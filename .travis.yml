@@ -159,22 +159,22 @@ matrix:
     #         - llvm-toolchain-precise-3.6
 
     # gcc-5
-    - env: GCC_VERSION=5 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-      os: linux
-      sudo: required
-      dist: trusty
-      cache:
-        ccache: true
-        timeout: 1000
-        directories:
-          - $HOME/boost
-      addons: &gcc5
-        apt:
-          packages:
-            - cmake
-            - g++-5
-          sources:
-            - ubuntu-toolchain-r-test
+    # - env: GCC_VERSION=5 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
+    #   os: linux
+    #   sudo: required
+    #   dist: trusty
+    #   cache:
+    #     ccache: true
+    #     timeout: 1000
+    #     directories:
+    #       - $HOME/boost
+    #   addons: &gcc5
+    #     apt:
+    #       packages:
+    #         - cmake
+    #         - g++-5
+    #       sources:
+    #         - ubuntu-toolchain-r-test
 
     - env: GCC_VERSION=5 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
       os: linux
