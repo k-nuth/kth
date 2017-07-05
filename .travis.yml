@@ -299,20 +299,26 @@ install:
       brew unlink cmake
       brew install cmake
     fi
+  
+
   ############################################################################
   # Custom script for external dependences
   ############################################################################
   - cd ${DEPS_DIR}
   - wget -O build_deps.sh  https://raw.githubusercontent.com/hanchon/travis_complete_cache/master/build_deps.sh
   - sudo chmod 777 build_deps.sh  
+  
   # Install Boost
   - ./build_deps.sh boost "${TRAVIS_OS_NAME}"
-  # Install ZeroMQ
-  - cd ${DEPS_DIR}
-  - ./build_deps.sh zeromq "${TRAVIS_OS_NAME}"
-  # Install Protobuf
-  - cd ${DEPS_DIR}
-  - ./build_deps.sh protobuf "${TRAVIS_OS_NAME}"
+  
+  # # Install ZeroMQ
+  # - cd ${DEPS_DIR}
+  # - ./build_deps.sh zeromq "${TRAVIS_OS_NAME}"
+  # # Install Protobuf
+  # - cd ${DEPS_DIR}
+  # - ./build_deps.sh protobuf "${TRAVIS_OS_NAME}"
+
+
   #Set linux variables:
   - |
     if [[ "${TRAVIS_OS_NAME}" == "linux" ]]; then
