@@ -14,149 +14,149 @@ git:
 matrix:
   include:
 
-    # Linux clang-3.6 Debug
-    - env: CLANG_VERSION=3.6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-      os: linux
-      sudo: required
-      dist: trusty
-      cache:
-        ccache: true
-        timeout: 1000
-        directories:
-          - $HOME/boost
-      addons: &clang36
-        apt:
-          packages:
-            - clang-3.6
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-precise-3.6
+    # # Linux clang-3.6 Debug
+    # - env: CLANG_VERSION=3.6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
+    #   os: linux
+    #   sudo: required
+    #   dist: trusty
+    #   cache:
+    #     ccache: true
+    #     timeout: 1000
+    #     directories:
+    #       - $HOME/boost
+    #   addons: &clang36
+    #     apt:
+    #       packages:
+    #         - clang-3.6
+    #       sources:
+    #         - ubuntu-toolchain-r-test
+    #         - llvm-toolchain-precise-3.6
 
-    # Linux clang-3.6 Release
-    - env: CLANG_VERSION=3.6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
-      os: linux
-      sudo: required
-      dist: trusty
-      cache:
-        ccache: true
-        timeout: 1000
-        directories:
-          - $HOME/boost
-      addons: &clang36
-        apt:
-          packages:
-            - clang-3.6
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-precise-3.6
+    # # Linux clang-3.6 Release
+    # - env: CLANG_VERSION=3.6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
+    #   os: linux
+    #   sudo: required
+    #   dist: trusty
+    #   cache:
+    #     ccache: true
+    #     timeout: 1000
+    #     directories:
+    #       - $HOME/boost
+    #   addons: &clang36
+    #     apt:
+    #       packages:
+    #         - clang-3.6
+    #       sources:
+    #         - ubuntu-toolchain-r-test
+    #         - llvm-toolchain-precise-3.6
 
-    # Linux clang-3.7 Debug
-    - env: CLANG_VERSION=3.7 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-      os: linux
-      sudo: required
-      dist: trusty
-      cache:
-        ccache: true
-        timeout: 1000
-        directories:
-          - $HOME/boost
-      addons: &clang37
-        apt:
-          packages:
-            - clang-3.7
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-precise-3.7
+    # # Linux clang-3.7 Debug
+    # - env: CLANG_VERSION=3.7 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
+    #   os: linux
+    #   sudo: required
+    #   dist: trusty
+    #   cache:
+    #     ccache: true
+    #     timeout: 1000
+    #     directories:
+    #       - $HOME/boost
+    #   addons: &clang37
+    #     apt:
+    #       packages:
+    #         - clang-3.7
+    #       sources:
+    #         - ubuntu-toolchain-r-test
+    #         - llvm-toolchain-precise-3.7
 
-    # Linux clang-3.7 Release
-    - env: CLANG_VERSION=3.7 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
-      os: linux
-      sudo: required
-      dist: trusty
-      cache:
-        ccache: true
-        timeout: 1000
-        directories:
-          - $HOME/boost
-      addons: &clang37
-        apt:
-          packages:
-            - clang-3.7
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-precise-3.7
+    # # Linux clang-3.7 Release
+    # - env: CLANG_VERSION=3.7 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
+    #   os: linux
+    #   sudo: required
+    #   dist: trusty
+    #   cache:
+    #     ccache: true
+    #     timeout: 1000
+    #     directories:
+    #       - $HOME/boost
+    #   addons: &clang37
+    #     apt:
+    #       packages:
+    #         - clang-3.7
+    #       sources:
+    #         - ubuntu-toolchain-r-test
+    #         - llvm-toolchain-precise-3.7
 
-    # Linux clang-3.8 Debug
-    - env: CLANG_VERSION=3.8 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-      os: linux
-      sudo: required
-      dist: trusty
-      cache:
-        ccache: true
-        timeout: 1000
-        directories:
-          - $HOME/boost
-      addons: &clang38
-        apt:
-          packages:
-            - clang-3.8
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-precise-3.8
+    # # Linux clang-3.8 Debug
+    # - env: CLANG_VERSION=3.8 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
+    #   os: linux
+    #   sudo: required
+    #   dist: trusty
+    #   cache:
+    #     ccache: true
+    #     timeout: 1000
+    #     directories:
+    #       - $HOME/boost
+    #   addons: &clang38
+    #     apt:
+    #       packages:
+    #         - clang-3.8
+    #       sources:
+    #         - ubuntu-toolchain-r-test
+    #         - llvm-toolchain-precise-3.8
 
-    # Linux clang-3.8 Release
-    - env: CLANG_VERSION=3.8 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
-      os: linux
-      sudo: required
-      dist: trusty
-      cache:
-        ccache: true
-        timeout: 1000
-        directories:
-          - $HOME/boost
-      addons: &clang38
-        apt:
-          packages:
-            - clang-3.8
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-precise-3.8
+    # # Linux clang-3.8 Release
+    # - env: CLANG_VERSION=3.8 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
+    #   os: linux
+    #   sudo: required
+    #   dist: trusty
+    #   cache:
+    #     ccache: true
+    #     timeout: 1000
+    #     directories:
+    #       - $HOME/boost
+    #   addons: &clang38
+    #     apt:
+    #       packages:
+    #         - clang-3.8
+    #       sources:
+    #         - ubuntu-toolchain-r-test
+    #         - llvm-toolchain-precise-3.8
 
-    # gcc-4.9 Debug
-    - env: GCC_VERSION=4.9 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-      os: linux
-      sudo: required
-      dist: trusty
-      cache:
-        ccache: true
-        timeout: 1000
-        directories:
-          - $HOME/boost
-      addons: &gcc49
-        apt:
-          packages:
-            - g++-4.9
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-precise-3.6
+    # # gcc-4.9 Debug
+    # - env: GCC_VERSION=4.9 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
+    #   os: linux
+    #   sudo: required
+    #   dist: trusty
+    #   cache:
+    #     ccache: true
+    #     timeout: 1000
+    #     directories:
+    #       - $HOME/boost
+    #   addons: &gcc49
+    #     apt:
+    #       packages:
+    #         - g++-4.9
+    #       sources:
+    #         - ubuntu-toolchain-r-test
+    #         - llvm-toolchain-precise-3.6
 
-    # gcc-4.9 Release
-    - env: GCC_VERSION=4.9 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
-      os: linux
-      sudo: required
-      dist: trusty
-      cache:
-        ccache: true
-        timeout: 1000
-        directories:
-          - $HOME/boost
-      addons: &gcc49
-        apt:
-          packages:
-            - g++-4.9
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-precise-3.6
+    # # gcc-4.9 Release
+    # - env: GCC_VERSION=4.9 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
+    #   os: linux
+    #   sudo: required
+    #   dist: trusty
+    #   cache:
+    #     ccache: true
+    #     timeout: 1000
+    #     directories:
+    #       - $HOME/boost
+    #   addons: &gcc49
+    #     apt:
+    #       packages:
+    #         - g++-4.9
+    #       sources:
+    #         - ubuntu-toolchain-r-test
+    #         - llvm-toolchain-precise-3.6
 
     # gcc-5
     - env: GCC_VERSION=5 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
@@ -193,41 +193,46 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
             
-    # gcc-6
-    - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-      os: linux
-      sudo: required
-      dist: trusty
-      cache:
-        ccache: true
-        timeout: 1000
-        directories:
-          - $HOME/boost
-          - $HOME/zeromq
-      addons: &gcc6
-        apt:
-          packages:
-            - cmake
-            - g++-6
-          sources:
-            - ubuntu-toolchain-r-test
+    # # gcc-6
+    # - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
+    #   os: linux
+    #   sudo: required
+    #   dist: trusty
+    #   cache:
+    #     ccache: true
+    #     timeout: 1000
+    #     directories:
+    #       - $HOME/boost
+    #       - $HOME/zeromq
+    #   addons: &gcc6
+    #     apt:
+    #       packages:
+    #         - cmake
+    #         - g++-6
+    #       sources:
+    #         - ubuntu-toolchain-r-test
     
-    - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
-      os: linux
-      sudo: required
-      dist: trusty
-      cache:
-        ccache: true
-        timeout: 1000
-        directories:
-          - $HOME/boost
-      addons: &gcc6
-        apt:
-          packages:
-            - cmake
-            - g++-6
-          sources:
-            - ubuntu-toolchain-r-test
+    # - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
+    #   os: linux
+    #   sudo: required
+    #   dist: trusty
+    #   cache:
+    #     ccache: true
+    #     timeout: 1000
+    #     directories:
+    #       - $HOME/boost
+    #   addons: &gcc6
+    #     apt:
+    #       packages:
+    #         - cmake
+    #         - g++-6
+    #       sources:
+    #         - ubuntu-toolchain-r-test
+
+
+
+
+# ---------------------------------------------------------------------------------------------------------
 
     # OSX
 
