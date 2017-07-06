@@ -28,4 +28,4 @@ The dependencies are:
 Cmake and Boost build from source might take several minutes, so please be patient.
 As soon as dependencies are satisfied, build will start. A successful build will look like this:
 
-TODO: Screenshot
+![Successful build](http://pichoster.net/images/2017/07/07/4062260796e0ce4949db7b5740e0761b.png)
