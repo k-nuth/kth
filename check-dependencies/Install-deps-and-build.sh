@@ -1,3 +1,4 @@
+#!/bin/bash
 #to use ./clone.sh ~/112bit/nuevo/
 #destination folder must exist
 
