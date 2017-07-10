@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/bitprim/bitprim.svg?branch=master)](https://travis-ci.org/bitprim/bitprim)
+
 # bitprim
 Bitcoin development platform
 

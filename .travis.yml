@@ -5,264 +5,36 @@
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
 language: cpp
-# sudo: false
-# sudo: required
-# dist: trusty
 git:
   submodules: false
-  
+
 matrix:
   include:
-
-    # # Linux clang-3.6 Debug
-    # - env: CLANG_VERSION=3.6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-    #   os: linux
-    #   sudo: required
-    #   dist: trusty
-    #   cache:
-    #     ccache: true
-    #     timeout: 1000
-    #     directories:
-    #       - $HOME/boost
-    #   addons: &clang36
-    #     apt:
-    #       packages:
-    #         - clang-3.6
-    #       sources:
-    #         - ubuntu-toolchain-r-test
-    #         - llvm-toolchain-precise-3.6
-
-    # # Linux clang-3.6 Release
-    # - env: CLANG_VERSION=3.6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
-    #   os: linux
-    #   sudo: required
-    #   dist: trusty
-    #   cache:
-    #     ccache: true
-    #     timeout: 1000
-    #     directories:
-    #       - $HOME/boost
-    #   addons: &clang36
-    #     apt:
-    #       packages:
-    #         - clang-3.6
-    #       sources:
-    #         - ubuntu-toolchain-r-test
-    #         - llvm-toolchain-precise-3.6
-
-    # # Linux clang-3.7 Debug
-    # - env: CLANG_VERSION=3.7 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-    #   os: linux
-    #   sudo: required
-    #   dist: trusty
-    #   cache:
-    #     ccache: true
-    #     timeout: 1000
-    #     directories:
-    #       - $HOME/boost
-    #   addons: &clang37
-    #     apt:
-    #       packages:
-    #         - clang-3.7
-    #       sources:
-    #         - ubuntu-toolchain-r-test
-    #         - llvm-toolchain-precise-3.7
-
-    # # Linux clang-3.7 Release
-    # - env: CLANG_VERSION=3.7 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
-    #   os: linux
-    #   sudo: required
-    #   dist: trusty
-    #   cache:
-    #     ccache: true
-    #     timeout: 1000
-    #     directories:
-    #       - $HOME/boost
-    #   addons: &clang37
-    #     apt:
-    #       packages:
-    #         - clang-3.7
-    #       sources:
-    #         - ubuntu-toolchain-r-test
-    #         - llvm-toolchain-precise-3.7
-
-    # # Linux clang-3.8 Debug
-    # - env: CLANG_VERSION=3.8 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-    #   os: linux
-    #   sudo: required
-    #   dist: trusty
-    #   cache:
-    #     ccache: true
-    #     timeout: 1000
-    #     directories:
-    #       - $HOME/boost
-    #   addons: &clang38
-    #     apt:
-    #       packages:
-    #         - clang-3.8
-    #       sources:
-    #         - ubuntu-toolchain-r-test
-    #         - llvm-toolchain-precise-3.8
-
-    # # Linux clang-3.8 Release
-    # - env: CLANG_VERSION=3.8 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
-    #   os: linux
-    #   sudo: required
-    #   dist: trusty
-    #   cache:
-    #     ccache: true
-    #     timeout: 1000
-    #     directories:
-    #       - $HOME/boost
-    #   addons: &clang38
-    #     apt:
-    #       packages:
-    #         - clang-3.8
-    #       sources:
-    #         - ubuntu-toolchain-r-test
-    #         - llvm-toolchain-precise-3.8
-
-    # # gcc-4.9 Debug
-    # - env: GCC_VERSION=4.9 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-    #   os: linux
-    #   sudo: required
-    #   dist: trusty
-    #   cache:
-    #     ccache: true
-    #     timeout: 1000
-    #     directories:
-    #       - $HOME/boost
-    #   addons: &gcc49
-    #     apt:
-    #       packages:
-    #         - g++-4.9
-    #       sources:
-    #         - ubuntu-toolchain-r-test
-    #         - llvm-toolchain-precise-3.6
-
-    # # gcc-4.9 Release
-    # - env: GCC_VERSION=4.9 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
-    #   os: linux
-    #   sudo: required
-    #   dist: trusty
-    #   cache:
-    #     ccache: true
-    #     timeout: 1000
-    #     directories:
-    #       - $HOME/boost
-    #   addons: &gcc49
-    #     apt:
-    #       packages:
-    #         - g++-4.9
-    #       sources:
-    #         - ubuntu-toolchain-r-test
-    #         - llvm-toolchain-precise-3.6
-
-    # gcc-5
-    # - env: GCC_VERSION=5 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-    #   os: linux
-    #   sudo: required
-    #   dist: trusty
-    #   cache:
-    #     ccache: true
-    #     timeout: 1000
-    #     directories:
-    #       - $HOME/boost
-    #   addons: &gcc5
-    #     apt:
-    #       packages:
-    #         - cmake
-    #         - g++-5
-    #       sources:
-    #         - ubuntu-toolchain-r-test
-
-    - env: GCC_VERSION=5 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
+    - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
       os: linux
       sudo: required
       dist: trusty
-      cache:
-        ccache: true
-        timeout: 1000
-        directories:
-          - $HOME/boost
-      addons: &gcc5
+      group: edge
+      addons: &gcc6
         apt:
           packages:
-            - cmake
-            - g++-5
+            - g++-6
+            - libc6
           sources:
             - ubuntu-toolchain-r-test
-            
-    # # gcc-6
-    # - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-    #   os: linux
-    #   sudo: required
-    #   dist: trusty
-    #   cache:
-    #     ccache: true
-    #     timeout: 1000
-    #     directories:
-    #       - $HOME/boost
-    #       - $HOME/zeromq
-    #   addons: &gcc6
-    #     apt:
-    #       packages:
-    #         - cmake
-    #         - g++-6
-    #       sources:
-    #         - ubuntu-toolchain-r-test
-    
-    # - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
-    #   os: linux
-    #   sudo: required
-    #   dist: trusty
-    #   cache:
-    #     ccache: true
-    #     timeout: 1000
-    #     directories:
-    #       - $HOME/boost
-    #   addons: &gcc6
-    #     apt:
-    #       packages:
-    #         - cmake
-    #         - g++-6
-    #       sources:
-    #         - ubuntu-toolchain-r-test
 
-
-
-
-# ---------------------------------------------------------------------------------------------------------
-
-    # OSX
-
-    # Xcode 7 Debug
-#    - env: CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-#      os: osx
-#      osx_image: xcode73
-#      addons: &xcode73
-#      sudo: required
-
-    # Xcode 7 Release
-#    - env: CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
-#      os: osx
-#      osx_image: xcode73
-#      addons: &xcode73
-#      sudo: required
-      
-    # Xcode 8 Release
-#    - env: CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-#      os: osx
-#      osx_image: xcode8
-#      addons: &xcode8
-#      sudo: required
-      
-    # Xcode 8 Release
-#    - env: CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
-#      os: osx
-#      osx_image: xcode8
-#      addons: &xcode8
-#      sudo: required
+    - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
+      os: linux
+      sudo: required
+      dist: trusty
+      group: edge
+      addons: &gcc6d
+        apt:
+          packages:
+            - g++-6
+            - libc6
+          sources:
+            - ubuntu-toolchain-r-test
 
 branches:
   only:
@@ -270,9 +42,9 @@ branches:
 
 before_install:
 
-  # Update submodules 
+  # Update submodules
   - git submodule update --init --recursive
-  
+
   - if [ -n "$GCC_VERSION" ]; then export CXX="g++-${GCC_VERSION}" CC="gcc-${GCC_VERSION}"; fi
   - if [ -n "$CLANG_VERSION" ]; then export CXX="clang++-${CLANG_VERSION}" CC="clang-${CLANG_VERSION}"; fi
   - if [ -n "$GCC_VERSION" ]; then export CXX_FLAGS="${CXX_FLAGS} "; fi
@@ -280,54 +52,30 @@ before_install:
 
 install:
   ############################################################################
-  # All the dependencies are installed in ${TRAVIS_BUILD_DIR}/deps/
+  # All the dependencies are installed in /home/travis/deps/
   ############################################################################
-  - DEPS_DIR="${TRAVIS_BUILD_DIR}/deps"
+  - DEPS_DIR="/home/travis/deps"
   - mkdir ${DEPS_DIR} && cd ${DEPS_DIR}
-
   ############################################################################
   # Install a recent CMake
   ############################################################################
-  - |
-    if [[ "${TRAVIS_OS_NAME}" == "linux" ]]; then
-      uname -a
-      cmake --version
-      CMAKE_URL="https://cmake.org/files/v3.7/cmake-3.7.0-rc3-Linux-x86_64.tar.gz"
-      mkdir cmake && travis_retry wget --no-check-certificate --quiet -O - ${CMAKE_URL} | tar --strip-components=1 -xz -C cmake
-      export PATH=${DEPS_DIR}/cmake/bin:${PATH}
-    else 
-      brew unlink cmake
-      brew install cmake
-    fi
-  
-
+  - CMAKE_URL="https://cmake.org/files/v3.9/cmake-3.9.0-rc5-Linux-x86_64.tar.gz"
+  - mkdir cmake && travis_retry wget --no-check-certificate --quiet -O - ${CMAKE_URL} | tar --strip-components=1 -xz -C cmake
+  - echo 'Cmake 3.9.0 installed';
+  - export PATH=${DEPS_DIR}/cmake/bin:${PATH}
   ############################################################################
-  # Custom script for external dependences
+  # Install a Boost with -fPIC
   ############################################################################
   - cd ${DEPS_DIR}
-  - wget -O build_deps.sh  https://raw.githubusercontent.com/hanchon/travis_complete_cache/master/build_deps.sh
-  - sudo chmod 777 build_deps.sh  
-  
-  # Install Boost
-  - ./build_deps.sh boost "${TRAVIS_OS_NAME}"
-  
-  # # Install ZeroMQ
-  # - cd ${DEPS_DIR}
-  # - ./build_deps.sh zeromq "${TRAVIS_OS_NAME}"
-  # # Install Protobuf
-  # - cd ${DEPS_DIR}
-  # - ./build_deps.sh protobuf "${TRAVIS_OS_NAME}"
+  - wget -O boost_1_64_0.tar.gz https://sourceforge.net/projects/boost/files/boost/1.64.0/boost_1_64_0.tar.gz/download
+  - tar -xzf boost_1_64_0.tar.gz
+  - cd boost_1_64_0
+  - wget -O boost_bin_fpic.tar.bz2 http://repo.bitprim.org/packages/binary/boost_bin_fpic.tar.bz2
+  - tar -xvjf boost_bin_fpic.tar.bz2
+  - export BOOST_OPTS="-DBOOST_ROOT=/home/travis/deps/boost_1_64_0 -DBOOST_INCLUDEDIR=/home/travis/deps/boost_1_64_0 -DBOOST_LIBRARYDIR=/home/travis/deps/boost_1_64_0/lib"
+  - sudo ldconfig
+  - echo 'Boost 1.64.0 installed';
 
-
-  #Set linux variables:
-  - |
-    if [[ "${TRAVIS_OS_NAME}" == "linux" ]]; then
-      export BOOST_OPTS="-DBOOST_ROOT=/home/travis/boost -DBOOST_INCLUDEDIR=/home/travis/boost/include -DBOOST_LIBRARYDIR=/home/travis/boost/lib"    
-      sudo ldconfig
-    else
-      export BOOST_OPTS=" "    
-    fi  
-   
 before_script:
   ############################################################################
   # Set the git identity (for pushing the documentation and the benchmarks)
@@ -339,12 +87,12 @@ before_script:
   - if [ -n "$CLANG_VERSION" ]; then export CXX_FLAGS="${CXX_FLAGS} "; fi
 
   - cd ${TRAVIS_BUILD_DIR}
-  - mkdir build 
-  - cd build 
-  - cmake .. -DENABLE_TESTS=OFF -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_FLAGS="${CXX_FLAGS}" ${BOOST_OPTS} 
+  - mkdir build
+  - cd build
+  - cmake .. -DENABLE_TESTS=OFF -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_FLAGS="${CXX_FLAGS}" ${BOOST_OPTS}
 
 script:
-  - make -j2 
+  - make -j2
   - sudo make install
 
 notifications:
@@ -353,3 +101,4 @@ notifications:
     urls: https://webhooks.gitter.im/e/a19dd2b03bf676d2b622
     on_success: change
     on_failure: always
+
