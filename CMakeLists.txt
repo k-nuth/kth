@@ -13,12 +13,14 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(WITH_LITECOIN "Compile with Litecoin support." OFF)
+option(WITH_REMOTE_BLOCKCHAIN "Compile with remote bitprim-blockchain (aka. bitprim-blockchain-requester)." OFF)
 option(WITH_REMOTE_DATABASE "Compile with remote bitprim-database (aka. bitprim-database-requester)." OFF)
 option(WITH_LOCAL_MINING "Compile with local mining." ON)
 option(ENABLE_TEST "Compile with enable test." OFF)
+option(ENABLE_TESTS "Compile with enable test." OFF)
 option(ENABLE_MODULE_RECOVERY "Compile with enable module recovery." ON)
 option(WITH_TOOLS "Compile with tools." OFF)
-option(WITH_REMOTE_BLOCKCHAIN "Compile with remote bitprim-blockchain (aka. bitprim-blockchain-requester)." OFF)
+option(WITH_CONSOLE_NODE_CINT "" OFF)
 
 # Implement --with-tests and declare WITH_TESTS.
 #------------------------------------------------------------------------------
@@ -31,20 +33,28 @@ option(WITH_EXAMPLES "Compile with examples." OFF)
 # Inherit --enable-shared and define BOOST_TEST_DYN_LINK.
 #------------------------------------------------------------------------------
 option(ENABLE_SHARED "" OFF)
+option(ENABLE_SHARED_NODE_CINT "" ON)
 
 set(WITH_REMOTE_DATABASE OFF)
 set(WITH_LOCAL_MINING ON)
 set(ENABLE_TEST OFF)
+set(ENABLE_TESTS OFF)
 set(ENABLE_MODULE_RECOVERY ON)
 set(WITH_TOOLS OFF)
 set(WITH_REMOTE_BLOCKCHAIN OFF)
 set(WITH_TESTS OFF)
 set(WITH_EXAMPLES OFF)
 
-add_definitions(-DWITH_LOCAL_MINING)
+set(ENABLE_SHARED OFF)
+set(ENABLE_SHARED_NODE_CINT ON)
+
+
+if (WITH_LOCAL_MINING)
+	add_definitions(-DWITH_LOCAL_MINING)
+endif()
 
 if (WITH_LITECOIN)
-  add_definitions(-DLITECOIN)
+	add_definitions(-DLITECOIN)
 endif()
 
 # Check dependencies.
