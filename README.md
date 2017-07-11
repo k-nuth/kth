@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/bitprim/bitprim.svg?branch=master)](https://travis-ci.org/bitprim/bitprim)
+
 # bitprim
 Bitcoin development platform
 
@@ -22,7 +24,7 @@ $ sudo ./Install-deps-and-build.sh
 ```
 The dependencies are:
 
-* Cmake 3.7.0
+* Cmake 3.7.0.rc1
 * Boost 1.64 (built with -fPIC flag; the script takes care of that, but beware because a default Boost install does not use this option)
 
 Cmake and Boost build from source might take several minutes, so please be patient.
