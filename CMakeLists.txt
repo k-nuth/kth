@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.4)
 
-# bitprim-build
+# bitprim
 #==============================================================================
-project(bitprim-build
+project(bitprim
   VERSION 3.0.0
   LANGUAGES CXX C)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
