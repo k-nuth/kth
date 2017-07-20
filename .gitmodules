@@ -29,3 +29,4 @@
 [submodule "bitprim-node-cint"]
 	path = bitprim-node-cint
 	url = https://github.com/bitprim/bitprim-node-cint.git
+	branch = dev

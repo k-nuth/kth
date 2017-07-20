@@ -1,3 +1,22 @@
+#
+# Copyright (c) 2017 Bitprim developers (see AUTHORS)
+#
+# This file is part of Bitprim.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
 cmake_minimum_required(VERSION 3.4)
 
 # bitprim
@@ -74,9 +93,12 @@ if (NOT Boost_FOUND)
   message(FATAL_ERROR "Could not find Boost 1.56.0 or newer" )
 endif()
 
-# Require zmq of at least version 4.2.0 and output ${zmq_CPPFLAGS/LIBS/PKG}.
+
+# bla bla bla
 #------------------------------------------------------------------------------
-#set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/bitprim-protocol/cmake)
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+include(BitprimTools)
+
 
 # Build
 #==============================================================================
