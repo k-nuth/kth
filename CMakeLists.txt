@@ -94,7 +94,7 @@ if (NOT Boost_FOUND)
 endif()
 
 
-# bla bla bla
+# Including common functions
 #------------------------------------------------------------------------------
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(BitprimTools)
