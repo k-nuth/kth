@@ -113,6 +113,8 @@ install:
     if [[ "${CHECK_FORMATTING}" == "true" ]]; then
       brew upgrade pcre || brew install pcre || exit 1
       brew upgrade vera++ || brew install vera++ || exit 1
+      brew upgrade llvm --with-clang --with-clang-extra-tools || brew install llvm --with-clang --with-clang-extra-tools || exit 1
+      ls /usr/local/opt/llvm/bin | grep clang
     fi
 
 before_script:
