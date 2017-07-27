@@ -10,6 +10,13 @@ git:
 
 matrix:
   include:
+    ##########################################################################
+    # Check for code formatting errors
+    ##########################################################################
+    - os: osx
+      env: CHECK_FORMATTING=true
+      osx_image: xcode8
+
     - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
       os: linux
       sudo: required
@@ -55,27 +62,57 @@ install:
   ############################################################################
   # All the dependencies are installed in /home/travis/deps/
   ############################################################################
+  # - DEPS_DIR="${TRAVIS_BUILD_DIR}/deps"
   - DEPS_DIR="/home/travis/deps"
   - mkdir ${DEPS_DIR} && cd ${DEPS_DIR}
+  
+  ############################################################################
+  # Setup default versions and override compiler if needed
+  ############################################################################
+  - if [[ "${LLVM_VERSION}" == "default" ]]; then LLVM_VERSION=3.9.0; fi
+  - if [[ "${BOOST_VERSION}" == "default" ]]; then BOOST_VERSION=1.64.0; fi
+  - if [[ "${COMPILER}" != "" ]]; then export CXX=${COMPILER}; fi  
+
   ############################################################################
   # Install a recent CMake
   ############################################################################
-  - CMAKE_URL="https://cmake.org/files/v3.9/cmake-3.9.0-rc5-Linux-x86_64.tar.gz"
-  - mkdir cmake && travis_retry wget --no-check-certificate --quiet -O - ${CMAKE_URL} | tar --strip-components=1 -xz -C cmake
-  - echo 'Cmake 3.9.0 installed';
-  - export PATH=${DEPS_DIR}/cmake/bin:${PATH}
+  - |
+    if [[ "${TRAVIS_OS_NAME}" == "linux" ]]; then
+      CMAKE_URL="https://cmake.org/files/v3.9/cmake-3.9.0-rc5-Linux-x86_64.tar.gz"
+      mkdir cmake && travis_retry wget --no-check-certificate --quiet -O - ${CMAKE_URL} | tar --strip-components=1 -xz -C cmake
+      echo 'Cmake 3.9.0 installed';
+      export PATH=${DEPS_DIR}/cmake/bin:${PATH}
+    else
+      brew upgrade cmake || brew install cmake
+    fi
+  - cmake --version
+
+
   ############################################################################
   # Install a Boost with -fPIC
   ############################################################################
-  - cd ${DEPS_DIR}
-  - wget -O boost_1_64_0.tar.gz https://sourceforge.net/projects/boost/files/boost/1.64.0/boost_1_64_0.tar.gz/download
-  - tar -xzf boost_1_64_0.tar.gz
-  - cd boost_1_64_0
-  - wget -O boost_bin_fpic.tar.bz2 http://repo.bitprim.org/packages/binary/boost_bin_fpic.tar.bz2
-  - tar -xvjf boost_bin_fpic.tar.bz2
-  - export BOOST_OPTS="-DBOOST_ROOT=/home/travis/deps/boost_1_64_0 -DBOOST_INCLUDEDIR=/home/travis/deps/boost_1_64_0 -DBOOST_LIBRARYDIR=/home/travis/deps/boost_1_64_0/lib"
-  - sudo ldconfig
-  - echo 'Boost 1.64.0 installed';
+  - |
+    if [[ "${TRAVIS_OS_NAME}" == "linux" ]]; then
+      cd ${DEPS_DIR}
+      wget -O boost_1_64_0.tar.gz https://sourceforge.net/projects/boost/files/boost/1.64.0/boost_1_64_0.tar.gz/download
+      tar -xzf boost_1_64_0.tar.gz
+      cd boost_1_64_0
+      wget -O boost_bin_fpic.tar.bz2 http://repo.bitprim.org/packages/binary/boost_bin_fpic.tar.bz2
+      tar -xvjf boost_bin_fpic.tar.bz2
+      export BOOST_OPTS="-DBOOST_ROOT=/home/travis/deps/boost_1_64_0 -DBOOST_INCLUDEDIR=/home/travis/deps/boost_1_64_0 -DBOOST_LIBRARYDIR=/home/travis/deps/boost_1_64_0/lib"
+      sudo ldconfig
+      echo 'Boost 1.64.0 installed';
+    fi
+
+
+  ############################################################################
+  # Install tools to check for code formatting errors (run on OS X only)
+  ############################################################################
+  - |
+    if [[ "${CHECK_FORMATTING}" == "true" ]]; then
+      brew upgrade pcre || brew install pcre || exit 1
+      brew upgrade vera++ || brew install vera++ || exit 1
+    fi
 
 before_script:
   ############################################################################
@@ -93,8 +130,21 @@ before_script:
   - cmake .. -DENABLE_TESTS=OFF -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_FLAGS="${CXX_FLAGS}" ${BOOST_OPTS}
 
 script:
-  - make -j2
-  - sudo make install
+  - |
+    if [[ "${CHECK_FORMATTING}" == "true" ]]; then
+      # Find non-ASCII characters in headers
+      hpps=$(find include doc -name \*\.hpp)
+      cpps=$(find test example -name \*\.cpp)
+      pcregrep --color='auto' -n "[\x80-\xFF]" ${hpps} ${cpps}
+      if [[ $? -ne 1 ]]; then exit 1; fi
+      # F001: Source files should not use the '\r' (CR) character
+      # L001: No trailing whitespace at the end of lines
+      # L002: Don't use tab characters
+      find include -name \*\.hpp | vera++ --rule F001 --rule L001 --rule L002 --error
+    else
+      make -j2
+      sudo make install
+    fi
 
 notifications:
   email: false
