@@ -130,13 +130,24 @@ before_script:
   - cd ${TRAVIS_BUILD_DIR}
   - mkdir build
   - cd build
-  - cmake .. -DENABLE_TESTS=OFF -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_FLAGS="${CXX_FLAGS}" ${BOOST_OPTS}
+
+  - |
+    if [[ "${CHECK_FORMATTING}" == "true" ]]; then
+      cmake .. -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_TESTS=OFF -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_FLAGS="${CXX_FLAGS}" ${BOOST_OPTS}
+    else
+      cmake .. -DENABLE_TESTS=OFF -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_FLAGS="${CXX_FLAGS}" ${BOOST_OPTS}
+    fi
 
 script:
   - |
     if [[ "${CHECK_FORMATTING}" == "true" ]]; then
 
+      export PATH=$PATH:/usr/local/opt/llvm/bin/
       clang-tidy --version
+
+      find / -name "run-clang-tidy.py"
+
+      /usr/local/Cellar/llvm/4.0.1/share/clang/run-clang-tidy.py -header-filter='.*' -checks='-*,modernize-use-override'
 
       # Find non-ASCII characters in headers
       hpps=$(find include doc -name \*\.hpp)
