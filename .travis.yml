@@ -145,7 +145,7 @@ script:
       export PATH=$PATH:/usr/local/opt/llvm/bin/
       clang-tidy --version
 
-      find / -name "run-clang-tidy.py"
+      # sudo find / -name "run-clang-tidy.py"
 
       /usr/local/Cellar/llvm/4.0.1/share/clang/run-clang-tidy.py -header-filter='.*' -checks='-*,modernize-use-override'
 
