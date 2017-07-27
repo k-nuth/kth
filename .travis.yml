@@ -66,6 +66,7 @@ install:
   # - DEPS_DIR="/home/travis/deps"
   - mkdir ${DEPS_DIR} && cd ${DEPS_DIR}
   
+  
   ############################################################################
   # Setup default versions and override compiler if needed
   ############################################################################
@@ -134,7 +135,7 @@ script:
     if [[ "${CHECK_FORMATTING}" == "true" ]]; then
 
       clang-tidy --version
-      
+
       # Find non-ASCII characters in headers
       hpps=$(find include doc -name \*\.hpp)
       cpps=$(find test example -name \*\.cpp)
