@@ -17,31 +17,31 @@ matrix:
       env: CHECK_FORMATTING=true
       osx_image: xcode8
 
-    - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
-      os: linux
-      sudo: required
-      dist: trusty
-      group: edge
-      addons: &gcc6
-        apt:
-          packages:
-            - g++-6
-            - libc6
-          sources:
-            - ubuntu-toolchain-r-test
+    # - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
+    #   os: linux
+    #   sudo: required
+    #   dist: trusty
+    #   group: edge
+    #   addons: &gcc6
+    #     apt:
+    #       packages:
+    #         - g++-6
+    #         - libc6
+    #       sources:
+    #         - ubuntu-toolchain-r-test
 
-    - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-      os: linux
-      sudo: required
-      dist: trusty
-      group: edge
-      addons: &gcc6d
-        apt:
-          packages:
-            - g++-6
-            - libc6
-          sources:
-            - ubuntu-toolchain-r-test
+    # - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
+    #   os: linux
+    #   sudo: required
+    #   dist: trusty
+    #   group: edge
+    #   addons: &gcc6d
+    #     apt:
+    #       packages:
+    #         - g++-6
+    #         - libc6
+    #       sources:
+    #         - ubuntu-toolchain-r-test
 
 branches:
   only:
@@ -62,8 +62,8 @@ install:
   ############################################################################
   # All the dependencies are installed in /home/travis/deps/
   ############################################################################
-  # - DEPS_DIR="${TRAVIS_BUILD_DIR}/deps"
-  - DEPS_DIR="/home/travis/deps"
+  - DEPS_DIR="${TRAVIS_BUILD_DIR}/deps"
+  # - DEPS_DIR="/home/travis/deps"
   - mkdir ${DEPS_DIR} && cd ${DEPS_DIR}
   
   ############################################################################
@@ -132,6 +132,9 @@ before_script:
 script:
   - |
     if [[ "${CHECK_FORMATTING}" == "true" ]]; then
+
+      clang-tidy --version
+      
       # Find non-ASCII characters in headers
       hpps=$(find include doc -name \*\.hpp)
       cpps=$(find test example -name \*\.cpp)
