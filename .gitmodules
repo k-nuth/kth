@@ -1,31 +1,31 @@
 [submodule "secp256k1"]
 	path = secp256k1
 	url = https://github.com/bitprim/secp256k1.git
-    branch = c-api
+    branch = dev
 [submodule "bitprim-core"]
 	path = bitprim-core
 	url = https://github.com/bitprim/bitprim-core.git
-    branch = c-api
+    branch = dev
 [submodule "bitprim-database"]
 	path = bitprim-database
 	url = https://github.com/bitprim/bitprim-database.git
-	branch = c-api
+	branch = dev
 [submodule "bitprim-network"]
 	path = bitprim-network
 	url = https://github.com/bitprim/bitprim-network.git
-	branch = c-api
+	branch = dev
 [submodule "bitprim-consensus"]
 	path = bitprim-consensus
 	url = https://github.com/bitprim/bitprim-consensus.git
-	branch = c-api
+	branch = dev
 [submodule "bitprim-blockchain"]
 	path = bitprim-blockchain
 	url = https://github.com/bitprim/bitprim-blockchain.git
-	branch = c-api
+	branch = dev
 [submodule "bitprim-node"]
 	path = bitprim-node
 	url = https://github.com/bitprim/bitprim-node.git
-	branch = c-api
+	branch = dev
 [submodule "bitprim-node-cint"]
 	path = bitprim-node-cint
 	url = https://github.com/bitprim/bitprim-node-cint.git
