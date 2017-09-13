@@ -62,9 +62,9 @@ The script creates a deps folder in the location `/path/to/dest/deps` where boos
 
 Install the [CMake](https://cmake.org/) (minimum 3.7.0-rc1) development package:
 ```sh
-$ wget https://cmake.org/files/v3.9/cmake-3.9.0-rc6.tar.gz
-$ tar -xvzf cmake-3.9.0-rc6.tar.gz
-$ cd cmake-3.9.0-rc6
+$ wget https://cmake.org/files/v3.9/cmake-3.9.0.tar.gz
+$ tar -xvzf cmake-3.9.0.tar.gz
+$ cd cmake-3.9.0
 $ ./bootstrap
 $ make -j 4
 $ sudo make install
