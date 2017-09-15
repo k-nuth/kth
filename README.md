@@ -3,7 +3,7 @@
 <!-- [![Build Status](https://travis-ci.org/bitprim/bitprim.svg?branch=master)](https://travis-ci.org/bitprim/bitprim) [![Appveyor Status](https://ci.appveyor.com/api/projects/status/github/bitprim/bitprim?branch=master&svg=true)](https://ci.appveyor.com/project/bitprim/bitprim?branch=master)  -->
 
 # bitprim
-Bitcoin development platform
+Bitcoin, Bitcoin Cash and Litecoin development platform
 
 ## Getting started - Build from source
 
