@@ -29,7 +29,7 @@ environment:
         PYTHON_ARCH: "64"
         WINDOWS_SDK_VERSION: "v7.0"
         DISTRIBUTIONS: "sdist bdist_wheel"
-        APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+        APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
 
 
 
@@ -102,7 +102,7 @@ install:
 
   # - set PATH=%PATH%;%PYTHON%/Scripts/
   - "%PYTHON%\\Scripts\\pip.exe --version"
-  - "%PYTHON%\\Scripts\\pip.exe install --upgrade setuptools"
+  # - "%PYTHON%\\Scripts\\pip.exe install --upgrade setuptools"
   - "%PYTHON%\\Scripts\\pip.exe install conan --upgrade"
   # - "%PYTHON%\\Scripts\\pip.exe install conan_package_tools"
   # - "%PYTHON%\\python.exe -m pip install wheel"
