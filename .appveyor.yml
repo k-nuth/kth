@@ -74,10 +74,10 @@ install:
 
 before_build:
   - call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvars64.bat" amd64
-  - mkdir C:\projects\bitprim
+  - mkdir C:\projects\bitprim-recursive
 
 build_script:
-  - cd C:\projects\bitprim
+  - cd C:\projects\bitprim-recursive
   - git clone https://github.com/bitprim/bitprim --recursive
   - cd bitprim
   - mkdir build
