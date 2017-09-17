@@ -122,9 +122,12 @@ build_script:
   - cd C:\projects\bitprim-recursive
   - git clone https://github.com/bitprim/bitprim --recursive
   - cd bitprim
+  - dir
   - mkdir build
   - cd build
+  - dir ..
   - conan install ..
+  
   - cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF -DWITH_EXAMPLES=OFF -DWITH_REMOTE_DATABASE=OFF -DWITH_REMOTE_BLOCKCHAIN=OFF -DWITH_LITECOIN=OFF -DWITH_TESTS=OFF -DENABLE_MODULE_RECOVERY=ON -DWITH_TOOLS=OFF
   #  -DBOOST_ROOT=C:\projects\deps\boost
   - cmake --build .
