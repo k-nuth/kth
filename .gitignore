@@ -3,3 +3,5 @@ cmake-build-debug/
 build/
 
 conanfile.pyc
+
+__pycache__/
