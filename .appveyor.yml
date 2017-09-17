@@ -122,6 +122,9 @@ build_script:
   - cd C:\projects\bitprim-recursive
   - git clone https://github.com/bitprim/bitprim --recursive
   - cd bitprim
+  - git checkout dev
+  - git pull
+  - git submodule update
   - dir
   - mkdir build
   - cd build
