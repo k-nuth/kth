@@ -1,104 +1,309 @@
-# Bitprim
 #
 # Copyright (c) 2017 Bitprim developers (see AUTHORS)
-# Distributed under the Boost Software License, Version 1.0. (See accompanying
-# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# This file is part of Bitprim.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+branches:
+  only:
+  - master
+  - dev
 
 language: cpp
 git:
   submodules: false
 
+linux: &linux
+   os: linux
+   sudo: required
+   language: python
+  #  python: "3.6"
+   services:
+     - docker
+
+osx: &osx
+   os: osx
+   sudo: required
+   # language: python
+   # python: "3.6"
+   language: generic
+
 matrix:
   include:
-    - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
-      os: linux
-      sudo: required
-      dist: trusty
-      group: edge
-      addons: &gcc6
-        apt:
-          packages:
-            - g++-6
-            - libc6
-          sources:
-            - ubuntu-toolchain-r-test
+      # - <<: *linux
+      #   env: CONAN_GCC_VERSIONS=4.9 CONAN_DOCKER_IMAGE=lasote/conangcc49
 
-    - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
-      os: linux
-      sudo: required
-      dist: trusty
-      group: edge
-      addons: &gcc6d
-        apt:
-          packages:
-            - g++-6
-            - libc6
-          sources:
-            - ubuntu-toolchain-r-test
+      # - <<: *linux
+      #   env: CONAN_GCC_VERSIONS=5.4 CONAN_DOCKER_IMAGE=lasote/conangcc54
 
-branches:
-  only:
-    - master
+      # - <<: *linux
+      #   env: CONAN_GCC_VERSIONS=6.3 CONAN_DOCKER_IMAGE=lasote/conangcc63
+
+      # - <<: *linux
+      #   env: CONAN_CLANG_VERSIONS=3.9 CONAN_DOCKER_IMAGE=lasote/conanclang39
+
+      # - <<: *linux
+      #   env: CONAN_CLANG_VERSIONS=4.0 CONAN_DOCKER_IMAGE=lasote/conanclang40
+
+      - <<: *osx
+        osx_image: xcode7.3
+        env: CONAN_APPLE_CLANG_VERSIONS=7.3 CHECK_FORMATTING=true
+
+      - <<: *osx
+        osx_image: xcode7.3
+        env: CONAN_APPLE_CLANG_VERSIONS=7.3
+
+      - <<: *osx
+        osx_image: xcode8.2
+        env: CONAN_APPLE_CLANG_VERSIONS=8.0
+
+      - <<: *osx
+        osx_image: xcode8.3
+        env: CONAN_APPLE_CLANG_VERSIONS=8.1
+
+
+    # ##########################################################################
+    # # Check for code formatting errors
+    # ##########################################################################
+    # - os: osx
+    #   env: CHECK_FORMATTING=true
+    #   osx_image: xcode8
+
+    # # - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Release
+    # #   os: linux
+    # #   sudo: required
+    # #   dist: trusty
+    # #   group: edge
+    # #   addons: &gcc6
+    # #     apt:
+    # #       packages:
+    # #         - g++-6
+    # #         - libc6
+    # #       sources:
+    # #         - ubuntu-toolchain-r-test
+
+    # # - env: GCC_VERSION=6 CXX_FLAGS="-std=c++11" BUILD_TYPE=Debug
+    # #   os: linux
+    # #   sudo: required
+    # #   dist: trusty
+    # #   group: edge
+    # #   addons: &gcc6d
+    # #     apt:
+    # #       packages:
+    # #         - g++-6
+    # #         - libc6
+    # #       sources:
+    # #         - ubuntu-toolchain-r-test
 
 before_install:
 
   # Update submodules
   - git submodule update --init --recursive
 
-  - if [ -n "$GCC_VERSION" ]; then export CXX="g++-${GCC_VERSION}" CC="gcc-${GCC_VERSION}"; fi
-  - if [ -n "$CLANG_VERSION" ]; then export CXX="clang++-${CLANG_VERSION}" CC="clang-${CLANG_VERSION}"; fi
-  - if [ -n "$GCC_VERSION" ]; then export CXX_FLAGS="${CXX_FLAGS} "; fi
-  - if [ -n "$CLANG_VERSION" ]; then export CXX_FLAGS="${CXX_FLAGS} "; fi
 
 install:
+  - set -e
+  # - set -x
+
+  - |
+    if [[ "${TRAVIS_OS_NAME}" != "linux" ]]; then
+      brew update || brew update
+      brew outdated pyenv || brew upgrade pyenv
+      brew install pyenv-virtualenv
+      brew install cmake || true
+
+      if which pyenv > /dev/null; then
+          eval "$(pyenv init -)"
+      fi
+      # if which pyenv > /dev/null; then
+      #     eval "$(pyenv init -)"
+      #     eval "$(pyenv virtualenv-init -)" 
+      # fi
+
+      pyenv install 2.7.10
+      pyenv virtualenv 2.7.10 conan
+      pyenv rehash
+      pyenv activate conan      
+    fi
+
+  - pip install conan_package_tools --upgrade
+  - pip install conan --upgrade
+  - conan user
+
+
   ############################################################################
-  # All the dependencies are installed in /home/travis/deps/
+  # Install tools to check for code formatting errors (run on OS X only)
   ############################################################################
-  - DEPS_DIR="/home/travis/deps"
-  - mkdir ${DEPS_DIR} && cd ${DEPS_DIR}
-  ############################################################################
-  # Install a recent CMake
-  ############################################################################
-  - CMAKE_URL="https://cmake.org/files/v3.9/cmake-3.9.0-rc5-Linux-x86_64.tar.gz"
-  - mkdir cmake && travis_retry wget --no-check-certificate --quiet -O - ${CMAKE_URL} | tar --strip-components=1 -xz -C cmake
-  - echo 'Cmake 3.9.0 installed';
-  - export PATH=${DEPS_DIR}/cmake/bin:${PATH}
-  ############################################################################
-  # Install a Boost with -fPIC
-  ############################################################################
-  - cd ${DEPS_DIR}
-  - wget -O boost_1_64_0.tar.gz https://sourceforge.net/projects/boost/files/boost/1.64.0/boost_1_64_0.tar.gz/download
-  - tar -xzf boost_1_64_0.tar.gz
-  - cd boost_1_64_0
-  - wget -O boost_bin_fpic.tar.bz2 http://repo.bitprim.org/packages/binary/boost_bin_fpic.tar.bz2
-  - tar -xvjf boost_bin_fpic.tar.bz2
-  - export BOOST_OPTS="-DBOOST_ROOT=/home/travis/deps/boost_1_64_0 -DBOOST_INCLUDEDIR=/home/travis/deps/boost_1_64_0 -DBOOST_LIBRARYDIR=/home/travis/deps/boost_1_64_0/lib"
-  - sudo ldconfig
-  - echo 'Boost 1.64.0 installed';
+  - |
+    if [[ "${CHECK_FORMATTING}" == "true" ]]; then
+      brew upgrade pcre || brew install pcre || exit 1
+      brew upgrade vera++ || brew install vera++ || exit 1
+      brew upgrade llvm --with-clang --with-clang-extra-tools || brew install llvm --with-clang --with-clang-extra-tools || exit 1
+      ls /usr/local/opt/llvm/bin | grep clang
+    fi
+
+# install:
+#   ############################################################################
+#   # All the dependencies are installed in /home/travis/deps/
+#   ############################################################################
+#   - DEPS_DIR="${TRAVIS_BUILD_DIR}/deps"
+#   # - DEPS_DIR="/home/travis/deps"
+#   - mkdir ${DEPS_DIR} && cd ${DEPS_DIR}
+  
+  
+#   ############################################################################
+#   # Setup default versions and override compiler if needed
+#   ############################################################################
+#   - if [[ "${LLVM_VERSION}" == "default" ]]; then LLVM_VERSION=3.9.0; fi
+#   - if [[ "${BOOST_VERSION}" == "default" ]]; then BOOST_VERSION=1.64.0; fi
+#   - if [[ "${COMPILER}" != "" ]]; then export CXX=${COMPILER}; fi  
+
+#   ############################################################################
+#   # Install a recent CMake
+#   ############################################################################
+#   - |
+#     if [[ "${TRAVIS_OS_NAME}" == "linux" ]]; then
+#       CMAKE_URL="https://cmake.org/files/v3.9/cmake-3.9.0-rc5-Linux-x86_64.tar.gz"
+#       mkdir cmake && travis_retry wget --no-check-certificate --quiet -O - ${CMAKE_URL} | tar --strip-components=1 -xz -C cmake
+#       echo 'Cmake 3.9.0 installed';
+#       export PATH=${DEPS_DIR}/cmake/bin:${PATH}
+#     else
+#       brew upgrade cmake || brew install cmake
+#     fi
+#   - cmake --version
+
+
+#   ############################################################################
+#   # Install a Boost with -fPIC
+#   ############################################################################
+#   - |
+#     if [[ "${TRAVIS_OS_NAME}" == "linux" ]]; then
+#       cd ${DEPS_DIR}
+#       wget -O boost_1_64_0.tar.gz https://sourceforge.net/projects/boost/files/boost/1.64.0/boost_1_64_0.tar.gz/download
+#       tar -xzf boost_1_64_0.tar.gz
+#       cd boost_1_64_0
+#       wget -O boost_bin_fpic.tar.bz2 http://repo.bitprim.org/packages/binary/boost_bin_fpic.tar.bz2
+#       tar -xvjf boost_bin_fpic.tar.bz2
+#       export BOOST_OPTS="-DBOOST_ROOT=/home/travis/deps/boost_1_64_0 -DBOOST_INCLUDEDIR=/home/travis/deps/boost_1_64_0 -DBOOST_LIBRARYDIR=/home/travis/deps/boost_1_64_0/lib"
+#       sudo ldconfig
+#       echo 'Boost 1.64.0 installed';
+#     fi
+
+
+#   ############################################################################
+#   # Install tools to check for code formatting errors (run on OS X only)
+#   ############################################################################
+#   - |
+#     if [[ "${CHECK_FORMATTING}" == "true" ]]; then
+#       brew upgrade pcre || brew install pcre || exit 1
+#       brew upgrade vera++ || brew install vera++ || exit 1
+#       brew upgrade llvm --with-clang --with-clang-extra-tools || brew install llvm --with-clang --with-clang-extra-tools || exit 1
+#       ls /usr/local/opt/llvm/bin | grep clang
+#     fi
 
 before_script:
-  ############################################################################
-  # Set the git identity (for pushing the documentation and the benchmarks)
-  ############################################################################
-  - git config --global user.name "Travis bot"
-  - git config --global user.email travis-bot@travis-ci.org
+  # ############################################################################
+  # # Set the git identity (for pushing the documentation and the benchmarks)
+  # ############################################################################
+  # - git config --global user.name "Travis bot"
+  # - git config --global user.email travis-bot@travis-ci.org
 
-  - if [ -n "$GCC_VERSION" ]; then export CXX_FLAGS="${CXX_FLAGS} "; fi
-  - if [ -n "$CLANG_VERSION" ]; then export CXX_FLAGS="${CXX_FLAGS} "; fi
-
-  - cd ${TRAVIS_BUILD_DIR}
-  - mkdir build
-  - cd build
-  - cmake .. -DENABLE_TESTS=OFF -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_FLAGS="${CXX_FLAGS}" ${BOOST_OPTS}
+  # - if [ -n "$GCC_VERSION" ]; then export CXX_FLAGS="${CXX_FLAGS} "; fi
+  # - if [ -n "$CLANG_VERSION" ]; then export CXX_FLAGS="${CXX_FLAGS} "; fi
 
 script:
-  - make -j2
-  - sudo make install
+
+  - set -e
+  # - set -x
+
+  - |
+    if [[ "${TRAVIS_OS_NAME}" != "linux" ]]; then
+      if which pyenv > /dev/null; then
+          eval "$(pyenv init -)"
+          eval "$(pyenv virtualenv-init -)"
+      fi
+      pyenv activate conan
+    fi
+
+
+
+  - |
+    if [[ "${TRAVIS_OS_NAME}" == "linux" ]]; then
+      cd ${TRAVIS_BUILD_DIR}
+      # chmod a+x .travis/entrypoint.sh
+      # # /usr/bin/docker run --rm -ti -e TRAVIS_PYTHON_VERSION=$TRAVIS_PYTHON_VERSION -v ${TRAVIS_BUILD_DIR}:/home/conan/project -v ${TRAVIS_BUILD_DIR}/.travis/entrypoint.sh:/tmp/entrypoint.sh lasote/conangcc63 /bin/bash -c /tmp/entrypoint.sh
+      # /usr/bin/docker run --rm -ti -v ${TRAVIS_BUILD_DIR}:/home/conan/project -v ${TRAVIS_BUILD_DIR}/.travis/entrypoint.sh:/tmp/entrypoint.sh ${CONAN_DOCKER_IMAGE} /bin/bash -c /tmp/entrypoint.sh
+    else
+      conan user
+      conan remote add bitprim_temp https://api.bintray.com/conan/bitprim/bitprim
+
+
+      cd ${TRAVIS_BUILD_DIR}
+      mkdir build
+      cd build
+
+      conan install ..
+
+      # if [[ "${CHECK_FORMATTING}" == "true" ]]; then
+      #   cmake .. -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_TESTS=OFF -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_FLAGS="${CXX_FLAGS}" ${BOOST_OPTS}
+      # else
+      #   cmake .. -DENABLE_TESTS=OFF -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_FLAGS="${CXX_FLAGS}" ${BOOST_OPTS}
+      # fi
+
+      if [[ "${CHECK_FORMATTING}" == "true" ]]; then
+        cmake .. -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_TESTS=OFF -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DCMAKE_BUILD_TYPE=$BUILD_TYPE
+      else
+        cmake .. -DENABLE_TESTS=OFF -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DCMAKE_BUILD_TYPE=$BUILD_TYPE
+      fi
+
+    fi
+
+  - |
+    if [[ "${CHECK_FORMATTING}" == "true" ]]; then
+
+      export PATH=$PATH:/usr/local/opt/llvm/bin/
+      clang-tidy --version
+
+      sudo find / -name "run-clang-tidy.py"
+      ls /usr/local/Cellar/llvm/4.0.1/share/clang/run-clang-tidy.py
+      
+      /usr/local/Cellar/llvm/4.0.1/share/clang/run-clang-tidy.py -header-filter='.*' -checks='-*,modernize-use-override'
+
+      # Find non-ASCII characters in headers
+      hpps=$(find include doc -name \*\.hpp)
+      cpps=$(find test example -name \*\.cpp)
+      pcregrep --color='auto' -n "[\x80-\xFF]" ${hpps} ${cpps}
+      if [[ $? -ne 1 ]]; then exit 1; fi
+      # F001: Source files should not use the '\r' (CR) character
+      # L001: No trailing whitespace at the end of lines
+      # L002: Don't use tab characters
+      find include -name \*\.hpp | vera++ --rule F001 --rule L001 --rule L002 --error
+    else
+      make -j2
+      sudo make install
+    fi
+
 
 notifications:
-  email: false
+  email: 
+    - ci@bitprim.org
+    - dev@bitprim.org
+    - fernando@bitprim.org
+  slack: bitprim:CGkcy3Bjx7UUIxu9FSZTpaxE
   webhooks:
     urls: https://webhooks.gitter.im/e/a19dd2b03bf676d2b622
     on_success: change
     on_failure: always
-
