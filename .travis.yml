@@ -277,10 +277,10 @@ script:
       export PATH=$PATH:/usr/local/opt/llvm/bin/
       clang-tidy --version
 
-      sudo find / -name "run-clang-tidy.py"
-      ls /usr/local/Cellar/llvm/4.0.1/share/clang/run-clang-tidy.py
+      # sudo find / -name "run-clang-tidy.py"
+      # ls /usr/local/Cellar/llvm/4.0.1/share/clang/run-clang-tidy.py
       
-      /usr/local/Cellar/llvm/4.0.1/share/clang/run-clang-tidy.py -header-filter='.*' -checks='-*,modernize-use-override'
+      /usr/local/Cellar/llvm/5.0.0/share/clang/run-clang-tidy.py -header-filter='.*' -checks='-*,modernize-use-override'
 
       # Find non-ASCII characters in headers
       hpps=$(find include doc -name \*\.hpp)
