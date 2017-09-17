@@ -125,10 +125,10 @@ build_script:
   - git checkout dev
   - git pull
   - git submodule update
-  - dir
+  # - dir
   - mkdir build
   - cd build
-  - dir ..
+  # - dir ..
   - conan install ..
   
   - cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF -DWITH_EXAMPLES=OFF -DWITH_REMOTE_DATABASE=OFF -DWITH_REMOTE_BLOCKCHAIN=OFF -DWITH_LITECOIN=OFF -DWITH_TESTS=OFF -DENABLE_MODULE_RECOVERY=ON -DWITH_TOOLS=OFF

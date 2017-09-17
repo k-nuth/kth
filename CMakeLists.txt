@@ -46,7 +46,7 @@ option(NO_CONAN_AT_ALL "Conan totally disabled." OFF)
 
 option(ENABLE_POSITION_INDEPENDENT_CODE "Enable POSITION_INDEPENDENT_CODE property" ON)
 
-set(WITH_BIGNUM "gmp" CACHE STRING "Specify Bignum Implementation (gmp|no|auto).")
+set(WITH_BIGNUM "no" CACHE STRING "Specify Bignum Implementation (gmp|no|auto).")
 
 
 set(USE_CPP11_ABI ON)
