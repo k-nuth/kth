@@ -10,7 +10,7 @@ Bitcoin, Bitcoin Cash and Litecoin development platform
 #### Requirements:
 
 - 64-bit machine.
-- [Conan](https://www.conan.io/) package manager. [Conan Installation].(http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended)
+- [Conan](https://www.conan.io/) package manager. [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended).
 - C++11 Compiler.
 - [CMake](https://cmake.org/) building tool. [Cmake Installation](#cmake).
 
