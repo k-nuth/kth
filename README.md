@@ -5,7 +5,40 @@
 # bitprim
 Bitcoin, Bitcoin Cash and Litecoin development platform
 
-## Getting started - Build from source
+## Install using Conan (recommended way)
+
+#### Requirements:
+
+- 64-bit machine
+- [Conan](https://www.conan.io/) package manager. [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended)
+- C++11 Compiler
+- [CMake](https://cmake.org/) building tool. [Cmake Installation](#cmake)
+
+#### Installation:
+
+```sh
+conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
+wget -O conanfile.txt https://raw.githubusercontent.com/bitprim/bitprim/master/install/conanfile.txt
+conan install .
+```
+
+
+<a name="cmake"></a>
+## [CMake](https://cmake.org/) Installation
+
+Install [CMake](https://cmake.org/) from sources:
+```sh
+$ wget https://cmake.org/files/v3.9/cmake-3.9.0.tar.gz
+$ tar -xvzf cmake-3.9.0.tar.gz
+$ cd cmake-3.9.0
+$ ./bootstrap
+$ make -j 4
+$ sudo make install
+$ sudo ln -s /usr/local/bin/cmake /usr/bin/cmake
+```
+
+
+## Build from source
 
 ### Debian/Ubuntu
 #### Dependencies
