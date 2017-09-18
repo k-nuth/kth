@@ -54,7 +54,7 @@ $ sudo ln -s /usr/local/bin/cmake /usr/bin/cmake
 
 Bitprim requires a C++11 compiler, currently minimum [GCC 4.8.0](https://gcc.gnu.org/projects/cxx0x.html)
 
-To see your GCC version:
+To check your GCC version:
 ```sh
 $ g++ --version
 ```
@@ -72,7 +72,7 @@ $ sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.8 50
 $ sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-4.8 50
 ```
 
-Next install the [build system](http://wikipedia.org/wiki/GNU_build_system) (Automake minimum 1.14) and tools needed to continue:
+Next, install the [build system](http://wikipedia.org/wiki/GNU_build_system) (Automake minimum 1.14) and tools needed to continue:
 ```sh
 $ sudo apt-get install build-essential autoconf automake libtool pkg-config git screen curl make g++ unzip
 ```
@@ -86,9 +86,9 @@ $ chmod +x install.sh
 2) Run the script install.sh, to get the dependencies (minimun: `Cmake 3.9`  and `Boost 1.64` built with `fPIC` flag) and build bitprim.
 
 The destination folder MUST be set using the option `prefix` (--prefix=/path/to/dest).
-The cores amount to be used by the `make -j cores` can be set using the option `cores` (--cores=4). Cores option is OPTIONAL and the default value is 4.
+The amount of CPU cores to be used by the `make -j cores` command can be set using the option `cores` (--cores=4). The cores option is NOT MANDATORY, and its default value is 4.
 
-Cmake and boost will not be installed in your system to avoid conflict with other versions that may be installed in the system.
+Cmake and boost will not be installed in your system directories to avoid conflict with other versions that may be installed there.
 
 ```sh
 $ ./install.sh --prefix=/home/dev/bitprim --cores=8
@@ -97,7 +97,7 @@ If the user running the script does not have full access to the folder, the scri
 
 The script creates a deps folder in the location `/path/to/dest/deps` where boost and cmake will be located. It also creates the folder `/path/to/dest/bitprim` where the project will be cloned and built.
 
-3) To upgrade to the `bitprim` version, just re-run the `./install.sh --prefix=/path/to/dest` script using the same options, the script won't re-download and build the dependencies, it will just pull the changes and rebuild bitprim.
+3) To upgrade to the latest `bitprim` version, just re-run the `./install.sh --prefix=/path/to/dest` script using the same options; the script won't re-download and build the dependencies, it will just pull the changes and rebuild bitprim.
 
 
 #### Build bitprim manually
@@ -125,7 +125,7 @@ $ ./bootstrap.sh
 $ sudo ./b2  cxxflags=-fPIC cflags=-fPIC -j4 install
 ```
 
-2) Clone recursive the bitprim repository and build it
+2) Clone the bitprim repository with the `--recursive` option, and build it
 ```sh
 $ git clone --recursive https://github.com/bitprim/bitprim/
 $ cd bitprim
