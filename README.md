@@ -9,17 +9,17 @@ Bitcoin, Bitcoin Cash and Litecoin development platform
 
 #### Requirements:
 
-- 64-bit machine
-- [Conan](https://www.conan.io/) package manager. [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended)
-- C++11 Compiler
-- [CMake](https://cmake.org/) building tool. [Cmake Installation](#cmake)
+- 64-bit machine.
+- [Conan](https://www.conan.io/) package manager. [Conan Installation].(http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended)
+- C++11 Compiler.
+- [CMake](https://cmake.org/) building tool. [Cmake Installation](#cmake).
 
 #### Installation:
 
 ```sh
-conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
-wget -O conanfile.txt https://raw.githubusercontent.com/bitprim/bitprim/master/install/conanfile.txt
-conan install .
+$ conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
+$ wget -O conanfile.txt https://raw.githubusercontent.com/bitprim/bitprim/master/install/conanfile.txt
+$ conan install .
 ```
 
 
