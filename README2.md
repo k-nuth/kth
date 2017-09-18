@@ -11,7 +11,7 @@ Table of Contents
 
    * [bitprim](#bitprim)
       * [Requirements:](#requirements)
-         * CMake Installation](#cmake-installation)
+         * [CMake Installation](#cmake-installation)
       * [Automatic Installation using script for Linux (tested on Ubuntu 16.04/17.04 and Fedora 26)](#automatic-installation-using-script-for-linux-tested-on-ubuntu-16041704-and-fedora-26)
          * [Manual Installation with Conan:](#manual-installation-with-conan)
       * [Build from source](#build-from-source)
