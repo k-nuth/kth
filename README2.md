@@ -29,6 +29,7 @@ sudo ln -s /usr/local/bin/cmake /usr/bin/cmake
 ## Automatic Install using script for Linux (should work for Ubuntu/Fedora)
 
 This script will automatically install cmake/pip/conan and then use conan to download/compile/install Bitprim
+
 ```wget -qO- https://raw.githubusercontent.com/bitprim/bitprim/master/install/install_bitprim.sh | bash```
 
 #### Manual Installation with Conan:
