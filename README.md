@@ -23,6 +23,14 @@ $ conan install .
 ```
 
 
+Now you have Bitprim in its two variants:
+- As a development platform:
+- As a ready-to-use Bitcoin (/Cash/Litecoin) full node:
+    ```sh
+    $ ./bitprim/bin/bn -i # for directories initialization 
+    $ ./bitprim/bin/bn    # for starting the node
+    ```
+
 <a name="cmake"></a>
 ## [CMake](https://cmake.org/) Installation
 
