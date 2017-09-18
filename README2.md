@@ -5,6 +5,23 @@
 # bitprim
 Bitcoin, Bitcoin Cash and Litecoin development platform
 
+
+Table of Contents
+=================
+
+   * [bitprim](#bitprim)
+      * [Requirements:](#requirements)
+         * CMake Installation](#cmake-installation)
+      * [Automatic Installation using script for Linux (tested on Ubuntu 16.04/17.04 and Fedora 26)](#automatic-installation-using-script-for-linux-tested-on-ubuntu-16041704-and-fedora-26)
+         * [Manual Installation with Conan:](#manual-installation-with-conan)
+      * [Build from source](#build-from-source)
+         * [Dependencies](#dependencies)
+         * [Simplified Bitprim Build using script](#simplified-bitprim-build-using-script)
+         * [Build bitprim manually](#build-bitprim-manually)
+      * [Docker Image](#docker-image)
+      * [Reference documentation](#reference-documentation)
+
+
 ## Requirements:
 
 - 64-bit machine Linux/Windows Machine/VM/instance which is able tu run the rest of the requirements
