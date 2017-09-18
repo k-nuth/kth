@@ -149,7 +149,7 @@ For more detailed documentation, please refer to https://www.bitprim.org/
 
 ---
 
-## [CMake](https://cmake.org/) Installation for Linux and macOS
+## [CMake](https://cmake.org/) Installation
 
 Cmake 3.8+ is required for all builds/installs, not all OS versions include this version, so check your version with ```cmake -version``` and install from source if required using the following instructions: 
 
