@@ -5,15 +5,15 @@
 # bitprim
 Bitcoin, Bitcoin Cash and Litecoin development platform
 
-#### Requirements:
+## Requirements:
 
-- 64-bit machine Linux Machine/VM/instance running a reasonably new version of Ubuntu or Fedora.
+- 64-bit machine Linux/Windows Machine/VM/instance which is able tu run the rest of the requirements
 - [Conan](https://www.conan.io/) package manager. [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended). (This, in turn, requires Python and PIP)
 - C++11 Compiler.
 - [CMake](https://cmake.org/) building tool. [Cmake Installation](#cmake).
 
-## [CMake](https://cmake.org/) Installation
-Cmake 3.8+ is required for all builds, not all OS versions include this version, so check your version with ```cmake -version``` and install from source if required using the following instructions: 
+### [CMake](https://cmake.org/) Installation
+Cmake 3.8+ is required for all builds/installs, not all OS versions include this version, so check your version with ```cmake -version``` and install from source if required using the following instructions: 
 ```sh
 wget https://cmake.org/files/v3.9/cmake-3.9.0.tar.gz
 tar -xvzf cmake-3.9.0.tar.gz
@@ -32,14 +32,13 @@ This script will automatically try to install cmake/pip/conan and then use conan
 ```wget -qO- https://raw.githubusercontent.com/bitprim/bitprim/master/install/install_bitprim.sh | bash```
 
 
-#### Manual Installation with Conan:
+### Manual Installation with Conan:
 ```sh
 conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
 wget -O conanfile.txt https://raw.githubusercontent.com/bitprim/bitprim/master/install/conanfile.txt
 conan install .
 ```
-
-#### Now you have Bitprim in its two variants:
+<b>Now you have Bitprim in its two variants:</b>
 - As a development platform:  
     _Headers files_: `./bitprim/include`  
     _Compiled libraries_: `./bitprim/lib`
@@ -49,13 +48,10 @@ conan install .
     $ ./bitprim/bin/bn    # for starting the node
     ```
 
-<a name="cmake"></a>
-
 
 ## Build from source
 
-### Debian/Ubuntu
-#### Dependencies
+### Dependencies
 
 Bitprim requires a C++11 compiler, currently minimum [GCC 4.8.0](https://gcc.gnu.org/projects/cxx0x.html)
 
@@ -69,7 +65,7 @@ Copyright (C) 2013 Free Software Foundation, Inc.
 This is free software; see the source for copying conditions.  There is NO
 warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 ```
-If necessary, upgrade your compiler as follows:
+If necessary, upgrade your compiler as follows (these instructions are for Ubuntu):
 ```sh
 sudo apt-get install g++-4.8
 sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-4.8 50
@@ -82,7 +78,7 @@ Next, install the [build system](http://wikipedia.org/wiki/GNU_build_system) (Au
 sudo apt-get install build-essential autoconf automake libtool pkg-config git screen curl make g++ unzip
 ```
 
-#### Simplified Bitprim install using script
+### Simplified Bitprim Build using script
 1) Download the script 
 ```sh
 wget https://raw.githubusercontent.com/bitprim/bitprim/master/install.sh
@@ -105,7 +101,7 @@ The script creates a deps folder in the location `/path/to/dest/deps` where boos
 3) To upgrade to the latest `bitprim` version, just re-run the `./install.sh --prefix=/path/to/dest` script using the same options; the script won't re-download and build the dependencies, it will just pull the changes and rebuild bitprim.
 
 
-#### Build bitprim manually
+### Build bitprim manually
 
 1) Install Cmake 3.9 and Boost 1.64 manually
 
@@ -140,7 +136,7 @@ cmake ..
 make -j4
 ```
 
-#### Docker Image
+## Docker Image
 For your convenience a Docker image is provided use ```docker pull bitprim/bitprim``` to pull it, the DockerFile used to build the image can be found [here](https://github.com/bitprim/bitprim/blob/master/install/Dockerfile)
 
 ## Reference documentation ##
