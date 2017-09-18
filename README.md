@@ -126,13 +126,6 @@ $ cmake ..
 $ make -j4
 ```
 
-### Windows
-TODO
-
-### OSX
-TODO
-
-
 ## Reference documentation ##
 
 For more detailed documentation, please refer to https://www.bitprim.org/
