@@ -1,6 +1,6 @@
-[![Build Status](https://travis-ci.org/bitprim/bitprim.svg?branch=master)](https://travis-ci.org/bitprim/bitprim) 
+[![Build Status](https://travis-ci.org/bitprim/bitprim.svg?branch=master)](https://travis-ci.org/bitprim/bitprim) [![Appveyor Status](https://ci.appveyor.com/api/projects/status/github/bitprim/bitprim?branch=master&svg=true)](https://ci.appveyor.com/project/bitprim/bitprim?branch=master) 
 
-<!-- [![Build Status](https://travis-ci.org/bitprim/bitprim.svg?branch=master)](https://travis-ci.org/bitprim/bitprim) [![Appveyor Status](https://ci.appveyor.com/api/projects/status/github/bitprim/bitprim?branch=master&svg=true)](https://ci.appveyor.com/project/bitprim/bitprim?branch=master)  -->
+<!-- [![Build Status](https://travis-ci.org/bitprim/bitprim.svg?branch=master)](https://travis-ci.org/bitprim/bitprim)  -->
 
 # bitprim
 Bitcoin, Bitcoin Cash and Litecoin development platform
@@ -41,7 +41,7 @@ $ sudo apt-get install build-essential autoconf automake libtool pkg-config git 
 $ wget https://raw.githubusercontent.com/bitprim/bitprim/master/install.sh
 $ chmod +x install.sh
 ```
-2) Run the script install.sh, to get the dependencies (minimun: `Cmake 3.7`  and `Boost 1.64` built with `fPIC` flag) and build bitprim.
+2) Run the script install.sh, to get the dependencies (minimun: `Cmake 3.9`  and `Boost 1.64` built with `fPIC` flag) and build bitprim.
 
 The destination folder MUST be set using the option `prefix` (--prefix=/path/to/dest).
 The cores amount to be used by the `make -j cores` can be set using the option `cores` (--cores=4). Cores option is OPTIONAL and the default value is 4.
@@ -60,9 +60,9 @@ The script creates a deps folder in the location `/path/to/dest/deps` where boos
 
 #### Build bitprim manually
 
-1) Install Cmake 3.7 and Boost 1.64 manually
+1) Install Cmake 3.9 and Boost 1.64 manually
 
-Install the [CMake](https://cmake.org/) (minimum 3.7.0-rc1) development package:
+Install [CMake](https://cmake.org/) from sources:
 ```sh
 $ wget https://cmake.org/files/v3.9/cmake-3.9.0.tar.gz
 $ tar -xvzf cmake-3.9.0.tar.gz
@@ -74,7 +74,7 @@ $ sudo ln -s /usr/local/bin/cmake /usr/bin/cmake
 $ cd ..
 ```
 
-Next install the [Boost](http://www.boost.org) (minimum 1.64.0 with fPIC flag) development package:
+Next, install the [Boost](http://www.boost.org) (minimum 1.64.0 with fPIC flag) development package:
 ```sh
 $ wget 'https://dl.bintray.com/boostorg/release/1.64.0/source/boost_1_64_0.tar.gz'
 $ tar -xvzf boost_1_64_0.tar.gz
