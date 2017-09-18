@@ -5,13 +5,11 @@
 # bitprim
 Bitcoin, Bitcoin Cash and Litecoin development platform
 
-
 Table of Contents
 =================
 
    * [bitprim](#bitprim)
       * [Requirements:](#requirements)
-         * [CMake Installation](#cmake-installation)
       * [Automatic Installation using script for Linux (tested on Ubuntu 16.04/17.04 and Fedora 26)](#automatic-installation-using-script-for-linux-tested-on-ubuntu-16041704-and-fedora-26)
          * [Manual Installation with Conan:](#manual-installation-with-conan)
       * [Build from source](#build-from-source)
@@ -20,26 +18,15 @@ Table of Contents
          * [Build bitprim manually](#build-bitprim-manually)
       * [Docker Image](#docker-image)
       * [Reference documentation](#reference-documentation)
+      * [CMake Installation](#cmake-installation)
 
 
 ## Requirements:
 
-- 64-bit machine Linux/Windows Machine/VM/instance which is able tu run the rest of the requirements
+- 64-bit machine
 - [Conan](https://www.conan.io/) package manager. [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended). (This, in turn, requires Python and PIP)
 - C++11 Compiler.
-- [CMake](https://cmake.org/) building tool. [Cmake Installation](#cmake).
-
-### [CMake](https://cmake.org/) Installation
-Cmake 3.8+ is required for all builds/installs, not all OS versions include this version, so check your version with ```cmake -version``` and install from source if required using the following instructions: 
-```sh
-wget https://cmake.org/files/v3.9/cmake-3.9.0.tar.gz
-tar -xvzf cmake-3.9.0.tar.gz
-cd cmake-3.9.0
-./bootstrap
-make -j 4
-sudo make install
-sudo ln -s /usr/local/bin/cmake /usr/bin/cmake
-```
+- [CMake](https://cmake.org/) building tool. [Cmake Installation](#cmake-installation).
 
 
 ## Automatic Installation using script for Linux (tested on Ubuntu 16.04/17.04 and Fedora 26)
@@ -159,3 +146,24 @@ For your convenience a Docker image is provided use ```docker pull bitprim/bitpr
 ## Reference documentation ##
 
 For more detailed documentation, please refer to https://www.bitprim.org/
+
+---
+
+## [CMake](https://cmake.org/) Installation for Linux and macOS
+
+Cmake 3.8+ is required for all builds/installs, not all OS versions include this version, so check your version with ```cmake -version``` and install from source if required using the following instructions: 
+
+### for Linux and macOS
+```sh
+wget https://cmake.org/files/v3.9/cmake-3.9.0.tar.gz
+tar -xvzf cmake-3.9.0.tar.gz
+cd cmake-3.9.0
+./bootstrap
+make -j 4
+sudo make install
+sudo ln -s /usr/local/bin/cmake /usr/bin/cmake
+```
+
+### for Windows
+
+For CMake Windows installation use the [CMake installer](https://cmake.org/download/)
