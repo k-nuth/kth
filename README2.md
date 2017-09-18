@@ -5,8 +5,6 @@
 # bitprim
 Bitcoin, Bitcoin Cash and Litecoin development platform
 
-## Install using Conan (recommended way)
-
 #### Requirements:
 
 - 64-bit machine.
@@ -14,12 +12,31 @@ Bitcoin, Bitcoin Cash and Litecoin development platform
 - C++11 Compiler.
 - [CMake](https://cmake.org/) building tool. [Cmake Installation](#cmake).
 
-#### Installation:
 
+## [CMake](https://cmake.org/) Installation
+Cmake 3.8+ is required for all build, not all OS versions include it, so check your version with ```cmake -version``` and install from source if required using the following instructions: 
 ```sh
-$ conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
-$ wget -O conanfile.txt https://raw.githubusercontent.com/bitprim/bitprim/master/install/conanfile.txt
-$ conan install .
+wget https://cmake.org/files/v3.9/cmake-3.9.0.tar.gz
+tar -xvzf cmake-3.9.0.tar.gz
+cd cmake-3.9.0
+./bootstrap
+make -j 4
+sudo make install
+sudo ln -s /usr/local/bin/cmake /usr/bin/cmake
+```
+
+
+## Automatic Install using script for Linux (should work for Ubuntu/Fedora)
+
+This script will automatically install cmake/pip/conan and then use conan to download/compile/install Bitprim
+
+```wget -qO- https://raw.githubusercontent.com/bitprim/bitprim/master/install/install_bitprim.sh | bash```
+
+#### Manual Installation with Conan:
+```sh
+conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
+wget -O conanfile.txt https://raw.githubusercontent.com/bitprim/bitprim/master/install/conanfile.txt
+conan install .
 ```
 
 #### Now you have Bitprim in its two variants:
@@ -33,18 +50,6 @@ $ conan install .
     ```
 
 <a name="cmake"></a>
-## [CMake](https://cmake.org/) Installation
-
-Install [CMake](https://cmake.org/) from sources:
-```sh
-$ wget https://cmake.org/files/v3.9/cmake-3.9.0.tar.gz
-$ tar -xvzf cmake-3.9.0.tar.gz
-$ cd cmake-3.9.0
-$ ./bootstrap
-$ make -j 4
-$ sudo make install
-$ sudo ln -s /usr/local/bin/cmake /usr/bin/cmake
-```
 
 
 ## Build from source
@@ -56,7 +61,7 @@ Bitprim requires a C++11 compiler, currently minimum [GCC 4.8.0](https://gcc.gnu
 
 To check your GCC version:
 ```sh
-$ g++ --version
+ g++ --version
 ```
 ```
 g++ (Ubuntu 4.8.2-19ubuntu1) 4.8.2
@@ -66,22 +71,22 @@ warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 ```
 If necessary, upgrade your compiler as follows:
 ```sh
-$ sudo apt-get install g++-4.8
-$ sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-4.8 50
-$ sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.8 50
-$ sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-4.8 50
+sudo apt-get install g++-4.8
+sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-4.8 50
+sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.8 50
+sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-4.8 50
 ```
 
 Next, install the [build system](http://wikipedia.org/wiki/GNU_build_system) (Automake minimum 1.14) and tools needed to continue:
 ```sh
-$ sudo apt-get install build-essential autoconf automake libtool pkg-config git screen curl make g++ unzip
+sudo apt-get install build-essential autoconf automake libtool pkg-config git screen curl make g++ unzip
 ```
 
-#### Build bitprim using install.sh script
+#### Simplified Bitprim install using script
 1) Download the script 
 ```sh
-$ wget https://raw.githubusercontent.com/bitprim/bitprim/master/install.sh
-$ chmod +x install.sh
+wget https://raw.githubusercontent.com/bitprim/bitprim/master/install.sh
+chmod +x install.sh
 ```
 2) Run the script install.sh, to get the dependencies (minimun: `Cmake 3.9`  and `Boost 1.64` built with `fPIC` flag) and build bitprim.
 
@@ -91,7 +96,7 @@ The amount of CPU cores to be used by the `make -j cores` command can be set usi
 Cmake and boost will not be installed in your system directories to avoid conflict with other versions that may be installed there.
 
 ```sh
-$ ./install.sh --prefix=/home/dev/bitprim --cores=8
+./install.sh --prefix=/home/dev/bitprim --cores=8
 ```
 If the user running the script does not have full access to the folder, the script can be run as administrator using `sudo ./install.sh --prefix=/path/to/dest`
 
@@ -106,33 +111,33 @@ The script creates a deps folder in the location `/path/to/dest/deps` where boos
 
 Install [CMake](https://cmake.org/) from sources:
 ```sh
-$ wget https://cmake.org/files/v3.9/cmake-3.9.0.tar.gz
-$ tar -xvzf cmake-3.9.0.tar.gz
-$ cd cmake-3.9.0
-$ ./bootstrap
-$ make -j 4
-$ sudo make install
-$ sudo ln -s /usr/local/bin/cmake /usr/bin/cmake
-$ cd ..
+wget https://cmake.org/files/v3.9/cmake-3.9.0.tar.gz
+tar -xvzf cmake-3.9.0.tar.gz
+cd cmake-3.9.0
+./bootstrap
+make -j 4
+sudo make install
+sudo ln -s /usr/local/bin/cmake /usr/bin/cmake
+cd ..
 ```
 
 Next, install the [Boost](http://www.boost.org) (minimum 1.64.0 with fPIC flag) development package:
 ```sh
-$ wget 'https://dl.bintray.com/boostorg/release/1.64.0/source/boost_1_64_0.tar.gz'
-$ tar -xvzf boost_1_64_0.tar.gz
-$ cd boost_1_64_0
-$ ./bootstrap.sh
-$ sudo ./b2  cxxflags=-fPIC cflags=-fPIC -j4 install
+wget 'https://dl.bintray.com/boostorg/release/1.64.0/source/boost_1_64_0.tar.gz'
+tar -xvzf boost_1_64_0.tar.gz
+cd boost_1_64_0
+./bootstrap.sh
+sudo ./b2  cxxflags=-fPIC cflags=-fPIC -j4 install
 ```
 
 2) Clone the bitprim repository with the `--recursive` option, and build it
 ```sh
-$ git clone --recursive https://github.com/bitprim/bitprim/
-$ cd bitprim
-$ mkdir build 
-$ cd build
-$ cmake ..
-$ make -j4
+git clone --recursive https://github.com/bitprim/bitprim/
+cd bitprim
+mkdir build 
+cd build
+cmake ..
+make -j4
 ```
 
 ## Reference documentation ##
