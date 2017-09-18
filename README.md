@@ -23,7 +23,7 @@ $ conan install .
 ```
 
 #### Now you have Bitprim in its two variants:
-- As a development platform:
+- As a development platform:  
     _Headers files_: `./bitprim/include`  
     _Compiled libraries_: `./bitprim/lib`
 - As a ready-to-use Bitcoin (/Cash/Litecoin) full node:
