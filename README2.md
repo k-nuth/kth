@@ -7,14 +7,13 @@ Bitcoin, Bitcoin Cash and Litecoin development platform
 
 #### Requirements:
 
-- 64-bit machine.
-- [Conan](https://www.conan.io/) package manager. [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended).
+- 64-bit machine Linux Machine/VM/instance running a reasonably new version of Ubuntu or Fedora.
+- [Conan](https://www.conan.io/) package manager. [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended). (This, in turn, requires Python and PIP)
 - C++11 Compiler.
 - [CMake](https://cmake.org/) building tool. [Cmake Installation](#cmake).
 
-
 ## [CMake](https://cmake.org/) Installation
-Cmake 3.8+ is required for all build, not all OS versions include it, so check your version with ```cmake -version``` and install from source if required using the following instructions: 
+Cmake 3.8+ is required for all builds, not all OS versions include this version, so check your version with ```cmake -version``` and install from source if required using the following instructions: 
 ```sh
 wget https://cmake.org/files/v3.9/cmake-3.9.0.tar.gz
 tar -xvzf cmake-3.9.0.tar.gz
@@ -26,11 +25,12 @@ sudo ln -s /usr/local/bin/cmake /usr/bin/cmake
 ```
 
 
-## Automatic Install using script for Linux (should work for Ubuntu/Fedora)
+## Automatic Installation using script for Linux (tested on Ubuntu 16.04/17.04 and Fedora 26)
 
-This script will automatically install cmake/pip/conan and then use conan to download/compile/install Bitprim
+This script will automatically try to install cmake/pip/conan and then use conan to download/compile/install Bitprim (files will be installed in a bitprim directory created under the current working directory)
 
 ```wget -qO- https://raw.githubusercontent.com/bitprim/bitprim/master/install/install_bitprim.sh | bash```
+
 
 #### Manual Installation with Conan:
 ```sh
@@ -139,6 +139,9 @@ cd build
 cmake ..
 make -j4
 ```
+
+#### Docker Image
+For your convenience a Docker image is provided use ```docker pull bitprim/bitprim``` to pull it, the DockerFile used to build the image can be found [here](https://github.com/bitprim/bitprim/blob/master/install/Dockerfile)
 
 ## Reference documentation ##
 
