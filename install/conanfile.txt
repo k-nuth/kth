@@ -6,31 +6,14 @@ cmake
 
 [options]
 bitprim-node-cint:shared=False
-# OpenSSL:shared=True
 
 [imports]
-# bin, *.dll -> ./bin # Copies all dll files from the package "bin" folder to my project "bin" folder
-# lib, *.dylib* -> ./bin # Copies all dylib files from the package "lib" folder to my project "bin" folder
-
 include/bitprim, *.h   -> ./bitprim/include/bitprim
 include/bitprim, *.hpp -> ./bitprim/include/bitprim
-
 lib, *.lib    -> ./bitprim/lib
 lib, *.a      -> ./bitprim/lib
 lib, *.dylib* -> ./bitprim/lib
 lib, *.so     -> ./bitprim/lib
 lib, *.dll    -> ./bitprim/lib
-
-bin, bn.exe -> ./bin
-bin, bn     -> ./bin
-
-
-
-# self.copy("*.h", "./bitprim/include/bitprim", "include/bitprim")
-# self.copy("*.hpp", dst="./bitprim/include/bitprim", src="include/bitprim")
-
-# self.copy("*.lib", dst="./bitprim/lib", src="lib")
-# self.copy("*.a", dst="./bitprim/lib", src="lib")
-# self.copy("*.dylib", dst="./bitprim/lib", src="lib")
-# self.copy("*.so", dst="./bitprim/lib", src="lib")
-# self.copy("*.dll", dst="./bitprim/lib", src="lib")
+bin, bn.exe -> ./bitprim/bin
+bin, bn     -> ./bitprim/bin
