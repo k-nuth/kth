@@ -58,9 +58,6 @@ matrix:
       # - <<: *linux
       #   env: CONAN_CLANG_VERSIONS=4.0 CONAN_DOCKER_IMAGE=lasote/conanclang40
 
-
-
-
       # - <<: *osx
       #   osx_image: xcode7.3
       #   env: CONAN_APPLE_CLANG_VERSIONS=7.3 CHECK_FORMATTING=true
@@ -282,9 +279,7 @@ script:
 
       # sudo find / -name "run-clang-tidy.py"
       # ls /usr/local/Cellar/llvm/4.0.1/share/clang/run-clang-tidy.py
-      ls /usr/local/Cellar/llvm/5.0.0/share/clang/run-clang-tidy.py
 
-      # /usr/local/Cellar/llvm/4.0.1/share/clang/run-clang-tidy.py -header-filter='.*' -checks='-*,modernize-use-override'
       /usr/local/Cellar/llvm/5.0.0/share/clang/run-clang-tidy.py -header-filter='.*' -checks='-*,modernize-use-override'
 
       # Find non-ASCII characters in headers
