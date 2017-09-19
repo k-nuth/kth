@@ -45,7 +45,7 @@ option(USE_CONAN "Use Conan Build Tool." OFF)
 option(NO_CONAN_AT_ALL "Conan totally disabled." OFF)
 
 option(ENABLE_POSITION_INDEPENDENT_CODE "Enable POSITION_INDEPENDENT_CODE property" ON)
-
+option(WITH_CONSOLE "Compile console application." ON)
 set(WITH_BIGNUM "no" CACHE STRING "Specify Bignum Implementation (gmp|no|auto).")
 
 
@@ -53,7 +53,7 @@ set(USE_CPP11_ABI ON)
 set(ENABLE_POSITION_INDEPENDENT_CODE ON)
 set(USE_CONAN OFF)
 set(NO_CONAN_AT_ALL OFF)
-
+set(WITH_CONSOLE ON)
 if (NO_CONAN_AT_ALL)
   set(USE_CONAN OFF)
 endif()
