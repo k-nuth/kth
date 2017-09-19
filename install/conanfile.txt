@@ -1,0 +1,19 @@
+[requires]
+bitprim-node-cint/0.1@bitprim/stable
+
+[generators]
+cmake
+
+[options]
+bitprim-node-cint:shared=False
+
+[imports]
+include/bitprim, *.h   -> ./bitprim/include/bitprim
+include/bitprim, *.hpp -> ./bitprim/include/bitprim
+lib, *.lib    -> ./bitprim/lib
+lib, *.a      -> ./bitprim/lib
+lib, *.dylib* -> ./bitprim/lib
+lib, *.so     -> ./bitprim/lib
+lib, *.dll    -> ./bitprim/lib
+bin, bn.exe -> ./bitprim/bin
+bin, bn     -> ./bitprim/bin
