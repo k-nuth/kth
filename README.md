@@ -22,7 +22,8 @@ Table of Contents
 - 64-bit machine
 - [Conan](https://www.conan.io/) package manager. [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended). (This, in turn, requires Python and PIP)
 - C++11 Compiler.
-- [CMake](https://cmake.org/) building tool.
+- [CMake](https://cmake.org/) building tool, version 3.4 or newer.
+- (Linux only) [m4 library](http://www.gnu.org/software/m4/m4.html)
 
 ## Installation:
 
