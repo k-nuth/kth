@@ -22,13 +22,23 @@ The new bitprim-node-cint project works as a C interface for all of bitprim's fe
     - fetch_merkle_block_by_height
     - fetch_merkle_block_by_hash
     - fetch_transaction
-    - fetch_compact_block_by_height
-    - fetch_compact_block_by_hash
     - fetch_transaction_position
     - fetch_spend
     - fetch_history
     - validate_transaction
     - fetch_stealth
+- Asides from the chain functions above, functions are available for operating with all their related data structures:
+    - block_indexes
+    - block
+    - header
+    - history
+    - input
+    - merkle_block
+    - output
+    - payment_address
+    - point
+    - script
+    - transaction
 
 All *fetch* functions are asynchronous, i.e. they return immediately and require a callback parameter to return the result. Also, each of these functions have a *get* sister function, which works synchronously, i.e. blocks until result is retrieved and returned directly.
 
