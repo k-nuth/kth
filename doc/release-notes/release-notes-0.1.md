@@ -27,7 +27,7 @@ The new bitprim-node-cint project works as a C interface for all of bitprim's fe
     - fetch_history
     - validate_transaction
     - fetch_stealth
-- Asides from the chain functions above, functions are available for operating with all their related data structures:
+- Aside from the chain functions above, functions are available for operating with all their related data structures:
     - block_indexes
     - block
     - header
