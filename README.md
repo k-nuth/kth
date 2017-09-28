@@ -116,3 +116,8 @@ conan install .
 * [Gitbook site](https://www.bitprim.org/)
 * [Build manually from source](https://www.bitprim.org/installation.html)
 * [Python API documentation](https://www.bitprim.org/python-interface/details.html)
+
+## Changelog
+
+* [0.2](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.2.md)
+* [0.1](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.1.md)
