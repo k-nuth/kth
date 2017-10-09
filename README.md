@@ -16,16 +16,13 @@ site).
 ## Requirements
 
 - 64-bit machine
-- [Conan](https://www.conan.io/) package manager. [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended). (This, in turn, requires Python and PIP)
 - C++11 Compiler.
+- [Conan](https://www.conan.io/) package manager. [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended). (This, in turn, requires Python and PIP)
 - [CMake](https://cmake.org/) building tool, version 3.4 or newer.
 
 ## Installation
 
-The bitprim binaries can be installed on Linux, Windows and OSX. These binaries are pre-built for the most
-usual operating system-compiler combinations and hosted in an online repository, so a network connection
-is needed to install bitprim. If there are no prebuilt binaries for your system, a build from source will be
-attempted.
+The Bitprim executables can be installed on Linux, macOS, FreeBSD, Windows and others. These binaries are pre-built for the most usual operating system/compiler combinations and hosted in an online repository. If there are no prebuilt binaries for your system, a build from source will be attempted.
 
 So, for any system, a binary install can be performed in a terminal in 3 simple steps (assuming all requirements are already met):
 
@@ -36,12 +33,14 @@ conan install .
 ```
  The 2nd step, downloading the conan file, is the only which may vary from system to system:
  
- Linux
+ Linux, macOS, FreeBSD, ...:  
+  Using _wget_:
+ 
  ```
  wget -O conanfile.txt https://raw.githubusercontent.com/bitprim/bitprim/master/install/conanfile.txt
  ```
  
- OSX
+  Using _curl_:
  ```
  curl https://raw.githubusercontent.com/bitprim/bitprim/master/install/conanfile.txt -o conanfile.txt
  ```
