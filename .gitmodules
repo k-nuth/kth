@@ -26,6 +26,10 @@
 	path = bitprim-node
 	url = https://github.com/bitprim/bitprim-node.git
 	branch = dev
+[submodule "bitprim-node-exe"]
+	path = bitprim-node-exe
+	url = https://github.com/bitprim/bitprim-node-exe.git
+	branch = dev
 [submodule "bitprim-node-cint"]
 	path = bitprim-node-cint
 	url = https://github.com/bitprim/bitprim-node-cint.git
