@@ -145,6 +145,7 @@ add_subdirectory(bitprim-network)
 add_subdirectory(bitprim-database)
 add_subdirectory(bitprim-blockchain)
 add_subdirectory(bitprim-node)
+add_subdirectory(bitprim-node-exe)
 add_subdirectory(bitprim-node-cint)
 
 # Tests
