@@ -1,5 +1,5 @@
 [requires]
-bitprim-node-cint/0.2@bitprim/stable
+bitprim-node-exe/0.3@bitprim/stable
 
 [generators]
 cmake
