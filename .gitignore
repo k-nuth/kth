@@ -4,3 +4,4 @@ build/
 
 conanfile.pyc
 __pycache__/
+.vscode/

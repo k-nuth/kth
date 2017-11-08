@@ -148,8 +148,6 @@ class BitprimConan(ConanFile):
         # Secp256k1 -------------------------------------------- (END)
 
 
-
-
         if self.settings.compiler == "gcc":
             if float(str(self.settings.compiler.version)) >= 5:
                 cmake.definitions["_GLIBCXX_USE_CXX11_ABI"] = "1"
