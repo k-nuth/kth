@@ -37,17 +37,17 @@ conan install .
   Using _wget_:
  
  ```
- wget -O conanfile.txt https://raw.githubusercontent.com/bitprim/bitprim/master/install/conanfile.txt
+ wget -O conanfile.txt https://github.com/bitprim/bitprim/blob/v0.3/install/conanfile.txt
  ```
  
   Using _curl_:
  ```
- curl https://raw.githubusercontent.com/bitprim/bitprim/master/install/conanfile.txt -o conanfile.txt
+ curl https://github.com/bitprim/bitprim/blob/v0.3/install/conanfile.txt -o conanfile.txt
  ```
  
  Windows:
  ```
- powershell -command "& {&'iwr' -outf conanfile.txt https://raw.githubusercontent.com/bitprim/bitprim/master/install/conanfile.txt}"
+ powershell -command "& {&'iwr' -outf conanfile.txt https://github.com/bitprim/bitprim/blob/v0.3/install/conanfile.txt}"
  ```
 
 ## Detailed documentation
