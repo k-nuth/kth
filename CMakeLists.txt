@@ -61,9 +61,7 @@ if (NO_CONAN_AT_ALL)
 endif()
 # ---------------------------------------------------------------
 
-
-
-
+option(WITH_RPC "Compile with RPC-ZMQ support." OFF)
 
 option(WITH_LITECOIN "Compile with Litecoin support." OFF)
 option(WITH_REMOTE_BLOCKCHAIN "Compile with remote bitprim-blockchain (aka. bitprim-blockchain-requester)." OFF)
@@ -101,6 +99,10 @@ set(WITH_EXAMPLES OFF)
 set(ENABLE_SHARED OFF)
 set(ENABLE_SHARED_NODE_CINT ON)
 
+set(WITH_RPC ON)
+if (WITH_RPC)
+    add_definitions(-DBITPRIM_WITH_RPC)
+endif()
 
 if (WITH_LOCAL_MINING)
 	add_definitions(-DWITH_LOCAL_MINING)
@@ -146,6 +148,7 @@ add_subdirectory(bitprim-consensus)
 add_subdirectory(bitprim-network)
 add_subdirectory(bitprim-database)
 add_subdirectory(bitprim-blockchain)
+add_subdirectory(bitprim-rpc)
 add_subdirectory(bitprim-node)
 add_subdirectory(bitprim-node-exe)
 add_subdirectory(bitprim-node-cint)

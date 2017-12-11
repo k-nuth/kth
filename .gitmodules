@@ -1,11 +1,11 @@
 [submodule "secp256k1"]
 	path = secp256k1
 	url = https://github.com/bitprim/secp256k1.git
-    branch = dev
+        branch = dev
 [submodule "bitprim-core"]
 	path = bitprim-core
 	url = https://github.com/bitprim/bitprim-core.git
-    branch = dev
+        branch = dev
 [submodule "bitprim-database"]
 	path = bitprim-database
 	url = https://github.com/bitprim/bitprim-database.git
@@ -33,4 +33,8 @@
 [submodule "bitprim-node-cint"]
 	path = bitprim-node-cint
 	url = https://github.com/bitprim/bitprim-node-cint.git
+	branch = dev
+[submodule "bitprim-rpc"]
+	path = bitprim-rpc
+	url = https://github.com/bitprim/bitprim-rpc
 	branch = dev
