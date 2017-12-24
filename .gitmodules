@@ -36,5 +36,4 @@
 	branch = master
 [submodule "bitprim-rpc"]
 	path = bitprim-rpc
-	url = https://github.com/bitprim/bitprim-rpc
-	branch = master
+	url = https://github.com/bitprim/bitprim-rpc.git
