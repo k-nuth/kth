@@ -59,6 +59,7 @@ conan install .
 
 ## Changelog
 
+* [0.4](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.4.md)
 * [0.3](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.3.md)
 * [0.2](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.2.md)
 * [0.1](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.1.md)
