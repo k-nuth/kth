@@ -62,3 +62,10 @@ conan install .
 * [0.3](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.3.md)
 * [0.2](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.2.md)
 * [0.1](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.1.md)
+
+
+<!-- Links -->
+[badge.Appveyor]: https://ci.appveyor.com/api/projects/status/github/bitprim/bitprim?svg=true&branch=dev
+[badge.Gitter]: https://img.shields.io/badge/gitter-join%20chat-blue.svg
+[badge.Travis]: https://travis-ci.org/bitprim/bitprim.svg?branch=master
+[badge.version]: https://badge.fury.io/gh/bitprim%2Fbitprim.svg
