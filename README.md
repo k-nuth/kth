@@ -2,54 +2,49 @@
 
 > Multi-Cryptocurrency full-node and development platform
 
-Bitcoin, Bitcoin Cash and Litecoin development platform.
-Bitprim allows you to run a full Bitcoin/Bitcoin Cash/Litecoin node,
+*Bitprim* allows you to run a full [Bitcoin](https://bitcoin.org/)/[Bitcoin Cash](https://www.bitcoincash.org/)/[Litecoin](https://litecoin.org/) node,
 with all four main features:
   * Wallet
   * Mining
   * Full blockchain
   * Routing
 
-bitprim also works as a Bitcoin development platform: with its C interface,
-bindings for many popular and friendlier languages can be built (some of which are available in this
-site).
+*Bitprim* also works as a cryptocurrency development platform with several programmable APIs:
+  * C++
+  * C
+  * Python
+  * Javascript
+  * Golang
+  * C#
 
-## Requirements
+... and networking APIs: 
+  * JSON-RPC
+  * Libbitcoin BS-BX protocol
 
-- 64-bit machine
-- C++11 Compiler.
-- [Conan](https://www.conan.io/) package manager. [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended). (This, in turn, requires Python and PIP)
-- [CMake](https://cmake.org/) building tool, version 3.4 or newer.
+## Installation Requirements
 
-## Installation
+- 64-bit machine.
+- [Conan](https://www.conan.io/) package manager. See [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended).
 
-The Bitprim executables can be installed on Linux, macOS, FreeBSD, Windows and others. These binaries are pre-built for the most usual operating system/compiler combinations and hosted in an online repository. If there are no prebuilt binaries for your system, a build from source will be attempted.
+## Installation Procedure
 
-So, for any system, a binary install can be performed in a terminal in 3 simple steps (assuming all requirements are already met):
+The *Bitprim* executables can be installed on Linux, macOS, FreeBSD, Windows and others. These binaries are pre-built for the most usual operating system/compiler combinations and hosted in an online repository. If there are no prebuilt binaries for your platform, a build from source will be attempted.
+
+So, for any platform, an installation can be performed in 3 simple steps:
 
 ```
 conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
-# download https://raw.githubusercontent.com/bitprim/bitprim/master/install/conanfile.txt
+wget -O conanfile.txt https://raw.githubusercontent.com/bitprim/bitprim/master/install/conanfile.txt
 conan install .
 ```
- The 2nd step, downloading the conan file, is the only which may vary from system to system:
- 
- Linux, macOS, FreeBSD, ...:  
-  Using _wget_:
- 
- ```
- wget -O conanfile.txt https://github.com/bitprim/bitprim/blob/v0.3/install/conanfile.txt
- ```
- 
-  Using _curl_:
- ```
- curl https://github.com/bitprim/bitprim/blob/v0.3/install/conanfile.txt -o conanfile.txt
- ```
- 
- Windows:
- ```
- powershell -command "& {&'iwr' -outf conanfile.txt https://github.com/bitprim/bitprim/blob/v0.3/install/conanfile.txt}"
- ```
+
+## Building from source Requirements
+
+In the case we don't have prebuilt binaries for your plarform, it is necessary to build from the source code, so you need to add the following requirements to the previous ones:
+
+- C++11 Compiler.
+- [CMake](https://cmake.org/) building tool, version 3.4 or newer.
+
 
 ## Detailed documentation
 
