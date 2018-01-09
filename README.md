@@ -54,6 +54,7 @@ In the case we don't have prebuilt binaries for your plarform, it is necessary t
 
 ## Changelog
 
+* [0.5](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.5.md)
 * [0.4](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.4.md)
 * [0.3](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.3.md)
 * [0.2](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.2.md)
