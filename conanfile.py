@@ -40,7 +40,6 @@ class BitprimConan(ConanFile):
                "with_png": [True, False],
                "with_litecoin": [True, False],
                "with_qrencode": [True, False],
-               "not_use_cpp11_abi": [True, False],
                "enable_benchmark": [True, False],
                "enable_tests": [True, False],
                "enable_openssl_tests": [True, False],
@@ -66,7 +65,6 @@ class BitprimConan(ConanFile):
         "with_png=False", \
         "with_litecoin=False", \
         "with_qrencode=False", \
-        "not_use_cpp11_abi=False", \
         "enable_benchmark=False", \
         "enable_tests=True", \
         "enable_openssl_tests=False", \
@@ -90,11 +88,18 @@ class BitprimConan(ConanFile):
     package_files = "build/lbitprim-core.a"
     build_policy = "missing"
 
-    requires = (("bitprim-conan-boost/1.64.0@bitprim/stable"))
+    # requires = (("bitprim-conan-boost/1.64.0@bitprim/stable"))
+    requires = (("boost/1.66.0@bitprim/stable"))
 
     def requirements(self):
-        if self.settings.os == "Linux" or self.settings.os == "Macos":
+        # if self.settings.os == "Linux" or self.settings.os == "Macos":
+        #     self.requires("gmp/6.1.2@bitprim/stable")
+
+        if self.settings.os == "Windows":
+            self.requires("mpir/3.0.0@bitprim/stable")
+        else:
             self.requires("gmp/6.1.2@bitprim/stable")
+
         if self.options.with_rpc:
             self.requires("libzmq/4.2.2@bitprim/stable")
 
@@ -102,10 +107,11 @@ class BitprimConan(ConanFile):
         cmake = CMake(self)
         cmake.definitions["USE_CONAN"] = "ON"
         cmake.definitions["NO_CONAN_AT_ALL"] = "OFF"
+        
         cmake.definitions["CMAKE_VERBOSE_MAKEFILE"] = "ON"
+
         cmake.definitions["ENABLE_SHARED"] = option_on_off(self.options.shared)
         cmake.definitions["ENABLE_POSITION_INDEPENDENT_CODE"] = option_on_off(self.options.fPIC)
-        # cmake.definitions["NOT_USE_CPP11_ABI"] = option_on_off(self.options.not_use_cpp11_abi)
         cmake.definitions["WITH_TESTS"] = option_on_off(self.options.with_tests)
         cmake.definitions["WITH_EXAMPLES"] = option_on_off(self.options.with_examples)
         cmake.definitions["WITH_ICU"] = option_on_off(self.options.with_icu)
@@ -113,17 +119,14 @@ class BitprimConan(ConanFile):
         cmake.definitions["WITH_LITECOIN"] = option_on_off(self.options.with_litecoin)
         cmake.definitions["WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
         
-        # if self.settings.compiler == "gcc":
-        #     if float(str(self.settings.compiler.version)) >= 5:
-        #         cmake.definitions["_GLIBCXX_USE_CXX11_ABI"] = "1"
-        #     else:
-        #         cmake.definitions["_GLIBCXX_USE_CXX11_ABI"] = "0"
-
         if self.settings.compiler == "gcc":
             if float(str(self.settings.compiler.version)) >= 5:
                 cmake.definitions["NOT_USE_CPP11_ABI"] = option_on_off(False)
             else:
                 cmake.definitions["NOT_USE_CPP11_ABI"] = option_on_off(True)
+        elif self.settings.compiler == "clang":
+            if str(self.settings.compiler.libcxx) == "libstdc++" or str(self.settings.compiler.libcxx) == "libstdc++11":
+                cmake.definitions["NOT_USE_CPP11_ABI"] = option_on_off(False)
 
 
         # Secp256k1 --------------------------------------------
@@ -152,15 +155,18 @@ class BitprimConan(ConanFile):
         # cmake.definitions["WITH_BIGNUM"] = option_on_off(self.options.with_bignum)
         # Secp256k1 -------------------------------------------- (END)
 
-
         if self.settings.compiler == "gcc":
             if float(str(self.settings.compiler.version)) >= 5:
                 cmake.definitions["_GLIBCXX_USE_CXX11_ABI"] = "1"
             else:
                 cmake.definitions["_GLIBCXX_USE_CXX11_ABI"] = "0"
+        elif self.settings.compiler == "clang":
+            if str(self.settings.compiler.libcxx) == "libstdc++" or str(self.settings.compiler.libcxx) == "libstdc++11":
+                cmake.definitions["_GLIBCXX_USE_CXX11_ABI"] = "1"
+
 
         # cmake.definitions["BITPRIM_BUILD_NUMBER"] = os.getenv('BITPRIM_BUILD_NUMBER', '-')
-        cmake.configure(source_dir=self.conanfile_directory)
+        cmake.configure(source_dir=self.source_folder)
         cmake.build()
 
     def imports(self):
