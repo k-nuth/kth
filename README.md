@@ -45,6 +45,20 @@ In the case we don't have prebuilt binaries for your plarform, it is necessary t
 - C++11 Compiler.
 - [CMake](https://cmake.org/) building tool, version 3.4 or newer.
 
+## Including the default configuration and running the node
+
+In order to run the full node it is necessary to download the configuration files present on the [bitprim-config](https://github.com/bitprim/bitprim-config) repo, to do that just run inside the folder.
+
+```git clone https://github.com/bitprim/bitprim-config``` 
+
+After that you need to run the following to initialize the database:
+
+```./bn -i -c <configuration folder route>```
+
+and to run the node, run:
+
+```./bn -c <configuration folder route>```
+
 
 ## Detailed documentation
 
