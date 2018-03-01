@@ -25,7 +25,7 @@ with all four main features:
 ## Installation Requirements
 
 - 64-bit machine.
-- [Conan](https://www.conan.io/) package manager, version 1.0.0 or newer. See [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended).
+- [Conan](https://www.conan.io/) package manager, version 1.1.0 or newer. See [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended).
 
 ## Installation Procedure
 
@@ -43,12 +43,12 @@ conan install .
 
 In the case we don't have prebuilt binaries for your plarform, it is necessary to build from the source code, so you need to add the following requirements to the previous ones:
 
-- C++11 Compiler.
+- C++11 Conforming Compiler.
 - [CMake](https://cmake.org/) building tool, version 3.4 or newer.
 
 ## Running the node using the default configuration
 
-In order to run the full node it is necessary to download the configuration files present on the [bitprim-config](https://github.com/bitprim/bitprim-config) repo, to do that just run inside the folder.
+In order to run the full node it is necessary to download the configuration files present on the [bitprim-config](https://github.com/bitprim/bitprim-config) repository, to do that just run inside the directory.
 
 ```git clone https://github.com/bitprim/bitprim-config``` 
 
