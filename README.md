@@ -12,10 +12,10 @@ with all four main features:
 *Bitprim* also works as a cryptocurrency development platform with several programmable APIs:
   * C++
   * C
+  * C#
   * Python
   * Javascript
   * Golang
-  * C#
 
 ... and networking APIs: 
   * JSON-RPC
@@ -45,7 +45,7 @@ In the case we don't have prebuilt binaries for your plarform, it is necessary t
 - C++11 Compiler.
 - [CMake](https://cmake.org/) building tool, version 3.4 or newer.
 
-## Including the default configuration and running the node
+## Running the node using the default configuration
 
 In order to run the full node it is necessary to download the configuration files present on the [bitprim-config](https://github.com/bitprim/bitprim-config) repo, to do that just run inside the folder.
 
