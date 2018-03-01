@@ -18,6 +18,7 @@ with all four main features:
   * Golang
 
 ... and networking APIs: 
+  * bitprim-insight: A Bitprim implementation of the Insight-API
   * JSON-RPC
   * Libbitcoin BS-BX protocol
 
