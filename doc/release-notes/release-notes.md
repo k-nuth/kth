@@ -1,3 +1,10 @@
+# version 0.7.0
+
+- Improved RPC getblocktemplate response time.
+- Implemented RPC getaddressmempool command.
+- Some improvements and fixes in the C-API to support our new Insight-API.
+- Binary packaging improvements.
+
 # version 0.6.0
 
 - Added new RPC functionality.
