@@ -70,11 +70,11 @@ and to run the node, run:
 
 ## Changelog
 
+* [0.8](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-080)
 * [0.7](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-070)
 * [0.6](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-060)
 * [0.5](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.5.md)
 * [0.4](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.4.md)
-* [0.3](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes-0.3.md)
 * [Older](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md)
 
 
