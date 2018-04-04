@@ -1,3 +1,10 @@
+# version 0.8.0
+
+- Crypto currencies are selected at compile-time.
+- Json-RPC API performance improvements.
+- Some improvements and fixes in the C-API to support our new Insight-API.
+- Binary packaging improvements.
+
 # version 0.7.0
 
 - Improved RPC getblocktemplate response time.
