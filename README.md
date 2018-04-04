@@ -15,6 +15,7 @@ with all four main features:
   * C#
   * Python
   * Javascript
+  * Rust
   * Golang
 
 ... and networking APIs: 
