@@ -32,13 +32,15 @@ with all four main features:
 
 The *Bitprim* executables can be installed on Linux, macOS, FreeBSD, Windows and others. These binaries are pre-built for the most usual operating system/compiler combinations and hosted in an online repository. If there are no prebuilt binaries for your platform, a build from source will be attempted.
 
-So, for any platform, an installation can be performed in 3 simple steps:
+So, for any platform, an installation can be performed in 2 simple steps:
 
 ```
 conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
 
 # For Bitcoin Cash
 conan install bitprim-node-exe/0.8@bitprim/stable -o currency=BCH 
+# ... or (BCH is the default crypto)
+conan install bitprim-node-exe/0.8@bitprim/stable 
 
 # For Bitcoin Legacy
 conan install bitprim-node-exe/0.8@bitprim/stable -o currency=BTC
