@@ -36,8 +36,15 @@ So, for any platform, an installation can be performed in 3 simple steps:
 
 ```
 conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
-wget -O conanfile.txt https://raw.githubusercontent.com/bitprim/bitprim/master/install/conanfile.txt
-conan install .
+
+# For Bitcoin Cash
+conan install bitprim-node-exe/0.8@bitprim/stable -o currency=BCH 
+
+# For Bitcoin Legacy
+conan install bitprim-node-exe/0.8@bitprim/stable -o currency=BTC
+
+# For Litecoin
+conan install bitprim-node-exe/0.8@bitprim/stable -o currency=LTC
 ```
 
 ## Building from source Requirements
