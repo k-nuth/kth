@@ -63,15 +63,23 @@ In the case we don't have prebuilt binaries for your plarform, it is necessary t
 
 ## Running the node using the default configuration
 
-In order to run the full node it is necessary to download the configuration files present on the [bitprim-config](https://github.com/bitprim/bitprim-config) repository, to do that just run inside the directory.
+In order to run the full node you have to initialize the database and then run the node:
 
-```git clone https://github.com/bitprim/bitprim-config``` 
+Run the following to initialize the database:
 
-After that you need to run the following to initialize the database:
+```./bn -i```
+
+... then, run the node:
+
+```./bn```
+
+The above commands use the default configuration hardcoded in the executable. You can use a configuration file to customize the behavior of the node. In the [bitprim-config](https://github.com/bitprim/bitprim-config) repository you can find some example archives.
+
+Initialize the database using a configuration file:
 
 ```./bn -i -c <configuration folder route>```
 
-and to run the node, run:
+Run the node using a configuration file:
 
 ```./bn -c <configuration folder route>```
 
