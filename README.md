@@ -73,7 +73,7 @@ In order to run the full node you have to initialize the database and then run t
 
 ```./bn```
 
-The above commands use the default configuration hardcoded in the executable. You can use a configuration file to customize the behavior of the node. In the [bitprim-config](https://github.com/bitprim/bitprim-config) repository you can find some example archives.
+The above commands use the default configuration hardcoded in the executable. You can use a configuration file to customize the behavior of the node. In the [bitprim-config](https://github.com/bitprim/bitprim-config) repository you can find some example files.
 
 1. Initialize the database using a configuration file:
 
@@ -86,7 +86,7 @@ The above commands use the default configuration hardcoded in the executable. Yo
 ## Advanced Installation
 
 Bitprim is a high performance node, so we have some options and pre-built packages tuned for several platforms.
-Especifically, you can choose your computer _microarchitecture_ to download a pre-build executable compiled to take advantage of the instructions available in your processor. For example:
+Specifically, you can choose your computer _microarchitecture_ to download a pre-build executable compiled to take advantage of the instructions available in your processor. For example:
 
 ```
 # For Haswell microarchitecture and Bitcoin Cash currency
