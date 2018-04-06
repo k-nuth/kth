@@ -1,3 +1,12 @@
+# version 0.9.0
+
+- [Bitcoin Cash](https://www.bitcoincash.org/) 2018-May-15 hard fork changes:
+    - Maximum block size increased to 32 MB.
+    - ​Script op-codes added or reactivated: _OP_CAT_, _OP_AND_, _OP_OR_, _OP_XOR_, _OP_DIV_, _OP_MOD_, _OP_SPLIT_, _OP_SUBSTR_, _OP_NUM2BIN_, and _OP_BIN2NUM_.
+
+    More details in [Bitcoin Cash 2018-May-15 hard fork](https://github.com/bitprim/bitprim/blob/master/doc/bch-announces/HF-2018-may-15.md).
+
+
 # version 0.8.0
 
 - Crypto currencies are selected at compile-time.
