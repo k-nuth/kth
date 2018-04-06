@@ -2,7 +2,7 @@
 
 > Multi-Cryptocurrency full-node and development platform
 
-*Bitprim* allows you to run a full [Bitcoin](https://bitcoin.org/)/[Bitcoin Cash](https://www.bitcoincash.org/)/[Litecoin](https://litecoin.org/) node,
+*Bitprim* allows you to run a full [Bitcoin Cash](https://www.bitcoincash.org/)/[Bitcoin](https://bitcoin.org/)/[Litecoin](https://litecoin.org/) node,
 with all four main features:
   * Wallet
   * Mining
