@@ -2,7 +2,7 @@
 
 > Multi-Cryptocurrency full-node and development platform
 
-*Bitprim* allows you to run a full [Bitcoin](https://bitcoin.org/)/[Bitcoin Cash](https://www.bitcoincash.org/)/[Litecoin](https://litecoin.org/) node,
+*Bitprim* allows you to run a full [Bitcoin Cash](https://www.bitcoincash.org/)/[Bitcoin](https://bitcoin.org/)/[Litecoin](https://litecoin.org/) node,
 with all four main features:
   * Wallet
   * Mining
@@ -56,20 +56,20 @@ conan install bitprim-node-exe/0.8@bitprim/stable -o currency=LTC
 
 ## Building from source Requirements
 
-In the case we don't have pre-built binaries for your plarform, it is necessary to build from the source code, so you need to add the following requirements to the previous ones:
+In case there are no pre-built binaries for your platform, it is necessary to build from source code. In such a scenario, the following requirements must be added to the previous ones:
 
 - C++11 Conforming Compiler.
 - [CMake](https://cmake.org/) building tool, version 3.4 or newer.
 
 ## Running the node
 
-In order to run the full node you have to initialize the database and then run the node:
+In order to run the full node, you have to initialize the database and then run the node:
 
 1. Run the following to initialize the database:
 
 ```./bn -i```
 
-2. finally, run the node:
+2. Finally, run the node:
 
 ```./bn```
 
