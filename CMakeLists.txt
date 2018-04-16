@@ -26,7 +26,7 @@ project(bitprim
   LANGUAGES CXX C)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-
+set(CURRENCY "BCH" CACHE STRING "Specify the Cryptocurrency (BCH|BTC|LTC).")
 # Check for baseline language coverage in the compiler for the C++11 standard.
 #------------------------------------------------------------------------------
 set(CMAKE_CXX_STANDARD 11)
@@ -35,11 +35,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ---------------------------------------------------------------
 #TODO!
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=1)
+#add_definitions(-D_GLIBCXX_USE_CXX11_ABI=1)
 
 
 
-option(USE_CPP11_ABI "" ON)
+#option(USE_CPP11_ABI "" ON)
 
 option(USE_CONAN "Use Conan Build Tool." OFF)
 option(NO_CONAN_AT_ALL "Conan totally disabled." OFF)
