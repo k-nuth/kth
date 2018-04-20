@@ -27,6 +27,17 @@ project(bitprim
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CURRENCY "BCH" CACHE STRING "Specify the Cryptocurrency (BCH|BTC|LTC).")
+if (${CURRENCY} STREQUAL "BCH")
+    add_definitions(-DBITPRIM_CURRENCY_BCH)
+elseif (${CURRENCY} STREQUAL "BTC")
+    add_definitions(-DBITPRIM_CURRENCY_BTC)
+elseif (${CURRENCY} STREQUAL "LTC")
+    add_definitions(-DBITPRIM_CURRENCY_LTC)
+else()
+    message(FATAL_ERROR "Invalid Cryptocurrency: ${CURRENCY}")
+endif()
+
+message(STATUS "Bitprim: Cryptocurrency: ${CURRENCY}")
 # Check for baseline language coverage in the compiler for the C++11 standard.
 #------------------------------------------------------------------------------
 set(CMAKE_CXX_STANDARD 11)
