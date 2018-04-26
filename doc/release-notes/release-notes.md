@@ -1,3 +1,8 @@
+# version 0.9.1
+
+- The database structure was updated to support blocks with more than 65535 transactions. (The new structure is only used when bitprim is compiled for Bitcoin Cash)
+- Fixed a bug where some transactions were not being writen to the history table when downloading the blockchain using checkpoints.
+
 # version 0.9.0
 
 - [Bitcoin Cash](https://www.bitcoincash.org/) 2018-May-15 hard fork changes:

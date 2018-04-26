@@ -112,6 +112,7 @@ conan install bitprim-node-exe/0.9@bitprim/stable
 
 ## Changelog
 
+* [0.9.1](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-091)
 * [0.9](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-090)
 * [0.8](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-080)
 * [0.7](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-070)
