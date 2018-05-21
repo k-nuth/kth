@@ -60,7 +60,7 @@ class BitprimConan(ConanFile):
 
     default_options = "shared=False", \
         "fPIC=True", \
-        "with_tests=True", \
+        "with_tests=False", \
         "with_examples=False", \
         "with_icu=False", \
         "with_png=False", \
@@ -76,7 +76,7 @@ class BitprimConan(ConanFile):
         "enable_module_ecdh=False", \
         "enable_module_schnorr=False", \
         "enable_module_recovery=True", \
-        "with_rpc=True"
+        "with_rpc=False"
 
         # "with_asm='auto'", \
         # "with_field='auto'", \
@@ -90,7 +90,7 @@ class BitprimConan(ConanFile):
     package_files = "build/lbitprim-core.a"
     build_policy = "missing"
 
-    requires = (("bitprim-conan-boost/1.64.0@bitprim/stable"))
+    requires = (("boost/1.66.0@bitprim/stable"))
 
     def requirements(self):
         if self.settings.os == "Linux" or self.settings.os == "Macos":
