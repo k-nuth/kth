@@ -1,3 +1,11 @@
+# version 0.10.0
+
+- BIP0141 fixes for BTC and LTC.
+- BIP0152 fixes for all currencies.
+- Updated BCH consensus to behave like the ABC.
+- P2P message fix for bitnodes counter.
+- The default value for minimum fee on incoming transactions changed to 0.1 statoshis/byte. This value can be changes in the configuration file.
+
 # version 0.9.1
 
 - The database structure was updated to support blocks with more than 65535 transactions. (The new structure is only used when Bitprim is compiled for Bitcoin Cash).
