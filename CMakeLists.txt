@@ -73,8 +73,6 @@ endif()
 # ---------------------------------------------------------------
 
 option(WITH_RPC "Compile with RPC-ZMQ support." OFF)
-
-option(WITH_LITECOIN "Compile with Litecoin support." OFF)
 option(WITH_REMOTE_BLOCKCHAIN "Compile with remote bitprim-blockchain (aka. bitprim-blockchain-requester)." OFF)
 option(WITH_REMOTE_DATABASE "Compile with remote bitprim-database (aka. bitprim-database-requester)." OFF)
 option(WITH_LOCAL_MINING "Compile with local mining." ON)
@@ -117,10 +115,6 @@ endif()
 
 if (WITH_LOCAL_MINING)
 	add_definitions(-DWITH_LOCAL_MINING)
-endif()
-
-if (WITH_LITECOIN)
-	add_definitions(-DLITECOIN)
 endif()
 
 # # Check dependencies.
