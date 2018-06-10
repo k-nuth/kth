@@ -115,6 +115,8 @@ class BitprimConan(ConanFile):
             self.requires("gmp/6.1.2@bitprim/stable")
         if self.options.with_rpc:
             self.requires("libzmq/4.2.2@bitprim/stable")
+        if self.options.currency == "LTC":
+             self.requires("OpenSSL/1.0.2l@conan/stable")
 
     def build(self):
         cmake = CMake(self)
