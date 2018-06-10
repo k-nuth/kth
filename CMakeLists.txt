@@ -108,7 +108,7 @@ set(WITH_EXAMPLES OFF)
 set(ENABLE_SHARED OFF)
 set(ENABLE_SHARED_NODE_CINT ON)
 
-set(WITH_RPC OFF)
+set(WITH_RPC ON)
 if (WITH_RPC)
     add_definitions(-DBITPRIM_WITH_RPC)
 endif()
@@ -154,9 +154,9 @@ add_subdirectory(bitprim-network)
 add_subdirectory(bitprim-database)
 add_subdirectory(bitprim-blockchain)
 add_subdirectory(bitprim-node)
-#add_subdirectory(bitprim-rpc)
+add_subdirectory(bitprim-rpc)
 add_subdirectory(bitprim-node-exe)
-#add_subdirectory(bitprim-node-cint)
+add_subdirectory(bitprim-node-cint)
 
 # Tests
 #==============================================================================
