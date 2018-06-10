@@ -77,7 +77,7 @@ class BitprimConan(ConanFile):
 
     default_options = "shared=False", \
         "fPIC=True", \
-        "with_tests=True", \
+        "with_tests=False", \
         "with_examples=False", \
         "with_icu=False", \
         "with_png=False", \
