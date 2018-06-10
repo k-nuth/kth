@@ -72,8 +72,8 @@ git clone --recursive https://github.com/bitprim/bitprim
 cd bitprim
 mkdir build
 cd build
-conan install ..
-cmake ..
+conan install .. -o currency=BCH
+cmake .. -DCURRENCY=BCH
 make -j4
 ```
 
