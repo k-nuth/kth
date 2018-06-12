@@ -108,7 +108,13 @@ def main():
     if args.new_version is None:
         new_version = [old_version[0], str(int(old_version[1]) + 1), old_version[2]]
     else:
-        new_version = old_version
+        new_version = args.new_version.split('.')
+        if len(new_version) != 3:
+            print('new_version has to be of the following format: xx.xx.xx')
+            return
+
+    print (new_version)
+    print (old_version)
 
     for project in projects:
         update_version(args.root_path, project, old_version[0], old_version[1], old_version[2], new_version[0], new_version[1], new_version[2])
