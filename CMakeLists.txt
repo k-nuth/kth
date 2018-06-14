@@ -26,7 +26,18 @@ project(bitprim
   LANGUAGES CXX C)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+set(CURRENCY "BCH" CACHE STRING "Specify the Cryptocurrency (BCH|BTC|LTC).")
+if (${CURRENCY} STREQUAL "BCH")
+    add_definitions(-DBITPRIM_CURRENCY_BCH)
+elseif (${CURRENCY} STREQUAL "BTC")
+    add_definitions(-DBITPRIM_CURRENCY_BTC)
+elseif (${CURRENCY} STREQUAL "LTC")
+    add_definitions(-DBITPRIM_CURRENCY_LTC)
+else()
+    message(FATAL_ERROR "Invalid Cryptocurrency: ${CURRENCY}")
+endif()
 
+message(STATUS "Bitprim: Cryptocurrency: ${CURRENCY}")
 # Check for baseline language coverage in the compiler for the C++11 standard.
 #------------------------------------------------------------------------------
 set(CMAKE_CXX_STANDARD 11)
@@ -35,11 +46,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ---------------------------------------------------------------
 #TODO!
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=1)
+#add_definitions(-D_GLIBCXX_USE_CXX11_ABI=1)
 
 
 
-option(USE_CPP11_ABI "" ON)
+#option(USE_CPP11_ABI "" ON)
 
 option(USE_CONAN "Use Conan Build Tool." OFF)
 option(NO_CONAN_AT_ALL "Conan totally disabled." OFF)
@@ -62,8 +73,6 @@ endif()
 # ---------------------------------------------------------------
 
 option(WITH_RPC "Compile with RPC-ZMQ support." OFF)
-
-option(WITH_LITECOIN "Compile with Litecoin support." OFF)
 option(WITH_REMOTE_BLOCKCHAIN "Compile with remote bitprim-blockchain (aka. bitprim-blockchain-requester)." OFF)
 option(WITH_REMOTE_DATABASE "Compile with remote bitprim-database (aka. bitprim-database-requester)." OFF)
 option(WITH_LOCAL_MINING "Compile with local mining." ON)
@@ -99,17 +108,13 @@ set(WITH_EXAMPLES OFF)
 set(ENABLE_SHARED OFF)
 set(ENABLE_SHARED_NODE_CINT ON)
 
-set(WITH_RPC OFF)
+set(WITH_RPC ON)
 if (WITH_RPC)
     add_definitions(-DBITPRIM_WITH_RPC)
 endif()
 
 if (WITH_LOCAL_MINING)
 	add_definitions(-DWITH_LOCAL_MINING)
-endif()
-
-if (WITH_LITECOIN)
-	add_definitions(-DLITECOIN)
 endif()
 
 # # Check dependencies.
@@ -149,9 +154,9 @@ add_subdirectory(bitprim-network)
 add_subdirectory(bitprim-database)
 add_subdirectory(bitprim-blockchain)
 add_subdirectory(bitprim-node)
-#add_subdirectory(bitprim-rpc)
+add_subdirectory(bitprim-rpc)
 add_subdirectory(bitprim-node-exe)
-#add_subdirectory(bitprim-node-cint)
+add_subdirectory(bitprim-node-cint)
 
 # Tests
 #==============================================================================

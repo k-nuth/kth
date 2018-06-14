@@ -17,15 +17,31 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-# import os
+import os
 from conans import ConanFile, CMake
+from conans import __version__ as conan_version
+from conans.model.version import Version
 
 def option_on_off(option):
     return "ON" if option else "OFF"
 
+def get_content(file_name):
+    file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), file_name)
+    with open(file_path, 'r') as f:
+        return f.read()
+
+def get_version():
+    return get_content('conan_version')
+
+def get_channel():
+    return get_content('conan_channel')
+
+def get_conan_req_version():
+    return get_content('conan_req_version')
+
 class BitprimConan(ConanFile):
     name = "bitprim"
-    version = "0.1"
+    version = get_version()
     license = "http://www.boost.org/users/license.html"
     url = "https://github.com/bitprim/bitprim"
     description = "Bitcoin Cross-Platform C++ Development Toolkit"
@@ -50,7 +66,8 @@ class BitprimConan(ConanFile):
                "enable_module_ecdh": [True, False],
                "enable_module_schnorr": [True, False],
                "enable_module_recovery": [True, False],
-               "with_rpc": [True, False]
+               "with_rpc": [True, False],
+               "currency": ['BCH', 'BTC', 'LTC']
     }
             #    "with_asm": ['x86_64', 'arm', 'no', 'auto'],
             #    "with_field": ['64bit', '32bit', 'auto'],
@@ -76,7 +93,8 @@ class BitprimConan(ConanFile):
         "enable_module_ecdh=False", \
         "enable_module_schnorr=False", \
         "enable_module_recovery=True", \
-        "with_rpc=False"
+        "with_rpc=True", \
+        "currency=BCH"
 
         # "with_asm='auto'", \
         # "with_field='auto'", \
@@ -97,6 +115,8 @@ class BitprimConan(ConanFile):
             self.requires("gmp/6.1.2@bitprim/stable")
         if self.options.with_rpc:
             self.requires("libzmq/4.2.2@bitprim/stable")
+        if self.options.currency == "LTC":
+             self.requires("OpenSSL/1.0.2l@conan/stable")
 
     def build(self):
         cmake = CMake(self)
@@ -152,15 +172,22 @@ class BitprimConan(ConanFile):
         # cmake.definitions["WITH_BIGNUM"] = option_on_off(self.options.with_bignum)
         # Secp256k1 -------------------------------------------- (END)
 
+        cmake.definitions["CURRENCY"] = self.options.currency
+
 
         if self.settings.compiler == "gcc":
             if float(str(self.settings.compiler.version)) >= 5:
-                cmake.definitions["_GLIBCXX_USE_CXX11_ABI"] = "1"
+                cmake.definitions["NOT_USE_CPP11_ABI"] = option_on_off(False)
             else:
-                cmake.definitions["_GLIBCXX_USE_CXX11_ABI"] = "0"
+                cmake.definitions["NOT_USE_CPP11_ABI"] = option_on_off(True)
+        elif self.settings.compiler == "clang":
+            if str(self.settings.compiler.libcxx) == "libstdc++" or str(self.settings.compiler.libcxx) == "libstdc++11":
+                cmake.definitions["NOT_USE_CPP11_ABI"] = option_on_off(False)
 
         # cmake.definitions["BITPRIM_BUILD_NUMBER"] = os.getenv('BITPRIM_BUILD_NUMBER', '-')
-        cmake.configure(source_dir=self.conanfile_directory)
+        # cmake.configure(source_dir=self.conanfile_directory)
+        cmake.definitions["BITPRIM_BUILD_NUMBER"] = os.getenv('BITPRIM_BUILD_NUMBER', '-')
+        cmake.configure(source_dir=self.source_folder)
         cmake.build()
 
     def imports(self):
