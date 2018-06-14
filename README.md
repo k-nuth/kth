@@ -61,17 +61,6 @@ In case there are no pre-built binaries for your platform, it is necessary to bu
 - C++11 Conforming Compiler.
 - [CMake](https://cmake.org/) building tool, version 3.4 or newer.
 
-**For example (linux):**
-```sh
-conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
-git clone --recursive https://github.com/bitprim/bitprim
-cd bitprim
-mkdir build
-cd build
-conan install .. -o currency=BCH
-cmake .. -DCURRENCY=BCH
-make -j4
-```
 
 ## Running the node
 
