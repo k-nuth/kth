@@ -43,15 +43,15 @@ conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
 
 ```
 # For Bitcoin Cash
-conan install bitprim-node-exe/0.10.0@bitprim/stable -o currency=BCH 
+conan install bitprim-node-exe/0.10.1@bitprim/stable -o currency=BCH 
 # ... or (BCH is the default crypto)
-conan install bitprim-node-exe/0.10.0@bitprim/stable 
+conan install bitprim-node-exe/0.10.1@bitprim/stable 
 
 # For Bitcoin Legacy
-conan install bitprim-node-exe/0.10.0@bitprim/stable -o currency=BTC
+conan install bitprim-node-exe/0.10.1@bitprim/stable -o currency=BTC
 
 # For Litecoin
-conan install bitprim-node-exe/0.10.0@bitprim/stable -o currency=LTC
+conan install bitprim-node-exe/0.10.1@bitprim/stable -o currency=LTC
 ```
 
 ## Building from source Requirements
