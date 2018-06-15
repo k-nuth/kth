@@ -29,6 +29,7 @@
 from argparse import ArgumentParser
 from os.path import expanduser
 import os
+import update_version
 
 projects = ['core', 'consensus', 'database', 'network', 'blockchain', 'node', 'rpc', 'node-cint', 'node-exe']
 
@@ -38,10 +39,8 @@ def commit(new_version):
     os.system('git push --set-upstream origin release-%s' % (new_version,))
     return
 
-def update_version(old_version, new_version, root_path):
-    program = '{0}bitprim/scripts/update_version.py {1} {2} --root_path {3}'.format(root_path,old_version, new_version,root_path + 'bitprim/')
-    print(program)
-    os.system(program)
+def call_update_version(root_path, project,old_version,new_version):
+    update_version.update_version(root_path, project, old_version[0], old_version[1], old_version[2], new_version[0], new_version[1], new_version[2])
     return 
 
 def clone():
@@ -56,62 +55,40 @@ def create_branch(new_version):
     os.system('git checkout -b release-%s' % (new_version,))
     return
 
-def release(root_path,oldversion,newversion):
+def release(root_path,old_version,new_version):
 
     os.chdir(root_path)
 
     if os.path.exists('bitprim') == False:
+        print('Cloning...')
         clone()
     else:
         os.chdir('bitprim')
 
-    old_version = '.'.join(str(x) for x in oldversion)
-    new_version = '.'.join(str(x) for x in newversion)
+    new_version_str = '.'.join(str(x) for x in new_version)
 
     for project in projects:
         bitprim_project = 'bitprim-%s' % (project,)
         os.chdir(bitprim_project)
-        create_branch(new_version)
+        print ('Creating release branch for ' + bitprim_project)
+        create_branch(new_version_str)
         os.chdir(root_path + 'bitprim')
-
-    os.chdir(root_path)
-    os.chdir('bitprim')
-    
-    update_version(old_version, new_version,root_path)
-    
-    for project in projects:
-        bitprim_project = 'bitprim-%s' % (project,)
+        print ('Updating version number')
+        call_update_version(root_path,project,old_version,new_version)
         os.chdir(bitprim_project)
-        commit(new_version)
-        os.chdir(root_path + 'bitprim')
+        print ('Commiting release branch for ' + bitprim_project)
+        commit(new_version_str)
 
     return
 
 def main():
 
-    parser = ArgumentParser('Bitprim Release.')
-    parser.add_argument("-rp", "--root_path", dest="root_path", help="root path where the projects are", default=expanduser("~"))
-    parser.add_argument('old_version', type=str, nargs=1, help='old version')
-    parser.add_argument('new_version', type=str, nargs='?', help='new version')
-    args = parser.parse_args()
+    ret, root_path, old_version, new_version = update_version.parse_args()
 
-    old_version = args.old_version[0].split('.')
-    if len(old_version) != 3:
-        print('old_version has to be of the following format: x.y.z')
+    if ret == False:
         return
 
-    if args.new_version is None:
-        new_version = [old_version[0], str(int(old_version[1]) + 1), old_version[2]]
-    else:
-        new_version = args.new_version.split('.')
-        if len(new_version) != 3:
-            print('new_version has to be of the following format: xx.yy.zz')
-            return
-
-    print (new_version)
-    print (old_version)
-
-    release(args.root_path,old_version,new_version)
+    release(root_path,old_version,new_version)
 
 if __name__ == "__main__":
     main()
