@@ -1,4 +1,4 @@
-# Bitprim <a target="_blank" href="http://semver.org">![Version][badge.version]</a> <a target="_blank" href="https://travis-ci.org/bitprim/bitprim-node-exe">![Travis status][badge.Travis]</a> [![Appveyor Status](https://ci.appveyor.com/api/projects/status/github/bitprim/bitprim-node-exe?svg=true&branch=master)](https://ci.appveyor.com/projects/bitprim/bitprim-node-exe) <a target="_blank" href="https://gitter.im/bitprim/Lobby">![Gitter Chat][badge.Gitter]</a>
+# Bitprim <a target="_blank" href="http://semver.org">![Version][badge.version]</a> <a target="_blank" href="https://travis-ci.org/bitprim/bitprim-node-exe">![Travis status][badge.Travis]</a> <a target="_blank" href="https://ci.appveyor.com/projects/bitprim/bitprim-node-exe">![Appveyor Status][badge.Appveyor]</a> <a target="_blank" href="https://gitter.im/bitprim/Lobby">![Gitter Chat][badge.Gitter]</a>
 
 > Multi-Cryptocurrency full-node and development platform
 
@@ -123,7 +123,7 @@ conan install bitprim-node-exe/0.10.0@bitprim/stable
 
 
 <!-- Links -->
-[badge.Appveyor]: https://ci.appveyor.com/api/projects/status/github/bitprim/bitprim-node-exe?svg=true&branch=dev
+[badge.Appveyor]: https://ci.appveyor.com/api/projects/status/github/bitprim/bitprim-node-exe?svg=true&branch=v0.10.1
 [badge.Gitter]: https://img.shields.io/badge/gitter-join%20chat-blue.svg
-[badge.Travis]: https://travis-ci.org/bitprim/bitprim-node-exe.svg?branch=master
+[badge.Travis]: https://travis-ci.org/bitprim/bitprim-node-exe.svg?branch=v0.10.1
 [badge.version]: https://badge.fury.io/gh/bitprim%2Fbitprim-node-exe.svg
