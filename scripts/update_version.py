@@ -99,12 +99,14 @@ def parse_args():
     parser.add_argument("-rp", "--root_path", dest="root_path", help="root path where the projects are", default=expanduser("~"))
     parser.add_argument('old_version', type=str, nargs=1, help='old version')
     parser.add_argument('new_version', type=str, nargs='?', help='new version')
+    parser.add_argument("-t", "--token", dest="token", help="GitHub token", default='')
+
     args = parser.parse_args()
 
     old_version = args.old_version[0].split('.')
     if len(old_version) != 3:
         print('old_version has to be of the following format: xx.xx.xx')
-        return False,'','',''
+        return False,'','','',''
 
     if args.new_version is None:
         new_version = [old_version[0], str(int(old_version[1]) + 1), old_version[2]]
@@ -112,12 +114,12 @@ def parse_args():
         new_version = args.new_version.split('.')
         if len(new_version) != 3:
             print('new_version has to be of the following format: xx.xx.xx')
-            return False,'','',''
+            return False,'','','',''
 
     print (new_version)
     print (old_version)
 
-    return True, args.root_path, old_version, new_version
+    return True, args.root_path, old_version, new_version, args.token
 
 
 def main():

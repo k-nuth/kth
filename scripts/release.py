@@ -19,6 +19,10 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
+#requeries
+# -pygithub
+#   pip install pygithub
+
 # Usage:    python3 release.py x.y.z --root_path ~/dev/
 #           where x.y.z is the old version
 #           new version is calculated from old version incrementing the minor part
@@ -30,8 +34,17 @@ from argparse import ArgumentParser
 from os.path import expanduser
 import os
 import update_version
+from github import Github
 
 projects = ['core', 'consensus', 'database', 'network', 'blockchain', 'node', 'rpc', 'node-cint', 'node-exe']
+
+def create_pr(project,new_version, token):
+    g = Github(token)
+    org = g.get_organization('bitprim')
+    repo = org.get_repo(project)
+    pr = repo.create_pull('Release ' + new_version,'','master','release-' + new_version,True )
+    print('PR created:' + pr.id)
+    return
 
 def commit(new_version):
     os.system('git add .')
@@ -55,7 +68,7 @@ def create_branch(new_version):
     os.system('git checkout -b release-%s' % (new_version,))
     return
 
-def release(root_path,old_version,new_version):
+def release(root_path,old_version,new_version, token):
 
     os.chdir(root_path)
 
@@ -78,17 +91,20 @@ def release(root_path,old_version,new_version):
         os.chdir(bitprim_project)
         print ('Commiting release branch for ' + bitprim_project)
         commit(new_version_str)
+        if token != '':
+            print ('Creating PR for ' + bitprim_project)
+            create_pr(project,new_version,token)
 
     return
 
 def main():
 
-    ret, root_path, old_version, new_version = update_version.parse_args()
+    ret, root_path, old_version, new_version, token = update_version.parse_args()
 
     if ret == False:
         return
 
-    release(root_path,old_version,new_version)
+    release(root_path,old_version,new_version, token)
 
 if __name__ == "__main__":
     main()
