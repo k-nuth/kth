@@ -1,3 +1,13 @@
+# version 0.10.1
+
+- Build fixes for Litecoin.
+- Support for protocol version 70015.
+- Bitprim-core scripting now supports BCH signatures when using it as a library.
+- Node-cint functionality to create raw transactions.
+- Bitprim binary logs if it was built on release or debug.
+- Fix on vout index when requesting information about mempool's transactions.
+- Block and transactions added stop guards.
+
 # version 0.10.0
 
 - BIP0141 fixes for BTC and LTC.

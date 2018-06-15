@@ -26,7 +26,7 @@ with all four main features:
 ## Installation Requirements
 
 - 64-bit machine.
-- [Conan](https://www.conan.io/) package manager, version 1.1.0 or newer. See [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended).
+- [Conan](https://www.conan.io/) package manager, version 1.4.0 or newer. See [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended).
 
 ## Installation Procedure
 
@@ -43,15 +43,15 @@ conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
 
 ```
 # For Bitcoin Cash
-conan install bitprim-node-exe/0.10.0@bitprim/stable -o currency=BCH 
+conan install bitprim-node-exe/0.10.1@bitprim/stable -o currency=BCH 
 # ... or (BCH is the default crypto)
-conan install bitprim-node-exe/0.10.0@bitprim/stable 
+conan install bitprim-node-exe/0.10.1@bitprim/stable 
 
 # For Bitcoin Legacy
-conan install bitprim-node-exe/0.10.0@bitprim/stable -o currency=BTC
+conan install bitprim-node-exe/0.10.1@bitprim/stable -o currency=BTC
 
 # For Litecoin
-conan install bitprim-node-exe/0.10.0@bitprim/stable -o currency=LTC
+conan install bitprim-node-exe/0.10.1@bitprim/stable -o currency=LTC
 ```
 
 ## Building from source Requirements
@@ -60,6 +60,7 @@ In case there are no pre-built binaries for your platform, it is necessary to bu
 
 - C++11 Conforming Compiler.
 - [CMake](https://cmake.org/) building tool, version 3.4 or newer.
+
 
 ## Running the node
 
@@ -112,7 +113,7 @@ conan install bitprim-node-exe/0.10.0@bitprim/stable
 
 ## Changelog
 
-
+* [0.10.1](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-0101)
 * [0.10.0](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-0100)
 * [0.9.1](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-091)
 * [0.9](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-090)
