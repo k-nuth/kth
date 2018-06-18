@@ -25,9 +25,7 @@
 import fnmatch
 import os
 import fileinput
-import glob
-from argparse import ArgumentParser
-from os.path import expanduser
+import argument_parser
 
 projects = ['core', 'consensus', 'database', 'network', 'blockchain', 'node', 'rpc', 'node-cint', 'node-exe']
 
@@ -73,7 +71,7 @@ def find_and_process_file_version(bitprim_project, filename, old_str, new_str, o
 
 def update_version(root_path, project, oldmajor, oldminor, oldpatch, newmajor, newminor, newpatch):
     bitprim_project = 'bitprim-%s' % (project,)
-    path = os.path.join(root_path, bitprim_project)
+    #path = os.path.join(root_path, bitprim_project)
     dep_files = ['bitprim-%sConfig.cmake.in']
     nodep_files = ['CMakeLists.txt', 'conan_version', 'conanfile.py']
     version_files = ['version.hpp']
@@ -93,38 +91,9 @@ def update_version(root_path, project, oldmajor, oldminor, oldpatch, newmajor, n
 
     return
 
-def parse_args():
-
-    parser = ArgumentParser('Bitprim version updater.')
-    parser.add_argument("-rp", "--root_path", dest="root_path", help="root path where the projects are", default=expanduser("~"))
-    parser.add_argument('old_version', type=str, nargs=1, help='old version')
-    parser.add_argument('new_version', type=str, nargs='?', help='new version')
-    parser.add_argument("-t", "--token", dest="token", help="GitHub token", default='')
-
-    args = parser.parse_args()
-
-    old_version = args.old_version[0].split('.')
-    if len(old_version) != 3:
-        print('old_version has to be of the following format: xx.xx.xx')
-        return False,'','','',''
-
-    if args.new_version is None:
-        new_version = [old_version[0], str(int(old_version[1]) + 1), old_version[2]]
-    else:
-        new_version = args.new_version.split('.')
-        if len(new_version) != 3:
-            print('new_version has to be of the following format: xx.xx.xx')
-            return False,'','','',''
-
-    print (new_version)
-    print (old_version)
-
-    return True, args.root_path, old_version, new_version, args.token
-
-
 def main():
 
-    ret, root_path, old_version, new_version = parse_args()
+    ret, root_path, old_version, new_version = argument_parser.parse_args()
 
     if ret == False:
         return

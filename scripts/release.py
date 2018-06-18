@@ -30,10 +30,11 @@
 #           python3 release.py x.y.z xx.yy.zz --root_path ~/dev/
 #           where x.y.z is the old version and xx.yy.zz is the new version
 
-from argparse import ArgumentParser
-from os.path import expanduser
+#from argparse import ArgumentParser
+#from os.path import expanduser
 import os
 import update_version
+import argument_parser
 from github import Github
 
 projects = ['core', 'consensus', 'database', 'network', 'blockchain', 'node', 'rpc', 'node-cint', 'node-exe']
@@ -99,7 +100,7 @@ def release(root_path,old_version,new_version, token):
 
 def main():
 
-    ret, root_path, old_version, new_version, token = update_version.parse_args()
+    ret, root_path, old_version, new_version, token = argument_parser.parse_args()
 
     if ret == False:
         return
