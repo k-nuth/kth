@@ -32,6 +32,7 @@ from os.path import expanduser
 projects = ['core', 'consensus', 'database', 'network', 'blockchain', 'node', 'rpc', 'node-cint', 'node-exe']
 
 def get_files(bitprim_project, f):
+    print(bitprim_project)
     matches = []
     for root, dirnames, filenames in os.walk(bitprim_project):
         for filename in fnmatch.filter(filenames, f):
@@ -92,18 +93,20 @@ def update_version(root_path, project, oldmajor, oldminor, oldpatch, newmajor, n
 
     return
 
-def main():
+def parse_args():
 
     parser = ArgumentParser('Bitprim version updater.')
     parser.add_argument("-rp", "--root_path", dest="root_path", help="root path where the projects are", default=expanduser("~"))
     parser.add_argument('old_version', type=str, nargs=1, help='old version')
     parser.add_argument('new_version', type=str, nargs='?', help='new version')
+    parser.add_argument("-t", "--token", dest="token", help="GitHub token", default='')
+
     args = parser.parse_args()
 
     old_version = args.old_version[0].split('.')
     if len(old_version) != 3:
         print('old_version has to be of the following format: xx.xx.xx')
-        return
+        return False,'','','',''
 
     if args.new_version is None:
         new_version = [old_version[0], str(int(old_version[1]) + 1), old_version[2]]
@@ -111,13 +114,23 @@ def main():
         new_version = args.new_version.split('.')
         if len(new_version) != 3:
             print('new_version has to be of the following format: xx.xx.xx')
-            return
+            return False,'','','',''
 
     print (new_version)
     print (old_version)
 
+    return True, args.root_path, old_version, new_version, args.token
+
+
+def main():
+
+    ret, root_path, old_version, new_version = parse_args()
+
+    if ret == False:
+        return
+
     for project in projects:
-        update_version(args.root_path, project, old_version[0], old_version[1], old_version[2], new_version[0], new_version[1], new_version[2])
+        update_version(root_path, project, old_version[0], old_version[1], old_version[2], new_version[0], new_version[1], new_version[2])
 
 if __name__ == "__main__":
     main()
