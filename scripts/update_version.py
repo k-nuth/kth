@@ -40,7 +40,7 @@ def get_files(bitprim_project, f):
 def find_and_process_file(bitprim_project, filename, old_str, new_str):
     files = get_files(bitprim_project, filename)
     for f in files:
-        # print(f)
+        print(f)
         with fileinput.FileInput(f, inplace=True) as file:
             for line in file:
                 print(line.replace(old_str, new_str), end='')
@@ -70,8 +70,14 @@ def find_and_process_file_version(bitprim_project, filename, old_str, new_str, o
 
 
 def update_version(root_path, project, oldmajor, oldminor, oldpatch, newmajor, newminor, newpatch):
+    
+    
+
     bitprim_project = 'bitprim-%s' % (project,)
     #path = os.path.join(root_path, bitprim_project)
+    
+    print ('Updating ' + bitprim_project)
+
     dep_files = ['bitprim-%sConfig.cmake.in']
     nodep_files = ['CMakeLists.txt', 'conan_version', 'conanfile.py']
     version_files = ['version.hpp']
@@ -93,12 +99,13 @@ def update_version(root_path, project, oldmajor, oldminor, oldpatch, newmajor, n
 
 def main():
 
-    ret, root_path, old_version, new_version = argument_parser.parse_args()
+    ret, root_path, old_version, new_version, token = argument_parser.parse_args()
 
     if ret == False:
         return
 
     for project in projects:
+        os.chdir(root_path)
         update_version(root_path, project, old_version[0], old_version[1], old_version[2], new_version[0], new_version[1], new_version[2])
 
 if __name__ == "__main__":
