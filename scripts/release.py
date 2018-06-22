@@ -44,7 +44,7 @@ def create_pr(project,new_version, token):
     org = g.get_organization('bitprim')
     repo = org.get_repo(project)
     pr = repo.create_pull('Release ' + new_version,'','master','release-' + new_version,True )
-    print('PR created:' + pr.id)
+    print('PR created:' + str(pr.id))
     return
 
 def commit(new_version):
@@ -88,13 +88,14 @@ def release(root_path,old_version,new_version, token):
         create_branch(new_version_str)
         os.chdir(root_path + 'bitprim')
         print ('Updating version number')
-        call_update_version(root_path,project,old_version,new_version)
+        call_update_version(root_path, project, old_version, new_version)
         os.chdir(bitprim_project)
         print ('Commiting release branch for ' + bitprim_project)
         commit(new_version_str)
         if token != '':
             print ('Creating PR for ' + bitprim_project)
-            create_pr(project,new_version,token)
+            create_pr(bitprim_project, new_version_str, token)
+        os.chdir(root_path + 'bitprim')    
 
     return
 
@@ -105,7 +106,7 @@ def main():
     if ret == False:
         return
 
-    release(root_path,old_version,new_version, token)
+    release(root_path, old_version, new_version, token)
 
 if __name__ == "__main__":
     main()
