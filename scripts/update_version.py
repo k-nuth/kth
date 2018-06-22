@@ -30,7 +30,7 @@ import argument_parser
 projects = ['core', 'consensus', 'database', 'network', 'blockchain', 'node', 'rpc', 'node-cint', 'node-exe']
 
 def get_files(bitprim_project, f):
-    print(bitprim_project)
+    #print(bitprim_project)
     matches = []
     for root, dirnames, filenames in os.walk(bitprim_project):
         for filename in fnmatch.filter(filenames, f):
