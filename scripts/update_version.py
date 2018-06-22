@@ -25,13 +25,12 @@
 import fnmatch
 import os
 import fileinput
-import glob
-from argparse import ArgumentParser
-from os.path import expanduser
+import argument_parser
 
 projects = ['core', 'consensus', 'database', 'network', 'blockchain', 'node', 'rpc', 'node-cint', 'node-exe']
 
 def get_files(bitprim_project, f):
+    #print(bitprim_project)
     matches = []
     for root, dirnames, filenames in os.walk(bitprim_project):
         for filename in fnmatch.filter(filenames, f):
@@ -41,7 +40,7 @@ def get_files(bitprim_project, f):
 def find_and_process_file(bitprim_project, filename, old_str, new_str):
     files = get_files(bitprim_project, filename)
     for f in files:
-        # print(f)
+        print(f)
         with fileinput.FileInput(f, inplace=True) as file:
             for line in file:
                 print(line.replace(old_str, new_str), end='')
@@ -71,8 +70,14 @@ def find_and_process_file_version(bitprim_project, filename, old_str, new_str, o
 
 
 def update_version(root_path, project, oldmajor, oldminor, oldpatch, newmajor, newminor, newpatch):
+    
+    
+
     bitprim_project = 'bitprim-%s' % (project,)
-    path = os.path.join(root_path, bitprim_project)
+    #path = os.path.join(root_path, bitprim_project)
+    
+    print ('Updating ' + bitprim_project)
+
     dep_files = ['bitprim-%sConfig.cmake.in']
     nodep_files = ['CMakeLists.txt', 'conan_version', 'conanfile.py']
     version_files = ['version.hpp']
@@ -94,30 +99,14 @@ def update_version(root_path, project, oldmajor, oldminor, oldpatch, newmajor, n
 
 def main():
 
-    parser = ArgumentParser('Bitprim version updater.')
-    parser.add_argument("-rp", "--root_path", dest="root_path", help="root path where the projects are", default=expanduser("~"))
-    parser.add_argument('old_version', type=str, nargs=1, help='old version')
-    parser.add_argument('new_version', type=str, nargs='?', help='new version')
-    args = parser.parse_args()
+    ret, root_path, old_version, new_version, token = argument_parser.parse_args()
 
-    old_version = args.old_version[0].split('.')
-    if len(old_version) != 3:
-        print('old_version has to be of the following format: xx.xx.xx')
+    if ret == False:
         return
 
-    if args.new_version is None:
-        new_version = [old_version[0], str(int(old_version[1]) + 1), old_version[2]]
-    else:
-        new_version = args.new_version.split('.')
-        if len(new_version) != 3:
-            print('new_version has to be of the following format: xx.xx.xx')
-            return
-
-    print (new_version)
-    print (old_version)
-
     for project in projects:
-        update_version(args.root_path, project, old_version[0], old_version[1], old_version[2], new_version[0], new_version[1], new_version[2])
+        os.chdir(root_path)
+        update_version(root_path, project, old_version[0], old_version[1], old_version[2], new_version[0], new_version[1], new_version[2])
 
 if __name__ == "__main__":
     main()
