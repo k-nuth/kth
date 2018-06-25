@@ -43,15 +43,15 @@ conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
 
 ```
 # For Bitcoin Cash
-conan install bitprim-node-exe/0.10.1@bitprim/stable -o currency=BCH 
+conan install bitprim-node-exe/0.10.2@bitprim/stable -o currency=BCH 
 # ... or (BCH is the default crypto)
-conan install bitprim-node-exe/0.10.1@bitprim/stable 
+conan install bitprim-node-exe/0.10.2@bitprim/stable 
 
 # For Bitcoin Legacy
-conan install bitprim-node-exe/0.10.1@bitprim/stable -o currency=BTC
+conan install bitprim-node-exe/0.10.2@bitprim/stable -o currency=BTC
 
 # For Litecoin
-conan install bitprim-node-exe/0.10.1@bitprim/stable -o currency=LTC
+conan install bitprim-node-exe/0.10.2@bitprim/stable -o currency=LTC
 ```
 
 ## Building from source Requirements
@@ -91,7 +91,7 @@ Specifically, you can choose your computer _microarchitecture_ to download a pre
 
 ```
 # For Haswell microarchitecture and Bitcoin Cash currency
-conan install bitprim-node-exe/0.10.0@bitprim/stable -o currency=BCH -o microarchitecture=haswell 
+conan install bitprim-node-exe/0.10.2@bitprim/stable -o currency=BCH -o microarchitecture=haswell 
 ```
 So, you can manually choose the appropriate microarchitecture, some examples are: _x86_64_, _haswell_, _ivybridge_, _sandybridge_, _bulldozer_, ...  
 By default, if you do not specify any, the building system will select a base microarchitecture corresponding to your _Instruction Set Architecture_ (ISA). For example, for _Intel 80x86_, the x86_64 microarchitecture will be selected.
@@ -102,7 +102,7 @@ Our build system has the ability to automatically detect the microarchitecture o
 
 ```
 pip install cpuid
-conan install bitprim-node-exe/0.10.0@bitprim/stable 
+conan install bitprim-node-exe/0.10.2@bitprim/stable 
 ```
 
 ## Detailed documentation
@@ -113,6 +113,7 @@ conan install bitprim-node-exe/0.10.0@bitprim/stable
 
 ## Changelog
 
+* [0.10.2](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-0102)
 * [0.10.1](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-0101)
 * [0.10.0](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-0100)
 * [0.9.1](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-091)
@@ -123,7 +124,7 @@ conan install bitprim-node-exe/0.10.0@bitprim/stable
 
 
 <!-- Links -->
-[badge.Appveyor]: https://ci.appveyor.com/api/projects/status/github/bitprim/bitprim-node-exe?svg=true&branch=v0.10.1
+[badge.Appveyor]: https://ci.appveyor.com/api/projects/status/github/bitprim/bitprim-node-exe?svg=true&branch=v0.10.2
 [badge.Gitter]: https://img.shields.io/badge/gitter-join%20chat-blue.svg
-[badge.Travis]: https://travis-ci.org/bitprim/bitprim-node-exe.svg?branch=v0.10.1
+[badge.Travis]: https://travis-ci.org/bitprim/bitprim-node-exe.svg?branch=v0.10.2
 [badge.version]: https://badge.fury.io/gh/bitprim%2Fbitprim-node-exe.svg
