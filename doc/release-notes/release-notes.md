@@ -1,3 +1,8 @@
+# version 0.10.2
+
+- BIP activation's height fixed for Litecoin
+- Added mempool transaction function to bitprim-node-cint
+
 # version 0.10.1
 
 - Build fixes for Litecoin.
