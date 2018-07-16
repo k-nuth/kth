@@ -43,23 +43,10 @@ conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
 
 ```
 # For Bitcoin Cash
-conan install bitprim-node-exe/0.10.2@bitprim/stable -o currency=BCH 
-# ... or (BCH is the default crypto)
 conan install bitprim-node-exe/0.10.2@bitprim/stable 
-
-# For Bitcoin Legacy
-conan install bitprim-node-exe/0.10.2@bitprim/stable -o currency=BTC
-
-# For Litecoin
-conan install bitprim-node-exe/0.10.2@bitprim/stable -o currency=LTC
 ```
 
-## Building from source Requirements
-
-In case there are no pre-built binaries for your platform, it is necessary to build from source code. In such a scenario, the following requirements must be added to the previous ones:
-
-- C++11 Conforming Compiler.
-- [CMake](https://cmake.org/) building tool, version 3.4 or newer.
+For BTC and LTC please refer to [documentation](https://bitprim.github.io/docfx/content/user_guide/installation.html)
 
 
 ## Running the node
@@ -84,44 +71,15 @@ The above commands use the default configuration hardcoded in the executable. Yo
 
 ```./bn -c <configuration file path>```
 
-## Advanced Installation
-
-Bitprim is a high performance node, so we have some options and pre-built packages tuned for several platforms.
-Specifically, you can choose your computer _microarchitecture_ to download a pre-build executable compiled to take advantage of the instructions available in your processor. For example:
-
-```
-# For Haswell microarchitecture and Bitcoin Cash currency
-conan install bitprim-node-exe/0.10.2@bitprim/stable -o currency=BCH -o microarchitecture=haswell 
-```
-So, you can manually choose the appropriate microarchitecture, some examples are: _x86_64_, _haswell_, _ivybridge_, _sandybridge_, _bulldozer_, ...  
-By default, if you do not specify any, the building system will select a base microarchitecture corresponding to your _Instruction Set Architecture_ (ISA). For example, for _Intel 80x86_, the x86_64 microarchitecture will be selected.
-
-### Automatic Microarchitecture selection
-
-Our build system has the ability to automatically detect the microarchitecture of your processor. To do this, first, you have to install our _pip_ package called [cpuid](https://pypi.python.org/pypi/cpuid). Our build system detects if this package is installed and in such case, makes use of it to detect the best possible executable for your processor.
-
-```
-pip install cpuid
-conan install bitprim-node-exe/0.10.2@bitprim/stable 
-```
-
 ## Detailed documentation
 
-* [Gitbook site](https://www.bitprim.org/)
-* [Build manually from source](https://www.bitprim.org/installation.html)
-* [Python API documentation](https://www.bitprim.org/python-interface/details.html)
+* [Documentation Site](https://bitprim.github.io/docfx/index.html)
+* [Build manually from source](https://bitprim.github.io/docfx/content/user_guide/installation.html)
+* [API's documentation](https://bitprim.github.io/docfx/content/developer_guide/introduction.html)
 
 ## Changelog
 
-* [0.10.2](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-0102)
-* [0.10.1](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-0101)
-* [0.10.0](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-0100)
-* [0.9.1](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-091)
-* [0.9](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-090)
-* [0.8](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-080)
-* [0.7](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md#version-070)
-* [Older](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md)
-
+To view the change logs and release notes please go [here](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md)
 
 <!-- Links -->
 [badge.Appveyor]: https://ci.appveyor.com/api/projects/status/github/bitprim/bitprim-node-exe?svg=true&branch=v0.10.2
