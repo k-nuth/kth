@@ -48,6 +48,8 @@ conan install bitprim-node-exe/0.10.2@bitprim/stable
 
 For BTC and LTC please refer to [documentation](https://bitprim.github.io/docfx/content/user_guide/installation.html)
 
+In you want to tune the installation for better performance, please refer to [this](https://bitprim.github.io/docfx/content/user_guide/installation.html#advanced-installation).
+
 
 ## Running the node
 
