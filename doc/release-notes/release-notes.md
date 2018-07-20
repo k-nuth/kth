@@ -1,3 +1,8 @@
+# version 0.11.0
+- Improved continuous integration.
+- Fix delay between incoming conections.
+- Basic wallet classes added to bitprim-core.
+
 # version 0.10.2
 
 - BIP activation's height fixed for Litecoin
