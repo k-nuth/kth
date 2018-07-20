@@ -1,3 +1,9 @@
+# version 0.12.0
+- Improved unconfirmed transactions validation for the get block template.
+- Improved get block template response creation times.
+- Added rpc support for getnetworkinfo.
+- Fix error when requesting unconfirmed transactions in BTC and LTC.
+
 # version 0.11.0
 - Improved continuous integration.
 - Fix delay between incoming conections.

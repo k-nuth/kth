@@ -84,7 +84,7 @@ The above commands use the default configuration hardcoded in the executable. Yo
 To view the change logs and release notes please go [here](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md)
 
 <!-- Links -->
-[badge.Appveyor]: https://ci.appveyor.com/api/projects/status/github/bitprim/bitprim-node-exe?svg=true&branch=release-0.11.0
+[badge.Appveyor]: https://ci.appveyor.com/api/projects/status/github/bitprim/bitprim-node-exe?svg=true&branch=release-0.12.0
 [badge.Gitter]: https://img.shields.io/badge/gitter-join%20chat-blue.svg
-[badge.Travis]: https://travis-ci.org/bitprim/bitprim-node-exe.svg?branch=release-0.11.0
+[badge.Travis]: https://travis-ci.org/bitprim/bitprim-node-exe.svg?branch=release-0.12.0
 [badge.version]: https://badge.fury.io/gh/bitprim%2Fbitprim-node-exe.svg
