@@ -1,4 +1,4 @@
-# Bitprim <a target="_blank" href="http://semver.org">![Version][badge.version]</a> <a target="_blank" href="https://travis-ci.org/bitprim/bitprim-node-exe">![Travis status][badge.Travis]</a> <a target="_blank" href="https://ci.appveyor.com/projects/bitprim/bitprim-node-exe">![Appveyor Status][badge.Appveyor]</a> <a target="_blank" href="https://gitter.im/bitprim/Lobby">![Gitter Chat][badge.Gitter]</a>
+# Bitprim <a target="_blank" href="http://semver.org">![Version][badge.version]</a> <a target="_blank" href="https://travis-ci.org/bitprim/bitprim-node-exe">![Travis status][badge.Travis]</a> <a target="_blank" href="https://ci.appveyor.com/projects/bitprim/bitprim-node-exe">![Appveyor Status][badge.Appveyor]</a> 
 
 > Multi-Cryptocurrency full-node and development platform
 
