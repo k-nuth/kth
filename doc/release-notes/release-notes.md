@@ -1,3 +1,8 @@
+# version 0.13.0
+- Added Keoken support.
+- Added wallet functionality.
+- Fixed some compiler warnings.
+
 # version 0.12.0
 - Improved unconfirmed transactions validation for the get block template.
 - Improved get block template response creation times.
@@ -11,8 +16,8 @@
 
 # version 0.10.2
 
-- BIP activation's height fixed for Litecoin
-- Added mempool transaction function to bitprim-node-cint
+- BIP activation's height fixed for Litecoin.
+- Added mempool transaction function to bitprim-node-cint.
 
 # version 0.10.1
 
