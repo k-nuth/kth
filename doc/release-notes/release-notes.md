@@ -1,3 +1,10 @@
+# version 0.15.0
+
+- Transactions and Blocks validation performance improvements.
+- [Bitcoin Cash](https://www.bitcoincash.org/) 2018-Nov-15 hard fork changes:
+    More details in [Bitcoin Cash 2018-Nov-15 hard fork](https://github.com/bitprim/bitprim/blob/master/doc/bch-announces/HF-2018-nov-15.md).
+
+
 # version 0.14.0
 
 - Modified Keoken API to allow save data in a external storage.
