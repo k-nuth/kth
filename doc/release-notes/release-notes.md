@@ -1,23 +1,35 @@
+# version 0.14.0
+
+- Modified Keoken API to allow save data in a external storage.
+
+
 # version 0.13.0
+
 - Added Keoken support.
 - Added wallet functionality.
 - Fixed some compiler warnings.
 
+
 # version 0.12.0
+
 - Improved unconfirmed transactions validation for the get block template.
 - Improved get block template response creation times.
 - Added rpc support for getnetworkinfo.
 - Fix error when requesting unconfirmed transactions in BTC and LTC.
 
+
 # version 0.11.0
+
 - Improved continuous integration.
 - Fix delay between incoming conections.
 - Basic wallet classes added to bitprim-core.
+
 
 # version 0.10.2
 
 - BIP activation's height fixed for Litecoin.
 - Added mempool transaction function to bitprim-node-cint.
+
 
 # version 0.10.1
 
@@ -29,6 +41,7 @@
 - Fix on vout index when requesting information about mempool's transactions.
 - Block and transactions added stop guards.
 
+
 # version 0.10.0
 
 - BIP0141 fixes for BTC and LTC.
@@ -37,10 +50,12 @@
 - P2P message fix for bitnodes counter.
 - The default value for minimum fee on incoming transactions changed to 0.1 statoshis/byte. This value can be changes in the configuration file.
 
+
 # version 0.9.1
 
 - The database structure was updated to support blocks with more than 65535 transactions. (The new structure is only used when Bitprim is compiled for Bitcoin Cash).
 - Fixed a bug where some transactions were not being writen to the history table when downloading the blockchain using checkpoints.
+
 
 # version 0.9.0
 
@@ -58,12 +73,14 @@
 - Some improvements and fixes in the C-API to support our new Insight-API.
 - Binary packaging improvements.
 
+
 # version 0.7.0
 
 - Improved RPC getblocktemplate response time.
 - Implemented RPC getaddressmempool command.
 - Some improvements and fixes in the C-API to support our new Insight-API.
 - Binary packaging improvements.
+
 
 # version 0.6.0
 
