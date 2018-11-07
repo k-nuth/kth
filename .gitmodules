@@ -38,3 +38,11 @@
 	path = bitprim-rpc
 	url = https://github.com/bitprim/bitprim-rpc.git
 	branch = master
+[submodule "bitprim-infrastructure"]
+	path = bitprim-infrastructure
+	url = https://github.com/bitprim/bitprim-infrastructure.git
+    branch = master
+[submodule "bitprim-domain"]
+	path = bitprim-domain
+	url = https://github.com/bitprim/bitprim-domain.git
+    branch = master
