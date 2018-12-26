@@ -1,3 +1,9 @@
+# version 0.17.0
+
+- Post 2018-Nov-15 HF changes.
+- Database performance improvements.
+- Bug fixes.
+
 # version 0.16.0
 
 - Database performance improvements.
@@ -12,7 +18,7 @@
 
 # version 0.14.0
 
-- Modified Keoken API to allow save data in a external storage.
+- Modified Keoken API to allow save data to an external storage.
 
 
 # version 0.13.0
