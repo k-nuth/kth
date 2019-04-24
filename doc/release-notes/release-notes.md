@@ -1,3 +1,8 @@
+# version 0.19.0
+
+- [Bitcoin Cash](https://www.bitcoincash.org/) 2019-May-15 hard fork changes:
+    More details in [Bitcoin Cash 2019-May-15 hard fork](https://github.com/bitcoincashorg/bitcoincash.org/blob/master/spec/2019-05-15-upgrade.md).
+
 # version 0.18.0
 
 - New Full-Indexed database implementation.
