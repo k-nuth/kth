@@ -1,0 +1,47 @@
+[submodule "ci-utils"]
+	path = ci-utils
+	url = https://github.com/k-nuth/ci-utils
+[submodule "secp256k1"]
+	path = secp256k1
+	url = https://github.com/k-nuth/secp256k1.git
+	branch = dev
+[submodule "domain"]
+	path = domain
+	url = https://github.com/k-nuth/domain.git
+	branch = dev
+[submodule "infrastructure"]
+	path = infrastructure
+	url = https://github.com/k-nuth/infrastructure.git
+	branch = dev
+[submodule "database"]
+	path = database
+	url = https://github.com/k-nuth/database.git
+	branch = dev
+[submodule "network"]
+	path = network
+	url = https://github.com/k-nuth/network.git
+	branch = dev
+[submodule "consensus"]
+	path = consensus
+	url = https://github.com/k-nuth/consensus.git
+	branch = dev
+[submodule "blockchain"]
+	path = blockchain
+	url = https://github.com/k-nuth/blockchain.git
+	branch = dev
+[submodule "node"]
+	path = node
+	url = https://github.com/k-nuth/node.git
+	branch = dev
+[submodule "rpc"]
+	path = rpc
+	url = https://github.com/k-nuth/rpc
+	branch = dev
+[submodule "node-exe"]
+	path = node-exe
+	url = https://github.com/k-nuth/node-exe.git
+	branch = dev
+[submodule "c-api"]
+	path = c-api
+	url = https://github.com/k-nuth/c-api.git
+	branch = dev
