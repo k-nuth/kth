@@ -25,7 +25,7 @@ endif()
 message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 # Check for baseline language coverage in the compiler for the C++11 standard.
 #------------------------------------------------------------------------------
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
