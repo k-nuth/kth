@@ -76,7 +76,7 @@ function build_bitprim {
     $cmake_bin/cmake .. -DBOOST_ROOT="$boost_root"
     make -j$cores
   else
-    git clone --recursive https://github.com/bitprim/bitprim.git
+    git clone --recursive https://github.com/k-nuth/kth.git
     cd bitprim
 	  mkdir build
 	  cd build

@@ -1,21 +1,7 @@
-#
-# Copyright (c) 2017 Bitprim developers (see AUTHORS)
-#
-# This file is part of Bitprim.
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
+# Copyright (c) 2016-2020 Knuth Project developers.
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 
 import os
 from conans import ConanFile, CMake
@@ -39,11 +25,11 @@ def get_channel():
 def get_conan_req_version():
     return get_content('conan_req_version')
 
-class BitprimConan(ConanFile):
+class KnuthConan(ConanFile):
     name = "bitprim"
     version = get_version()
     license = "http://www.boost.org/users/license.html"
-    url = "https://github.com/bitprim/bitprim"
+    url = "https://github.com/k-nuth/kth"
     description = "Bitcoin Cross-Platform C++ Development Toolkit"
     settings = "os", "compiler", "build_type", "arch"
 
@@ -104,17 +90,17 @@ class BitprimConan(ConanFile):
 
 
     generators = "cmake"
-    exports_sources = "src/*", "CMakeLists.txt", "cmake/*", "bitprim-coreConfig.cmake.in", "include/*", "test/*"
-    package_files = "build/lbitprim-core.a"
+    exports_sources = "src/*", "CMakeLists.txt", "cmake/*", "kth-coreConfig.cmake.in", "include/*", "test/*"
+    package_files = "build/lkth-core.a"
     build_policy = "missing"
 
-    requires = (("boost/1.66.0@bitprim/stable"))
+    requires = (("boost/1.66.0@kth/stable"))
 
     def requirements(self):
         if self.settings.os == "Linux" or self.settings.os == "Macos":
-            self.requires("gmp/6.1.2@bitprim/stable")
+            self.requires("gmp/6.1.2@kth/stable")
         if self.options.with_rpc:
-            self.requires("libzmq/4.2.2@bitprim/stable")
+            self.requires("libzmq/4.2.2@kth/stable")
         if self.options.currency == "LTC":
              self.requires("OpenSSL/1.0.2l@conan/stable")
 
@@ -184,9 +170,9 @@ class BitprimConan(ConanFile):
             if str(self.settings.compiler.libcxx) == "libstdc++" or str(self.settings.compiler.libcxx) == "libstdc++11":
                 cmake.definitions["NOT_USE_CPP11_ABI"] = option_on_off(False)
 
-        # cmake.definitions["BITPRIM_BUILD_NUMBER"] = os.getenv('BITPRIM_BUILD_NUMBER', '-')
+        # cmake.definitions["KTH_BUILD_NUMBER"] = os.getenv('KTH_BUILD_NUMBER', '-')
         # cmake.configure(source_dir=self.conanfile_directory)
-        cmake.definitions["BITPRIM_BUILD_NUMBER"] = os.getenv('BITPRIM_BUILD_NUMBER', '-')
+        cmake.definitions["KTH_BUILD_NUMBER"] = os.getenv('KTH_BUILD_NUMBER', '-')
         cmake.configure(source_dir=self.source_folder)
         cmake.build()
 
@@ -205,7 +191,7 @@ class BitprimConan(ConanFile):
 
     def package_info(self):
         self.cpp_info.includedirs = ['include']
-        self.cpp_info.libs = ["bitprim-core"]
+        self.cpp_info.libs = ["kth-core"]
 
         if self.settings.os == "Linux":
             self.cpp_info.libs.append("pthread")

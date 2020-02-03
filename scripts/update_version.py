@@ -1,23 +1,8 @@
 #!/usr/bin/env python3
 
-#
-# Copyright (c) 2017-2018 Bitprim Inc.
-#
-# This file is part of Bitprim.
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
+# Copyright (c) 2016-2020 Knuth Project developers.
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 # Usage: python3 update_version.py 0.10.0 --root_path ~/dev/
 #        new version is calculated from old version incrementing the minor part
@@ -73,12 +58,12 @@ def update_version(root_path, project, oldmajor, oldminor, oldpatch, newmajor, n
     
     
 
-    bitprim_project = 'bitprim-%s' % (project,)
+    bitprim_project = 'kth-%s' % (project,)
     #path = os.path.join(root_path, bitprim_project)
     
     print ('Updating ' + bitprim_project)
 
-    dep_files = ['bitprim-%sConfig.cmake.in']
+    dep_files = ['kth-%sConfig.cmake.in']
     nodep_files = ['CMakeLists.txt', 'conan_version', 'conanfile.py']
     version_files = ['version.hpp']
 

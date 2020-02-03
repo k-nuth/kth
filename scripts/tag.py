@@ -1,23 +1,8 @@
 #!/usr/bin/env python3
 
-#
-# Copyright (c) 2017-2018 Bitprim Inc.
-#
-# This file is part of Bitprim.
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
+# Copyright (c) 2016-2020 Knuth Project developers.
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 # Usage:    python3 tag.py x.y.z --root_path ~/dev/
 #           where x.y.z is the old version
@@ -46,7 +31,7 @@ def tag_repos(root_path,new_version):
     new_version_str = '.'.join(str(x) for x in new_version)
 
     for project in projects:
-        bitprim_project = 'bitprim-%s' % (project,)
+        bitprim_project = 'kth-%s' % (project,)
         os.chdir(bitprim_project)
         print ('Creating tag for ' + bitprim_project)
         make_tag(new_version_str)

@@ -1,6 +1,6 @@
-# Bitprim
-#
-# Copyright (c) 2017 Bitprim developers (see AUTHORS)
+# Copyright (c) 2016-2020 Knuth Project developers.
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 shallow_clone: true
 
@@ -111,16 +111,16 @@ install:
   - "%PYTHON%\\python.exe --version"
   - "%PYTHON%\\python.exe -c \"import struct;print( 8 * struct.calcsize('P'))\""
   - conan user # It creates the conan data directory
-  - conan remote add bitprim_temp https://api.bintray.com/conan/bitprim/bitprim
+  - conan remote add kth_temp https://api.bintray.com/conan/k-nuth/kth
 
 
 before_build:
   - call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvars64.bat" amd64
-  - mkdir C:\projects\bitprim-recursive
+  - mkdir C:\projects\kth-recursive
 
 build_script:
-  - cd C:\projects\bitprim-recursive
-  - git clone https://github.com/bitprim/bitprim --recursive
+  - cd C:\projects\kth-recursive
+  - git clone https://github.com/k-nuth/kth --recursive
   - cd bitprim
   - git checkout dev
   - git pull

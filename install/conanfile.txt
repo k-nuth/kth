@@ -1,11 +1,11 @@
 [requires]
-bitprim-node-cint/0.3@bitprim/testing
+kth-node-cint/0.3@kth/testing
 
 [generators]
 cmake
 
 [options]
-bitprim-node-cint:shared=False
+kth-node-cint:shared=False
 
 [imports]
 include/bitprim, *.h   -> ./bitprim/include/bitprim
