@@ -66,18 +66,18 @@ function build_cmake {
   fi
 }
 
-function build_bitprim {
+function build_kth {
 	cd $root_folder
-  if [ -d "$root_folder/bitprim" ]; then
-    echo "--->Upgrading bitprim"
-    cd bitprim
+  if [ -d "$root_folder/kth" ]; then
+    echo "--->Upgrading kth"
+    cd kth
     git pull
     cd build
     $cmake_bin/cmake .. -DBOOST_ROOT="$boost_root"
     make -j$cores
   else
     git clone --recursive https://github.com/k-nuth/kth.git
-    cd bitprim
+    cd kth
 	  mkdir build
 	  cd build
   	$cmake_bin/cmake .. -DBOOST_ROOT="$boost_root"
@@ -87,4 +87,4 @@ function build_bitprim {
 
 build_boost
 build_cmake
-build_bitprim
+build_kth

@@ -9,7 +9,7 @@ from os.path import expanduser
 
 def parse_args():
 
-    parser = ArgumentParser('Bitprim Release Manager')
+    parser = ArgumentParser('kth Release Manager')
     parser.add_argument("-rp", "--root_path", dest="root_path", help="root path where the projects are", default=expanduser("~"))
     parser.add_argument('old_version', type=str, nargs=1, help='old version')
     parser.add_argument('new_version', type=str, nargs='?', help='new version')

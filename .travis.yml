@@ -180,7 +180,7 @@ install:
 #       wget -O boost_1_64_0.tar.gz https://sourceforge.net/projects/boost/files/boost/1.64.0/boost_1_64_0.tar.gz/download
 #       tar -xzf boost_1_64_0.tar.gz
 #       cd boost_1_64_0
-#       wget -O boost_bin_fpic.tar.bz2 http://repo.bitprim.org/packages/binary/boost_bin_fpic.tar.bz2
+#       wget -O boost_bin_fpic.tar.bz2 http://repo.kth.cash/packages/binary/boost_bin_fpic.tar.bz2
 #       tar -xvjf boost_bin_fpic.tar.bz2
 #       export BOOST_OPTS="-DBOOST_ROOT=/home/travis/deps/boost_1_64_0 -DBOOST_INCLUDEDIR=/home/travis/deps/boost_1_64_0 -DBOOST_LIBRARYDIR=/home/travis/deps/boost_1_64_0/lib"
 #       sudo ldconfig
@@ -284,10 +284,9 @@ script:
 
 notifications:
   email: 
-    - ci@bitprim.org
-    - dev@bitprim.org
-    - fernando@bitprim.org
-  slack: bitprim:CGkcy3Bjx7UUIxu9FSZTpaxE
+    - ci@kth.cash
+    - dev@kth.cash
+    - fernando@kth.cash
   webhooks:
     urls: https://webhooks.gitter.im/e/a19dd2b03bf676d2b622
     on_success: change

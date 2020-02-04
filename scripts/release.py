@@ -26,7 +26,7 @@ projects = ['core', 'consensus', 'database', 'network', 'blockchain', 'node', 'r
 
 def create_pr(project,new_version, token):
     g = Github(token)
-    org = g.get_organization('bitprim')
+    org = g.get_organization('kth')
     repo = org.get_repo(project)
     pr = repo.create_pull('Release ' + new_version,'','master','release-' + new_version,True )
     print('PR created:' + str(pr.id))
@@ -44,7 +44,7 @@ def call_update_version(root_path, project,old_version,new_version):
 
 def clone():
     os.system('git clone https://github.com/k-nuth/kth -b dev --recursive')
-    os.chdir('bitprim')
+    os.chdir('kth')
     os.system('git submodule update --remote')
     return
 
@@ -58,29 +58,29 @@ def release(root_path,old_version,new_version, token):
 
     os.chdir(root_path)
 
-    if os.path.exists('bitprim') == False:
+    if os.path.exists('kth') == False:
         print('Cloning...')
         clone()
     else:
-        os.chdir('bitprim')
+        os.chdir('kth')
 
     new_version_str = '.'.join(str(x) for x in new_version)
 
     for project in projects:
-        bitprim_project = 'kth-%s' % (project,)
-        os.chdir(bitprim_project)
-        print ('Creating release branch for ' + bitprim_project)
+        kth_project = 'kth-%s' % (project,)
+        os.chdir(kth_project)
+        print ('Creating release branch for ' + kth_project)
         create_branch(new_version_str)
-        os.chdir(root_path + 'bitprim')
+        os.chdir(root_path + 'kth')
         print ('Updating version number')
         call_update_version(root_path, project, old_version, new_version)
-        os.chdir(bitprim_project)
-        print ('Commiting release branch for ' + bitprim_project)
+        os.chdir(kth_project)
+        print ('Commiting release branch for ' + kth_project)
         commit(new_version_str)
         if token != '':
-            print ('Creating PR for ' + bitprim_project)
-            create_pr(bitprim_project, new_version_str, token)
-        os.chdir(root_path + 'bitprim')    
+            print ('Creating PR for ' + kth_project)
+            create_pr(kth_project, new_version_str, token)
+        os.chdir(root_path + 'kth')    
 
     return
 

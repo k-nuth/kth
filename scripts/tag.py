@@ -26,16 +26,16 @@ def make_tag(new_version):
 def tag_repos(root_path,new_version):
 
     os.chdir(root_path)
-    os.chdir('bitprim')
+    os.chdir('kth')
 
     new_version_str = '.'.join(str(x) for x in new_version)
 
     for project in projects:
-        bitprim_project = 'kth-%s' % (project,)
-        os.chdir(bitprim_project)
-        print ('Creating tag for ' + bitprim_project)
+        kth_project = 'kth-%s' % (project,)
+        os.chdir(kth_project)
+        print ('Creating tag for ' + kth_project)
         make_tag(new_version_str)
-        os.chdir(root_path + 'bitprim')
+        os.chdir(root_path + 'kth')
 
     return
 

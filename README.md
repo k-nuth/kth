@@ -27,13 +27,13 @@ with all four main features:
   
 # Documentation
 
-For more detailed documentation, please refer to [Bitprim Docs](https://bitprim.github.io/docfx/index.html)
+For more detailed documentation, please refer to [Docs](https://k-nuth.github.io/docfx/index.html)
 
 <!-- Links -->
 [badge.Travis]: https://travis-ci.org/k-nuth/node-exe.svg?branch=dev
 [badge.Appveyor]: https://ci.appveyor.com/api/projects/status/github/k-nuth/node-exe?svg=true&branch=dev
 [badge.Cirrus]: https://api.cirrus-ci.com/github/k-nuth/node-exe.svg?branch=dev
-[badge.version]: https://badge.fury.io/gh/bitprim%2Fkth-node-exe.svg
+[badge.version]: https://badge.fury.io/gh/k-nuth%2Fkth-node-exe.svg
 [badge.release]: https://img.shields.io/github/release/k-nuth/node-exe.svg
 
 [badge.telegram]: https://img.shields.io/badge/telegram-badge-blue.svg?logo=telegram

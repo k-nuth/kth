@@ -8,12 +8,12 @@ cmake
 kth-node-cint:shared=False
 
 [imports]
-include/bitprim, *.h   -> ./bitprim/include/bitprim
-include/bitprim, *.hpp -> ./bitprim/include/bitprim
-lib, *.lib    -> ./bitprim/lib
-lib, *.a      -> ./bitprim/lib
-lib, *.dylib* -> ./bitprim/lib
-lib, *.so     -> ./bitprim/lib
-lib, *.dll    -> ./bitprim/lib
-bin, bn.exe -> ./bitprim/bin
-bin, bn     -> ./bitprim/bin
+include/kth, *.h   -> ./kth/include/kth
+include/kth, *.hpp -> ./kth/include/kth
+lib, *.lib    -> ./kth/lib
+lib, *.a      -> ./kth/lib
+lib, *.dylib* -> ./kth/lib
+lib, *.so     -> ./kth/lib
+lib, *.dll    -> ./kth/lib
+bin, bn.exe -> ./kth/bin
+bin, bn     -> ./kth/bin

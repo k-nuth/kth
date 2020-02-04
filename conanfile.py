@@ -26,7 +26,7 @@ def get_conan_req_version():
     return get_content('conan_req_version')
 
 class KnuthConan(ConanFile):
-    name = "bitprim"
+    name = "kth"
     version = get_version()
     license = "http://www.boost.org/users/license.html"
     url = "https://github.com/k-nuth/kth"

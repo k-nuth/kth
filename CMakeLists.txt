@@ -4,9 +4,9 @@
 
 cmake_minimum_required(VERSION 3.4)
 
-# bitprim
+# kth
 #==============================================================================
-project(bitprim
+project(kth
   VERSION 3.0.0
   LANGUAGES CXX C)
 

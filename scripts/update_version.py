@@ -14,23 +14,23 @@ import argument_parser
 
 projects = ['core', 'consensus', 'database', 'network', 'blockchain', 'node', 'rpc', 'node-cint', 'node-exe']
 
-def get_files(bitprim_project, f):
-    #print(bitprim_project)
+def get_files(kth_project, f):
+    #print(kth_project)
     matches = []
-    for root, dirnames, filenames in os.walk(bitprim_project):
+    for root, dirnames, filenames in os.walk(kth_project):
         for filename in fnmatch.filter(filenames, f):
             matches.append(os.path.join(root, filename))
     return matches
 
-def find_and_process_file(bitprim_project, filename, old_str, new_str):
-    files = get_files(bitprim_project, filename)
+def find_and_process_file(kth_project, filename, old_str, new_str):
+    files = get_files(kth_project, filename)
     for f in files:
         print(f)
         with fileinput.FileInput(f, inplace=True) as file:
             for line in file:
                 print(line.replace(old_str, new_str), end='')
 
-def find_and_process_file_version(bitprim_project, filename, old_str, new_str, oldmajor, oldminor, oldpatch, newmajor, newminor, newpatch):
+def find_and_process_file_version(kth_project, filename, old_str, new_str, oldmajor, oldminor, oldpatch, newmajor, newminor, newpatch):
     major_str_old = '_MAJOR_VERSION %s' % (oldmajor,)
     minor_str_old = '_MINOR_VERSION %s' % (oldminor,)
     patch_str_old = '_PATCH_VERSION %s' % (oldpatch,)
@@ -41,7 +41,7 @@ def find_and_process_file_version(bitprim_project, filename, old_str, new_str, o
 
     # print(filename)
 
-    files = get_files(bitprim_project, filename)
+    files = get_files(kth_project, filename)
 
     for f in files:
         # print(f)
@@ -58,10 +58,10 @@ def update_version(root_path, project, oldmajor, oldminor, oldpatch, newmajor, n
     
     
 
-    bitprim_project = 'kth-%s' % (project,)
-    #path = os.path.join(root_path, bitprim_project)
+    kth_project = 'kth-%s' % (project,)
+    #path = os.path.join(root_path, kth_project)
     
-    print ('Updating ' + bitprim_project)
+    print ('Updating ' + kth_project)
 
     dep_files = ['kth-%sConfig.cmake.in']
     nodep_files = ['CMakeLists.txt', 'conan_version', 'conanfile.py']
@@ -71,14 +71,14 @@ def update_version(root_path, project, oldmajor, oldminor, oldpatch, newmajor, n
     new_str = '%s.%s.%s' % (newmajor, newminor, newpatch)
 
     for nodep_file in nodep_files:
-        find_and_process_file(bitprim_project, nodep_file, old_str, new_str)
+        find_and_process_file(kth_project, nodep_file, old_str, new_str)
 
     for dep_file in dep_files:
         dep_file = dep_file % (project,)
-        find_and_process_file(bitprim_project, dep_file, old_str, new_str)
+        find_and_process_file(kth_project, dep_file, old_str, new_str)
 
     for version_file in version_files:
-        find_and_process_file_version(bitprim_project, version_file, old_str, new_str, oldmajor, oldminor, oldpatch, newmajor, newminor, newpatch)
+        find_and_process_file_version(kth_project, version_file, old_str, new_str, oldmajor, oldminor, oldpatch, newmajor, newminor, newpatch)
 
     return
 
