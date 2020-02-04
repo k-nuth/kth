@@ -1,21 +1,6 @@
-#
-# Copyright (c) 2017 Bitprim developers (see AUTHORS)
-#
-# This file is part of Bitprim.
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
+# Copyright (c) 2016-2020 Knuth Project developers.
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 branches:
   only:
@@ -30,7 +15,7 @@ linux: &linux
    os: linux
    sudo: required
    language: python
-  #  python: "3.6"
+  #  python: "3.7"
    services:
      - docker
 
@@ -38,7 +23,7 @@ osx: &osx
    os: osx
    sudo: required
    # language: python
-   # python: "3.6"
+   # python: "3.7"
    language: generic
 
 matrix:
@@ -195,7 +180,7 @@ install:
 #       wget -O boost_1_64_0.tar.gz https://sourceforge.net/projects/boost/files/boost/1.64.0/boost_1_64_0.tar.gz/download
 #       tar -xzf boost_1_64_0.tar.gz
 #       cd boost_1_64_0
-#       wget -O boost_bin_fpic.tar.bz2 http://repo.bitprim.org/packages/binary/boost_bin_fpic.tar.bz2
+#       wget -O boost_bin_fpic.tar.bz2 http://repo.kth.cash/packages/binary/boost_bin_fpic.tar.bz2
 #       tar -xvjf boost_bin_fpic.tar.bz2
 #       export BOOST_OPTS="-DBOOST_ROOT=/home/travis/deps/boost_1_64_0 -DBOOST_INCLUDEDIR=/home/travis/deps/boost_1_64_0 -DBOOST_LIBRARYDIR=/home/travis/deps/boost_1_64_0/lib"
 #       sudo ldconfig
@@ -248,7 +233,7 @@ script:
       # /usr/bin/docker run --rm -ti -v ${TRAVIS_BUILD_DIR}:/home/conan/project -v ${TRAVIS_BUILD_DIR}/.travis/entrypoint.sh:/tmp/entrypoint.sh ${CONAN_DOCKER_IMAGE} /bin/bash -c /tmp/entrypoint.sh
     else
       conan user
-      conan remote add bitprim_temp https://api.bintray.com/conan/bitprim/bitprim
+      conan remote add kth_temp https://api.bintray.com/conan/k-nuth/kth
 
 
       cd ${TRAVIS_BUILD_DIR}
@@ -299,10 +284,9 @@ script:
 
 notifications:
   email: 
-    - ci@bitprim.org
-    - dev@bitprim.org
-    - fernando@bitprim.org
-  slack: bitprim:CGkcy3Bjx7UUIxu9FSZTpaxE
+    - ci@kth.cash
+    - dev@kth.cash
+    - fernando@kth.cash
   webhooks:
     urls: https://webhooks.gitter.im/e/a19dd2b03bf676d2b622
     on_success: change

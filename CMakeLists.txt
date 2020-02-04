@@ -1,46 +1,31 @@
-#
-# Copyright (c) 2017 Bitprim developers (see AUTHORS)
-#
-# This file is part of Bitprim.
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
+# Copyright (c) 2016-2020 Knuth Project developers.
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 cmake_minimum_required(VERSION 3.4)
 
-# bitprim
+# kth
 #==============================================================================
-project(bitprim
+project(kth
   VERSION 3.0.0
   LANGUAGES CXX C)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CURRENCY "BCH" CACHE STRING "Specify the Cryptocurrency (BCH|BTC|LTC).")
 if (${CURRENCY} STREQUAL "BCH")
-    add_definitions(-DBITPRIM_CURRENCY_BCH)
+    add_definitions(-DKTH_CURRENCY_BCH)
 elseif (${CURRENCY} STREQUAL "BTC")
-    add_definitions(-DBITPRIM_CURRENCY_BTC)
+    add_definitions(-DKTH_CURRENCY_BTC)
 elseif (${CURRENCY} STREQUAL "LTC")
-    add_definitions(-DBITPRIM_CURRENCY_LTC)
+    add_definitions(-DKTH_CURRENCY_LTC)
 else()
     message(FATAL_ERROR "Invalid Cryptocurrency: ${CURRENCY}")
 endif()
 
-message(STATUS "Bitprim: Cryptocurrency: ${CURRENCY}")
+message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 # Check for baseline language coverage in the compiler for the C++11 standard.
 #------------------------------------------------------------------------------
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
@@ -73,8 +58,8 @@ endif()
 # ---------------------------------------------------------------
 
 option(WITH_RPC "Compile with RPC-ZMQ support." OFF)
-option(WITH_REMOTE_BLOCKCHAIN "Compile with remote bitprim-blockchain (aka. bitprim-blockchain-requester)." OFF)
-option(WITH_REMOTE_DATABASE "Compile with remote bitprim-database (aka. bitprim-database-requester)." OFF)
+option(WITH_REMOTE_BLOCKCHAIN "Compile with remote kth-blockchain (aka. kth-blockchain-requester)." OFF)
+option(WITH_REMOTE_DATABASE "Compile with remote kth-database (aka. kth-database-requester)." OFF)
 option(WITH_LOCAL_MINING "Compile with local mining." ON)
 option(ENABLE_TEST "Compile with enable test." OFF)
 option(ENABLE_TESTS "Compile with enable test." OFF)
@@ -110,7 +95,7 @@ set(ENABLE_SHARED_NODE_CINT ON)
 
 set(WITH_RPC ON)
 if (WITH_RPC)
-    add_definitions(-DBITPRIM_WITH_RPC)
+    add_definitions(-DKTH_WITH_RPC)
 endif()
 
 if (WITH_LOCAL_MINING)
@@ -138,7 +123,7 @@ endif()
 # bla bla bla
 #------------------------------------------------------------------------------
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
-include(BitprimTools)
+include(KnuthTools)
 
 
 # Build
@@ -148,15 +133,15 @@ if (NOT DEFINED ENABLE_MODULE_RECOVERY)
 endif()
 
 add_subdirectory(secp256k1)
-add_subdirectory(bitprim-core)
-add_subdirectory(bitprim-consensus)
-add_subdirectory(bitprim-network)
-add_subdirectory(bitprim-database)
-add_subdirectory(bitprim-blockchain)
-add_subdirectory(bitprim-node)
-add_subdirectory(bitprim-rpc)
-add_subdirectory(bitprim-node-exe)
-add_subdirectory(bitprim-node-cint)
+add_subdirectory(kth-core)
+add_subdirectory(kth-consensus)
+add_subdirectory(kth-network)
+add_subdirectory(kth-database)
+add_subdirectory(kth-blockchain)
+add_subdirectory(kth-node)
+add_subdirectory(kth-rpc)
+add_subdirectory(kth-node-exe)
+add_subdirectory(kth-node-cint)
 
 # Tests
 #==============================================================================
