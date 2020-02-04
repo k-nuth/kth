@@ -1,12 +1,16 @@
 # Knuth <a target="_blank" href="http://semver.org">![Version][badge.version]</a> <a target="_blank" href="https://travis-ci.org/k-nuth/node-exe">![Build status][badge.Travis]</a> <a target="_blank" href="https://ci.appveyor.com/projects/k-nuth/node-exe">![Build Status][badge.Appveyor]</a> <a target="_blank" href="https://gitter.im/bitprim/Lobby">![Gitter Chat][badge.Gitter]</a>
 
 
+
 # Knuth 
 <a target="_blank" href="https://github.com/k-nuth/node-exe/releases">![Github Releases][badge.release]</a> 
 <a target="_blank" href="https://travis-ci.org/k-nuth/node-exe">![Build status][badge.Travis]</a> 
 <a target="_blank" href="https://ci.appveyor.com/projects/k-nuth/node-exe">![Build Status][badge.Appveyor]</a> 
 <a target="_blank" href="https://cirrus-ci.com/github/k-nuth/node-exe">![Build Status][badge.Cirrus]</a> 
-<a target="_blank" href="https://gitter.im/bitprim/Lobby">![Gitter Chat][badge.Gitter</a>
+<a target="_blank" href="https://t.me/knuth_cash">![Telegram][badge.telegram]</a>
+<a target="_blank" href="https://k-nuth.slack.com/">![Slack][badge.slack]</a>
+
+
 
 
 <!-- [![Build Status](https://travis-ci.org/k-nuth/kth-conan-gmp.svg?branch=master)](https://travis-ci.org/k-nuth/kth-conan-gmp) 
@@ -58,5 +62,9 @@ For more detailed documentation, please refer to [Bitprim Docs](https://bitprim.
 [badge.Cirrus]: https://api.cirrus-ci.com/github/k-nuth/node-exe.svg?branch=dev
 [badge.version]: https://badge.fury.io/gh/bitprim%2Fkth-node-exe.svg
 [badge.release]: https://img.shields.io/github/release/k-nuth/node-exe.svg
+
+[badge.telegram]: https://img.shields.io/badge/telegram-badge-blue.svg?logo=telegram
+[badge.slack]: https://img.shields.io/badge/slack-badge-orange.svg?logo=slack
+
 <!-- [badge.Gitter]: https://img.shields.io/badge/gitter-join%20chat-blue.svg -->
 
