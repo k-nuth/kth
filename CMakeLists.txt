@@ -58,8 +58,6 @@ endif()
 # ---------------------------------------------------------------
 
 option(WITH_RPC "Compile with RPC-ZMQ support." OFF)
-option(WITH_REMOTE_BLOCKCHAIN "Compile with remote kth-blockchain (aka. kth-blockchain-requester)." OFF)
-option(WITH_REMOTE_DATABASE "Compile with remote kth-database (aka. kth-database-requester)." OFF)
 option(WITH_LOCAL_MINING "Compile with local mining." ON)
 option(ENABLE_TEST "Compile with enable test." OFF)
 option(ENABLE_TESTS "Compile with enable test." OFF)
@@ -80,13 +78,11 @@ option(WITH_EXAMPLES "Compile with examples." OFF)
 option(ENABLE_SHARED "" OFF)
 option(ENABLE_SHARED_NODE_CINT "" ON)
 
-set(WITH_REMOTE_DATABASE OFF)
 set(WITH_LOCAL_MINING OFF)
 set(ENABLE_TEST OFF)
 set(ENABLE_TESTS OFF)
 set(ENABLE_MODULE_RECOVERY ON)
 set(WITH_TOOLS OFF)
-set(WITH_REMOTE_BLOCKCHAIN OFF)
 set(WITH_TESTS OFF)
 set(WITH_EXAMPLES OFF)
 
