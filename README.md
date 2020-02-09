@@ -10,9 +10,9 @@ Knuth is a high performance implementation of the Bitcoin protocol focused on us
 ## Multiple cryptos
 
 Knuth supports the following cryptocurrencies in the same code base:
-- [BCH - Bitcoin Cash](https://www.bitcoincash.org/)
-- [BTC - Bitcoin](https://bitcoin.org/)
-- [LTC - Litecoin](https://litecoin.org/)
+- [Bitcoin Cash (BCH)](https://www.bitcoincash.org/)
+- [Bitcoin (BTC)](https://bitcoin.org/)
+- [Litecoin (LTC)](https://litecoin.org/)
 
 Choosing a cryptocurrency is just as simple as changing a switch in our build system, [take a look here](#getting-started).
 
@@ -49,57 +49,45 @@ If you find a problem in any other platform, please [let us know](https://github
 
 ## Getting started
 
-So, for any platform, an installation can be performed in 3 simple steps:
+Install and run Knuth is very easy:
 
-1. Install the Knuth build helper:
+1. Install and configure the Knuth build helper:
 ```
-pip install kthbuild --user --upgrade
-```
+$ pip install kthbuild --user --upgrade
 
-2. Configure the Conan remote:
-```
-conan remote add kth https://api.bintray.com/conan/k-nuth/kth
+$ conan remote add kth https://api.bintray.com/conan/k-nuth/kth
 ```
 
-3. Install the appropriate executable:
+2. Install the appropriate node executable:
 
 ```
 # For Bitcoin Cash (default)
-conan install kth/0.X@kth/stable -o currency=BCH
+$ conan install kth/0.X@kth/stable -o currency=BCH
 
-# For Bitcoin Core
-conan install kth/0.X@kth/stable -o currency=BTC
+# For Bitcoin
+$ conan install kth/0.X@kth/stable -o currency=BTC
 
 # For Litecoin
-conan install kth/0.X@kth/stable -o currency=LTC
+$ conan install kth/0.X@kth/stable -o currency=LTC
 ```
 
-## Building from source Requirements
+(`0.X` is an alias for our latest uploaded package)
 
-In the case we don't have pre-built binaries for your plarform, it is necessary to build from the source code, so you need to add the following requirements to the previous ones:
+3. Run the node:
 
-- C++17 conforming compiler.
-- [CMake](https://cmake.org/) building tool, version 3.8 or newer.
+```
+# Initialize the database
+$ ./kth -i
 
-## Running the node
+# Run the node
+$ ./kth
+```
 
-In order to run the full node you have to initialize the database and then run the node:
-
-1. Run the following to initialize the database:
-
-```./kth -i```
-
-2. finally, run the node:
-
-```./kth```
-
-
-For more more detailed instructions, please refer to http://bitcoinverde.org/documentation/
+For more more detailed instructions, please refer to https://k-nuth.github.io/docs/
 
 ## Roadmap
 
 Our goal is to become a reliable implementation for use in mining and the one with the best APIs, so we need to:
-
 
 - Implement the Bitcoin-Core and Bitcoin-ABC testing batteries, to ensure compatibility with them.
 
@@ -115,13 +103,20 @@ Our goal is to become a reliable implementation for use in mining and the one wi
 
 ## Donation
 
+We adhere to the feature-by-feature funding model proposed by Bitcoin Verde.
+
+We believe that the feature-by-feature funding model proposed by [Bitcoin Verde](https://read.cash/@joshmgreen/bitcoin-verdes-response-to-the-miner-sponsored-development-fund-34028b1e#funding-bitcoin-verde) fits with our project.
+
+Take a look at our [issues](https://github.com/k-nuth/kth/issues) to see if you want to donate towards a specific objective, or you can contact us by [Telegram](https://t.me/knuth_cash), [Slack](https://k-nuth.slack.com/) or info@kth.cash.
+
+
 ## Documentation
 
 We are working to improve the documentation, which is [located here](https://k-nuth.github.io/docs/).
 
 ## Issues
 
-Each of our modules has its own Github repository. In case you want to create an issue, please do so in our [main repository](https://github.com/k-nuth/kth).
+Each of our modules has its own Github repository, but in case you want to create an issue, please do so in our [main repository](https://github.com/k-nuth/kth/issues).
 
 ## Contact
 
