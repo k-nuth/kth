@@ -103,8 +103,6 @@ Our goal is to become a reliable implementation for use in mining and the one wi
 
 ## Donation
 
-We adhere to the feature-by-feature funding model proposed by Bitcoin Verde.
-
 We believe that the feature-by-feature funding model proposed by [Bitcoin Verde](https://read.cash/@joshmgreen/bitcoin-verdes-response-to-the-miner-sponsored-development-fund-34028b1e#funding-bitcoin-verde) fits with our project.
 
 Take a look at our [issues](https://github.com/k-nuth/kth/issues) to see if you want to donate towards a specific objective, or you can contact us by [Telegram](https://t.me/knuth_cash), [Slack](https://k-nuth.slack.com/) or info@kth.cash.
