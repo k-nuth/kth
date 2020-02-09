@@ -82,8 +82,7 @@ $ ./kth -i
 # Run the node
 $ ./kth
 ```
-
-For more more detailed instructions, please refer to https://k-nuth.github.io/docs/
+For more more detailed instructions, please refer to our [documentation](https://k-nuth.github.io/docs/).
 
 ## Roadmap
 
@@ -107,7 +106,6 @@ We believe that the feature-by-feature funding model proposed by [Bitcoin Verde]
 
 Take a look at our [issues](https://github.com/k-nuth/kth/issues) to see if you want to donate towards a specific objective, or you can contact us by [Telegram](https://t.me/knuth_cash), [Slack](https://k-nuth.slack.com/) or info@kth.cash.
 
-
 ## Documentation
 
 We are working to improve the documentation, which is [located here](https://k-nuth.github.io/docs/).
@@ -118,8 +116,7 @@ Each of our modules has its own Github repository, but in case you want to creat
 
 ## Contact
 
-You can contact us through our [Telegram](https://t.me/knuth_cash) and [Slack](https://k-nuth.slack.com/) groups or you can write to us at info@kth.cash.
-
+You can contact us through our [Telegram](https://t.me/knuth_cash) and [Slack](https://k-nuth.slack.com/) groups or write to us at info@kth.cash.
 
 <!-- Links -->
 [badge.Travis]: https://travis-ci.org/k-nuth/node-exe.svg?branch=master
