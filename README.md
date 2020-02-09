@@ -41,7 +41,7 @@ Any protocol change can be introduced in Knuth much faster and more efficiently 
 
 ## Cross-platform
 
-Knuth can be used in any computer architecture and operating system, the only requirement is a 64-bit system.
+Knuth can be used in any computer architecture and operating system, it only requires a 64-bit system.
 
 Knuth has been well tested on x86-64 processors and on the following operating systems: FreeBSD, Linux, macOS and Windows. However, it is not limited to these, Knuth can be used in any computer architecture and any operating system, the only requirement is a 64-bit system.
 
