@@ -1,48 +1,43 @@
-[submodule "secp256k1"]
-	path = secp256k1
-	url = https://github.com/bitprim/secp256k1.git
-    branch = master
-[submodule "bitprim-core"]
-	path = bitprim-core
-	url = https://github.com/bitprim/bitprim-core.git
-    branch = master
-[submodule "bitprim-database"]
-	path = bitprim-database
-	url = https://github.com/bitprim/bitprim-database.git
+[submodule "ci-utils"]
+	path = ci-utils
+	url = https://github.com/k-nuth/ci-utils
+[submodule "domain"]
+	path = domain
+	url = https://github.com/k-nuth/domain.git
 	branch = master
-[submodule "bitprim-network"]
-	path = bitprim-network
-	url = https://github.com/bitprim/bitprim-network.git
+[submodule "infrastructure"]
+	path = infrastructure
+	url = https://github.com/k-nuth/infrastructure.git
 	branch = master
-[submodule "bitprim-consensus"]
-	path = bitprim-consensus
-	url = https://github.com/bitprim/bitprim-consensus.git
+[submodule "database"]
+	path = database
+	url = https://github.com/k-nuth/database.git
 	branch = master
-[submodule "bitprim-blockchain"]
-	path = bitprim-blockchain
-	url = https://github.com/bitprim/bitprim-blockchain.git
+[submodule "network"]
+	path = network
+	url = https://github.com/k-nuth/network.git
 	branch = master
-[submodule "bitprim-node"]
-	path = bitprim-node
-	url = https://github.com/bitprim/bitprim-node.git
+[submodule "consensus"]
+	path = consensus
+	url = https://github.com/k-nuth/consensus.git
 	branch = master
-[submodule "bitprim-node-exe"]
-	path = bitprim-node-exe
-	url = https://github.com/bitprim/bitprim-node-exe.git
+[submodule "blockchain"]
+	path = blockchain
+	url = https://github.com/k-nuth/blockchain.git
 	branch = master
-[submodule "bitprim-node-cint"]
-	path = bitprim-node-cint
-	url = https://github.com/bitprim/bitprim-node-cint.git
+[submodule "node"]
+	path = node
+	url = https://github.com/k-nuth/node.git
 	branch = master
-[submodule "bitprim-rpc"]
-	path = bitprim-rpc
-	url = https://github.com/bitprim/bitprim-rpc.git
+[submodule "rpc"]
+	path = rpc
+	url = https://github.com/k-nuth/rpc
 	branch = master
-[submodule "bitprim-infrastructure"]
-	path = bitprim-infrastructure
-	url = https://github.com/bitprim/bitprim-infrastructure.git
-    branch = master
-[submodule "bitprim-domain"]
-	path = bitprim-domain
-	url = https://github.com/bitprim/bitprim-domain.git
-    branch = master
+[submodule "node-exe"]
+	path = node-exe
+	url = https://github.com/k-nuth/node-exe.git
+	branch = master
+[submodule "c-api"]
+	path = c-api
+	url = https://github.com/k-nuth/c-api.git
+	branch = master

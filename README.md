@@ -1,90 +1,135 @@
-# Bitprim <a target="_blank" href="http://semver.org">![Version][badge.version]</a> <a target="_blank" href="https://travis-ci.org/bitprim/bitprim-node-exe">![Travis status][badge.Travis]</a> <a target="_blank" href="https://ci.appveyor.com/projects/bitprim/bitprim-node-exe">![Appveyor Status][badge.Appveyor]</a> 
+<!-- <a target="_blank" href="http://semver.org">![Version][badge.version]</a> -->
+<!-- <a target="_blank" href="https://cirrus-ci.com/github/k-nuth/node-exe">![Build Status][badge.Cirrus]</a> -->
 
-> Multi-Cryptocurrency full-node and development platform
+# knuth <a target="_blank" href="https://github.com/k-nuth/node-exe/releases">![Github Releases][badge.release]</a> <a target="_blank" href="https://travis-ci.org/k-nuth/node-exe">![Build status][badge.Travis]</a> <a target="_blank" href="https://ci.appveyor.com/projects/k-nuth/node-exe">![Build Status][badge.Appveyor]</a> <a href="#">![CPP][badge.cpp]</a> <a target="_blank" href="https://t.me/knuth_cash">![Telegram][badge.telegram]</a> <a target="_blank" href="https://k-nuth.slack.com/">![Slack][badge.slack]</a>
 
-*Bitprim* allows you to run a full [Bitcoin Cash](https://www.bitcoincash.org/)/[Bitcoin](https://bitcoin.org/)/[Litecoin](https://litecoin.org/) node,
-with all four main features:
-  * Wallet
-  * Mining
-  * Full blockchain
-  * Routing
+> High performance Bitcoin development platform.
 
-*Bitprim* also works as a cryptocurrency development platform with several programmable APIs:
-  * C++
-  * C
-  * C#
-  * Python
-  * Javascript
-  * Rust
-  * Golang
+Knuth is a high performance implementation of the Bitcoin protocol focused on users requiring extra performance and flexibility, what makes it the best platform for wallets, exchanges, block explorers and miners.
 
-... and networking APIs: 
-  * bitprim-insight: A Bitprim implementation of the Insight-API
-  * JSON-RPC
-  * Libbitcoin BS-BX protocol
+## Multiple cryptos
 
-## Installation Requirements
+Knuth supports the following cryptocurrencies in the same code base:
+- [Bitcoin Cash (BCH)](https://www.bitcoincash.org/)
+- [Bitcoin (BTC)](https://bitcoin.org/)
+- [Litecoin (LTC)](https://litecoin.org/)
 
-- 64-bit machine.
-- [Conan](https://www.conan.io/) package manager, version 1.4.0 or newer. See [Conan Installation](http://docs.conan.io/en/latest/installation.html#install-with-pip-recommended).
+Choosing a cryptocurrency is just as simple as changing a switch in our build system, [take a look here](#getting-started).
 
-## Installation Procedure
+Also, given its modular design and beautiful code, Knuth allows you to implement other cryptocurrencies with very few code changes.
 
-The *Bitprim* executables can be installed on Linux, macOS, FreeBSD, Windows and others. These binaries are pre-built for the most usual operating system/compiler combinations and hosted in an online repository. If there are no pre-built binaries for your platform, a build from source will be attempted.
+## Not just a node
 
-So, for any platform, an installation can be performed in 2 simple steps:
+Knuth is a multi-crypto full node, but it is also a development platform.
 
-1. Configure the Conan remote
+Knuth's core is written in C++17, on top of it we provide a set of libraries and modules written in various programming languages that you can use as basis for building your application.
+
+At the moment we have libraries in the following languages: [C++](https://github.com/k-nuth/node), [C](https://github.com/k-nuth/c-api), [C#](https://github.com/k-nuth/cs-api), [Python](https://github.com/k-nuth/py-api), [Javascript](https://github.com/k-nuth/js-api) and [Golang](https://github.com/k-nuth/go-api).
+You can build your own library in the language of your choice on top of our [C library](https://github.com/k-nuth/c-api).
+
+## Performance matters
+
+We designed Knuth to be a high performance node, so our build system has the ability to automatically detect the microarchitecture of your processor and perform an optimized build for it.
+
+For those who don't want to wait for compilation times, we provide pre-built binaries compatible with [Intel's Haswell microarchitecture](https://en.wikipedia.org/wiki/Haswell_(microarchitecture)). But you don't have to worry about that, our build system will do everything for you.
+
+## Modular architecture
+
+Knuth is based on a modular architecture simple to modify, expand and learn.
+
+Any protocol change can be introduced in Knuth much faster and more efficiently than in reference implementations.
+
+## Cross-platform
+
+Knuth can be used in any computer architecture and operating system, it only requires a 64-bit system.
+
+Knuth has been well tested on x86-64 processors and on the following operating systems: FreeBSD, Linux, macOS and Windows. However, it is not limited to these, Knuth can be used in any computer architecture and any operating system, the only requirement is a 64-bit system.
+
+If you find a problem in any other platform, please [let us know](https://github.com/k-nuth/kth/issues).
+
+## Getting started
+
+Install and run Knuth is very easy:
+
+1. Install and configure the Knuth build helper:
 ```
-conan remote add bitprim https://api.bintray.com/conan/bitprim/bitprim
+$ pip install kthbuild --user --upgrade
+
+$ conan remote add kth https://api.bintray.com/conan/k-nuth/kth
 ```
 
-2. Install the appropriate executable
+2. Install the appropriate node executable:
 
 ```
-# For Bitcoin Cash (lastest version)
-conan install bitprim-node-exe/0.X@bitprim/stable 
+# For Bitcoin Cash (default)
+$ conan install kth/0.X@kth/stable -o currency=BCH
+
+# For Bitcoin
+$ conan install kth/0.X@kth/stable -o currency=BTC
+
+# For Litecoin
+$ conan install kth/0.X@kth/stable -o currency=LTC
 ```
 
-For BTC and LTC please refer to [documentation](https://bitprim.github.io/docfx/content/user_guide/installation.html)
+(`0.X` is an alias for our latest uploaded package)
 
-In you want to tune the installation for better performance, please refer to [this](https://bitprim.github.io/docfx/content/user_guide/installation.html#advanced-installation).
+3. Run the node:
 
+```
+# Initialize the database
+$ ./kth -i
 
-## Running the node
+# Run the node
+$ ./kth
+```
+For more more detailed instructions, please refer to our [documentation](https://k-nuth.github.io/docs/).
 
-In order to run the full node, you have to initialize the database and then run the node:
+## Roadmap
 
-1. Run the following to initialize the database:
+Our goal is to become a reliable implementation for use in mining and the one with the best APIs, so we need to:
 
-```./bn -i```
+- Implement the Bitcoin-Core and Bitcoin-ABC testing batteries, to ensure compatibility with them.
 
-2. Finally, run the node:
+- Remove the limitation of 25 chained transactions.
 
-```./bn```
+- Implement a high performance SLP full indexer within the node.
 
-The above commands use the default configuration hardcoded in the executable. You can use a configuration file to customize the behavior of the node. In the [bitprim-config](https://github.com/bitprim/bitprim-config) repository you can find some example files.
+- Improve libraries and APIs of languages.
 
-1. Initialize the database using a configuration file:
+- Create a high performance mining API (a high performance API should not be on top of HTTP).
 
-```./bn -i -c <configuration file path>```
+- Improve our APIs documentation.
 
-2. Run the node using a configuration file:
+## Donation
 
-```./bn -c <configuration file path>```
+We believe that the feature-by-feature funding model proposed by [Bitcoin Verde](https://read.cash/@joshmgreen/bitcoin-verdes-response-to-the-miner-sponsored-development-fund-34028b1e#funding-bitcoin-verde) fits with our project.
 
-## Detailed documentation
+Take a look at our [issues](https://github.com/k-nuth/kth/issues) to see if you want to donate towards a specific objective, or you can contact us by [Telegram](https://t.me/knuth_cash), [Slack](https://k-nuth.slack.com/) or info@kth.cash.
 
-* [Documentation Site](https://bitprim.github.io/docfx/index.html)
-* [Build manually from source](https://bitprim.github.io/docfx/content/user_guide/installation.html)
-* [API's documentation](https://bitprim.github.io/docfx/content/developer_guide/introduction.html)
+Our donation address is:
+`bitcoincash:qrlgfg2qkj3na2x9k7frvcmv06ljx5xlnuuwx95zfn`
 
-## Changelog
+## Documentation
 
-To view the change logs and release notes please go [here](https://github.com/bitprim/bitprim/blob/master/doc/release-notes/release-notes.md)
+We are working to improve the documentation, which is [located here](https://k-nuth.github.io/docs/).
+
+## Issues
+
+Each of our modules has its own Github repository, but in case you want to create an issue, please do so in our [main repository](https://github.com/k-nuth/kth/issues).
+
+## Contact
+
+You can contact us through our [Telegram](https://t.me/knuth_cash) and [Slack](https://k-nuth.slack.com/) groups or write to us at info@kth.cash.
 
 <!-- Links -->
-[badge.Appveyor]: https://ci.appveyor.com/api/projects/status/github/bitprim/bitprim-node-exe?svg=true&branch=release-0.12.0
-[badge.Gitter]: https://img.shields.io/badge/gitter-join%20chat-blue.svg
-[badge.Travis]: https://travis-ci.org/bitprim/bitprim-node-exe.svg?branch=release-0.12.0
-[badge.version]: https://badge.fury.io/gh/bitprim%2Fbitprim-node-exe.svg
+[badge.Travis]: https://travis-ci.org/k-nuth/node-exe.svg?branch=master
+[badge.Appveyor]: https://ci.appveyor.com/api/projects/status/github/k-nuth/node-exe?svg=true&branch=master
+[badge.Cirrus]: https://api.cirrus-ci.com/github/k-nuth/node-exe.svg?branch=master
+[badge.version]: https://badge.fury.io/gh/k-nuth%2Fkth-node-exe.svg
+[badge.release]: https://img.shields.io/github/release/k-nuth/node-exe.svg
+[badge.cpp]: https://img.shields.io/badge/C++-17-blue.svg?style=flat&logo=c%2B%2B
+[badge.telegram]: https://img.shields.io/badge/telegram-badge-blue.svg?logo=telegram
+[badge.slack]: https://img.shields.io/badge/slack-badge-orange.svg?logo=slack
+
+<!-- [badge.Gitter]: https://img.shields.io/badge/gitter-join%20chat-blue.svg -->
+

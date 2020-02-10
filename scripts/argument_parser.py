@@ -1,30 +1,15 @@
 #!/usr/bin/env python3
 
-#
-# Copyright (c) 2017-2018 Bitprim Inc.
-#
-# This file is part of Bitprim.
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
+# Copyright (c) 2016-2020 Knuth Project developers.
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 from argparse import ArgumentParser
 from os.path import expanduser
 
 def parse_args():
 
-    parser = ArgumentParser('Bitprim Release Manager')
+    parser = ArgumentParser('kth Release Manager')
     parser.add_argument("-rp", "--root_path", dest="root_path", help="root path where the projects are", default=expanduser("~"))
     parser.add_argument('old_version', type=str, nargs=1, help='old version')
     parser.add_argument('new_version', type=str, nargs='?', help='new version')
