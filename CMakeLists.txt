@@ -90,7 +90,7 @@ if (WITH_LOCAL_MINING)
 	add_definitions(-DWITH_LOCAL_MINING)
 endif()
 
-# Bitprim tools
+# Knuth tools
 #------------------------------------------------------------------------------
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(KnuthTools)
