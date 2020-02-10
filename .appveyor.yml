@@ -17,6 +17,7 @@ branches:
   only:
     - master
     - dev
+    - /^v\d+\.\d+\.\d+$/
 
 
 environment:
@@ -122,9 +123,9 @@ build_script:
   - cd C:\projects\kth-recursive
   - git clone https://github.com/k-nuth/kth --recursive
   - cd kth
-  - git checkout dev
-  - git pull
-  - git submodule update
+  # - git checkout dev
+  # - git pull
+  # - git submodule update
   # - dir
   - mkdir build
   - cd build

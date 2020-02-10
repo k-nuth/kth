@@ -28,22 +28,14 @@ message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-
+# Options
 # ---------------------------------------------------------------
-#TODO!
-#add_definitions(-D_GLIBCXX_USE_CXX11_ABI=1)
-
-
-
-#option(USE_CPP11_ABI "" ON)
-
 option(USE_CONAN "Use Conan Build Tool." OFF)
 option(NO_CONAN_AT_ALL "Conan totally disabled." OFF)
 
 option(ENABLE_POSITION_INDEPENDENT_CODE "Enable POSITION_INDEPENDENT_CODE property" ON)
 option(WITH_CONSOLE "Compile console application." OFF)
 set(WITH_BIGNUM "no" CACHE STRING "Specify Bignum Implementation (gmp|no|auto).")
-
 
 set(USE_CPP11_ABI ON)
 set(ENABLE_POSITION_INDEPENDENT_CODE ON)
@@ -55,6 +47,7 @@ set(WITH_CONSOLE OFF)
 if (NO_CONAN_AT_ALL)
   set(USE_CONAN OFF)
 endif()
+
 # ---------------------------------------------------------------
 
 option(WITH_RPC "Compile with RPC-ZMQ support." OFF)
@@ -89,7 +82,6 @@ set(WITH_EXAMPLES OFF)
 set(ENABLE_SHARED OFF)
 set(ENABLE_SHARED_NODE_CINT ON)
 
-set(WITH_RPC ON)
 if (WITH_RPC)
     add_definitions(-DKTH_WITH_RPC)
 endif()
@@ -98,29 +90,10 @@ if (WITH_LOCAL_MINING)
 	add_definitions(-DWITH_LOCAL_MINING)
 endif()
 
-# # Check dependencies.
-# #==============================================================================
-# ## Require Boost of at least version 1.56.0 and output ${boost_CPPFLAGS/LDFLAGS}.
-# # Require Boost of at least version 1.46.0 and output ${boost_CPPFLAGS/LDFLAGS}.
-# #------------------------------------------------------------------------------
-# if (NOT ENABLE_SHARED)
-#   set(Boost_USE_STATIC_LIBS ON)
-# endif()
-
-# find_package(
-#   Boost 1.56.0 REQUIRED
-#   COMPONENTS chrono date_time filesystem iostreams locale log program_options regex system thread unit_test_framework)
-
-# if (NOT Boost_FOUND)
-#   message(FATAL_ERROR "Could not find Boost 1.56.0 or newer" )
-# endif()
-
-
-# bla bla bla
+# Bitprim tools
 #------------------------------------------------------------------------------
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(KnuthTools)
-
 
 # Build
 #==============================================================================

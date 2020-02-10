@@ -1,10 +1,6 @@
 [submodule "ci-utils"]
 	path = ci-utils
 	url = https://github.com/k-nuth/ci-utils
-[submodule "secp256k1"]
-	path = secp256k1
-	url = https://github.com/k-nuth/secp256k1.git
-	branch = dev
 [submodule "domain"]
 	path = domain
 	url = https://github.com/k-nuth/domain.git

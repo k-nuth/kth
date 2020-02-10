@@ -6,6 +6,7 @@ branches:
   only:
   - master
   - dev
+  - /^v\d+\.\d+\.\d+$/
 
 language: cpp
 git:

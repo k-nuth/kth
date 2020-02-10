@@ -1,11 +1,11 @@
 [requires]
-kth-node-cint/0.3@kth/testing
+c-api/0.X@kth/testing
 
 [generators]
 cmake
 
 [options]
-kth-node-cint:shared=False
+c-api:shared=False
 
 [imports]
 include/kth, *.h   -> ./kth/include/kth

@@ -14,7 +14,7 @@ def option_on_off(option):
 def get_content(file_name):
     file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), file_name)
     with open(file_path, 'r') as f:
-        return f.read()
+        return f.read().replace('\n', '').replace('\r', '')
 
 def get_version():
     return get_content('conan_version')
