@@ -106,6 +106,9 @@ We believe that the feature-by-feature funding model proposed by [Bitcoin Verde]
 
 Take a look at our [issues](https://github.com/k-nuth/kth/issues) to see if you want to donate towards a specific objective, or you can contact us by [Telegram](https://t.me/knuth_cash), [Slack](https://k-nuth.slack.com/) or info@kth.cash.
 
+Our donation address is:
+<p style="text-align: center;">bitcoincash:qrlgfg2qkj3na2x9k7frvcmv06ljx5xlnuuwx95zfn</p>
+
 ## Documentation
 
 We are working to improve the documentation, which is [located here](https://k-nuth.github.io/docs/).
