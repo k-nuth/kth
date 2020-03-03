@@ -1,6 +1,6 @@
-[submodule "ci-utils"]
+[submodule "ci_utils"]
 	path = ci_utils
-	url = https://github.com/k-nuth/ci-utils
+	url = https://github.com/k-nuth/ci-utils.git
 [submodule "domain"]
 	path = domain
 	url = https://github.com/k-nuth/domain.git
