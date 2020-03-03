@@ -87,14 +87,12 @@ class KnuthConan(ConanFile):
         # "with_scalar='auto'"
         # "with_bignum='auto'"
 
-
-
     generators = "cmake"
     exports_sources = "src/*", "CMakeLists.txt", "cmake/*", "kth-coreConfig.cmake.in", "include/*", "test/*"
     package_files = "build/lkth-core.a"
     build_policy = "missing"
 
-    requires = (("boost/1.66.0@kth/stable"))
+    requires = (("boost/1.72.0@kth/stable"))
 
     def requirements(self):
         if self.settings.os == "Linux" or self.settings.os == "Macos":
