@@ -2,12 +2,12 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.8)
 
 # kth
 #==============================================================================
 project(kth
-  VERSION 3.0.0
+  VERSION 0.0.0
   LANGUAGES CXX C)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -23,7 +23,7 @@ else()
 endif()
 
 message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
-# Check for baseline language coverage in the compiler for the C++11 standard.
+# Check for baseline language coverage in the compiler for the C++17 standard.
 #------------------------------------------------------------------------------
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -102,15 +102,16 @@ if (NOT DEFINED ENABLE_MODULE_RECOVERY)
 endif()
 
 add_subdirectory(secp256k1)
-add_subdirectory(kth-core)
-add_subdirectory(kth-consensus)
-add_subdirectory(kth-network)
-add_subdirectory(kth-database)
-add_subdirectory(kth-blockchain)
-add_subdirectory(kth-node)
-add_subdirectory(kth-rpc)
-add_subdirectory(kth-node-exe)
-add_subdirectory(kth-node-cint)
+add_subdirectory(infrastructure)
+add_subdirectory(domain)
+add_subdirectory(consensus)
+add_subdirectory(network)
+add_subdirectory(database)
+add_subdirectory(blockchain)
+add_subdirectory(node)
+add_subdirectory(rpc)
+add_subdirectory(node-exe)
+add_subdirectory(c-api)
 
 # Tests
 #==============================================================================
