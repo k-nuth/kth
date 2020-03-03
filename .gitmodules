@@ -42,3 +42,6 @@
 	path = secp256k1
 	url = https://github.com/k-nuth/secp256k1.git
     branch = dev
+[submodule "ci_utils"]
+	path = ci_utils
+	url = https://github.com/k-nuth/ci-utils.git
