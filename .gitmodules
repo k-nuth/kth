@@ -41,3 +41,7 @@
 	path = c-api
 	url = https://github.com/k-nuth/c-api.git
 	branch = dev
+[submodule "secp256k1"]
+	path = secp256k1
+	url = https://github.com/k-nuth/secp256k1.git
+    branch = dev
