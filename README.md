@@ -121,6 +121,11 @@ Each of our modules has its own Github repository, but in case you want to creat
 
 You can contact us through our [Telegram](https://t.me/knuth_cash) and [Slack](https://k-nuth.slack.com/) groups or write to us at info@kth.cash.
 
+## Security Disclosures
+To report security issues please contact:
+
+Fernando Pelliccioni (fpelliccioni@gmail.com) - GPG Fingerprint: 6CD0 ADA3 91BF 29C6 3F1A AC3E F934 722F 6790 2A4E
+
 <!-- Links -->
 [badge.Travis]: https://travis-ci.org/k-nuth/node-exe.svg?branch=master
 [badge.Appveyor]: https://ci.appveyor.com/api/projects/status/github/k-nuth/node-exe?svg=true&branch=master
