@@ -10,6 +10,8 @@ project(kth
   VERSION 0.0.0
   LANGUAGES CXX C)
 
+set(CMAKE_VERBOSE_MAKEFILE ON)
+
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CURRENCY "BCH" CACHE STRING "Specify the Cryptocurrency (BCH|BTC|LTC).")
 if (${CURRENCY} STREQUAL "BCH")
@@ -30,6 +32,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Options
 # ---------------------------------------------------------------
+
+option(BUILD_NODE_EXE "Build the node executable." ON)
+option(BUILD_C_API "Build the C-API." OFF)
+
 option(USE_CONAN "Use Conan Build Tool." OFF)
 option(NO_CONAN_AT_ALL "Conan totally disabled." OFF)
 
@@ -110,8 +116,15 @@ add_subdirectory(database)
 add_subdirectory(blockchain)
 add_subdirectory(node)
 add_subdirectory(rpc)
-add_subdirectory(node-exe)
-add_subdirectory(c-api)
+
+if (BUILD_NODE_EXE)
+    add_subdirectory(node-exe)
+endif()
+
+if (BUILD_C_API)
+    add_subdirectory(c-api)
+endif()
+
 
 # Tests
 #==============================================================================
