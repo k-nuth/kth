@@ -97,10 +97,11 @@ class KnuthConan(ConanFile):
     def requirements(self):
         self.requires("boost/1.72.0@kth/stable")
         self.requires("lmdb/0.9.24@kth/stable")
+        self.requires("libmdbx/0.7.0@kth/stable")
         self.requires("binlog/2020.02.29@kth/stable")
 
         if self.settings.os == "Linux" or self.settings.os == "Macos":
-            self.requires("gmp/6.1.2@kth/stable")
+            self.requires("gmp/6.2.0@kth/stable")
         if self.options.with_rpc:
             self.requires("libzmq/4.2.2@kth/stable")
         if self.options.currency == "LTC":
