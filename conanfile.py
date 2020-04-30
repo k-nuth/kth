@@ -99,6 +99,7 @@ class KnuthConan(ConanFile):
         self.requires("lmdb/0.9.24@kth/stable")
         self.requires("libmdbx/0.7.0@kth/stable")
         self.requires("binlog/2020.02.29@kth/stable")
+        self.requires("fmt/6.2.0@")
 
         if self.settings.os == "Linux" or self.settings.os == "Macos":
             self.requires("gmp/6.2.0@kth/stable")
@@ -106,6 +107,10 @@ class KnuthConan(ConanFile):
             self.requires("libzmq/4.2.2@kth/stable")
         if self.options.currency == "LTC":
              self.requires("OpenSSL/1.0.2l@conan/stable")
+
+    def configure(self):
+        self.options["fmt"].header_only = True
+
 
     def build(self):
         cmake = CMake(self)
