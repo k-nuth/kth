@@ -87,22 +87,30 @@ class KnuthConan(ConanFile):
         # "with_scalar='auto'"
         # "with_bignum='auto'"
 
-
-
     generators = "cmake"
     exports_sources = "src/*", "CMakeLists.txt", "cmake/*", "kth-coreConfig.cmake.in", "include/*", "test/*"
     package_files = "build/lkth-core.a"
     build_policy = "missing"
 
-    requires = (("boost/1.66.0@kth/stable"))
+    # requires = (("boost/1.72.0@kth/stable"))
 
     def requirements(self):
+        self.requires("boost/1.72.0@kth/stable")
+        self.requires("lmdb/0.9.24@kth/stable")
+        self.requires("libmdbx/0.7.0@kth/stable")
+        self.requires("binlog/2020.02.29@kth/stable")
+        self.requires("fmt/6.2.0@")
+
         if self.settings.os == "Linux" or self.settings.os == "Macos":
-            self.requires("gmp/6.1.2@kth/stable")
+            self.requires("gmp/6.2.0@kth/stable")
         if self.options.with_rpc:
             self.requires("libzmq/4.2.2@kth/stable")
         if self.options.currency == "LTC":
              self.requires("OpenSSL/1.0.2l@conan/stable")
+
+    def configure(self):
+        self.options["fmt"].header_only = True
+
 
     def build(self):
         cmake = CMake(self)
