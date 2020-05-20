@@ -1,3 +1,17 @@
+# version 0.3.0
+
+You can install Knuth node version 0.3.0 [using these instructions](http://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Post HF stability changes.
+- DB performance improvements.
+- Use std::filesystem instead of boost::filesystem.
+- Use std::optional instead of boost::optional.
+- Usage of TaoCpp algorithms library (as a dependency).
+- Optional and experimental usage of a new logging library.
+- Several improvements in the build system and continuous integration.
+
 # version 0.2.0
 
 ### Network upgrade
@@ -22,10 +36,6 @@ At the MTP time of 1589544000 (May 15, 2020 12:00:00 UTC) the following behavior
 - Usage of new formater library.
 - Various bug fixes and stability improvements.
 - Code style improvements.
-
-
-
-
 
 # version 0.1.0
 
