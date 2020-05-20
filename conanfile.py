@@ -92,14 +92,14 @@ class KnuthConan(ConanFile):
     package_files = "build/lkth-core.a"
     build_policy = "missing"
 
-    # requires = (("boost/1.72.0@kth/stable"))
-
     def requirements(self):
-        self.requires("boost/1.72.0@kth/stable")
+        self.requires("boost/1.73.0@kth/stable")
         self.requires("lmdb/0.9.24@kth/stable")
         self.requires("libmdbx/0.7.0@kth/stable")
         self.requires("binlog/2020.02.29@kth/stable")
         self.requires("fmt/6.2.0@")
+        self.requires("binlog/2020.02.29@kth/stable")
+        self.requires("spdlog/1.5.0@")
 
         if self.settings.os == "Linux" or self.settings.os == "Macos":
             self.requires("gmp/6.2.0@kth/stable")
@@ -110,7 +110,7 @@ class KnuthConan(ConanFile):
 
     def configure(self):
         self.options["fmt"].header_only = True
-
+        self.options["spdlog"].header_only = True
 
     def build(self):
         cmake = CMake(self)
