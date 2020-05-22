@@ -100,6 +100,7 @@ class KnuthConan(ConanFile):
         self.requires("fmt/6.2.0@")
         self.requires("binlog/2020.02.29@kth/stable")
         self.requires("spdlog/1.5.0@")
+        self.requires("algorithm/0.1.213@tao/stable")
 
         if self.settings.os == "Linux" or self.settings.os == "Macos":
             self.requires("gmp/6.2.0@kth/stable")
