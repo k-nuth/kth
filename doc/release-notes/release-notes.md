@@ -1,3 +1,13 @@
+# version 0.3.1
+
+You can install Knuth node version 0.3.1 [using these instructions](http://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Fix a runtime error when parsing config file in testnet mode.
+- Fix BCH seeders.
+- Fix algorithm package version.
+
 # version 0.3.0
 
 You can install Knuth node version 0.3.0 [using these instructions](http://kth.cash/#download).
