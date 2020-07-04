@@ -124,7 +124,7 @@ You can contact us through our [Telegram](https://t.me/knuth_cash) and [Slack](h
 ## Security Disclosures
 To report security issues please contact:
 
-Fernando Pelliccioni (fpelliccioni@gmail.com) - GPG Fingerprint: 6CD0 ADA3 91BF 29C6 3F1A AC3E F934 722F 6790 2A4E
+Fernando Pelliccioni (fpelliccioni@gmail.com) - GPG Fingerprint: 8C1C 3163 AAE1 0EFA 704C 8A00 FE77 07B7 4C29 E389
 
 <!-- Links -->
 [badge.Travis]: https://travis-ci.org/k-nuth/node-exe.svg?branch=master
