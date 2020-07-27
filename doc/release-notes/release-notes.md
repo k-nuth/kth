@@ -1,3 +1,15 @@
+# version 0.3.2
+
+You can install Knuth node version 0.3.2 [using these instructions](https://kth.cash/#download).
+
+- This release includes the following features and fixes:
+
+- Most of the modules' code underwent a major modernization.
+
+- All unit tests were improved as a previous step to meet our mining compliance test objective.
+
+- The use of the Boost.Test framework has been replaced by the more modern Catch2.
+
 # version 0.3.1
 
 You can install Knuth node version 0.3.1 [using these instructions](https://kth.cash/#download).
