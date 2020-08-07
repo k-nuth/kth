@@ -88,7 +88,7 @@ For more more detailed instructions, please refer to our [documentation](https:/
 
 Our goal is to become a reliable implementation for use in mining and the one with the best APIs, so we need to:
 
-- Implement the Bitcoin-Core and Bitcoin-ABC testing batteries, to ensure compatibility with them.
+- Implement the Bitcoin-Cash-Node and Bitcoin-Core testing batteries, to ensure compatibility with them.
 
 - Remove the limitation of 25 chained transactions.
 
