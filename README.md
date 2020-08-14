@@ -62,13 +62,13 @@ $ conan config install https://github.com/k-nuth/ci-utils/raw/master/conan/confi
 
 ```
 # For Bitcoin Cash (default)
-$ conan install kth/0.X@kth/stable -o currency=BCH
+$ conan install kth/0.X@kth/stable -o currency=BCH --update
 
 # For Bitcoin
-$ conan install kth/0.X@kth/stable -o currency=BTC
+$ conan install kth/0.X@kth/stable -o currency=BTC --update
 
 # For Litecoin
-$ conan install kth/0.X@kth/stable -o currency=LTC
+$ conan install kth/0.X@kth/stable -o currency=LTC --update
 ```
 
 (`0.X` is an alias for our latest uploaded package)
