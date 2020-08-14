@@ -1,3 +1,13 @@
+# version 0.4.0
+
+You can install Knuth node version 0.4.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Implementation of aserti3-2d: the new difficulty adjustment algorithm which will be activated on November 15, 2020.
+- Fixed a linking error on Debian10 using GCC8, trying to link std::filesystem.
+- Some minor fixes and code style improvements.
+
 # version 0.3.2
 
 You can install Knuth node version 0.3.2 [using these instructions](https://kth.cash/#download).
