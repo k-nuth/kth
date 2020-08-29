@@ -1,3 +1,12 @@
+# version 0.4.1
+
+You can install Knuth node version 0.4.1 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Updated several external dependencies: Boost libs. 1.74.0, {fmt} lib. 7.0.3, spdlog lib. 1.7.0, catch2 testing framework 2.13.0.
+- Some bug fixes and code style improvements.
+
 # version 0.4.0
 
 You can install Knuth node version 0.4.0 [using these instructions](https://kth.cash/#download).
