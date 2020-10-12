@@ -1,3 +1,14 @@
+# version 0.4.4
+
+You can install Knuth node version 0.4.4 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Some bug fixes.
+- Performance improvements.
+- Code modernization.
+- Improvements in CI/CD processes.
+
 # version 0.4.3
 
 You can install Knuth node version 0.4.3 [using these instructions](https://kth.cash/#download).
