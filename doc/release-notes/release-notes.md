@@ -1,3 +1,11 @@
+# version 0.4.5
+
+You can install Knuth node version 0.4.5 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Workaround to fix an issue in GCC 9.x (Linux) causing IBD to stop.
+
 # version 0.4.4
 
 You can install Knuth node version 0.4.4 [using these instructions](https://kth.cash/#download).
