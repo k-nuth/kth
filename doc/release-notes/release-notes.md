@@ -1,3 +1,16 @@
+# version 0.4.3
+
+You can install Knuth node version 0.4.3 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Support for XCode12 on macOS.
+- Refactoring so that the node reports the user-agent related to the version of [the node lib](https://github.com/k-nuth/node) instead of the version of the executable.
+In this way both the node executable and the node as a library (C++, C, C#, Javascript, etc ...) will now report the same version and the same user-agent.
+- Performance improvements.
+- Code modernization.
+- Improvements in CI/CD processes.
+
 # version 0.4.2
 
 You can install Knuth node version 0.4.2 [using these instructions](https://kth.cash/#download).
