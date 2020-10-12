@@ -1,3 +1,25 @@
+# version 0.4.2
+
+You can install Knuth node version 0.4.2 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Support for the new testnet4 on Bitcoin Cash.
+- New setting for initialize the DB and then run the node (`-r`, `--init_run`).
+- New setting for specify the network: mainnet, testnet, regtest, testnet4 (`-n`, `--network`).
+- The internal names with which we define the Bitcoin Cash hardsforks [have been renamed](https://read.cash/@kth/renaming-bitcoin-cash-forks-4ede337e).
+- Other improvements in settings management.
+- Some bug fixes and code style improvements.
+
+# version 0.4.1
+
+You can install Knuth node version 0.4.1 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Updated several external dependencies: Boost libs. 1.74.0, {fmt} lib. 7.0.3, spdlog lib. 1.7.0, catch2 testing framework 2.13.0.
+- Some bug fixes and code style improvements.
+
 # version 0.4.0
 
 You can install Knuth node version 0.4.0 [using these instructions](https://kth.cash/#download).
