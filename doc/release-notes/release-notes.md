@@ -1,3 +1,12 @@
+# version 0.5.0
+
+You can install Knuth node version 0.5.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Use of spdlog as the default logging library.
+- Code style improvements.
+
 # version 0.4.5
 
 You can install Knuth node version 0.4.5 [using these instructions](https://kth.cash/#download).
