@@ -1,3 +1,12 @@
+# version 0.5.1
+
+You can install Knuth node version 0.5.1 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Fix for Visual Studio 2019 in Windows.
+- Code style improvements.
+
 # version 0.5.0
 
 You can install Knuth node version 0.5.0 [using these instructions](https://kth.cash/#download).
