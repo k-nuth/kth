@@ -1,3 +1,12 @@
+# version 0.5.2
+
+You can install Knuth node version 0.5.2 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Logging improved.
+- Code style improvements.
+
 # version 0.5.1
 
 You can install Knuth node version 0.5.1 [using these instructions](https://kth.cash/#download).
