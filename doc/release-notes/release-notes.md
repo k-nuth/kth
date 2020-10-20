@@ -1,3 +1,12 @@
+# version 0.5.3
+
+You can install Knuth node version 0.5.3 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Workaround to fix a cashnodes.bitcoinunlimited.info crawler error. 
+Now Knuth nodes are counted by this tool.
+
 # version 0.5.2
 
 You can install Knuth node version 0.5.2 [using these instructions](https://kth.cash/#download).
