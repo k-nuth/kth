@@ -1,3 +1,13 @@
+# version 0.6.0
+
+You can install Knuth node version 0.6.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Support the new network designed to test big/huge blocks: Scalenet (only for Bitcoin Cash).
+- Performance improvements.
+- Code style improvements.
+
 # version 0.5.3
 
 You can install Knuth node version 0.5.3 [using these instructions](https://kth.cash/#download).
