@@ -1,3 +1,14 @@
+# version 0.7.0
+
+You can install Knuth node version 0.7.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Bitcoin Cash 2020-Nov HF stability improvements.
+- ASERT anchor/reference block variables were hardcoded.
+- Scalenet fixes.
+- Other bugfixes.
+
 # version 0.6.0
 
 You can install Knuth node version 0.6.0 [using these instructions](https://kth.cash/#download).
