@@ -1,3 +1,13 @@
+# version 0.8.0
+
+You can install Knuth node version 0.8.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- ASERT implementation fix.
+- Scalenet performance improvements.
+- Several CI/CD improvements.
+
 # version 0.7.0
 
 You can install Knuth node version 0.7.0 [using these instructions](https://kth.cash/#download).
