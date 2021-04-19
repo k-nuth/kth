@@ -1,3 +1,12 @@
+# version 0.9.0
+
+You can install Knuth node version 0.9.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Performance improvements.
+- Several CI/CD improvements.
+
 # version 0.8.0
 
 You can install Knuth node version 0.8.0 [using these instructions](https://kth.cash/#download).
@@ -35,7 +44,7 @@ You can install Knuth node version 0.5.3 [using these instructions](https://kth.
 
 This release includes the following features and fixes:
 
-- Workaround to fix a cashnodes.bitcoinunlimited.info crawler error. 
+- Workaround to fix a cashnodes.bitcoinunlimited.info crawler error.
 Now Knuth nodes are counted by this tool.
 
 # version 0.5.2
@@ -169,7 +178,7 @@ This release includes the following features and fixes:
 
 At the MTP time of 1589544000 (May 15, 2020 12:00:00 UTC) the following behaviors will change:
 
-- `OP_REVERSEBYTES` support in script.  
+- `OP_REVERSEBYTES` support in script.
 
 - New SigOps counting method (SigChecks) as standardness and consensus rules.
 
