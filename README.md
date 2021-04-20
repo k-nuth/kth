@@ -98,6 +98,8 @@ Our goal is to become a reliable implementation for use in mining and the one wi
 
 ## Donation
 
+See [fund.kth.cash](https://fund.kth.cash/) for active Flipstarter campaigns.
+
 Our general donation address is:
 `bitcoincash:qrlgfg2qkj3na2x9k7frvcmv06ljx5xlnuuwx95zfn`
 
