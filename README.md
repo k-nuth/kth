@@ -105,10 +105,6 @@ Our goal is to become a reliable implementation for use in mining and the one wi
 Our general donation address is:
 `bitcoincash:qrlgfg2qkj3na2x9k7frvcmv06ljx5xlnuuwx95zfn`
 
-## Documentation
-
-We are working to improve the documentation, which is [located here](https://k-nuth.github.io/docs/).
-
 ## Issues
 
 Each of our modules has its own Github repository, but in case you want to create an issue, please do so in our [main repository](https://github.com/k-nuth/kth/issues).
