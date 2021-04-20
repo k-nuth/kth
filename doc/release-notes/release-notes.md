@@ -1,3 +1,11 @@
+# version 0.9.1
+
+You can install Knuth node version 0.9.1 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Minor bug fix.
+
 # version 0.9.0
 
 You can install Knuth node version 0.9.0 [using these instructions](https://kth.cash/#download).
