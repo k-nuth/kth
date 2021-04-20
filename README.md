@@ -76,10 +76,6 @@ $ conan install kth/0.X@kth/stable -o currency=LTC --update
 3. Run the node:
 
 ```
-# Initialize the database
-$ ./kth -i
-
-# Run the node
 $ ./kth
 ```
 For more more detailed instructions, please refer to our [documentation](https://k-nuth.github.io/docs/).
