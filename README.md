@@ -80,22 +80,6 @@ $ ./kth
 ```
 For more more detailed instructions, please refer to our [documentation](https://k-nuth.github.io/docs/).
 
-## Roadmap
-
-Our goal is to become a reliable implementation for use in mining and the one with the best APIs, so we need to:
-
-- Implement the Bitcoin Cash Node and Bitcoin Unlimited testing batteries, to ensure compatibility with them.
-
-- Remove the limitation of 25 chained transactions.
-
-- Implement a high performance SLP full indexer within the node.
-
-- Improve libraries and APIs of languages.
-
-- Create a high performance mining API (a high performance API should not be on top of HTTP).
-
-- Improve our APIs documentation.
-
 ## Donation
 
 See [fund.kth.cash](https://fund.kth.cash/) for active Flipstarter campaigns.
