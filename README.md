@@ -103,6 +103,10 @@ See [fund.kth.cash](https://fund.kth.cash/) for active Flipstarter campaigns.
 Our general donation address is:
 `bitcoincash:qrlgfg2qkj3na2x9k7frvcmv06ljx5xlnuuwx95zfn`
 
+## License
+
+Knuth node is released under the terms of the MIT license. See COPYING for more information or see https://opensource.org/licenses/MIT.
+
 ## Issues
 
 Each of our modules has its own Github repository, but in case you want to create an issue, please do so in our [main repository](https://github.com/k-nuth/kth/issues).
