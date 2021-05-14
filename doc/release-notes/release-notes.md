@@ -1,3 +1,13 @@
+# version 0.20.0
+
+You can install Knuth node version v0.20.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- The version number of the executable was unified with the user-agent displayed by the node. For this reason the version interval (0.9.1, 0.20.0) of the node executable will be skipped.
+The user-agent presented by the node comes from the core C++ library, so all other components that depend on it (executable, C-API, C#-API, Javascript-API and TypeScript-API) will show the same user-agent.
+- Some bug fixes.
+
 # version 0.9.1
 
 You can install Knuth node version 0.9.1 [using these instructions](https://kth.cash/#download).
