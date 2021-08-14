@@ -9,6 +9,6 @@ fi
 which cmake || $INSTALL_CMD cmake
 which pip || sudo wget -qO- "https://bootstrap.pypa.io/get-pip.py"  | python
 pip install conan
-conan remote add kth https://api.bintray.com/conan/k-nuth/kth
+conan remote add kth https://knuth.jfrog.io/artifactory/api/conan/knuth
 wget -O conanfile.txt https://raw.githubusercontent.com/k-nuth/kth/dev/install/conanfile.txt
 conan install .
