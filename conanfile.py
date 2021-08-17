@@ -79,7 +79,7 @@ class KnuthConan(ConanFile):
         "enable_module_ecdh=False", \
         "enable_module_schnorr=False", \
         "enable_module_recovery=True", \
-        "with_rpc=True", \
+        "with_rpc=False", \
         "currency=BCH"
 
         # "with_asm='auto'", \
