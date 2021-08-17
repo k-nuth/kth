@@ -1,7 +1,6 @@
-# Copyright (c) 2016-2020 Knuth Project developers.
+# Copyright (c) 2016-2021 Knuth Project developers.
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-
 
 import os
 from conans import ConanFile, CMake
@@ -131,7 +130,7 @@ class KnuthConan(ConanFile):
         cmake.definitions["WITH_PNG"] = option_on_off(self.options.with_png)
         cmake.definitions["WITH_LITECOIN"] = option_on_off(self.options.with_litecoin)
         cmake.definitions["WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
-        
+
         # if self.settings.compiler == "gcc":
         #     if float(str(self.settings.compiler.version)) >= 5:
         #         cmake.definitions["_GLIBCXX_USE_CXX11_ABI"] = "1"
