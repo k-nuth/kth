@@ -109,6 +109,10 @@ class KnuthConan(ConanFile):
         if self.options.currency == "LTC":
              self.requires("OpenSSL/1.0.2l@conan/stable")
 
+    def validate(self):
+        if self.settings.os == "Linux" and self.settings.compiler == "gcc" and self.settings.compiler.libcxx == "libstdc++":
+            raise ConanInvalidConfiguration("We just support GCC C++11ABI.\n**** Please run `conan profile update settings.compiler.libcxx=libstdc++11 default`")
+
     def configure(self):
         self.options["fmt"].header_only = True
         self.options["spdlog"].header_only = True
