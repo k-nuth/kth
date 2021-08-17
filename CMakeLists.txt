@@ -115,7 +115,7 @@ add_subdirectory(network)
 add_subdirectory(database)
 add_subdirectory(blockchain)
 add_subdirectory(node)
-add_subdirectory(rpc)
+# add_subdirectory(rpc)
 
 if (BUILD_NODE_EXE)
     add_subdirectory(node-exe)
