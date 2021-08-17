@@ -94,10 +94,11 @@ class KnuthConan(ConanFile):
     def requirements(self):
         self.requires("boost/1.76.0")
         self.requires("lmdb/0.9.24@kth/stable")
+        self.requires("fmt/8.0.1")
         # self.requires("libmdbx/0.7.0@kth/stable")
         # self.requires("binlog/2020.02.29@kth/stable")
-        self.requires("fmt/7.1.3")
-        self.requires("spdlog/1.8.5")
+        # self.requires("binlog/2020.02.29@kth/stable")
+        self.requires("spdlog/1.9.1")
         self.requires("algorithm/0.1.239@tao/stable")
 
         if self.settings.os == "Linux" or self.settings.os == "Macos":
@@ -106,6 +107,10 @@ class KnuthConan(ConanFile):
             self.requires("libzmq/4.2.2@kth/stable")
         if self.options.currency == "LTC":
              self.requires("OpenSSL/1.0.2l@conan/stable")
+
+    def validate(self):
+        if self.settings.os == "Linux" and self.settings.compiler == "gcc" and self.settings.compiler.libcxx == "libstdc++":
+            raise ConanInvalidConfiguration("We just support GCC C++11ABI.\n**** Please run `conan profile update settings.compiler.libcxx=libstdc++11 default`")
 
     def configure(self):
         self.options["fmt"].header_only = True
