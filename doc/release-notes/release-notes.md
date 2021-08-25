@@ -1,3 +1,13 @@
+# version 0.21.0
+
+You can install Knuth node version v0.21.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Uses C++ API v0.21.0
+- Several external dependencies were updated.
+- Several bug fixes.
+
 # version 0.20.0
 
 You can install Knuth node version v0.20.0 [using these instructions](https://kth.cash/#download).
