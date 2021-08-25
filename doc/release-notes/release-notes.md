@@ -4,7 +4,7 @@ You can install Knuth node version v0.22.0 [using these instructions](https://kt
 
 This release includes the following features and fixes:
 
-- Added experimental support for Double-Spend Proofs. This feature is disabled by default. If you want to enable it you just have to add the following entry in the configuration: `node.ds_proof = true`.
+- Added experimental support for Double-Spend Proofs. This feature is disabled by default. If you want to enable it you just have to add the following entry in the configuration: `node.ds_proofs = true`.
 - Uses C++ API v0.22.0
 - Several external dependencies were updated.
 
