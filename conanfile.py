@@ -92,9 +92,9 @@ class KnuthConan(ConanFile):
     build_policy = "missing"
 
     def requirements(self):
-        self.requires("boost/1.76.0")
+        self.requires("boost/1.78.0")
         self.requires("lmdb/0.9.24@kth/stable")
-        self.requires("fmt/8.0.1")
+        self.requires("fmt/8.1.1")
         # self.requires("libmdbx/0.7.0@kth/stable")
         # self.requires("binlog/2020.02.29@kth/stable")
         # self.requires("binlog/2020.02.29@kth/stable")
