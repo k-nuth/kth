@@ -56,19 +56,15 @@ Install and run Knuth is very easy:
 $ pip install kthbuild --user --upgrade
 
 $ conan config install https://github.com/k-nuth/ci-utils/raw/master/conan/config.zip
+
+# Just for Linux
+$ conan profile update settings.compiler.libcxx=libstdc++11 default
 ```
 
 2. Install the appropriate node executable:
 
 ```
-# For Bitcoin Cash (default)
-$ conan install kth/0.X@kth/stable -o currency=BCH --update
-
-# For Bitcoin
-$ conan install kth/0.X@kth/stable -o currency=BTC --update
-
-# For Litecoin
-$ conan install kth/0.X@kth/stable -o currency=LTC --update
+$ conan install kth/0.X@kth/stable --update
 ```
 
 (`0.X` is an alias for our latest uploaded package)
