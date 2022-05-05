@@ -1,3 +1,25 @@
+# version 0.24.0
+
+You can install Knuth node version v0.24.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Support for Visual Studio 2022 on Windows.
+- Uses C++ API v0.24.0
+- Several external dependencies were updated.
+
+# version 0.23.0
+
+You can install Knuth node version v0.23.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Support for the [May 15, 2022 Network Upgrade](https://upgradespecs.bitcoincashnode.org/2022-05-15-upgrade/). This release implements the following two consensus CHIPs:
+    - [CHIP-2021-03: Bigger Script Integers](https://gitlab.com/GeneralProtocols/research/chips/-/blob/master/CHIP-2021-02-Bigger-Script-Integers.md) increased precision for arithmetic operations.
+    - [CHIP-2021-02: Native Introspection Opcodes](https://gitlab.com/GeneralProtocols/research/chips/-/blob/master/CHIP-2021-02-Add-Native-Introspection-Opcodes.md) enabling smart contracts to inspect the current transaction.
+- Uses C++ API v0.23.0
+- Several external dependencies were updated.
+
 # version 0.22.0
 
 You can install Knuth node version v0.22.0 [using these instructions](https://kth.cash/#download).
