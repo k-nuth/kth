@@ -1,3 +1,19 @@
+# version 0.25.0
+
+You can install Knuth node version v0.25.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Knuth's build system ([kthbuild](https://github.com/k-nuth/kthbuild)) has been completely rewritten.
+For x86-64 systems (AMD, Intel, etc.) kthbuild now supports all five industry-defined [microarchitecture levels](https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels): x86-64-v0, x86-64-v1, x86-64-v2, x86-64-v3, and x86-64-v4
+This version of node has been compiled using kthbuild v1.0.37.
+We have chosen to distribute binaries compiled using the x86-64-v3 microarchitecture level.
+However, if your platform does not support the x86-64-v3 microarchitecture level, kthbuild will automatically compile from source using your platform's specifications.
+And if your platform is better than x86-64-v3, you can take advantage of your hardware by compiling node with `-o march_strategy=optimize`.
+- Uses C++ API v0.25.0
+- Support for Visual Studio (MSVC) has been temporarily discontinued.
+- Some external dependencies were updated.
+
 # version 0.24.0
 
 You can install Knuth node version v0.24.0 [using these instructions](https://kth.cash/#download).
