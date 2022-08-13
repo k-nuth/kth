@@ -1,3 +1,13 @@
+# version 0.26.0
+
+You can install Knuth node version v0.26.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Fixed compatibility between different versions of the C++ standard library.
+- Support for Visual Studio (MSVC) was restored.
+- Uses C++ API v0.26.0.
+
 # version 0.25.0
 
 You can install Knuth node version v0.25.0 [using these instructions](https://kth.cash/#download).
