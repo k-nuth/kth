@@ -7,6 +7,7 @@ This release includes the following features and fixes:
 - secp256k1 performance improvements backported.
 - Some fixes to support for Visual Studio 2022 on Windows.
 - Uses C++ API v0.27.0.
+
 # version 0.26.0
 
 You can install Knuth node version v0.26.0 [using these instructions](https://kth.cash/#download).
