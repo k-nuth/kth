@@ -1,0 +1,154 @@
+[2022-09-07 14:15:35.564] [info] [node] Using config file: config.cfg 
+[2022-09-07 14:15:35.565] [info] [node] Node C++ lib v-. 
+[2022-09-07 14:15:35.565] [info] [node] Node exe v- 
+[2022-09-07 14:15:35.565] [info] [node] Currency: BCH - Bitcoin Cash. 
+[2022-09-07 14:15:35.565] [info] [node] Optimized for microarchitecture: . 
+[2022-09-07 14:15:35.565] [info] [node] Database type: pruned. 
+[2022-09-07 14:15:35.565] [info] [node] Network: Mainnet (3908297187 - 0xe8f3e1e3). 
+[2022-09-07 14:15:35.565] [info] [node] Blockchain configured to use 16 threads. 
+[2022-09-07 14:15:35.565] [info] [node] Networking configured to use 16 threads. 
+[2022-09-07 14:15:35.565] [info] [node] Press CTRL-C to stop the node. 
+[2022-09-07 14:15:35.565] [info] [node] Please wait while the node is starting... 
+[2022-09-07 14:15:35.567] [info] [network] Starting manual session. 
+[2022-09-07 14:15:35.567] [info] [network] Contacting seed [ seed.flowee.cash:8333 ] 
+[2022-09-07 14:15:35.568] [info] [network] Contacting seed [ seed-bch.bitcoinforks.org:8333 ] 
+[2022-09-07 14:15:35.568] [info] [network] Contacting seed [ btccash-seeder.bitcoinunlimited.info:8333 ] 
+[2022-09-07 14:15:35.568] [info] [network] Contacting seed [ seed.bchd.cash:8333 ] 
+[2022-09-07 14:15:35.568] [info] [network] Contacting seed [ seed.bch.loping.net:8333 ] 
+[2022-09-07 14:15:35.568] [info] [network] Contacting seed [ dnsseed.electroncash.de:8333 ] 
+[2022-09-07 14:16:05.571] [info] [network] Failure contacting seed [ seed.flowee.cash:8333 ]  resolving hostname failed 
+[2022-09-07 14:16:05.647] [info] [network] Connected seed [ seed-bch.bitcoinforks.org:8333 ] as  139.162.255.15:8333 
+[2022-09-07 14:16:05.686] [debug] [network] Heading read failure [ 139.162.255.15:8333 ]  unable to reach remote host 
+[2022-09-07 14:16:05.686] [debug] [network] Stop protocol_ version  on [ 139.162.255.15:8333 ]  End of file 
+[2022-09-07 14:16:05.686] [debug] [network] Failure in handshake with [ 139.162.255.15:8333 ]  channel stopped 
+[2022-09-07 14:16:05.686] [debug] [network] Seed channel stopped:  channel stopped 
+[2022-09-07 14:16:05.712] [info] [network] Connected seed [ btccash-seeder.bitcoinunlimited.info:8333 ] as  3.236.38.121:8333 
+[2022-09-07 14:16:05.819] [debug] [network] Read  version  from [ 3.236.38.121:8333 ] ( 120  bytes). Now parsing ... 
+[2022-09-07 14:16:05.819] [debug] [network] Peer [ 3.236.38.121:8333 ] protocol version ( 70015 ) user agent:  /Bitcoin Cash Node:24.0.0(EB32.0)/ 
+[2022-09-07 14:16:05.819] [debug] [network] Negotiated protocol version ( 70014 ) for [ 3.236.38.121:8333 ] 
+[2022-09-07 14:16:05.819] [debug] [network] Received  version  from [ 3.236.38.121:8333 ] ( 120  bytes) 
+[2022-09-07 14:16:05.819] [debug] [network] Read  verack  from [ 3.236.38.121:8333 ] ( 0  bytes). Now parsing ... 
+[2022-09-07 14:16:05.820] [debug] [network] Received  verack  from [ 3.236.38.121:8333 ] ( 0  bytes) 
+[2022-09-07 14:16:05.860] [info] [network] Connected seed [ dnsseed.electroncash.de:8333 ] as  139.59.99.164:8333 
+[2022-09-07 14:16:05.866] [info] [network] Connected seed [ seed.bchd.cash:8333 ] as  47.88.159.63:8333 
+[2022-09-07 14:16:05.912] [info] [network] Connected seed [ seed.bch.loping.net:8333 ] as  52.192.182.28:8333 
+[2022-09-07 14:16:05.927] [debug] [network] Read  sendheaders  from [ 3.236.38.121:8333 ] ( 0  bytes). Now parsing ... 
+[2022-09-07 14:16:05.927] [debug] [network] Received  sendheaders  from [ 3.236.38.121:8333 ] ( 0  bytes) 
+[2022-09-07 14:16:05.927] [debug] [network] Read  sendcmpct  from [ 3.236.38.121:8333 ] ( 9  bytes). Now parsing ... 
+[2022-09-07 14:16:05.927] [debug] [network] Received  sendcmpct  from [ 3.236.38.121:8333 ] ( 9  bytes) 
+[2022-09-07 14:16:05.927] [debug] [network] Read  ping  from [ 3.236.38.121:8333 ] ( 8  bytes). Now parsing ... 
+[2022-09-07 14:16:05.927] [debug] [network] Received  ping  from [ 3.236.38.121:8333 ] ( 8  bytes) 
+[2022-09-07 14:16:05.928] [debug] [network] Read  addr  from [ 3.236.38.121:8333 ] ( 31  bytes). Now parsing ... 
+[2022-09-07 14:16:05.928] [debug] [network] Received  addr  from [ 3.236.38.121:8333 ] ( 31  bytes) 
+[2022-09-07 14:16:05.928] [debug] [network] Storing addresses from seed [ 3.236.38.121:8333 ] ( 1 ) 
+[2022-09-07 14:16:05.928] [debug] [network] Accepted ( 1  of  1 ) host addresses from peer. 
+[2022-09-07 14:16:05.928] [debug] [network] Stopping completed seed [ 3.236.38.121:8333 ]  
+[2022-09-07 14:16:05.928] [debug] [network] Read  feefilter  from [ 3.236.38.121:8333 ] ( 8  bytes). Now parsing ... 
+[2022-09-07 14:16:05.928] [debug] [network] Received  feefilter  from [ 3.236.38.121:8333 ] ( 8  bytes) 
+[2022-09-07 14:16:05.928] [debug] [network] Seed channel stopped:  success 
+[2022-09-07 14:16:06.106] [debug] [network] Heading read failure [ 139.59.99.164:8333 ]  unable to reach remote host 
+[2022-09-07 14:16:06.106] [debug] [network] Stop protocol_ version  on [ 139.59.99.164:8333 ]  End of file 
+[2022-09-07 14:16:06.106] [debug] [network] Failure in handshake with [ 139.59.99.164:8333 ]  channel stopped 
+[2022-09-07 14:16:06.106] [debug] [network] Seed channel stopped:  channel stopped 
+[2022-09-07 14:16:06.178] [debug] [network] Read  version  from [ 47.88.159.63:8333 ] ( 120  bytes). Now parsing ... 
+[2022-09-07 14:16:06.178] [debug] [network] Peer [ 47.88.159.63:8333 ] protocol version ( 70015 ) user agent:  /Bitcoin Cash Node:24.0.0(EB32.0)/ 
+[2022-09-07 14:16:06.178] [debug] [network] Negotiated protocol version ( 70014 ) for [ 47.88.159.63:8333 ] 
+[2022-09-07 14:16:06.178] [debug] [network] Received  version  from [ 47.88.159.63:8333 ] ( 120  bytes) 
+[2022-09-07 14:16:06.189] [debug] [network] Read  verack  from [ 47.88.159.63:8333 ] ( 0  bytes). Now parsing ... 
+[2022-09-07 14:16:06.189] [debug] [network] Received  verack  from [ 47.88.159.63:8333 ] ( 0  bytes) 
+[2022-09-07 14:16:06.240] [debug] [network] Read  version  from [ 52.192.182.28:8333 ] ( 120  bytes). Now parsing ... 
+[2022-09-07 14:16:06.240] [debug] [network] Peer [ 52.192.182.28:8333 ] protocol version ( 70015 ) user agent:  /Bitcoin Cash Node:24.0.0(EB32.0)/ 
+[2022-09-07 14:16:06.240] [debug] [network] Negotiated protocol version ( 70014 ) for [ 52.192.182.28:8333 ] 
+[2022-09-07 14:16:06.240] [debug] [network] Received  version  from [ 52.192.182.28:8333 ] ( 120  bytes) 
+[2022-09-07 14:16:06.249] [debug] [network] Read  verack  from [ 52.192.182.28:8333 ] ( 0  bytes). Now parsing ... 
+[2022-09-07 14:16:06.250] [debug] [network] Received  verack  from [ 52.192.182.28:8333 ] ( 0  bytes) 
+[2022-09-07 14:16:06.442] [debug] [network] Read  sendheaders  from [ 47.88.159.63:8333 ] ( 0  bytes). Now parsing ... 
+[2022-09-07 14:16:06.442] [debug] [network] Received  sendheaders  from [ 47.88.159.63:8333 ] ( 0  bytes) 
+[2022-09-07 14:16:06.442] [debug] [network] Read  sendcmpct  from [ 47.88.159.63:8333 ] ( 9  bytes). Now parsing ... 
+[2022-09-07 14:16:06.442] [debug] [network] Received  sendcmpct  from [ 47.88.159.63:8333 ] ( 9  bytes) 
+[2022-09-07 14:16:06.442] [debug] [network] Read  ping  from [ 47.88.159.63:8333 ] ( 8  bytes). Now parsing ... 
+[2022-09-07 14:16:06.442] [debug] [network] Received  ping  from [ 47.88.159.63:8333 ] ( 8  bytes) 
+[2022-09-07 14:16:06.442] [debug] [network] Read  addr  from [ 47.88.159.63:8333 ] ( 31  bytes). Now parsing ... 
+[2022-09-07 14:16:06.442] [debug] [network] Received  addr  from [ 47.88.159.63:8333 ] ( 31  bytes) 
+[2022-09-07 14:16:06.442] [debug] [network] Storing addresses from seed [ 47.88.159.63:8333 ] ( 1 ) 
+[2022-09-07 14:16:06.442] [debug] [network] Accepted ( 1  of  1 ) host addresses from peer. 
+[2022-09-07 14:16:06.442] [debug] [network] Read  feefilter  from [ 47.88.159.63:8333 ] ( 8  bytes). Now parsing ... 
+[2022-09-07 14:16:06.442] [debug] [network] Stopping completed seed [ 47.88.159.63:8333 ]  
+[2022-09-07 14:16:06.442] [debug] [network] Received  feefilter  from [ 47.88.159.63:8333 ] ( 8  bytes) 
+[2022-09-07 14:16:06.442] [debug] [network] Seed channel stopped:  success 
+[2022-09-07 14:16:06.522] [debug] [network] Read  sendheaders  from [ 52.192.182.28:8333 ] ( 0  bytes). Now parsing ... 
+[2022-09-07 14:16:06.522] [debug] [network] Received  sendheaders  from [ 52.192.182.28:8333 ] ( 0  bytes) 
+[2022-09-07 14:16:06.522] [debug] [network] Read  sendcmpct  from [ 52.192.182.28:8333 ] ( 9  bytes). Now parsing ... 
+[2022-09-07 14:16:06.522] [debug] [network] Received  sendcmpct  from [ 52.192.182.28:8333 ] ( 9  bytes) 
+[2022-09-07 14:16:06.522] [debug] [network] Read  ping  from [ 52.192.182.28:8333 ] ( 8  bytes). Now parsing ... 
+[2022-09-07 14:16:06.522] [debug] [network] Received  ping  from [ 52.192.182.28:8333 ] ( 8  bytes) 
+[2022-09-07 14:16:06.522] [debug] [network] Read  addr  from [ 52.192.182.28:8333 ] ( 31  bytes). Now parsing ... 
+[2022-09-07 14:16:06.522] [debug] [network] Received  addr  from [ 52.192.182.28:8333 ] ( 31  bytes) 
+[2022-09-07 14:16:06.522] [debug] [network] Storing addresses from seed [ 52.192.182.28:8333 ] ( 1 ) 
+[2022-09-07 14:16:06.522] [debug] [network] Accepted ( 1  of  1 ) host addresses from peer. 
+[2022-09-07 14:16:06.522] [debug] [network] Stopping completed seed [ 52.192.182.28:8333 ]  
+[2022-09-07 14:16:06.522] [info] [node] Seeding is complete. 
+[2022-09-07 14:16:06.522] [debug] [network] Read  feefilter  from [ 52.192.182.28:8333 ] ( 8  bytes). Now parsing ... 
+[2022-09-07 14:16:06.522] [debug] [network] Received  feefilter  from [ 52.192.182.28:8333 ] ( 8  bytes) 
+[2022-09-07 14:16:06.522] [info] [node] Node start height is ( 10713 ). 
+[2022-09-07 14:16:06.523] [info] [node] Starting inbound session on port ( 8333 ). 
+[2022-09-07 14:16:06.523] [info] [network] Not configured for accepting incoming connections. 
+[2022-09-07 14:16:06.523] [info] [network] Not configured for generating outbound connections. 
+[2022-09-07 14:16:06.523] [info] [node] Node is started. 
+[2022-09-07 14:16:06.523] [debug] [network] Seed channel stopped:  success 
+[2022-09-07 14:16:06.530] [debug] [network] Read  version  from [ 127.0.0.1:8333 ] ( 120  bytes). Now parsing ... 
+[2022-09-07 14:16:06.530] [debug] [network] Peer [ 127.0.0.1:8333 ] protocol version ( 70016 ) user agent:  /Bitcoin Cash Node:24.1.0(EB32.0)/ 
+[2022-09-07 14:16:06.530] [debug] [network] Negotiated protocol version ( 70014 ) for [ 127.0.0.1:8333 ] 
+[2022-09-07 14:16:06.530] [debug] [network] Received  version  from [ 127.0.0.1:8333 ] ( 120  bytes) 
+[2022-09-07 14:16:06.530] [debug] [network] Read  verack  from [ 127.0.0.1:8333 ] ( 0  bytes). Now parsing ... 
+[2022-09-07 14:16:06.530] [info] [network] Connected manual channel [ 127.0.0.1:8333 ] as [ 127.0.0.1:8333 ] ( 1 ) 
+[2022-09-07 14:16:06.530] [debug] [node] The chain is stale, send sendcmcpt low bandwidth [ 127.0.0.1:8333 ] 
+[2022-09-07 14:16:06.530] [debug] [node] Ask [ 127.0.0.1:8333 ] for  headers  after [ 00000000258f267e1490c715c451cba90c02e3d65286aad8a907a1646bf095a4 ] 
+[2022-09-07 14:16:06.530] [debug] [network] Received  verack  from [ 127.0.0.1:8333 ] ( 0  bytes) 
+[2022-09-07 14:16:06.530] [debug] [network] Read  sendheaders  from [ 127.0.0.1:8333 ] ( 0  bytes). Now parsing ... 
+[2022-09-07 14:16:06.530] [debug] [network] Received  sendheaders  from [ 127.0.0.1:8333 ] ( 0  bytes) 
+[2022-09-07 14:16:06.530] [debug] [network] Read  sendcmpct  from [ 127.0.0.1:8333 ] ( 9  bytes). Now parsing ... 
+[2022-09-07 14:16:06.530] [debug] [network] Received  sendcmpct  from [ 127.0.0.1:8333 ] ( 9  bytes) 
+[2022-09-07 14:16:06.530] [debug] [network] Read  ping  from [ 127.0.0.1:8333 ] ( 8  bytes). Now parsing ... 
+[2022-09-07 14:16:06.530] [debug] [network] Received  ping  from [ 127.0.0.1:8333 ] ( 8  bytes) 
+[2022-09-07 14:16:06.530] [debug] [network] Read  getheaders  from [ 127.0.0.1:8333 ] ( 1029  bytes). Now parsing ... 
+[2022-09-07 14:16:06.531] [debug] [network] Received  getheaders  from [ 127.0.0.1:8333 ] ( 1029  bytes) 
+[2022-09-07 14:16:06.531] [debug] [network] Read  feefilter  from [ 127.0.0.1:8333 ] ( 8  bytes). Now parsing ... 
+[2022-09-07 14:16:06.531] [debug] [node] Disallowed get_headers locator size ( 31 ) from [ 127.0.0.1:8333 ] 
+[2022-09-07 14:16:06.531] [debug] [network] Received  feefilter  from [ 127.0.0.1:8333 ] ( 8  bytes) 
+[2022-09-07 14:16:06.531] [debug] [network] Read  pong  from [ 127.0.0.1:8333 ] ( 8  bytes). Now parsing ... 
+[2022-09-07 14:16:06.531] [debug] [network] Received  pong  from [ 127.0.0.1:8333 ] ( 8  bytes) 
+[2022-09-07 14:17:06.596] [debug] [network] Fired protocol_ block_in  timer on [ 127.0.0.1:8333 ]  success 
+[2022-09-07 14:17:06.597] [debug] [network] Manual channel stopped:  success 
+[2022-09-07 14:17:06.597] [debug] [network] Stopped block_in protocol for [ 127.0.0.1:8333 ]. 
+[2022-09-07 14:17:06.597] [debug] [network] Stopped block_out protocol for [ 127.0.0.1:8333 ]. 
+[2022-09-07 14:17:06.597] [debug] [network] Stopped double_spend_proof_in protocol for [ 127.0.0.1:8333 ]. 
+[2022-09-07 14:17:06.597] [debug] [network] Stopped double_spend_proof_out protocol for [ 127.0.0.1:8333 ]. 
+[2022-09-07 14:17:06.597] [debug] [network] Stopped transaction_in protocol for [ 127.0.0.1:8333 ]. 
+[2022-09-07 14:17:06.597] [debug] [network] Stopped transaction_out protocol for [ 127.0.0.1:8333 ]. 
+[2022-09-07 14:17:06.604] [debug] [network] Read  version  from [ 127.0.0.1:8333 ] ( 120  bytes). Now parsing ... 
+[2022-09-07 14:17:06.604] [debug] [network] Peer [ 127.0.0.1:8333 ] protocol version ( 70016 ) user agent:  /Bitcoin Cash Node:24.1.0(EB32.0)/ 
+[2022-09-07 14:17:06.604] [debug] [network] Negotiated protocol version ( 70014 ) for [ 127.0.0.1:8333 ] 
+[2022-09-07 14:17:06.604] [debug] [network] Received  version  from [ 127.0.0.1:8333 ] ( 120  bytes) 
+[2022-09-07 14:17:06.604] [debug] [network] Read  verack  from [ 127.0.0.1:8333 ] ( 0  bytes). Now parsing ... 
+[2022-09-07 14:17:06.604] [info] [network] Connected manual channel [ 127.0.0.1:8333 ] as [ 127.0.0.1:8333 ] ( 1 ) 
+[2022-09-07 14:17:06.604] [debug] [node] The chain is stale, send sendcmcpt low bandwidth [ 127.0.0.1:8333 ] 
+[2022-09-07 14:17:06.604] [debug] [node] Ask [ 127.0.0.1:8333 ] for  headers  after [ 00000000258f267e1490c715c451cba90c02e3d65286aad8a907a1646bf095a4 ] 
+[2022-09-07 14:17:06.605] [debug] [network] Received  verack  from [ 127.0.0.1:8333 ] ( 0  bytes) 
+[2022-09-07 14:17:06.605] [debug] [network] Read  sendheaders  from [ 127.0.0.1:8333 ] ( 0  bytes). Now parsing ... 
+[2022-09-07 14:17:06.605] [debug] [network] Received  sendheaders  from [ 127.0.0.1:8333 ] ( 0  bytes) 
+[2022-09-07 14:17:06.605] [debug] [network] Read  sendcmpct  from [ 127.0.0.1:8333 ] ( 9  bytes). Now parsing ... 
+[2022-09-07 14:17:06.605] [debug] [network] Received  sendcmpct  from [ 127.0.0.1:8333 ] ( 9  bytes) 
+[2022-09-07 14:17:06.605] [debug] [network] Read  ping  from [ 127.0.0.1:8333 ] ( 8  bytes). Now parsing ... 
+[2022-09-07 14:17:06.605] [debug] [network] Received  ping  from [ 127.0.0.1:8333 ] ( 8  bytes) 
+[2022-09-07 14:17:06.605] [debug] [network] Read  getheaders  from [ 127.0.0.1:8333 ] ( 1029  bytes). Now parsing ... 
+[2022-09-07 14:17:06.605] [debug] [network] Received  getheaders  from [ 127.0.0.1:8333 ] ( 1029  bytes) 
+[2022-09-07 14:17:06.605] [debug] [node] Disallowed get_headers locator size ( 31 ) from [ 127.0.0.1:8333 ] 
+[2022-09-07 14:17:06.605] [debug] [network] Read  feefilter  from [ 127.0.0.1:8333 ] ( 8  bytes). Now parsing ... 
+[2022-09-07 14:17:06.605] [debug] [network] Received  feefilter  from [ 127.0.0.1:8333 ] ( 8  bytes) 
+[2022-09-07 14:17:06.605] [debug] [network] Read  pong  from [ 127.0.0.1:8333 ] ( 8  bytes). Now parsing ... 
+[2022-09-07 14:17:06.605] [debug] [network] Received  pong  from [ 127.0.0.1:8333 ] ( 8  bytes) 
+[2022-09-07 14:17:26.825] [debug] [network] Read  addr  from [ 127.0.0.1:8333 ] ( 30003  bytes). Now parsing ... 
+[2022-09-07 14:17:26.825] [debug] [network] Received  addr  from [ 127.0.0.1:8333 ] ( 30003  bytes) 
+[2022-09-07 14:17:26.825] [debug] [network] Storing addresses from [ 127.0.0.1:8333 ] ( 1000 ) 
+[2022-09-07 14:17:26.830] [debug] [network] Accepted ( 999  of  1000 ) host addresses from peer. 

@@ -1,0 +1,1 @@
+../build/node-exe/bin/kth -c config.cfg

@@ -92,19 +92,19 @@ class KnuthConan(ConanFile):
     build_policy = "missing"
 
     def requirements(self):
-        self.requires("boost/1.78.0")
-        self.requires("lmdb/0.9.24@kth/stable")
+        self.requires("boost/1.79.0")
+        self.requires("lmdb/0.9.29")
         self.requires("fmt/8.1.1")
         # self.requires("libmdbx/0.7.0@kth/stable")
         # self.requires("binlog/2020.02.29@kth/stable")
         # self.requires("binlog/2020.02.29@kth/stable")
-        self.requires("spdlog/1.9.1")
+        self.requires("spdlog/1.10.0")
         self.requires("algorithm/0.1.239@tao/stable")
 
         if self.settings.os == "Linux" or self.settings.os == "Macos":
             self.requires("gmp/6.2.1")
         if self.options.with_rpc:
-            self.requires("libzmq/4.2.2@kth/stable")
+            self.requires("libzmq/4.3.2@kth/stable")
         if self.options.currency == "LTC":
              self.requires("OpenSSL/1.0.2l@conan/stable")
 
