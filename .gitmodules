@@ -1,47 +1,43 @@
 [submodule "domain"]
 	path = domain
 	url = https://github.com/k-nuth/domain.git
-	branch = dev
+	branch = dev-experiments
 [submodule "infrastructure"]
 	path = infrastructure
 	url = https://github.com/k-nuth/infrastructure.git
-	branch = dev
+	branch = dev-experiments
 [submodule "database"]
 	path = database
 	url = https://github.com/k-nuth/database.git
-	branch = dev
+	branch = dev-experiments
 [submodule "network"]
 	path = network
 	url = https://github.com/k-nuth/network.git
-	branch = dev
+	branch = dev-experiments
 [submodule "consensus"]
 	path = consensus
 	url = https://github.com/k-nuth/consensus.git
-	branch = dev
+	branch = dev-experiments
 [submodule "blockchain"]
 	path = blockchain
 	url = https://github.com/k-nuth/blockchain.git
-	branch = dev
+	branch = dev-experiments
 [submodule "node"]
 	path = node
 	url = https://github.com/k-nuth/node.git
-	branch = dev
-[submodule "rpc"]
-	path = rpc
-	url = https://github.com/k-nuth/rpc
-	branch = dev
+	branch = dev-experiments
 [submodule "node-exe"]
 	path = node-exe
 	url = https://github.com/k-nuth/node-exe.git
-	branch = dev
+	branch = dev-experiments
 [submodule "c-api"]
 	path = c-api
 	url = https://github.com/k-nuth/c-api.git
-	branch = dev
+	branch = dev-experiments
 [submodule "secp256k1"]
 	path = secp256k1
 	url = https://github.com/k-nuth/secp256k1.git
-    branch = dev
+    branch = dev-experiments
 [submodule "ci_utils"]
 	path = ci_utils
 	url = https://github.com/k-nuth/ci-utils.git

@@ -1,0 +1,11 @@
+- remove boost lexical cast
+- remove all the std::ostream& operator<<(std::ostream& output, ...)
+- remove std::regex
+- remove boost::regex
+
+- remove RPC submodule
+- make RPC repo private
+
+- use string_view when necesary
+- use ranges when necesary
+- use concepts when necesary
