@@ -24,6 +24,6 @@ cmake .. -GNinja -DCMAKE_CXX_FLAGS=-Wno-deprecated-declarations \
                  -DENABLE_SHARED_CAPI=ON \
                  -DCMAKE_BUILD_TYPE=Release
 
-ninja -j4
+ninja -j16
 # cmake --build .
 
