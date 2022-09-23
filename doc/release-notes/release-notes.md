@@ -1,3 +1,12 @@
+# version 0.29.0
+
+You can install Knuth node version v0.29.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Fixes on `armv7` architecture.
+- Uses [C++ API v0.29.0](https://github.com/k-nuth/node/releases/tag/v0.29.0).
+
 # version 0.28.0
 
 You can install Knuth node version v0.28.0 [using these instructions](https://kth.cash/#download).
