@@ -7,17 +7,6 @@
 
 Knuth is a high performance implementation of the Bitcoin protocol focused on users requiring extra performance and flexibility, what makes it the best platform for wallets, exchanges, block explorers and miners.
 
-## Multiple cryptos
-
-Knuth supports the following cryptocurrencies in the same code base:
-- [Bitcoin Cash (BCH)](https://www.bitcoincash.org/)
-- [Bitcoin (BTC)](https://bitcoin.org/)
-- [Litecoin (LTC)](https://litecoin.org/)
-
-Choosing a cryptocurrency is just as simple as changing a switch in our build system, [take a look here](#getting-started).
-
-Also, given its modular design and beautiful code, Knuth allows you to implement other cryptocurrencies with very few code changes.
-
 ## Not just a node
 
 Knuth is a multi-crypto full node, but it is also a development platform.
@@ -46,6 +35,17 @@ Knuth can be used in any computer architecture and operating system, it only req
 Knuth has been well tested on x86-64 processors and on the following operating systems: FreeBSD, Linux, macOS and Windows. However, it is not limited to these, Knuth can be used in any computer architecture and any operating system, the only requirement is a 64-bit system.
 
 If you find a problem in any other platform, please [let us know](https://github.com/k-nuth/kth/issues).
+
+## Multiple cryptos
+
+Knuth supports the following cryptocurrencies in the same code base:
+- [Bitcoin Cash (BCH)](https://www.bitcoincash.org/)
+- [Bitcoin (BTC)](https://bitcoin.org/)
+- [Litecoin (LTC)](https://litecoin.org/)
+
+Choosing a cryptocurrency is just as simple as changing a switch in our build system, [take a look here](#getting-started).
+
+Also, given its modular design and beautiful code, Knuth allows you to implement other cryptocurrencies with very few code changes.
 
 ## Getting started
 
