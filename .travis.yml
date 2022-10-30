@@ -1,4 +1,4 @@
-# Copyright (c) 2016-2020 Knuth Project developers.
+# Copyright (c) 2016-2022 Knuth Project developers.
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -116,13 +116,13 @@ install:
       fi
       # if which pyenv > /dev/null; then
       #     eval "$(pyenv init -)"
-      #     eval "$(pyenv virtualenv-init -)" 
+      #     eval "$(pyenv virtualenv-init -)"
       # fi
 
       pyenv install 2.7.10
       pyenv virtualenv 2.7.10 conan
       pyenv rehash
-      pyenv activate conan      
+      pyenv activate conan
     fi
 
   - pip install conan_package_tools --upgrade
@@ -148,14 +148,14 @@ install:
 #   - DEPS_DIR="${TRAVIS_BUILD_DIR}/deps"
 #   # - DEPS_DIR="/home/travis/deps"
 #   - mkdir ${DEPS_DIR} && cd ${DEPS_DIR}
-  
-  
+
+
 #   ############################################################################
 #   # Setup default versions and override compiler if needed
 #   ############################################################################
 #   - if [[ "${LLVM_VERSION}" == "default" ]]; then LLVM_VERSION=3.9.0; fi
 #   - if [[ "${BOOST_VERSION}" == "default" ]]; then BOOST_VERSION=1.64.0; fi
-#   - if [[ "${COMPILER}" != "" ]]; then export CXX=${COMPILER}; fi  
+#   - if [[ "${COMPILER}" != "" ]]; then export CXX=${COMPILER}; fi
 
 #   ############################################################################
 #   # Install a recent CMake
@@ -284,7 +284,7 @@ script:
 
 
 notifications:
-  email: 
+  email:
     - ci@kth.cash
     - dev@kth.cash
     - fernando@kth.cash

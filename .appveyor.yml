@@ -1,4 +1,4 @@
-# Copyright (c) 2016-2020 Knuth Project developers.
+# Copyright (c) 2016-2022 Knuth Project developers.
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -24,7 +24,7 @@ environment:
     # VS150COMNTOOLS: "C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Community\\Common7\\Tools\\"
 
     matrix:
- 
+
       - PYTHON: "C:\\Python27-x64"
         PYTHON_VERSION: "2.7.13"
         PYTHON_ARCH: "64"
@@ -61,7 +61,7 @@ install:
   - move C:\projects\deps\cmake-* C:\projects\deps\cmake # Move to a version-agnostic directory
   - set PATH=C:\projects\deps\cmake\bin;%PATH%
   - cmake --version
-  
+
   # ############################################################################
   # # Install boost with fpic
   # ############################################################################
@@ -75,7 +75,7 @@ install:
   # - cd C:\projects\deps\boost\stage
   # - rename boost_msvc_141_fpic lib
   # - cd C:\projects\deps\boost\stage\lib
-  
+
   # # HEADERS
   # - set BOOST_H_URL="http://repo.kth.cash/packages/binary/boost_1_64_include.7z"
   # - appveyor DownloadFile %BOOST_H_URL% -FileName boost_h.7z
@@ -131,7 +131,7 @@ build_script:
   - cd build
   # - dir ..
   - conan install ..
-  
+
   - cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF -DWITH_EXAMPLES=OFF -DWITH_LITECOIN=OFF -DWITH_TESTS=OFF -DENABLE_MODULE_RECOVERY=ON -DWITH_TOOLS=OFF
   #  -DBOOST_ROOT=C:\projects\deps\boost
   - cmake --build .

@@ -1,4 +1,4 @@
-# Copyright (c) 2016-2020 Knuth Project developers.
+# Copyright (c) 2016-2022 Knuth Project developers.
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -34,7 +34,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # ---------------------------------------------------------------
 
 option(BUILD_NODE_EXE "Build the node executable." ON)
-option(BUILD_C_API "Build the C-API." OFF)
+option(BUILD_C_API "Build the C-API." ON)
 
 option(USE_CONAN "Use Conan Build Tool." OFF)
 option(NO_CONAN_AT_ALL "Conan totally disabled." OFF)
@@ -115,7 +115,7 @@ add_subdirectory(network)
 add_subdirectory(database)
 add_subdirectory(blockchain)
 add_subdirectory(node)
-add_subdirectory(rpc)
+# add_subdirectory(rpc)
 
 if (BUILD_NODE_EXE)
     add_subdirectory(node-exe)
