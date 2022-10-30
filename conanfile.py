@@ -2,7 +2,6 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-
 import os
 from conans import ConanFile, CMake
 from conans import __version__ as conan_version
@@ -79,7 +78,7 @@ class KnuthConan(ConanFile):
         "enable_module_ecdh=False", \
         "enable_module_schnorr=False", \
         "enable_module_recovery=True", \
-        "with_rpc=True", \
+        "with_rpc=False", \
         "currency=BCH"
 
         # "with_asm='auto'", \
@@ -93,21 +92,25 @@ class KnuthConan(ConanFile):
     build_policy = "missing"
 
     def requirements(self):
-        self.requires("boost/1.73.0@kth/stable")
+        self.requires("boost/1.78.0")
         self.requires("lmdb/0.9.24@kth/stable")
-        self.requires("libmdbx/0.7.0@kth/stable")
-        self.requires("binlog/2020.02.29@kth/stable")
-        self.requires("fmt/6.2.0@")
-        self.requires("binlog/2020.02.29@kth/stable")
-        self.requires("spdlog/1.5.0@")
-        self.requires("algorithm/0.1.213@tao/stable")
+        self.requires("fmt/8.1.1")
+        # self.requires("libmdbx/0.7.0@kth/stable")
+        # self.requires("binlog/2020.02.29@kth/stable")
+        # self.requires("binlog/2020.02.29@kth/stable")
+        self.requires("spdlog/1.9.1")
+        self.requires("algorithm/0.1.239@tao/stable")
 
         if self.settings.os == "Linux" or self.settings.os == "Macos":
-            self.requires("gmp/6.2.0@kth/stable")
+            self.requires("gmp/6.2.1")
         if self.options.with_rpc:
             self.requires("libzmq/4.2.2@kth/stable")
         if self.options.currency == "LTC":
              self.requires("OpenSSL/1.0.2l@conan/stable")
+
+    def validate(self):
+        if self.settings.os == "Linux" and self.settings.compiler == "gcc" and self.settings.compiler.libcxx == "libstdc++":
+            raise ConanInvalidConfiguration("We just support GCC C++11ABI.\n**** Please run `conan profile update settings.compiler.libcxx=libstdc++11 default`")
 
     def configure(self):
         self.options["fmt"].header_only = True
@@ -127,7 +130,7 @@ class KnuthConan(ConanFile):
         cmake.definitions["WITH_PNG"] = option_on_off(self.options.with_png)
         cmake.definitions["WITH_LITECOIN"] = option_on_off(self.options.with_litecoin)
         cmake.definitions["WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
-        
+
         # if self.settings.compiler == "gcc":
         #     if float(str(self.settings.compiler.version)) >= 5:
         #         cmake.definitions["_GLIBCXX_USE_CXX11_ABI"] = "1"
