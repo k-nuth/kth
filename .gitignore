@@ -1,9 +1,7 @@
 .idea/
 cmake-build-debug/
 build/
-
 conanfile.pyc
 __pycache__/
 .vscode/
-
-
+build_debug/
