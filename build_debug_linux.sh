@@ -7,7 +7,7 @@ conan install .. -s build_type=Debug --build=missing
 cmake .. -GNinja \
          -DCMAKE_VERBOSE_MAKEFILE=ON \
          -DBINLOG=OFF \
-         -DWITH_CONSOLE_CAPI=OFF \
+         -DWITH_CONSOLE_CAPI=ON \
          -DBUILD_C_API=ON \
          -DDB_READONLY_MODE=OFF \
          -DENABLE_TESTS=OFF \

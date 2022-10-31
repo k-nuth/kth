@@ -5,3 +5,4 @@ conanfile.pyc
 __pycache__/
 .vscode/
 build_debug/
+build_release/
