@@ -1,7 +1,7 @@
 <!-- <a target="_blank" href="http://semver.org">![Version][badge.version]</a> -->
 <!-- <a target="_blank" href="https://cirrus-ci.com/github/k-nuth/node-exe">![Build Status][badge.Cirrus]</a> -->
 
-# knuth <a target="_blank" href="https://github.com/k-nuth/node-exe/releases">![Github Releases][badge.release]</a> <a target="_blank" href="https://github.com/k-nuth/node-exe/actions">![Build status][badge.GithubActions]</a> <a target="_blank" href="https://ci.appveyor.com/projects/k-nuth/node-exe">![Build Status][badge.Appveyor]</a> <a href="#">![CPP][badge.cpp]</a> <a target="_blank" href="https://t.me/knuth_cash">![Telegram][badge.telegram]</a> <a target="_blank" href="https://k-nuth.slack.com/">![Slack][badge.slack]</a>
+# knuth <a target="_blank" href="https://github.com/k-nuth/node-exe/releases">![Github Releases][badge.release]</a> <a target="_blank" href="https://github.com/k-nuth/node-exe/actions">![Build status][badge.GithubActions]</a> <a href="#">![CPP][badge.cpp]</a> <a target="_blank" href="https://t.me/knuth_cash">![Telegram][badge.telegram]</a> <a target="_blank" href="https://k-nuth.slack.com/">![Slack][badge.slack]</a>
 
 > High performance Bitcoin development platform.
 
@@ -104,12 +104,13 @@ Fernando Pelliccioni (fpelliccioni@gmail.com) - GPG Fingerprint: 8C1C 3163 AAE
 [badge.Travis]: https://travis-ci.org/k-nuth/node-exe.svg?branch=master
 [badge.Appveyor]: https://ci.appveyor.com/api/projects/status/github/k-nuth/node-exe?svg=true&branch=master
 [badge.Cirrus]: https://api.cirrus-ci.com/github/k-nuth/node-exe.svg?branch=master
-[badge.GithubActions]: https://github.com/k-nuth/node-exe/workflows/Build%20and%20Test/badge.svg
+[badge.GithubActions]: https://img.shields.io/endpoint.svg?url=https%3A%2F%2Factions-badge.atrox.dev%2Fk-nuth%2Fnode-exe%2Fbadge&style=for-the-badge
 [badge.version]: https://badge.fury.io/gh/k-nuth%2Fkth-node-exe.svg
 [badge.release]: https://img.shields.io/github/release/k-nuth/node-exe.svg
-[badge.cpp]: https://img.shields.io/badge/C++-17-blue.svg?style=flat&logo=c%2B%2B
-[badge.telegram]: https://img.shields.io/badge/telegram-badge-blue.svg?logo=telegram
-[badge.slack]: https://img.shields.io/badge/slack-badge-orange.svg?logo=slack
+[badge.cpp]: https://img.shields.io/badge/C++-17-blue.svg?logo=c%2B%2B&style=for-the-badge
+[badge.telegram]: https://img.shields.io/badge/telegram-badge-blue.svg?logo=telegramlogo=slack&style=for-the-badge
+[badge.slack]: https://img.shields.io/badge/slack-badge-orange.svg?logo=slacklogo=slack&style=for-the-badge
+
 
 <!-- [badge.Gitter]: https://img.shields.io/badge/gitter-join%20chat-blue.svg -->
 
