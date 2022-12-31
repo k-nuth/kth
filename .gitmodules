@@ -26,10 +26,6 @@
 	path = node
 	url = https://github.com/k-nuth/node.git
 	branch = dev
-[submodule "rpc"]
-	path = rpc
-	url = https://github.com/k-nuth/rpc
-	branch = dev
 [submodule "node-exe"]
 	path = node-exe
 	url = https://github.com/k-nuth/node-exe.git
