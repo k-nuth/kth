@@ -92,13 +92,11 @@ class KnuthConan(ConanFile):
     build_policy = "missing"
 
     def requirements(self):
-        self.requires("boost/1.78.0")
-        self.requires("lmdb/0.9.24@kth/stable")
+        self.requires("boost/1.80.0")
+        self.requires("lmdb/0.9.29")
         self.requires("fmt/8.1.1")
-        # self.requires("libmdbx/0.7.0@kth/stable")
-        # self.requires("binlog/2020.02.29@kth/stable")
-        # self.requires("binlog/2020.02.29@kth/stable")
-        self.requires("spdlog/1.9.1")
+        self.requires("spdlog/1.10.0")
+        self.requires("zlib/1.2.13")
         self.requires("algorithm/0.1.239@tao/stable")
 
         if self.settings.os == "Linux" or self.settings.os == "Macos":
