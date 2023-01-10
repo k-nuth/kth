@@ -155,7 +155,9 @@ class KnuthConan(ConanFile):
         cmake.definitions["ENABLE_MODULE_RECOVERY"] = option_on_off(self.options.enable_module_recovery)
         cmake.definitions["WITH_RPC"] = option_on_off(self.options.with_rpc)
 
-        cmake.definitions["CONAN_CXX_FLAGS"] = cmake.definitions.get("CONAN_CXX_FLAGS", "") + " -DKTH_MARCH_NAMES_FULL_STR=\\\"%s\\\"" % "64 bits"
+        # cmake.definitions["CONAN_CXX_FLAGS"] = cmake.definitions.get("CONAN_CXX_FLAGS", "") + " -DKTH_MARCH_NAMES_FULL_STR=\\\"%s\\\"" % "64 bits"
+
+        cmake.definitions["MARCH_NAMES_FULL_STR"] = "hello"
 
 
         if self.settings.os == "Windows":
