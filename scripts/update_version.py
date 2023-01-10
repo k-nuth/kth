@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright (c) 2016-2021 Knuth Project developers.
+# Copyright (c) 2016-2023 Knuth Project developers.
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -55,12 +55,12 @@ def find_and_process_file_version(kth_project, filename, old_str, new_str, oldma
 
 
 def update_version(root_path, project, oldmajor, oldminor, oldpatch, newmajor, newminor, newpatch):
-    
-    
+
+
 
     kth_project = 'kth-%s' % (project,)
     #path = os.path.join(root_path, kth_project)
-    
+
     print ('Updating ' + kth_project)
 
     dep_files = ['kth-%sConfig.cmake.in']

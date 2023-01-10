@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright (c) 2016-2021 Knuth Project developers.
+# Copyright (c) 2016-2023 Knuth Project developers.
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -40,7 +40,7 @@ def commit(new_version):
 
 def call_update_version(root_path, project,old_version,new_version):
     update_version.update_version(root_path, project, old_version[0], old_version[1], old_version[2], new_version[0], new_version[1], new_version[2])
-    return 
+    return
 
 def clone():
     os.system('git clone https://github.com/k-nuth/kth -b dev --recursive')
@@ -80,7 +80,7 @@ def release(root_path,old_version,new_version, token):
         if token != '':
             print ('Creating PR for ' + kth_project)
             create_pr(kth_project, new_version_str, token)
-        os.chdir(root_path + 'kth')    
+        os.chdir(root_path + 'kth')
 
     return
 
