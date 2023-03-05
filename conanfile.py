@@ -3,31 +3,31 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 import os
-from conans import ConanFile, CMake
-from conans import __version__ as conan_version
-from conans.model.version import Version
+from conan import ConanFile
+from conan.tools.cmake import CMakeDeps, CMakeToolchain, CMake, cmake_layout
+from conan.tools.build import check_min_cppstd
 
 def option_on_off(option):
     return "ON" if option else "OFF"
 
-def get_content(file_name):
-    file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), file_name)
-    with open(file_path, 'r') as f:
-        return f.read().replace('\n', '').replace('\r', '')
+# def get_content(file_name):
+#     file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), file_name)
+#     with open(file_path, 'r') as f:
+#         return f.read().replace('\n', '').replace('\r', '')
 
-def get_version():
-    return get_content('conan_version')
+# def get_version():
+#     return get_content('conan_version')
 
-def get_channel():
-    return get_content('conan_channel')
+# def get_channel():
+#     return get_content('conan_channel')
 
-def get_conan_req_version():
-    return get_content('conan_req_version')
+# def get_conan_req_version():
+#     return get_content('conan_req_version')
 
 class KnuthConan(ConanFile):
     name = "kth"
-    version = get_version()
-    license = "http://www.boost.org/users/license.html"
+    # version = get_version()
+    license = "MIT"
     url = "https://github.com/k-nuth/kth"
     description = "Bitcoin Cross-Platform C++ Development Toolkit"
     settings = "os", "compiler", "build_type", "arch"
@@ -59,7 +59,6 @@ class KnuthConan(ConanFile):
             #    "with_scalar": ['64bit', '32bit', 'auto'],
             #    "with_bignum": ['gmp', 'no', 'auto'],
 
-
     default_options = "shared=False", \
         "fPIC=True", \
         "with_tests=False", \
@@ -86,17 +85,36 @@ class KnuthConan(ConanFile):
         # "with_scalar='auto'"
         # "with_bignum='auto'"
 
-    generators = "cmake"
+    # generators = "cmake"
+    # generators = "CMakeToolchain", "CMakeDeps"
     exports_sources = "src/*", "CMakeLists.txt", "cmake/*", "kth-coreConfig.cmake.in", "include/*", "test/*"
     package_files = "build/lkth-core.a"
-    build_policy = "missing"
+    # build_policy = "missing"
+
+    def validate(self):
+        if self.info.settings.compiler.cppstd:
+            check_min_cppstd(self, "20")
+
+        if self.settings.os == "Linux" and self.settings.compiler == "gcc" and self.settings.compiler.libcxx == "libstdc++":
+            raise ConanInvalidConfiguration("We just support GCC C++11ABI.\n**** Please run `conan profile update settings.compiler.libcxx=libstdc++11 default`")
+
+    def build_requirements(self):
+        # self.test_requires("catch2/3.3.0")
+        self.test_requires("catch2/3.3.1")
+        # self.test_requires("doctest/2.4.9")       # Alternative to Catch2
+        # self.test_requires("nanobench/4.3.9")
+        # self.requires("cppfront/cci.20221024")
+
+        # self.tool_requires("m4/1.4.19")
 
     def requirements(self):
-        self.requires("boost/1.80.0")
+        self.requires("boost/1.81.0")
         self.requires("lmdb/0.9.29")
-        self.requires("fmt/8.1.1")
-        self.requires("spdlog/1.10.0")
+        # self.requires("fmt/8.1.1")
+        self.requires("fmt/9.1.0")
+        self.requires("spdlog/1.11.0")
         self.requires("zlib/1.2.13")
+        # self.requires("catch2/3.3.1")
         self.requires("algorithm/0.1.239@tao/stable")
 
         if self.settings.os == "Linux" or self.settings.os == "Macos":
@@ -106,13 +124,19 @@ class KnuthConan(ConanFile):
         if self.options.currency == "LTC":
              self.requires("OpenSSL/1.0.2l@conan/stable")
 
-    def validate(self):
-        if self.settings.os == "Linux" and self.settings.compiler == "gcc" and self.settings.compiler.libcxx == "libstdc++":
-            raise ConanInvalidConfiguration("We just support GCC C++11ABI.\n**** Please run `conan profile update settings.compiler.libcxx=libstdc++11 default`")
-
     def configure(self):
         self.options["fmt"].header_only = True
         self.options["spdlog"].header_only = True
+
+    def layout(self):
+        cmake_layout(self)
+
+    def generate(self):
+        tc = CMakeToolchain(self)
+        # tc.variables["CMAKE_VERBOSE_MAKEFILE"] = True
+        tc.generate()
+        tc = CMakeDeps(self)
+        tc.generate()
 
     def build(self):
         cmake = CMake(self)
@@ -188,7 +212,12 @@ class KnuthConan(ConanFile):
         # cmake.definitions["KTH_BUILD_NUMBER"] = os.getenv('KTH_BUILD_NUMBER', '-')
         # cmake.configure(source_dir=self.conanfile_directory)
         cmake.definitions["KTH_BUILD_NUMBER"] = os.getenv('KTH_BUILD_NUMBER', '-')
-        cmake.configure(source_dir=self.source_folder)
+
+        # cmake.configure(source_dir=self.source_folder)
+        # cmake.build()
+
+
+        cmake.configure()
         cmake.build()
 
     def imports(self):
