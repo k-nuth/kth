@@ -44,7 +44,7 @@ Install and run Knuth is very easy:
 ```
 $ pip install kthbuild --user --upgrade
 
-$ conan config install https://github.com/k-nuth/ci-utils/raw/master/conan/config.zip
+$ conan config install https://github.com/k-nuth/ci-utils/raw/master/conan/config2023.zip
 
 # Just for Linux
 $ conan profile update settings.compiler.libcxx=libstdc++11 default
@@ -53,15 +53,13 @@ $ conan profile update settings.compiler.libcxx=libstdc++11 default
 2. Install the appropriate node executable:
 
 ```
-$ conan install kth/0.X@kth/stable --update
+$ conan install --requires=kth/0.33.0 --update --deploy=direct_deploy
 ```
-
-(`0.X` is an alias for our latest uploaded package)
 
 3. Run the node:
 
 ```
-$ ./kth
+$ ./kth/bin/kth
 ```
 For more more detailed instructions, please refer to our [documentation](https://k-nuth.github.io/docs/).
 
@@ -99,7 +97,4 @@ Fernando Pelliccioni (fpelliccioni@gmail.com) - GPG Fingerprint: 8C1C 3163 AAE
 [badge.cpp]: https://img.shields.io/badge/C++-20-blue.svg?logo=c%2B%2B&style=for-the-badge
 [badge.telegram]: https://img.shields.io/badge/telegram-badge-blue.svg?logo=telegramlogo=slack&style=for-the-badge
 [badge.slack]: https://img.shields.io/badge/slack-badge-orange.svg?logo=slacklogo=slack&style=for-the-badge
-
-
 <!-- [badge.Gitter]: https://img.shields.io/badge/gitter-join%20chat-blue.svg -->
-
