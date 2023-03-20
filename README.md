@@ -46,8 +46,6 @@ $ pip install kthbuild --user --upgrade
 
 $ conan config install https://github.com/k-nuth/ci-utils/raw/master/conan/config2023.zip
 
-# Just for Linux
-$ conan profile update settings.compiler.libcxx=libstdc++11 default
 ```
 
 2. Install the appropriate node executable:
