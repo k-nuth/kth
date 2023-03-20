@@ -1,3 +1,13 @@
+# version 0.32.0
+
+You can install Knuth node version v0.32.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- CI/CD code changes.
+- Conan V2 Partial support.
+- Uses [C++ API v0.32.0](https://github.com/k-nuth/node/releases/tag/v0.32.0).
+
 # version 0.31.0
 
 You can install Knuth node version v0.31.0 [using these instructions](https://kth.cash/#download).
