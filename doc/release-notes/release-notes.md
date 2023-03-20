@@ -1,3 +1,23 @@
+# version 0.33.0
+
+You can install Knuth node version v0.33.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Support for the [May 15, 2023 Network Upgrade](https://upgradespecs.bitcoincashnode.org/2023-05-15-upgrade/). This release implements the following CHIPs:
+    - [CHIP-2021-01 Restrict Transaction Version v1.0](https://gitlab.com/bitcoin.cash/chips/-/blob/3b0e5d55e1e139046794e850287b7acb795f4e66/CHIP-2021-01-Restrict%20Transaction%20Versions.md)
+    - [CHIP-2021-01 Minimum Transaction Size v0.4](https://gitlab.com/bitcoin.cash/chips/-/blob/00e55fbfdaacf1436e455289086d9b4c6b3e7306/CHIP-2021-01-Allow%20Smaller%20Transactions.md)
+    - [CHIP-2022-02 CashTokens v2.2.1](https://github.com/bitjson/cashtokens)
+    - [CHIP-2022-05 P2SH32 v1.5.1](https://gitlab.com/0353F40E/p2sh32/-/blob/f58ecf835f58555c9087c53af25da92a0e74534c/CHIP-2022-05_Pay-to-Script-Hash-32_%28P2SH32%29_for_Bitcoin_Cash.md)
+
+- Support for new `chipnet` test network (for pre-upgrade testing).
+- Support for C++20.
+- Full Conan V2 support was added.
+- Complete refactoring of the continuous integration scripts.
+- Keoken protocol was removed from the source code.
+- Uses [C++ API v0.34.0](https://github.com/k-nuth/node/releases/tag/v0.34.0).
+- Several external dependencies were updated.
+
 # version 0.32.0
 
 You can install Knuth node version v0.32.0 [using these instructions](https://kth.cash/#download).
