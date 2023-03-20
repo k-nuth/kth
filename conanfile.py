@@ -10,19 +10,12 @@ from conans.model.version import Version
 def option_on_off(option):
     return "ON" if option else "OFF"
 
-def get_content(file_name):
-    file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), file_name)
-    with open(file_path, 'r') as f:
-        return f.read().replace('\n', '').replace('\r', '')
-
 class KnuthConan(ConanFile):
     name = "kth"
-    version = get_version()
     license = "http://www.boost.org/users/license.html"
     url = "https://github.com/k-nuth/kth"
     description = "Bitcoin Cross-Platform C++ Development Toolkit"
     settings = "os", "compiler", "build_type", "arch"
-
 
     options = {"shared": [True, False],
                "fPIC": [True, False],
@@ -32,7 +25,6 @@ class KnuthConan(ConanFile):
                "with_png": [True, False],
                "with_litecoin": [True, False],
                "with_qrencode": [True, False],
-               "not_use_cpp11_abi": [True, False],
                "enable_benchmark": [True, False],
                "enable_tests": [True, False],
                "enable_openssl_tests": [True, False],
@@ -42,7 +34,6 @@ class KnuthConan(ConanFile):
                "enable_module_ecdh": [True, False],
                "enable_module_schnorr": [True, False],
                "enable_module_recovery": [True, False],
-               "with_rpc": [True, False],
                "currency": ['BCH', 'BTC', 'LTC']
     }
             #    "with_asm": ['x86_64', 'arm', 'no', 'auto'],
@@ -59,7 +50,6 @@ class KnuthConan(ConanFile):
         "with_png=False", \
         "with_litecoin=False", \
         "with_qrencode=False", \
-        "not_use_cpp11_abi=False", \
         "enable_benchmark=False", \
         "enable_tests=True", \
         "enable_openssl_tests=False", \
@@ -69,7 +59,6 @@ class KnuthConan(ConanFile):
         "enable_module_ecdh=False", \
         "enable_module_schnorr=False", \
         "enable_module_recovery=True", \
-        "with_rpc=False", \
         "currency=BCH"
 
         # "with_asm='auto'", \
@@ -92,8 +81,6 @@ class KnuthConan(ConanFile):
 
         if self.settings.os == "Linux" or self.settings.os == "Macos":
             self.requires("gmp/6.2.1")
-        if self.options.with_rpc:
-            self.requires("libzmq/4.2.2@kth/stable")
         if self.options.currency == "LTC":
              self.requires("OpenSSL/1.0.2l@conan/stable")
 
@@ -112,26 +99,12 @@ class KnuthConan(ConanFile):
         cmake.definitions["CMAKE_VERBOSE_MAKEFILE"] = "ON"
         cmake.definitions["ENABLE_SHARED"] = option_on_off(self.options.shared)
         cmake.definitions["ENABLE_POSITION_INDEPENDENT_CODE"] = option_on_off(self.options.fPIC)
-        # cmake.definitions["NOT_USE_CPP11_ABI"] = option_on_off(self.options.not_use_cpp11_abi)
         cmake.definitions["WITH_TESTS"] = option_on_off(self.options.with_tests)
         cmake.definitions["WITH_EXAMPLES"] = option_on_off(self.options.with_examples)
         cmake.definitions["WITH_ICU"] = option_on_off(self.options.with_icu)
         cmake.definitions["WITH_PNG"] = option_on_off(self.options.with_png)
         cmake.definitions["WITH_LITECOIN"] = option_on_off(self.options.with_litecoin)
         cmake.definitions["WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
-
-        # if self.settings.compiler == "gcc":
-        #     if float(str(self.settings.compiler.version)) >= 5:
-        #         cmake.definitions["_GLIBCXX_USE_CXX11_ABI"] = "1"
-        #     else:
-        #         cmake.definitions["_GLIBCXX_USE_CXX11_ABI"] = "0"
-
-        if self.settings.compiler == "gcc":
-            if float(str(self.settings.compiler.version)) >= 5:
-                cmake.definitions["NOT_USE_CPP11_ABI"] = option_on_off(False)
-            else:
-                cmake.definitions["NOT_USE_CPP11_ABI"] = option_on_off(True)
-
 
         # Secp256k1 --------------------------------------------
         cmake.definitions["ENABLE_POSITION_INDEPENDENT_CODE"] = option_on_off(self.options.fPIC)
@@ -144,7 +117,6 @@ class KnuthConan(ConanFile):
         cmake.definitions["ENABLE_MODULE_ECDH"] = option_on_off(self.options.enable_module_ecdh)
         cmake.definitions["ENABLE_MODULE_SCHNORR"] = option_on_off(self.options.enable_module_schnorr)
         cmake.definitions["ENABLE_MODULE_RECOVERY"] = option_on_off(self.options.enable_module_recovery)
-        cmake.definitions["WITH_RPC"] = option_on_off(self.options.with_rpc)
 
         if self.settings.os == "Windows":
             cmake.definitions["WITH_BIGNUM"] = "no"
@@ -160,16 +132,6 @@ class KnuthConan(ConanFile):
         # Secp256k1 -------------------------------------------- (END)
 
         cmake.definitions["CURRENCY"] = self.options.currency
-
-
-        if self.settings.compiler == "gcc":
-            if float(str(self.settings.compiler.version)) >= 5:
-                cmake.definitions["NOT_USE_CPP11_ABI"] = option_on_off(False)
-            else:
-                cmake.definitions["NOT_USE_CPP11_ABI"] = option_on_off(True)
-        elif self.settings.compiler == "clang":
-            if str(self.settings.compiler.libcxx) == "libstdc++" or str(self.settings.compiler.libcxx) == "libstdc++11":
-                cmake.definitions["NOT_USE_CPP11_ABI"] = option_on_off(False)
 
         # cmake.definitions["KTH_BUILD_NUMBER"] = os.getenv('KTH_BUILD_NUMBER', '-')
         # cmake.configure(source_dir=self.conanfile_directory)
