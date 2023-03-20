@@ -36,17 +36,6 @@ Knuth has been well tested on x86-64 processors and on the following operating s
 
 If you find a problem in any other platform, please [let us know](https://github.com/k-nuth/kth/issues).
 
-## Multiple cryptos
-
-Knuth supports the following cryptocurrencies in the same code base:
-- [Bitcoin Cash (BCH)](https://www.bitcoincash.org/)
-- [Bitcoin (BTC)](https://bitcoin.org/)
-- [Litecoin (LTC)](https://litecoin.org/)
-
-Choosing a cryptocurrency is just as simple as changing a switch in our build system, [take a look here](#getting-started).
-
-Also, given its modular design and beautiful code, Knuth allows you to implement other cryptocurrencies with very few code changes.
-
 ## Getting started
 
 Install and run Knuth is very easy:
