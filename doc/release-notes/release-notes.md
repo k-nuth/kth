@@ -6,6 +6,7 @@ This release includes the following features and fixes:
 
 - Use Conan Transitive Dependencies.
 - Improve CI/CD infrastructure.
+- Uses [C++ API v0.33.0](https://github.com/k-nuth/node/releases/tag/v0.33.0).
 
 # version 0.32.0
 
