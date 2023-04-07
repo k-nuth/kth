@@ -1,3 +1,12 @@
+# version 0.33.0
+
+You can install Knuth node version v0.33.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+- Use Conan Transitive Dependencies.
+- Improve CI/CD infrastructure.
+
 # version 0.32.0
 
 You can install Knuth node version v0.32.0 [using these instructions](https://kth.cash/#download).

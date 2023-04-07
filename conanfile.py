@@ -89,8 +89,8 @@ class KnuthConan(ConanFile):
             raise ConanInvalidConfiguration("We just support GCC C++11ABI.\n**** Please run `conan profile update settings.compiler.libcxx=libstdc++11 default`")
 
     def configure(self):
-        self.options["fmt"].header_only = True
-        self.options["spdlog"].header_only = True
+        self.options["fmt/*"].header_only = True
+        self.options["spdlog/*"].header_only = True
 
     def build(self):
         cmake = CMake(self)
