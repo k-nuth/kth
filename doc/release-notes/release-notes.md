@@ -1,12 +1,3 @@
-# version 0.34.0
-
-You can install Knuth node version v0.34.0 [using these instructions](https://kth.cash/#download).
-
-This release includes the following features and fixes:
-
-- Fix Database in Full mode.
-- Uses [C++ API v0.34.0](https://github.com/k-nuth/node/releases/tag/v0.34.0).
-
 # version 0.33.0
 
 You can install Knuth node version v0.33.0 [using these instructions](https://kth.cash/#download).
@@ -14,6 +5,7 @@ You can install Knuth node version v0.33.0 [using these instructions](https://kt
 This release includes the following features and fixes:
 
 - Use Conan Transitive Dependencies.
+- Fix Database in Full mode.
 - Improve CI/CD infrastructure.
 - Uses [C++ API v0.33.0](https://github.com/k-nuth/node/releases/tag/v0.33.0).
 
