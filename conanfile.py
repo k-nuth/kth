@@ -71,18 +71,42 @@ class KnuthConan(ConanFile):
     package_files = "build/lkth-core.a"
     build_policy = "missing"
 
-    def requirements(self):
-        self.requires("boost/1.80.0")
-        self.requires("lmdb/0.9.29")
-        self.requires("fmt/8.1.1")
-        self.requires("spdlog/1.10.0")
-        self.requires("zlib/1.2.13")
-        self.requires("algorithm/0.1.239@tao/stable")
+    # def requirements(self):
+    #     self.requires("boost/1.82.0")
+    #     self.requires("lmdb/0.9.29")
+    #     self.requires("fmt/8.1.1")
+    #     self.requires("spdlog/1.10.0")
+    #     self.requires("zlib/1.2.13")
+    #     self.requires("algorithm/0.1.239@tao/stable")
 
-        if self.settings.os == "Linux" or self.settings.os == "Macos":
-            self.requires("gmp/6.2.1")
-        if self.options.currency == "LTC":
-             self.requires("OpenSSL/1.0.2l@conan/stable")
+    #     if self.settings.os == "Linux" or self.settings.os == "Macos":
+    #         self.requires("gmp/6.2.1")
+    #     if self.options.currency == "LTC":
+    #          self.requires("OpenSSL/1.0.2l@conan/stable")
+
+    def build_requirements(self):
+        if self.options.tests:
+            self.test_requires("catch2/3.3.1")
+
+    def requirements(self):
+        self.requires("secp256k1/0.16.0", transitive_headers=True, transitive_libs=True)
+        self.requires("boost/1.81.0", transitive_headers=True, transitive_libs=True)
+        self.requires("fmt/9.1.0", transitive_headers=True, transitive_libs=True)
+
+        if self.options.log == "binlog":
+            self.requires("binlog/2020.02.29@kth/stable", transitive_headers=True, transitive_libs=True)
+        elif self.options.log == "spdlog":
+            self.requires("spdlog/1.11.0", transitive_headers=True, transitive_libs=True)
+
+        if self.options.with_png:
+            self.requires("libpng/1.6.34@kth/stable", transitive_headers=True, transitive_libs=True)
+
+        if self.options.with_qrencode:
+            self.requires("libqrencode/4.0.0@kth/stable", transitive_headers=True, transitive_libs=True)
+
+        if self.options.asio_standalone:
+            self.requires("asio/1.24.0", transitive_headers=True, transitive_libs=True)
+
 
     def validate(self):
         if self.settings.os == "Linux" and self.settings.compiler == "gcc" and self.settings.compiler.libcxx == "libstdc++":
