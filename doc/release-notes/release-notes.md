@@ -1,3 +1,13 @@
+# version 0.35.0
+
+You can install Knuth node version v0.35.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+* dynamic GhA Matrix by @fpelliccioni in https://github.com/k-nuth/node-exe/pull/8
+* adapt cmake for global build by @fpelliccioni in https://github.com/k-nuth/node-exe/pull/9
+* Uses [C++ API v0.35.0](https://github.com/k-nuth/node/releases/tag/v0.35.0).
+
 # version 0.34.0
 
 You can install Knuth node version v0.34.0 [using these instructions](https://kth.cash/#download).
