@@ -64,6 +64,8 @@ if (NOT DEFINED ENABLE_MODULE_RECOVERY)
   set(ENABLE_MODULE_RECOVERY ON CACHE BOOL "Enable ECDSA pubkey recovery module.")
 endif()
 
+find_package(gmp REQUIRED)
+
 add_subdirectory(secp256k1)
 add_subdirectory(infrastructure)
 add_subdirectory(domain)
