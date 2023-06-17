@@ -92,15 +92,18 @@ class KnuthConan(ConanFile):
 
     def build_requirements(self):
         if self.options.tests:
-            self.test_requires("catch2/3.3.1")
+            self.test_requires("catch2/3.3.2")
 
     def requirements(self):
         # self.requires("secp256k1/0.16.0", transitive_headers=True, transitive_libs=True)
-        self.requires("boost/1.81.0", transitive_headers=True, transitive_libs=True)
+        self.requires("boost/1.82.0", transitive_headers=True, transitive_libs=True)
         self.requires("fmt/9.1.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.11.0", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/0.9.29", transitive_headers=True, transitive_libs=True)
         self.requires("gmp/6.2.1", transitive_headers=True, transitive_libs=True)
+
+        self.requires("unordered/cci.20230612", transitive_headers=True, transitive_libs=True)
+
 
         # self.requires("infrastructure/0.25.0", transitive_headers=True, transitive_libs=True)
         # self.requires("domain/0.27.0", transitive_headers=True, transitive_libs=True)
