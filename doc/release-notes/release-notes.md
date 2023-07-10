@@ -1,3 +1,12 @@
+# version 0.37.0
+
+You can install Knuth node version v0.37.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+* Dynamic DB mode by @fpelliccioni in https://github.com/k-nuth/node-exe/pull/11
+* Uses [C++ API v0.37.0](https://github.com/k-nuth/node/releases/tag/v0.37.0).
+
 # version 0.36.0
 
 You can install Knuth node version v0.36.0 [using these instructions](https://kth.cash/#download).
