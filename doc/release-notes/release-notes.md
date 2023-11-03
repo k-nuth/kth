@@ -1,5 +1,15 @@
 # version 0.38.0
 
+You can install Knuth node version v0.39.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+* WebAssembly support.
+* Minor fixes.
+* Uses [C++ API v0.39.0](https://github.com/k-nuth/node/releases/tag/v0.39.0).
+
+# version 0.38.0
+
 You can install Knuth node version v0.38.0 [using these instructions](https://kth.cash/#download).
 
 This release includes the following features and fixes:

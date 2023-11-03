@@ -96,14 +96,15 @@ class KnuthConan(ConanFile):
 
     def requirements(self):
         # self.requires("secp256k1/0.16.0", transitive_headers=True, transitive_libs=True)
-        self.requires("boost/1.82.0", transitive_headers=True, transitive_libs=True)
-        self.requires("fmt/10.0.0", transitive_headers=True, transitive_libs=True)
-        self.requires("spdlog/1.11.0", transitive_headers=True, transitive_libs=True)
+        self.requires("boost/1.83.0", transitive_headers=True, transitive_libs=True)
+        self.requires("fmt/10.1.1", transitive_headers=True, transitive_libs=True)
+        self.requires("spdlog/1.12.0", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/0.9.29", transitive_headers=True, transitive_libs=True)
-        self.requires("gmp/6.2.1", transitive_headers=True, transitive_libs=True)
+        self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
+        self.requires("expected-lite/0.6.3", transitive_headers=True, transitive_libs=True)
+        self.requires("ctre/3.8", transitive_headers=True, transitive_libs=True)
 
-        self.requires("unordered/cci.20230612", transitive_headers=True, transitive_libs=True)
-
+        # self.requires("unordered/cci.20230612", transitive_headers=True, transitive_libs=True)
 
         # self.requires("infrastructure/0.25.0", transitive_headers=True, transitive_libs=True)
         # self.requires("domain/0.27.0", transitive_headers=True, transitive_libs=True)
