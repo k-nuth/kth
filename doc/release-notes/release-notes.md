@@ -1,3 +1,12 @@
+# version 0.41.0
+
+You can install Knuth node version v0.41.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+* WASM Pthread support by @fpelliccioni in https://github.com/k-nuth/infrastructure/pull/29
+* Uses [C++ API v0.41.0](https://github.com/k-nuth/node/releases/tag/v0.41.0).
+
 # version 0.40.0
 
 You can install Knuth node version v0.40.0 [using these instructions](https://kth.cash/#download).
