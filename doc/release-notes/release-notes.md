@@ -1,3 +1,13 @@
+# version 0.42.0
+
+You can install Knuth node version v0.42.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+* Implementing ABLA for 2024-May by @fpelliccioni in https://github.com/k-nuth/blockchain/pull/21
+* bump dependencies by @fpelliccioni in https://github.com/k-nuth/node/pull/22
+* Uses [C++ API v0.42.0](https://github.com/k-nuth/node/releases/tag/v0.42.0).
+
 # version 0.41.0
 
 You can install Knuth node version v0.41.0 [using these instructions](https://kth.cash/#download).
