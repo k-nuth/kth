@@ -1,4 +1,13 @@
-# version 0.38.0
+# version 0.40.0
+
+You can install Knuth node version v0.40.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+* Fixes linking issues in WASM compilation by @fpelliccioni in https://github.com/k-nuth/infrastructure/pull/28
+* Uses [C++ API v0.40.0](https://github.com/k-nuth/node/releases/tag/v0.40.0).
+
+# version 0.39.0
 
 You can install Knuth node version v0.39.0 [using these instructions](https://kth.cash/#download).
 
