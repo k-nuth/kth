@@ -1,3 +1,13 @@
+# version 0.43.0
+
+You can install Knuth node version v0.43.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+* Post upgrade 2024 changes by @fpelliccioni in https://github.com/k-nuth/node/pull/24
+* Bump dependencies by @fpelliccioni in https://github.com/k-nuth/node/pull/23
+* Uses [C++ API v0.43.0](https://github.com/k-nuth/node/releases/tag/v0.43.0).
+
 # version 0.42.0
 
 You can install Knuth node version v0.42.0 [using these instructions](https://kth.cash/#download).

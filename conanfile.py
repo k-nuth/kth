@@ -79,7 +79,7 @@ class KnuthConan(ConanFile):
 
     # def requirements(self):
     #     self.requires("boost/1.82.0")
-    #     self.requires("lmdb/0.9.29")
+    #     self.requires("lmdb/0.9.31")
     #     self.requires("fmt/8.1.1")
     #     self.requires("spdlog/1.10.0")
     #     self.requires("zlib/1.2.13")
@@ -92,17 +92,17 @@ class KnuthConan(ConanFile):
 
     def build_requirements(self):
         if self.options.tests:
-            self.test_requires("catch2/3.3.2")
+            self.test_requires("catch2/3.6.0")
 
     def requirements(self):
         # self.requires("secp256k1/0.16.0", transitive_headers=True, transitive_libs=True)
-        self.requires("boost/1.83.0", transitive_headers=True, transitive_libs=True)
-        self.requires("fmt/10.1.1", transitive_headers=True, transitive_libs=True)
-        self.requires("spdlog/1.12.0", transitive_headers=True, transitive_libs=True)
-        self.requires("lmdb/0.9.29", transitive_headers=True, transitive_libs=True)
+        self.requires("boost/1.85.0", transitive_headers=True, transitive_libs=True)
+        self.requires("fmt/10.2.1", transitive_headers=True, transitive_libs=True)
+        self.requires("spdlog/1.14.1", transitive_headers=True, transitive_libs=True)
+        self.requires("lmdb/0.9.32", transitive_headers=True, transitive_libs=True)
         self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
         self.requires("expected-lite/0.6.3", transitive_headers=True, transitive_libs=True)
-        self.requires("ctre/3.8", transitive_headers=True, transitive_libs=True)
+        self.requires("ctre/3.8.1", transitive_headers=True, transitive_libs=True)
 
         # self.requires("unordered/cci.20230612", transitive_headers=True, transitive_libs=True)
 

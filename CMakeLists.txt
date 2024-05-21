@@ -83,7 +83,6 @@ if (BUILD_C_API)
     add_subdirectory(c-api)
 endif()
 
-
 if (WITH_TESTS)
   enable_testing()
 endif()
