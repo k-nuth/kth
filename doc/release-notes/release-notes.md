@@ -1,3 +1,12 @@
+# version 0.44.0
+
+You can install Knuth node version v0.44.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+* fix DB initialization by @fpelliccioni in https://github.com/k-nuth/database/pull/21
+* Uses [C++ API v0.44.0](https://github.com/k-nuth/node/releases/tag/v0.44.0).
+
 # version 0.43.0
 
 You can install Knuth node version v0.43.0 [using these instructions](https://kth.cash/#download).
