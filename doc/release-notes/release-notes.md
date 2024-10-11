@@ -1,3 +1,12 @@
+# version 0.46.0
+
+You can install Knuth node version v0.46.0 [using these instructions](https://kth.cash/#download).
+
+This release includes the following features and fixes:
+
+* performance: Improved transaction validation and block synchronization performance, leading to a more efficient node operation and faster sync times.
+* Uses [C++ API v0.46.0](https://github.com/k-nuth/node/releases/tag/v0.46.0).
+
 # version 0.45.0
 
 You can install Knuth node version v0.45.0 [using these instructions](https://kth.cash/#download).
