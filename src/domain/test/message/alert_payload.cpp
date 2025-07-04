@@ -165,15 +165,17 @@ TEST_CASE("alert payload  constructor 5  always  equals params", "[alert payload
     REQUIRE(reserved == instance.reserved());
 }
 
-TEST_CASE("alert payload  from data  insufficient bytes  failure", "[alert payload]") {
+TEST_CASE("alert payload from data insufficient bytes  failure", "[alert payload]") {
     data_chunk raw{0xab, 0x11};
     message::alert_payload instance;
 
-    REQUIRE( ! entity_from_data(instance, message::version::level::minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::alert_payload::from_data(reader, message::version::level::minimum);
+    REQUIRE( ! result);
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("alert payload  factory from data 1  wiki sample test  success", "[alert payload]") {
+TEST_CASE("alert payload from data wiki sample test  success", "[alert payload]") {
     data_chunk const raw{
         0x01, 0x00, 0x00, 0x00, 0x37, 0x66, 0x40, 0x4f, 0x00, 0x00,
         0x00, 0x00, 0xb3, 0x05, 0x43, 0x4f, 0x00, 0x00, 0x00, 0x00,
@@ -203,8 +205,10 @@ TEST_CASE("alert payload  factory from data 1  wiki sample test  success", "[ale
         "See bitcoin.org/feb20 if you have trouble connecting after 20 February",
         ""};
 
-    auto const result = create<message::alert_payload>(
-        message::version::level::minimum, raw);
+    byte_reader reader(raw);
+    auto const result_exp = message::alert_payload::from_data(reader, message::version::level::minimum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(result.is_valid());
     REQUIRE(raw.size() == result.serialized_size(message::version::level::minimum));
@@ -216,7 +220,7 @@ TEST_CASE("alert payload  factory from data 1  wiki sample test  success", "[ale
     REQUIRE(data.size() == expected.serialized_size(message::version::level::minimum));
 }
 
-TEST_CASE("alert payload  factory from data 1  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload from data roundtrip  success", "[alert payload]") {
     message::alert_payload expected{
         5,
         105169,
@@ -233,8 +237,10 @@ TEST_CASE("alert payload  factory from data 1  roundtrip  success", "[alert payl
         "RESERVED?"};
 
     auto const data = expected.to_data(message::version::level::minimum);
-    auto const result = create<message::alert_payload>(
-        message::version::level::minimum, data);
+    byte_reader reader(data);
+    auto const result_exp = message::alert_payload::from_data(reader, message::version::level::minimum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
@@ -242,60 +248,7 @@ TEST_CASE("alert payload  factory from data 1  roundtrip  success", "[alert payl
     REQUIRE(expected.serialized_size(message::version::level::minimum) == result.serialized_size(message::version::level::minimum));
 }
 
-TEST_CASE("alert payload  factory from data 2  roundtrip  success", "[alert payload]") {
-    message::alert_payload expected{
-        5,
-        105169,
-        723544,
-        1779,
-        1678,
-        {10, 25256, 37, 98485, 250},
-        75612,
-        81354,
-        {"alpha", "beta", "gamma", "delta"},
-        781,
-        "My Comment",
-        "My Status Bar",
-        "RESERVED?"};
 
-    auto const data = expected.to_data(message::version::level::minimum);
-    data_source istream(data);
-    auto const result = create<message::alert_payload>(
-        message::version::level::minimum, istream);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(message::version::level::minimum));
-    REQUIRE(expected.serialized_size(message::version::level::minimum) == result.serialized_size(message::version::level::minimum));
-}
-
-TEST_CASE("alert payload  factory from data 3  roundtrip  success", "[alert payload]") {
-    const message::alert_payload expected{
-        5,
-        105169,
-        723544,
-        1779,
-        1678,
-        {10, 25256, 37, 98485, 250},
-        75612,
-        81354,
-        {"alpha", "beta", "gamma", "delta"},
-        781,
-        "My Comment",
-        "My Status Bar",
-        "RESERVED?"};
-
-    auto const data = expected.to_data(message::version::level::minimum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::alert_payload>(
-        message::version::level::minimum, source);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(message::version::level::minimum));
-    REQUIRE(expected.serialized_size(message::version::level::minimum) == result.serialized_size(message::version::level::minimum));
-}
 
 TEST_CASE("alert payload  version  roundtrip  success", "[alert payload]") {
     uint32_t value = 1234u;

@@ -41,8 +41,8 @@ std::string_view db_type(kth::database::db_mode_type db_mode) {
 }
 
 uint32_t build_timestamp() {
-#ifdef KTK_NODE_BUILD_TIMESTAMP
-    return KTK_NODE_BUILD_TIMESTAMP;
+#ifdef KTH_NODE_BUILD_TIMESTAMP
+    return KTH_NODE_BUILD_TIMESTAMP;
 #else
     return 0;
 #endif

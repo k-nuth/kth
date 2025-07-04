@@ -74,14 +74,16 @@ TEST_CASE("get blocks  constructor 5  always  equals params", "[get blocks]") {
     REQUIRE(stop == instance.stop_hash());
 }
 
-TEST_CASE("get blocks  from data  insufficient bytes  failure", "[get blocks]") {
+TEST_CASE("get blocks from data insufficient bytes  failure", "[get blocks]") {
     data_chunk const raw{0xab, 0xcd};
     message::get_blocks instance;
 
-    REQUIRE( ! entity_from_data(instance, message::version::level::minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::get_blocks::from_data(reader, message::version::level::minimum);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("get blocks  factory from data 1  valid input  success", "[get blocks]") {
+TEST_CASE("get blocks from data valid input  success", "[get blocks]") {
     const message::get_blocks expected{
         {hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
          hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
@@ -91,8 +93,10 @@ TEST_CASE("get blocks  factory from data 1  valid input  success", "[get blocks]
         hash_literal("7777777777777777777777777777777777777777777777777777777777777777")};
 
     auto const data = expected.to_data(message::version::level::minimum);
-    auto const result = create<message::get_blocks>(
-        message::version::level::minimum, data);
+    byte_reader reader(data);
+    auto const result_exp = message::get_blocks::from_data(reader, message::version::level::minimum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
@@ -100,48 +104,7 @@ TEST_CASE("get blocks  factory from data 1  valid input  success", "[get blocks]
     REQUIRE(expected.serialized_size(message::version::level::minimum) == result.serialized_size(message::version::level::minimum));
 }
 
-TEST_CASE("get blocks  factory from data 2  valid input  success", "[get blocks]") {
-    const message::get_blocks expected{
-        {hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-         hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-         hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-         hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-         hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")},
-        hash_literal("7777777777777777777777777777777777777777777777777777777777777777")};
 
-    auto const data = expected.to_data(message::version::level::minimum);
-    data_source istream(data);
-    auto const result = create<message::get_blocks>(
-        message::version::level::minimum, istream);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(message::version::level::minimum));
-    REQUIRE(expected.serialized_size(message::version::level::minimum) ==
-                        result.serialized_size(message::version::level::minimum));
-}
-
-TEST_CASE("get blocks  factory from data 3  valid input  success", "[get blocks]") {
-    const message::get_blocks expected{
-        {hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-         hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-         hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-         hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-         hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")},
-        hash_literal("7777777777777777777777777777777777777777777777777777777777777777")};
-
-    auto const data = expected.to_data(message::version::level::minimum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::get_blocks>(
-        message::version::level::minimum, source);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(message::version::level::minimum));
-    REQUIRE(expected.serialized_size(message::version::level::minimum) ==
-                        result.serialized_size(message::version::level::minimum));
-}
 
 TEST_CASE("get blocks  start hashes accessor 1  always  returns initialized value", "[get blocks]") {
     hash_list expected = {

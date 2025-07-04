@@ -17,7 +17,7 @@ void encdec_test(std::string const& hex, std::string const& encoded) {
     REQUIRE(decoded == data);
 }
 
-TEST_CASE("base58 test", "[base 58 tests]") {
+TEST_CASE("infrastructure base58 encode and decode various test vectors", "[infrastructure][base58]") {
     encdec_test("", "");
     encdec_test("61", "2g");
     encdec_test("626262", "a3gV");
@@ -32,7 +32,7 @@ TEST_CASE("base58 test", "[base 58 tests]") {
     encdec_test("00000000000000000000", "1111111111");
 }
 
-TEST_CASE("base58 address test", "[base 58 tests]") {
+TEST_CASE("infrastructure base58 encode and decode bitcoin address", "[infrastructure][base58]") {
     data_chunk const pubkey
     {
         {
@@ -42,29 +42,35 @@ TEST_CASE("base58 address test", "[base 58 tests]") {
             0x64
         }
     };
-    std::string address = "19TbMSWwHvnxAKy12iNm3KdbGfzfaMFViT";
+    std::string const address = "19TbMSWwHvnxAKy12iNm3KdbGfzfaMFViT";
     REQUIRE(encode_base58(pubkey) == address);
     data_chunk decoded;
     REQUIRE(decode_base58(decoded, address));
     REQUIRE(decoded == pubkey);
 }
 
-TEST_CASE("is b58", "[base 58 tests]") {
-    std::string const base58_chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-    for (char ch: base58_chars) {
-        REQUIRE(is_base58(ch));
+TEST_CASE("infrastructure base58 character validation", "[infrastructure][base58]") {
+    SECTION("valid base58 characters should be recognized") {
+        std::string const base58_chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+        for (char const ch : base58_chars) {
+            REQUIRE(is_base58(ch));
+        }
     }
 
-    std::string const non_base58_chars = "0OIl+- //#";
-    for (char ch: non_base58_chars) {
-        REQUIRE( ! is_base58(ch));
+    SECTION("invalid base58 characters should be rejected") {
+        std::string const non_base58_chars = "0OIl+- //#";
+        for (char const ch : non_base58_chars) {
+            REQUIRE(!is_base58(ch));
+        }
     }
 
-    REQUIRE(is_base58("abcdjkk11"));
-    REQUIRE( ! is_base58("abcdjkk011"));
+    SECTION("base58 string validation") {
+        REQUIRE(is_base58("abcdjkk11"));
+        REQUIRE(!is_base58("abcdjkk011"));
+    }
 }
 
-TEST_CASE("base58 array test", "[base 58 tests]") {
+TEST_CASE("infrastructure base58 decode to fixed size array", "[infrastructure][base58]") {
     byte_array<25> converted;
     REQUIRE(decode_base58(converted, "19TbMSWwHvnxAKy12iNm3KdbGfzfaMFViT"));
     const byte_array<25> expected

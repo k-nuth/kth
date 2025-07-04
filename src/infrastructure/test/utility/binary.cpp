@@ -11,17 +11,17 @@ using namespace kth;
 
 // Start Test Suite: binary  encoded
 
-TEST_CASE("prefix encoded  32 bits  expected value", "[binary  encoded]") {
+TEST_CASE("infrastructure binary encoded 32 bits from data chunk", "[infrastructure][binary]") {
     data_chunk const blocks{ { 0xba, 0xad, 0xf0, 0x0d } };
     binary const prefix(32, blocks);
     REQUIRE(prefix.encoded() == "10111010101011011111000000001101");
 }
 
-TEST_CASE("prefix encoded  32 bits unsigned  expected value", "[binary  encoded]") {
+TEST_CASE("infrastructure binary encoded 32 bits from unsigned integer", "[infrastructure][binary]") {
     binary const prefix(32, uint32_t(0x0df0adba));
     REQUIRE(prefix.encoded() == "10111010101011011111000000001101");
 }
-TEST_CASE("prefix encoded  8 bits unsigned  expected value", "[binary  encoded]") {
+TEST_CASE("infrastructure binary encoded 8 bits from unsigned integer", "[infrastructure][binary]") {
     binary const prefix(8, uint32_t(0x0df0adba));
     REQUIRE(prefix.encoded() == "10111010");
 }
@@ -30,7 +30,7 @@ TEST_CASE("prefix encoded  8 bits unsigned  expected value", "[binary  encoded]"
 
 // Start Test Suite: binary  to string
 
-TEST_CASE("prefix to string  32 bits  expected value", "[binary  to string]") {
+TEST_CASE("infrastructure binary to string stream output", "[infrastructure][binary]") {
     data_chunk const blocks{ { 0xba, 0xad, 0xf0, 0x0d } };
     binary const prefix(32, blocks);
     std::stringstream stream;
@@ -42,7 +42,7 @@ TEST_CASE("prefix to string  32 bits  expected value", "[binary  to string]") {
 
 // Start Test Suite: binary  shift left
 
-TEST_CASE("shift left by zero", "[binary  shift left]") {
+TEST_CASE("infrastructure binary shift left by zero", "[infrastructure][binary]") {
     binary::size_type distance = 0;
     binary instance(16, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(16, data_chunk{ 0xAA, 0xAA });

@@ -5,6 +5,7 @@
 #include <kth/domain/message/filter_add.hpp>
 
 #include <kth/domain/message/version.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 #include <kth/infrastructure/utility/container_sink.hpp>
@@ -48,7 +49,11 @@ void filter_add::reset() {
 //-----------------------------------------------------------------------------
 
 // static
-expect<filter_add> filter_add::from_data(byte_reader& reader, uint32_t /*version*/) {
+expect<filter_add> filter_add::from_data(byte_reader& reader, uint32_t version) {
+    if (version < version_minimum) {
+        return make_unexpected(error::version_too_low);
+    }
+    
     auto const size = reader.read_size_little_endian();
     if ( ! size) {
         return make_unexpected(size.error());

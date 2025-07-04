@@ -29,7 +29,10 @@ static hash_digest const data{
 TEST_CASE("reject  factory from data  tx nonstandard empty data valid", "[reject]") {
     data_chunk payload;
     REQUIRE(decode_base16(payload, MALFORMED_REJECT));
-    auto const reject = create<message::reject>(version_maximum, payload);
+    byte_reader reader(payload);
+    auto const result_exp = message::reject::from_data(reader, version_maximum);
+    REQUIRE(result_exp);
+    auto const reject = std::move(*result_exp);
     REQUIRE(reject.is_valid());
 }
 
@@ -89,13 +92,15 @@ TEST_CASE("reject  constructor 5  always  equals params", "[reject]") {
     REQUIRE(data == instance.data());
 }
 
-TEST_CASE("reject  from data  insufficient bytes  failure", "[reject]") {
+TEST_CASE("reject from data insufficient bytes  failure", "[reject]") {
     static data_chunk const raw{0xab};
     message::reject instance{};
-    REQUIRE( ! entity_from_data(instance, version_maximum, raw));
+    byte_reader reader(raw);
+    auto result = message::reject::from_data(reader, version_maximum);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("reject  from data  insufficient version  failure", "[reject]") {
+TEST_CASE("reject from data insufficient version  failure", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::dust,
         message::block::command,
@@ -104,10 +109,12 @@ TEST_CASE("reject  from data  insufficient version  failure", "[reject]") {
 
     data_chunk const raw = expected.to_data(version_maximum);
     message::reject instance{};
-    REQUIRE( ! entity_from_data(instance, message::reject::version_minimum - 1, raw));
+    byte_reader reader(raw);
+    auto result = message::reject::from_data(reader, message::reject::version_minimum - 1);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("reject  from data  code malformed  success", "[reject]") {
+TEST_CASE("reject from data code malformed  success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::malformed,
         message::block::command,
@@ -116,11 +123,14 @@ TEST_CASE("reject  from data  code malformed  success", "[reject]") {
 
     data_chunk const raw = expected.to_data(version_maximum);
     message::reject instance{};
-    REQUIRE(entity_from_data(instance, message::reject::version_minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::reject::from_data(reader, message::reject::version_minimum);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject  from data  code invalid  success", "[reject]") {
+TEST_CASE("reject from data code invalid  success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::invalid,
         message::block::command,
@@ -130,11 +140,14 @@ TEST_CASE("reject  from data  code invalid  success", "[reject]") {
     data_chunk const raw = expected.to_data(version_maximum);
     message::reject instance{};
 
-    REQUIRE(entity_from_data(instance, message::reject::version_minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::reject::from_data(reader, message::reject::version_minimum);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject  from data  code obsolete  success", "[reject]") {
+TEST_CASE("reject from data code obsolete  success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::obsolete,
         message::block::command,
@@ -143,11 +156,14 @@ TEST_CASE("reject  from data  code obsolete  success", "[reject]") {
 
     data_chunk const raw = expected.to_data(version_maximum);
     message::reject instance{};
-    REQUIRE(entity_from_data(instance, message::reject::version_minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::reject::from_data(reader, message::reject::version_minimum);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject  from data  code duplicate  success", "[reject]") {
+TEST_CASE("reject from data code duplicate  success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::duplicate,
         message::block::command,
@@ -156,11 +172,14 @@ TEST_CASE("reject  from data  code duplicate  success", "[reject]") {
 
     data_chunk const raw = expected.to_data(version_maximum);
     message::reject instance{};
-    REQUIRE(entity_from_data(instance, message::reject::version_minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::reject::from_data(reader, message::reject::version_minimum);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject  from data  code nonstandard  success", "[reject]") {
+TEST_CASE("reject from data code nonstandard  success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::nonstandard,
         message::block::command,
@@ -169,11 +188,14 @@ TEST_CASE("reject  from data  code nonstandard  success", "[reject]") {
 
     data_chunk const raw = expected.to_data(version_maximum);
     message::reject instance{};
-    REQUIRE(entity_from_data(instance, message::reject::version_minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::reject::from_data(reader, message::reject::version_minimum);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject  from data  code dust  success", "[reject]") {
+TEST_CASE("reject from data code dust  success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::dust,
         message::block::command,
@@ -182,11 +204,14 @@ TEST_CASE("reject  from data  code dust  success", "[reject]") {
 
     data_chunk const raw = expected.to_data(version_maximum);
     message::reject instance{};
-    REQUIRE(entity_from_data(instance, message::reject::version_minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::reject::from_data(reader, message::reject::version_minimum);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject  from data  code insufficient fee  success", "[reject]") {
+TEST_CASE("reject from data code insufficient fee  success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::insufficient_fee,
         message::block::command,
@@ -195,11 +220,14 @@ TEST_CASE("reject  from data  code insufficient fee  success", "[reject]") {
 
     data_chunk const raw = expected.to_data(version_maximum);
     message::reject instance{};
-    REQUIRE(entity_from_data(instance, message::reject::version_minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::reject::from_data(reader, message::reject::version_minimum);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject  from data  code checkpoint  success", "[reject]") {
+TEST_CASE("reject from data code checkpoint  success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::checkpoint,
         message::block::command,
@@ -209,11 +237,14 @@ TEST_CASE("reject  from data  code checkpoint  success", "[reject]") {
     data_chunk const raw = expected.to_data(version_maximum);
     message::reject instance{};
 
-    REQUIRE(entity_from_data(instance, message::reject::version_minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::reject::from_data(reader, message::reject::version_minimum);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject  from data  code undefined  success", "[reject]") {
+TEST_CASE("reject from data code undefined  success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::undefined,
         message::block::command,
@@ -223,11 +254,14 @@ TEST_CASE("reject  from data  code undefined  success", "[reject]") {
     data_chunk const raw = expected.to_data(version_maximum);
     message::reject instance{};
 
-    REQUIRE(entity_from_data(instance, message::reject::version_minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::reject::from_data(reader, message::reject::version_minimum);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject  factory from data 1  valid input  success", "[reject]") {
+TEST_CASE("reject from data valid input  success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::dust,
         message::block::command,
@@ -235,45 +269,17 @@ TEST_CASE("reject  factory from data 1  valid input  success", "[reject]") {
         data);
 
     auto const data = expected.to_data(version_maximum);
-    auto const result = create<message::reject>(version_maximum, data);
+    byte_reader reader(data);
+    auto const result_exp = message::reject::from_data(reader, version_maximum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(version_maximum));
     REQUIRE(expected.serialized_size(version_maximum) == result.serialized_size(version_maximum));
 }
 
-TEST_CASE("reject  factory from data 2  valid input  success", "[reject]") {
-    const message::reject expected(
-        message::reject::reason_code::insufficient_fee,
-        message::block::command,
-        reason_text,
-        data);
 
-    auto const data = expected.to_data(version_maximum);
-    data_source istream(data);
-    auto const result = create<message::reject>(version_maximum, istream);
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(version_maximum));
-    REQUIRE(expected.serialized_size(version_maximum) == result.serialized_size(version_maximum));
-}
-
-TEST_CASE("reject  factory from data 3  valid input  success", "[reject]") {
-    const message::reject expected(
-        message::reject::reason_code::duplicate,
-        message::transaction::command,
-        reason_text,
-        data);
-
-    auto const data = expected.to_data(version_maximum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::reject>(version_maximum, source);
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(version_maximum));
-    REQUIRE(expected.serialized_size(version_maximum) == result.serialized_size(version_maximum));
-}
 
 TEST_CASE("reject  code accessor  always  returns initialized value", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;

@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <string>
 
+#include <fmt/format.h>
+
 #include <boost/algorithm/string.hpp>
 
 #include <kth/infrastructure/constants.hpp>
@@ -104,7 +106,7 @@ std::string opcode_to_string(opcode value, uint32_t active_forks) {
         case opcode::push_size_73:
         case opcode::push_size_74:
         case opcode::push_size_75:
-            return "push_" + std::to_string(static_cast<uint8_t>(value));
+            return fmt::format("push_{}", uint8_t(value));
         case opcode::push_one_size:
             return "pushdata1";
         case opcode::push_two_size:
@@ -131,7 +133,7 @@ std::string opcode_to_string(opcode value, uint32_t active_forks) {
         case opcode::push_positive_14:
         case opcode::push_positive_15:
         case opcode::push_positive_16:
-            return std::to_string(static_cast<uint8_t>(value) - push_zero);
+            return std::to_string(uint8_t(value) - push_zero);
         case opcode::nop:
             return "nop";
         case opcode::reserved_98:
@@ -319,56 +321,56 @@ std::string opcode_to_string(opcode value, uint32_t active_forks) {
         case opcode::checkdatasig:
             return "checkdatasig";
         case opcode::checkdatasigverify:
-            return "checkdatasigverify";
+            return "checkdatasigverify";            
 
 // additional byte string operations
         case opcode::reverse_bytes:
-            return "reverse_bytes";
+            return "reversebytes";
 
 
 // Native Introspection opcodes
         case opcode::input_index:
-            return "input_index";
+            return "inputindex";
         case opcode::active_bytecode:
-            return "active_bytecode";
+            return "activebytecode";
         case opcode::tx_version:
-            return "tx_version";
+            return "txversion";
         case opcode::tx_input_count:
-            return "tx_input_count";
+            return "txinputcount";
         case opcode::tx_output_count:
-            return "tx_output_count";
+            return "txoutputcount";
         case opcode::tx_locktime:
-            return "tx_locktime";
+            return "txlocktime";
         case opcode::utxo_value:
-            return "utxo_value";
+            return "utxovalue";
         case opcode::utxo_bytecode:
-            return "utxo_bytecode";
+            return "utxobytecode";
         case opcode::outpoint_tx_hash:
-            return "outpoint_tx_hash";
+            return "outpointtxhash";
         case opcode::outpoint_index:
-            return "outpoint_index";
+            return "outpointindex";
         case opcode::input_bytecode:
-            return "input_bytecode";
+            return "inputbytecode";
         case opcode::input_sequence_number:
-            return "input_sequence_number";
+            return "inputsequencenumber";
         case opcode::output_value:
-            return "output_value";
+            return "outputvalue";
         case opcode::output_bytecode:
-            return "output_bytecode";
+            return "outputbytecode";
 
 // Native Introspection of tokens (SCRIPT_ENABLE_TOKENS must be set)
         case opcode::utxo_token_category:
-            return "utxo_token_category";
+            return "utxotokencategory";
         case opcode::utxo_token_commitment:
-            return "utxo_token_commitment";
+            return "utxotokencommitment";
         case opcode::utxo_token_amount:
-            return "utxo_token_amount";
+            return "utxotokenamount";
         case opcode::output_token_category:
-            return "output_token_category";
+            return "outputtokencategory";
         case opcode::output_token_commitment:
-            return "output_token_commitment";
+            return "outputtokencommitment";
         case opcode::output_token_amount:
-            return "output_token_amount";
+            return "outputtokenamount";
 
         case opcode::reserved_212:
         case opcode::reserved_213:
@@ -627,34 +629,34 @@ bool opcode_from_string(opcode& out_code, std::string const& value) {       //NO
     RETURN_IF_OPCODE("checkdatasigverify", checkdatasigverify);
 
 // additional byte string operations
-    RETURN_IF_OPCODE("reverse_bytes", reverse_bytes);
+    RETURN_IF_OPCODE_OR_ALIAS("reversebytes", "reverse_bytes", reverse_bytes);
 
 // Native Introspection opcodes
-    RETURN_IF_OPCODE("input_index", input_index);
-    RETURN_IF_OPCODE("active_bytecode", active_bytecode);
-    RETURN_IF_OPCODE("tx_version", tx_version);
-    RETURN_IF_OPCODE("tx_input_count", tx_input_count);
-    RETURN_IF_OPCODE("tx_output_count", tx_output_count);
-    RETURN_IF_OPCODE("tx_locktime", tx_locktime);
-    RETURN_IF_OPCODE("utxo_value", utxo_value);
-    RETURN_IF_OPCODE("utxo_bytecode", utxo_bytecode);
-    RETURN_IF_OPCODE("outpoint_tx_hash", outpoint_tx_hash);
-    RETURN_IF_OPCODE("outpoint_index", outpoint_index);
-    RETURN_IF_OPCODE("input_bytecode", input_bytecode);
-    RETURN_IF_OPCODE("input_sequence_number", input_sequence_number);
-    RETURN_IF_OPCODE("output_value", output_value);
-    RETURN_IF_OPCODE("output_bytecode", output_bytecode);
+    RETURN_IF_OPCODE("inputindex", input_index);
+    RETURN_IF_OPCODE("activebytecode", active_bytecode);
+    RETURN_IF_OPCODE("txversion", tx_version);
+    RETURN_IF_OPCODE("txinputcount", tx_input_count);
+    RETURN_IF_OPCODE("txoutputcount", tx_output_count);
+    RETURN_IF_OPCODE("txlocktime", tx_locktime);
+    RETURN_IF_OPCODE("utxovalue", utxo_value);
+    RETURN_IF_OPCODE("utxobytecode", utxo_bytecode);
+    RETURN_IF_OPCODE("outpointtxhash", outpoint_tx_hash);
+    RETURN_IF_OPCODE("outpointindex", outpoint_index);
+    RETURN_IF_OPCODE("inputbytecode", input_bytecode);
+    RETURN_IF_OPCODE("inputsequencenumber", input_sequence_number);
+    RETURN_IF_OPCODE("outputvalue", output_value);
+    RETURN_IF_OPCODE("outputbytecode", output_bytecode);
 
 // Native Introspection of tokens (SCRIPT_ENABLE_TOKENS must be set)
-    RETURN_IF_OPCODE("utxo_token_category", utxo_token_category);
-    RETURN_IF_OPCODE("utxo_token_commitment", utxo_token_commitment);
-    RETURN_IF_OPCODE("utxo_token_amount", utxo_token_amount);
-    RETURN_IF_OPCODE("output_token_category", output_token_category);
-    RETURN_IF_OPCODE("output_token_commitment", output_token_commitment);
-    RETURN_IF_OPCODE("output_token_amount", output_token_amount);
+    RETURN_IF_OPCODE("utxotokencategory", utxo_token_category);
+    RETURN_IF_OPCODE("utxotokencommitment", utxo_token_commitment);
+    RETURN_IF_OPCODE("utxotokenamount", utxo_token_amount);
+    RETURN_IF_OPCODE("outputtokencategory", output_token_category);
+    RETURN_IF_OPCODE("outputtokencommitment", output_token_commitment);
+    RETURN_IF_OPCODE("outputtokenamount", output_token_amount);
 
-    RETURN_IF_OPCODE("reserved_212", reserved_212);
-    RETURN_IF_OPCODE("reserved_213", reserved_213);
+    RETURN_IF_OPCODE_OR_ALIAS("reserved_212", "reserved3", reserved_212);
+    RETURN_IF_OPCODE_OR_ALIAS("reserved_213", "reserved4", reserved_213);
     RETURN_IF_OPCODE("reserved_214", reserved_214);
     RETURN_IF_OPCODE("reserved_215", reserved_215);
     RETURN_IF_OPCODE("reserved_216", reserved_216);

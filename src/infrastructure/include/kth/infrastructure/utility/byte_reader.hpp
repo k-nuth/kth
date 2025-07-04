@@ -219,6 +219,10 @@ struct byte_reader {
         return position_ >= buffer_.size();
     }
 
+    void reset() {
+        position_ = 0;
+    }
+
 private:
     byte_span buffer_;
     size_t position_;

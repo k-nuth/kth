@@ -113,7 +113,9 @@ TEST_CASE("from data insufficient data fails", "[merkle block]") {
     data_chunk const data{10};
     message::merkle_block instance{};
 
-    REQUIRE( ! entity_from_data(instance, message::version::level::maximum, data));
+    byte_reader reader(data);
+    auto result = message::merkle_block::from_data(reader, message::version::level::maximum);
+    REQUIRE( ! result);
     REQUIRE( ! instance.is_valid());
 }
 
@@ -132,7 +134,9 @@ TEST_CASE("from data insufficient version fails", "[merkle block]") {
     auto const data = expected.to_data(message::version::level::maximum);
     message::merkle_block instance{};
 
-    REQUIRE( ! entity_from_data(instance, message::merkle_block::version_minimum - 1, data));
+    byte_reader reader(data);
+    auto result = message::merkle_block::from_data(reader, message::merkle_block::version_minimum - 1);
+    REQUIRE( ! result);
     REQUIRE( ! instance.is_valid());
 }
 
@@ -149,52 +153,16 @@ TEST_CASE("merkle block - roundtrip to data factory from data chunk", "[merkle b
         {0x00}};
 
     auto const data = expected.to_data(message::version::level::maximum);
-    auto const result = create<message::merkle_block>(message::version::level::maximum, data);
+    byte_reader reader(data);
+    auto const result_exp = message::merkle_block::from_data(reader, message::version::level::maximum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
 }
 
-TEST_CASE("merkle block - roundtrip to data factory from data stream", "[merkle block]") {
-    const message::merkle_block expected {
-        {10,
-         hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-         hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-         531234,
-         6523454,
-         68644},
-        543563u,
-        {hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b")},
-        {0x00}};
 
-    auto const data = expected.to_data(message::version::level::maximum);
-    data_source istream(data);
-    auto const result = create<message::merkle_block>(message::version::level::maximum, istream);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-}
-
-TEST_CASE("merkle block - roundtrip to data factory from data reader", "[merkle block]") {
-    const message::merkle_block expected{
-        {10,
-         hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-         hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-         531234,
-         6523454,
-         68644},
-        5324u,
-        {hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b")},
-        {0x00}};
-
-    auto const data = expected.to_data(message::version::level::maximum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::merkle_block>(message::version::level::maximum, source);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-}
 
 TEST_CASE("merkle block  header accessor 1  always  returns initialized value", "[merkle block]") {
     chain::header const expected{

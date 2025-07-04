@@ -42,7 +42,7 @@ public:
     void set_minimum_fee(uint64_t value);
 
     static
-    expect<fee_filter> from_data(byte_reader& reader, uint32_t /*version*/);
+    expect<fee_filter> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
     data_chunk to_data(uint32_t version) const;

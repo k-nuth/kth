@@ -39,50 +39,28 @@ TEST_CASE("fee filter  constructor 4  always  equals params", "[fee filter]") {
     REQUIRE(fee == instance.minimum_fee());
 }
 
-TEST_CASE("fee filter  from data  insufficient bytes failure", "[fee filter]") {
+TEST_CASE("fee filter from data insufficient bytes failure", "[fee filter]") {
     data_chunk const raw = {0xab, 0x11};
-    fee_filter instance;
-    REQUIRE( ! entity_from_data(instance, raw, version::level::maximum));
+    byte_reader reader(raw);
+    auto const result = fee_filter::from_data(reader, version::level::maximum);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("fee filter  from data  insufficient version failure", "[fee filter]") {
-    const fee_filter expected{1};
+TEST_CASE("fee filter from data insufficient version failure", "[fee filter]") {
+    fee_filter const expected{1};
     auto const data = expected.to_data(fee_filter::version_maximum);
-    fee_filter instance;
-    REQUIRE( ! entity_from_data(instance, data, filter_add::version_minimum - 1));
+    byte_reader reader(data);
+    auto const result = fee_filter::from_data(reader, fee_filter::version_minimum - 1);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("fee filter  factory from data 1  roundtrip  success", "[fee filter]") {
+TEST_CASE("fee filter from data roundtrip  success", "[fee filter]") {
     const fee_filter expected{123};
     auto const data = expected.to_data(fee_filter::version_maximum);
-    auto const result = create<fee_filter>(fee_filter::version_maximum, data);
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-
-    auto const size = result.serialized_size(version::level::maximum);
-    REQUIRE(data.size() == size);
-    REQUIRE(expected.serialized_size(version::level::maximum) == size);
-}
-
-TEST_CASE("fee filter  factory from data 2  roundtrip  success", "[fee filter]") {
-    const fee_filter expected{325};
-    auto const data = expected.to_data(fee_filter::version_maximum);
-    data_source istream(data);
-    auto const result = create<fee_filter>(fee_filter::version_maximum, istream);
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-
-    auto const size = result.serialized_size(version::level::maximum);
-    REQUIRE(data.size() == size);
-    REQUIRE(expected.serialized_size(version::level::maximum) == size);
-}
-
-TEST_CASE("fee filter  factory from data 3  roundtrip  success", "[fee filter]") {
-    const fee_filter expected{58246};
-    auto const data = expected.to_data(fee_filter::version_maximum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<fee_filter>(fee_filter::version_maximum, source);
+    byte_reader reader(data);
+    auto const result_exp = fee_filter::from_data(reader, fee_filter::version_maximum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
 

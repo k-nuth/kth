@@ -236,13 +236,17 @@ std::istream& operator>>(std::istream& input, authority& argument) {
         std::string ip_address = ipv6 ? ipv6.to_string() : to_ipv6(ipv4.to_string());
 
 #if ! defined(__EMSCRIPTEN__)
-        argument.ip_ = asio::ipv6::from_string(ip_address);
+        try {
+            argument.ip_ = asio::ipv6::from_string(ip_address);
+        } catch (std::exception const&) {
+            BOOST_THROW_EXCEPTION(invalid_option_value(value));
+        }
 #endif
 
         if (port) {
             auto const port_sv = port.to_view();
             auto const result = std::from_chars(port_sv.data(), port_sv.data() + port_sv.size(), argument.port_);
-            if (result.ec == std::errc()) {
+            if (result.ec != std::errc()) {
 #if ! defined(__EMSCRIPTEN__)
                 BOOST_THROW_EXCEPTION(invalid_option_value(value));
 #else

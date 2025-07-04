@@ -294,7 +294,6 @@ chain::block genesis_generic(std::string const& raw_data) {
     data_chunk data;
     decode_base16(data, raw_data);
 
-    // auto genesis = create<chain::block>(data);
     byte_reader reader(data);
     auto genesis = block::from_data(reader);
 

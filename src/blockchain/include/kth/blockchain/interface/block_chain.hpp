@@ -230,7 +230,7 @@ public:
             auto const tx_result = database_.internal_db().get_transaction(hash, max_size_t);
 
             if ( ! tx_result.is_valid()) {
-                handler(error::operation_failed_16, 0, domain::chain::transaction{});
+                handler(error::transaction_lookup_failed, 0, domain::chain::transaction{});
                 return;
             }
             KTH_ASSERT(tx_result.height() == height);
@@ -245,7 +245,7 @@ public:
             auto const& tx = *f;
 
             if ( ! tx.is_valid()) {
-                handler(error::operation_failed_16, 0, domain::chain::transaction{});
+                handler(error::transaction_lookup_failed, 0, domain::chain::transaction{});
                 return;
             }
             //KTH_ASSERT(tx.height() == height);

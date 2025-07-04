@@ -46,14 +46,16 @@ TEST_CASE("filter add  constructor 5  always  equals params", "[filter add]") {
     REQUIRE(data == instance.data());
 }
 
-TEST_CASE("filter add  from data  insufficient bytes  failure", "[filter add]") {
+TEST_CASE("filter add from data insufficient bytes  failure", "[filter add]") {
     data_chunk raw = {0xab, 0x11};
     message::filter_add instance;
 
-    REQUIRE( ! entity_from_data(instance, message::version::level::maximum, raw));
+    byte_reader reader(raw);
+    auto result = message::filter_add::from_data(reader, message::version::level::maximum);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("filter add  from data  insufficient version  failure", "[filter add]") {
+TEST_CASE("filter add from data insufficient version  failure", "[filter add]") {
     const message::filter_add expected{
         {0x1F, 0x9a, 0x0d, 0x24, 0x9a, 0xd5, 0x39, 0x89,
          0xbb, 0x85, 0x0a, 0x3d, 0x79, 0x24, 0xed, 0x0f,
@@ -61,13 +63,13 @@ TEST_CASE("filter add  from data  insufficient version  failure", "[filter add]"
          0x37, 0xc0, 0xb0, 0x32, 0xf0, 0xd6, 0x6e, 0xdf}};
 
     auto const data = expected.to_data(message::version::level::maximum);
-    message::filter_add instance;
-
-    REQUIRE( ! entity_from_data(instance,
-                                   message::filter_add::version_minimum - 1, data));
+    byte_reader reader(data);
+    auto const result = message::filter_add::from_data(reader, message::version::level::minimum - 1);
+    REQUIRE( ! result);
+    REQUIRE(result.error() == error::version_too_low);
 }
 
-TEST_CASE("filter add  factory from data 1  valid input  success", "[filter add]") {
+TEST_CASE("filter add from data valid input  success", "[filter add]") {
     const message::filter_add expected{
         {0x1F, 0x9a, 0x0d, 0x24, 0x9a, 0xd5, 0x39, 0x89,
          0xbb, 0x85, 0x0a, 0x3d, 0x79, 0x24, 0xed, 0x0f,
@@ -75,8 +77,10 @@ TEST_CASE("filter add  factory from data 1  valid input  success", "[filter add]
          0x37, 0xc0, 0xb0, 0x32, 0xf0, 0xd6, 0x6e, 0xdf}};
 
     auto const data = expected.to_data(message::version::level::maximum);
-    auto const result = create<message::filter_add>(
-        message::version::level::maximum, data);
+    byte_reader reader(data);
+    auto const result_exp = message::filter_add::from_data(reader, message::version::level::maximum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
@@ -85,44 +89,7 @@ TEST_CASE("filter add  factory from data 1  valid input  success", "[filter add]
                         result.serialized_size(message::version::level::maximum));
 }
 
-TEST_CASE("filter add  factory from data 2  valid input  success", "[filter add]") {
-    const message::filter_add expected{
-        {0x1F, 0x9a, 0x0d, 0x24, 0x9a, 0xd5, 0x39, 0x89,
-         0xbb, 0x85, 0x0a, 0x3d, 0x79, 0x24, 0xed, 0x0f,
-         0xc3, 0x0d, 0x6f, 0x55, 0x7d, 0x71, 0x12, 0x1a,
-         0x37, 0xc0, 0xb0, 0x32, 0xf0, 0xd6, 0x6e, 0xdf}};
 
-    auto const data = expected.to_data(message::version::level::maximum);
-    data_source istream(data);
-    auto const result = create<message::filter_add>(
-        message::version::level::maximum, istream);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(message::version::level::maximum));
-    REQUIRE(expected.serialized_size(message::version::level::maximum) ==
-                        result.serialized_size(message::version::level::maximum));
-}
-
-TEST_CASE("filter add  factory from data 3  valid input  success", "[filter add]") {
-    const message::filter_add expected{
-        {0x1F, 0x9a, 0x0d, 0x24, 0x9a, 0xd5, 0x39, 0x89,
-         0xbb, 0x85, 0x0a, 0x3d, 0x79, 0x24, 0xed, 0x0f,
-         0xc3, 0x0d, 0x6f, 0x55, 0x7d, 0x71, 0x12, 0x1a,
-         0x37, 0xc0, 0xb0, 0x32, 0xf0, 0xd6, 0x6e, 0xdf}};
-
-    auto const data = expected.to_data(message::version::level::maximum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::filter_add>(
-        message::version::level::maximum, source);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(message::version::level::maximum));
-    REQUIRE(expected.serialized_size(message::version::level::maximum) ==
-                        result.serialized_size(message::version::level::maximum));
-}
 
 TEST_CASE("filter add  data accessor 1  always  returns initialized value", "[filter add]") {
     data_chunk const value = {0x0f, 0xf0, 0x55, 0xaa};

@@ -1,0 +1,1536 @@
+{
+  "_documentation": {
+    "description": "Knuth overrides for script test cases",
+    "key_format": "script_sig and script_pub_key are required. key_fork is optional for disambiguation.",
+    "fields": {
+      "script_sig": "Input script (required)",
+      "script_pub_key": "Output script (required)", 
+      "key_fork": "Fork flags for key disambiguation (optional). When specified, only matches test cases with exactly these forks.",
+      "knuth_error": "Override the expected error",
+      "knuth_script_sig": "Override the script_sig",
+      "knuth_script_pub_key": "Override the script_pub_key",
+      "knuth_fork": "Override the fork flags (output override, different from key_fork)",
+      "reason": "Documentation of why this override is needed"
+    },
+    "duplicate_detection": "Entries with the same (script_sig, script_pub_key) and same key_fork (or both missing key_fork) will cause an error. key_fork allows disambiguation when the same scripts appear with different forks.",
+    "skip_tests": "Array of test cases to exclude from conversion. Each entry must have script_sig, script_pub_key, and reason. Optional key_fork for disambiguation."
+  },
+  "skip_tests": [
+    {
+      "script_sig": "0x4c01",
+      "script_pub_key": "0x01 NOP",
+      "reason": "Knuth fails at parsing stage (OP_PUSHDATA1 with missing data), BCHN fails at execution stage"
+    },
+    {
+      "script_sig": "0x4d0200ff",
+      "script_pub_key": "0x01 NOP",
+      "reason": "..."
+    },
+    {
+      "script_sig": "0x4e03000000ffff",
+      "script_pub_key": "0x01 NOP",
+      "reason": ""
+    },
+    {
+      "script_sig": "0x41 0x1052a02f76cf6c3bc43e4671af4c6065f6d918c79f58ad7f90a49c4e2603a4728fc6d81d49087dd97bc43ae184da55dc5195553526ce076df092be27a398b68f41",
+      "script_pub_key": "0x21 0xa8f459fbe84e0568ff03454d438183b0464e0c18ff73658ec0d2619b20ff29e502 REVERSEBYTES CHECKSIG",
+      "reason": "Complex Schnorr signature + NULLFAIL case - BCHN expects success but signature appears invalid, needs investigation of NULLFAIL handling"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "NOP1",
+      "reason": "SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS is a standardness rule, not consensus - Knuth doesn't support this"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "NOP4",
+      "reason": "SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS is a standardness rule, not consensus - Knuth doesn't support this"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "NOP5",
+      "reason": "SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS is a standardness rule, not consensus - Knuth doesn't support this"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "NOP6",
+      "reason": "SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS is a standardness rule, not consensus - Knuth doesn't support this"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "NOP7",
+      "reason": "SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS is a standardness rule, not consensus - Knuth doesn't support this"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "NOP8",
+      "reason": "SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS is a standardness rule, not consensus - Knuth doesn't support this"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "NOP9",
+      "reason": "SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS is a standardness rule, not consensus - Knuth doesn't support this"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "NOP10",
+      "reason": "SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS is a standardness rule, not consensus - Knuth doesn't support this"
+    },
+    {
+      "script_sig": "NOP10",
+      "script_pub_key": "1",
+      "reason": "SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS is a standardness rule, not consensus - Knuth doesn't support this"
+    },
+    {
+      "script_sig": "1 0x01 0xb9",
+      "script_pub_key": "HASH160 0x14 0x15727299b05b45fdaf9ac9ecf7565cfe27c3e567 EQUAL",
+      "reason": "SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS is a standardness rule, not consensus - Knuth doesn't support this"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "0x61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+      "reason": "Estos son multiples opcodes 0x61, tengo que ver cómo encodearlos en Knuth"
+    },
+    {
+      "script_sig": "0",
+      "script_pub_key": "IF 0x6161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161 ENDIF 1",
+      "reason": "Estos son multiples opcodes 0x61, tengo que ver cómo encodearlos en Knuth"
+    },
+    {
+      "script_sig": "1 2 3 4 5 0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+      "script_pub_key": "1 2 3 4 5 6 0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+      "reason": "Estos son multiples opcodes 0x6f, tengo que ver cómo encodearlos en Knuth"
+    },
+    {
+      "script_sig": "1 2 3 4 5 0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+      "script_pub_key": "1 TOALTSTACK 2 TOALTSTACK 3 4 5 6 0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+      "reason": "Estos son multiples opcodes 0x6f, tengo que ver cómo encodearlos en Knuth"
+    }
+  ],
+  "overrides": [
+    {
+      "script_sig": "1 2 3 4 5 0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+      "script_pub_key": "1 2 3 4 5 0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+      "knuth_error": "EVAL_FALSE",
+      "reason": ""
+    },
+    {
+      "script_sig": "1 TOALTSTACK 2 TOALTSTACK 3 4 5 0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+      "script_pub_key": "1 2 3 4 5 6 7 0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+      "knuth_error": "EVAL_FALSE",
+      "reason": ""
+    },
+    {
+      "script_sig": "'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+      "script_pub_key": "'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f 2DUP 0x616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+      "knuth_error": "EVAL_FALSE",
+      "reason": ""
+    },
+    {
+      "script_sig": "0 0x01 1",
+      "script_pub_key": "HASH160 0x14 0xda1745e9b549bd0bfa1a569971c77eba30cd5a4b EQUAL",
+      "knuth_script_sig": "0 [51]",
+      "reason": ""
+    },
+    {
+      "script_sig": "PUSHDATA1 0x00 0x01 1",
+      "script_pub_key": "HASH160 0x14 0xda1745e9b549bd0bfa1a569971c77eba30cd5a4b EQUAL",
+      "knuth_script_sig": "[1.] [0.51]",
+      "reason": ""
+    },
+
+
+    {
+      "script_sig": "0 0x02 0x0100",
+      "script_pub_key": "DIV DROP 1",
+      "knuth_fork": "SIGPUSHONLY", 
+      "reason": "SIGPUSHONLY genera bch_euclid y nosotros necesitamos bch_pythagoras. No hay traducción de flags de BCHN a bch_pythagoras entonces usamos uno que traduzca a bch_euclid que es un fork posterior."
+    },
+    {
+      "script_sig": "0x02 0x0000 1",
+      "script_pub_key": "DIV DROP 1",
+      "knuth_fork": "SIGPUSHONLY", 
+      "reason": "SIGPUSHONLY genera bch_euclid y nosotros necesitamos bch_pythagoras. No hay traducción de flags de BCHN a bch_pythagoras entonces usamos uno que traduzca a bch_euclid que es un fork posterior."
+    },
+
+    {
+      "script_sig": "0 0x02 0x0100",
+      "script_pub_key": "MOD DROP 1",
+      "knuth_fork": "SIGPUSHONLY", 
+      "reason": "SIGPUSHONLY genera bch_euclid y nosotros necesitamos bch_pythagoras. No hay traducción de flags de BCHN a bch_pythagoras entonces usamos uno que traduzca a bch_euclid que es un fork posterior."
+    },
+    {
+      "script_sig": "0x02 0x0000 1",
+      "script_pub_key": "MOD DROP 1",
+      "knuth_fork": "SIGPUSHONLY", 
+      "reason": "SIGPUSHONLY genera bch_euclid y nosotros necesitamos bch_pythagoras. No hay traducción de flags de BCHN a bch_pythagoras entonces usamos uno que traduzca a bch_euclid que es un fork posterior."
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "NOP1 CHECKLOCKTIMEVERIFY CHECKSEQUENCEVERIFY NOP4 NOP5 NOP6 NOP7 NOP8 NOP9 NOP10 1 EQUAL",
+      "knuth_fork": "P2SH", 
+      "reason": "????"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "NOP1 CHECKLOCKTIMEVERIFY CHECKSEQUENCEVERIFY NOP4 NOP5 NOP6 NOP7 NOP8 NOP9 NOP10 2 EQUAL",
+      "knuth_error": "UNSATISFIED_LOCKTIME",
+      "reason": "????"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "CHECKSEQUENCEVERIFY 1",
+      "knuth_fork": "P2SH", 
+      "reason": "????"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "CHECKLOCKTIMEVERIFY 1",
+      "knuth_fork": "P2SH", 
+      "reason": "????"
+    },
+    {
+      "script_sig": "'NOP_1_to_10' NOP1 CHECKLOCKTIMEVERIFY CHECKSEQUENCEVERIFY NOP4 NOP5 NOP6 NOP7 NOP8 NOP9 NOP10",
+      "script_pub_key": "'NOP_1_to_10' EQUAL",
+      "key_fork": "P2SH", 
+      "knuth_error": "UNSATISFIED_LOCKTIME",
+      "reason": "????"
+    },
+    {
+      "script_sig": "'NOP_1_to_10' NOP1 CHECKLOCKTIMEVERIFY CHECKSEQUENCEVERIFY NOP4 NOP5 NOP6 NOP7 NOP8 NOP9 NOP10",
+      "script_pub_key": "'NOP_1_to_11' EQUAL",
+      "key_fork": "P2SH,STRICTENC", 
+      "knuth_error": "UNSATISFIED_LOCKTIME",
+      "reason": "????"
+    },
+    
+      
+    {
+      "script_sig": "0", 
+      "script_pub_key": "IF VERIF ELSE 1 ENDIF",
+      "knuth_error": "DISABLED_OPCODE",
+      "reason": "BCHN returns BAD_OPCODE for VERIF (illegal opcode), but Knuth returns op_disabled for disabled opcodes"
+    },
+    {
+      "script_sig": "0",
+      "script_pub_key": "IF ELSE 1 ELSE VERIF ENDIF", 
+      "knuth_error": "DISABLED_OPCODE",
+      "reason": "BCHN returns BAD_OPCODE for VERIF (illegal opcode), but Knuth returns op_disabled for disabled opcodes"
+    },
+    {
+      "script_sig": "0",
+      "script_pub_key": "IF VERNOTIF ELSE 1 ENDIF",
+      "knuth_error": "DISABLED_OPCODE", 
+      "reason": "BCHN returns BAD_OPCODE for VERNOTIF (illegal opcode), but Knuth returns op_disabled for disabled opcodes"
+    },
+    {
+      "script_sig": "0",
+      "script_pub_key": "IF ELSE 1 ELSE VERNOTIF ENDIF",
+      "knuth_error": "DISABLED_OPCODE",
+      "reason": "BCHN returns BAD_OPCODE for VERNOTIF (illegal opcode), but Knuth returns op_disabled for disabled opcodes"
+    },
+    {
+      "script_sig": "1 IF 0 ENDIF",
+      "script_pub_key": "1 ENDIF",
+      "knuth_error": "KTH_OP_ENDIF",
+      "reason": "BCHN returns UNBALANCED_CONDITIONAL, but Knuth returns op_endif for unbalanced ENDIF"
+    },
+    {
+      "script_sig": "1 ELSE 0 ENDIF", 
+      "script_pub_key": "1",
+      "knuth_error": "KTH_OP_ELSE",
+      "reason": "BCHN returns UNBALANCED_CONDITIONAL, but Knuth returns op_else for unbalanced ELSE"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "ENDIF",
+      "knuth_error": "KTH_OP_ENDIF",
+      "reason": "BCHN returns UNBALANCED_CONDITIONAL, but Knuth returns op_endif for unbalanced ENDIF"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "ELSE ENDIF",
+      "knuth_error": "KTH_OP_ELSE",
+      "reason": "BCHN returns UNBALANCED_CONDITIONAL, but Knuth returns op_else for unbalanced ELSE"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "ENDIF ELSE",
+      "knuth_error": "KTH_OP_ENDIF",
+      "reason": "BCHN returns UNBALANCED_CONDITIONAL, but Knuth returns op_endif for unbalanced ENDIF"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "ENDIF ELSE IF",
+      "knuth_error": "KTH_OP_ENDIF",
+      "reason": "BCHN returns UNBALANCED_CONDITIONAL, but Knuth returns op_endif for unbalanced ENDIF"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF ELSE ENDIF ELSE",
+      "knuth_error": "KTH_OP_ELSE",
+      "reason": "BCHN returns UNBALANCED_CONDITIONAL, but Knuth returns op_else for unbalanced ELSE"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF ELSE ENDIF ELSE ENDIF",
+      "knuth_error": "KTH_OP_ELSE",
+      "reason": "BCHN returns UNBALANCED_CONDITIONAL, but Knuth returns op_else for unbalanced ELSE"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF ENDIF ENDIF",
+      "knuth_error": "KTH_OP_ENDIF",
+      "reason": "BCHN returns UNBALANCED_CONDITIONAL, but Knuth returns op_endif for unbalanced ENDIF"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF ELSE ELSE ENDIF ENDIF",
+      "knuth_error": "KTH_OP_ENDIF",
+      "reason": "BCHN returns UNBALANCED_CONDITIONAL, but Knuth returns op_endif for unbalanced ENDIF"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "RETURN",
+      "knuth_error": "KTH_INVALID_SCRIPT",
+      "reason": "BCHN executes script and returns OP_RETURN error, but Knuth detects unspendable script early and returns invalid_script"
+    },
+    {
+      "script_sig": "1", 
+      "script_pub_key": "RETURN 'data'",
+      "knuth_error": "KTH_INVALID_SCRIPT", 
+      "reason": "BCHN executes script and returns OP_RETURN error, but Knuth detects unspendable script early and returns invalid_script"
+    },
+    {
+      "script_sig": "0",
+      "script_pub_key": "VERIFY 1",
+      "knuth_error": "KTH_OP_VERIFY_FAILED",
+      "reason": "BCHN expects VERIFY error but Knuth returns OP_VERIFY_FAILED because stack contains false value, not empty"
+    },
+    {
+      "script_sig": "IFDUP",
+      "script_pub_key": "DEPTH 0 EQUAL",
+      "knuth_error": "KTH_OP_IF_DUP",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_if_dup error"
+    },
+    {
+      "script_sig": "DROP",
+      "script_pub_key": "DEPTH 0 EQUAL",
+      "knuth_error": "KTH_OP_DROP",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_drop error"
+    },
+    {
+      "script_sig": "DUP",
+      "script_pub_key": "DEPTH 0 EQUAL",
+      "knuth_error": "KTH_OP_DUP",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_dup error"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "NIP",
+      "knuth_error": "KTH_OP_NIP",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_nip error"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "1 NIP",
+      "knuth_error": "KTH_OP_NIP",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_nip error"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "OVER 1",
+      "knuth_error": "KTH_OP_OVER",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_over error"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "OVER",
+      "knuth_error": "KTH_OP_OVER",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_over error"
+    },
+    {
+      "script_sig": "19 20 21",
+      "script_pub_key": "PICK 19 EQUALVERIFY DEPTH 2 EQUAL",
+      "knuth_error": "KTH_OP_PICK",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_pick error"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "0 PICK",
+      "knuth_error": "KTH_OP_PICK",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_pick error"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "-1 PICK",
+      "knuth_error": "KTH_OP_PICK",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_pick error"
+    },
+    {
+      "script_sig": "19 20 21",
+      "script_pub_key": "0 PICK 20 EQUALVERIFY DEPTH 3 EQUAL",
+      "knuth_error": "KTH_OP_EQUAL_VERIFY_FAILED",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth executes PICK successfully and fails at EQUALVERIFY with op_equal_verify_failed"
+    },
+    {
+      "script_sig": "19 20 21",
+      "script_pub_key": "1 PICK 21 EQUALVERIFY DEPTH 3 EQUAL",
+      "knuth_error": "KTH_OP_EQUAL_VERIFY_FAILED",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth executes PICK successfully and fails at EQUALVERIFY with op_equal_verify_failed"
+    },
+    {
+      "script_sig": "19 20 21",
+      "script_pub_key": "2 PICK 22 EQUALVERIFY DEPTH 3 EQUAL",
+      "knuth_error": "KTH_OP_EQUAL_VERIFY_FAILED",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth executes PICK successfully and fails at EQUALVERIFY with op_equal_verify_failed"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "0 ROLL",
+      "knuth_error": "KTH_OP_ROLL",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_roll error"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "-1 ROLL",
+      "knuth_error": "KTH_OP_ROLL",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_roll error"
+    },
+    {
+      "script_sig": "19 20 21",
+      "script_pub_key": "0 ROLL 20 EQUALVERIFY DEPTH 2 EQUAL",
+      "knuth_error": "KTH_OP_EQUAL_VERIFY_FAILED",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth executes ROLL successfully and fails at EQUALVERIFY with op_equal_verify_failed"
+    },
+    {
+      "script_sig": "19 20 21",
+      "script_pub_key": "1 ROLL 21 EQUALVERIFY DEPTH 2 EQUAL",
+      "knuth_error": "KTH_OP_EQUAL_VERIFY_FAILED",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth executes ROLL successfully and fails at EQUALVERIFY with op_equal_verify_failed"
+    },
+    {
+      "script_sig": "19 20 21",
+      "script_pub_key": "2 ROLL 22 EQUALVERIFY DEPTH 2 EQUAL",
+      "knuth_error": "KTH_OP_EQUAL_VERIFY_FAILED",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth executes ROLL successfully and fails at EQUALVERIFY with op_equal_verify_failed"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "ROT 1",
+      "knuth_error": "KTH_OP_ROT",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_rot error"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "1 ROT 1",
+      "knuth_error": "KTH_OP_ROT",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_rot error"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "1 2 ROT 1",
+      "knuth_error": "KTH_OP_ROT",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_rot error"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "SWAP 1",
+      "knuth_error": "KTH_OP_SWAP",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_swap error"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "SWAP 1",
+      "knuth_error": "KTH_OP_SWAP",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_swap error"
+    },
+    {
+      "script_sig": "0 1",
+      "script_pub_key": "SWAP 1 EQUALVERIFY",
+      "knuth_error": "KTH_OP_EQUAL_VERIFY_FAILED",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth executes SWAP successfully and fails at EQUALVERIFY with op_equal_verify_failed"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "TUCK 1",
+      "knuth_error": "KTH_OP_TUCK",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_tuck error"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "TUCK 1",
+      "knuth_error": "KTH_OP_TUCK",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_tuck error"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "2DUP 1",
+      "knuth_error": "KTH_OP_DUP2",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_dup2 error"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "2DUP 1",
+      "knuth_error": "KTH_OP_DUP2",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_dup2 error"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "3DUP 1",
+      "knuth_error": "KTH_OP_DUP3",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_dup3 error"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "3DUP 1",
+      "knuth_error": "KTH_OP_DUP3",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_dup3 error"
+    },
+    {
+      "script_sig": "1 2",
+      "script_pub_key": "3DUP 1",
+      "knuth_error": "KTH_OP_DUP3",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_dup3 error"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "2OVER 1",
+      "knuth_error": "KTH_OP_OVER2",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_over2 error"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "2 3 2OVER 1",
+      "knuth_error": "KTH_OP_OVER2",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_over2 error"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "2SWAP 1",
+      "knuth_error": "KTH_OP_SWAP2",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_swap2 error"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "2 3 2SWAP 1",
+      "knuth_error": "KTH_OP_SWAP2",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_swap2 error"
+    },
+    {
+      "script_sig": "",
+      "script_pub_key": "CAT",
+      "knuth_error": "KTH_OP_CAT",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_cat error"
+    },
+    {
+      "script_sig": "'a'",
+      "script_pub_key": "CAT",
+      "knuth_error": "KTH_OP_CAT",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_cat error"
+    },
+    {
+      "script_sig": "",
+      "script_pub_key": "SPLIT",
+      "knuth_error": "KTH_OP_SPLIT",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_split error"
+    },
+    {
+      "script_sig": "'a'",
+      "script_pub_key": "SPLIT",
+      "knuth_error": "KTH_OP_SPLIT",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_split error"
+    },
+    {
+      "script_sig": "'abc' 4",
+      "script_pub_key": "SPLIT",
+      "knuth_error": "KTH_OP_SPLIT",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_split error"
+    },
+    {
+      "script_sig": "'abc' -1",
+      "script_pub_key": "SPLIT",
+      "knuth_error": "KTH_OP_SPLIT",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_split error"
+    },
+    {
+      "script_sig": "",
+      "script_pub_key": "REVERSEBYTES 0 EQUAL",
+      "knuth_error": "KTH_OP_REVERSE_BYTES",
+      "reason": "BCHN returns INVALID_STACK_OPERATION but Knuth returns specific op_reverse_bytes error"
+    },
+    {
+      "script_sig": "",
+      "script_pub_key": "NUM2BIN 0 EQUAL",
+      "knuth_error": "KTH_OP_NUM2BIN",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_num2bin error (bitcoin:132)"
+    },
+    {
+      "script_sig": "0",
+      "script_pub_key": "NUM2BIN 0 EQUAL",
+      "knuth_error": "KTH_OP_NUM2BIN",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_num2bin error (bitcoin:132)"
+    },
+    {
+      "script_sig": "-42 521",
+      "script_pub_key": "NUM2BIN",
+      "knuth_error": "KTH_OP_NUM2BIN_SIZE_EXCEEDED",
+      "reason": "BCHN returns INVALID_PUSH_DATA_SIZE (bitcoin:57) but Knuth returns specific op_num2bin_size_exceeded error (bitcoin:134)"
+    },
+    {
+      "script_sig": "-42 -3",
+      "script_pub_key": "NUM2BIN",
+      "knuth_error": "KTH_OP_NUM2BIN_SIZE_EXCEEDED",
+      "reason": "BCHN returns INVALID_PUSH_DATA_SIZE (bitcoin:57) but Knuth returns specific op_num2bin_size_exceeded error (bitcoin:134)"
+    },
+    {
+      "script_sig": "0x03 0xabcdef 2",
+      "script_pub_key": "NUM2BIN",
+      "knuth_error": "KTH_OP_NUM2BIN_IMPOSSIBLE_ENCODING",
+      "reason": "BCHN returns INVALID_SCRIPT (bitcoin:39) but Knuth returns specific op_num2bin_impossible_encoding error (bitcoin:135)"
+    },
+    {
+      "script_sig": "1 0x05 0x0500000000",
+      "script_pub_key": "NUM2BIN",
+      "knuth_error": "KTH_OP_NUM2BIN_INVALID_SIZE",
+      "reason": "BCHN returns INVALID_SCRIPT (bitcoin:39) but Knuth returns specific op_num2bin_invalid_size error (bitcoin:133)"
+    },
+    {
+      "script_sig": "",
+      "script_pub_key": "BIN2NUM 0 EQUAL",
+      "knuth_error": "KTH_OP_BIN2NUM",
+      "reason": "BCHN returns INVALID_SCRIPT (bitcoin:39) but Knuth returns specific op_bin2num error (bitcoin:136)"
+    },
+    {
+      "script_sig": "0x05 0xffffffff00",
+      "script_pub_key": "BIN2NUM 2147483647 EQUAL",
+      "knuth_error": "KTH_OP_BIN2NUM_INVALID_NUMBER_RANGE",
+      "reason": "BCHN returns INVALID_SCRIPT (bitcoin:39) but Knuth returns specific op_bin2num_invalid_number_range error (bitcoin:137)"
+    },
+
+    {
+      "script_sig": "0 0",
+      "script_pub_key": "AND 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "AND requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly. Using KTH_PYTHAGORAS to activate bch_gauss which includes pythagoras functionality."
+    },
+    {
+      "script_sig": "0x01 0x00 0x01 0x00",
+      "script_pub_key": "AND 0x01 0x00 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "AND requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly. Using KTH_PYTHAGORAS to activate bch_gauss which includes pythagoras functionality."
+    },
+    {
+      "script_sig": "1 0x01 0x00",
+      "script_pub_key": "AND 0x01 0x00 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "AND requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly. Using KTH_PYTHAGORAS to activate bch_gauss which includes pythagoras functionality."
+    },    
+    {
+      "script_sig": "0x01 0x00 1",
+      "script_pub_key": "AND 0x01 0x00 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "AND requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly. Using KTH_PYTHAGORAS to activate bch_gauss which includes pythagoras functionality."
+    },  
+    {
+      "script_sig": "1 1",
+      "script_pub_key": "AND 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "AND requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "0",
+      "script_pub_key": "AND 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_AND",
+      "reason": "AND requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly. Using KTH_PYTHAGORAS to activate bch_gauss which includes pythagoras functionality."
+    },
+    {
+      "script_sig": "",
+      "script_pub_key": "AND 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_AND",
+      "reason": "AND requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly. Using KTH_PYTHAGORAS to activate bch_gauss which includes pythagoras functionality."
+    },
+    {
+      "script_sig": "1 0",
+      "script_pub_key": "AND 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "AND requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "0 1",
+      "script_pub_key": "AND 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "AND requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "0 1",
+      "script_pub_key": "AND 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_AND",
+      "reason": "AND requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly. BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_and error (bitcoin:139)"
+    },
+    {
+      "script_sig": "0x01 0xab 0x01 0xcd",
+      "script_pub_key": "AND 0x01 0x89 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "AND requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+
+    {
+      "script_sig": "0 0",
+      "script_pub_key": "OR 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "OR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "0x01 0x00 0x01 0x00",
+      "script_pub_key": "OR 0x01 0x00 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "OR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "1 0x01 0x00",
+      "script_pub_key": "OR 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "OR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "0x01 0x00 1",
+      "script_pub_key": "OR 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "OR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "0",
+      "script_pub_key": "OR 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_OR",
+      "reason": "OR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly. Using KTH_PYTHAGORAS to activate bch_gauss which includes pythagoras functionality."
+    },
+    {
+      "script_sig": "",
+      "script_pub_key": "OR 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_OR",
+      "reason": "OR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly. Using KTH_PYTHAGORAS to activate bch_gauss which includes pythagoras functionality."
+    },
+    {
+      "script_sig": "1 0",
+      "script_pub_key": "OR 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "OR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "1 1",
+      "script_pub_key": "OR 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "OR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "0 1",
+      "script_pub_key": "OR 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_OR",
+      "reason": "OR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly. BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_or error (bitcoin:140) - different operand sizes"
+    },
+    {
+      "script_sig": "0x01 0xab 0x01 0xcd",
+      "script_pub_key": "OR 0x01 0xef EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "OR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+
+
+    {
+      "script_sig": "0 0",
+      "script_pub_key": "XOR 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "XOR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "0x01 0x00 0x01 0x00",
+      "script_pub_key": "XOR 0x01 0x00 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "XOR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "1 0x01 0x00",
+      "script_pub_key": "XOR 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "XOR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "0x01 0x00 1",
+      "script_pub_key": "XOR 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "XOR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "1 1",
+      "script_pub_key": "XOR 0x01 0x00 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "XOR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "0 0",
+      "script_pub_key": "XOR 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "XOR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "1 0",
+      "script_pub_key": "XOR 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "XOR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "0",
+      "script_pub_key": "XOR 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_XOR",
+      "reason": "XOR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly. BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_xor error (bitcoin:141)"
+    },
+    {
+      "script_sig": "",
+      "script_pub_key": "XOR 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_XOR",
+      "reason": "XOR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly. BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_xor error (bitcoin:141)"
+    },
+    {
+      "script_sig": "0 1",
+      "script_pub_key": "XOR 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_XOR",
+      "reason": "XOR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly. BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_xor error (bitcoin:141) - different operand sizes"
+    },
+    {
+      "script_sig": "0x01 0xab 0x01 0xcd",
+      "script_pub_key": "XOR 0x01 0x66 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "XOR requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+
+
+    {
+      "script_sig": "1",
+      "script_pub_key": "DIV",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_DIV",
+      "reason": ""
+    },
+    {
+      "script_sig": "0",
+      "script_pub_key": "DIV",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_DIV",
+      "reason": ""
+    },
+    {
+      "script_sig": "2147483648 1",
+      "script_pub_key": "DIV",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_DIV",
+      "reason": ""
+    },
+    {
+      "script_sig": "1 2147483648",
+      "script_pub_key": "DIV",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_DIV",
+      "reason": ""
+    },
+    {
+      "script_sig": "-2147483648 1",
+      "script_pub_key": "DIV",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_DIV",
+      "reason": ""
+    },
+    {
+      "script_sig": "1 -2147483648",
+      "script_pub_key": "DIV",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_DIV",
+      "reason": ""
+    },
+
+    {
+      "script_sig": "511 0",
+      "script_pub_key": "DIV",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_DIV_BY_ZERO",
+      "reason": ""
+    },
+    {
+      "script_sig": "1 1",
+      "script_pub_key": "DIV 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "1 -1",
+      "script_pub_key": "DIV -1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-1 1",
+      "script_pub_key": "DIV -1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-1 -1",
+      "script_pub_key": "DIV 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "28 21",
+      "script_pub_key": "DIV 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "12 -7",
+      "script_pub_key": "DIV -1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-32 29",
+      "script_pub_key": "DIV -1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-42 -27",
+      "script_pub_key": "DIV 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "0 123",
+      "script_pub_key": "DIV 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "1 1",
+      "script_pub_key": "DIV DEPTH 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "2147483647 1",
+      "script_pub_key": "DIV 2147483647 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "1 2147483647",
+      "script_pub_key": "DIV 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "2147483647 2147483647",
+      "script_pub_key": "DIV 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-2147483647 1",
+      "script_pub_key": "DIV -2147483647 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-1 2147483647",
+      "script_pub_key": "DIV 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-2147483647 2147483647",
+      "script_pub_key": "DIV -1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "2147483647 -1",
+      "script_pub_key": "DIV -2147483647 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "1 -2147483647",
+      "script_pub_key": "DIV 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "2147483647 -2147483647",
+      "script_pub_key": "DIV -1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-2147483647 -1",
+      "script_pub_key": "DIV 2147483647 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-1 -2147483647",
+      "script_pub_key": "DIV 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-2147483647 -2147483647",
+      "script_pub_key": "DIV 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "DIV requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+
+
+
+
+    {
+      "script_sig": "1 0",
+      "script_pub_key": "MOD",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_MOD_BY_ZERO",
+      "reason": ""
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "MOD",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_MOD",
+      "reason": ""
+    },
+    {
+      "script_sig": "0",
+      "script_pub_key": "MOD",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_MOD",
+      "reason": ""
+    },
+
+    {
+      "script_sig": "2147483648 1",
+      "script_pub_key": "MOD",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_MOD",
+      "reason": ""
+    },
+    {
+      "script_sig": "1 2147483648",
+      "script_pub_key": "MOD",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_MOD",
+      "reason": ""
+    },
+    {
+      "script_sig": "-2147483648 1",
+      "script_pub_key": "MOD",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_MOD",
+      "reason": ""
+    },
+    {
+      "script_sig": "1 -2147483648  ",
+      "script_pub_key": "MOD",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": ""
+    },
+
+
+    {
+      "script_sig": "1 -2147483648",
+      "script_pub_key": "MOD",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "knuth_error": "KTH_OP_MOD",
+      "reason": ""
+    },
+
+    {
+      "script_sig": "1 1",
+      "script_pub_key": "MOD 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-1 1",
+      "script_pub_key": "MOD 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "1 -1",
+      "script_pub_key": "MOD 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-1 -1",
+      "script_pub_key": "MOD 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "82 23",
+      "script_pub_key": "MOD 13 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "8 -3",
+      "script_pub_key": "MOD 2 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-71 13",
+      "script_pub_key": "MOD -6 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-110 -31",
+      "script_pub_key": "MOD -17 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "0 1",
+      "script_pub_key": "MOD 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "1 1",
+      "script_pub_key": "MOD DEPTH 1 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "2147483647 123",
+      "script_pub_key": "MOD 79 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "123 2147483647",
+      "script_pub_key": "MOD 123 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "2147483647 2147483647",
+      "script_pub_key": "MOD 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-2147483647 123",
+      "script_pub_key": "MOD -79 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-123 2147483647",
+      "script_pub_key": "MOD -123 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-2147483647 2147483647",
+      "script_pub_key": "MOD 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "2147483647 -123",
+      "script_pub_key": "MOD 79 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "123 -2147483647",
+      "script_pub_key": "MOD 123 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "2147483647 -2147483647",
+      "script_pub_key": "MOD 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-2147483647 -123",
+      "script_pub_key": "MOD -79 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-123 -2147483647",
+      "script_pub_key": "MOD -123 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "-2147483647 -2147483647",
+      "script_pub_key": "MOD 0 EQUAL",
+      "knuth_fork": "KTH_PYTHAGORAS",
+      "reason": "MOD requires bch_pythagoras fork but test only has bch_uahf. BCHN doesn't check forks correctly."
+    },
+    {
+      "script_sig": "2 DUP",
+      "script_pub_key": "MUL 4 EQUAL",
+      "knuth_fork": "64_BIT_INTEGERS",
+      "reason": "MUL requires bch_gauss fork but test only has bch_uahf. BCHN doesn't check forks correctly. Using 64_BIT_INTEGERS to activate bch_gauss."
+    },
+    {
+      "script_sig": "0x05 0xabcdef4243 4",
+      "script_pub_key": "NUM2BIN",
+      "knuth_error": "KTH_OP_NUM2BIN_IMPOSSIBLE_ENCODING",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_num2bin_impossible_encoding error (bitcoin:135)"
+    },
+    {
+      "script_sig": "0x08 0xffffffffffffff7f",
+      "script_pub_key": "BIN2NUM 9223372036854775807 EQUAL",
+      "key_fork": "P2SH,STRICTENC",
+      "knuth_error": "KTH_OP_BIN2NUM_INVALID_NUMBER_RANGE",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_bin2num_invalid_number_range error (bitcoin:137)"
+    },
+    {
+      "script_sig": "0x08 0xffffffffffffffff",
+      "script_pub_key": "BIN2NUM -9223372036854775807 EQUAL",
+      "key_fork": "P2SH,STRICTENC",
+      "knuth_error": "KTH_OP_BIN2NUM_INVALID_NUMBER_RANGE",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_bin2num_invalid_number_range error (bitcoin:137)"
+    },
+    {
+      "script_sig": "0x09 0xffffffffffffffff00",
+      "script_pub_key": "BIN2NUM 9223372036854775807 EQUAL",
+      "key_fork": "P2SH,STRICTENC,64_BIT_INTEGERS",
+      "knuth_error": "KTH_OP_BIN2NUM_INVALID_NUMBER_RANGE",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_bin2num_invalid_number_range error (bitcoin:137)"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "SIZE 1",
+      "knuth_error": "KTH_OP_SIZE",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_size error (bitcoin:138)"
+    },
+    {
+      "script_sig": "0x04 0xabcdef42 0x05 0xabcdef4243",
+      "script_pub_key": "NUM2BIN",
+      "knuth_error": "KTH_OP_NUM2BIN_INVALID_SIZE",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_num2bin_invalid_size error (bitcoin:133)"
+    },
+    {
+      "script_sig": "",
+      "script_pub_key": "CHECKDATASIG",
+      "knuth_error": "KTH_OP_CHECKDATASIG",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_checkdatasig error (bitcoin:182)"
+    },
+    {
+      "script_sig": "0",
+      "script_pub_key": "CHECKDATASIG",
+      "knuth_error": "KTH_OP_CHECKDATASIG",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_checkdatasig error (bitcoin:182)"
+    },
+    {
+      "script_sig": "0 0",
+      "script_pub_key": "CHECKDATASIG",
+      "knuth_error": "KTH_OP_CHECKDATASIG",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_checkdatasig error (bitcoin:182)"
+    },
+    {
+      "script_sig": "0 0",
+      "script_pub_key": "0 CHECKDATASIG",
+      "knuth_error": "KTH_OP_CHECKDATASIG",
+      "reason": "BCHN returns WITNESS_PUBKEYTYPE (bitcoin:226) but Knuth returns specific op_checkdatasig error (bitcoin:182)"
+    },
+    {
+      "script_sig": "0 0",
+      "script_pub_key": "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKDATASIG",
+      "knuth_error": "KTH_OP_CHECKDATASIG",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:65) but Knuth returns specific op_checkdatasig error (bitcoin:182)"
+    },
+    {
+      "script_sig": "0x08 0x3006020101020101 0",
+      "script_pub_key": "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKDATASIG",
+      "knuth_error": "KTH_OP_CHECKDATASIG",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:65) but Knuth returns specific op_checkdatasig error (bitcoin:182)"
+    },
+    {
+      "script_sig": "0x08 0x3006020101020101 0xxxx",
+      "script_pub_key": "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKDATASIG",
+      "knuth_error": "KTH_OP_CHECKDATASIG",
+      "reason": "BCHN returns MINIMALDATA (bitcoin:231) but Knuth returns specific op_checkdatasig error (bitcoin:182)"
+    },
+    {
+      "script_sig": "0x09 0x300602010102010101 0",
+      "script_pub_key": "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKDATASIG",
+      "knuth_error": "KTH_OP_CHECKDATASIG",
+      "reason": "BCHN returns BAD_OPCODE (bitcoin:62) but Knuth returns specific op_checkdatasig error (bitcoin:182)"
+    },
+    {
+      "script_sig": "",
+      "script_pub_key": "EQUAL NOT",
+      "knuth_error": "KTH_OP_EQUAL",
+      "reason": ""
+    },
+    {
+      "script_sig": "0",
+      "script_pub_key": "EQUAL NOT",
+      "knuth_error": "KTH_OP_EQUAL",
+      "reason": ""
+    },
+    {
+      "script_sig": "",
+      "script_pub_key": "CHECKDATASIGVERIFY 1",
+      "knuth_error": "KTH_OP_CHECKDATASIGVERIFY",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_checkdatasigverify error (bitcoin:183)"
+    },
+    {
+      "script_sig": "0",
+      "script_pub_key": "CHECKDATASIGVERIFY 1",
+      "knuth_error": "KTH_OP_CHECKDATASIGVERIFY",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_checkdatasigverify error (bitcoin:183)"
+    },
+    {
+      "script_sig": "0 0",
+      "script_pub_key": "CHECKDATASIGVERIFY 1",
+      "knuth_error": "KTH_OP_CHECKDATASIGVERIFY",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_checkdatasigverify error (bitcoin:183)"
+    },
+    {
+      "script_sig": "0 0",
+      "script_pub_key": "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKDATASIGVERIFY 1",
+      "knuth_error": "KTH_OP_CHECKDATASIGVERIFY",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_checkdatasigverify error (bitcoin:183)"
+    },
+    {
+      "script_sig": "0x07 0x616263646566",
+      "script_pub_key": "NOT 0 EQUAL",
+      "knuth_error": "KTH_OP_NOT",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_not error (bitcoin:149)"
+    },
+    {
+      "script_sig": "4611686018427387904 2",
+      "script_pub_key": "MUL 1 EQUAL",
+      "knuth_error": "KTH_OP_MUL",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_mul error (bitcoin:156)"
+    },
+    {
+      "script_sig": "4611686018427387904 2 MUL",
+      "script_pub_key": "1 EQUAL",
+      "knuth_error": "KTH_OP_MUL_OVERFLOW",
+      "reason": ""
+    },
+
+
+
+    {
+      "script_sig": "0x09 0x300702010102020001 0",
+      "script_pub_key": "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKDATASIG",
+      "knuth_error": "KTH_OP_CHECKDATASIG",
+      "reason": "BCHN returns BAD_OPCODE (bitcoin:62) but Knuth returns specific op_checkdatasig error (bitcoin:182)"
+    },
+    {
+      "script_sig": "0 0",
+      "script_pub_key": "0 CHECKDATASIGVERIFY 1",
+      "knuth_error": "KTH_OP_CHECKDATASIGVERIFY",
+      "reason": "BCHN returns WITNESS_PUBKEYTYPE (bitcoin:226) but Knuth returns specific op_checkdatasigverify error (bitcoin:183)"
+    },
+    {
+      "script_sig": "0x08 0x3006020101020101 0",
+      "script_pub_key": "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKDATASIGVERIFY 1",
+      "knuth_error": "KTH_OP_CHECKDATASIGVERIFY",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_checkdatasigverify error (bitcoin:183)"
+    },
+    {
+      "script_sig": "0x09 0x300602010102010101 0",
+      "script_pub_key": "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKDATASIGVERIFY 1",
+      "knuth_error": "KTH_OP_CHECKDATASIGVERIFY",
+      "reason": "BCHN returns BAD_OPCODE (bitcoin:62) but Knuth returns specific op_checkdatasigverify error (bitcoin:183)"
+    },
+    {
+      "script_sig": "0x09 0x300702010102020001 0",
+      "script_pub_key": "0x21 0x038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508 CHECKDATASIGVERIFY 1",
+      "knuth_error": "KTH_OP_CHECKDATASIGVERIFY",
+      "reason": "BCHN returns BAD_OPCODE (bitcoin:62) but Knuth returns specific op_checkdatasigverify error (bitcoin:183)"
+    },
+    {
+      "script_sig": "2147483647 DUP ADD",
+      "script_pub_key": "4294967294 NUMEQUAL",
+      "key_fork": "P2SH,STRICTENC",
+      "knuth_error": "KTH_OP_NUM_EQUAL",
+      "reason": ""
+    },
+    {
+      "script_sig": "'abcdef' NOT",
+      "script_pub_key": "0 EQUAL",
+      "knuth_error": "KTH_OP_NOT",
+      "reason": ""
+    },
+
+
+
+
+
+
+
+    {
+      "script_sig": "2147483648 0",
+      "script_pub_key": "ADD NOP",
+      "knuth_error": "KTH_OP_ADD",
+      "reason": "BCHN returns INVALID_SCRIPT (bitcoin:152) but Knuth returns specific op_add error (bitcoin:151)"
+    },
+    {
+      "script_sig": "2147483648 0 ADD",
+      "script_pub_key": "NOP",
+      "key_fork": "P2SH,STRICTENC",
+      "knuth_error": "KTH_OP_ADD",
+      "reason": "BCHN returns INVALID_SCRIPT (bitcoin:152) but Knuth returns specific op_add error (bitcoin:151)"
+    },    
+    {
+      "script_sig": "-2147483648 0",
+      "script_pub_key": "ADD NOP",
+      "knuth_error": "KTH_OP_ADD",
+      "reason": "BCHN returns INVALID_SCRIPT (bitcoin:152) but Knuth returns specific op_add error (bitcoin:151)"
+    },
+    {
+      "script_sig": "0x0b 0x4e4f505f315f746f5f3130",
+      "script_pub_key": "NOP1 CHECKLOCKTIMEVERIFY CHECKSEQUENCEVERIFY NOP4 NOP5 NOP6 NOP7 NOP8 NOP9 NOP10 0x0c 0x4e4f505f315f746f5f3131 EQUAL",
+      "knuth_error": "KTH_OP_EQUAL",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:65) but Knuth returns specific op_equal error (bitcoin:193)"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF INPUTINDEX ELSE 1 ENDIF",
+      "knuth_error": "KTH_OP_INPUT_INDEX",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:101) but Knuth returns specific op_input_index error (bitcoin:194)"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF ACTIVEBYTECODE ELSE 1 ENDIF",
+      "knuth_error": "KTH_OP_ACTIVE_BYTECODE",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:101) but Knuth returns specific op_active_bytecode error (bitcoin:195)"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF TXVERSION ELSE 1 ENDIF",
+      "knuth_error": "KTH_OP_TX_VERSION",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:101) but Knuth returns specific op_tx_version error (bitcoin:196)"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF TXINPUTCOUNT ELSE 1 ENDIF",
+      "knuth_error": "KTH_OP_TX_INPUT_COUNT",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:101) but Knuth returns specific op_tx_input_count error (bitcoin:197)"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF TXOUTPUTCOUNT ELSE 1 ENDIF",
+      "knuth_error": "KTH_OP_TX_OUTPUT_COUNT",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:101) but Knuth returns specific op_tx_output_count error (bitcoin:198)"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF TXLOCKTIME ELSE 1 ENDIF",
+      "knuth_error": "KTH_OP_TX_LOCKTIME",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:101) but Knuth returns specific op_tx_locktime error (bitcoin:199)"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF UTXOVALUE ELSE 1 ENDIF",
+      "knuth_error": "KTH_OP_UTXO_VALUE",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:101) but Knuth returns specific op_utxo_value error (bitcoin:200)"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF UTXOBYTECODE ELSE 1 ENDIF",
+      "knuth_error": "KTH_OP_UTXO_BYTECODE",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:101) but Knuth returns specific op_utxo_bytecode error (bitcoin:201)"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF OUTPOINTTXHASH ELSE 1 ENDIF",
+      "knuth_error": "KTH_OP_OUTPOINT_TX_HASH",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:101) but Knuth returns specific op_outpoint_tx_hash error (bitcoin:202)"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF OUTPOINTINDEX ELSE 1 ENDIF",
+      "knuth_error": "KTH_OP_OUTPOINT_INDEX",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:101) but Knuth returns specific op_outpoint_index error (bitcoin:203)"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF INPUTBYTECODE ELSE 1 ENDIF",
+      "knuth_error": "KTH_OP_INPUT_BYTECODE",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:101) but Knuth returns specific op_input_bytecode error (bitcoin:204)"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF INPUTSEQUENCENUMBER ELSE 1 ENDIF",
+      "knuth_error": "KTH_OP_INPUT_SEQUENCE_NUMBER",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:101) but Knuth returns specific op_input_sequence_number error (bitcoin:205)"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF OUTPUTVALUE ELSE 1 ENDIF",
+      "knuth_error": "KTH_OP_OUTPUT_VALUE",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:101) but Knuth returns specific op_output_value error (bitcoin:206)"
+    },
+    {
+      "script_sig": "1",
+      "script_pub_key": "IF OUTPUTBYTECODE ELSE 1 ENDIF",
+      "knuth_error": "KTH_OP_OUTPUT_BYTECODE",
+      "reason": "BCHN returns DISABLED_OPCODE (bitcoin:101) but Knuth returns specific op_output_bytecode error (bitcoin:207)"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "RIPEMD160",
+      "knuth_error": "KTH_OP_RIPEMD160",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_ripemd160 error (bitcoin:174)"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "SHA1",
+      "knuth_error": "KTH_OP_SHA1",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_sha1 error (bitcoin:175)"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "SHA256",
+      "knuth_error": "KTH_OP_SHA256",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_sha256 error (bitcoin:176)"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "HASH160",
+      "knuth_error": "KTH_OP_HASH160",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_hash160 error (bitcoin:177)"
+    },
+    {
+      "script_sig": "NOP",
+      "script_pub_key": "HASH256",
+      "knuth_error": "KTH_OP_HASH256",
+      "reason": "BCHN returns INVALID_STACK_OPERATION (bitcoin:39) but Knuth returns specific op_hash256 error (bitcoin:178)"
+    }
+
+
+]
+}

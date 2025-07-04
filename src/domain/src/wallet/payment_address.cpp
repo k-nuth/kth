@@ -224,6 +224,8 @@ payment_address payment_address::from_string(std::string const& address) {
     payment decoded;
     if ( ! decode_base58(decoded, address) || ! is_address(decoded)) {
 #if defined(KTH_CURRENCY_BCH)
+        // If the address is not a valid base58 encoded address, try cashaddr.
+        // This will return an empty payment_address if the address is not a valid cashaddr.
         return from_string_cashaddr(address);
 #else
         return {};
@@ -273,6 +275,10 @@ payment_address payment_address::from_script(chain::script const& script, uint8_
 // ----------------------------------------------------------------------------
 
 payment_address::operator bool() const {
+    return valid_;
+}
+
+bool payment_address::valid() const {
     return valid_;
 }
 

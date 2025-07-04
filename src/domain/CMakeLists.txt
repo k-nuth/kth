@@ -12,7 +12,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(ENABLE_SHARED "" OFF)
 option(ENABLE_POSITION_INDEPENDENT_CODE "Enable POSITION_INDEPENDENT_CODE property" ON)
-option(ENABLE_TEST "Compile with unit tests." ON)
 option(WITH_EXAMPLES "Compile with examples." OFF)
 option(WITH_ICU "Compile with International Components for Unicode." OFF)
 option(WITH_PNG "Compile with Libpng support." OFF)
@@ -204,6 +203,7 @@ set(kth_sources_just_legacy
         src/machine/opcode.cpp
         src/machine/operation.cpp
         src/machine/program.cpp
+        src/machine/script_execution_context.cpp
 
         src/config/header.cpp
         src/config/input.cpp

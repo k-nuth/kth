@@ -204,14 +204,14 @@ TEST_CASE("block  is valid merkle root  valid  returns true", "[chain block]") {
 
 // Start Test Suite: block serialization tests
 
-TEST_CASE("block  from data  insufficient bytes  failure", "[block serialization]") {
+TEST_CASE("block from data insufficient bytes  failure", "[block serialization]") {
     data_chunk data(10);
     byte_reader reader(data);
     auto const result = chain::block::from_data(reader);
     REQUIRE( ! result);
 }
 
-TEST_CASE("block  from data  insufficient transaction bytes  failure", "[block serialization]") {
+TEST_CASE("block from data insufficient transaction bytes  failure", "[block serialization]") {
     data_chunk const data = to_chunk(base16_literal(
         "010000007f110631052deeee06f0754a3629ad7663e56359fd5f3aa7b3e30a00"
         "000000005f55996827d9712147a8eb6d7bae44175fe0bcfa967e424a25bfe9f4"
@@ -269,7 +269,7 @@ TEST_CASE("block genesis chipnet valid structure", "[block serialization]") {
 
 #endif
 
-TEST_CASE("block  factory from data 1  genesis mainnet  success", "[block serialization]") {
+TEST_CASE("block from data genesis mainnet  success", "[block serialization]") {
     auto const genesis = chain::block::genesis_mainnet();
     REQUIRE(genesis.serialized_size() == 285u);
     REQUIRE(genesis.header().serialized_size() == 80u);

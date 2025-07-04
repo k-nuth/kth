@@ -50,13 +50,15 @@ TEST_CASE("prefilled transaction  constructor 5  always  equals params", "[prefi
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("prefilled transaction  from data  insufficient bytes  failure", "[prefilled transaction]") {
+TEST_CASE("prefilled transaction from data insufficient bytes  failure", "[prefilled transaction]") {
     data_chunk const raw{1};
     message::prefilled_transaction instance{};
-    REQUIRE( ! entity_from_data(instance, message::version::level::minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::prefilled_transaction::from_data(reader, message::version::level::minimum);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("prefilled transaction  factory from data 1  valid input  success", "[prefilled transaction]") {
+TEST_CASE("prefilled transaction from data valid input  success", "[prefilled transaction]") {
     const message::prefilled_transaction expected(
         16,
         chain::transaction{
@@ -66,49 +68,16 @@ TEST_CASE("prefilled transaction  factory from data 1  valid input  success", "[
             {}});
 
     auto const data = expected.to_data(message::version::level::minimum);
-    auto const result = create<message::prefilled_transaction>(
-        message::version::level::minimum, data);
+    byte_reader reader(data);
+    auto const result_exp = message::prefilled_transaction::from_data(reader, message::version::level::minimum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
 }
 
-TEST_CASE("prefilled transaction  factory from data 2  valid input  success", "[prefilled transaction]") {
-    const message::prefilled_transaction expected(
-        16,
-        chain::transaction{
-            1,
-            0,
-            {},
-            {}});
 
-    auto const data = expected.to_data(message::version::level::minimum);
-    data_source istream(data);
-    auto const result = create<message::prefilled_transaction>(
-        message::version::level::minimum, istream);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-}
-
-TEST_CASE("prefilled transaction  factory from data 3  valid input  success", "[prefilled transaction]") {
-    const message::prefilled_transaction expected(
-        16,
-        chain::transaction{
-            1,
-            0,
-            {},
-            {}});
-
-    auto const data = expected.to_data(message::version::level::minimum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::prefilled_transaction>(
-        message::version::level::minimum, source);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-}
 
 TEST_CASE("prefilled transaction  index accessor  always  returns initialized value", "[prefilled transaction]") {
     uint64_t index = 634u;

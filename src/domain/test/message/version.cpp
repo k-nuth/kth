@@ -31,42 +31,60 @@ auto const version_maximum = message::version::level::maximum;
 TEST_CASE("version  factory  therealbitcoin dot org valid", "[version]") {
     data_chunk payload;
     REQUIRE(decode_base16(payload, NO_RELAY_THEREALBITCOIN_1));
-    auto const version = create<message::version>(version_maximum, payload);
+    byte_reader reader(payload);
+    auto const result_exp = message::version::from_data(reader, version_maximum);
+    REQUIRE(result_exp);
+    auto const version = std::move(*result_exp);
     REQUIRE(version.is_valid());
 }
 
 TEST_CASE("version  factory  anarchistprime1 valid", "[version]") {
     data_chunk payload;
     REQUIRE(decode_base16(payload, NO_RELAY_ANARCHISTPRIME_1));
-    auto const version = create<message::version>(version_maximum, payload);
+    byte_reader reader(payload);
+    auto const result_exp = message::version::from_data(reader, version_maximum);
+    REQUIRE(result_exp);
+    auto const version = std::move(*result_exp);
     REQUIRE(version.is_valid());
 }
 
 TEST_CASE("version  factory  anarchistprime2 valid", "[version]") {
     data_chunk payload;
     REQUIRE(decode_base16(payload, NO_RELAY_ANARCHISTPRIME_2));
-    auto const version = create<message::version>(version_maximum, payload);
+    byte_reader reader(payload);
+    auto const result_exp = message::version::from_data(reader, version_maximum);
+    REQUIRE(result_exp);
+    auto const version = std::move(*result_exp);
     REQUIRE(version.is_valid());
 }
 
 TEST_CASE("version  factory  falcon1 valid", "[version]") {
     data_chunk payload;
     REQUIRE(decode_base16(payload, NO_RELAY_FALCON_1));
-    auto const version = create<message::version>(version_maximum, payload);
+    byte_reader reader(payload);
+    auto const result_exp = message::version::from_data(reader, version_maximum);
+    REQUIRE(result_exp);
+    auto const version = std::move(*result_exp);
     REQUIRE(version.is_valid());
 }
 
 TEST_CASE("version  factory  falcon2 valid", "[version]") {
     data_chunk payload;
     REQUIRE(decode_base16(payload, NO_RELAY_FALCON_2));
-    auto const version = create<message::version>(version_maximum, payload);
+    byte_reader reader(payload);
+    auto const result_exp = message::version::from_data(reader, version_maximum);
+    REQUIRE(result_exp);
+    auto const version = std::move(*result_exp);
     REQUIRE(version.is_valid());
 }
 
 TEST_CASE("version  factory  satoshi1 valid", "[version]") {
     data_chunk payload;
     REQUIRE(decode_base16(payload, NO_RELAY_SATOSHI_1));
-    auto const version = create<message::version>(version_maximum, payload);
+    byte_reader reader(payload);
+    auto const result_exp = message::version::from_data(reader, version_maximum);
+    REQUIRE(result_exp);
+    auto const version = std::move(*result_exp);
     REQUIRE(version.is_valid());
 }
 
@@ -224,14 +242,16 @@ TEST_CASE("version  constructor 5  always  equals params", "[version]") {
     REQUIRE(relay == beta.relay());
 }
 
-TEST_CASE("version  from data  insufficient bytes invalid", "[version]") {
+TEST_CASE("version from data insufficient bytes invalid", "[version]") {
     data_chunk const raw{0xab};
     message::version instance{};
 
-    REQUIRE( ! entity_from_data(instance, version_maximum, raw));
+    byte_reader reader(raw);
+    auto result = message::version::from_data(reader, version_maximum);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("version  from data  mismatched sender services invalid", "[version]") {
+TEST_CASE("version from data mismatched sender services invalid", "[version]") {
     uint64_t sender_services = 1515u;
     const message::version expected(
         210u,
@@ -255,13 +275,16 @@ TEST_CASE("version  from data  mismatched sender services invalid", "[version]")
         false);
 
     auto const data = expected.to_data(version_maximum);
-    auto const result = create<message::version>(version_maximum, data);
+    byte_reader reader(data);
+    auto const result_exp = message::version::from_data(reader, version_maximum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     // HACK: disabled check due to inconsistent node implementation.
     REQUIRE(/*!*/ result.is_valid());
 }
 
-TEST_CASE("version  from data  version meets bip37  success", "[version]") {
+TEST_CASE("version from data version meets bip37  success", "[version]") {
     auto const sender_services = 1515u;
     const message::version expected{
         message::version::level::bip37,
@@ -283,11 +306,14 @@ TEST_CASE("version  from data  version meets bip37  success", "[version]") {
         true};
 
     auto const data = expected.to_data(version_maximum);
-    auto const result = create<message::version>(version_maximum, data);
+    byte_reader reader(data);
+    auto const result_exp = message::version::from_data(reader, version_maximum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
     REQUIRE(result.is_valid());
 }
 
-TEST_CASE("version  factory from data 1  valid input  success", "[version]") {
+TEST_CASE("version from data valid input  success", "[version]") {
     auto const sender_services = 1515u;
     const message::version expected{
         210u,
@@ -309,83 +335,17 @@ TEST_CASE("version  factory from data 1  valid input  success", "[version]") {
         true};
 
     auto const data = expected.to_data(version_maximum);
-    auto const result = create<message::version>(version_maximum, data);
+    byte_reader reader(data);
+    auto const result_exp = message::version::from_data(reader, version_maximum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
     REQUIRE(result.is_valid());
     REQUIRE(data.size() == result.serialized_size(version_maximum));
     REQUIRE(expected.serialized_size(version_maximum) == result.serialized_size(version_maximum));
     REQUIRE(expected == result);
 }
 
-TEST_CASE("version  factory from data 2  valid input  success", "[version]") {
-    auto const sender_services = 1515u;
-    const message::version expected(
-        210u,
-        sender_services,
-        979797u,
-        {734678u,
-         5357534u,
-         {{0x47, 0x81, 0x6a, 0x40, 0xbb, 0x92, 0xbd, 0xb4,
-           0xe0, 0xb8, 0x25, 0x68, 0x61, 0xf9, 0x6a, 0x55}},
-         123u},
-        {46324u,
-         sender_services,
-         {{0xab, 0xcd, 0x6a, 0x40, 0x33, 0x92, 0x77, 0xb4,
-           0xe0, 0xb8, 0xda, 0x43, 0x61, 0x66, 0x6a, 0x88}},
-         351u},
-        13626u,
-        "my agent",
-        100u,
-        true);
 
-    auto const data = expected.to_data(version_maximum);
-    data_source istream(data);
-    auto const result = create<message::version>(version_maximum, istream);
-    REQUIRE(result.is_valid());
-    REQUIRE(data.size() == result.serialized_size(version_maximum));
-    REQUIRE(expected.serialized_size(version_maximum) == result.serialized_size(version_maximum));
-    REQUIRE(expected == result);
-}
-
-TEST_CASE("version  factory from data 3  valid input  success", "[version]") {
-    auto const sender_services = 1515u;
-    const message::version expected(
-        210u,
-        sender_services,
-        979797u,
-        {734678u,
-         5357534u,
-         {{0x47, 0x81, 0x6a, 0x40, 0xbb, 0x92, 0xbd, 0xb4,
-           0xe0, 0xb8, 0x25, 0x68, 0x61, 0xf9, 0x6a, 0x55}},
-         123u},
-        {46324u,
-         sender_services,
-         {{0xab, 0xcd, 0x6a, 0x40, 0x33, 0x92, 0x77, 0xb4,
-           0xe0, 0xb8, 0xda, 0x43, 0x61, 0x66, 0x6a, 0x88}},
-         351u},
-        13626u,
-        "my agent",
-        100u,
-        true);
-
-    auto const data = expected.to_data(version_maximum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::version>(version_maximum, source);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(data.size() == result.serialized_size(version_maximum));
-    REQUIRE(expected.serialized_size(version_maximum) == result.serialized_size(version_maximum));
-    REQUIRE(expected.relay() == result.relay());
-    REQUIRE(expected.value() == result.value());
-    REQUIRE(expected.services() == result.services());
-    REQUIRE(expected.timestamp() == result.timestamp());
-    REQUIRE(expected.nonce() == result.nonce());
-    REQUIRE(expected.user_agent() == result.user_agent());
-    REQUIRE(expected.start_height() == result.start_height());
-    REQUIRE(expected.address_receiver() == result.address_receiver());
-    REQUIRE(expected.address_sender() == result.address_sender());
-    REQUIRE(expected == result);
-}
 
 TEST_CASE("version  value accessor  returns initialized value", "[version]") {
     uint32_t const expected = 210u;

@@ -25,42 +25,42 @@ using namespace kth;
     0x6e, 0x64, 0x20, 0x53, 0x74, 0x61, 0x74, 0x65 \
 }
 
-TEST_CASE("encode base64 empty test", "[base 64 tests]") {
+TEST_CASE("infrastructure base64 encode empty data", "[infrastructure][base64]") {
     data_chunk decoded;
     REQUIRE(encode_base64(decoded) == "");
 }
 
-TEST_CASE("decode base64 empty test", "[base 64 tests]") {
+TEST_CASE("infrastructure base64 decode empty string", "[infrastructure][base64]") {
     data_chunk result;
     REQUIRE(decode_base64(result, ""));
     REQUIRE(result == data_chunk());
 }
 
-TEST_CASE("encode base64 test", "[base 64 tests]") {
+TEST_CASE("infrastructure base64 encode unpadded data", "[infrastructure][base64]") {
     data_chunk decoded(BASE64_DATA_MURRAY);
     REQUIRE(encode_base64(decoded) == BASE64_MURRAY);
 }
 
-TEST_CASE("decode base64 valid test", "[base 64 tests]") {
+TEST_CASE("infrastructure base64 decode unpadded data", "[infrastructure][base64]") {
     data_chunk result;
     REQUIRE(decode_base64(result, BASE64_MURRAY));
     REQUIRE(result == data_chunk(BASE64_DATA_MURRAY));
 }
 
-TEST_CASE("encode base64 padded test", "[base 64 tests]") {
+TEST_CASE("infrastructure base64 encode padded data", "[infrastructure][base64]") {
     data_chunk decoded(BASE64_DATA_BOOK);
     REQUIRE(encode_base64(decoded) == BASE64_BOOK);
 }
 
-TEST_CASE("decode base64 padded valid test", "[base 64 tests]") {
+TEST_CASE("infrastructure base64 decode padded data", "[infrastructure][base64]") {
     data_chunk result;
     REQUIRE(decode_base64(result, BASE64_BOOK));
     REQUIRE(result == data_chunk(BASE64_DATA_BOOK));
 }
 
-TEST_CASE("decode base64 invalid test", "[base 64 tests]") {
+TEST_CASE("infrastructure base64 decode invalid characters", "[infrastructure][base64]") {
     data_chunk result;
-    REQUIRE( ! decode_base64(result, "!@#$%^&*()"));
+    REQUIRE(!decode_base64(result, "!@#$%^&*()"));
 }
 
 // End Test Suite

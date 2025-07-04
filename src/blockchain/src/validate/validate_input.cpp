@@ -147,24 +147,31 @@ code validate_input::convert_result(verify_result_type result) {
         case verify_result_type::verify_result_sig_der:
             return error::invalid_signature_encoding;
 #endif
-        // BIP62 errors (should not see).
+        // BIP62 signature validation errors
         case verify_result_type::verify_result_sig_hashtype:
+            return error::sig_hashtype;
         case verify_result_type::verify_result_minimaldata:
+            return error::minimaldata;
         case verify_result_type::verify_result_sig_pushonly:
+            return error::sig_pushonly;
         case verify_result_type::verify_result_sig_high_s:
+            return error::sig_high_s;
 
 #if ! defined(KTH_CURRENCY_BCH)
         case verify_result_type::verify_result_sig_nulldummy:
+            return error::sig_nullfail;
 #endif
 
         case verify_result_type::verify_result_pubkeytype:
+            return error::pubkey_type;
         case verify_result_type::verify_result_cleanstack:
-            return error::operation_failed_21;
+            return error::cleanstack;
 
         // BIP65/BIP112 (shared codes).
         case verify_result_type::verify_result_negative_locktime:
+            return error::negative_locktime;
         case verify_result_type::verify_result_unsatisfied_locktime:
-            return error::invalid_script;
+            return error::unsatisfied_locktime;
 
         // Other errors.
         case verify_result_type::verify_result_op_return:

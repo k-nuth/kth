@@ -25,18 +25,29 @@ bool is_negative(data_chunk const& data) {
     return (data.back() & number::negative_mask) != 0;
 }
 
-inline
-number::number()
-    : number(0)
-{}
-
+// proteded
 inline
 number::number(int64_t value)
     : value_(value)
 {}
 
+inline //static
+nonstd::expected<number, error::error_code_t> number::from_int(int64_t value) {
+    if (value == kth::min_int64) {
+        return nonstd::make_unexpected(error::out_of_range);
+    }
+    return number(value);
+}
+
+
 // Properties
 //-----------------------------------------------------------------------------
+
+// Return true if the value is valid given the maximum size.
+inline
+bool number::valid(size_t max_size) {
+    return data().size() <= max_size;
+}
 
 // The data is interpreted as little-endian.
 inline
@@ -506,7 +517,7 @@ bool number::minimally_encode(data_chunk& data) {
     }
 
     uint8_t const last = data.back();
-    if ((last & 0x7f) == 0) {
+    if ((last & 0x7f) != 0) {
         return false;  // Already minimally encoded.
     }
 
@@ -515,13 +526,13 @@ bool number::minimally_encode(data_chunk& data) {
         return true;  // Zero, encoded as an empty array.
     }
 
-    if ((data[data.size() - 2] & 0x80) == 0) {
+    if ((data[data.size() - 2] & 0x80) != 0) {
         return false;  // Already minimally encoded.
     }
 
     for (size_t i = data.size() - 1; i > 0; --i) {
         if (data[i - 1] != 0) {
-            if ((data[i - 1] & 0x80) == 0) {
+            if ((data[i - 1] & 0x80) != 0) {
                 data[i++] = last;  // Need one more byte.
             } else {
                 data[i - 1] |= last;  // Use the available sign bit.

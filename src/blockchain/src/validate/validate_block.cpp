@@ -130,7 +130,7 @@ void validate_block::accept(branch::const_ptr branch, result_handler handler) co
     block->validation.state = fast_chain_.chain_state(branch);
 
     if ( ! block->validation.state) {
-        handler(error::operation_failed_19);
+        handler(error::block_validation_state_failed);
         return;
     }
 

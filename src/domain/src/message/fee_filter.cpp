@@ -5,6 +5,7 @@
 #include <kth/domain/message/fee_filter.hpp>
 
 #include <kth/domain/message/version.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/container_source.hpp>
 #include <kth/infrastructure/utility/istream_reader.hpp>
@@ -45,10 +46,13 @@ bool fee_filter::operator!=(fee_filter const& x) const {
 //-----------------------------------------------------------------------------
 
 // static
-expect<fee_filter> fee_filter::from_data(byte_reader& reader, uint32_t /*version*/) {
+expect<fee_filter> fee_filter::from_data(byte_reader& reader, uint32_t version) {
     auto const minimum = reader.read_little_endian<uint64_t>();
     if ( ! minimum) {
         return make_unexpected(minimum.error());
+    }
+    if (version < version_minimum) {
+        return make_unexpected(error::version_too_low);
     }
     auto const insufficient_version = false;
     return fee_filter(*minimum, insufficient_version);
@@ -74,6 +78,7 @@ void fee_filter::to_data(uint32_t version, data_sink& stream) const {
 }
 
 bool fee_filter::is_valid() const {
+    // return !insufficient_version_;
     return !insufficient_version_ || (minimum_fee_ > 0);
 }
 

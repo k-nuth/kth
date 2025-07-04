@@ -83,14 +83,14 @@ TEST_CASE("chain header  constructor 5  always  equals params", "[chain header]"
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("chain header  from data  insufficient bytes  failure", "[chain header]") {
+TEST_CASE("chain header from data insufficient bytes  failure", "[chain header]") {
     data_chunk data(10);
     byte_reader reader(data);
     auto const result = chain::header::from_data(reader);
     REQUIRE( ! result);
 }
 
-TEST_CASE("chain header  factory from data 1  valid input  success", "[chain header]") {
+TEST_CASE("chain header from data valid input  success", "[chain header]") {
     chain::header expected{
         10,
         hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),

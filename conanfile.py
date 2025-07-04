@@ -30,6 +30,7 @@ class KthRecipe(KnuthConanFileV2):
         "currency": ['BCH', 'BTC', 'LTC'],
         "verbose": [True, False],
         "mempool": [True, False],
+        "consensus": [True, False],
         "db": ['dynamic'],
         "db_readonly": [True, False],
         "cxxflags": ["ANY"],
@@ -71,6 +72,7 @@ class KthRecipe(KnuthConanFileV2):
         "currency": "BCH",
         "verbose": False,
         "mempool": False,
+        "consensus": True,
         "db": "dynamic",
         "db_readonly": False,
         "cmake_export_compile_commands": False,
@@ -122,11 +124,15 @@ class KthRecipe(KnuthConanFileV2):
         self.requires("fmt/11.2.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.15.3", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/0.9.32", transitive_headers=True, transitive_libs=True)
-        self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
+        
+        # For the moment GMP and OpenSSL are only required for consensus builds, in the future it will be required for Knuth VM also.
+        if self.options.consensus:
+            self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
+            self.requires("openssl/3.4.1", transitive_headers=True, transitive_libs=True)
+
         self.requires("expected-lite/0.8.0", transitive_headers=True, transitive_libs=True)
         self.requires("ctre/3.8.1", transitive_headers=True, transitive_libs=True)
         self.requires("tiny-aes-c/1.0.0", transitive_headers=True, transitive_libs=True)
-        self.requires("openssl/3.4.1", transitive_headers=True, transitive_libs=True)
 
         # if self.options.with_png:
         #     self.requires("libpng/1.6.34@kth/stable", transitive_headers=True, transitive_libs=True)
@@ -141,7 +147,7 @@ class KthRecipe(KnuthConanFileV2):
     def build_requirements(self):
         self.tool_requires("secp256k1-precompute/1.0.0")
         if self.options.tests:
-            self.test_requires("catch2/3.6.0")
+            self.test_requires("catch2/3.9.0")
 
     def config_options(self):
         KnuthConanFileV2.config_options(self)
@@ -201,6 +207,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["WITH_CONSOLE_CAPI"] = option_on_off(self.options.console)
 
         tc.variables["WITH_MEMPOOL"] = option_on_off(self.options.mempool)
+        tc.variables["WITH_CONSENSUS"] = option_on_off(self.options.consensus)
         tc.variables["DB_READONLY_MODE"] = option_on_off(self.options.db_readonly)
         tc.variables["LOG_LIBRARY"] = self.options.log
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
@@ -301,17 +308,18 @@ class KthRecipe(KnuthConanFileV2):
             "tiny-aes-c::tiny-aes-c"
         ]
         
-        # Consensus rules and validation
-        self.cpp_info.components["consensus"].libs = ["consensus"]
-        self.cpp_info.components["consensus"].names["cmake_find_package"] = "consensus"
-        self.cpp_info.components["consensus"].names["cmake_find_package_multi"] = "consensus"
-        # Consensus has its own direct dependencies: boost, openssl, secp256k1 (internal component), gmp
-        self.cpp_info.components["consensus"].requires = [
-            "secp256k1",
-            "boost::boost", 
-            "openssl::openssl",
-            "gmp::gmp"
-        ]
+        # Consensus rules and validation (if enabled)
+        if self.options.consensus:
+            self.cpp_info.components["consensus"].libs = ["consensus"]
+            self.cpp_info.components["consensus"].names["cmake_find_package"] = "consensus"
+            self.cpp_info.components["consensus"].names["cmake_find_package_multi"] = "consensus"
+            # Consensus has its own direct dependencies: boost, openssl, secp256k1 (internal component), gmp
+            self.cpp_info.components["consensus"].requires = [
+                "secp256k1",
+                "boost::boost", 
+                "openssl::openssl",
+                "gmp::gmp"
+            ]
         
         # Database layer
         self.cpp_info.components["database"].libs = ["database"]
@@ -325,10 +333,10 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["blockchain"].names["cmake_find_package"] = "blockchain"
         self.cpp_info.components["blockchain"].names["cmake_find_package_multi"] = "blockchain"
         # Blockchain depends on database and optionally consensus
-        self.cpp_info.components["blockchain"].requires = [
-            "database", 
-            "consensus"
-        ]
+        blockchain_requires = ["database"]
+        if self.options.consensus:
+            blockchain_requires.append("consensus")
+        self.cpp_info.components["blockchain"].requires = blockchain_requires
         
         # Network layer (not available in Emscripten builds)
         if self.settings.os != "Emscripten":
@@ -376,7 +384,9 @@ class KthRecipe(KnuthConanFileV2):
         
         # Main target that includes all core components (equivalent to the old behavior)
         # This provides a convenient way to link against all of kth at once
-        main_requires = ["infrastructure", "domain", "consensus", "database", "blockchain", "node", "secp256k1"]
+        main_requires = ["infrastructure", "domain", "database", "blockchain", "node", "secp256k1"]
+        if self.options.consensus:
+            main_requires.append("consensus")
         if self.settings.os != "Emscripten":
             main_requires.append("network")
         

@@ -611,14 +611,14 @@ code verify(transaction const& tx, uint32_t input_index, uint32_t forks, script 
 
     // This precludes bare witness programs of -0 (undocumented).
     if ( ! prevout.stack_result(false)) {
+        // TODO(2025-Jul)
         // fmt::print("verify() - embedded.stack_result(false) - 1\n");
         // std::terminate();
         return error::stack_false;
     }
 
-    // p2sh and p2w are mutually exclusive.
-    /*else*/
-    if (prevout_script.is_pay_to_script_hash(forks) || prevout_script.is_pay_to_script_hash_32(forks)) {
+    if (prevout_script.is_pay_to_script_hash(forks) || 
+        prevout_script.is_pay_to_script_hash_32(forks)) {
         if ( ! script::is_relaxed_push(input_script.operations())) {
             return error::invalid_script_embed;
         }
@@ -633,6 +633,7 @@ code verify(transaction const& tx, uint32_t input_index, uint32_t forks, script 
 
         // This precludes embedded witness programs of -0 (undocumented).
         if ( ! embedded.stack_result(false)) {
+            // TODO(2025-Jul)
             // fmt::print("verify() - embedded.stack_result(false) - 2\n");
             // std::terminate();
             return error::stack_false;

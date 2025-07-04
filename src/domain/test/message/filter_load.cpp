@@ -74,29 +74,31 @@ TEST_CASE("filter load  constructor 5  always  equals params", "[filter load]") 
     REQUIRE(flags == instance.flags());
 }
 
-TEST_CASE("filter load  from data  insufficient bytes  failure", "[filter load]") {
+TEST_CASE("filter load from data insufficient bytes  failure", "[filter load]") {
     data_chunk const raw{0xab, 0x11};
     message::filter_load instance;
 
-    REQUIRE( ! entity_from_data(instance, message::version::level::maximum, raw));
+    byte_reader reader(raw);
+    auto result = message::filter_load::from_data(reader, message::version::level::maximum);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("filter load  from data  insufficient version  failure", "[filter load]") {
-    const message::filter_load expected{
+TEST_CASE("filter load from data insufficient version  failure", "[filter load]") {
+    const message::filter_load expected {
         {0x05, 0xaa, 0xbb, 0xcc, 0xdd, 0xee},
         25,
         10,
-        0xab};
+        0xab
+    };
 
     data_chunk const data = expected.to_data(message::version::level::maximum);
-    message::filter_load instance;
-
-    REQUIRE( ! entity_from_data(instance,
-                                   message::filter_load::version_minimum - 1, data));
-    REQUIRE( ! instance.is_valid());
+    
+    byte_reader reader(data);
+    auto result = message::filter_load::from_data(reader, message::filter_load::version_minimum - 1);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("filter load  factory from data 1  valid input  success", "[filter load]") {
+TEST_CASE("filter load from data valid input  success", "[filter load]") {
     const message::filter_load expected{
         {0x05, 0xaa, 0xbb, 0xcc, 0xdd, 0xee},
         25,
@@ -104,8 +106,10 @@ TEST_CASE("filter load  factory from data 1  valid input  success", "[filter loa
         0xab};
 
     auto const data = expected.to_data(message::version::level::maximum);
-    auto const result = create<message::filter_load>(
-        message::version::level::maximum, data);
+    byte_reader reader(data);
+    auto const result_exp = message::filter_load::from_data(reader, message::version::level::maximum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
@@ -114,43 +118,7 @@ TEST_CASE("filter load  factory from data 1  valid input  success", "[filter loa
                         result.serialized_size(message::version::level::maximum));
 }
 
-TEST_CASE("filter load  factory from data 2  valid input  success", "[filter load]") {
-    const message::filter_load expected{
-        {0x05, 0xaa, 0xbb, 0xcc, 0xdd, 0xee},
-        25,
-        10,
-        0xab};
 
-    auto const data = expected.to_data(message::version::level::maximum);
-    data_source istream(data);
-    auto const result = create<message::filter_load>(
-        message::version::level::maximum, istream);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(message::version::level::maximum));
-    REQUIRE(expected.serialized_size(message::version::level::maximum) == result.serialized_size(message::version::level::maximum));
-}
-
-TEST_CASE("filter load  factory from data 3  valid input  success", "[filter load]") {
-    const message::filter_load expected{
-        {0x05, 0xaa, 0xbb, 0xcc, 0xdd, 0xee},
-        25,
-        10,
-        0xab};
-
-    auto const data = expected.to_data(message::version::level::maximum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::filter_load>(
-        message::version::level::maximum, source);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(message::version::level::maximum));
-    REQUIRE(expected.serialized_size(message::version::level::maximum) ==
-                        result.serialized_size(message::version::level::maximum));
-}
 
 TEST_CASE("filter load  filter accessor 1  always  returns initialized value", "[filter load]") {
     data_chunk const filter = {0x0f, 0xf0, 0x55, 0xaa};

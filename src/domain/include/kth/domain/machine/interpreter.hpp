@@ -350,6 +350,14 @@ public:
 private:
     static
     result run_op(operation const& op, program& program);
+
+    /// Helper function for common Native Introspection validations
+    static
+    result validate_native_introspection(program const& program);
+
+    /// Helper function for post-processing Native Introspection push operations
+    static
+    void post_process_introspection_push(program& program, data_chunk const& data);
 };
 
 } // namespace kth::domain::machine

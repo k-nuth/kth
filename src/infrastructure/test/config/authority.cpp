@@ -79,7 +79,7 @@ TEST_CASE("authority port copy expected", "[authority port]") {
     REQUIRE(host.port() == expected_port);
 }
 
-TEST_CASE("authority port ipv4 authority expected", "[authority port]") {
+TEST_CASE("authority should extract port from IPv4 address with port", "[authority port]") {
     const uint16_t expected_port = 42;
     std::stringstream address;
     address << KI_AUTHORITY_IPV4_ADDRESS ":" << expected_port;
@@ -87,7 +87,7 @@ TEST_CASE("authority port ipv4 authority expected", "[authority port]") {
     REQUIRE(host.port() == expected_port);
 }
 
-TEST_CASE("authority  port  ipv6 authority  expected", "[authority  port]") {
+TEST_CASE("authority should extract port from IPv6 address with port", "[authority port]") {
     const uint16_t expected_port = 42;
     std::stringstream address;
     address << "[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]:" << expected_port;
@@ -95,7 +95,7 @@ TEST_CASE("authority  port  ipv6 authority  expected", "[authority  port]") {
     REQUIRE(host.port() == expected_port);
 }
 
-TEST_CASE("authority  port  network address  expected", "[authority  port]") {
+TEST_CASE("authority should extract port from network address", "[authority port]") {
     const uint16_t expected_port = 42;
     message::network_address const address {
         0, 0, test_ipv6_address, expected_port
@@ -105,13 +105,13 @@ TEST_CASE("authority  port  network address  expected", "[authority  port]") {
     REQUIRE(host.port() == expected_port);
 }
 
-TEST_CASE("authority  port  ip address  expected", "[authority  port]") {
+TEST_CASE("authority should extract port from IP address constructor", "[authority port]") {
     const uint16_t expected_port = 42;
     const authority host(test_ipv6_address, expected_port);
     REQUIRE(host.port() == expected_port);
 }
 
-TEST_CASE("authority  port  hostname  expected", "[authority  port]") {
+TEST_CASE("authority should extract port from hostname constructor", "[authority port]") {
     const uint16_t expected_port = 42;
     const authority host(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS, expected_port);
     REQUIRE(host.port() == expected_port);
@@ -173,29 +173,29 @@ TEST_CASE("authority  ip  copy  expected", "[authority  ip]") {
     REQUIRE(ip_equal(host.ip(), expected_ip));
 }
 
-TEST_CASE("authority  ip  ipv4 authority  expected", "[authority  ip]") {
+TEST_CASE("authority should parse IPv4 address from string", "[authority ip]") {
     const authority host(KI_AUTHORITY_IPV4_ADDRESS ":42");
     REQUIRE(ip_equal(host.ip(), test_mapped_ip_address));
 }
 
-TEST_CASE("authority  ip  ipv6 authority  expected", "[authority  ip]") {
+TEST_CASE("authority should parse IPv6 address from string", "[authority ip]") {
     const authority host("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]:42");
     REQUIRE(ip_equal(host.ip(), test_ipv6_address));
 }
 
-TEST_CASE("authority  ip  ipv6 compatible authority  expected", "[authority  ip]") {
+TEST_CASE("authority should parse IPv6 compatible address from string", "[authority ip]") {
     // KI_AUTHORITY_IPV6_COMPATIBLE_ADDRESS A|B variants are equivalent.
     const authority host("[" KI_AUTHORITY_IPV6_COMPATIBLE_ADDRESS "]:42");
     REQUIRE(ip_equal(host.ip(), test_compatible_ip_address));
 }
 
-TEST_CASE("authority  ip  ipv6 compatible alternative authority  expected", "[authority  ip]") {
+TEST_CASE("authority should parse IPv6 alternative compatible address from string", "[authority ip]") {
     // KI_AUTHORITY_IPV6_COMPATIBLE_ADDRESS A|B variants are equivalent.
     const authority host("[" KI_AUTHORITY_IPV6_ALTERNATIVE_COMPATIBLE_ADDRESS "]:42");
     REQUIRE(ip_equal(host.ip(), test_compatible_ip_address));
 }
 
-TEST_CASE("authority  ip  network address  expected", "[authority  ip]") {
+TEST_CASE("authority should extract IP from network address", "[authority ip]") {
     auto const& expected_ip = test_ipv6_address;
     message::network_address const address {
         0, 0, test_ipv6_address, 42
@@ -205,23 +205,23 @@ TEST_CASE("authority  ip  network address  expected", "[authority  ip]") {
     REQUIRE(ip_equal(host.ip(), test_ipv6_address));
 }
 
-TEST_CASE("authority  ip  ip address  expected", "[authority  ip]") {
+TEST_CASE("authority should extract IP from IP address constructor", "[authority ip]") {
     auto const& expected_ip = test_ipv6_address;
     const authority host(expected_ip, 42);
     REQUIRE(ip_equal(host.ip(), expected_ip));
 }
 
-TEST_CASE("authority  ip  ipv4 hostname  expected", "[authority  ip]") {
+TEST_CASE("authority should parse IPv4 from hostname string", "[authority ip]") {
     const authority host(KI_AUTHORITY_IPV4_ADDRESS, 42);
     REQUIRE(ip_equal(host.ip(), test_mapped_ip_address));
 }
 
-TEST_CASE("authority  ip  ipv6 host  expected", "[authority  ip]") {
+TEST_CASE("authority should parse IPv6 from hostname string", "[authority ip]") {
     const authority host(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS, 42);
     REQUIRE(ip_equal(host.ip(), test_ipv6_address));
 }
 
-TEST_CASE("authority  ip  ipv6 hostname  expected", "[authority  ip]") {
+TEST_CASE("authority should parse IPv6 from bracketed hostname string", "[authority ip]") {
     const authority host("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]", 42);
     REQUIRE(ip_equal(host.ip(), test_ipv6_address));
 }
@@ -479,11 +479,11 @@ TEST_CASE("authority  construct  bogus ip  throws invalid option", "[authority  
     REQUIRE_THROWS_AS([](){authority host("bogus");}(), invalid_option_value);
 }
 
-TEST_CASE("authority  construct  invalid ipv4  throws invalid option", "[authority  construct]") {
+TEST_CASE("authority should throw invalid option exception for invalid IPv4", "[authority construct]") {
     REQUIRE_THROWS_AS([](){authority host("999.999.999.999");}(), invalid_option_value);
 }
 
-TEST_CASE("authority  construct  invalid ipv6  throws invalid option", "[authority  construct]") {
+TEST_CASE("authority should throw invalid option exception for invalid IPv6", "[authority construct]") {
     REQUIRE_THROWS_AS([](){authority host("[:::]");}(), invalid_option_value);
 }
 

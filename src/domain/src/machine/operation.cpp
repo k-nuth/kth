@@ -80,7 +80,11 @@ bool data_from_number_token(data_chunk& out_data, std::string const& token) {
     if (ec != std::errc()) {
         return false;
     }
-    out_data = number(value).data();
+    auto num_exp = number::from_int(value);
+    if ( ! num_exp) {
+        return false;
+    }
+    out_data = num_exp->data();
     return true;
 }
 
@@ -117,6 +121,10 @@ bool operation::from_string(std::string const& mnemonic) {
         // Otherwise minimal_opcode_from_data could convert integers here.
         code_ = nominal_opcode_from_data(data_);
         valid_ = true;
+    } else {
+        reset();
+        valid_ = false;
+        return false;
     }
 
     if ( ! valid_) {
@@ -155,7 +163,15 @@ expect<operation> operation::from_data(byte_reader& reader) {
     if ( ! data) {
         return make_unexpected(data.error());
     }
-    return operation(data_chunk(data->begin(), data->end()), false);
+    
+    // For numeric opcodes, create operation directly with the opcode (no data)
+    if (*size == 0 && is_numeric(code)) {
+        return operation(code);
+    }
+    
+    // For other opcodes, create operation with data using protected constructor
+    data_chunk data_chunk_result(data->data(), data->data() + data->size());
+    return operation(code, std::move(data_chunk_result), true);
 }
 
 // Serialization.

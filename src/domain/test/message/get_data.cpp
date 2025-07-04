@@ -96,68 +96,44 @@ TEST_CASE("get data  constructor 7  always  equals params", "[get data]") {
     REQUIRE(hash == inventories[0].hash());
 }
 
-TEST_CASE("get data  from data  insufficient bytes  failure", "[get data]") {
+TEST_CASE("get data from data insufficient bytes  failure", "[get data]") {
     static data_chunk const raw{0xab, 0xcd};
     get_data instance;
     static auto const version = version::level::maximum;
-    REQUIRE( ! entity_from_data(instance, version, raw));
+    byte_reader reader(raw);
+    auto result = get_data::from_data(reader, version);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("get data  from data  insufficient version  failure", "[get data]") {
+TEST_CASE("get data from data insufficient version  failure", "[get data]") {
     static const get_data expected{
         {inventory_vector::type_id::error,
          hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b")}};
 
     auto const raw = expected.to_data(version::level::maximum);
-    get_data instance;
-    REQUIRE( ! entity_from_data(instance, get_data::version_minimum - 1, raw));
-    REQUIRE( ! instance.is_valid());
+    byte_reader reader(raw);
+    auto const result = get_data::from_data(reader, get_data::version_minimum - 1);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("get data  factory from data 1  valid input  success", "[get data]") {
+TEST_CASE("get data from data valid input  success", "[get data]") {
     static const get_data expected{
         {inventory_vector::type_id::error,
          hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b")}};
 
     static auto const version = version::level::maximum;
     auto const data = expected.to_data(version);
-    auto const result = create<get_data>(version, data);
+    byte_reader reader(data);
+    auto const result_exp = get_data::from_data(reader, version);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(version));
     REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
 }
 
-TEST_CASE("get data  factory from data 2  valid input  success", "[get data]") {
-    static const get_data expected{
-        {{inventory_vector::type_id::transaction,
-          hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b")}}};
 
-    static auto const version = version::level::maximum;
-    auto const data = expected.to_data(version);
-    data_source istream(data);
-    auto const result = create<get_data>(version, istream);
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(version));
-    REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
-}
-
-TEST_CASE("get data  factory from data 3  valid input  success", "[get data]") {
-    static const get_data expected{
-        {{inventory_vector::type_id::block,
-          hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b")}}};
-
-    static auto const version = version::level::maximum;
-    auto const data = expected.to_data(version);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<get_data>(version, source);
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(version));
-    REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
-}
 
 TEST_CASE("get data  operator assign equals  always  matches equivalent", "[get data]") {
     static auto const hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");

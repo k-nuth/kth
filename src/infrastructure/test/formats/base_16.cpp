@@ -9,7 +9,7 @@ using namespace kth;
 
 // Start Test Suite: base 16 tests
 
-TEST_CASE("base16 literal test", "[base 16 tests]") {
+TEST_CASE("infrastructure base16 literal compilation", "[infrastructure][base16]") {
     auto result = base16_literal("01ff42bc");
     const byte_array<4> expected
     {
@@ -20,13 +20,13 @@ TEST_CASE("base16 literal test", "[base 16 tests]") {
     REQUIRE(result == expected);
 }
 
-TEST_CASE("base16 odd length invalid test", "[base 16 tests]") {
+TEST_CASE("infrastructure base16 decode odd length string should fail", "[infrastructure][base16]") {
     auto const& hex_str = "10a7fd15cb45bda9e90e19a15";
     data_chunk data;
-    REQUIRE( ! decode_base16(data, hex_str));
+    REQUIRE(!decode_base16(data, hex_str));
 }
 
-TEST_CASE("base16 short hash test", "[base 16 tests]") {
+TEST_CASE("infrastructure base16 encode and decode short hash", "[infrastructure][base16]") {
     auto const& hex_str = "f85beb6356d0813ddb0dbb14230a249fe931a135";
     short_hash hash;
     REQUIRE(decode_base16(hash, hex_str));
@@ -42,14 +42,14 @@ TEST_CASE("base16 short hash test", "[base 16 tests]") {
 }
 
 // TODO: this should be tested for correctness, not just round-tripping.
-TEST_CASE("base16 round trip test", "[base 16 tests]") {
+TEST_CASE("infrastructure base16 encode and decode round trip", "[infrastructure][base16]") {
     auto const& hex_str = "10a7fd15cb45bda9e90e19a15f";
     data_chunk data;
     REQUIRE(decode_base16(data, hex_str));
     REQUIRE(encode_base16(data) == hex_str);
 }
 
-TEST_CASE("base16 array test", "[base 16 tests]") {
+TEST_CASE("infrastructure base16 decode to fixed size array", "[infrastructure][base16]") {
     byte_array<4> converted;
     REQUIRE(decode_base16(converted, "01ff42bc"));
     const byte_array<4> expected

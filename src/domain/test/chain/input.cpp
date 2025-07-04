@@ -80,7 +80,7 @@ TEST_CASE("input  constructor 5  valid input  returns input initialized", "[inpu
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("input  from data  insufficient data  failure", "[input]") {
+TEST_CASE("input from data insufficient data  failure", "[input]") {
     data_chunk data(2);
 
     byte_reader reader(data);
@@ -88,7 +88,7 @@ TEST_CASE("input  from data  insufficient data  failure", "[input]") {
     REQUIRE(!result);
 }
 
-TEST_CASE("input  from data  valid data  success", "[input]") {
+TEST_CASE("input from data valid data  success", "[input]") {
     auto const junk = base16_literal("000000000000005739943a9c29a1955dfae2b3f37de547005bfb9535192e5fb0000000000000005739943a9c29a1955dfae2b3f37de547005bfb9535192e5fb0");
 
     byte_reader reader(junk);
@@ -96,7 +96,7 @@ TEST_CASE("input  from data  valid data  success", "[input]") {
     REQUIRE(result);
 }
 
-TEST_CASE("input  factory from data 1  valid input  success", "[input]") {
+TEST_CASE("input from data valid input  success", "[input]") {
     byte_reader reader(valid_raw_input);
     auto result = input::from_data(reader, true);
     REQUIRE(result);
@@ -327,8 +327,10 @@ TEST_CASE("input  operator assign equals 1  always  matches equivalent", "[input
 }
 
 TEST_CASE("input  operator assign equals 2  always  matches equivalent", "[input]") {
-    input expected;
-    REQUIRE(entity_from_data(expected, valid_raw_input));
+    byte_reader reader(valid_raw_input);
+    auto result = input::from_data(reader, true);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
     input instance;
     instance = expected;
     REQUIRE(instance == expected);
@@ -337,30 +339,48 @@ TEST_CASE("input  operator assign equals 2  always  matches equivalent", "[input
 TEST_CASE("input  operator boolean equals  duplicates  returns true", "[input]") {
     input alpha;
     input beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_input));
-    REQUIRE(entity_from_data(beta, valid_raw_input));
+    byte_reader reader(valid_raw_input);
+    auto result = input::from_data(reader, true);
+    REQUIRE(result);
+    alpha = std::move(*result);
+    reader.reset();
+    result = input::from_data(reader, true);
+    REQUIRE(result);
+    beta = std::move(*result);
     REQUIRE(alpha == beta);
 }
 
 TEST_CASE("input  operator boolean equals  differs  returns false", "[input]") {
     input alpha;
     input beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_input));
+    byte_reader reader(valid_raw_input);
+    auto result = input::from_data(reader, true);
+    REQUIRE(result);
+    alpha = std::move(*result);
     REQUIRE(alpha != beta);
 }
 
 TEST_CASE("input  operator boolean not equals  duplicates  returns false", "[input]") {
     input alpha;
     input beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_input));
-    REQUIRE(entity_from_data(beta, valid_raw_input));
+    byte_reader reader(valid_raw_input);
+    auto result = input::from_data(reader, true);
+    REQUIRE(result);
+    alpha = std::move(*result);
+    reader.reset();
+    result = input::from_data(reader, true);
+    REQUIRE(result);
+    beta = std::move(*result);
     REQUIRE(alpha == beta);
 }
 
 TEST_CASE("input  operator boolean not equals  differs  returns true", "[input]") {
     input alpha;
     input beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_input));
+    byte_reader reader(valid_raw_input);
+    auto result = input::from_data(reader, true);
+    REQUIRE(result);
+    alpha = std::move(*result);
     REQUIRE(alpha != beta);
 }
 

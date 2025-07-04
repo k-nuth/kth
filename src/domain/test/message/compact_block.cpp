@@ -144,13 +144,15 @@ TEST_CASE("compact block  constructor 5  always  equals params", "[compact block
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("compact block  from data  insufficient bytes  failure", "[compact block]") {
+TEST_CASE("compact block from data insufficient bytes  failure", "[compact block]") {
     data_chunk const raw{0xab, 0xcd};
     message::compact_block instance{};
-    REQUIRE( ! entity_from_data(instance, message::compact_block::version_minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::compact_block::from_data(reader, message::compact_block::version_minimum);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("compact block  from data  insufficient bytes mid transaction  failure", "[compact block]") {
+TEST_CASE("compact block from data insufficient bytes mid transaction  failure", "[compact block]") {
     auto const raw = to_chunk(base16_literal(
         "0a0000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000"
         "00003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
@@ -158,38 +160,48 @@ TEST_CASE("compact block  from data  insufficient bytes mid transaction  failure
         "3434565656565678789a9a02010000000100000000000001000000010000000"));
 
     message::compact_block instance{};
-    REQUIRE( ! entity_from_data(instance, message::compact_block::version_minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::compact_block::from_data(reader, message::compact_block::version_minimum);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("compact block  from data  insufficient version  failure", "[compact block]") {
+TEST_CASE("compact block from data insufficient version  failure", "[compact block]") {
     auto const raw = to_chunk(base16_literal(
         "0a0000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000"
         "00003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
         "221b08003e8a6300240c0100d2040000000000000400000012121212121234343434"
         "3434565656565678789a9a0201000000010000000000000100000001000000000000"));
 
-    message::compact_block expected;
-    entity_from_data(expected, message::compact_block::version_minimum, raw);
+    byte_reader reader(raw);
+    auto result_exp = message::compact_block::from_data(reader, message::compact_block::version_minimum);
+    REQUIRE(result_exp);
+    auto const expected = std::move(*result_exp);
     auto const data = expected.to_data(message::compact_block::version_minimum);
     REQUIRE(raw == data);
 
-    message::compact_block instance{};
-    REQUIRE( ! entity_from_data(instance, message::compact_block::version_minimum - 1, data));
+    byte_reader reader2(raw);
+    auto result = message::compact_block::from_data(reader2, message::compact_block::version_minimum - 1);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("compact block  factory from data 1  valid input  success", "[compact block]") {
+TEST_CASE("compact block from data valid input  success", "[compact block]") {
     auto const raw = to_chunk(base16_literal(
         "0a0000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000"
         "00003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
         "221b08003e8a6300240c0100d2040000000000000400000012121212121234343434"
         "3434565656565678789a9a0201000000010000000000000100000001000000000000"));
 
-    message::compact_block expected;
-    entity_from_data(expected, message::compact_block::version_minimum, raw);
+    byte_reader reader(raw);
+    auto result_exp = message::compact_block::from_data(reader, message::compact_block::version_minimum);
+    REQUIRE(result_exp);
+    auto const expected = std::move(*result_exp);
     auto const data = expected.to_data(message::compact_block::version_minimum);
     REQUIRE(raw == data);
 
-    auto const result = create<message::compact_block>(message::compact_block::version_minimum, data);
+    byte_reader reader2(data);
+    auto const result_exp2 = message::compact_block::from_data(reader2, message::compact_block::version_minimum);
+    REQUIRE(result_exp2);
+    auto const result = std::move(*result_exp2);
 
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
@@ -197,50 +209,7 @@ TEST_CASE("compact block  factory from data 1  valid input  success", "[compact 
     REQUIRE(expected.serialized_size(message::compact_block::version_minimum) == result.serialized_size(message::compact_block::version_minimum));
 }
 
-TEST_CASE("compact block  factory from data 2  valid input  success", "[compact block]") {
-    auto const raw = to_chunk(base16_literal(
-        "0a0000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000"
-        "00003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
-        "221b08003e8a6300240c0100d2040000000000000400000012121212121234343434"
-        "3434565656565678789a9a0201000000010000000000000100000001000000000000"));
 
-    message::compact_block expected;
-    entity_from_data(expected, message::compact_block::version_minimum, raw);
-    auto const data = expected.to_data(message::compact_block::version_minimum);
-    REQUIRE(raw == data);
-
-    data_source istream(data);
-    auto result = create<message::compact_block>(
-        message::compact_block::version_minimum, istream);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(message::compact_block::version_minimum));
-    REQUIRE(expected.serialized_size(message::compact_block::version_minimum) == result.serialized_size(message::compact_block::version_minimum));
-}
-
-TEST_CASE("compact block  factory from data 3  valid input  success", "[compact block]") {
-    auto const raw = to_chunk(base16_literal(
-        "0a0000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000"
-        "00003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
-        "221b08003e8a6300240c0100d2040000000000000400000012121212121234343434"
-        "3434565656565678789a9a0201000000010000000000000100000001000000000000"));
-
-    message::compact_block expected;
-    entity_from_data(expected, message::compact_block::version_minimum, raw);
-    auto const data = expected.to_data(message::compact_block::version_minimum);
-    REQUIRE(raw == data);
-
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::compact_block>(
-        message::compact_block::version_minimum, source);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(message::compact_block::version_minimum));
-    REQUIRE(expected.serialized_size(message::compact_block::version_minimum) == result.serialized_size(message::compact_block::version_minimum));
-}
 
 TEST_CASE("compact block  header accessor 1  always  returns initialized value", "[compact block]") {
     chain::header const header(10u,

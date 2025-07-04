@@ -742,7 +742,16 @@ bool script::is_coinbase_pattern(operation::list const& ops, size_t height) {
         return height == op_0 - op_1 + 1;
     }
 
-    return ops[0].is_nominal_push() && ops[0].data() == number(height).data();
+    if ( ! ops[0].is_nominal_push()) {
+        return false;
+    }
+    auto num_exp = number::from_int(height);
+    if ( ! num_exp) {
+        return false;
+    }
+    auto const& num = *num_exp;
+    return ops[0].data() == num.data();
+
 }
 
 // The satoshi client tests for 83 bytes total. This allows for the waste of

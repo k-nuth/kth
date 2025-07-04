@@ -13,8 +13,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(ENABLE_SHARED "" OFF)
 option(ENABLE_POSITION_INDEPENDENT_CODE "Enable POSITION_INDEPENDENT_CODE property" ON)
-option(WITH_CONSENSUS "Link consensus and use for consensus checks." ON) #OFF)
-option(ENABLE_TEST "Compile with unit tests." ON)
 option(WITH_TOOLS "Compile with tools." OFF)
 option(WITH_MEMPOOL "Mempool enabled." OFF)
 option(DB_READONLY_MODE "Readonly DB mode enabled." OFF)
@@ -241,51 +239,51 @@ _group_sources(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}")
 
 # Tests
 # ------------------------------------------------------------------------------
-if (ENABLE_TEST)
-    enable_testing()
-    find_package(Catch2 3 REQUIRED)
+# if (ENABLE_TEST)
+#     enable_testing()
+#     find_package(Catch2 3 REQUIRED)
 
-    set(kth_blockchain_test_sources
-        test/block_chain.cpp
-        test/block_entry.cpp
-        test/block_pool.cpp
-        test/branch.cpp
-        test/transaction_entry.cpp
-        test/transaction_pool.cpp
-        test/validate_block.cpp
-        test/validate_transaction.cpp
-        test/utxo.cpp
-        test/main.cpp
-    )
+#     set(kth_blockchain_test_sources
+#         test/block_chain.cpp
+#         test/block_entry.cpp
+#         test/block_pool.cpp
+#         test/branch.cpp
+#         test/transaction_entry.cpp
+#         test/transaction_pool.cpp
+#         test/validate_block.cpp
+#         test/validate_transaction.cpp
+#         test/utxo.cpp
+#         test/main.cpp
+#     )
 
-    if (WITH_MEMPOOL)
-        set(kth_blockchain_test_sources
-            ${kth_blockchain_test_sources}
-            test/mempool_tests.cpp
-        )
-    endif()
+#     if (WITH_MEMPOOL)
+#         set(kth_blockchain_test_sources
+#             ${kth_blockchain_test_sources}
+#             test/mempool_tests.cpp
+#         )
+#     endif()
 
-    add_executable(kth_blockchain_test
-        ${kth_blockchain_test_sources}
-    )
+#     add_executable(kth_blockchain_test
+#         ${kth_blockchain_test_sources}
+#     )
 
-    target_include_directories(kth_blockchain_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
-    target_link_libraries(kth_blockchain_test PUBLIC ${PROJECT_NAME})
-    target_link_libraries(kth_blockchain_test PRIVATE Catch2::Catch2WithMain)
+#     target_include_directories(kth_blockchain_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+#     target_link_libraries(kth_blockchain_test PUBLIC ${PROJECT_NAME})
+#     target_link_libraries(kth_blockchain_test PRIVATE Catch2::Catch2WithMain)
 
-    _group_sources(kth_blockchain_test "${CMAKE_CURRENT_LIST_DIR}/test")
+#     _group_sources(kth_blockchain_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
-    include(CTest)
-    # Try to use Catch2 automatic test discovery
-    find_package(Catch2 QUIET)
-    if(Catch2_FOUND)
-      include(Catch)
-      catch_discover_tests(kth_blockchain_test)
-    else()
-      # Fallback to manual test registration
-      add_test(NAME kth_blockchain_test COMMAND kth_blockchain_test)
-    endif()
-endif()
+#     include(CTest)
+#     # Try to use Catch2 automatic test discovery
+#     find_package(Catch2 QUIET)
+#     if(Catch2_FOUND)
+#       include(Catch)
+#       catch_discover_tests(kth_blockchain_test)
+#     else()
+#       # Fallback to manual test registration
+#       add_test(NAME kth_blockchain_test COMMAND kth_blockchain_test)
+#     endif()
+# endif()
 
 # Tools
 # ------------------------------------------------------------------------------

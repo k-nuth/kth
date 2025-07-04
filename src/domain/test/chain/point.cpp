@@ -65,15 +65,17 @@ TEST_CASE("point  begin end  initialized  begin not equal end", "[point]") {
     REQUIRE(instance.begin() != instance.end());
 }
 
-TEST_CASE("point  from data  insufficient bytes  failure", "[point]") {
+TEST_CASE("point from data insufficient bytes  failure", "[point]") {
     data_chunk data(10);
     chain::point instance;
 
-    REQUIRE( ! entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::point::from_data(reader);
+    REQUIRE( ! result);
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("point  from data  roundtrip  success", "[point]") {
+TEST_CASE("point from data roundtrip  success", "[point]") {
     uint32_t index = 53213;
     hash_digest const hash{
         {0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
@@ -87,15 +89,16 @@ TEST_CASE("point  from data  roundtrip  success", "[point]") {
     REQUIRE(hash == initial.hash());
     REQUIRE(index == initial.index());
 
-    chain::point point;
-
-    REQUIRE(point != initial);
-    REQUIRE(entity_from_data(point, initial.to_data()));
+    data_chunk output = initial.to_data();
+    byte_reader reader(output);
+    auto result_exp = chain::point::from_data(reader);
+    REQUIRE(result_exp);
+    auto const point = std::move(*result_exp);
     REQUIRE(point.is_valid());
     REQUIRE(point == initial);
 }
 
-TEST_CASE("point  factory from data 1  roundtrip  success", "[point]") {
+TEST_CASE("point from data roundtrip  success 2", "[point]") {
     auto const raw = to_chunk(base16_literal("46682488f0a721124a3905a1bb72445bf13493e2cd46c5c0c8db1c15afa0d58e00000000"));
     auto const data = data_chunk{
         0x46, 0x68, 0x24, 0x88, 0xf0, 0xa7, 0x21, 0x12, 0x4a, 0x39, 0x05, 0xa1,
@@ -104,7 +107,10 @@ TEST_CASE("point  factory from data 1  roundtrip  success", "[point]") {
 
     REQUIRE(raw == data);
 
-    auto point = create<chain::point>(raw);
+    byte_reader reader(raw);
+    auto result_exp = chain::point::from_data(reader);
+    REQUIRE(result_exp);
+    auto const point = std::move(*result_exp);
 
     REQUIRE(point.is_valid());
     REQUIRE(encode_hash(point.hash()) == "8ed5a0af151cdbc8c0c546cde29334f15b4472bba105394a1221a7f088246846");
@@ -114,46 +120,7 @@ TEST_CASE("point  factory from data 1  roundtrip  success", "[point]") {
     REQUIRE(output == raw);
 }
 
-TEST_CASE("point  factory from data 2  roundtrip  success", "[point]") {
-    auto const raw = to_chunk(base16_literal("46682488f0a721124a3905a1bb72445bf13493e2cd46c5c0c8db1c15afa0d58e00000000"));
-    data_chunk const data{
-        0x46, 0x68, 0x24, 0x88, 0xf0, 0xa7, 0x21, 0x12, 0x4a, 0x39, 0x05, 0xa1,
-        0xbb, 0x72, 0x44, 0x5b, 0xf1, 0x34, 0x93, 0xe2, 0xcd, 0x46, 0xc5, 0xc0,
-        0xc8, 0xdb, 0x1c, 0x15, 0xaf, 0xa0, 0xd5, 0x8e, 0x00, 0x00, 0x00, 0x00};
 
-    REQUIRE(raw == data);
-
-    data_source istream(raw);
-    auto point = create<chain::point>(istream);
-
-    REQUIRE(point.is_valid());
-    REQUIRE(encode_hash(point.hash()) == "8ed5a0af151cdbc8c0c546cde29334f15b4472bba105394a1221a7f088246846");
-    REQUIRE(point.index() == 0);
-
-    data_chunk output = point.to_data();
-    REQUIRE(output == raw);
-}
-
-TEST_CASE("point  factory from data 3  roundtrip  success", "[point]") {
-    auto const raw = to_chunk(base16_literal("46682488f0a721124a3905a1bb72445bf13493e2cd46c5c0c8db1c15afa0d58e00000000"));
-    data_chunk const data{
-        0x46, 0x68, 0x24, 0x88, 0xf0, 0xa7, 0x21, 0x12, 0x4a, 0x39, 0x05, 0xa1,
-        0xbb, 0x72, 0x44, 0x5b, 0xf1, 0x34, 0x93, 0xe2, 0xcd, 0x46, 0xc5, 0xc0,
-        0xc8, 0xdb, 0x1c, 0x15, 0xaf, 0xa0, 0xd5, 0x8e, 0x00, 0x00, 0x00, 0x00};
-
-    REQUIRE(raw == data);
-
-    data_source istream(raw);
-    istream_reader source(istream);
-    auto point = create<chain::point>(source);
-
-    REQUIRE(point.is_valid());
-    REQUIRE(encode_hash(point.hash()) == "8ed5a0af151cdbc8c0c546cde29334f15b4472bba105394a1221a7f088246846");
-    REQUIRE(point.index() == 0);
-
-    data_chunk output = point.to_data();
-    REQUIRE(output == raw);
-}
 
 TEST_CASE("point  hash setter 1  roundtrip  success", "[point]") {
     auto const value = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
@@ -185,21 +152,28 @@ TEST_CASE("point  index  roundtrip  success", "[point]") {
 }
 
 TEST_CASE("point  operator assign equals 1  always  matches equivalent", "[point]") {
-    chain::point expected;
-    REQUIRE(entity_from_data(expected, valid_raw_point));
+    byte_reader reader(valid_raw_point);
+    auto result = chain::point::from_data(reader);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
     chain::point instance;
 
     // This must be non-const.
     chain::point value;
 
-    REQUIRE(entity_from_data(value, valid_raw_point));
+    reader.reset();
+    result = chain::point::from_data(reader);
+    REQUIRE(result);
+    value = std::move(*result);
     instance = std::move(value);
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("point  operator assign equals 2  always  matches equivalent", "[point]") {
-    chain::point expected;
-    REQUIRE(entity_from_data(expected, valid_raw_point));
+    byte_reader reader(valid_raw_point);
+    auto result = chain::point::from_data(reader);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
     chain::point instance;
     instance = expected;
     REQUIRE(instance == expected);
@@ -208,30 +182,48 @@ TEST_CASE("point  operator assign equals 2  always  matches equivalent", "[point
 TEST_CASE("point  operator boolean equals  duplicates  returns true", "[point]") {
     chain::point alpha;
     chain::point beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_point));
-    REQUIRE(entity_from_data(beta, valid_raw_point));
+    byte_reader reader(valid_raw_point);
+    auto result = chain::point::from_data(reader);
+    REQUIRE(result);
+    alpha = std::move(*result);
+    reader.reset();
+    result = chain::point::from_data(reader);
+    REQUIRE(result);
+    beta = std::move(*result);
     REQUIRE(alpha == beta);
 }
 
 TEST_CASE("point  operator boolean equals  differs  returns false", "[point]") {
     chain::point alpha;
     chain::point beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_point));
+    byte_reader reader(valid_raw_point);
+    auto result = chain::point::from_data(reader);
+    REQUIRE(result);
+    alpha = std::move(*result);
     REQUIRE(alpha != beta);
 }
 
 TEST_CASE("point  operator boolean not equals  duplicates  returns false", "[point]") {
     chain::point alpha;
     chain::point beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_point));
-    REQUIRE(entity_from_data(beta, valid_raw_point));
+    byte_reader reader(valid_raw_point);
+    auto result = chain::point::from_data(reader);
+    REQUIRE(result);
+    alpha = std::move(*result);
+    reader.reset();
+    result = chain::point::from_data(reader);
+    REQUIRE(result);
+    beta = std::move(*result);
     REQUIRE(alpha == beta);
 }
 
 TEST_CASE("point  operator boolean not equals  differs  returns true", "[point]") {
     chain::point alpha;
     chain::point beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_point));
+    byte_reader reader(valid_raw_point);
+    auto result = chain::point::from_data(reader);
+    REQUIRE(result);
+    alpha = std::move(*result);
     REQUIRE(alpha != beta);
 }
 

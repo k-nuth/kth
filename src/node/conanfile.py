@@ -64,7 +64,7 @@ class KnuthNodeConan(KnuthConanFileV2):
 
     def build_requirements(self):
         if self.options.tests:
-            self.test_requires("catch2/3.7.1")
+            self.test_requires("catch2/3.9.0")
 
     def requirements(self):
         self.requires("blockchain/0.51.0", transitive_headers=True, transitive_libs=True)

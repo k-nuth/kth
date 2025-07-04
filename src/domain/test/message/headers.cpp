@@ -122,13 +122,15 @@ TEST_CASE("headers  constructor 6  always  equals params", "[headers]") {
     REQUIRE(instance.elements().size() == 2u);
 }
 
-TEST_CASE("headers  from data  insufficient bytes  failure", "[headers]") {
+TEST_CASE("headers from data insufficient bytes  failure", "[headers]") {
     data_chunk const raw{0xab, 0xcd};
     headers instance{};
-    REQUIRE( ! entity_from_data(instance, headers::version_minimum, raw));
+    byte_reader reader(raw);
+    auto result = headers::from_data(reader, headers::version_minimum);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("headers  from data  insufficient version  failure", "[headers]") {
+TEST_CASE("headers from data insufficient version  failure", "[headers]") {
     static headers const expected{
         {10,
          hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
@@ -139,10 +141,12 @@ TEST_CASE("headers  from data  insufficient version  failure", "[headers]") {
 
     data_chunk const data = expected.to_data(headers::version_minimum);
     headers instance{};
-    REQUIRE( ! entity_from_data(instance, headers::version_minimum - 1, data));
+    byte_reader reader(data);
+    auto result = headers::from_data(reader, headers::version_minimum - 1);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("headers  factory from data 1  valid input  success", "[headers]") {
+TEST_CASE("headers from data valid input  success", "[headers]") {
     static headers const expected{
         {10,
          hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
@@ -153,51 +157,17 @@ TEST_CASE("headers  factory from data 1  valid input  success", "[headers]") {
 
     static auto const version = headers::version_minimum;
     auto const data = expected.to_data(version);
-    auto const result = create<headers>(version, data);
+    byte_reader reader(data);
+    auto const result_exp = headers::from_data(reader, version);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
     REQUIRE(result.is_valid());
     REQUIRE(result == expected);
     REQUIRE(result.serialized_size(version) == data.size());
     REQUIRE(result.serialized_size(version) == expected.serialized_size(version));
 }
 
-TEST_CASE("headers  factory from data 2  valid input  success", "[headers]") {
-    static headers const expected{
-        {15,
-         hash_literal("00acadae0019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-         hash_literal("4a5e1e4bbbccddee32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-         542344,
-         1247742,
-         34632}};
 
-    static auto const version = headers::version_minimum;
-    auto const data = expected.to_data(version);
-    data_source istream(data);
-    auto result = create<headers>(version, istream);
-    REQUIRE(result.is_valid());
-    REQUIRE(result == expected);
-    REQUIRE(data.size() == result.serialized_size(version));
-    REQUIRE(result.serialized_size(version) == expected.serialized_size(version));
-}
-
-TEST_CASE("headers  factory from data 3  valid input  success", "[headers]") {
-    static headers const expected{
-        {7,
-         hash_literal("1234123412341234123412341234123412341234123412341234123412341234"),
-         hash_literal("4321432143214321432143214321432143214321432143214321432143214321"),
-         83221,
-         4353212,
-         54234}};
-
-    static auto const version = headers::version_minimum;
-    auto const data = expected.to_data(version);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<headers>(version, source);
-    REQUIRE(result.is_valid());
-    REQUIRE(result == expected);
-    REQUIRE(data.size() == result.serialized_size(version));
-    REQUIRE(result.serialized_size(version) == expected.serialized_size(version));
-}
 
 TEST_CASE("headers  elements accessor 1  always  returns initialized value", "[headers]") {
     header::list const expected{

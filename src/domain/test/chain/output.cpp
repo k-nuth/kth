@@ -82,7 +82,7 @@ TEST_CASE("output from data  insufficient bytes  failure", "[output]") {
     REQUIRE( ! result);
 }
 
-TEST_CASE("output factory from data 1  valid input success", "[output]") {
+TEST_CASE("output from data  valid input success", "[output]") {
     byte_reader reader(valid_raw_output);
     auto const result = chain::output::from_data(reader);
     REQUIRE(result);
@@ -163,7 +163,10 @@ TEST_CASE("output script setter 1  roundtrip  success", "[output]") {
 TEST_CASE("output script setter 2  roundtrip  success", "[output]") {
     chain::script value;
     auto const data = to_chunk(base16_literal("ece424a6bb6ddf4db592c0faed60685047a361b1"));
-    REQUIRE(entity_from_data(value, data, false));
+    byte_reader reader(data);
+    auto result = chain::script::from_data(reader, false);
+    REQUIRE(result);
+    value = std::move(*result);
 
     // This must be non-const.
     auto dup_value = value;
@@ -179,16 +182,22 @@ TEST_CASE("output script setter 2  roundtrip  success", "[output]") {
 }
 
 TEST_CASE("output operator assign equals 1  always  matches equivalent", "[output]") {
-    chain::output expected;
-    REQUIRE(entity_from_data(expected, valid_raw_output));
-    chain::output instance;
-    instance = create<chain::output>(valid_raw_output);
+    byte_reader reader(valid_raw_output);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
+    reader.reset();
+    auto result_exp = chain::output::from_data(reader);
+    REQUIRE(result_exp);
+    auto const instance = std::move(*result_exp);
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("output operator assign equals 2  always  matches equivalent", "[output]") {
-    chain::output expected;
-    REQUIRE(entity_from_data(expected, valid_raw_output));
+    byte_reader reader(valid_raw_output);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
     chain::output instance;
     instance = expected;
     REQUIRE(instance == expected);
@@ -197,30 +206,48 @@ TEST_CASE("output operator assign equals 2  always  matches equivalent", "[outpu
 TEST_CASE("output operator boolean equals  duplicates  returns true", "[output]") {
     chain::output alpha;
     chain::output beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_output));
-    REQUIRE(entity_from_data(beta, valid_raw_output));
+    byte_reader reader(valid_raw_output);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    alpha = std::move(*result);
+    reader.reset();
+    result = chain::output::from_data(reader);
+    REQUIRE(result);
+    beta = std::move(*result);
     REQUIRE(alpha == beta);
 }
 
 TEST_CASE("output operator boolean equals  differs  returns false", "[output]") {
     chain::output alpha;
     chain::output beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_output));
+    byte_reader reader(valid_raw_output);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    alpha = std::move(*result);
     REQUIRE(alpha != beta);
 }
 
 TEST_CASE("output operator boolean not equals  duplicates  returns false", "[output]") {
     chain::output alpha;
     chain::output beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_output));
-    REQUIRE(entity_from_data(beta, valid_raw_output));
+    byte_reader reader(valid_raw_output);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    alpha = std::move(*result);
+    reader.reset();
+    result = chain::output::from_data(reader);
+    REQUIRE(result);
+    beta = std::move(*result);
     REQUIRE(alpha == beta);
 }
 
 TEST_CASE("output operator boolean not equals  differs  returns true", "[output]") {
     chain::output alpha;
     chain::output beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_output));
+    byte_reader reader(valid_raw_output);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    alpha = std::move(*result);
     REQUIRE(alpha != beta);
 }
 
@@ -230,7 +257,10 @@ TEST_CASE("output deserialization with just FT amount 1", "[output]") {
     auto const data = to_chunk(base16_literal("2030050000000000" "3c" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1001" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -250,7 +280,10 @@ TEST_CASE("output deserialization with just FT amount 252", "[output]") {
     auto const data = to_chunk(base16_literal("2030050000000000" "3c" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb10fc" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -270,7 +303,10 @@ TEST_CASE("output deserialization with just FT amount 253", "[output]") {
     auto const data = to_chunk(base16_literal("2030050000000000" "3e" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb10fdfd00" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -290,7 +326,10 @@ TEST_CASE("output deserialization with just FT amount 9223372036854775807", "[ou
     auto const data = to_chunk(base16_literal("2030050000000000" "44" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb10ffffffffffffffff7f" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -310,7 +349,10 @@ TEST_CASE("output deserialization with just immutable NFT 0-byte commitment", "[
     auto const data = to_chunk(base16_literal("2030050000000000" "3b" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb20" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -331,7 +373,10 @@ TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - 
     auto const data = to_chunk(base16_literal("2030050000000000" "3c" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb3001" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -354,7 +399,10 @@ TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - 
     auto const data = to_chunk(base16_literal("2030050000000000" "3e" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb30fdfd00" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -377,7 +425,10 @@ TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - 
     auto const data = to_chunk(base16_literal("2030050000000000" "44" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb30ffffffffffffffff7f" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -400,7 +451,10 @@ TEST_CASE("output deserialization with just immutable NFT 1-byte commitment", "[
     auto const data = to_chunk(base16_literal("2030050000000000" "3d" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb6001cc" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -422,7 +476,10 @@ TEST_CASE("output deserialization with both - immutable NFT 1-byte commitment - 
     auto const data = to_chunk(base16_literal("2030050000000000" "3e" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7001ccfc" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -446,7 +503,10 @@ TEST_CASE("output deserialization with both - immutable NFT 2-byte commitment - 
     auto const data = to_chunk(base16_literal("2030050000000000" "41" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7002ccccfdfd00" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -470,7 +530,10 @@ TEST_CASE("output deserialization with both - immutable NFT 10-byte commitment -
     auto const data = to_chunk(base16_literal("2030050000000000" "49" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb700accccccccccccccccccccfdffff" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -494,7 +557,10 @@ TEST_CASE("output deserialization with both - immutable NFT 40-byte commitment -
     auto const data = to_chunk(base16_literal("2030050000000000" "69" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7028ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccfe00000100" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -518,7 +584,10 @@ TEST_CASE("output deserialization with just mutable NFT 0-byte commitment", "[ou
     auto const data = to_chunk(base16_literal("2030050000000000" "3b" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb21" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -539,7 +608,10 @@ TEST_CASE("output deserialization with both - mutable NFT 0-byte commitment - FT
     auto const data = to_chunk(base16_literal("2030050000000000" "40" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb31feffffffff" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -562,7 +634,10 @@ TEST_CASE("output deserialization with just mutable NFT 1-byte commitment", "[ou
     auto const data = to_chunk(base16_literal("2030050000000000" "3d" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb6101cc" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -584,7 +659,10 @@ TEST_CASE("output deserialization with both - mutable NFT 1-byte commitment - FT
     auto const data = to_chunk(base16_literal("2030050000000000" "46" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7101ccff0000000001000000" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -608,7 +686,10 @@ TEST_CASE("output deserialization with both - mutable NFT 2-byte commitment - FT
     auto const data = to_chunk(base16_literal("2030050000000000" "47" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7102ccccffffffffffffffff7f" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -632,7 +713,10 @@ TEST_CASE("output deserialization with both - mutable NFT 10-byte commitment - F
     auto const data = to_chunk(base16_literal("2030050000000000" "47" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb710acccccccccccccccccccc01" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -656,7 +740,10 @@ TEST_CASE("output deserialization with both - mutable NFT 40-byte commitment - F
     auto const data = to_chunk(base16_literal("2030050000000000" "65" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7128ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccfc" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -680,7 +767,10 @@ TEST_CASE("output deserialization with just minting NFT 0-byte commitment", "[ou
     auto const data = to_chunk(base16_literal("2030050000000000" "3b" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb22" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -701,7 +791,10 @@ TEST_CASE("output deserialization with both - minting NFT 0-byte commitment - FT
     auto const data = to_chunk(base16_literal("2030050000000000" "3e" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb32fdfd00" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -724,7 +817,10 @@ TEST_CASE("output deserialization with just minting NFT 1-byte commitment", "[ou
     auto const data = to_chunk(base16_literal("2030050000000000" "3d" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb6201cc" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -746,7 +842,10 @@ TEST_CASE("output deserialization with both - minting NFT 1-byte commitment - FT
     auto const data = to_chunk(base16_literal("2030050000000000" "40" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7201ccfdffff" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -770,7 +869,10 @@ TEST_CASE("output deserialization with both - minting NFT 2-byte commitment - FT
     auto const data = to_chunk(base16_literal("2030050000000000" "43" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7202ccccfe00000100" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -794,7 +896,10 @@ TEST_CASE("output deserialization with both - minting NFT 10-byte commitment - F
     auto const data = to_chunk(base16_literal("2030050000000000" "4f" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb720accccccccccccccccccccff0100000001000000" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -818,7 +923,10 @@ TEST_CASE("output deserialization with both - minting NFT 40-byte commitment - F
     auto const data = to_chunk(base16_literal("2030050000000000" "6d" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7228ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccffffffffffffffff7f" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 
@@ -842,7 +950,10 @@ TEST_CASE("output deserialization ...", "[output]") {
     auto const data = to_chunk(base16_literal("e803000000000000" "3c" "efb43378d02ca3a5ef93f150d44b3be4f098f103e4336062ee2142d03ddd9ac629100a" "76a91448a5e322b29f3db7297f4dc744e30bca63a0179d88ac"));
 
     chain::output instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output::from_data(reader);
+    REQUIRE(result);
+    instance = std::move(*result);
 
     REQUIRE(instance.is_valid());
 

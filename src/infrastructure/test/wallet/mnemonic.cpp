@@ -12,7 +12,7 @@ using namespace kth::infrastructure::wallet;
 
 // Start Test Suite: mnemonic tests
 
-TEST_CASE("mnemonic  decode mnemonic  no passphrase", "[mnemonic tests]") {
+TEST_CASE("infrastructure mnemonic decode without passphrase", "[infrastructure][mnemonic]") {
     for (auto const& vector: mnemonic_no_passphrase) {
         auto const words = split(vector.mnemonic, ",");
         REQUIRE(validate_mnemonic(words, vector.language));
@@ -23,7 +23,7 @@ TEST_CASE("mnemonic  decode mnemonic  no passphrase", "[mnemonic tests]") {
 
 #ifdef WITH_ICU
 
-TEST_CASE("mnemonic  decode mnemonic  trezor", "[mnemonic tests]") {
+TEST_CASE("infrastructure mnemonic decode with trezor test vectors", "[infrastructure][mnemonic]") {
     for (auto const& vector: mnemonic_trezor_vectors) {
         auto const words = split(vector.mnemonic, ",");
         REQUIRE(validate_mnemonic(words));
@@ -32,7 +32,7 @@ TEST_CASE("mnemonic  decode mnemonic  trezor", "[mnemonic tests]") {
     }
 }
 
-TEST_CASE("mnemonic  decode mnemonic  bx", "[mnemonic tests]") {
+TEST_CASE("infrastructure mnemonic decode with bx test vectors", "[infrastructure][mnemonic]") {
     for (auto const& vector: mnemonic_bx_to_seed_vectors) {
         auto const words = split(vector.mnemonic, ",");
         REQUIRE(validate_mnemonic(words));
@@ -43,8 +43,8 @@ TEST_CASE("mnemonic  decode mnemonic  bx", "[mnemonic tests]") {
 
 #endif
 
-TEST_CASE("mnemonic  create mnemonic  trezor", "[mnemonic tests]") {
-    for (const mnemonic_result& vector: mnemonic_trezor_vectors) {
+TEST_CASE("infrastructure mnemonic create from entropy trezor vectors", "[infrastructure][mnemonic]") {
+    for (mnemonic_result const& vector : mnemonic_trezor_vectors) {
         data_chunk entropy;
         decode_base16(entropy, vector.entropy);
         auto const mnemonic = create_mnemonic(entropy, vector.language);

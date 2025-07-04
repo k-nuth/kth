@@ -89,6 +89,11 @@ chain::transaction const& program::transaction() const {
     return transaction_;
 }
 
+inline
+std::optional<script_execution_context> const& program::context() const {
+    return context_;
+}
+
 // Program registers.
 //-----------------------------------------------------------------------------
 
@@ -231,7 +236,8 @@ bool program::pop(number& out_number, size_t maximum_size) {
 inline
 bool program::pop_binary(number& first, number& second) {
     // The right hand side number is at the top of the stack.
-    return pop(first, max_integer_size_legacy()) && pop(second, max_integer_size_legacy());
+    return pop(first, max_integer_size_legacy()) && 
+           pop(second, max_integer_size_legacy());
 }
 
 inline

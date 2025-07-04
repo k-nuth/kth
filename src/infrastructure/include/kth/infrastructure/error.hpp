@@ -167,9 +167,10 @@ enum error_code_t {
     op_notif,
     op_else,
     op_endif,
-    op_verify1,
-    op_verify2,
-    op_return,
+    op_verify_empty_stack,
+    op_verify_failed,
+
+    op_return,              // 110
     op_to_alt_stack,
     op_from_alt_stack,
     op_drop2,
@@ -178,8 +179,9 @@ enum error_code_t {
     op_over2,
     op_rot2,
     op_swap2,
-    op_if_dup,
-    op_drop,
+    op_if_dup,          
+
+    op_drop,            // 120
     op_dup,
     op_nip,
     op_over,
@@ -188,9 +190,9 @@ enum error_code_t {
     op_rot,
     op_swap,
     op_tuck,
-
     op_cat,
-    op_split,
+
+    op_split,           // 130
     op_reverse_bytes,
     op_num2bin,
     op_num2bin_invalid_size,
@@ -198,23 +200,21 @@ enum error_code_t {
     op_num2bin_impossible_encoding,
     op_bin2num,
     op_bin2num_invalid_number_range,
-
     op_size,
-
     op_and,
-    op_or,
-    op_xor,
 
+    op_or,                  // 140
+    op_xor,
     op_equal,
-    op_equal_verify1,
-    op_equal_verify2,
+    op_equal_verify_insufficient_stack,
+    op_equal_verify_failed,
     op_add1,
     op_sub1,
     op_negate,
     op_abs,
     op_not,
-    op_nonzero,
 
+    op_nonzero,         // 150
     op_add,
     op_add_overflow,
     op_sub,
@@ -224,18 +224,19 @@ enum error_code_t {
     op_div,
     op_div_by_zero,
     op_mod,
-    op_mod_by_zero,
 
+    op_mod_by_zero,     // 160
     op_bool_and,
     op_bool_or,
     op_num_equal,
-    op_num_equal_verify1,
-    op_num_equal_verify2,
+    op_num_equal_verify_insufficient_stack,
+    op_num_equal_verify_failed,
     op_num_not_equal,
     op_less_than,
     op_greater_than,
     op_less_than_or_equal,
-    op_greater_than_or_equal,
+
+    op_greater_than_or_equal, // 170
     op_min,
     op_max,
     op_within,
@@ -246,43 +247,35 @@ enum error_code_t {
     op_hash256,
     op_code_seperator,
 
-    op_check_sig,
-    op_check_sig_verify1,
-
+    op_check_sig,                   // 180
+    op_check_sig_verify_failed,
     op_check_data_sig,
     op_check_data_sig_verify,
+    multisig_missing_key_count,
+    multisig_invalid_key_count,
+    multisig_missing_pubkeys,
+    multisig_missing_signature_count,
+    multisig_invalid_signature_count,
+    multisig_missing_endorsements,
 
-    op_check_multisig_verify1,
-    op_check_multisig_verify2,
-    op_check_multisig_verify3,
-    op_check_multisig_verify4,
-    op_check_multisig_verify5,
-    op_check_multisig_verify6,
-    op_check_multisig_verify7,
+    multisig_empty_stack,      // 190
     op_check_multisig,
-    op_check_locktime_verify1,
-    op_check_locktime_verify2,
-    op_check_locktime_verify3,
-    op_check_locktime_verify4,
-    op_check_locktime_verify5,
-    op_check_locktime_verify6,
-    op_check_sequence_verify1,
-    op_check_sequence_verify2,
-    op_check_sequence_verify3,
-    op_check_sequence_verify4,
-    op_check_sequence_verify5,
-    op_check_sequence_verify6,
-    op_check_sequence_verify7,
+
+    // BIP65/BIP112 Script validation errors
+    negative_locktime,
+    unsatisfied_locktime,
 
     // Native Introspection Opcodes
+    context_not_present,
     op_input_index,
     op_active_bytecode,
     op_tx_version,
     op_tx_input_count,
     op_tx_output_count,
     op_tx_locktime,
-    op_utxo_value,
-    op_utxo_bytecode,
+
+    op_utxo_value,                      
+    op_utxo_bytecode,                   // 200
     op_outpoint_tx_hash,
     op_outpoint_index,
     op_input_bytecode,
@@ -291,46 +284,51 @@ enum error_code_t {
     op_output_bytecode,
     op_utxo_token_category,
     op_utxo_token_commitment,
-    op_utxo_token_amount,
-    op_output_token_category,
+
+    op_utxo_token_amount,              
+    op_output_token_category,               // 210
     op_output_token_commitment,
     op_output_token_amount,
 
-    operation_failed_0,
-    operation_failed_1,
-    operation_failed_2,
-    operation_failed_3,
-    operation_failed_4,
-    operation_failed_5,
-    operation_failed_6,
-    operation_failed_7,
-    operation_failed_8,
-    operation_failed_9,
-
-    operation_failed_10,
-    operation_failed_11,
-    operation_failed_12,
-    operation_failed_13,
-    operation_failed_14,
-    operation_failed_15,
-    operation_failed_16,
-    operation_failed_17,
-    operation_failed_18,
-    operation_failed_19,
-
-    operation_failed_20,
-    operation_failed_21,
-    operation_failed_22,
-    operation_failed_23,
-    operation_failed_24,
-    operation_failed_25,
-    operation_failed_26,
-    operation_failed_27,
-    operation_failed_28,
-    operation_failed_29,
-    operation_failed_30,
+    // Database errors
+    database_insert_failed,
+    database_push_failed,             
+    database_concurrent_push_failed,
+    chain_reorganization_failed,
+    database_pop_failed,
+    
+    // Blockchain validation errors
+    reorganize_empty_blocks,              
+    chain_state_invalid,                  
+    pool_state_failed,                      // 220
+    transaction_lookup_failed,            
+    branch_work_failed,
+    block_validation_state_failed,
+    transaction_validation_state_failed,
+    
+    // Script validation errors
+    pubkey_type,                        // Invalid public key type/encoding
+    cleanstack,                         // Stack not clean after script execution
+    
+    // BIP62/Signature validation errors
+    sig_hashtype,                       // Invalid signature hash type
+    sig_pushonly,                       // Signature push only violation.  
+    sig_high_s,                         // High S value in signature            // 230
+    sig_nullfail,                       // Null signature must fail
+    minimaldata,                        // Non-minimal data encoding
+    minimalif,                          // Non-minimal IF encoding
+    minimal_number,                     // Non-minimal number encoding
+    strict_encoding,                    // Strict DER encoding violation
+    
+    // Fork/Schnorr signature errors
+    sighash_forkid,                     // Invalid sighash forkid usage
+    sig_badlength,                      // Invalid signature length
+    sig_nonschnorr,                     // Non-Schnorr signature in Schnorr context
+    illegal_forkid,                     // Illegal fork ID usage            
+    must_use_forkid,                    // Must use fork ID but didn't          // 240
+    missing_forkid,                     // Missing required fork ID
     // Added out of order (bip147).
-    op_check_multisig_verify8,
+    multisig_satoshi_bug,
 
     // TX creation
     invalid_output,

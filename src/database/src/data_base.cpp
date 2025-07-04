@@ -185,7 +185,7 @@ code data_base::insert(domain::chain::block const& block, size_t height) {
 
     auto res = internal_db_->push_block(block, height, median_time_past);
     if ( ! succeed(res)) {
-        return error::operation_failed_1;   //TODO(fernando): create a new operation_failed
+        return error::database_insert_failed;   //TODO(fernando): create a new operation_failed
     }
 
     return error::success;
@@ -214,7 +214,7 @@ code data_base::push(block const& block, size_t height) {
     auto const median_time_past = block.header().validation.median_time_past;
     auto res = internal_db_->push_block(block, height, median_time_past);
     if ( ! succeed(res)) {
-        return error::operation_failed_6;   //TODO(fernando): create a new operation_failed
+        return error::database_push_failed;   //TODO(fernando): create a new operation_failed
     }
     return error::success;
 }
@@ -224,7 +224,7 @@ code data_base::push(block const& block, size_t height) {
 code data_base::push_genesis(block const& block) {
     auto res = internal_db_->push_genesis(block);
     if ( ! succeed(res)) {
-        return error::operation_failed_6;   //TODO(fernando): create a new operation_failed
+        return error::database_push_failed;   //TODO(fernando): create a new operation_failed
     }
 
     return error::success;
@@ -322,7 +322,7 @@ void data_base::do_push(block_const_ptr block, size_t height, uint32_t median_ti
     // LOG_DEBUG(LOG_DATABASE, "Write flushed to disk: ", ec.message());
     auto res = internal_db_->push_block(*block, height, median_time_past);
     if ( ! succeed(res)) {
-        handler(error::operation_failed_7); //TODO(fernando): create a new operation_failed
+        handler(error::database_concurrent_push_failed); //TODO(fernando): create a new operation_failed
         return;
     }
     block->validation.end_push = asio::steady_clock::now();
@@ -341,7 +341,7 @@ void data_base::pop_above(block_const_ptr_list_ptr out_blocks, hash_digest const
     // The fork point does not exist or failed to get it or the top, fail.
     if ( ! header_result.first.is_valid() ||  internal_db_->get_last_height(top) != result_code::success) {
         //**--**
-        handler(error::operation_failed_9);
+        handler(error::chain_reorganization_failed);
         return;
     }
 
@@ -365,7 +365,7 @@ void data_base::pop_above(block_const_ptr_list_ptr out_blocks, hash_digest const
         // TODO(legacy): parallelize pop of transactions within each block.
         if ( ! pop(next)) {
             //**--**
-            handler(error::operation_failed_10);
+            handler(error::database_insert_failed);
             return;
         }
 

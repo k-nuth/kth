@@ -37,21 +37,24 @@ TEST_CASE("ping  satoshi fixed size  bip31 version  8", "[ping]") {
     REQUIRE(8u == message::ping::satoshi_fixed_size(message::version::level::bip31));
 }
 
-TEST_CASE("ping  factory from data 1  maximum version empty data invalid", "[ping]") {
+TEST_CASE("ping from data maximum version empty data invalid", "[ping]") {
     static auto const version = message::version::level::maximum;
-    auto const result = create<message::ping>(version, data_chunk{});
-    REQUIRE( ! result.is_valid());
+    byte_reader reader(data_chunk{});
+    auto const result_exp = message::ping::from_data(reader, version);
+    REQUIRE( ! result_exp);
 }
 
-TEST_CASE("ping  factory from data 1  minimum version empty data valid", "[ping]") {
+TEST_CASE("ping from data minimum version empty data valid", "[ping]") {
     static auto const version = message::version::level::minimum;
-    auto const result = create<message::ping>(version, data_chunk{});
+    byte_reader reader(data_chunk{});
+    auto const result_exp = message::ping::from_data(reader, version);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
     REQUIRE(result.is_valid());
 }
 
 TEST_CASE("ping  from data 1  minimum version  success zero nonce", "[ping]") {
-    static const message::ping value{
-        213153u};
+    static const message::ping value{213153u};
 
     // This serializes the nonce.
     auto const data = value.to_data(message::version::level::bip31);
@@ -59,46 +62,29 @@ TEST_CASE("ping  from data 1  minimum version  success zero nonce", "[ping]") {
 
     // This leaves the nonce on the wire but otherwise succeeds with a zero nonce.
     message::ping instance;
-    REQUIRE(entity_from_data(instance, message::ping::version_minimum, data));
+    byte_reader reader(data);
+    auto result = message::ping::from_data(reader, message::ping::version_minimum);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(instance.is_valid());
     REQUIRE(instance.nonce() == 0u);
 }
 
-TEST_CASE("ping  factory from data 1  minimum version round trip  zero nonce", "[ping]") {
+TEST_CASE("ping from data minimum version round trip  zero nonce", "[ping]") {
     static const message::ping value{
         16545612u};
 
     static auto const version = message::version::level::minimum;
     auto const data = value.to_data(version);
-    auto const result = create<message::ping>(version, data);
+    byte_reader reader(data);
+    auto const result_exp = message::ping::from_data(reader, version);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
     REQUIRE(result.is_valid());
     REQUIRE(result.nonce() == 0u);
 }
 
-TEST_CASE("ping  factory from data 2  minimum version round trip  zero nonce", "[ping]") {
-    const message::ping value{
-        5087222u};
 
-    static auto const version = message::version::level::minimum;
-    auto const data = value.to_data(version);
-    data_source istream(data);
-    auto const result = create<message::ping>(version, istream);
-    REQUIRE(result.is_valid());
-    REQUIRE(result.nonce() == 0u);
-}
-
-TEST_CASE("ping  factory from data 3  minimum version round trip  zero nonce", "[ping]") {
-    static const message::ping value{
-        6456147u};
-
-    static auto const version = message::version::level::minimum;
-    auto const data = value.to_data(version);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::ping>(version, source);
-    REQUIRE(result.is_valid());
-    REQUIRE(result.nonce() == 0u);
-}
 
 TEST_CASE("ping  from data 1  maximum version  success expected nonce", "[ping]") {
     static const message::ping expected{
@@ -110,46 +96,29 @@ TEST_CASE("ping  from data 1  maximum version  success expected nonce", "[ping]"
 
     // This leaves the nonce on the wire but otherwise succeeds with a zero nonce.
     message::ping instance;
-    REQUIRE(entity_from_data(instance, message::ping::version_maximum, data));
+    byte_reader reader(data);
+    auto result = message::ping::from_data(reader, message::ping::version_maximum);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(instance.is_valid());
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("ping  factory from data 1  bip31 version round trip  expected nonce", "[ping]") {
+TEST_CASE("ping from data bip31 version round trip  expected nonce", "[ping]") {
     static const message::ping expected{
         16545612u};
 
     static auto const version = message::version::level::bip31;
     auto const data = expected.to_data(version);
-    auto const result = create<message::ping>(version, data);
+    byte_reader reader(data);
+    auto const result_exp = message::ping::from_data(reader, version);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
     REQUIRE(result.is_valid());
     REQUIRE(result == expected);
 }
 
-TEST_CASE("ping  factory from data 2  bip31 version round trip  expected nonce", "[ping]") {
-    const message::ping expected{
-        5087222u};
 
-    static auto const version = message::version::level::bip31;
-    auto const data = expected.to_data(version);
-    data_source istream(data);
-    auto const result = create<message::ping>(version, istream);
-    REQUIRE(result.is_valid());
-    REQUIRE(result == expected);
-}
-
-TEST_CASE("ping  factory from data 3  bip31 version round trip  expected nonce", "[ping]") {
-    static const message::ping expected{
-        6456147u};
-
-    static auto const version = message::version::level::bip31;
-    auto const data = expected.to_data(version);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::ping>(version, source);
-    REQUIRE(result.is_valid());
-    REQUIRE(result == expected);
-}
 
 TEST_CASE("ping  nonce accessor  always  returns initialized value", "[ping]") {
     uint64_t value = 43564u;

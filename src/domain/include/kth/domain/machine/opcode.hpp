@@ -278,8 +278,8 @@ enum class opcode : uint8_t {
     output_token_commitment = 0xd2, // 210
     output_token_amount = 0xd3,     // 211
 
-    reserved_212 = 0xd4,          // 212
-    reserved_213 = 0xd5,          // 213
+    reserved_212 = 0xd4,          // 212 [reserved3]
+    reserved_213 = 0xd5,          // 213 [reserved4]
     reserved_214 = 0xd6,          // 214
 
 // The first op_code value after all defined opcodes

@@ -149,7 +149,10 @@ TEST_CASE("block  factory data 1  genesis mainnet  success", "[message block]") 
     REQUIRE(raw_block.size() == 285u);
 
     // Reload genesis block.
-    auto const block = create<message::block>(version::level::minimum, raw_block);
+    byte_reader reader(raw_block);
+    auto const result_exp = message::block::from_data(reader, version::level::minimum);
+    REQUIRE(result_exp);
+    auto const block = std::move(*result_exp);
 
     REQUIRE(block.is_valid());
     REQUIRE(genesis.header() == block.header());
@@ -162,61 +165,7 @@ TEST_CASE("block  factory data 1  genesis mainnet  success", "[message block]") 
     REQUIRE(raw_reserialization.size() == block.serialized_size(version::level::minimum));
 }
 
-TEST_CASE("block  factory data 2  genesis mainnet  success", "[message block]") {
-    auto const genesis = chain::block::genesis_mainnet();
-    REQUIRE(genesis.serialized_size() == 285u);
-    REQUIRE(genesis.header().serialized_size() == 80u);
 
-    // Save genesis block.
-    auto raw_block = genesis.to_data();
-    REQUIRE(raw_block.size() == 285u);
-
-    // Reload genesis block.
-    data_source stream(raw_block);
-    auto const block = create<message::block>(version::level::minimum, stream);
-
-    REQUIRE(block.is_valid());
-    REQUIRE(genesis.header() == block.header());
-
-    // Verify merkle root from transactions.
-    REQUIRE(block.generate_merkle_root() == genesis.header().merkle());
-
-    data_chunk raw_reserialization;
-    data_sink sink(raw_reserialization);
-    block.to_data(version::level::minimum, sink);
-    sink.flush();
-    REQUIRE(raw_reserialization == raw_block);
-    REQUIRE(raw_reserialization.size() == block.serialized_size(version::level::minimum));
-}
-
-TEST_CASE("block  factory data 3  genesis mainnet  success", "[message block]") {
-    auto const genesis = chain::block::genesis_mainnet();
-    REQUIRE(genesis.serialized_size() == 285u);
-    REQUIRE(genesis.header().serialized_size() == 80u);
-
-    // Save genesis block.
-    auto raw_block = genesis.to_data();
-    REQUIRE(raw_block.size() == 285u);
-
-    // Reload genesis block.
-    data_source stream(raw_block);
-    istream_reader reader(stream);
-    auto const block = create<message::block>(version::level::minimum + 1, reader);
-
-    REQUIRE(block.is_valid());
-    REQUIRE(genesis.header() == block.header());
-
-    // Verify merkle root from transactions.
-    REQUIRE(block.generate_merkle_root() == genesis.header().merkle());
-
-    data_chunk raw_reserialization;
-    data_sink sink(raw_reserialization);
-    ostream_writer writer(sink);
-    block.to_data(version::level::minimum, writer);
-    sink.flush();
-    REQUIRE(raw_reserialization == raw_block);
-    REQUIRE(raw_reserialization.size() == block.serialized_size(version::level::minimum));
-}
 
 TEST_CASE("block  operator assign equals 1  always  matches equivalent", "[message block]") {
     chain::header const header(10u,

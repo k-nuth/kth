@@ -79,15 +79,17 @@ TEST_CASE("heading  to data  checksum variations  success", "[heading]") {
     REQUIRE(nonzero_checksum.size() == heading::satoshi_fixed_size());
 }
 
-TEST_CASE("heading  from data  insufficient bytes  failure", "[heading]") {
+TEST_CASE("heading from data insufficient bytes  failure", "[heading]") {
     static data_chunk const raw{
         0xab, 0xcd};
 
     heading instance;
-    REQUIRE( ! entity_from_data(instance, raw));
+    byte_reader reader(raw);
+    auto result = heading::from_data(reader, true);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("heading  factory from data 1  valid input  success", "[heading]") {
+TEST_CASE("heading from data valid input  success", "[heading]") {
     static const heading expected{
         32414u,
         "foo",
@@ -95,42 +97,16 @@ TEST_CASE("heading  factory from data 1  valid input  success", "[heading]") {
         0u};
 
     auto const data = expected.to_data();
-    auto const result = create<heading>(data);
+    byte_reader reader(data);
+    auto const result_exp = heading::from_data(reader, true);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == heading::satoshi_fixed_size());
 }
 
-TEST_CASE("heading  factory from data 2  valid input  success", "[heading]") {
-    static const heading expected{
-        29145u,
-        "bar",
-        79531u,
-        0u};
 
-    auto const data = expected.to_data();
-    data_source istream(data);
-    auto const result = create<heading>(istream);
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == heading::satoshi_fixed_size());
-}
-
-TEST_CASE("heading  factory from data 3  valid input  success", "[heading]") {
-    static const heading expected{
-        1u,
-        "bazbazbazbaz",
-        2u,
-        0u};
-
-    auto const data = expected.to_data();
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<heading>(source);
-    REQUIRE(data.size() == heading::satoshi_fixed_size());
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-}
 
 TEST_CASE("heading  magic accessor  always  returns initialized value", "[heading]") {
     uint32_t expected = 3574u;

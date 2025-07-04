@@ -97,13 +97,15 @@ TEST_CASE("not found  constructor 7  always  equals params", "[not found]") {
     REQUIRE(hash == inventories[0].hash());
 }
 
-TEST_CASE("not found  from data  insufficient bytes  failure", "[not found]") {
+TEST_CASE("not found from data insufficient bytes  failure", "[not found]") {
     static data_chunk const raw{0xab, 0xcd};
     not_found instance;
-    REQUIRE( ! entity_from_data(instance, raw, version::level::minimum));
+    byte_reader reader(raw);
+    auto result = not_found::from_data(reader, version::level::minimum);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("not found  from data  insufficient version  failure", "[not found]") {
+TEST_CASE("not found from data insufficient version  failure", "[not found]") {
     static not_found const expected{
         {{inventory_vector::type_id::error,
           {{0x44, 0x9a, 0x0d, 0x24, 0x9a, 0xd5, 0x39, 0x89,
@@ -114,11 +116,13 @@ TEST_CASE("not found  from data  insufficient version  failure", "[not found]") 
     auto const version = version::level::maximum;
     data_chunk const raw = expected.to_data(version);
     not_found instance;
-    REQUIRE( ! entity_from_data(instance, raw, not_found::version_minimum - 1));
+    byte_reader reader(raw);
+    auto result = not_found::from_data(reader, not_found::version_minimum - 1);
+    REQUIRE( ! result);
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("not found  factory from data 1  valid input  success", "[not found]") {
+TEST_CASE("not found from data valid input  success", "[not found]") {
     static not_found const expected{
         {{inventory_vector::type_id::error,
           {{0x44, 0x9a, 0x0d, 0x24, 0x9a, 0xd5, 0x39, 0x89,
@@ -128,49 +132,17 @@ TEST_CASE("not found  factory from data 1  valid input  success", "[not found]")
 
     auto const version = version::level::maximum;
     auto const data = expected.to_data(version);
-    auto const result = create<not_found>(version, data);
+    byte_reader reader(data);
+    auto const result_exp = not_found::from_data(reader, version);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(version));
     REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
 }
 
-TEST_CASE("not found  factory from data 2  valid input  success", "[not found]") {
-    static not_found const expected{
-        {{inventory_vector::type_id::transaction,
-          {{0x44, 0x9a, 0x0d, 0xee, 0x9a, 0xd5, 0x39, 0xee,
-            0xee, 0x85, 0x0a, 0x3d, 0xee, 0x24, 0xed, 0x0f,
-            0xc3, 0xee, 0x6f, 0x55, 0x7d, 0xee, 0x12, 0x1a,
-            0x37, 0xc0, 0xee, 0x32, 0xf0, 0xd6, 0xee, 0xdf}}}}};
 
-    auto const version = version::level::maximum;
-    auto const data = expected.to_data(version);
-    data_source istream(data);
-    auto const result = create<not_found>(version, istream);
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(version));
-    REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
-}
-
-TEST_CASE("not found  factory from data 3  valid input  success", "[not found]") {
-    static not_found const expected{
-        {{inventory_vector::type_id::block,
-          {{0x66, 0x9a, 0x0d, 0x24, 0x66, 0xd5, 0x39, 0x89,
-            0xbb, 0x66, 0x0a, 0x3d, 0x79, 0x66, 0xed, 0x0f,
-            0xc3, 0x0d, 0x66, 0x55, 0x7d, 0x71, 0x66, 0x1a,
-            0x37, 0xc0, 0xb0, 0x66, 0xf0, 0xd6, 0x6e, 0x66}}}}};
-
-    auto const version = version::level::maximum;
-    auto const data = expected.to_data(version);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<not_found>(version, source);
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(version));
-    REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
-}
 
 TEST_CASE("not found  operator assign equals  always  matches equivalent", "[not found]") {
     const message::inventory_vector::list elements =

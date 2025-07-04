@@ -58,12 +58,5 @@ std::ostream& operator<<(std::ostream& os, prefilled_transaction const& x) {
 
 } // namespace kth::domain::message
 
-// Import and re-export infrastructure helpers for domain types
-namespace kth::domain {
-
-using kth::entity_from_data;
-using kth::create;
-
-} // namespace kth::domain
 
 #endif // KTH_DOMAIN_TEST_HELPERS_HPP

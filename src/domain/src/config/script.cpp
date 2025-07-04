@@ -32,7 +32,6 @@ script::script(chain::script const& value)
 }
 
 script::script(data_chunk const& value) {
-    // entity_from_data(value_, value, false);
     byte_reader reader(value);
     auto script_exp = chain::script::from_data(reader, false);
     if ( ! script_exp) {

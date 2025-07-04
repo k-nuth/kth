@@ -157,12 +157,21 @@ TEST_CASE("chain transaction  constructor 1  always  returns default initialized
 TEST_CASE("chain transaction  constructor 2  valid input  returns input initialized", "[chain transaction]") {
     uint32_t version = 2345u;
     uint32_t locktime = 4568656u;
-    chain::input::list inputs;
-    inputs.emplace_back();
-    REQUIRE(entity_from_data(inputs.back(), to_chunk(base16_literal(TX0_INPUTS))));
-    chain::output::list outputs;
-    outputs.emplace_back();
-    REQUIRE(entity_from_data(outputs.back(), to_chunk(base16_literal(TX0_INPUTS_LAST_OUTPUT))));
+    data_chunk data = to_chunk(base16_literal(TX0_INPUTS));
+    byte_reader reader(data);
+    auto result_exp = chain::input::from_data(reader, true);
+    REQUIRE(result_exp);
+    chain::input::list inputs { 
+        std::move(*result_exp) 
+    };
+
+    data = to_chunk(base16_literal(TX0_INPUTS_LAST_OUTPUT));
+    reader = byte_reader(data);
+    auto result_exp_out = chain::output::from_data(reader);
+    REQUIRE(result_exp_out);
+    chain::output::list outputs { 
+        std::move(*result_exp_out) 
+    };
 
     chain::transaction instance(version, locktime, inputs, outputs);
     REQUIRE(instance.is_valid());
@@ -175,12 +184,25 @@ TEST_CASE("chain transaction  constructor 2  valid input  returns input initiali
 TEST_CASE("chain transaction  constructor 3  valid input  returns input initialized", "[chain transaction]") {
     uint32_t version = 2345u;
     uint32_t locktime = 4568656u;
-    chain::input::list inputs;
-    inputs.emplace_back();
-    REQUIRE(entity_from_data(inputs.back(), to_chunk(base16_literal(TX0_INPUTS))));
-    chain::output::list outputs;
-    outputs.emplace_back();
-    REQUIRE(entity_from_data(outputs.back(), to_chunk(base16_literal(TX0_INPUTS_LAST_OUTPUT))));
+    
+    // chain::input::list inputs;
+    // inputs.emplace_back();
+    // REQUIRE(entity_from_data(inputs.back(), to_chunk(base16_literal(TX0_INPUTS))));
+    data_chunk data = to_chunk(base16_literal(TX0_INPUTS));
+    byte_reader reader(data);
+    auto result_exp = chain::input::from_data(reader, true);
+    REQUIRE(result_exp);
+    chain::input::list inputs { 
+        std::move(*result_exp) 
+    };
+
+    data = to_chunk(base16_literal(TX0_INPUTS_LAST_OUTPUT));
+    reader = byte_reader(data);
+    auto result_exp_out = chain::output::from_data(reader);
+    REQUIRE(result_exp_out);
+    chain::output::list outputs { 
+        std::move(*result_exp_out) 
+    };
 
     // These must be non-const.
     auto dup_inputs = inputs;
@@ -196,8 +218,10 @@ TEST_CASE("chain transaction  constructor 3  valid input  returns input initiali
 
 TEST_CASE("chain transaction  constructor 4  valid input  returns input initialized", "[chain transaction]") {
     auto const raw_tx = to_chunk(base16_literal(TX1));
-    chain::transaction expected;
-    REQUIRE(entity_from_data(expected, raw_tx));
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
 
     chain::transaction instance(expected);
     REQUIRE(instance.is_valid());
@@ -207,9 +231,10 @@ TEST_CASE("chain transaction  constructor 4  valid input  returns input initiali
 TEST_CASE("chain transaction  constructor 5  valid input  returns input initialized", "[chain transaction]") {
     auto const raw_tx = to_chunk(base16_literal(TX1));
 
-    // This must be non-const.
-    chain::transaction expected;
-    REQUIRE(entity_from_data(expected, raw_tx));
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
 
     chain::transaction instance(std::move(expected));
     REQUIRE(instance.is_valid());
@@ -217,8 +242,10 @@ TEST_CASE("chain transaction  constructor 5  valid input  returns input initiali
 
 TEST_CASE("chain transaction  constructor 6  valid input  returns input initialized", "[chain transaction]") {
     auto const raw_tx = to_chunk(base16_literal(TX1));
-    chain::transaction expected;
-    REQUIRE(entity_from_data(expected, raw_tx));
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
     hash_digest const expected_hash = hash_literal(TX1_HASH);
 
     chain::transaction instance(expected, expected_hash);
@@ -230,10 +257,10 @@ TEST_CASE("chain transaction  constructor 6  valid input  returns input initiali
 TEST_CASE("chain transaction  constructor 7  valid input  returns input initialized", "[chain transaction]") {
     auto const raw_tx = to_chunk(base16_literal(TX1));
 
-    // This must be non-const.
-    chain::transaction expected;
-
-    REQUIRE(entity_from_data(expected, raw_tx));
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
     hash_digest const expected_hash = hash_literal(TX1_HASH);
 
     chain::transaction instance(std::move(expected), expected_hash);
@@ -404,56 +431,69 @@ TEST_CASE("chain transaction  is locktime conflict  input max sequence  returns 
     REQUIRE(instance.is_locktime_conflict());
 }
 
-TEST_CASE("chain transaction  from data  insufficient version bytes  failure", "[chain transaction]") {
+TEST_CASE("chain transaction from data insufficient version bytes  failure", "[chain transaction]") {
     data_chunk data(2);
 
     chain::transaction instance;
 
-    REQUIRE( ! entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE( ! result);
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("chain transaction  from data  insufficient input bytes  failure", "[chain transaction]") {
+TEST_CASE("chain transaction from data insufficient input bytes  failure", "[chain transaction]") {
     data_chunk data = to_chunk(base16_literal("0000000103"));
     chain::transaction instance;
-    REQUIRE( ! entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE( ! result);
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("chain transaction  from data  insufficient output bytes  failure", "[chain transaction]") {
+TEST_CASE("chain transaction from data insufficient output bytes  failure", "[chain transaction]") {
     data_chunk data = to_chunk(base16_literal("000000010003"));
     chain::transaction instance;
-    REQUIRE( ! entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE( ! result);
     REQUIRE( ! instance.is_valid());
 }
 
 // TODO(legacy): update test for v4 store serialization (input with witness).
-////TEST_CASE("chain transaction  from data  compare wire to store  success", "[None]")
-////{
-////    static auto const wire = true;
-////    auto const data_wire = to_chunk(base16_literal(TX3_WIRE_SERIALIZED));
-////
-////    data_source wire_stream(data_wire);
-////    chain::transaction wire_tx;
-////    REQUIRE(entity_from_data(wire_tx, wire_stream, wire));
-////    REQUIRE(data_wire == wire_tx.to_data(wire));
-////
-////    auto const get_store_text = encode_base16(wire_tx.to_data( ! wire));
-////
-////    auto const data_store = to_chunk(base16_literal(TX3_STORE_SERIALIZED_V3));
-////    data_source store_stream(data_store);
-////    chain::transaction store_tx;
-////    REQUIRE(entity_from_data(store_tx, store_stream, !wire));
-////    REQUIRE(data_store == store_tx.to_data( ! wire));
-////    REQUIRE(wire_tx == store_tx);
-////}
+// *******1
+TEST_CASE("chain transaction from data compare wire to store  success", "[None]") {
+   static auto const wire = true;
+   auto const data_wire = to_chunk(base16_literal(TX3_WIRE_SERIALIZED));
+
+    byte_reader reader(data_wire);
+    auto result = chain::transaction::from_data(reader, wire);
+    REQUIRE(result);
+    auto const wire_tx = std::move(*result);
+    REQUIRE(data_wire == wire_tx.to_data(wire));
+
+    auto const get_store_text = encode_base16(wire_tx.to_data( ! wire));
+
+    auto const data_store = to_chunk(base16_literal(TX3_STORE_SERIALIZED_V3));
+    data_source store_stream(data_store);
+    byte_reader reader2(data_store);
+    result = chain::transaction::from_data(reader2, !wire);
+    REQUIRE(result);
+    auto const store_tx = std::move(*result);
+    REQUIRE(data_store == store_tx.to_data( ! wire));
+    REQUIRE(wire_tx == store_tx);
+}
 
 TEST_CASE("chain transaction  factory data 1  case 1  success", "[chain transaction]") {
     static auto const tx_hash = hash_literal(TX1_HASH);
     static auto const raw_tx = to_chunk(base16_literal(TX1));
     REQUIRE(raw_tx.size() == 225u);
 
-    chain::transaction tx = create<chain::transaction>(raw_tx);
+    byte_reader reader(raw_tx);
+    auto result_exp = chain::transaction::from_data(reader, true);
+    REQUIRE(result_exp);
+    auto const tx = std::move(*result_exp);
+
     REQUIRE(tx.is_valid());
     REQUIRE(tx.serialized_size() == 225u);
     REQUIRE(tx.hash() == tx_hash);
@@ -469,7 +509,11 @@ TEST_CASE("chain transaction  factory data 1  case 2  success", "[chain transact
     static auto const raw_tx = to_chunk(base16_literal(TX4));
     REQUIRE(raw_tx.size() == 523u);
 
-    chain::transaction tx = create<chain::transaction>(raw_tx);
+    byte_reader reader(raw_tx);
+    auto result_exp = chain::transaction::from_data(reader, true);
+    REQUIRE(result_exp);
+    auto const tx = std::move(*result_exp);
+    
     REQUIRE(tx.is_valid());
     REQUIRE(tx.hash() == tx_hash);
 
@@ -479,73 +523,9 @@ TEST_CASE("chain transaction  factory data 1  case 2  success", "[chain transact
     REQUIRE(resave == raw_tx);
 }
 
-TEST_CASE("chain transaction  factory data 2  case 1  success", "[chain transaction]") {
-    static auto const tx_hash = hash_literal(TX1_HASH);
-    static auto const raw_tx = to_chunk(base16_literal(TX1));
-    REQUIRE(raw_tx.size() == 225u);
 
-    data_source stream(raw_tx);
-    chain::transaction tx = create<chain::transaction>(stream);
-    REQUIRE(tx.is_valid());
-    REQUIRE(tx.serialized_size() == 225u);
-    REQUIRE(tx.hash() == tx_hash);
 
-    // Re-save tx and compare against original.
-    REQUIRE(tx.serialized_size() == raw_tx.size());
-    data_chunk resave = tx.to_data();
-    REQUIRE(resave == raw_tx);
-}
 
-TEST_CASE("chain transaction  factory data 2  case 2  success", "[chain transaction]") {
-    static auto const tx_hash = hash_literal(TX4_HASH);
-    static auto const raw_tx = to_chunk(base16_literal(TX4));
-    REQUIRE(raw_tx.size() == 523u);
-
-    data_source stream(raw_tx);
-    chain::transaction tx = create<chain::transaction>(stream);
-    REQUIRE(tx.is_valid());
-    REQUIRE(tx.hash() == tx_hash);
-
-    // Re-save tx and compare against original.
-    REQUIRE(tx.serialized_size() == raw_tx.size());
-    data_chunk resave = tx.to_data();
-    REQUIRE(resave == raw_tx);
-}
-
-TEST_CASE("chain transaction  factory data 3  case 1  success", "[chain transaction]") {
-    static auto const tx_hash = hash_literal(TX1_HASH);
-    static auto const raw_tx = to_chunk(base16_literal(TX1));
-    REQUIRE(raw_tx.size() == 225u);
-
-    data_source stream(raw_tx);
-    istream_reader source(stream);
-    chain::transaction tx = create<chain::transaction>(source);
-    REQUIRE(tx.is_valid());
-    REQUIRE(tx.serialized_size() == 225u);
-    REQUIRE(tx.hash() == tx_hash);
-
-    // Re-save tx and compare against original.
-    REQUIRE(tx.serialized_size() == raw_tx.size());
-    data_chunk resave = tx.to_data();
-    REQUIRE(resave == raw_tx);
-}
-
-TEST_CASE("chain transaction  factory data 3  case 2  success", "[chain transaction]") {
-    static hash_digest const tx_hash = hash_literal(TX4_HASH);
-    static data_chunk const raw_tx = to_chunk(base16_literal(TX4));
-    REQUIRE(raw_tx.size() == 523u);
-
-    data_source stream(raw_tx);
-    istream_reader source(stream);
-    chain::transaction tx = create<chain::transaction>(source);
-    REQUIRE(tx.is_valid());
-    REQUIRE(tx.hash() == tx_hash);
-
-    // Re-save tx and compare against original.
-    REQUIRE(tx.serialized_size() == raw_tx.size());
-    data_chunk resave = tx.to_data();
-    REQUIRE(resave == raw_tx);
-}
 
 TEST_CASE("chain transaction  version  roundtrip  success", "[chain transaction]") {
     uint32_t version = 1254u;
@@ -564,9 +544,13 @@ TEST_CASE("chain transaction  locktime  roundtrip  success", "[chain transaction
 }
 
 TEST_CASE("chain transaction  inputs setter 1  roundtrip  success", "[chain transaction]") {
-    chain::input::list inputs;
-    inputs.emplace_back();
-    REQUIRE(entity_from_data(inputs.back(), to_chunk(base16_literal(TX0_INPUTS))));
+    data_chunk data = to_chunk(base16_literal(TX0_INPUTS));
+    byte_reader reader(data);
+    auto result_exp = chain::input::from_data(reader, true);
+    REQUIRE(result_exp);
+    chain::input::list inputs {
+        std::move(*result_exp)
+    };
 
     chain::transaction instance;
     REQUIRE(inputs != instance.inputs());
@@ -575,9 +559,13 @@ TEST_CASE("chain transaction  inputs setter 1  roundtrip  success", "[chain tran
 }
 
 TEST_CASE("chain transaction  inputs setter 2  roundtrip  success", "[chain transaction]") {
-    chain::input::list inputs;
-    inputs.emplace_back();
-    REQUIRE(entity_from_data(inputs.back(), to_chunk(base16_literal(TX0_INPUTS))));
+    data_chunk data = to_chunk(base16_literal(TX0_INPUTS));
+    byte_reader reader(data);
+    auto result_exp = chain::input::from_data(reader, true);
+    REQUIRE(result_exp);
+    chain::input::list inputs {
+        std::move(*result_exp)
+    };
 
     // This must be non-const.
     auto dup_inputs = inputs;
@@ -589,9 +577,13 @@ TEST_CASE("chain transaction  inputs setter 2  roundtrip  success", "[chain tran
 }
 
 TEST_CASE("chain transaction  outputs setter 1  roundtrip  success", "[chain transaction]") {
-    chain::output::list outputs;
-    outputs.emplace_back();
-    REQUIRE(entity_from_data(outputs.back(), to_chunk(base16_literal(TX0_INPUTS_LAST_OUTPUT))));
+    data_chunk data = to_chunk(base16_literal(TX0_INPUTS_LAST_OUTPUT));
+    byte_reader reader(data);
+    auto result_exp = chain::output::from_data(reader);
+    REQUIRE(result_exp);
+    auto const outputs = chain::output::list {
+        std::move(*result_exp)
+    };
 
     chain::transaction instance;
     REQUIRE(outputs != instance.outputs());
@@ -600,9 +592,13 @@ TEST_CASE("chain transaction  outputs setter 1  roundtrip  success", "[chain tra
 }
 
 TEST_CASE("chain transaction  outputs setter 2  roundtrip  success", "[chain transaction]") {
-    chain::output::list outputs;
-    outputs.emplace_back();
-    REQUIRE(entity_from_data(outputs.back(), to_chunk(base16_literal(TX0_INPUTS_LAST_OUTPUT))));
+    data_chunk data = to_chunk(base16_literal(TX0_INPUTS_LAST_OUTPUT));
+    byte_reader reader(data);
+    auto result_exp = chain::output::from_data(reader);
+    REQUIRE(result_exp);
+    auto const outputs = chain::output::list {
+        std::move(*result_exp)
+    };
 
     // This must be non-const.
     auto dup_outputs = outputs;
@@ -616,7 +612,10 @@ TEST_CASE("chain transaction  outputs setter 2  roundtrip  success", "[chain tra
 TEST_CASE("chain transaction  is oversized coinbase  non coinbase tx  returns false", "[chain transaction]") {
     static auto const data = to_chunk(base16_literal(TX5));
     chain::transaction instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE( ! instance.is_coinbase());
     REQUIRE( ! instance.is_oversized_coinbase());
 }
@@ -637,7 +636,13 @@ TEST_CASE("chain transaction  is oversized coinbase  script size above max  retu
     inputs.emplace_back();
     inputs.back().previous_output().set_index(chain::point::null_index);
     inputs.back().previous_output().set_hash(null_hash);
-    REQUIRE(entity_from_data(inputs.back().script(), data_chunk(max_coinbase_size + 10), false));
+    
+    data_chunk oversized_script(max_coinbase_size + 10);
+    byte_reader reader(oversized_script);
+    auto result = chain::script::from_data(reader, false);
+    REQUIRE(result);
+    inputs.back().set_script(std::move(*result));
+
     REQUIRE(instance.is_coinbase());
     REQUIRE(inputs.back().script().serialized_size(false) > max_coinbase_size);
     REQUIRE(instance.is_oversized_coinbase());
@@ -649,7 +654,13 @@ TEST_CASE("chain transaction  is oversized coinbase  script size within bounds  
     inputs.emplace_back();
     inputs.back().previous_output().set_index(chain::point::null_index);
     inputs.back().previous_output().set_hash(null_hash);
-    REQUIRE(entity_from_data(inputs.back().script(), data_chunk(50), false));
+
+    data_chunk valid_script(50);
+    byte_reader reader(valid_script);
+    auto result = chain::script::from_data(reader, false);
+    REQUIRE(result);
+    inputs.back().set_script(std::move(*result));
+
     REQUIRE(instance.is_coinbase());
     REQUIRE(inputs.back().script().serialized_size(false) >= min_coinbase_size);
     REQUIRE(inputs.back().script().serialized_size(false) <= max_coinbase_size);
@@ -659,7 +670,10 @@ TEST_CASE("chain transaction  is oversized coinbase  script size within bounds  
 TEST_CASE("chain transaction  is null non coinbase  coinbase tx  returns false", "[chain transaction]") {
     static auto const data = to_chunk(base16_literal(TX6));
     chain::transaction instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE( ! instance.is_null_non_coinbase());
 }
 
@@ -836,35 +850,50 @@ TEST_CASE("chain transaction  is dusty  no outputs zero  returns false", "[chain
 TEST_CASE("chain transaction  is dusty  two outputs limit above both  returns true", "[chain transaction]") {
     static auto const raw_tx = to_chunk(base16_literal(TX1));
     chain::transaction instance;
-    REQUIRE(entity_from_data(instance, raw_tx));
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(instance.is_dusty(1740950001));
 }
 
 TEST_CASE("chain transaction  is dusty  two outputs limit below both  returns false", "[chain transaction]") {
     static auto const raw_tx = to_chunk(base16_literal(TX1));
     chain::transaction instance;
-    REQUIRE(entity_from_data(instance, raw_tx));
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE( ! instance.is_dusty(257999999));
 }
 
 TEST_CASE("chain transaction  is dusty  two outputs limit at upper  returns true", "[chain transaction]") {
     static auto const raw_tx = to_chunk(base16_literal(TX1));
     chain::transaction instance;
-    REQUIRE(entity_from_data(instance, raw_tx));
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(instance.is_dusty(1740950000));
 }
 
 TEST_CASE("chain transaction  is dusty  two outputs limit at lower  returns false", "[chain transaction]") {
     static auto const raw_tx = to_chunk(base16_literal(TX1));
     chain::transaction instance;
-    REQUIRE(entity_from_data(instance, raw_tx));
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE( ! instance.is_dusty(258000000));
 }
 
 TEST_CASE("chain transaction  is dusty  two outputs limit between both  returns true", "[chain transaction]") {
     static auto const raw_tx = to_chunk(base16_literal(TX1));
     chain::transaction instance;
-    REQUIRE(entity_from_data(instance, raw_tx));
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(instance.is_dusty(258000001));
 }
 
@@ -920,17 +949,23 @@ TEST_CASE("chain transaction  is mature  premature non coinbase prevout  returns
 
 TEST_CASE("chain transaction  operator assign equals 1  always  matches equivalent", "[chain transaction]") {
     static auto const raw_tx = to_chunk(base16_literal(TX4));
-    chain::transaction expected;
-    REQUIRE(entity_from_data(expected, raw_tx));
-    chain::transaction instance;
-    instance = create<chain::transaction>(raw_tx);
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
+    reader.reset();
+    auto result_exp = chain::transaction::from_data(reader, true);
+    REQUIRE(result_exp);
+    auto const instance = std::move(*result_exp);
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("chain transaction  operator assign equals 2  always  matches equivalent", "[chain transaction]") {
     static auto const raw_tx = to_chunk(base16_literal(TX4));
-    chain::transaction expected;
-    REQUIRE(entity_from_data(expected, raw_tx));
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
     chain::transaction instance;
     instance = expected;
     REQUIRE(instance == expected);
@@ -940,8 +975,14 @@ TEST_CASE("chain transaction  operator boolean equals  duplicates  returns true"
     static auto const raw_tx = to_chunk(base16_literal(TX4));
     chain::transaction alpha;
     chain::transaction beta;
-    REQUIRE(entity_from_data(alpha, raw_tx));
-    REQUIRE(entity_from_data(beta, raw_tx));
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    alpha = std::move(*result);
+    reader.reset();
+    result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    beta = std::move(*result);
     REQUIRE(alpha == beta);
 }
 
@@ -949,7 +990,10 @@ TEST_CASE("chain transaction  operator boolean equals  differs  returns false", 
     static auto const raw_tx = to_chunk(base16_literal(TX4));
     chain::transaction alpha;
     chain::transaction beta;
-    REQUIRE(entity_from_data(alpha, raw_tx));
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    alpha = std::move(*result);
     REQUIRE( ! (alpha == beta));
 }
 
@@ -957,8 +1001,14 @@ TEST_CASE("chain transaction  operator boolean not equals  duplicates  returns f
     static auto const raw_tx = to_chunk(base16_literal(TX4));
     chain::transaction alpha;
     chain::transaction beta;
-    REQUIRE(entity_from_data(alpha, raw_tx));
-    REQUIRE(entity_from_data(beta, raw_tx));
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    alpha = std::move(*result);
+    reader.reset();
+    result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    beta = std::move(*result);
     REQUIRE( ! (alpha != beta));
 }
 
@@ -966,7 +1016,10 @@ TEST_CASE("chain transaction  operator boolean not equals  differs  returns true
     static auto const raw_tx = to_chunk(base16_literal(TX4));
     chain::transaction alpha;
     chain::transaction beta;
-    REQUIRE(entity_from_data(alpha, raw_tx));
+    byte_reader reader(raw_tx);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    alpha = std::move(*result);
     REQUIRE(alpha != beta);
 }
 
@@ -975,7 +1028,10 @@ TEST_CASE("chain transaction  hash  block320670  success", "[chain transaction]"
     static auto const expected = hash_literal(TX7_HASH);
     static auto const data = to_chunk(base16_literal(TX7));
     chain::transaction instance;
-    REQUIRE(entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::transaction::from_data(reader, true);
+    REQUIRE(result);
+    instance = std::move(*result);
     REQUIRE(expected == instance.hash());
     REQUIRE(data == instance.to_data());
 }

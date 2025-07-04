@@ -106,14 +106,16 @@ TEST_CASE("message header  constructor 7  always  equals params", "[message head
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("message header  from data  insufficient bytes  failure", "[message header]") {
+TEST_CASE("message header from data insufficient bytes  failure", "[message header]") {
     data_chunk data(10);
     message::header header;
-    REQUIRE( ! entity_from_data(header, message::header::version_maximum, data));
+    byte_reader reader(data);
+    auto result = message::header::from_data(reader, message::header::version_maximum);
+    REQUIRE( ! result);
     REQUIRE( ! header.is_valid());
 }
 
-TEST_CASE("message header  factory from data 1  valid input canonical version  no transaction count", "[message header]") {
+TEST_CASE("message header from data valid input canonical version  no transaction count", "[message header]") {
     auto const version = message::version::level::canonical;
     message::header expected{
         10u,
@@ -125,7 +127,10 @@ TEST_CASE("message header  factory from data 1  valid input canonical version  n
 
     auto const data = expected.to_data(version);
 
-    auto const result = create<message::header>(version, data);
+    byte_reader reader(data);
+    auto const result_exp = message::header::from_data(reader, version);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
@@ -133,7 +138,7 @@ TEST_CASE("message header  factory from data 1  valid input canonical version  n
     REQUIRE(expected.serialized_size(version) == chain::header::satoshi_fixed_size());
 }
 
-TEST_CASE("message header  factory from data 1  valid input  success", "[message header]") {
+TEST_CASE("message header from data valid input  success", "[message header]") {
     auto const version = message::header::version_minimum;
     message::header expected{
         10u,
@@ -145,7 +150,10 @@ TEST_CASE("message header  factory from data 1  valid input  success", "[message
 
     auto const data = expected.to_data(version);
 
-    auto const result = create<message::header>(version, data);
+    byte_reader reader(data);
+    auto const result_exp = message::header::from_data(reader, version);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
@@ -153,48 +161,7 @@ TEST_CASE("message header  factory from data 1  valid input  success", "[message
     REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
 }
 
-TEST_CASE("message header  factory from data 2  valid input  success", "[message header]") {
-    auto const version = message::header::version_minimum;
-    message::header expected{
-        10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-        531234u,
-        6523454u,
-        68644u};
 
-    auto const data = expected.to_data(version);
-    data_source istream(data);
-
-    auto const result = create<message::header>(version, istream);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(version));
-    REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
-}
-
-TEST_CASE("message header  factory from data 3  valid input  success", "[message header]") {
-    auto const version = message::header::version_minimum;
-    message::header expected{
-        10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-        531234u,
-        6523454u,
-        68644u};
-
-    auto const data = expected.to_data(version);
-    data_source istream(data);
-    istream_reader source(istream);
-
-    auto const result = create<message::header>(version, source);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(version));
-    REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
-}
 
 TEST_CASE("message header  operator assign equals 1  always  matches equivalent", "[message header]") {
     chain::header value(

@@ -63,15 +63,17 @@ TEST_CASE("alert  constructor 5  always  equals params", "[alert]") {
     REQUIRE(signature == instance.signature());
 }
 
-TEST_CASE("alert  from data  insufficient bytes  failure", "[alert]") {
+TEST_CASE("alert from data insufficient bytes  failure", "[alert]") {
     data_chunk const raw{0xab, 0x11};
     message::alert instance;
 
-    REQUIRE( ! entity_from_data(instance, message::version::level::minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::alert::from_data(reader, message::version::level::minimum);
+    REQUIRE( ! result);
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("alert  factory from data 1  wiki sample  success", "[alert]") {
+TEST_CASE("alert from data wiki sample  success", "[alert]") {
     data_chunk const raw_payload{
         0x01, 0x00, 0x00, 0x00, 0x37, 0x66, 0x40, 0x4f, 0x00,
         0x00, 0x00, 0x00, 0xb3, 0x05, 0x43, 0x4f, 0x00, 0x00, 0x00,
@@ -117,9 +119,11 @@ TEST_CASE("alert  factory from data 1  wiki sample  success", "[alert]") {
         0xde, 0x2b, 0x3f, 0x57, 0x30, 0x60, 0xd5, 0xb7, 0x0c, 0x3a,
         0x46, 0x72, 0x33, 0x26, 0xe4, 0xe8, 0xa4, 0xf1};
 
-    const message::alert expected{raw_payload, raw_signature};
-    auto const result = create<message::alert>(
-        message::version::level::minimum, raw);
+    message::alert const expected {raw_payload, raw_signature};
+    byte_reader reader(raw);
+    auto const result_exp = message::alert::from_data(reader, message::version::level::minimum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(result.is_valid());
     REQUIRE(raw.size() == result.serialized_size(message::version::level::minimum));
@@ -131,14 +135,16 @@ TEST_CASE("alert  factory from data 1  wiki sample  success", "[alert]") {
     REQUIRE(data.size() == expected.serialized_size(message::version::level::minimum));
 }
 
-TEST_CASE("alert  factory from data 1  roundtrip  success", "[alert]") {
+TEST_CASE("alert from data roundtrip  success", "[alert]") {
     const message::alert expected{
         {0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
         {0x04, 0xff, 0xab, 0xcd, 0xee}};
 
     auto const data = expected.to_data(message::version::level::minimum);
-    auto const result = create<message::alert>(
-        message::version::level::minimum, data);
+    byte_reader reader(data);
+    auto const result_exp = message::alert::from_data(reader, message::version::level::minimum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
@@ -146,37 +152,7 @@ TEST_CASE("alert  factory from data 1  roundtrip  success", "[alert]") {
     REQUIRE(expected.serialized_size(message::version::level::minimum) == result.serialized_size(message::version::level::minimum));
 }
 
-TEST_CASE("alert  factory from data 2  roundtrip  success", "[alert]") {
-    const message::alert expected{
-        {0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
-        {0x04, 0xff, 0xab, 0xcd, 0xee}};
 
-    auto const data = expected.to_data(message::version::level::minimum);
-    data_source istream(data);
-    auto const result = create<message::alert>(message::version::level::minimum, istream);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(message::version::level::minimum));
-    REQUIRE(expected.serialized_size(message::version::level::minimum) == result.serialized_size(message::version::level::minimum));
-}
-
-TEST_CASE("alert  factory from data 3  roundtrip  success", "[alert]") {
-    const message::alert expected{
-        {0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
-        {0x04, 0xff, 0xab, 0xcd, 0xee}};
-
-    auto const data = expected.to_data(message::version::level::minimum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::alert>(
-        message::version::level::minimum, source);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(message::version::level::minimum));
-    REQUIRE(expected.serialized_size(message::version::level::minimum) == result.serialized_size(message::version::level::minimum));
-}
 
 TEST_CASE("alert  payload accessor 1  always  returns initialized", "[alert]") {
     data_chunk const payload = to_chunk(base16_literal("0123456789abcdef"));

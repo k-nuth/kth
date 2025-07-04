@@ -300,7 +300,7 @@ void block_chain::reorganize(const infrastructure::config::checkpoint& fork_poin
     block_const_ptr_list_ptr outgoing_blocks, dispatcher& dispatch,
     result_handler handler) {
     if (incoming_blocks->empty()) {
-        handler(error::operation_failed_13);
+        handler(error::reorganize_empty_blocks);
         return;
     }
 
@@ -316,7 +316,7 @@ void block_chain::handle_reorganize(code const& ec, block_const_ptr top, result_
     }
 
     if ( ! top->validation.state) {
-        handler(error::operation_failed_14);
+        handler(error::chain_state_invalid);
         return;
     }
 
@@ -357,7 +357,7 @@ code block_chain::set_chain_state(domain::chain::chain_state::ptr previous) {
     unique_lock lock(pool_state_mutex_);
 
     pool_state_ = chain_state_populator_.populate(previous);
-    return pool_state_ ? error::success : error::operation_failed_15;
+    return pool_state_ ? error::success : error::pool_state_failed;
     ///////////////////////////////////////////////////////////////////////////
 }
 

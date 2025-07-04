@@ -7,7 +7,10 @@ cmake_minimum_required(VERSION 3.15)
 add_subdirectory(secp256k1)
 add_subdirectory(infrastructure)
 add_subdirectory(domain)
-add_subdirectory(consensus)
+
+if (WITH_CONSENSUS)
+    add_subdirectory(consensus)
+endif()
 
 # Network module is not compatible with Emscripten
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")

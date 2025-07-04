@@ -82,7 +82,7 @@ void validate_transaction::accept(transaction_const_ptr tx, result_handler handl
     tx->validation.state = fast_chain_.chain_state();
 
     if ( ! tx->validation.state) {
-        handler(error::operation_failed_23);
+        handler(error::transaction_validation_state_failed);
         return;
     }
 

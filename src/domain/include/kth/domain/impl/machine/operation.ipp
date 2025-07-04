@@ -57,16 +57,17 @@ operation::operation(opcode code)
 {}
 
 // // protected
-// inline
-// operation::operation(opcode code, data_chunk&& data, bool valid)
-//     : code_(code), data_(std::move(data)), valid_(valid)
-// {}
+// protected
+inline
+operation::operation(opcode code, data_chunk&& data, bool valid)
+    : code_(code), data_(std::move(data)), valid_(valid)
+{}
 
-// // protected
-// inline
-// operation::operation(opcode code, data_chunk const& data, bool valid)
-//     : code_(code), data_(data), valid_(valid)
-// {}
+// protected
+inline
+operation::operation(opcode code, data_chunk const& data, bool valid)
+    : code_(code), data_(data), valid_(valid)
+{}
 
 // Operators.
 //-----------------------------------------------------------------------------
@@ -329,6 +330,12 @@ bool operation::is_disabled(opcode code, uint32_t active_forks) {
             return true;
         case opcode::mul:
             return ! is_enabled(active_forks, rule_fork::bch_gauss);
+        case opcode::div:
+        case opcode::mod:
+        case opcode::and_:
+        case opcode::or_:
+        case opcode::xor_:
+            return ! is_enabled(active_forks, rule_fork::bch_pythagoras);
         default:
             return false;
     }
@@ -419,7 +426,6 @@ bool operation::is_relaxed_push() const {
 
 inline
 bool operation::is_oversized(size_t max_size) const {
-    // bit.ly/2eSDkOJ
     return data_.size() > max_size;
 }
 

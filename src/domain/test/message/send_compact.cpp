@@ -40,44 +40,28 @@ TEST_CASE("send compact  constructor 4  always  equals params", "[send compact]"
     REQUIRE(version == instance.version());
 }
 
-TEST_CASE("send compact  factory from data 1  valid input  success", "[send compact]") {
+TEST_CASE("send compact from data valid input  success", "[send compact]") {
     const message::send_compact expected{true, 164};
     auto const data = expected.to_data(message::send_compact::version_minimum);
-    auto const result = create<message::send_compact>(
-        message::send_compact::version_minimum, data);
+    byte_reader reader(data);
+    auto const result_exp = message::send_compact::from_data(reader, message::send_compact::version_minimum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(message::send_compact::satoshi_fixed_size(message::send_compact::version_minimum) == data.size());
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
 }
 
-TEST_CASE("send compact  factory from data 2  valid input  success", "[send compact]") {
-    const message::send_compact expected{false, 5};
-    auto const data = expected.to_data(message::send_compact::version_minimum);
-    data_source istream(data);
-    auto const result = create<message::send_compact>(message::send_compact::version_minimum, istream);
 
-    REQUIRE(message::send_compact::satoshi_fixed_size(message::send_compact::version_minimum) == data.size());
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-}
-
-TEST_CASE("send compact  factory from data 3  valid input  success", "[send compact]") {
-    const message::send_compact expected{true, 257};
-    auto const data = expected.to_data(message::send_compact::version_minimum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::send_compact>(message::send_compact::version_minimum, source);
-
-    REQUIRE(message::send_compact::satoshi_fixed_size(message::send_compact::version_minimum) == data.size());
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-}
 
 TEST_CASE("send compact  from data 1  invalid mode byte  failure", "[send compact]") {
     data_chunk raw_data{0x0f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
     message::send_compact msg;
-    bool result = entity_from_data(msg, message::send_compact::version_minimum, raw_data);
+    byte_reader reader(raw_data);
+    auto exp_result = message::send_compact::from_data(reader, message::send_compact::version_minimum);
+    bool result = static_cast<bool>(exp_result);
+    if (result) msg = std::move(*exp_result);
     REQUIRE( ! result);
 }
 
@@ -85,7 +69,10 @@ TEST_CASE("send compact  from data 1  insufficient version  failure", "[send com
     const message::send_compact expected{true, 257};
     data_chunk raw_data = expected.to_data(message::send_compact::version_minimum);
     message::send_compact msg;
-    bool result = entity_from_data(msg, message::send_compact::version_minimum - 1, raw_data);
+    byte_reader reader(raw_data);
+    auto exp_result = message::send_compact::from_data(reader, message::send_compact::version_minimum - 1);
+    bool result = static_cast<bool>(exp_result);
+    if (result) msg = std::move(*exp_result);
     REQUIRE( ! result);
 }
 

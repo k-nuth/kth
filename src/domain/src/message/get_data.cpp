@@ -10,6 +10,7 @@
 #include <kth/domain/message/inventory.hpp>
 #include <kth/domain/message/inventory_vector.hpp>
 #include <kth/domain/message/version.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/istream_reader.hpp>
 
@@ -48,6 +49,9 @@ bool get_data::operator!=(get_data const& x) const {
 
 // static
 expect<get_data> get_data::from_data(byte_reader& reader, uint32_t version) {
+    if (version < version_minimum) {
+        return make_unexpected(error::version_too_low);
+    }
     auto inv = inventory::from_data(reader, version);
     if ( ! inv) {
         return make_unexpected(inv.error());

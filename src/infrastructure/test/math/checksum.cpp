@@ -12,14 +12,14 @@ using namespace kth;
 // TODO: add append_checksum<> tests.
 // TODO: add build_checked_array<> tests.
 
-TEST_CASE("checksum  append checksum  size  increased by checksum size", "[checksum tests]") {
+TEST_CASE("infrastructure checksum append increases size by checksum size", "[infrastructure][checksum]") {
     data_chunk data = { 0, 0, 0, 0, 0 };
     auto const data_size = data.size();
     append_checksum(data);
     REQUIRE(data.size() == data_size + checksum_size);
 }
 
-TEST_CASE("checksum  append checksum  empty  valid", "[checksum tests]") {
+TEST_CASE("infrastructure checksum append to empty data", "[infrastructure][checksum]") {
     data_chunk data = {};
     auto checksum = data.size();
     append_checksum(data);
@@ -29,7 +29,7 @@ TEST_CASE("checksum  append checksum  empty  valid", "[checksum tests]") {
     REQUIRE(data[checksum++] == 0xe2u);
 }
 
-TEST_CASE("checksum  append checksum  not empty  valid", "[checksum tests]") {
+TEST_CASE("infrastructure checksum append to non-empty data", "[infrastructure][checksum]") {
     data_chunk data = { 0, 0, 0, 0, 0 };
     auto checksum = data.size();
     append_checksum(data);
@@ -39,13 +39,13 @@ TEST_CASE("checksum  append checksum  not empty  valid", "[checksum tests]") {
     REQUIRE(data[checksum++] == 0x93u);
 }
 
-TEST_CASE("checksum  bitcoin checksum  always  valid", "[checksum tests]") {
+TEST_CASE("infrastructure checksum bitcoin checksum calculation", "[infrastructure][checksum]") {
     data_chunk data = { 0, 0, 0, 0, 0 };
     auto const result = bitcoin_checksum(data);
     REQUIRE(result == 0x93af0179u);
 }
 
-TEST_CASE("checksum  build checked array  empty  valid", "[checksum tests]") {
+TEST_CASE("infrastructure checksum build checked array from empty data", "[infrastructure][checksum]") {
     data_chunk data = {};
     auto checksum = data.size();
     byte_array<checksum_size> out;
@@ -60,7 +60,7 @@ TEST_CASE("checksum  build checked array  empty  valid", "[checksum tests]") {
     REQUIRE(out[checksum++] == 0xe2u);
 }
 
-TEST_CASE("checksum  build checked array  not empty  valid", "[checksum tests]") {
+TEST_CASE("infrastructure checksum build checked array from non-empty data", "[infrastructure][checksum]") {
     data_chunk data = { 0, 0, 0, 0, 0 };
     auto checksum = data.size();
     byte_array<checksum_size + 5> out;
@@ -75,7 +75,7 @@ TEST_CASE("checksum  build checked array  not empty  valid", "[checksum tests]")
     REQUIRE(out[checksum++] == 0x93u);
 }
 
-TEST_CASE("checksum  build checked array  overflow  false", "[checksum tests]") {
+TEST_CASE("infrastructure checksum build checked array overflow returns false", "[infrastructure][checksum]") {
     data_chunk data = { 0, 0, 0, 0, 0 };
     auto checksum = data.size();
     byte_array<checksum_size> out;
@@ -83,10 +83,10 @@ TEST_CASE("checksum  build checked array  overflow  false", "[checksum tests]") 
     {
         data
     });
-    REQUIRE( ! result);
+    REQUIRE(!result);
 }
 
-TEST_CASE("checksum  insert checksum  empty  valid", "[checksum tests]") {
+TEST_CASE("infrastructure checksum insert checksum to empty data", "[infrastructure][checksum]") {
     data_chunk data = {};
     auto checksum = data.size();
     byte_array<checksum_size> out;

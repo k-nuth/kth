@@ -15,7 +15,7 @@ using namespace kth;
 #ifdef WITH_ICU
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki
-TEST_CASE("unicode  to normal nfc form  validate  test", "[unicode tests]") {
+TEST_CASE("infrastructure unicode to normal nfc form validation", "[infrastructure][unicode]") {
     data_chunk original;
     REQUIRE(decode_base16(original, "cf92cc8100f0909080f09f92a9"));
     std::string original_string(original.begin(), original.end());
@@ -28,7 +28,7 @@ TEST_CASE("unicode  to normal nfc form  validate  test", "[unicode tests]") {
     REQUIRE(expected_normal_string == derived_normal_string);
 }
 
-TEST_CASE("unicode  to normal nfkd form  validate  test", "[unicode tests]") {
+TEST_CASE("infrastructure unicode to normal nfkd form validation", "[infrastructure][unicode]") {
     auto const ascii_space_sandwich = "space-> <-space";
     auto const ideographic_space_sandwich = "space->　<-space";
     auto const normalized = to_normal_nfkd_form(ideographic_space_sandwich);
@@ -38,7 +38,7 @@ TEST_CASE("unicode  to normal nfkd form  validate  test", "[unicode tests]") {
 #endif
 
 // Use of L is not recommended as it will only work for ascii.
-TEST_CASE("unicode  to utf8 string  ascii  test", "[unicode tests]") {
+TEST_CASE("infrastructure unicode to utf8 string ascii conversion", "[infrastructure][unicode]") {
     auto const utf8_ascii = "ascii";
     auto const utf16_ascii = L"ascii";
     auto const converted = to_utf8(utf16_ascii);

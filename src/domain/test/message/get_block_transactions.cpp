@@ -57,14 +57,16 @@ TEST_CASE("get block transactions  constructor 5  always  equals params", "[get 
     REQUIRE(indexes == instance.indexes());
 }
 
-TEST_CASE("get block transactions  from data  insufficient bytes  failure", "[get block transactions]") {
+TEST_CASE("get block transactions from data insufficient bytes  failure", "[get block transactions]") {
     data_chunk const raw{0xab, 0xcd};
     message::get_block_transactions instance{};
 
-    REQUIRE( ! entity_from_data(instance, message::version::level::minimum, raw));
+    byte_reader reader(raw);
+    auto result = message::get_block_transactions::from_data(reader, message::version::level::minimum);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("get block transactions  factory from data 1  valid input  success", "[get block transactions]") {
+TEST_CASE("get block transactions from data valid input  success", "[get block transactions]") {
     const message::get_block_transactions expected{
         hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
         {16,
@@ -73,8 +75,10 @@ TEST_CASE("get block transactions  factory from data 1  valid input  success", "
          44}};
 
     auto const data = expected.to_data(message::version::level::minimum);
-    auto const result = create<message::get_block_transactions>(
-        message::version::level::minimum, data);
+    byte_reader reader(data);
+    auto const result_exp = message::get_block_transactions::from_data(reader, message::version::level::minimum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
@@ -82,46 +86,7 @@ TEST_CASE("get block transactions  factory from data 1  valid input  success", "
     REQUIRE(expected.serialized_size(message::version::level::minimum) == result.serialized_size(message::version::level::minimum));
 }
 
-TEST_CASE("get block transactions  factory from data 2  valid input  success", "[get block transactions]") {
-    const message::get_block_transactions expected{
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-        {16,
-         32,
-         37,
-         44}};
 
-    auto const data = expected.to_data(message::version::level::minimum);
-    data_source istream(data);
-    auto result = create<message::get_block_transactions>(
-        message::version::level::minimum, istream);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(message::version::level::minimum));
-    REQUIRE(expected.serialized_size(message::version::level::minimum) ==
-                        result.serialized_size(message::version::level::minimum));
-}
-
-TEST_CASE("get block transactions  factory from data 3  valid input  success", "[get block transactions]") {
-    const message::get_block_transactions expected{
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-        {16,
-         32,
-         37,
-         44}};
-
-    auto const data = expected.to_data(message::version::level::minimum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::get_block_transactions>(
-        message::version::level::minimum, source);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(message::version::level::minimum));
-    REQUIRE(expected.serialized_size(message::version::level::minimum) ==
-                        result.serialized_size(message::version::level::minimum));
-}
 
 TEST_CASE("get block transactions  block hash accessor 1  always  returns initialized value", "[get block transactions]") {
     hash_digest const hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");

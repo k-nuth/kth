@@ -6,6 +6,7 @@
 #define KTH_DOMAIN_MACHINE_PROGRAM_HPP
 
 #include <cstdint>
+#include <optional>
 
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/chain/transaction.hpp>
@@ -14,6 +15,7 @@
 #include <kth/domain/machine/metrics.hpp>
 #include <kth/domain/machine/opcode.hpp>
 #include <kth/domain/machine/operation.hpp>
+#include <kth/domain/machine/script_execution_context.hpp>
 #include <kth/infrastructure/machine/number.hpp>
 #include <kth/infrastructure/machine/script_version.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -100,6 +102,10 @@ public:
 
     [[nodiscard]]
     chain::transaction const& transaction() const;
+
+    /// Get the script execution context (if available)
+    [[nodiscard]]
+    std::optional<script_execution_context> const& context() const;
 
     /// Program registers.
     [[nodiscard]]
@@ -245,6 +251,9 @@ private:
     bool_stack condition_;
 
     metrics metrics_;
+    
+    /// Optional script execution context for Native Introspection opcodes
+    std::optional<script_execution_context> context_;
 };
 
 } // namespace kth::domain::machine

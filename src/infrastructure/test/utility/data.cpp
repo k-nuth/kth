@@ -13,19 +13,19 @@ using namespace kth;
 
 // Start Test Suite: data tests
 
-TEST_CASE("data  to byte  value  expected size and value", "[data tests]") {
+TEST_CASE("infrastructure data to byte array", "[infrastructure][data]") {
     uint8_t const expected = 42;
     auto const result = to_array(expected);
     REQUIRE(result.size() == 1u);
     REQUIRE(result[0] == expected);
 }
 
-TEST_CASE("data  build chunk  empty  empty", "[data tests]") {
+TEST_CASE("infrastructure data build chunk from empty slices", "[infrastructure][data]") {
     auto const result = build_chunk({});
     REQUIRE(result.empty());
 }
 
-TEST_CASE("data  build chunk  one slice  expected size and value", "[data tests]") {
+TEST_CASE("infrastructure data build chunk from single slice", "[infrastructure][data]") {
     uint8_t const expected = 42;
     auto const chunk1 = std::vector<uint8_t>{ 24 };
     auto const chunk2 = std::vector<uint8_t>{ expected };
@@ -39,7 +39,7 @@ TEST_CASE("data  build chunk  one slice  expected size and value", "[data tests]
     REQUIRE(result[1] == expected);
 }
 
-TEST_CASE("data  build chunk  three slices  expected size and value", "[data tests]") {
+TEST_CASE("infrastructure data build chunk from multiple slices", "[infrastructure][data]") {
     size_t const size1 = 2;
     size_t const size2 = 1;
     size_t const size3 = 3;
@@ -54,7 +54,7 @@ TEST_CASE("data  build chunk  three slices  expected size and value", "[data tes
     REQUIRE(result[size1] == expected);
 }
 
-TEST_CASE("data  build chunk  extra reserve  expected size and capacity", "[data tests]") {
+TEST_CASE("infrastructure data build chunk with extra reserve capacity", "[infrastructure][data]") {
     uint8_t const size1 = 2;
     uint8_t const size2 = 1;
     uint8_t const size3 = 3;
@@ -69,7 +69,7 @@ TEST_CASE("data  build chunk  extra reserve  expected size and capacity", "[data
     REQUIRE(result.capacity() == size1 + size2 + size3 + reserve);
 }
 
-TEST_CASE("data  build array  empty  true unchanged", "[data tests]") {
+TEST_CASE("infrastructure data build array from empty slices", "[infrastructure][data]") {
     uint8_t const expected = 42;
     std::array<uint8_t, 3> value{ { 0, expected, 0 } };
     auto const result = build_array(value, {});
@@ -77,7 +77,7 @@ TEST_CASE("data  build array  empty  true unchanged", "[data tests]") {
     REQUIRE(value[1] == expected);
 }
 
-TEST_CASE("data  build array  under capacity  true excess unchanged", "[data tests]") {
+TEST_CASE("infrastructure data build array under capacity", "[infrastructure][data]") {
     uint8_t const expected1 = 24;
     uint8_t const expected2 = 42;
     uint8_t const expected3 = 48;
@@ -92,7 +92,7 @@ TEST_CASE("data  build array  under capacity  true excess unchanged", "[data tes
     REQUIRE(value[2] == expected3);
 }
 
-TEST_CASE("data  build array  exact fill multiple slices  true expected values", "[data tests]") {
+TEST_CASE("infrastructure data build array exact fill from multiple slices", "[infrastructure][data]") {
     size_t const size1 = 2;
     size_t const size2 = 1;
     size_t const size3 = 3;

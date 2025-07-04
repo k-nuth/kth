@@ -12,37 +12,16 @@ using namespace kd;
 TEST_CASE("get address - roundtrip to data factory from data chunk", "[get address]") {
     const message::get_address expected{};
     auto const data = expected.to_data(message::version::level::minimum);
-    auto const result = create<message::get_address>(
-        message::version::level::minimum, data);
+    byte_reader reader(data);
+    auto const result_exp = message::get_address::from_data(reader, message::version::level::minimum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(0u == data.size());
     REQUIRE(result.is_valid());
     REQUIRE(0u == result.serialized_size(message::version::level::minimum));
 }
 
-TEST_CASE("get address - roundtrip to data factory from data stream", "[get address]") {
-    const message::get_address expected{};
-    auto const data = expected.to_data(message::version::level::minimum);
-    data_source istream(data);
-    auto const result = create<message::get_address>(
-        message::version::level::minimum, istream);
 
-    REQUIRE(0u == data.size());
-    REQUIRE(result.is_valid());
-    REQUIRE(0u == result.serialized_size(message::version::level::minimum));
-}
-
-TEST_CASE("get address - roundtrip to data factory from data reader", "[get address]") {
-    const message::get_address expected{};
-    auto const data = expected.to_data(message::version::level::minimum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::get_address>(
-        message::version::level::minimum, source);
-
-    REQUIRE(0u == data.size());
-    REQUIRE(result.is_valid());
-    REQUIRE(0u == result.serialized_size(message::version::level::minimum));
-}
 
 // End Test Suite

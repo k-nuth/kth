@@ -264,7 +264,7 @@ TEST_CASE("payment_address cashAddr testnet encode", "[payment_address]") {
 
 TEST_CASE("payment_address cashAddr mainnet from string", "[payment_address]") {
     payment_address const address("bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz");
-    REQUIRE(address);
+    REQUIRE(address.valid());
     REQUIRE(address.encoded_cashaddr(false) == "bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz");
     REQUIRE(address.encoded_legacy() == "17DHrHvtmMRs9ciersFCPNhvJtryd5NWbT");
 }
@@ -272,18 +272,20 @@ TEST_CASE("payment_address cashAddr mainnet from string", "[payment_address]") {
 TEST_CASE("payment_address cashAddr testnet from string", "[payment_address]") {
     set_cashaddr_prefix("bchtest");
     payment_address const address("bchtest:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvleatp707");
-    REQUIRE(address);
+    REQUIRE(address.valid());
     REQUIRE(address.encoded_cashaddr(false) == "bchtest:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvleatp707");
     REQUIRE(address.encoded_legacy() == "mmjF9M1saNs7vjCGaSDaDHvFAtTgUNtfrJ");
+    set_cashaddr_prefix("bitcoincash");
 }
 
 TEST_CASE("payment_address token address from string", "[payment_address]") {
     payment_address const address("bitcoincash:pvstqkm54dtvnpyqxt5m5n7sjsn4enrlxc526xyxlnjkaycdzfeu69reyzmqx");
-    REQUIRE(address);
+    REQUIRE(address.valid());
     REQUIRE(address.encoded_cashaddr(false) == "bitcoincash:pvstqkm54dtvnpyqxt5m5n7sjsn4enrlxc526xyxlnjkaycdzfeu69reyzmqx");
     REQUIRE(address.encoded_cashaddr(true) == "bitcoincash:rvstqkm54dtvnpyqxt5m5n7sjsn4enrlxc526xyxlnjkaycdzfeu6hs99m6ed");
     REQUIRE(address.encoded_legacy() == "34frpCV2v6wtzig9xx4Z9XJ6s4jU3zqwR7");  // In fact a 32-byte address is not representable in legacy encoding.
 }
+
 #endif
 
 // End Test Suite

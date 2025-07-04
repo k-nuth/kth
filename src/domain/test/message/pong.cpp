@@ -34,19 +34,23 @@ TEST_CASE("pong  satoshi fixed size  minimum version  returns 8", "[pong]") {
     REQUIRE(size == 8u);
 }
 
-TEST_CASE("pong  factory from data 1  minimum version empty data invalid", "[pong]") {
+TEST_CASE("pong from data minimum version empty data invalid", "[pong]") {
     static auto const version = message::version::level::minimum;
-    auto const result = create<message::pong>(version, data_chunk{});
-    REQUIRE( ! result.is_valid());
+    byte_reader reader(data_chunk{});
+    auto const result_exp = message::pong::from_data(reader, version);
+    REQUIRE( ! result_exp);
 }
 
-TEST_CASE("pong  factory from data 1  round trip  expected", "[pong]") {
+TEST_CASE("pong from data round trip  expected", "[pong]") {
     static const message::pong expected{
         4306550u};
 
     static auto const version = message::version::level::minimum;
     auto const data = expected.to_data(version);
-    auto const result = create<message::pong>(version, data);
+    byte_reader reader(data);
+    auto const result_exp = message::pong::from_data(reader, version);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
@@ -54,36 +58,7 @@ TEST_CASE("pong  factory from data 1  round trip  expected", "[pong]") {
     REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
 }
 
-TEST_CASE("pong  factory from data 2  round trip  expected", "[pong]") {
-    static const message::pong expected{
-        3100693u};
 
-    static auto const version = message::version::level::minimum;
-    auto const data = expected.to_data(version);
-    data_source istream(data);
-    auto const result = create<message::pong>(version, istream);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(version));
-    REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
-}
-
-TEST_CASE("pong  factory from data 3  round trip  expected", "[pong]") {
-    static const message::pong expected{
-        4642675u};
-
-    static auto const version = message::version::level::minimum;
-    auto const data = expected.to_data(version);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<message::pong>(version, source);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(version));
-    REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
-}
 
 TEST_CASE("pong  nonce accessor  always  returns initialized value", "[pong]") {
     uint64_t value = 43564u;

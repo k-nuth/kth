@@ -78,8 +78,8 @@ bool negate_overflow64(int64_t const number) {
 static
 void CheckAdd(int64_t const num1, int64_t const num2, size_t value, size_t offset, size_t test) {
 	number_buffer const& add = number_adds[value][offset][test];
-    number const scriptnum1(num1);
-    number const scriptnum2(num2);
+    auto const scriptnum1 = number::from_int(num1).value();
+    auto const scriptnum2 = number::from_int(num2).value();
 
     if ( ! add_overflow64(num1, num2)) {
         KI_SCRIPT_NUMBER_CHECK_EQ(add, scriptnum1 + scriptnum2, value, offset, test);
@@ -91,7 +91,7 @@ void CheckAdd(int64_t const num1, int64_t const num2, size_t value, size_t offse
 static
 void CheckNegate(int64_t const num, size_t value, size_t offset, size_t test) {
 	number_buffer const& negated = number_negates[value][offset][test];
-    number const scriptnum(num);
+    auto const scriptnum = number::from_int(num).value();
 
     if ( ! negate_overflow64(num)) {
         KI_SCRIPT_NUMBER_CHECK_EQ(negated, -scriptnum, value, offset, test);
@@ -101,8 +101,8 @@ void CheckNegate(int64_t const num, size_t value, size_t offset, size_t test) {
 static
 void CheckSubtract(int64_t const num1, int64_t const num2, size_t value, size_t offset, size_t test) {
 	number_subtract const& subtract = number_subtracts[value][offset][test];
-    number const scriptnum1(num1);
-    number const scriptnum2(num2);
+    auto const scriptnum1 = number::from_int(num1).value();
+    auto const scriptnum2 = number::from_int(num2).value();
 
     if ( ! subtract_overflow64(num1, num2)) {
         KI_SCRIPT_NUMBER_CHECK_EQ(subtract.forward, scriptnum1 - scriptnum2, value, offset, test);
@@ -118,8 +118,8 @@ void CheckSubtract(int64_t const num1, int64_t const num2, size_t value, size_t 
 static
 void CheckCompare(int64_t const num1, int64_t const num2, size_t value, size_t offset, size_t test) {
     number_compare const& compare = number_compares[value][offset][test];
-    number const scriptnum1(num1);
-    number const scriptnum2(num2);
+    auto const scriptnum1 = number::from_int(num1).value();
+    auto const scriptnum2 = number::from_int(num2).value();
 
     CHECK(scriptnum1 == scriptnum1);
     CHECK(scriptnum1 >= scriptnum1);

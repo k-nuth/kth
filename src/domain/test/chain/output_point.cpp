@@ -71,14 +71,16 @@ TEST_CASE("output point  begin end  initialized  begin not equal end", "[output 
     REQUIRE(instance.begin() != instance.end());
 }
 
-TEST_CASE("output point  from data  insufficient bytes  failure", "[output point]") {
+TEST_CASE("output point from data insufficient bytes  failure", "[output point]") {
     static data_chunk const data(10);
     chain::output_point instance;
-    REQUIRE( ! entity_from_data(instance, data));
+    byte_reader reader(data);
+    auto result = chain::output_point::from_data(reader);
+    REQUIRE( ! result);
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("output point  from data  roundtrip  success", "[output point]") {
+TEST_CASE("output point from data roundtrip  success", "[output point]") {
     static uint32_t const index = 53213u;
     static hash_digest const hash{
         {0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
@@ -92,22 +94,26 @@ TEST_CASE("output point  from data  roundtrip  success", "[output point]") {
     REQUIRE(hash == initial.hash());
     REQUIRE(index == initial.index());
 
-    chain::output_point point;
-
-    REQUIRE(point != initial);
-    REQUIRE(entity_from_data(point, initial.to_data()));
+    data_chunk output = initial.to_data();
+    byte_reader reader(output);
+    auto result_exp = chain::output_point::from_data(reader);
+    REQUIRE(result_exp);
+    auto const point = std::move(*result_exp);
     REQUIRE(point.is_valid());
     REQUIRE(point == initial);
 }
 
-TEST_CASE("output point  factory from data 1  roundtrip  success", "[output point]") {
+TEST_CASE("output point from data roundtrip  success 2", "[output point]") {
     static auto const data = to_chunk(base16_literal("46682488f0a721124a3905a1bb72445bf13493e2cd46c5c0c8db1c15afa0d58e00000000"));
     REQUIRE(data == (data_chunk{
                               0x46, 0x68, 0x24, 0x88, 0xf0, 0xa7, 0x21, 0x12, 0x4a, 0x39, 0x05, 0xa1,
                               0xbb, 0x72, 0x44, 0x5b, 0xf1, 0x34, 0x93, 0xe2, 0xcd, 0x46, 0xc5, 0xc0,
                               0xc8, 0xdb, 0x1c, 0x15, 0xaf, 0xa0, 0xd5, 0x8e, 0x00, 0x00, 0x00, 0x00}));
 
-    auto point = create<chain::output_point>(data);
+    byte_reader reader(data);
+    auto result_exp = chain::output_point::from_data(reader);
+    REQUIRE(result_exp);
+    auto const point = std::move(*result_exp);
 
     REQUIRE(point.is_valid());
     REQUIRE(encode_hash(point.hash()) == "8ed5a0af151cdbc8c0c546cde29334f15b4472bba105394a1221a7f088246846");
@@ -124,7 +130,10 @@ TEST_CASE("output point  factory from data 2  roundtrip  success", "[output poin
                               0xbb, 0x72, 0x44, 0x5b, 0xf1, 0x34, 0x93, 0xe2, 0xcd, 0x46, 0xc5, 0xc0,
                               0xc8, 0xdb, 0x1c, 0x15, 0xaf, 0xa0, 0xd5, 0x8e, 0x00, 0x00, 0x00, 0x00}));
 
-    auto point = create<chain::output_point>(data);
+    byte_reader reader(data);
+    auto result_exp = chain::output_point::from_data(reader);
+    REQUIRE(result_exp);
+    auto const point = std::move(*result_exp);
 
     REQUIRE(point.is_valid());
     REQUIRE(encode_hash(point.hash()) == "8ed5a0af151cdbc8c0c546cde29334f15b4472bba105394a1221a7f088246846");
@@ -141,7 +150,10 @@ TEST_CASE("output point  factory from data 3  roundtrip  success", "[output poin
                               0xbb, 0x72, 0x44, 0x5b, 0xf1, 0x34, 0x93, 0xe2, 0xcd, 0x46, 0xc5, 0xc0,
                               0xc8, 0xdb, 0x1c, 0x15, 0xaf, 0xa0, 0xd5, 0x8e, 0x00, 0x00, 0x00, 0x00}));
 
-    auto point = create<chain::output_point>(data);
+    byte_reader reader(data);
+    auto result_exp = chain::output_point::from_data(reader);
+    REQUIRE(result_exp);
+    auto point = std::move(*result_exp);
 
     REQUIRE(point.is_valid());
     REQUIRE(encode_hash(point.hash()) == "8ed5a0af151cdbc8c0c546cde29334f15b4472bba105394a1221a7f088246846");
@@ -197,98 +209,139 @@ TEST_CASE("output point  is mature  immature non coinbase prevout  returns true"
 }
 
 TEST_CASE("output point  operator assign equals 1  always  matches equivalent", "[output point]") {
-    chain::output_point expected;
-    REQUIRE(entity_from_data(expected, valid_raw_output_point));
+    byte_reader reader(valid_raw_output_point);
+    auto result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
     chain::output_point instance;
     chain::output_point value;
-    REQUIRE(entity_from_data(value, valid_raw_output_point));
+    reader.reset();
+    result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    value = std::move(*result);
     instance = std::move(value);
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("output point  operator assign equals 2  always  matches equivalent", "[output point]") {
-    chain::output_point expected;
-    REQUIRE(entity_from_data(expected, valid_raw_output_point));
+    byte_reader reader(valid_raw_output_point);
+    auto result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
     chain::output_point instance;
     instance = expected;
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("output point  operator assign equals 3  always  matches equivalent", "[output point]") {
-    chain::point expected;
-    REQUIRE(entity_from_data(expected, valid_raw_output_point));
-    chain::output_point instance;
-    chain::point value;
-    REQUIRE(entity_from_data(value, valid_raw_output_point));
-    instance = std::move(value);
+    byte_reader reader(valid_raw_output_point);
+    auto result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
+    reader.reset();
+    result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    auto instance = std::move(*result);
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("output point  operator assign equals 4  always  matches equivalent", "[output point]") {
-    chain::point expected;
-    REQUIRE(entity_from_data(expected, valid_raw_output_point));
+    byte_reader reader(valid_raw_output_point);
+    auto result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    auto const expected = std::move(*result);
     chain::output_point instance;
     instance = expected;
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("output point  operator boolean equals 1  duplicates  returns true", "[output point]") {
-    chain::output_point alpha;
-    chain::output_point beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_output_point));
-    REQUIRE(entity_from_data(beta, valid_raw_output_point));
+    byte_reader reader(valid_raw_output_point);
+    auto result = chain::point::from_data(reader);
+    REQUIRE(result);
+    auto const alpha = std::move(*result);
+    reader.reset();
+    auto result2 = chain::output_point::from_data(reader);
+    REQUIRE(result2);
+    auto const beta = std::move(*result2);
     REQUIRE(alpha == beta);
 }
 
 TEST_CASE("output point  operator boolean equals 1  differs  returns false", "[output point]") {
     chain::output_point alpha;
     chain::output_point beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_output_point));
+    byte_reader reader(valid_raw_output_point);
+    auto result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    alpha = std::move(*result);
     REQUIRE(alpha != beta);
 }
 
 TEST_CASE("output point  operator boolean equals 2  duplicates  returns true", "[output point]") {
-    chain::output_point alpha;
-    chain::point beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_output_point));
-    REQUIRE(entity_from_data(beta, valid_raw_output_point));
+    byte_reader reader(valid_raw_output_point);
+    auto result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    auto const alpha = std::move(*result);
+    reader.reset();
+    result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    auto const beta = std::move(*result);
     REQUIRE(alpha == beta);
 }
 
 TEST_CASE("output point  operator boolean equals 2  differs  returns false", "[output point]") {
     chain::output_point alpha;
     chain::point beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_output_point));
+    byte_reader reader(valid_raw_output_point);
+    auto result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    alpha = std::move(*result);
     REQUIRE(alpha != beta);
 }
 
 TEST_CASE("output point  operator boolean not equals 1  duplicates  returns false", "[output point]") {
     chain::output_point alpha;
     chain::output_point beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_output_point));
-    REQUIRE(entity_from_data(beta, valid_raw_output_point));
+    byte_reader reader(valid_raw_output_point);
+    auto result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    alpha = std::move(*result);
+    reader.reset();
+    result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    beta = std::move(*result);
     REQUIRE(alpha == beta);
 }
 
 TEST_CASE("output point  operator boolean not equals 1  differs  returns true", "[output point]") {
     chain::output_point alpha;
     chain::output_point beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_output_point));
+    byte_reader reader(valid_raw_output_point);
+    auto result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    alpha = std::move(*result);
     REQUIRE(alpha != beta);
 }
 
 TEST_CASE("output point  operator boolean not equals 2  duplicates  returns false", "[output point]") {
-    chain::output_point alpha;
-    chain::point beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_output_point));
-    REQUIRE(entity_from_data(beta, valid_raw_output_point));
+    byte_reader reader(valid_raw_output_point);
+    auto result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    auto const alpha = std::move(*result);
+    reader.reset();
+    result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    auto const beta = std::move(*result);
     REQUIRE(alpha == beta);
 }
 
 TEST_CASE("output point  operator boolean not equals 2  differs  returns true", "[output point]") {
     chain::output_point alpha;
     chain::point beta;
-    REQUIRE(entity_from_data(alpha, valid_raw_output_point));
+    byte_reader reader(valid_raw_output_point);
+    auto result = chain::output_point::from_data(reader);
+    REQUIRE(result);
+    alpha = std::move(*result);
     REQUIRE(alpha != beta);
 }
 

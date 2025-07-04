@@ -129,14 +129,16 @@ TEST_CASE("address  constructor 5  always  equals params", "[address]") {
     REQUIRE(addresses == instance.addresses());
 }
 
-TEST_CASE("address  from data  insufficient bytes  failure", "[address]") {
+TEST_CASE("address from data insufficient bytes  failure", "[address]") {
     data_chunk const raw{0xab};
     address instance;
 
-    REQUIRE( ! entity_from_data(instance, raw, version::level::minimum));
+    byte_reader reader(raw);
+    auto result = address::from_data(reader, version::level::minimum);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("address  factory from data 1  roundtrip  success", "[address]") {
+TEST_CASE("address from data roundtrip  success", "[address]") {
     address const expected(
         {{734678u,
           5357534u,
@@ -144,7 +146,10 @@ TEST_CASE("address  factory from data 1  roundtrip  success", "[address]") {
           123u}});
 
     auto const data = expected.to_data(version::level::minimum);
-    auto const result = create<address>(version::level::minimum, data);
+    byte_reader reader(data);
+    auto const result_exp = address::from_data(reader, version::level::minimum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(result.is_valid());
     REQUIRE(equal(expected, result));
@@ -153,42 +158,7 @@ TEST_CASE("address  factory from data 1  roundtrip  success", "[address]") {
     REQUIRE(expected.serialized_size(version::level::minimum) == serialized_size);
 }
 
-TEST_CASE("address  factory from data 2  roundtrip  success", "[address]") {
-    address const expected(
-        {{734678u,
-          5357534u,
-          base16_literal("47816a40bb92bdb4e0b8256861f96a55"),
-          123u}});
 
-    auto const data = expected.to_data(version::level::minimum);
-    data_source istream(data);
-    auto const result = create<address>(version::level::minimum, istream);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(equal(expected, result));
-    auto const serialized_size = result.serialized_size(version::level::minimum);
-    REQUIRE(data.size() == serialized_size);
-    REQUIRE(expected.serialized_size(version::level::minimum) == serialized_size);
-}
-
-TEST_CASE("address  factory from data 3  roundtrip  success", "[address]") {
-    address const expected(
-        {{734678u,
-          5357534u,
-          base16_literal("47816a40bb92bdb4e0b8256861f96a55"),
-          123u}});
-
-    data_chunk const data = expected.to_data(version::level::minimum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<address>(version::level::minimum, source);
-
-    REQUIRE(result.is_valid());
-    REQUIRE(equal(expected, result));
-    auto const serialized_size = result.serialized_size(version::level::minimum);
-    REQUIRE(data.size() == serialized_size);
-    REQUIRE(expected.serialized_size(version::level::minimum) == serialized_size);
-}
 
 TEST_CASE("address  addresses setter 1  roundtrip  success", "[address]") {
     infrastructure::message::network_address::list const value{

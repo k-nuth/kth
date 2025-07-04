@@ -76,16 +76,15 @@ TEST_CASE("block entry  add child  two  expected order", "[block entry tests]") 
 
 // equality
 
-TEST_CASE("block entry  equality  same  true", "[block entry tests]")
-{
+// TODO(2025-July)
+TEST_CASE("block entry equality same true", "[block entry tests]") {
     auto const block = std::make_shared<const domain::message::block>();
     block_entry instance1(block);
     block_entry instance2(block->hash());
     REQUIRE(instance1 == instance2);
 }
 
-TEST_CASE("block entry  equality  different  false", "[block entry tests]")
-{
+TEST_CASE("block entry  equality  different  false", "[block entry tests]") {
     auto const block = std::make_shared<const domain::message::block>();
     block_entry instance1(block);
     block_entry instance2(null_hash);

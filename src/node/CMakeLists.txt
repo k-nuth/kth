@@ -13,7 +13,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(ENABLE_SHARED "" OFF)
 option(ENABLE_POSITION_INDEPENDENT_CODE "Enable POSITION_INDEPENDENT_CODE property" ON)
-option(ENABLE_TEST "Compile with unit tests." ON)
 option(WITH_MEMPOOL "Mempool enabled." OFF)
 option(DB_READONLY_MODE "Readonly DB mode enabled." OFF)
 option(JUST_KTH_SOURCES "Just Knuth source code to be linted." OFF)
@@ -38,9 +37,6 @@ endif()
 if (STATISTICS)
   add_definitions(-DKTH_STATISTICS_ENABLED)
 endif()
-
-# is it possible to get the current timestamp in cmake?
-add_definitions(-DKTH_BUILD_TIME="xxxxxxxxxxxx")
 
 add_definitions(-DKTH_MICROARCHITECTURE_STR="${MARCH_ID}")
 set(MARCH_ID "" CACHE STRING "Specify the Microarchitecture ID (x86_64|...).")
@@ -88,9 +84,9 @@ endif()
 message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 
 # --------------------------------------------------------------------------------
-string(TIMESTAMP KTK_NODE_BUILD_TIMESTAMP "%s" UTC)
-message(STATUS "KTK_NODE_BUILD_TIMESTAMP: ${KTK_NODE_BUILD_TIMESTAMP}")
-add_definitions(-DKTK_NODE_BUILD_TIMESTAMP=${KTK_NODE_BUILD_TIMESTAMP})
+string(TIMESTAMP KTH_NODE_BUILD_TIMESTAMP "%s" UTC)
+message(STATUS "KTH_NODE_BUILD_TIMESTAMP: ${KTH_NODE_BUILD_TIMESTAMP}")
+add_definitions(-DKTH_NODE_BUILD_TIMESTAMP=${KTH_NODE_BUILD_TIMESTAMP})
 # --------------------------------------------------------------------------------
 
 

@@ -76,7 +76,7 @@ TEST_CASE("network address  constructor 5  always  equals params", "[network add
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("network address  from data  insufficient bytes  failure", "[network address tests]") {
+TEST_CASE("network address from data insufficient bytes  failure", "[network address tests]") {
     data_chunk const raw{1};
     byte_reader reader(raw);
 

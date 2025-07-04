@@ -94,6 +94,8 @@ public:
     operator bool() const;
     // operator short_hash const&() const;
 
+    bool valid() const;
+
     /// Serializer.
     [[nodiscard]]
     std::string encoded_legacy() const;

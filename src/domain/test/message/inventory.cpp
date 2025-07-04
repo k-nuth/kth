@@ -97,14 +97,16 @@ TEST_CASE("inventory  constructor 7  always  equals params", "[inventory]") {
     REQUIRE(hash == inventories[0].hash());
 }
 
-TEST_CASE("inventory  from data  insufficient bytes  failure", "[inventory]") {
+TEST_CASE("inventory from data insufficient bytes  failure", "[inventory]") {
     static auto const version = version::level::minimum;
     static data_chunk const raw{0xab, 0xcd};
     inventory instance;
-    REQUIRE( ! entity_from_data(instance, version, raw));
+    byte_reader reader(raw);
+    auto result = inventory::from_data(reader, version);
+    REQUIRE( ! result);
 }
 
-TEST_CASE("inventory  factory from data 1  valid input  success", "[inventory]") {
+TEST_CASE("inventory from data valid input  success", "[inventory]") {
     static inventory const expected{
         {{inventory::type_id::error,
           {{0x44, 0x9a, 0x0d, 0x24, 0x9a, 0xd5, 0x39, 0x89,
@@ -114,49 +116,17 @@ TEST_CASE("inventory  factory from data 1  valid input  success", "[inventory]")
 
     static auto const version = version::level::minimum;
     auto const data = expected.to_data(version);
-    auto const result = create<inventory>(version, data);
+    byte_reader reader(data);
+    auto const result_exp = inventory::from_data(reader, version);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
     REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(version));
     REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
 }
 
-TEST_CASE("inventory  factory from data 2  valid input  success", "[inventory]") {
-    static inventory const expected{
-        {{inventory::type_id::transaction,
-          {{0x44, 0x9a, 0x0d, 0xee, 0x9a, 0xd5, 0x39, 0xee,
-            0xee, 0x85, 0x0a, 0x3d, 0xee, 0x24, 0xed, 0x0f,
-            0xc3, 0xee, 0x6f, 0x55, 0x7d, 0xee, 0x12, 0x1a,
-            0x37, 0xc0, 0xee, 0x32, 0xf0, 0xd6, 0xee, 0xdf}}}}};
 
-    static auto const version = version::level::minimum;
-    auto const data = expected.to_data(version);
-    data_source istream(data);
-    auto result = create<inventory>(version, istream);
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(version));
-    REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
-}
-
-TEST_CASE("inventory  factory from data 3  valid input  success", "[inventory]") {
-    static inventory const expected{
-        {{inventory::type_id::block,
-          {{0x66, 0x9a, 0x0d, 0x24, 0x66, 0xd5, 0x39, 0x89,
-            0xbb, 0x66, 0x0a, 0x3d, 0x79, 0x66, 0xed, 0x0f,
-            0xc3, 0x0d, 0x66, 0x55, 0x7d, 0x71, 0x66, 0x1a,
-            0x37, 0xc0, 0xb0, 0x66, 0xf0, 0xd6, 0x6e, 0x66}}}}};
-
-    static auto const version = version::level::minimum;
-    auto const data = expected.to_data(version);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<inventory>(version, source);
-    REQUIRE(result.is_valid());
-    REQUIRE(expected == result);
-    REQUIRE(data.size() == result.serialized_size(version));
-    REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
-}
 
 TEST_CASE("inventory  inventories accessor 1  always  returns initialized value", "[inventory]") {
     const message::inventory_vector::list values =

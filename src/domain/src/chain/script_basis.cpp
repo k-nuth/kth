@@ -369,7 +369,11 @@ std::pair<hash_digest, size_t> script_basis::generate_version_0_signature_hash(
     sink_w.write_little_endian(input.sequence());
 
     // 10. outputs hash (32-byte hash).
-    sink_w.write_hash(all ? tx.outputs_hash() : (single && input_index < tx.outputs().size() ? bitcoin_hash(tx.outputs()[input_index].to_data()) : null_hash));
+    sink_w.write_hash(all ? 
+        tx.outputs_hash() : 
+        (single && input_index < tx.outputs().size() ? 
+            bitcoin_hash(tx.outputs()[input_index].to_data()) : 
+            null_hash));
 
     // 11. transaction locktime (4-byte little endian).
     sink_w.write_little_endian(tx.locktime());
@@ -411,7 +415,18 @@ bool script_basis::is_relaxed_push(operation::list const& ops) {
 // the size byte overflows. However satoshi actually requires nominal encoding.
 //*****************************************************************************
 bool script_basis::is_coinbase_pattern(operation::list const& ops, size_t height) {
-    return !ops.empty() && ops[0].is_nominal_push() && ops[0].data() == number(height).data();
+    if (ops.empty()) {
+        return false;
+    }
+    if ( ! ops[0].is_nominal_push()) {
+        return false;
+    }
+    auto num_exp = number::from_int(height);
+    if ( ! num_exp) {
+        std::cout << "number error in script_basis::is_coinbase_pattern()" << std::endl;
+        return false;
+    }
+    return ops[0].data() == num_exp->data();
 }
 
 // The satoshi client enables configurable data size for policy.

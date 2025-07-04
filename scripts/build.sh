@@ -2,12 +2,16 @@
 set -x
 
 if [ -z "$1" ]; then
-    echo "Usage: $0 <version>"
+    echo "Usage: $0 <version> <test>"
     exit 1
 fi
 VERSION="$1"
-
-echo "Building version: ${VERSION}"
+TEST="$2"
+if [ -z "$TEST" ]; then
+    echo "No test specified, defaulting to '0'"
+    TEST="0"
+fi
+echo "Building version: ${VERSION} with test: ${TEST}"
 
 rm -rf build
 rm -rf conan.lock
@@ -27,16 +31,19 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-cmake --build --preset conan-release -j4
+cmake --build --preset conan-release --parallel
 
 if [ $? -ne 0 ]; then
-    echo "CMake build failed"
+    echo "Build failed"
     exit 1
 fi
 
-# Run tests after build
-echo "Running tests..."
-cd build/build/Release
-
-# Run tests with ctest (CTestTestfile.cmake is now generated automatically by CMake)
-ctest --output-on-failure --parallel 4
+# Run tests if specified
+if [ "$TEST" != "0" ]; then
+    echo "Running tests..."
+    cd build/build/Release
+    # Run tests with ctest (CTestTestfile.cmake is now generated automatically by CMake)
+    ctest --output-on-failure --parallel 4
+else
+    echo "Skipping tests"
+fi

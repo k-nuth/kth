@@ -239,7 +239,7 @@ jobs:
       enable-asan: false   # Always enabled (sanitizer builds)
       enable-ubsan: false  # Always enabled (sanitizer builds) 
       enable-tsan: false   # Always enabled (sanitizer builds)
-      skip-tests: true
+      skip-tests: false
     secrets:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
@@ -263,7 +263,7 @@ jobs:
       enable-asan: false  # Disabled due to secp256k1 inline assembly conflicts
       enable-ubsan: false # Disabled due to secp256k1 inline assembly conflicts
       enable-tsan: false  # Disabled due to secp256k1 inline assembly conflicts
-      skip-tests: true
+      skip-tests: false
     secrets:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
@@ -290,7 +290,7 @@ jobs:
       enable-asan: false  # Disabled for clean release builds  
       enable-ubsan: false # Disabled for clean release builds
       enable-tsan: false  # Disabled for clean release builds
-      skip-tests: true
+      skip-tests: false  # Skip tests for clean release builds
     secrets:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
@@ -316,7 +316,7 @@ jobs:
       enable-asan: false  # Disabled for clean release builds
       enable-ubsan: false # Disabled for clean release builds  
       enable-tsan: false  # Disabled for clean release builds
-      skip-tests: true
+      skip-tests: false
     secrets:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}

@@ -15,41 +15,25 @@ TEST_CASE("filter clear - from data insufficient version failure", "[filter clea
     auto const raw = expected.to_data(version::level::maximum);
     filter_clear instance{};
 
-    REQUIRE( ! entity_from_data(instance, filter_clear::version_minimum - 1, raw));
+    byte_reader reader(raw);
+    auto result = filter_clear::from_data(reader, filter_clear::version_minimum - 1);
+    REQUIRE( ! result);
     REQUIRE( ! instance.is_valid());
 }
 
 TEST_CASE("filter clear - roundtrip to data factory from data chunk", "[filter clear]") {
     static const filter_clear expected{};
     auto const data = expected.to_data(version::level::maximum);
-    auto const result = create<filter_clear>(version::level::maximum, data);
+    byte_reader reader(data);
+    auto const result_exp = filter_clear::from_data(reader, version::level::maximum);
+    REQUIRE(result_exp);
+    auto const result = std::move(*result_exp);
 
     REQUIRE(data.size() == 0u);
     REQUIRE(result.is_valid());
     REQUIRE(result.serialized_size(version::level::maximum) == 0u);
 }
 
-TEST_CASE("filter clear - roundtrip to data factory from data stream", "[filter clear]") {
-    static const filter_clear expected{};
-    auto const data = expected.to_data(version::level::maximum);
-    data_source istream(data);
-    auto const result = create<filter_clear>(version::level::maximum, istream);
 
-    REQUIRE(data.size() == 0u);
-    REQUIRE(result.is_valid());
-    REQUIRE(result.serialized_size(version::level::maximum) == 0u);
-}
-
-TEST_CASE("filter clear - roundtrip to data factory from data reader", "[filter clear]") {
-    static const filter_clear expected{};
-    auto const data = expected.to_data(version::level::maximum);
-    data_source istream(data);
-    istream_reader source(istream);
-    auto const result = create<filter_clear>(version::level::maximum, source);
-
-    REQUIRE(data.size() == 0u);
-    REQUIRE(result.is_valid());
-    REQUIRE(result.serialized_size(version::level::maximum) == 0u);
-}
 
 // End Test Suite
