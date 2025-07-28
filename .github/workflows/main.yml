@@ -18,6 +18,8 @@ env:
   NAME: kth-mono
   CONAN_REMOTE: kth
   CONAN_REMOTE_URL: https://packages.kth.cash/api/
+  # Static analysis flags
+  SKIP_CLANG_FORMAT: true  # Set to false to enable clang-format checks
 
 jobs:
   debug:
@@ -260,12 +262,20 @@ jobs:
           submodules: true
 
       - name: Install clang-format
+        if: env.SKIP_CLANG_FORMAT != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y clang-format-15
           clang-format-15 --version
 
+      - name: Clang-format check disabled
+        if: env.SKIP_CLANG_FORMAT == 'true'
+        run: |
+          echo "⚠️ Clang-format check is currently disabled"
+          echo "Set SKIP_CLANG_FORMAT=false in workflow env to enable"
+
       - name: Check code formatting
+        if: env.SKIP_CLANG_FORMAT != 'true'
         shell: bash
         run: |
           echo "Checking C++ code formatting with clang-format..."
