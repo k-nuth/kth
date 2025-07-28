@@ -7,3 +7,4 @@ __pycache__/
 build_debug/
 build_release/
 CMakeUserPresets.json
+build-asan/
