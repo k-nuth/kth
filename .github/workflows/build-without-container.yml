@@ -116,6 +116,15 @@ jobs:
           SANITIZER_FLAGS=""
           BUILD_SUFFIX=""
           
+          # Check for conflicting sanitizers (AddressSanitizer and ThreadSanitizer are mutually exclusive)
+          if [ "${{ inputs.enable-asan }}" == "true" ] && [ "${{ inputs.enable-tsan }}" == "true" ]; then
+            echo "⚠️ WARNING: AddressSanitizer and ThreadSanitizer are mutually exclusive"
+            echo "🔧 Prioritizing AddressSanitizer and disabling ThreadSanitizer"
+            TSAN_ENABLED=false
+          else
+            TSAN_ENABLED="${{ inputs.enable-tsan }}"
+          fi
+          
           if [ "${{ inputs.enable-asan }}" == "true" ]; then
             echo "🧪 Enabling AddressSanitizer build"
             SANITIZER_FLAGS="$SANITIZER_FLAGS -fsanitize=address -fno-omit-frame-pointer"
@@ -128,7 +137,7 @@ jobs:
             BUILD_SUFFIX="${BUILD_SUFFIX}-ubsan"
           fi
           
-          if [ "${{ inputs.enable-tsan }}" == "true" ]; then
+          if [ "$TSAN_ENABLED" == "true" ]; then
             echo "🧪 Enabling ThreadSanitizer build"
             SANITIZER_FLAGS="$SANITIZER_FLAGS -fsanitize=thread"
             BUILD_SUFFIX="${BUILD_SUFFIX}-tsan"
@@ -196,8 +205,13 @@ jobs:
           # Run the tests
           echo "Running unit tests..."
           
-          # Set sanitizer options for better reporting
-          if [ "${{ inputs.enable-asan }}" == "true" ] || [ "${{ inputs.enable-ubsan }}" == "true" ] || [ "${{ inputs.enable-tsan }}" == "true" ]; then
+          # Set sanitizer options for better reporting (preserve conflict resolution from build step)
+          TSAN_ENABLED_FOR_TESTS="${{ inputs.enable-tsan }}"
+          if [ "${{ inputs.enable-asan }}" == "true" ] && [ "${{ inputs.enable-tsan }}" == "true" ]; then
+            TSAN_ENABLED_FOR_TESTS=false
+          fi
+          
+          if [ "${{ inputs.enable-asan }}" == "true" ] || [ "${{ inputs.enable-ubsan }}" == "true" ] || [ "$TSAN_ENABLED_FOR_TESTS" == "true" ]; then
             echo "🧪 Running tests with sanitizers enabled..."
             echo "⚠️ Tests may run slower due to sanitizer overhead"
             
@@ -209,7 +223,7 @@ jobs:
               export UBSAN_OPTIONS="print_stacktrace=1:abort_on_error=1"
             fi
             
-            if [ "${{ inputs.enable-tsan }}" == "true" ]; then
+            if [ "$TSAN_ENABLED_FOR_TESTS" == "true" ]; then
               export TSAN_OPTIONS="halt_on_error=1:abort_on_error=1"
             fi
           fi
@@ -233,7 +247,7 @@ jobs:
             
             cd build/build/Release
             
-            if [ "${{ inputs.enable-asan }}" == "true" ] || [ "${{ inputs.enable-ubsan }}" == "true" ] || [ "${{ inputs.enable-tsan }}" == "true" ]; then
+            if [ "${{ inputs.enable-asan }}" == "true" ] || [ "${{ inputs.enable-ubsan }}" == "true" ] || [ "$TSAN_ENABLED_FOR_TESTS" == "true" ]; then
               timeout 1800 ctest --output-on-failure --parallel 2 || echo "Some tests may have failed or timed out with sanitizers"
             else
               ctest --output-on-failure --parallel 4 || echo "Some tests may have failed, but continuing..."

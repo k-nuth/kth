@@ -29,6 +29,9 @@ env:
   # - enable-ubsan: Set to true/false to enable UndefinedBehaviorSanitizer builds  
   # - enable-tsan: Set to true/false to enable ThreadSanitizer builds
   # - skip-tests: Set to true/false to skip unit test execution
+  # 
+  # NOTE: AddressSanitizer and ThreadSanitizer are mutually exclusive on Clang (macOS)
+  #       If both are enabled, AddressSanitizer takes priority
 
 jobs:
   debug:
@@ -254,7 +257,7 @@ jobs:
       build-version: "${{ needs.setup.outputs.build-version }}"
       enable-asan: true
       enable-ubsan: true  
-      enable-tsan: true
+      enable-tsan: false
       skip-tests: false
     secrets:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
