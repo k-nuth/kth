@@ -30,6 +30,21 @@ on:
       build-version:
         required: true
         type: string
+      enable-asan:
+        description: 'Enable AddressSanitizer build'
+        required: false
+        type: boolean
+        default: false
+      enable-ubsan:
+        description: 'Enable UndefinedBehaviorSanitizer build'
+        required: false
+        type: boolean
+        default: false
+      enable-tsan:
+        description: 'Enable ThreadSanitizer build'
+        required: false
+        type: boolean
+        default: false
     secrets:
       CONAN_LOGIN_USERNAME:
         required: true
@@ -100,7 +115,38 @@ jobs:
         # This should not be logged in to conan remote since we are building for ubuntu the binaries are available in CCI
         run: |
           conan remote login -p ${{ secrets.CONAN_PASSWORD }} ${{ inputs.conan-remote }} ${{ secrets.CONAN_LOGIN_USERNAME }}
-          # conan remote list
+          
+          # Prepare sanitizer flags
+          SANITIZER_FLAGS=""
+          BUILD_SUFFIX=""
+          
+          if [ "${{ inputs.enable-asan }}" == "true" ]; then
+            echo "🧪 Enabling AddressSanitizer build"
+            SANITIZER_FLAGS="$SANITIZER_FLAGS -fsanitize=address -fno-omit-frame-pointer"
+            BUILD_SUFFIX="${BUILD_SUFFIX}-asan"
+          fi
+          
+          if [ "${{ inputs.enable-ubsan }}" == "true" ]; then
+            echo "🧪 Enabling UndefinedBehaviorSanitizer build"
+            SANITIZER_FLAGS="$SANITIZER_FLAGS -fsanitize=undefined -fno-omit-frame-pointer"
+            BUILD_SUFFIX="${BUILD_SUFFIX}-ubsan"
+          fi
+          
+          if [ "${{ inputs.enable-tsan }}" == "true" ]; then
+            echo "🧪 Enabling ThreadSanitizer build"
+            SANITIZER_FLAGS="$SANITIZER_FLAGS -fsanitize=thread"
+            BUILD_SUFFIX="${BUILD_SUFFIX}-tsan"
+          fi
+          
+          # Set environment variables for sanitizers
+          if [ -n "$SANITIZER_FLAGS" ]; then
+            echo "🔧 Using sanitizer flags: $SANITIZER_FLAGS"
+            export CXXFLAGS="$CXXFLAGS $SANITIZER_FLAGS"
+            export CFLAGS="$CFLAGS $SANITIZER_FLAGS"
+            export LDFLAGS="$LDFLAGS $SANITIZER_FLAGS"
+          fi
+          
+          # Build with or without sanitizers
           conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh
           conan create conanfile.py --version ${{ inputs.build-version }} --lockfile=build/conan.lock -pr:b linux-ci-cd -pr:h linux-ci-cd --build=missing -o march_id=ZLm9Pjh -o tests=False
 
@@ -135,7 +181,29 @@ jobs:
           cd build/build/Release
           
           # Run tests with ctest
-          ctest --output-on-failure --parallel 4 || echo "Some tests may have failed, but continuing..."
+          if [ "${{ inputs.enable-asan }}" == "true" ] || [ "${{ inputs.enable-ubsan }}" == "true" ] || [ "${{ inputs.enable-tsan }}" == "true" ]; then
+            echo "🧪 Running tests with sanitizers enabled..."
+            echo "⚠️ Tests may run slower due to sanitizer overhead"
+            
+            # Set sanitizer options for better reporting
+            if [ "${{ inputs.enable-asan }}" == "true" ]; then
+              export ASAN_OPTIONS="detect_leaks=1:abort_on_error=1:print_stats=1"
+            fi
+            
+            if [ "${{ inputs.enable-ubsan }}" == "true" ]; then
+              export UBSAN_OPTIONS="print_stacktrace=1:abort_on_error=1"
+            fi
+            
+            if [ "${{ inputs.enable-tsan }}" == "true" ]; then
+              export TSAN_OPTIONS="halt_on_error=1:abort_on_error=1"
+            fi
+            
+            # Run tests with extended timeout for sanitizers
+            timeout 1800 ctest --output-on-failure --parallel 2 || echo "Some tests may have failed or timed out with sanitizers"
+          else
+            # Normal test run
+            ctest --output-on-failure --parallel 4 || echo "Some tests may have failed, but continuing..."
+          fi
 
       # - uses: github/codeql-action/analyze@v2
 

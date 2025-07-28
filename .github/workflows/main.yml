@@ -23,6 +23,11 @@ env:
   SKIP_CLANG_TIDY: true    # Set to false to enable clang-tidy analysis
   SKIP_CPPCHECK: true      # Set to false to enable cppcheck analysis
   SKIP_IWYU: false         # Set to false to enable include-what-you-use analysis
+  
+  # Sanitizer build flags
+  ENABLE_ASAN: true       # Set to true to enable AddressSanitizer builds
+  ENABLE_UBSAN: true      # Set to true to enable UndefinedBehaviorSanitizer builds
+  ENABLE_TSAN: true       # Set to true to enable ThreadSanitizer builds
 
 jobs:
   debug:
@@ -221,6 +226,9 @@ jobs:
       compiler: ${{ matrix.config.compiler }}
       compiler-version: ${{ matrix.config.version }}
       build-version: "${{ needs.setup.outputs.build-version }}"
+      enable-asan: ${{ env.ENABLE_ASAN }}
+      enable-ubsan: ${{ env.ENABLE_UBSAN }}
+      enable-tsan: ${{ env.ENABLE_TSAN }}
 
     secrets:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
@@ -242,6 +250,9 @@ jobs:
       compiler: ${{ matrix.config.compiler }}
       compiler-version: ${{ matrix.config.version }}
       build-version: "${{ needs.setup.outputs.build-version }}"
+      enable-asan: ${{ env.ENABLE_ASAN }}
+      enable-ubsan: ${{ env.ENABLE_UBSAN }}
+      enable-tsan: ${{ env.ENABLE_TSAN }}
     secrets:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
