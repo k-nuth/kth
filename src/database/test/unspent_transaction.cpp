@@ -2,10 +2,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/database.hpp>
+
 #include <boost/test/unit_test.hpp>
 
 #include <utility>
-#include <kth/database.hpp>
 
 using namespace kth::domain::chain;
 using namespace kth::database;

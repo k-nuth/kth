@@ -1,8 +1,9 @@
 #include <iostream>
 
 // Test individual targets - include version headers from each module
-#include <kth/infrastructure/version.hpp>
 #include <kth/domain/version.hpp>
+#include <kth/infrastructure/version.hpp>
+
 #include <secp256k1/version.h>
 
 int main() {

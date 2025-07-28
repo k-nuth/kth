@@ -5,20 +5,19 @@
 #ifndef KTH_DATABASE_HISTORY_ENTRY_HPP_
 #define KTH_DATABASE_HISTORY_ENTRY_HPP_
 
-#include <kth/domain.hpp>
 #include <kth/database/define.hpp>
+#include <kth/domain.hpp>
 
 namespace kth::database {
 
 class KD_API history_entry {
-public:
-
+  public:
     history_entry() = default;
 
     history_entry(uint64_t id, domain::chain::point const& point, domain::chain::point_kind kind, uint32_t height, uint32_t index, uint64_t value_or_checksum);
 
     // Getters
-    uint64_t id () const;
+    uint64_t id() const;
     domain::chain::point const& point() const;
     domain::chain::point_kind point_kind() const;
     uint64_t value_or_checksum() const;
@@ -27,31 +26,26 @@ public:
 
     bool is_valid() const;
 
-    //TODO(fernando): make domain::chain::point::serialized_size() static and constexpr to make this constexpr too
-    // constexpr
-    static
-    size_t serialized_size(domain::chain::point const& point);
+    // TODO(fernando): make domain::chain::point::serialized_size() static and constexpr to make this constexpr too
+    //  constexpr
+    static size_t serialized_size(domain::chain::point const& point);
 
     data_chunk to_data() const;
     void to_data(std::ostream& stream) const;
 
     template <typename W, KTH_IS_WRITER(W)>
     void to_data(W& sink) const {
-        factory_to_data(sink,id_, point_, point_kind_, height_, index_, value_or_checksum_ );
+        factory_to_data(sink, id_, point_, point_kind_, height_, index_, value_or_checksum_);
     }
 
-    static
-    expect<history_entry> from_data(byte_reader& reader);
+    static expect<history_entry> from_data(byte_reader& reader);
 
-    static
-    data_chunk factory_to_data(uint64_t id, domain::chain::point const& point, domain::chain::point_kind kind, uint32_t height, uint32_t index, uint64_t value_or_checksum);
+    static data_chunk factory_to_data(uint64_t id, domain::chain::point const& point, domain::chain::point_kind kind, uint32_t height, uint32_t index, uint64_t value_or_checksum);
 
-    static
-    void factory_to_data(std::ostream& stream,uint64_t id, domain::chain::point const& point, domain::chain::point_kind kind, uint32_t height, uint32_t index, uint64_t value_or_checksum);
+    static void factory_to_data(std::ostream& stream, uint64_t id, domain::chain::point const& point, domain::chain::point_kind kind, uint32_t height, uint32_t index, uint64_t value_or_checksum);
 
     template <typename W, KTH_IS_WRITER(W)>
-    static
-    void factory_to_data(W& sink, uint64_t id, domain::chain::point const& point, domain::chain::point_kind kind, uint32_t height, uint32_t index, uint64_t value_or_checksum) {
+    static void factory_to_data(W& sink, uint64_t id, domain::chain::point const& point, domain::chain::point_kind kind, uint32_t height, uint32_t index, uint64_t value_or_checksum) {
         sink.write_8_bytes_little_endian(id);
         point.to_data(sink, false);
         sink.write_byte(static_cast<uint8_t>(kind));
@@ -60,7 +54,7 @@ public:
         sink.write_8_bytes_little_endian(value_or_checksum);
     }
 
-private:
+  private:
     void reset();
 
     uint64_t id_ = max_uint64;
@@ -71,7 +65,6 @@ private:
     uint64_t value_or_checksum_ = max_uint64;
 };
 
-} // namespace kth::database
+}  // namespace kth::database
 
-
-#endif // KTH_DATABASE_HISTORY_ENTRY_HPP_
+#endif  // KTH_DATABASE_HISTORY_ENTRY_HPP_

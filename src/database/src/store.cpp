@@ -3,11 +3,10 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/database/store.hpp>
+#include <kth/domain.hpp>
 
 #include <cstddef>
 #include <memory>
-
-#include <kth/domain.hpp>
 
 namespace kth::database {
 
@@ -20,7 +19,6 @@ using namespace kth::database;
 // ------------------------------------------------------------------------
 
 store::store(path const& prefix)
-    : internal_db_dir(prefix / INTERNAL_DB_DIR)
-{}
+    : internal_db_dir(prefix / INTERNAL_DB_DIR) {}
 
-} // namespace kth::database
+}  // namespace kth::database

@@ -26,8 +26,8 @@ size_t const position_max = max_uint32;
 #define KTH_POSITION_READER read_2_bytes_little_endian
 static constexpr auto position_size = sizeof(uint16_t);
 size_t const position_max = max_uint16;
-#endif // KTH_CURRENCY_BCH
+#endif  // KTH_CURRENCY_BCH
 
-} // namespace kth::database
+}  // namespace kth::database
 
-#endif // KTH_DATABASE_CURRENCY_CONFIG_HPP_
+#endif  // KTH_DATABASE_CURRENCY_CONFIG_HPP_

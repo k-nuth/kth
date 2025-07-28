@@ -5,15 +5,22 @@
 #ifndef KTH_CONSENSUS_TEST_HELPERS_HPP
 #define KTH_CONSENSUS_TEST_HELPERS_HPP
 
+#include <catch2/catch_test_macros.hpp>
 #include <type_traits>
 
-#include <catch2/catch_test_macros.hpp>
-
 // Test macros
-#define CHECK_MESSAGE(cond, msg) do { INFO(msg); CHECK(cond); } while((void)0, 0)
-#define REQUIRE_MESSAGE(cond, msg) do { INFO(msg); REQUIRE(cond); } while((void)0, 0)
+#define CHECK_MESSAGE(cond, msg) \
+    do {                         \
+        INFO(msg);               \
+        CHECK(cond);             \
+    } while ((void)0, 0)
+#define REQUIRE_MESSAGE(cond, msg) \
+    do {                           \
+        INFO(msg);                 \
+        REQUIRE(cond);             \
+    } while ((void)0, 0)
 
 // Note: consensus module is standalone and doesn't use infrastructure types
 // If needed, add specific helpers for consensus types here
 
-#endif // KTH_CONSENSUS_TEST_HELPERS_HPP
+#endif  // KTH_CONSENSUS_TEST_HELPERS_HPP

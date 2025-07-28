@@ -2,8 +2,9 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <stdint.h>
 #include <kth/consensus.hpp>
+
+#include <stdint.h>
 #include <test_helpers.hpp>
 
 // These give us test accesss to unpublished symbols.
@@ -226,7 +227,7 @@ TEST_CASE("consensus script error to verify result SIG HIGH S  sig high s", "[co
 #endif
 }
 
-#if ! defined(KTH_CURRENCY_BCH)         //BIP 147
+#if ! defined(KTH_CURRENCY_BCH)  // BIP 147
 TEST_CASE("consensus script error to verify result SIG NULLDUMMY  sig nulldummy", "[consensus script error to verify result]") {
     REQUIRE(script_error_to_verify_result(SCRIPT_ERR_SIG_NULLDUMMY) == verify_result_sig_nulldummy);
 }

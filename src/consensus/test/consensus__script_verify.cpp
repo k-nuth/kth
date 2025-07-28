@@ -2,20 +2,21 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-//#include "script.hpp"
+// #include "script.hpp"
 
-#include <stdint.h>
-#include <stdexcept>
-#include <string>
-#include <vector>
 #include <kth/consensus.hpp>
+
+#include <stdexcept>
+#include <stdint.h>
+#include <string>
 #include <test_helpers.hpp>
+#include <vector>
 
 #if defined(KTH_CURRENCY_BCH)
 #include <bch-rules/script/interpreter.h>
 #else
 #include <btc-rules/script/interpreter.h>
-#endif // KTH_CURRENCY_BCH
+#endif  // KTH_CURRENCY_BCH
 
 // Start Test Suite: consensus script verify
 
@@ -23,8 +24,7 @@ using namespace kth::consensus;
 
 using data_chunk = std::vector<uint8_t>;
 
-static
-unsigned int from_hex(const char ch) {
+static unsigned int from_hex(const char ch) {
     if ('A' <= ch && ch <= 'F') {
         return 10 + ch - 'A';
     }
@@ -36,10 +36,9 @@ unsigned int from_hex(const char ch) {
     return ch - '0';
 }
 
-static
-bool decode_base16_private(uint8_t* out, size_t size, const char* in) {
+static bool decode_base16_private(uint8_t* out, size_t size, const char* in) {
     for (size_t i = 0; i < size; ++i) {
-        if ( ! isxdigit(in[0]) || !isxdigit(in[1])) {
+        if (! isxdigit(in[0]) || ! isxdigit(in[1])) {
             return false;
         }
 
@@ -50,15 +49,14 @@ bool decode_base16_private(uint8_t* out, size_t size, const char* in) {
     return true;
 }
 
-static
-bool decode_base16(data_chunk& out, std::string const& in) {
+static bool decode_base16(data_chunk& out, std::string const& in) {
     // This prevents a last odd character from being ignored:
     if (in.size() % 2 != 0) {
         return false;
     }
 
     data_chunk result(in.size() / 2);
-    if ( ! decode_base16_private(result.data(), result.size(), in.data())) {
+    if (! decode_base16_private(result.data(), result.size(), in.data())) {
         return false;
     }
 
@@ -67,36 +65,34 @@ bool decode_base16(data_chunk& out, std::string const& in) {
 }
 
 #if defined(KTH_CURRENCY_BCH)
-static
-verify_result test_verify(std::string const& transaction, std::string const& prevout_script, size_t& sig_checks, uint32_t tx_input_index=0,
-    const uint32_t flags=verify_flags_p2sh, int32_t tx_size_hack = 0, uint64_t amount = 0 ) {
+static verify_result test_verify(std::string const& transaction, std::string const& prevout_script, size_t& sig_checks, uint32_t tx_input_index = 0,
+                                 const uint32_t flags = verify_flags_p2sh, int32_t tx_size_hack = 0, uint64_t amount = 0) {
     data_chunk tx_data, prevout_script_data;
     std::vector<std::vector<uint8_t>> coins;
     REQUIRE(decode_base16(tx_data, transaction));
     REQUIRE(decode_base16(prevout_script_data, prevout_script));
-    
+
     // Create empty unlocking script for this test
     data_chunk unlocking_script_data;
     const unsigned char* unlocking_ptr = unlocking_script_data.empty() ? nullptr : &unlocking_script_data[0];
-    
+
     return verify_script(&tx_data[0], tx_data.size() + tx_size_hack,
-        &prevout_script_data[0], prevout_script_data.size(), 
-        unlocking_ptr, unlocking_script_data.size(),
-        tx_input_index, flags, sig_checks, amount, coins);
+                         &prevout_script_data[0], prevout_script_data.size(),
+                         unlocking_ptr, unlocking_script_data.size(),
+                         tx_input_index, flags, sig_checks, amount, coins);
 }
 #else
 
-static
-verify_result test_verify(std::string const& transaction,
-    std::string const& prevout_script, uint64_t prevout_value=0,
-    uint32_t tx_input_index=0, const uint32_t flags=verify_flags_p2sh,
-    int32_t tx_size_hack=0) {
+static verify_result test_verify(std::string const& transaction,
+                                 std::string const& prevout_script, uint64_t prevout_value = 0,
+                                 uint32_t tx_input_index = 0, const uint32_t flags = verify_flags_p2sh,
+                                 int32_t tx_size_hack = 0) {
     data_chunk tx_data, prevout_script_data;
     REQUIRE(decode_base16(tx_data, transaction));
     REQUIRE(decode_base16(prevout_script_data, prevout_script));
     return verify_script(&tx_data[0], tx_data.size() + tx_size_hack,
-        &prevout_script_data[0], prevout_script_data.size(), prevout_value,
-        tx_input_index, flags);
+                         &prevout_script_data[0], prevout_script_data.size(), prevout_value,
+                         tx_input_index, flags);
 }
 #endif
 
@@ -116,11 +112,12 @@ TEST_CASE("consensus script verify null tx throws invalid argument", "[consensus
     data_chunk unlocking_script_data;
     const unsigned char* unlocking_ptr = unlocking_script_data.empty() ? nullptr : &unlocking_script_data[0];
     REQUIRE(decode_base16(prevout_script_data, CONSENSUS_SCRIPT_VERIFY_PREVOUT_SCRIPT));
-    REQUIRE_THROWS_AS(verify_script(NULL, 1, &prevout_script_data[0], prevout_script_data.size(), 
-        unlocking_ptr, unlocking_script_data.size(), 0, 0, sig_checks, 0, coins), std::invalid_argument);
+    REQUIRE_THROWS_AS(verify_script(NULL, 1, &prevout_script_data[0], prevout_script_data.size(),
+                                    unlocking_ptr, unlocking_script_data.size(), 0, 0, sig_checks, 0, coins),
+                      std::invalid_argument);
 }
 
-//TODO: BTC test
+// TODO: BTC test
 TEST_CASE("consensus script verify value overflow throws invalid argument", "[consensus script verify]") {
     data_chunk prevout_script_data;
     size_t sig_checks;
@@ -128,8 +125,9 @@ TEST_CASE("consensus script verify value overflow throws invalid argument", "[co
     data_chunk unlocking_script_data;
     const unsigned char* unlocking_ptr = unlocking_script_data.empty() ? nullptr : &unlocking_script_data[0];
     REQUIRE(decode_base16(prevout_script_data, CONSENSUS_SCRIPT_VERIFY_PREVOUT_SCRIPT));
-    REQUIRE_THROWS_AS(verify_script(NULL, 1, &prevout_script_data[0], prevout_script_data.size(), 
-        unlocking_ptr, unlocking_script_data.size(), 0xffffffffffffffff, 0, sig_checks, 0, coins), std::invalid_argument);
+    REQUIRE_THROWS_AS(verify_script(NULL, 1, &prevout_script_data[0], prevout_script_data.size(),
+                                    unlocking_ptr, unlocking_script_data.size(), 0xffffffffffffffff, 0, sig_checks, 0, coins),
+                      std::invalid_argument);
 }
 
 TEST_CASE("consensus script verify null prevout script throws invalid argument", "[consensus script verify]") {
@@ -139,8 +137,9 @@ TEST_CASE("consensus script verify null prevout script throws invalid argument",
     data_chunk unlocking_script_data;
     const unsigned char* unlocking_ptr = unlocking_script_data.empty() ? nullptr : &unlocking_script_data[0];
     REQUIRE(decode_base16(tx_data, CONSENSUS_SCRIPT_VERIFY_TX));
-    REQUIRE_THROWS_AS(verify_script(&tx_data[0], tx_data.size(), NULL, 1, 
-        unlocking_ptr, unlocking_script_data.size(), 0, 0, sig_checks, 0, coins), std::invalid_argument);
+    REQUIRE_THROWS_AS(verify_script(&tx_data[0], tx_data.size(), NULL, 1,
+                                    unlocking_ptr, unlocking_script_data.size(), 0, 0, sig_checks, 0, coins),
+                      std::invalid_argument);
 }
 
 TEST_CASE("consensus script verify invalid tx tx invalid", "[consensus script verify]") {
@@ -205,12 +204,12 @@ TEST_CASE("consensus script verify valid true forkid", "[consensus script verify
     int CONSENSUS_FORKID_TX_AMMOUT = 85899498;
     auto flags = SCRIPT_ENABLE_SIGHASH_FORKID;
     size_t sig_checks;
-    const verify_result result = test_verify(CONSENSUS_FORKID_TX, CONSENSUS_FORKID_TX_PREV_SCRIPT,sig_checks, 0, flags, 0, CONSENSUS_FORKID_TX_AMMOUT);
+    const verify_result result = test_verify(CONSENSUS_FORKID_TX, CONSENSUS_FORKID_TX_PREV_SCRIPT, sig_checks, 0, flags, 0, CONSENSUS_FORKID_TX_AMMOUT);
     REQUIRE(result == verify_result_eval_true);
 }
 
 TEST_CASE("consensus script verify valid true forkid long int", "[consensus script verify]") {
-    std::string CONSENSUS_FORKID_TX="02000000016d4a52bbec92aca5014955a2d1d317f54a684dcc8b2ade9f9f1b5f873eb0933100000000694630430220058750aaa604cde20738ba2ae9949685b06f62c441e22e5e1374b422adde3865021f0c27d7f71603a86ebf05e7de0d29923d0616de03424bcbb858408fb8247d50412102a105d2380adc8f6b1148eab7db12098bb3860c5d856a24452fd6c6d63ba53e17feffffff0210270000000000001976a914bf9350c2ff5b147c33cab3307974f9a298b92a0688ac43b7052a010000001976a9149705d4b593f98f34e19a5961199db0ed7f04ebaf88ac23a31100";
+    std::string CONSENSUS_FORKID_TX = "02000000016d4a52bbec92aca5014955a2d1d317f54a684dcc8b2ade9f9f1b5f873eb0933100000000694630430220058750aaa604cde20738ba2ae9949685b06f62c441e22e5e1374b422adde3865021f0c27d7f71603a86ebf05e7de0d29923d0616de03424bcbb858408fb8247d50412102a105d2380adc8f6b1148eab7db12098bb3860c5d856a24452fd6c6d63ba53e17feffffff0210270000000000001976a914bf9350c2ff5b147c33cab3307974f9a298b92a0688ac43b7052a010000001976a9149705d4b593f98f34e19a5961199db0ed7f04ebaf88ac23a31100";
     std::string CONSENSUS_FORKID_TX_PREV_SCRIPT = "76a914b939fdc5c4dd28318fd80b4203dc43003c4353ec88ac";
     unsigned long int CONSENSUS_FORKID_TX_AMMOUT = 5000000000;
     auto flags = SCRIPT_ENABLE_SIGHASH_FORKID;
@@ -236,7 +235,7 @@ TEST_CASE("consensus script verify valid nested p2wpkh true", "[consensus script
 #endif
 
 // TODO: create negative test vector.
-//TEST_CASE("consensus script verify invalid false", "[consensus script verify]")
+// TEST_CASE("consensus script verify invalid false", "[consensus script verify]")
 //{
 //    const verify_result result = test_verify(...);
 //    REQUIRE(result == verify_result_eval_false);

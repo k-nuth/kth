@@ -1,10 +1,10 @@
 #include <iostream>
 
 // Test meta target (includes everything) - show versions from multiple modules
-#include <kth/infrastructure/version.hpp>
-#include <kth/domain/version.hpp>
-#include <kth/consensus/version.hpp>
 #include <kth/blockchain/version.hpp>
+#include <kth/consensus/version.hpp>
+#include <kth/domain/version.hpp>
+#include <kth/infrastructure/version.hpp>
 #include <kth/node/version.hpp>
 
 int main() {

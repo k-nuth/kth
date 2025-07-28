@@ -5,15 +5,14 @@
 #ifndef KTH_CONSENSUS_EXPORT_HPP
 #define KTH_CONSENSUS_EXPORT_HPP
 
+#include <kth/consensus/define.hpp>
+#include <kth/consensus/version.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
-#include <kth/consensus/define.hpp>
-#include <kth/consensus/version.hpp>
-
 namespace kth::consensus {
-
 
 /**
  * Result values from calling verify_script.
@@ -93,38 +92,29 @@ typedef enum verify_result_type {
     verify_result_negative_locktime,
     verify_result_unsatisfied_locktime
 
-
 #if defined(KTH_CURRENCY_BCH)
-    , verify_result_input_sigchecks
-
-    , verify_result_invalid_operand_size
-    , verify_result_invalid_number_range
-    , verify_result_impossible_encoding
-    , verify_result_invalid_split_range
-    , verify_result_invalid_bit_count
-
-    , verify_result_checkdatasigverify
-
-    , verify_result_div_by_zero
-    , verify_result_mod_by_zero
-
-    , verify_result_invalid_bitfield_size
-    , verify_result_invalid_bit_range
-
-    , verify_result_sig_badlength
-    , verify_result_sig_nonschnorr
-
-    , verify_result_illegal_forkid
-    , verify_result_must_use_forkid
-
-    , verify_result_sigchecks_limit_exceeded
+    verify_result_input_sigchecks,
+    verify_result_invalid_operand_size,
+    verify_result_invalid_number_range,
+    verify_result_impossible_encoding,
+    verify_result_invalid_split_range,
+    verify_result_invalid_bit_count,
+    verify_result_checkdatasigverify,
+    verify_result_div_by_zero,
+    verify_result_mod_by_zero,
+    verify_result_invalid_bitfield_size,
+    verify_result_invalid_bit_range,
+    verify_result_sig_badlength,
+    verify_result_sig_nonschnorr,
+    verify_result_illegal_forkid,
+    verify_result_must_use_forkid,
+    verify_result_sigchecks_limit_exceeded,
 #endif
 
 #if ! defined(KTH_CURRENCY_BCH)
-    , verify_result_op_codeseparator
-    , verify_result_sig_findanddelete
+    verify_result_op_codeseparator,
+    verify_result_sig_findanddelete
 #endif
-
 
 } verify_result;
 
@@ -245,95 +235,112 @@ typedef enum verify_flags_type {
      */
     verify_flags_checksequenceverify = (1U << 10)
 
-    /**
-     * SCRIPT_VERIFY_MINIMALIF (bip141 p2wsh policy).
-     */
-    , verify_flags_minimal_if = (1U << 13)
+        /**
+         * SCRIPT_VERIFY_MINIMALIF (bip141 p2wsh policy).
+         */
+        ,
+    verify_flags_minimal_if = (1U << 13)
 
-    /**
-     * SCRIPT_VERIFY_NULLFAIL (bip141 global policy, bip146 soft fork).
-     */
-    , verify_flags_null_fail = (1U << 14)
+        /**
+         * SCRIPT_VERIFY_NULLFAIL (bip141 global policy, bip146 soft fork).
+         */
+        ,
+    verify_flags_null_fail = (1U << 14)
 
 #if defined(KTH_CURRENCY_BCH)
-    // BCH only flags
-    /**
-     * SCRIPT_ENABLE_SIGHASH_FORKID (BCH).
-     */
-    , verify_flags_enable_sighash_forkid = (1U << 16)
+        // BCH only flags
+        /**
+         * SCRIPT_ENABLE_SIGHASH_FORKID (BCH).
+         */
+        ,
+    verify_flags_enable_sighash_forkid = (1U << 16)
 
-    /**
-     * SCRIPT_DISALLOW_SEGWIT_RECOVERY (BCH).
-     */
-    , verify_flags_disallow_segwit_recovery = (1U << 20)
+        /**
+         * SCRIPT_DISALLOW_SEGWIT_RECOVERY (BCH).
+         */
+        ,
+    verify_flags_disallow_segwit_recovery = (1U << 20)
 
-    /**
-     * SCRIPT_ENABLE_SCHNORR_MULTISIG (BCH).
-     */
-    , verify_flags_enable_schnorr_multisig = (1U << 21)
+        /**
+         * SCRIPT_ENABLE_SCHNORR_MULTISIG (BCH).
+         */
+        ,
+    verify_flags_enable_schnorr_multisig = (1U << 21)
 
-    /**
-     * SCRIPT_VERIFY_INPUT_SIGCHECKS (BCH).
-     */
-    , verify_flags_input_sigchecks = (1U << 22)
+        /**
+         * SCRIPT_VERIFY_INPUT_SIGCHECKS (BCH).
+         */
+        ,
+    verify_flags_input_sigchecks = (1U << 22)
 
-    /**
-     * SCRIPT_ENFORCE_SIGCHECKS (BCH).
-     */
-    , verify_flags_enforce_sigchecks = (1U << 23)
+        /**
+         * SCRIPT_ENFORCE_SIGCHECKS (BCH).
+         */
+        ,
+    verify_flags_enforce_sigchecks = (1U << 23)
 
-    /**
-     * SCRIPT_64_BIT_INTEGERS (BCH).
-     */
-    , verify_flags_64_bit_integers = (1U << 24)
+        /**
+         * SCRIPT_64_BIT_INTEGERS (BCH).
+         */
+        ,
+    verify_flags_64_bit_integers = (1U << 24)
 
-    /**
-     * SCRIPT_NATIVE_INTROSPECTION (BCH).
-     */
-    , verify_flags_native_introspection = (1U << 25)
+        /**
+         * SCRIPT_NATIVE_INTROSPECTION (BCH).
+         */
+        ,
+    verify_flags_native_introspection = (1U << 25)
 
-    /**
-     * SCRIPT_ENABLE_P2SH_32 (BCH).
-     */
-    , verify_flags_enable_p2sh_32 = (1U << 26)
+        /**
+         * SCRIPT_ENABLE_P2SH_32 (BCH).
+         */
+        ,
+    verify_flags_enable_p2sh_32 = (1U << 26)
 
-    /**
-     * SCRIPT_ENABLE_TOKENS (BCH).
-     */
-    , verify_flags_enable_tokens = (1U << 27)
+        /**
+         * SCRIPT_ENABLE_TOKENS (BCH).
+         */
+        ,
+    verify_flags_enable_tokens = (1U << 27)
 
-    /**
-     * SCRIPT_ENABLE_MAY2025 (BCH).
-     */
-    , verify_flags_enable_may2025 = (1U << 28)
+        /**
+         * SCRIPT_ENABLE_MAY2025 (BCH).
+         */
+        ,
+    verify_flags_enable_may2025 = (1U << 28)
 
-    /**
-     * SCRIPT_VM_LIMITS_STANDARD (BCH).
-     */
-    , verify_flags_enable_vm_limits_standard = (1U << 29)
+        /**
+         * SCRIPT_VM_LIMITS_STANDARD (BCH).
+         */
+        ,
+    verify_flags_enable_vm_limits_standard = (1U << 29)
 
 #else
-    // BTC only flags
+        // BTC only flags
 
-    /**
-     * SCRIPT_VERIFY_WITNESS (bip141).
-     */
-    , verify_flags_witness = (1U << 11)
+        /**
+         * SCRIPT_VERIFY_WITNESS (bip141).
+         */
+        ,
+    verify_flags_witness = (1U << 11)
 
-    /**
-     * SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM (bip141 policy).
-     */
-    , verify_flags_discourage_upgradable_witness_program = (1U << 12)
+        /**
+         * SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM (bip141 policy).
+         */
+        ,
+    verify_flags_discourage_upgradable_witness_program = (1U << 12)
 
-    /**
-     * SCRIPT_VERIFY_WITNESS_PUBKEYTYPE (bip141/bip143 p2wsh/p2wpkh policy).
-     */
-    , verify_flags_witness_public_key_compressed = (1U << 15)
+        /**
+         * SCRIPT_VERIFY_WITNESS_PUBKEYTYPE (bip141/bip143 p2wsh/p2wpkh policy).
+         */
+        ,
+    verify_flags_witness_public_key_compressed = (1U << 15)
 
-    /**
-     * SCRIPT_VERIFY_CONST_SCRIPTCODE
-     */
-    , verify_flags_const_scriptcode = (1U << 16)
+        /**
+         * SCRIPT_VERIFY_CONST_SCRIPTCODE
+         */
+        ,
+    verify_flags_const_scriptcode = (1U << 16)
 #endif
 } verify_flags;
 
@@ -353,7 +360,7 @@ typedef enum verify_flags_type {
  * @returns                           A script verification result code.
  */
 
- BCK_API verify_result_type verify_script(
+BCK_API verify_result_type verify_script(
     const unsigned char* transaction,
     size_t transaction_size,
     const unsigned char* locking_script_data,
@@ -366,6 +373,6 @@ typedef enum verify_flags_type {
     int64_t amount,
     std::vector<std::vector<uint8_t>> coins);
 
-} // namespace kth::consensus
+}  // namespace kth::consensus
 
 #endif

@@ -2,10 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <filesystem>
-
-#include <test_helpers.hpp>
 #include <kth/database.hpp>
+
+#include <filesystem>
+#include <test_helpers.hpp>
 
 using namespace boost::system;
 using namespace std::filesystem;
@@ -22,7 +22,7 @@ transaction random_tx(size_t fudge) {
 #define DIRECTORY "block_database"
 
 class block_database_directory_setup_fixture {
-public:
+  public:
     block_database_directory_setup_fixture() {
         std::error_code ec;
         remove_all(DIRECTORY, ec);

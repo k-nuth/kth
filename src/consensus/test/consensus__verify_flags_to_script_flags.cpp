@@ -2,8 +2,9 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <stdint.h>
 #include <kth/consensus.hpp>
+
+#include <stdint.h>
 #include <test_helpers.hpp>
 
 // These give us test accesss to unpublished symbols.
@@ -98,52 +99,30 @@ TEST_CASE("consensus verify flags to script flags const scriptcode  SCRIPTCODE",
 
 TEST_CASE("consensus verify flags to script flags all  all", "[consensus verify flags to script flags]") {
     const uint32_t all_verify_flags =
-          verify_flags_none
-        | verify_flags_p2sh
-        | verify_flags_strictenc
-        | verify_flags_dersig
-        | verify_flags_low_s
+        verify_flags_none | verify_flags_p2sh | verify_flags_strictenc | verify_flags_dersig | verify_flags_low_s
 #if ! defined(KTH_CURRENCY_BCH)
         | verify_flags_nulldummy
 #endif
-        | verify_flags_sigpushonly
-        | verify_flags_minimaldata
-        | verify_flags_discourage_upgradable_nops
-        | verify_flags_cleanstack
-        | verify_flags_checklocktimeverify
-        | verify_flags_checksequenceverify
+        | verify_flags_sigpushonly | verify_flags_minimaldata | verify_flags_discourage_upgradable_nops | verify_flags_cleanstack | verify_flags_checklocktimeverify | verify_flags_checksequenceverify
 #if ! defined(KTH_CURRENCY_BCH)
-        | verify_flags_witness
-        | verify_flags_discourage_upgradable_witness_program
+        | verify_flags_witness | verify_flags_discourage_upgradable_witness_program
 #endif
-        | verify_flags_minimal_if
-        | verify_flags_null_fail
+        | verify_flags_minimal_if | verify_flags_null_fail
 #if ! defined(KTH_CURRENCY_BCH)
         | verify_flags_witness_public_key_compressed
 #endif
         ;
 
     const uint32_t all_script_flags =
-          SCRIPT_VERIFY_NONE
-        | SCRIPT_VERIFY_P2SH
-        | SCRIPT_VERIFY_STRICTENC
-        | SCRIPT_VERIFY_DERSIG
-        | SCRIPT_VERIFY_LOW_S
+        SCRIPT_VERIFY_NONE | SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_STRICTENC | SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S
 #if ! defined(KTH_CURRENCY_BCH)
         | SCRIPT_VERIFY_NULLDUMMY
 #endif
-        | SCRIPT_VERIFY_SIGPUSHONLY
-        | SCRIPT_VERIFY_MINIMALDATA
-        | SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS
-        | SCRIPT_VERIFY_CLEANSTACK
-        | SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY
-        | SCRIPT_VERIFY_CHECKSEQUENCEVERIFY
+        | SCRIPT_VERIFY_SIGPUSHONLY | SCRIPT_VERIFY_MINIMALDATA | SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS | SCRIPT_VERIFY_CLEANSTACK | SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | SCRIPT_VERIFY_CHECKSEQUENCEVERIFY
 #if ! defined(KTH_CURRENCY_BCH)
-        | SCRIPT_VERIFY_WITNESS
-        | SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM
+        | SCRIPT_VERIFY_WITNESS | SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM
 #endif
-        | SCRIPT_VERIFY_MINIMALIF
-        | SCRIPT_VERIFY_NULLFAIL
+        | SCRIPT_VERIFY_MINIMALIF | SCRIPT_VERIFY_NULLFAIL
 #if ! defined(KTH_CURRENCY_BCH)
         | SCRIPT_VERIFY_WITNESS_PUBKEYTYPE
 #endif

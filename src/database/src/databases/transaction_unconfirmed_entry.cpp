@@ -13,8 +13,7 @@
 namespace kth::database {
 
 transaction_unconfirmed_entry::transaction_unconfirmed_entry(domain::chain::transaction const& tx, uint32_t arrival_time, uint32_t height)
-    : transaction_(tx), arrival_time_(arrival_time), height_(height)
-{}
+    : transaction_(tx), arrival_time_(arrival_time), height_(height) {}
 
 domain::chain::transaction const& transaction_unconfirmed_entry::transaction() const {
     return transaction_;
@@ -37,17 +36,16 @@ void transaction_unconfirmed_entry::reset() {
 
 // Empty scripts are valid, validation relies on not_found only.
 bool transaction_unconfirmed_entry::is_valid() const {
-    return transaction_.is_valid() && arrival_time_ != kth::max_uint32  && height_ != kth::max_uint32;
+    return transaction_.is_valid() && arrival_time_ != kth::max_uint32 && height_ != kth::max_uint32;
 }
 
 // Size.
 //-----------------------------------------------------------------------------
 // constexpr
-//TODO(fernando): make this constexpr
+// TODO(fernando): make this constexpr
 size_t transaction_unconfirmed_entry::serialized_size(domain::chain::transaction const& tx) {
-    return tx.serialized_size(false)
-         + sizeof(uint32_t) // arrival_time
-         + sizeof(uint32_t); //height
+    return tx.serialized_size(false) + sizeof(uint32_t)  // arrival_time
+           + sizeof(uint32_t);                           // height
 }
 
 // Deserialization.
@@ -56,17 +54,17 @@ size_t transaction_unconfirmed_entry::serialized_size(domain::chain::transaction
 // static
 expect<transaction_unconfirmed_entry> transaction_unconfirmed_entry::from_data(byte_reader& reader) {
     auto tx = domain::chain::transaction::from_data(reader, false);
-    if ( ! tx) {
+    if (! tx) {
         return make_unexpected(tx.error());
     }
 
     auto arrival_time = reader.read_little_endian<uint32_t>();
-    if ( ! arrival_time) {
+    if (! arrival_time) {
         return make_unexpected(arrival_time.error());
     }
 
     auto height = reader.read_little_endian<uint32_t>();
-    if ( ! height) {
+    if (! height) {
         return make_unexpected(height.error());
     }
 
@@ -113,4 +111,4 @@ void transaction_unconfirmed_entry::to_data(std::ostream& stream) const {
     to_data(sink);
 }
 
-} // namespace kth::database
+}  // namespace kth::database

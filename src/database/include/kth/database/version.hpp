@@ -11,4 +11,4 @@ namespace kth::database {
 char const* version();
 }
 
-#endif // KTH_DATABASE_VERSION_HPP_
+#endif  // KTH_DATABASE_VERSION_HPP_

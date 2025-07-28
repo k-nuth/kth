@@ -2,10 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <filesystem>
-
-#include <test_helpers.hpp>
 #include <kth/database.hpp>
+
+#include <filesystem>
+#include <test_helpers.hpp>
 
 using namespace boost::system;
 using namespace std::filesystem;
@@ -15,7 +15,7 @@ using namespace kth::database;
 #define DIRECTORY "spend_database"
 
 class spend_database_directory_setup_fixture {
-public:
+  public:
     spend_database_directory_setup_fixture() {
         std::error_code ec;
         remove_all(DIRECTORY, ec);
@@ -67,11 +67,11 @@ TEST_CASE("spend database  test", "[None]") {
     REQUIRE(spend3.index() == value3.index());
 
     // Record shouldnt exist yet.
-    REQUIRE( ! db.get(key4).is_valid());
+    REQUIRE(! db.get(key4).is_valid());
 
     // Delete record.
     db.unlink(key3);
-    REQUIRE( ! db.get(key3).is_valid());
+    REQUIRE(! db.get(key3).is_valid());
 
     // Add another record.
     db.store(key4, value4);
@@ -83,6 +83,6 @@ TEST_CASE("spend database  test", "[None]") {
     REQUIRE(spend4.index() == value4.index());
     db.synchronize();
 }
-#endif // KTH_DB_SPEND
+#endif  // KTH_DB_SPEND
 
 // End Test Suite

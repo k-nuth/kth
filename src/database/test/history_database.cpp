@@ -2,11 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <filesystem>
-
-#include <test_helpers.hpp>
-
 #include <kth/database.hpp>
+
+#include <filesystem>
+#include <test_helpers.hpp>
 
 using namespace boost::system;
 using namespace std::filesystem;
@@ -16,7 +15,7 @@ using namespace kth::database;
 #define DIRECTORY "history_database"
 
 class history_database_directory_setup_fixture {
-public:
+  public:
     history_database_directory_setup_fixture() {
         std::error_code ec;
         remove_all(DIRECTORY, ec);
@@ -32,8 +31,7 @@ public:
 BOOST_FIXTURE_TEST_SUITE(database_tests, history_database_directory_setup_fixture)
 
 #ifdef KTH_DB_HISTORY
-TEST_CASE("history database  test", "[None]")
-{
+TEST_CASE("history database  test", "[None]") {
     const short_hash key1 = base16_literal("a006500b7ddfd568e2b036c65a4f4d6aaa0cbd9b");
     output_point out11{ hash_literal("4129e76f363f9742bc98dd3d40c99c9066e4d53b8e10e5097bd6f7b5059d7c53"), 110 };
     size_t const out_h11 = 110;
@@ -175,7 +173,6 @@ TEST_CASE("history database  test", "[None]")
 
     db.synchronize();
 }
-#endif // KTH_DB_HISTORY
+#endif  // KTH_DB_HISTORY
 
 // End Test Suite
-

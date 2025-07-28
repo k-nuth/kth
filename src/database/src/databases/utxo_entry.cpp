@@ -13,8 +13,7 @@
 namespace kth::database {
 
 utxo_entry::utxo_entry(domain::chain::output output, uint32_t height, uint32_t median_time_past, bool coinbase)
-    : output_(std::move(output)), height_(height), median_time_past_(median_time_past), coinbase_(coinbase)
-{}
+    : output_(std::move(output)), height_(height), median_time_past_(median_time_past), coinbase_(coinbase) {}
 
 domain::chain::output const& utxo_entry::output() const {
     return output_;
@@ -45,13 +44,11 @@ bool utxo_entry::is_valid() const {
     return output_.is_valid() && height_ != kth::max_uint32 && median_time_past_ != max_uint32;
 }
 
-
 // Size.
 //-----------------------------------------------------------------------------
 
 // private static
-constexpr
-size_t utxo_entry::serialized_size_fixed() {
+constexpr size_t utxo_entry::serialized_size_fixed() {
     return sizeof(uint32_t) + sizeof(uint32_t) + sizeof(bool);
 }
 
@@ -82,7 +79,7 @@ void utxo_entry::to_data_fixed(std::ostream& stream, uint32_t height, uint32_t m
 
 // static
 data_chunk utxo_entry::to_data_with_fixed(domain::chain::output const& output, data_chunk const& fixed) {
-    //TODO(fernando):  reuse fixed vector (do not create a new one)
+    // TODO(fernando):  reuse fixed vector (do not create a new one)
     data_chunk data;
     auto const size = output.serialized_size(false) + fixed.size();
     data.reserve(size);
@@ -99,35 +96,33 @@ void utxo_entry::to_data_with_fixed(std::ostream& stream, domain::chain::output 
     to_data_with_fixed(sink, output, fixed);
 }
 
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 
 // static
 expect<utxo_entry> utxo_entry::from_data(byte_reader& reader) {
     auto output = domain::chain::output::from_data(reader, false);
-    if ( ! output) {
+    if (! output) {
         return make_unexpected(output.error());
     }
 
     auto const height = reader.read_little_endian<uint32_t>();
-    if ( ! height) {
+    if (! height) {
         return make_unexpected(height.error());
     }
 
     auto const median_time_past = reader.read_little_endian<uint32_t>();
-    if ( ! median_time_past) {
+    if (! median_time_past) {
         return make_unexpected(median_time_past.error());
     }
 
     auto const coinbase = reader.read_byte();
-    if ( ! coinbase) {
+    if (! coinbase) {
         return make_unexpected(coinbase.error());
     }
 
     return utxo_entry(std::move(*output), *height, *median_time_past, *coinbase);
 }
-
 
 // Serialization.
 //-----------------------------------------------------------------------------
@@ -148,4 +143,4 @@ void utxo_entry::to_data(std::ostream& stream) const {
     to_data(sink);
 }
 
-} // namespace kth::database
+}  // namespace kth::database

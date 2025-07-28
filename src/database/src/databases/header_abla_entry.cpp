@@ -3,11 +3,10 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/database/databases/header_abla_entry.hpp>
+#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 #include <cstddef>
 #include <cstdint>
-
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::database {
 
@@ -29,27 +28,26 @@ void to_data_with_abla_state(std::ostream& stream, domain::chain::block const& b
 
 expect<header_with_abla_state_t> get_header_and_abla_state_from_data(byte_reader& reader) {
     auto header = domain::chain::header::from_data(reader, true);
-    if ( ! header) {
+    if (! header) {
         return make_unexpected(header.error());
     }
 
     auto const block_size = reader.read_little_endian<uint64_t>();
-    if ( ! block_size) {
+    if (! block_size) {
         return std::make_tuple(std::move(*header), 0, 0, 0);
     }
 
     auto const control_block_size = reader.read_little_endian<uint64_t>();
-    if ( ! control_block_size) {
+    if (! control_block_size) {
         return std::make_tuple(std::move(*header), 0, 0, 0);
     }
 
     auto const elastic_buffer_size = reader.read_little_endian<uint64_t>();
-    if ( ! elastic_buffer_size) {
+    if (! elastic_buffer_size) {
         return std::make_tuple(std::move(*header), 0, 0, 0);
     }
 
     return std::make_tuple(std::move(*header), *block_size, *control_block_size, *elastic_buffer_size);
 }
 
-
-} // namespace kth::database
+}  // namespace kth::database

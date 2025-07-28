@@ -2,9 +2,9 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <boost/test/unit_test.hpp>
-
 #include <kth/database.hpp>
+
+#include <boost/test/unit_test.hpp>
 
 using namespace kth::domain::chain;
 using namespace kth::database;
@@ -20,7 +20,7 @@ BOOST_AUTO_TEST_CASE(unspent_outputs__construct__capacity_0__disabled) {
 
 BOOST_AUTO_TEST_CASE(unspent_outputs__construct__capacity_42__not_disabled) {
     const unspent_outputs cache(42);
-    BOOST_REQUIRE( ! cache.disabled());
+    BOOST_REQUIRE(! cache.disabled());
 }
 
 BOOST_AUTO_TEST_CASE(unspent_outputs__construct__capacity_0__size_0) {
@@ -109,8 +109,8 @@ BOOST_AUTO_TEST_CASE(unspent_outputs__remove2__remove_one_output__expected_outpu
 
     cache.remove({ tx1.hash(), 0 });
     BOOST_REQUIRE_EQUAL(cache.size(), 1u);
-    BOOST_REQUIRE( ! cache.get(out_value, out_height, out_median_time_past, out_coinbase, { tx1.hash(), 0 }, max_size_t, false));
-    BOOST_REQUIRE( ! cache.get(out_value, out_height, out_median_time_past, out_coinbase, { tx1.hash(), 1 }, max_size_t, false));
+    BOOST_REQUIRE(! cache.get(out_value, out_height, out_median_time_past, out_coinbase, { tx1.hash(), 0 }, max_size_t, false));
+    BOOST_REQUIRE(! cache.get(out_value, out_height, out_median_time_past, out_coinbase, { tx1.hash(), 1 }, max_size_t, false));
     BOOST_REQUIRE(cache.get(out_value, out_height, out_median_time_past, out_coinbase, { tx2.hash(), 0 }, max_size_t, false));
     BOOST_REQUIRE(cache.get(out_value, out_height, out_median_time_past, out_coinbase, { tx2.hash(), 1 }, max_size_t, false));
 }
@@ -129,7 +129,7 @@ BOOST_AUTO_TEST_CASE(unspent_outputs__get__two_capacity_1__size_1_expected) {
     BOOST_REQUIRE(cache.get(out_value1, out_height, out_median_time_past, out_coinbase, { tx1.hash(), 1 }, max_size_t, false));
     BOOST_REQUIRE_EQUAL(out_coinbase, false);
     BOOST_REQUIRE_EQUAL(out_height, expected_height);
-    BOOST_REQUIRE( ! out_value1.is_valid());
+    BOOST_REQUIRE(! out_value1.is_valid());
 
     static const uint64_t expected2a = 41;
     static const uint64_t expected2b = 42;

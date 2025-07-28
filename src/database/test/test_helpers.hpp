@@ -8,4 +8,4 @@
 // Include the central test helpers from domain
 #include "../../domain/test/test_helpers.hpp"
 
-#endif // KTH_DATABASE_TEST_HELPERS_HPP
+#endif  // KTH_DATABASE_TEST_HELPERS_HPP

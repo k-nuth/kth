@@ -2,10 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <filesystem>
-
-#include <test_helpers.hpp>
 #include <kth/database.hpp>
+
+#include <filesystem>
+#include <test_helpers.hpp>
 
 using namespace boost::system;
 using namespace std::filesystem;
@@ -15,7 +15,7 @@ using namespace kth::database;
 #define DIRECTORY "transaction_database"
 
 class transaction_database_directory_setup_fixture {
-public:
+  public:
     transaction_database_directory_setup_fixture() {
         std::error_code ec;
         remove_all(DIRECTORY, ec);

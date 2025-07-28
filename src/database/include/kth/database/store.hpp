@@ -5,19 +5,17 @@
 #ifndef KTH_DATABASE_STORE_HPP
 #define KTH_DATABASE_STORE_HPP
 
-#include <filesystem>
-#include <memory>
-
-#include <kth/domain.hpp>
 #include <kth/database/define.hpp>
-
+#include <kth/domain.hpp>
 #include <kth/infrastructure/utility/sequential_lock.hpp>
 
+#include <filesystem>
+#include <memory>
 
 namespace kth::database {
 
 class KD_API store {
-public:
+  public:
     using path = kth::path;
     using handle = sequential_lock::handle;
 
@@ -29,6 +27,6 @@ public:
     path const internal_db_dir;
 };
 
-} // namespace kth::database
+}  // namespace kth::database
 
 #endif

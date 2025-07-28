@@ -3,6 +3,12 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/database/data_base.hpp>
+#include <kth/database/define.hpp>
+#include <kth/database/settings.hpp>
+#include <kth/database/store.hpp>
+#include <kth/domain.hpp>
+
+#include <boost/range/adaptor/reversed.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -12,13 +18,6 @@
 #include <memory>
 #include <type_traits>
 #include <utility>
-
-#include <boost/range/adaptor/reversed.hpp>
-
-#include <kth/database/define.hpp>
-#include <kth/database/settings.hpp>
-#include <kth/database/store.hpp>
-#include <kth/domain.hpp>
 
 namespace kth::database {
 
@@ -41,10 +40,7 @@ using namespace std::placeholders;
 // ----------------------------------------------------------------------------
 
 data_base::data_base(settings const& settings)
-    : closed_(true)
-    , settings_(settings)
-    , store(settings.directory)
-{}
+    : closed_(true), settings_(settings), store(settings.directory) {}
 
 data_base::~data_base() {
     close();
@@ -61,11 +57,11 @@ bool data_base::create(block const& genesis) {
     // These leave the databases open.
     auto created = true
 #if ! defined(KTH_DB_READONLY)
-                && internal_db_->create()
+                   && internal_db_->create()
 #endif
-    ;
+        ;
 
-    if ( ! created) {
+    if (! created) {
         return false;
     }
 
@@ -76,7 +72,7 @@ bool data_base::create(block const& genesis) {
     closed_ = false;
     return true;
 }
-#endif // ! defined(KTH_DB_READONLY)
+#endif  // ! defined(KTH_DB_READONLY)
 
 // Must be called before performing queries, not idempotent.
 // May be called after stop and/or after close in order to reopen.
@@ -118,8 +114,7 @@ internal_database const& data_base::internal_db() const {
 // Synchronous writers.
 // ----------------------------------------------------------------------------
 
-static inline
-uint32_t get_next_height(internal_database const& db) {
+static inline uint32_t get_next_height(internal_database const& db) {
     uint32_t current_height;
     auto res = db.get_last_height(current_height);
 
@@ -130,12 +125,11 @@ uint32_t get_next_height(internal_database const& db) {
     return current_height + 1;
 }
 
-static inline
-hash_digest get_previous_hash(internal_database const& db, size_t height) {
+static inline hash_digest get_previous_hash(internal_database const& db, size_t height) {
     return height == 0 ? null_hash : db.get_header(height - 1).hash();
 }
 
-//TODO(fernando): const?
+// TODO(fernando): const?
 code data_base::verify_insert(block const& block, size_t height) {
     if (block.transactions().empty()) {
         return error::empty_block;
@@ -170,27 +164,26 @@ code data_base::verify_push(block const& block, size_t height) const {
     return error::success;
 }
 
-
 #if ! defined(KTH_DB_READONLY)
 
 // Add block to the database at the given height (gaps allowed/created).
 // This is designed for write concurrency but only with itself.
 code data_base::insert(domain::chain::block const& block, size_t height) {
-
     auto const median_time_past = block.header().validation.median_time_past;
 
     auto const ec = verify_insert(block, height);
 
-    if (ec) return ec;
+    if (ec)
+        return ec;
 
     auto res = internal_db_->push_block(block, height, median_time_past);
-    if ( ! succeed(res)) {
-        return error::operation_failed_1;   //TODO(fernando): create a new operation_failed
+    if (! succeed(res)) {
+        return error::operation_failed_1;  // TODO(fernando): create a new operation_failed
     }
 
     return error::success;
 }
-#endif //! defined(KTH_DB_READONLY)
+#endif  //! defined(KTH_DB_READONLY)
 
 #if ! defined(KTH_DB_READONLY)
 
@@ -200,12 +193,12 @@ code data_base::push(domain::chain::transaction const& tx, uint32_t forks) {
         return error::success;
     }
 
-    //We insert only in transaction unconfirmed here
+    // We insert only in transaction unconfirmed here
     internal_db_->push_transaction_unconfirmed(tx, forks);
-    return error::success;  //TODO(fernando): store the transactions in a new mempool
+    return error::success;  // TODO(fernando): store the transactions in a new mempool
 }
 
-#endif // ! defined(KTH_DB_READONLY)
+#endif  // ! defined(KTH_DB_READONLY)
 
 #if ! defined(KTH_DB_READONLY)
 // Add a block in order (creates no gaps, must be at top).
@@ -213,8 +206,8 @@ code data_base::push(domain::chain::transaction const& tx, uint32_t forks) {
 code data_base::push(block const& block, size_t height) {
     auto const median_time_past = block.header().validation.median_time_past;
     auto res = internal_db_->push_block(block, height, median_time_past);
-    if ( ! succeed(res)) {
-        return error::operation_failed_6;   //TODO(fernando): create a new operation_failed
+    if (! succeed(res)) {
+        return error::operation_failed_6;  // TODO(fernando): create a new operation_failed
     }
     return error::success;
 }
@@ -223,22 +216,19 @@ code data_base::push(block const& block, size_t height) {
 // Add the Genesis block
 code data_base::push_genesis(block const& block) {
     auto res = internal_db_->push_genesis(block);
-    if ( ! succeed(res)) {
-        return error::operation_failed_6;   //TODO(fernando): create a new operation_failed
+    if (! succeed(res)) {
+        return error::operation_failed_6;  // TODO(fernando): create a new operation_failed
     }
 
     return error::success;
 }
-#endif // ! defined(KTH_DB_READONLY)
-
-
+#endif  // ! defined(KTH_DB_READONLY)
 
 #if defined(KTH_CURRENCY_BCH)
 
 #if ! defined(KTH_DB_READONLY)
 // A false return implies store corruption.
 bool data_base::pop(block& out_block) {
-
     auto const start_time = asio::steady_clock::now();
 
     if (internal_db_->pop_block(out_block) != result_code::success) {
@@ -249,14 +239,13 @@ bool data_base::pop(block& out_block) {
     out_block.validation.start_pop = start_time;
     return true;
 }
-#endif // ! defined(KTH_DB_READONLY)
+#endif  // ! defined(KTH_DB_READONLY)
 
-#else // KTH_CURRENCY_BCH
+#else  // KTH_CURRENCY_BCH
 
 #if ! defined(KTH_DB_READONLY)
 // A false return implies store corruption.
 bool data_base::pop(block& out_block) {
-
     auto const start_time = asio::steady_clock::now();
 
     if (internal_db_->pop_block(out_block) != result_code::success) {
@@ -267,14 +256,12 @@ bool data_base::pop(block& out_block) {
     out_block.validation.start_pop = start_time;
     return true;
 }
-#endif //! defined(KTH_DB_READONLY)
-#endif // KTH_CURRENCY_BCH
-
+#endif  //! defined(KTH_DB_READONLY)
+#endif  // KTH_CURRENCY_BCH
 
 #if ! defined(KTH_DB_READONLY)
 // A false return implies store corruption.
 bool data_base::pop_inputs(const input::list& inputs, size_t height) {
-
     return true;
 }
 
@@ -282,7 +269,7 @@ bool data_base::pop_inputs(const input::list& inputs, size_t height) {
 bool data_base::pop_outputs(const output::list& outputs, size_t height) {
     return true;
 }
-#endif //! defined(KTH_DB_READONLY)
+#endif  //! defined(KTH_DB_READONLY)
 
 // Asynchronous writers.
 // ----------------------------------------------------------------------------
@@ -321,8 +308,8 @@ void data_base::push_next(code const& ec, block_const_ptr_list_const_ptr blocks,
 void data_base::do_push(block_const_ptr block, size_t height, uint32_t median_time_past, dispatcher& dispatch, result_handler handler) {
     // LOG_DEBUG(LOG_DATABASE, "Write flushed to disk: ", ec.message());
     auto res = internal_db_->push_block(*block, height, median_time_past);
-    if ( ! succeed(res)) {
-        handler(error::operation_failed_7); //TODO(fernando): create a new operation_failed
+    if (! succeed(res)) {
+        handler(error::operation_failed_7);  // TODO(fernando): create a new operation_failed
         return;
     }
     block->validation.end_push = asio::steady_clock::now();
@@ -339,7 +326,7 @@ void data_base::pop_above(block_const_ptr_list_ptr out_blocks, hash_digest const
 
     uint32_t top;
     // The fork point does not exist or failed to get it or the top, fail.
-    if ( ! header_result.first.is_valid() ||  internal_db_->get_last_height(top) != result_code::success) {
+    if (! header_result.first.is_valid() || internal_db_->get_last_height(top) != result_code::success) {
         //**--**
         handler(error::operation_failed_9);
         return;
@@ -363,7 +350,7 @@ void data_base::pop_above(block_const_ptr_list_ptr out_blocks, hash_digest const
         domain::message::block next;
 
         // TODO(legacy): parallelize pop of transactions within each block.
-        if ( ! pop(next)) {
+        if (! pop(next)) {
             //**--**
             handler(error::operation_failed_10);
             return;
@@ -379,13 +366,13 @@ void data_base::pop_above(block_const_ptr_list_ptr out_blocks, hash_digest const
 
 code data_base::prune_reorg() {
     auto res = internal_db_->prune();
-    if ( ! succeed_prune(res)) {
+    if (! succeed_prune(res)) {
         LOG_ERROR(LOG_DATABASE, "Error pruning the reorganization pool, code: ", static_cast<std::underlying_type<result_code>::type>(res));
         return error::unknown;
     }
     return error::success;
 }
-#endif // ! defined(KTH_DB_READONLY)
+#endif  // ! defined(KTH_DB_READONLY)
 
 #if ! defined(KTH_DB_READONLY)
 // This is designed for write exclusivity and read concurrency.
@@ -417,6 +404,6 @@ void data_base::handle_push(code const& ec, result_handler handler) const {
     }
     handler(error::success);
 }
-#endif // ! defined(KTH_DB_READONLY)
+#endif  // ! defined(KTH_DB_READONLY)
 
-} // namespace kth::database
+}  // namespace kth::database

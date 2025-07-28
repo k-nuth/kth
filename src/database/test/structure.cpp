@@ -2,10 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <filesystem>
-
-#include <test_helpers.hpp>
 #include <kth/database.hpp>
+
+#include <filesystem>
+#include <test_helpers.hpp>
 
 using namespace boost::system;
 using namespace std::filesystem;
@@ -14,7 +14,7 @@ using namespace kth::database;
 #define DIRECTORY "structure"
 
 class structure_directory_setup_fixture {
-public:
+  public:
     structure_directory_setup_fixture() {
         std::error_code ec;
         remove_all(DIRECTORY, ec);
@@ -29,8 +29,7 @@ public:
 
 BOOST_FIXTURE_TEST_SUITE(structure_tests, structure_directory_setup_fixture)
 
-TEST_CASE("hash table header  test", "[None]")
-{
+TEST_CASE("hash table header  test", "[None]") {
     store::create(DIRECTORY "/hash_table_header");
     memory_map file(DIRECTORY "/hash_table_header");
     REQUIRE(file.open());
@@ -45,8 +44,7 @@ TEST_CASE("hash table header  test", "[None]")
     REQUIRE(header.read(9) == 110);
 }
 
-TEST_CASE("slab manager  test", "[None]")
-{
+TEST_CASE("slab manager  test", "[None]") {
     store::create(DIRECTORY "/slab_manager");
     memory_map file(DIRECTORY "/slab_manager");
     REQUIRE(file.open());
@@ -59,17 +57,16 @@ TEST_CASE("slab manager  test", "[None]")
 
     file_offset position = data.new_slab(100);
     REQUIRE(position == 8);
-    //slab_byte_pointer slab = data.get(position);
+    // slab_byte_pointer slab = data.get(position);
 
     file_offset position2 = data.new_slab(100);
     REQUIRE(position2 == 108);
-    //slab = data.get(position2);
+    // slab = data.get(position2);
 
     REQUIRE(file.size() >= 208);
 }
 
-TEST_CASE("record manager  test", "[None]")
-{
+TEST_CASE("record manager  test", "[None]") {
     store::create(DIRECTORY "/record_manager");
     memory_map file(DIRECTORY "/record_manager");
     REQUIRE(file.open());
@@ -88,8 +85,7 @@ TEST_CASE("record manager  test", "[None]")
     recs.sync();
 }
 
-TEST_CASE("record list  test", "[None]")
-{
+TEST_CASE("record list  test", "[None]") {
     // TODO
 }
 

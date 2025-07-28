@@ -2,13 +2,13 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <filesystem>
-#include <random>
+#include <kth/database.hpp>
 
 #include <boost/functional/hash_fwd.hpp>
-#include <test_helpers.hpp>
 
-#include <kth/database.hpp>
+#include <filesystem>
+#include <random>
+#include <test_helpers.hpp>
 
 using namespace boost::system;
 using namespace std::filesystem;
@@ -39,11 +39,11 @@ struct hash<little_hash> {
     }
 };
 
-} // namspace std
+}  // namespace std
 
 data_chunk generate_random_bytes(std::default_random_engine& engine, size_t size) {
     data_chunk result(size);
-    for (uint8_t& byte: result) {
+    for (uint8_t& byte : result) {
         byte = engine() % std::numeric_limits<uint8_t>::max();
     }
 
@@ -75,8 +75,7 @@ void create_database_file() {
     for (size_t i = 0; i < total_txs; ++i) {
         data_chunk value = generate_random_bytes(engine, tx_size);
         hash_digest key = bitcoin_hash(value);
-        auto write = [&value](serializer<uint8_t*>& serial)
-        {
+        auto write = [&value](serializer<uint8_t*>& serial) {
             serial.write_forward(value);
         };
         ht.store(key, write, value.size());
@@ -86,7 +85,7 @@ void create_database_file() {
 }
 
 class hash_table_directory_setup_fixture {
-public:
+  public:
     hash_table_directory_setup_fixture() {
         std::error_code ec;
         remove_all(DIRECTORY, ec);
@@ -403,4 +402,3 @@ TEST_CASE("slab hash table  test", "[None]") {
 ////}
 
 // End Test Suite
-

@@ -5,8 +5,8 @@
 #ifndef KTH_DATABASE_HEADER_ABLA_ENTRY_HPP_
 #define KTH_DATABASE_HEADER_ABLA_ENTRY_HPP_
 
-#include <kth/domain.hpp>
 #include <kth/database/define.hpp>
+#include <kth/domain.hpp>
 
 namespace kth::database {
 
@@ -32,7 +32,6 @@ void to_data_with_abla_state(W& sink, domain::chain::block const& block) {
 
 expect<header_with_abla_state_t> get_header_and_abla_state_from_data(byte_reader& reader);
 
+}  // namespace kth::database
 
-} // namespace kth::database
-
-#endif // KTH_DATABASE_HEADER_ABLA_ENTRY_HPP_
+#endif  // KTH_DATABASE_HEADER_ABLA_ENTRY_HPP_

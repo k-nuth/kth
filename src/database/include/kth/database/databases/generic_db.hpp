@@ -33,8 +33,6 @@
 #define KTH_DB_FIRST MDB_FIRST
 #define KTH_DB_DUPFIXED MDB_DUPFIXED
 
-
-
 #define kth_db_txn_commit mdb_txn_commit
 #define kth_db_cursor_close mdb_cursor_close
 #define kth_db_cursor_get mdb_cursor_get
@@ -54,19 +52,16 @@
 #define kth_db_env_close mdb_env_close
 #define kth_db_del mdb_del
 
-inline
-auto const& kth_db_get_data(KTH_DB_val const& x) {
+inline auto const& kth_db_get_data(KTH_DB_val const& x) {
     return x.mv_data;
 }
 
-inline
-auto const& kth_db_get_size(KTH_DB_val const& x) {
+inline auto const& kth_db_get_size(KTH_DB_val const& x) {
     return x.mv_size;
 }
 
-inline
-KTH_DB_val kth_db_make_value(size_t size, void* data) {
-    return KTH_DB_val{size, data};
+inline KTH_DB_val kth_db_make_value(size_t size, void* data) {
+    return KTH_DB_val{ size, data };
 }
 
-#endif // KTH_DATABASE_GENERIC_DB_HPP_
+#endif  // KTH_DATABASE_GENERIC_DB_HPP_

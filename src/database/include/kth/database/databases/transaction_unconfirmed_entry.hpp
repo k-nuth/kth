@@ -5,17 +5,14 @@
 #ifndef KTH_DATABASE_TRANSACTION_UNCONFIRMED_ENTRY_HPP_
 #define KTH_DATABASE_TRANSACTION_UNCONFIRMED_ENTRY_HPP_
 
-#include <kth/domain.hpp>
-
 #include <kth/database/currency_config.hpp>
 #include <kth/database/define.hpp>
+#include <kth/domain.hpp>
 
 namespace kth::database {
 
-
 class KD_API transaction_unconfirmed_entry {
-public:
-
+  public:
     transaction_unconfirmed_entry() = default;
 
     transaction_unconfirmed_entry(domain::chain::transaction const& tx, uint32_t arrival_time, uint32_t height);
@@ -27,38 +24,32 @@ public:
 
     bool is_valid() const;
 
-    //TODO(fernando): make this constexpr
-    // constexpr
-    static
-    size_t serialized_size(domain::chain::transaction const& tx);
+    // TODO(fernando): make this constexpr
+    //  constexpr
+    static size_t serialized_size(domain::chain::transaction const& tx);
 
     data_chunk to_data() const;
     void to_data(std::ostream& stream) const;
-
 
     template <typename W, KTH_IS_WRITER(W)>
     void to_data(W& sink) const {
         factory_to_data(sink, transaction_, arrival_time_, height_);
     }
 
-    static
-    expect<transaction_unconfirmed_entry> from_data(byte_reader& reader);
+    static expect<transaction_unconfirmed_entry> from_data(byte_reader& reader);
 
-    static
-    data_chunk factory_to_data(domain::chain::transaction const& tx, uint32_t arrival_time, uint32_t height);
+    static data_chunk factory_to_data(domain::chain::transaction const& tx, uint32_t arrival_time, uint32_t height);
 
-    static
-    void factory_to_data(std::ostream& stream, domain::chain::transaction const& tx, uint32_t arrival_time, uint32_t height);
+    static void factory_to_data(std::ostream& stream, domain::chain::transaction const& tx, uint32_t arrival_time, uint32_t height);
 
     template <typename W, KTH_IS_WRITER(W)>
-    static
-    void factory_to_data(W& sink, domain::chain::transaction const& tx, uint32_t arrival_time, uint32_t height) {
+    static void factory_to_data(W& sink, domain::chain::transaction const& tx, uint32_t arrival_time, uint32_t height) {
         tx.to_data(sink, false);
         sink.write_4_bytes_little_endian(arrival_time);
         sink.write_4_bytes_little_endian(height);
     }
 
-private:
+  private:
     void reset();
 
     domain::chain::transaction transaction_;
@@ -66,7 +57,6 @@ private:
     uint32_t height_;
 };
 
-} // namespace kth::database
+}  // namespace kth::database
 
-
-#endif // KTH_DATABASE_TRANSACTION_UNCONFIRMED_ENTRY_HPP_
+#endif  // KTH_DATABASE_TRANSACTION_UNCONFIRMED_ENTRY_HPP_

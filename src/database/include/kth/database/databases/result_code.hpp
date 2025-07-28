@@ -19,18 +19,14 @@ enum class result_code {
     other = 8
 };
 
-inline
-bool succeed(result_code code) {
+inline bool succeed(result_code code) {
     return code == result_code::success || code == result_code::success_duplicate_coinbase;
 }
 
-inline
-bool succeed_prune(result_code code) {
+inline bool succeed_prune(result_code code) {
     return code == result_code::success || code == result_code::no_data_to_prune;
 }
 
+}  // namespace kth::database
 
-
-} // namespace kth::database
-
-#endif // KTH_DATABASE_RESULT_CODE_HPP_
+#endif  // KTH_DATABASE_RESULT_CODE_HPP_

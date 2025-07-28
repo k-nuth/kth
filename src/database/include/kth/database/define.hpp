@@ -5,9 +5,10 @@
 #ifndef KTH_DATABASE_DEFINE_HPP
 #define KTH_DATABASE_DEFINE_HPP
 
+#include <kth/domain.hpp>
+
 #include <cstdint>
 #include <vector>
-#include <kth/domain.hpp>
 
 // Now we use the generic helper definitions to
 // define KD_API and KD_INTERNAL.
@@ -16,14 +17,14 @@
 // KD_INTERNAL is used for non-api symbols.
 
 #if defined KD_STATIC
-    #define KD_API
-    #define KD_INTERNAL
+#define KD_API
+#define KD_INTERNAL
 #elif defined KD_DLL
-    #define KD_API      BC_HELPER_DLL_EXPORT
-    #define KD_INTERNAL BC_HELPER_DLL_LOCAL
+#define KD_API BC_HELPER_DLL_EXPORT
+#define KD_INTERNAL BC_HELPER_DLL_LOCAL
 #else
-    #define KD_API      BC_HELPER_DLL_IMPORT
-    #define KD_INTERNAL BC_HELPER_DLL_LOCAL
+#define KD_API BC_HELPER_DLL_IMPORT
+#define KD_INTERNAL BC_HELPER_DLL_LOCAL
 #endif
 
 // Log name.
@@ -40,6 +41,6 @@ namespace kth::database {
 using array_index = uint32_t;
 using file_offset = uint64_t;
 
-} // namespace kth::database
+}  // namespace kth::database
 
 #endif

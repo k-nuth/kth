@@ -5,14 +5,13 @@
 #ifndef KTH_DATABASE_UTXO_ENTRY_HPP_
 #define KTH_DATABASE_UTXO_ENTRY_HPP_
 
-#include <kth/domain.hpp>
 #include <kth/database/define.hpp>
+#include <kth/domain.hpp>
 
 namespace kth::database {
 
 class KD_API utxo_entry {
-public:
-
+  public:
     utxo_entry() = default;
 
     utxo_entry(domain::chain::output output, uint32_t height, uint32_t median_time_past, bool coinbase);
@@ -36,41 +35,33 @@ public:
         to_data_fixed(sink, height_, median_time_past_, coinbase_);
     }
 
-    static
-    expect<utxo_entry> from_data(byte_reader& reader);
+    static expect<utxo_entry> from_data(byte_reader& reader);
 
-    static
-    data_chunk to_data_fixed(uint32_t height, uint32_t median_time_past, bool coinbase);
+    static data_chunk to_data_fixed(uint32_t height, uint32_t median_time_past, bool coinbase);
 
-    static
-    void to_data_fixed(std::ostream& stream, uint32_t height, uint32_t median_time_past, bool coinbase);
+    static void to_data_fixed(std::ostream& stream, uint32_t height, uint32_t median_time_past, bool coinbase);
 
     template <typename W, KTH_IS_WRITER(W)>
-    static
-    void to_data_fixed(W& sink, uint32_t height, uint32_t median_time_past, bool coinbase) {
+    static void to_data_fixed(W& sink, uint32_t height, uint32_t median_time_past, bool coinbase) {
         sink.write_4_bytes_little_endian(height);
         sink.write_4_bytes_little_endian(median_time_past);
         sink.write_byte(coinbase);
     }
 
-    static
-    data_chunk to_data_with_fixed(domain::chain::output const& output, data_chunk const& fixed);
+    static data_chunk to_data_with_fixed(domain::chain::output const& output, data_chunk const& fixed);
 
-    static
-    void to_data_with_fixed(std::ostream& stream, domain::chain::output const& output, data_chunk const& fixed);
+    static void to_data_with_fixed(std::ostream& stream, domain::chain::output const& output, data_chunk const& fixed);
 
     template <typename W, KTH_IS_WRITER(W)>
-    static
-    void to_data_with_fixed(W& sink, domain::chain::output const& output, data_chunk const& fixed) {
+    static void to_data_with_fixed(W& sink, domain::chain::output const& output, data_chunk const& fixed) {
         output.to_data(sink, false);
         sink.write_bytes(fixed);
     }
 
-private:
+  private:
     void reset();
 
-    constexpr static
-    size_t serialized_size_fixed();
+    constexpr static size_t serialized_size_fixed();
 
     domain::chain::output output_;
     uint32_t height_ = max_uint32;
@@ -78,6 +69,6 @@ private:
     bool coinbase_;
 };
 
-} // namespace kth::database
+}  // namespace kth::database
 
-#endif // KTH_DATABASE_UTXO_ENTRY_HPP_
+#endif  // KTH_DATABASE_UTXO_ENTRY_HPP_

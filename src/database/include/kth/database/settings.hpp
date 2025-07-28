@@ -5,17 +5,17 @@
 #ifndef KTH_DATABASE_SETTINGS_HPP
 #define KTH_DATABASE_SETTINGS_HPP
 
+#include <kth/database/databases/property_code.hpp>
+#include <kth/database/define.hpp>
+
 #include <cstdint>
 #include <filesystem>
-
-#include <kth/database/define.hpp>
-#include <kth/database/databases/property_code.hpp>
 
 namespace kth::database {
 
 /// Common database configuration settings, properties not thread safe.
 class KD_API settings {
-public:
+  public:
     settings();
     settings(domain::config::network context);
 
@@ -28,6 +28,6 @@ public:
     uint32_t cache_capacity;
 };
 
-} // namespace kth::database
+}  // namespace kth::database
 
 #endif

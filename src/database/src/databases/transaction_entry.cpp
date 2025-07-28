@@ -22,8 +22,7 @@ namespace kth::database {
 // }
 
 transaction_entry::transaction_entry(domain::chain::transaction const& tx, uint32_t height, uint32_t median_time_past, uint32_t position)
-    : transaction_(tx), height_(height), median_time_past_(median_time_past), position_(position)
-{}
+    : transaction_(tx), height_(height), median_time_past_(median_time_past), position_(position) {}
 
 domain::chain::transaction const& transaction_entry::transaction() const {
     return transaction_;
@@ -57,10 +56,9 @@ bool transaction_entry::is_valid() const {
 // Size.
 //-----------------------------------------------------------------------------
 // constexpr
-//TODO(fernando): make this constexpr
+// TODO(fernando): make this constexpr
 size_t transaction_entry::serialized_size(domain::chain::transaction const& tx) {
-    return tx.serialized_size(false)
-         + sizeof(uint32_t) + sizeof(uint32_t) + position_size;
+    return tx.serialized_size(false) + sizeof(uint32_t) + sizeof(uint32_t) + position_size;
 }
 
 // Deserialization.
@@ -69,23 +67,23 @@ size_t transaction_entry::serialized_size(domain::chain::transaction const& tx) 
 // static
 expect<transaction_entry> transaction_entry::from_data(byte_reader& reader) {
     auto tx = domain::chain::transaction::from_data(reader, false);
-    if ( ! tx) {
+    if (! tx) {
         return make_unexpected(tx.error());
     }
 
     auto height = reader.read_little_endian<uint32_t>();
-    if ( ! height) {
+    if (! height) {
         return make_unexpected(height.error());
     }
 
     auto median_time_past = reader.read_little_endian<uint32_t>();
-    if ( ! median_time_past) {
+    if (! median_time_past) {
         return make_unexpected(median_time_past.error());
     }
 
     using position_type = uint32_t;
     auto const position = reader.read_little_endian<position_type>();
-    if ( ! position) {
+    if (! position) {
         return make_unexpected(position.error());
     }
 
@@ -139,7 +137,7 @@ bool transaction_entry::confirmed() const {
     return position_ != position_max;
 }
 
-//TODO(fernando): We don't have spent information, yet.
+// TODO(fernando): We don't have spent information, yet.
 
 // bool transaction_entry::is_spent(size_t fork_height) const {
 
@@ -157,6 +155,4 @@ bool transaction_entry::confirmed() const {
 //     return true;
 // }
 
-
-} // namespace kth::database
-
+}  // namespace kth::database
