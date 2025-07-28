@@ -242,17 +242,75 @@ jobs:
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
 
   static-checks:
-    # needs: wait-for-dependencies
     name: Static Checks
-    if: github.ref == 'refs/heads/devX' ||
-        startsWith(github.ref, 'refs/heads/testci') ||
-        startsWith(github.ref, 'refs/heads/release') ||
-        startsWith(github.ref, 'refs/heads/hotfix')
+    if: github.event_name == 'push' || 
+      (github.event_name == 'pull_request' && 
+       !startsWith(github.head_ref, 'release/') && 
+       !startsWith(github.head_ref, 'hotfix/') &&
+       !startsWith(github.head_ref, 'docs/') &&
+       !startsWith(github.head_ref, 'style/') &&
+       !startsWith(github.head_ref, 'chore/') &&
+       !startsWith(github.head_ref, 'noci/'))
 
     runs-on: ubuntu-22.04
     steps:
-      - name: Static Checks
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-15
+          clang-format-15 --version
+
+      - name: Check code formatting
         shell: bash
         run: |
-          echo ${{github.ref}}
+          echo "Checking C++ code formatting with clang-format..."
+          
+          # Find all C++ source files, avoiding broken pipe by using process substitution
+          find . \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" -o -name "*.c" \) \
+            -not -path "./build/*" \
+            -not -path "./cmake-build-*" \
+            -not -path "./.conan/*" \
+            -not -path "./third_party/*" \
+            -not -path "./ci_utils/*" > cpp_files_all.txt
+          
+          # Take first 50 files to avoid overwhelming the CI
+          head -50 cpp_files_all.txt > cpp_files.txt
+          
+          total_files=$(wc -l < cpp_files_all.txt)
+          check_files=$(wc -l < cpp_files.txt)
+          echo "Found $total_files C++ files total, checking first $check_files files"
+          
+          # Check formatting and collect results
+          format_issues=0
+          while IFS= read -r file; do
+            if [ -f "$file" ]; then
+              if ! clang-format-15 --dry-run --Werror "$file" 2>/dev/null; then
+                echo "❌ Formatting issues in: $file"
+                echo "--- Expected format diff:"
+                clang-format-15 "$file" | diff -u "$file" - || true
+                echo ""
+                format_issues=$((format_issues + 1))
+              else
+                echo "✅ $file"
+              fi
+            fi
+          done < cpp_files.txt
+          
+          # Cleanup
+          rm -f cpp_files_all.txt cpp_files.txt
+          
+          if [ $format_issues -gt 0 ]; then
+            echo ""
+            echo "❌ Found $format_issues files with formatting issues"
+            echo "To fix, run: clang-format-15 -i <file>"
+            exit 1
+          else
+            echo ""
+            echo "✅ All checked files are properly formatted!"
+          fi
 
