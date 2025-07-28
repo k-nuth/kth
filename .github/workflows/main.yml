@@ -22,6 +22,7 @@ env:
   SKIP_CLANG_FORMAT: true  # Set to false to enable clang-format checks
   SKIP_CLANG_TIDY: true    # Set to false to enable clang-tidy analysis
   SKIP_CPPCHECK: true      # Set to false to enable cppcheck analysis
+  SKIP_IWYU: false         # Set to false to enable include-what-you-use analysis
 
 jobs:
   debug:
@@ -466,4 +467,102 @@ jobs:
           
           # Cleanup
           rm -f "$cppcheck_output"
+
+      - name: Install include-what-you-use
+        if: env.SKIP_IWYU != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iwyu
+          include-what-you-use --version || echo "IWYU installed successfully"
+
+      - name: IWYU analysis disabled
+        if: env.SKIP_IWYU == 'true'
+        run: |
+          echo "⚠️ Include-what-you-use analysis is currently disabled"
+          echo "Set SKIP_IWYU=false in workflow env to enable"
+
+      - name: Run include-what-you-use analysis
+        if: env.SKIP_IWYU != 'true'
+        shell: bash
+        run: |
+          echo "🔍 Running include-what-you-use analysis..."
+          
+          # Find C++ source files (focus on .cpp files for IWYU)
+          find . -name "*.cpp" \
+            -not -path "./build/*" \
+            -not -path "./cmake-build-*" \
+            -not -path "./.conan/*" \
+            -not -path "./third_party/*" \
+            -not -path "./ci_utils/*" > cpp_source_files.txt
+          
+          # Take first 15 files to avoid overwhelming CI
+          head -15 cpp_source_files.txt > cpp_iwyu_files.txt
+          
+          total_files=$(wc -l < cpp_source_files.txt)
+          check_files=$(wc -l < cpp_iwyu_files.txt)
+          echo "Found $total_files C++ source files total, analyzing first $check_files files"
+          
+          if [ "$check_files" -eq 0 ]; then
+            echo "⚠️ No C++ source files found to analyze"
+            rm -f cpp_source_files.txt cpp_iwyu_files.txt
+            exit 0
+          fi
+          
+          echo "📊 Analyzing include dependencies..."
+          
+          iwyu_output="iwyu_results.txt"
+          iwyu_issues=0
+          processed_files=0
+          
+          # Run IWYU on each file
+          while IFS= read -r file; do
+            if [ -f "$file" ]; then
+              echo "🔍 Analyzing includes in: $file"
+              processed_files=$((processed_files + 1))
+              
+              # Run IWYU with basic flags
+              if ! include-what-you-use \
+                -std=c++17 \
+                -I./src \
+                -I./include \
+                "$file" \
+                2>> "$iwyu_output" >/dev/null; then
+                
+                # IWYU always returns non-zero, so we check output instead
+                if grep -q "should add\|should remove\|full include-list" "$iwyu_output" 2>/dev/null; then
+                  echo "💡 Suggestions found for: $file"
+                  iwyu_issues=$((iwyu_issues + 1))
+                else
+                  echo "✅ No changes needed: $file"
+                fi
+              fi
+            fi
+          done < cpp_iwyu_files.txt
+          
+          echo ""
+          echo "📊 IWYU Analysis Summary:"
+          echo "  Files analyzed: $processed_files"
+          echo "  Files with suggestions: $iwyu_issues"
+          
+          if [ "$iwyu_issues" -gt 0 ] && [ -f "$iwyu_output" ] && [ -s "$iwyu_output" ]; then
+            echo ""
+            echo "💡 Include optimization suggestions (first 30 lines):"
+            head -30 "$iwyu_output"
+            echo ""
+            echo "🔧 IWYU found $iwyu_issues files that could optimize their includes"
+            echo "Note: These are suggestions to reduce compile time and dependencies"
+            echo ""
+            echo "📄 Full report available in CI artifacts or run locally:"
+            echo "  ./scripts/check-iwyu.sh"
+          else
+            echo ""
+            echo "✅ No include optimizations suggested!"
+            echo "🎉 Include dependencies are well-organized!"
+          fi
+          
+          # Cleanup
+          rm -f cpp_source_files.txt cpp_iwyu_files.txt "$iwyu_output"
+          
+          # Don't fail CI - IWYU suggestions are optional optimizations
+          exit 0
 
