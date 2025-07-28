@@ -20,6 +20,7 @@ env:
   CONAN_REMOTE_URL: https://packages.kth.cash/api/
   # Static analysis flags
   SKIP_CLANG_FORMAT: true  # Set to false to enable clang-format checks
+  SKIP_CLANG_TIDY: false   # Set to false to enable clang-tidy analysis
 
 jobs:
   debug:
@@ -322,5 +323,67 @@ jobs:
           else
             echo ""
             echo "✅ All checked files are properly formatted!"
+          fi
+
+      - name: Install clang-tidy
+        if: env.SKIP_CLANG_TIDY != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy-15
+          clang-tidy-15 --version
+
+      - name: Clang-tidy analysis disabled
+        if: env.SKIP_CLANG_TIDY == 'true'
+        run: |
+          echo "⚠️ Clang-tidy analysis is currently disabled"
+          echo "Set SKIP_CLANG_TIDY=false in workflow env to enable"
+
+      - name: Run clang-tidy analysis
+        if: env.SKIP_CLANG_TIDY != 'true'
+        shell: bash
+        run: |
+          echo "🔍 Running clang-tidy analysis..."
+          
+          # Find all C++ source files
+          find . \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" -o -name "*.c" \) \
+            -not -path "./build/*" \
+            -not -path "./cmake-build-*" \
+            -not -path "./.conan/*" \
+            -not -path "./third_party/*" \
+            -not -path "./ci_utils/*" > cpp_files_all.txt
+          
+          # Take first 20 files to avoid overwhelming CI
+          head -20 cpp_files_all.txt > cpp_files.txt
+          
+          total_files=$(wc -l < cpp_files_all.txt)
+          check_files=$(wc -l < cpp_files.txt)
+          echo "Found $total_files C++ files total, analyzing first $check_files files"
+          
+          # Run clang-tidy analysis
+          tidy_issues=0
+          while IFS= read -r file; do
+            if [ -f "$file" ]; then
+              echo "🔍 Analyzing: $file"
+              if ! clang-tidy-15 "$file" -- -std=c++17 2>/dev/null; then
+                echo "⚠️ Issues found in: $file"
+                tidy_issues=$((tidy_issues + 1))
+              else
+                echo "✅ Clean: $file"
+              fi
+            fi
+          done < cpp_files.txt
+          
+          # Cleanup
+          rm -f cpp_files_all.txt cpp_files.txt
+          
+          echo ""
+          echo "📊 Clang-tidy Summary:"
+          if [ $tidy_issues -gt 0 ]; then
+            echo "⚠️ Found potential issues in $tidy_issues files"
+            echo "Note: Some warnings may be false positives"
+            # Don't fail CI for now, just report
+            exit 0
+          else
+            echo "✅ No issues found in analyzed files!"
           fi
 
