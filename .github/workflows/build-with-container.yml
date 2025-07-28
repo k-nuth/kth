@@ -118,7 +118,7 @@ jobs:
           
           # Build with tests enabled
           conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh
-          conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -o tests=True
+          conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b linux-ci-cd -pr:h linux-ci-cd -o tests=True
           
           # Configure with tests enabled
           cmake --preset conan-release \

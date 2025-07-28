@@ -110,7 +110,7 @@ jobs:
           
           # Build with tests enabled
           conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd
-          conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -o tests=True
+          conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b general-ci-cd -pr:h general-ci-cd -o tests=True
           
           # Configure with tests enabled
           cmake --preset conan-release \
