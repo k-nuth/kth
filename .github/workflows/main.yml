@@ -20,7 +20,8 @@ env:
   CONAN_REMOTE_URL: https://packages.kth.cash/api/
   # Static analysis flags
   SKIP_CLANG_FORMAT: true  # Set to false to enable clang-format checks
-  SKIP_CLANG_TIDY: true   # Set to false to enable clang-tidy analysis
+  SKIP_CLANG_TIDY: true    # Set to false to enable clang-tidy analysis
+  SKIP_CPPCHECK: true      # Set to false to enable cppcheck analysis
 
 jobs:
   debug:
@@ -386,4 +387,83 @@ jobs:
           else
             echo "✅ No issues found in analyzed files!"
           fi
+
+      - name: Install cppcheck
+        if: env.SKIP_CPPCHECK != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+          cppcheck --version
+
+      - name: Cppcheck analysis disabled
+        if: env.SKIP_CPPCHECK == 'true'
+        run: |
+          echo "⚠️ Cppcheck analysis is currently disabled"
+          echo "Set SKIP_CPPCHECK=false in workflow env to enable"
+
+      - name: Run cppcheck analysis
+        if: env.SKIP_CPPCHECK != 'true'
+        shell: bash
+        run: |
+          echo "🔍 Running cppcheck analysis..."
+          
+          # Run cppcheck on source directories
+          echo "📊 Analyzing C++ code for bugs and security issues..."
+          
+          cppcheck_output="cppcheck_results.txt"
+          
+          # Run cppcheck with comprehensive checks
+          cppcheck \
+            --enable=warning,style,performance,portability,information \
+            --std=c++17 \
+            --inline-suppr \
+            --quiet \
+            --template='{file}:{line}:{column}: {severity}: {message} [{id}]' \
+            --suppress=missingIncludeSystem \
+            --suppress=unmatchedSuppression \
+            --suppress=unusedFunction \
+            --suppress=noExplicitConstructor \
+            --error-exitcode=0 \
+            src/ \
+            2>&1 | tee "$cppcheck_output" || true
+          
+          # Count different types of issues
+          total_issues=$(wc -l < "$cppcheck_output" || echo "0")
+          error_issues=$(grep -c ": error:" "$cppcheck_output" 2>/dev/null || echo "0")
+          warning_issues=$(grep -c ": warning:" "$cppcheck_output" 2>/dev/null || echo "0")
+          style_issues=$(grep -c ": style:" "$cppcheck_output" 2>/dev/null || echo "0")
+          performance_issues=$(grep -c ": performance:" "$cppcheck_output" 2>/dev/null || echo "0")
+          
+          echo ""
+          echo "📊 Cppcheck Summary:"
+          echo "  Total issues: $total_issues"
+          echo "  Errors: $error_issues"
+          echo "  Warnings: $warning_issues"
+          echo "  Style: $style_issues"
+          echo "  Performance: $performance_issues"
+          
+          if [ "$total_issues" -gt 0 ]; then
+            echo ""
+            echo "🔍 Found issues (first 20):"
+            head -20 "$cppcheck_output"
+            
+            if [ "$error_issues" -gt 0 ]; then
+              echo ""
+              echo "❌ Found $error_issues critical errors"
+              echo "Note: These should be reviewed and fixed"
+            else
+              echo ""
+              echo "⚠️ Found $total_issues potential issues"
+              echo "Note: Many may be false positives - review manually"
+            fi
+            
+            # Don't fail CI for now, just report
+            exit 0
+          else
+            echo "✅ No issues found!"
+            echo "🎉 Cppcheck analysis passed!"
+          fi
+          
+          # Cleanup
+          rm -f "$cppcheck_output"
 
