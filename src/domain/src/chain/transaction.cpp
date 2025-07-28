@@ -611,8 +611,8 @@ code verify(transaction const& tx, uint32_t input_index, uint32_t forks, script 
 
     // This precludes bare witness programs of -0 (undocumented).
     if ( ! prevout.stack_result(false)) {
-        fmt::print("verify() - embedded.stack_result(false) - 1\n");
-        std::terminate();
+        // fmt::print("verify() - embedded.stack_result(false) - 1\n");
+        // std::terminate();
         return error::stack_false;
     }
 
@@ -633,8 +633,8 @@ code verify(transaction const& tx, uint32_t input_index, uint32_t forks, script 
 
         // This precludes embedded witness programs of -0 (undocumented).
         if ( ! embedded.stack_result(false)) {
-            fmt::print("verify() - embedded.stack_result(false) - 2\n");
-            std::terminate();
+            // fmt::print("verify() - embedded.stack_result(false) - 2\n");
+            // std::terminate();
             return error::stack_false;
         }
     }
