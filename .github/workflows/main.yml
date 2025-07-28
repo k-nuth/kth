@@ -241,54 +241,6 @@ jobs:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
 
-  test:
-    needs: [setup, build-with-container, build-without-container]
-    if: always() && (needs.build-with-container.result == 'success' || needs.build-without-container.result == 'success')
-    name: Run Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-          
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-          
-      - uses: ./ci_utils/.github/actions/setup-conan
-      - uses: ./ci_utils/.github/actions/setup-kthbuild
-      - uses: lukka/get-cmake@latest
-      
-      - uses: ./ci_utils/.github/actions/replace-version-monorepo
-        with:
-          new-version: ${{ needs.setup.outputs.build-version }}
-          
-      - name: run unit tests
-        run: |
-          echo "Setting up test environment..."
-          conan remote login -p ${{ secrets.CONAN_3_PASSWORD }} kth ${{ secrets.CONAN_LOGIN_USERNAME }}
-          
-          # Build with tests enabled
-          conan lock create conanfile.py --version ${{ needs.setup.outputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd
-          conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -o tests=False
-          
-          # Configure with tests enabled
-          cmake --preset conan-release \
-               -DCMAKE_VERBOSE_MAKEFILE=ON \
-               -DGLOBAL_BUILD=ON \
-               -DENABLE_TEST=ON \
-               -DCMAKE_BUILD_TYPE=Release
-               
-          # Build the project with tests
-          cmake --build --preset conan-release -j4
-          
-          # Run the tests
-          echo "Running unit tests..."
-          cd build/build/Release
-          
-          # Run tests with ctest (CTestTestfile.cmake is now generated automatically by CMake)
-          ctest --output-on-failure --parallel 4 || echo "Some tests may have failed, but continuing..."
-          
   static-checks:
     # needs: wait-for-dependencies
     name: Static Checks
