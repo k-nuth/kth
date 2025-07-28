@@ -305,11 +305,12 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["consensus"].libs = ["consensus"]
         self.cpp_info.components["consensus"].names["cmake_find_package"] = "consensus"
         self.cpp_info.components["consensus"].names["cmake_find_package_multi"] = "consensus"
-        # Consensus has its own direct dependencies: boost, openssl, secp256k1 (internal component)
+        # Consensus has its own direct dependencies: boost, openssl, secp256k1 (internal component), gmp
         self.cpp_info.components["consensus"].requires = [
             "secp256k1",
             "boost::boost", 
-            "openssl::openssl"
+            "openssl::openssl",
+            "gmp::gmp"
         ]
         
         # Database layer
