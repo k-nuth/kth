@@ -24,10 +24,11 @@ env:
   SKIP_CPPCHECK: true      # Set to false to enable cppcheck analysis
   SKIP_IWYU: false         # Set to false to enable include-what-you-use analysis
   
-  # Sanitizer build flags
-  ENABLE_ASAN: true       # Set to true to enable AddressSanitizer builds
-  ENABLE_UBSAN: true      # Set to true to enable UndefinedBehaviorSanitizer builds
-  ENABLE_TSAN: true       # Set to true to enable ThreadSanitizer builds
+  # Configuration flags (modify values in build job calls below):
+  # - enable-asan: Set to true/false to enable AddressSanitizer builds
+  # - enable-ubsan: Set to true/false to enable UndefinedBehaviorSanitizer builds  
+  # - enable-tsan: Set to true/false to enable ThreadSanitizer builds
+  # - skip-tests: Set to true/false to skip unit test execution
 
 jobs:
   debug:
@@ -226,9 +227,10 @@ jobs:
       compiler: ${{ matrix.config.compiler }}
       compiler-version: ${{ matrix.config.version }}
       build-version: "${{ needs.setup.outputs.build-version }}"
-      enable-asan: ${{ env.ENABLE_ASAN }}
-      enable-ubsan: ${{ env.ENABLE_UBSAN }}
-      enable-tsan: ${{ env.ENABLE_TSAN }}
+      enable-asan: true
+      enable-ubsan: true  
+      enable-tsan: true
+      skip-tests: false
 
     secrets:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
@@ -250,9 +252,10 @@ jobs:
       compiler: ${{ matrix.config.compiler }}
       compiler-version: ${{ matrix.config.version }}
       build-version: "${{ needs.setup.outputs.build-version }}"
-      enable-asan: ${{ env.ENABLE_ASAN }}
-      enable-ubsan: ${{ env.ENABLE_UBSAN }}
-      enable-tsan: ${{ env.ENABLE_TSAN }}
+      enable-asan: true
+      enable-ubsan: true  
+      enable-tsan: true
+      skip-tests: false
     secrets:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}

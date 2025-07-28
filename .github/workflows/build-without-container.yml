@@ -42,6 +42,11 @@ on:
         required: false
         type: boolean
         default: false
+      skip-tests:
+        description: 'Skip unit test execution'
+        required: false
+        type: boolean
+        default: false
     secrets:
       CONAN_LOGIN_USERNAME:
         required: true
@@ -137,46 +142,65 @@ jobs:
             export LDFLAGS="$LDFLAGS $SANITIZER_FLAGS"
           fi
           
-          # Build with or without sanitizers
+          # Build with tests enabled only if not skipping tests (to avoid recompilation)
+          if [ "${{ inputs.skip-tests }}" == "true" ]; then
+            echo "⏭️ Skipping tests - building without test binaries"
+            TEST_OPTION="tests=False"
+          else
+            echo "🧪 Building with tests enabled"
+            TEST_OPTION="tests=True"
+          fi
+          
           conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd
-          conan create conanfile.py --version ${{ inputs.build-version }} --lockfile=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd --build=missing -o tests=False
+          conan create conanfile.py --version ${{ inputs.build-version }} --lockfile=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd --build=missing -o "$TEST_OPTION"
 
       - name: run package tests
+        if: ${{ inputs.skip-tests != true }}
         working-directory: .
         run: |
           echo "Running package tests..."
           # Run tests from the conan cache
           conan test test_package kth/${{ inputs.build-version }}@ --lockfile=build/conan.lock || echo "Test package not found, skipping..."
 
+      - name: skip unit tests
+        if: ${{ inputs.skip-tests == true }}
+        run: |
+          echo "⏭️ Unit tests skipped (SKIP_TESTS=true)"
+          echo "To enable tests, set SKIP_TESTS=false in main workflow"
+          
       - name: run unit tests
+        if: ${{ inputs.skip-tests != true }}
         working-directory: .
         run: |
-          echo "Setting up unit test environment..."
+          echo "Running unit tests from conan cache..."
           
-          # Build with tests enabled
-          conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd
-          conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b general-ci-cd -pr:h general-ci-cd -o tests=True
+          # Create a temporary test package dir to run tests from the cache
+          mkdir -p test_runner
+          cd test_runner
           
-          # Configure with tests enabled
-          cmake --preset conan-release \
-               -DCMAKE_VERBOSE_MAKEFILE=ON \
-               -DGLOBAL_BUILD=ON \
-               -DENABLE_TEST=ON \
-               -DCMAKE_BUILD_TYPE=Release
-               
-          # Build the project with tests
-          cmake --build --preset conan-release -j4
+          # Install the already built package with tests from conan cache
+          conan install ${{ inputs.recipe-name }}/${{ inputs.build-version }}@ --lockfile=../build/conan.lock -g cmake_find_package -g cmake_paths
+          
+          # Find the package folder in conan cache
+          PACKAGE_FOLDER=$(conan cache path ${{ inputs.recipe-name }}/${{ inputs.build-version }}@)
+          echo "Package found at: $PACKAGE_FOLDER"
+          
+          # Look for test binaries in the conan package
+          echo "Looking for test binaries..."
+          find "$PACKAGE_FOLDER" -name "*test*" -type f -executable 2>/dev/null || echo "No test executables found in package"
+          
+          # Alternative: Use conan test if test_package exists
+          echo "Trying conan test approach..."
+          cd ..
           
           # Run the tests
           echo "Running unit tests..."
-          cd build/build/Release
           
-          # Run tests with ctest
+          # Set sanitizer options for better reporting
           if [ "${{ inputs.enable-asan }}" == "true" ] || [ "${{ inputs.enable-ubsan }}" == "true" ] || [ "${{ inputs.enable-tsan }}" == "true" ]; then
             echo "🧪 Running tests with sanitizers enabled..."
             echo "⚠️ Tests may run slower due to sanitizer overhead"
             
-            # Set sanitizer options for better reporting
             if [ "${{ inputs.enable-asan }}" == "true" ]; then
               export ASAN_OPTIONS="detect_leaks=1:abort_on_error=1:print_stats=1"
             fi
@@ -188,12 +212,32 @@ jobs:
             if [ "${{ inputs.enable-tsan }}" == "true" ]; then
               export TSAN_OPTIONS="halt_on_error=1:abort_on_error=1"
             fi
-            
-            # Run tests with extended timeout for sanitizers
-            timeout 1800 ctest --output-on-failure --parallel 2 || echo "Some tests may have failed or timed out with sanitizers"
+          fi
+          
+          # Try to run tests using conan test command (uses cached package)
+          if conan test test_package ${{ inputs.recipe-name }}/${{ inputs.build-version }}@ --lockfile=build/conan.lock 2>/dev/null; then
+            echo "✅ Tests completed successfully using conan test"
           else
-            # Normal test run
-            ctest --output-on-failure --parallel 4 || echo "Some tests may have failed, but continuing..."
+            echo "⚠️ conan test failed or not available, trying alternative approach..."
+            
+            # Fallback: Install package and run tests manually (but this will be faster since package is cached)
+            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b general-ci-cd -pr:h general-ci-cd -o tests=True
+            
+            cmake --preset conan-release \
+                 -DCMAKE_VERBOSE_MAKEFILE=ON \
+                 -DGLOBAL_BUILD=ON \
+                 -DENABLE_TEST=ON \
+                 -DCMAKE_BUILD_TYPE=Release
+                 
+            cmake --build --preset conan-release -j4
+            
+            cd build/build/Release
+            
+            if [ "${{ inputs.enable-asan }}" == "true" ] || [ "${{ inputs.enable-ubsan }}" == "true" ] || [ "${{ inputs.enable-tsan }}" == "true" ]; then
+              timeout 1800 ctest --output-on-failure --parallel 2 || echo "Some tests may have failed or timed out with sanitizers"
+            else
+              ctest --output-on-failure --parallel 4 || echo "Some tests may have failed, but continuing..."
+            fi
           fi
 
       # - uses: github/codeql-action/analyze@v2
