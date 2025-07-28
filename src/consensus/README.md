@@ -19,7 +19,7 @@ $ conan config install https://github.com/k-nuth/ci-utils/raw/master/conan/confi
 2. Install the appropriate library:
 
 ```
-$ conan install --requires=consensus/0.68.1 --update
+$ conan install --requires=consensus/0.69.0 --update
 ```
 
 For more more detailed instructions, please refer to our [documentation](https://kth.cash/docs/).
