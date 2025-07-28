@@ -24,14 +24,20 @@ env:
   SKIP_CPPCHECK: true      # Set to false to enable cppcheck analysis
   SKIP_IWYU: false         # Set to false to enable include-what-you-use analysis
   
-  # Configuration flags (modify values in build job calls below):
-  # - enable-asan: Set to true/false to enable AddressSanitizer builds
-  # - enable-ubsan: Set to true/false to enable UndefinedBehaviorSanitizer builds  
-  # - enable-tsan: Set to true/false to enable ThreadSanitizer builds
-  # - skip-tests: Set to true/false to skip unit test execution
+  # Build strategy:
   # 
+  # ALL BRANCHES:
+  # - Sanitizer builds: Always run WITH sanitizers for quality assurance (never uploaded)
+  # 
+  # RELEASE BRANCHES ONLY (release/hotfix/dev-publish):
+  # - Relase builds: Clean binaries WITHOUT sanitizers (uploaded to registry)
+  #
+  # This ensures: 
+  # • Development branches: Only sanitizer builds (1 build per platform)
+  # • Release branches: Sanitizer builds + release builds (2 builds per platform)
+  # • Release packages: Always clean (no sanitizer instrumentation)
+  #
   # NOTE: AddressSanitizer and ThreadSanitizer are mutually exclusive on Clang (macOS)
-  #       If both are enabled, AddressSanitizer takes priority
 
 jobs:
   debug:
@@ -218,11 +224,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
-    name: ${{ matrix.config.name }}
+    name: ${{ matrix.config.name }} (Sanitizers)
     uses: ./.github/workflows/build-with-container.yml
     with:
       if: ${{ matrix.config.compiler == 'GCC' }}
-      upload: ${{ (github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/release') || startsWith(github.ref, 'refs/heads/hotfix') || startsWith(github.ref, 'refs/heads/dev-publish'))) || (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/') || startsWith(github.head_ref, 'dev-publish/'))) }}
+      upload: false  # Never upload sanitizer builds
       os: ${{ matrix.config.os }}
       image: "kthnode/gcc${{ matrix.config.version }}${{ matrix.config.docker_suffix }}"
       conan-remote: "kth"
@@ -230,10 +236,10 @@ jobs:
       compiler: ${{ matrix.config.compiler }}
       compiler-version: ${{ matrix.config.version }}
       build-version: "${{ needs.setup.outputs.build-version }}"
-      enable-asan: true
-      enable-ubsan: true  
-      enable-tsan: true
-      skip-tests: false
+      enable-asan: true   # Always enabled (sanitizer builds)
+      enable-ubsan: true  # Always enabled (sanitizer builds) 
+      enable-tsan: true   # Always enabled (sanitizer builds)
+      skip-tests: true
 
     secrets:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
@@ -244,21 +250,75 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
-    name: ${{ matrix.config.name }}
+    name: ${{ matrix.config.name }} (Sanitizers)
     uses: ./.github/workflows/build-without-container.yml
     with:
       if: ${{ matrix.config.compiler != 'GCC' }}
-      upload: ${{ (github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/release') || startsWith(github.ref, 'refs/heads/hotfix') || startsWith(github.ref, 'refs/heads/dev-publish'))) || (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/') || startsWith(github.head_ref, 'dev-publish/'))) }}
+      upload: false  # Never upload sanitizer builds
       os: ${{ matrix.config.os }}
       conan-remote: "kth"
       recipe-name: "kth"
       compiler: ${{ matrix.config.compiler }}
       compiler-version: ${{ matrix.config.version }}
       build-version: "${{ needs.setup.outputs.build-version }}"
-      enable-asan: true
-      enable-ubsan: true  
-      enable-tsan: false
-      skip-tests: false
+      enable-asan: true   # Always enabled (sanitizer builds)
+      enable-ubsan: true  # Always enabled (sanitizer builds)
+      enable-tsan: false  # Disabled due to Clang conflict with AddressSanitizer
+      skip-tests: true
+    secrets:
+      CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
+      CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
+
+  build-with-container-release:
+    needs: [setup, generate-matrix]
+    # Only run release builds when uploading (clean binaries for release branches)
+    if: ${{ (github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/release') || startsWith(github.ref, 'refs/heads/hotfix') || startsWith(github.ref, 'refs/heads/dev-publish'))) || (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/') || startsWith(github.head_ref, 'dev-publish/'))) }}
+    strategy:
+      fail-fast: false
+      matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
+    name: ${{ matrix.config.name }} (Release)
+    uses: ./.github/workflows/build-with-container.yml
+    with:
+      if: ${{ matrix.config.compiler == 'GCC' }}
+      upload: true  # Upload clean release builds
+      os: ${{ matrix.config.os }}
+      image: "kthnode/gcc${{ matrix.config.version }}${{ matrix.config.docker_suffix }}"
+      conan-remote: "kth"
+      recipe-name: "kth"
+      compiler: ${{ matrix.config.compiler }}
+      compiler-version: ${{ matrix.config.version }}
+      build-version: "${{ needs.setup.outputs.build-version }}"
+      enable-asan: false  # Disabled for clean release builds  
+      enable-ubsan: false # Disabled for clean release builds
+      enable-tsan: false  # Disabled for clean release builds
+      skip-tests: true
+
+    secrets:
+      CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
+      CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
+
+  build-without-container-release:
+    needs: [setup, generate-matrix]
+    # Only run release builds when uploading (clean binaries for release branches)
+    if: ${{ (github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/release') || startsWith(github.ref, 'refs/heads/hotfix') || startsWith(github.ref, 'refs/heads/dev-publish'))) || (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/') || startsWith(github.head_ref, 'dev-publish/'))) }}
+    strategy:
+      fail-fast: false
+      matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
+    name: ${{ matrix.config.name }} (Release)
+    uses: ./.github/workflows/build-without-container.yml
+    with:
+      if: ${{ matrix.config.compiler != 'GCC' }}
+      upload: true  # Upload clean release builds
+      os: ${{ matrix.config.os }}
+      conan-remote: "kth"
+      recipe-name: "kth"
+      compiler: ${{ matrix.config.compiler }}
+      compiler-version: ${{ matrix.config.version }}
+      build-version: "${{ needs.setup.outputs.build-version }}"
+      enable-asan: false  # Disabled for clean release builds
+      enable-ubsan: false # Disabled for clean release builds  
+      enable-tsan: false  # Disabled for clean release builds
+      skip-tests: true
     secrets:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
