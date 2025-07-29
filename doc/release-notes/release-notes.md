@@ -1,3 +1,43 @@
+# version 0.69.0
+
+You can install Knuth node version v0.69.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* refactor: replace deprecated create_old function with byte_reader pat… by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/35
+* feat: add GLOBAL_BUILD option to CMake configuration by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/38
+* feat: update secp256k1 configuration by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/39
+* feat: reorganize build scripts into scripts/ directory by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/36
+* feat: add Emscripten (WebAssembly) support by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/37
+* refactor: Conan package to expose multiple CMake targets by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/40
+* fix: C-API operation mutable by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/41
+* cleanup: secp256k1 cmake quiet by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/42
+* feat(build): enable tests by default in CMake and Conan for all major… by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/47
+* doc: update README and add BUILD_WITH_TESTS documentation by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/43
+* feat(ci): enable and run tests by default in all CI workflows by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/44
+* chore(scripts): update build scripts, add test runner, remove obsolet… by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/45
+* feat(tests): update and refactor test files for new test-enabled buil… by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/46
+* chore: remove doctest add catch2 lock by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/48
+* chore: update copyright year to 2025 by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/49
+* feat: Update secp256k1 from Bitcoin Cash Node with enhanced cryptographic modules by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/50
+* chore: general cleanup and code organization by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/51
+* feat: refactor transaction verification logic and utxo selection by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/53
+* chore: temporary adjustments in validation flow by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/54
+* fix: add gmp dependency reference to consensus component in conanfile by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/56
+* fix: integrate unit tests into build workflows and remove duplicate test job by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/58
+* feat: add clang-format static checks to CI workflow by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/59
+* fix: add missing conan profiles to unit test steps by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/60
+* ci: add SKIP_CLANG_FORMAT flag to temporarily disable formatting checks by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/62
+* feat: add cppcheck static analysis to CI workflow by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/64
+* feat: add IWYU (Include What You Use) analysis to CI workflow by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/65
+* feat: add local sanitizer testing script by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/66
+* fix: resolve GitHub Actions env context error in workflow calls by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/67
+* fix: resolve sanitizer conflicts between AddressSanitizer and ThreadS… by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/68
+* feat: add local sanitizer build script based on build.sh by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/69
+
+
+**Full Changelog**: https://github.com/k-nuth/kth-mono/compare/v0.68.1...v0.69.0
+
+
 # version 0.68.1
 
 You can install Knuth node version v0.68.1 [using these instructions](https://kth.cash/#download).
