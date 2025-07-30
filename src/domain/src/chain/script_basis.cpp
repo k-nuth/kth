@@ -57,7 +57,8 @@ script_basis::script_basis(data_chunk&& encoded, bool prefix) {
         byte_reader reader(encoded);
         auto obj = from_data(reader, prefix);
         if (! obj) {
-            throw std::runtime_error(obj.error().message());
+            valid_ = false;
+            return;
         }
         valid_ = true;
         *this = std::move(obj.value());
@@ -73,7 +74,8 @@ script_basis::script_basis(data_chunk const& encoded, bool prefix) {
     byte_reader reader(encoded);
     auto obj = from_data(reader, prefix);
     if (! obj) {
-        throw std::runtime_error(obj.error().message());
+        valid_ = false;
+        return;
     }
     valid_ = true;
     *this = std::move(obj.value());
