@@ -20,7 +20,7 @@ $ conan config install https://github.com/k-nuth/ci-utils/raw/master/conan/confi
 2. Install the appropriate library:
 
 ```
-$ conan install --requires=c-api/0.69.0 --update
+$ conan install --requires=c-api/0.70.0 --update
 ```
 
 ### "Hello, Knuth!":
