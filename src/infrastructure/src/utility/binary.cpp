@@ -16,12 +16,12 @@
 
 namespace kth {
 
-binary::size_type binary::blocks_size(size_type bit_size) {
+constexpr binary::size_type binary::blocks_size(size_type bit_size) noexcept {
     return bit_size == 0 ? 0 : (bit_size - 1) / bits_per_block + 1;
 }
 
-bool binary::is_base2(std::string const& text) {
-    for (auto const& character: text) {
+bool binary::is_base2(std::string_view text) noexcept {
+    for (auto const character: text) {
         if (character != '0' && character != '1') {
             return false;
         }
@@ -29,10 +29,10 @@ bool binary::is_base2(std::string const& text) {
     return true;
 }
 
-binary::binary(std::string const& bit_string)
+binary::binary(std::string_view bit_string)
     : binary()
 {
-    std::stringstream(bit_string) >> *this;
+    std::stringstream(std::string(bit_string)) >> *this;
 }
 
 binary::binary(size_type size, uint32_t number)
@@ -85,7 +85,7 @@ bool binary::operator[](size_type index) const {
     return (block & bitmask) > 0;
 }
 
-data_chunk const& binary::blocks() const {
+data_chunk const& binary::blocks() const noexcept {
     return blocks_;
 }
 
@@ -95,7 +95,7 @@ std::string binary::encoded() const {
     return bits.str();
 }
 
-binary::size_type binary::size() const {
+binary::size_type binary::size() const noexcept {
     size_type const base_bit_size = blocks_.size() * bits_per_block;
     auto const res = safe_subtract(base_bit_size, static_cast<size_type>(final_block_excess_));
     if ( ! res) {

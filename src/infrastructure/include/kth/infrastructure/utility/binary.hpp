@@ -5,8 +5,10 @@
 #ifndef KTH_INFRASTRUCTURE_BINARY_HPP
 #define KTH_INFRASTRUCTURE_BINARY_HPP
 
+#include <bit>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <kth/infrastructure/constants.hpp>
@@ -21,42 +23,41 @@ struct KI_API binary {
     static
     constexpr size_type bits_per_block = byte_bits;
 
-    static
-    size_type blocks_size(size_type bit_size);
+    [[nodiscard]] static constexpr
+    size_type blocks_size(size_type bit_size) noexcept;
 
-    static
-    bool is_base2(std::string const& text);
+    [[nodiscard]] static
+    bool is_base2(std::string_view text) noexcept;
 
     binary() = default;
-    binary(binary const& x) = default;
 
     explicit
-    binary(std::string const& bit_string);
+    binary(std::string_view bit_string);
 
     binary(size_type size, uint32_t number);
     binary(size_type size, data_slice blocks);
 
     void resize(size_type size);
-    bool operator[](size_type index) const;
-    data_chunk const& blocks() const;
-    std::string encoded() const;
+    [[nodiscard]] bool operator[](size_type index) const;
+    [[nodiscard]] data_chunk const& blocks() const noexcept;
+    [[nodiscard]] std::string encoded() const;
 
     /// size in bits
-    size_type size() const;
+    [[nodiscard]] size_type size() const noexcept;
     void append(binary const& post);
     void prepend(binary const& prior);
     void shift_left(size_type distance);
     void shift_right(size_type distance);
-    binary substring(size_type start, size_type length=max_size_t) const;
+    [[nodiscard]] binary substring(size_type start, size_type length=max_size_t) const;
 
-    bool is_prefix_of(data_slice field) const;
-    bool is_prefix_of(uint32_t field) const;
-    bool is_prefix_of(binary const& field) const;
+    [[nodiscard]] bool is_prefix_of(data_slice field) const;
+    [[nodiscard]] bool is_prefix_of(uint32_t field) const;
+    [[nodiscard]] bool is_prefix_of(binary const& field) const;
 
     binary& operator=(binary const& x);
-    bool operator==(binary const& x) const;
-    bool operator!=(binary const& x) const;
-    bool operator<(binary const& x) const;
+    [[nodiscard]] bool operator==(binary const& x) const;
+    [[nodiscard]] bool operator!=(binary const& x) const;
+    [[nodiscard]] bool operator<(binary const& x) const;
 
     friend
     std::istream& operator>>(std::istream& in, binary& to);
