@@ -78,6 +78,10 @@ include(CheckCXXCompilerFlag)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/ci_utils/cmake)
 include(KnuthTools)
 
+# Find simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  find_package(simdutf REQUIRED)
+endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -matomics -mbulk-memory")
@@ -444,6 +448,11 @@ target_link_libraries(${PROJECT_NAME} PUBLIC secp256k1::secp256k1)
 target_link_libraries(${PROJECT_NAME} PUBLIC nonstd::expected-lite)
 target_link_libraries(${PROJECT_NAME} PUBLIC ctre::ctre)
 
+# Link simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  target_link_libraries(${PROJECT_NAME} PUBLIC simdutf::simdutf)
+endif()
+
 if (WITH_ICU)
   target_link_libraries(${PROJECT_NAME} PUBLIC ICU::icuuc)
 endif()
@@ -460,9 +469,11 @@ _group_sources(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}")
 
 # Tests
 # ------------------------------------------------------------------------------
-if (ENABLE_TEST)
+# Skip tests for WebAssembly (Catch2 incompatible with shared-memory/threads)
+if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   enable_testing()
   find_package(Catch2 3 REQUIRED)
+  find_package(nanobench REQUIRED)
 
   set(kth_test_sources
     test/config/authority.cpp
@@ -498,7 +509,6 @@ if (ENABLE_TEST)
     test/utility/data.cpp
     test/utility/endian.cpp
     test/utility/operators.cpp
-    test/utility/pseudo_random_broken_do_not_use.cpp
     test/utility/serializer.cpp
     test/utility/stream.cpp
     test/utility/thread.cpp
@@ -551,6 +561,16 @@ if (ENABLE_TEST)
     # Fallback to manual test registration
     add_test(NAME kth_infrastructure_test COMMAND kth_infrastructure_test)
   endif()
+
+  _group_sources(kth_infrastructure_test "${CMAKE_CURRENT_LIST_DIR}/test")
+
+  # Benchmark executable (separate from tests)
+  add_executable(kth_infrastructure_benchmarks test/formats/base_encoding_benchmarks.cpp)
+  target_include_directories(kth_infrastructure_benchmarks PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+  target_link_libraries(kth_infrastructure_benchmarks PRIVATE ${PROJECT_NAME})
+  target_link_libraries(kth_infrastructure_benchmarks PRIVATE nanobench::nanobench)
+
+  _group_sources(kth_infrastructure_benchmarks "${CMAKE_CURRENT_LIST_DIR}/test")
 endif()
 
 # Examples

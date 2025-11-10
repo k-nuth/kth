@@ -9,6 +9,45 @@
 
 #include <kth/infrastructure/utility/data.hpp>
 
+#ifndef __EMSCRIPTEN__
+// Use SIMD-optimized simdutf library when not compiling for WebAssembly
+#include <simdutf.h>
+
+namespace kth {
+
+std::string encode_base64(data_slice unencoded) {
+    auto const input = reinterpret_cast<char const*>(unencoded.data());
+    auto const size = unencoded.size();
+    auto const output_size = simdutf::base64_length_from_binary(size);
+
+    std::string result(output_size, '\0');
+    simdutf::binary_to_base64(input, size, result.data());
+    return result;
+}
+
+bool decode_base64(data_chunk& out, std::string_view in) {
+    auto const max_size = simdutf::maximal_binary_length_from_base64(in.data(), in.size());
+    data_chunk decoded(max_size);
+
+    auto result = simdutf::base64_to_binary(
+        in.data(),
+        in.size(),
+        reinterpret_cast<char*>(decoded.data())
+    );
+
+    if (result.error != simdutf::error_code::SUCCESS) {
+        return false;
+    }
+
+    decoded.resize(result.count);
+    out = std::move(decoded);
+    return true;
+}
+
+} // namespace kth
+
+#else
+// Fallback implementation for WebAssembly
 // This implementation derived from public domain:
 // en.wikibooks.org/wiki/Algorithm_Implementation/Miscellaneous/Base64
 
@@ -136,3 +175,4 @@ bool decode_base64(data_chunk& out, std::string_view in)
 
 } // namespace kth
 
+#endif // __EMSCRIPTEN__

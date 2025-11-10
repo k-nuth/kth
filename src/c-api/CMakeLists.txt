@@ -488,7 +488,8 @@ if (WITH_CONSOLE_CAPI)
           OUTPUT_NAME test_console)
 endif()
 
-if (ENABLE_TEST)
+# Skip tests for WebAssembly (Catch2 incompatible with shared-memory/threads)
+if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     enable_testing()
     find_package(Catch2 3 REQUIRED)
 

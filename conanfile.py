@@ -131,6 +131,10 @@ class KthRecipe(KnuthConanFileV2):
         self.requires("ctre/3.10.0", transitive_headers=True, transitive_libs=True)
         self.requires("tiny-aes-c/1.0.0", transitive_headers=True, transitive_libs=True)
 
+        # simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)
+        if self.settings.os != "Emscripten":
+            self.requires("simdutf/7.1.0", transitive_headers=True, transitive_libs=True)
+
         # if self.options.with_png:
         #     self.requires("libpng/1.6.34@kth/stable", transitive_headers=True, transitive_libs=True)
 
@@ -145,6 +149,7 @@ class KthRecipe(KnuthConanFileV2):
         self.tool_requires("secp256k1-precompute/1.0.0")
         if self.options.tests:
             self.test_requires("catch2/3.11.0")
+            self.test_requires("nanobench/4.3.11")
 
     def config_options(self):
         KnuthConanFileV2.config_options(self)
@@ -160,6 +165,11 @@ class KthRecipe(KnuthConanFileV2):
         if arch != "x86_64" and arch != "armv7":
             self.output.info(f"Setting secp256k1_use_asm to False for architecture: {arch}")
             self.options.secp256k1_use_asm = False
+
+        # Disable tests for WebAssembly (Catch2 incompatible with shared-memory/threads)
+        if self.settings.os == "Emscripten":
+            self.options.tests = False
+            self.output.info("Tests disabled for Emscripten build")
 
     def configure(self):
         KnuthConanFileV2.configure(self)

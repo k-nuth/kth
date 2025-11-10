@@ -5,40 +5,51 @@
 #include <kth/infrastructure/formats/base_16.hpp>
 
 #include <algorithm>
-#include <iomanip>
-#include <sstream>
-
-#include <boost/algorithm/string.hpp>
+#include <array>
 
 #include <kth/infrastructure/utility/data.hpp>
 
 namespace kth {
 
-std::string encode_base16(data_slice data) {
-    std::stringstream ss;
-    ss << std::hex << std::setfill('0');
-    for (int val: data) {
-        ss << std::setw(2) << val;
+// Optimized lookup table for hex encoding
+static constexpr std::array<char, 16> hex_chars = {
+    '0', '1', '2', '3', '4', '5', '6', '7',
+    '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
+};
+
+// Fast hex decode lookup table (256 entries, invalid chars = 255)
+static constexpr std::array<uint8_t, 256> hex_decode_table = []() consteval {
+    std::array<uint8_t, 256> table{};
+    for (size_t i = 0; i < 256; ++i) {
+        table[i] = 255;  // Invalid by default
     }
-    return ss.str();
+    // Digits 0-9
+    for (size_t i = 0; i < 10; ++i) {
+        table['0' + i] = static_cast<uint8_t>(i);
+    }
+    // Uppercase A-F
+    for (size_t i = 0; i < 6; ++i) {
+        table['A' + i] = static_cast<uint8_t>(10 + i);
+    }
+    // Lowercase a-f
+    for (size_t i = 0; i < 6; ++i) {
+        table['a' + i] = static_cast<uint8_t>(10 + i);
+    }
+    return table;
+}();
+
+std::string encode_base16(data_slice data) {
+    std::string result(data.size() * 2, '\0');
+    auto out = result.data();
+    for (auto byte : data) {
+        *out++ = hex_chars[(byte >> 4) & 0x0F];
+        *out++ = hex_chars[byte & 0x0F];
+    }
+    return result;
 }
 
 bool is_base16(char c) {
-    return
-        ('0' <= c && c <= '9') ||
-        ('A' <= c && c <= 'F') ||
-        ('a' <= c && c <= 'f');
-}
-
-static
-unsigned from_hex(char c) {
-    if ('A' <= c && c <= 'F') {
-        return 10 + c - 'A';
-    }
-    if ('a' <= c && c <= 'f') {
-        return 10 + c - 'a';
-    }
-    return c - '0';
+    return hex_decode_table[static_cast<uint8_t>(c)] != 255;
 }
 
 bool decode_base16(data_chunk& out, std::string_view in) {
@@ -87,15 +98,17 @@ hash_digest hash_literal(char const (&string)[2 * hash_size + 1]) {
 
 // For support of template implementation only, do not call directly.
 bool decode_base16_private(uint8_t* out, size_t out_size, char const* in) {
-    if ( ! std::all_of(in, in + 2 * out_size, is_base16)) {
-        return false;
-    }
-
     for (size_t i = 0; i < out_size; ++i) {
-        out[i] = (from_hex(in[0]) << 4) + from_hex(in[1]);
+        auto const high = hex_decode_table[static_cast<uint8_t>(in[0])];
+        auto const low = hex_decode_table[static_cast<uint8_t>(in[1])];
+
+        if (high == 255 || low == 255) {
+            return false;
+        }
+
+        out[i] = (high << 4) | low;
         in += 2;
     }
-
     return true;
 }
 
