@@ -63,35 +63,28 @@ jobs:
               issue.title.includes('Conan package updates available')
             );
 
-            const body = `## Conan Package Updates Available
-
-The weekly dependency check has found updates for Conan packages:
-
-${updates}
-
-### How to Update
-
-To update a specific package:
-\`\`\`bash
-python scripts/check_conan_updates.py --update --package PACKAGE_NAME
-\`\`\`
-
-To update all packages:
-\`\`\`bash
-python scripts/check_conan_updates.py --update
-\`\`\`
-
-### Full Report
-<details>
-<summary>Click to expand</summary>
-
-\`\`\`
-${report}
-\`\`\`
-</details>
-
----
-*This issue was automatically created by the [Check Conan Dependencies workflow](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}).*`;
+            const body = "## Conan Package Updates Available\n\n" +
+              "The weekly dependency check has found updates for Conan packages:\n\n" +
+              updates + "\n\n" +
+              "### How to Update\n\n" +
+              "To update a specific package:\n" +
+              "```bash\n" +
+              "python scripts/check_conan_updates.py --update --package PACKAGE_NAME\n" +
+              "```\n\n" +
+              "To update all packages:\n" +
+              "```bash\n" +
+              "python scripts/check_conan_updates.py --update\n" +
+              "```\n\n" +
+              "### Full Report\n" +
+              "<details>\n" +
+              "<summary>Click to expand</summary>\n\n" +
+              "```\n" +
+              report + "\n" +
+              "```\n" +
+              "</details>\n\n" +
+              "---\n" +
+              "*This issue was automatically created by the [Check Conan Dependencies workflow](" +
+              context.serverUrl + "/" + context.repo.owner + "/" + context.repo.repo + "/actions/runs/" + context.runId + ").*";
 
             if (existingIssue) {
               // Update existing issue
@@ -99,9 +92,9 @@ ${report}
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: existingIssue.number,
-                body: `## Updated Report (${new Date().toISOString().split('T')[0]})\n\n` + body
+                body: "## Updated Report (" + new Date().toISOString().split('T')[0] + ")\n\n" + body
               });
-              console.log(`Updated existing issue #${existingIssue.number}`);
+              console.log('Updated existing issue #' + existingIssue.number);
             } else {
               // Create new issue
               await github.rest.issues.create({
