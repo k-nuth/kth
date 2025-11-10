@@ -131,7 +131,7 @@ class KthRecipe(KnuthConanFileV2):
             self.requires("openssl/3.4.1", transitive_headers=True, transitive_libs=True)
 
         self.requires("expected-lite/0.8.0", transitive_headers=True, transitive_libs=True)
-        self.requires("ctre/3.8.1", transitive_headers=True, transitive_libs=True)
+        self.requires("ctre/3.10.0", transitive_headers=True, transitive_libs=True)
         self.requires("tiny-aes-c/1.0.0", transitive_headers=True, transitive_libs=True)
 
         # if self.options.with_png:
