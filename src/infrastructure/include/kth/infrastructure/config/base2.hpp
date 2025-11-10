@@ -19,12 +19,7 @@ namespace kth::infrastructure::config {
  * Serialization helper for base2 encoded data.
  */
 struct KI_API base2 {
-
     base2() = default;
-    base2(base2 const& x) = default;
-    base2(base2&& x) = default;
-    base2& operator=(base2 const&) = default;
-    base2& operator=(base2&&) = default;
 
     /**
      * Initialization constructor.
@@ -39,18 +34,17 @@ struct KI_API base2 {
     explicit
     base2(binary const& value);
 
-
     /**
      * Get number of bits in value.
      */
-    size_t size() const;
+    [[nodiscard]] size_t size() const noexcept;
 
     /**
      * Overload cast to internal type.
      * @return  This object's value cast to internal type reference.
      */
-    explicit
-    operator binary const&() const;
+    [[nodiscard]] explicit
+    operator binary const&() const noexcept;
 
     /**
      * Overload stream in. If input is invalid sets no bytes in argument.

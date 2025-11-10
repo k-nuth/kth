@@ -21,12 +21,7 @@ namespace kth::infrastructure::config {
  */
 //TODO(fernando): make a generic class for baseX
 struct KI_API base16 {
-
     base16() = default;
-    base16(base16 const& x) = default;
-    base16(base16&& x) = default;
-    base16& operator=(base16 const&) = default;
-    base16& operator=(base16&&) = default;
 
     explicit
     base16(std::string_view hexcode);
@@ -51,14 +46,14 @@ struct KI_API base16 {
      * @return  This object's value cast to internal type reference.
      */
     // implicit
-    operator data_chunk const&() const;
+    [[nodiscard]] operator data_chunk const&() const noexcept;
 
     /**
      * Overload cast to generic data reference.
      * @return  This object's value cast to a generic data.
      */
-    explicit
-    operator data_slice() const;
+    [[nodiscard]] explicit
+    operator data_slice() const noexcept;
 
     /**
      * Overload stream in. If input is invalid sets no bytes in argument.

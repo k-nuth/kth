@@ -25,11 +25,11 @@ base2::base2(binary const& value)
     : value_(value)
 {}
 
-size_t base2::size() const {
+size_t base2::size() const noexcept {
     return value_.size();
 }
 
-base2::operator binary const&() const {
+base2::operator binary const&() const noexcept {
     return value_;
 }
 

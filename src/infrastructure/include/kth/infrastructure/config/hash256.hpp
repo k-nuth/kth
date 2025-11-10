@@ -24,8 +24,6 @@ public:
 
     hash256() = default;
 
-    hash256(hash256 const& x) = default;
-
     /**
      * Initialization constructor.
      * @param[in]  hexcode  The hash value in string hexidecimal form.
@@ -44,20 +42,20 @@ public:
      * Get the hash as a string.
      * @return The hash in the string hexidecimal form.
      */
-    std::string to_string() const;
+    [[nodiscard]] std::string to_string() const;
 
     /**
      * Override the equality operator.
      * @param[in]  other  The other object with which to compare.
      */
-    bool operator==(const hash256& x) const;
+    [[nodiscard]] bool operator==(const hash256& x) const noexcept;
 
     /**
      * Cast to internal type.
      * @return  This object's value cast to internal type.
      */
     // implicit
-    operator hash_digest const&() const;    //NOLINT
+    [[nodiscard]] operator hash_digest const&() const noexcept;    //NOLINT
 
     /**
      * Define stream in. Throws if input is invalid.

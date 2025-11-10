@@ -18,12 +18,7 @@ namespace kth::infrastructure::config {
  * Serialization helper for base64 encoded data.
  */
 struct KI_API base64 {
-
     base64() = default;
-    base64(base64 const& x) = default;
-    base64(base64&& x) = default;
-    base64& operator=(base64 const&) = default;
-    base64& operator=(base64&&) = default;
 
     explicit
     base64(std::string_view base64);
@@ -34,20 +29,19 @@ struct KI_API base64 {
     explicit
     base64(data_chunk&& value);
 
-
     /**
      * Overload cast to internal type.
      * @return  This object's value cast to internal type reference.
      */
-    explicit
-    operator data_chunk const&() const;
+    [[nodiscard]] explicit
+    operator data_chunk const&() const noexcept;
 
     /**
      * Overload cast to generic data reference.
      * @return  This object's value cast to a generic data.
      */
-    explicit
-    operator data_slice() const;
+    [[nodiscard]] explicit
+    operator data_slice() const noexcept;
 
     /**
      * Overload stream in. Throws if input is invalid.

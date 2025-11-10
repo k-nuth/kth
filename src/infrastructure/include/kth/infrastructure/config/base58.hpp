@@ -18,13 +18,7 @@ namespace kth::infrastructure::config {
  * Serialization helper for base58 encoded text.
  */
 struct KI_API base58 {
-
     base58() = default;
-    base58(base58 const& x) = default;
-    base58(base58&& x) = default;
-    base58& operator=(base58 const&) = default;
-    base58& operator=(base58&&) = default;
-
 
     explicit
     base58(std::string_view base58);
@@ -39,15 +33,15 @@ struct KI_API base58 {
      * Overload cast to internal type.
      * @return  This object's value cast to internal type reference.
      */
-    explicit
-    operator data_chunk const&() const;
+    [[nodiscard]] explicit
+    operator data_chunk const&() const noexcept;
 
     /**
      * Overload cast to generic data reference.
      * @return  This object's value cast to a generic data.
      */
-    explicit
-    operator data_slice() const;
+    [[nodiscard]] explicit
+    operator data_slice() const noexcept;
 
     /**
      * Overload stream in. Throws if input is invalid.

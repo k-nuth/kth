@@ -18,9 +18,7 @@ namespace kth::infrastructure::config {
  * Serialization helper for a bitcoin 160 bit hash.
  */
 struct KI_API hash160 {
-
     hash160() = default;
-    hash160(hash160 const& x) = default;
 
     explicit
     hash160(std::string_view hexcode);
@@ -35,8 +33,8 @@ struct KI_API hash160 {
      * Overload cast to internal type.
      * @return  This object's value cast to internal type.
      */
-    explicit
-    operator short_hash const&() const;
+    [[nodiscard]] explicit
+    operator short_hash const&() const noexcept;
 
     /**
      * Overload stream in. Throws if input is invalid.

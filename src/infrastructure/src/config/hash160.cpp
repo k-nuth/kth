@@ -35,7 +35,7 @@ hash160::hash160(short_hash const& value)
 //     std::copy_n(value.begin(), value_.size(), value_.begin());
 // }
 
-hash160::operator short_hash const&() const {
+hash160::operator short_hash const&() const noexcept {
     return value_;
 }
 

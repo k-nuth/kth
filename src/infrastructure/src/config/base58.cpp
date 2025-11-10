@@ -34,11 +34,11 @@ base58::base58(data_chunk&& value)
     : value_(std::move(value))
 {}
 
-base58::operator data_chunk const&() const {
+base58::operator data_chunk const&() const noexcept {
     return value_;
 }
 
-base58::operator data_slice() const {
+base58::operator data_slice() const noexcept {
     return value_;
 }
 

@@ -31,11 +31,11 @@ base64::base64(data_chunk&& value)
 {}
 
 
-base64::operator data_chunk const&() const {
+base64::operator data_chunk const&() const noexcept {
     return value_;
 }
 
-base64::operator data_slice() const {
+base64::operator data_slice() const noexcept {
     return value_;
 }
 

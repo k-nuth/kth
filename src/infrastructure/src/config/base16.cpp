@@ -31,11 +31,11 @@ base16::base16(data_chunk&& value)
     : value_(std::move(value))
 {}
 
-base16::operator data_chunk const&() const {
+base16::operator data_chunk const&() const noexcept {
     return value_;
 }
 
-base16::operator data_slice() const {
+base16::operator data_slice() const noexcept {
     return value_;
 }
 

@@ -49,7 +49,6 @@ struct KI_API checkpoint {
     bool validate(hash_digest const& hash, size_t height, list const& checks);
 
     checkpoint() = default;
-    checkpoint(checkpoint const& x) noexcept = default;
 
     /**
      * Initialization constructor.

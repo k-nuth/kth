@@ -18,9 +18,7 @@
 
 namespace kth::infrastructure::config {
 
-hash256::hash256(std::string_view hexcode)
-    : hash256()
-{
+hash256::hash256(std::string_view hexcode) {
     std::stringstream(std::string(hexcode)) >> *this;
 }
 
@@ -34,7 +32,7 @@ std::string hash256::to_string() const {
     return value.str();
 }
 
-hash256::operator hash_digest const&() const {
+hash256::operator hash_digest const&() const noexcept {
     return value_;
 }
 
