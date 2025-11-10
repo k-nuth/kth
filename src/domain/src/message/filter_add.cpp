@@ -51,20 +51,20 @@ void filter_add::reset() {
 // static
 expect<filter_add> filter_add::from_data(byte_reader& reader, uint32_t version) {
     if (version < version_minimum) {
-        return make_unexpected(error::version_too_low);
+        return std::unexpected(error::version_too_low);
     }
     
     auto const size = reader.read_size_little_endian();
     if ( ! size) {
-        return make_unexpected(size.error());
+        return std::unexpected(size.error());
     }
     if (*size > max_filter_add) {
-        return make_unexpected(error::invalid_filter_add);
+        return std::unexpected(error::invalid_filter_add);
     }
 
     auto data = reader.read_bytes(*size);
     if ( ! data) {
-        return make_unexpected(data.error());
+        return std::unexpected(data.error());
     }
     return filter_add(data_chunk(data->begin(), data->end()));
 }

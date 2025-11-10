@@ -44,14 +44,14 @@ void header::reset() {
 expect<header> header::from_data(byte_reader& reader, bool wire) {
     auto const basis = header_basis::from_data(reader, wire);
     if ( ! basis) {
-        return make_unexpected(basis.error());
+        return std::unexpected(basis.error());
     }
     header hdr {*basis};
 
     if ( ! wire) {
         auto const mtp = reader.read_little_endian<uint32_t>();
         if ( ! mtp) {
-            return make_unexpected(mtp.error());
+            return std::unexpected(mtp.error());
         }
         hdr.validation.median_time_past = *mtp;
     }

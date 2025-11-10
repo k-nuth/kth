@@ -57,17 +57,17 @@ size_t transaction_unconfirmed_entry::serialized_size(domain::chain::transaction
 expect<transaction_unconfirmed_entry> transaction_unconfirmed_entry::from_data(byte_reader& reader) {
     auto tx = domain::chain::transaction::from_data(reader, false);
     if ( ! tx) {
-        return make_unexpected(tx.error());
+        return std::unexpected(tx.error());
     }
 
     auto arrival_time = reader.read_little_endian<uint32_t>();
     if ( ! arrival_time) {
-        return make_unexpected(arrival_time.error());
+        return std::unexpected(arrival_time.error());
     }
 
     auto height = reader.read_little_endian<uint32_t>();
     if ( ! height) {
-        return make_unexpected(height.error());
+        return std::unexpected(height.error());
     }
 
     return transaction_unconfirmed_entry(std::move(*tx), *arrival_time, *height);

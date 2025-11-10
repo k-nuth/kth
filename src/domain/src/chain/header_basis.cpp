@@ -83,7 +83,7 @@ bool header_basis::is_valid() const {
 expect<header_basis> header_basis::from_data(byte_reader& reader, bool /*wire*/) {
     auto const packed_exp = reader.read_packed<detail::header_packed>();
     if ( ! packed_exp) {
-        return make_unexpected(packed_exp.error());
+        return std::unexpected(packed_exp.error());
     }
     auto const& packed = *packed_exp;
     header_basis header;

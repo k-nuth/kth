@@ -152,16 +152,16 @@ void operation::reset() {
 expect<operation> operation::from_data(byte_reader& reader) {
     auto code_exp = reader.read_byte();
     if ( ! code_exp) {
-        return make_unexpected(code_exp.error());
+        return std::unexpected(code_exp.error());
     }
     auto code = opcode(*code_exp);
     auto const size = read_data_size(code, reader);
     if ( ! size) {
-        return make_unexpected(size.error());
+        return std::unexpected(size.error());
     }
     auto data = reader.read_bytes(*size);
     if ( ! data) {
-        return make_unexpected(data.error());
+        return std::unexpected(data.error());
     }
     
     // For numeric opcodes, create operation directly with the opcode (no data)

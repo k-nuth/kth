@@ -36,7 +36,7 @@
 
 #include <kth/domain/concepts.hpp>
 
-#include <nonstd/expected.hpp>
+#include <expected>
 
 #include <kth/domain/wallet/payment_address.hpp>
 #include <kth/domain/chain/coin_selection.hpp>
@@ -173,7 +173,7 @@ public:
     bool is_standard() const;
 
     static
-    nonstd::expected<template_result, std::error_code> create_template(
+    std::expected<template_result, std::error_code> create_template(
         std::vector<utxo> available_utxos,
         uint64_t amount_to_send_hint,
         wallet::payment_address const& destination_address,
@@ -182,7 +182,7 @@ public:
     );
 
     static
-    nonstd::expected<template_result, std::error_code> create_template(
+    std::expected<template_result, std::error_code> create_template(
         std::vector<utxo> available_utxos,
         uint64_t amount_to_send_hint,
         wallet::payment_address const& destination_address,

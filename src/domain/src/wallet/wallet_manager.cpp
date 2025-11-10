@@ -8,7 +8,7 @@
 #include <kth/infrastructure/wallet/dictionary.hpp>
 #include <kth/infrastructure/wallet/mnemonic.hpp>
 
-#include <nonstd/expected.hpp>
+#include <expected>
 
 
 #include <kth/infrastructure/formats/base_16.hpp>
@@ -38,7 +38,7 @@ void clear_hd(T& hd) {
     swap(hd, tmp);
 }
 
-nonstd::expected<wallet_data, std::error_code>
+std::expected<wallet_data, std::error_code>
 create_wallet(
     std::string const& password,
     std::string const& normalized_passphrase,
@@ -100,7 +100,7 @@ create_wallet(
     return data;
 }
 
-nonstd::expected<long_hash, std::error_code>
+std::expected<long_hash, std::error_code>
 decrypt_seed(
     std::string const& password,
     encrypted_seed_t const& encrypted_seed) {

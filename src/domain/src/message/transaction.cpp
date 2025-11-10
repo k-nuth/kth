@@ -64,7 +64,7 @@ bool transaction::operator!=(transaction const& x) const {
 expect<transaction> transaction::from_data(byte_reader& reader, uint32_t version) {
     auto chain = chain::transaction::from_data(reader, true);
     if ( ! chain) {
-        return make_unexpected(chain.error());
+        return std::unexpected(chain.error());
     }
     return transaction(std::move(*chain));
 }

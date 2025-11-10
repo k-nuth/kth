@@ -73,11 +73,11 @@ void inventory_vector::reset() {
 expect<inventory_vector> inventory_vector::from_data(byte_reader& reader, uint32_t version) {
     auto const raw_type = reader.read_little_endian<uint32_t>();
     if ( ! raw_type) {
-        return make_unexpected(raw_type.error());
+        return std::unexpected(raw_type.error());
     }
     auto const hash = read_hash(reader);
     if ( ! hash) {
-        return make_unexpected(hash.error());
+        return std::unexpected(hash.error());
     }
     return inventory_vector(inventory_vector::to_type(*raw_type), *hash);
 }

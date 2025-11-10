@@ -19,7 +19,7 @@
 #include <kth/infrastructure/wallet/hd_public.hpp>
 #include <kth/infrastructure/wallet/mnemonic.hpp>
 
-#include <nonstd/expected.hpp>
+#include <expected>
 
 #define AES256 1
 #include <aes.hpp>
@@ -61,13 +61,13 @@ struct wallet_data {
     encrypted_seed_t encrypted_seed;
 };
 
-nonstd::expected<wallet_data, std::error_code>
+std::expected<wallet_data, std::error_code>
 create_wallet(
     std::string const& password,
     std::string const& normalized_passphrase,
     kth::infrastructure::wallet::dictionary const& lexicon=kth::infrastructure::wallet::language::en);
 
-nonstd::expected<long_hash, std::error_code>
+std::expected<long_hash, std::error_code>
 decrypt_seed(
     std::string const& password,
     encrypted_seed_t const& encrypted_seed);

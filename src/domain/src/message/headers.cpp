@@ -64,23 +64,23 @@ void headers::reset() {
 expect<headers> headers::from_data(byte_reader& reader, uint32_t version) {
     auto const count = reader.read_variable_little_endian();
     if ( ! count) {
-        return make_unexpected(count.error());
+        return std::unexpected(count.error());
     }
     if (*count > max_get_headers) {
-        return make_unexpected(error::version_too_new);
+        return std::unexpected(error::version_too_new);
     }
     header::list elements;
     elements.reserve(*count);
     for (size_t i = 0; i < *count; ++i) {
         auto element = header::from_data(reader, version);
         if ( ! element) {
-            return make_unexpected(element.error());
+            return std::unexpected(element.error());
         }
         elements.push_back(std::move(*element));
     }
 
     if (version < headers::version_minimum) {
-        return make_unexpected(error::version_too_new);
+        return std::unexpected(error::version_too_new);
     }
     return headers(std::move(elements));
 }

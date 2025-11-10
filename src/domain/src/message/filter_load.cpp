@@ -54,30 +54,30 @@ void filter_load::reset() {
 expect<filter_load> filter_load::from_data(byte_reader& reader, uint32_t version) {
     auto const size = reader.read_size_little_endian();
     if ( ! size) {
-        return make_unexpected(size.error());
+        return std::unexpected(size.error());
     }
     if (*size > max_filter_load) {
-        return make_unexpected(error::invalid_filter_load);
+        return std::unexpected(error::invalid_filter_load);
     }
     auto const filter = reader.read_bytes(*size);
     if ( ! filter) {
-        return make_unexpected(filter.error());
+        return std::unexpected(filter.error());
     }
     auto const hash_functions = reader.read_little_endian<uint32_t>();
     if ( ! hash_functions) {
-        return make_unexpected(hash_functions.error());
+        return std::unexpected(hash_functions.error());
     }
     auto const tweak = reader.read_little_endian<uint32_t>();
     if ( ! tweak) {
-        return make_unexpected(tweak.error());
+        return std::unexpected(tweak.error());
     }
     auto const flags = reader.read_byte();
     if ( ! flags) {
-        return make_unexpected(flags.error());
+        return std::unexpected(flags.error());
     }
 
     if (version < filter_load::version_minimum) {
-        return make_unexpected(error::version_too_low);
+        return std::unexpected(error::version_too_low);
     }
     return filter_load(
         data_chunk(filter->begin(), filter->end()),

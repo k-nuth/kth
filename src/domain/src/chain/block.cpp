@@ -214,7 +214,7 @@ expect<block> block::from_data(byte_reader& reader, bool wire) {
     auto basis = block_basis::from_data(reader, wire);
     auto const end_deserialize = asio::steady_clock::now();
     if ( ! basis) {
-        return make_unexpected(basis.error());
+        return std::unexpected(basis.error());
     }
     block res {std::move(*basis)};
     res.validation.start_deserialize = start_deserialize;

@@ -125,20 +125,20 @@ bool compact_block::from_block(message::block const& block) {
 expect<compact_block> compact_block::from_data(byte_reader& reader, uint32_t version) {
     auto const header = chain::header::from_data(reader);
     if ( ! header) {
-        return make_unexpected(header.error());
+        return std::unexpected(header.error());
     }
 
     auto const nonce = reader.read_little_endian<uint64_t>();
     if ( ! nonce) {
-        return make_unexpected(nonce.error());
+        return std::unexpected(nonce.error());
     }
 
     auto const short_id_count = reader.read_size_little_endian();
     if ( ! short_id_count) {
-        return make_unexpected(short_id_count.error());
+        return std::unexpected(short_id_count.error());
     }
     if (*short_id_count > static_absolute_max_block_size()) {
-        return make_unexpected(error::invalid_compact_block);
+        return std::unexpected(error::invalid_compact_block);
     }
 
     short_id_list short_ids;
@@ -146,11 +146,11 @@ expect<compact_block> compact_block::from_data(byte_reader& reader, uint32_t ver
     for (size_t i = 0; i < *short_id_count; ++i) {
         auto const lsb = reader.read_little_endian<uint32_t>();
         if ( ! lsb) {
-            return make_unexpected(lsb.error());
+            return std::unexpected(lsb.error());
         }
         auto const msb = reader.read_little_endian<uint16_t>();
         if ( ! msb) {
-            return make_unexpected(msb.error());
+            return std::unexpected(msb.error());
         }
         short_ids.emplace_back((uint64_t(*msb) << 32) | uint64_t(*lsb));
         //short_ids_.push_back(source.read_mini_hash());
@@ -158,11 +158,11 @@ expect<compact_block> compact_block::from_data(byte_reader& reader, uint32_t ver
 
     auto txs = read_collection<prefilled_transaction>(reader, version);
     if ( ! txs) {
-        return make_unexpected(txs.error());
+        return std::unexpected(txs.error());
     }
 
     if (version < compact_block::version_minimum) {
-        return make_unexpected(error::version_too_low);
+        return std::unexpected(error::version_too_low);
     }
 
     return compact_block(*header, *nonce, std::move(short_ids), std::move(*txs));

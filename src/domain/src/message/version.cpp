@@ -71,35 +71,35 @@ void version::reset() {
 expect<message::version> version::from_data(byte_reader& reader, uint32_t version) {
     auto const value = reader.read_little_endian<uint32_t>();
     if ( ! value) {
-        return make_unexpected(value.error());
+        return std::unexpected(value.error());
     }
     auto const services = reader.read_little_endian<uint64_t>();
     if ( ! services) {
-        return make_unexpected(services.error());
+        return std::unexpected(services.error());
     }
     auto const timestamp = reader.read_little_endian<uint64_t>();
     if ( ! timestamp) {
-        return make_unexpected(timestamp.error());
+        return std::unexpected(timestamp.error());
     }
     auto const address_receiver = network_address::from_data(reader, version, false);
     if ( ! address_receiver) {
-        return make_unexpected(address_receiver.error());
+        return std::unexpected(address_receiver.error());
     }
     auto const address_sender = network_address::from_data(reader, version, false);
     if ( ! address_sender) {
-        return make_unexpected(address_sender.error());
+        return std::unexpected(address_sender.error());
     }
     auto const nonce = reader.read_little_endian<uint64_t>();
     if ( ! nonce) {
-        return make_unexpected(nonce.error());
+        return std::unexpected(nonce.error());
     }
     auto user_agent = reader.read_string();
     if ( ! user_agent) {
-        return make_unexpected(user_agent.error());
+        return std::unexpected(user_agent.error());
     }
     auto const start_height = reader.read_little_endian<uint32_t>();
     if ( ! start_height) {
-        return make_unexpected(start_height.error());
+        return std::unexpected(start_height.error());
     }
 
     auto const peer_bip37 = *value >= level::bip37;

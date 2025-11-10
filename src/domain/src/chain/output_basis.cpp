@@ -52,18 +52,18 @@ bool output_basis::is_valid() const {
 expect<output_basis> output_basis::from_data(byte_reader& reader, bool /*wire*/) {
     auto const value = reader.read_little_endian<uint64_t>();
     if ( ! value) {
-        return make_unexpected(value.error());
+        return std::unexpected(value.error());
     }
 
     auto const script_size_exp = reader.read_size_little_endian();
     if ( ! script_size_exp) {
-        return make_unexpected(script_size_exp.error());
+        return std::unexpected(script_size_exp.error());
     }
     auto script_size = *script_size_exp;
 
     auto const token_prefix_byte = reader.peek_byte();
     if ( ! token_prefix_byte) {
-        return make_unexpected(token_prefix_byte.error());
+        return std::unexpected(token_prefix_byte.error());
     }
 
     token_data_opt token_data = std::nullopt;
@@ -72,7 +72,7 @@ expect<output_basis> output_basis::from_data(byte_reader& reader, bool /*wire*/)
         reader.skip(1); // skip prefix byte
         auto token = token::encoding::from_data(reader);
         if ( ! token) {
-            return make_unexpected(token.error());
+            return std::unexpected(token.error());
         }
         token_data.emplace(std::move(*token));
 
@@ -82,7 +82,7 @@ expect<output_basis> output_basis::from_data(byte_reader& reader, bool /*wire*/)
 
     auto script = script::from_data_with_size(reader, script_size);
     if ( ! script) {
-        return make_unexpected(script.error());
+        return std::unexpected(script.error());
     }
 
     return output_basis{

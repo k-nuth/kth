@@ -32,9 +32,9 @@ number::number(int64_t value)
 {}
 
 inline //static
-nonstd::expected<number, error::error_code_t> number::from_int(int64_t value) {
+std::expected<number, error::error_code_t> number::from_int(int64_t value) {
     if (value == kth::min_int64) {
-        return nonstd::make_unexpected(error::out_of_range);
+        return std::unexpected(error::out_of_range);
     }
     return number(value);
 }
@@ -377,32 +377,32 @@ bool number::safe_mul(int64_t x) {
 
 // static
 inline
-nonstd::expected<number, code> number::safe_add(number const& x, number const& y) {
+std::expected<number, code> number::safe_add(number const& x, number const& y) {
     int64_t val;
     bool const res = __builtin_add_overflow(x.value_, y.value_, &val);
     if (res) {
-        return make_unexpected(error::overflow);
+        return std::unexpected(error::overflow);
     }
     return number(val);
 }
 
 // static
 inline
-nonstd::expected<number, code> number::safe_sub(number const& x, number const& y) {
+std::expected<number, code> number::safe_sub(number const& x, number const& y) {
     int64_t val;
     bool const res = __builtin_sub_overflow(x.value_, y.value_, &val);
     if (res) {
-        return make_unexpected(error::overflow);
+        return std::unexpected(error::overflow);
     }
     return number(val);
 }
 
 inline
-nonstd::expected<number, code> number::safe_mul(number const& x, number const& y) {
+std::expected<number, code> number::safe_mul(number const& x, number const& y) {
     int64_t val;
     bool const res = __builtin_mul_overflow(x.value_, y.value_, &val);
     if (res) {
-        return make_unexpected(error::overflow);
+        return std::unexpected(error::overflow);
     }
     return number(val);
 }

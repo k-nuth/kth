@@ -13,7 +13,7 @@
 // #include <string>
 // #include <vector>
 
-#include <nonstd/expected.hpp>
+#include <expected>
 
 
 #include <kth/domain/concepts.hpp>
@@ -24,7 +24,7 @@
 namespace kth {
 
 template <typename T>
-using expect = nonstd::expected<T, code>;
+using expect = std::expected<T, code>;
 
 // using hash_digest = byte_array<hash_size>;
 // using half_hash = byte_array<half_hash_size>;
@@ -46,7 +46,7 @@ template <size_t N>
 expect<byte_array<N>> read_hash_generic(byte_reader& reader) {
     auto const res = reader.read_bytes(N);
     if ( ! res) {
-        return make_unexpected(res.error());
+        return std::unexpected(res.error());
     }
     byte_array<N> arr;
     std::copy(res->begin(), res->end(), arr.begin());
@@ -78,11 +78,11 @@ template <typename T, typename ... Args>
 expect<std::vector<T>> read_collection(byte_reader& reader, Args&&... args) {
     auto const count_exp = reader.read_size_little_endian();
     if ( ! count_exp) {
-        return make_unexpected(count_exp.error());
+        return std::unexpected(count_exp.error());
     }
     auto const count = *count_exp;
     if (count > static_absolute_max_block_size()) {
-        return make_unexpected(error::invalid_size);
+        return std::unexpected(error::invalid_size);
     }
 
     std::vector<T> list;
@@ -91,7 +91,7 @@ expect<std::vector<T>> read_collection(byte_reader& reader, Args&&... args) {
     for (size_t i = 0; i < count; ++i) {
         auto res = T::from_data(reader, std::forward<Args>(args)...);
         if ( ! res) {
-            return make_unexpected(res.error());
+            return std::unexpected(res.error());
         }
         list.emplace_back(std::move(*res));
     }

@@ -11,7 +11,7 @@
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
-#include <nonstd/expected.hpp>
+#include <expected>
 
 namespace kth::infrastructure::machine {
 
@@ -53,7 +53,7 @@ struct KI_API number {
     number() = default;
 
     static
-    nonstd::expected<number, error::error_code_t> from_int(int64_t value);
+    std::expected<number, error::error_code_t> from_int(int64_t value);
 
     /// Return true if the value is valid given the maximum size.
     bool valid(size_t max_size);
@@ -132,13 +132,13 @@ struct KI_API number {
     bool safe_mul(int64_t x);
 
     static
-    nonstd::expected<number, code> safe_add(number const& x, number const& y);
+    std::expected<number, code> safe_add(number const& x, number const& y);
 
     static
-    nonstd::expected<number, code> safe_sub(number const& x, number const& y);
+    std::expected<number, code> safe_sub(number const& x, number const& y);
 
     static
-    nonstd::expected<number, code> safe_mul(number const& x, number const& y);
+    std::expected<number, code> safe_mul(number const& x, number const& y);
 
 
     // Minimally encoded

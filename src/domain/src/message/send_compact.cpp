@@ -52,17 +52,17 @@ void send_compact::reset() {
 expect<send_compact> send_compact::from_data(byte_reader& reader, uint32_t version) {
     auto const mode = reader.read_byte();
     if ( ! mode) {
-        return make_unexpected(mode.error());
+        return std::unexpected(mode.error());
     }
     if (*mode > 1) {
-        return make_unexpected(error::illegal_value);
+        return std::unexpected(error::illegal_value);
     }
     auto const protocol_version = reader.read_little_endian<uint64_t>();
     if ( ! protocol_version) {
-        return make_unexpected(protocol_version.error());
+        return std::unexpected(protocol_version.error());
     }
     if (version < send_compact::version_minimum) {
-        return make_unexpected(error::version_too_low);
+        return std::unexpected(error::version_too_low);
     }
     return send_compact(*mode, *protocol_version);
 }

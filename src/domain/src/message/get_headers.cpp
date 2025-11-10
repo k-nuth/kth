@@ -38,10 +38,10 @@ bool get_headers::operator!=(get_headers const& x) const {
 expect<get_headers> get_headers::from_data(byte_reader& reader, uint32_t version) {
     auto blocks = get_blocks::from_data(reader, version);
     if ( ! blocks) {
-        return make_unexpected(blocks.error());
+        return std::unexpected(blocks.error());
     }
     if (version < get_headers::version_minimum) {
-        return make_unexpected(error::version_too_new);
+        return std::unexpected(error::version_too_new);
     }
     return get_headers(std::move(blocks->start_hashes()), blocks->stop_hash());
 }

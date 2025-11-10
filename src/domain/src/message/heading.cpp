@@ -85,19 +85,19 @@ void heading::reset() {
 expect<heading> heading::from_data(byte_reader& reader, uint32_t /*version*/) {
     auto const magic = reader.read_little_endian<uint32_t>();
     if ( ! magic) {
-        return make_unexpected(magic.error());
+        return std::unexpected(magic.error());
     }
     auto const command = reader.read_string(command_size);
     if ( ! command) {
-        return make_unexpected(command.error());
+        return std::unexpected(command.error());
     }
     auto const payload_size = reader.read_little_endian<uint32_t>();
     if ( ! payload_size) {
-        return make_unexpected(payload_size.error());
+        return std::unexpected(payload_size.error());
     }
     auto const checksum = reader.read_little_endian<uint32_t>();
     if ( ! checksum) {
-        return make_unexpected(checksum.error());
+        return std::unexpected(checksum.error());
     }
     return heading(*magic, std::move(*command), *payload_size, *checksum);
 }

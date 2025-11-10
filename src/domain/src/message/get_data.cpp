@@ -50,11 +50,11 @@ bool get_data::operator!=(get_data const& x) const {
 // static
 expect<get_data> get_data::from_data(byte_reader& reader, uint32_t version) {
     if (version < version_minimum) {
-        return make_unexpected(error::version_too_low);
+        return std::unexpected(error::version_too_low);
     }
     auto inv = inventory::from_data(reader, version);
     if ( ! inv) {
-        return make_unexpected(inv.error());
+        return std::unexpected(inv.error());
     }
     return get_data(std::move(*inv));
 }

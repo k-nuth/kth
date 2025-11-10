@@ -12,7 +12,7 @@
 #include <string>
 #include <type_traits>
 
-#include <nonstd/expected.hpp>
+#include <expected>
 
 #include <kth/domain/chain/script_basis.hpp>
 #include <kth/domain/constants.hpp>
@@ -156,7 +156,7 @@ public:
     // bool create_endorsement(endorsement& out, ec_secret const& secret, script const& prevout_script, transaction const& tx, uint32_t input_index, uint8_t sighash_type, script_version version = script_version::unversioned, uint64_t value = max_uint64);
 
     static
-    nonstd::expected<endorsement, std::error_code> create_endorsement(
+    std::expected<endorsement, std::error_code> create_endorsement(
         ec_secret const& secret,
         script const& prevout_script,
         transaction const& tx,

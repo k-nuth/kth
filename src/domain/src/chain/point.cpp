@@ -89,13 +89,13 @@ bool point::is_valid() const {
 expect<point> point::from_data(byte_reader& reader, bool wire) {
     auto const hash = read_hash(reader);
     if ( ! hash) {
-        return make_unexpected(hash.error());
+        return std::unexpected(hash.error());
     }
 
     if ( ! wire) {
         auto const index = reader.read_little_endian<uint16_t>();
         if ( ! index) {
-            return make_unexpected(index.error());
+            return std::unexpected(index.error());
         }
         if (*index == max_uint16) {
             return point {*hash, null_index};
@@ -105,7 +105,7 @@ expect<point> point::from_data(byte_reader& reader, bool wire) {
 
     auto const index = reader.read_little_endian<uint32_t>();
     if ( ! index) {
-        return make_unexpected(index.error());
+        return std::unexpected(index.error());
     }
     return point {*hash, *index};
 }

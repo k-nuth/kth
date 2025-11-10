@@ -127,7 +127,6 @@ class KthRecipe(KnuthConanFileV2):
             self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
             self.requires("openssl/3.6.0", transitive_headers=True, transitive_libs=True)
 
-        self.requires("expected-lite/0.9.0", transitive_headers=True, transitive_libs=True)
         self.requires("ctre/3.10.0", transitive_headers=True, transitive_libs=True)
         self.requires("tiny-aes-c/1.0.0", transitive_headers=True, transitive_libs=True)
 
@@ -312,12 +311,11 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["infrastructure"].names["cmake_find_package"] = "infrastructure"
         self.cpp_info.components["infrastructure"].names["cmake_find_package_multi"] = "infrastructure"
         self.cpp_info.components["infrastructure"].defines = static_defines
-        # Infrastructure core dependencies: secp256k1, boost, fmt, expected-lite, ctre, spdlog
+        # Infrastructure core dependencies: secp256k1, boost, fmt, ctre, spdlog
         self.cpp_info.components["infrastructure"].requires = [
             "secp256k1",
             "boost::boost",
             "fmt::fmt",
-            "expected-lite::expected-lite",
             "ctre::ctre",
             "spdlog::spdlog"
         ]

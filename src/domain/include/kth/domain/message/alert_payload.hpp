@@ -113,59 +113,59 @@ struct KD_API alert_payload {
     static
     expect<alert_payload> from_data(byte_reader& reader, uint32_t /*version*/) {
         auto version = reader.read_little_endian<uint32_t>();
-        if (!version) return make_unexpected(version.error());
+        if (!version) return std::unexpected(version.error());
 
         auto relay_until = reader.read_little_endian<uint64_t>();
-        if (!relay_until) return make_unexpected(relay_until.error());
+        if (!relay_until) return std::unexpected(relay_until.error());
 
         auto expiration = reader.read_little_endian<uint64_t>();
-        if (!expiration) return make_unexpected(expiration.error());
+        if (!expiration) return std::unexpected(expiration.error());
 
         auto id = reader.read_little_endian<uint32_t>();
-        if (!id) return make_unexpected(id.error());
+        if (!id) return std::unexpected(id.error());
 
         auto cancel = reader.read_little_endian<uint32_t>();
-        if (!cancel) return make_unexpected(cancel.error());
+        if (!cancel) return std::unexpected(cancel.error());
 
         auto set_cancel_size = reader.read_size_little_endian();
-        if (!set_cancel_size) return make_unexpected(set_cancel_size.error());
+        if (!set_cancel_size) return std::unexpected(set_cancel_size.error());
 
         std::vector<uint32_t> set_cancel;
         set_cancel.reserve(*set_cancel_size);
         for (size_t i = 0; i < *set_cancel_size; ++i) {
             auto value = reader.read_little_endian<uint32_t>();
-            if (!value) return make_unexpected(value.error());
+            if (!value) return std::unexpected(value.error());
             set_cancel.push_back(*value);
         }
 
         auto const min_version = reader.read_little_endian<uint32_t>();
-        if (!min_version) return make_unexpected(min_version.error());
+        if (!min_version) return std::unexpected(min_version.error());
 
         auto const max_version = reader.read_little_endian<uint32_t>();
-        if (!max_version) return make_unexpected(max_version.error());
+        if (!max_version) return std::unexpected(max_version.error());
 
         auto const set_sub_version_size = reader.read_size_little_endian();
-        if (!set_sub_version_size) return make_unexpected(set_sub_version_size.error());
+        if (!set_sub_version_size) return std::unexpected(set_sub_version_size.error());
 
         std::vector<std::string> set_sub_version;
         set_sub_version.reserve(*set_sub_version_size);
         for (size_t i = 0; i < *set_sub_version_size; ++i) {
             auto value = reader.read_string();
-            if (!value) return make_unexpected(value.error());
+            if (!value) return std::unexpected(value.error());
             set_sub_version.emplace_back(std::move(*value));
         }
 
         auto const priority = reader.read_little_endian<uint32_t>();
-        if (!priority) return make_unexpected(priority.error());
+        if (!priority) return std::unexpected(priority.error());
 
         auto const comment = reader.read_string();
-        if (!comment) return make_unexpected(comment.error());
+        if (!comment) return std::unexpected(comment.error());
 
         auto const status_bar = reader.read_string();
-        if (!status_bar) return make_unexpected(status_bar.error());
+        if (!status_bar) return std::unexpected(status_bar.error());
 
         auto const reserved = reader.read_string();
-        if (!reserved) return make_unexpected(reserved.error());
+        if (!reserved) return std::unexpected(reserved.error());
 
         return alert_payload{
             *version,

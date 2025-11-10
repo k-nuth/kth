@@ -169,24 +169,24 @@ expect<script_basis> script_basis::from_data(byte_reader& reader, bool prefix) {
     if ( ! prefix) {
         auto const bytes = reader.read_remaining_bytes();
         if ( ! bytes) {
-            return make_unexpected(bytes.error());
+            return std::unexpected(bytes.error());
         }
         return script_basis {data_chunk(std::begin(*bytes), std::end(*bytes)), false};
     }
 
     auto const size = reader.read_size_little_endian();
     if ( ! size) {
-        return make_unexpected(size.error());
+        return std::unexpected(size.error());
     }
 
     // The max_script_size constant limits evaluation, but not all scripts
     // evaluate, so use max_block_size to guard memory allocation here.
     if (*size > static_absolute_max_block_size()) {
-        return make_unexpected(error::script_invalid_size);
+        return std::unexpected(error::script_invalid_size);
     }
     auto const bytes = reader.read_bytes(*size);
     if ( ! bytes) {
-        return make_unexpected(bytes.error());
+        return std::unexpected(bytes.error());
     }
     return script_basis {data_chunk(std::begin(*bytes), std::end(*bytes)), false};
 }
@@ -195,12 +195,12 @@ expect<script_basis> script_basis::from_data(byte_reader& reader, bool prefix) {
 expect<script_basis> script_basis::from_data_with_size(byte_reader& reader, size_t size) {
     // The max_script_size constant limits evaluation, but not all scripts evaluate, so use max_block_size to guard memory allocation here.
     if (size > static_absolute_max_block_size()) {
-        return make_unexpected(error::script_invalid_size);
+        return std::unexpected(error::script_invalid_size);
     }
 
     auto const bytes = reader.read_bytes(size);
     if ( ! bytes) {
-        return make_unexpected(bytes.error());
+        return std::unexpected(bytes.error());
     }
     return script_basis {data_chunk(std::begin(*bytes), std::end(*bytes)), false};
 }

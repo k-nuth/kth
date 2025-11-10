@@ -70,32 +70,32 @@ size_t history_entry::serialized_size(domain::chain::point const& point) {
 expect<history_entry> history_entry::from_data(byte_reader& reader) {
     auto const id = reader.read_little_endian<uint64_t>();
     if ( ! id) {
-        return make_unexpected(id.error());
+        return std::unexpected(id.error());
     }
 
     auto const point = domain::chain::point::from_data(reader, false);
     if ( ! point) {
-        return make_unexpected(point.error());
+        return std::unexpected(point.error());
     }
 
     auto const point_kind = reader.read_byte();
     if ( ! point_kind) {
-        return make_unexpected(point_kind.error());
+        return std::unexpected(point_kind.error());
     }
 
     auto const height = reader.read_little_endian<uint32_t>();
     if ( ! height) {
-        return make_unexpected(height.error());
+        return std::unexpected(height.error());
     }
 
     auto const index = reader.read_little_endian<uint32_t>();
     if ( ! index) {
-        return make_unexpected(index.error());
+        return std::unexpected(index.error());
     }
 
     auto const value_or_checksum = reader.read_little_endian<uint64_t>();
     if ( ! value_or_checksum) {
-        return make_unexpected(value_or_checksum.error());
+        return std::unexpected(value_or_checksum.error());
     }
 
     return history_entry(

@@ -93,15 +93,15 @@ void reject::reset() {
 expect<reject> reject::from_data(byte_reader& reader, uint32_t version) {
     auto message = reader.read_string();
     if ( ! message) {
-        return make_unexpected(message.error());
+        return std::unexpected(message.error());
     }
     auto const code = reader.read_byte();
     if ( ! code) {
-        return make_unexpected(code.error());
+        return std::unexpected(code.error());
     }
     auto reason = reader.read_string();
     if ( ! reason) {
-        return make_unexpected(reason.error());
+        return std::unexpected(reason.error());
     }
 
     hash_digest data;
@@ -110,7 +110,7 @@ expect<reject> reject::from_data(byte_reader& reader, uint32_t version) {
         // for tx and block rejects. Use this to prevent error on empty stream.
         auto const bytes = reader.read_remaining_bytes();
         if ( ! bytes) {
-            return make_unexpected(bytes.error());
+            return std::unexpected(bytes.error());
         }
         if (bytes->size() == hash_size) {
             build_array(data, {data_chunk(bytes->begin(), bytes->end())});
@@ -118,7 +118,7 @@ expect<reject> reject::from_data(byte_reader& reader, uint32_t version) {
     }
 
     if (version < reject::version_minimum) {
-        return make_unexpected(error::version_too_low);
+        return std::unexpected(error::version_too_low);
     }
 
     return reject(

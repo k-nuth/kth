@@ -46,7 +46,7 @@ expect<ping> ping::from_data(byte_reader& reader, uint32_t version) {
     }
     auto const nonce = reader.read_little_endian<uint64_t>();
     if ( ! nonce) {
-        return make_unexpected(nonce.error());
+        return std::unexpected(nonce.error());
     }
     return ping(*nonce, false);
 }

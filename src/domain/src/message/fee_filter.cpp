@@ -49,10 +49,10 @@ bool fee_filter::operator!=(fee_filter const& x) const {
 expect<fee_filter> fee_filter::from_data(byte_reader& reader, uint32_t version) {
     auto const minimum = reader.read_little_endian<uint64_t>();
     if ( ! minimum) {
-        return make_unexpected(minimum.error());
+        return std::unexpected(minimum.error());
     }
     if (version < version_minimum) {
-        return make_unexpected(error::version_too_low);
+        return std::unexpected(error::version_too_low);
     }
     auto const insufficient_version = false;
     return fee_filter(*minimum, insufficient_version);

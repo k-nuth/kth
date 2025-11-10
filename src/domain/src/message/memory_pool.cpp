@@ -36,7 +36,7 @@ void memory_pool::reset() {
 // static
 expect<memory_pool> memory_pool::from_data(byte_reader& reader, uint32_t version) {
     if (version < memory_pool::version_minimum) {
-        return make_unexpected(error::unsupported_version);
+        return std::unexpected(error::unsupported_version);
     }
     auto const insufficient_version = false;
     return memory_pool(insufficient_version);

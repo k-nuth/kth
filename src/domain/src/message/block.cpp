@@ -77,7 +77,7 @@ bool block::operator!=(block const& x) const {
 expect<block> block::from_data(byte_reader& reader, uint32_t /*version*/) {
     auto chain_block = chain::block::from_data(reader);
     if ( ! chain_block) {
-        return make_unexpected(chain_block.error());
+        return std::unexpected(chain_block.error());
     }
     return block(std::move(*chain_block));
 }

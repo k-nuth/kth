@@ -40,7 +40,7 @@ void send_headers::reset() {
 // static
 expect<send_headers> send_headers::from_data(byte_reader& reader, uint32_t version) {
     if (version < send_headers::version_minimum) {
-        return make_unexpected(error::version_too_low);
+        return std::unexpected(error::version_too_low);
     }
     auto const insufficient_version = false;
     return send_headers(insufficient_version);

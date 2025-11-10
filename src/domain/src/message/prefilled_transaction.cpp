@@ -55,11 +55,11 @@ void prefilled_transaction::reset() {
 expect<prefilled_transaction> prefilled_transaction::from_data(byte_reader& reader, uint32_t version) {
     auto const index = reader.read_variable_little_endian();
     if ( ! index) {
-        return make_unexpected(index.error());
+        return std::unexpected(index.error());
     }
     auto const transaction = chain::transaction::from_data(reader, true);
     if ( ! transaction) {
-        return make_unexpected(transaction.error());
+        return std::unexpected(transaction.error());
     }
     return prefilled_transaction(*index, std::move(*transaction));
 }

@@ -65,7 +65,6 @@ endif()
 
 find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
-find_package(expected-lite REQUIRED)
 find_package(ctre REQUIRED)
 
 if (WITH_ICU)
@@ -445,7 +444,6 @@ endif()
 target_link_libraries(${PROJECT_NAME} PUBLIC fmt::fmt-header-only)
 target_link_libraries(${PROJECT_NAME} PUBLIC spdlog::spdlog_header_only)
 target_link_libraries(${PROJECT_NAME} PUBLIC secp256k1::secp256k1)
-target_link_libraries(${PROJECT_NAME} PUBLIC nonstd::expected-lite)
 target_link_libraries(${PROJECT_NAME} PUBLIC ctre::ctre)
 
 # Link simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)

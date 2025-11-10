@@ -95,11 +95,11 @@ bool block_basis::is_valid() const {
 expect<block_basis> block_basis::from_data(byte_reader& reader, bool wire) {
     auto const hdr = chain::header::from_data(reader, wire);
     if ( ! hdr) {
-        return make_unexpected(hdr.error());
+        return std::unexpected(hdr.error());
     }
     auto txs = read_collection<chain::transaction>(reader, wire);
     if ( ! txs) {
-        return make_unexpected(txs.error());
+        return std::unexpected(txs.error());
     }
     return block_basis {*hdr, std::move(*txs)};
 }

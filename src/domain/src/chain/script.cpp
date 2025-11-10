@@ -108,7 +108,7 @@ script& script::operator=(script const& x) {
 expect<script> script::from_data(byte_reader& reader, bool prefix) {
     auto basis = script_basis::from_data(reader, prefix);
     if ( ! basis) {
-        return make_unexpected(basis.error());
+        return std::unexpected(basis.error());
     }
     return script(std::move(*basis));
 }
@@ -117,7 +117,7 @@ expect<script> script::from_data(byte_reader& reader, bool prefix) {
 expect<script> script::from_data_with_size(byte_reader& reader, size_t size) {
     auto basis = script_basis::from_data_with_size(reader, size);
     if ( ! basis) {
-        return make_unexpected(basis.error());
+        return std::unexpected(basis.error());
     }
     return script(std::move(*basis));
 }
@@ -646,7 +646,7 @@ std::pair<bool, size_t> script::check_signature(
 }
 
 // static
-nonstd::expected<endorsement, std::error_code> script::create_endorsement(
+std::expected<endorsement, std::error_code> script::create_endorsement(
     ec_secret const& secret,
     script const& prevout_script,
     transaction const& tx,
@@ -679,7 +679,7 @@ nonstd::expected<endorsement, std::error_code> script::create_endorsement(
         // Create the EC signature and encode as DER.
         result.reserve(max_endorsement_size);
         if ( ! sign_ecdsa(signature, secret, sighash) || ! encode_signature(result, signature)) {
-            return nonstd::make_unexpected(error::invalid_signature_encoding);
+            return std::unexpected(error::invalid_signature_encoding);
         }
 
         // Add the sighash type to the end of the DER signature -> endorsement.
@@ -688,7 +688,7 @@ nonstd::expected<endorsement, std::error_code> script::create_endorsement(
     } else {
         // Create the Schnorr signature.
         if ( ! sign_schnorr(signature, secret, sighash)) {
-            return nonstd::make_unexpected(error::invalid_signature_encoding);
+            return std::unexpected(error::invalid_signature_encoding);
         }
         result.resize(schnorr_signature_size + 1);
         std::copy_n(signature.data(), schnorr_signature_size, result.begin());

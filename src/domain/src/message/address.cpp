@@ -52,12 +52,12 @@ void address::reset() {
 expect<address> address::from_data(byte_reader& reader, uint32_t version) {
     auto count = reader.read_size_little_endian();
     if (!count) {
-        return make_unexpected(count.error());
+        return std::unexpected(count.error());
     }
 
     // Guard against potential for arbitrary memory allocation.
     if (*count > max_address) {
-        return make_unexpected(error::invalid_address_count);
+        return std::unexpected(error::invalid_address_count);
     }
 
     infrastructure::message::network_address::list addresses;
@@ -66,7 +66,7 @@ expect<address> address::from_data(byte_reader& reader, uint32_t version) {
     for (size_t i = 0; i < *count; ++i) {
         auto address = infrastructure::message::network_address::from_data(reader, version, true);
         if (!address) {
-            return make_unexpected(address.error());
+            return std::unexpected(address.error());
         }
         addresses.push_back(std::move(*address));
     }

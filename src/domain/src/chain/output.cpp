@@ -81,14 +81,14 @@ expect<output> output::from_data(byte_reader& reader, bool wire) {
     if ( ! wire) {
         auto const height = reader.read_little_endian<uint32_t>();
         if ( ! height) {
-            return make_unexpected(height.error());
+            return std::unexpected(height.error());
         }
         spender_height = *height;
     }
 
     auto basis = output_basis::from_data(reader, wire);
     if ( ! basis) {
-        return make_unexpected(basis.error());
+        return std::unexpected(basis.error());
     }
     output result(std::move(*basis));
     result.validation.spender_height = spender_height;

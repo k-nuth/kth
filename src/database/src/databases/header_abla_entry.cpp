@@ -30,7 +30,7 @@ void to_data_with_abla_state(std::ostream& stream, domain::chain::block const& b
 expect<header_with_abla_state_t> get_header_and_abla_state_from_data(byte_reader& reader) {
     auto header = domain::chain::header::from_data(reader, true);
     if ( ! header) {
-        return make_unexpected(header.error());
+        return std::unexpected(header.error());
     }
 
     auto const block_size = reader.read_little_endian<uint64_t>();

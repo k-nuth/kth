@@ -56,15 +56,15 @@ bool input_basis::is_valid() const {
 expect<input_basis> input_basis::from_data(byte_reader& reader, bool wire) {
     auto point = output_point::from_data(reader, wire);
     if ( ! point) {
-        return make_unexpected(point.error());
+        return std::unexpected(point.error());
     }
     auto script = script::from_data(reader, true);
     if ( ! script) {
-        return make_unexpected(script.error());
+        return std::unexpected(script.error());
     }
     auto sequence = reader.read_little_endian<uint32_t>();
     if ( ! sequence) {
-        return make_unexpected(sequence.error());
+        return std::unexpected(sequence.error());
     }
     return input_basis{std::move(*point), std::move(*script), *sequence};
 }
@@ -216,13 +216,13 @@ expect<chain::script> input_basis::extract_embedded_script() const {
     // There are no embedded sigops when the prevout script is not p2sh or p2sh32.
     if ( ! prevout_script.is_pay_to_script_hash(rule_fork::bip16_rule) &&
          ! prevout_script.is_pay_to_script_hash_32(rule_fork::bch_gauss)) {
-            return make_unexpected(error::invalid_script_type);
+            return std::unexpected(error::invalid_script_type);
     }
 
     // There are no embedded sigops when the input script is not push only.
     // The first operations access must be method-based to guarantee the cache.
     if (ops.empty() || !script::is_relaxed_push(ops)) {
-        return make_unexpected(error::script_not_push_only);
+        return std::unexpected(error::script_not_push_only);
     }
 
     // Parse the embedded script from the last input script item (data).

@@ -78,7 +78,7 @@ void input::reset() {
 expect<input> input::from_data(byte_reader& reader, bool wire) {
     auto basis = input_basis::from_data(reader, wire);
     if ( ! basis) {
-        return make_unexpected(basis.error());
+        return std::unexpected(basis.error());
     }
     return input(std::move(*basis));
 }

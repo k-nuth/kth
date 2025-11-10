@@ -70,18 +70,18 @@ void inventory::reset() {
 expect<inventory> inventory::from_data(byte_reader& reader, uint32_t version) {
     auto const count = reader.read_variable_little_endian();
     if ( ! count) {
-        return make_unexpected(count.error());
+        return std::unexpected(count.error());
     }
     // Guard against potential for arbitary memory allocation.
     if (*count > max_inventory) {
-        return make_unexpected(error::bad_inventory_count);
+        return std::unexpected(error::bad_inventory_count);
     }
     inventory_vector::list inventories;
     inventories.reserve(*count);
     for (size_t i = 0; i < *count; ++i) {
         auto const inventory = inventory_vector::from_data(reader, version);
         if ( ! inventory) {
-            return make_unexpected(inventory.error());
+            return std::unexpected(inventory.error());
         }
         inventories.emplace_back(std::move(*inventory));
     }

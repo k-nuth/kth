@@ -395,7 +395,7 @@ inline
 expect<void> from_data(byte_reader& reader, fungible& x, bool /*has_commitment*/) {
     auto const amt = reader.read_variable_little_endian();
     if ( ! amt) {
-        return make_unexpected(amt.error());
+        return std::unexpected(amt.error());
     }
     x.amount = amount_t(*amt);
     return {};
@@ -410,11 +410,11 @@ expect<void> from_data(byte_reader& reader, non_fungible& x, bool has_commitment
     //TODO(fernando): check size is valid
     auto const size = reader.read_size_little_endian();
     if ( ! size) {
-        return make_unexpected(size.error());
+        return std::unexpected(size.error());
     }
     auto commitment = reader.read_bytes(*size);
     if ( ! commitment) {
-        return make_unexpected(commitment.error());
+        return std::unexpected(commitment.error());
     }
     x.commitment = std::vector<uint8_t>(std::begin(*commitment), std::end(*commitment));
     return {};
@@ -441,18 +441,18 @@ expect<void> from_data(byte_reader& reader, both_kinds& x, bool has_commitment) 
 //     if constexpr (std::is_same_v<T, fungible>) {
 //         auto const amt = reader.read_variable_little_endian();
 //         if (!amt) {
-//             return make_unexpected(amt.error());
+//             return std::unexpected(amt.error());
 //         }
 //         result.amount = amount_t(*amt);
 //     } else if constexpr (std::is_same_v<T, non_fungible>) {
 //         if (has_commitment) {
 //             auto const size = reader.read_size_little_endian();
 //             if (!size) {
-//                 return make_unexpected(size.error());
+//                 return std::unexpected(size.error());
 //             }
 //             auto commitment = reader.read_bytes(size);
 //             if (!commitment) {
-//                 return make_unexpected(commitment.error());
+//                 return std::unexpected(commitment.error());
 //             }
 //             result.commitment = std::move(*commitment);
 //         }
@@ -460,14 +460,14 @@ expect<void> from_data(byte_reader& reader, both_kinds& x, bool has_commitment) 
 //         // Leer el non_fungible primero
 //         auto non_fungible_result = from_data<non_fungible>(reader, has_commitment);
 //         if (!non_fungible_result) {
-//             return make_unexpected(non_fungible_result.error());
+//             return std::unexpected(non_fungible_result.error());
 //         }
 //         result.second = std::move(*non_fungible_result);
 
 //         // Luego leer el fungible
 //         auto fungible_result = from_data<fungible>(reader, false);  // has_commitment no aplica a fungible
 //         if (!fungible_result) {
-//             return make_unexpected(fungible_result.error());
+//             return std::unexpected(fungible_result.error());
 //         }
 //         result.first = std::move(*fungible_result);
 //     }
@@ -481,15 +481,15 @@ inline
 expect<token_data_t> from_data(byte_reader& reader) {
     auto const id = read_hash(reader);
     if ( ! id) {
-        return make_unexpected(id.error());
+        return std::unexpected(id.error());
     }
 
     auto const bitfield = reader.read_byte();
     if ( ! bitfield) {
-        return make_unexpected(bitfield.error());
+        return std::unexpected(bitfield.error());
     }
     if ( ! is_valid_bitfield(*bitfield)) {
-        return make_unexpected(error::invalid_bitfield);
+        return std::unexpected(error::invalid_bitfield);
     }
 
     token_data_t x = {
@@ -509,14 +509,14 @@ expect<token_data_t> from_data(byte_reader& reader) {
         using T = std::decay_t<decltype(arg)>;
         auto const res = detail::from_data(reader, arg, has_commitment(*bitfield));
         if ( ! res) {
-            return make_unexpected(res.error());
+            return std::unexpected(res.error());
         }
         return {};
     };
 
     auto const res = std::visit(visitor, x.data);
     if ( ! res) {
-        return make_unexpected(res.error());
+        return std::unexpected(res.error());
     }
 
     return x;

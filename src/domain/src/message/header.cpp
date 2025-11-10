@@ -59,7 +59,7 @@ header& header::operator=(header const& x) {
 expect<header> header::from_data(byte_reader& reader, uint32_t version) {
     auto header = chain::header::from_data(reader);
     if ( ! header) {
-        return make_unexpected(header.error());
+        return std::unexpected(header.error());
     }
 
     // The header message must trail a zero byte (yes, it's stoopid).
@@ -67,10 +67,10 @@ expect<header> header::from_data(byte_reader& reader, uint32_t version) {
     if (version != version::level::canonical) {
         auto const trail = reader.read_byte();
         if ( ! trail) {
-            return make_unexpected(trail.error());
+            return std::unexpected(trail.error());
         }
         if (*trail != 0x00) {
-            return make_unexpected(error::version_too_new);
+            return std::unexpected(error::version_too_new);
         }
     }
     return header;

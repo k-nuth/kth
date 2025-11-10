@@ -44,24 +44,24 @@ expect<network_address> network_address::from_data(byte_reader& reader, uint32_t
     if (with_timestamp) {
         auto const timestamp_exp = reader.read_little_endian<uint32_t>();
         if ( ! timestamp_exp) {
-            return make_unexpected(timestamp_exp.error());
+            return std::unexpected(timestamp_exp.error());
         }
         timestamp = *timestamp_exp;
     }
 
     auto const services = reader.read_little_endian<uint64_t>();
     if ( ! services) {
-        return make_unexpected(services.error());
+        return std::unexpected(services.error());
     }
 
     auto const ip = reader.read_bytes(std::tuple_size<ip_address>::value);
     if ( ! ip) {
-        return make_unexpected(ip.error());
+        return std::unexpected(ip.error());
     }
 
     auto const port = reader.read_big_endian<uint16_t>();
     if ( ! port) {
-        return make_unexpected(port.error());
+        return std::unexpected(port.error());
     }
 
     ip_address ip_addr;

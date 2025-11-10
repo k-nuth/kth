@@ -63,12 +63,12 @@ expect<get_blocks> get_blocks::from_data(byte_reader& reader, uint32_t /*version
     // Discard protocol version because it is stupid.
     auto const skipped_version = reader.skip(4);
     if ( ! skipped_version) {
-        return make_unexpected(skipped_version.error());
+        return std::unexpected(skipped_version.error());
     }
 
     auto const count = reader.read_size_little_endian();
     if ( ! count) {
-        return make_unexpected(count.error());
+        return std::unexpected(count.error());
     }
 
     hash_list start_hashes;
@@ -77,14 +77,14 @@ expect<get_blocks> get_blocks::from_data(byte_reader& reader, uint32_t /*version
     for (size_t i = 0; i < *count; ++i) {
         auto const start_hash = read_hash(reader);
         if ( ! start_hash) {
-            return make_unexpected(start_hash.error());
+            return std::unexpected(start_hash.error());
         }
         start_hashes.emplace_back(*start_hash);
     }
 
     auto const stop_hash = read_hash(reader);
     if ( ! stop_hash) {
-        return make_unexpected(stop_hash.error());
+        return std::unexpected(stop_hash.error());
     }
 
     return get_blocks(std::move(start_hashes), *stop_hash);

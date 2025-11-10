@@ -59,16 +59,16 @@ void block_transactions::reset() {
 expect<block_transactions> block_transactions::from_data(byte_reader& reader, uint32_t version) {
     auto const block_hash = read_hash(reader);
     if ( ! block_hash) {
-        return make_unexpected(block_hash.error());
+        return std::unexpected(block_hash.error());
     }
 
     auto txs = read_collection<chain::transaction>(reader, true);
     if ( ! txs) {
-        return make_unexpected(txs.error());
+        return std::unexpected(txs.error());
     }
 
     if (version < block_transactions::version_minimum) {
-        return make_unexpected(error::version_too_low);
+        return std::unexpected(error::version_too_low);
     }
 
     return block_transactions(*block_hash, std::move(*txs));

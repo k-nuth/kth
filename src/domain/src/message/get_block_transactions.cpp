@@ -61,21 +61,21 @@ void get_block_transactions::reset() {
 expect<get_block_transactions> get_block_transactions::from_data(byte_reader& reader, uint32_t /*version*/) {
     auto const block_hash = read_hash(reader);
     if ( ! block_hash) {
-        return make_unexpected(block_hash.error());
+        return std::unexpected(block_hash.error());
     }
     auto const count = reader.read_size_little_endian();
     if ( ! count) {
-        return make_unexpected(count.error());
+        return std::unexpected(count.error());
     }
     if (*count > static_absolute_max_block_size()) {
-        return make_unexpected(error::invalid_size);
+        return std::unexpected(error::invalid_size);
     }
     std::vector<uint64_t> indexes;
     indexes.reserve(*count);
     for (size_t i = 0; i < *count; ++i) {
         auto const index = reader.read_size_little_endian();
         if ( ! index) {
-            return make_unexpected(index.error());
+            return std::unexpected(index.error());
         }
         indexes.push_back(*index);
     }

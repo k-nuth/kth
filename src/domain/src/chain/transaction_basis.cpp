@@ -90,19 +90,19 @@ expect<transaction_basis> transaction_basis::from_data(byte_reader& reader, bool
         // Wire (satoshi protocol) deserialization.
         auto const version = reader.read_little_endian<uint32_t>();
         if ( ! version) {
-            return make_unexpected(version.error());
+            return std::unexpected(version.error());
         }
         auto inputs = read_collection<chain::input>(reader, wire);
         if ( ! inputs) {
-            return make_unexpected(inputs.error());
+            return std::unexpected(inputs.error());
         }
         auto outputs = read_collection<chain::output>(reader, wire);
         if ( ! outputs) {
-            return make_unexpected(outputs.error());
+            return std::unexpected(outputs.error());
         }
         auto const locktime = reader.read_little_endian<uint32_t>();
         if ( ! locktime) {
-            return make_unexpected(locktime.error());
+            return std::unexpected(locktime.error());
         }
         return transaction_basis {
             *version,
@@ -115,23 +115,23 @@ expect<transaction_basis> transaction_basis::from_data(byte_reader& reader, bool
     // Database (outputs forward) serialization.
     auto outputs = read_collection<chain::output>(reader, wire);
     if ( ! outputs) {
-        return make_unexpected(outputs.error());
+        return std::unexpected(outputs.error());
     }
     auto inputs = read_collection<chain::input>(reader, wire);
     if ( ! inputs) {
-        return make_unexpected(inputs.error());
+        return std::unexpected(inputs.error());
     }
     auto const locktime = reader.read_variable_little_endian();
     if ( ! locktime) {
-        return make_unexpected(locktime.error());
+        return std::unexpected(locktime.error());
     }
     auto const version = reader.read_variable_little_endian();
     if ( ! version) {
-        return make_unexpected(version.error());
+        return std::unexpected(version.error());
     }
 
     if (*locktime > max_uint32 || *version > max_uint32) {
-        return make_unexpected(error::invalid_size);
+        return std::unexpected(error::invalid_size);
     }
 
     return transaction_basis {

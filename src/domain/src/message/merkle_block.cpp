@@ -80,21 +80,21 @@ void merkle_block::reset() {
 expect<merkle_block> merkle_block::from_data(byte_reader& reader, uint32_t version) {
     auto const header = chain::header::from_data(reader, version);
     if ( ! header) {
-        return make_unexpected(header.error());
+        return std::unexpected(header.error());
     }
 
     auto const total_transactions = reader.read_little_endian<uint32_t>();
     if ( ! total_transactions) {
-        return make_unexpected(total_transactions.error());
+        return std::unexpected(total_transactions.error());
     }
 
     auto const count = reader.read_size_little_endian();
     if ( ! count) {
-        return make_unexpected(count.error());
+        return std::unexpected(count.error());
     }
     // Guard against potential for arbitary memory allocation.
     if (*count > static_absolute_max_block_size()) {
-        return make_unexpected(error::bad_merkle_block_count);
+        return std::unexpected(error::bad_merkle_block_count);
     }
 
     hash_list hashes;
@@ -102,23 +102,23 @@ expect<merkle_block> merkle_block::from_data(byte_reader& reader, uint32_t versi
     for (size_t i = 0; i < *count; ++i) {
         auto const hash = read_hash(reader);
         if ( ! hash) {
-            return make_unexpected(hash.error());
+            return std::unexpected(hash.error());
         }
         hashes.emplace_back(*hash);
     }
 
     auto const flags_size = reader.read_size_little_endian();
     if ( ! flags_size) {
-        return make_unexpected(flags_size.error());
+        return std::unexpected(flags_size.error());
     }
 
     auto const flags = reader.read_bytes(*flags_size);
     if ( ! flags) {
-        return make_unexpected(flags.error());
+        return std::unexpected(flags.error());
     }
 
     if (version < merkle_block::version_minimum) {
-        return make_unexpected(error::unsupported_version);
+        return std::unexpected(error::unsupported_version);
     }
 
     return merkle_block(

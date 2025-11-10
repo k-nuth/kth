@@ -11,7 +11,7 @@
 #include <limits>
 #include <stdexcept>
 
-#include <nonstd/expected.hpp>
+#include <expected>
 
 #include <kth/infrastructure/compat.hpp>
 #include <kth/infrastructure/error.hpp>
@@ -19,8 +19,8 @@
 
 namespace kth {
 
-using nonstd::expected;           // [C++23] Replace with std::expected when available
-using nonstd::make_unexpected;    // [C++23] Replace with std::expected when available
+using std::expected;
+using std::unexpected;
 
 
 template <typename Space, typename I>
@@ -148,7 +148,7 @@ expected<I, code> safe_add(I left, I right) {
     static auto const maximum = std::numeric_limits<I>::max();
 
     if (left > maximum - right) {
-        return make_unexpected(error::overflow);
+        return std::unexpected(error::overflow);
     }
     return left + right;
 }
@@ -158,7 +158,7 @@ expected<I, code> safe_subtract(I left, I right) {
     static auto const minimum = (std::numeric_limits<I>::min)();
 
     if (left < minimum + right) {
-        return make_unexpected(error::underflow);
+        return std::unexpected(error::underflow);
     }
 
     return left - right;
@@ -170,7 +170,7 @@ expected<To, code> safe_signed(From signed_value) {
     static auto const signed_maximum = (std::numeric_limits<To>::max)();
 
     if (signed_value < signed_minimum || signed_value > signed_maximum) {
-        return make_unexpected(error::out_of_range);
+        return std::unexpected(error::out_of_range);
     }
 
     return static_cast<To>(signed_value);
@@ -182,7 +182,7 @@ expected<To, code> safe_unsigned(From unsigned_value) {
     static auto const unsigned_maximum = (std::numeric_limits<To>::max)();
 
     if (unsigned_value < unsigned_minimum || unsigned_value > unsigned_maximum) {
-        return make_unexpected(error::out_of_range);
+        return std::unexpected(error::out_of_range);
     }
 
     return static_cast<To>(unsigned_value);
@@ -194,7 +194,7 @@ expected<To, code> safe_to_signed(From unsigned_value) {
     static auto const signed_maximum = (std::numeric_limits<To>::max)();
 
     if (unsigned_value > static_cast<uint64_t>(signed_maximum)) {
-        return make_unexpected(error::out_of_range);
+        return std::unexpected(error::out_of_range);
     }
 
     return static_cast<To>(unsigned_value);
@@ -206,7 +206,7 @@ expected<To, code> safe_to_unsigned(From signed_value) {
     static auto const unsigned_maximum = (std::numeric_limits<To>::max());
 
     if (signed_value < 0 || static_cast<uint64_t>(signed_value) > unsigned_maximum) {
-        return make_unexpected(error::out_of_range);
+        return std::unexpected(error::out_of_range);
     }
 
     return static_cast<To>(signed_value);

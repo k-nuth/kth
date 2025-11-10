@@ -39,7 +39,7 @@
 #include <kth/infrastructure/utility/istream_reader.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
 #include <kth/infrastructure/utility/ostream_writer.hpp>
-#include <nonstd/expected.hpp>
+#include <expected>
 #include <kth/domain/wallet/payment_address.hpp>
 #include <kth/domain/chain/coin_selection.hpp>
 
@@ -135,7 +135,7 @@ void transaction::reset() {
 expect<transaction> transaction::from_data(byte_reader& reader, bool wire) {
     auto basis = transaction_basis::from_data(reader, wire);
     if ( ! basis) {
-        return make_unexpected(basis.error());
+        return std::unexpected(basis.error());
     }
     return transaction(std::move(*basis));
 }
@@ -675,7 +675,7 @@ struct utxo_selection {
 
 template <typename Comp>
     requires std::strict_weak_order<Comp, utxo, utxo>
-nonstd::expected<utxo_selection, std::error_code> select_utxos_simple(
+std::expected<utxo_selection, std::error_code> select_utxos_simple(
     std::vector<utxo>& available_utxos,
     uint64_t amount_to_send,
     size_t output_count,
@@ -708,10 +708,10 @@ nonstd::expected<utxo_selection, std::error_code> select_utxos_simple(
             return result;
         }
     }
-    return nonstd::make_unexpected(error::insufficient_amount);
+    return std::unexpected(error::insufficient_amount);
 }
 
-nonstd::expected<utxo_selection, std::error_code> select_utxos_all(
+std::expected<utxo_selection, std::error_code> select_utxos_all(
     std::vector<utxo> const& available_utxos,
     uint64_t amount_to_send,
     size_t output_count
@@ -726,7 +726,7 @@ nonstd::expected<utxo_selection, std::error_code> select_utxos_all(
 
     uint64_t const estimated_fee = estimated_size * sats_per_byte;
     if (total_input <= estimated_fee) {
-        return nonstd::make_unexpected(error::insufficient_amount);
+        return std::unexpected(error::insufficient_amount);
     }
 
     amount_to_send = total_input - estimated_fee;
@@ -750,7 +750,7 @@ std::vector<double> make_change_ratios(size_t change_count) {
     return change_ratios;
 }
 
-nonstd::expected<template_result, std::error_code> transaction::create_template(
+std::expected<template_result, std::error_code> transaction::create_template(
     std::vector<utxo> available_utxos,
     uint64_t amount_to_send_hint,
     wallet::payment_address const& destination_address,
@@ -760,19 +760,19 @@ nonstd::expected<template_result, std::error_code> transaction::create_template(
 ) {
     // Validations
     if (available_utxos.empty()) {
-        return nonstd::make_unexpected(error::empty_utxo_list);
+        return std::unexpected(error::empty_utxo_list);
     }
 
     if (change_addresses.empty()) {
-        return nonstd::make_unexpected(error::invalid_change);
+        return std::unexpected(error::invalid_change);
     }
 
     if (change_ratios.size() != change_addresses.size()) {
-        return nonstd::make_unexpected(error::invalid_change);
+        return std::unexpected(error::invalid_change);
     }
 
     if (std::accumulate(change_ratios.begin(), change_ratios.end(), 0.0) != 1.0) {
-        return nonstd::make_unexpected(error::invalid_change);
+        return std::unexpected(error::invalid_change);
     }
 
     bool const send_all = amount_to_send_hint == 0 ||
@@ -780,7 +780,7 @@ nonstd::expected<template_result, std::error_code> transaction::create_template(
         selection_algo == coin_selection_algorithm::manual; // in manual mode, we asume that the user provided just the selected utxos
 
     if (send_all && change_addresses.size() > 1) {
-        return nonstd::make_unexpected(error::invalid_change);
+        return std::unexpected(error::invalid_change);
     }
 
     boost::unordered_flat_map<chain::point, uint32_t> utxo_positions;
@@ -797,7 +797,7 @@ nonstd::expected<template_result, std::error_code> transaction::create_template(
                        select_utxos_simple(available_utxos, amount_to_send_hint, output_count, [](utxo const& a, utxo const& b) { return a.amount() > b.amount(); });
 
     if ( ! res) {
-        return nonstd::make_unexpected(res.error());
+        return std::unexpected(res.error());
     }
 
     auto const [
@@ -856,18 +856,18 @@ nonstd::expected<template_result, std::error_code> transaction::create_template(
             }
         }
         if (accumulated_change != total_change_amount) {
-            return nonstd::make_unexpected(error::unknown);
+            return std::unexpected(error::unknown);
         }
         uint64_t const total_output = total_change_amount + amount_to_send + estimated_fee;
         if (total_input != total_output) {
-            return nonstd::make_unexpected(error::unknown);
+            return std::unexpected(error::unknown);
         }
         // postcondition validation
     } else {
         // postcondition validation
         uint64_t const total_output = amount_to_send + estimated_fee;
         if (total_input != total_output) {
-            return nonstd::make_unexpected(error::unknown);
+            return std::unexpected(error::unknown);
         }
     }
 
@@ -904,7 +904,7 @@ nonstd::expected<template_result, std::error_code> transaction::create_template(
     );
 }
 
-nonstd::expected<template_result, std::error_code> transaction::create_template(
+std::expected<template_result, std::error_code> transaction::create_template(
     std::vector<utxo> available_utxos,
     uint64_t amount_to_send_hint,
     wallet::payment_address const& destination_address,

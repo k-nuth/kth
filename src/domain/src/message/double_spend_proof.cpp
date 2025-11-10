@@ -49,31 +49,31 @@ void double_spend_proof::reset() {
 expect<double_spend_proof::spender> double_spend_proof::spender::from_data(byte_reader& reader, uint32_t /*version*/) {
     auto const version = reader.read_little_endian<uint32_t>();
     if ( ! version) {
-        return make_unexpected(version.error());
+        return std::unexpected(version.error());
     }
     auto const out_sequence = reader.read_little_endian<uint32_t>();
     if ( ! out_sequence) {
-        return make_unexpected(out_sequence.error());
+        return std::unexpected(out_sequence.error());
     }
     auto const locktime = reader.read_little_endian<uint32_t>();
     if ( ! locktime) {
-        return make_unexpected(locktime.error());
+        return std::unexpected(locktime.error());
     }
     auto const prev_outs_hash = read_hash(reader);
     if ( ! prev_outs_hash) {
-        return make_unexpected(prev_outs_hash.error());
+        return std::unexpected(prev_outs_hash.error());
     }
     auto const sequence_hash = read_hash(reader);
     if ( ! sequence_hash) {
-        return make_unexpected(sequence_hash.error());
+        return std::unexpected(sequence_hash.error());
     }
     auto const outputs_hash = read_hash(reader);
     if ( ! outputs_hash) {
-        return make_unexpected(outputs_hash.error());
+        return std::unexpected(outputs_hash.error());
     }
     auto const push_data = reader.read_remaining_bytes();
     if ( ! push_data) {
-        return make_unexpected(push_data.error());
+        return std::unexpected(push_data.error());
     }
 
     return spender {
@@ -91,16 +91,16 @@ expect<double_spend_proof::spender> double_spend_proof::spender::from_data(byte_
 expect<double_spend_proof> double_spend_proof::from_data(byte_reader& reader, uint32_t /*version*/) {
     auto const out_point = chain::output_point::from_data(reader, true);
     if ( ! out_point) {
-        return make_unexpected(out_point.error());
+        return std::unexpected(out_point.error());
     }
     auto const spender1 = spender::from_data(reader, 0);
     if ( ! spender1) {
-        return make_unexpected(spender1.error());
+        return std::unexpected(spender1.error());
     }
 
     auto const spender2 = spender::from_data(reader, 0);
     if ( ! spender2) {
-        return make_unexpected(spender2.error());
+        return std::unexpected(spender2.error());
     }
 
     return double_spend_proof(*out_point, *spender1, *spender2);
