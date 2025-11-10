@@ -34,7 +34,7 @@ using time_point = steady_clock::time_point;
 #if ! defined(__EMSCRIPTEN__)
 using timer = ::asio::basic_waitable_timer<steady_clock>;
 
-using service = ::asio::io_service;
+using context = ::asio::io_context;
 using address = ::asio::ip::address;
 using ipv4 = ::asio::ip::address_v4;
 using ipv6 = ::asio::ip::address_v6;
@@ -44,10 +44,13 @@ using endpoint = ::asio::ip::tcp::endpoint;
 using socket = tcp::socket;
 using acceptor = tcp::acceptor;
 using resolver = tcp::resolver;
-using query = tcp::resolver::query;
-using iterator = tcp::resolver::iterator;
+using results_type = tcp::resolver::results_type;
 
-constexpr int max_connections = ::asio::socket_base::max_connections;
+using work_guard = ::asio::executor_work_guard<context::executor_type>;
+
+// Maximum listen backlog - use system constant directly
+// (boost::asio::socket_base::max_connections was removed in Boost 1.87)
+constexpr int max_connections = SOMAXCONN;
 
 // Boost thread is used because of thread_specific_ptr limitation:
 // stackoverflow.com/q/22448022/1172329

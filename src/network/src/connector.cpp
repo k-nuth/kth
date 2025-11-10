@@ -85,19 +85,17 @@ void connector::connect(std::string const& hostname, uint16_t port, connect_hand
         return;
     }
 
-    query_ = std::make_shared<asio::query>(hostname, std::to_string(port));
-
     mutex_.unlock_upgrade_and_lock();
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     // async_resolve will not invoke the handler within this function.
-    resolver_.async_resolve(*query_, std::bind(&connector::handle_resolve, shared_from_this(), _1, _2, handler));
+    resolver_.async_resolve(hostname, std::to_string(port), std::bind(&connector::handle_resolve, shared_from_this(), _1, _2, handler));
 
     mutex_.unlock();
     ///////////////////////////////////////////////////////////////////////////
 }
 
-void connector::handle_resolve(boost_code const& ec, asio::iterator iterator, connect_handler handler) {
+void connector::handle_resolve(boost_code const& ec, asio::results_type results, connect_handler handler) {
     using namespace ::asio;
 
     // Critical Section
@@ -129,14 +127,14 @@ void connector::handle_resolve(boost_code const& ec, asio::iterator iterator, co
 
     // async_connect will not invoke the handler within this function.
     // The bound delegate ensures handler completion before loss of scope.
-    async_connect(socket->get(), iterator, std::bind(&connector::handle_connect, shared_from_this(), _1, _2, socket, join_handler));
+    async_connect(socket->get(), results, std::bind(&connector::handle_connect, shared_from_this(), _1, _2, socket, join_handler));
 
     mutex_.unlock_shared();
     ///////////////////////////////////////////////////////////////////////////
 }
 
 // private:
-void connector::handle_connect(boost_code const& ec, asio::iterator,
+void connector::handle_connect(boost_code const& ec, asio::endpoint const&,
     socket::ptr socket, connect_handler handler) {
     if (ec) {
         handler(error::boost_to_error_code(ec), nullptr);

@@ -25,13 +25,6 @@ namespace kth {
 #define CONCURRENT "concurrent"
 #define SEQUENCE "sequence"
 
-#define FORWARD_ARGS(args) \
-    std::forward<Args>(args)...
-#define FORWARD_HANDLER(handler) \
-    std::forward<Handler>(handler)
-#define BIND_HANDLER(handler, args) \
-    std::bind(FORWARD_HANDLER(handler), FORWARD_ARGS(args))
-
 /// This  class is thread safe.
 /// boost asio class wrapper to enable work heap management.
 class KI_API work
@@ -46,16 +39,14 @@ public:
     /// Local execution for any operation, equivalent to std::bind.
     template <typename Handler, typename... Args>
     static void bound(Handler&& handler, Args&&... args) {
-        BIND_HANDLER(handler, args)();
+        std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...)();
     }
 
     /// Concurrent execution for any operation.
     template <typename Handler, typename... Args>
     void concurrent(Handler&& handler, Args&&... args) {
         // Service post ensures the job does not execute in the current thread.
-        service_.post(BIND_HANDLER(handler, args));
-        ////service_.post(inject(BIND_HANDLER(handler, args), CONCURRENT,
-        ////    concurrent_));
+        ::asio::post(service_, std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...));
     }
 
     /// Sequential execution for synchronous operations.
@@ -63,8 +54,7 @@ public:
     void ordered(Handler&& handler, Args&&... args) {
         // Use a strand to prevent concurrency and post vs. dispatch to ensure
         // that the job is not executed in the current thread.
-        strand_.post(BIND_HANDLER(handler, args));
-        ////strand_.post(inject(BIND_HANDLER(handler, args), ORDERED, ordered_));
+        ::asio::post(strand_, std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...));
     }
 
     /// Non-concurrent execution for synchronous operations.
@@ -72,9 +62,9 @@ public:
     void unordered(Handler&& handler, Args&&... args) {
         // Use a strand wrapper to prevent concurrency and a service post
         // to deny ordering while ensuring execution on another thread.
-        service_.post(strand_.wrap(BIND_HANDLER(handler, args)));
-        ////service_.post(strand_.wrap(inject(BIND_HANDLER(handler, args),
-        ////    UNORDERED, unordered_)));
+        // TODO: Review bind_executor vs deprecated wrap() for behavioral differences
+        // See: https://github.com/k-nuth/kth-mono/issues/76
+        ::asio::post(service_, ::asio::bind_executor(strand_, std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...)));
     }
 
     /// Begin sequential execution for a set of asynchronous operations.
@@ -83,9 +73,7 @@ public:
     void lock(Handler&& handler, Args&&... args) {
         // Use a sequence to track the asynchronous operation to completion,
         // ensuring each asynchronous op executes independently and in order.
-        sequence_.lock(BIND_HANDLER(handler, args));
-        ////sequence_.lock(inject(BIND_HANDLER(handler, args), SEQUENCE,
-        ////    sequence_));
+        sequence_.lock(std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...));
     }
 
     /// Complete sequential execution.
@@ -119,14 +107,10 @@ private:
     ////monitor::count_ptr unordered_;
     ////monitor::count_ptr concurrent_;
     ////monitor::count_ptr sequential_;
-    asio::service& service_;
-    asio::service::strand strand_;
+    asio::context& service_;
+    asio::context::strand strand_;
     sequencer sequence_;
 };
-
-#undef FORWARD_ARGS
-#undef FORWARD_HANDLER
-#undef BIND_HANDLER
 
 } // namespace kth
 

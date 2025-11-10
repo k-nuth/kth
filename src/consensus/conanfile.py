@@ -49,7 +49,7 @@ class KnuthConsensusConan(KnuthConanFileV2):
             self.test_requires("catch2/3.7.1")
 
     def requirements(self):
-        self.requires("boost/1.86.0", transitive_headers=True, transitive_libs=True)
+        self.requires("boost/1.89.0", transitive_headers=True, transitive_libs=True)
         self.requires("openssl/3.4.1", transitive_headers=True, transitive_libs=True)
         self.requires("secp256k1/0.22.0", transitive_headers=True, transitive_libs=True)
 

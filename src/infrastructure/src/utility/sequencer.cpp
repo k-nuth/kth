@@ -12,7 +12,7 @@
 
 namespace kth {
 
-sequencer::sequencer(asio::service& service)
+sequencer::sequencer(asio::context& service)
     : service_(service), executing_(false)
 {}
 
@@ -38,7 +38,7 @@ sequencer::~sequencer() {
 //     ///////////////////////////////////////////////////////////////////////
 
 //     if (post) {
-//         service_.post(std::move(handler));
+//         ::asio::post(service_, std::move(handler));
 //     }
 // }
 
@@ -56,7 +56,7 @@ void sequencer::lock(action&& handler) {
     } //unlock()
     ///////////////////////////////////////////////////////////////////////
 
-    service_.post(std::move(handler));
+    ::asio::post(service_, std::move(handler));
 }
 
 
@@ -85,7 +85,7 @@ void sequencer::unlock() {
     ///////////////////////////////////////////////////////////////////////
 
     if (handler) {
-        service_.post(std::move(handler));
+        ::asio::post(service_, std::move(handler));
     }
 }
 

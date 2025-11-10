@@ -48,12 +48,10 @@ public:
     void stop(code const& ec);
 
 private:
-    using query_ptr = std::shared_ptr<asio::query>;
-
     bool stopped() const;
 
-    void handle_resolve(boost_code const& ec, asio::iterator iterator, connect_handler handler);
-    void handle_connect(boost_code const& ec, asio::iterator iterator, socket::ptr socket, connect_handler handler);
+    void handle_resolve(boost_code const& ec, asio::results_type results, connect_handler handler);
+    void handle_connect(boost_code const& ec, asio::endpoint const& endpoint, socket::ptr socket, connect_handler handler);
     void handle_timer(code const& ec, socket::ptr socket, connect_handler handler);
 
     // These are thread safe
@@ -63,7 +61,6 @@ private:
     mutable dispatcher dispatch_;
 
     // These are protected by mutex.
-    query_ptr query_;
     deadline::ptr timer_;
     asio::resolver resolver_;
     mutable upgrade_mutex mutex_;

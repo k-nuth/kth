@@ -40,7 +40,7 @@ size_t threadpool::size() const {
 // This is not thread safe.
 void threadpool::spawn(size_t number_threads, thread_priority priority) {
     // This allows the pool to be restarted.
-    service_.reset();
+    service_.restart();
     // std::println("threadpool::spawn() - name: {} - thread id: {}", name_, std::this_thread::get_id());
 
     for (size_t i = 0; i < number_threads; ++i) {
@@ -59,7 +59,7 @@ void threadpool::spawn_once(thread_priority priority) {
     if ( ! work_) {
         work_mutex_.unlock_upgrade_and_lock();
         //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        work_ = std::make_shared<asio::service::work>(service_);
+        work_ = std::make_shared<asio::work_guard>(service_.get_executor());
 
         work_mutex_.unlock_and_lock_upgrade();
         //-----------------------------------------------------------------
@@ -154,11 +154,11 @@ void threadpool::join() {
 
 }
 
-asio::service& threadpool::service() {
+asio::context& threadpool::service() {
     return service_;
 }
 
-const asio::service& threadpool::service() const {
+const asio::context& threadpool::service() const {
     return service_;
 }
 

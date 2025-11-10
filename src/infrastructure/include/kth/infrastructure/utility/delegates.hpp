@@ -14,20 +14,13 @@
 namespace kth {
 namespace delegates {
 
-#define FORWARD_ARGS(args) \
-    std::forward<Args>(args)...
-#define FORWARD_HANDLER(handler) \
-    std::forward<Handler>(handler)
-#define BIND_HANDLER(handler, args) \
-    std::bind(FORWARD_HANDLER(handler), FORWARD_ARGS(args))
-
 /// Binding delegate (current thread).
 template <typename Handler>
 struct bound
 {
     template <typename... Args>
     void operator()(Args&&... args) {
-        work::bound(BIND_HANDLER(handler, args));
+        work::bound(std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...));
     }
 
     Handler handler;
@@ -39,7 +32,7 @@ struct concurrent
 {
     template <typename... Args>
     void operator()(Args&&... args) {
-        heap->concurrent(BIND_HANDLER(handler, args));
+        heap->concurrent(std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...));
     }
 
     Handler handler;
@@ -52,7 +45,7 @@ struct ordered
 {
     template <typename... Args>
     void operator()(Args&&... args) {
-        heap->ordered(BIND_HANDLER(handler, args));
+        heap->ordered(std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...));
     }
 
     Handler handler;
@@ -65,7 +58,7 @@ struct unordered
 {
     template <typename... Args>
     void operator()(Args&&... args) {
-        heap->unordered(BIND_HANDLER(handler, args));
+        heap->unordered(std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...));
     }
 
     Handler handler;
@@ -78,16 +71,12 @@ struct sequence
 {
     template <typename... Args>
     void operator()(Args&&... args) {
-        heap->lock(BIND_HANDLER(handler, args));
+        heap->lock(std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...));
     }
 
     Handler handler;
     work::ptr heap;
 };
-
-#undef FORWARD_ARGS
-#undef FORWARD_HANDLER
-#undef BIND_HANDLER
 
 } // namespace delegates
 } // namespace kth

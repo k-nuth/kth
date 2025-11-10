@@ -31,15 +31,6 @@ namespace kth {
 
 #if ! defined(__EMSCRIPTEN__)
 
-#define FORWARD_ARGS(args) std::forward<Args>(args)...
-#define FORWARD_HANDLER(handler) std::forward<Handler>(handler)
-#define BIND_HANDLER(handler, args) std::bind(FORWARD_HANDLER(handler), FORWARD_ARGS(args))
-#define BIND_ARGS(args) std::bind(FORWARD_ARGS(args))
-
-// Collection dispatch doesn't forward args as move args can only forward once.
-#define BIND_RACE(args, call) std::bind(args..., call)
-#define BIND_ELEMENT(args, element, call) std::bind(args..., element, call)
-
 /// This  class is thread safe.
 /// If the ios service is stopped jobs will not be dispatched.
 class KI_API dispatcher : noncopyable {
@@ -57,33 +48,33 @@ public:
     template <typename... Args>
     static
     void bound(Args&&... args) {
-        BIND_ARGS(args)();
+        std::bind_front(std::forward<Args>(args)...)();
     }
 
     /// Posts a job to the service. Concurrent and not ordered.
     template <typename... Args>
     void concurrent(Args&&... args) {
-        heap_->concurrent(BIND_ARGS(args));
+        heap_->concurrent(std::bind_front(std::forward<Args>(args)...));
     }
 
     /// Post a job to the strand. Ordered and not concurrent.
     template <typename... Args>
     void ordered(Args&&... args) {
-        heap_->ordered(BIND_ARGS(args));
+        heap_->ordered(std::bind_front(std::forward<Args>(args)...));
     }
 
     /// Posts a strand-wrapped job to the service. Not ordered or concurrent.
     /// The wrap provides non-concurrency, order is prevented by service post.
     template <typename... Args>
     void unordered(Args&&... args) {
-        heap_->unordered(BIND_ARGS(args));
+        heap_->unordered(std::bind_front(std::forward<Args>(args)...));
     }
 
     /// Posts an asynchronous job to the sequencer. Ordered and not concurrent.
     /// The sequencer provides both non-concurrency and ordered execution.
     template <typename... Args>
     void lock(Args&&... args) {
-        heap_->lock(BIND_ARGS(args));
+        heap_->lock(std::bind_front(std::forward<Args>(args)...));
     }
 
     /// Complete sequential execution.
@@ -106,44 +97,44 @@ public:
     /// Returns a delegate that will execute the job on the current thread.
     template <typename... Args>
     static
-    auto bound_delegate(Args&&... args) -> delegates::bound<decltype(BIND_ARGS(args))> {
+    auto bound_delegate(Args&&... args) -> delegates::bound<decltype(std::bind_front(std::forward<Args>(args)...))> {
         return {
-            BIND_ARGS(args)
+            std::bind_front(std::forward<Args>(args)...)
         };
     }
 
     /// Returns a delegate that will post the job via the service.
     template <typename... Args>
-    auto concurrent_delegate(Args&&... args) -> delegates::concurrent<decltype(BIND_ARGS(args))> {
+    auto concurrent_delegate(Args&&... args) -> delegates::concurrent<decltype(std::bind_front(std::forward<Args>(args)...))> {
         return {
-            BIND_ARGS(args),
+            std::bind_front(std::forward<Args>(args)...),
             heap_
         };
     }
 
     /// Returns a delegate that will post the job via the strand.
     template <typename... Args>
-    auto ordered_delegate(Args&&... args) -> delegates::ordered<decltype(BIND_ARGS(args))> {
+    auto ordered_delegate(Args&&... args) -> delegates::ordered<decltype(std::bind_front(std::forward<Args>(args)...))> {
         return {
-            BIND_ARGS(args),
+            std::bind_front(std::forward<Args>(args)...),
             heap_
         };
     }
 
     /// Returns a delegate that will post a wrapped job via the service.
     template <typename... Args>
-    auto unordered_delegate(Args&&... args) -> delegates::unordered<decltype(BIND_ARGS(args))> {
+    auto unordered_delegate(Args&&... args) -> delegates::unordered<decltype(std::bind_front(std::forward<Args>(args)...))> {
         return {
-            BIND_ARGS(args),
+            std::bind_front(std::forward<Args>(args)...),
             heap_
         };
     }
 
     /// Returns a delegate that will post a job via the sequencer.
     template <typename... Args>
-    auto sequence_delegate(Args&&... args) -> delegates::sequence<decltype(BIND_ARGS(args))> {
+    auto sequence_delegate(Args&&... args) -> delegates::sequence<decltype(std::bind_front(std::forward<Args>(args)...))> {
         return {
-            BIND_ARGS(args),
+            std::bind_front(std::forward<Args>(args)...),
             heap_
         };
     }
@@ -225,13 +216,6 @@ private:
     work::ptr heap_;
     threadpool& pool_;
 };
-
-#undef FORWARD_ARGS
-#undef FORWARD_HANDLER
-#undef BIND_HANDLER
-#undef BIND_ARGS
-#undef BIND_RACE
-#undef BIND_ELEMENT
 
 #else
 
