@@ -41,7 +41,7 @@ unsigned from_hex(char c) {
     return c - '0';
 }
 
-bool decode_base16(data_chunk& out, std::string const& in) {
+bool decode_base16(data_chunk& out, std::string_view in) {
     // This prevents a last odd character from being ignored:
     if (in.size() % 2 != 0) {
         return false;
@@ -62,7 +62,7 @@ std::string encode_hash(hash_digest hash) {
     return encode_base16(hash);
 }
 
-bool decode_hash(hash_digest& out, std::string const& in) {
+bool decode_hash(hash_digest& out, std::string_view in) {
     if (in.size() != 2 * hash_size) {
         return false;
     }

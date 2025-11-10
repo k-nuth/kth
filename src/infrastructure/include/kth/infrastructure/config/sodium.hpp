@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <kth/infrastructure/define.hpp>
@@ -31,7 +32,7 @@ public:
      * @param[in]  base85  The value to initialize with.
      */
     explicit
-    sodium(std::string const& base85);
+    sodium(std::string_view base85);
 
     /**
      * Initialization constructor.

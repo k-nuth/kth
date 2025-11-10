@@ -6,6 +6,7 @@
 #define KTH_INFRASTUCTURE_BASE_64_HPP
 
 #include <string>
+#include <string_view>
 
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -22,7 +23,7 @@ KI_API std::string encode_base64(data_slice unencoded);
  * Attempt to decode base64 data.
  * @return false if the input contains non-base64 characters.
  */
-KI_API bool decode_base64(data_chunk& out, std::string const& in);
+KI_API bool decode_base64(data_chunk& out, std::string_view in);
 
 } // namespace kth
 

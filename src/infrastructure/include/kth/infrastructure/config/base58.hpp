@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <string>
+#include <string_view>
 
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -27,7 +28,7 @@ public:
 
 
     explicit
-    base58(std::string const& base58);
+    base58(std::string_view base58);
 
     explicit
     base58(data_chunk const& value);

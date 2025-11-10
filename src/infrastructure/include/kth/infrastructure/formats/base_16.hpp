@@ -6,6 +6,7 @@
 #define KTH_INFRASTUCTURE_BASE_16_HPP
 
 #include <string>
+#include <string_view>
 
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/math/hash.hpp>
@@ -28,14 +29,14 @@ KI_API std::string encode_base16(data_slice data);
  * Convert a hex string into bytes.
  * @return false if the input is malformed.
  */
-KI_API bool decode_base16(data_chunk& out, std::string const &in);
+KI_API bool decode_base16(data_chunk& out, std::string_view in);
 
 /**
  * Converts a hex string to a number of bytes.
  * @return false if the input is malformed, or the wrong length.
  */
 template <size_t Size>
-bool decode_base16(byte_array<Size>& out, std::string const &in);
+bool decode_base16(byte_array<Size>& out, std::string_view in);
 
 /**
  * Converts a hex string literal to a data array.
@@ -56,7 +57,7 @@ KI_API std::string encode_hash(hash_digest hash);
  * The bitcoin_hash format is like base16, but with the bytes reversed.
  * @return false if the input is malformed.
  */
-KI_API bool decode_hash(hash_digest& out, std::string const& in);
+KI_API bool decode_hash(hash_digest& out, std::string_view in);
 
 /**
  * Convert a hex string literal into a bitcoin_hash.

@@ -15,7 +15,7 @@ KI_API bool decode_base58_private(uint8_t* out, size_t out_size,
     char const* in);
 
 template <size_t Size>
-bool decode_base58(byte_array<Size>& out, std::string const &in)
+bool decode_base58(byte_array<Size>& out, std::string_view in)
 {
     byte_array<Size> result;
     if ( ! decode_base58_private(result.data(), result.size(), in.data())) {

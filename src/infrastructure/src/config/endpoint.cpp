@@ -35,15 +35,15 @@ endpoint::endpoint(endpoint const& x)
     : scheme_(x.scheme()), host_(x.host()), port_(x.port())
 {}
 
-endpoint::endpoint(std::string const& value) {
-    std::stringstream(value) >> *this;
+endpoint::endpoint(std::string_view value) {
+    std::stringstream(std::string(value)) >> *this;
 }
 
 endpoint::endpoint(authority const& authority)
     : endpoint(authority.to_string())
 {}
 
-endpoint::endpoint(std::string const& host, uint16_t port)
+endpoint::endpoint(std::string_view host, uint16_t port)
     : host_(host), port_(port)
 {}
 

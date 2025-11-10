@@ -14,7 +14,7 @@ KI_API bool decode_base16_private(uint8_t* out, size_t out_size,
     char const* in);
 
 template <size_t Size>
-bool decode_base16(byte_array<Size>& out, std::string const &in)
+bool decode_base16(byte_array<Size>& out, std::string_view in)
 {
     if (in.size() != 2 * Size) {
         return false;

@@ -63,7 +63,7 @@ std::string encode_base64(data_slice unencoded)
     return encoded;
 }
 
-bool decode_base64(data_chunk& out, std::string const& in)
+bool decode_base64(data_chunk& out, std::string_view in)
 {
     const static uint32_t mask = 0x000000FF;
 

@@ -18,8 +18,8 @@
 
 namespace kth::infrastructure::config {
 
-hash160::hash160(std::string const& hexcode) {
-    std::stringstream(hexcode) >> *this;
+hash160::hash160(std::string_view hexcode) {
+    std::stringstream(std::string(hexcode)) >> *this;
 }
 
 hash160::hash160(short_hash const& value)

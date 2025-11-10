@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // #include <fmt/ostream.h>
@@ -39,7 +40,7 @@ public:
 
 
     explicit
-    authority(std::string const& authority);
+    authority(std::string_view authority);
 
     //Note(fernando): in kth-network it is used the implicit convertion
     // implicit
@@ -48,7 +49,7 @@ public:
     authority(message::ip_address const& ip, uint16_t port);
 
 
-    authority(std::string const& host, uint16_t port);
+    authority(std::string_view host, uint16_t port);
 
 #if ! defined(__EMSCRIPTEN__)
     authority(asio::address const& ip, uint16_t port);

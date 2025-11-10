@@ -22,8 +22,8 @@ namespace kth::infrastructure::config {
 // {
 // }
 
-base58::base58(std::string const& base58) {
-    std::stringstream(base58) >> *this;
+base58::base58(std::string_view base58) {
+    std::stringstream(std::string(base58)) >> *this;
 }
 
 base58::base58(data_chunk const& value)

@@ -115,8 +115,8 @@ std::string to_ipv6_hostname(asio::address const& ip_address) {
 // {}
 
 // authority: [2001:db8::2]:port or 1.2.240.1:port
-authority::authority(std::string const& authority) {
-    std::stringstream(authority) >> *this;
+authority::authority(std::string_view authority) {
+    std::stringstream(std::string(authority)) >> *this;
 }
 
 // This is the format returned from peers on the bitcoin network.
@@ -163,8 +163,8 @@ authority::authority(message::ip_address const& ip, uint16_t port)
 {}
 
 // host: [2001:db8::2] or 2001:db8::2 or 1.2.240.1
-authority::authority(std::string const& host, uint16_t port)
-    : authority(to_authority(host, port))
+authority::authority(std::string_view host, uint16_t port)
+    : authority(to_authority(std::string(host), port))
 {}
 
 #if ! defined(__EMSCRIPTEN__)

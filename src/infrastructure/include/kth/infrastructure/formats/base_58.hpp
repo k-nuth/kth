@@ -6,6 +6,7 @@
 #define KTH_INFRASTUCTURE_BASE_58_HPP
 
 #include <string>
+#include <string_view>
 
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -13,14 +14,14 @@
 namespace kth {
 
 KI_API bool is_base58(char ch);
-KI_API bool is_base58(std::string const& text);
+KI_API bool is_base58(std::string_view text);
 
 /**
  * Converts a base58 string to a number of bytes.
  * @return false if the input is malformed, or the wrong length.
  */
 template <size_t Size>
-bool decode_base58(byte_array<Size>& out, std::string const &in);
+bool decode_base58(byte_array<Size>& out, std::string_view in);
 
 /**
  * Converts a base58 string literal to a data array.
@@ -41,7 +42,7 @@ KI_API std::string encode_base58(data_slice unencoded);
  * Attempt to decode base58 data.
  * @return false if the input contains non-base58 characters.
  */
-KI_API bool decode_base58(data_chunk& out, std::string const& in);
+KI_API bool decode_base58(data_chunk& out, std::string_view in);
 
 } // namespace kth
 

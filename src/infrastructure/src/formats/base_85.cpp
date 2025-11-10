@@ -105,7 +105,7 @@ bool encode_base85(std::string& out, data_slice in)
 }
 
 // Accepts only strings bounded to 5 characters.
-bool decode_base85(data_chunk& out, std::string const& in)
+bool decode_base85(data_chunk& out, std::string_view in)
 {
     size_t const length = in.size();
     if (length % 5 != 0) {

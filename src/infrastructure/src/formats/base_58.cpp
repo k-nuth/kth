@@ -17,7 +17,7 @@ bool is_base58(char ch) {
     return std::binary_search(base58_chars.begin(), base58_chars.end(), ch);
 }
 
-bool is_base58(std::string const& text) {
+bool is_base58(std::string_view text) {
     auto const test = [](char ch) {
         return is_base58(ch);
     };
@@ -93,7 +93,7 @@ std::string encode_base58(data_slice unencoded) {
     return encoded;
 }
 
-size_t count_leading_zeros(std::string const& encoded) {
+size_t count_leading_zeros(std::string_view encoded) {
     // Skip and count leading '1's.
     size_t leading_zeros = 0;
     for (uint8_t const digit: encoded) {
@@ -117,7 +117,7 @@ void unpack_char(data_chunk& data, size_t carry) {
     KTH_ASSERT(carry == 0);
 }
 
-bool decode_base58(data_chunk& out, std::string const& in) {
+bool decode_base58(data_chunk& out, std::string_view in) {
     // Trim spaces and newlines around the string.
     auto const leading_zeros = count_leading_zeros(in);
 

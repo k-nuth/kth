@@ -17,8 +17,8 @@
 
 namespace kth::infrastructure::config {
 
-base2::base2(std::string const& binary) {
-    std::stringstream(binary) >> *this;
+base2::base2(std::string_view binary) {
+    std::stringstream(std::string(binary)) >> *this;
 }
 
 base2::base2(binary const& value)

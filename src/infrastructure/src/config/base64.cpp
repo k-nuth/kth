@@ -18,8 +18,8 @@
 
 namespace kth::infrastructure::config {
 
-base64::base64(std::string const& base64) {
-    std::stringstream(base64) >> *this;
+base64::base64(std::string_view base64) {
+    std::stringstream(std::string(base64)) >> *this;
 }
 
 base64::base64(data_chunk const& value)

@@ -19,8 +19,8 @@
 namespace kth::infrastructure::config {
 
 
-base16::base16(std::string const& hexcode) {
-    std::stringstream(hexcode) >> *this;
+base16::base16(std::string_view hexcode) {
+    std::stringstream(std::string(hexcode)) >> *this;
 }
 
 base16::base16(data_chunk const& value)

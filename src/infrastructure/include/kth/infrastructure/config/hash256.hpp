@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <string>
+#include <string_view>
 
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/math/hash.hpp>
@@ -30,7 +31,7 @@ public:
      * @param[in]  hexcode  The hash value in string hexidecimal form.
      */
     explicit
-    hash256(std::string const& hexcode);
+    hash256(std::string_view hexcode);
 
     /**
      * Initialization constructor.

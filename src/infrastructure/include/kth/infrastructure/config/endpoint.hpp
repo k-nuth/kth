@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // #include <fmt/ostream.h>
@@ -48,7 +49,7 @@ public:
      */
     // explicit
     // implicit
-    endpoint(std::string const& value);
+    endpoint(std::string_view value);
 
     /**
      * Initialization constructor.
@@ -62,7 +63,7 @@ public:
      * @param[in]  host  The host name or ip address to initialize with.
      * @param[in]  port  The port to initialize with.
      */
-    endpoint(std::string const& host, uint16_t port);
+    endpoint(std::string_view host, uint16_t port);
 
 #if ! defined(__EMSCRIPTEN__)
     /**

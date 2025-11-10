@@ -31,10 +31,10 @@ using namespace boost::program_options;
 //     : hash_(kth::null_hash)
 // {}
 
-checkpoint::checkpoint(std::string const& value)
+checkpoint::checkpoint(std::string_view value)
     : checkpoint()
 {
-    std::stringstream(value) >> *this;
+    std::stringstream(std::string(value)) >> *this;
 }
 
 // checkpoint::checkpoint(checkpoint const& x)
@@ -42,15 +42,15 @@ checkpoint::checkpoint(std::string const& value)
 // {}
 
 // This is intended for static initialization (i.e. of the internal defaults).
-checkpoint::checkpoint(std::string const& hash, size_t height)
+checkpoint::checkpoint(std::string_view hash, size_t height)
     : height_(height)
 {
     if ( ! decode_hash(hash_, hash)) {
 #if ! defined(__EMSCRIPTEN__)
         using namespace boost::program_options;
-        BOOST_THROW_EXCEPTION(invalid_option_value(hash));
+        BOOST_THROW_EXCEPTION(invalid_option_value(std::string(hash)));
 #else
-        throw std::invalid_argument(hash);
+        throw std::invalid_argument(std::string(hash));
 #endif
     }
 }
@@ -118,7 +118,7 @@ std::istream& operator>>(std::istream& input, checkpoint& argument) {
     }
 
     auto const& match = *it;
-    if ( ! decode_hash(argument.hash_, match[1])) {
+    if ( ! decode_hash(argument.hash_, match[1].str())) {
 #if ! defined(__EMSCRIPTEN__)
         using namespace boost::program_options;
         BOOST_THROW_EXCEPTION(invalid_option_value(value));

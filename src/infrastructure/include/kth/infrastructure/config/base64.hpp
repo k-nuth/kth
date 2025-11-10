@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <string>
+#include <string_view>
 
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -26,7 +27,7 @@ public:
     base64& operator=(base64&&) = default;
 
     explicit
-    base64(std::string const& base64);
+    base64(std::string_view base64);
 
     explicit
     base64(data_chunk const& value);

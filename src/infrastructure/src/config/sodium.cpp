@@ -22,8 +22,8 @@ sodium::sodium()
     : value_(null_hash)
 {}
 
-sodium::sodium(std::string const& base85) {
-    std::stringstream(base85) >> *this;
+sodium::sodium(std::string_view base85) {
+    std::stringstream(std::string(base85)) >> *this;
 }
 
 sodium::sodium(hash_digest const& value)

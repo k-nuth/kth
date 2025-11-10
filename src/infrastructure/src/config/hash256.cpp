@@ -18,10 +18,10 @@
 
 namespace kth::infrastructure::config {
 
-hash256::hash256(std::string const& hexcode)
+hash256::hash256(std::string_view hexcode)
     : hash256()
 {
-    std::stringstream(hexcode) >> *this;
+    std::stringstream(std::string(hexcode)) >> *this;
 }
 
 hash256::hash256(hash_digest const& value)

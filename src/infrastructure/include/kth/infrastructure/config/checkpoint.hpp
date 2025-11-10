@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <kth/infrastructure/define.hpp>
@@ -57,14 +58,14 @@ public:
      * @param[in]  value  The value of the hash[:height] form.
      */
     explicit
-    checkpoint(std::string const& value);
+    checkpoint(std::string_view value);
 
     /**
      * Initialization constructor.
      * @param[in]  hash    The string block hash for the checkpoint.
      * @param[in]  height  The height of the hash.
      */
-    checkpoint(std::string const& hash, size_t height);
+    checkpoint(std::string_view hash, size_t height);
 
     /**
      * Initialization constructor.

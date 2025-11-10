@@ -6,6 +6,7 @@
 #define KTH_INFRASTUCTURE_BASE_85_HPP
 
 #include <string>
+#include <string_view>
 
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -22,7 +23,7 @@ KI_API bool encode_base85(std::string& out, data_slice in);
  * Attempt to decode base85 (Z85) data.
  * @return false if the input contains non-base85 characters or length (% 5).
  */
-KI_API bool decode_base85(data_chunk& out, std::string const& in);
+KI_API bool decode_base85(data_chunk& out, std::string_view in);
 
 } // namespace kth
 
