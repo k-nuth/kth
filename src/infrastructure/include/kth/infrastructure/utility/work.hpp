@@ -53,8 +53,8 @@ public:
     template <typename Handler, typename... Args>
     void concurrent(Handler&& handler, Args&&... args) {
         // Service post ensures the job does not execute in the current thread.
-        service_.post(BIND_HANDLER(handler, args));
-        ////service_.post(inject(BIND_HANDLER(handler, args), CONCURRENT,
+        ::asio::post(service_, BIND_HANDLER(handler, args));
+        ////::asio::post(service_, inject(BIND_HANDLER(handler, args), CONCURRENT,
         ////    concurrent_));
     }
 
@@ -63,8 +63,8 @@ public:
     void ordered(Handler&& handler, Args&&... args) {
         // Use a strand to prevent concurrency and post vs. dispatch to ensure
         // that the job is not executed in the current thread.
-        strand_.post(BIND_HANDLER(handler, args));
-        ////strand_.post(inject(BIND_HANDLER(handler, args), ORDERED, ordered_));
+        ::asio::post(strand_, BIND_HANDLER(handler, args));
+        ////::asio::post(strand_, inject(BIND_HANDLER(handler, args), ORDERED, ordered_));
     }
 
     /// Non-concurrent execution for synchronous operations.
@@ -72,8 +72,10 @@ public:
     void unordered(Handler&& handler, Args&&... args) {
         // Use a strand wrapper to prevent concurrency and a service post
         // to deny ordering while ensuring execution on another thread.
-        service_.post(strand_.wrap(BIND_HANDLER(handler, args)));
-        ////service_.post(strand_.wrap(inject(BIND_HANDLER(handler, args),
+        // TODO: Review bind_executor vs deprecated wrap() for behavioral differences
+        // See: https://github.com/k-nuth/kth-mono/issues/76
+        ::asio::post(service_, ::asio::bind_executor(strand_, BIND_HANDLER(handler, args)));
+        ////::asio::post(service_, ::asio::bind_executor(strand_, inject(BIND_HANDLER(handler, args),
         ////    UNORDERED, unordered_)));
     }
 
@@ -119,8 +121,8 @@ private:
     ////monitor::count_ptr unordered_;
     ////monitor::count_ptr concurrent_;
     ////monitor::count_ptr sequential_;
-    asio::service& service_;
-    asio::service::strand strand_;
+    asio::context& service_;
+    asio::context::strand strand_;
     sequencer sequence_;
 };
 

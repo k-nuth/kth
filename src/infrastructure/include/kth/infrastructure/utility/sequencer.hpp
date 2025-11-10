@@ -25,7 +25,7 @@ public:
     using action = std::function<void ()>;
 
     explicit
-    sequencer(asio::service& service);
+    sequencer(asio::context& service);
 
     ~sequencer();
 
@@ -34,7 +34,7 @@ public:
 
 private:
     // This is thread safe.
-    asio::service& service_;
+    asio::context& service_;
 
     // These are protected by mutex.
     bool executing_;

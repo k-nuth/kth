@@ -63,7 +63,7 @@ static
 asio::ipv6 to_ipv6(asio::ipv4 const& ipv4_address) {
     // Create an IPv6 mapped IPv4 address via serialization.
     auto const ipv6 = to_ipv6(ipv4_address.to_string());
-    return asio::ipv6::from_string(ipv6);
+    return ::asio::ip::make_address_v6(ipv6);
 }
 
 static
@@ -233,7 +233,7 @@ std::istream& operator>>(std::istream& input, authority& argument) {
 
 #if ! defined(__EMSCRIPTEN__)
         try {
-            argument.ip_ = asio::ipv6::from_string(ip_address);
+            argument.ip_ = ::asio::ip::make_address_v6(ip_address);
         } catch (std::exception const&) {
             BOOST_THROW_EXCEPTION(invalid_option_value(value));
         }

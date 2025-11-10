@@ -120,14 +120,14 @@ TEST_CASE("authority should extract port from hostname constructor", "[authority
 #if ! defined(__EMSCRIPTEN__)
 TEST_CASE("authority  port  boost address  expected", "[authority  port]") {
     const uint16_t expected_port = 42;
-    auto const address = kth::asio::address::from_string(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS);
+    auto const address = ::asio::ip::make_address(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS);
     const authority host(address, expected_port);
     REQUIRE(host.port() == expected_port);
 }
 
 TEST_CASE("authority  port  boost endpoint  expected", "[authority  port]") {
     const uint16_t expected_port = 42;
-    auto const address = kth::asio::address::from_string(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS);
+    auto const address = ::asio::ip::make_address(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS);
     kth::asio::endpoint tcp_endpoint(address, expected_port);
     const authority host(tcp_endpoint);
     REQUIRE(host.port() == expected_port);
@@ -228,13 +228,13 @@ TEST_CASE("authority should parse IPv6 from bracketed hostname string", "[author
 
 #if ! defined(__EMSCRIPTEN__)
 TEST_CASE("authority  ip  boost address  expected", "[authority  ip]") {
-    auto const address = kth::asio::address::from_string(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS);
+    auto const address = ::asio::ip::make_address(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS);
     const authority host(address, 42);
     REQUIRE(ip_equal(host.ip(), test_ipv6_address));
 }
 
 TEST_CASE("authority  ip  boost endpoint  expected", "[authority  ip]") {
-    auto const address = kth::asio::address::from_string(KI_AUTHORITY_IPV4_ADDRESS);
+    auto const address = ::asio::ip::make_address(KI_AUTHORITY_IPV4_ADDRESS);
     kth::asio::endpoint tcp_endpoint(address, 42);
     const authority host(tcp_endpoint);
     REQUIRE(ip_equal(host.ip(), test_mapped_ip_address));
