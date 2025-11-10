@@ -29,9 +29,9 @@ bool verify_checksum(data_slice data)
 }
 
     // TODO: create a bitcoin_checksum overload that can accept begin/end.
-    auto const checksum_begin = data.end() - checksum_size;
-    data_slice slice(data.begin(), checksum_begin);
-    auto checksum = from_little_endian_unsafe<uint32_t>(checksum_begin);
+    auto const slice_size = data.size() - checksum_size;
+    data_slice slice(data.data(), slice_size);
+    auto checksum = from_little_endian_unsafe<uint32_t>(data.data() + slice_size);
     return bitcoin_checksum(slice) == checksum;
 }
 

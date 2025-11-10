@@ -29,7 +29,7 @@ hash_digest hash_message(data_slice message) {
     ostream_writer sink_w(ostream);
     sink_w.write_string(prefix);
     sink_w.write_variable_little_endian(message.size());
-    sink_w.write_bytes(message.begin(), message.size());
+    sink_w.write_bytes(message.data(), message.size());
     ostream.flush();
     return bitcoin_hash(data);
 }

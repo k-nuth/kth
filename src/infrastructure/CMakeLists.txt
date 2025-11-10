@@ -321,8 +321,6 @@ set(kth_headers
     include/kth/infrastructure/math/sip_hash.hpp
     include/kth/infrastructure/math/uint256.hpp
 
-    include/kth/infrastructure/impl/utility/array_slice.ipp
-
     include/kth/infrastructure/impl/utility/collection.ipp
     include/kth/infrastructure/impl/utility/data.ipp
     include/kth/infrastructure/impl/utility/deserializer.ipp
@@ -347,7 +345,6 @@ set(kth_headers
     include/kth/infrastructure/unicode/unicode_ostream.hpp
     include/kth/infrastructure/unicode/unicode_streambuf.hpp
 
-    include/kth/infrastructure/utility/array_slice.hpp
     include/kth/infrastructure/utility/asio.hpp
     include/kth/infrastructure/utility/assert.hpp
     include/kth/infrastructure/utility/atomic.hpp

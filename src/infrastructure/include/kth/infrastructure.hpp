@@ -68,7 +68,6 @@
 #include <kth/infrastructure/unicode/unicode_ostream.hpp>
 #include <kth/infrastructure/unicode/unicode_streambuf.hpp>
 
-#include <kth/infrastructure/utility/array_slice.hpp>
 #include <kth/infrastructure/utility/asio.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 #include <kth/infrastructure/utility/atomic.hpp>

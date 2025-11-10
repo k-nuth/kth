@@ -15,7 +15,6 @@
 #include <vector>
 
 #include <kth/infrastructure/define.hpp>
-#include <kth/infrastructure/utility/array_slice.hpp>
 
 namespace kth {
 
@@ -34,7 +33,7 @@ struct byte_array_parts {
 
 // Define arbitrary byte storage types.
 using one_byte = byte_array<1>;
-using data_slice = array_slice<uint8_t>;
+using data_slice = std::span<uint8_t const>;
 using data_chunk = std::vector<uint8_t>;
 using data_queue = std::queue<data_chunk>;
 using data_stack = std::vector<data_chunk>;
