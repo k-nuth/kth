@@ -4,6 +4,18 @@ set -x
 # Error handling - rollback on failure
 trap 'echo "❌ Script failed. Consider running cleanup manually."; exit 1' ERR
 
+# Start ssh-agent if not already running to avoid multiple passphrase prompts
+SSH_AGENT_STARTED=false
+if [ -z "$SSH_AUTH_SOCK" ]; then
+    echo "🔐 Starting SSH agent..."
+    eval $(ssh-agent -s)
+    SSH_AGENT_STARTED=true
+fi
+
+# Add SSH key (will ask for passphrase once)
+echo "🔑 Adding SSH key..."
+ssh-add ~/.ssh/id_rsa 2>/dev/null || ssh-add ~/.ssh/id_ed25519 2>/dev/null || ssh-add 2>/dev/null || true
+
 if [ -z "$1" ]; then
     echo "Usage: $0 <version>"
     exit 1
@@ -195,6 +207,10 @@ else
 fi
 
 echo "Waiting for the build to finish for branch: release/${VERSION}"
+echo "⏰ Recording current time to filter only new workflow runs..."
+RELEASE_START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+sleep 5  # Small delay to ensure GitHub has registered the push
+
 MAX_WAIT_TIME=7200  # 2 hours
 ELAPSED=0
 while [ $ELAPSED -lt $MAX_WAIT_TIME ]; do
@@ -209,10 +225,12 @@ while [ $ELAPSED -lt $MAX_WAIT_TIME ]; do
     fi
     
     # Find the most recent run that was triggered by 'push' (not 'pull_request')
+    # Only consider runs created AFTER we pushed the release branch
     # Sort by creation time and filter out cancelled/failed runs from previous attempts
-    push_run=$(echo "$run_info" | jq -r '
-        .[] | 
-        select(.event == "push") | 
+    push_run=$(echo "$run_info" | jq -r --arg start_time "$RELEASE_START_TIME" '
+        .[] |
+        select(.event == "push") |
+        select(.createdAt >= $start_time) |
         select(.status == "in_progress" or .status == "queued" or (.status == "completed" and .conclusion == "success")) |
         . | @base64
     ' | head -1)
@@ -220,9 +238,10 @@ while [ $ELAPSED -lt $MAX_WAIT_TIME ]; do
     # If no active/successful push run found, look for the most recent push run regardless of status
     if [ -z "$push_run" ]; then
         echo "No active push-triggered workflow runs found. Checking most recent push run..."
-        push_run=$(echo "$run_info" | jq -r '
-            .[] | 
-            select(.event == "push") | 
+        push_run=$(echo "$run_info" | jq -r --arg start_time "$RELEASE_START_TIME" '
+            .[] |
+            select(.event == "push") |
+            select(.createdAt >= $start_time) |
             . | @base64
         ' | head -1)
     fi
@@ -369,3 +388,9 @@ echo "✅ Release notes have been updated in $NOTES_FILE"
 # remove the release branch locally and remotely
 git push origin --delete "release/${VERSION}"
 git branch -D "release/${VERSION}"
+
+# Clean up ssh-agent if we started it
+if [ "$SSH_AGENT_STARTED" = true ]; then
+    echo "🔐 Stopping SSH agent..."
+    ssh-agent -k
+fi

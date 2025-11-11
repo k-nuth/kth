@@ -63,7 +63,9 @@ jobs:
         working-directory: .
         run: |
           conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr linux-ci-cd -s build_type=Release
-          conan graph explain conanfile.py --lockfile=build/conan.lock -s build_type=Release
+
+          # conan graph explain fails when no missing binaries, so it's commented out
+          # conan graph explain conanfile.py --lockfile=build/conan.lock -s build_type=Release
 
           # conan lock build-order build/conan.lock --json=build_order.json
           # conan graph build-order conanfile.py --lockfile=build/conan.lock -f json > build_order.json
