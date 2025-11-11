@@ -34,7 +34,13 @@ def main():
                         matrix["config"].append(deepcopy(platform_final))
 
             if len(matrix["config"]) == 0:
-                matrix["config"].append({"reference": "null"})
+                # Create a dummy entry with minimal required fields when no dependencies to build
+                # This prevents workflow errors when os field is accessed
+                matrix["config"].append({
+                    "reference": "null",
+                    "os": "ubuntu-latest",
+                    "context": "host"
+                })
 
     print(matrix)
     with open("matrix.json", "w") as write_file:
