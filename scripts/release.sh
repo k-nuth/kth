@@ -132,11 +132,12 @@ rm -rf build
 rm -rf conan.lock
 rm -rf conan-wasm.lock
 
+echo "🔒 Creating conan-wasm.lock for version ${VERSION}..."
+conan lock create conanfile.py --version="${VERSION}" --update -pr ems2
+mv conan.lock conan-wasm.lock
+
 echo "🔒 Creating conan.lock for version ${VERSION}..."
 conan lock create conanfile.py --version="${VERSION}" --update
-
-echo "🔒 Creating conan-wasm.lock for version ${VERSION}..."
-conan lock create conanfile.py --version="${VERSION}" --lockfile=conan-wasm.lock --update -pr ems2
 
 echo "🔒 Checking lockfile changes..."
 if git status --porcelain | grep -q "conan.lock\|conan-wasm.lock"; then
