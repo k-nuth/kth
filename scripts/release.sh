@@ -1,13 +1,29 @@
 #!/bin/bash
 set -x
 
+# Error handling - rollback on failure
+trap 'echo "❌ Script failed. Consider running cleanup manually."; exit 1' ERR
+
 if [ -z "$1" ]; then
     echo "Usage: $0 <version>"
     exit 1
 fi
 VERSION="$1"
 
+# Validate semver format
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "❌ Version must be in semver format (e.g., 0.71.0)"
+    exit 1
+fi
+
 echo "Building version: ${VERSION}"
+
+# Verify GitHub CLI authentication
+echo "🔐 Verifying GitHub CLI authentication..."
+if ! gh auth status >/dev/null 2>&1; then
+    echo "❌ Not authenticated with GitHub CLI. Run: gh auth login"
+    exit 1
+fi
 
 # Cleanup previous release attempts (if any)
 echo "🧹 Cleaning up previous release artifacts..."
@@ -48,6 +64,12 @@ fi
 
 echo "✅ Cleanup completed"
 
+# Check for staged changes before proceeding
+if git status --porcelain | grep -q "^[MADRCU]"; then
+    echo "⚠️ You have staged changes. Please commit or unstash them first."
+    exit 1
+fi
+
 # Smart stash handling - only stash if there are changes, and track if we did
 STASH_CREATED=false
 if ! git diff-index --quiet HEAD --; then
@@ -64,6 +86,12 @@ git pull origin master
 if [ "$STASH_CREATED" = true ]; then
     echo "📦 Restoring stashed changes..."
     git stash pop
+fi
+
+# Verify the branch doesn't exist before creating
+if git show-ref --verify --quiet "refs/heads/release/${VERSION}"; then
+    echo "❌ Branch release/${VERSION} already exists locally"
+    exit 1
 fi
 
 git checkout -b "release/${VERSION}"
@@ -90,25 +118,29 @@ fi
 
 rm -rf build
 rm -rf conan.lock
+rm -rf conan-wasm.lock
 
 echo "🔒 Creating conan.lock for version ${VERSION}..."
 conan lock create conanfile.py --version="${VERSION}" --update
 
-echo "🔒 Checking conan.lock changes..."
-if git status --porcelain | grep -q "conan.lock"; then
-    echo "📝 conan.lock was updated, committing..."
-    git add conan.lock
-    git commit -m "release: update conan.lock for version ${VERSION}"
+echo "🔒 Creating conan-wasm.lock for version ${VERSION}..."
+conan lock create conanfile.py --version="${VERSION}" --lockfile=conan-wasm.lock --update -pr ems2
+
+echo "🔒 Checking lockfile changes..."
+if git status --porcelain | grep -q "conan.lock\|conan-wasm.lock"; then
+    echo "📝 Lockfiles were updated, committing..."
+    git add conan.lock conan-wasm.lock
+    git commit -m "release: update lockfiles for version ${VERSION}"
     CHANGES_MADE=true
 else
-    echo "📝 No conan.lock changes detected"
-    # Add anyway in case it's a new file
-    git add conan.lock 2>/dev/null || true
+    echo "📝 No lockfile changes detected"
+    # Add anyway in case they're new files
+    git add conan.lock conan-wasm.lock 2>/dev/null || true
     if git diff --cached --quiet; then
-        echo "📝 No changes to commit for conan.lock"
+        echo "📝 No changes to commit for lockfiles"
     else
-        echo "📝 Committing new conan.lock..."
-        git commit -m "release: update conan.lock for version ${VERSION}"
+        echo "📝 Committing new lockfiles..."
+        git commit -m "release: update lockfiles for version ${VERSION}"
         CHANGES_MADE=true
     fi
 fi
@@ -163,13 +195,16 @@ else
 fi
 
 echo "Waiting for the build to finish for branch: release/${VERSION}"
-while true; do
+MAX_WAIT_TIME=7200  # 2 hours
+ELAPSED=0
+while [ $ELAPSED -lt $MAX_WAIT_TIME ]; do
     # Get workflow runs for the current branch, including event type
     run_info=$(gh run list --branch "release/${VERSION}" --workflow "Build and Test" --limit 10 --json status,conclusion,url,number,event,createdAt)
     
     if [ -z "$run_info" ] || [ "$run_info" == "[]" ]; then
         echo "No workflow runs found for branch release/${VERSION}. Waiting..."
         sleep 30
+        ELAPSED=$((ELAPSED + 30))
         continue
     fi
     
@@ -195,6 +230,7 @@ while true; do
     if [ -z "$push_run" ]; then
         echo "No push-triggered workflow runs found for branch release/${VERSION}. Waiting..."
         sleep 30
+        ELAPSED=$((ELAPSED + 30))
         continue
     fi
     
@@ -220,11 +256,12 @@ while true; do
             echo "⚠️ Most recent workflow was cancelled. This might be from a previous release attempt."
             echo "Waiting for a new workflow to start or checking if there's a more recent one..."
             sleep 30
+            ELAPSED=$((ELAPSED + 30))
             continue
         else
             echo "❌ Build completed but failed with conclusion: ${conclusion}"
             echo "Please check the workflow at: ${url}"
-            
+
             # Ask user if they want to continue waiting for a new run or exit
             echo "This might be from a previous release attempt. Continue waiting? (y/n)"
             read -r response
@@ -232,13 +269,21 @@ while true; do
                 exit 1
             fi
             sleep 30
+            ELAPSED=$((ELAPSED + 30))
             continue
         fi
     else
         echo "🔄 Build is still in progress (${status}). Waiting..."
         sleep 30
+        ELAPSED=$((ELAPSED + 30))
     fi
 done
+
+# If we exit the loop due to timeout
+if [ $ELAPSED -ge $MAX_WAIT_TIME ]; then
+    echo "❌ Timeout waiting for CI after $MAX_WAIT_TIME seconds ($(($MAX_WAIT_TIME / 60)) minutes)"
+    exit 1
+fi
 
 # squash merge the PR, do not delete the branch
 gh pr merge --squash --auto "release/${VERSION}"
