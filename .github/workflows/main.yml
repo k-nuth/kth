@@ -247,6 +247,7 @@ jobs:
       os: ${{ matrix.config.os }}
       image: "kthnode/gcc${{ matrix.config.version }}${{ matrix.config.docker_suffix }}"
       reference: ${{ matrix.config.reference }}
+      context: ${{ matrix.config.context }}
       conan-remote: "kth"
     secrets:
       conan-user: ${{ secrets.CONAN_LOGIN_USERNAME }}
@@ -262,6 +263,7 @@ jobs:
       if: ${{ matrix.config.compiler != 'GCC' }}
       os: ${{ matrix.config.os }}
       reference: ${{ matrix.config.reference }}
+      context: ${{ matrix.config.context }}
       conan-remote: "kth"
     secrets:
       conan-user: ${{ secrets.CONAN_LOGIN_USERNAME }}

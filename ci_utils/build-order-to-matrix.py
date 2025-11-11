@@ -15,10 +15,21 @@ def main():
                 for reference in level:
                     # print(f"reference: {reference}")
                     # print(f"reference: {reference['ref']}")
+
+                    # Detect if this is a build requirement (tool_requires)
+                    is_build = False
+                    if 'packages' in reference and reference['packages']:
+                        for pkg_list in reference['packages']:
+                            for pkg in pkg_list:
+                                if isinstance(pkg, dict) and pkg.get('context') == 'build':
+                                    is_build = True
+                                    break
+
                     for platform in platform_data['config']:
                         platform_final = deepcopy(platform)
                         platform_final["name"] = f'{platform_final["name"]} - {reference["ref"]}'
                         platform_final["reference"] = reference["ref"]
+                        platform_final["context"] = "build" if is_build else "host"
                         # print(f"reference: {platform['reference']}")
                         matrix["config"].append(deepcopy(platform_final))
 

@@ -14,6 +14,10 @@ on:
       reference:
         required: true
         type: string
+      context:
+        required: false
+        type: string
+        default: 'host'
       conan-remote:
         required: true
         type: string
@@ -64,7 +68,14 @@ jobs:
           name: conan-lockfile-container
       - name: 🏗️ Build dependencies
         if: ${{ inputs.reference != 'null' }}
-        run: conan install --requires=${{ inputs.reference }} -l conan.lock -b missing -pr:b linux-ci-cd -pr:h linux-ci-cd
+        run: |
+          if [ "${{ inputs.context }}" = "build" ]; then
+            echo "Building tool requirement: ${{ inputs.reference }}"
+            conan install --tool-requires=${{ inputs.reference }} -l conan.lock -b missing -pr:b linux-ci-cd -pr:h linux-ci-cd
+          else
+            echo "Building host requirement: ${{ inputs.reference }}"
+            conan install --requires=${{ inputs.reference }} -l conan.lock -b missing -pr:b linux-ci-cd -pr:h linux-ci-cd
+          fi
       - name: 📦 Upload package
         if: ${{ inputs.reference != 'null' }}
         run: conan upload ${{ inputs.reference }} -r ${{ inputs.conan-remote }} # --all
