@@ -10,10 +10,10 @@ VERSION="$1"
 echo "Building version: ${VERSION}"
 
 rm -rf build
-rm -rf conan.lock
+rm -rf conan-wasm.lock
 
-conan lock create conanfile.py --version="${VERSION}" --update -pr ems2
-conan lock create conanfile.py --version "${VERSION}" --lockfile=conan.lock --lockfile-out=build/conan.lock -pr ems2
+conan lock create conanfile.py --version="${VERSION}" --lockfile=conan-wasm.lock --update -pr ems2
+conan lock create conanfile.py --version "${VERSION}" --lockfile=conan-wasm.lock --lockfile-out=build/conan.lock -pr ems2
 conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr ems2
 
 cmake --preset conan-release \

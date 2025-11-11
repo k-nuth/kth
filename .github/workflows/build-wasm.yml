@@ -1,0 +1,203 @@
+name: Build WebAssembly
+
+on:
+  push:
+    branches:
+      - master
+      - 'release/**'
+      - 'hotfix/**'
+      - 'dev-publish/**'
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch: {}
+
+env:
+  CONAN_REMOTE: kth
+  CONAN_REMOTE_URL: https://packages.kth.cash/api/
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      build-version: ${{ steps.version.outputs.build-version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+      - id: version
+        uses: ./ci_utils/.github/actions/determine-version
+        with:
+          github-ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+          run-number: ${{ github.run_number }}
+
+  build-wasm:
+    needs: [setup]
+    runs-on: ubuntu-latest
+    name: WebAssembly (Emscripten)
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: 🔧 Replace version
+        uses: ./ci_utils/.github/actions/replace-version-monorepo
+        with:
+          new-version: ${{ needs.setup.outputs.build-version }}
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install build dependencies
+        run: |
+          pip install conan==2.22.2
+          pip install kthbuild --upgrade
+          conan --version
+
+      - name: 🔧 Setup Conan profile
+        run: |
+          conan profile detect --force
+
+          # Create Emscripten profile matching local ems2 profile
+          cat > ~/.conan2/profiles/ems2 <<'EOF'
+          [settings]
+          arch=wasm
+          build_type=Release
+          compiler=clang
+          compiler.cppstd=23
+          compiler.libcxx=libc++
+          compiler.version=14
+          os=Emscripten
+
+          [tool_requires]
+          emsdk/3.1.73
+
+          [buildenv]
+          # Use system clang for build tools (not Emscripten)
+          CC_FOR_BUILD=clang
+          CXX_FOR_BUILD=clang++
+          EOF
+
+          echo "Created Emscripten profile:"
+          cat ~/.conan2/profiles/ems2
+
+      - name: 🔐 Add Conan remote
+        run: |
+          conan remote add ${{ env.CONAN_REMOTE }} ${{ env.CONAN_REMOTE_URL }} --force
+          conan remote login ${{ env.CONAN_REMOTE }} ${{ secrets.CONAN_LOGIN_USERNAME }} -p ${{ secrets.CONAN_3_PASSWORD }}
+
+      - name: 📋 Calculate dependency build order
+        run: |
+          VERSION="${{ needs.setup.outputs.build-version }}"
+          echo "Calculating dependency build order for version: ${VERSION}"
+
+          # Create lock and get build order
+          conan lock create conanfile.py --version="${VERSION}" --lockfile=conan-wasm.lock --lockfile-out=build/conan.lock -pr ems2
+
+          # Explain dependency graph (commented out - fails when no missing binaries)
+          # conan graph explain conanfile.py --lockfile=build/conan.lock -pr ems2
+
+          # Get build order (may be empty if all packages exist)
+          # If there are no missing binaries, create an empty build order
+          conan graph build-order conanfile.py --lockfile=build/conan.lock -f json --order-by recipe --build=missing --reduce -pr ems2 > build_order.json || {
+            echo "No missing binaries to build, creating empty build order"
+            echo '{"order":[]}' > build_order.json
+          }
+
+          echo "Build order:"
+          cat build_order.json
+
+      - name: 🏗️ Build and upload dependencies
+        run: |
+          # Parse build order and build each dependency
+          # Extract references and their context (build or host)
+          python3 << 'PYTHON_EOF' > deps_list.txt
+          import json
+          import os
+          import sys
+
+          if not os.path.exists('build_order.json'):
+              print("Error: build_order.json not found", file=sys.stderr)
+              exit(0)
+
+          if os.path.getsize('build_order.json') == 0:
+              print("Warning: build_order.json is empty", file=sys.stderr)
+              exit(0)
+
+          with open('build_order.json', 'r') as f:
+              data = json.load(f)
+          if 'order' in data and data['order']:
+              for level in data['order']:
+                  for item in level:
+                      if isinstance(item, dict) and 'ref' in item:
+                          ref = item['ref']
+                          # Check if it's a build requirement by looking at packages context
+                          is_build = False
+                          if 'packages' in item and item['packages']:
+                              for pkg_list in item['packages']:
+                                  for pkg in pkg_list:
+                                      if isinstance(pkg, dict) and pkg.get('context') == 'build':
+                                          is_build = True
+                                          break
+                          print(f"{ref}|{'build' if is_build else 'host'}")
+          PYTHON_EOF
+
+          while IFS='|' read -r ref context; do
+            if [ -n "$ref" ]; then
+              echo "Building dependency: $ref (context: $context)"
+              if [ "$context" = "build" ]; then
+                conan install --tool-requires="$ref" -l build/conan.lock --build=missing -pr ems2
+              else
+                conan install --requires="$ref" -l build/conan.lock --build=missing -pr ems2
+              fi
+              echo "Uploading dependency: $ref"
+              conan upload "$ref" -r ${{ env.CONAN_REMOTE }} --confirm
+            fi
+          done < deps_list.txt
+
+      - name: 🏗️ Build main package
+        run: |
+          VERSION="${{ needs.setup.outputs.build-version }}"
+          echo "Building main package version: ${VERSION}"
+
+          conan create conanfile.py --version="${VERSION}" --lockfile=build/conan.lock -pr ems2 --build=missing -o tests=False
+
+      - name: 📊 Build summary
+        if: always()
+        run: |
+          echo "## 🌐 WebAssembly Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 📦 Package Information" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ needs.setup.outputs.build-version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Package:** \`kth/${{ needs.setup.outputs.build-version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 🔧 Build Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "**Toolchain:** Emscripten (emsdk/3.1.73)" >> $GITHUB_STEP_SUMMARY
+          echo "**Architecture:** wasm" >> $GITHUB_STEP_SUMMARY
+          echo "**Compiler:** clang 14" >> $GITHUB_STEP_SUMMARY
+          echo "**C++ Standard:** C++23" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Type:** Release" >> $GITHUB_STEP_SUMMARY
+          echo "**Tests:** Disabled (not supported on WASM)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "### ✅ Package Upload" >> $GITHUB_STEP_SUMMARY
+            echo "**Status:** Package will be uploaded to Conan registry" >> $GITHUB_STEP_SUMMARY
+            echo "**Registry:** \`${{ env.CONAN_REMOTE_URL }}\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ⏭️ Package Upload" >> $GITHUB_STEP_SUMMARY
+            echo "**Status:** Package will not be uploaded (PR build)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: 📦 Upload package to Conan remote
+        if: github.event_name == 'push'
+        run: |
+          conan remote login -p ${{ secrets.CONAN_3_PASSWORD }} ${{ env.CONAN_REMOTE }} ${{ secrets.CONAN_LOGIN_USERNAME }}
+          conan upload kth/${{ needs.setup.outputs.build-version }}@ -r ${{ env.CONAN_REMOTE }}

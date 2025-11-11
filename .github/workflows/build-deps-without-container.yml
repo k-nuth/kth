@@ -24,7 +24,8 @@ jobs:
     if: ${{ inputs.if }}
     runs-on: ${{ inputs.os }}
     steps:
-      - if: ${{ inputs.reference != 'null' }}
+      - name: 🐛 Debug inputs
+        if: ${{ inputs.reference != 'null' }}
         run: |
           echo "inputs.conan-remote: ${{ inputs.conan-remote }}"
           echo "CONAN_REMOTE: $CONAN_REMOTE"
@@ -46,30 +47,35 @@ jobs:
           # # python3 -m pip install kthbuild --upgrade
 
 
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
         with:
           submodules: true
 
-      - if: ${{ inputs.reference != 'null' && inputs.compiler != 'GCC' }}
+      - name: 🐍 Setup Python
+        if: ${{ inputs.reference != 'null' && inputs.compiler != 'GCC' }}
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - if: ${{ inputs.reference != 'null' }}
+      - name: 🔧 Setup Conan
+        if: ${{ inputs.reference != 'null' }}
         uses: ./ci_utils/.github/actions/setup-conan
-      - if: ${{ inputs.reference != 'null' }}
+      - name: 🔧 Setup kthbuild
+        if: ${{ inputs.reference != 'null' }}
         uses: ./ci_utils/.github/actions/setup-kthbuild
-      - if: ${{ inputs.reference != 'null' }}
+      - name: 🔐 Conan login
+        if: ${{ inputs.reference != 'null' }}
         run: conan remote login -p ${{ secrets.conan-password }} ${{ inputs.conan-remote }} ${{ secrets.conan-user }}
-      - name: download
+      - name: 📥 Download artifact
         if: ${{ inputs.reference != 'null' }}
         uses: actions/download-artifact@v4
         with:
           name: conan-lockfile-no-container
-      - name: build
+      - name: 🏗️ Build dependencies
         if: ${{ inputs.reference != 'null' }}
         run: conan install --requires=${{ inputs.reference }} -l conan.lock -b missing -pr:b general-ci-cd -pr:h general-ci-cd
-      - name: upload
+      - name: 📦 Upload package
         if: ${{ inputs.reference != 'null' }}
         run: conan upload ${{ inputs.reference }} -r ${{ inputs.conan-remote }} # --all
       - run: exit 0

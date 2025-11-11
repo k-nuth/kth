@@ -29,7 +29,8 @@ jobs:
     container:
       image: ${{ inputs.image }}
     steps:
-      - run: |
+      - name: 🐛 Debug inputs
+        run: |
           echo "inputs.conan-remote: ${{ inputs.conan-remote }}"
           echo "CONAN_REMOTE: $CONAN_REMOTE"
           echo "inputs.if: ${{ inputs.if }}"
@@ -38,7 +39,8 @@ jobs:
           echo "inputs.reference: ${{ inputs.reference }}"
 
 
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -46,21 +48,24 @@ jobs:
       #   uses: actions/setup-python@v4
       #   with:
       #     python-version: '3.11'
-      - if: ${{ inputs.reference != 'null' }}
+      - name: 🔧 Setup Conan
+        if: ${{ inputs.reference != 'null' }}
         uses: ./ci_utils/.github/actions/setup-conan
-      - if: ${{ inputs.reference != 'null' }}
+      - name: 🔧 Setup kthbuild
+        if: ${{ inputs.reference != 'null' }}
         uses: ./ci_utils/.github/actions/setup-kthbuild
-      - if: ${{ inputs.reference != 'null' }}
+      - name: 🔐 Conan login
+        if: ${{ inputs.reference != 'null' }}
         run: conan remote login -p ${{ secrets.conan-password }} ${{ inputs.conan-remote }} ${{ secrets.conan-user }}
-      - name: download
+      - name: 📥 Download artifact
         if: ${{ inputs.reference != 'null' }}
         uses: actions/download-artifact@v4
         with:
           name: conan-lockfile-container
-      - name: build
+      - name: 🏗️ Build dependencies
         if: ${{ inputs.reference != 'null' }}
         run: conan install --requires=${{ inputs.reference }} -l conan.lock -b missing -pr:b linux-ci-cd -pr:h linux-ci-cd
-      - name: upload
+      - name: 📦 Upload package
         if: ${{ inputs.reference != 'null' }}
         run: conan upload ${{ inputs.reference }} -r ${{ inputs.conan-remote }} # --all
       - run: exit 0

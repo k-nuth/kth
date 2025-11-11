@@ -31,22 +31,27 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
         with:
           submodules: true
 
-      - uses: actions/cache@v4
+      - name: 💾 Cache Conan packages
+        uses: actions/cache@v4
         with:
           path: ~/.conan/data
           key: alpine-${{ hashFiles('**/conan.lock') }}
 
       # - if: ${{ inputs.compiler != 'GCC' }}
-      - uses: actions/setup-python@v4
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - uses: ./ci_utils/.github/actions/setup-conan
-      - uses: ./ci_utils/.github/actions/setup-kthbuild
+      - name: 🔧 Setup Conan
+        uses: ./ci_utils/.github/actions/setup-conan
+      - name: 🔧 Setup kthbuild
+        uses: ./ci_utils/.github/actions/setup-kthbuild
       - name: 🔑 Conan login
         run: conan remote login -p ${{ secrets.conan-password }} ${{ inputs.conan-remote }} ${{ secrets.conan-user }}
 
@@ -65,10 +70,12 @@ jobs:
 
 
 
-      - uses: actions/upload-artifact@v4
+      - name: 📦 Upload lockfile artifact
+        uses: actions/upload-artifact@v4
         with:
           name: conan-lockfile-no-container
           path: build/conan.lock
+
       - id: set-matrix
         name: 📤 Output
         run: |

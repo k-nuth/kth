@@ -62,7 +62,8 @@ jobs:
     container:
       image: ${{ inputs.image }}
     steps:
-      - run: |
+      - name: 🐛 Debug inputs
+        run: |
           echo "inputs.conan-remote: ${{ inputs.conan-remote }}"
           echo "inputs.if: ${{ inputs.if }}"
           echo "inputs.os: ${{ inputs.os }}"
@@ -79,11 +80,13 @@ jobs:
           # echo "github.event_name:         ${{ github.event_name }}"
 
 
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
         with:
           submodules: true
 
-      - uses: actions/cache@v4
+      - name: 💾 Cache Conan packages
+        uses: actions/cache@v4
         with:
           path: ~/.conan/data
           key: ${{ runner.os }}-${{ hashFiles('**/conan.lock') }}
@@ -102,15 +105,19 @@ jobs:
       #   with:
       #     node-version: '20.x'
 
-      - uses: ./ci_utils/.github/actions/setup-conan
-      - uses: ./ci_utils/.github/actions/setup-kthbuild
-      - uses: lukka/get-cmake@6d674ef0d7703f12f77182ca400e1e7be99fd399
+      - name: 🔧 Setup Conan
+        uses: ./ci_utils/.github/actions/setup-conan
+      - name: 🔧 Setup kthbuild
+        uses: ./ci_utils/.github/actions/setup-kthbuild
+      - name: 🔧 Get CMake
+        uses: lukka/get-cmake@6d674ef0d7703f12f77182ca400e1e7be99fd399
 
       # - uses: github/codeql-action/init@v2
       #   with:
       #     languages: 'cpp'
 
-      - uses: ./ci_utils/.github/actions/replace-version-monorepo
+      - name: 🔧 Replace version
+        uses: ./ci_utils/.github/actions/replace-version-monorepo
         with:
           new-version: ${{ inputs.build-version }}
 
@@ -175,6 +182,51 @@ jobs:
                  -DCMAKE_BUILD_TYPE=Release
                  
             cmake --build --preset conan-release -j4
+          fi
+
+      - name: 📊 Build summary
+        if: always()
+        run: |
+          echo "### Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ inputs.build-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Platform:** ${{ inputs.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Container Image:** ${{ inputs.image }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Compiler:** ${{ inputs.compiler }} ${{ inputs.compiler-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Build type
+          if [ "${{ inputs.upload }}" = "true" ]; then
+            echo "**Build Type:** Release build (with package validation)" >> $GITHUB_STEP_SUMMARY
+            echo "**Uploaded to Conan:** Yes" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Build Type:** Development build (with tests)" >> $GITHUB_STEP_SUMMARY
+            echo "**Uploaded to Conan:** No" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Sanitizers
+          SANITIZERS_ENABLED=false
+          echo "**Sanitizers:**" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.enable-asan }}" = "true" ]; then
+            echo "- AddressSanitizer (ASan): Enabled" >> $GITHUB_STEP_SUMMARY
+            SANITIZERS_ENABLED=true
+          fi
+          if [ "${{ inputs.enable-ubsan }}" = "true" ]; then
+            echo "- UndefinedBehaviorSanitizer (UBSan): Enabled" >> $GITHUB_STEP_SUMMARY
+            SANITIZERS_ENABLED=true
+          fi
+          if [ "${{ inputs.enable-tsan }}" = "true" ]; then
+            if [ "${{ inputs.enable-asan }}" = "true" ]; then
+              echo "- ThreadSanitizer (TSan): Disabled (conflicts with ASan)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- ThreadSanitizer (TSan): Enabled" >> $GITHUB_STEP_SUMMARY
+              SANITIZERS_ENABLED=true
+            fi
+          fi
+          if [ "$SANITIZERS_ENABLED" = "false" ]; then
+            echo "- None enabled" >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: 🧪 Run unit tests

@@ -35,11 +35,13 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
         with:
           submodules: true
 
-      - uses: actions/cache@v4
+      - name: 💾 Cache Conan packages
+        uses: actions/cache@v4
         with:
           path: ~/.conan/data
           key: alpine-${{ hashFiles('**/conan.lock') }}
@@ -50,12 +52,14 @@ jobs:
       #   with:
       #     python-version: '3.11'
 
-      - uses: ./ci_utils/.github/actions/setup-conan
-      - uses: ./ci_utils/.github/actions/setup-kthbuild
-      - name: conan login
+      - name: 🔧 Setup Conan
+        uses: ./ci_utils/.github/actions/setup-conan
+      - name: 🔧 Setup kthbuild
+        uses: ./ci_utils/.github/actions/setup-kthbuild
+      - name: 🔐 Conan login
         run: conan remote login -p ${{ secrets.conan-password }} ${{ inputs.conan-remote }} ${{ secrets.conan-user }}
 
-      - name: build order
+      - name: 📋 Calculate build order
         working-directory: .
         run: |
           conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr linux-ci-cd -s build_type=Release
@@ -69,12 +73,14 @@ jobs:
           # Conan 2.7 build order configuration
           # conan graph build-order conanfile.py --lockfile=build/conan.lock -f json --order-by configuration --build=missing --reduce > build_order.json
 
-      - uses: actions/upload-artifact@v4
+      - name: 📦 Upload lockfile artifact
+        uses: actions/upload-artifact@v4
         with:
           name: conan-lockfile-container
           path: build/conan.lock
-      - id: set-matrix
-        name: output
+
+      - name: 📤 Output matrix
+        id: set-matrix
         run: |
           cp ./ci_utils/.github/matrix.json platform.json
           cat platform.json
