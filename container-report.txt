@@ -1,0 +1,160 @@
+# Container Usage Report for Migration to boost::unordered_flat_*
+
+## Summary
+- std::map: 33 occurrences
+- std::set: 60 occurrences
+- std::unordered_map: 41 occurrences
+- std::unordered_set: 8 occurrences
+Total: 142 occurrences
+
+## Detailed Findings
+
+### std::map
+src/consensus/src/btc-rules/serialize.h:704:template<typename Stream, typename K, typename T, typename Pred, typename A> void Serialize(Stream& os, const std::map<K, T, Pred, A>& m);
+src/consensus/src/btc-rules/serialize.h:705:template<typename Stream, typename K, typename T, typename Pred, typename A> void Unserialize(Stream& is, std::map<K, T, Pred, A>& m);
+src/consensus/src/btc-rules/serialize.h:923:void Serialize(Stream& os, const std::map<K, T, Pred, A>& m)
+src/consensus/src/btc-rules/serialize.h:931:void Unserialize(Stream& is, std::map<K, T, Pred, A>& m)
+src/consensus/src/btc-rules/serialize.h:935:    typename std::map<K, T, Pred, A>::iterator mi = m.begin();
+src/consensus/src/bch-rules/indirectmap.h:18: * Differs from a plain std::map<const K*, T, DereferencingComparator<K*> > in
+src/consensus/src/bch-rules/indirectmap.h:29:    typedef std::map<const K *, T, DereferencingComparator<const K *>> base;
+src/consensus/src/bch-rules/psbt.h:44:    std::map<CPubKey, KeyOriginInfo> hd_keypaths;
+src/consensus/src/bch-rules/psbt.h:45:    std::map<CKeyID, SigPair> partial_sigs;
+src/consensus/src/bch-rules/psbt.h:46:    std::map<std::vector<uint8_t>, std::vector<uint8_t>> unknown;
+src/consensus/src/bch-rules/psbt.h:223:    std::map<CPubKey, KeyOriginInfo> hd_keypaths;
+src/consensus/src/bch-rules/psbt.h:224:    std::map<std::vector<uint8_t>, std::vector<uint8_t>> unknown;
+src/consensus/src/bch-rules/psbt.h:317:    std::map<std::vector<uint8_t>, std::vector<uint8_t>> unknown;
+src/consensus/src/bch-rules/script/sign.h:68:    std::map<ScriptID, CScript> scripts;
+src/consensus/src/bch-rules/script/sign.h:69:    std::map<CKeyID, CPubKey> pubkeys;
+src/consensus/src/bch-rules/script/sign.h:70:    std::map<CKeyID, KeyOriginInfo> origins;
+src/consensus/src/bch-rules/script/sign.h:71:    std::map<CKeyID, CKey> keys;
+src/consensus/src/bch-rules/script/sign.h:131:    std::map<CKeyID, SigPair> signatures;
+src/consensus/src/bch-rules/script/sign.h:132:    std::map<CKeyID, std::pair<CPubKey, KeyOriginInfo>> misc_pubkeys;
+src/consensus/src/bch-rules/script/sign.h:165:                           std::map<CPubKey, KeyOriginInfo> &hd_keypaths) {
+src/consensus/src/bch-rules/script/sign.h:203:                         const std::map<CPubKey, KeyOriginInfo> &hd_keypaths,
+src/consensus/src/bch-rules/serialize.h:801:void Serialize(Stream &os, const std::map<K, T, Pred, A> &m);
+src/consensus/src/bch-rules/serialize.h:803:void Unserialize(Stream &is, std::map<K, T, Pred, A> &m);
+src/consensus/src/bch-rules/serialize.h:998:void Serialize(Stream &os, const std::map<K, T, Pred, A> &m) {
+src/consensus/src/bch-rules/serialize.h:1006:void Unserialize(Stream &is, std::map<K, T, Pred, A> &m) {
+src/consensus/src/bch-rules/serialize.h:1009:    typename std::map<K, T, Pred, A>::iterator mi = m.begin();
+src/consensus/src/bch-rules/memusage.h:91:inline size_t DynamicUsage(const std::map<X, Y, Z> &m) {
+src/consensus/src/bch-rules/memusage.h:96:inline constexpr size_t IncrementalDynamicUsage(const std::map<X, Y, Z> &) {
+src/infrastructure/include/kth/infrastructure/wallet/uri.hpp:65:    using query_map = std::map<std::string, std::string>;
+src/infrastructure/src/log/sink.cpp:81:std::map<severity, std::string> severity_mapping {
+src/domain/include/kth/domain/wallet/bitcoin_uri.hpp:102:    std::map<std::string, std::string> query_;
+src/domain/include/kth/domain/utility/property_tree.hpp:31:using settings_list = std::map<std::string, std::string>;
+src/domain/test_new/doctest.h:3347:    typedef std::map<std::pair<int, String>, IReporter*> reporterMap;
+
+### std::set
+src/consensus/src/btc-rules/serialize.h:710:template<typename Stream, typename K, typename Pred, typename A> void Serialize(Stream& os, const std::set<K, Pred, A>& m);
+src/consensus/src/btc-rules/serialize.h:711:template<typename Stream, typename K, typename Pred, typename A> void Unserialize(Stream& is, std::set<K, Pred, A>& m);
+src/consensus/src/btc-rules/serialize.h:949:void Serialize(Stream& os, const std::set<K, Pred, A>& m)
+src/consensus/src/btc-rules/serialize.h:952:    for (typename std::set<K, Pred, A>::const_iterator it = m.begin(); it != m.end(); ++it)
+src/consensus/src/btc-rules/serialize.h:957:void Unserialize(Stream& is, std::set<K, Pred, A>& m)
+src/consensus/src/btc-rules/serialize.h:961:    typename std::set<K, Pred, A>::iterator it = m.begin();
+src/consensus/src/bch-rules/util/string.h:61:    // GCC 8.3.0 workaround so that e.g. OutputSequence above can be std::set<std::string>.
+src/consensus/src/bch-rules/util/string.h:88:    // including std::set<std::string>, etc.
+src/consensus/src/bch-rules/support/lockedpool.cpp:151:    std::cout << "0x" << std::hex << std::setw(16) << std::setfill('0') << base
+src/consensus/src/bch-rules/support/lockedpool.cpp:152:              << " 0x" << std::hex << std::setw(16) << std::setfill('0') << sz
+src/consensus/src/bch-rules/serialize.h:809:void Serialize(Stream &os, const std::set<K, Pred, A> &m);
+src/consensus/src/bch-rules/serialize.h:811:void Unserialize(Stream &is, std::set<K, Pred, A> &m);
+src/consensus/src/bch-rules/serialize.h:1021:void Serialize(Stream &os, const std::set<K, Pred, A> &m) {
+src/consensus/src/bch-rules/serialize.h:1029:void Unserialize(Stream &is, std::set<K, Pred, A> &m) {
+src/consensus/src/bch-rules/serialize.h:1032:    typename std::set<K, Pred, A>::iterator it = m.begin();
+src/consensus/src/bch-rules/memusage.h:76:inline size_t DynamicUsage(const std::set<X, Y> &s) {
+src/consensus/src/bch-rules/memusage.h:81:inline constexpr size_t IncrementalDynamicUsage(const std::set<X, Y> &) {
+src/consensus/src/bch-rules/memusage.h:86:inline constexpr size_t IncrementalDynamicUsage(const std::set<X, Y> *) {
+src/blockchain/include/kth/blockchain/mining/mempool_v1_old.hpp:71:std::set<typename Container::value_type, Cmp> to_ordered_set(F f, Container const& to_remove) {
+src/blockchain/include/kth/blockchain/mining/mempool_v1_old.hpp:72:    std::set<typename Container::value_type, Cmp> ordered;
+src/blockchain/include/kth/blockchain/mining/mempool_v1_old.hpp:461:        std::set<index_t, std::greater<index_t>> to_remove;
+src/blockchain/include/kth/blockchain/mining/mempool_v1_old.hpp:792:    void find_double_spend_issues(std::set<index_t, std::greater<index_t>>& to_remove, std::vector<domain::chain::point> const& outs) {
+src/blockchain/include/kth/blockchain/mining/mempool_v1_old.hpp:1076:            std::set<index_t, std::greater<index_t>> parents_temp(parents.begin(), parents.end());
+src/blockchain/include/kth/blockchain/mining/mempool_v1.hpp:77:std::set<typename Container::value_type, Cmp> to_ordered_set(F f, Container const& to_remove) {
+src/blockchain/include/kth/blockchain/mining/mempool_v1.hpp:78:    std::set<typename Container::value_type, Cmp> ordered;
+src/blockchain/include/kth/blockchain/mining/mempool_v1.hpp:191:                std::cout << std::setw(2) << index << ", ";
+src/blockchain/include/kth/blockchain/mining/mempool_v1.hpp:198:            std::cout << std::setw(2) << mi.index() << ", ";
+src/blockchain/include/kth/blockchain/mining/mempool_v1.hpp:214:                std::cout << std::setw(2) << index << ", ";
+src/blockchain/include/kth/blockchain/mining/mempool_v1.hpp:224:                std::cout << std::setw(2) << e.candidate_index() << ", ";
+src/blockchain/include/kth/blockchain/mining/mempool_v1.hpp:537:        std::set<index_t, std::greater<>> to_remove;
+src/blockchain/include/kth/blockchain/mining/mempool_v1.hpp:1270:    void find_double_spend_issues(std::set<index_t, std::greater<>>& to_remove, std::vector<domain::chain::point> const& outs) {
+src/blockchain/include/kth/blockchain/mining/mempool_v1.hpp:1478:            // std::set<index_t, std::greater<>> parents_temp(parents.begin(), parents.end());
+src/blockchain/include/kth/blockchain/mining/mempool_v2.hpp:65:std::set<typename Container::value_type, Cmp> to_ordered_set(F f, Container const& to_remove) {
+src/blockchain/include/kth/blockchain/mining/mempool_v2.hpp:66:    std::set<typename Container::value_type, Cmp> ordered;
+src/blockchain/include/kth/blockchain/mining/mempool_v2.hpp:223:        std::set<index_t, std::greater<index_t>> to_remove;
+src/blockchain/include/kth/blockchain/mining/mempool_v2.hpp:667:    void find_double_spend_issues(std::set<index_t, std::greater<index_t>>& to_remove, std::vector<domain::chain::point> const& outs) {
+src/blockchain/include/kth/blockchain/mining/mempool_v2.hpp:1134:            std::set<index_t, std::greater<index_t>> parents_temp(parents.begin(), parents.end());
+src/infrastructure/src/formats/base_10.cpp:83:    stream << std::setfill('0') << std::setw(1 + decimal_places) << amount;
+src/infrastructure/src/formats/base_16.cpp:19:    ss << std::hex << std::setfill('0');
+src/infrastructure/src/formats/base_16.cpp:21:        ss << std::setw(2) << val;
+src/infrastructure/src/wallet/uri.cpp:109:    stream << std::hex << std::uppercase << std::setfill('0');
+src/infrastructure/src/wallet/uri.cpp:114:            stream << '%' << std::setw(2) << +c;
+src/domain/test_new/doctest.h:2757:        oss << std::setprecision(precision) << std::fixed << value;
+src/domain/test_new/doctest.h:2802:        oss << "0x" << std::setfill('0') << std::hex;
+src/domain/test_new/doctest.h:2804:            oss << std::setw(2) << static_cast<unsigned>(bytes[i]);
+src/domain/test_new/doctest.h:2840:        std::set<SubcaseSignature> subcasesPassed;
+src/domain/test_new/doctest.h:2841:        std::set<int>              subcasesEnteredLevels;
+src/domain/test_new/doctest.h:3661:    std::set<TestCase>& getRegisteredTests() {
+src/domain/test_new/doctest.h:3662:        static std::set<TestCase> data;
+src/domain/test_new/doctest.h:4316:            s << Color::Cyan << "[doctest] " << Color::None << "test cases: " << std::setw(6)
+src/domain/test_new/doctest.h:4320:              << std::setw(6) << p.numTestCasesPassingFilters - p.numTestCasesFailed << " passed"
+src/domain/test_new/doctest.h:4322:              << std::setw(6) << p.numTestCasesFailed << " failed" << Color::None << " | ";
+src/domain/test_new/doctest.h:4325:                s << (numSkipped == 0 ? Color::None : Color::Yellow) << std::setw(6) << numSkipped
+src/domain/test_new/doctest.h:4329:            s << Color::Cyan << "[doctest] " << Color::None << "assertions: " << std::setw(6)
+src/domain/test_new/doctest.h:4332:              << std::setw(6) << (p.numAsserts - p.numAssertsFailed) << " passed" << Color::None
+src/domain/test_new/doctest.h:4333:              << " | " << (p.numAssertsFailed > 0 ? Color::Red : Color::None) << std::setw(6)
+src/domain/test_new/doctest.h:4378:                s << Color::None << std::setprecision(6) << std::fixed << st.seconds_so_far
+src/domain/test_new/doctest.h:4382:                s << Color::Red << "Test case exceeded time limit of " << std::setprecision(6)
+src/domain/test_new/doctest.h:4560:                s << "priority: " << std::setw(5) << curr.first.first
+src/domain/test_new/doctest.h:4992:    std::set<String> testSuitesPassingFilt;
+
+### std::unordered_map
+src/database/include/kth/database/databases/internal_database.hpp:64:    using utxo_pool_t = std::unordered_map<domain::chain::point, utxo_entry>;
+src/consensus/src/bch-rules/support/lockedpool.h:100:    typedef std::unordered_map<char *, SizeToChunkSortedMap::const_iterator>
+src/consensus/src/bch-rules/support/lockedpool.h:108:    std::unordered_map<char *, size_t> chunks_used;
+src/consensus/src/bch-rules/coins.h:96:// typedef std::unordered_map<COutPoint, CCoinsCacheEntry, SaltedOutpointHasher>
+src/consensus/src/bch-rules/coins.h:99:using CCoinsMap = std::unordered_map<COutPoint, CCoinsCacheEntry>;
+src/consensus/src/bch-rules/memusage.h:145:inline constexpr size_t IncrementalDynamicUsage(const std::unordered_map<X, Y, Hasher, Eq, A> &) {
+src/consensus/src/bch-rules/memusage.h:150:inline size_t DynamicUsage(const std::unordered_map<X, Y, Hasher, Eq, A> &m) {
+src/blockchain/test/mempool_tests.cpp:47:transaction get_tx_from_mempool(mining::mempool const& mp, std::unordered_map<domain::chain::point, domain::chain::output> const& internal_utxo, std::string const& hex) {
+src/blockchain/test/mempool_tests.cpp:1402:    std::unordered_map<domain::chain::point, domain::chain::output> internal_utxo;
+src/blockchain/test/mempool_tests.cpp:1580:    std::unordered_map<domain::chain::point, domain::chain::output> internal_utxo;
+src/blockchain/test/mempool_tests.cpp:1774:    std::unordered_map<domain::chain::point, domain::chain::output> internal_utxo;
+src/blockchain/test/mempool_tests.cpp:2191:    std::unordered_map<domain::chain::point, domain::chain::output> internal_utxo;
+src/blockchain/test/mempool_tests.cpp:2573:    std::unordered_map<domain::chain::point, domain::chain::output> internal_utxo;
+src/blockchain/test/mempool_tests.cpp:3108:    std::unordered_map<domain::chain::point, domain::chain::output> internal_utxo;
+src/blockchain/include/kth/blockchain/interface/safe_chain.hpp:61:    using mempool_mini_hash_map = std::unordered_map<mini_hash, domain::chain::transaction>;
+src/blockchain/include/kth/blockchain/interface/safe_chain.hpp:142:    virtual void fill_tx_list_from_mempool(domain::message::compact_block const& block, size_t& mempool_count, std::vector<domain::chain::transaction>& txn_available, std::unordered_map<uint64_t, uint16_t> const& shorttxids) const = 0;
+src/blockchain/include/kth/blockchain/interface/block_chain.hpp:289:    void fill_tx_list_from_mempool(domain::message::compact_block const& block, size_t& mempool_count, std::vector<domain::chain::transaction>& txn_available, std::unordered_map<uint64_t, uint16_t> const& shorttxids) const override;
+src/blockchain/include/kth/blockchain/pools/branch.hpp:19:using local_utxo_t = std::unordered_map<domain::chain::point, domain::chain::output const*>;
+src/blockchain/include/kth/blockchain/pools/branch.hpp:51:    void populate_prevout(domain::chain::output_point const& outpoint, std::vector<std::unordered_map<domain::chain::point, domain::chain::output const*>> const& branch_utxo) const;
+src/blockchain/include/kth/blockchain/pools/transaction_organizer.hpp:113:    std::unordered_map<hash_digest, double_spend_proof_const_ptr> ds_proofs_;
+src/blockchain/include/kth/blockchain/mining/mempool_v1_old.hpp:113:    using internal_utxo_set_t = std::unordered_map<domain::chain::point, domain::chain::output>;
+src/blockchain/include/kth/blockchain/mining/mempool_v1_old.hpp:116:    using previous_outputs_t = std::unordered_map<domain::chain::point, index_t>;
+src/blockchain/include/kth/blockchain/mining/mempool_v1_old.hpp:118:    // using hash_index_t = std::unordered_map<hash_digest, index_t>;
+src/blockchain/include/kth/blockchain/mining/mempool_v1_old.hpp:119:    using hash_index_t = std::unordered_map<hash_digest, std::pair<index_t, domain::chain::transaction>>;
+src/blockchain/include/kth/blockchain/mining/mempool_v1_old.hpp:1850:    // std::unordered_map<domain::chain::point, index_t> previous_outputs_;
+src/blockchain/include/kth/blockchain/mining/mempool_v1.hpp:313:    using internal_utxo_set_t = std::unordered_map<domain::chain::point, domain::chain::output>;
+src/blockchain/include/kth/blockchain/mining/mempool_v1.hpp:314:    using previous_outputs_t = std::unordered_map<domain::chain::point, index_t>;
+src/blockchain/include/kth/blockchain/mining/mempool_v1.hpp:315:    using hash_index_t = std::unordered_map<hash_digest, std::pair<index_t, domain::chain::transaction>>;
+src/blockchain/include/kth/blockchain/mining/mempool_v2.hpp:140:    using internal_utxo_set_t = std::unordered_map<domain::chain::point, domain::chain::output>;
+src/blockchain/include/kth/blockchain/mining/mempool_v2.hpp:141:    using previous_outputs_t = std::unordered_map<domain::chain::point, index_t>;
+src/blockchain/include/kth/blockchain/mining/mempool_v2.hpp:142:    using hash_index_t = std::unordered_map<hash_digest, std::pair<index_t, domain::chain::transaction>>;
+src/blockchain/include/kth/blockchain/mining/mempool_v2.hpp:1199:    // std::unordered_map<domain::chain::point, index_t> previous_outputs_;
+src/blockchain/src/interface/block_chain.cpp:891:void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const& block, size_t& mempool_count, std::vector<domain::chain::transaction>& txn_available, std::unordered_map<uint64_t, uint16_t> const& shorttxids) const {
+src/blockchain/src/interface/block_chain.cpp:1130:void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const& block, size_t& mempool_count, std::vector<domain::chain::transaction>& txn_available, std::unordered_map<uint64_t, uint16_t> const& shorttxids) const {
+src/blockchain/src/pools/branch.cpp:255:void branch::populate_prevout(output_point const& outpoint, std::vector<std::unordered_map<point, output const*>> const& branch_utxo) const {
+src/node/include/kth/node/full_node.hpp:446:    // using statistics_detail_t = std::unordered_map<size_t, statistics_entry<size_t, float>>;
+src/node/include/kth/node/protocols/protocol_block_in.hpp:31:    using compact_block_map = std::unordered_map<hash_digest, temp_compact_block>;
+src/node/src/protocols/protocol_block_in.cpp:547:    std::unordered_map<uint64_t, uint16_t> shorttxids(short_ids.size());
+src/node/src/protocols/protocol_block_in.cpp:560:        // number of buckets is equal to S (due to std::unordered_map having a
+src/infrastructure/src/error.cpp:34:    static const std::unordered_map<int, std::string> messages = {
+src/domain/src/chain/block_basis.cpp:298:    std::unordered_map<hash_digest, bool> hashes(transactions_.size());
+
+### std::unordered_set
+src/consensus/src/bch-rules/memusage.h:134:inline constexpr size_t IncrementalDynamicUsage(const std::unordered_set<X, Hasher, Eq, A> &) {
+src/consensus/src/bch-rules/memusage.h:139:inline size_t DynamicUsage(const std::unordered_set<X, Hasher, Eq, A> &s) {
+src/blockchain/include/kth/blockchain/mining/common.hpp:35:using removal_list_t = std::unordered_set<index_t>;
+src/blockchain/src/interface/block_chain.cpp:42:using spent_container = std::unordered_set<spent_value_type>;
+src/blockchain/src/interface/block_chain.cpp:783:    std::unordered_set<kth::domain::wallet::payment_address> addrs;
+src/blockchain/src/interface/block_chain.cpp:1013:    std::unordered_set<kth::domain::wallet::payment_address> addrs;
+src/blockchain/src/pools/block_organizer.cpp:300:    std::unordered_set<hash_digest> txs_in;
+src/blockchain/src/pools/block_organizer.cpp:301:    std::unordered_set<domain::chain::point> prevouts_in;
