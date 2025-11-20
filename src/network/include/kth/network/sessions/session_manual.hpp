@@ -21,7 +21,7 @@ namespace kth::network {
 class p2p;
 
 /// Manual connections session, thread safe.
-class BCT_API session_manual : public session, track<session_manual> {
+class KN_API session_manual : public session, track<session_manual> {
 public:
     using ptr = std::shared_ptr<session_manual>;
     using channel_handler = std::function<void(code const&, channel::ptr)>;

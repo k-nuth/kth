@@ -134,7 +134,8 @@ add_executable(asert-gen
 
 
 # target_compile_definitions(asert-gen PUBLIC -DKTH_PROJECT_VERSION="${KTH_PROJECT_VERSION}") #TODO(fernando): manage with Conan????
-target_compile_definitions(asert-gen PUBLIC -DBCN_STATIC -DBCB_STATIC -DBCD_STATIC -DBCT_STATIC -DBC_STATIC)
+# Note: These should be inherited from dependencies via Conan
+# target_compile_definitions(asert-gen PUBLIC -DKND_STATIC -DKB_STATIC -DKN_STATIC)
 
 # target_link_libraries(asert-gen PUBLIC ${CONAN_LIBS})
 

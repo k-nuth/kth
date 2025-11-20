@@ -16,7 +16,7 @@ namespace kth::blockchain {
 /// Caller must ensure the database is not otherwise in use during these calls.
 /// Implementations are NOT expected to be thread safe with the exception
 /// that the import method may itself be called concurrently.
-class BCB_API fast_chain {
+class KB_API fast_chain {
 public:
     // This avoids conflict with the result_handler in safe_chain.
     using complete_handler = handle0;

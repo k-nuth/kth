@@ -36,7 +36,7 @@ template <typename Message>
 using message_handler = std::function<bool(code const&, std::shared_ptr<const Message>)>;
 
 /// Aggregation of subscribers by messasge type, thread safe.
-class BCT_API message_subscriber : noncopyable {
+class KN_API message_subscriber : noncopyable {
 public:
     DEFINE_SUBSCRIBER_TYPE(address);
     DEFINE_SUBSCRIBER_TYPE(alert);

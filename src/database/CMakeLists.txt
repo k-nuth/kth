@@ -188,7 +188,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 
 
 if (NOT ENABLE_SHARED)
-    target_compile_definitions(${PROJECT_NAME} PUBLIC -DKD_STATIC -DBC_STATIC)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC -DKDB_STATIC)
 endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC domain::domain)

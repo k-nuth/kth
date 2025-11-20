@@ -12,7 +12,7 @@
 namespace kth::node {
 
 /// Common database configuration settings, properties not thread safe.
-class BCN_API settings {
+class KND_API settings {
 public:
     settings();
     settings(domain::config::network context);

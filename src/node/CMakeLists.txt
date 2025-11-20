@@ -250,7 +250,9 @@ target_include_directories(${PROJECT_NAME} PUBLIC
         $<INSTALL_INTERFACE:include>)
 
 if (NOT ENABLE_SHARED)
-  target_compile_definitions(${PROJECT_NAME} PUBLIC -DBCN_STATIC -DBCB_STATIC -DBCD_STATIC -DBCT_STATIC -DBC_STATIC)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC -DKND_STATIC)
+  # Note: Conan should propagate KB_STATIC and KN_STATIC from blockchain and network components
+  # target_compile_definitions(${PROJECT_NAME} PUBLIC -DKB_STATIC -DKN_STATIC)
 endif()
 
 if (NOT MSVC)

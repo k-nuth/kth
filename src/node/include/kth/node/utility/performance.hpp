@@ -13,7 +13,7 @@
 
 namespace kth::node {
 
-class BCN_API performance {
+class KND_API performance {
 public:
 
     /// The normalized rate derived from the performance values.

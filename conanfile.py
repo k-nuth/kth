@@ -269,10 +269,33 @@ class KthRecipe(KnuthConanFileV2):
     def package_info(self):
         # Set the main CMake file name
         self.cpp_info.set_property("cmake_file_name", "kth")
-        
+
+        # Define currency macro based on option
+        currency_define = f"KTH_CURRENCY_{self.options.currency}"
+
+        # Define STATIC macros when building static libraries
+        static_defines = []
+        if not self.is_shared:
+            # Always include infrastructure and domain
+            static_defines = ["KI_STATIC", "KD_STATIC"]
+
+            # Add consensus if enabled
+            if self.options.consensus:
+                static_defines.append("KC_STATIC")
+
+            # Always include database and blockchain
+            static_defines.extend(["KDB_STATIC", "KB_STATIC"])
+
+            # Add network if not Emscripten
+            if self.settings.os != "Emscripten":
+                static_defines.append("KN_STATIC")
+
+            # Always include node
+            static_defines.append("KND_STATIC")
+
         # Define individual components as separate targets
         # Each component will be available as kth::component_name
-        
+
         # Secp256k1 cryptographic library
         self.cpp_info.components["secp256k1"].libs = ["secp256k1"]
         self.cpp_info.components["secp256k1"].names["cmake_find_package"] = "secp256k1"
@@ -286,13 +309,14 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["infrastructure"].libs = ["infrastructure"]
         self.cpp_info.components["infrastructure"].names["cmake_find_package"] = "infrastructure"
         self.cpp_info.components["infrastructure"].names["cmake_find_package_multi"] = "infrastructure"
+        self.cpp_info.components["infrastructure"].defines = static_defines
         # Infrastructure core dependencies: secp256k1, boost, fmt, expected-lite, ctre, spdlog
         self.cpp_info.components["infrastructure"].requires = [
-            "secp256k1", 
-            "boost::boost", 
-            "fmt::fmt", 
-            "expected-lite::expected-lite", 
-            "ctre::ctre", 
+            "secp256k1",
+            "boost::boost",
+            "fmt::fmt",
+            "expected-lite::expected-lite",
+            "ctre::ctre",
             "spdlog::spdlog"
         ]
         
@@ -301,9 +325,10 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["domain"].libs = ["domain"]
         self.cpp_info.components["domain"].names["cmake_find_package"] = "domain"
         self.cpp_info.components["domain"].names["cmake_find_package_multi"] = "domain"
+        self.cpp_info.components["domain"].defines = [currency_define] + static_defines
         # Domain depends on infrastructure and tiny-aes-c for wallet encryption
         self.cpp_info.components["domain"].requires = [
-            "infrastructure", 
+            "infrastructure",
             "tiny-aes-c::tiny-aes-c"
         ]
         
@@ -312,10 +337,11 @@ class KthRecipe(KnuthConanFileV2):
             self.cpp_info.components["consensus"].libs = ["consensus"]
             self.cpp_info.components["consensus"].names["cmake_find_package"] = "consensus"
             self.cpp_info.components["consensus"].names["cmake_find_package_multi"] = "consensus"
+            self.cpp_info.components["consensus"].defines = [currency_define] + static_defines
             # Consensus has its own direct dependencies: boost, openssl, secp256k1 (internal component), gmp
             self.cpp_info.components["consensus"].requires = [
                 "secp256k1",
-                "boost::boost", 
+                "boost::boost",
                 "openssl::openssl",
                 "gmp::gmp"
             ]
@@ -324,6 +350,7 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["database"].libs = ["database"]
         self.cpp_info.components["database"].names["cmake_find_package"] = "database"
         self.cpp_info.components["database"].names["cmake_find_package_multi"] = "database"
+        self.cpp_info.components["database"].defines = [currency_define] + static_defines
         # Database depends on domain and lmdb
         self.cpp_info.components["database"].requires = ["domain", "lmdb::lmdb"]
         
@@ -331,6 +358,7 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["blockchain"].libs = ["blockchain"]
         self.cpp_info.components["blockchain"].names["cmake_find_package"] = "blockchain"
         self.cpp_info.components["blockchain"].names["cmake_find_package_multi"] = "blockchain"
+        self.cpp_info.components["blockchain"].defines = [currency_define] + static_defines
         # Blockchain depends on database and optionally consensus
         blockchain_requires = ["database"]
         if self.options.consensus:
@@ -342,6 +370,7 @@ class KthRecipe(KnuthConanFileV2):
             self.cpp_info.components["network"].libs = ["network"]
             self.cpp_info.components["network"].names["cmake_find_package"] = "network"
             self.cpp_info.components["network"].names["cmake_find_package_multi"] = "network"
+            self.cpp_info.components["network"].defines = [currency_define] + static_defines
             # Network depends on domain
             self.cpp_info.components["network"].requires = ["domain"]
         
@@ -349,6 +378,7 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["node"].libs = ["node"]
         self.cpp_info.components["node"].names["cmake_find_package"] = "node"
         self.cpp_info.components["node"].names["cmake_find_package_multi"] = "node"
+        self.cpp_info.components["node"].defines = [currency_define] + static_defines
         # Node depends on blockchain and optionally network (if not Emscripten)
         node_requires = ["blockchain"]
         if self.settings.os != "Emscripten":
@@ -363,6 +393,7 @@ class KthRecipe(KnuthConanFileV2):
                 self.cpp_info.components["node-exe"].libs = node_exe_libs
                 self.cpp_info.components["node-exe"].names["cmake_find_package"] = "node-exe"
                 self.cpp_info.components["node-exe"].names["cmake_find_package_multi"] = "node-exe"
+                self.cpp_info.components["node-exe"].defines = [currency_define] + static_defines
                 self.cpp_info.components["node-exe"].requires = ["node"]
         except:
             # If collect_libs fails or node-exe is not built, skip it
@@ -376,6 +407,7 @@ class KthRecipe(KnuthConanFileV2):
                 self.cpp_info.components["c-api"].libs = c_api_libs
                 self.cpp_info.components["c-api"].names["cmake_find_package"] = "c-api"
                 self.cpp_info.components["c-api"].names["cmake_find_package_multi"] = "c-api"
+                self.cpp_info.components["c-api"].defines = [currency_define] + static_defines
                 self.cpp_info.components["c-api"].requires = ["node"]
         except:
             # If collect_libs fails or c-api is not built, skip it

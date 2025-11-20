@@ -19,7 +19,7 @@
 namespace kth::node {
 
 // Class to manage a set of reservation objects during sync, thread safe.
-class BCN_API reservations {
+class KND_API reservations {
 public:
     typedef struct {
         size_t active_count;

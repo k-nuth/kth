@@ -19,7 +19,7 @@ namespace kth::network {
 /// Create outbound socket connections.
 /// This class is thread safe against stop.
 /// This class is not safe for concurrent connection attempts.
-class BCT_API connector
+class KN_API connector
   : public enable_shared_from_base<connector>, noncopyable, track<connector>
 {
 public:

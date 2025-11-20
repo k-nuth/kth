@@ -8,20 +8,20 @@
 #include <kth/domain.hpp>
 
 // Now we use the generic helper definitions to
-// define BCB_API and BCB_INTERNAL.
-// BCB_API is used for the public API symbols. It either DLL imports or
+// define KB_API and KB_INTERNAL.
+// KB_API is used for the public API symbols. It either DLL imports or
 // DLL exports (or does nothing for static build)
-// BCB_INTERNAL is used for non-api symbols.
+// KB_INTERNAL is used for non-api symbols.
 
-#if defined BCB_STATIC
-    #define BCB_API
-    #define BCB_INTERNAL
-#elif defined BCB_DLL
-    #define BCB_API      BC_HELPER_DLL_EXPORT
-    #define BCB_INTERNAL BC_HELPER_DLL_LOCAL
+#if defined KB_STATIC
+    #define KB_API
+    #define KB_INTERNAL
+#elif defined KB_DLL
+    #define KB_API      KD_HELPER_DLL_EXPORT
+    #define KB_INTERNAL KD_HELPER_DLL_LOCAL
 #else
-    #define BCB_API      BC_HELPER_DLL_IMPORT
-    #define BCB_INTERNAL BC_HELPER_DLL_LOCAL
+    #define KB_API      KD_HELPER_DLL_IMPORT
+    #define KB_INTERNAL KD_HELPER_DLL_LOCAL
 #endif
 
 //// Now we use the generic helper definitions to

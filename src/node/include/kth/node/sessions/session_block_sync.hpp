@@ -29,7 +29,7 @@ namespace kth::node {
 class full_node;
 
 /// Class to manage initial block download connections, thread safe.
-class BCN_API session_block_sync : public session<network::session_outbound>, track<session_block_sync> {
+class KND_API session_block_sync : public session<network::session_outbound>, track<session_block_sync> {
 public:
     using ptr = std::shared_ptr<session_block_sync>;
 

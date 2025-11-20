@@ -17,7 +17,7 @@ namespace kth::network {
 class p2p;
 
 /// Intermediate base class for adding batch connect sequence.
-class BCT_API session_batch : public session {
+class KN_API session_batch : public session {
 protected:
     /// Construct an instance.
     session_batch(p2p& network, bool notify_on_connect);

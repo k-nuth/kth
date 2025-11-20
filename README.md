@@ -147,7 +147,7 @@ int main() {
     
     // Query current height
     uint64_t height;
-    chain_get_last_height(chain, &height);
+    kth_chain_sync_last_height(chain, &height);
     printf("Current height: %" PRIu64 "\n", height);
     
     // Cleanup

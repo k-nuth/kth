@@ -26,7 +26,7 @@ namespace kth::blockchain {
 
 /// This class is thread safe.
 /// Organises blocks via the block pool to the blockchain.
-class BCB_API block_organizer {
+class KB_API block_organizer {
 public:
     using result_handler = handle0;
     using ptr = std::shared_ptr<block_organizer>;

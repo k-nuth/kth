@@ -17,7 +17,7 @@ namespace kth::node {
 
 /// Parse configurable values from environment variables, settings file, and
 /// command line positional and non-positional options.
-class BCN_API parser : public domain::config::parser<parser> {
+class KND_API parser : public domain::config::parser<parser> {
 public:
     parser(domain::config::network context);
     parser(configuration const& defaults);

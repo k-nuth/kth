@@ -176,7 +176,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
         $<INSTALL_INTERFACE:include>)
 
 if (NOT ENABLE_SHARED)
-    target_compile_definitions(${PROJECT_NAME} PUBLIC -DBCT_STATIC -DBC_STATIC)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC -DKN_STATIC)
 endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC domain::domain)

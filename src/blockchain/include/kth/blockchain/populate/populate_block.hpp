@@ -20,7 +20,7 @@
 namespace kth::blockchain {
 
 /// This class is NOT thread safe.
-class BCB_API populate_block : public populate_base {
+class KB_API populate_block : public populate_base {
 public:
     using utxo_pool_t = database::internal_database::utxo_pool_t;
 

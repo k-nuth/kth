@@ -21,7 +21,7 @@ namespace kth::network {
 /// The store can be loaded and saved from/to the specified file path.
 /// The file is a line-oriented set of infrastructure::config::authority serializations.
 /// Duplicate addresses and those with zero-valued ports are disacarded.
-class BCT_API hosts : noncopyable {
+class KN_API hosts : noncopyable {
 public:
     using ptr = std::shared_ptr<hosts>;
     using address = domain::message::network_address;

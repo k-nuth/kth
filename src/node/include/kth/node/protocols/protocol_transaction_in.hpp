@@ -17,7 +17,7 @@ namespace kth::node {
 
 class full_node;
 
-class BCN_API protocol_transaction_in : public network::protocol_events, track<protocol_transaction_in> {
+class KND_API protocol_transaction_in : public network::protocol_events, track<protocol_transaction_in> {
 public:
     using ptr = std::shared_ptr<protocol_transaction_in>;
 

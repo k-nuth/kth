@@ -19,6 +19,6 @@ conan create conanfile.py --version "${VERSION}" --lockfile=build/conan.lock --b
 
 # Run tests after create
 echo "Running tests..."
-conan test test_package conanfile.py --version "${VERSION}" --lockfile=build/conan.lock 
+conan test test_package kth/${VERSION} 
 
 

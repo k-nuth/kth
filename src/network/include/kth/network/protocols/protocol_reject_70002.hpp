@@ -15,7 +15,7 @@ namespace kth::network {
 
 class p2p;
 
-class BCT_API protocol_reject_70002
+class KN_API protocol_reject_70002
     : public protocol_events, track<protocol_reject_70002>
 {
 public:

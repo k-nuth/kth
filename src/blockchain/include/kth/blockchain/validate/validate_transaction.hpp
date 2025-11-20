@@ -22,7 +22,7 @@
 namespace kth::blockchain {
 
 /// This class is NOT thread safe.
-class BCB_API validate_transaction {
+class KB_API validate_transaction {
 public:
     // using result_handler = handle0;
     using result_handler = handle0;

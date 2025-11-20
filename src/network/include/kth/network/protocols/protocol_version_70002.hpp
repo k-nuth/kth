@@ -18,7 +18,7 @@ namespace kth::network {
 
 class p2p;
 
-class BCT_API protocol_version_70002
+class KN_API protocol_version_70002
     : public protocol_version_31402, track<protocol_version_70002>
 {
 public:

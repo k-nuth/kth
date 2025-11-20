@@ -24,7 +24,7 @@ struct temp_compact_block {
 
 class full_node;
 
-class BCN_API protocol_block_in : public network::protocol_timer, track<protocol_block_in> {
+class KND_API protocol_block_in : public network::protocol_timer, track<protocol_block_in> {
 public:
     using ptr = std::shared_ptr<protocol_block_in>;
 

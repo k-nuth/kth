@@ -217,12 +217,13 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   $<INSTALL_INTERFACE:include>)
 
 if (NOT ENABLE_SHARED)
-  target_compile_definitions(${PROJECT_NAME} PUBLIC -DBCB_STATIC -DBCD_STATIC -DBC_STATIC)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC -DKB_STATIC)
 endif()
 
-if (WITH_CONSENSUS)
-  target_compile_definitions(${PROJECT_NAME} PUBLIC -DBCK_STATIC)
-endif(WITH_CONSENSUS)
+# Note: Conan should propagate KC_STATIC from consensus component
+# if (WITH_CONSENSUS)
+#   target_compile_definitions(${PROJECT_NAME} PUBLIC -DKC_STATIC)
+# endif(WITH_CONSENSUS)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC database::database)
 

@@ -448,7 +448,8 @@ if (NOT ENABLE_SHARED)
 endif()
 
 #Note: Knuth modules are Static, C-API Shared
-target_compile_definitions(${PROJECT_NAME} PUBLIC -DBCN_STATIC -DBCB_STATIC -DBCD_STATIC -DBCT_STATIC -DBC_STATIC)
+# Note: These should be inherited from node::node target via Conan
+# target_compile_definitions(${PROJECT_NAME} PUBLIC -DKND_STATIC -DKB_STATIC -DKN_STATIC)
 
 if (NOT MSVC)
   target_compile_definitions(${PROJECT_NAME} PUBLIC -DSYSCONFDIR=\"${SYSCONFDIR}\")

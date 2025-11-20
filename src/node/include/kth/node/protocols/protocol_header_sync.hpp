@@ -21,7 +21,7 @@ namespace kth::node {
 class full_node;
 
 /// Headers sync protocol, thread safe.
-class BCN_API protocol_header_sync : public network::protocol_timer, public track<protocol_header_sync> {
+class KND_API protocol_header_sync : public network::protocol_timer, public track<protocol_header_sync> {
 public:
     using ptr = std::shared_ptr<protocol_header_sync>;
 

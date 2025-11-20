@@ -18,7 +18,7 @@ class p2p;
 /**
  * Base class for stateful protocol implementation, thread and lock safe.
  */
-class BCT_API protocol_events
+class KN_API protocol_events
   : public protocol
 {
 protected:

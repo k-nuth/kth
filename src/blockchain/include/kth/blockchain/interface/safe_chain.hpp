@@ -23,7 +23,7 @@ namespace kth::blockchain {
 /// This interface is thread safe.
 /// A high level interface for encapsulation of the blockchain database.
 /// Implementations are expected to be thread safe.
-class BCB_API safe_chain {
+class KB_API safe_chain {
 public:
     using result_handler = handle0;
 

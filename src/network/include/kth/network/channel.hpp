@@ -20,7 +20,7 @@
 namespace kth::network {
 
 /// A concrete proxy with timers and state, mostly thread safe.
-class BCT_API channel
+class KN_API channel
   : public proxy, track<channel>
 {
 public:

@@ -19,7 +19,7 @@ class p2p;
  * Seeding protocol.
  * Attach this to a channel immediately following seed handshake completion.
  */
-class BCT_API protocol_seed_31402
+class KN_API protocol_seed_31402
     : public protocol_timer, track<protocol_seed_31402>
 {
 public:

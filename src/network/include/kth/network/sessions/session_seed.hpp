@@ -20,7 +20,7 @@ namespace kth::network {
 class p2p;
 
 /// Seed connections session, thread safe.
-class BCT_API session_seed : public session, track<session_seed> {
+class KN_API session_seed : public session, track<session_seed> {
 public:
     using ptr = std::shared_ptr<session_seed>;
 

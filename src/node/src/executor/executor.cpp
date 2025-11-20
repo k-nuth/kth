@@ -22,9 +22,7 @@
 
 #if defined(KTH_LOG_LIBRARY_SPDLOG)
 #include <spdlog/spdlog.h>
-// #include "spdlog/spdlog.h"
-#include <spdlog/sinks/stdout_color_sinks.h> // or "../stdout_sinks.h" if no colors needed
-// #include <spdlog/sinks/stderr_color_sinks.h> // or "../stdout_sinks.h" if no colors needed
+#include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #endif
 

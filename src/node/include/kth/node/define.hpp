@@ -7,20 +7,20 @@
 
 #include <kth/domain.hpp>
 
-// We use the generic helper definitions to define BCN_API
-// and BCN_INTERNAL. BCN_API is used for the public API symbols. It either DLL
-// imports or DLL exports (or does nothing for static build) BCN_INTERNAL is
+// We use the generic helper definitions to define KND_API
+// and KND_INTERNAL. KND_API is used for the public API symbols. It either DLL
+// imports or DLL exports (or does nothing for static build) KND_INTERNAL is
 // used for non-api symbols.
 
-#if defined BCN_STATIC
-    #define BCN_API
-    #define BCN_INTERNAL
-#elif defined BCN_DLL
-    #define BCN_API      BC_HELPER_DLL_EXPORT
-    #define BCN_INTERNAL BC_HELPER_DLL_LOCAL
+#if defined KND_STATIC
+    #define KND_API
+    #define KND_INTERNAL
+#elif defined KND_DLL
+    #define KND_API      KD_HELPER_DLL_EXPORT
+    #define KND_INTERNAL KD_HELPER_DLL_LOCAL
 #else
-    #define BCN_API      BC_HELPER_DLL_IMPORT
-    #define BCN_INTERNAL BC_HELPER_DLL_LOCAL
+    #define KND_API      KD_HELPER_DLL_IMPORT
+    #define KND_INTERNAL KD_HELPER_DLL_LOCAL
 #endif
 
 // Log name.

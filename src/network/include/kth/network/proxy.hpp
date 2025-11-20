@@ -20,7 +20,7 @@
 namespace kth::network {
 
 /// Manages all socket communication, thread safe.
-class BCT_API proxy
+class KN_API proxy
     : public enable_shared_from_base<proxy>, noncopyable
 {
 public:

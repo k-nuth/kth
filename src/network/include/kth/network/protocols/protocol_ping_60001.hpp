@@ -23,7 +23,7 @@ class p2p;
  * Ping-pong protocol.
  * Attach this to a channel immediately following handshake completion.
  */
-class BCT_API protocol_ping_60001
+class KN_API protocol_ping_60001
   : public protocol_ping_31402, track<protocol_ping_60001>
 {
 public:

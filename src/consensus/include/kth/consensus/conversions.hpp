@@ -11,7 +11,7 @@
 
 namespace kth::consensus {
 
-BCK_API unsigned int verify_flags_to_script_flags(unsigned int flags);
+KC_API unsigned int verify_flags_to_script_flags(unsigned int flags);
 
 } // namespace kth::consensus
 

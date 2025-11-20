@@ -19,7 +19,7 @@ namespace kth::node {
 
 class full_node;
 
-class BCN_API protocol_block_out : public network::protocol_events, track<protocol_block_out> {
+class KND_API protocol_block_out : public network::protocol_events, track<protocol_block_out> {
 public:
     using ptr = std::shared_ptr<protocol_block_out>;
 

@@ -20,7 +20,7 @@ using local_utxo_t = std::unordered_map<domain::chain::point, domain::chain::out
 using local_utxo_set_t = std::vector<local_utxo_t>;
 
 /// This class is not thread safe.
-class BCB_API branch {
+class KB_API branch {
 public:
     using ptr = std::shared_ptr<branch>;
     using const_ptr = std::shared_ptr<const branch>;

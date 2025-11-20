@@ -31,7 +31,7 @@
 namespace kth::blockchain {
 
 /// The fast_chain interface portion of this class is not thread safe.
-class BCB_API block_chain : public safe_chain, public fast_chain, noncopyable {
+class KB_API block_chain : public safe_chain, public fast_chain, noncopyable {
 public:
     /// Relay transactions is network setting that is passed through to block
     /// population as an optimization. This can be removed once there is an

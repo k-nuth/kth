@@ -41,7 +41,7 @@ int main() {
     kth_chain_t chain = kth_node_get_chain(node);
 
     uint64_t height;
-    chain_get_last_height(chain, &height);
+    kth_chain_sync_last_height(chain, &height);
 
     printf("%" PRIu64 "\n", height);
 
@@ -101,7 +101,7 @@ Get access to the blockchain query interface (commands and queries).
 
 ```c
 uint64_t height;
-chain_get_last_height(chain, &height);
+kth_chain_sync_last_height(chain, &height);
 
 printf("%" PRIu64 "\n", height);
 ```

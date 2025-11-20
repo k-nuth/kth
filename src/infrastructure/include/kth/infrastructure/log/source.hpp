@@ -160,7 +160,6 @@ BOOST_LOG_INLINE_GLOBAL_LOGGER_INIT(source, severity_source) {
 
 #define KTH_FOLD(z, n, text)  text
 #define KTH_STRREP(str, n) BOOST_PP_REPEAT(n, KTH_FOLD, str)
-
 #define LOG_VERBOSE(...) spdlog::trace(KTH_STRREP("{}", KTH_PP_NARG(__VA_ARGS__)), __VA_ARGS__)
 #define LOG_DEBUG(...) spdlog::debug(KTH_STRREP("{}", KTH_PP_NARG(__VA_ARGS__)), __VA_ARGS__)
 #define LOG_INFO(...) spdlog::info(KTH_STRREP("{}", KTH_PP_NARG(__VA_ARGS__)), __VA_ARGS__)

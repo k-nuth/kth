@@ -18,7 +18,7 @@ class p2p;
 /**
  * Base class for timed protocol implementation.
  */
-class BCT_API protocol_timer
+class KN_API protocol_timer
   : public protocol_events
 {
 protected:

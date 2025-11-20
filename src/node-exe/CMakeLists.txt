@@ -110,7 +110,8 @@ endif()
 add_executable(${PROJECT_NAME} src/main.cpp)
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX CXX_STANDARD 23 CXX_STANDARD_REQUIRED TRUE)
 
-target_compile_definitions(${PROJECT_NAME} PUBLIC -DBCN_STATIC -DBCB_STATIC -DBCD_STATIC -DBCT_STATIC -DBC_STATIC)
+# Note: These should be inherited from node::node target via Conan
+# target_compile_definitions(${PROJECT_NAME} PUBLIC -DKND_STATIC -DKB_STATIC -DKN_STATIC)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC node::node)
 

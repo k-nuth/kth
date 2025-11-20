@@ -18,7 +18,7 @@ namespace kth::node {
 class full_node;
 
 /// Manual connections session, thread safe.
-class BCN_API session_manual : public session<network::session_manual>, track<session_manual> {
+class KND_API session_manual : public session<network::session_manual>, track<session_manual> {
 public:
     using ptr = std::shared_ptr<session_manual>;
 

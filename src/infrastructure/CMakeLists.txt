@@ -34,7 +34,7 @@ if (WITH_QRENCODE)
 endif()
 
 
-set(LOG_LIBRARY "boost" CACHE STRING "Setting for the logging library (boost|spdlog|binlog).")
+set(LOG_LIBRARY "spdlog" CACHE STRING "Setting for the logging library (boost|spdlog|binlog).")
 
 if (${LOG_LIBRARY} STREQUAL "boost")
   add_definitions(-DKTH_LOG_LIBRARY_BOOST)

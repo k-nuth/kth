@@ -292,7 +292,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   $<INSTALL_INTERFACE:include>)
 
 if (NOT ENABLE_SHARED)
-  target_compile_definitions(${PROJECT_NAME} PUBLIC -DBCK_STATIC)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC -DKC_STATIC)
 endif()
 
 if (${CURRENCY} STREQUAL "BCH")

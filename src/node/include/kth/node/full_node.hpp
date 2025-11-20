@@ -126,7 +126,7 @@ struct multi_crypto_setter {
 
 
 /// A full node on the Bitcoin P2P network.
-class BCN_API full_node
+class KND_API full_node
     : public multi_crypto_setter
 #if ! defined(__EMSCRIPTEN__)
     , public network::p2p

@@ -16,7 +16,7 @@
 namespace kth::blockchain {
 
 /// This class is NOT thread safe.
-class BCB_API populate_base {
+class KB_API populate_base {
 protected:
     using result_handler = handle0;
 
