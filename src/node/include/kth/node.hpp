@@ -22,6 +22,7 @@
 #include <kth/node/parser.hpp>
 #include <kth/node/settings.hpp>
 #include <kth/node/version.hpp>
+#include <kth/node/executor/executor.hpp>
 
 #if ! defined(__EMSCRIPTEN__)
 #include <kth/node/protocols/protocol_block_in.hpp>

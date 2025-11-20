@@ -12,13 +12,13 @@
 #include <kth/database/databases/property_code.hpp>
 
 #include <kth/infrastructure/handlers.hpp>
-#include <kth/node.hpp>
+#include <kth/node/configuration.hpp>
+#include <kth/node/full_node.hpp>
 #include <kth/node/executor/executor_info.hpp>
 
 namespace kth::node {
 
-class executor {
-public:
+struct executor {
     executor(kth::node::configuration const& config, bool stdout_enabled = true);
 
     executor(executor const&) = delete;
@@ -70,9 +70,8 @@ private:
     void handle_running(kth::code const& ec);
     void handle_stopped(kth::code const& ec);
 
-    // Termination state.
-    static
-    std::promise<kth::code> stopping_;
+    // Termination state
+    static std::promise<kth::code> stopping_;
 
     bool stdout_enabled_;
     kth::node::configuration config_;
