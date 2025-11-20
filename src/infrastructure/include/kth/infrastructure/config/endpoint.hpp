@@ -10,16 +10,16 @@
 #include <string>
 #include <vector>
 
-// #include <fmt/ostream.h>
+#include <fmt/ostream.h>
 
 #include <kth/infrastructure/config/authority.hpp>
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/asio_helper.hpp>
 
-#if defined(KTH_LOG_LIBRARY_SPDLOG)
-#include <spdlog/fmt/ostr.h>
-#endif
+// #if defined(KTH_LOG_LIBRARY_SPDLOG)
+// #include <spdlog/fmt/ostr.h>
+// #endif
 
 namespace kth::infrastructure::config {
 
