@@ -25,7 +25,7 @@
 #include <kth/infrastructure/unicode/ofstream.hpp>
 
 #elif defined(KTH_LOG_LIBRARY_SPDLOG)
-#include <fmt/core.h>
+#include <print>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h> // or "../stdout_sinks.h" if no colors needed
 #include <spdlog/sinks/basic_file_sink.h>
@@ -231,7 +231,7 @@ void initialize(std::string const& debug_file, std::string const& error_file, bo
         spdlog::flush_every(std::chrono::seconds(2));
     }
     catch (spdlog::spdlog_ex const& ex) {
-        fmt::print("Log initialization failed: {}\n", ex.what());
+        std::println(stderr, "Log initialization failed: {}", ex.what());
     }
 }
 
