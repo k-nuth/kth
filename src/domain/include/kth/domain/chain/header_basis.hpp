@@ -29,8 +29,7 @@
 
 namespace kth::domain::chain {
 
-class KD_API header_basis {
-public:
+struct KD_API header_basis {
     using list = std::vector<header_basis>;
     using ptr = std::shared_ptr<header_basis>;
     using const_ptr = std::shared_ptr<header_basis const>;

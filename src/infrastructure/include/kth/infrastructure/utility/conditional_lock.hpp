@@ -12,8 +12,7 @@
 
 namespace kth {
 
-class KI_API conditional_lock {
-public:
+struct KI_API conditional_lock {
     /// Conditional lock using specified mutex pointer.
     explicit
     conditional_lock(std::shared_ptr<shared_mutex> const& mutex_ptr);

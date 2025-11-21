@@ -33,8 +33,7 @@ class witness {};
 
 #else
 
-class KD_API witness {
-public:
+struct KD_API witness {
     using operation = machine::operation;
     using iterator = data_stack::const_iterator;
 

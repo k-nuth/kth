@@ -22,8 +22,7 @@
 namespace kth::blockchain {
 
 /// This class is NOT thread safe.
-class KB_API validate_transaction {
-public:
+struct KB_API validate_transaction {
     // using result_handler = handle0;
     using result_handler = handle0;
 

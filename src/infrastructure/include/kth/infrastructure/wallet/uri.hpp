@@ -17,8 +17,7 @@ namespace kth::infrastructure::wallet {
 /**
  * A parsed URI according to RFC 3986.
  */
-class KI_API uri {
-public:
+struct KI_API uri {
     /**
      * Decodes a URI from a string.
      * @param strict Set to false to tolerate unescaped special characters.

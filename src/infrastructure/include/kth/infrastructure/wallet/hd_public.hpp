@@ -41,8 +41,7 @@ struct KI_API hd_lineage {
 class hd_private;
 
 /// An extended public key, as defined by BIP 32.
-class KI_API hd_public {
-public:
+struct KI_API hd_public {
     static constexpr uint32_t mainnet = 76067358;
     static constexpr uint32_t testnet = 70617039;
 

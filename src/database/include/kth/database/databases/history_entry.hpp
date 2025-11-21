@@ -10,8 +10,7 @@
 
 namespace kth::database {
 
-class KD_API history_entry {
-public:
+struct KD_API history_entry {
 
     history_entry() = default;
 

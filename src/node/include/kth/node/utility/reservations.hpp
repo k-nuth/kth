@@ -19,8 +19,7 @@
 namespace kth::node {
 
 // Class to manage a set of reservation objects during sync, thread safe.
-class KND_API reservations {
-public:
+struct KND_API reservations {
     typedef struct {
         size_t active_count;
         double arithmentic_mean;

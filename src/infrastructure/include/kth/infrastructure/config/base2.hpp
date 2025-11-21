@@ -17,8 +17,7 @@ namespace kth::infrastructure::config {
 /**
  * Serialization helper for base2 encoded data.
  */
-class KI_API base2 {
-public:
+struct KI_API base2 {
 
     base2() = default;
     base2(base2 const& x) = default;

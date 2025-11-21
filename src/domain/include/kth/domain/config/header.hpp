@@ -17,8 +17,7 @@ namespace kth::domain::config {
  * Serialization helper to convert between serialized and deserialized satoshi
  * header.
  */
-class KD_API header {
-public:
+struct KD_API header {
     header() = default;
 
     /**

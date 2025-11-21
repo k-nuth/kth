@@ -28,7 +28,7 @@
 namespace kth::network {
 
 /// Top level public networking interface, partly thread safe.
-class KN_API p2p : public enable_shared_from_base<p2p>, noncopyable {
+struct KN_API p2p : enable_shared_from_base<p2p>, noncopyable {
 public:
     using ptr = std::shared_ptr<p2p>;
     using address = domain::message::network_address;

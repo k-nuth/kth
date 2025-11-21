@@ -16,8 +16,7 @@ namespace kth {
 
 /// This class is not thread safe.
 /// Guard a resource that may be corrupted due to an interrupted write.
-class KI_API flush_lock {
-public:
+struct KI_API flush_lock {
     using path = kth::path;
 
     explicit

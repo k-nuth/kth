@@ -22,8 +22,7 @@ namespace kth::blockchain {
 /// There is no search within blocks of the block pool (just hashes).
 /// The branch object contains chain query for new (leaf) block validation.
 /// All pool blocks are valid, lacking only sufficient work for reorganzation.
-class KB_API block_pool {
-public:
+struct KB_API block_pool {
     block_pool(size_t maximum_depth);
 
     // The number of blocks in the pool.

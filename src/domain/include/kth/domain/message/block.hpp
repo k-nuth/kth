@@ -28,7 +28,7 @@
 
 namespace kth::domain::message {
 
-class KD_API block : public chain::block {
+struct KD_API block : chain::block {
 public:
     using ptr = std::shared_ptr<block>;
     using const_ptr = std::shared_ptr<const block>;

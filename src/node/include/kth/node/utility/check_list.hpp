@@ -15,8 +15,7 @@
 namespace kth::node {
 
 /// A thread safe checkpoint queue.
-class KND_API check_list {
-public:
+struct KND_API check_list {
     using heights = std::vector<size_t>;
 
     /// The queue contains no checkpoints.

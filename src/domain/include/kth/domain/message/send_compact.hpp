@@ -22,8 +22,7 @@
 
 namespace kth::domain::message {
 
-class KD_API send_compact {
-public:
+struct KD_API send_compact {
     using ptr = std::shared_ptr<send_compact>;
     using const_ptr = std::shared_ptr<const send_compact>;
 

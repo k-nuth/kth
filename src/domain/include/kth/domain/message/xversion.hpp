@@ -29,8 +29,7 @@ using namespace kth::infrastructure::message;
 // Implementation of BU xversion and xverack messages
 // https://github.com/BitcoinUnlimited/BitcoinUnlimited/blob/dev/doc/xversionmessage.md
 
-class KD_API xversion {
-public:
+struct KD_API xversion {
     using ptr = std::shared_ptr<xversion>;
     using const_ptr = std::shared_ptr<xversion const>;
 

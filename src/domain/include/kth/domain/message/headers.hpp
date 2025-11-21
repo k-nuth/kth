@@ -28,8 +28,7 @@
 
 namespace kth::domain::message {
 
-class KD_API headers {
-public:
+struct KD_API headers {
     using ptr = std::shared_ptr<headers>;
     using const_ptr = std::shared_ptr<const headers>;
 

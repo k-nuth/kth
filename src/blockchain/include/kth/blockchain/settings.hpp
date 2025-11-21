@@ -16,8 +16,7 @@
 namespace kth::blockchain {
 
 /// Common blockchain configuration settings, properties not thread safe.
-class KB_API settings {
-public:
+struct KB_API settings {
     settings() = default;
     settings(domain::config::network net);
 

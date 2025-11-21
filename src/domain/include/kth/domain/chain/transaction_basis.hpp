@@ -97,8 +97,7 @@ uint64_t fees(transaction_basis const& tx);
 bool is_overspent(transaction_basis const& tx);
 
 
-class KD_API transaction_basis {
-public:
+struct KD_API transaction_basis {
     using ins = input::list;
     using outs = output::list;
     using list = std::vector<transaction_basis>;

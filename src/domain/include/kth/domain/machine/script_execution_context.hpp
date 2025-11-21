@@ -15,8 +15,7 @@ namespace kth::domain::machine {
 
 /// An execution context for evaluating a script input. This provides access to transaction
 /// and input information needed for Native Introspection opcodes.
-class KD_API script_execution_context {
-public:
+struct KD_API script_execution_context {
     /// Construct a context for a specific input in a transaction
     script_execution_context(uint32_t input_index, chain::transaction const& transaction);
 

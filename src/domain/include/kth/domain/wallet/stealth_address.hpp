@@ -19,8 +19,7 @@
 namespace kth::domain::wallet {
 
 /// A class for working with stealth payment addresses.
-class KD_API stealth_address {
-public:
+struct KD_API stealth_address {
     /// DEPRECATED: we intend to make p2kh same as payment address versions.
     static
     uint8_t const mainnet_p2kh;

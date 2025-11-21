@@ -25,8 +25,7 @@
 
 namespace kth::domain::message {
 
-class KD_API merkle_block {
-public:
+struct KD_API merkle_block {
     using list = std::vector<merkle_block>;
     using ptr = std::shared_ptr<merkle_block>;
     using const_ptr = std::shared_ptr<const merkle_block>;

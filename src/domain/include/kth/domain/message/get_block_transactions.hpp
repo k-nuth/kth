@@ -24,8 +24,7 @@
 
 namespace kth::domain::message {
 
-class KD_API get_block_transactions {
-public:
+struct KD_API get_block_transactions {
     using ptr = std::shared_ptr<get_block_transactions>;
     using const_ptr = std::shared_ptr<const get_block_transactions>;
 

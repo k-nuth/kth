@@ -16,8 +16,7 @@
 
 namespace kth::domain::machine {
 
-class KD_API interpreter {
-public:
+struct KD_API interpreter {
     using result = error::error_code_t;
 
     // Operations (shared).

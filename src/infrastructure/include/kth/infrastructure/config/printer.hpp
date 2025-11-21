@@ -31,8 +31,7 @@ namespace kth::infrastructure::config {
 /**
  * Class for managing the serialization of command line options and arguments.
  */
-class KI_API printer {
-public:
+struct KI_API printer {
 
     /**
      * Number of arguments above which the argument is considered unlimited.

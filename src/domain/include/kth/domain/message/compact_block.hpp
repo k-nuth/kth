@@ -24,8 +24,7 @@
 
 namespace kth::domain::message {
 
-class KD_API compact_block {
-public:
+struct KD_API compact_block {
     using ptr = std::shared_ptr<compact_block>;
     using const_ptr = std::shared_ptr<const compact_block>;
     //using short_id = mini_hash;

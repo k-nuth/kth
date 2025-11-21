@@ -27,8 +27,7 @@ namespace kth::infrastructure::config {
  * Serialization helper for a network endpoint in URI format.
  * This is a container for a {scheme, host, port} tuple.
  */
-class KI_API endpoint {
-public:
+struct KI_API endpoint {
     using list = std::vector<endpoint>;
 
 

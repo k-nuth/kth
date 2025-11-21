@@ -30,8 +30,7 @@ using script_version = ::kth::infrastructure::machine::script_version;
 
 using number = ::kth::infrastructure::machine::number;
 
-class KD_API program {
-public:
+struct KD_API program {
     using value_type = data_stack::value_type;
     using op_iterator = operation::iterator;
 

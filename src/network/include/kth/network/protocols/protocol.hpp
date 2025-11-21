@@ -32,7 +32,7 @@ namespace kth::network {
 class p2p;
 
 /// Virtual base class for protocol implementation, mostly thread safe.
-class KN_API protocol : public enable_shared_from_base<protocol>, noncopyable {
+struct KN_API protocol : enable_shared_from_base<protocol>, noncopyable {
 protected:
     using completion_handler = std::function<void()>;
     using event_handler = std::function<void(code const&)>;

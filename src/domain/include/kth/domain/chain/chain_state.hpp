@@ -24,8 +24,7 @@ namespace kth::domain::chain {
 class block;
 class header;
 
-class KD_API chain_state {
-public:
+struct KD_API chain_state {
     using bitss = std::deque<uint32_t>;                 //TODO(fernando): why deque?
     using versions = std::deque<uint32_t>;              //TODO(fernando): why deque?
     using timestamps = std::deque<uint32_t>;            //TODO(fernando): why deque?

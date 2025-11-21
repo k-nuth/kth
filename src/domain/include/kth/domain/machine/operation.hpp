@@ -35,8 +35,7 @@ constexpr
 // auto invalid_code = opcode::disabled_xor;
 auto invalid_code = opcode::invalidopcode;
 
-class KD_API operation {
-public:
+struct KD_API operation {
     using list = std::vector<operation>;
     using iterator = list::const_iterator;
 

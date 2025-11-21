@@ -34,8 +34,7 @@ namespace kth::domain::chain {
 
 using indexes = std::vector<size_t>;
 
-class KD_API block_basis {
-public:
+struct KD_API block_basis {
     using list = std::vector<block_basis>;
 
     // Constructors.

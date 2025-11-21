@@ -18,8 +18,7 @@
 namespace kth::domain::wallet {
 
 /// This class does not support multisignature stealth addresses.
-class KD_API stealth_sender {
-public:
+struct KD_API stealth_sender {
     /// Constructors.
     /// Generate a send address from the stealth address.
     stealth_sender(stealth_address const& address, data_chunk const& seed, binary const& filter, uint8_t version = payment_address::mainnet_p2kh);

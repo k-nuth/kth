@@ -22,7 +22,7 @@ namespace kth::node {
 class reservations;
 
 // Class to manage hashes during sync, thread safe.
-class KND_API reservation : public enable_shared_from_base<reservation> {
+struct KND_API reservation : enable_shared_from_base<reservation> {
 public:
     using ptr = std::shared_ptr<reservation>;
     using list = std::vector<reservation::ptr>;

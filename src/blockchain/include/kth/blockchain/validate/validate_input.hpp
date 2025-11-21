@@ -17,8 +17,7 @@
 namespace kth::blockchain {
 
 /// This class is static.
-class KB_API validate_input {
-public:
+struct KB_API validate_input {
 
 #ifdef WITH_CONSENSUS
     static

@@ -44,7 +44,7 @@ enum class endorsement_type {
     schnorr
 };
 
-class KD_API script : public script_basis {
+struct KD_API script : script_basis {
 public:
     using operation = machine::operation;
     using rule_fork = machine::rule_fork;

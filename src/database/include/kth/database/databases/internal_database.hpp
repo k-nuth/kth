@@ -58,8 +58,7 @@ constexpr size_t env_open_mode_ = 0664;
 constexpr int directory_exists = 0;
 
 template <typename Clock = std::chrono::system_clock>
-class KD_API internal_database_basis {
-public:
+struct KD_API internal_database_basis {
     using path = kth::path;
     using utxo_pool_t = std::unordered_map<domain::chain::point, utxo_entry>;
 

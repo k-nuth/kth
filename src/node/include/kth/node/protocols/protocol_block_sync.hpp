@@ -19,7 +19,7 @@ namespace kth::node {
 class full_node;
 
 /// Blocks sync protocol, thread safe.
-class KND_API protocol_block_sync : public network::protocol_timer, public track<protocol_block_sync> {
+struct KND_API protocol_block_sync : network::protocol_timer, track<protocol_block_sync> {
 public:
     using ptr = std::shared_ptr<protocol_block_sync>;
 

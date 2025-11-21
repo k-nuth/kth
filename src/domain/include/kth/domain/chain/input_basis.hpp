@@ -27,8 +27,7 @@
 
 namespace kth::domain::chain {
 
-class KD_API input_basis {
-public:
+struct KD_API input_basis {
     using list = std::vector<input_basis>;
 
     // Constructors.

@@ -61,8 +61,7 @@ enum class message_type {
     xversion
 };
 
-class KD_API heading {
-public:
+struct KD_API heading {
     static
     size_t maximum_size();
 

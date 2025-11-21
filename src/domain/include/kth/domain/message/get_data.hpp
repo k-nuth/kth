@@ -24,7 +24,7 @@
 
 namespace kth::domain::message {
 
-class KD_API get_data : public inventory {
+struct KD_API get_data : inventory {
 public:
     using ptr = std::shared_ptr<get_data>;
     using const_ptr = std::shared_ptr<const get_data>;

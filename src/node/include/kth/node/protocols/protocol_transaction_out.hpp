@@ -18,7 +18,7 @@ namespace kth::node {
 
 class full_node;
 
-class KND_API protocol_transaction_out : public network::protocol_events, track<protocol_transaction_out> {
+struct KND_API protocol_transaction_out : network::protocol_events, track<protocol_transaction_out> {
 public:
     using ptr = std::shared_ptr<protocol_transaction_out>;
 

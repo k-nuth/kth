@@ -17,8 +17,7 @@ namespace kth::domain::config {
  * Serialization helper to convert between serialized and deserialized satoshi
  * transaction.
  */
-class KD_API transaction {
-public:
+struct KD_API transaction {
     transaction() = default;
 
     /**

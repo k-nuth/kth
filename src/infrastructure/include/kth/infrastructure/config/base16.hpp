@@ -19,8 +19,7 @@ namespace kth::infrastructure::config {
  * Serialization helper for base16 encoded data.
  */
 //TODO(fernando): make a generic class for baseX
-class KI_API base16 {
-public:
+struct KI_API base16 {
 
     base16() = default;
     base16(base16 const& x) = default;

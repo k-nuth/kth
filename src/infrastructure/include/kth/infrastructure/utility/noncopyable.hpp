@@ -9,8 +9,7 @@
 
 namespace kth {
 
-class KI_API noncopyable {
-public:
+struct KI_API noncopyable {
     noncopyable(const noncopyable&) = delete;
     void operator=(const noncopyable&) = delete;
 

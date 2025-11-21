@@ -13,8 +13,7 @@
 namespace kth::database {
 
 
-class KD_API transaction_unconfirmed_entry {
-public:
+struct KD_API transaction_unconfirmed_entry {
 
     transaction_unconfirmed_entry() = default;
 

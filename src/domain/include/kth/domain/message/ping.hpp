@@ -24,8 +24,7 @@
 
 namespace kth::domain::message {
 
-class KD_API ping {
-public:
+struct KD_API ping {
     using ptr = std::shared_ptr<ping>;
     using const_ptr = std::shared_ptr<const ping>;
 

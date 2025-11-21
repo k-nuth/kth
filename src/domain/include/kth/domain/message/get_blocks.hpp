@@ -28,8 +28,7 @@
 
 namespace kth::domain::message {
 
-class KD_API get_blocks {
-public:
+struct KD_API get_blocks {
     using ptr = std::shared_ptr<get_blocks>;
     using const_ptr = std::shared_ptr<const get_blocks>;
 

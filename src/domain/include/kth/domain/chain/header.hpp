@@ -28,7 +28,7 @@
 
 #include <kth/domain/concepts.hpp>
 namespace kth::domain::chain {
-class KD_API header : public header_basis, public hash_memoizer<header> {                                 // NOLINT(cppcoreguidelines-special-member-functions)
+struct KD_API header : header_basis, hash_memoizer<header> {                                 // NOLINT(cppcoreguidelines-special-member-functions)
 public:
     using list = std::vector<header>;
     using ptr = std::shared_ptr<header>;

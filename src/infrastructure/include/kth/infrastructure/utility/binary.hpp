@@ -14,8 +14,7 @@
 
 namespace kth {
 
-class KI_API binary {
-public:
+struct KI_API binary {
     using block = uint8_t;
     using size_type = std::size_t;
 

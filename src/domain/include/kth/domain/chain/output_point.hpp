@@ -18,7 +18,7 @@
 
 namespace kth::domain::chain {
 
-class KD_API output_point : public point {
+struct KD_API output_point : point {
 public:
     // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
     struct validation_type {

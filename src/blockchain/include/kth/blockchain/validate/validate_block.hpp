@@ -24,8 +24,7 @@
 namespace kth::blockchain {
 
 /// This class is NOT thread safe.
-class KB_API validate_block {
-public:
+struct KB_API validate_block {
     using result_handler = handle0;
 
 #if defined(KTH_WITH_MEMPOOL)

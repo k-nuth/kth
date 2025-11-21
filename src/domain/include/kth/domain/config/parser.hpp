@@ -438,8 +438,7 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
 /// Parse configurable values from environment variables, settings file, and
 /// command line positional and non-positional options.
 template <typename ConcreteParser>
-class KD_API parser {
-public:
+struct KD_API parser {
     ConcreteParser& derived() {
         return static_cast<ConcreteParser&>(*this);
     }

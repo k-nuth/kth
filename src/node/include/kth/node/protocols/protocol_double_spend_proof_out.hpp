@@ -18,7 +18,7 @@ namespace kth::node {
 
 class full_node;
 
-class KND_API protocol_double_spend_proof_out : public network::protocol_events, track<protocol_double_spend_proof_out> {
+struct KND_API protocol_double_spend_proof_out : network::protocol_events, track<protocol_double_spend_proof_out> {
 public:
     using ptr = std::shared_ptr<protocol_double_spend_proof_out>;
 

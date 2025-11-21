@@ -16,8 +16,7 @@
 
 namespace kth::database {
 
-class KD_API store {
-public:
+struct KD_API store {
     using path = kth::path;
     using handle = sequential_lock::handle;
 

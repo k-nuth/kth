@@ -16,8 +16,7 @@ namespace kth::infrastructure::config {
 /**
  * Serialization helper for base64 encoded data.
  */
-class KI_API base64 {
-public:
+struct KI_API base64 {
 
     base64() = default;
     base64(base64 const& x) = default;

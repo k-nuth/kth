@@ -22,8 +22,7 @@
 
 namespace kth::domain::message {
 
-class KD_API get_address {
-public:
+struct KD_API get_address {
     using ptr = std::shared_ptr<get_address>;
     using const_ptr = std::shared_ptr<const get_address>;
 

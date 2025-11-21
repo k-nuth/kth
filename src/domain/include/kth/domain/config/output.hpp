@@ -19,8 +19,7 @@ namespace kth::domain::config {
  * Serialization helper to convert between a base58-string:number and
  * a vector of chain::output.
  */
-class KD_API output {
-public:
+struct KD_API output {
 
     output();
 

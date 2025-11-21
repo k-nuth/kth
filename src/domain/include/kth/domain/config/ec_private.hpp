@@ -18,8 +18,7 @@ namespace kth::domain::config {
 /**
  * Serialization helper to convert between base16 string and ec_secret.
  */
-class KD_API ec_private {
-public:
+struct KD_API ec_private {
 
     ec_private() = default;
 

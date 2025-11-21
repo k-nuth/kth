@@ -21,7 +21,7 @@ namespace kth::node {
 class full_node;
 
 /// Inbound connections session, thread safe.
-class KND_API session_inbound : public session<network::session_inbound>, track<session_inbound> {
+struct KND_API session_inbound : session<network::session_inbound>, track<session_inbound> {
 public:
     using ptr = std::shared_ptr<session_inbound>;
 

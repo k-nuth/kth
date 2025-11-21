@@ -25,7 +25,7 @@
 
 #include <kth/domain/concepts.hpp>
 namespace kth::domain::chain {
-class KD_API output : public output_basis {
+struct KD_API output : output_basis {
 public:
     using list = std::vector<output>;
 

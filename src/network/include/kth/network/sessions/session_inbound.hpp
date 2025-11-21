@@ -20,7 +20,7 @@ namespace kth::network {
 class p2p;
 
 /// Inbound connections session, thread safe.
-class KN_API session_inbound : public session, track<session_inbound> {
+struct KN_API session_inbound : session, track<session_inbound> {
 public:
     using ptr = std::shared_ptr<session_inbound>;
 

@@ -14,7 +14,7 @@
 namespace kth::domain::chain {
 
 /// A valued point, does not implement specialized serialization methods.
-class KD_API point_value : public point {
+struct KD_API point_value : point {
 public:
     using list = std::vector<point_value>;
 

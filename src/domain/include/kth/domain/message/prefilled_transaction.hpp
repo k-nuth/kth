@@ -22,8 +22,7 @@
 
 namespace kth::domain::message {
 
-class KD_API prefilled_transaction {
-public:
+struct KD_API prefilled_transaction {
     using list = std::vector<prefilled_transaction>;
     using const_ptr = std::shared_ptr<const prefilled_transaction>;
 

@@ -19,8 +19,7 @@
 namespace kth {
 
 /// A reference counting wrapper for closures placed on the asio work heap.
-class KI_API monitor {
-public:
+struct KI_API monitor {
     using count = std::atomic<size_t>;
     using count_ptr = std::shared_ptr<count>;
 

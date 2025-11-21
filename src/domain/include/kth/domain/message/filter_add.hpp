@@ -23,8 +23,7 @@
 
 namespace kth::domain::message {
 
-class KD_API filter_add {
-public:
+struct KD_API filter_add {
     using ptr = std::shared_ptr<filter_add>;
     using const_ptr = std::shared_ptr<const filter_add>;
 

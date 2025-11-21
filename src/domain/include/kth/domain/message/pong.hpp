@@ -23,8 +23,7 @@
 
 namespace kth::domain::message {
 
-class KD_API pong {
-public:
+struct KD_API pong {
     using ptr = std::shared_ptr<pong>;
     using const_ptr = std::shared_ptr<const pong>;
 

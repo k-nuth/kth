@@ -45,7 +45,7 @@ namespace kth::domain::chain {
 
 using template_result = std::tuple<transaction, std::vector<uint32_t>, std::vector<wallet::payment_address>, std::vector<uint64_t>>;
 
-class KD_API transaction : public transaction_basis {
+struct KD_API transaction : transaction_basis {
 public:
     using ins = input::list;
     using outs = output::list;

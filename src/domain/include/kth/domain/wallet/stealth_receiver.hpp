@@ -16,8 +16,7 @@
 namespace kth::domain::wallet {
 
 /// This class does not support multisignature stealth addresses.
-class KD_API stealth_receiver {
-public:
+struct KD_API stealth_receiver {
     /// Constructors.
     stealth_receiver(ec_secret const& scan_private,
                      ec_secret const& spend_private,

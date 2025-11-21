@@ -24,7 +24,7 @@
 namespace kth::database {
 
 /// This class is thread safe and implements the sequential locking pattern.
-class KD_API data_base : public store, noncopyable {
+struct KD_API data_base : store, noncopyable {
 public:
     using handle = store::handle;
     using result_handler = handle0;

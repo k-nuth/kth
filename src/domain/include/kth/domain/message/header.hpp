@@ -24,7 +24,7 @@
 
 namespace kth::domain::message {
 
-class KD_API header : public chain::header {
+struct KD_API header : chain::header {
 public:
     using list = std::vector<header>;
     using ptr = std::shared_ptr<header>;

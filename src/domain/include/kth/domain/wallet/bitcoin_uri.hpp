@@ -24,8 +24,7 @@ namespace kth::domain::wallet {
 /// A bitcoin URI corresponding to BIP 21 and BIP 72.
 /// The object is not constant, setters can change state after construction.
 // class KD_API bitcoin_uri : public uri_reader {
-class KD_API bitcoin_uri {
-public:
+struct KD_API bitcoin_uri {
     /// Constructors.
     bitcoin_uri() = default;
     bitcoin_uri(std::string const& uri, bool strict = true);

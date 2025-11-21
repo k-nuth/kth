@@ -27,8 +27,7 @@ namespace kth::domain::message {
 
 
 // The checksum is ignored by the xverack command.
-class KD_API xverack {
-public:
+struct KD_API xverack {
     using ptr = std::shared_ptr<xverack>;
     using const_ptr = std::shared_ptr<const xverack>;
 

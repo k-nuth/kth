@@ -13,8 +13,7 @@
 
 namespace kth::node {
 
-class KND_API performance {
-public:
+struct KND_API performance {
 
     /// The normalized rate derived from the performance values.
     double normal() const;

@@ -32,8 +32,7 @@ size_t wif_compressed_size = wif_uncompressed_size + 1U;
 using wif_compressed = byte_array<wif_compressed_size>;
 
 /// Use to pass an ec secret with compresson and version information.
-class KD_API ec_private {
-public:
+struct KD_API ec_private {
     static
     uint8_t const compressed_sentinel;
 

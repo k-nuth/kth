@@ -14,8 +14,7 @@
 namespace kth::domain::wallet {
 
 /// Use to pass an encrypted private key.
-class KD_API ek_private {
-public:
+struct KD_API ek_private {
     /// Constructors.
     ek_private();
     ek_private(std::string const& encoded);

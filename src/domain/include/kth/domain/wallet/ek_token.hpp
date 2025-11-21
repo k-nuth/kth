@@ -16,8 +16,7 @@ namespace kth::domain::wallet {
 /**
  * Serialization helper to convert between base58 string and bip38 token.
  */
-class KD_API ek_token {
-public:
+struct KD_API ek_token {
     /// Constructors.
     ek_token();
     ek_token(std::string const& encoded);

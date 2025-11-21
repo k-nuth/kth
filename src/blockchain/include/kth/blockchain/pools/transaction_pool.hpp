@@ -16,8 +16,7 @@
 namespace kth::blockchain {
 
 /// TODO: this class is not implemented or utilized.
-class KB_API transaction_pool {
-public:
+struct KB_API transaction_pool {
     using inventory_fetch_handler = safe_chain::inventory_fetch_handler;
     using merkle_block_fetch_handler = safe_chain::merkle_block_fetch_handler;
 

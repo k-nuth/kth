@@ -22,8 +22,7 @@
 
 namespace kth::domain::message {
 
-class KD_API alert_payload {
-public:
+struct KD_API alert_payload {
     alert_payload() = default;
     alert_payload(uint32_t version, uint64_t relay_until, uint64_t expiration, uint32_t id, uint32_t cancel, const std::vector<uint32_t>& set_cancel, uint32_t min_version, uint32_t max_version, const std::vector<std::string>& set_sub_version, uint32_t priority, std::string const& comment, std::string const& status_bar, std::string const& reserved);
     alert_payload(uint32_t version, uint64_t relay_until, uint64_t expiration, uint32_t id, uint32_t cancel, std::vector<uint32_t>&& set_cancel, uint32_t min_version, uint32_t max_version, std::vector<std::string>&& set_sub_version, uint32_t priority, std::string&& comment, std::string&& status_bar, std::string&& reserved);

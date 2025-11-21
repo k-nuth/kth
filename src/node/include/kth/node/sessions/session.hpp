@@ -18,7 +18,7 @@ class full_node;
 /// Intermediate session base class template.
 /// This avoids having to make network::session into a template.
 template <class Session>
-class KND_API session : public Session {
+struct KND_API session : Session {
 protected:
     /// Construct an instance.
     session(full_node& node, bool notify_on_connect)

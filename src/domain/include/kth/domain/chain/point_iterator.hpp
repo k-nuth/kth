@@ -16,8 +16,7 @@ namespace kth::domain::chain {
 class point;
 
 /// A point iterator for store serialization (does not support wire).
-class KD_API point_iterator {
-public:
+struct KD_API point_iterator {
     using pointer = uint8_t;
     using reference = uint8_t;
     using value_type = uint8_t;

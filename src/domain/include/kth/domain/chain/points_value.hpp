@@ -14,8 +14,7 @@
 
 namespace kth::domain::chain {
 
-class KD_API points_value {
-public:
+struct KD_API points_value {
     /// A set of valued points.
     point_value::list points;
 

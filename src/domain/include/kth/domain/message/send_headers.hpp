@@ -22,8 +22,7 @@
 
 namespace kth::domain::message {
 
-class KD_API send_headers {
-public:
+struct KD_API send_headers {
     using ptr = std::shared_ptr<send_headers>;
     using const_ptr = std::shared_ptr<const send_headers>;
 

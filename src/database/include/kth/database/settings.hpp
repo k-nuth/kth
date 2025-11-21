@@ -14,8 +14,7 @@
 namespace kth::database {
 
 /// Common database configuration settings, properties not thread safe.
-class KD_API settings {
-public:
+struct KD_API settings {
     settings();
     settings(domain::config::network context);
 

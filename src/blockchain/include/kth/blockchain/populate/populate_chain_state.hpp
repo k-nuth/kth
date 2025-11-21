@@ -17,8 +17,7 @@
 namespace kth::blockchain {
 
 /// This class is NOT thread safe.
-class KB_API populate_chain_state {
-public:
+struct KB_API populate_chain_state {
     populate_chain_state(fast_chain const& chain, settings const& settings, domain::config::network network);
 
     /// Populate chain state for the tx pool (start).

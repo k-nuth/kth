@@ -30,8 +30,7 @@ size_t payment_size = 1U + short_hash_size + checksum_size;  // 1 + 20 + sizeof(
 using payment = byte_array<payment_size>;
 
 /// A class for working with non-stealth payment addresses.
-class KD_API payment_address {
-public:
+struct KD_API payment_address {
 
 #if defined(KTH_CURRENCY_LTC)
     static constexpr uint8_t mainnet_p2kh = 0x30;

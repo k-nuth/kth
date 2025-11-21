@@ -25,7 +25,7 @@
 
 namespace kth::domain::message {
 
-class KD_API not_found : public inventory {
+struct KD_API not_found : inventory {
 public:
     using ptr = std::shared_ptr<not_found>;
     using const_ptr = std::shared_ptr<const not_found>;

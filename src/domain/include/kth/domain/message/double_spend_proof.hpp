@@ -24,8 +24,7 @@
 
 namespace kth::domain::message {
 
-class KD_API double_spend_proof {
-public:
+struct KD_API double_spend_proof {
     using ptr = std::shared_ptr<double_spend_proof>;
     using const_ptr = std::shared_ptr<double_spend_proof const>;
     using short_id = uint64_t;

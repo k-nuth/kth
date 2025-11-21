@@ -37,8 +37,7 @@
 namespace kth::domain::chain {
 
 class transaction;
-class KD_API script_basis {
-public:
+struct KD_API script_basis {
     using operation = machine::operation;
     using rule_fork = machine::rule_fork;
     using script_pattern = infrastructure::machine::script_pattern;

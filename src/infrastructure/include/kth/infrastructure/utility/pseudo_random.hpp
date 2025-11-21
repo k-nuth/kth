@@ -23,8 +23,7 @@
 #endif
 namespace kth {
 
-class KI_API pseudo_random {
-public:
+struct KI_API pseudo_random {
     template <typename Container>
         requires std::is_trivially_copyable<typename Container::value_type>::value
     static

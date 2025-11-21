@@ -28,8 +28,7 @@
 
 namespace kth::domain::chain {
 
-class KD_API point {
-public:
+struct KD_API point {
     /// This is a sentinel used in .index to indicate no output, e.g. coinbase.
     /// This value is serialized and defined by consensus, not implementation.
     static constexpr

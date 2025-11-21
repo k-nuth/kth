@@ -22,8 +22,7 @@
 
 namespace kth::domain::message {
 
-class KD_API memory_pool {
-public:
+struct KD_API memory_pool {
     using ptr = std::shared_ptr<memory_pool>;
     using const_ptr = std::shared_ptr<const memory_pool>;
 

@@ -18,8 +18,7 @@ namespace kth::domain::config {
 /**
  * Serialization helper to convert between base16/raw script and script_type.
  */
-class KD_API script {
-public:
+struct KD_API script {
     script() = default;
 
     /**

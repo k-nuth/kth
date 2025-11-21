@@ -22,8 +22,7 @@ namespace kth::infrastructure::message {
 using ip_address = byte_array<16>;
 constexpr ip_address null_address {{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }};
 
-class KI_API network_address {
-public:
+struct KI_API network_address {
     using list = std::vector<network_address>;
 
     network_address() = default;

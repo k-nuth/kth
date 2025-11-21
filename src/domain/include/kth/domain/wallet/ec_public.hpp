@@ -21,8 +21,7 @@ class payment_address;
 
 /// Use to pass an ec point as either ec_compressed or ec_uncompressed.
 /// ec_public doesn't carry a version for address creation or base58 encoding.
-class KD_API ec_public {
-public:
+struct KD_API ec_public {
     static
     uint8_t const compressed_even;
 

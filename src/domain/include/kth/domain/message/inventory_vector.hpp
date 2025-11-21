@@ -24,8 +24,7 @@
 
 namespace kth::domain::message {
 
-class KD_API inventory_vector {
-public:
+struct KD_API inventory_vector {
     using list = std::vector<inventory_vector>;
 
     enum class type_id : uint32_t {

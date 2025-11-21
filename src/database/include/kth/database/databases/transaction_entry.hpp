@@ -23,8 +23,7 @@ uint32_t read_position(Deserializer& deserial) {
     return deserial.KTH_POSITION_READER();
 }
 
-class KD_API transaction_entry {
-public:
+struct KD_API transaction_entry {
 
     transaction_entry() = default;
 

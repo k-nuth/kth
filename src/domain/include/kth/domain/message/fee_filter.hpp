@@ -22,8 +22,7 @@
 
 namespace kth::domain::message {
 
-class KD_API fee_filter {
-public:
+struct KD_API fee_filter {
     using ptr = std::shared_ptr<fee_filter>;
     using const_ptr = std::shared_ptr<const fee_filter>;
 

@@ -37,7 +37,7 @@ namespace kth::network {
 class p2p;
 
 /// Base class for maintaining the lifetime of a channel set, thread safe.
-class KN_API session : public enable_shared_from_base<session>, noncopyable {
+struct KN_API session : enable_shared_from_base<session>, noncopyable {
 public:
     using authority = infrastructure::config::authority;
     using address = domain::message::network_address;

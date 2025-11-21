@@ -15,8 +15,7 @@
 
 namespace kth {
 
-class KI_API pseudo_random_broken_do_not_use {
-public:
+struct KI_API pseudo_random_broken_do_not_use {
     template <typename Container>
     static void fill(Container& out) {
         // uniform_int_distribution is undefined for sizes < 16 bits.

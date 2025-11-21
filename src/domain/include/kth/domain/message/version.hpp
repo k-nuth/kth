@@ -27,8 +27,7 @@ namespace kth::domain::message {
 using namespace kth::infrastructure::message;
 
 // The checksum is ignored by the version command.
-class KD_API version {
-public:
+struct KD_API version {
     using ptr = std::shared_ptr<version>;
     using const_ptr = std::shared_ptr<const version>;
 

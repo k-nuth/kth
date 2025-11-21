@@ -17,8 +17,7 @@
 namespace kth {
 
 /// Reader interface.
-class KI_API reader {
-public:
+struct KI_API reader {
     /// Context.
     operator bool() const;
     bool operator!() const;

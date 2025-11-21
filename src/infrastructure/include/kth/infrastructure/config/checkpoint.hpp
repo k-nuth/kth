@@ -19,8 +19,7 @@ namespace kth::infrastructure::config {
  * Serialization helper for a blockchain checkpoint.
  * This is a container for a {block hash, block height} tuple.
  */
-class KI_API checkpoint {
-public:
+struct KI_API checkpoint {
     using list = std::vector<checkpoint>;
 
     /**

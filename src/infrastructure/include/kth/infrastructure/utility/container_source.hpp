@@ -20,8 +20,7 @@ namespace kth {
 // modified from boost.iostreams example
 // boost.org/doc/libs/1_55_0/libs/iostreams/doc/tutorial/container_source.html
 template <typename Container, typename SourceType, typename CharType>
-class KI_API container_source {
-public:
+struct KI_API container_source {
     using char_type = CharType;
     using category = boost::iostreams::source_tag;
 

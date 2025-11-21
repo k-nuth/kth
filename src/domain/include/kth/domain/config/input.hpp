@@ -17,8 +17,7 @@ namespace kth::domain::config {
 /**
  * Serialization helper stub for chain::input.
  */
-class KD_API input {
-public:
+struct KD_API input {
     input() = default;
 
     /**

@@ -16,8 +16,7 @@ namespace kth::infrastructure::config {
 /**
  * Serialization helper for a bitcoin 160 bit hash.
  */
-class KI_API hash160 {
-public:
+struct KI_API hash160 {
 
     hash160() = default;
     hash160(hash160 const& x) = default;

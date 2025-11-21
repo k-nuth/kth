@@ -26,7 +26,7 @@
 
 namespace kth::domain::message {
 
-class KD_API transaction : public chain::transaction {
+struct KD_API transaction : chain::transaction {
 public:
     using ptr = std::shared_ptr<transaction>;
     using const_ptr = std::shared_ptr<const transaction>;

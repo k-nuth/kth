@@ -28,8 +28,7 @@
 
 namespace kth::domain::message {
 
-class KD_API inventory {
-public:
+struct KD_API inventory {
     using ptr = std::shared_ptr<inventory>;
     using const_ptr = std::shared_ptr<const inventory>;
     using type_id = inventory_vector::type_id;

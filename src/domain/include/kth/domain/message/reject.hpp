@@ -24,8 +24,7 @@
 
 namespace kth::domain::message {
 
-class KD_API reject {
-public:
+struct KD_API reject {
     enum class reason_code : uint8_t {
         /// The reason code is not defined.
         undefined = 0x00,

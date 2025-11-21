@@ -33,7 +33,7 @@
 
 namespace kth::domain::chain {
 
-class KD_API input : public input_basis {
+struct KD_API input : input_basis {
 public:
     using list = std::vector<input>;
 

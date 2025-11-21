@@ -13,8 +13,7 @@
 namespace kth::domain::chain {
 
 /// A signed but zero-floored scientific notation in 32 bits.
-class KD_API compact {
-public:
+struct KD_API compact {
     /// Construct a normal form compact number from a 32 bit compact number.
     explicit
     compact(uint32_t compact);

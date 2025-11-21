@@ -20,7 +20,7 @@
 
 namespace kth::domain::message {
 
-class KD_API get_headers : public get_blocks {
+struct KD_API get_headers : get_blocks {
 public:
     using ptr = std::shared_ptr<get_headers>;
     using const_ptr = std::shared_ptr<const get_headers>;

@@ -16,8 +16,7 @@ namespace kth::node {
 
 /// A smart queue for chaining blockchain headers, thread safe.
 /// The peer should be stopped if merge fails.
-class KND_API header_list {
-public:
+struct KND_API header_list {
     using ptr = std::shared_ptr<header_list>;
 
     /// Construct a list to fill the specified range of headers.

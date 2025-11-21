@@ -32,8 +32,7 @@
 namespace kth::node {
 
 /// Full node configuration, thread safe.
-class KND_API configuration {
-public:
+struct KND_API configuration {
     configuration(domain::config::network net);
     configuration(configuration const& other);
 

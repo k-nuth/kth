@@ -18,8 +18,7 @@
 
 namespace kth::infrastructure::wallet {
 
-class KI_API qr {
-public:
+struct KI_API qr {
     using encode_mode = QRencodeMode;
     using error_recovery_level = QRecLevel;
 

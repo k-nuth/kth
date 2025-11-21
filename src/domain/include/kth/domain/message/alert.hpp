@@ -22,8 +22,7 @@
 
 namespace kth::domain::message {
 
-class KD_API alert {
-public:
+struct KD_API alert {
     using ptr = std::shared_ptr<alert>;
     using const_ptr = std::shared_ptr<const alert>;
 

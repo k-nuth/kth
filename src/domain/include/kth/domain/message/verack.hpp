@@ -23,8 +23,7 @@
 namespace kth::domain::message {
 
 // The checksum is ignored by the verack command.
-class KD_API verack {
-public:
+struct KD_API verack {
     using ptr = std::shared_ptr<verack>;
     using const_ptr = std::shared_ptr<const verack>;
 

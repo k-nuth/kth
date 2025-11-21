@@ -26,8 +26,7 @@ namespace kth::infrastructure::config {
  * Serialization helper for a network authority.
  * This is a container for a {ip address, port} tuple.
  */
-class KI_API authority {
-public:
+struct KI_API authority {
     using list = std::vector<authority>;
 
 

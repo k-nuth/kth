@@ -10,8 +10,7 @@
 
 namespace kth::database {
 
-class KD_API utxo_entry {
-public:
+struct KD_API utxo_entry {
 
     utxo_entry() = default;
 

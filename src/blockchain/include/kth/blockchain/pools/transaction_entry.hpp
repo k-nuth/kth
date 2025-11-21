@@ -19,8 +19,7 @@
 namespace kth::blockchain {
 
 /// This class is not thread safe.
-class KB_API transaction_entry {
-public:
+struct KB_API transaction_entry {
     using ptr = std::shared_ptr<transaction_entry>;
     using list = std::vector<ptr>;
 

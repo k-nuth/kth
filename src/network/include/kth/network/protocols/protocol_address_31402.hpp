@@ -19,7 +19,7 @@ class p2p;
  * Address protocol.
  * Attach this to a channel immediately following handshake completion.
  */
-class KN_API protocol_address_31402 : public protocol_events, track<protocol_address_31402> {
+struct KN_API protocol_address_31402 : protocol_events, track<protocol_address_31402> {
 public:
     using ptr = std::shared_ptr<protocol_address_31402>;
 

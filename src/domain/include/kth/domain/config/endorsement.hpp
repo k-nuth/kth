@@ -18,8 +18,7 @@ namespace kth::domain::config {
 /**
  * Serialization helper to convert between endorsement string and data_chunk.
  */
-class KD_API endorsement {
-public:
+struct KD_API endorsement {
     endorsement() = default;
 
     /**

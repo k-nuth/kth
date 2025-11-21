@@ -14,8 +14,7 @@ namespace kth {
 
 /// This class is thread safe.
 /// Encapsulation of sequential locking conditions.
-class KI_API sequential_lock {
-public:
+struct KI_API sequential_lock {
     using handle = size_t;
 
     /// Determine if the given handle is a write-locked handle.

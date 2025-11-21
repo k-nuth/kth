@@ -22,8 +22,7 @@
 
 namespace kth::domain::message {
 
-class KD_API filter_clear {
-public:
+struct KD_API filter_clear {
     using ptr = std::shared_ptr<filter_clear>;
     using const_ptr = std::shared_ptr<const filter_clear>;
 

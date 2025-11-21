@@ -23,8 +23,7 @@
 
 namespace kth::domain::message {
 
-class KD_API address {
-public:
+struct KD_API address {
     using ptr = std::shared_ptr<address>;
     using const_ptr = std::shared_ptr<const address>;
 

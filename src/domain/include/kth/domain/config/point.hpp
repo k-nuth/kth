@@ -17,8 +17,7 @@ namespace kth::domain::config {
 /**
  * Serialization helper to convert between text and an output_point.
  */
-class KD_API point {
-public:
+struct KD_API point {
     static
     std::string const delimeter;
 

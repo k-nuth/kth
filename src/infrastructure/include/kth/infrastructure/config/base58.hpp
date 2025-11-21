@@ -16,8 +16,7 @@ namespace kth::infrastructure::config {
 /**
  * Serialization helper for base58 encoded text.
  */
-class KI_API base58 {
-public:
+struct KI_API base58 {
 
     base58() = default;
     base58(base58 const& x) = default;

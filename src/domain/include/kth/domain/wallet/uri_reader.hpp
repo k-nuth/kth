@@ -22,8 +22,7 @@ using namespace kth::infrastructure::wallet;
  * The URI parser calls these methods as it extracts each URI component.
  * A false return from any setter is expected to terminate the parser.
  */
-class KD_API uri_reader {
-public:
+struct KD_API uri_reader {
     /**
      * Parses any URI string into its individual components.
      * @param[in]  uri     The URI to parse.

@@ -19,7 +19,7 @@
 namespace kth::blockchain {
 
 /// This class is NOT thread safe.
-class KB_API populate_transaction : public populate_base {
+struct KB_API populate_transaction : populate_base {
 public:
 
 #if defined(KTH_WITH_MEMPOOL)
