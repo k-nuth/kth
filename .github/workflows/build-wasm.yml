@@ -34,8 +34,12 @@ jobs:
 
   build-wasm:
     needs: [setup]
-    # Only build WASM for release branches on push (not on PR to avoid duplicate builds)
-    if: ${{ github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/release') || startsWith(github.ref, 'refs/heads/hotfix') || startsWith(github.ref, 'refs/heads/dev-publish')) }}
+    # Run on all pushes and PRs to master (except PRs from release branches)
+    if: github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+       !startsWith(github.head_ref, 'release/') &&
+       !startsWith(github.head_ref, 'hotfix/') &&
+       !startsWith(github.head_ref, 'dev-publish/'))
     runs-on: ubuntu-latest
     name: WebAssembly (Emscripten)
 
