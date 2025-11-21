@@ -25,14 +25,14 @@ namespace kth::network {
     shared_from_base<Session>(), \
     std::forward<Args>(args)...
 #define BOUND_SESSION(handler, args) \
-    std::bind(SESSION_ARGS(handler, args))
+    std::bind_front(SESSION_ARGS(handler, args))
 
 #define SESSION_ARGS_TYPE(handler, args) \
     std::forward<Handler>(handler), \
     std::shared_ptr<Session>(), \
     std::forward<Args>(args)...
 #define BOUND_SESSION_TYPE(handler, args) \
-    std::bind(SESSION_ARGS_TYPE(handler, args))
+    std::bind_front(SESSION_ARGS_TYPE(handler, args))
 
 class p2p;
 
