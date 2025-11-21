@@ -205,10 +205,10 @@ void validate_block::accept_transactions(block_const_ptr block, size_t bucket, s
     for (auto tx = bucket; tx < count && !ec; tx = ceiling_add(tx, buckets)) {
         auto const& transaction = txs[tx];
         if ( ! transaction.validation.validated) {
-            // LOG_INFO(LOG_BLOCKCHAIN, "Transaction ", encode_hash(transaction.hash()), " has to be validated.");
+            // spdlog::info("[blockchain] Transaction {} has to be validated.", encode_hash(transaction.hash()));
             ec = transaction.accept(state, false);
         } else {
-            // LOG_INFO(LOG_BLOCKCHAIN, "Transaction ", encode_hash(transaction.hash()), " validation could be skiped.");
+            // spdlog::info("[blockchain] Transaction {} validation could be skiped.", encode_hash(transaction.hash()));
         }
         *sigops += transaction.signature_operations(bip16, bip141);
     }
@@ -374,15 +374,15 @@ void validate_block::dump(code const& ec, transaction const& tx, uint32_t input_
     auto const hash = encode_hash(prevout.hash());
     auto const tx_hash = encode_hash(tx.hash());
 
-    spdlog::debug("[{}] Verify failed [{}] : {}\n"
+    spdlog::debug("[blockchain] Verify failed [{}] : {}\n"
         " forks        : {}\n"
         " outpoint     : {}:{}\n"
         " script       : {}\n"
         " value        : {}\n"
         " inpoint      : {}:{}\n"
         " transaction  : {}",
-        LOG_BLOCKCHAIN, height, ec.message(), forks, hash, prevout.index(), encode_base16(script)
-        , prevout.validation.cache.value(), tx_hash, input_index, encode_base16(tx.to_data(true)));
+        height, ec.message(), forks, hash, prevout.index(), encode_base16(script),
+        prevout.validation.cache.value(), tx_hash, input_index, encode_base16(tx.to_data(true)));
 }
 
 } // namespace kth::blockchain

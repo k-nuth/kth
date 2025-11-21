@@ -13,12 +13,6 @@
 #include <kth/infrastructure/log/source.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 
-// Defines the log and tracking but does not use them.
-// These are defined in kth so that they can be used in network and blockchain.
-
-// Log name.
-#define LOG_SYSTEM "[system] "
-
 template <typename Shared>
 std::atomic<size_t> track<Shared>::instances(0);
 
@@ -29,17 +23,15 @@ track<Shared>::track(std::string const& DEBUG_ONLY(class_name))
 #endif
 {
 #ifndef NDEBUG
-    // LOG_DEBUG(LOG_SYSTEM) << class_ << "(" << ++instances << ")";
-    // LOG_DEBUG(LOG_SYSTEM, class_, "(", ++instances, ")");
-    LOG_DEBUG(LOG_SYSTEM, class_);
+    // spdlog::debug("[system] {}({})", class_, ++instances);
+    spdlog::debug("[system] {}", class_);
 #endif
 }
 
 template <typename Shared>
 track<Shared>::~track() {
 #ifndef NDEBUG
-    // LOG_DEBUG(LOG_SYSTEM) << "~" << class_ << "(" << --instances << ")";
-    LOG_DEBUG(LOG_SYSTEM, "~", class_, "(", --instances, ")");
+    spdlog::debug("[system] ~{}({})", class_, --instances);
 #endif
 }
 

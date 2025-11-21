@@ -36,8 +36,6 @@ class KthRecipe(KnuthConanFileV2):
         "cxxflags": ["ANY"],
         "cflags": ["ANY"],
         "cmake_export_compile_commands": [True, False],
-        "log": ["boost", "spdlog", "binlog"],
-
         "with_examples": [True, False],
         "with_icu": [True, False],
         "with_png": [True, False],
@@ -76,7 +74,6 @@ class KthRecipe(KnuthConanFileV2):
         "db": "dynamic",
         "db_readonly": False,
         "cmake_export_compile_commands": False,
-        "log": "spdlog",
 
         "with_examples": False,
         "with_icu": False,
@@ -173,17 +170,13 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os == "Emscripten":
             self.options["boost/*"].header_only = True
 
-        if self.options.log == "spdlog":
-            self.options["spdlog/*"].header_only = True
+        self.options["spdlog/*"].header_only = True
 
         self.options["*"].db_readonly = self.options.db_readonly
         self.output.info("Compiling with read-only DB: %s" % (self.options.db_readonly,))
 
         self.options["*"].mempool = self.options.mempool
         self.output.info("Compiling with mempool: %s" % (self.options.mempool,))
-
-        self.options["*"].log = self.options.log
-        self.output.info("Compiling with log: %s" % (self.options.log,))
 
     def package_id(self):
         KnuthConanFileV2.package_id(self)
@@ -209,7 +202,6 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["WITH_MEMPOOL"] = option_on_off(self.options.mempool)
         tc.variables["WITH_CONSENSUS"] = option_on_off(self.options.consensus)
         tc.variables["DB_READONLY_MODE"] = option_on_off(self.options.db_readonly)
-        tc.variables["LOG_LIBRARY"] = self.options.log
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
         
         tc.variables["WITH_EXAMPLES"] = option_on_off(self.options.with_examples)

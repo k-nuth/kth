@@ -31,7 +31,6 @@ class KnuthNodeExeConan(KnuthConanFileV2):
         "cxxflags": ["ANY"],
         "cflags": ["ANY"],
         "cmake_export_compile_commands": [True, False],
-        "log": ["boost", "spdlog", "binlog"],
         "statistics": [True, False],
     }
 
@@ -44,7 +43,6 @@ class KnuthNodeExeConan(KnuthConanFileV2):
         "db": "dynamic",
         "db_readonly": False,
         "cmake_export_compile_commands": False,
-        "log": "spdlog",
         "statistics": False,
     }
 
@@ -82,10 +80,6 @@ class KnuthNodeExeConan(KnuthConanFileV2):
         self.options["*"].mempool = self.options.mempool
         self.output.info("Compiling with mempool: %s" % (self.options.mempool,))
 
-        #TODO(fernando): move to kthbuild
-        self.options["*"].log = self.options.log
-        self.output.info("Compiling with log: %s" % (self.options.log,))
-
         self.options["*"].statistics = self.options.statistics
         self.output.info("Compiling with statistics: %s" % (self.options.statistics,))
 
@@ -118,7 +112,6 @@ class KnuthNodeExeConan(KnuthConanFileV2):
         # tc.variables["CMAKE_VERBOSE_MAKEFILE"] = True
         tc.variables["WITH_MEMPOOL"] = option_on_off(self.options.mempool)
         tc.variables["DB_READONLY_MODE"] = option_on_off(self.options.db_readonly)
-        tc.variables["LOG_LIBRARY"] = self.options.log
         tc.variables["STATISTICS"] = option_on_off(self.options.statistics)
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
         tc.generate()

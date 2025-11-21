@@ -49,20 +49,6 @@ message( STATUS "Knuth: Built for CPU instructions/extensions: ${MARCH_NAMES_FUL
 message( STATUS "Knuth: CONAN_CXX_FLAGS ${CONAN_CXX_FLAGS}")
 message( STATUS "Knuth: CONAN_C_FLAGS ${CONAN_C_FLAGS}")
 
-set(LOG_LIBRARY "boost" CACHE STRING "Setting for the logging library (boost|spdlog|binlog).")
-
-if (${LOG_LIBRARY} STREQUAL "boost")
-  add_definitions(-DKTH_LOG_LIBRARY_BOOST)
-elseif (${LOG_LIBRARY} STREQUAL "spdlog")
-  add_definitions(-DKTH_LOG_LIBRARY_SPDLOG)
-elseif (${LOG_LIBRARY} STREQUAL "binlog")
-  add_definitions(-DKTH_LOG_LIBRARY_BINLOG)
-else()
-  message(FATAL_ERROR "Invalid Logging Library: ${LOG_LIBRARY}")
-endif()
-
-message(STATUS "Knuth: Logging Library: ${LOG_LIBRARY}")
-
 set(CURRENCY "BCH" CACHE STRING "Specify the Cryptocurrency (BCH|BTC|LTC).")
 
 if (${CURRENCY} STREQUAL "BCH")

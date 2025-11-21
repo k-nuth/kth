@@ -158,7 +158,7 @@ void reservations::initialize(size_t connections) {
         }
     }
 
-    LOG_DEBUG(LOG_NODE, "Reserved ", allocation, " blocks to ", rows, " slots.");
+    spdlog::debug("[node] Reserved {} blocks to {} slots.", allocation, rows);
 }
 
 // Call when minimal is empty.
@@ -174,9 +174,7 @@ bool reservations::populate(reservation::ptr minimal) {
     ///////////////////////////////////////////////////////////////////////////
 
     if (populated) {
-        LOG_DEBUG(LOG_NODE
-           , "Populated ", minimal->size(), " blocks to slot ("
-           , minimal->slot(), ").");
+        spdlog::debug("[node] Populated {} blocks to slot ({}).", minimal->size(), minimal->slot());
     }
 
     return populated;

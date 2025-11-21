@@ -17,7 +17,6 @@ option(WITH_EXAMPLES "Compile with examples." OFF)
 option(WITH_ICU "Compile with International Components for Unicode." OFF)
 option(WITH_PNG "Compile with Libpng support." OFF)
 option(WITH_QRENCODE "Compile with QREncode." OFF)
-# option(LOG_LIBRARY "Setting for the logging library." OFF)
 option(JUST_KTH_SOURCES "Just Knuth source code to be linted." OFF)
 
 
@@ -33,20 +32,6 @@ if (WITH_QRENCODE)
   add_definitions(-DWITH_QRENCODE)
 endif()
 
-
-set(LOG_LIBRARY "spdlog" CACHE STRING "Setting for the logging library (boost|spdlog|binlog).")
-
-if (${LOG_LIBRARY} STREQUAL "boost")
-  add_definitions(-DKTH_LOG_LIBRARY_BOOST)
-elseif (${LOG_LIBRARY} STREQUAL "spdlog")
-  add_definitions(-DKTH_LOG_LIBRARY_SPDLOG)
-elseif (${LOG_LIBRARY} STREQUAL "binlog")
-  add_definitions(-DKTH_LOG_LIBRARY_BINLOG)
-else()
-  message(FATAL_ERROR "Invalid Logging Library: ${LOG_LIBRARY}")
-endif()
-
-message(STATUS "Knuth: Logging Library: ${LOG_LIBRARY}")
 
 if (JUST_KTH_SOURCES)
   message(STATUS "Knuth: Just Knuth source code to be linted: enabled")
@@ -252,24 +237,10 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 endif()
 
 
-if (${LOG_LIBRARY} STREQUAL "boost")
-  set(kth_sources_just_legacy
-    ${kth_sources_just_legacy}
-    src/log/file_collector.cpp
-    src/log/file_collector_repository.cpp
-    src/log/file_counter_formatter.cpp
-    src/log/sink.cpp
-    src/log/statsd_sink.cpp
-    src/log/udp_client_sink.cpp
-  )
-endif()
-
-if (${LOG_LIBRARY} STREQUAL "spdlog")
-  set(kth_sources_just_legacy
-    ${kth_sources_just_legacy}
-    src/log/sink.cpp
-  )
-endif()
+set(kth_sources_just_legacy
+  ${kth_sources_just_legacy}
+  src/log/sink.cpp
+)
 
 if (WITH_PNG)
   set(kth_sources_just_legacy
@@ -439,35 +410,6 @@ set(kth_headers
     include/kth/infrastructure.hpp
 )
 
-if (${LOG_LIBRARY} STREQUAL "boost")
-  set(kth_headers
-    ${kth_headers}
-    include/kth/infrastructure/log/attributes.hpp
-    include/kth/infrastructure/log/file_char_traits.hpp
-    include/kth/infrastructure/log/file_collector.hpp
-    include/kth/infrastructure/log/file_collector_repository.hpp
-    include/kth/infrastructure/log/file_counter_formatter.hpp
-    include/kth/infrastructure/log/rotable_file.hpp
-    include/kth/infrastructure/log/severity.hpp
-    include/kth/infrastructure/log/sink.hpp
-    include/kth/infrastructure/log/source.hpp
-    include/kth/infrastructure/log/statsd_sink.hpp
-    include/kth/infrastructure/log/statsd_source.hpp
-    include/kth/infrastructure/log/udp_client_sink.hpp
-
-    include/kth/infrastructure/log/features/counter.hpp
-    include/kth/infrastructure/log/features/gauge.hpp
-    include/kth/infrastructure/log/features/metric.hpp
-    include/kth/infrastructure/log/features/rate.hpp
-    include/kth/infrastructure/log/features/timer.hpp
-
-    include/kth/infrastructure/impl/log/features/counter.ipp
-    include/kth/infrastructure/impl/log/features/gauge.ipp
-    include/kth/infrastructure/impl/log/features/metric.ipp
-    include/kth/infrastructure/impl/log/features/rate.ipp
-    include/kth/infrastructure/impl/log/features/timer.ipp
-  )
-endif()
 
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})

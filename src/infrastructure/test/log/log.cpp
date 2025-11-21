@@ -16,13 +16,13 @@ using namespace kth;
 
 //TEST_CASE("log general  debug", "[log  general]") {
 
-    // LOG_DEBUG(LOG_SYSTEM, "hello", "world", 1);
+    // spdlog::debug("[system]] helloworld{}", 1);
     // spdlog::debug(KTH_STRREP("{} ", KTH_PP_NARG("hello", "world", 1) + 1), LOG_SYSTEM, "hello", "world", 1);
     // spdlog::debug(KTH_STRREP("{} ", 3 + 1), LOG_SYSTEM, "hello", "world", 1);
     // spdlog::debug("{} {} {} {}", LOG_SYSTEM, "hello", "world", 1);
 
     // spdlog::debug("{} " KTH_STRREP("{} ", 3), LOG_SYSTEM, "hello", "world", 1);
-    // LOG_DEBUG(LOG_SYSTEM, "hello", "world", 1);
+    // spdlog::debug("[system]] helloworld{}", 1);
 
     // #define Fold(z, n, text)  text
     // #define STRREP(str, n) BOOST_PP_REPEAT(n, Fold, str)

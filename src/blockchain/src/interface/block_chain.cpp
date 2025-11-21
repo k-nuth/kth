@@ -372,7 +372,7 @@ bool block_chain::start() {
     stopped_ = false;
 
     if ( ! database_.open()) {
-        LOG_ERROR(LOG_BLOCKCHAIN, "Failed to open database.");
+        spdlog::error("[blockchain] Failed to open database.");
         return false;
     }
 
@@ -382,19 +382,19 @@ bool block_chain::start() {
     // Initialize chain state after database start but before organizers.
     pool_state_ = chain_state_populator_.populate();
     if ( ! pool_state_) {
-        LOG_ERROR(LOG_BLOCKCHAIN, "Failed to initialize chain state.");
+        spdlog::error("[blockchain] Failed to initialize chain state.");
         return false;
     }
 
     auto const tx_org_started = transaction_organizer_.start();
     if ( ! tx_org_started) {
-        LOG_ERROR(LOG_BLOCKCHAIN, "Failed to start transaction organizer.");
+        spdlog::error("[blockchain] Failed to start transaction organizer.");
         return false;
     }
 
     auto const blk_org_started = block_organizer_.start();
     if ( ! blk_org_started) {
-        LOG_ERROR(LOG_BLOCKCHAIN, "Failed to start block organizer.");
+        spdlog::error("[blockchain] Failed to start block organizer.");
         return false;
     }
     return true;
@@ -1136,19 +1136,11 @@ void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const
     auto k1 = from_little_endian_unsafe<uint64_t>(header_hash.begin() + sizeof(uint64_t));
 
 
-    //LOG_INFO(LOG_BLOCKCHAIN
-    //<< "fill_tx_list_from_mempool header_hash ->  " << encode_hash(header_hash)
-    //<< " k0 " << k0
-    //<< " k1 " << k1);
-
+    // spdlog::info("[blockchain] fill_tx_list_from_mempool header_hash -> {} k0 {} k1 {}", encode_hash(header_hash), k0, k1);
 
     database_.transactions_unconfirmed().for_each([&](domain::chain::transaction const &tx) {
         uint64_t shortid = sip_hash_uint256(k0, k1, tx.hash()) & uint64_t(0xffffffffffff);
-
-      /*   LOG_INFO(LOG_BLOCKCHAIN
-            << "mempool tx ->  " << encode_hash(tx.hash())
-            << " shortid " << shortid);
-      */
+        // spdlog::info("[blockchain] mempool tx -> {} shortid {}", encode_hash(tx.hash()), shortid);
         auto idit = shorttxids.find(shortid);
         if (idit != shorttxids.end()) {
             if ( ! have_txn[idit->second]) {

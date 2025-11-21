@@ -236,14 +236,12 @@ branch::ptr block_pool::get_path(block_const_ptr block) const {
 ////// private
 ////void block_pool::log_content() const
 ////{
-////    LOG_INFO(LOG_BLOCKCHAIN, "pool: ");
-////
-////    // Dump in hash order with height suffix (roots have height).
-////    for (auto const& entry: blocks_.left)
-////    {
-////        LOG_INFO(LOG_BLOCKCHAIN
-////            << entry.first << " " << entry.second);
-////    }
-////}
+////    spdlog::info("[blockchain] pool: ");
+// void block_pool::trace() const {
+//     // Dump in hash order with height suffix (roots have height).
+//     for (auto const& entry: blocks_.left) {
+//         spdlog::info("[blockchain] {} {}", entry.first, entry.second);
+//     }
+// }
 
 } // namespace kth::blockchain

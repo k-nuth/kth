@@ -612,7 +612,7 @@ bool parser::parse(int argc, const char* argv[], std::ostream& error) {
             file = load_configuration_variables(variables, KTH_CONFIG_VARIABLE);
 
             if (file == load_error::non_existing_file) {
-                LOG_ERROR(LOG_NODE, "Config file provided does not exists.");
+                spdlog::error("[node] Config file provided does not exists.");
                 return false;
             }
         }

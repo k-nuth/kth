@@ -64,9 +64,7 @@ bool protocol_address_31402::handle_receive_address(code const& ec, address_cons
         return false;
     }
 
-    LOG_DEBUG(LOG_NETWORK,
-       "Storing addresses from [", authority(), "] ("
-       , message->addresses().size(), ")");
+    spdlog::debug("[network] Storing addresses from [{}] ({})", authority(), message->addresses().size());
 
     // TODO: manage timestamps (active channels are connected < 3 hours ago).
     network_.store(message->addresses(), BIND1(handle_store_addresses, _1));
@@ -87,9 +85,7 @@ bool protocol_address_31402::handle_receive_get_address(code const& ec, get_addr
         const address address_subset(addresses);
         SEND2(address_subset, handle_send, _1, self_.command);
 
-        LOG_DEBUG(LOG_NETWORK
-           , "Sending addresses to [", authority(), "] ("
-           , self_.addresses().size(), ")");
+        spdlog::debug("[network] Sending addresses to [{}] ({})", authority(), self_.addresses().size());
     }
 
     // do not resubscribe; one response per connection permitted
@@ -102,17 +98,15 @@ void protocol_address_31402::handle_store_addresses(code const& ec) {
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NETWORK
-           , "Failure storing addresses from [", authority(), "] "
-           , ec.message());
+        spdlog::error("[network] Failure storing addresses from [{}] {}", authority(), ec.message());
         stop(ec);
     }
 }
 
 void protocol_address_31402::handle_stop(code const&) {
     // None of the other kth::network protocols log their stop.
-    ////LOG_DEBUG(LOG_NETWORK
-    ////   , "Stopped address protocol for [", authority(), "].");
+    ////spdlog::debug("[network]
+    ////] Stopped address protocol for [{}].", authority());
 }
 
 } // namespace kth::network

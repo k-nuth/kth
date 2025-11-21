@@ -33,10 +33,9 @@ struct KI_API monitor {
     }
 
     void trace(size_t /*unused*/, std::string const& /*unused*/) const {
-        ////#ifndef NDEBUG
-        ////    LOG_DEBUG(LOG_SYSTEM)
-        ////        << action << " " << name_ << " {" << count << "}";
-        ////#endif
+        // #ifndef NDEBUG
+        //     spdlog::debug("[system] {} {} {{{}}}", action, name_, count);
+        // #endif
     }
 
 private:

@@ -86,9 +86,7 @@ bool protocol_version_70002::handle_receive_reject(code const& ec, reject_const_
     }
 
     if (ec) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Failure receiving reject from [", authority(), "] "
-           , ec.message());
+        spdlog::debug("[network] Failure receiving reject from [{}] {}", authority(), ec.message());
         set_event(error::channel_stopped);
         return false;
     }
@@ -104,18 +102,14 @@ bool protocol_version_70002::handle_receive_reject(code const& ec, reject_const_
 
     // Client is an obsolete, unsupported version.
     if (code == reject::reason_code::obsolete) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Obsolete version reject from [", authority(), "] '"
-           , reject->reason(), "'");
+        spdlog::debug("[network] Obsolete version reject from [{}] '{}'", authority(), reject->reason());
         set_event(error::channel_stopped);
         return false;
     }
 
     // Duplicate version message received.
     if (code == reject::reason_code::duplicate) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Duplicate version reject from [", authority(), "] '"
-           , reject->reason(), "'");
+        spdlog::debug("[network] Duplicate version reject from [{}] '{}'", authority(), reject->reason());
         set_event(error::channel_stopped);
         return false;
     }

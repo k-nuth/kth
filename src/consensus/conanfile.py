@@ -30,7 +30,6 @@ class KnuthConsensusConan(KnuthConanFileV2):
                "cxxflags": ["ANY"],
                "cflags": ["ANY"],
                "cmake_export_compile_commands": [True, False],
-               "log": ["boost", "spdlog", "binlog"],
     }
 
     default_options = {
@@ -41,7 +40,6 @@ class KnuthConsensusConan(KnuthConanFileV2):
         "march_strategy": "download_if_possible",
         "verbose": False,
         "cmake_export_compile_commands": False,
-        "log": "spdlog",
     }
 
     exports_sources = "src/*", "CMakeLists.txt", "ci_utils/cmake/*", "cmake/*", "knuthbuildinfo.cmake", "include/*", "test/*"

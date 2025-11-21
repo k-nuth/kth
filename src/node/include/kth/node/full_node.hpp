@@ -401,7 +401,7 @@ public:
     //     //     f(stats_current1_accum_deposit_per_input_us_),
     //     //     f(stats_current1_accum_cache_efficiency_));
 
-    //     // LOG_INFO(LOG_BLOCKCHAIN, formatted);
+    //     // spdlog::info("[blockchain] {}", formatted);
     // }
 
     void print_statistics(size_t height) const;

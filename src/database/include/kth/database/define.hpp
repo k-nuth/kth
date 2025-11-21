@@ -26,9 +26,6 @@
     #define KDB_INTERNAL KD_HELPER_DLL_LOCAL
 #endif
 
-// Log name.
-#define LOG_DATABASE "[database] "
-
 // Remap safety is required if the mmap file is not fully preallocated.
 #define REMAP_SAFETY
 

@@ -32,7 +32,6 @@ class KnuthDomainConan(KnuthConanFileV2):
                "cxxflags": ["ANY"],
                "cflags": ["ANY"],
                "cmake_export_compile_commands": [True, False],
-               "log": ["boost", "spdlog", "binlog"],
                "disable_get_blocks": [True, False],
     }
 
@@ -49,7 +48,6 @@ class KnuthDomainConan(KnuthConanFileV2):
 
         "verbose": False,
         "cmake_export_compile_commands": False,
-        "log": "spdlog",
         "disable_get_blocks": False,
     }
 
@@ -76,8 +74,6 @@ class KnuthDomainConan(KnuthConanFileV2):
 
     def configure(self):
         KnuthConanFileV2.configure(self)
-        self.options["*"].log = self.options.log
-        self.output.info("Compiling with log: %s" % (self.options.log,))
 
     def package_id(self):
         KnuthConanFileV2.package_id(self)
@@ -92,7 +88,6 @@ class KnuthDomainConan(KnuthConanFileV2):
         tc.variables["WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
         # tc.variables["WITH_PNG"] = option_on_off(self.options.with_png)
         tc.variables["WITH_PNG"] = option_on_off(self.options.with_qrencode)
-        tc.variables["LOG_LIBRARY"] = self.options.log
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
 
         tc.generate()

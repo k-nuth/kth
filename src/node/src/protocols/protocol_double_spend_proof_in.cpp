@@ -67,12 +67,12 @@ bool protocol_double_spend_proof_in::handle_receive_inventory(code const& ec, in
     }
 
     if ( ! ds_proofs_enabled_) {
-        LOG_DEBUG(LOG_NODE, "Got DSProof INV but node.ds_proofs is disabled (settings) from [", authority(), "]");
+        spdlog::debug("[node] Got DSProof INV but node.ds_proofs is disabled (settings) from [{}]", authority());
         return true;
     }
     // BCHN: inv.hash.ToString()
 
-    LOG_DEBUG(LOG_NODE, "Got DSProof INV from [", authority(), "]");
+    spdlog::debug("[node] Got DSProof INV from [{}]", authority());
 
     // if (DoubleSpendProof::IsEnabled()) {
     //     // dsproof subsystem enabled, ask peer for the proof
@@ -130,18 +130,18 @@ void protocol_double_spend_proof_in::handle_store_ds_proof_data(code const& ec, 
     if (ec) {
         // This should not happen with a single peer since we filter inventory.
         // However it will happen when a block or another peer's tx intervenes.
-        LOG_DEBUG(LOG_NODE, "Dropped DSProof [", encoded, "] from [", authority(), "] ", ec.message());
+        spdlog::debug("[node] Dropped DSProof [{}] from [{}] {}", encoded, authority(), ec.message());
         return;
     }
 
-    LOG_DEBUG(LOG_NODE, "Stored DSProof [", encoded, "] from [", authority(), "].");
+    spdlog::debug("[node] Stored DSProof [{}] from [{}].", encoded, authority());
 }
 
 // Stop.
 //-----------------------------------------------------------------------------
 
 void protocol_double_spend_proof_in::handle_stop(code const&) {
-    LOG_DEBUG(LOG_NETWORK, "Stopped double_spend_proof_in protocol for [", authority(), "].");
+    spdlog::debug("[network] Stopped double_spend_proof_in protocol for [{}].", authority());
 }
 
 } // namespace kth::node

@@ -34,7 +34,6 @@ class KnuthInfrastructureConan(KnuthConanFileV2):
         "cxxflags": ["ANY"],
         "cflags": ["ANY"],
         "cmake_export_compile_commands": [True, False],
-        "log": ["spdlog", "binlog"],
         "asio_standalone": [True, False],
     }
 
@@ -51,7 +50,6 @@ class KnuthInfrastructureConan(KnuthConanFileV2):
 
         "verbose": False,
         "cmake_export_compile_commands": False,
-        "log": "spdlog",
         "asio_standalone": False,
     }
 
@@ -68,10 +66,7 @@ class KnuthInfrastructureConan(KnuthConanFileV2):
         self.requires("expected-lite/0.8.0", transitive_headers=True, transitive_libs=True)
         self.requires("ctre/3.9.0", transitive_headers=True, transitive_libs=True)
 
-        if self.options.log == "binlog":
-            self.requires("binlog/2020.02.29@kth/stable", transitive_headers=True, transitive_libs=True)
-        elif self.options.log == "spdlog":
-            self.requires("spdlog/1.15.1", transitive_headers=True, transitive_libs=True)
+        self.requires("spdlog/1.15.1", transitive_headers=True, transitive_libs=True)
 
         if self.options.with_png:
             self.requires("libpng/1.6.40", transitive_headers=True, transitive_libs=True)
@@ -102,15 +97,7 @@ class KnuthInfrastructureConan(KnuthConanFileV2):
         if self.settings.os == "Emscripten":
             self.options["boost/*"].header_only = True
 
-        if self.options.log == "spdlog":
-            self.options["spdlog/*"].header_only = True
-
-        # if self.options.log != "boost":
-        #     self.options["boost"].without_filesystem = True
-        #     self.options["boost"].without_log = True
-
-        # self.options["*"].log = self.options.log
-        self.output.info("Compiling with log: %s" % (self.options.log,))
+        self.options["spdlog/*"].header_only = True
 
     def package_id(self):
         KnuthConanFileV2.package_id(self)
@@ -126,7 +113,6 @@ class KnuthInfrastructureConan(KnuthConanFileV2):
         # tc.variables["WITH_PNG"] = option_on_off(self.options.with_qrencode)
         tc.variables["WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
         tc.variables["WITH_PNG"] = option_on_off(self.options.with_png)
-        tc.variables["LOG_LIBRARY"] = self.options.log
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
         tc.generate()
         tc = CMakeDeps(self)

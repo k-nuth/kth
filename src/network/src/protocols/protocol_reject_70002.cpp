@@ -43,9 +43,7 @@ bool protocol_reject_70002::handle_receive_reject(code const& ec, reject_const_p
     }
 
     if (ec) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Failure receiving reject from [", authority(), "] "
-           , ec.message());
+        spdlog::debug("[network] Failure receiving reject from [{}] {}", authority(), ec.message());
         stop(error::channel_stopped);
         return false;
     }
@@ -63,10 +61,7 @@ bool protocol_reject_70002::handle_receive_reject(code const& ec, reject_const_p
     }
 
     auto const code = reject->code();
-    LOG_DEBUG(LOG_NETWORK
-       , "Received ", message, " reject (", static_cast<uint16_t>(code)
-       , ") from [", authority(), "] '", reject->reason()
-       , "'", hash);
+    spdlog::debug("[network] Received {} reject ({}) from [{}] '{}'{}", message, static_cast<uint16_t>(code), authority(), reject->reason(), hash);
     return true;
 }
 

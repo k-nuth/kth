@@ -10,7 +10,6 @@ int main(int argc, char* argv[]) {
 
     auto config = kth_libconfig_get();
 
-    std::cout << "log_library:          " << config.log_library << '\n';
     std::cout << "version:              " << config.version << '\n';
     std::cout << "microarchitecture_id: " << config.microarchitecture_id << '\n';
     std::cout << "currency:             " << config.currency << '\n';

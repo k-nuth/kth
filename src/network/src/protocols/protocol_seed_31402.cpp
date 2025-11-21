@@ -70,9 +70,7 @@ bool protocol_seed_31402::handle_receive_address(code const& ec, address_const_p
         return false;
     }
 
-    LOG_DEBUG(LOG_NETWORK
-       , "Storing addresses from seed [", authority(), "] ("
-       , message->addresses().size(), ")");
+    spdlog::debug("[network] Storing addresses from seed [{}] ({})", authority(), message->addresses().size());
 
     // TODO: manage timestamps (active channels are connected < 3 hours ago).
     network_.store(message->addresses(), BIND1(handle_store_addresses, _1));
@@ -94,9 +92,7 @@ void protocol_seed_31402::handle_send_get_address(code const& ec) {
     }
 
     if (ec) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Failure sending get_address to seed [", authority(), "] "
-           , ec.message());
+        spdlog::debug("[network] Failure sending get_address to seed [{}] {}", authority(), ec.message());
         set_event(ec);
         return;
     }
@@ -111,14 +107,12 @@ void protocol_seed_31402::handle_store_addresses(code const& ec) {
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NETWORK
-           , "Failure storing addresses from seed [", authority(), "] "
-           , ec.message());
+        spdlog::error("[network] Failure storing addresses from seed [{}] {}", authority(), ec.message());
         set_event(ec);
         return;
     }
 
-    LOG_DEBUG(LOG_NETWORK, "Stopping completed seed [", authority(), "] ");
+    spdlog::debug("[network] Stopping completed seed [{}] ", authority());
 
     // 3 of 3
     set_event(error::channel_stopped);

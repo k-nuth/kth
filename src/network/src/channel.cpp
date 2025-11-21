@@ -109,7 +109,7 @@ void channel::handle_expiration(code const& ec) {
         return;
     }
 
-    LOG_DEBUG(LOG_NETWORK, "Channel lifetime expired [", authority(), "]");
+    spdlog::debug("[network] Channel lifetime expired [{}]", authority());
 
     stop(error::channel_timeout);
 }
@@ -127,7 +127,7 @@ void channel::handle_inactivity(code const& ec) {
         return;
     }
 
-    LOG_DEBUG(LOG_NETWORK, "Channel inactivity timeout [", authority(), "]");
+    spdlog::debug("[network] Channel inactivity timeout [{}]", authority());
 
     stop(error::channel_timeout);
 }

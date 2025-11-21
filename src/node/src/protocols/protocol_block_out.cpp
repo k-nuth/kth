@@ -119,17 +119,13 @@ bool protocol_block_out::handle_receive_get_headers(code const& ec, get_headers_
     auto const size = message->start_hashes().size();
 
     if (size > max_locator) {
-        LOG_WARNING(LOG_NODE
-           , "Excessive get_headers locator size ("
-           , size, ") from [", authority(), "]");
+        spdlog::warn("[node] Excessive get_headers locator size ({}) from [{}]", size, authority());
         stop(error::channel_stopped);
         return false;
     }
 
     if (size > locator_limit()) {
-        LOG_DEBUG(LOG_NODE
-           , "Disallowed get_headers locator size ("
-           , size, ") from [", authority(), "]");
+        spdlog::debug("[node] Disallowed get_headers locator size ({}) from [{}]", size, authority());
         return true;
     }
 
@@ -145,9 +141,7 @@ void protocol_block_out::handle_fetch_locator_headers(code const& ec, headers_pt
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NODE
-           , "Internal failure locating locator block headers for ["
-           , authority(), "] ", ec.message());
+        spdlog::error("[node] Internal failure locating locator block headers for [{}] {}", authority(), ec.message());
         stop(ec);
         return;
     }
@@ -195,9 +189,7 @@ bool protocol_block_out::handle_receive_get_block_transactions(code const& ec, g
             uint16_t offset = 0;
             for (size_t j = 0; j < indexes.size(); j++) {
                 if (uint64_t(message->indexes()[j]) + uint64_t(offset) > std::numeric_limits<uint16_t>::max()) {
-                    LOG_WARNING(LOG_NODE
-                       , "Compact Blocks index offset is invalid"
-                       , " from [", authority(), "]");
+                    spdlog::warn("[node] Compact Blocks index offset is invalid from [{}]", authority());
                     stop(error::channel_stopped);
                     return;
                 }
@@ -210,9 +202,7 @@ bool protocol_block_out::handle_receive_get_block_transactions(code const& ec, g
 
             for (size_t i = 0; i < indexes.size(); i++) {
                 if (indexes[i] >= block->transactions().size()) {
-                   LOG_WARNING(LOG_NODE
-                       , "Compact Blocks index is greater than transactions size"
-                       , " from [", authority(), "]");
+                   spdlog::warn("[node] Compact Blocks index is greater than transactions size from [{}]", authority());
                     stop(error::channel_stopped);
                     return;
                 }
@@ -239,17 +229,13 @@ bool protocol_block_out::handle_receive_get_blocks(code const& ec, get_blocks_co
     auto const size = message->start_hashes().size();
 
     if (size > max_locator) {
-        LOG_WARNING(LOG_NODE
-           , "Excessive get_blocks locator size ("
-           , size, ") from [", authority(), "]");
+        spdlog::warn("[node] Excessive get_blocks locator size ({}) from [{}]", size, authority());
         stop(error::channel_stopped);
         return false;
     }
 
     if (size > locator_limit()) {
-        LOG_DEBUG(LOG_NODE
-           , "Disallowed get_blocks locator size ("
-           , size, ") from [", authority(), "]");
+        spdlog::debug("[node] Disallowed get_blocks locator size ({}) from [{}]", size, authority());
         return true;
     }
 
@@ -269,9 +255,7 @@ void protocol_block_out::handle_fetch_locator_hashes(code const& ec, inventory_p
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NODE
-           , "Internal failure locating locator block hashes for ["
-           , authority(), "] ", ec.message());
+        spdlog::error("[node] Internal failure locating locator block hashes for [{}] {}", authority(), ec.message());
         stop(ec);
         return;
     }
@@ -303,9 +287,7 @@ bool protocol_block_out::handle_receive_get_data(code const& ec, get_data_const_
 
     // TODO: consider rejecting the message for duplicated entries.
     if (message->inventories().size() > max_get_data) {
-        LOG_WARNING(LOG_NODE
-           , "Invalid get_data size (", message->inventories().size()
-           , ") from [", authority(), "]");
+        spdlog::warn("[node] Invalid get_data size ({}) from [{}]", message->inventories().size(), authority());
         stop(error::channel_stopped);
         return false;
     }
@@ -363,7 +345,7 @@ void protocol_block_out::send_block(code const& ec, block_const_ptr message, siz
     }
 
     if (ec == error::not_found) {
-        LOG_DEBUG(LOG_NODE, "Block requested by [", authority(), "] not found.");
+        spdlog::debug("[node] Block requested by [{}] not found.", authority());
 
         // TODO: move not_found to derived class protocol_block_out_70001.
         KTH_ASSERT( ! inventory->inventories().empty());
@@ -374,9 +356,7 @@ void protocol_block_out::send_block(code const& ec, block_const_ptr message, siz
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NODE
-           , "Internal failure locating block requested by ["
-           , authority(), "] ", ec.message());
+        spdlog::error("[node] Internal failure locating block requested by [{}] {}", authority(), ec.message());
         stop(ec);
         return;
     }
@@ -391,7 +371,7 @@ void protocol_block_out::send_merkle_block(code const& ec, merkle_block_const_pt
     }
 
     if (ec == error::not_found) {
-        LOG_DEBUG(LOG_NODE, "Merkle block requested by [", authority(), "] not found.");
+        spdlog::debug("[node] Merkle block requested by [{}] not found.", authority());
 
         // TODO: move not_found to derived class protocol_block_out_70001.
         KTH_ASSERT( ! inventory->inventories().empty());
@@ -402,9 +382,7 @@ void protocol_block_out::send_merkle_block(code const& ec, merkle_block_const_pt
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NODE
-           , "Internal failure locating merkle block requested by ["
-           , authority(), "] ", ec.message());
+        spdlog::error("[node] Internal failure locating merkle block requested by [{}] {}", authority(), ec.message());
         stop(ec);
         return;
     }
@@ -419,7 +397,7 @@ void protocol_block_out::send_compact_block(code const& ec, compact_block_const_
     }
 
     if (ec == error::not_found) {
-        LOG_DEBUG(LOG_NODE, "Compact block requested by [", authority(), "] not found.");
+        spdlog::debug("[node] Compact block requested by [{}] not found.", authority());
 
         // TODO: move not_found to derived class protocol_block_out_70001.
         KTH_ASSERT( ! inventory->inventories().empty());
@@ -430,9 +408,7 @@ void protocol_block_out::send_compact_block(code const& ec, compact_block_const_
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NODE
-           , "Internal failure locating compact block requested by ["
-           , authority(), "] ", ec.message());
+        spdlog::error("[node] Internal failure locating compact block requested by [{}] {}", authority(), ec.message());
         stop(ec);
         return;
     }
@@ -463,7 +439,7 @@ bool protocol_block_out::handle_reorganized(code ec, size_t fork_height, block_c
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NODE, "Failure handling reorganization: ", ec.message());
+        spdlog::error("[node] Failure handling reorganization: {}", ec.message());
         stop(ec);
         return false;
     }
@@ -502,9 +478,9 @@ bool protocol_block_out::handle_reorganized(code ec, size_t fork_height, block_c
         if ( ! announce.elements().empty()) {
             SEND2(announce, handle_send, _1, announce.command);
             ////auto const hash = announce.elements().front().hash();
-            ////LOG_DEBUG(LOG_NODE
-            ////   , "Announced block header [", encode_hash(hash)
-            ////   , "] to [", authority(), "].");
+            ////spdlog::debug("[node]
+            ////] Announced block header [{}] to [{}].", encode_hash(hash)
+            ////, authority());
         }
 
         return true;
@@ -520,9 +496,9 @@ bool protocol_block_out::handle_reorganized(code ec, size_t fork_height, block_c
         if ( ! announce.inventories().empty()) {
             SEND2(announce, handle_send, _1, announce.command);
             ////auto const hash = announce.inventories().front().hash();
-            ////LOG_DEBUG(LOG_NODE
-            ////   , "Announced block inventory [", encode_hash(hash)
-            ////   , "] to [", authority(), "].");
+            ////spdlog::debug("[node]
+            ////] Announced block inventory [{}] to [{}].", encode_hash(hash)
+            ////, authority());
         }
 
         return true;
@@ -531,7 +507,7 @@ bool protocol_block_out::handle_reorganized(code ec, size_t fork_height, block_c
 
 void protocol_block_out::handle_stop(code const&) {
     chain_.unsubscribe();
-    LOG_DEBUG(LOG_NETWORK, "Stopped block_out protocol for [", authority(), "].");
+    spdlog::debug("[network] Stopped block_out protocol for [{}].", authority());
 }
 
 // Utility.

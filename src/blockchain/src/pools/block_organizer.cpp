@@ -428,7 +428,7 @@ void block_organizer::handle_connect(code const& ec, branch::ptr branch, result_
 // Outgoing blocks must have median_time_past set.
 void block_organizer::handle_reorganized(code const& ec, branch::const_ptr branch, block_const_ptr_list_ptr outgoing, result_handler handler) {
     if (ec) {
-        LOG_FATAL(LOG_BLOCKCHAIN, "Failure writing block to store, is now corrupted: ", ec.message());
+        spdlog::critical("[blockchain] Failure writing block to store, is now corrupted: {}", ec.message());
         handler(ec);
         return;
     }

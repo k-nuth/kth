@@ -144,7 +144,7 @@ code hosts::start() {
     ///////////////////////////////////////////////////////////////////////////
 
     if (file_error) {
-        LOG_DEBUG(LOG_NETWORK, "Failed to save hosts file.");
+        spdlog::debug("[network] Failed to save hosts file.");
         return error::file_system;
     }
 
@@ -187,7 +187,7 @@ code hosts::stop() {
     ///////////////////////////////////////////////////////////////////////////
 
     if (file_error) {
-        LOG_DEBUG(LOG_NETWORK, "Failed to load hosts file.");
+        spdlog::debug("[network] Failed to load hosts file.");
         return error::file_system;
     }
 
@@ -234,7 +234,7 @@ code hosts::store(address const& host) {
 
     if ( ! host.is_valid()) {
         // Do not treat invalid address as an error, just log it.
-        LOG_DEBUG(LOG_NETWORK, "Invalid host address from peer.");
+        spdlog::debug("[network] Invalid host address from peer.");
         return error::success;
     }
 
@@ -262,8 +262,8 @@ code hosts::store(address const& host) {
     ///////////////////////////////////////////////////////////////////////////
 
     ////// We don't treat redundant address as an error, just log it.
-    ////LOG_DEBUG(LOG_NETWORK
-    ////   , "Redundant host address [", authority(host), "] from peer.");
+    ////spdlog::debug("[network]
+    ////] Redundant host address [{}] from peer.", authority(host));
 
     return error::success;
 }
@@ -307,8 +307,7 @@ void hosts::store(address::list const& hosts, result_handler handler) {
         // Do not treat invalid address as an error, just log it.
         if ( ! host.is_valid())
         {
-            LOG_DEBUG(LOG_NETWORK
-               , "Invalid host address from peer.");
+            spdlog::debug("[network] Invalid host address from peer.");
             continue;
         }
 
@@ -322,9 +321,7 @@ void hosts::store(address::list const& hosts, result_handler handler) {
     mutex_.unlock();
     ///////////////////////////////////////////////////////////////////////////
 
-    LOG_DEBUG(LOG_NETWORK
-       , "Accepted (", accepted, " of ", hosts.size()
-       , ") host addresses from peer.");
+    spdlog::debug("[network] Accepted ({} of {}) host addresses from peer.", accepted, hosts.size());
 
     handler(error::success);
 }

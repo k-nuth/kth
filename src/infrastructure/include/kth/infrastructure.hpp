@@ -42,29 +42,7 @@
 #include <kth/infrastructure/formats/base_64.hpp>
 #include <kth/infrastructure/formats/base_85.hpp>
 
-#if defined(KTH_LOG_LIBRARY_BOOST)
-#include <kth/infrastructure/log/attributes.hpp>
-#include <kth/infrastructure/log/file_char_traits.hpp>
-#include <kth/infrastructure/log/file_collector.hpp>
-#include <kth/infrastructure/log/file_collector_repository.hpp>
-#include <kth/infrastructure/log/file_counter_formatter.hpp>
-#include <kth/infrastructure/log/rotable_file.hpp>
-#include <kth/infrastructure/log/severity.hpp>
 #include <kth/infrastructure/log/sink.hpp>
-#include <kth/infrastructure/log/source.hpp>
-#include <kth/infrastructure/log/statsd_sink.hpp>
-#include <kth/infrastructure/log/statsd_source.hpp>
-#include <kth/infrastructure/log/udp_client_sink.hpp>
-#include <kth/infrastructure/log/features/counter.hpp>
-#include <kth/infrastructure/log/features/gauge.hpp>
-#include <kth/infrastructure/log/features/metric.hpp>
-#include <kth/infrastructure/log/features/rate.hpp>
-#include <kth/infrastructure/log/features/timer.hpp>
-#endif // defined(KTH_LOG_LIBRARY_BOOST)
-
-#if defined(KTH_LOG_LIBRARY_SPDLOG)
-#include <kth/infrastructure/log/sink.hpp>
-#endif
 
 #include <kth/infrastructure/machine/number.hpp>
 #include <kth/infrastructure/machine/script_pattern.hpp>

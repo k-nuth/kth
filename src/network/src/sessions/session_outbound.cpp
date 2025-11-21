@@ -31,12 +31,12 @@ session_outbound::session_outbound(p2p& network, bool notify_on_connect)
 
 void session_outbound::start(result_handler handler) {
     if (settings_.outbound_connections == 0) {
-        LOG_INFO(LOG_NETWORK, "Not configured for generating outbound connections.");
+        spdlog::info("[network] Not configured for generating outbound connections.");
         handler(error::success);
         return;
     }
 
-    LOG_INFO(LOG_NETWORK, "Starting outbound session.");
+    spdlog::info("[network] Starting outbound session.");
 
     session::start(CONCURRENT_DELEGATE2(handle_started, _1, handler));
 }
@@ -60,7 +60,7 @@ void session_outbound::handle_started(code const& ec, result_handler handler) {
 
 void session_outbound::new_connection(code const&) {
     if (stopped()) {
-        LOG_DEBUG(LOG_NETWORK, "Suspended outbound connection.");
+        spdlog::debug("[network] Suspended outbound connection.");
         return;
     }
 
@@ -69,7 +69,7 @@ void session_outbound::new_connection(code const&) {
 
 void session_outbound::handle_connect(code const& ec, channel::ptr channel) {
     if (ec) {
-        LOG_DEBUG(LOG_NETWORK, "Failure connecting outbound: ", ec.message());
+        spdlog::debug("[network] Failure connecting outbound: {}", ec.message());
         // Retry with conditional delay in case of network error.
         dispatch_delayed(cycle_delay(ec), BIND1(new_connection, _1));
         return;
@@ -83,13 +83,11 @@ void session_outbound::handle_connect(code const& ec, channel::ptr channel) {
 void session_outbound::handle_channel_start(code const& ec, channel::ptr channel) {
     // The start failure is also caught by handle_channel_stop.
     if (ec) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Outbound channel failed to start ["
-           , channel->authority(), "] ", ec.message());
+        spdlog::debug("[network] Outbound channel failed to start [{}] {}", channel->authority(), ec.message());
         return;
     }
 
-    LOG_DEBUG(LOG_NETWORK, "Connected outbound channel [", channel->authority(), "] (", connection_count(), ")");
+    spdlog::debug("[network] Connected outbound channel [{}] ({})", channel->authority(), connection_count());
     attach_protocols(channel);
 }
 
@@ -133,9 +131,7 @@ void session_outbound::attach_handshake_protocols(channel::ptr channel, result_h
 }
 
 void session_outbound::handle_channel_stop(code const& ec, channel::ptr channel) {
-    LOG_DEBUG(LOG_NETWORK
-       , "Outbound channel stopped [", channel->authority(), "] "
-       , ec.message());
+    spdlog::debug("[network] Outbound channel stopped [{}] {}", channel->authority(), ec.message());
 
     new_connection(error::success);
 }

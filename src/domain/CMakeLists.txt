@@ -36,20 +36,6 @@ endif()
 add_definitions(-DJEMALLOC)
 
 
-set(LOG_LIBRARY "boost" CACHE STRING "Setting for the logging library (boost|spdlog|binlog).")
-
-if (${LOG_LIBRARY} STREQUAL "boost")
-  add_definitions(-DKTH_LOG_LIBRARY_BOOST)
-elseif (${LOG_LIBRARY} STREQUAL "spdlog")
-  add_definitions(-DKTH_LOG_LIBRARY_SPDLOG)
-elseif (${LOG_LIBRARY} STREQUAL "binlog")
-  add_definitions(-DKTH_LOG_LIBRARY_BINLOG)
-else()
-  message(FATAL_ERROR "Invalid Logging Library: ${LOG_LIBRARY}")
-endif()
-
-message(STATUS "Knuth: Logging Library: ${LOG_LIBRARY}")
-
 if (JUST_KTH_SOURCES)
   message(STATUS "Knuth: Just Knuth source code to be linted: enabled")
 endif()

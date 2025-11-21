@@ -234,17 +234,17 @@ chain_state::assert_anchor_block_info_t populate_chain_state::get_assert_anchor_
 chain_state::ptr populate_chain_state::populate() const {
     size_t top;
     if ( ! fast_chain_.get_last_height(top)) {
-        LOG_ERROR(LOG_BLOCKCHAIN, "Failed to populate chain state, last height.");
+        spdlog::error("[blockchain] Failed to populate chain state, last height.");
         return {};
     }
     auto opt = fast_chain_.get_header_and_abla_state(top);
     if ( ! opt) {
-        LOG_ERROR(LOG_BLOCKCHAIN, "Failed to populate chain state, last header.");
+        spdlog::error("[blockchain] Failed to populate chain state, last header.");
         return {};
     }
     auto [last_header, block_size, control_block_size, elastic_buffer_size] = *opt;
     if ( ! last_header.is_valid()) {
-        LOG_ERROR(LOG_BLOCKCHAIN, "Failed to populate chain state, last header.");
+        spdlog::error("[blockchain] Failed to populate chain state, last header.");
         return {};
     }
 
@@ -264,7 +264,7 @@ chain_state::ptr populate_chain_state::populate() const {
 
     // Use an empty branch to represent the transaction pool.
     if ( ! populate_all(data, branch_ptr)) {
-        LOG_ERROR(LOG_BLOCKCHAIN, "Failed to populate chain state, all.");
+        spdlog::error("[blockchain] Failed to populate chain state, all.");
         return {};
     }
 

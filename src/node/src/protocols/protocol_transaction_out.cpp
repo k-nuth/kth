@@ -122,9 +122,7 @@ bool protocol_transaction_out::handle_receive_get_data(code const& ec, get_data_
     }
 
     if (message->inventories().size() > max_get_data) {
-        LOG_WARNING(LOG_NODE
-           , "Invalid get_data size (", message->inventories().size()
-           , ") from [", authority(), "]");
+        spdlog::warn("[node] Invalid get_data size ({}) from [{}]", message->inventories().size(), authority());
         stop(error::channel_stopped);
         return false;
     }
@@ -173,7 +171,7 @@ void protocol_transaction_out::send_transaction(code const& ec, transaction_cons
                     ;
 
     if (ec == error::not_found || confirmed) {
-        LOG_DEBUG(LOG_NODE, "Transaction requested by [", authority(), "] not found.");
+        spdlog::debug("[node] Transaction requested by [{}] not found.", authority());
 
         // TODO: move not_found to derived class protocol_block_out_70001.
         KTH_ASSERT( ! inventory->inventories().empty());
@@ -184,9 +182,7 @@ void protocol_transaction_out::send_transaction(code const& ec, transaction_cons
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NODE
-           , "Internal failure locating transaction requested by ["
-           , authority(), "] ", ec.message());
+        spdlog::error("[node] Internal failure locating transaction requested by [{}] {}", authority(), ec.message());
         stop(ec);
         return;
     }
@@ -215,7 +211,7 @@ bool protocol_transaction_out::handle_transaction_pool(code const& ec, transacti
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NODE, "Failure handling transaction notification: ", ec.message());
+        spdlog::error("[node] Failure handling transaction notification: {}", ec.message());
         stop(ec);
         return false;
     }
@@ -246,16 +242,16 @@ bool protocol_transaction_out::handle_transaction_pool(code const& ec, transacti
     inventory const announce {{id, message->hash()}};
     SEND2(announce, handle_send, _1, announce.command);
 
-    ////LOG_DEBUG(LOG_NODE
-    ////   , "Announced tx [", encode_hash(message->hash()), "] to ["
-    ////   , authority(), "].");
+    ////spdlog::debug("[node]
+    ////] Announced tx [{}{}{}].", encode_hash(message->hash()), "] to ["
+    ////, authority());
     return true;
 }
 
 void protocol_transaction_out::handle_stop(code const&) {
     chain_.unsubscribe();
 
-    LOG_DEBUG(LOG_NETWORK, "Stopped transaction_out protocol for [", authority(), "].");
+    spdlog::debug("[network] Stopped transaction_out protocol for [{}].", authority());
 }
 
 } // namespace kth::node

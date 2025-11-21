@@ -131,12 +131,12 @@ result_code internal_database_basis<Clock>::insert_transaction(uint64_t id, doma
 
     auto res = kth_db_put(db_txn, dbi_transaction_db_, &key, &value, KTH_DB_APPEND);
     if (res == KTH_DB_KEYEXIST) {
-        LOG_INFO(LOG_DATABASE, "Duplicate key in Transaction DB [insert_transaction] ", res);
+        spdlog::info("[database] Duplicate key in Transaction DB [insert_transaction] {}", res);
         return result_code::duplicated_key;
     }
 
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error saving in Transaction DB [insert_transaction] ", res);
+        spdlog::info("[database] Error saving in Transaction DB [insert_transaction] {}", res);
         return result_code::other;
     }
 
@@ -146,12 +146,12 @@ result_code internal_database_basis<Clock>::insert_transaction(uint64_t id, doma
 
     res = kth_db_put(db_txn, dbi_transaction_hash_db_, &key_tx, &key, KTH_DB_NOOVERWRITE);
     if (res == KTH_DB_KEYEXIST) {
-        LOG_INFO(LOG_DATABASE, "Duplicate key in Transaction DB [insert_transaction] ", res);
+        spdlog::info("[database] Duplicate key in Transaction DB [insert_transaction] {}", res);
         return result_code::duplicated_key;
     }
 
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error saving in Transaction DB [insert_transaction] ", res);
+        spdlog::info("[database] Error saving in Transaction DB [insert_transaction] {}", res);
         return result_code::other;
     }
 
@@ -192,21 +192,21 @@ result_code internal_database_basis<Clock>::remove_transactions(domain::chain::b
 
         res = kth_db_del(db_txn, dbi_transaction_db_, &key_tx, NULL);
         if (res == KTH_DB_NOTFOUND) {
-            LOG_INFO(LOG_DATABASE, "Key not found deleting transaction DB in LMDB [remove_transactions] - kth_db_del: ", res);
+            spdlog::info("[database] Key not found deleting transaction DB in LMDB [remove_transactions] - kth_db_del: {}", res);
             return result_code::key_not_found;
         }
         if (res != KTH_DB_SUCCESS) {
-            LOG_INFO(LOG_DATABASE, "Error deleting transaction DB in LMDB [remove_transactions] - kth_db_del: ", res);
+            spdlog::info("[database] Error deleting transaction DB in LMDB [remove_transactions] - kth_db_del: {}", res);
             return result_code::other;
         }
 
         res = kth_db_del(db_txn, dbi_transaction_hash_db_, &key, NULL);
         if (res == KTH_DB_NOTFOUND) {
-            LOG_INFO(LOG_DATABASE, "Key not found deleting transaction DB in LMDB [remove_transactions] - kth_db_del: ", res);
+            spdlog::info("[database] Key not found deleting transaction DB in LMDB [remove_transactions] - kth_db_del: {}", res);
             return result_code::key_not_found;
         }
         if (res != KTH_DB_SUCCESS) {
-            LOG_INFO(LOG_DATABASE, "Error deleting transaction DB in LMDB [remove_transactions] - kth_db_del: ", res);
+            spdlog::info("[database] Error deleting transaction DB in LMDB [remove_transactions] - kth_db_del: {}", res);
             return result_code::other;
         }
 
@@ -245,22 +245,22 @@ result_code internal_database_basis<Clock>::remove_transactions(domain::chain::b
         auto key_tx = kth_db_make_value(sizeof(tx_id), &tx_id);
         auto res = kth_db_del(db_txn, dbi_transaction_db_, &key_tx, NULL);
         if (res == KTH_DB_NOTFOUND) {
-            LOG_INFO(LOG_DATABASE, "Key not found deleting transaction DB in LMDB [remove_transactions] - kth_db_del: ", res);
+            spdlog::info("[database] Key not found deleting transaction DB in LMDB [remove_transactions] - kth_db_del: {}", res);
             return result_code::key_not_found;
         }
         if (res != KTH_DB_SUCCESS) {
-            LOG_INFO(LOG_DATABASE, "Error deleting transaction DB in LMDB [remove_transactions] - kth_db_del: ", res);
+            spdlog::info("[database] Error deleting transaction DB in LMDB [remove_transactions] - kth_db_del: {}", res);
             return result_code::other;
         }
 
         auto key_hash = kth_db_make_value(tx.hash().size(), tx.hash().data());
         res = kth_db_del(db_txn, dbi_transaction_hash_db_, &key_hash, NULL);
         if (res == KTH_DB_NOTFOUND) {
-            LOG_INFO(LOG_DATABASE, "Key not found deleting transaction DB in LMDB [remove_transactions] - kth_db_del: ", res);
+            spdlog::info("[database] Key not found deleting transaction DB in LMDB [remove_transactions] - kth_db_del: {}", res);
             return result_code::key_not_found;
         }
         if (res != KTH_DB_SUCCESS) {
-            LOG_INFO(LOG_DATABASE, "Error deleting transaction DB in LMDB [remove_transactions] - kth_db_del: ", res);
+            spdlog::info("[database] Error deleting transaction DB in LMDB [remove_transactions] - kth_db_del: {}", res);
             return result_code::other;
         }
 
@@ -285,22 +285,22 @@ result_code internal_database_basis<Clock>::remove_transactions(domain::chain::b
             auto key_tx = kth_db_make_value(sizeof(tx_id), &tx_id);
             auto res = kth_db_del(db_txn, dbi_transaction_db_, &key_tx, NULL);
             if (res == KTH_DB_NOTFOUND) {
-                LOG_INFO(LOG_DATABASE, "Key not found deleting transaction DB in LMDB [remove_transactions] - kth_db_del: ", res);
+                spdlog::info("[database] Key not found deleting transaction DB in LMDB [remove_transactions] - kth_db_del: {}", res);
                 return result_code::key_not_found;
             }
             if (res != KTH_DB_SUCCESS) {
-                LOG_INFO(LOG_DATABASE, "Error deleting transaction DB in LMDB [remove_transactions] - kth_db_del: ", res);
+                spdlog::info("[database] Error deleting transaction DB in LMDB [remove_transactions] - kth_db_del: {}", res);
                 return result_code::other;
             }
 
             auto key_hash = kth_db_make_value(tx.hash().size(), tx.hash().data());
             res = kth_db_del(db_txn, dbi_transaction_hash_db_, &key_hash, NULL);
             if (res == KTH_DB_NOTFOUND) {
-                LOG_INFO(LOG_DATABASE, "Key not found deleting transaction DB in LMDB [remove_transactions] - kth_db_del: ", res);
+                spdlog::info("[database] Key not found deleting transaction DB in LMDB [remove_transactions] - kth_db_del: {}", res);
                 return result_code::key_not_found;
             }
             if (res != KTH_DB_SUCCESS) {
-                LOG_INFO(LOG_DATABASE, "Error deleting transaction DB in LMDB [remove_transactions] - kth_db_del: ", res);
+                spdlog::info("[database] Error deleting transaction DB in LMDB [remove_transactions] - kth_db_del: {}", res);
                 return result_code::other;
             }
         }
@@ -346,11 +346,11 @@ result_code internal_database_basis<Clock>::remove_transactions(domain::chain::b
 
         auto res = kth_db_del(db_txn, dbi_transaction_db_, &key_tx, NULL);
         if (res == KTH_DB_NOTFOUND) {
-            LOG_INFO(LOG_DATABASE, "Key not found deleting transaction DB in LMDB [remove_transactions] - kth_db_del: ", res);
+            spdlog::info("[database] Key not found deleting transaction DB in LMDB [remove_transactions] - kth_db_del: {}", res);
             return result_code::key_not_found;
         }
         if (res != KTH_DB_SUCCESS) {
-            LOG_INFO(LOG_DATABASE, "Error deleting transaction DB in LMDB [remove_transactions] - kth_db_del: ", res);
+            spdlog::info("[database] Error deleting transaction DB in LMDB [remove_transactions] - kth_db_del: {}", res);
             return result_code::other;
         }
 
@@ -372,12 +372,12 @@ result_code internal_database_basis<Clock>::update_transaction(domain::chain::tr
 
     auto res = kth_db_put(db_txn, dbi_transaction_db_, &key, &value, 0);
     if (res == KTH_DB_KEYEXIST) {
-        LOG_INFO(LOG_DATABASE, "Duplicate key in Transaction DB [insert_transaction] ", res);
+        spdlog::info("[database] Duplicate key in Transaction DB [insert_transaction] {}", res);
         return result_code::duplicated_key;
     }
 
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error saving in Transaction DB [insert_transaction] ", res);
+        spdlog::info("[database] Error saving in Transaction DB [insert_transaction] {}", res);
         return result_code::other;
     }
 

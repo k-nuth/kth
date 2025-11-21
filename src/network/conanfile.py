@@ -31,7 +31,6 @@ class KnuthNetworkConan(KnuthConanFileV2):
         "cxxflags": ["ANY"],
         "cflags": ["ANY"],
         "cmake_export_compile_commands": [True, False],
-        "log": ["boost", "spdlog", "binlog"]
     }
 
     default_options = {
@@ -44,7 +43,6 @@ class KnuthNetworkConan(KnuthConanFileV2):
 
         "verbose": False,
         "cmake_export_compile_commands": False,
-        "log": "spdlog",
     }
 
     exports_sources = "src/*", "CMakeLists.txt", "ci_utils/cmake/*", "cmake/*", "knuthbuildinfo.cmake", "include/*", "test/*"
@@ -67,10 +65,6 @@ class KnuthNetworkConan(KnuthConanFileV2):
     def configure(self):
         KnuthConanFileV2.configure(self)
 
-        #TODO(fernando): move to kthbuild
-        self.options["*"].log = self.options.log
-        self.output.info("Compiling with log: %s" % (self.options.log,))
-
     def package_id(self):
         KnuthConanFileV2.package_id(self)
 
@@ -80,8 +74,6 @@ class KnuthNetworkConan(KnuthConanFileV2):
     def generate(self):
         tc = self.cmake_toolchain_basis()
         # tc.variables["CMAKE_VERBOSE_MAKEFILE"] = True
-        #TODO(fernando): move to kthbuild
-        tc.variables["LOG_LIBRARY"] = self.options.log
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
 
         tc.generate()

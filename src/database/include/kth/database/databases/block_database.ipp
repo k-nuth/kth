@@ -136,12 +136,12 @@ result_code internal_database_basis<Clock>::insert_block(domain::chain::block co
 
             auto res = kth_db_put(db_txn, dbi_block_db_, &key, &value, MDB_APPENDDUP);
             if (res == KTH_DB_KEYEXIST) {
-                LOG_INFO(LOG_DATABASE, "Duplicate key in Block DB [insert_block] ", res);
+                spdlog::info("[database] Duplicate key in Block DB [insert_block] {}", res);
                 return result_code::duplicated_key;
             }
 
             if (res != KTH_DB_SUCCESS) {
-                LOG_INFO(LOG_DATABASE, "Error saving in Block DB [insert_block] ", res);
+                spdlog::info("[database] Error saving in Block DB [insert_block] {}", res);
                 return result_code::other;
             }
         }
@@ -152,12 +152,12 @@ result_code internal_database_basis<Clock>::insert_block(domain::chain::block co
 
         auto res = kth_db_put(db_txn, dbi_block_db_, &key, &value, KTH_DB_APPEND);
         if (res == KTH_DB_KEYEXIST) {
-            LOG_INFO(LOG_DATABASE, "Duplicate key in Block DB [insert_block] ", res);
+            spdlog::info("[database] Duplicate key in Block DB [insert_block] {}", res);
             return result_code::duplicated_key;
         }
 
         if (res != KTH_DB_SUCCESS) {
-            LOG_INFO(LOG_DATABASE, "Error saving in Block DB [insert_block] ", res);
+            spdlog::info("[database] Error saving in Block DB [insert_block] {}", res);
             return result_code::other;
         }
     }
@@ -196,11 +196,11 @@ result_code internal_database_basis<Clock>::remove_blocks_db(uint32_t height, KT
     } else if (db_mode_ == db_mode_type::blocks) {
         auto res = kth_db_del(db_txn, dbi_block_db_, &key, NULL);
         if (res == KTH_DB_NOTFOUND) {
-            LOG_INFO(LOG_DATABASE, "Key not found deleting blocks DB in LMDB [remove_blocks_db] - kth_db_del: ", res);
+            spdlog::info("[database] Key not found deleting blocks DB in LMDB [remove_blocks_db] - kth_db_del: {}", res);
             return result_code::key_not_found;
         }
         if (res != KTH_DB_SUCCESS) {
-            LOG_INFO(LOG_DATABASE, "Error deleting blocks DB in LMDB [remove_blocks_db] - kth_db_del: ", res);
+            spdlog::info("[database] Error deleting blocks DB in LMDB [remove_blocks_db] - kth_db_del: {}", res);
             return result_code::other;
         }
     }

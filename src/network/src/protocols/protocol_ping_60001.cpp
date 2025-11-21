@@ -34,15 +34,13 @@ void protocol_ping_60001::send_ping(code const& ec) {
     }
 
     if (ec && ec != error::channel_timeout) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Failure in ping timer for [", authority(), "] "
-           , ec.message());
+        spdlog::debug("[network] Failure in ping timer for [{}] {}", authority(), ec.message());
         stop(ec);
         return;
     }
 
     if (pending_) {
-        LOG_DEBUG(LOG_NETWORK, "Ping latency limit exceeded [", authority(), "]");
+        spdlog::debug("[network] Ping latency limit exceeded [{}]", authority());
         stop(error::channel_timeout);
         return;
     }
@@ -59,9 +57,7 @@ void protocol_ping_60001::handle_send_ping(code const& ec, const std::string&) {
     }
 
     if (ec) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Failure sending ping to [", authority(), "] "
-           , ec.message());
+        spdlog::debug("[network] Failure sending ping to [{}] {}", authority(), ec.message());
         stop(ec);
         return;
     }
@@ -73,9 +69,7 @@ bool protocol_ping_60001::handle_receive_ping(code const& ec, ping_const_ptr mes
     }
 
     if (ec) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Failure getting ping from [", authority(), "] "
-           , ec.message());
+        spdlog::debug("[network] Failure getting ping from [{}] {}", authority(), ec.message());
         stop(ec);
         return false;
     }
@@ -90,9 +84,7 @@ bool protocol_ping_60001::handle_receive_pong(code const& ec, pong_const_ptr mes
     }
 
     if (ec) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Failure getting pong from [", authority(), "] "
-           , ec.message());
+        spdlog::debug("[network] Failure getting pong from [{}] {}", authority(), ec.message());
         stop(ec);
         return false;
     }
@@ -100,7 +92,7 @@ bool protocol_ping_60001::handle_receive_pong(code const& ec, pong_const_ptr mes
     pending_ = false;
 
     if (message->nonce() != nonce) {
-        LOG_WARNING(LOG_NETWORK, "Invalid pong nonce from [", authority(), "]");
+        spdlog::warn("[network] Invalid pong nonce from [{}]", authority());
         stop(error::bad_stream);
         return false;
     }

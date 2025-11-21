@@ -14,12 +14,6 @@
 extern "C" {
 #endif
 
-typedef enum {
-    kth_libconfig_log_library_boost = 0,
-    kth_libconfig_log_library_spdlog = 1,
-    kth_libconfig_log_library_binlog = 2,
-} kth_libconfig_log_library_t;
-
 typedef struct {
     uint8_t size_int;
     uint8_t size_long;
@@ -27,7 +21,6 @@ typedef struct {
 } kth_libconfig_type_sizes_t;
 
 typedef struct {
-    kth_libconfig_log_library_t log_library;
     char const* version;
     char const* microarchitecture_id;
     kth_currency_t currency;

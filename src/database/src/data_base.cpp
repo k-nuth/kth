@@ -319,7 +319,7 @@ void data_base::push_next(code const& ec, block_const_ptr_list_const_ptr blocks,
 }
 
 void data_base::do_push(block_const_ptr block, size_t height, uint32_t median_time_past, dispatcher& dispatch, result_handler handler) {
-    // LOG_DEBUG(LOG_DATABASE, "Write flushed to disk: ", ec.message());
+    // spdlog::debug("[database] Write flushed to disk: {}", ec.message());
     auto res = internal_db_->push_block(*block, height, median_time_past);
     if ( ! succeed(res)) {
         handler(error::database_concurrent_push_failed); //TODO(fernando): create a new operation_failed
@@ -380,7 +380,7 @@ void data_base::pop_above(block_const_ptr_list_ptr out_blocks, hash_digest const
 code data_base::prune_reorg() {
     auto res = internal_db_->prune();
     if ( ! succeed_prune(res)) {
-        LOG_ERROR(LOG_DATABASE, "Error pruning the reorganization pool, code: ", static_cast<std::underlying_type<result_code>::type>(res));
+        spdlog::error("[database] Error pruning the reorganization pool, code: {}", static_cast<std::underlying_type<result_code>::type>(res));
         return error::unknown;
     }
     return error::success;

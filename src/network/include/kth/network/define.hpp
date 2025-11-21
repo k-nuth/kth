@@ -23,9 +23,6 @@
     #define KN_INTERNAL KD_HELPER_DLL_LOCAL
 #endif
 
-// Log name.
-#define LOG_NETWORK "[network] "
-
 // Avoid namespace conflict between boost::placeholders and std::placeholders.
 #define BOOST_BIND_NO_PLACEHOLDERS
 

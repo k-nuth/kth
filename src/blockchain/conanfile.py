@@ -35,7 +35,6 @@ class KnuthBlockchainConan(KnuthConanFileV2):
         "cxxflags": ["ANY"],
         "cflags": ["ANY"],
         "cmake_export_compile_commands": [True, False],
-        "log": ["boost", "spdlog", "binlog"],
     }
 
     default_options = {
@@ -51,7 +50,6 @@ class KnuthBlockchainConan(KnuthConanFileV2):
         "db": "dynamic",
         "db_readonly": False,
         "cmake_export_compile_commands": False,
-        "log": "spdlog",
     }
 
     exports_sources = "src/*", "CMakeLists.txt", "ci_utils/cmake/*", "cmake/*", "knuthbuildinfo.cmake", "include/*", "test/*", "tools/*"
@@ -88,10 +86,6 @@ class KnuthBlockchainConan(KnuthConanFileV2):
         # self.output.info("Compiling with mining optimizations: %s" % (self.options.mining,))
         self.output.info("Compiling with mempool: %s" % (self.options.mempool,))
 
-        #TODO(fernando): move to kthbuild
-        self.options["*"].log = self.options.log
-        self.output.info("Compiling with log: %s" % (self.options.log,))
-
 
     def package_id(self):
         KnuthConanFileV2.package_id(self)
@@ -107,7 +101,6 @@ class KnuthBlockchainConan(KnuthConanFileV2):
         # tc.variables["WITH_MINING"] = option_on_off(self.options.mining)
         tc.variables["WITH_MEMPOOL"] = option_on_off(self.options.mempool)
         tc.variables["DB_READONLY_MODE"] = option_on_off(self.options.db_readonly)
-        tc.variables["LOG_LIBRARY"] = self.options.log
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
 
         tc.generate()

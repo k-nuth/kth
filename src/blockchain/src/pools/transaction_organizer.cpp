@@ -295,7 +295,7 @@ void transaction_organizer::handle_connect(code const& ec, transaction_const_ptr
         handler(res);
         return;
     }
-    // LOG_INFO(LOG_BLOCKCHAIN, "Transaction ", encode_hash(tx->hash()), " added to mempool.");
+    // spdlog::info("[blockchain] Transaction {} added to mempool.", encode_hash(tx->hash()));
 #endif
 
 #if ! defined(KTH_DB_READONLY)
@@ -310,7 +310,7 @@ void transaction_organizer::handle_connect(code const& ec, transaction_const_ptr
 // private
 void transaction_organizer::handle_pushed(code const& ec, transaction_const_ptr tx, result_handler handler) {
     if (ec) {
-        LOG_FATAL(LOG_BLOCKCHAIN, "Failure writing transaction to store, is now corrupted: ", ec.message());
+        spdlog::critical("[blockchain] Failure writing transaction to store, is now corrupted: {}", ec.message());
         handler(ec);
         return;
     }

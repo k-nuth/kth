@@ -112,9 +112,7 @@ void proxy::handle_read_heading(boost_code const& ec, size_t) {
     }
 
     if (ec) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Heading read failure [", authority(), "] "
-           , code(error::boost_to_error_code(ec)).message());
+        spdlog::debug("[network] Heading read failure [{}] {}", authority(), code(error::boost_to_error_code(ec)).message());
         stop(ec);
         return;
     }
@@ -123,39 +121,31 @@ void proxy::handle_read_heading(boost_code const& ec, size_t) {
     byte_reader reader(heading_buffer_);
     auto head_res = heading::from_data(reader, 0);
     if ( ! head_res) {
-        LOG_WARNING(LOG_NETWORK, "Failed to parse heading from [", authority(), "]");
+        spdlog::warn("[network] Failed to parse heading from [{}]", authority());
         stop(error::bad_stream);
         return;
     }
     auto const head = *head_res;
 
     if ( ! head.is_valid()) {
-        LOG_WARNING(LOG_NETWORK, "Invalid heading from [", authority(), "]");
+        spdlog::warn("[network] Invalid heading from [{}]", authority());
         stop(error::bad_stream);
         return;
     }
 
     if (head.magic() != protocol_magic_) {
         // These are common, with magic 542393671 coming from http requests.
-        LOG_DEBUG(LOG_NETWORK
-           , "Invalid heading magic (", head.magic(), ") from ["
-           , authority(), "]");
+        spdlog::debug("[network] Invalid heading magic ({}) from [{}]", head.magic(), authority());
         stop(error::bad_stream);
         return;
     }
 
     if (head.payload_size() > max_payload_size) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Huge payload indicated by ", head.command()
-           , " heading from [", authority(), "] ("
-           , head.payload_size(), " bytes)");
+        spdlog::debug("[network] Huge payload indicated by {} heading from [{}] ({} bytes)", head.command(), authority(), head.payload_size());
     }
 
     if (head.payload_size() > maximum_payload_) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Oversized payload indicated by ", head.command()
-           , " heading from [", authority(), "] ("
-           , head.payload_size(), " bytes)");
+        spdlog::debug("[network] Oversized payload indicated by {} heading from [{}] ({} bytes)", head.command(), authority(), head.payload_size());
         stop(error::bad_stream);
         return;
     }
@@ -178,23 +168,19 @@ void proxy::handle_read_payload(boost_code const& ec, size_t payload_size, headi
     if (stopped()) return;
 
     if (ec) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Payload read failure [", authority(), "] "
-           , code(error::boost_to_error_code(ec)).message());
+        spdlog::debug("[network] Payload read failure [{}] {}", authority(), code(error::boost_to_error_code(ec)).message());
         stop(ec);
         return;
     }
 
     // This is a pointless test but we allow it as an option for completeness.
     if (validate_checksum_ && head.checksum() != bitcoin_checksum(payload_buffer_)) {
-        LOG_WARNING(LOG_NETWORK, "Invalid ", head.command(), " payload from [", authority(), "] bad checksum.");
+        spdlog::warn("[network] Invalid {} payload from [{}] bad checksum.", head.command(), authority());
         stop(error::bad_stream);
         return;
     }
 
-    LOG_DEBUG(LOG_NETWORK
-       , "Read ", head.command(), " from [", authority()
-       , "] (", payload_size, " bytes). Now parsing ...");
+    spdlog::debug("[network] Read {} from [{}] ({} bytes). Now parsing ...", head.command(), authority(), payload_size);
 
     // Notify subscribers of the new message.
     byte_reader reader(payload_buffer_);
@@ -207,26 +193,24 @@ void proxy::handle_read_payload(boost_code const& ec, size_t payload_size, headi
         auto const size = std::min(payload_size, invalid_payload_dump_size);
         auto const begin = payload_buffer_.begin();
 
-        LOG_VERBOSE(LOG_NETWORK, "Invalid payload from [", authority(), "] ", encode_base16(data_chunk{ begin, begin + size }));
+        spdlog::trace("[network] Invalid payload from [{}] {}", authority(), encode_base16(data_chunk{ begin, begin + size }));
         stop(code);
         return;
     }
 
     if (code) {
-        LOG_VERBOSE(LOG_NETWORK, "Invalid ", head.command(), " payload from [", authority(), "] ", code.message());
+        spdlog::trace("[network] Invalid {} payload from [{}] {}", head.command(), authority(), code.message());
         stop(code);
         return;
     }
 
     if ( ! consumed) {
-        LOG_VERBOSE(LOG_NETWORK, "Invalid ", head.command(), " payload from [", authority(), "] trailing bytes.");
+        spdlog::trace("[network] Invalid {} payload from [{}] trailing bytes.", head.command(), authority());
         stop(error::bad_stream);
         return;
     }
 
-    LOG_DEBUG(LOG_NETWORK
-       , "Received ", head.command(), " from [", authority()
-       , "] (", payload_size, " bytes)");
+    spdlog::debug("[network] Received {} from [{}] ({} bytes)", head.command(), authority(), payload_size);
 
     signal_activity();
     read_heading();
@@ -252,17 +236,13 @@ void proxy::handle_send(boost_code const& ec, size_t, command_ptr command, paylo
     }
 
     if (error) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Failure sending ", *command, " to [", authority()
-           , "] (", size, " bytes) ", error.message());
+        spdlog::debug("[network] Failure sending {} to [{}] ({} bytes) {}", *command, authority(), size, error.message());
         stop(error);
         handler(error);
         return;
     }
 
-    LOG_VERBOSE(LOG_NETWORK
-       , "Sent ", *command, " to [", authority(), "] (", size
-       , " bytes)");
+    spdlog::trace("[network] Sent {} to [{}] ({} bytes)", *command, authority(), size);
 
     handler(error);
 }

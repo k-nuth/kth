@@ -16,10 +16,6 @@
 #define FMT_HEADER_ONLY 1
 #include <fmt/core.h>
 
-// #if defined(KTH_LOG_LIBRARY_BINLOG)
-// #include <binlog/binlog.hpp>
-// #endif
-
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/asio.hpp>
 #include <kth/infrastructure/utility/assert.hpp>

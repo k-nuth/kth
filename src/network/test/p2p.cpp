@@ -66,8 +66,7 @@ std::string get_log_path(std::string const& test, std::string const& file) {
 
 static
 void print_headers(std::string const& test) {
-    auto const header = "=========== " + test + " ==========";
-    LOG_INFO(TEST_SET_NAME, header);
+    spdlog::info("[test] =========== {} ==========", test);
 }
 
 static

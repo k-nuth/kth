@@ -60,8 +60,7 @@ static const uint64_t genesis_mainnet_work = 0x0000000100010001;
 
 static
 void print_headers(std::string const& test) {
-    auto const header = "=========== " + test + " ==========";
-    LOG_INFO(TEST_SET_NAME, header);
+    spdlog::info("[test] =========== {} ==========", test);
 }
 
 bool create_database(database::settings& out_database) {

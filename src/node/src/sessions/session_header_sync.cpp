@@ -64,7 +64,7 @@ void session_header_sync::handle_started(code const& ec, result_handler handler)
     }
 
     // TODO: expose header count and emit here.
-    LOG_INFO(LOG_NODE, "Getting headers.");
+    spdlog::info("[node] Getting headers.");
 
     if ( ! initialize()) {
         handler(error::operation_failed);
@@ -84,11 +84,11 @@ void session_header_sync::handle_started(code const& ec, result_handler handler)
 
 void session_header_sync::new_connection(header_list::ptr row, result_handler handler) {
     if (stopped()) {
-        LOG_DEBUG(LOG_NODE, "Suspending header slot (", row->slot(), ").");
+        spdlog::debug("[node] Suspending header slot ({}).", row->slot());
         return;
     }
 
-    LOG_DEBUG(LOG_NODE, "Starting header slot (", row->slot(), ").");
+    spdlog::debug("[node] Starting header slot ({}).", row->slot());
 
     // HEADER SYNC CONNECT
     session_batch::connect(BIND4(handle_connect, _1, _2, row, handler));
@@ -96,16 +96,12 @@ void session_header_sync::new_connection(header_list::ptr row, result_handler ha
 
 void session_header_sync::handle_connect(code const& ec, channel::ptr channel, header_list::ptr row, result_handler handler) {
     if (ec) {
-        LOG_DEBUG(LOG_NODE
-           , "Failure connecting header slot (", row->slot(), ") "
-           , ec.message());
+        spdlog::debug("[node] Failure connecting header slot ({}) {}", row->slot(), ec.message());
         new_connection(row ,handler);
         return;
     }
 
-    LOG_DEBUG(LOG_NODE
-       , "Connected header slot (", row->slot(), ") ["
-       , channel->authority(), "]");
+    spdlog::debug("[node] Connected header slot ({}) [{}]", row->slot(), channel->authority());
 
     register_channel(channel,
         BIND4(handle_channel_start, _1, channel, row, handler),
@@ -179,16 +175,14 @@ void session_header_sync::handle_complete(code const& ec, header_list::ptr row, 
         hashes_.enqueue(header.hash(), height++);
     }
 
-    LOG_DEBUG(LOG_NODE, "Completed header slot (", row->slot(), ")");
+    spdlog::debug("[node] Completed header slot ({})", row->slot());
 
     // This is the end of the header sync sequence.
     handler(error::success);
 }
 
 void session_header_sync::handle_channel_stop(code const& ec, header_list::ptr row) {
-    LOG_DEBUG(LOG_NODE
-       , "Channel stopped on header slot (", row->slot(), ") "
-       , ec.message());
+    spdlog::debug("[node] Channel stopped on header slot ({}) {}", row->slot(), ec.message());
 }
 
 // Utility.
@@ -196,7 +190,7 @@ void session_header_sync::handle_channel_stop(code const& ec, header_list::ptr r
 
 bool session_header_sync::initialize() {
     if ( ! hashes_.empty()) {
-        LOG_ERROR(LOG_NODE, "Block hash list must not be initialized.");
+        spdlog::error("[node] Block hash list must not be initialized.");
         return false;
     }
     //*************************************************************************

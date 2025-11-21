@@ -100,7 +100,7 @@ void full_node::start(result_handler handler) {
     }
 
     if ( ! chain_.start()) {
-        LOG_ERROR(LOG_NODE, "Failure starting blockchain [full_node::start()].");
+        spdlog::error("[node] Failure starting blockchain [full_node::start()].");
         handler(error::operation_failed);
         return;
     }
@@ -117,7 +117,7 @@ void full_node::start_chain(result_handler handler) {
     }
 
     if ( ! chain_.start()) {
-        LOG_ERROR(LOG_NODE, "Failure starting blockchain [full_node::start_chain()].");
+        spdlog::error("[node] Failure starting blockchain [full_node::start_chain()].");
         handler(error::operation_failed);
         return;
     }
@@ -180,8 +180,8 @@ void full_node::handle_headers_synchronized(code const& ec, result_handler handl
 
     ////if (ec)
     ////{
-    ////    LOG_ERROR(LOG_NODE
-    ////       , "Failure synchronizing headers: ", ec.message());
+    ////    spdlog::error("[node]
+    ////] Failure synchronizing headers: {}", ec.message());
     ////    handler(ec);
     ////    return;
     ////}
@@ -202,7 +202,7 @@ void full_node::handle_running(code const& ec, result_handler handler) {
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NODE, "Failure synchronizing blocks: ", ec.message());
+        spdlog::error("[node] Failure synchronizing blocks: {}", ec.message());
         handler(ec);
         return;
     }
@@ -212,14 +212,14 @@ void full_node::handle_running(code const& ec, result_handler handler) {
 
     if ( ! chain_.get_last_height(top_height) ||
          ! chain_.get_block_hash(top_hash, top_height)) {
-             LOG_ERROR(LOG_NODE, "The blockchain is corrupt.");
+             spdlog::error("[node] The blockchain is corrupt.");
         handler(error::operation_failed);
         return;
     }
 
     set_top_block({ std::move(top_hash), top_height });
 
-    LOG_INFO(LOG_NODE, "Node start height is (", top_height, ").");
+    spdlog::info("[node] Node start height is ({}).", top_height);
 
     subscribe_blockchain(
         std::bind(&full_node::handle_reorganized, this, _1, _2, _3, _4));
@@ -236,7 +236,7 @@ void full_node::handle_running_chain(code const& ec, result_handler handler) {
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NODE, "Failure synchronizing blocks: ", ec.message());
+        spdlog::error("[node] Failure synchronizing blocks: {}", ec.message());
         handler(ec);
         return;
     }
@@ -246,14 +246,14 @@ void full_node::handle_running_chain(code const& ec, result_handler handler) {
 
     if ( ! chain_.get_last_height(top_height) ||
          ! chain_.get_block_hash(top_hash, top_height)) {
-             LOG_ERROR(LOG_NODE, "The blockchain is corrupt.");
+             spdlog::error("[node] The blockchain is corrupt.");
         handler(error::operation_failed);
         return;
     }
 
     set_top_block({ std::move(top_hash), top_height });
 
-    LOG_INFO(LOG_NODE, "Node start height is (", top_height, ").");
+    spdlog::info("[node] Node start height is ({}).", top_height);
 
     subscribe_blockchain(
         std::bind(&full_node::handle_reorganized, this, _1, _2, _3, _4));
@@ -270,7 +270,7 @@ bool full_node::handle_reorganized(code ec, size_t fork_height, block_const_ptr_
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NODE, "Failure handling reorganization: ", ec.message());
+        spdlog::error("[node] Failure handling reorganization: {}", ec.message());
         stop();
         return false;
     }
@@ -281,9 +281,7 @@ bool full_node::handle_reorganized(code ec, size_t fork_height, block_const_ptr_
     }
 
     for (auto const block: *outgoing) {
-        LOG_DEBUG(LOG_NODE
-           , "Reorganization moved block to orphan pool ["
-           , encode_hash(block->header().hash()), "]");
+        spdlog::debug("[node] Reorganization moved block to orphan pool [{}]", encode_hash(block->header().hash()));
     }
 
     auto const height = *safe_add(fork_height, incoming->size());
@@ -329,11 +327,11 @@ bool full_node::stop() {
     auto const chain_stop = chain_.stop();
 
     if ( ! p2p_stop) {
-        LOG_ERROR(LOG_NODE, "Failed to stop network.");
+        spdlog::error("[node] Failed to stop network.");
     }
 
     if ( ! chain_stop) {
-        LOG_ERROR(LOG_NODE, "Failed to stop blockchain.");
+        spdlog::error("[node] Failed to stop blockchain.");
     }
 
     return p2p_stop && chain_stop;
@@ -350,11 +348,11 @@ bool full_node::close() {
     auto const chain_close = chain_.close();
 
     if ( ! p2p_close) {
-        LOG_ERROR(LOG_NODE, "Failed to close network.");
+        spdlog::error("[node] Failed to close network.");
     }
 
     if ( ! chain_close) {
-        LOG_ERROR(LOG_NODE, "Failed to close blockchain.");
+        spdlog::error("[node] Failed to close blockchain.");
     }
 
     return p2p_close && chain_close;
@@ -569,9 +567,9 @@ void full_node::print_statistics(size_t height) const {
     //     boost::accumulators::sum(stats_current1_accum_deposit_per_input_us_),
     //     boost::accumulators::sum(stats_current1_accum_cache_efficiency_));
 
-    // LOG_INFO(LOG_BLOCKCHAIN, "************************************************************************************************************************");
-    // LOG_INFO(LOG_BLOCKCHAIN, "Stats:");
-    // LOG_INFO(LOG_BLOCKCHAIN, formatted);
+    // spdlog::info("[blockchain] ************************************************************************************************************************");
+    // spdlog::info("[blockchain] Stats:");
+    // spdlog::info("[blockchain] {}", formatted);
 
     print_stat_item_sum(stats, from1, height,
         sum(stats_current1_accum_transactions_),
@@ -645,7 +643,7 @@ void full_node::print_statistics(size_t height) const {
     screen_clear();
     std::print("{}\n\n", stats.str());
 
-    // LOG_INFO(LOG_BLOCKCHAIN, "************************************************************************************************************************");
+    // spdlog::info("[blockchain] ************************************************************************************************************************");
 }
 
 #endif

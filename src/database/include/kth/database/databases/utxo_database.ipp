@@ -23,11 +23,11 @@ result_code internal_database_basis<Clock>::remove_utxo(uint32_t height, domain:
 
     auto res = kth_db_del(db_txn, dbi_utxo_, &key, NULL);
     if (res == KTH_DB_NOTFOUND) {
-        LOG_INFO(LOG_DATABASE, "Key not found deleting UTXO [remove_utxo] ", res);
+        spdlog::info("[database] Key not found deleting UTXO [remove_utxo] {}", res);
         return result_code::key_not_found;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error deleting UTXO [remove_utxo] ", res);
+        spdlog::info("[database] Error deleting UTXO [remove_utxo] {}", res);
         return result_code::other;
     }
     return result_code::success;
@@ -43,11 +43,11 @@ result_code internal_database_basis<Clock>::insert_utxo(domain::chain::output_po
     auto res = kth_db_put(db_txn, dbi_utxo_, &key, &value, KTH_DB_NOOVERWRITE);
 
     if (res == KTH_DB_KEYEXIST) {
-        LOG_DEBUG(LOG_DATABASE, "Duplicate Key inserting UTXO [insert_utxo] ", res);
+        spdlog::debug("[database] Duplicate Key inserting UTXO [insert_utxo] {}", res);
         return result_code::duplicated_key;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error inserting UTXO [insert_utxo] ", res);
+        spdlog::info("[database] Error inserting UTXO [insert_utxo] {}", res);
         return result_code::other;
     }
     return result_code::success;

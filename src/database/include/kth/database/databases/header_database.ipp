@@ -22,11 +22,11 @@ result_code internal_database_basis<Clock>::push_block_header(domain::chain::blo
     auto res = kth_db_put(db_txn, dbi_block_header_, &key, &value, KTH_DB_APPEND);
     if (res == KTH_DB_KEYEXIST) {
         //TODO(fernando): El logging en general no está bueno que esté en la DbTx.
-        LOG_INFO(LOG_DATABASE, "Duplicate key inserting block header [push_block_header] ", res);        //TODO(fernando): podría estar afuera de la DBTx.
+        spdlog::info("[database] Duplicate key inserting block header [push_block_header] {}", res);        //TODO(fernando): podría estar afuera de la DBTx.
         return result_code::duplicated_key;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error inserting block header  [push_block_header] ", res);
+        spdlog::info("[database] Error inserting block header  [push_block_header] {}", res);
         return result_code::other;
     }
 
@@ -35,11 +35,11 @@ result_code internal_database_basis<Clock>::push_block_header(domain::chain::blo
 
     res = kth_db_put(db_txn, dbi_block_header_by_hash_, &key_by_hash, &key, KTH_DB_NOOVERWRITE);
     if (res == KTH_DB_KEYEXIST) {
-        LOG_INFO(LOG_DATABASE, "Duplicate key inserting block header by hash [push_block_header] ", res);
+        spdlog::info("[database] Duplicate key inserting block header by hash [push_block_header] {}", res);
         return result_code::duplicated_key;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error inserting block header by hash [push_block_header] ", res);
+        spdlog::info("[database] Error inserting block header by hash [push_block_header] {}", res);
         return result_code::other;
     }
 
@@ -90,11 +90,11 @@ result_code internal_database_basis<Clock>::remove_block_header(hash_digest cons
     auto key = kth_db_make_value(sizeof(height), &height);
     auto res = kth_db_del(db_txn, dbi_block_header_, &key, NULL);
     if (res == KTH_DB_NOTFOUND) {
-        LOG_INFO(LOG_DATABASE, "Key not found deleting block header in LMDB [remove_block_header] - kth_db_del: ", res);
+        spdlog::info("[database] Key not found deleting block header in LMDB [remove_block_header] - kth_db_del: {}", res);
         return result_code::key_not_found;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Erro deleting block header in LMDB [remove_block_header] - kth_db_del: ", res);
+        spdlog::info("[database] Erro deleting block header in LMDB [remove_block_header] - kth_db_del: {}", res);
         return result_code::other;
     }
 
@@ -102,11 +102,11 @@ result_code internal_database_basis<Clock>::remove_block_header(hash_digest cons
 
     res = kth_db_del(db_txn, dbi_block_header_by_hash_, &key_hash, NULL);
     if (res == KTH_DB_NOTFOUND) {
-        LOG_INFO(LOG_DATABASE, "Key not found deleting block header by hash in LMDB [remove_block_header] - kth_db_del: ", res);
+        spdlog::info("[database] Key not found deleting block header by hash in LMDB [remove_block_header] - kth_db_del: {}", res);
         return result_code::key_not_found;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Erro deleting block header by hash in LMDB [remove_block_header] - kth_db_del: ", res);
+        spdlog::info("[database] Erro deleting block header by hash in LMDB [remove_block_header] - kth_db_del: {}", res);
         return result_code::other;
     }
 

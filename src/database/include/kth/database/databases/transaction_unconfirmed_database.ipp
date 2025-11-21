@@ -105,11 +105,11 @@ result_code internal_database_basis<Clock>::remove_transaction_unconfirmed(hash_
 
     auto res = kth_db_del(db_txn, dbi_transaction_unconfirmed_db_, &key, NULL);
     if (res == KTH_DB_NOTFOUND) {
-        //LOG_DEBUG(LOG_DATABASE, "Key not found deleting transaction unconfirmed DB in LMDB [remove_transaction_unconfirmed] - kth_db_del: ", res);
+        // spdlog::debug("[database] Key not found deleting transaction unconfirmed DB in LMDB [remove_transaction_unconfirmed] - kth_db_del: {}", res);
         return result_code::key_not_found;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error deleting transaction unconfirmed DB in LMDB [remove_transaction_unconfirmed] - kth_db_del: ", res);
+        spdlog::info("[database] Error deleting transaction unconfirmed DB in LMDB [remove_transaction_unconfirmed] - kth_db_del: {}", res);
         return result_code::other;
     }
 
@@ -140,12 +140,12 @@ result_code internal_database_basis<Clock>::insert_transaction_unconfirmed(domai
 
     auto res = kth_db_put(db_txn, dbi_transaction_unconfirmed_db_, &key, &value, KTH_DB_NOOVERWRITE);
     if (res == KTH_DB_KEYEXIST) {
-        LOG_INFO(LOG_DATABASE, "Duplicate key in Transaction Unconfirmed DB [insert_transaction_unconfirmed] ", res);
+        spdlog::info("[database] Duplicate key in Transaction Unconfirmed DB [insert_transaction_unconfirmed] {}", res);
         return result_code::duplicated_key;
     }
 
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error saving in Transaction Unconfirmed DB [insert_transaction_unconfirmed] ", res);
+        spdlog::info("[database] Error saving in Transaction Unconfirmed DB [insert_transaction_unconfirmed] {}", res);
         return result_code::other;
     }
 

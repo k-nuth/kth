@@ -34,7 +34,6 @@ class KnuthDatabaseConan(KnuthConanFileV2):
                "cxxflags": ["ANY"],
                "cflags": ["ANY"],
                "cmake_export_compile_commands": [True, False],
-               "log": ["boost", "spdlog", "binlog"],
     }
 
     default_options = {
@@ -50,7 +49,6 @@ class KnuthDatabaseConan(KnuthConanFileV2):
         "db_readonly": False,
         "cached_rpc_data": False,
         "cmake_export_compile_commands": False,
-        "log": "spdlog",
     }
 
     exports_sources = "src/*", "CMakeLists.txt", "ci_utils/cmake/*", "cmake/*", "knuthbuildinfo.cmake", "include/*", "test/*", "tools/*"
@@ -86,8 +84,6 @@ class KnuthDatabaseConan(KnuthConanFileV2):
         self.output.info("Compiling with measurements: %s" % (self.options.measurements,))
         self.output.info("Compiling for DB: %s" % (self.options.db,))
 
-        self.options["*"].log = self.options.log
-        self.output.info("Compiling with log: %s" % (self.options.log,))
 
     def package_id(self):
         KnuthConanFileV2.package_id(self)
@@ -100,7 +96,6 @@ class KnuthDatabaseConan(KnuthConanFileV2):
         # tc.variables["CMAKE_VERBOSE_MAKEFILE"] = True
         tc.variables["WITH_MEASUREMENTS"] = option_on_off(self.options.measurements)
         tc.variables["DB_READONLY_MODE"] = option_on_off(self.options.db_readonly)
-        tc.variables["LOG_LIBRARY"] = self.options.log
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
 
         if self.options.cmake_export_compile_commands:

@@ -15,14 +15,6 @@ extern "C" {
 kth_libconfig_t kth_libconfig_get() {
     kth_libconfig_t res;
 
-#if defined(KTH_LOG_LIBRARY_BOOST)
-    res.log_library = kth_libconfig_log_library_boost;
-#elif defined(KTH_LOG_LIBRARY_SPDLOG)
-    res.log_library = kth_libconfig_log_library_spdlog;
-#elif defined(KTH_LOG_LIBRARY_BINLOG)
-    res.log_library = kth_libconfig_log_library_binlog;
-#endif
-
     res.version = KTH_CAPI_VERSION;
     res.microarchitecture_id = KTH_STR(KTH_MARCH_ID);
 

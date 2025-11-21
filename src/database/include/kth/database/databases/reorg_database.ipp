@@ -17,21 +17,21 @@ result_code internal_database_basis<Clock>::insert_reorg_pool(uint32_t height, K
     //TODO: use cursors
     auto res = kth_db_get(db_txn, dbi_utxo_, &key, &value);
     if (res == KTH_DB_NOTFOUND) {
-        LOG_INFO(LOG_DATABASE, "Key not found getting UTXO [insert_reorg_pool] ", res);
+        spdlog::info("[database] Key not found getting UTXO [insert_reorg_pool] {}", res);
         return result_code::key_not_found;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error getting UTXO [insert_reorg_pool] ", res);
+        spdlog::info("[database] Error getting UTXO [insert_reorg_pool] {}", res);
         return result_code::other;
     }
 
     res = kth_db_put(db_txn, dbi_reorg_pool_, &key, &value, KTH_DB_NOOVERWRITE);
     if (res == KTH_DB_KEYEXIST) {
-        LOG_INFO(LOG_DATABASE, "Duplicate key inserting in reorg pool [insert_reorg_pool] ", res);
+        spdlog::info("[database] Duplicate key inserting in reorg pool [insert_reorg_pool] {}", res);
         return result_code::duplicated_key;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error inserting in reorg pool [insert_reorg_pool] ", res);
+        spdlog::info("[database] Error inserting in reorg pool [insert_reorg_pool] {}", res);
         return result_code::other;
     }
 
@@ -40,11 +40,11 @@ result_code internal_database_basis<Clock>::insert_reorg_pool(uint32_t height, K
     res = kth_db_put(db_txn, dbi_reorg_index_, &key_index, &value_index, 0);
 
     if (res == KTH_DB_KEYEXIST) {
-        LOG_INFO(LOG_DATABASE, "Duplicate key inserting in reorg index [insert_reorg_pool] ", res);
+        spdlog::info("[database] Duplicate key inserting in reorg index [insert_reorg_pool] {}", res);
         return result_code::duplicated_key;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error inserting in reorg index [insert_reorg_pool] ", res);
+        spdlog::info("[database] Error inserting in reorg index [insert_reorg_pool] {}", res);
         return result_code::other;
     }
 
@@ -61,11 +61,11 @@ result_code internal_database_basis<Clock>::push_block_reorg(domain::chain::bloc
 
     auto res = kth_db_put(db_txn, dbi_reorg_block_, &key, &value, KTH_DB_NOOVERWRITE);
     if (res == KTH_DB_KEYEXIST) {
-        LOG_INFO(LOG_DATABASE, "Duplicate key inserting in reorg block [push_block_reorg] ", res);
+        spdlog::info("[database] Duplicate key inserting in reorg block [push_block_reorg] {}", res);
         return result_code::duplicated_key;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error inserting in reorg block [push_block_reorg] ", res);
+        spdlog::info("[database] Error inserting in reorg block [push_block_reorg] {}", res);
         return result_code::other;
     }
 
@@ -80,31 +80,31 @@ result_code internal_database_basis<Clock>::insert_output_from_reorg_and_remove(
     KTH_DB_val value;
     auto res = kth_db_get(db_txn, dbi_reorg_pool_, &key, &value);
     if (res == KTH_DB_NOTFOUND) {
-        LOG_INFO(LOG_DATABASE, "Key not found in reorg pool [insert_output_from_reorg_and_remove] ", res);
+        spdlog::info("[database] Key not found in reorg pool [insert_output_from_reorg_and_remove] {}", res);
         return result_code::key_not_found;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error in reorg pool [insert_output_from_reorg_and_remove] ", res);
+        spdlog::info("[database] Error in reorg pool [insert_output_from_reorg_and_remove] {}", res);
         return result_code::other;
     }
 
     res = kth_db_put(db_txn, dbi_utxo_, &key, &value, KTH_DB_NOOVERWRITE);
     if (res == KTH_DB_KEYEXIST) {
-        LOG_INFO(LOG_DATABASE, "Duplicate key inserting in UTXO [insert_output_from_reorg_and_remove] ", res);
+        spdlog::info("[database] Duplicate key inserting in UTXO [insert_output_from_reorg_and_remove] {}", res);
         return result_code::duplicated_key;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error inserting in UTXO [insert_output_from_reorg_and_remove] ", res);
+        spdlog::info("[database] Error inserting in UTXO [insert_output_from_reorg_and_remove] {}", res);
         return result_code::other;
     }
 
     res = kth_db_del(db_txn, dbi_reorg_pool_, &key, NULL);
     if (res == KTH_DB_NOTFOUND) {
-        LOG_INFO(LOG_DATABASE, "Key not found deleting in reorg pool [insert_output_from_reorg_and_remove] ", res);
+        spdlog::info("[database] Key not found deleting in reorg pool [insert_output_from_reorg_and_remove] {}", res);
         return result_code::key_not_found;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error deleting in reorg pool [insert_output_from_reorg_and_remove] ", res);
+        spdlog::info("[database] Error deleting in reorg pool [insert_output_from_reorg_and_remove] {}", res);
         return result_code::other;
     }
     return result_code::success;
@@ -116,11 +116,11 @@ result_code internal_database_basis<Clock>::remove_block_reorg(uint32_t height, 
     auto key = kth_db_make_value(sizeof(height), &height);
     auto res = kth_db_del(db_txn, dbi_reorg_block_, &key, NULL);
     if (res == KTH_DB_NOTFOUND) {
-        LOG_INFO(LOG_DATABASE, "Key not found deleting reorg block in LMDB [remove_block_reorg] - kth_db_del: ", res);
+        spdlog::info("[database] Key not found deleting reorg block in LMDB [remove_block_reorg] - kth_db_del: {}", res);
         return result_code::key_not_found;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_INFO(LOG_DATABASE, "Error deleting reorg block in LMDB [remove_block_reorg] - kth_db_del: ", res);
+        spdlog::info("[database] Error deleting reorg block in LMDB [remove_block_reorg] - kth_db_del: {}", res);
         return result_code::other;
     }
     return result_code::success;
@@ -132,11 +132,11 @@ result_code internal_database_basis<Clock>::remove_reorg_index(uint32_t height, 
     auto key = kth_db_make_value(sizeof(height), &height);
     auto res = kth_db_del(db_txn, dbi_reorg_index_, &key, NULL);
     if (res == KTH_DB_NOTFOUND) {
-        LOG_DEBUG(LOG_DATABASE, "Key not found deleting reorg index in LMDB [remove_reorg_index] - height: ", height, " - kth_db_del: ", res);
+        spdlog::debug("[database] Key not found deleting reorg index in LMDB [remove_reorg_index] - height: {} - kth_db_del: {}", height, res);
         return result_code::key_not_found;
     }
     if (res != KTH_DB_SUCCESS) {
-        LOG_DEBUG(LOG_DATABASE, "Error deleting reorg index in LMDB [remove_reorg_index] - height: ", height, " - kth_db_del: ", res);
+        spdlog::debug("[database] Error deleting reorg index in LMDB [remove_reorg_index] - height: {} - kth_db_del: {}", height, res);
         return result_code::other;
     }
     return result_code::success;
@@ -197,11 +197,11 @@ result_code internal_database_basis<Clock>::prune_reorg_index(uint32_t remove_un
 
             auto res = kth_db_del(db_txn, dbi_reorg_pool_, &value, NULL);
             if (res == KTH_DB_NOTFOUND) {
-                LOG_INFO(LOG_DATABASE, "Key not found deleting reorg pool in LMDB [prune_reorg_index] - kth_db_del: ", res);
+                spdlog::info("[database] Key not found deleting reorg pool in LMDB [prune_reorg_index] - kth_db_del: {}", res);
                 return result_code::key_not_found;
             }
             if (res != KTH_DB_SUCCESS) {
-                LOG_INFO(LOG_DATABASE, "Error deleting reorg pool in LMDB [prune_reorg_index] - kth_db_del: ", res);
+                spdlog::info("[database] Error deleting reorg pool in LMDB [prune_reorg_index] - kth_db_del: {}", res);
                 return result_code::other;
             }
 

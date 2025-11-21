@@ -57,9 +57,7 @@ void protocol_timer::handle_timer(code const& ec) {
         return;
     }
 
-    LOG_DEBUG(LOG_NETWORK
-       , "Fired protocol_", name(), " timer on [", authority(), "] "
-       , ec.message());
+    spdlog::debug("[network] Fired protocol_{} timer on [{}] {}", name(), authority(), ec.message());
 
     // The handler completes before the timer is reset.
     set_event(error::channel_timeout);

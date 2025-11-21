@@ -24,24 +24,6 @@
     #define KB_INTERNAL KD_HELPER_DLL_LOCAL
 #endif
 
-//// Now we use the generic helper definitions to
-//// define BCD_API and BCD_INTERNAL.
-//// BCD_API is used for the public API symbols. It either DLL imports or
-//// DLL exports (or does nothing for static build)
-//// BCD_INTERNAL is used for non-api symbols.
-//
-//#if defined BCB_STATIC
-//    #define BCD_API
-//    #define BCD_INTERNAL
-//#elif defined BCB_DLL
-//    #define BCD_API      BC_HELPER_DLL_EXPORT
-//    #define BCD_INTERNAL BC_HELPER_DLL_LOCAL
-//#else
-//    #define BCD_API      BC_HELPER_DLL_IMPORT
-//    #define BCD_INTERNAL BC_HELPER_DLL_LOCAL
-//#endif
 
-// Log name.
-#define LOG_BLOCKCHAIN "[blockchain] "
 
 #endif

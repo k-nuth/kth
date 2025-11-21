@@ -68,7 +68,7 @@ void protocol_header_sync::send_get_headers(event_handler complete) {
         headers_->stop_hash()
     };
 
-    LOG_INFO(LOG_NODE, "protocol_header_sync::send_get_headers [", authority(), "]");
+    spdlog::info("[node] protocol_header_sync::send_get_headers [{}]", authority());
     SEND2(request, handle_send, _1, request.command);
 }
 
@@ -81,16 +81,14 @@ bool protocol_header_sync::handle_receive_headers(code const& ec, headers_const_
 
     // A merge failure resets the headers list.
     if ( ! headers_->merge(message)) {
-        LOG_WARNING(LOG_NODE, "Failure merging headers from [", authority(), "]");
+        spdlog::warn("[node] Failure merging headers from [{}]", authority());
         complete(error::invalid_previous_block);
         return false;
     }
 
     auto const end = headers_->previous_height();
 
-    LOG_INFO(LOG_NODE
-       , "Synced headers ", start, "-", end, " from ["
-       , authority(), "]");
+    spdlog::info("[node] Synced headers {}-{} from [{}]", start, end, authority());
 
     if (headers_->complete()) {
         complete(error::success);
@@ -115,9 +113,7 @@ void protocol_header_sync::handle_event(code const& ec, event_handler complete) 
     }
 
     if (ec && ec != error::channel_timeout) {
-        LOG_WARNING(LOG_NODE
-           , "Failure in header sync timer for [", authority(), "] "
-           , ec.message());
+        spdlog::warn("[node] Failure in header sync timer for [{}] {}", authority(), ec.message());
         complete(ec);
         return;
     }
@@ -131,9 +127,7 @@ void protocol_header_sync::handle_event(code const& ec, event_handler complete) 
 
     // Drop the channel if it falls below the min sync rate averaged over all.
     if (rate < minimum_rate_) {
-        LOG_DEBUG(LOG_NODE
-           , "Header sync rate (", rate, "/sec) from ["
-           , authority(), "]");
+        spdlog::debug("[node] Header sync rate ({}/sec) from [{}]", rate, authority());
         complete(error::channel_timeout);
         return;
     }

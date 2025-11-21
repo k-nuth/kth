@@ -40,9 +40,7 @@ void protocol_ping_31402::send_ping(code const& ec) {
     }
 
     if (ec && ec != error::channel_timeout) {
-        LOG_DEBUG(LOG_NETWORK
-           , "Failure in ping timer for [", authority(), "] "
-           , ec.message());
+        spdlog::debug("[network] Failure in ping timer for [{}] {}", authority(), ec.message());
         stop(ec);
         return;
     }

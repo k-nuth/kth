@@ -35,11 +35,11 @@ bool internal_database_basis<Clock>::create() {
 
     if ( ! std::filesystem::create_directories(db_dir_, ec)) {
         if (ec.value() == directory_exists) {
-            LOG_ERROR(LOG_DATABASE, "Failed because the directory ", db_dir_.string(), " already exists.");
+            spdlog::error("[database] Failed because the directory {} already exists.", db_dir_.string());
             return false;
         }
 
-        LOG_ERROR(LOG_DATABASE, "Failed to create directory ", db_dir_.string(), " with error, '", ec.message(), "'.");
+        spdlog::error("[database] Failed to create directory {} with error, '{}'.", db_dir_.string(), ec.message());
         return false;
     }
 
@@ -71,7 +71,7 @@ bool internal_database_basis<Clock>::create_db_mode_property() {
 
     res = kth_db_put(db_txn, dbi_properties_, &key, &value, KTH_DB_NOOVERWRITE);
     if (res != KTH_DB_SUCCESS) {
-        LOG_ERROR(LOG_DATABASE, "Failed saving in DB Properties [create_db_mode_property] ", static_cast<int32_t>(res));
+        spdlog::error("[database] Failed saving in DB Properties [create_db_mode_property] {}", static_cast<int32_t>(res));
         kth_db_txn_abort(db_txn);
         return false;
     }
@@ -108,7 +108,7 @@ template <typename Clock>
 bool internal_database_basis<Clock>::open_internal() {
 
     if ( ! create_and_open_environment()) {
-        LOG_ERROR(LOG_DATABASE, "Error configuring LMDB environment.");
+        spdlog::error("[database] Error configuring LMDB environment.");
         return false;
     }
 
@@ -131,7 +131,7 @@ bool internal_database_basis<Clock>::verify_db_mode_property() const {
 
     res = kth_db_get(db_txn, dbi_properties_, &key, &value);
     if (res != KTH_DB_SUCCESS) {
-        LOG_ERROR(LOG_DATABASE, "Failed getting DB Properties [verify_db_mode_property] ", static_cast<int32_t>(res));
+        spdlog::error("[database] Failed getting DB Properties [verify_db_mode_property] {}", static_cast<int32_t>(res));
         kth_db_txn_abort(db_txn);
         return false;
     }
@@ -144,10 +144,7 @@ bool internal_database_basis<Clock>::verify_db_mode_property() const {
     }
 
     if (db_mode_ != db_mode_db) {
-        LOG_ERROR(LOG_DATABASE, "Error validating DB Mode, the node is compiled for another DB mode. Node DB Mode: "
-           , static_cast<uint32_t>(db_mode_)
-           , ", Actual DB Mode: "
-           , static_cast<uint32_t>(db_mode_db));
+        spdlog::error("[database] Error validating DB Mode, the node is compiled for another DB mode. Node DB Mode: {}, Actual DB Mode: {}", static_cast<uint32_t>(db_mode_), static_cast<uint32_t>(db_mode_db));
         return false;
     }
 
@@ -224,7 +221,7 @@ result_code internal_database_basis<Clock>::push_block(domain::chain::block cons
     KTH_DB_txn* db_txn;
     auto res0 = kth_db_txn_begin(env_, NULL, 0, &db_txn);
     if (res0 != KTH_DB_SUCCESS) {
-        LOG_ERROR(LOG_DATABASE, "Error begining LMDB Transaction [push_block] ", res0);
+        spdlog::error("[database] Error begining LMDB Transaction [push_block] {}", res0);
         return result_code::other;
     }
 
@@ -237,7 +234,7 @@ result_code internal_database_basis<Clock>::push_block(domain::chain::block cons
 
     auto res2 = kth_db_txn_commit(db_txn);
     if (res2 != KTH_DB_SUCCESS) {
-        LOG_ERROR(LOG_DATABASE, "Error commiting LMDB Transaction [push_block] ", res2);
+        spdlog::error("[database] Error commiting LMDB Transaction [push_block] {}", res2);
         return result_code::other;
     }
 
@@ -274,7 +271,7 @@ utxo_entry internal_database_basis<Clock>::get_utxo(domain::chain::output_point 
     KTH_DB_txn* db_txn;
     auto res0 = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (res0 != KTH_DB_SUCCESS) {
-        LOG_ERROR(LOG_DATABASE, "Error begining LMDB Transaction [get_utxo] ", res0);
+        spdlog::error("[database] Error begining LMDB Transaction [get_utxo] {}", res0);
         return {};
     }
 
@@ -282,7 +279,7 @@ utxo_entry internal_database_basis<Clock>::get_utxo(domain::chain::output_point 
 
     res0 = kth_db_txn_commit(db_txn);
     if (res0 != KTH_DB_SUCCESS) {
-        LOG_ERROR(LOG_DATABASE, "Error commiting LMDB Transaction [get_utxo] ", res0);
+        spdlog::error("[database] Error commiting LMDB Transaction [get_utxo] {}", res0);
         return {};
     }
 
@@ -523,12 +520,12 @@ result_code internal_database_basis<Clock>::insert_reorg_into_pool(utxo_pool_t& 
     KTH_DB_val value;
     auto res = kth_db_get(db_txn, dbi_reorg_pool_, &key_point, &value);
     if (res == KTH_DB_NOTFOUND) {
-        LOG_INFO(LOG_DATABASE, "Key not found in reorg pool [insert_reorg_into_pool] ", res);
+        spdlog::info("[database] Key not found in reorg pool [insert_reorg_into_pool] {}", res);
         return result_code::key_not_found;
     }
 
     if (res != KTH_DB_SUCCESS) {
-        LOG_ERROR(LOG_DATABASE, "Error in reorg pool [insert_reorg_into_pool] ", res);
+        spdlog::error("[database] Error in reorg pool [insert_reorg_into_pool] {}", res);
         return result_code::other;
     }
 
@@ -536,7 +533,7 @@ result_code internal_database_basis<Clock>::insert_reorg_into_pool(utxo_pool_t& 
     byte_reader entry_reader(entry_data);
     auto entry_res = utxo_entry::from_data(entry_reader);
     if ( ! entry_res) {
-        LOG_ERROR(LOG_DATABASE, "Error deserializing utxo_entry from reorg pool");
+        spdlog::error("[database] Error deserializing utxo_entry from reorg pool");
         return result_code::other;
     }
 
@@ -544,7 +541,7 @@ result_code internal_database_basis<Clock>::insert_reorg_into_pool(utxo_pool_t& 
     byte_reader point_reader(point_data);
     auto point_res = domain::chain::output_point::from_data(point_reader, KTH_INTERNAL_DB_WIRE);
     if ( ! point_res) {
-        LOG_ERROR(LOG_DATABASE, "Error deserializing output_point from reorg pool");
+        spdlog::error("[database] Error deserializing output_point from reorg pool");
         return result_code::other;
     }
     pool.insert({*point_res, std::move(*entry_res)});     //TODO(fernando): use emplace?
@@ -696,7 +693,7 @@ bool internal_database_basis<Clock>::create_and_open_environment() {
 
     auto res = kth_db_env_set_mapsize(env_, adjust_db_size(db_max_size_));
     if (res != KTH_DB_SUCCESS) {
-        LOG_ERROR(LOG_DATABASE, "Error setting max memory map size. Verify do you have enough free space. [create_and_open_environment] ", static_cast<int32_t>(res));
+        spdlog::error("[database] Error setting max memory map size. Verify do you have enough free space. [create_and_open_environment] {}", static_cast<int32_t>(res));
         return false;
     }
 
@@ -745,12 +742,12 @@ bool internal_database_basis<Clock>::set_fast_flags_environment(bool enabled) {
         return true;
     }
 
-    LOG_INFO(LOG_DATABASE, "Setting LMDB Environment Flags. Fast mode: ", (enabled ? "yes" : "no" ));
+    spdlog::info("[database] Setting LMDB Environment Flags. Fast mode: {}", (enabled ? "yes" : "no" ));
 
     //KTH_DB_WRITEMAP |
     auto res = mdb_env_set_flags(env_, KTH_DB_MAPASYNC, enabled ? 1 : 0);
     if ( res != KTH_DB_SUCCESS ) {
-        LOG_ERROR(LOG_DATABASE, "Error setting LMDB Environmet flags. [set_fast_flags_environment] ", static_cast<int32_t>(res));
+        spdlog::error("[database] Error setting LMDB Environmet flags. [set_fast_flags_environment] {}", static_cast<int32_t>(res));
         return false;
     }
 

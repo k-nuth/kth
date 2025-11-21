@@ -60,12 +60,12 @@ bool protocol_double_spend_proof_out::handle_receive_get_data(code const& ec, ge
     }
 
     if ( ! ds_proofs_enabled_) {
-        LOG_DEBUG(LOG_NODE, "Got DSProof GetData but node.ds_proofs is disabled (settings) from [", authority(), "]");
+        spdlog::debug("[node] Got DSProof GetData but node.ds_proofs is disabled (settings) from [{}]", authority());
         return false;
     }
 
     if (message->inventories().size() > max_get_data) {
-        LOG_WARNING(LOG_NODE, "Invalid get_data size (", message->inventories().size(), ") from [", authority(), "]");
+        spdlog::warn("[node] Invalid get_data size ({}) from [{}]", message->inventories().size(), authority());
         stop(error::channel_stopped);
         return false;
     }
@@ -108,7 +108,7 @@ void protocol_double_spend_proof_out::send_ds_proof(code const& ec, double_spend
     }
 
     if (ec == error::not_found) {
-        LOG_DEBUG(LOG_NODE, "DSProof requested by [", authority(), "] not found.");
+        spdlog::debug("[node] DSProof requested by [{}] not found.", authority());
 
         KTH_ASSERT( ! inventory->inventories().empty());
         const not_found reply{ inventory->inventories().back() };
@@ -118,7 +118,7 @@ void protocol_double_spend_proof_out::send_ds_proof(code const& ec, double_spend
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NODE, "Internal failure locating DSProof requested by [", authority(), "] ", ec.message());
+        spdlog::error("[node] Internal failure locating DSProof requested by [{}] {}", authority(), ec.message());
         stop(ec);
         return;
     }
@@ -147,7 +147,7 @@ bool protocol_double_spend_proof_out::handle_ds_proof_pool(code const& ec, doubl
     }
 
     if (ec) {
-        LOG_ERROR(LOG_NODE, "Failure handling DSProof notification: ", ec.message());
+        spdlog::error("[node] Failure handling DSProof notification: {}", ec.message());
         stop(ec);
         return false;
     }
@@ -168,16 +168,16 @@ bool protocol_double_spend_proof_out::handle_ds_proof_pool(code const& ec, doubl
     inventory const announce {{id, message->hash()}};
     SEND2(announce, handle_send, _1, announce.command);
 
-    ////LOG_DEBUG(LOG_NODE
-    ////   , "Announced tx [", encode_hash(message->hash()), "] to ["
-    ////   , authority(), "].");
+    ////spdlog::debug("[node]
+    ////] Announced tx [{}{}{}].", encode_hash(message->hash()), "] to ["
+    ////, authority());
     return true;
 }
 
 void protocol_double_spend_proof_out::handle_stop(code const&) {
     chain_.unsubscribe();
 
-    LOG_DEBUG(LOG_NETWORK, "Stopped double_spend_proof_out protocol for [", authority(), "].");
+    spdlog::debug("[network] Stopped double_spend_proof_out protocol for [{}].", authority());
 }
 
 } // namespace kth::node
