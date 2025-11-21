@@ -39,14 +39,14 @@ public:
     /// Local execution for any operation, equivalent to std::bind.
     template <typename Handler, typename... Args>
     static void bound(Handler&& handler, Args&&... args) {
-        std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...)();
+        std::bind(std::forward<Handler>(handler), std::forward<Args>(args)...)();
     }
 
     /// Concurrent execution for any operation.
     template <typename Handler, typename... Args>
     void concurrent(Handler&& handler, Args&&... args) {
         // Service post ensures the job does not execute in the current thread.
-        ::asio::post(service_, std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...));
+        ::asio::post(service_, std::bind(std::forward<Handler>(handler), std::forward<Args>(args)...));
     }
 
     /// Sequential execution for synchronous operations.
@@ -54,7 +54,7 @@ public:
     void ordered(Handler&& handler, Args&&... args) {
         // Use a strand to prevent concurrency and post vs. dispatch to ensure
         // that the job is not executed in the current thread.
-        ::asio::post(strand_, std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...));
+        ::asio::post(strand_, std::bind(std::forward<Handler>(handler), std::forward<Args>(args)...));
     }
 
     /// Non-concurrent execution for synchronous operations.
@@ -64,7 +64,7 @@ public:
         // to deny ordering while ensuring execution on another thread.
         // TODO: Review bind_executor vs deprecated wrap() for behavioral differences
         // See: https://github.com/k-nuth/kth-mono/issues/76
-        ::asio::post(service_, ::asio::bind_executor(strand_, std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...)));
+        ::asio::post(service_, ::asio::bind_executor(strand_, std::bind(std::forward<Handler>(handler), std::forward<Args>(args)...)));
     }
 
     /// Begin sequential execution for a set of asynchronous operations.
@@ -73,7 +73,7 @@ public:
     void lock(Handler&& handler, Args&&... args) {
         // Use a sequence to track the asynchronous operation to completion,
         // ensuring each asynchronous op executes independently and in order.
-        sequence_.lock(std::bind_front(std::forward<Handler>(handler), std::forward<Args>(args)...));
+        sequence_.lock(std::bind(std::forward<Handler>(handler), std::forward<Args>(args)...));
     }
 
     /// Complete sequential execution.

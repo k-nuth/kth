@@ -21,10 +21,10 @@
 namespace kth::network {
 
 #define BOUND_SESSION(handler, args) \
-    std::bind_front(std::forward<Handler>(handler), shared_from_base<Session>(), std::forward<Args>(args)...)
+    std::bind(std::forward<Handler>(handler), shared_from_base<Session>(), std::forward<Args>(args)...)
 
 #define BOUND_SESSION_TYPE(handler, args) \
-    std::bind_front(std::forward<Handler>(handler), std::shared_ptr<Session>(), std::forward<Args>(args)...)
+    std::bind(std::forward<Handler>(handler), std::shared_ptr<Session>(), std::forward<Args>(args)...)
 
 class p2p;
 
@@ -74,7 +74,7 @@ protected:
     template <typename Session, typename Handler, typename... Args>
     auto concurrent_delegate(Handler&& handler, Args&&... args) ->
         delegates::concurrent<decltype(BOUND_SESSION_TYPE(handler, args))> const {
-        return dispatch_.concurrent_delegate(SESSION_ARGS(handler, args));
+        return dispatch_.concurrent_delegate(std::forward<Handler>(handler), shared_from_base<Session>(), std::forward<Args>(args)...);
     }
 
     /// Invoke a method in the derived class after the specified delay.

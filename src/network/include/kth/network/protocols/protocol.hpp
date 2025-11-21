@@ -16,10 +16,10 @@
 namespace kth::network {
 
 #define BOUND_PROTOCOL(handler, args) \
-    std::bind_front(std::forward<Handler>(handler), shared_from_base<Protocol>(), std::forward<Args>(args)...)
+    std::bind(std::forward<Handler>(handler), shared_from_base<Protocol>(), std::forward<Args>(args)...)
 
 #define BOUND_PROTOCOL_TYPE(handler, args) \
-    std::bind_front(std::forward<Handler>(handler), std::shared_ptr<Protocol>(), std::forward<Args>(args)...)
+    std::bind(std::forward<Handler>(handler), std::shared_ptr<Protocol>(), std::forward<Args>(args)...)
 
 class p2p;
 
