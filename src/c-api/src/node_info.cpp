@@ -5,7 +5,7 @@
 #include <kth/capi/node_info.h>
 
 #include <functional>
-#include <iostream>
+#include <print>
 #include <thread>
 
 // #ifndef __EMSCRIPTEN__
@@ -23,7 +23,7 @@
 extern "C" {
 
 void kth_node_print_thread_id() {
-    std::cout << std::this_thread::get_id() << '\n';
+    std::println("{}", std::this_thread::get_id());
 }
 
 uint64_t kth_node_get_thread_id() {

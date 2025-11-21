@@ -641,12 +641,6 @@ std::pair<bool, size_t> script::check_signature(
 #endif // ! KTH_CURRENCY_BCH
                                                                 value);
 
-    std::cout << "script::check_signature() - sighash: ";
-    for (auto const& byte : sighash) {
-        printf("%02x", int(byte));
-    }
-    printf("\n");
-
     // Validate the EC signature.
     return { verify_signature(public_key, sighash, signature), size };
 }

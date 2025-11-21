@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <print>
 #include <utility>
 #include <kth/blockchain.hpp>
 #include <kth/node/configuration.hpp>
@@ -642,7 +643,7 @@ void full_node::print_statistics(size_t height) const {
     }
 
     screen_clear();
-    std::cout << stats << "\n\n";
+    std::print("{}\n\n", stats.str());
 
     // LOG_INFO(LOG_BLOCKCHAIN, "************************************************************************************************************************");
 }

@@ -6,6 +6,7 @@
 #define KTH_BLOCKCHAIN_MINING_PARTIALLY_INDEXED_HPP_
 
 #include <list>
+#include <print>
 #include <vector>
 
 #include <kth/mining/common.hpp>
@@ -222,7 +223,7 @@ public:
     }
 
     void check_invariant() const {
-        std::cout << "Checking invariants...\n";
+        std::println("Checking invariants...");
         check_invariant_partial();
 
         {

@@ -423,7 +423,6 @@ bool script_basis::is_coinbase_pattern(operation::list const& ops, size_t height
     }
     auto num_exp = number::from_int(height);
     if ( ! num_exp) {
-        std::cout << "number error in script_basis::is_coinbase_pattern()" << std::endl;
         return false;
     }
     return ops[0].data() == num_exp->data();

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <print>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
@@ -15,7 +16,6 @@
 
 #ifndef NDEBUG
 #include <iomanip>
-#include <iostream>
 #endif
 
 // #include <boost/bimap.hpp>
@@ -176,55 +176,40 @@ public:
 
 #ifndef NDEBUG
     void print_candidates() const {
-
-        std::cout.fill('0');
-        std::cout.width(2);
-        // cout << setw(2);
-
-        std::cout << "candidate_transactions_.size() " << candidate_transactions_.size() << std::endl;
-        std::cout << "all_transactions_.size()       " << all_transactions_.size() << std::endl;
-
+        std::println("candidate_transactions_.size() {}", candidate_transactions_.size());
+        std::println("all_transactions_.size()       {}", all_transactions_.size());
 
         {
             size_t index = 0;
             for (auto mi : candidate_transactions_) {
-                std::cout << std::setw(2) << index << ", ";
+                std::print("{:02}, ", index);
                 ++index;
             }
-            std::cout << std::endl;
+            std::println("");
         }
 
         for (auto mi : candidate_transactions_) {
-            std::cout << std::setw(2) << mi.index() << ", ";
+            std::print("{:02}, ", mi.index());
         }
-
-        std::cout << std::endl;
-
-        // for (auto mi : candidate_transactions_) {
-        //     auto& temp_node = all_transactions_[mi.index()];
-        //     auto benefit = static_cast<double>(temp_node.children_fees()) / temp_node.children_size();
-        //     std::cout << benefit << ", ";
-        // }
-
-        // std::cout << std::endl;
+        std::println("");
 
         {
             size_t index = 0;
             for (auto const& mi : all_transactions_) {
-                std::cout << std::setw(2) << index << ", ";
+                std::print("{:02}, ", index);
                 ++index;
             }
-            std::cout << std::endl;
+            std::println("");
         }
 
         for (auto const& e : all_transactions_) {
             if (e.candidate_index() == null_index) {
-                std::cout << "XX, ";
+                std::print("XX, ");
             } else {
-                std::cout << std::setw(2) << e.candidate_index() << ", ";
+                std::print("{:02}, ", e.candidate_index());
+            }
         }
-        }
-        std::cout << std::endl;
+        std::println("");
     }
 #endif // NDEBUG
 
@@ -486,7 +471,7 @@ public:
                 return error::success;
             }
 
-            std::cout << "************************** FIRST ITEM DOESNT FIT **************************" << std::endl;
+            std::println("************************** FIRST ITEM DOESNT FIT **************************");
 
 
             auto const cmp = [this](candidate_index_t a, candidate_index_t b) {

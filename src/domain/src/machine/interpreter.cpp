@@ -150,20 +150,17 @@ std::tuple<code, size_t, program> interpreter::debug_step(program program, size_
 
     // if (step > program.operation_count()) {
     if (step >= program.get_script().operations().size()) {
-        std::cout << "interpreter::debug_step() return 1" << std::endl;
         return {error::invalid_operation_count, step, program};
     }
 
     auto const op_it = program.begin() + step;
     if (op_it == program.end()) {
-        std::cout << "interpreter::debug_step() return 2" << std::endl;
         return {error::invalid_operation_count, step, program};
     }
 
     auto const op = *op_it;
 
     if (op.is_oversized(program.max_script_element_size())) {
-        std::cout << "interpreter::debug_step() return 3" << std::endl;
         return {error::invalid_push_data_size, step, program};
     }
 

@@ -7,9 +7,9 @@
 #include <csignal>
 #include <functional>
 #include <future>
-#include <iostream>
 #include <memory>
 #include <mutex>
+#include <print>
 
 #include <boost/core/null_deleter.hpp>
 
@@ -105,7 +105,7 @@ executor::executor(kth::node::configuration const& config, bool stdout_enabled /
 }
 
 void executor::print_version(std::string_view extra) {
-    std::cout << fmt::format(KTH_VERSION_MESSAGE, KTH_NODE_VERSION, extra, KTH_CURRENCY_SYMBOL_STR, KTH_MICROARCHITECTURE_STR, march_names()) << std::endl;
+    std::println(KTH_VERSION_MESSAGE, KTH_NODE_VERSION, extra, KTH_CURRENCY_SYMBOL_STR, KTH_MICROARCHITECTURE_STR, march_names());
 }
 
 #if ! defined(KTH_DB_READONLY)
@@ -367,25 +367,26 @@ void executor::stop(kth::code const& ec) {
 // ----------------------------------------------------------------------------
 
 void executor::print_ascii_art() {
-    std::cout << "    ...\n";
-    std::cout << "    .-=*#%%=                            :-=+++*#:\n";
-    std::cout << "    :+*%%%@=                            .:--#@@#.\n";
-    std::cout << "       :%%@=                      .:.      :%@#.\n";
-    std::cout << "       .%%@=                    .*%%-     :#@%:\n";
-    std::cout << "       :%%@=       ..          .#@%=     .#@%-\n";
-    std::cout << "       :%%@= .=###**+.     -+++#%%%***.  +@%=  :=+*+-\n";
-    std::cout << "       :%%%-  :%%=:.       :--%@%*-::.  =%%= -+*=-%@@=\n";
-    std::cout << "       :%%%: :*+.   .::.     =%@*.     :%@#:++:   +@@+\n";
-    std::cout << "       :%%%*+#:    .#%%%=   -%@#.     .*%%%*:     *%@-\n";
-    std::cout << "       -%%%@@%*-   :#@@%=  :#@#.      +@%%+      :%%%.\n";
-    std::cout << "       =@%%-+%@%+.  .-=-  .#@%:.=*.  -%%%-      .#@%-\n";
-    std::cout << "       -@%%. :*%@#-      .*@%+=#%-  :%@#: .--  .*@%-\n";
-    std::cout << "     .:*@%%:   =%@@*-.   +@%%@%+.  .*@#.  *@@*=#@#:\n";
-    std::cout << "    .*#####*: -*#####*.  *%%*=.    .**:   :*#%#+-.\n";
-    std::cout << "    ........  ..  ....   ...                ..\n";
-    std::cout << "\n";
-    std::cout << "          High Performance Bitcoin Cash Node\n";
-    std::cout << "\n";
+    std::print("{}", R"(    ...
+    .-=*#%%=                            :-=+++*#:
+    :+*%%%@=                            .:--#@@#.
+       :%%@=                      .:.      :%@#.
+       .%%@=                    .*%%-     :#@%:
+       :%%@=       ..          .#@%=     .#@%-
+       :%%@= .=###**+.     -+++#%%%***.  +@%=  :=+*+-
+       :%%%-  :%%=:.       :--%@%*-::.  =%%= -+*=-%@@=
+       :%%%: :*+.   .::.     =%@*.     :%@#:++:   +@@+
+       :%%%*+#:    .#%%%=   -%@#.     .*%%%*:     *%@-
+       -%%%@@%*-   :#@@%=  :#@#.      +@%%+      :%%%.
+       =@%%-+%@%+.  .-=-  .#@%:.=*.  -%%%-      .#@%-
+       -@%%. :*%@#-      .*@%+=#%-  :%@#: .--  .*@%-
+     .:*@%%:   =%@@*-.   +@%%@%+.  .*@#.  *@@*=#@#:
+    .*#####*: -*#####*.  *%%*=.    .**:   :*#%#+-.
+    ........  ..  ....   ...                ..
+
+          High Performance Bitcoin Cash Node
+
+)");
 }
 
 // Set up logging.
