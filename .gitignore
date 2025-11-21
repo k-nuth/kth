@@ -9,3 +9,4 @@ build_release/
 CMakeUserPresets.json
 build-asan/
 test_runner/
+doc/release-notes/*.backup
