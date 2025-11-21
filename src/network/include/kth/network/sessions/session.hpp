@@ -20,19 +20,11 @@
 
 namespace kth::network {
 
-#define SESSION_ARGS(handler, args) \
-    std::forward<Handler>(handler), \
-    shared_from_base<Session>(), \
-    std::forward<Args>(args)...
 #define BOUND_SESSION(handler, args) \
-    std::bind_front(SESSION_ARGS(handler, args))
+    std::bind_front(std::forward<Handler>(handler), shared_from_base<Session>(), std::forward<Args>(args)...)
 
-#define SESSION_ARGS_TYPE(handler, args) \
-    std::forward<Handler>(handler), \
-    std::shared_ptr<Session>(), \
-    std::forward<Args>(args)...
 #define BOUND_SESSION_TYPE(handler, args) \
-    std::bind_front(SESSION_ARGS_TYPE(handler, args))
+    std::bind_front(std::forward<Handler>(handler), std::shared_ptr<Session>(), std::forward<Args>(args)...)
 
 class p2p;
 
@@ -171,9 +163,7 @@ private:
     mutable dispatcher dispatch_;
 };
 
-#undef SESSION_ARGS
 #undef BOUND_SESSION
-#undef SESSION_ARGS_TYPE
 #undef BOUND_SESSION_TYPE
 
 #define BIND1(method, p1) bind<CLASS>(&CLASS::method, p1)
