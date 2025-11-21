@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chrono>
+#include <print>
 #include <csignal>
 #include <cstdio>
 #include <iostream>
@@ -206,7 +207,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
 // bool stopped = false;
 
 // void handle_stop(int signal) {
-//     std::cout << "handle_stop()\n";
+//     std::println("handle_stop()");
 //     // stop(kth::error::success);
 //     //kth_node_stop(exec);
 //     //kth_chain_t chain = kth_node_get_chain(exec);
@@ -229,13 +230,13 @@ int main(int /*argc*/, char* /*argv*/[]) {
 
 //     //if (xxx >= 3000) {
 //     //    int s = kth_node_stopped(exec);
-//     //    std::cout << s << std::endl;
+//     //    std::println("{}", s);
 
 //     //    //kth_node_stop(exec);
 //     //    //kth_node_close(exec);
 
 //     //    s = kth_node_stopped(exec);
-//     //    std::cout << s << std::endl;
+//     //    std::println("{}", s);
 //     //    kth_chain_unsubscribe(chain);
 //     //}
 
@@ -300,13 +301,13 @@ int main(int /*argc*/, char* /*argv*/[]) {
 
 //         if (height >= 3000) {
 //             int s = kth_node_stopped(exec);
-//             std::cout << s << std::endl;
+//             std::println("{}", s);
 
 //             kth_node_stop(exec);
 //             //kth_node_close(exec);
 
 //             s = kth_node_stopped(exec);
-//             std::cout << s << std::endl;
+//             std::println("{}", s);
 //         }
 
 //         std::this_thread::sleep_for(std::chrono::seconds(10));
@@ -425,7 +426,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
 //	//auto data = txlib.to_data();
 //
 //	//for (int i = 0; i < data.size(); ++i) {
-//	//	std::cout << std::hex << (int)data[i];
+//	//	std::print("{:x}", (int)data[i]);
 //	//}
 //
 //
@@ -441,7 +442,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
 //
 //	//while (waiting) {
 //	//	std::this_thread::sleep_for(500ms);
-//	//	//std::cout << "..." << std::endl;
+//	//	//std::println("{}", "...");
 //	//}
 //
 ////    fetch_merkle_block_by_height(exec, 0, NULL);
@@ -458,7 +459,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
 //	while (true) {
 //		fetch_last_height(exec, last_height_fetch_handler);
 //		std::this_thread::sleep_for(500ms);
-//		//std::cout << "..." << std::endl;
+//		//std::println("{}", "...");
 //	}
 //
 //    kth_node_destruct(exec);

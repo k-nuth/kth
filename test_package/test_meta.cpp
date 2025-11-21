@@ -1,4 +1,4 @@
-#include <iostream>
+#include <print>
 
 // Test meta target (includes everything) - show versions from multiple modules
 #include <kth/infrastructure/version.hpp>
@@ -8,13 +8,13 @@
 #include <kth/node/version.hpp>
 
 int main() {
-    std::cout << "Testing KTH meta target (kth::kth)..." << std::endl;
-    std::cout << "=== KTH Component Versions ===" << std::endl;
-    std::cout << "Infrastructure: " << kth::infrastructure::version() << std::endl;
-    std::cout << "Domain: " << kth::domain::version() << std::endl;
+    std::println("Testing KTH meta target (kth::kth)...");
+    std::println("=== KTH Component Versions ===");
+    std::println("Infrastructure: {}", kth::infrastructure::version());
+    std::println("Domain: {}", kth::domain::version());
     // Note: Not all modules may have version functions implemented
-    std::cout << "Blockchain: " << kth::blockchain::version() << std::endl;
-    std::cout << "Node: " << kth::node::version() << std::endl;
-    std::cout << "Meta target includes all core components!" << std::endl;
+    std::println("Blockchain: {}", kth::blockchain::version());
+    std::println("Node: {}", kth::node::version());
+    std::println("Meta target includes all core components!");
     return 0;
 }

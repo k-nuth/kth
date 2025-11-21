@@ -111,7 +111,7 @@ int main() {
     auto& chain = node.chain();
     auto height = chain.get_last_height();
     
-    std::cout << "Current height: " << height << std::endl;
+    std::println("Current height: {}", height);
     return 0;
 }
 ```

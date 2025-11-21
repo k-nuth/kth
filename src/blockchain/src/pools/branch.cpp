@@ -29,7 +29,7 @@ local_utxo_t create_local_utxo_set(domain::chain::block const& block) {
         auto const& outputs = tx.outputs();
         for (uint32_t idx = 0; idx < outputs.size(); ++idx) {
             auto const& output = outputs[idx];
-            // std::cout << "create_local_utxo_set - output: {" << encode_hash(tx.hash()) << " - " << idx << "}" << std::endl;
+            // std::println("{}", "create_local_utxo_set - output: {" << encode_hash(tx.hash()) << " - " << idx << "}");
             res.emplace(output_point{tx.hash(), idx}, std::addressof(output));
         }
     }
@@ -43,7 +43,7 @@ local_utxo_set_t create_branch_utxo_set(branch::const_ptr const& branch) {
     res.reserve(branch->size());
 
     for (auto const& block : blocks) {
-        // std::cout << "create_branch_utxo_set - block: {" << encode_hash(block->hash()) << "}" << std::endl;
+        // std::println("{}", "create_branch_utxo_set - block: {" << encode_hash(block->hash()) << "}");
         res.push_back(create_local_utxo_set(*block));
     }
 

@@ -459,7 +459,7 @@ payment_address::list payment_address::extract(chain::script const& script, uint
 payment_address::list payment_address::extract_input(chain::script const& script, uint8_t p2kh_version, uint8_t p2sh_version) {
     // A sign_public_key_hash result always implies sign_script_hash as well.
     auto const pattern = script.input_pattern();
-    // std::cout << "input_pattern(): " << int(pattern) << std::endl;
+    // std::println("input_pattern(): {}", int(pattern));
 
     switch (pattern) {
         // Given lack of context (prevout) sign_public_key_hash is always ambiguous

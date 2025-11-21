@@ -59,7 +59,7 @@ void protocol::stop(code const& ec) {
 
 // protected
 void protocol::handle_send(code const& ec, std::string const& command) {
-    // std::cout << command << std::endl;
+    // std::println("{}", command);
     // Send and receive failures are logged by the proxy.
     // This provides a convenient location for override if desired.
 }

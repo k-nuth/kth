@@ -763,8 +763,8 @@ int compare_uint64(KTH_DB_val const* a, KTH_DB_val const* b) {
     const uint64_t va = *(const uint64_t *)kth_db_get_data(*a);
     const uint64_t vb = *(const uint64_t *)kth_db_get_data(*b);
 
-    //std::cout << "va: " << va << std::endl;
-    //std::cout << "vb: " << va << std::endl;
+    //std::println("va: {}", va);
+    //std::println("vb: {}", va);
 
     return (va < vb) ? -1 : va > vb;
 }

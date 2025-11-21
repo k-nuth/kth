@@ -5,6 +5,7 @@
 #include <test_helpers.hpp>
 #include <kth/infrastructure/machine/sighash_algorithm.hpp>
 
+#include <print>
 #include <sstream>
 #include "script.hpp"
 
@@ -126,14 +127,14 @@ std::optional<transaction> new_tx_bchn(bchn_script_test const& test) {
     // Parse input script from string.
     script input_script;
     if ( ! input_script.from_string(test.script_sig)) {
-        std::cout << "Failed to parse input script: " << test.script_sig << std::endl;
+        std::println("Failed to parse input script: {}", test.script_sig);
         return std::nullopt;
     }
 
     // Parse output script from string.
     script output_script;
-    if ( ! output_script.from_string(test.script_pub_key)) {      
-        std::cout << "Failed to parse output script: " << test.script_pub_key << std::endl;  
+    if ( ! output_script.from_string(test.script_pub_key)) {
+        std::println("Failed to parse output script: {}", test.script_pub_key);
         return std::nullopt;
     }
 
@@ -948,9 +949,9 @@ TEST_CASE("script generate signature hash  all  expected", "[script]") {
 //     prevout.set_script(create<script>(decoded_script, false));
 //     REQUIRE(prevout.script().is_valid());
 
-//     ////std::cout << prevout.script().to_string(forks) << std::endl;
-//     ////std::cout << input.script().to_string(forks) << std::endl;
-//     ////std::cout << input.witness().to_string() << std::endl;
+//     ////std::println("{}", prevout.script().to_string(forks));
+//     ////std::println("{}", input.script().to_string(forks));
+//     ////std::println("{}", input.witness().to_string());
 
 //     auto const result2 = verify(tx, index, forks);
 //     REQUIRE(result2.value() == error::success);
@@ -1010,8 +1011,7 @@ TEST_CASE("BCHN script tests", "[script]") {
     // Iterate through all test chunks
     for (size_t chunk_idx = 0; chunk_idx < all_script_test_chunks.size(); ++chunk_idx) {
         DYNAMIC_SECTION("Chunk " + std::to_string(chunk_idx) + " (" + std::to_string(all_script_test_chunks[chunk_idx]->size()) + " tests)") {
-            // std::cout << "Testing chunk " << chunk_idx << " (" 
-            //           << all_script_test_chunks[chunk_idx]->size() << " tests)..." << std::endl;
+            // std::println("Testing chunk {} ({} tests)...", chunk_idx, all_script_test_chunks[chunk_idx]->size());
             
             for (size_t test_idx = 0; test_idx < all_script_test_chunks[chunk_idx]->size(); ++test_idx) {
                 auto const& test = (*all_script_test_chunks[chunk_idx])[test_idx];
@@ -1030,7 +1030,7 @@ TEST_CASE("BCHN script tests", "[script]") {
                 }
             }
             
-            // std::cout << "Chunk " << chunk_idx << " completed." << std::endl;
+            // std::println("Chunk {} completed.", chunk_idx);
         }
     }
 }

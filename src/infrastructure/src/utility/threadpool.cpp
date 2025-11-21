@@ -17,12 +17,12 @@ threadpool::threadpool(std::string const& name, size_t number_threads, thread_pr
     : name_(name)
     , size_(0)
 {
-    // std::cout << "threadpool::threadpool() - name: " << name_ << " - thread id: " << std::this_thread::get_id() << std::endl;
+    // std::println("threadpool::threadpool() - name: {} - thread id: {}", name_, std::this_thread::get_id());
     spawn(number_threads, priority);
 }
 
 threadpool::~threadpool() {
-    // std::cout << "threadpool::~threadpool() - name: " << name_ << " - thread id: " << std::this_thread::get_id() << std::endl;
+    // std::println("threadpool::~threadpool() - name: {} - thread id: {}", name_, std::this_thread::get_id());
     shutdown();
     join();
 }
@@ -41,7 +41,7 @@ size_t threadpool::size() const {
 void threadpool::spawn(size_t number_threads, thread_priority priority) {
     // This allows the pool to be restarted.
     service_.reset();
-    // std::cout << "threadpool::spawn() - name: " << name_ << " - thread id: " << std::this_thread::get_id() << std::endl;
+    // std::println("threadpool::spawn() - name: {} - thread id: {}", name_, std::this_thread::get_id());
 
     for (size_t i = 0; i < number_threads; ++i) {
         spawn_once(priority);
@@ -49,7 +49,7 @@ void threadpool::spawn(size_t number_threads, thread_priority priority) {
 }
 
 void threadpool::spawn_once(thread_priority priority) {
-    // std::cout << "threadpool::spawn_once() - name: " << name_ << " - thread id: " << std::this_thread::get_id() << std::endl;
+    // std::println("threadpool::spawn_once() - name: {} - thread id: {}", name_, std::this_thread::get_id());
 
     ///////////////////////////////////////////////////////////////////////////
     // Critical Section
@@ -74,9 +74,9 @@ void threadpool::spawn_once(thread_priority priority) {
 
     threads_.emplace_back([this, priority]() {
         set_priority(priority);
-        // std::cout << "threadpool::spawn_once() *** BEFORE run() *** - name: " << name_ << " - thread id: " << std::this_thread::get_id() << std::endl;
+        // std::println("threadpool::spawn_once() *** BEFORE run() *** - name: {} - thread id: {}", name_, std::this_thread::get_id());
         service_.run();
-        // std::cout << "threadpool::spawn_once() *** AFTER  run() *** - name: " << name_ << " - thread id: " << std::this_thread::get_id() << std::endl;
+        // std::println("threadpool::spawn_once() *** AFTER  run() *** - name: {} - thread id: {}", name_, std::this_thread::get_id());
     });
 
     ++size_;
@@ -84,14 +84,14 @@ void threadpool::spawn_once(thread_priority priority) {
 }
 
 void threadpool::abort() {
-    // std::cout << "threadpool::abort() *** BEFORE stop *** - name: " << name_ << " - thread id: " << std::this_thread::get_id() << std::endl;
+    // std::println("threadpool::abort() *** BEFORE stop *** - name: {} - thread id: {}", name_, std::this_thread::get_id());
     service_.stop();
-    // std::cout << "threadpool::abort() *** AFTER stop *** - name: " << name_ << " - thread id: " << std::this_thread::get_id() << std::endl;
+    // std::println("threadpool::abort() *** AFTER stop *** - name: {} - thread id: {}", name_, std::this_thread::get_id());
 }
 
 void threadpool::shutdown() {
     abort();
-    // std::cout << "threadpool::shutdown() *** BEFORE lock *** - name: " << name_ << " - thread id: " << std::this_thread::get_id() << std::endl;
+    // std::println("threadpool::shutdown() *** BEFORE lock *** - name: {} - thread id: {}", name_, std::this_thread::get_id());
 
     // {
     // ///////////////////////////////////////////////////////////////////////////
@@ -101,11 +101,11 @@ void threadpool::shutdown() {
     // work_.reset();
     // ///////////////////////////////////////////////////////////////////////////
     // }
-    // std::cout << "threadpool::shutdown() *** AFTER lock *** - name: " << name_ << " - thread id: " << std::this_thread::get_id() << std::endl;
+    // std::println("threadpool::shutdown() *** AFTER lock *** - name: {} - thread id: {}", name_, std::this_thread::get_id());
 }
 
 void threadpool::join() {
-    // std::cout << "threadpool::join() *** BEFORE lock *** - name: " << name_ << " - thread id: " << std::this_thread::get_id() << std::endl;
+    // std::println("threadpool::join() *** BEFORE lock *** - name: {} - thread id: {}", name_, std::this_thread::get_id());
 
     {
     ///////////////////////////////////////////////////////////////////////////
@@ -119,12 +119,12 @@ void threadpool::join() {
     //     KTH_ASSERT(this_id != thread.get_id());
     //     KTH_ASSERT(thread.joinable());
 
-    //     std::cout << "threadpool::join() - this_id != thread.get_id(): " << (this_id != thread.get_id()) << std::endl;
-    //     std::cout << "threadpool::join() - thread.joinable(): " << thread.joinable() << " - name: " << name_ << " - thread id: " << thread.get_id() << std::endl;
+    //     std::println("threadpool::join() - this_id != thread.get_id(): {}", this_id != thread.get_id());
+    //     std::println("threadpool::join() - thread.joinable(): {} - name: {} - thread id: {}", thread.joinable(), name_, thread.get_id());
 
-    //     std::cout << "threadpool::join() *** BEFORE join *** - name: " << name_ << " - thread id: " << thread.get_id() << std::endl;
+    //     std::println("threadpool::join() *** BEFORE join *** - name: {} - thread id: {}", name_, thread.get_id());
     //     thread.join();
-    //     std::cout << "threadpool::join() *** AFTER  join *** - name: " << name_ << " - thread id: " << thread.get_id() << std::endl;
+    //     std::println("threadpool::join() *** AFTER  join *** - name: {} - thread id: {}", name_, thread.get_id());
     // }
 
     for (auto i = threads_.rbegin(); i != threads_.rend(); ++i ) {
@@ -133,16 +133,16 @@ void threadpool::join() {
         KTH_ASSERT(this_id != thread.get_id());
         KTH_ASSERT(thread.joinable());
 
-        // std::cout << "threadpool::join() - this_id != thread.get_id(): " << (this_id != thread.get_id()) << std::endl;
-        // std::cout << "threadpool::join() - thread.joinable(): " << thread.joinable() << " - name: " << name_ << " - thread id: " << thread.get_id() << std::endl;
+        // std::println("threadpool::join() - this_id != thread.get_id(): {}", this_id != thread.get_id());
+        // std::println("threadpool::join() - thread.joinable(): {} - name: {} - thread id: {}", thread.joinable(), name_, thread.get_id());
 
-        // std::cout << "threadpool::join() *** BEFORE join *** - name: " << name_ << " - thread id: " << thread.get_id() << std::endl;
+        // std::println("threadpool::join() *** BEFORE join *** - name: {} - thread id: {}", name_, thread.get_id());
         // thread.join();
-        // std::cout << "threadpool::join() *** AFTER  join *** - name: " << name_ << " - thread id: " << thread.get_id() << std::endl;
+        // std::println("threadpool::join() *** AFTER  join *** - name: {} - thread id: {}", name_, thread.get_id());
 
-        // std::cout << "threadpool::join() *** BEFORE detach *** - name: " << name_ << " - thread id: " << thread.get_id() << std::endl;
+        // std::println("threadpool::join() *** BEFORE detach *** - name: {} - thread id: {}", name_, thread.get_id());
         thread.detach();
-        // std::cout << "threadpool::join() *** AFTER  detach *** - name: " << name_ << " - thread id: " << thread.get_id() << std::endl;
+        // std::println("threadpool::join() *** AFTER  detach *** - name: {} - thread id: {}", name_, thread.get_id());
     }
 
     threads_.clear();
@@ -150,7 +150,7 @@ void threadpool::join() {
     ///////////////////////////////////////////////////////////////////////////
     }
 
-    // std::cout << "threadpool::join() *** AFTER lock *** - name: " << name_ << " - thread id: " << std::this_thread::get_id() << std::endl;
+    // std::println("threadpool::join() *** AFTER lock *** - name: {} - thread id: {}", name_, std::this_thread::get_id());
 
 }
 

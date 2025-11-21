@@ -135,18 +135,18 @@ std::pair<code, size_t> interpreter::debug_start(program const& program) {
 
 // static
 bool interpreter::debug_steps_available(program const& program, size_t step) {
-    // std::cout << "interpreter::debug_steps_available() step: " << step << std::endl;
-    // std::cout << "interpreter::debug_steps_available() program.operation_count(): " << program.operation_count() << std::endl;
-    // std::cout << "interpreter::debug_steps_available() program.get_script().operations().size(): " << program.get_script().operations().size() << std::endl;
+    // std::println("interpreter::debug_steps_available() step: {}", step);
+    // std::println("interpreter::debug_steps_available() program.operation_count(): {}", program.operation_count());
+    // std::println("interpreter::debug_steps_available() program.get_script().operations().size(): {}", program.get_script().operations().size());
     // return step <= program.operation_count();
     return step < program.get_script().operations().size();
 }
 
 // static
 std::tuple<code, size_t, program> interpreter::debug_step(program program, size_t step) {
-    // std::cout << "----------------------------------------" << std::endl;
-    // std::cout << "interpreter::debug_step() BEGIN step: " << step << std::endl;
-    // std::cout << "interpreter::debug_step() BEGIN program.get_script().operations().size(): " << program.get_script().operations().size() << std::endl;
+    // std::println("src/domain/src/machine/interpreter.cpp", "----------------------------------------");
+    // std::println("interpreter::debug_step() BEGIN step: {}", step);
+    // std::println("interpreter::debug_step() BEGIN program.get_script().operations().size(): {}", program.get_script().operations().size());
 
     // if (step > program.operation_count()) {
     if (step >= program.get_script().operations().size()) {
@@ -165,24 +165,24 @@ std::tuple<code, size_t, program> interpreter::debug_step(program program, size_
     }
 
     if (op.is_disabled(program.forks())) {
-        // std::cout << "interpreter::debug_step() return 4" << std::endl;
+        // std::println("src/domain/src/machine/interpreter.cpp", "interpreter::debug_step() return 4");
         return {error::op_disabled, step, program};
     }
 
     if ( ! program.increment_operation_count(op)) {
-        // std::cout << "interpreter::debug_step() return 5" << std::endl;
+        // std::println("src/domain/src/machine/interpreter.cpp", "interpreter::debug_step() return 5");
         return {error::invalid_operation_count, step, program};
     }
 
     if (program.if_(op)) {
         code ec = run_op(op, program);
         if (ec != error::success) {
-            // std::cout << "interpreter::debug_step() return 6" << std::endl;
+            // std::println("src/domain/src/machine/interpreter.cpp", "interpreter::debug_step() return 6");
             return {ec, step, program};
         }
 
         if (program.is_stack_overflow()) {
-            // std::cout << "interpreter::debug_step() return 7" << std::endl;
+            // std::println("src/domain/src/machine/interpreter.cpp", "interpreter::debug_step() return 7");
             return {error::invalid_stack_size, step, program};
         }
 
@@ -211,21 +211,21 @@ std::tuple<code, size_t, program> interpreter::debug_step(program program, size_
             // }
 
             if (program.get_metrics().is_over_hash_iters_limit()) {
-                // std::cout << "interpreter::debug_step() return 8" << std::endl;
+                // std::println("src/domain/src/machine/interpreter.cpp", "interpreter::debug_step() return 8");
                 return {error::too_many_hash_iters, step, program};
             }
 
             // Conditional stack may not exceed depth of 100
             if (program.conditional_stack_size() > ::kth::may2025::max_conditional_stack_depth) {
-                // std::cout << "interpreter::debug_step() return 9" << std::endl;
+                // std::println("src/domain/src/machine/interpreter.cpp", "interpreter::debug_step() return 9");
                 return {error::conditional_stack_depth, step, program};
             }
         }
     }
 
-    // std::cout << "interpreter::debug_step() END step: " << ++step << std::endl;
-    // std::cout << "interpreter::debug_step() END program.get_script().operations().size(): " << program.get_script().operations().size() << std::endl;
-    // std::cout << "----------------------------------------" << std::endl;
+    // std::println("interpreter::debug_step() END step: {}", ++step);
+    // std::println("interpreter::debug_step() END program.get_script().operations().size(): {}", program.get_script().operations().size());
+    // std::println("src/domain/src/machine/interpreter.cpp", "----------------------------------------");
 
     return {error::success, ++step, program};
 }

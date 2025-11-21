@@ -893,7 +893,7 @@ using script_test_list = std::vector<script_test>;
 template<typename TestFunc>
 void run_script_tests_chunked(TestFunc test_func) {
     for (size_t chunk_idx = 0; chunk_idx < all_script_test_chunks.size(); ++chunk_idx) {
-        std::cout << "Testing chunk " << chunk_idx << " (" 
+        std::println("Testing chunk {} (", chunk_idx, 
                   << all_script_test_chunks[chunk_idx]->size() << " tests)..." << std::endl;
         
         for (size_t test_idx = 0; test_idx < all_script_test_chunks[chunk_idx]->size(); ++test_idx) {
@@ -901,7 +901,7 @@ void run_script_tests_chunked(TestFunc test_func) {
             test_func(test, chunk_idx, test_idx);
         }
         
-        std::cout << "Chunk " << chunk_idx << " completed." << std::endl;
+        std::println("Chunk {} completed.", chunk_idx);
     }
 }
 

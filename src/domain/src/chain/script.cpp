@@ -1005,33 +1005,33 @@ script_pattern script::output_pattern() const {
 // A sign_public_key_hash result always implies sign_script_hash as well.
 // The bip34 coinbase pattern is not tested here, must test independently.
 script_pattern script::input_pattern() const {
-    // std::cout << "input_pattern() - 1" << std::endl;
+    // std::println("src/domain/src/chain/script.cpp", "input_pattern() - 1");
     // The first operations access must be method-based to guarantee the cache.
     if (is_sign_public_key_hash_pattern(operations())) {
-        // std::cout << "input_pattern() - 2" << std::endl;
+        // std::println("src/domain/src/chain/script.cpp", "input_pattern() - 2");
         return script_pattern::sign_public_key_hash;
     }
 
-    // std::cout << "input_pattern() - 3" << std::endl;
+    // std::println("src/domain/src/chain/script.cpp", "input_pattern() - 3");
     // This must follow is_sign_public_key_hash_pattern for ambiguity comment to hold.
     if (is_sign_script_hash_pattern(operations_)) {
-        // std::cout << "input_pattern() - 4" << std::endl;
+        // std::println("src/domain/src/chain/script.cpp", "input_pattern() - 4");
         return script_pattern::sign_script_hash;
     }
 
-    // std::cout << "input_pattern() - 5" << std::endl;
+    // std::println("src/domain/src/chain/script.cpp", "input_pattern() - 5");
     if (is_sign_public_key_pattern(operations_)) {
-        // std::cout << "input_pattern() - 6" << std::endl;
+        // std::println("src/domain/src/chain/script.cpp", "input_pattern() - 6");
         return script_pattern::sign_public_key;
     }
 
-    // std::cout << "input_pattern() - 7" << std::endl;
+    // std::println("src/domain/src/chain/script.cpp", "input_pattern() - 7");
     if (is_sign_multisig_pattern(operations_)) {
-        // std::cout << "input_pattern() - 8" << std::endl;
+        // std::println("src/domain/src/chain/script.cpp", "input_pattern() - 8");
         return script_pattern::sign_multisig;
     }
 
-    // std::cout << "input_pattern() - 9" << std::endl;
+    // std::println("src/domain/src/chain/script.cpp", "input_pattern() - 9");
     return script_pattern::non_standard;
 }
 

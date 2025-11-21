@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chrono>
+#include <print>
 #include <csignal>
 #include <cstdio>
 #include <iostream>
@@ -131,17 +132,17 @@ int main(int /*argc*/, char* /*argv*/[]) {
     std::string addr = "bitcoincash:qrcuqadqrzp2uztjl9wn5sthepkg22majyxw4gmv6p";
     payment_address const pa("bitcoincash:qrcuqadqrzp2uztjl9wn5sthepkg22majyxw4gmv6p");
     if ( ! pa) {
-        std::cout << "Invalid address" << std::endl;
+        std::println("{}", "Invalid address");
         return -1;
     }
-    std::cout << "Valid address" << std::endl;
-    std::cout << "Original Address: " << addr << std::endl;
-    std::cout << "Encoded cashaddr: " << pa.encoded_cashaddr(false) << std::endl;
-    std::cout << "Encoded cashaddr: " << pa.encoded_cashaddr(true) << std::endl;
-    std::cout << "Encoded cashaddr: " << encode_cashaddr_(pa, false) << std::endl;
-    std::cout << "Encoded cashaddr: " << encode_cashaddr_(pa, true) << std::endl;
+    std::println("{}", "Valid address");
+    std::println("{}", "Original Address: " << addr);
+    std::println("{}", "Encoded cashaddr: " << pa.encoded_cashaddr(false));
+    std::println("{}", "Encoded cashaddr: " << pa.encoded_cashaddr(true));
+    std::println("{}", "Encoded cashaddr: " << encode_cashaddr_(pa, false));
+    std::println("{}", "Encoded cashaddr: " << encode_cashaddr_(pa, true));
 
-    std::cout << "Encoded legacy:   " << pa.encoded_legacy() << std::endl;
+    std::println("{}", "Encoded legacy:   " << pa.encoded_legacy());
 
 
     // const result = paymentAddress.fromData('bitcoincash:qrcuqadqrzp2uztjl9wn5sthepkg22majyxw4gmv6p');

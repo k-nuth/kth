@@ -3,10 +3,10 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <stdio.h>
+#include <print>
 
 #include <kth/capi/node.h>
 
-#include <iostream>
 #include <chrono>
 #include <thread>
 
@@ -33,12 +33,12 @@ int main(int argc, char* argv[]) {
 
 
     using namespace std::chrono_literals;
-    std::cout << "Hello waiter" << std::endl;
+    std::println("Hello waiter");
     auto start = std::chrono::high_resolution_clock::now();
     std::this_thread::sleep_for(2s);
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> elapsed = end-start;
-    std::cout << "Waited " << elapsed.count() << " ms\n";
+    std::println("Waited {} ms", elapsed.count());
 
 
     kth_node_destruct(exec);

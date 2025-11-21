@@ -5,6 +5,7 @@
 // export LD_LIBRARY_PATH=/home/fernando/organize/lib
 
 #include <atomic>
+#include <print>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
@@ -41,12 +42,12 @@ bytes_t hex2vec(char const* src, size_t n) {
 }
 
 std::vector<bytes_t> get_blocks_raw(std::string const& blocks_filename) {
-    std::cout << "Allocating some memory ...\n";
+    std::println("Allocating some memory ...");
 
     std::vector<bytes_t> blocks_raw;
     blocks_raw.reserve(100000);
 
-    std::cout << "Reading " << blocks_filename << " into memory ...\n";
+    std::println("Reading {} into memory ...", blocks_filename);
 
     std::ifstream file(blocks_filename);
     std::string str;
@@ -59,7 +60,7 @@ std::vector<bytes_t> get_blocks_raw(std::string const& blocks_filename) {
 }
 
 std::vector<kth_block_t> get_blocks(std::vector<bytes_t>& blocks_raw) {
-    std::cout << "Deserializing blocks ...\n";
+    std::println("Deserializing blocks ...");
     std::vector<kth_block_t> blocks;
     blocks.reserve(100000);
 
@@ -68,27 +69,27 @@ std::vector<kth_block_t> get_blocks(std::vector<bytes_t>& blocks_raw) {
         auto valid = kth_chain_block_is_valid(block_ptr);
 
         if ( ! valid) {
-            std::cout << "****** INVALID BLOCK ******\n";
+            std::println("****** INVALID BLOCK ******");
         }
 
         blocks.push_back(block_ptr);
 
         // auto fees = kth_chain_block_fees(block_ptr);
-        // std::cout << "fees: " << fees << " ...\n";
+        // std::println("fees: {} ...", fees);
         // auto hash = kth_chain_block_hash(block_ptr);
         // char* hash_str = kth_hash_to_str(hash);
-        // std::cout << "hash: " << hash_str << " ...\n";
+        // std::println("hash: {} ...", hash_str);
 
         // kth_chain_block_destruct(block_ptr);
     }
 
-    std::cout << "Deserialization OK.\n";
+    std::println("Deserialization OK.");
 
     return blocks;
 }
 
 std::vector<kth_block_t> get_blocks_from_to(std::vector<bytes_t>& blocks_raw, size_t from, size_t n) {
-    std::cout << "Deserializing blocks ...\n";
+    std::println("Deserializing blocks ...");
     std::vector<kth_block_t> blocks;
     blocks.reserve(n);
 
@@ -98,22 +99,22 @@ std::vector<kth_block_t> get_blocks_from_to(std::vector<bytes_t>& blocks_raw, si
         auto valid = kth_chain_block_is_valid(block_ptr);
 
         if ( ! valid) {
-            std::cout << "****** INVALID BLOCK ******\n";
+            std::println("****** INVALID BLOCK ******");
         }
 
         blocks.push_back(block_ptr);
 
         // auto fees = kth_chain_block_fees(block_ptr);
-        // std::cout << "fees: " << fees << " ...\n";
+        // std::println("fees: {} ...", fees);
         // auto hash = kth_chain_block_hash(block_ptr);
         // char* hash_str = kth_hash_to_str(hash);
-        // std::cout << "hash: " << hash_str << " ...\n";
+        // std::println("hash: {} ...", hash_str);
 
         // kth_chain_block_destruct(block_ptr);
     }
 
 
-    std::cout << "Deserialization OK.\n";
+    std::println("Deserialization OK.");
 
     return blocks;
 }
@@ -127,28 +128,28 @@ std::vector<kth_block_t> get_blocks_from_file(std::string const& blocks_filename
 void process_0(kth_chain_t chain, std::string const& blocks_filename) {
     auto blocks = get_blocks_from_file(blocks_filename);
 
-    std::cout << "-------------------------------------------------------\n";
+    std::println("-------------------------------------------------------");
 
-    std::cout << "*********** Organizing blocks ...\n";
+    std::println("*********** Organizing blocks ...");
 
     auto start = std::chrono::high_resolution_clock::now();
 
     size_t block_h = 0;
     for (auto const& block_ptr : blocks) {
         auto res = kth_chain_sync_organize_block(chain,  block_ptr);
-        // std::cout << "res: " << res << " ...\n";
+        // std::println("res: {} ...", res);
         if (res != 0) {
-            std::cout << "****** INVALID BLOCK ORGANIZATION: " << block_h << " -- res: " << res << " ******\n";
+            std::println("****** INVALID BLOCK ORGANIZATION: {} -- res: {} ******", block_h, res);
         }
 
         // size_t height;
         // kth_chain_sync_last_height(chain, &height);
-        // std::cout << "height: " << height << " ...\n";
+        // std::println("height: {} ...", height);
 
         // kth_chain_block_destruct(block_ptr);
 
         if (block_h % 1000 == 0) {
-            std::cout << "height: " << block_h << " ...\n";
+            std::println("height: {} ...", block_h);
         }
 
         ++block_h;
@@ -156,8 +157,8 @@ void process_0(kth_chain_t chain, std::string const& blocks_filename) {
 
     auto finish = std::chrono::high_resolution_clock::now();
 
-    std::cout << "Organization OK.\n";
-    std::cout << std::chrono::duration_cast<std::chrono::nanoseconds>(finish-start).count() << "ns\n";
+    std::println("Organization OK.");
+    std::println("{}ns", std::chrono::duration_cast<std::chrono::nanoseconds>(finish-start).count());
 
 }
 
@@ -165,12 +166,12 @@ void process_1(kth_chain_t chain, std::string const& blocks_filename) {
     size_t const max = 1000;
     auto blocks_raw = get_blocks_raw(blocks_filename);
 
-    std::cout << "-------------------------------------------------------\n";
-    std::cout << "*********** Organizing blocks ...\n";
+    std::println("-------------------------------------------------------");
+    std::println("*********** Organizing blocks ...");
 
     double total_time = 0.0;
     for (size_t i = 0; i < blocks_raw.size(); i += max) {
-        std::cout << "process_1 i: " << i << '\n';
+        std::println("process_1 i: {}", i);
         auto blocks = get_blocks_from_to(blocks_raw, i, max);
 
         auto start = std::chrono::high_resolution_clock::now();
@@ -180,19 +181,19 @@ void process_1(kth_chain_t chain, std::string const& blocks_filename) {
             auto res = kth_chain_sync_organize_block(chain, block_ptr);
             // void kth_chain_async_organize_block(kth_chain_t chain, void* ctx, kth_block_t block, kth_result_handler_t handler);
 
-            // std::cout << "res: " << res << " ...\n";
+            // std::println("res: {} ...", res);
             if (res != 0 && res != 51) {
-                std::cout << "****** INVALID BLOCK ORGANIZATION: " << block_h << " -- res: " << res << " ******\n";
+                std::println("****** INVALID BLOCK ORGANIZATION: {} -- res: {} ******", block_h, res);
             }
 
             // size_t height;
             // kth_chain_sync_last_height(chain, &height);
-            // std::cout << "height: " << height << " ...\n";
+            // std::println("height: {} ...", height);
 
             // kth_chain_block_destruct(block_ptr);
 
             if (block_h % 1000 == 0) {
-                std::cout << "height: " << block_h << " ...\n";
+                std::println("height: {} ...", block_h);
             }
 
             ++block_h;
@@ -201,17 +202,17 @@ void process_1(kth_chain_t chain, std::string const& blocks_filename) {
         auto finish = std::chrono::high_resolution_clock::now();
         auto partial_time = std::chrono::duration_cast<std::chrono::nanoseconds>(finish-start).count();
         total_time += partial_time;
-        std::cout << "partial_time: " << partial_time << " - Total time: " << total_time << "ns\n";
+        std::println("partial_time: {} - Total time: {}ns", partial_time, total_time);
 
 
-        std::cout << "Destructing blokcs ...\n";
+        std::println("Destructing blokcs ...");
         for (auto const& block_ptr : blocks) {
             kth_chain_block_destruct(block_ptr);
         }
 
     }
-    std::cout << "Organization OK.\n";
-    std::cout << "Total time: " << total_time << "ns\n";
+    std::println("Organization OK.");
+    std::println("Total time: {}ns", total_time);
 }
 
 
@@ -220,7 +221,7 @@ std::atomic<size_t> sent = 0;
 
 void on_block_organized(kth_chain_t chain, void* ctx, kth_error_code_t err) {
     if (err != 0 && err != 51) {
-        std::cout << "****** INVALID BLOCK ORGANIZATION: -- err: " << err << " ******\n";
+        std::println("****** INVALID BLOCK ORGANIZATION: -- err: {} ******", err);
     }
     ++organized;
 }
@@ -229,12 +230,12 @@ void process_2(kth_chain_t chain, std::string const& blocks_filename) {
     size_t const max = 1000;
     auto blocks_raw = get_blocks_raw(blocks_filename);
 
-    std::cout << "-------------------------------------------------------\n";
-    std::cout << "*********** Organizing blocks ...\n";
+    std::println("-------------------------------------------------------");
+    std::println("*********** Organizing blocks ...");
 
     double total_time = 0.0;
     for (size_t i = 0; i < blocks_raw.size(); i += max) {
-        std::cout << "process_2 i: " << i << '\n';
+        std::println("process_2 i: {}", i);
         auto blocks = get_blocks_from_to(blocks_raw, i, max);
 
         auto start = std::chrono::high_resolution_clock::now();
@@ -247,7 +248,7 @@ void process_2(kth_chain_t chain, std::string const& blocks_filename) {
             ++sent;
 
             if (block_h % 1000 == 0) {
-                std::cout << "height: " << block_h << " ...\n";
+                std::println("height: {} ...", block_h);
             }
 
             ++block_h;
@@ -256,22 +257,22 @@ void process_2(kth_chain_t chain, std::string const& blocks_filename) {
         auto finish = std::chrono::high_resolution_clock::now();
         auto partial_time = std::chrono::duration_cast<std::chrono::nanoseconds>(finish-start).count();
         total_time += partial_time;
-        std::cout << "partial_time: " << partial_time << " - Total time: " << total_time << "ns\n";
+        std::println("partial_time: {} - Total time: {}ns", partial_time, total_time);
 
 
-        std::cout << "Destructing blokcs ...\n";
+        std::println("Destructing blokcs ...");
         for (auto const& block_ptr : blocks) {
             kth_chain_block_destruct(block_ptr);
         }
 
     }
-    std::cout << "Organization OK.\n";
-    std::cout << "Total time: " << total_time << "ns\n";
+    std::println("Organization OK.");
+    std::println("Total time: {}ns", total_time);
 }
 
 int main(int argc, char** argv) {
     if (argc <= 1) {
-        std::cout << "USAGE: organize <filename>\n";
+        std::println("USAGE: organize <filename>");
         return 1;
     }
     std::string blocks_filename = argv[1];
@@ -288,7 +289,7 @@ int main(int argc, char** argv) {
     kth_node_t node = kth_node_construct(settings, 1);
     auto res = kth_node_init_run_sync(node, kth_start_modules_just_chain);
 
-    std::cout << "res: " << res << "\n";
+    std::println("res: {}", res);
 
     kth_chain_t chain = kth_node_get_chain(node);
 

@@ -185,7 +185,7 @@ public:
         //precondition: tx is fully validated: check() && accept() && connect()
         //              ! tx.is_coinbase()
 
-        // std::cout << encode_base16(tx.to_data(true, KTH_WITNESS_DEFAULT)) << std::endl;
+        // std::println("src/blockchain/include/kth/blockchain/mining/mempool_v2.hpp", encode_base16(tx.to_data(true, KTH_WITNESS_DEFAULT)));
 
         return prioritizer_.low_job([this, &tx]{
             auto const index = data_.size();
@@ -213,8 +213,8 @@ public:
             return error::success;
         }
 
-        // std::cout << "Arrive Block -------------------------------------------------------------------" << std::endl;
-        // std::cout << encode_base16(tx.to_data(true, KTH_WITNESS_DEFAULT)) << std::endl;
+        // std::println("src/blockchain/include/kth/blockchain/mining/mempool_v2.hpp", "Arrive Block -------------------------------------------------------------------");
+        // std::println("src/blockchain/include/kth/blockchain/mining/mempool_v2.hpp", encode_base16(tx.to_data(true, KTH_WITNESS_DEFAULT)));
 
 
         processing_block_ = true;
@@ -305,10 +305,10 @@ public:
 //                     assert(old_children[j] == node.children()[j]);
 //                 }
 
-//                 std::cout << std::endl;
+//                 std::println("");
 
 //                 // if (node_old.parents().size() > 0) {
-//                 //     std::cout << std::endl;
+//                 //     std::println("");
 //                 // }
 
 
@@ -345,7 +345,7 @@ public:
                             //     auto it = hash_index_.find(elem.txid());
                             //     if (it != hash_index_.end()) {
                             //         if (it->second.first != i) {
-                            //             std::cout << "pepe\n";
+                            //             std::println("pepe");
                             //         }
                             //         it->second.first = i;
                             //     }
@@ -555,40 +555,40 @@ private:
         }
 
         // if (node.second.children_fees() != fee) {
-        //     std::cout << "node_index:           " << node_index << std::endl;
-        //     std::cout << "node.second.children_fees(): " << node.second.children_fees() << std::endl;
-        //     std::cout << "fee:                  " << fee << std::endl;
+        //     std::println("node_index:           {}", node_index);
+        //     std::println("node.second.children_fees(): {}", node.second.children_fees());
+        //     std::println("fee:                  {}", fee);
 
-        //     std::cout << "Removed:  ";
+        //     std::print("Removed:  ");
         //     for (auto i : out_removed) {
-        //         std::cout << i << ", ";
+        //         std::print("{}, ", i);
         //     }
-        //     std::cout << std::endl;
+        //     std::println("");
         // }
 
         // if (node.second.children_size() != size) {
-        //     std::cout << "node_index:           " << node_index << std::endl;
-        //     std::cout << "node.second.children_size(): " << node.second.children_size() << std::endl;
-        //     std::cout << "size:                 " << size << std::endl;
+        //     std::println("node_index:           {}", node_index);
+        //     std::println("node.second.children_size(): {}", node.second.children_size());
+        //     std::println("size:                 {}", size);
 
-        //     std::cout << "Removed:  ";
+        //     std::print("Removed:  ");
         //     for (auto i : out_removed) {
-        //         std::cout << i << ", ";
+        //         std::print("{}, ", i);
         //     }
-        //     std::cout << std::endl;
+        //     std::println("");
         // }
 
         // if (node.second.children_sigops() != sigops) {
-        //     std::cout << "node_index:             " << node_index << std::endl;
-        //     std::cout << "node.second.children_sigops(): " << node.second.children_sigops() << std::endl;
-        //     std::cout << "sigops:                 " << sigops << std::endl;
+        //     std::println("node_index:             {}", node_index);
+        //     std::println("node.second.children_sigops(): {}", node.second.children_sigops());
+        //     std::println("sigops:                 {}", sigops);
 
 
-        //     std::cout << "Removed:  ";
+        //     std::print("Removed:  ");
         //     for (auto i : out_removed) {
-        //         std::cout << i << ", ";
+        //         std::print("{}, ", i);
         //     }
-        //     std::cout << std::endl;
+        //     std::println("");
         // }
 
         // KTH_ASSERT(node.second.children_fees() == fee);

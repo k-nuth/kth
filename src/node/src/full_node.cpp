@@ -440,10 +440,9 @@ void screen_clear() {
 
 #else
 
-// #include <iostream>
 // void screen_clear() {
 //     // CSI[2J clears screen, CSI[H moves the cursor to top-left corner
-//     std::cout << "\x1B[2J\x1B[H";
+//     std::print("\x1B[2J\x1B[H");
 // }
 
 #include <cstdio>

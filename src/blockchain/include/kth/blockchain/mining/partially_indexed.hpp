@@ -559,14 +559,14 @@ private:
     }
 
 
-    // std::cout << all_elements_[*cand_index].element().fee() << "\n";
+    // std::print("{}", all_elements_[*cand_index].element().fee() << "\n");
     // for (auto mi : candidate_elements_) {
     //     auto ci = all_elements_[mi].index();
-    //     std::cout << all_elements_[mi].element().fee() << "\n";
+    //     std::println("{}", all_elements_[mi].element().fee());
     //     if (mi == *ci) {
-    //         std::cout << "OK\n";
+    //         std::println("OK");
     //     } else {
-    //         std::cout << "Error\n";
+    //         std::println("Error");
     //     }
     // }
 

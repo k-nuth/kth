@@ -3,13 +3,14 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/capi/node.h>
+#include <print>
 
 #include <iostream>
 #include <chrono>
 #include <thread>
 
 int main() {
-    std::cout << "Initializing...\n";
+    std::println("Initializing...");
 
     // using (var node = new Knuth.Node("node.cfg")) {
     // auto node = kth_node_construct_fd("/Users/fernando/dev/kth/cs-api/console/node.cfg", 0, 0);
@@ -19,16 +20,16 @@ int main() {
         // kth_node_init_and_run(node, handlerPtr, internalRunNodeHandler_);
         auto result = kth_node_init_and_run_wait(node);
         if (result != 0) {
-            std::cout << "kth_node_init_and_run_wait failed; error code: " << result << std::endl;
-            std::cout << "sleeping 5 seconds" << std::endl;
+            std::println("{}", "kth_node_init_and_run_wait failed; error code: " << result);
+            std::println("{}", "sleeping 5 seconds");
             std::this_thread::sleep_for(std::chrono::seconds(5));
         }
         // kth_node_close(node);
 
-        std::cout << "main thread: " << std::this_thread::get_id() << std::endl;
+        std::println("{}", "main thread: " << std::this_thread::get_id());
 
         std::thread t1([&] {
-            std::cout << "t1 thread: " << std::this_thread::get_id() << std::endl;
+            std::println("{}", "t1 thread: " << std::this_thread::get_id());
             kth_node_close(node);
         });
         t1.join();
@@ -61,12 +62,12 @@ int main() {
 
 
 //     using namespace std::chrono_literals;
-//     std::cout << "Hello waiter" << std::endl;
+//     std::println("{}", "Hello waiter");
 //     auto start = std::chrono::high_resolution_clock::now();
 //     std::this_thread::sleep_for(2s);
 //     auto end = std::chrono::high_resolution_clock::now();
 //     std::chrono::duration<double, std::milli> elapsed = end-start;
-//     std::cout << "Waited " << elapsed.count() << " ms\n";
+//     std::println("Waited {} ms", elapsed.count());
 
 
 //     kth_node_destruct(exec);

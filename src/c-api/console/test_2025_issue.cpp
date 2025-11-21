@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <stdio.h>
+#include <print>
 
 #include <kth/capi/chain/chain.h>
 #include <kth/capi/chain/history_compact.h>
@@ -85,7 +86,7 @@ int main() {
 //     kth::byte_reader tx_reader(tx_data);
 //     auto tx_exp = kth::domain::chain::transaction::from_data(tx_reader, true);
 //     if ( ! tx_exp) {
-//         std::cout << "transaction parsing ERROR" << std::endl;
+//         std::println("{}", "transaction parsing ERROR");
 //         return 1;
 //     }
 //     auto const& tx = * tx_exp;
@@ -99,7 +100,7 @@ int main() {
 //     kth::byte_reader script_reader(prev_out_script_data);
 //     auto script_exp = kth::domain::chain::script::from_data(script_reader, false);
 //     if ( ! script_exp) {
-//         std::cout << "prev out script parsing ERROR" << std::endl;
+//         std::println("{}", "prev out script parsing ERROR");
 //         return 1;
 //     }
 //     auto const& script = * script_exp;
@@ -114,9 +115,9 @@ int main() {
 //     // std::pair<code, size_t> verify_script(domain::chain::transaction const& tx, uint32_t input_index, uint32_t forks);
 //     auto const [ec, sigchecks] = kth::blockchain::validate_input::verify_script(tx, input_index, forks);
 //     if (ec == kth::error::success) {
-//         std::cout << "Script verification is Ok" << std::endl;
+//         std::println("{}", "Script verification is Ok");
 //     } else {
-//         std::cout << "Script verification ERROR" << std::endl;
+//         std::println("{}", "Script verification ERROR");
 //     }
 
 

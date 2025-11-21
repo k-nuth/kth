@@ -159,7 +159,7 @@ static
 void RunOperators(int64_t const num1, int64_t num2, size_t value, size_t offset, size_t test) {
     //// Diagnostics
     //std::stringstream message;
-    //std::cout << boost::format(
+    //std::println("{}", boost::format(
     //    ">>> RunOperators: {} : {} : {} : {} : {}\n")
     //    % num1 % num2 % value % offset % test;
     //BOOST_MESSAGE(message.str());

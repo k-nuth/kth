@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chrono>
+#include <print>
 #include <csignal>
 #include <cstdio>
 #include <iostream>
@@ -78,7 +79,7 @@ int main(int argc, char* argv[]) {
     auto seed_hash = longhash_to_cpp(seed_c.hash);
     kth::data_chunk seed(std::begin(seed_hash), std::end(seed_hash));
 
-    std::cout << "seed: ";
+    std::print("seed: ");
     print_hex(seed.data(), seed.size());
 
     hd_private const m(seed, hd_private::mainnet);
@@ -90,20 +91,20 @@ int main(int argc, char* argv[]) {
     auto const m44h145h0h = m44h145h.derive_private(0 + hd_first_hardened_key);
     auto const m44h145h0h0 = m44h145h0h.derive_private(0);
 
-    std::cout << "BIP32 Root Key:                      " << m.encoded() << std::endl;
-    std::cout << "BIP44 Account Extended Private Key: " << m44h145h0h.encoded() << std::endl;
-    std::cout << "BIP44 Account Extended Public Key:  " << m44h145h0h.to_public().encoded() << std::endl;
+    std::println("{}", "BIP32 Root Key:                      " << m.encoded());
+    std::println("{}", "BIP44 Account Extended Private Key: " << m44h145h0h.encoded());
+    std::println("{}", "BIP44 Account Extended Public Key:  " << m44h145h0h.to_public().encoded());
 
-    std::cout << "BIP32 Account Extended Private Key: " << m44h145h0h0.encoded() << std::endl;
-    std::cout << "BIP32 Account Extended Public Key:  " << m44h145h0h0.to_public().encoded() << std::endl;
+    std::println("{}", "BIP32 Account Extended Private Key: " << m44h145h0h0.encoded());
+    std::println("{}", "BIP32 Account Extended Public Key:  " << m44h145h0h0.to_public().encoded());
 
     // print addresses
     // auto key = m44h145h0h0;
     for (size_t i = 0; i < 20; ++i) {
         auto key = m44h145h0h0.derive_private(i);
 
-        std::cout << "i: " << i << " - Private key: " << key.encoded() << std::endl;
-        std::cout << "i: " << i << " - Public key: " << key.to_public().encoded() << std::endl;
+        std::println("{}", "i: " << i << " - Private key: " << key.encoded());
+        std::println("{}", "i: " << i << " - Public key: " << key.to_public().encoded());
 
         auto secret = key.secret();
 
@@ -111,19 +112,19 @@ int main(int argc, char* argv[]) {
         kth::ec_compressed point;
         kth::secret_to_public(point, secret);
 
-        std::cout << "i: " << i << " - secret: ";
+        std::print("i: {} - secret: ", i);
         print_hex(secret.data(), secret.size());
-        std::cout << "i: " << i << " - point: ";
+        std::print("i: {} - point: ", i);
         print_hex(point.data(), point.size());
 
         kth::domain::wallet::ec_public ecp(point);
 
-        std::cout << "i: " << i << " - ecp: " << ecp.encoded() << std::endl;
+        std::println("{}", "i: " << i << " - ecp: " << ecp.encoded());
 
         kth::domain::wallet::payment_address pa(ecp);
 
-        // std::cout << pa.encoded() << std::endl;
-        std::cout << pa.encoded_cashaddr(false) << std::endl;
+        // std::println("src/c-api/console/test_wallet.cpp", pa.encoded());
+        std::println("{}", pa.encoded_cashaddr(false));
 
         // // auto hd_priv = kth_wallet_hd_new(seed, 76066276);
         // kth_ec_secret_t ec_priv;
@@ -135,7 +136,7 @@ int main(int argc, char* argv[]) {
     }
 
 
-    std::cout << std::endl;
+    std::println("");
 
 
     // auto const m0h = m.derive_private(hd_first_hardened_key);

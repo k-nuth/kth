@@ -183,40 +183,40 @@ public:
         }
 
         // if (node.children_fees() != fee) {
-        //     std::cout << "node_index:           " << node_index << std::endl;
-        //     std::cout << "node.children_fees(): " << node.children_fees() << std::endl;
-        //     std::cout << "fee:                  " << fee << std::endl;
+        //     std::println("node_index:           {}", node_index);
+        //     std::println("node.children_fees(): {}", node.children_fees());
+        //     std::println("fee:                  {}", fee);
 
-        //     std::cout << "Removed:  ";
+        //     std::print("Removed:  ");
         //     for (auto i : out_removed) {
-        //         std::cout << i << ", ";
+        //         std::print("{}, ", i);
         //     }
-        //     std::cout << std::endl;
+        //     std::println("");
         // }
 
         // if (node.children_size() != size) {
-        //     std::cout << "node_index:           " << node_index << std::endl;
-        //     std::cout << "node.children_size(): " << node.children_size() << std::endl;
-        //     std::cout << "size:                 " << size << std::endl;
+        //     std::println("node_index:           {}", node_index);
+        //     std::println("node.children_size(): {}", node.children_size());
+        //     std::println("size:                 {}", size);
 
-        //     std::cout << "Removed:  ";
+        //     std::print("Removed:  ");
         //     for (auto i : out_removed) {
-        //         std::cout << i << ", ";
+        //         std::print("{}, ", i);
         //     }
-        //     std::cout << std::endl;
+        //     std::println("");
         // }
 
         // if (node.children_sigops() != sigops) {
-        //     std::cout << "node_index:             " << node_index << std::endl;
-        //     std::cout << "node.children_sigops(): " << node.children_sigops() << std::endl;
-        //     std::cout << "sigops:                 " << sigops << std::endl;
+        //     std::println("node_index:             {}", node_index);
+        //     std::println("node.children_sigops(): {}", node.children_sigops());
+        //     std::println("sigops:                 {}", sigops);
 
 
-        //     std::cout << "Removed:  ";
+        //     std::print("Removed:  ");
         //     for (auto i : out_removed) {
-        //         std::cout << i << ", ";
+        //         std::print("{}, ", i);
         //     }
-        //     std::cout << std::endl;
+        //     std::println("");
         // }
 
         KTH_ASSERT(node.children_fees() == fee);
@@ -269,7 +269,7 @@ public:
 
             // if ( !  res) {
                 // auto res2 = std::is_sorted(candidate_transactions_.begin(), candidate_transactions_.end(), cmp);
-                // std::cout << res2;
+                // std::print("{}", res2);
             // }
 
             BOOST_ASSERT(res);
@@ -385,7 +385,7 @@ public:
         //precondition: tx is fully validated: check() && accept() && connect()
         //              ! tx.is_coinbase()
 
-        // std::cout << encode_base16(tx.to_data(true, KTH_WITNESS_DEFAULT)) << std::endl;
+        // std::println("src/blockchain/include/kth/blockchain/mining/mempool_v1_old.hpp", encode_base16(tx.to_data(true, KTH_WITNESS_DEFAULT)));
 
         return prioritizer_.low_job([this, &tx]{
             auto const index = all_transactions_.size();
@@ -451,8 +451,8 @@ public:
             return error::success;
         }
 
-        // std::cout << "Arrive Block -------------------------------------------------------------------" << std::endl;
-        // std::cout << encode_base16(tx.to_data(true, KTH_WITNESS_DEFAULT)) << std::endl;
+        // std::println("src/blockchain/include/kth/blockchain/mining/mempool_v1_old.hpp", "Arrive Block -------------------------------------------------------------------");
+        // std::println("src/blockchain/include/kth/blockchain/mining/mempool_v1_old.hpp", encode_base16(tx.to_data(true, KTH_WITNESS_DEFAULT)));
 
 
         processing_block_ = true;
@@ -531,10 +531,10 @@ public:
 //                     assert(old_children[j] == node.children()[j]);
 //                 }
 
-//                 std::cout << std::endl;
+//                 std::println("");
 
 //                 // if (node_old.parents().size() > 0) {
-//                 //     std::cout << std::endl;
+//                 //     std::println("");
 //                 // }
 
 
@@ -999,11 +999,11 @@ private:
         //     }
         // }
 
-        // std::cout << "TO Insert: ";
+        // std::print("{}", "TO Insert: ");
         // for (auto i : std::get<0>(to_insert)) {
-        //     std::cout << i << ", ";
+        //     std::print("{}, ", i);
         // }
-        // std::cout << std::endl;
+        // std::println("");
 
         for (auto i : std::get<0>(to_insert)) {
             insert_in_candidate(i, std::get<0>(to_insert));
@@ -1329,36 +1329,36 @@ private:
 
     void reindex_parent_from_insertion(mining::node const& node, mining::node& parent, index_t parent_index) {
 
-        // std::cout << "hhhhh\n";
+        // std::println("hhhhh");
 
         auto node_benefit = static_cast<double>(node.fee()) / node.size();                          //a
         auto accum_benefit = static_cast<double>(parent.children_fees()) / parent.children_size();  //b
         auto node_accum_benefit = static_cast<double>(node.children_fees()) / node.children_size(); //c
         auto old_accum_benefit = static_cast<double>(parent.children_fees() - node.fee()) / (parent.children_size() - node.size());  //d?
 
-        // std::cout << "node_benefit:       " << node_benefit << "\n";
-        // std::cout << "accum_benefit:      " << accum_benefit << "\n";
-        // std::cout << "node_accum_benefit: " << node_accum_benefit << "\n";
-        // std::cout << "old_accum_benefit:  " << old_accum_benefit << "\n";
+        // std::print("{}", "node_benefit:       " << node_benefit << "\n");
+        // std::print("{}", "accum_benefit:      " << accum_benefit << "\n");
+        // std::print("{}", "node_accum_benefit: " << node_accum_benefit << "\n");
+        // std::print("{}", "old_accum_benefit:  " << old_accum_benefit << "\n");
 
-        // std::cout << "iiiiiii\n";
+        // std::println("iiiiiii");
 
         if (node_benefit == accum_benefit) {
             return;
         }
 
-        // std::cout << "jjjjjjjjj\n";
+        // std::println("jjjjjjjjj");
 
         if (old_accum_benefit == accum_benefit) {
             return;
         }
 
-        // std::cout << "kkkkkkkkkk\n";
+        // std::println("kkkkkkkkkk");
 
         // if (old_accum_benefit > node_accum_benefit) {
-        //     std::cout << "kkkkkkkkkk\n";
+        //     std::println("kkkkkkkkkk");
         // } else {
-        //     std::cout << "kkkkkkkkkk\n";
+        //     std::println("kkkkkkkkkk");
         // }
 
 
@@ -1387,7 +1387,7 @@ private:
         ------------------------------------
 */
 
-                // std::cout << "Case 1\n";
+                // std::println("Case 1");
 
                 auto from = it + 1;
                 auto to = std::end(candidate_transactions_);
@@ -1405,7 +1405,7 @@ private:
                  P        C     P'
         ------------------------------------
 */
-                    // std::cout << "Case 2\n";
+                    // std::println("Case 2");
 
                     auto from = child_it + 1;
                     auto to = std::end(candidate_transactions_);;
@@ -1421,7 +1421,7 @@ private:
                  P              P'      C
         ------------------------------------
 */
-                    // std::cout << "Case 3\n";
+                    // std::println("Case 3");
 
                     auto from = it + 1;
                     auto to = child_it;
@@ -1447,7 +1447,7 @@ private:
             C    P'              P
         ------------------------------------
 */
-                // std::cout << "Case 4\n";
+                // std::println("Case 4");
 
                 auto from = child_it + 1;
                 auto to = it;
@@ -1466,7 +1466,7 @@ private:
              P'        C       P
         ------------------------------------
 */
-                    // std::cout << "Case 5\n";
+                    // std::println("Case 5");
 
                     auto from = std::begin(candidate_transactions_);
                     auto to = child_it;
@@ -1484,7 +1484,7 @@ private:
         ------------------------------------
 */
 
-                    // std::cout << "Case 6\n";
+                    // std::println("Case 6");
 
                     auto from = std::begin(candidate_transactions_);
                     auto to = it;
@@ -1505,7 +1505,7 @@ private:
         //     if (accum_benefit < node_accum_benefit) {
         //         // Now parent is worst than child
 
-        //         std::cout << "Case 1\n";
+        //         std::println("Case 1");
 
 
         //         auto from = child_it + 1;
@@ -1518,14 +1518,14 @@ private:
         //             it = std::rotate(it, it + 1, it2);
         //             parent.set_candidate_index(std::distance(std::begin(candidate_transactions_), it));
         //         } else {
-        //             std::cout << "kkkkkkkkkk\n";
+        //             std::println("kkkkkkkkkk");
         //             reindex_decrement(it + 1, it2);
         //             it = std::rotate(it, it + 1, it2);
         //             parent.set_candidate_index(std::distance(std::begin(candidate_transactions_), it));
         //         }
         //     } else {
 
-        //         std::cout << "Case 2\n";
+        //         std::println("Case 2");
 
         //         // Parent is still better than child
         //         BOOST_ASSERT(old_accum_benefit > accum_benefit);    //Can not be better than yesterday (?)
@@ -1540,7 +1540,7 @@ private:
         //             it = std::rotate(it, it + 1, it2);
         //             parent.set_candidate_index(std::distance(std::begin(candidate_transactions_), it));
         //         } else {
-        //             std::cout << "kkkkkkkkkk\n";
+        //             std::println("kkkkkkkkkk");
 
         //             reindex_decrement(it + 1, it2);
         //             it = std::rotate(it, it + 1, it2);
@@ -1555,7 +1555,7 @@ private:
         //     if (accum_benefit < node_accum_benefit) {
         //         // Parent is still worst than child
 
-        //         std::cout << "Case 3\n";
+        //         std::println("Case 3");
 
 
         //         auto from = child_it + 1;
@@ -1568,16 +1568,16 @@ private:
         //             std::rotate(it2, it, it + 1);
         //             parent.set_candidate_index(std::distance(std::begin(candidate_transactions_), it2));
         //         } else {
-        //             std::cout << "kkkkkkkkkk\n";
+        //             std::println("kkkkkkkkkk");
         //             reindex_increment(it2, it);
         //             std::rotate(it2, it, it + 1);
         //             parent.set_candidate_index(std::distance(std::begin(candidate_transactions_), it2));
         //         }
 
         //     } else {
-        //         std::cout << "Case 4\n";
+        //         std::println("Case 4");
 
-        //         std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n";
+        //         std::println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
         //         // BOOST_ASSERT(false);
         //     }
         // }
@@ -1597,7 +1597,7 @@ private:
         //         // BOOST_ASSERT(node_benefit < accum_benefit && accum_benefit > node_accum_benefit);
 
         //         if ( ! (node_benefit < accum_benefit && accum_benefit > node_accum_benefit)) {
-        //             std::cout << "aaa\n";
+        //             std::println("aaa");
         //         }
 
         //         auto from = it + 1;
@@ -1615,7 +1615,7 @@ private:
 
 
 
-        //         std::cout << "aaa\n";
+        //         std::println("aaa");
 
         //     } else {
         //         // BOOST_ASSERT(a < b && b < c);
@@ -1667,15 +1667,15 @@ private:
 
     // void print_candidates() {
     //     for (auto mi : candidate_transactions_) {
-    //         std::cout << mi << ", ";
+    //         std::print("{}, ", mi);
     //     }
-    //     std::cout << std::endl;
+    //     std::println("");
     //     for (auto mi : candidate_transactions_) {
     //         auto& temp_node = all_transactions_[mi];
     //         auto benefit = static_cast<double>(temp_node.children_fees()) / temp_node.children_size();
-    //         std::cout << benefit << ", ";
+    //         std::print("{}, ", benefit);
     //     }
-    //     std::cout << std::endl;
+    //     std::println("");
     // }
 
     void reindex_parents_from_insertion(mining::node const& node, indexes_t to_insert) {
@@ -1690,11 +1690,11 @@ private:
         // }
 
 
-        // std::cout << "Node " << candidate_transactions_[node.candidate_index()] << " parents: ";
+        // std::print("{}", "Node " << candidate_transactions_[node.candidate_index()] << " parents: ");
         // for (auto pi : node.parents()) {
-        //     std::cout << pi << ", ";
+        //     std::print("{}, ", pi);
         // }
-        // std::cout << std::endl;
+        // std::println("");
 
         for (auto pi : node.parents()) {
             auto& parent = all_transactions_[pi];
@@ -1704,30 +1704,30 @@ private:
 
             if (parent.candidate_index() != null_index) {
 
-                // std::cout << "--------------------------------------------------\n";
-                // std::cout << "Before re-sorting " << pi << "\n";
+                // std::println("--------------------------------------------------");
+                // std::print("{}", "Before re-sorting " << pi << "\n");
                 // print_candidates();
-                // std::cout << std::endl;
-                // std::cout << "--------------------------------------------------\n";
+                // std::println("");
+                // std::println("--------------------------------------------------");
 
                 // if (pi == 27) {
-                //     std::cout << "muneco\n";
+                //     std::println("muneco");
                 // }
 
 
                 auto parent_benefit = static_cast<double>(parent.children_fees()) / parent.children_size();
-                // std::cout << "Parent stage0 benefit " << parent_benefit << "\n";
+                // std::print("{}", "Parent stage0 benefit " << parent_benefit << "\n");
                 parent.increment_values(node.fee(), node.size(), node.sigops());
                 parent_benefit = static_cast<double>(parent.children_fees()) / parent.children_size();
-                // std::cout << "Parent stage1 benefit " << parent_benefit << "\n";
+                // std::print("{}", "Parent stage1 benefit " << parent_benefit << "\n");
 
                 reindex_parent_from_insertion(node, parent, pi);
 
-                // std::cout << "--------------------------------------------------\n";
-                // std::cout << "After re-sorting " << pi << "\n";
+                // std::println("--------------------------------------------------");
+                // std::print("{}", "After re-sorting " << pi << "\n");
                 // print_candidates();
-                // std::cout << std::endl;
-                // std::cout << "--------------------------------------------------\n";
+                // std::println("");
+                // std::println("--------------------------------------------------");
 
             } else {
                 auto it = std::find(std::begin(to_insert), std::end(to_insert), pi);
@@ -1741,13 +1741,13 @@ private:
     void insert_in_candidate(index_t node_index, indexes_t to_insert) {
         auto& node = all_transactions_[node_index];
 
-        // std::cout << "--------------------------------------------------\n";
+        // std::println("--------------------------------------------------");
         auto node_benefit = static_cast<double>(node.children_fees()) / node.children_size();
-        // std::cout << "Before insert " << node_index << "\n";
-        // std::cout << "New node benefit " << node_benefit << "\n";
+        // std::print("{}", "Before insert " << node_index << "\n");
+        // std::print("{}", "New node benefit " << node_benefit << "\n");
         // print_candidates();
-        // std::cout << std::endl;
-        // std::cout << "--------------------------------------------------\n";
+        // std::println("");
+        // std::println("--------------------------------------------------");
 
 
 
@@ -1783,11 +1783,11 @@ private:
         // time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
         // insert_time += time_ns;
 
-        // std::cout << "--------------------------------------------------\n";
-        // std::cout << "After insert " << node_index << "\n";
+        // std::println("--------------------------------------------------");
+        // std::print("{}", "After insert " << node_index << "\n");
         // print_candidates();
-        // std::cout << std::endl;
-        // std::cout << "--------------------------------------------------\n";
+        // std::println("");
+        // std::println("--------------------------------------------------");
 
         reindex_parents_from_insertion(node, to_insert);
     }

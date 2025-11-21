@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <iostream>
+#include <print>
 
 #include <kth/capi/libconfig/libconfig.h>
 
@@ -10,22 +11,22 @@ int main(int argc, char* argv[]) {
 
     auto config = kth_libconfig_get();
 
-    std::cout << "version:              " << config.version << '\n';
-    std::cout << "microarchitecture_id: " << config.microarchitecture_id << '\n';
-    std::cout << "currency:             " << config.currency << '\n';
-    std::cout << "mempool:              " << config.mempool << '\n';
-    // std::cout << "db_mode:              " << config.db_mode << '\n';
-    std::cout << "db_readonly:          " << config.db_readonly << '\n';
-    std::cout << "debug_mode:           " << config.debug_mode << '\n';
-    std::cout << "architecture:         " << config.architecture << '\n';
-    std::cout << "os_name:              " << config.os_name << '\n';
-    std::cout << "compiler_name:        " << config.compiler_name << '\n';
-    std::cout << "compiler_version:     " << config.compiler_version << '\n';
-    std::cout << "optimization_level:   " << config.optimization_level << '\n';
-    std::cout << "build_timestamp:      " << config.build_timestamp << '\n';
+    std::println("version:              {}", config.version);
+    std::println("microarchitecture_id: {}", config.microarchitecture_id);
+    std::println("currency:             {}", config.currency);
+    std::println("mempool:              {}", config.mempool);
+    // std::println("db_mode:              {}", config.db_mode);
+    std::println("db_readonly:          {}", config.db_readonly);
+    std::println("debug_mode:           {}", config.debug_mode);
+    std::println("architecture:         {}", config.architecture);
+    std::println("os_name:              {}", config.os_name);
+    std::println("compiler_name:        {}", config.compiler_name);
+    std::println("compiler_version:     {}", config.compiler_version);
+    std::println("optimization_level:   {}", config.optimization_level);
+    std::println("build_timestamp:      {}", config.build_timestamp);
 
-    std::cout << "endianness:           " << config.endianness << '\n';
-    std::cout << "size_int:             " << int(config.type_sizes.size_int) << '\n';
-    std::cout << "size_long:            " << int(config.type_sizes.size_long) << '\n';
-    std::cout << "size_pointer:         " << int(config.type_sizes.size_pointer) << '\n';
+    std::println("endianness:           {}", config.endianness);
+    std::println("size_int:             {}", int(config.type_sizes.size_int));
+    std::println("size_long:            {}", int(config.type_sizes.size_long));
+    std::println("size_pointer:         {}", int(config.type_sizes.size_pointer));
 }

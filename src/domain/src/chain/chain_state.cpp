@@ -1130,7 +1130,7 @@ uint32_t chain_state::work_required_retarget(data const& values) {
     int64_t const high = timestamp_high(values);
     int64_t const retarget = values.timestamp.retarget;
     int64_t const actual_timespan = range_constrain(high - retarget, (int64_t)min_timespan, (int64_t)max_timespan);
-    // std::cout << "high:            " << high << "\n";
+    // std::println("high:            {}", high);
 
     target *= actual_timespan;
     target /= target_timespan_seconds;

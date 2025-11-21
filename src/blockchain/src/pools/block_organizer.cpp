@@ -231,7 +231,7 @@ void block_organizer::populate_prevout_1(branch::const_ptr branch, domain::chain
 
     //TODO(fernando): check the value of the parameters: branch_height and require_confirmed
     if ( ! fast_chain_.get_utxo(prevout.cache, prevout.height, prevout.median_time_past, prevout.coinbase, outpoint, branch_height)) {
-        // std::cout << "outpoint not found in UTXO: " << encode_hash(outpoint.hash()) << " - " << outpoint.index() << std::endl;
+        // std::println("{}", "outpoint not found in UTXO: " << encode_hash(outpoint.hash()) << " - " << outpoint.index());
         return;
     }
 
@@ -288,7 +288,7 @@ local_utxo_set_t create_outgoing_utxo_set(block_const_ptr_list_ptr const& outgoi
     res.reserve(outgoing_blocks->size());
 
     for (auto const& block : *outgoing_blocks) {
-        // std::cout << "create_branch_utxo_set - block: {" << encode_hash(block->hash()) << "}" << std::endl;
+        // std::println("{}", "create_branch_utxo_set - block: {" << encode_hash(block->hash()) << "}");
         res.push_back(create_local_utxo_set(*block));
     }
 
@@ -304,9 +304,9 @@ void block_organizer::organize_mempool(branch::const_ptr branch, block_const_ptr
         if (block->transactions().size() > 1) {
 
             //TODO(fernando): Remove!!!!
-            // std::cout << "Arrive Block -------------------------------------------------------------------" << std::endl;
-            // std::cout << encode_hash(block->hash()) << std::endl;
-            // std::cout << "--------------------------------------------------------------------------------" << std::endl;
+            // std::println("src/blockchain/src/pools/block_organizer.cpp", "Arrive Block -------------------------------------------------------------------");
+            // std::println("src/blockchain/src/pools/block_organizer.cpp", encode_hash(block->hash()));
+            // std::println("src/blockchain/src/pools/block_organizer.cpp", "--------------------------------------------------------------------------------");
 
 
             mempool_.remove(block->transactions().begin() + 1, block->transactions().end(), block->non_coinbase_input_count());
@@ -328,7 +328,7 @@ void block_organizer::organize_mempool(branch::const_ptr branch, block_const_ptr
 
         for (auto const& block : *outgoing_blocks) {
 
-            // std::cout << "Inserting Block in Mempool: " << encode_hash(block->hash()) << std::endl;
+            // std::println("{}", "Inserting Block in Mempool: " << encode_hash(block->hash()));
 
             if (block->transactions().size() > 1) {
                 std::for_each(block->transactions().begin() + 1, block->transactions().end(),

@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chrono>
+#include <print>
 #include <csignal>
 #include <cstdio>
 #include <iostream>
@@ -88,8 +89,8 @@ int main(int /*argc*/, char* /*argv*/[]) {
     auto valid = kth_wallet_payment_address_is_valid(pa);
     auto address_str = kth_wallet_payment_address_encoded(pa);
     auto cash_address_str = kth_wallet_payment_address_encoded_cashaddr(pa, false);
-    std::cout << address_str << std::endl;
-    std::cout << cash_address_str << std::endl;
+    std::println("{}", address_str);
+    std::println("{}", cash_address_str);
 
 
 
@@ -217,7 +218,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
 //     auto address = kth_wallet_payment_address_construct_from_string(addr.c_str());
 
 //     if (kth_wallet_payment_address_is_valid(address) == 0) {
-//         std::cout << "Invalid payment address: " << addr << std::endl;
+//         std::println("Invalid payment address: {}", addr);
 //     }
 
 //     kth_shorthash_t addr_hash = kth_wallet_payment_address_hash20(address);
@@ -228,7 +229,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
 //     kth_script_t locking_script = kth_chain_script_construct(static_cast<uint8_t*>(locking_script_data), 25, 0 /*int bool prefix*/);
 
 //     if (kth_chain_script_is_valid(locking_script) == 0) {
-//         std::cout << "Invalid locking script\n";
+//         std::println("Invalid locking script");
 //     }
 
 //     //--------------------------------------------------------------------------------------------------------------
@@ -242,7 +243,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
 //     kth_script_t unlocking_script = kth_chain_script_construct(unlocking_script_data.data(), unlocking_script_data.size(), 0 /*int bool prefix*/);
 
 //     if (kth_chain_script_is_valid(unlocking_script) == 0) {
-//         std::cout << "Invalid unlocking script\n";
+//         std::println("Invalid unlocking script");
 //     }
 
 //     //--------------------------------------------------------------------------------------------------------------
@@ -297,9 +298,9 @@ int main(int /*argc*/, char* /*argv*/[]) {
 
 //     uint64_t tx_data_n;
 //     uint8_t* tx_data = kth_chain_transaction_to_data(tx, 1 /*int bool wire*/, &tx_data_n);
-//     std::cout << "-----------------------------------------------------------------------------\n";
+//     std::println("-----------------------------------------------------------------------------");
 //     print_hex(tx_data, tx_data_n);
-//     std::cout << "-----------------------------------------------------------------------------\n";
+//     std::println("-----------------------------------------------------------------------------");
 //     free(tx_data);
 
 //     kth_chain_transaction_destruct(tx);
@@ -403,7 +404,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
 // bool stopped = false;
 
 // void handle_stop(int signal) {
-//     std::cout << "handle_stop()\n";
+//     std::println("handle_stop()");
 //     // stop(kth::error::success);
 //     //kth_node_stop(exec);
 //     //kth_chain_t chain = kth_node_get_chain(exec);
@@ -426,13 +427,13 @@ int main(int /*argc*/, char* /*argv*/[]) {
 
 //     //if (xxx >= 3000) {
 //     //    int s = kth_node_stopped(exec);
-//     //    std::cout << s << std::endl;
+//     //    std::println("{}", s);
 
 //     //    //kth_node_stop(exec);
 //     //    //kth_node_close(exec);
 
 //     //    s = kth_node_stopped(exec);
-//     //    std::cout << s << std::endl;
+//     //    std::println("{}", s);
 //     //    kth_chain_unsubscribe(chain);
 //     //}
 
@@ -497,13 +498,13 @@ int main(int /*argc*/, char* /*argv*/[]) {
 
 //         if (height >= 3000) {
 //             int s = kth_node_stopped(exec);
-//             std::cout << s << std::endl;
+//             std::println("{}", s);
 
 //             kth_node_stop(exec);
 //             //kth_node_close(exec);
 
 //             s = kth_node_stopped(exec);
-//             std::cout << s << std::endl;
+//             std::println("{}", s);
 //         }
 
 //         std::this_thread::sleep_for(std::chrono::seconds(10));
@@ -622,7 +623,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
 //	//auto data = txlib.to_data();
 //
 //	//for (int i = 0; i < data.size(); ++i) {
-//	//	std::cout << std::hex << (int)data[i];
+//	//	std::print("{:x}", (int)data[i]);
 //	//}
 //
 //
@@ -638,7 +639,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
 //
 //	//while (waiting) {
 //	//	std::this_thread::sleep_for(500ms);
-//	//	//std::cout << "..." << std::endl;
+//	//	//std::println("{}", "...");
 //	//}
 //
 ////    fetch_merkle_block_by_height(exec, 0, NULL);
@@ -655,7 +656,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
 //	while (true) {
 //		fetch_last_height(exec, last_height_fetch_handler);
 //		std::this_thread::sleep_for(500ms);
-//		//std::cout << "..." << std::endl;
+//		//std::println("{}", "...");
 //	}
 //
 //    kth_node_destruct(exec);

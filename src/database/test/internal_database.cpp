@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <filesystem>
+#include <print>
 #include <tuple>
 
 #include <test_helpers.hpp>
@@ -208,12 +209,12 @@ void print_db_entries_count(KTH_DB_env* env_, KTH_DB_dbi& dbi ) {
     MDB_stat db_stats;
     auto ret = mdb_stat(txn, dbi, &db_stats);
     if (ret != KTH_DB_SUCCESS) {
-        std::cout << "Error getting entries " << static_cast<int32_t>(ret) << std::endl;
+        std::println("Error getting entries {}", static_cast<int32_t>(ret));
         kth_db_txn_commit(txn);
         return;
     }
 
-    std::cout << "Entries: " << db_stats.ms_entries << std::endl;
+    std::println("Entries: {}", db_stats.ms_entries);
     kth_db_txn_commit(txn);
 }
 
@@ -498,15 +499,15 @@ size_t db_count_items(KTH_DB_env *env, KTH_DB_dbi dbi) {
 
         data_chunk key_bytes {static_cast<uint8_t*>(kth_db_get_data(key)), static_cast<uint8_t*>(kth_db_get_data(key)) + kth_db_get_size(key)};
         std::reverse(begin(key_bytes), end(key_bytes));
-        std::cout << encode_base16(key_bytes) << std::endl;
+        std::println("{}", encode_base16(key_bytes));
 
         data_chunk value_bytes {static_cast<uint8_t*>(kth_db_get_data(data)), static_cast<uint8_t*>(kth_db_get_data(data)) + kth_db_get_size(data)};
         std::reverse(begin(value_bytes), end(value_bytes));
-        // std::cout << encode_base16(value_bytes) << std::endl;
+        // std::println("src/database/test/internal_database.cpp", encode_base16(value_bytes));
 
         ++count;
     }
-    // std::cout << "---------------------------------\n" << std::endl;
+    // std::println("src/database/test/internal_database.cpp", "---------------------------------\n");
 
     kth_db_cursor_close(cursor);
     kth_db_txn_commit(txn);
@@ -534,9 +535,9 @@ size_t db_count_index_by_height(KTH_DB_env *env, KTH_DB_dbi dbi, size_t height) 
             ++count;
         }
     } else {
-        // std::cout << "no encontre el primero\n" << std::endl;
+        // std::println("src/database/test/internal_database.cpp", "no encontre el primero\n");
     }
-    // std::cout << "---------------------------------\n" << std::endl;
+    // std::println("src/database/test/internal_database.cpp", "---------------------------------\n");
 
     kth_db_cursor_close(cursor);
     kth_db_txn_abort(txn);
@@ -563,9 +564,9 @@ size_t db_count_db_by_address(KTH_DB_env *env, KTH_DB_dbi dbi, domain::wallet::p
             ++count;
         }
     } else {
-        // std::cout << "no encontre el primero\n" << std::endl;
+        // std::println("src/database/test/internal_database.cpp", "no encontre el primero\n");
     }
-    // std::cout << "---------------------------------\n" << std::endl;
+    // std::println("src/database/test/internal_database.cpp", "---------------------------------\n");
 
     kth_db_cursor_close(cursor);
     kth_db_txn_abort(txn);
@@ -623,7 +624,7 @@ struct dummy_clock {
 TEST_CASE("internal database  dummy clock", "[None]") {
     auto start = dummy_clock<200>::now();
     auto end = dummy_clock<200>::now();
-    // std::cout << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "us.\n";
+    // std::println("{}us.", std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
     REQUIRE(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() == 0);
 }
 
@@ -811,8 +812,8 @@ TEST_CASE("internal database  key not found", "[None]") {
 TEST_CASE("internal database  insert duplicate", "[None]") {
     auto const orig = get_block("01000000a594fda9d85f69e762e498650d6fdb54d838657cea7841915203170000000000a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f505da904ce6ed5b1b017fe8070101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704e6ed5b1b015cffffffff0100f2052a01000000434104283338ffd784c198147f99aed2cc16709c90b1522e3b3637b312a6f9130e0eda7081e373a96d36be319710cd5c134aaffba81ff08650d7de8af332fe4d8cde20ac00000000");
     auto const spender = get_block("01000000ba8b9cda965dd8e536670f9ddec10e53aab14b20bacad27b9137190000000000190760b278fe7b8565fda3b968b918d5fd997f993b23674c0af3b6fde300b38f33a5914ce6ed5b1b01e32f570201000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704e6ed5b1b014effffffff0100f2052a01000000434104b68a50eaa0287eff855189f949c1c6e5f58b37c88231373d8a59809cbae83059cc6469d65c665ccfd1cfeb75c6e8e19413bba7fbff9bc762419a76d87b16086eac000000000100000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000");
-    // std::cout << encode_hash(orig.hash()) << std::endl;
-    // std::cout << encode_hash(spender.hash()) << std::endl;
+    // std::println("src/database/test/internal_database.cpp", encode_hash(orig.hash()));
+    // std::println("src/database/test/internal_database.cpp", encode_hash(spender.hash()));
 
     internal_database db(db_path, db_mode_type::full, 10000000, db_size, true);
     REQUIRE(db.open());
@@ -826,8 +827,8 @@ TEST_CASE("internal database  insert double spend block", "[None]") {
     auto const spender0 = get_block("01000000ba8b9cda965dd8e536670f9ddec10e53aab14b20bacad27b9137190000000000190760b278fe7b8565fda3b968b918d5fd997f993b23674c0af3b6fde300b38f33a5914ce6ed5b1b01e32f570201000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704e6ed5b1b014effffffff0100f2052a01000000434104b68a50eaa0287eff855189f949c1c6e5f58b37c88231373d8a59809cbae83059cc6469d65c665ccfd1cfeb75c6e8e19413bba7fbff9bc762419a76d87b16086eac000000000100000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000");
     auto const spender1 = get_block("02000000ba8b9cda965dd8e536670f9ddec10e53aab14b20bacad27b9137190000000000190760b278fe7b8565fda3b968b918d5fd997f993b23674c0af3b6fde300b38f33a5914ce6ed5b1b01e32f570201000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704e6ed5b1b014effffffff0100f2052a01000000434104b68a50eaa0287eff855189f949c1c6e5f58b37c88231373d8a59809cbae83059cc6469d65c665ccfd1cfeb75c6e8e19413bba7fbff9bc762419a76d87b16086eac000000000200000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000");
 
-    // std::cout << encode_hash(orig.hash()) << std::endl;
-    // std::cout << encode_hash(spender.hash()) << std::endl;
+    // std::println("src/database/test/internal_database.cpp", encode_hash(orig.hash()));
+    // std::println("src/database/test/internal_database.cpp", encode_hash(spender.hash()));
 
     internal_database db(db_path, db_mode_type::full, 10000000, db_size, true);
     REQUIRE(db.open());
@@ -1403,7 +1404,7 @@ TEST_CASE("internal database  reorg index2", "[None]") {
 /*
 TEST_CASE("internal database  test tx address", "[None]") {
 
-std::cout << "*************************************************************"  << std::endl;
+std::println("*************************************************************");
 
 data_chunk wire_tx1;
 REQUIRE(decode_base16(wire_tx1, "0100000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000"));
@@ -1414,26 +1415,26 @@ REQUIRE(tx1.is_valid());
 
 for (auto const& i : tx1.inputs()) {
 
-    std::cout << "address HHHHHHHHHHHHHHHHH:" << i.address() << std::endl;
+    std::println("address HHHHHHHHHHHHHHHHH:{}", i.address());
 
     auto const& script = i.script();
 
-    std::cout << "address SSSSS:" << script.to_string(0) << std::endl;
+    std::println("address SSSSS:{}", script.to_string(0));
 
 
     for (auto const& a : i.addresses()) {
-            std::cout << "address iiiiiii:" << a << std::endl;
+            std::println("address iiiiiii:{}", a);
     }
 }
 
 
 for (auto const& o : tx1.outputs()) {
     for (auto const& a : o.addresses()) {
-            std::cout << "address oooooo:" << a << std::endl;
+            std::println("address oooooo:{}", a);
     }
 }
 
-std::cout << "*************************************************************"  << std::endl;
+std::println("*************************************************************");
 
 }
 
@@ -2158,7 +2159,7 @@ TEST_CASE("internal database  prune", "[None]") {
         REQUIRE(decode_hash(txid, "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"));
         spender80000b.transactions()[1].inputs()[0].previous_output().set_hash(txid);
     }
-    // std::cout << encode_hash(spender80000b.transactions()[1].inputs()[0].previous_output().hash()) << std::endl;
+    // std::println("src/database/test/internal_database.cpp", encode_hash(spender80000b.transactions()[1].inputs()[0].previous_output().hash()));
 
     auto spender80000c = spender80000;
     spender80000c.header().set_version(3);
@@ -2169,7 +2170,7 @@ TEST_CASE("internal database  prune", "[None]") {
         REQUIRE(decode_hash(txid, "9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5"));
         spender80000c.transactions()[1].inputs()[0].previous_output().set_hash(txid);
     }
-    // std::cout << encode_hash(spender80000c.transactions()[1].inputs()[0].previous_output().hash()) << std::endl;
+    // std::println("src/database/test/internal_database.cpp", encode_hash(spender80000c.transactions()[1].inputs()[0].previous_output().hash()));
 
     auto spender80000d = spender80000;
     spender80000d.header().set_version(4);
@@ -2180,7 +2181,7 @@ TEST_CASE("internal database  prune", "[None]") {
         REQUIRE(decode_hash(txid, "999e1c837c76a1b7fbb7e57baf87b309960f5ffefbf2a9b95dd890602272f644"));
         spender80000d.transactions()[1].inputs()[0].previous_output().set_hash(txid);
     }
-    // std::cout << encode_hash(spender80000d.transactions()[1].inputs()[0].previous_output().hash()) << std::endl;
+    // std::println("src/database/test/internal_database.cpp", encode_hash(spender80000d.transactions()[1].inputs()[0].previous_output().hash()));
 
     auto spender80000e = spender80000;
     spender80000e.header().set_version(5);
@@ -2191,7 +2192,7 @@ TEST_CASE("internal database  prune", "[None]") {
         REQUIRE(decode_hash(txid, "df2b060fa2e5e9c8ed5eaf6a45c13753ec8c63282b2688322eba40cd98ea067a"));
         spender80000e.transactions()[1].inputs()[0].previous_output().set_hash(txid);
     }
-    // std::cout << encode_hash(spender80000e.transactions()[1].inputs()[0].previous_output().hash()) << std::endl;
+    // std::println("src/database/test/internal_database.cpp", encode_hash(spender80000e.transactions()[1].inputs()[0].previous_output().hash()));
 
 
 
@@ -2860,7 +2861,7 @@ TEST_CASE("internal database  prune 2", "[None]") {
         spender80000b.transactions()[1].inputs()[3].previous_output().set_hash(txid);
 
     }
-    // std::cout << encode_hash(spender80000b.transactions()[1].inputs()[0].previous_output().hash()) << std::endl;
+    // std::println("src/database/test/internal_database.cpp", encode_hash(spender80000b.transactions()[1].inputs()[0].previous_output().hash()));
 
 
     using my_clock = dummy_clock<1284613427>;
@@ -3445,7 +3446,7 @@ TEST_CASE("internal database  prune 3", "[None]") {
         spender80000b.transactions()[1].inputs()[3].previous_output().set_hash(txid);
 
     }
-    // std::cout << encode_hash(spender80000b.transactions()[1].inputs()[0].previous_output().hash()) << std::endl;
+    // std::println("src/database/test/internal_database.cpp", encode_hash(spender80000b.transactions()[1].inputs()[0].previous_output().hash()));
 
 
     using my_clock = dummy_clock<1284613427>;

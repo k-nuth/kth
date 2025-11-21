@@ -70,7 +70,7 @@ bool compact_block::operator!=(compact_block const& x) const {
 }
 
 bool compact_block::is_valid() const {
-    //std::cout << "compact_block::is_valid\n";
+    //std::println("compact_block::is_valid");
 
     return header_.is_valid()
         && ! short_ids_.empty()
@@ -78,7 +78,7 @@ bool compact_block::is_valid() const {
 }
 
 void compact_block::reset() {
-    //std::cout << "compact_block::reset\n";
+    //std::println("compact_block::reset");
 
     header_ = chain::header{};
     nonce_ = 0;
@@ -183,14 +183,14 @@ data_chunk compact_block::to_data(uint32_t version) const {
 }
 
 void compact_block::to_data(uint32_t version, data_sink& stream) const {
-    //std::cout << "compact_block::to_data 2\n";
+    //std::println("compact_block::to_data 2");
 
     ostream_writer sink_w(stream);
     to_data(version, sink_w);
 }
 
 size_t compact_block::serialized_size(uint32_t version) const {
-    //std::cout << "compact_block::serialized_size\n";
+    //std::println("compact_block::serialized_size");
 
     auto size = chain::header::satoshi_fixed_size() +
                 infrastructure::message::variable_uint_size(short_ids_.size()) +
@@ -206,41 +206,41 @@ size_t compact_block::serialized_size(uint32_t version) const {
 }
 
 chain::header& compact_block::header() {
-    //std::cout << "compact_block::header\n";
+    //std::println("compact_block::header");
 
     return header_;
 }
 
 chain::header const& compact_block::header() const {
-    //std::cout << "compact_block::header 2\n";
+    //std::println("compact_block::header 2");
 
     return header_;
 }
 
 void compact_block::set_header(chain::header const& value) {
-    //std::cout << "compact_block::set_header\n";
+    //std::println("compact_block::set_header");
 
     header_ = value;
 }
 
 uint64_t compact_block::nonce() const {
-    //std::cout << "compact_block::nonce\n";
+    //std::println("compact_block::nonce");
 
     return nonce_;
 }
 
 void compact_block::set_nonce(uint64_t value) {
-    //std::cout << "compact_block::set_nonce\n";
+    //std::println("compact_block::set_nonce");
     nonce_ = value;
 }
 
 compact_block::short_id_list& compact_block::short_ids() {
-    //std::cout << "compact_block::short_ids\n";
+    //std::println("compact_block::short_ids");
     return short_ids_;
 }
 
 compact_block::short_id_list const& compact_block::short_ids() const {
-    //std::cout << "compact_block::short_ids 2\n";
+    //std::println("compact_block::short_ids 2");
     return short_ids_;
 }
 
@@ -275,7 +275,7 @@ void to_data_header_nonce(compact_block const& block, data_sink& stream) {
 }
 
 data_chunk to_data_header_nonce(compact_block const& block) {
-    //std::cout << "compact_block::to_data\n";
+    //std::println("compact_block::to_data");
 
     data_chunk data;
     auto size = chain::header::satoshi_fixed_size() + sizeof(block.nonce());

@@ -217,7 +217,7 @@ void istream_reader::skip_remaining() {
 
     // stream_.seekg(0, stream_.end);
     // auto length = stream_.tellg();
-    // std::cout << length << std::endl;
+    // std::println("src/infrastructure/src/utility/istream_reader.cpp", length);
 }
 
 // private
