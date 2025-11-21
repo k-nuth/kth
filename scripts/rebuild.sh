@@ -13,12 +13,12 @@ if [ -z "$TEST" ]; then
 fi
 echo "Building version: ${VERSION} with test: ${TEST}"
 
-# rm -rf build
-# rm -rf conan.lock
+rm -rf build
+rm -rf conan.lock
 
-# conan lock create conanfile.py --version="${VERSION}" --update
-# conan lock create conanfile.py --version "${VERSION}" --lockfile=conan.lock --lockfile-out=build/conan.lock
-# conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing
+conan lock create conanfile.py --version="${VERSION}" --update
+conan lock create conanfile.py --version "${VERSION}" --lockfile=conan.lock --lockfile-out=build/conan.lock
+conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing
 
 cmake --preset conan-release \
          -DCMAKE_VERBOSE_MAKEFILE=ON \
