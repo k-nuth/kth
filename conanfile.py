@@ -311,7 +311,7 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["infrastructure"].names["cmake_find_package"] = "infrastructure"
         self.cpp_info.components["infrastructure"].names["cmake_find_package_multi"] = "infrastructure"
         self.cpp_info.components["infrastructure"].defines = static_defines
-        # Infrastructure core dependencies: secp256k1, boost, fmt, ctre, spdlog
+        # Infrastructure core dependencies: secp256k1, boost, fmt, ctre, spdlog, simdutf (non-wasm)
         self.cpp_info.components["infrastructure"].requires = [
             "secp256k1",
             "boost::boost",
@@ -319,6 +319,9 @@ class KthRecipe(KnuthConanFileV2):
             "ctre::ctre",
             "spdlog::spdlog"
         ]
+        # Add simdutf for SIMD-optimized base encoding (not available for WebAssembly)
+        if self.settings.os != "Emscripten":
+            self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
         
         
         # Domain models and business logic
