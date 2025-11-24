@@ -77,9 +77,8 @@ settings::settings(domain::config::network context)
 
 #if defined(KTH_CURRENCY_BCH)
             identifier = netmagic::bch_mainnet;
-            seeds.reserve(8);
+            seeds.reserve(7);
             seeds.emplace_back("seed.flowee.cash", 8333);                     // Flowee
-            seeds.emplace_back("seed-bch.bitcoinforks.org", 8333);            // BitcoinForks
             seeds.emplace_back("btccash-seeder.bitcoinunlimited.info", 8333); // Bitcoin Unlimited
             seeds.emplace_back("seed.bchd.cash", 8333);                       // BCHD
             seeds.emplace_back("seed.bch.loping.net", 8333);                  // Loping.net
@@ -113,11 +112,10 @@ settings::settings(domain::config::network context)
             inbound_port = 18333;
 #if defined(KTH_CURRENCY_BCH)
             identifier = netmagic::bch_testnet;
-            seeds.reserve(4);
-            seeds.emplace_back("testnet-seed-bch.bitcoinforks.org", 18333);
+            seeds.reserve(3);
+            seeds.emplace_back("testnet-seed.bchd.cash", 18333);
             seeds.emplace_back("seed.tbch.loping.net", 18333);
             seeds.emplace_back("testnet-seed.bitcoinunlimited.info", 18333);
-            seeds.emplace_back("testnet-seed.bchd.cash", 18333);
 #else
             identifier = netmagic::btc_testnet;
             // Seeds based on satoshi client v0.14.0 plus voskuil.org.
@@ -144,18 +142,18 @@ settings::settings(domain::config::network context)
         case domain::config::network::testnet4: {
             inbound_port = 28333;
             identifier = netmagic::bch_testnet4;
-            seeds.reserve(3);
-            seeds.emplace_back("testnet4-seed-bch.bitcoinforks.org", 28333);
+            seeds.reserve(4);
             seeds.emplace_back("testnet4-seed-bch.toom.im", 28333);
             seeds.emplace_back("seed.tbch4.loping.net", 28333);
+            seeds.emplace_back("testnet4-seed.flowee.cash", 28333);
+            seeds.emplace_back("testnet4.bitjson.com", 28333);
             break;
         }
 
         case domain::config::network::scalenet: {
             inbound_port = 38333;
             identifier = netmagic::bch_scalenet;
-            seeds.reserve(3);
-            seeds.emplace_back("scalenet-seed-bch.bitcoinforks.org", 38333);
+            seeds.reserve(2);
             seeds.emplace_back("scalenet-seed-bch.toom.im", 38333);
             seeds.emplace_back("seed.sbch.loping.net", 38333);
             break;
