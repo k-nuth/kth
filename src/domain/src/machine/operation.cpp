@@ -98,14 +98,17 @@ bool operation::from_string(std::string const& mnemonic) {
 
         if (parts.size() == 1) {
             // Extract operation using nominal data size encoding.
-            if (decode_base16(data_, parts[0])) {
+            if (auto decoded = decode_base16(parts[0])) {
+                data_ = std::move(*decoded);
                 code_ = nominal_opcode_from_data(data_);
                 valid_ = true;
             }
         } else if (parts.size() == 2) {
             // Extract operation using explicit data size encoding.
-            valid_ = decode_base16(data_, parts[1]) &&
-                     opcode_from_data_prefix(code_, parts[0], data_);
+            if (auto decoded = decode_base16(parts[1])) {
+                data_ = std::move(*decoded);
+                valid_ = opcode_from_data_prefix(code_, parts[0], data_);
+            }
         }
     } else if (is_text_token(mnemonic)) {
         auto const text = trim_token(mnemonic);

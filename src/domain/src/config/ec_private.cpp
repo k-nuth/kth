@@ -19,7 +19,12 @@ namespace kth::domain::config {
 // ec_secret base16 format is private to bx.
 static
 bool decode_secret(ec_secret& secret, std::string const& encoded) {
-    return decode_base16(secret, encoded) && verify(secret);
+    auto result = decode_base16<ec_secret_size>(encoded);
+    if ( ! result) {
+        return false;
+    }
+    secret = *result;
+    return verify(secret);
 }
 
 ec_private::ec_private(std::string const& hexcode) {

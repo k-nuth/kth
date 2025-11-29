@@ -713,12 +713,12 @@ bool opcode_from_hexadecimal(opcode& out_code, std::string const& value) {
         return false;
     }
 
-    data_chunk out;
-    if ( ! decode_base16(out, std::string(value.begin() + 2, value.end()))) {
+    auto out = decode_base16(std::string(value.begin() + 2, value.end()));
+    if ( ! out) {
         return false;
     }
 
-    out_code = static_cast<opcode>(out.front());
+    out_code = static_cast<opcode>(out->front());
     return true;
 }
 

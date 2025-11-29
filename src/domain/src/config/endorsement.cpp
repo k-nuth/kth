@@ -21,13 +21,12 @@ namespace kth::domain::config {
 static
 bool decode_endorsement(kth::endorsement& endorsement,
                                std::string const& encoded) {
-    kth::endorsement decoded;
-    if ( ! decode_base16(decoded, encoded) ||
-        (decoded.size() > max_endorsement_size)) {
+    auto decoded = decode_base16(encoded);
+    if ( ! decoded || decoded->size() > max_endorsement_size) {
         return false;
     }
 
-    endorsement = decoded;
+    endorsement = std::move(*decoded);
     return true;
 }
 

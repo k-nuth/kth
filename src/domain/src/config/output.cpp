@@ -88,13 +88,13 @@ std::istream& operator>>(std::istream& input, output& argument) {
             BOOST_THROW_EXCEPTION(invalid_option_value(tuple));
         }
 
-        data_chunk seed;
-        if ( ! decode_base16(seed, tokens[2]) || seed.size() < minimum_seed_size) {
+        auto seed = decode_base16(tokens[2]);
+        if ( ! seed || seed->size() < minimum_seed_size) {
             BOOST_THROW_EXCEPTION(invalid_option_value(tuple));
         }
 
         ec_secret ephemeral_secret;
-        if ( ! create_stealth_data(argument.script_, ephemeral_secret, stealth.filter(), seed)) {
+        if ( ! create_stealth_data(argument.script_, ephemeral_secret, stealth.filter(), *seed)) {
             BOOST_THROW_EXCEPTION(invalid_option_value(tuple));
         }
 
@@ -112,12 +112,12 @@ std::istream& operator>>(std::istream& input, output& argument) {
     // The target must be a serialized script.
     // Note that it is possible for a base16 encoded script to be interpreted
     // as an address above. That is unlikely but considered intended behavior.
-    data_chunk decoded;
-    if ( ! decode_base16(decoded, target)) {
+    auto decoded = decode_base16(target);
+    if ( ! decoded) {
         BOOST_THROW_EXCEPTION(invalid_option_value(target));
     }
 
-    argument.script_ = script(decoded);
+    argument.script_ = script(*decoded);
     return input;
 }
 

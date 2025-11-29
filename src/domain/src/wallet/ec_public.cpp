@@ -66,12 +66,12 @@ ec_public ec_public::from_private(ec_private const& secret) {
 }
 
 ec_public ec_public::from_string(std::string const& base16) {
-    data_chunk decoded;
-    if ( ! decode_base16(decoded, base16)) {
+    auto decoded = decode_base16(base16);
+    if ( ! decoded) {
         return ec_public();
     }
 
-    return ec_public(decoded);
+    return ec_public(*decoded);
 }
 
 ec_public ec_public::from_data(data_chunk const& decoded) {

@@ -22,7 +22,6 @@ namespace pt = boost::property_tree;
 
 namespace kth::domain::config {
 
-class base2;
 class wrapper;
 
 /**

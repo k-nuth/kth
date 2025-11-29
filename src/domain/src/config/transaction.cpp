@@ -12,15 +12,12 @@
 
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/infrastructure/config/base16.hpp>
+#include <kth/infrastructure/formats/base_16.hpp>
 
 namespace kth::domain::config {
 
 using namespace boost::program_options;
 using namespace infrastructure::config;
-
-transaction::transaction(std::string const& hexcode) {
-    std::stringstream(hexcode) >> *this;
-}
 
 transaction::transaction(chain::transaction const& value)
     : value_(value) {
@@ -38,23 +35,22 @@ transaction::operator chain::transaction const&() const {
     return value_;
 }
 
-std::istream& operator>>(std::istream& input, transaction& argument) {
-    std::string hexcode;
-    input >> hexcode;
-
-    data_chunk const bytes = base16(hexcode);
+std::expected<transaction, std::error_code> transaction::from_string(std::string_view text) noexcept {
+    auto const bytes_result = base16::from_string(text);
+    if ( ! bytes_result) {
+        return std::unexpected(bytes_result.error());
+    }
+    data_chunk const& bytes = *bytes_result;
     byte_reader reader(bytes);
     auto transaction_exp = chain::transaction::from_data(reader, true);
     if ( ! transaction_exp) {
-        BOOST_THROW_EXCEPTION(invalid_option_value(hexcode));
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
-    argument.value_ = std::move(*transaction_exp);
-    return input;
+    return transaction(std::move(*transaction_exp));
 }
 
-std::ostream& operator<<(std::ostream& output, transaction const& argument) {
-    output << base16(argument.value_.to_data());
-    return output;
+std::string transaction::to_string() const {
+    return kth::encode_base16(value_.to_data());
 }
 
 } // namespace kth::domain::config

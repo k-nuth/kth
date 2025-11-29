@@ -291,10 +291,10 @@ void block::set_transactions(transaction::list&& value) {
 //-----------------------------------------------------------------------------
 
 chain::block genesis_generic(std::string const& raw_data) {
-    data_chunk data;
-    decode_base16(data, raw_data);
+    auto data = decode_base16(raw_data);
+    KTH_ASSERT(data);
 
-    byte_reader reader(data);
+    byte_reader reader(*data);
     auto genesis = block::from_data(reader);
 
     KTH_ASSERT(genesis);

@@ -12,15 +12,12 @@
 
 #include <kth/domain/chain/header.hpp>
 #include <kth/infrastructure/config/base16.hpp>
+#include <kth/infrastructure/formats/base_16.hpp>
 
 namespace kth::domain::config {
 
 using namespace boost::program_options;
 using namespace infrastructure::config;
-
-header::header(std::string const& hexcode) {
-    std::stringstream(hexcode) >> *this;
-}
 
 header::header(chain::header const& value)
     : value_(value) {
@@ -34,25 +31,22 @@ header::operator chain::header const&() const {
     return value_;
 }
 
-std::istream& operator>>(std::istream& input, header& argument) {
-    std::string hexcode;
-    input >> hexcode;
-
-    data_chunk const bytes = base16(hexcode);
+std::expected<header, std::error_code> header::from_string(std::string_view text) noexcept {
+    auto const bytes_result = base16::from_string(text);
+    if ( ! bytes_result) {
+        return std::unexpected(bytes_result.error());
+    }
+    data_chunk const& bytes = *bytes_result;
     byte_reader reader(bytes);
     auto header_exp = chain::header::from_data(reader);
     if ( ! header_exp) {
-        BOOST_THROW_EXCEPTION(invalid_option_value(hexcode));
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
-    argument.value_ = std::move(*header_exp);
-    return input;
+    return header(std::move(*header_exp));
 }
 
-std::ostream& operator<<(std::ostream& output, header const& argument) {
-    auto const bytes = argument.value_.to_data();
-
-    output << base16(bytes);
-    return output;
+std::string header::to_string() const {
+    return kth::encode_base16(value_.to_data());
 }
 
 } // namespace kth::domain::config

@@ -5,8 +5,9 @@
 #ifndef KTH_HEADER_HPP
 #define KTH_HEADER_HPP
 
-#include <iostream>
+#include <expected>
 #include <string>
+#include <system_error>
 
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/define.hpp>
@@ -19,12 +20,6 @@ namespace kth::domain::config {
  */
 struct KD_API header {
     header() = default;
-
-    /**
-     * Initialization constructor.
-     * @param[in]  hexcode  The value to initialize with.
-     */
-    header(std::string const& hexcode);
 
     /**
      * Initialization constructor.
@@ -45,26 +40,21 @@ struct KD_API header {
     operator chain::header const&() const;
 
     /**
-     * Overload stream in. Throws if input is invalid.
-     * @param[in]   input     The input stream to read the value from.
-     * @param[out]  argument  The object to receive the read value.
-     * @return                The input stream reference.
+     * Parse a base16 string into a header object.
+     * @param[in]  text  The base16 encoded string to parse.
+     * @return           The parsed header object or an error.
      */
-    friend std::istream& operator>>(std::istream& input, header& argument);
+    [[nodiscard]] static
+    std::expected<header, std::error_code> from_string(std::string_view text) noexcept;
 
     /**
-     * Overload stream out.
-     * @param[in]   output    The output stream to write the value to.
-     * @param[out]  argument  The object from which to obtain the value.
-     * @return                The output stream reference.
+     * Serialize the value to a base16 encoded string.
+     * @return  The base16 encoded string.
      */
-    friend std::ostream& operator<<(std::ostream& output,
-                                    header const& argument);
+    [[nodiscard]]
+    std::string to_string() const;
 
 private:
-    /**
-     * The state of this object's header data.
-     */
     chain::header value_;
 };
 

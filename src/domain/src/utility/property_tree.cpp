@@ -20,6 +20,7 @@
 #include <kth/infrastructure/config/base16.hpp>
 #include <kth/infrastructure/config/hash160.hpp>
 #include <kth/infrastructure/config/hash256.hpp>
+#include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/collection.hpp>
 
 namespace kth::domain::config {
@@ -211,7 +212,7 @@ ptree property_tree(const std::vector<config::transaction>& transactions, bool j
 ptree property_list(const wallet::wrapped_data& wrapper) {
     ptree tree;
     tree.put("checksum", wrapper.checksum);
-    tree.put("payload", base16(wrapper.payload));
+    tree.put("payload", kth::encode_base16(wrapper.payload));
     tree.put("version", wrapper.version);
     return tree;
 }
