@@ -51,14 +51,14 @@ TEST_CASE("block locator size positive backoff returns log plus eleven", "[chain
 
 TEST_CASE("block locator heights zero backoff returns top to zero", "[chain block]") {
     constexpr size_t top = 7u;
-    constexpr chain::block::indexes expected{7u, 6u, 5u, 4u, 3u, 2u, 1u, 0u};
+    chain::block::indexes const expected{7u, 6u, 5u, 4u, 3u, 2u, 1u, 0u};
     auto const result = chain::block::locator_heights(top);
     REQUIRE(expected.size() == result.size());
     REQUIRE(expected == result);
 }
 
 TEST_CASE("block locator heights positive backoff returns top plus log offset to zero", "[chain block]") {
-    constexpr chain::block::indexes expected {
+    chain::block::indexes const expected {
         138u, 137u, 136u, 135u, 134u, 133u, 132u, 131u, 130u,
         129u, 128u, 126u, 122u, 114u, 98u, 66u, 2u, 0u
     };
@@ -596,7 +596,7 @@ TEST_CASE("block  operator boolean not equals  duplicates  returns false", "[blo
             chain::transaction(2, 32, {}, {}),
             chain::transaction(4, 16, {}, {})
         }
-    );
+    };
 
     chain::block const instance(expected);
     REQUIRE( ! (instance != expected));
@@ -665,8 +665,8 @@ TEST_CASE("validate block  is distinct tx set  partialy distinct not adjacent by
 #if defined(KTH_CURRENCY_BCH)
 TEST_CASE("validate block is cash pow valid true", "[block is distinct transaction set]") {
     constexpr uint32_t old_bits = 402736949;
-    constexpr domain::chain::compact bits(old_bits);
-    constexpr uint256_t target(bits);
+    domain::chain::compact const bits(old_bits);
+    uint256_t const target(bits);
     REQUIRE(domain::chain::compact(domain::chain::chain_state::difficulty_adjustment_cash(target)).normal() == 402757890);
 }
 #endif  //KTH_CURRENCY_BCH

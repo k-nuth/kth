@@ -506,10 +506,13 @@ int main(int /*argc*/, char* /*argv*/[]) {
 
     std::string raw = "0200000001ffecbd2b832ea847a7da905a40d5abaff8323cc18ff3121532f6fe781ce79f6e000000008b483045022100a26515b4bb5f3eb0259c0cc0806b4d8096f91a801ee9b15ced76f2537f7de94b02205becd631fe0ae232e4453f1b4a8a5375e4caec62e3971dbfe5a6d86b2538dcf64141044636673164f4b636d560cb4192cb07aa62054154f1a7a99a694b235f8fba56950b34e6ab55d58991470a13ca59330bc6339a2f72eb6f9204a64a1a538ddff4fbffffffff0290d00300000000001976a9144913233162944e9239637f998235d76e1601b1cf88ac80d1f008000000001976a914cc1d800e7f83edd96a0340a4e269b2956f636e3f88ac00000000";
 
-    kth::data_chunk chunk;
-    kth::decode_base16(chunk,raw);
+    auto chunk = kth::decode_base16(raw);
+    if (!chunk) {
+        printf("decode_base16 failed\n");
+        return 0;
+    }
 
-    kth_transaction_t tx = kth_chain_transaction_factory_from_data(1,chunk.data(),chunk.size());
+    kth_transaction_t tx = kth_chain_transaction_factory_from_data(1,chunk->data(),chunk->size());
 
 
     auto ret = kth_chain_organize_transaction_sync(chain,tx);

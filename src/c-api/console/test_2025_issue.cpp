@@ -44,9 +44,11 @@ void print_hex(uint8_t const* data, size_t n) {
 }
 
 kth::data_chunk to_data(std::string const& hex) {
-    kth::data_chunk data;
-    kth::decode_base16(data, hex);
-    return data;
+    auto data = kth::decode_base16(hex);
+    if (!data) {
+        return kth::data_chunk{};
+    }
+    return *data;
 }
 
 int main() {

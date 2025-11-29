@@ -83,10 +83,10 @@ bool create_database(database::settings& out_database) {
 }
 
 domain::chain::block read_block(const std::string hex) {
-    data_chunk data;
-    REQUIRE(decode_base16(data, hex));
+    auto const data = decode_base16(hex);
+    REQUIRE(data);
     domain::chain::block result;
-    REQUIRE(kd::entity_from_data(result, data));
+    REQUIRE(kd::entity_from_data(result, *data));
     return result;
 }
 

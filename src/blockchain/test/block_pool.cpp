@@ -64,12 +64,12 @@ block_const_ptr make_block(uint32_t id, size_t height) {
 
 // construct
 
-TEST_CASE("block pool  construct  zero depth  sets  maximum value", "[block pool tests]") {
+TEST_CASE("block pool construct zero depth sets maximum value", "[block pool tests]") {
     block_pool_fixture instance(0);
     REQUIRE(instance.maximum_depth() == max_size_t);
 }
 
-TEST_CASE("block pool  construct  nonzero depth  round trips", "[block pool tests]") {
+TEST_CASE("block pool construct nonzero depth round trips", "[block pool tests]") {
     static size_t const expected = 42;
     block_pool_fixture instance(expected);
     REQUIRE(instance.maximum_depth() == expected);
@@ -77,7 +77,7 @@ TEST_CASE("block pool  construct  nonzero depth  round trips", "[block pool test
 
 // add1
 
-TEST_CASE("block pool  add1  one  single", "[block pool tests]") {
+TEST_CASE("block pool add1 one single", "[block pool tests]") {
     block_pool_fixture instance(0);
     static size_t const height = 42;
     auto const block1 = make_block(1, height);
@@ -92,7 +92,7 @@ TEST_CASE("block pool  add1  one  single", "[block pool tests]") {
     REQUIRE(entry->first == height);
 }
 
-TEST_CASE("block pool  add1  twice  single", "[block pool tests]") {
+TEST_CASE("block pool add1 twice single", "[block pool tests]") {
     block_pool instance(0);
     auto const block = std::make_shared<const domain::message::block>();
 
@@ -101,7 +101,7 @@ TEST_CASE("block pool  add1  twice  single", "[block pool tests]") {
     REQUIRE(instance.size() == 1u);
 }
 
-TEST_CASE("block pool  add1  two different blocks with same hash  first retained", "[block pool tests]") {
+TEST_CASE("block pool add1 two different blocks with same hash first retained", "[block pool tests]") {
     block_pool_fixture instance(0);
     static size_t const height1a = 42;
     auto const block1a = make_block(1, height1a);
@@ -119,7 +119,7 @@ TEST_CASE("block pool  add1  two different blocks with same hash  first retained
     REQUIRE(entry->second.block() == block1a);
 }
 
-TEST_CASE("block pool  add1  two distinct hash  two", "[block pool tests]") {
+TEST_CASE("block pool add1 two distinct hash two", "[block pool tests]") {
     block_pool_fixture instance(0);
     static size_t const height1 = 42;
     static size_t const height2 = height1 + 1u;
@@ -144,13 +144,13 @@ TEST_CASE("block pool  add1  two distinct hash  two", "[block pool tests]") {
 
 // add2
 
-TEST_CASE("block pool  add2  empty  empty", "[block pool tests]") {
+TEST_CASE("block pool add2 empty empty", "[block pool tests]") {
     block_pool instance(0);
     instance.add(std::make_shared<block_const_ptr_list const>());
     REQUIRE(instance.size() == 0u);
 }
 
-TEST_CASE("block pool  add2  distinct  expected", "[block pool tests]") {
+TEST_CASE("block pool add2 distinct expected", "[block pool tests]") {
     block_pool_fixture instance(0);
     auto const block1 = make_block(1, 42);
     auto const block2 = make_block(2, 43);
@@ -173,7 +173,7 @@ TEST_CASE("block pool  add2  distinct  expected", "[block pool tests]") {
 
 // remove
 
-TEST_CASE("block pool  remove  empty  unchanged", "[block pool tests]") {
+TEST_CASE("block pool remove empty unchanged", "[block pool tests]") {
     block_pool instance(0);
     auto const block1 = make_block(1, 42);
     instance.add(block1);
@@ -183,7 +183,7 @@ TEST_CASE("block pool  remove  empty  unchanged", "[block pool tests]") {
     REQUIRE(instance.size() == 1u);
 }
 
-TEST_CASE("block pool  remove  all distinct  empty", "[block pool tests]") {
+TEST_CASE("block pool remove all distinct empty", "[block pool tests]") {
     block_pool_fixture instance(0);
     auto const block1 = make_block(1, 42);
     auto const block2 = make_block(2, 43);
@@ -197,7 +197,7 @@ TEST_CASE("block pool  remove  all distinct  empty", "[block pool tests]") {
     REQUIRE(instance.size() == 0u);
 }
 
-TEST_CASE("block pool  remove  all connected  empty", "[block pool tests]") {
+TEST_CASE("block pool remove all connected empty", "[block pool tests]") {
     block_pool instance(0);
     auto const block1 = make_block(1, 42);
     auto const block2 = make_block(2, 43, block1);
@@ -211,7 +211,7 @@ TEST_CASE("block pool  remove  all connected  empty", "[block pool tests]") {
     REQUIRE(instance.size() == 0u);
 }
 
-TEST_CASE("block pool  remove  subtree  reorganized", "[block pool tests]") {
+TEST_CASE("block pool remove subtree reorganized", "[block pool tests]") {
     block_pool_fixture instance(0);
     auto const block1 = make_block(1, 42);
     auto const block2 = make_block(2, 43, block1);
@@ -247,13 +247,13 @@ TEST_CASE("block pool  remove  subtree  reorganized", "[block pool tests]") {
 
 // prune
 
-TEST_CASE("block pool  prune  empty zero zero  empty", "[block pool tests]") {
+TEST_CASE("block pool prune empty zero zero empty", "[block pool tests]") {
     block_pool_fixture instance(0);
     instance.prune(0);
     REQUIRE(instance.size() == 0u);
 }
 
-TEST_CASE("block pool  prune  all current  unchanged", "[block pool tests]") {
+TEST_CASE("block pool prune all current unchanged", "[block pool tests]") {
     block_pool_fixture instance(10);
     auto const block1 = make_block(1, 42);
     auto const block2 = make_block(2, 43);
@@ -273,7 +273,7 @@ TEST_CASE("block pool  prune  all current  unchanged", "[block pool tests]") {
     REQUIRE(instance.size() == 5u);
 }
 
-TEST_CASE("block pool  prune  one expired  one deleted", "[block pool tests]") {
+TEST_CASE("block pool prune one expired one deleted", "[block pool tests]") {
     block_pool_fixture instance(10);
     auto const block1 = make_block(1, 42);
     auto const block2 = make_block(2, 43);
@@ -293,7 +293,7 @@ TEST_CASE("block pool  prune  one expired  one deleted", "[block pool tests]") {
     REQUIRE(instance.size() == 4u);
 }
 
-TEST_CASE("block pool  prune  whole branch expired  whole branch deleted", "[block pool tests]") {
+TEST_CASE("block pool prune whole branch expired whole branch deleted", "[block pool tests]") {
     block_pool_fixture instance(10);
 
     // branch1
@@ -317,7 +317,7 @@ TEST_CASE("block pool  prune  whole branch expired  whole branch deleted", "[blo
     REQUIRE(instance.size() == 3u);
 }
 
-TEST_CASE("block pool  prune  partial branch expired  partial branch deleted", "[block pool tests]") {
+TEST_CASE("block pool prune partial branch expired partial branch deleted", "[block pool tests]") {
     block_pool_fixture instance(10);
 
     // branch1
@@ -371,14 +371,14 @@ TEST_CASE("block pool  prune  partial branch expired  partial branch deleted", "
 
 // filter
 
-TEST_CASE("block pool  filter  empty  empty", "[block pool tests]") {
+TEST_CASE("block pool filter empty empty", "[block pool tests]") {
     block_pool_fixture instance(0);
     auto const message = std::make_shared<domain::message::get_data>();
     instance.filter(message);
     REQUIRE(message->inventories().empty());
 }
 
-TEST_CASE("block pool  filter  empty filter  unchanged", "[block pool tests]") {
+TEST_CASE("block pool filter empty filter unchanged", "[block pool tests]") {
     block_pool_fixture instance(0);
     auto const block1 = make_block(1, 42);
     auto const block2 = make_block(2, 42);
@@ -389,7 +389,7 @@ TEST_CASE("block pool  filter  empty filter  unchanged", "[block pool tests]") {
     REQUIRE(message->inventories().empty());
 }
 
-TEST_CASE("block pool  filter  matched blocks  non blocks and mismatches remain", "[block pool tests]") {
+TEST_CASE("block pool filter matched blocks non blocks and mismatches remain", "[block pool tests]") {
     block_pool_fixture instance(0);
     auto const block1 = make_block(1, 42);
     auto const block2 = make_block(2, 43);
@@ -418,13 +418,13 @@ TEST_CASE("block pool  filter  matched blocks  non blocks and mismatches remain"
 
 // exists
 
-TEST_CASE("block pool  exists  empty  false", "[block pool tests]") {
+TEST_CASE("block pool exists empty false", "[block pool tests]") {
     block_pool_fixture instance(0);
     auto const block1 = make_block(1, 42);
     REQUIRE( ! instance.exists(block1));
 }
 
-TEST_CASE("block pool  exists  not empty mismatch  false", "[block pool tests]") {
+TEST_CASE("block pool exists not empty mismatch false", "[block pool tests]") {
     block_pool_fixture instance(0);
     auto const block1 = make_block(1, 42);
     auto const block2 = make_block(2, 43, block1);
@@ -432,7 +432,7 @@ TEST_CASE("block pool  exists  not empty mismatch  false", "[block pool tests]")
     REQUIRE( ! instance.exists(block2));
 }
 
-TEST_CASE("block pool  exists  match  true", "[block pool tests]") {
+TEST_CASE("block pool exists match true", "[block pool tests]") {
     block_pool_fixture instance(0);
     auto const block1 = make_block(1, 42);
     instance.add(block1);
@@ -441,13 +441,13 @@ TEST_CASE("block pool  exists  match  true", "[block pool tests]") {
 
 // parent
 
-TEST_CASE("block pool  parent  empty  false", "[block pool tests]") {
+TEST_CASE("block pool parent empty false", "[block pool tests]") {
     block_pool_fixture instance(0);
     auto const block1 = make_block(1, 42);
     REQUIRE( ! instance.parent(block1));
 }
 
-TEST_CASE("block pool  parent  nonempty mismatch   false", "[block pool tests]") {
+TEST_CASE("block pool parent nonempty mismatch false", "[block pool tests]") {
     block_pool_fixture instance(0);
     auto const block1 = make_block(1, 42);
     auto const block2 = make_block(2, 43);
@@ -456,7 +456,7 @@ TEST_CASE("block pool  parent  nonempty mismatch   false", "[block pool tests]")
     REQUIRE( ! instance.parent(block2));
 }
 
-TEST_CASE("block pool  parent  match   true", "[block pool tests]") {
+TEST_CASE("block pool parent match true", "[block pool tests]") {
     block_pool_fixture instance(0);
     auto const block1 = make_block(1, 42);
     auto const block2 = make_block(2, 43, block1);
@@ -467,7 +467,7 @@ TEST_CASE("block pool  parent  match   true", "[block pool tests]") {
 
 // get_path
 
-TEST_CASE("block pool  get path  empty  self", "[block pool tests]") {
+TEST_CASE("block pool get path empty self", "[block pool tests]") {
     block_pool instance(0);
     auto const block1 = make_block(1, 42);
     auto const path = instance.get_path(block1);
@@ -475,7 +475,7 @@ TEST_CASE("block pool  get path  empty  self", "[block pool tests]") {
     REQUIRE(path->blocks()->front() == block1);
 }
 
-TEST_CASE("block pool  get path  exists  empty", "[block pool tests]") {
+TEST_CASE("block pool get path exists empty", "[block pool tests]") {
     block_pool instance(0);
     auto const block1 = make_block(1, 42);
     instance.add(block1);
@@ -483,7 +483,7 @@ TEST_CASE("block pool  get path  exists  empty", "[block pool tests]") {
     REQUIRE(path->size() == 0u);
 }
 
-TEST_CASE("block pool  get path  disconnected  self", "[block pool tests]") {
+TEST_CASE("block pool get path disconnected self", "[block pool tests]") {
     block_pool_fixture instance(0);
     auto const block1 = make_block(1, 42);
     auto const block2 = make_block(2, 43);
@@ -498,7 +498,7 @@ TEST_CASE("block pool  get path  disconnected  self", "[block pool tests]") {
     REQUIRE(path->blocks()->front() == block3);
 }
 
-TEST_CASE("block pool  get path  connected one path  expected path", "[block pool tests]") {
+TEST_CASE("block pool get path connected one path expected path", "[block pool tests]") {
     block_pool_fixture instance(0);
     auto const block1 = make_block(1, 42);
     auto const block2 = make_block(2, 43, block1);
@@ -521,7 +521,7 @@ TEST_CASE("block pool  get path  connected one path  expected path", "[block poo
     REQUIRE((*path->blocks())[4] == block5);
 }
 
-TEST_CASE("block pool  get path  connected multiple paths  expected path", "[block pool tests]") {
+TEST_CASE("block pool get path connected multiple paths expected path", "[block pool tests]") {
     block_pool_fixture instance(0);
 
     auto const block1 = make_block(1, 42);
@@ -565,7 +565,7 @@ TEST_CASE("block pool  get path  connected multiple paths  expected path", "[blo
     REQUIRE((*path2->blocks())[4] == block15);
 }
 
-TEST_CASE("block pool  get path  connected multiple sub branches  expected path", "[block pool tests]") {
+TEST_CASE("block pool get path connected multiple sub branches expected path", "[block pool tests]") {
     block_pool_fixture instance(0);
 
     // root branch

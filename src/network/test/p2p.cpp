@@ -165,7 +165,7 @@ TEST_CASE("empty test", "[empty tests]") {
 
 // Start Test Suite: p2p tests
 
-TEST_CASE("p2p  top block  default  zero null hash", "[p2p tests]") {
+TEST_CASE("p2p top block default zero null hash", "[p2p tests]") {
     print_headers(TEST_NAME);
     network::settings const configuration;
     p2p network(configuration);
@@ -173,7 +173,7 @@ TEST_CASE("p2p  top block  default  zero null hash", "[p2p tests]") {
     REQUIRE(network.top_block().hash() == null_hash);
 }
 
-TEST_CASE("p2p  set top block1  values  expected", "[p2p tests]") {
+TEST_CASE("p2p set top block1 values expected", "[p2p tests]") {
     print_headers(TEST_NAME);
     network::settings const configuration;
     p2p network(configuration);
@@ -184,7 +184,7 @@ TEST_CASE("p2p  set top block1  values  expected", "[p2p tests]") {
     REQUIRE(network.top_block().height() == expected_height);
 }
 
-TEST_CASE("p2p  set top block2  values  expected", "[p2p tests]") {
+TEST_CASE("p2p set top block2 values expected", "[p2p tests]") {
     print_headers(TEST_NAME);
     network::settings const configuration;
     p2p network(configuration);
@@ -196,14 +196,14 @@ TEST_CASE("p2p  set top block2  values  expected", "[p2p tests]") {
     REQUIRE(network.top_block().height() == expected.height());
 }
 
-TEST_CASE("p2p  start  no sessions  start success", "[p2p tests]") {
+TEST_CASE("p2p start no sessions start success", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);
     REQUIRE(start_result(network) == error::success);
 }
 
-TEST_CASE("p2p  start  no connections  start stop success", "[p2p tests]") {
+TEST_CASE("p2p start no connections start stop success", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);
@@ -211,7 +211,7 @@ TEST_CASE("p2p  start  no connections  start stop success", "[p2p tests]") {
     REQUIRE(network.stop());
 }
 
-TEST_CASE("p2p  start  no sessions  start success start operation fail", "[p2p tests]") {
+TEST_CASE("p2p start no sessions start success start operation fail", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);
@@ -229,7 +229,7 @@ TEST_CASE("p2p  start  no sessions  start success start operation fail", "[p2p t
 ////    REQUIRE(start_result(network) == error::success);
 ////}
 
-TEST_CASE("p2p  start  seed session handshake timeout  start peer throttling stop success", "[p2p tests]") {
+TEST_CASE("p2p start seed session handshake timeout start peer throttling stop success", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_ONE_SEED(configuration);
     configuration.channel_handshake_seconds = 0;
@@ -244,7 +244,7 @@ TEST_CASE("p2p  start  seed session handshake timeout  start peer throttling sto
     REQUIRE(network.stop());
 }
 
-TEST_CASE("p2p  start  seed session connect timeout  start peer throttling stop success", "[p2p tests]") {
+TEST_CASE("p2p start seed session connect timeout start peer throttling stop success", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_ONE_SEED(configuration);
     configuration.connect_timeout_seconds = 0;
@@ -253,7 +253,7 @@ TEST_CASE("p2p  start  seed session connect timeout  start peer throttling stop 
     REQUIRE(network.stop());
 }
 
-TEST_CASE("p2p  start  seed session germination timeout  start peer throttling stop success", "[p2p tests]") {
+TEST_CASE("p2p start seed session germination timeout start peer throttling stop success", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_ONE_SEED(configuration);
     configuration.channel_germination_seconds = 0;
@@ -262,7 +262,7 @@ TEST_CASE("p2p  start  seed session germination timeout  start peer throttling s
     REQUIRE(network.stop());
 }
 
-TEST_CASE("p2p  start  seed session inactivity timeout  start peer throttling stop success", "[p2p tests]") {
+TEST_CASE("p2p start seed session inactivity timeout start peer throttling stop success", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_ONE_SEED(configuration);
     configuration.channel_inactivity_minutes = 0;
@@ -271,7 +271,7 @@ TEST_CASE("p2p  start  seed session inactivity timeout  start peer throttling st
     REQUIRE(network.stop());
 }
 
-TEST_CASE("p2p  start  seed session expiration timeout  start peer throttling stop success", "[p2p tests]") {
+TEST_CASE("p2p start seed session expiration timeout start peer throttling stop success", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_ONE_SEED(configuration);
     configuration.channel_expiration_minutes = 0;
@@ -295,7 +295,7 @@ TEST_CASE("p2p  start  seed session expiration timeout  start peer throttling st
 ////    REQUIRE(network.stop());
 ////}
 
-TEST_CASE("p2p  start  outbound no seeds  success", "[p2p tests]") {
+TEST_CASE("p2p start outbound no seeds success", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     configuration.outbound_connections = 1;
@@ -303,7 +303,7 @@ TEST_CASE("p2p  start  outbound no seeds  success", "[p2p tests]") {
     REQUIRE(start_result(network) == error::success);
 }
 
-TEST_CASE("p2p  connect  not started  service stopped", "[p2p tests]") {
+TEST_CASE("p2p connect not started service stopped", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);
@@ -311,7 +311,7 @@ TEST_CASE("p2p  connect  not started  service stopped", "[p2p tests]") {
     REQUIRE(connect_result(network, host) == error::service_stopped);
 }
 
-TEST_CASE("p2p  connect  started  success", "[p2p tests]") {
+TEST_CASE("p2p connect started success", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);
@@ -335,7 +335,7 @@ TEST_CASE("p2p  connect  started  success", "[p2p tests]") {
 ////    REQUIRE(connect_result(network, host) == error::address_in_use);
 ////}
 
-TEST_CASE("p2p  subscribe  stopped  service stopped", "[p2p tests]") {
+TEST_CASE("p2p subscribe stopped service stopped", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);
@@ -344,7 +344,7 @@ TEST_CASE("p2p  subscribe  stopped  service stopped", "[p2p tests]") {
     REQUIRE(subscribe_result(network) == error::service_stopped);
 }
 
-TEST_CASE("p2p  subscribe  started stop  service stopped", "[p2p tests]") {
+TEST_CASE("p2p subscribe started stop service stopped", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);
@@ -361,7 +361,7 @@ TEST_CASE("p2p  subscribe  started stop  service stopped", "[p2p tests]") {
     network.subscribe_connection(handler);
 }
 
-TEST_CASE("p2p  subscribe  started connect1  success", "[p2p tests]") {
+TEST_CASE("p2p subscribe started connect1 success", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);
@@ -370,7 +370,7 @@ TEST_CASE("p2p  subscribe  started connect1  success", "[p2p tests]") {
     REQUIRE(subscribe_connect1_result(network, host) == error::success);
 }
 
-TEST_CASE("p2p  subscribe  started connect2  success", "[p2p tests]") {
+TEST_CASE("p2p subscribe started connect2 success", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);
@@ -379,7 +379,7 @@ TEST_CASE("p2p  subscribe  started connect2  success", "[p2p tests]") {
     REQUIRE(subscribe_connect2_result(network, host) == error::success);
 }
 
-TEST_CASE("p2p  broadcast  ping two distinct hosts  two sends and successful completion", "[p2p tests]") {
+TEST_CASE("p2p broadcast ping two distinct hosts two sends and successful completion", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);

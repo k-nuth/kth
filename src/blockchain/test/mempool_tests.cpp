@@ -39,17 +39,15 @@ void add_state(transaction& tx) {
 }
 
 transaction get_tx(std::string const& hex) {
-    data_chunk data;
-    decode_base16(data, hex);
-    auto tx = transaction::factory_from_data(data);
+    auto const data = decode_base16(hex);
+    auto tx = transaction::factory_from_data(*data);
     add_state(tx);
     return tx;
 }
 
 transaction get_tx_from_mempool(mining::mempool const& mp, std::unordered_map<domain::chain::point, domain::chain::output> const& internal_utxo, std::string const& hex) {
-    data_chunk data;
-    decode_base16(data, hex);
-    auto tx = transaction::factory_from_data(data);
+    auto const data = decode_base16(hex);
+    auto tx = transaction::factory_from_data(*data);
     add_state(tx);
 
     for (auto& i : tx.inputs()) {
@@ -76,9 +74,8 @@ transaction get_tx_from_mempool(mining::mempool const& mp, std::unordered_map<do
 }
 
 domain::chain::block get_block(std::string const& hex) {
-    data_chunk data;
-    decode_base16(data, hex);
-    auto blk = domain::chain::block::factory_from_data(data);
+    auto const data = decode_base16(hex);
+    auto blk = domain::chain::block::factory_from_data(*data);
     // add_state(tx);
     return blk;
 }

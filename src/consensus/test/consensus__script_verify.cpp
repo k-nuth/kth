@@ -22,65 +22,24 @@
 using namespace kth::consensus;
 
 using data_chunk = std::vector<uint8_t>;
-
-static
-unsigned int from_hex(const char ch) {
-    if ('A' <= ch && ch <= 'F') {
-        return 10 + ch - 'A';
-    }
-
-    if ('a' <= ch && ch <= 'f') {
-        return 10 + ch - 'a';
-    }
-
-    return ch - '0';
-}
-
-static
-bool decode_base16_private(uint8_t* out, size_t size, const char* in) {
-    for (size_t i = 0; i < size; ++i) {
-        if ( ! isxdigit(in[0]) || !isxdigit(in[1])) {
-            return false;
-        }
-
-        out[i] = (from_hex(in[0]) << 4) + from_hex(in[1]);
-        in += 2;
-    }
-
-    return true;
-}
-
-static
-bool decode_base16(data_chunk& out, std::string const& in) {
-    // This prevents a last odd character from being ignored:
-    if (in.size() % 2 != 0) {
-        return false;
-    }
-
-    data_chunk result(in.size() / 2);
-    if ( ! decode_base16_private(result.data(), result.size(), in.data())) {
-        return false;
-    }
-
-    out = result;
-    return true;
-}
+using kth::infrastructure::decode_base16;
 
 #if defined(KTH_CURRENCY_BCH)
 static
 verify_result test_verify(std::string const& transaction, std::string const& prevout_script, size_t& sig_checks, uint32_t tx_input_index=0,
     const uint32_t flags=verify_flags_p2sh, int32_t tx_size_hack = 0, uint64_t amount = 0 ) {
-    data_chunk tx_data, prevout_script_data;
     std::vector<std::vector<uint8_t>> coins;
-    REQUIRE(decode_base16(tx_data, transaction));
-    REQUIRE(decode_base16(prevout_script_data, prevout_script));
+    auto const tx_data = decode_base16(transaction);
+    auto const prevout_script_data = decode_base16(prevout_script);
+    REQUIRE(tx_data);
+    REQUIRE(prevout_script_data);
     
     // Create empty unlocking script for this test
     data_chunk unlocking_script_data;
     const unsigned char* unlocking_ptr = unlocking_script_data.empty() ? nullptr : &unlocking_script_data[0];
-    
-    return verify_script(&tx_data[0], tx_data.size() + tx_size_hack,
-        &prevout_script_data[0], prevout_script_data.size(), 
+
+    return verify_script(&(*tx_data)[0], tx_data->size() + tx_size_hack,
+        &(*prevout_script_data)[0], prevout_script_data->size(),
         unlocking_ptr, unlocking_script_data.size(),
         tx_input_index, flags, sig_checks, amount, coins);
 }
@@ -91,55 +50,56 @@ verify_result test_verify(std::string const& transaction,
     std::string const& prevout_script, uint64_t prevout_value=0,
     uint32_t tx_input_index=0, const uint32_t flags=verify_flags_p2sh,
     int32_t tx_size_hack=0) {
-    data_chunk tx_data, prevout_script_data;
-    REQUIRE(decode_base16(tx_data, transaction));
-    REQUIRE(decode_base16(prevout_script_data, prevout_script));
-    return verify_script(&tx_data[0], tx_data.size() + tx_size_hack,
-        &prevout_script_data[0], prevout_script_data.size(), prevout_value,
+    auto const tx_data = decode_base16(transaction);
+    auto const prevout_script_data = decode_base16(prevout_script);
+    REQUIRE(tx_data);
+    REQUIRE(prevout_script_data);
+    return verify_script(&(*tx_data)[0], tx_data->size() + tx_size_hack,
+        &(*prevout_script_data)[0], prevout_script_data->size(), prevout_value,
         tx_input_index, flags);
 }
 #endif
 
 // Test case derived from:
 // github.com/libbitcoin/libbitcoin-explorer/wiki/How-to-Spend-Bitcoin
-#define CONSENSUS_SCRIPT_VERIFY_TX "01000000017d01943c40b7f3d8a00a2d62fa1d560bf739a2368c180615b0a7937c0e883e7c000000006b4830450221008f66d188c664a8088893ea4ddd9689024ea5593877753ecc1e9051ed58c15168022037109f0d06e6068b7447966f751de8474641ad2b15ec37f4a9d159b02af68174012103e208f5403383c77d5832a268c9f71480f6e7bfbdfa44904becacfad66163ea31ffffffff01c8af0000000000001976a91458b7a60f11a904feef35a639b6048de8dd4d9f1c88ac00000000"
-#define CONSENSUS_SCRIPT_VERIFY_PREVOUT_SCRIPT "76a914c564c740c6900b93afc9f1bdaef0a9d466adf6ee88ac"
+constexpr char consensus_script_verify_tx[] = "01000000017d01943c40b7f3d8a00a2d62fa1d560bf739a2368c180615b0a7937c0e883e7c000000006b4830450221008f66d188c664a8088893ea4ddd9689024ea5593877753ecc1e9051ed58c15168022037109f0d06e6068b7447966f751de8474641ad2b15ec37f4a9d159b02af68174012103e208f5403383c77d5832a268c9f71480f6e7bfbdfa44904becacfad66163ea31ffffffff01c8af0000000000001976a91458b7a60f11a904feef35a639b6048de8dd4d9f1c88ac00000000";
+constexpr char consensus_script_verify_prevout_script[] = "76a914c564c740c6900b93afc9f1bdaef0a9d466adf6ee88ac";
 
 // Test case derived from first witness tx:
-#define CONSENSUS_SCRIPT_VERIFY_WITNESS_TX "010000000001015836964079411659db5a4cfddd70e3f0de0261268f86c998a69a143f47c6c83800000000171600149445e8b825f1a17d5e091948545c90654096db68ffffffff02d8be04000000000017a91422c17a06117b40516f9826804800003562e834c98700000000000000004d6a4b424950313431205c6f2f2048656c6c6f20536567576974203a2d29206b656570206974207374726f6e6721204c4c415020426974636f696e20747769747465722e636f6d2f6b6873396e6502483045022100aaa281e0611ba0b5a2cd055f77e5594709d611ad1233e7096394f64ffe16f5b202207e2dcc9ef3a54c24471799ab99f6615847b21be2a6b4e0285918fd025597c5740121021ec0613f21c4e81c4b300426e5e5d30fa651f41e9993223adbe74dbe603c74fb00000000"
-#define CONSENSUS_SCRIPT_VERIFY_WITNESS_PREVOUT_SCRIPT "a914642bda298792901eb1b48f654dd7225d99e5e68c87"
+constexpr char consensus_script_verify_witness_tx[] = "010000000001015836964079411659db5a4cfddd70e3f0de0261268f86c998a69a143f47c6c83800000000171600149445e8b825f1a17d5e091948545c90654096db68ffffffff02d8be04000000000017a91422c17a06117b40516f9826804800003562e834c98700000000000000004d6a4b424950313431205c6f2f2048656c6c6f20536567576974203a2d29206b656570206974207374726f6e6721204c4c415020426974636f696e20747769747465722e636f6d2f6b6873396e6502483045022100aaa281e0611ba0b5a2cd055f77e5594709d611ad1233e7096394f64ffe16f5b202207e2dcc9ef3a54c24471799ab99f6615847b21be2a6b4e0285918fd025597c5740121021ec0613f21c4e81c4b300426e5e5d30fa651f41e9993223adbe74dbe603c74fb00000000";
+constexpr char consensus_script_verify_witness_prevout_script[] = "a914642bda298792901eb1b48f654dd7225d99e5e68c87";
 
 TEST_CASE("consensus script verify null tx throws invalid argument", "[consensus script verify]") {
-    data_chunk prevout_script_data;
     size_t sig_checks;
     std::vector<std::vector<uint8_t>> coins;
     data_chunk unlocking_script_data;
     const unsigned char* unlocking_ptr = unlocking_script_data.empty() ? nullptr : &unlocking_script_data[0];
-    REQUIRE(decode_base16(prevout_script_data, CONSENSUS_SCRIPT_VERIFY_PREVOUT_SCRIPT));
-    REQUIRE_THROWS_AS(verify_script(NULL, 1, &prevout_script_data[0], prevout_script_data.size(), 
+    auto const prevout_script_data = decode_base16(consensus_script_verify_prevout_script);
+    REQUIRE(prevout_script_data);
+    REQUIRE_THROWS_AS(verify_script(NULL, 1, &(*prevout_script_data)[0], prevout_script_data->size(),
         unlocking_ptr, unlocking_script_data.size(), 0, 0, sig_checks, 0, coins), std::invalid_argument);
 }
 
 //TODO: BTC test
 TEST_CASE("consensus script verify value overflow throws invalid argument", "[consensus script verify]") {
-    data_chunk prevout_script_data;
     size_t sig_checks;
     std::vector<std::vector<uint8_t>> coins;
     data_chunk unlocking_script_data;
     const unsigned char* unlocking_ptr = unlocking_script_data.empty() ? nullptr : &unlocking_script_data[0];
-    REQUIRE(decode_base16(prevout_script_data, CONSENSUS_SCRIPT_VERIFY_PREVOUT_SCRIPT));
-    REQUIRE_THROWS_AS(verify_script(NULL, 1, &prevout_script_data[0], prevout_script_data.size(), 
+    auto const prevout_script_data = decode_base16(consensus_script_verify_prevout_script);
+    REQUIRE(prevout_script_data);
+    REQUIRE_THROWS_AS(verify_script(NULL, 1, &(*prevout_script_data)[0], prevout_script_data->size(),
         unlocking_ptr, unlocking_script_data.size(), 0xffffffffffffffff, 0, sig_checks, 0, coins), std::invalid_argument);
 }
 
 TEST_CASE("consensus script verify null prevout script throws invalid argument", "[consensus script verify]") {
-    data_chunk tx_data;
     size_t sig_checks;
     std::vector<std::vector<uint8_t>> coins;
     data_chunk unlocking_script_data;
     const unsigned char* unlocking_ptr = unlocking_script_data.empty() ? nullptr : &unlocking_script_data[0];
-    REQUIRE(decode_base16(tx_data, CONSENSUS_SCRIPT_VERIFY_TX));
-    REQUIRE_THROWS_AS(verify_script(&tx_data[0], tx_data.size(), NULL, 1, 
+    auto const tx_data = decode_base16(consensus_script_verify_tx);
+    REQUIRE(tx_data);
+    REQUIRE_THROWS_AS(verify_script(&(*tx_data)[0], tx_data->size(), NULL, 1,
         unlocking_ptr, unlocking_script_data.size(), 0, 0, sig_checks, 0, coins), std::invalid_argument);
 }
 
@@ -152,41 +112,41 @@ TEST_CASE("consensus script verify invalid tx tx invalid", "[consensus script ve
 #if defined(KTH_CURRENCY_BCH)
 TEST_CASE("consensus script verify invalid input tx input invalid", "[consensus script verify]") {
     size_t sig_checks;
-    const verify_result result = test_verify(CONSENSUS_SCRIPT_VERIFY_TX, CONSENSUS_SCRIPT_VERIFY_PREVOUT_SCRIPT, sig_checks, 1);
+    const verify_result result = test_verify(consensus_script_verify_tx, consensus_script_verify_prevout_script, sig_checks, 1);
     REQUIRE(result == verify_result_tx_input_invalid);
 }
 
 TEST_CASE("consensus script verify undersized tx tx invalid", "[consensus script verify]") {
     size_t sig_checks;
-    const verify_result result = test_verify(CONSENSUS_SCRIPT_VERIFY_TX, CONSENSUS_SCRIPT_VERIFY_PREVOUT_SCRIPT, sig_checks, 0, verify_flags_p2sh, -1);
+    const verify_result result = test_verify(consensus_script_verify_tx, consensus_script_verify_prevout_script, sig_checks, 0, verify_flags_p2sh, -1);
     REQUIRE(result == verify_result_tx_invalid);
 }
 #else
 TEST_CASE("consensus script verify invalid input tx input invalid", "[consensus script verify]") {
-    const verify_result result = test_verify(CONSENSUS_SCRIPT_VERIFY_TX, CONSENSUS_SCRIPT_VERIFY_PREVOUT_SCRIPT, 0, 1);
+    const verify_result result = test_verify(consensus_script_verify_tx, consensus_script_verify_prevout_script, 0, 1);
     REQUIRE(result == verify_result_tx_input_invalid);
 }
 
 TEST_CASE("consensus script verify undersized tx tx invalid", "[consensus script verify]") {
-    const verify_result result = test_verify(CONSENSUS_SCRIPT_VERIFY_TX, CONSENSUS_SCRIPT_VERIFY_PREVOUT_SCRIPT, 0, 0, verify_flags_p2sh, -1);
+    const verify_result result = test_verify(consensus_script_verify_tx, consensus_script_verify_prevout_script, 0, 0, verify_flags_p2sh, -1);
     REQUIRE(result == verify_result_tx_invalid);
 }
 #endif
 TEST_CASE("consensus script verify oversized tx tx size invalid", "[consensus script verify]") {
     size_t sig_checks;
-    const verify_result result = test_verify(CONSENSUS_SCRIPT_VERIFY_TX, CONSENSUS_SCRIPT_VERIFY_PREVOUT_SCRIPT, sig_checks, 0, 0, verify_flags_p2sh, +1);
+    const verify_result result = test_verify(consensus_script_verify_tx, consensus_script_verify_prevout_script, sig_checks, 0, 0, verify_flags_p2sh, +1);
     REQUIRE(result == verify_result_tx_size_invalid);
 }
 
 TEST_CASE("consensus script verify incorrect pubkey hash equalverify", "[consensus script verify]") {
     size_t sig_checks;
-    const verify_result result = test_verify(CONSENSUS_SCRIPT_VERIFY_TX, "76a914c564c740c6900b93afc9f1bdaef0a9d466adf6ef88ac", sig_checks);
+    const verify_result result = test_verify(consensus_script_verify_tx, "76a914c564c740c6900b93afc9f1bdaef0a9d466adf6ef88ac", sig_checks);
     REQUIRE(result == verify_result_equalverify);
 }
 
 TEST_CASE("consensus script verify valid true", "[consensus script verify]") {
     size_t sig_checks;
-    const verify_result result = test_verify(CONSENSUS_SCRIPT_VERIFY_TX, CONSENSUS_SCRIPT_VERIFY_PREVOUT_SCRIPT, sig_checks);
+    const verify_result result = test_verify(consensus_script_verify_tx, consensus_script_verify_prevout_script, sig_checks);
     REQUIRE(result == verify_result_eval_true);
 }
 
@@ -230,7 +190,7 @@ TEST_CASE("consensus script verify valid nested p2wpkh true", "[consensus script
         verify_flags_checksequenceverify |
         verify_flags_witness;
 
-    const verify_result result = test_verify(CONSENSUS_SCRIPT_VERIFY_WITNESS_TX, CONSENSUS_SCRIPT_VERIFY_WITNESS_PREVOUT_SCRIPT, value, index, flags);
+    const verify_result result = test_verify(consensus_script_verify_witness_tx, consensus_script_verify_witness_prevout_script, value, index, flags);
     REQUIRE(result == verify_result_eval_true);
 }
 #endif

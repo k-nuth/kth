@@ -34,7 +34,7 @@ BOOST_FIXTURE_TEST_SUITE(database_tests, history_database_directory_setup_fixtur
 #ifdef KTH_DB_HISTORY
 TEST_CASE("history database  test", "[None]")
 {
-    const short_hash key1 = base16_literal("a006500b7ddfd568e2b036c65a4f4d6aaa0cbd9b");
+    const short_hash key1 = "a006500b7ddfd568e2b036c65a4f4d6aaa0cbd9b"_base16;
     output_point out11{ hash_literal("4129e76f363f9742bc98dd3d40c99c9066e4d53b8e10e5097bd6f7b5059d7c53"), 110 };
     size_t const out_h11 = 110;
     const uint64_t value11 = 4;
@@ -50,7 +50,7 @@ TEST_CASE("history database  test", "[None]")
     input_point spend13{ hash_literal("3cc768bbaef30587c72c6eba8dbf6aeec4ef24172ae6fe357f2e24c2b0fa44d5"), 0 };
     size_t const spend_h13 = 320;
 
-    const short_hash key2 = base16_literal("9c6b3bdaa612ceab88d49d4431ed58f26e69b90d");
+    const short_hash key2 = "9c6b3bdaa612ceab88d49d4431ed58f26e69b90d"_base16;
     output_point out21{ hash_literal("80d9e7012b5b171bf78e75b52d2d149580d9e7012b5b171bf78e75b52d2d1495"), 9 };
     size_t const out_h21 = 3982;
     const uint64_t value21 = 65;
@@ -61,12 +61,12 @@ TEST_CASE("history database  test", "[None]")
     input_point spend22{ hash_literal("3cc768bbaef30587c72c6eba8dbfffffc4ef24172ae6fe357f2e24c2b0fa44d5"), 0 };
     size_t const spend_h22 = 900;
 
-    const short_hash key3 = base16_literal("3eb84f6a98478e516325b70fecf9903e1ce7528b");
+    const short_hash key3 = "3eb84f6a98478e516325b70fecf9903e1ce7528b"_base16;
     output_point out31{ hash_literal("d90aba96944cac3e715047256f7016d1d90aba96944cac3e715047256f7016d1"), 0 };
     size_t const out_h31 = 378;
     const uint64_t value31 = 34;
 
-    const short_hash key4 = base16_literal("d60db39ca8ce4caf0f7d2b7d3111535d9543473f");
+    const short_hash key4 = "d60db39ca8ce4caf0f7d2b7d3111535d9543473f"_base16;
     ////output_point out42{ hash_literal("aaaaaaaaaaacac3e715047256f7016d1d90aaa96944cac3e715047256f7016d1"), 0};
     size_t const out_h41 = 74448;
     const uint64_t value41 = 990;

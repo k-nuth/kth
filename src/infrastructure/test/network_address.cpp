@@ -10,7 +10,8 @@ using namespace kth::infrastructure;
 
 using message::network_address;
 
-namesspace {
+namespace {
+    
 //This is defined in Domain <kth/domain/message/version.hpp>
 constexpr uint32_t version_level_minimum = 31402;
 

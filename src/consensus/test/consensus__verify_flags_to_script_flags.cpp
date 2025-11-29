@@ -16,62 +16,62 @@ using namespace kth::consensus;
 
 // Unnamed enum values require cast for boost comparison macros.
 
-TEST_CASE("consensus verify flags to script flags none  NONE", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags none NONE", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_none) == (uint32_t)SCRIPT_VERIFY_NONE);
 }
 
-TEST_CASE("consensus verify flags to script flags p2sh  P2SH", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags p2sh P2SH", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_p2sh) == (uint32_t)SCRIPT_VERIFY_P2SH);
 }
 
-TEST_CASE("consensus verify flags to script flags strictenc  STRICTENC", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags strictenc STRICTENC", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_strictenc) == (uint32_t)SCRIPT_VERIFY_STRICTENC);
 }
 
-TEST_CASE("consensus verify flags to script flags dersig  DERSIG", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags dersig DERSIG", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_dersig) == (uint32_t)SCRIPT_VERIFY_DERSIG);
 }
 
-TEST_CASE("consensus verify flags to script flags low s  LOW S", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags low s LOW S", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_low_s) == (uint32_t)SCRIPT_VERIFY_LOW_S);
 }
 
 #if ! defined(KTH_CURRENCY_BCH)
-TEST_CASE("consensus verify flags to script flags nulldummy  NULLDUMMY", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags nulldummy NULLDUMMY", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_nulldummy) == (uint32_t)SCRIPT_VERIFY_NULLDUMMY);
 }
 #endif
 
-TEST_CASE("consensus verify flags to script flags sigpushonly  SIGPUSHONLY", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags sigpushonly SIGPUSHONLY", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_sigpushonly) == (uint32_t)SCRIPT_VERIFY_SIGPUSHONLY);
 }
 
-TEST_CASE("consensus verify flags to script flags minimaldata  MINIMALDATA", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags minimaldata MINIMALDATA", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_minimaldata) == (uint32_t)SCRIPT_VERIFY_MINIMALDATA);
 }
 
-TEST_CASE("consensus verify flags to script flags discourage upgradable nops  DISCOURAGE UPGRADABLE NOPS", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags discourage upgradable nops DISCOURAGE UPGRADABLE NOPS", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_discourage_upgradable_nops) == (uint32_t)SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS);
 }
 
-TEST_CASE("consensus verify flags to script flags cleanstack  CLEANSTACK", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags cleanstack CLEANSTACK", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_cleanstack) == (uint32_t)SCRIPT_VERIFY_CLEANSTACK);
 }
 
-TEST_CASE("consensus verify flags to script flags checklocktimeverify  CHECKLOCKTIMEVERIFY", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags checklocktimeverify CHECKLOCKTIMEVERIFY", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_checklocktimeverify) == (uint32_t)SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY);
 }
 
-TEST_CASE("consensus verify flags to script flags checksequenceverify  CHECKSEQUENCEVERIFY", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags checksequenceverify CHECKSEQUENCEVERIFY", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_checksequenceverify) == (uint32_t)SCRIPT_VERIFY_CHECKSEQUENCEVERIFY);
 }
 
 #if ! defined(KTH_CURRENCY_BCH)
-TEST_CASE("consensus verify flags to script flags witness  WITNESS", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags witness WITNESS", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_witness) == (uint32_t)SCRIPT_VERIFY_WITNESS);
 }
 
-TEST_CASE("consensus verify flags to script flags discourage upgradable witness program  DISCOURAGE UPGRADABLE WITNESS PROGRAM", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags discourage upgradable witness program DISCOURAGE UPGRADABLE WITNESS PROGRAM", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_discourage_upgradable_witness_program) == (uint32_t)SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM);
 }
 #endif
@@ -85,18 +85,18 @@ TEST_CASE("consensus verify flags to script flags null fail NULLFAIL", "[consens
 }
 
 #if ! defined(KTH_CURRENCY_BCH)
-TEST_CASE("consensus verify flags to script flags witness public key compressed  PUBKEYTYPE", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags witness public key compressed PUBKEYTYPE", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_witness_public_key_compressed) == (uint32_t)SCRIPT_VERIFY_WITNESS_PUBKEYTYPE);
 }
 #endif
 
 #if ! defined(KTH_CURRENCY_BCH)
-TEST_CASE("consensus verify flags to script flags const scriptcode  SCRIPTCODE", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags const scriptcode SCRIPTCODE", "[consensus verify flags to script flags]") {
     REQUIRE(verify_flags_to_script_flags(verify_flags_const_scriptcode) == (uint32_t)SCRIPT_VERIFY_CONST_SCRIPTCODE);
 }
 #endif
 
-TEST_CASE("consensus verify flags to script flags all  all", "[consensus verify flags to script flags]") {
+TEST_CASE("consensus verify flags to script flags all all", "[consensus verify flags to script flags]") {
     const uint32_t all_verify_flags =
           verify_flags_none
         | verify_flags_p2sh

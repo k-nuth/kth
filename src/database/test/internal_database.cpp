@@ -42,9 +42,8 @@ struct internal_database_directory_setup_fixture {
 };
 
 domain::chain::block get_block(std::string const& enc) {
-    data_chunk data;
-    decode_base16(data, enc);
-    byte_reader reader(data);
+    auto const data = decode_base16(enc);
+    byte_reader reader(*data);
     auto res = domain::chain::block::from_data(reader);
     if ( ! res) {
         return domain::chain::block{};
@@ -1406,10 +1405,10 @@ TEST_CASE("internal database  test tx address", "[None]") {
 
 std::println("*************************************************************");
 
-data_chunk wire_tx1;
-REQUIRE(decode_base16(wire_tx1, "0100000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000"));
+auto wire_tx1 = decode_base16("0100000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000");
+REQUIRE(wire_tx1);
 transaction tx1;
-REQUIRE(tx1.from_data(wire_tx1, true));
+REQUIRE(tx1.from_data(*wire_tx1, true));
 
 REQUIRE(tx1.is_valid());
 

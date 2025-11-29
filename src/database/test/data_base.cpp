@@ -17,10 +17,10 @@ using namespace boost::system;
 using namespace std::filesystem;
 
 block read_block(const std::string hex) {
-    data_chunk data;
-    REQUIRE(decode_base16(data, hex));
+    auto const data = decode_base16(hex);
+    REQUIRE(data);
     block result;
-    REQUIRE(result.from_data(data));
+    REQUIRE(result.from_data(*data));
     return result;
 }
 

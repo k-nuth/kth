@@ -16,7 +16,7 @@ using namespace kth::consensus;
 
 // Logical result
 
-TEST_CASE("consensus script error to verify result OK  eval true", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result OK eval true", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::OK) == verify_result_eval_true);
 #else
@@ -24,7 +24,7 @@ TEST_CASE("consensus script error to verify result OK  eval true", "[consensus s
 #endif
 }
 
-TEST_CASE("consensus script error to verify result EVAL FALSE  eval false", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result EVAL FALSE eval false", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::EVAL_FALSE) == verify_result_eval_false);
 #else
@@ -34,7 +34,7 @@ TEST_CASE("consensus script error to verify result EVAL FALSE  eval false", "[co
 
 // Max size errors.
 
-TEST_CASE("consensus script error to verify result SCRIPT SIZE  script size", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result SCRIPT SIZE script size", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::SCRIPT_SIZE) == verify_result_script_size);
 #else
@@ -42,7 +42,7 @@ TEST_CASE("consensus script error to verify result SCRIPT SIZE  script size", "[
 #endif
 }
 
-TEST_CASE("consensus script error to verify result PUSH SIZE  push size", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result PUSH SIZE push size", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::PUSH_SIZE) == verify_result_push_size);
 #else
@@ -50,7 +50,7 @@ TEST_CASE("consensus script error to verify result PUSH SIZE  push size", "[cons
 #endif
 }
 
-TEST_CASE("consensus script error to verify result OP COUNT  op count", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result OP COUNT op count", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::OP_COUNT) == verify_result_op_count);
 #else
@@ -58,7 +58,7 @@ TEST_CASE("consensus script error to verify result OP COUNT  op count", "[consen
 #endif
 }
 
-TEST_CASE("consensus script error to verify result STACK SIZE  stack size", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result STACK SIZE stack size", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::STACK_SIZE) == verify_result_stack_size);
 #else
@@ -66,7 +66,7 @@ TEST_CASE("consensus script error to verify result STACK SIZE  stack size", "[co
 #endif
 }
 
-TEST_CASE("consensus script error to verify result SIG COUNT  sig count", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result SIG COUNT sig count", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::SIG_COUNT) == verify_result_sig_count);
 #else
@@ -74,7 +74,7 @@ TEST_CASE("consensus script error to verify result SIG COUNT  sig count", "[cons
 #endif
 }
 
-TEST_CASE("consensus script error to verify result PUBKEY COUNT  pubkey count", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result PUBKEY COUNT pubkey count", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::PUBKEY_COUNT) == verify_result_pubkey_count);
 #else
@@ -84,7 +84,7 @@ TEST_CASE("consensus script error to verify result PUBKEY COUNT  pubkey count", 
 
 // Failed verify operations
 
-TEST_CASE("consensus script error to verify result VERIFY  verify", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result VERIFY verify", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::VERIFY) == verify_result_verify);
 #else
@@ -92,7 +92,7 @@ TEST_CASE("consensus script error to verify result VERIFY  verify", "[consensus 
 #endif
 }
 
-TEST_CASE("consensus script error to verify result EQUALVERIFY  equalverify", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result EQUALVERIFY equalverify", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::EQUALVERIFY) == verify_result_equalverify);
 #else
@@ -100,7 +100,7 @@ TEST_CASE("consensus script error to verify result EQUALVERIFY  equalverify", "[
 #endif
 }
 
-TEST_CASE("consensus script error to verify result CHECKMULTISIGVERIFY  checkmultisigverify", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result CHECKMULTISIGVERIFY checkmultisigverify", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::CHECKMULTISIGVERIFY) == verify_result_checkmultisigverify);
 #else
@@ -108,7 +108,7 @@ TEST_CASE("consensus script error to verify result CHECKMULTISIGVERIFY  checkmul
 #endif
 }
 
-TEST_CASE("consensus script error to verify result CHECKSIGVERIFY  checksigverify", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result CHECKSIGVERIFY checksigverify", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::CHECKSIGVERIFY) == verify_result_checksigverify);
 #else
@@ -116,7 +116,7 @@ TEST_CASE("consensus script error to verify result CHECKSIGVERIFY  checksigverif
 #endif
 }
 
-TEST_CASE("consensus script error to verify result NUMEQUALVERIFY  numequalverify", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result NUMEQUALVERIFY numequalverify", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::NUMEQUALVERIFY) == verify_result_numequalverify);
 #else
@@ -126,7 +126,7 @@ TEST_CASE("consensus script error to verify result NUMEQUALVERIFY  numequalverif
 
 // Logical/Format/Canonical errors
 
-TEST_CASE("consensus script error to verify result BAD OPCODE  bad opcode", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result BAD OPCODE bad opcode", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::BAD_OPCODE) == verify_result_bad_opcode);
 #else
@@ -134,7 +134,7 @@ TEST_CASE("consensus script error to verify result BAD OPCODE  bad opcode", "[co
 #endif
 }
 
-TEST_CASE("consensus script error to verify result DISABLED OPCODE  disabled opcode", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result DISABLED OPCODE disabled opcode", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::DISABLED_OPCODE) == verify_result_disabled_opcode);
 #else
@@ -142,7 +142,7 @@ TEST_CASE("consensus script error to verify result DISABLED OPCODE  disabled opc
 #endif
 }
 
-TEST_CASE("consensus script error to verify result INVALID STACK OPERATION  invalid stack operation", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result INVALID STACK OPERATION invalid stack operation", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::INVALID_STACK_OPERATION) == verify_result_invalid_stack_operation);
 #else
@@ -150,7 +150,7 @@ TEST_CASE("consensus script error to verify result INVALID STACK OPERATION  inva
 #endif
 }
 
-TEST_CASE("consensus script error to verify result INVALID ALTSTACK OPERATION  invalid altstack operation", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result INVALID ALTSTACK OPERATION invalid altstack operation", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::INVALID_ALTSTACK_OPERATION) == verify_result_invalid_altstack_operation);
 #else
@@ -158,7 +158,7 @@ TEST_CASE("consensus script error to verify result INVALID ALTSTACK OPERATION  i
 #endif
 }
 
-TEST_CASE("consensus script error to verify result UNBALANCED CONDITIONAL  unbalanced conditional", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result UNBALANCED CONDITIONAL unbalanced conditional", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::UNBALANCED_CONDITIONAL) == verify_result_unbalanced_conditional);
 #else
@@ -168,7 +168,7 @@ TEST_CASE("consensus script error to verify result UNBALANCED CONDITIONAL  unbal
 
 // BIP65
 
-TEST_CASE("consensus script error to verify result NEGATIVE LOCKTIME  sig hashtype", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result NEGATIVE LOCKTIME sig hashtype", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::NEGATIVE_LOCKTIME) == verify_result_negative_locktime);
 #else
@@ -176,7 +176,7 @@ TEST_CASE("consensus script error to verify result NEGATIVE LOCKTIME  sig hashty
 #endif
 }
 
-TEST_CASE("consensus script error to verify result ERR UNSATISFIED LOCKTIME  err sig der", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result ERR UNSATISFIED LOCKTIME err sig der", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::UNSATISFIED_LOCKTIME) == verify_result_unsatisfied_locktime);
 #else
@@ -186,7 +186,7 @@ TEST_CASE("consensus script error to verify result ERR UNSATISFIED LOCKTIME  err
 
 // BIP62
 
-TEST_CASE("consensus script error to verify result SIG HASHTYPE  sig hashtype", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result SIG HASHTYPE sig hashtype", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::SIG_HASHTYPE) == verify_result_sig_hashtype);
 #else
@@ -194,7 +194,7 @@ TEST_CASE("consensus script error to verify result SIG HASHTYPE  sig hashtype", 
 #endif
 }
 
-TEST_CASE("consensus script error to verify result ERR SIG DER  err sig der", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result ERR SIG DER err sig der", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::SIG_DER) == verify_result_sig_der);
 #else
@@ -202,7 +202,7 @@ TEST_CASE("consensus script error to verify result ERR SIG DER  err sig der", "[
 #endif
 }
 
-TEST_CASE("consensus script error to verify result ERR MINIMALDATA  err minimaldata", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result ERR MINIMALDATA err minimaldata", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::MINIMALDATA) == verify_result_minimaldata);
 #else
@@ -210,7 +210,7 @@ TEST_CASE("consensus script error to verify result ERR MINIMALDATA  err minimald
 #endif
 }
 
-TEST_CASE("consensus script error to verify result SIG PUSHONLY  sig pushonly", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result SIG PUSHONLY sig pushonly", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::SIG_PUSHONLY) == verify_result_sig_pushonly);
 #else
@@ -218,7 +218,7 @@ TEST_CASE("consensus script error to verify result SIG PUSHONLY  sig pushonly", 
 #endif
 }
 
-TEST_CASE("consensus script error to verify result SIG HIGH S  sig high s", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result SIG HIGH S sig high s", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::SIG_HIGH_S) == verify_result_sig_high_s);
 #else
@@ -227,12 +227,12 @@ TEST_CASE("consensus script error to verify result SIG HIGH S  sig high s", "[co
 }
 
 #if ! defined(KTH_CURRENCY_BCH)         //BIP 147
-TEST_CASE("consensus script error to verify result SIG NULLDUMMY  sig nulldummy", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result SIG NULLDUMMY sig nulldummy", "[consensus script error to verify result]") {
     REQUIRE(script_error_to_verify_result(SCRIPT_ERR_SIG_NULLDUMMY) == verify_result_sig_nulldummy);
 }
 #endif
 
-TEST_CASE("consensus script error to verify result PUBKEYTYPE  pubkeytype", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result PUBKEYTYPE pubkeytype", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::PUBKEYTYPE) == verify_result_pubkeytype);
 #else
@@ -240,7 +240,7 @@ TEST_CASE("consensus script error to verify result PUBKEYTYPE  pubkeytype", "[co
 #endif
 }
 
-TEST_CASE("consensus script error to verify result CLEANSTACK  cleanstack", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result CLEANSTACK cleanstack", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::CLEANSTACK) == verify_result_cleanstack);
 #else
@@ -248,7 +248,7 @@ TEST_CASE("consensus script error to verify result CLEANSTACK  cleanstack", "[co
 #endif
 }
 
-TEST_CASE("consensus script error to verify result MINIMALIF  minimalif", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result MINIMALIF minimalif", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::MINIMALIF) == verify_result_minimalif);
 #else
@@ -256,7 +256,7 @@ TEST_CASE("consensus script error to verify result MINIMALIF  minimalif", "[cons
 #endif
 }
 
-TEST_CASE("consensus script error to verify result SIG NULLFAIL  nullfail", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result SIG NULLFAIL nullfail", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::SIG_NULLFAIL) == verify_result_sig_nullfail);
 #else
@@ -266,7 +266,7 @@ TEST_CASE("consensus script error to verify result SIG NULLFAIL  nullfail", "[co
 
 // Softfork safeness
 
-TEST_CASE("consensus script error to verify result  DISCOURAGE UPGRADABLE NOPS   discourage upgradable nops", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result DISCOURAGE UPGRADABLE NOPS discourage upgradable nops", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::DISCOURAGE_UPGRADABLE_NOPS) == verify_result_discourage_upgradable_nops);
 #else
@@ -275,44 +275,44 @@ TEST_CASE("consensus script error to verify result  DISCOURAGE UPGRADABLE NOPS  
 }
 
 #if ! defined(KTH_CURRENCY_BCH)
-TEST_CASE("consensus script error to verify result  DISCOURAGE UPGRADABLE WITNESS PROGRAM   discourage upgradable witness program", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result DISCOURAGE UPGRADABLE WITNESS PROGRAM discourage upgradable witness program", "[consensus script error to verify result]") {
     REQUIRE(script_error_to_verify_result(SCRIPT_ERR_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM) == verify_result_discourage_upgradable_witness_program);
 }
 
 // Segregated witness
 
-TEST_CASE("consensus script error to verify result  WITNESS PROGRAM WRONG LENGTH   witness program wrong length", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result WITNESS PROGRAM WRONG LENGTH witness program wrong length", "[consensus script error to verify result]") {
     REQUIRE(script_error_to_verify_result(SCRIPT_ERR_WITNESS_PROGRAM_WRONG_LENGTH) == verify_result_witness_program_wrong_length);
 }
 
-TEST_CASE("consensus script error to verify result  WITNESS PROGRAM WITNESS EMPTY   witness program empty witness", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result WITNESS PROGRAM WITNESS EMPTY witness program empty witness", "[consensus script error to verify result]") {
     REQUIRE(script_error_to_verify_result(SCRIPT_ERR_WITNESS_PROGRAM_WITNESS_EMPTY) == verify_result_witness_program_empty_witness);
 }
 
-TEST_CASE("consensus script error to verify result  WITNESS PROGRAM MISMATCH   witness program mismatch", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result WITNESS PROGRAM MISMATCH witness program mismatch", "[consensus script error to verify result]") {
     REQUIRE(script_error_to_verify_result(SCRIPT_ERR_WITNESS_PROGRAM_MISMATCH) == verify_result_witness_program_mismatch);
 }
 
-TEST_CASE("consensus script error to verify result  WITNESS MALLEATED   witness malleated", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result WITNESS MALLEATED witness malleated", "[consensus script error to verify result]") {
     REQUIRE(script_error_to_verify_result(SCRIPT_ERR_WITNESS_MALLEATED) == verify_result_witness_malleated);
 }
 
-TEST_CASE("consensus script error to verify result  WITNESS MALLEATED P2SH   witness malleated p2sh", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result WITNESS MALLEATED P2SH witness malleated p2sh", "[consensus script error to verify result]") {
     REQUIRE(script_error_to_verify_result(SCRIPT_ERR_WITNESS_MALLEATED_P2SH) == verify_result_witness_malleated_p2sh);
 }
 
-TEST_CASE("consensus script error to verify result  WITNESS UNEXPECTED   witness unexpected", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result WITNESS UNEXPECTED witness unexpected", "[consensus script error to verify result]") {
     REQUIRE(script_error_to_verify_result(SCRIPT_ERR_WITNESS_UNEXPECTED) == verify_result_witness_unexpected);
 }
 
-TEST_CASE("consensus script error to verify result  WITNESS PUBKEYTYPE   witness pubkeytype", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result WITNESS PUBKEYTYPE witness pubkeytype", "[consensus script error to verify result]") {
     REQUIRE(script_error_to_verify_result(SCRIPT_ERR_WITNESS_PUBKEYTYPE) == verify_result_witness_pubkeytype);
 }
 #endif
 
 // Other
 
-TEST_CASE("consensus script error to verify result OP RETURN  op return", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result OP RETURN op return", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::OP_RETURN) == verify_result_op_return);
 #else
@@ -320,7 +320,7 @@ TEST_CASE("consensus script error to verify result OP RETURN  op return", "[cons
 #endif
 }
 
-TEST_CASE("consensus script error to verify result UNKNOWN ERROR  unknown error", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result UNKNOWN ERROR unknown error", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::UNKNOWN) == verify_result_unknown_error);
 #else
@@ -328,7 +328,7 @@ TEST_CASE("consensus script error to verify result UNKNOWN ERROR  unknown error"
 #endif
 }
 
-TEST_CASE("consensus script error to verify result ERROR COUNT  unknown error", "[consensus script error to verify result]") {
+TEST_CASE("consensus script error to verify result ERROR COUNT unknown error", "[consensus script error to verify result]") {
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(script_error_to_verify_result(ScriptError::ERROR_COUNT) == verify_result_unknown_error);
 #else

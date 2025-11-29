@@ -35,12 +35,12 @@ public:
 
 // hash
 
-TEST_CASE("branch  hash  default  null hash", "[branch tests]") {
+TEST_CASE("branch hash default null hash", "[branch tests]") {
     branch instance;
     REQUIRE(instance.hash() == null_hash);
 }
 
-TEST_CASE("branch  hash  one block  only previous block hash", "[branch tests]") {
+TEST_CASE("branch hash one block only previous block hash", "[branch tests]") {
     DECLARE_BLOCK(block, 0);
     DECLARE_BLOCK(block, 1);
 
@@ -52,7 +52,7 @@ TEST_CASE("branch  hash  one block  only previous block hash", "[branch tests]")
     REQUIRE(instance.hash() == expected);
 }
 
-TEST_CASE("branch  hash  two blocks  first previous block hash", "[branch tests]") {
+TEST_CASE("branch hash two blocks first previous block hash", "[branch tests]") {
     branch instance;
     DECLARE_BLOCK(top, 42);
     DECLARE_BLOCK(block, 0);
@@ -70,12 +70,12 @@ TEST_CASE("branch  hash  two blocks  first previous block hash", "[branch tests]
 
 // height/set_height
 
-TEST_CASE("branch  height  default  zero", "[branch tests]") {
+TEST_CASE("branch height default zero", "[branch tests]") {
     branch instance;
     REQUIRE(instance.height() == 0);
 }
 
-TEST_CASE("branch  set height  round trip  unchanged", "[branch tests]") {
+TEST_CASE("branch set height round trip unchanged", "[branch tests]") {
     static size_t const expected = 42;
     branch instance;
     instance.set_height(expected);
@@ -84,19 +84,19 @@ TEST_CASE("branch  set height  round trip  unchanged", "[branch tests]") {
 
 // index_of
 
-TEST_CASE("branch  index of  one  zero", "[branch tests]") {
+TEST_CASE("branch index of one zero", "[branch tests]") {
     branch_fixture instance;
     instance.set_height(0);
     REQUIRE(instance.index_of(1) == 0u);
 }
 
-TEST_CASE("branch  index of  two  one", "[branch tests]") {
+TEST_CASE("branch index of two one", "[branch tests]") {
     branch_fixture instance;
     instance.set_height(0);
     REQUIRE(instance.index_of(2) == 1u);
 }
 
-TEST_CASE("branch  index of  value  expected", "[branch tests]") {
+TEST_CASE("branch index of value expected", "[branch tests]") {
     branch_fixture instance;
     instance.set_height(42);
     REQUIRE(instance.index_of(53) == 10u);
@@ -104,19 +104,19 @@ TEST_CASE("branch  index of  value  expected", "[branch tests]") {
 
 // height_at
 
-TEST_CASE("branch  height at  zero  one", "[branch tests]") {
+TEST_CASE("branch height at zero one", "[branch tests]") {
     branch_fixture instance;
     instance.set_height(0);
     REQUIRE(instance.height_at(0) == 1u);
 }
 
-TEST_CASE("branch  height at  one  two", "[branch tests]") {
+TEST_CASE("branch height at one two", "[branch tests]") {
     branch_fixture instance;
     instance.set_height(0);
     REQUIRE(instance.height_at(1) == 2u);
 }
 
-TEST_CASE("branch  height at  value  expected", "[branch tests]") {
+TEST_CASE("branch height at value expected", "[branch tests]") {
     branch_fixture instance;
     instance.set_height(42);
     REQUIRE(instance.height_at(10) == 53u);
@@ -124,19 +124,19 @@ TEST_CASE("branch  height at  value  expected", "[branch tests]") {
 
 // size
 
-TEST_CASE("branch  size  empty  zero", "[branch tests]") {
+TEST_CASE("branch size empty zero", "[branch tests]") {
     branch instance;
     REQUIRE(instance.size() == 0);
 }
 
 // empty
 
-TEST_CASE("branch  empty  default  true", "[branch tests]") {
+TEST_CASE("branch empty default true", "[branch tests]") {
     branch instance;
     REQUIRE(instance.empty());
 }
 
-TEST_CASE("branch  empty  push one  false", "[branch tests]") {
+TEST_CASE("branch empty push one false", "[branch tests]") {
     branch instance;
     DECLARE_BLOCK(block, 0);
     REQUIRE(instance.push_front(block0));
@@ -145,12 +145,12 @@ TEST_CASE("branch  empty  push one  false", "[branch tests]") {
 
 // blocks
 
-TEST_CASE("branch  blocks  default  empty", "[branch tests]") {
+TEST_CASE("branch blocks default empty", "[branch tests]") {
     branch instance;
     REQUIRE(instance.blocks()->empty());
 }
 
-TEST_CASE("branch  blocks  one  empty", "[branch tests]") {
+TEST_CASE("branch blocks one empty", "[branch tests]") {
     branch instance;
     DECLARE_BLOCK(block, 0);
     REQUIRE(instance.push_front(block0));
@@ -160,7 +160,7 @@ TEST_CASE("branch  blocks  one  empty", "[branch tests]") {
 
 // push_front
 
-TEST_CASE("branch  push front  one  success", "[branch tests]") {
+TEST_CASE("branch push front one success", "[branch tests]") {
     branch_fixture instance;
     DECLARE_BLOCK(block, 0);
     REQUIRE(instance.push_front(block0));
@@ -169,7 +169,7 @@ TEST_CASE("branch  push front  one  success", "[branch tests]") {
     REQUIRE((*instance.blocks())[0] == block0);
 }
 
-TEST_CASE("branch  push front  two linked  success", "[branch tests]") {
+TEST_CASE("branch push front two linked success", "[branch tests]") {
     branch_fixture instance;
     DECLARE_BLOCK(block, 0);
     DECLARE_BLOCK(block, 1);
@@ -184,7 +184,7 @@ TEST_CASE("branch  push front  two linked  success", "[branch tests]") {
     REQUIRE((*instance.blocks())[1] == block1);
 }
 
-TEST_CASE("branch  push front  two unlinked  link failure", "[branch tests]") {
+TEST_CASE("branch push front two unlinked link failure", "[branch tests]") {
     branch_fixture instance;
     DECLARE_BLOCK(block, 0);
     DECLARE_BLOCK(block, 1);
@@ -200,12 +200,12 @@ TEST_CASE("branch  push front  two unlinked  link failure", "[branch tests]") {
 
 // top
 
-TEST_CASE("branch  top  default  nullptr", "[branch tests]") {
+TEST_CASE("branch top default nullptr", "[branch tests]") {
     branch instance;
     REQUIRE( ! instance.top());
 }
 
-TEST_CASE("branch  top  two blocks  expected", "[branch tests]") {
+TEST_CASE("branch top two blocks expected", "[branch tests]") {
     branch_fixture instance;
     DECLARE_BLOCK(block, 0);
     DECLARE_BLOCK(block, 1);
@@ -221,12 +221,12 @@ TEST_CASE("branch  top  two blocks  expected", "[branch tests]") {
 
 // top_height
 
-TEST_CASE("branch  top height  default  0", "[branch tests]") {
+TEST_CASE("branch top height default 0", "[branch tests]") {
     branch instance;
     REQUIRE(instance.top_height() == 0u);
 }
 
-TEST_CASE("branch  top height  two blocks  expected", "[branch tests]") {
+TEST_CASE("branch top height two blocks expected", "[branch tests]") {
     branch_fixture instance;
     DECLARE_BLOCK(block, 0);
     DECLARE_BLOCK(block, 1);
@@ -245,12 +245,12 @@ TEST_CASE("branch  top height  two blocks  expected", "[branch tests]") {
 
 // work
 
-TEST_CASE("branch  work  default  zero", "[branch tests]") {
+TEST_CASE("branch work default zero", "[branch tests]") {
     branch instance;
     REQUIRE(instance.work() == 0);
 }
 
-TEST_CASE("branch  work  two blocks  expected", "[branch tests]") {
+TEST_CASE("branch work two blocks expected", "[branch tests]") {
     branch instance;
     DECLARE_BLOCK(block, 0);
     DECLARE_BLOCK(block, 1);
