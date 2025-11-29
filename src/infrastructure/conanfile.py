@@ -53,7 +53,7 @@ class KnuthInfrastructureConan(KnuthConanFileV2):
         "asio_standalone": False,
     }
 
-    exports_sources = "src/*", "CMakeLists.txt", "ci_utils/cmake/*", "cmake/*", "include/*", "test/*", "examples/*", "test_new/*"
+    exports_sources = "src/*", "CMakeLists.txt", "ci_utils/cmake/*", "cmake/*", "include/*", "test/*", "examples/*"
 
     def build_requirements(self):
         if self.options.tests:
