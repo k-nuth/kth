@@ -115,7 +115,7 @@ concept hash_literal = base16_literal<Str> && (Str.size() == 2 * hash_size);
 // TODO(fernando): investigate if this can be consteval instead of constexpr
 template <fixed_string Str>
     requires hash_literal<Str>
-constexpr hash_digest operator""_hash() {
+constexpr auto operator""_hash() {
     hash_digest result{};
     detail::decode_base16(result.data(), result.size(), Str.content);
     std::reverse(result.begin(), result.end());

@@ -562,6 +562,18 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
   _group_sources(kth_infrastructure_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
+  # Compile-time failure tests
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(Python3_FOUND)
+    add_test(
+      NAME kth_infrastructure_compile_fail_tests
+      COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/compile_fail/test_compile_failures.py
+        --compiler ${CMAKE_CXX_COMPILER}
+        --include-dir ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+  endif()
+
   # Benchmark executable (separate from tests)
   add_executable(kth_infrastructure_benchmarks test/formats/base_encoding_benchmarks.cpp)
   target_include_directories(kth_infrastructure_benchmarks PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)

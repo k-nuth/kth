@@ -8,6 +8,32 @@
 
 using namespace kth;
 
+// Compile-time validation tests for base16_literal concept
+static_assert(base16_literal<"deadbeef">);                // valid hex
+static_assert(base16_literal<"DEADBEEF">);                // valid uppercase
+static_assert(base16_literal<"DeAdBeEf">);                // valid mixed case
+static_assert(base16_literal<"">);                        // valid empty
+static_assert(base16_literal<"00">);                      // valid single byte
+static_assert(!base16_literal<"abc">);                    // invalid: odd length
+static_assert(!base16_literal<"abcde">);                  // invalid: odd length
+static_assert(!base16_literal<"xyz">);                    // invalid: bad characters
+static_assert(!base16_literal<"deadbeXf">);               // invalid: bad character in middle
+static_assert(!base16_literal<"ghijklmn">);               // invalid: all bad characters
+
+// Compile-time validation tests for hash_literal concept
+static_assert(hash_literal<"0000000000000000000000000000000000000000000000000000000000000000">);   // valid: 64 zeros
+static_assert(hash_literal<"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f">);   // valid: genesis hash
+static_assert(!hash_literal<"deadbeef">);                 // invalid: too short (8 chars)
+static_assert(!hash_literal<"">);                         // invalid: empty
+static_assert(!hash_literal<"00">);                       // invalid: too short (2 chars)
+static_assert(!hash_literal<"000000000000000000000000000000000000000000000000000000000000000">);   // invalid: 63 chars (odd)
+static_assert(!hash_literal<"00000000000000000000000000000000000000000000000000000000000000000">); // invalid: 65 chars
+static_assert(!hash_literal<"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26X">); // invalid: bad char
+
+// Note: UDL operators (_base16, _hash) are tested for compile-time failures
+// in test/compile_fail/test_compile_failures.py which verifies that invalid
+// expressions fail to compile as expected.
+
 // Start Test Suite: base 16 tests
 
 TEST_CASE("base16 decode basic", "[infrastructure][base16]") {
