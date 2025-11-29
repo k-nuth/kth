@@ -33,17 +33,17 @@ TEST_CASE("address  constructor 2  always  equals params", "[address]") {
         network_address(
             734678u,
             5357534u,
-            base16_literal("47816a40bb92bdb4e0b8256861f96a55"),
+            "47816a40bb92bdb4e0b8256861f96a55"_base16,
             123u),
         network_address(
             34654u,
             47653u,
-            base16_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_base16,
             222u),
         network_address(
             265453u,
             2115325u,
-            base16_literal("19573257168426842319857321595126"),
+            "19573257168426842319857321595126"_base16,
             159u)};
 
     address instance(addresses);
@@ -57,17 +57,17 @@ TEST_CASE("address  constructor 3  always  equals params", "[address]") {
         network_address(
             734678u,
             5357534u,
-            base16_literal("47816a40bb92bdb4e0b8256861f96a55"),
+            "47816a40bb92bdb4e0b8256861f96a55"_base16,
             123u),
         network_address(
             34654u,
             47653u,
-            base16_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_base16,
             222u),
         network_address(
             265453u,
             2115325u,
-            base16_literal("19573257168426842319857321595126"),
+            "19573257168426842319857321595126"_base16,
             159u)};
 
     auto dup_addresses = addresses;
@@ -83,17 +83,17 @@ TEST_CASE("address  constructor 4  always  equals params", "[address]") {
         network_address(
             734678u,
             5357534u,
-            base16_literal("47816a40bb92bdb4e0b8256861f96a55"),
+            "47816a40bb92bdb4e0b8256861f96a55"_base16,
             123u),
         network_address(
             34654u,
             47653u,
-            base16_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_base16,
             222u),
         network_address(
             265453u,
             2115325u,
-            base16_literal("19573257168426842319857321595126"),
+            "19573257168426842319857321595126"_base16,
             159u)};
 
     address value(addresses);
@@ -109,17 +109,17 @@ TEST_CASE("address  constructor 5  always  equals params", "[address]") {
         network_address(
             734678u,
             5357534u,
-            base16_literal("47816a40bb92bdb4e0b8256861f96a55"),
+            "47816a40bb92bdb4e0b8256861f96a55"_base16,
             123u),
         network_address(
             34654u,
             47653u,
-            base16_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_base16,
             222u),
         network_address(
             265453u,
             2115325u,
-            base16_literal("19573257168426842319857321595126"),
+            "19573257168426842319857321595126"_base16,
             159u)};
 
     address value(addresses);
@@ -142,7 +142,7 @@ TEST_CASE("address from data roundtrip  success", "[address]") {
     address const expected(
         {{734678u,
           5357534u,
-          base16_literal("47816a40bb92bdb4e0b8256861f96a55"),
+          "47816a40bb92bdb4e0b8256861f96a55"_base16,
           123u}});
 
     auto const data = expected.to_data(version::level::minimum);
@@ -165,17 +165,17 @@ TEST_CASE("address  addresses setter 1  roundtrip  success", "[address]") {
         network_address(
             734678u,
             5357534u,
-            base16_literal("47816a40bb92bdb4e0b8256861f96a55"),
+            "47816a40bb92bdb4e0b8256861f96a55"_base16,
             123u),
         network_address(
             34654u,
             47653u,
-            base16_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_base16,
             222u),
         network_address(
             265453u,
             2115325u,
-            base16_literal("19573257168426842319857321595126"),
+            "19573257168426842319857321595126"_base16,
             159u)};
 
     address instance;
@@ -189,17 +189,17 @@ TEST_CASE("address  addresses setter 2  roundtrip  success", "[address]") {
         network_address(
             734678u,
             5357534u,
-            base16_literal("47816a40bb92bdb4e0b8256861f96a55"),
+            "47816a40bb92bdb4e0b8256861f96a55"_base16,
             123u),
         network_address(
             34654u,
             47653u,
-            base16_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_base16,
             222u),
         network_address(
             265453u,
             2115325u,
-            base16_literal("19573257168426842319857321595126"),
+            "19573257168426842319857321595126"_base16,
             159u)};
 
     auto dup_value = value;
@@ -214,17 +214,17 @@ TEST_CASE("address  operator assign equals  always  matches equivalent", "[addre
         network_address(
             734678u,
             5357534u,
-            base16_literal("47816a40bb92bdb4e0b8256861f96a55"),
+            "47816a40bb92bdb4e0b8256861f96a55"_base16,
             123u),
         network_address(
             34654u,
             47653u,
-            base16_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_base16,
             222u),
         network_address(
             265453u,
             2115325u,
-            base16_literal("19573257168426842319857321595126"),
+            "19573257168426842319857321595126"_base16,
             159u)};
 
     address value(addresses);
@@ -244,17 +244,17 @@ TEST_CASE("address  operator boolean equals  duplicates  returns true", "[addres
         {network_address(
              734678u,
              5357534u,
-             base16_literal("47816a40bb92bdb4e0b8256861f96a55"),
+             "47816a40bb92bdb4e0b8256861f96a55"_base16,
              123u),
          network_address(
              34654u,
              47653u,
-             base16_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_base16,
              222u),
          network_address(
              265453u,
              2115325u,
-             base16_literal("19573257168426842319857321595126"),
+             "19573257168426842319857321595126"_base16,
              159u)});
 
     address instance(expected);
@@ -266,17 +266,17 @@ TEST_CASE("address  operator boolean equals  differs  returns false", "[address]
         {network_address(
              734678u,
              5357534u,
-             base16_literal("47816a40bb92bdb4e0b8256861f96a55"),
+             "47816a40bb92bdb4e0b8256861f96a55"_base16,
              123u),
          network_address(
              34654u,
              47653u,
-             base16_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_base16,
              222u),
          network_address(
              265453u,
              2115325u,
-             base16_literal("19573257168426842319857321595126"),
+             "19573257168426842319857321595126"_base16,
              159u)});
 
     address instance;
@@ -288,17 +288,17 @@ TEST_CASE("address  operator boolean not equals  duplicates  returns false", "[a
         {network_address(
              734678u,
              5357534u,
-             base16_literal("47816a40bb92bdb4e0b8256861f96a55"),
+             "47816a40bb92bdb4e0b8256861f96a55"_base16,
              123u),
          network_address(
              34654u,
              47653u,
-             base16_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_base16,
              222u),
          network_address(
              265453u,
              2115325u,
-             base16_literal("19573257168426842319857321595126"),
+             "19573257168426842319857321595126"_base16,
              159u)});
 
     address instance(expected);
@@ -310,17 +310,17 @@ TEST_CASE("address  operator boolean not equals  differs  returns true", "[addre
         {network_address(
              734678u,
              5357534u,
-             base16_literal("47816a40bb92bdb4e0b8256861f96a55"),
+             "47816a40bb92bdb4e0b8256861f96a55"_base16,
              123u),
          network_address(
              34654u,
              47653u,
-             base16_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_base16,
              222u),
          network_address(
              265453u,
              2115325u,
-             base16_literal("19573257168426842319857321595126"),
+             "19573257168426842319857321595126"_base16,
              159u)});
 
     address instance;

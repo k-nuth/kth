@@ -13,38 +13,38 @@ using namespace kth::domain::wallet;
 // Start Test Suite: payment_address tests
 
 // $ bx base16-encode "Satoshi" | bx sha256
-#define SECRET "002688cc350a5333a87fa622eacec626c3d1c0ebf9f3793de3885fa254d7e393"
-#define SCRIPT "dup hash160 [18c0bd8d1818f1bf99cb1df2269c645318ef7b73] equalverify checksig"
+constexpr char secret_hex[] = "002688cc350a5333a87fa622eacec626c3d1c0ebf9f3793de3885fa254d7e393";
+constexpr char script_text[] = "dup hash160 [18c0bd8d1818f1bf99cb1df2269c645318ef7b73] equalverify checksig";
 
 // $ bx base16-encode "Satoshi" | bx sha256 | bx ec-to-public
-#define COMPRESSED "03d24123978d696a6c964f2dcb1d1e000d4150102fbbcc37f020401e35fb4cb745"
+constexpr char compressed_pubkey[] = "03d24123978d696a6c964f2dcb1d1e000d4150102fbbcc37f020401e35fb4cb745";
 // $ bx base16-encode "Satoshi" | bx sha256 | bx ec-to-public -u
-#define UNCOMPRESSED "04d24123978d696a6c964f2dcb1d1e000d4150102fbbcc37f020401e35fb4cb74561a3362716303b0469f04c3d0e3cbc4b5b62a2da7add6ecc3b254404b12d2f83"
+constexpr char uncompressed_pubkey[] = "04d24123978d696a6c964f2dcb1d1e000d4150102fbbcc37f020401e35fb4cb74561a3362716303b0469f04c3d0e3cbc4b5b62a2da7add6ecc3b254404b12d2f83";
 
 // $ bx base16-encode "Satoshi" | bx sha256 | bx ec-to-public | bx bitcoin160
-#define COMPRESSED_HASH "f85beb6356d0813ddb0dbb14230a249fe931a135"
+constexpr char compressed_hash[] = "f85beb6356d0813ddb0dbb14230a249fe931a135";
 // $ bx base16-encode "Satoshi" | bx sha256 | bx ec-to-public -u | bx bitcoin160
-#define UNCOMPRESSED_HASH "96ec4e06c665b7bd62cbe3d232f7c2d34016e136"
+constexpr char uncompressed_hash[] = "96ec4e06c665b7bd62cbe3d232f7c2d34016e136";
 
 // $ bx base16-encode "Satoshi" | bx sha256 | bx ec-to-public | bx ec-to-address
-#define ADDRESS_COMPRESSED "1PeChFbhxDD9NLbU21DfD55aQBC4ZTR3tE"
+constexpr char address_compressed[] = "1PeChFbhxDD9NLbU21DfD55aQBC4ZTR3tE";
 // $ bx base16-encode "Satoshi" | bx sha256 | bx ec-to-public -u | bx ec-to-address
-#define ADDRESS_UNCOMPRESSED "1Em1SX7qQq1pTmByqLRafhL1ypx2V786tP"
+constexpr char address_uncompressed[] = "1Em1SX7qQq1pTmByqLRafhL1ypx2V786tP";
 
 // $ bx base16-encode "Satoshi" | bx sha256 | bx ec-to-public | bx ec-to-address -v 111
-#define ADDRESS_COMPRESSED_TESTNET "n4A9zJggmEeQ9T55jaC32zHuGAnmSzPU2L"
+constexpr char address_compressed_testnet[] = "n4A9zJggmEeQ9T55jaC32zHuGAnmSzPU2L";
 // $ bx script-encode "dup hash160 [18c0bd8d1818f1bf99cb1df2269c645318ef7b73] equalverify checksig"
-#define ADDRESS_UNCOMPRESSED_TESTNET "muGxjaCpDrT5EsfbYuPxVcYLqpYjNQnbkR"
+constexpr char address_uncompressed_testnet[] = "muGxjaCpDrT5EsfbYuPxVcYLqpYjNQnbkR";
 
 // $ bx script-to-address "dup hash160 [18c0bd8d1818f1bf99cb1df2269c645318ef7b73] equalverify checksig"
-#define ADDRESS_SCRIPT "3CPSWnCGjkePffNyVptkv45Bx35SaAwm7d"
+constexpr char address_script[] = "3CPSWnCGjkePffNyVptkv45Bx35SaAwm7d";
 // $ bx script-to-address "dup hash160 [18c0bd8d1818f1bf99cb1df2269c645318ef7b73] equalverify checksig" -v 196
-#define ADDRESS_SCRIPT_TESTNET "2N3weaX8JMD9jsT1XAxWdY14TAPHcKYKHCT"
+constexpr char address_script_testnet[] = "2N3weaX8JMD9jsT1XAxWdY14TAPHcKYKHCT";
 
 // $ bx script-to-address "dup hash160 [18c0bd8d1818f1bf99cb1df2269c645318ef7b73] equalverify checksig" | bx base58-decode
-#define PAYMENT "0575566c599452b7bcb7f8cd4087bde9686fa9c52d8c2a7d90"
+constexpr char payment_hex[] = "0575566c599452b7bcb7f8cd4087bde9686fa9c52d8c2a7d90";
 // $ bx script-to-address "dup hash160 [18c0bd8d1818f1bf99cb1df2269c645318ef7b73] equalverify checksig" -v 196 | bx base58-decode
-#define PAYMENT_TESTNET "c475566c599452b7bcb7f8cd4087bde9686fa9c52d2fba2898"
+constexpr char payment_testnet[] = "c475566c599452b7bcb7f8cd4087bde9686fa9c52d2fba2898";
 
 // $ bx base58-decode 1111111111111111111114oLvT2 | bx wrap-decode
 // wrapper
@@ -53,186 +53,186 @@ using namespace kth::domain::wallet;
 //     payload 0000000000000000000000000000000000000000
 //     version 0
 // }
-#define UNINITIALIZED_ADDRESS "1111111111111111111114oLvT2"
+constexpr char uninitialized_address[] = "1111111111111111111114oLvT2";
 
 // negative tests:
 
 TEST_CASE("payment_address construct default invalid", "[payment_address]") {
     payment_address const address;
     REQUIRE( ! address);
-    REQUIRE(address.encoded_legacy() == UNINITIALIZED_ADDRESS);
+    REQUIRE(address.encoded_legacy() == uninitialized_address);
 }
 
 TEST_CASE("payment_address construct string invalid invalid", "[payment_address]") {
     payment_address const address("bogus");
     REQUIRE( ! address);
-    REQUIRE(address.encoded_legacy() == UNINITIALIZED_ADDRESS);
+    REQUIRE(address.encoded_legacy() == uninitialized_address);
 }
 
 // construct secret:
 
 TEST_CASE("payment_address construct secret valid expected", "[payment_address]") {
-    ec_secret secret;
-    REQUIRE(decode_base16(secret, SECRET));
-    payment_address const address(ec_private{secret});
+    auto const secret = decode_base16<ec_secret_size>(secret_hex);
+    REQUIRE(secret);
+    payment_address const address(ec_private{*secret});
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_COMPRESSED);
+    REQUIRE(address.encoded_legacy() == address_compressed);
 }
 
 TEST_CASE("payment_address construct secret testnet valid expected", "[payment_address]") {
-    ec_secret secret;
-    REQUIRE(decode_base16(secret, SECRET));
+    auto const secret = decode_base16<ec_secret_size>(secret_hex);
+    REQUIRE(secret);
 
     // MSVC CTP loses the MSB (WIF prefix) byte of the literal version when
     // using this initializer, but the MSB isn't used by payment_address.
-    payment_address const address(ec_private{secret, 0x806f});
+    payment_address const address(ec_private{*secret, 0x806f});
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_COMPRESSED_TESTNET);
+    REQUIRE(address.encoded_legacy() == address_compressed_testnet);
 }
 
 TEST_CASE("payment_address construct secret mainnet uncompressed valid expected", "[payment_address]") {
-    ec_secret secret;
-    REQUIRE(decode_base16(secret, SECRET));
-    payment_address const address(ec_private{secret, payment_address::mainnet_p2kh, false});
+    auto const secret = decode_base16<ec_secret_size>(secret_hex);
+    REQUIRE(secret);
+    payment_address const address(ec_private{*secret, payment_address::mainnet_p2kh, false});
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_UNCOMPRESSED);
+    REQUIRE(address.encoded_legacy() == address_uncompressed);
 }
 
-TEST_CASE("payment_address construct secret testnet uncompressed  valid expected", "[payment_address]") {
-    ec_secret secret;
-    REQUIRE(decode_base16(secret, SECRET));
+TEST_CASE("payment_address construct secret testnet uncompressed valid expected", "[payment_address]") {
+    auto const secret = decode_base16<ec_secret_size>(secret_hex);
+    REQUIRE(secret);
 
     // MSVC CTP loses the MSB (WIF prefix) byte of the literal version when
     // using this initializer, but the MSB isn't used by payment_address.
-    payment_address const address(ec_private{secret, 0x806f, false});
+    payment_address const address(ec_private{*secret, 0x806f, false});
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_UNCOMPRESSED_TESTNET);
+    REQUIRE(address.encoded_legacy() == address_uncompressed_testnet);
 }
 
 // construct public:
 
-TEST_CASE("payment_address construct public  valid expected", "[payment_address]") {
-    payment_address const address(ec_public(COMPRESSED));
+TEST_CASE("payment_address construct public valid expected", "[payment_address]") {
+    payment_address const address{ec_public(compressed_pubkey)};
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_COMPRESSED);
+    REQUIRE(address.encoded_legacy() == address_compressed);
 }
 
-TEST_CASE("payment_address construct public testnet  valid expected", "[payment_address]") {
-    payment_address const address(ec_public(COMPRESSED), 0x6f);
+TEST_CASE("payment_address construct public testnet valid expected", "[payment_address]") {
+    payment_address const address{ec_public(compressed_pubkey), 0x6f};
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_COMPRESSED_TESTNET);
+    REQUIRE(address.encoded_legacy() == address_compressed_testnet);
 }
 
-TEST_CASE("payment_address construct public uncompressed  valid expected", "[payment_address]") {
-    payment_address const address(ec_public(UNCOMPRESSED));
+TEST_CASE("payment_address construct public uncompressed valid expected", "[payment_address]") {
+    payment_address const address{ec_public(uncompressed_pubkey)};
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_UNCOMPRESSED);
+    REQUIRE(address.encoded_legacy() == address_uncompressed);
 }
 
-TEST_CASE("payment_address construct public testnet uncompressed  valid expected", "[payment_address]") {
-    payment_address const address(ec_public(UNCOMPRESSED), 0x6f);
+TEST_CASE("payment_address construct public testnet uncompressed valid expected", "[payment_address]") {
+    payment_address const address{ec_public(uncompressed_pubkey), 0x6f};
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_UNCOMPRESSED_TESTNET);
+    REQUIRE(address.encoded_legacy() == address_uncompressed_testnet);
 }
 
-TEST_CASE("payment_address construct public compressed from uncompressed testnet  valid expected", "[payment_address]") {
-    ec_uncompressed point;
-    REQUIRE(decode_base16(point, UNCOMPRESSED));
-    payment_address const address(ec_public{point, true}, 0x6f);
+TEST_CASE("payment_address construct public compressed from uncompressed testnet valid expected", "[payment_address]") {
+    auto const point = decode_base16<ec_uncompressed_size>(uncompressed_pubkey);
+    REQUIRE(point);
+    payment_address const address(ec_public{*point, true}, 0x6f);
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_COMPRESSED_TESTNET);
+    REQUIRE(address.encoded_legacy() == address_compressed_testnet);
 }
 
-TEST_CASE("payment_address construct public uncompressed from compressed testnet  valid expected", "[payment_address]") {
-    ec_compressed point;
-    REQUIRE(decode_base16(point, COMPRESSED));
-    payment_address const address(ec_public{point, false}, 0x6f);
+TEST_CASE("payment_address construct public uncompressed from compressed testnet valid expected", "[payment_address]") {
+    auto const point = decode_base16<ec_compressed_size>(compressed_pubkey);
+    REQUIRE(point);
+    payment_address const address(ec_public{*point, false}, 0x6f);
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_UNCOMPRESSED_TESTNET);
+    REQUIRE(address.encoded_legacy() == address_uncompressed_testnet);
 }
 
 // construct hash:
 
-TEST_CASE("payment_address construct hash  valid expected", "[payment_address]") {
-    short_hash hash;
-    REQUIRE(decode_base16(hash, COMPRESSED_HASH));
-    payment_address const address(hash);
+TEST_CASE("payment_address construct hash valid expected", "[payment_address]") {
+    auto const hash = decode_base16<short_hash_size>(compressed_hash);
+    REQUIRE(hash);
+    payment_address const address(*hash);
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_COMPRESSED);
+    REQUIRE(address.encoded_legacy() == address_compressed);
 }
 
-TEST_CASE("payment_address construct uncompressed hash testnet  valid expected", "[payment_address]") {
-    short_hash hash;
-    REQUIRE(decode_base16(hash, UNCOMPRESSED_HASH));
-    payment_address const address(hash, 0x6f);
+TEST_CASE("payment_address construct uncompressed hash testnet valid expected", "[payment_address]") {
+    auto const hash = decode_base16<short_hash_size>(uncompressed_hash);
+    REQUIRE(hash);
+    payment_address const address(*hash, 0x6f);
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_UNCOMPRESSED_TESTNET);
+    REQUIRE(address.encoded_legacy() == address_uncompressed_testnet);
 }
 
 // construct script:
 
-TEST_CASE("payment_address construct script  valid expected", "[payment_address]") {
+TEST_CASE("payment_address construct script valid expected", "[payment_address]") {
     script ops;
-    REQUIRE(ops.from_string(SCRIPT));
+    REQUIRE(ops.from_string(script_text));
     payment_address const address(ops);
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_SCRIPT);
+    REQUIRE(address.encoded_legacy() == address_script);
 }
 
-TEST_CASE("payment_address construct script testnet  valid expected", "[payment_address]") {
+TEST_CASE("payment_address construct script testnet valid expected", "[payment_address]") {
     script ops;
-    REQUIRE(ops.from_string(SCRIPT));
+    REQUIRE(ops.from_string(script_text));
     payment_address const address(ops, 0xc4);
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_SCRIPT_TESTNET);
+    REQUIRE(address.encoded_legacy() == address_script_testnet);
 }
 
 // construct payment:
 
-TEST_CASE("payment_address construct payment  valid expected", "[payment_address]") {
-    payment pay;
-    REQUIRE(decode_base16(pay, PAYMENT));
-    payment_address const address(pay);
+TEST_CASE("payment_address construct payment valid expected", "[payment_address]") {
+    auto const pay = decode_base16<payment_size>(payment_hex);
+    REQUIRE(pay);
+    payment_address const address(*pay);
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_SCRIPT);
+    REQUIRE(address.encoded_legacy() == address_script);
 }
 
-TEST_CASE("payment_address construct payment testnet  valid expected", "[payment_address]") {
-    payment pay;
-    REQUIRE(decode_base16(pay, PAYMENT_TESTNET));
-    payment_address const address(pay);
+TEST_CASE("payment_address construct payment testnet valid expected", "[payment_address]") {
+    auto const pay = decode_base16<payment_size>(payment_testnet);
+    REQUIRE(pay);
+    payment_address const address(*pay);
     REQUIRE(address);
-    REQUIRE(address.encoded_legacy() == ADDRESS_SCRIPT_TESTNET);
+    REQUIRE(address.encoded_legacy() == address_script_testnet);
 }
 
 // construct copy:
 
-TEST_CASE("payment_address construct copy  valid expected", "[payment_address]") {
-    payment pay;
-    REQUIRE(decode_base16(pay, PAYMENT));
-    payment_address const address(pay);
+TEST_CASE("payment_address construct copy valid expected", "[payment_address]") {
+    auto const pay = decode_base16<payment_size>(payment_hex);
+    REQUIRE(pay);
+    payment_address const address(*pay);
     payment_address const copy(address);
     REQUIRE(copy);
-    REQUIRE(copy.encoded_legacy() == ADDRESS_SCRIPT);
+    REQUIRE(copy.encoded_legacy() == address_script);
 }
 
 // version property:
 
 TEST_CASE("payment_address version default mainnet", "[payment_address]") {
-    payment_address const address(ec_public(COMPRESSED));
+    payment_address const address{ec_public(compressed_pubkey)};
     REQUIRE(address.version() == payment_address::mainnet_p2kh);
 }
 
 TEST_CASE("payment_address version testnet testnet", "[payment_address]") {
     uint8_t const testnet = 0x6f;
-    payment_address const address(ec_public(COMPRESSED), testnet);
+    payment_address const address{ec_public(compressed_pubkey), testnet};
     REQUIRE(address);
     REQUIRE(address.version() == testnet);
 }
 
 TEST_CASE("payment_address version script valid mainnet p2sh", "[payment_address]") {
     script ops;
-    REQUIRE(ops.from_string(SCRIPT));
+    REQUIRE(ops.from_string(script_text));
     payment_address const address(ops);
     REQUIRE(address);
     REQUIRE(address.version() == payment_address::mainnet_p2sh);
@@ -241,9 +241,9 @@ TEST_CASE("payment_address version script valid mainnet p2sh", "[payment_address
 // hash property:
 
 TEST_CASE("payment_address hash compressed point expected", "[payment_address]") {
-    payment_address const address(ec_public(COMPRESSED));
+    payment_address const address{ec_public(compressed_pubkey)};
     REQUIRE(address);
-    REQUIRE(encode_base16(address.hash20()) == COMPRESSED_HASH);
+    REQUIRE(encode_base16(address.hash20()) == compressed_hash);
 }
 
 #if defined(KTH_CURRENCY_BCH)

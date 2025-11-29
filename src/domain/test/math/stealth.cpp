@@ -10,72 +10,72 @@ using namespace kd;
 // TODO(legacy): split out individual functions and standardize test names.
 // Start Test Suite: stealth tests
 
-#define SCAN_PRIVATE "fa63521e333e4b9f6a98a142680d3aef4d8e7f79723ce0043691db55c36bd905"
-#define SCAN_PUBLIC "034ea70b28d607bf3a2493102001cab35689cf2152530bf8bf8a5b594af6ae31d0"
+constexpr char scan_private_hex[] = "fa63521e333e4b9f6a98a142680d3aef4d8e7f79723ce0043691db55c36bd905";
+constexpr char scan_public_hex[] = "034ea70b28d607bf3a2493102001cab35689cf2152530bf8bf8a5b594af6ae31d0";
 
-#define SPEND_PRIVATE "dcc1250b51c0f03ae4e978e0256ede51dc1144e345c926262b9717b1bcc9bd1b"
-#define SPEND_PUBLIC "03d5b3853bbee336b551ff999b0b1d656e65a7649037ae0dcb02b3c4ff5f29e5be"
+constexpr char spend_private_hex[] = "dcc1250b51c0f03ae4e978e0256ede51dc1144e345c926262b9717b1bcc9bd1b";
+constexpr char spend_public_hex[] = "03d5b3853bbee336b551ff999b0b1d656e65a7649037ae0dcb02b3c4ff5f29e5be";
 
-#define EPHEMERAL_PRIVATE "5f70a77b32260a7a32c62242381fba2cf40c0e209e665a7959418eae4f2da22b"
-#define EPHEMERAL_PUBLIC "0387ff9128d18ddcec0a8119589a62b88bc035cb9cd6db08ce5ff702a78ef8f922"
+constexpr char ephemeral_private_hex[] = "5f70a77b32260a7a32c62242381fba2cf40c0e209e665a7959418eae4f2da22b";
+constexpr char ephemeral_public_hex[] = "0387ff9128d18ddcec0a8119589a62b88bc035cb9cd6db08ce5ff702a78ef8f922";
 
-#define STEALTH_PRIVATE "280a9931c0a7b8f9bed96bad35f69a1431817fb77043fdff641ad48ce1e4411e"
-#define STEALTH_PUBLIC "0305f6b99a44a2bdec8b484ffcee561cf9a0c3b7ea92ea8e6334e6fbc4f1c17899"
+constexpr char stealth_private_hex[] = "280a9931c0a7b8f9bed96bad35f69a1431817fb77043fdff641ad48ce1e4411e";
+constexpr char stealth_public_hex[] = "0305f6b99a44a2bdec8b484ffcee561cf9a0c3b7ea92ea8e6334e6fbc4f1c17899";
 
 // $ bx ec-add 03d5b3853bbee336b551ff999b0b1d656e65a7649037ae0dcb02b3c4ff5f29e5be 4b4974266ee6c8bed9eff2cd1087bbc1101f17bad9c37814f8561b67f550c544 | bx ec-to-address
-#define P2PKH_ADDRESS "1Gvq8pSTRocNLDyf858o4PL3yhZm5qQDgB"
+constexpr char p2pkh_address[] = "1Gvq8pSTRocNLDyf858o4PL3yhZm5qQDgB";
 
 // $ bx ec-add 03d5b3853bbee336b551ff999b0b1d656e65a7649037ae0dcb02b3c4ff5f29e5be 4b4974266ee6c8bed9eff2cd1087bbc1101f17bad9c37814f8561b67f550c544 | bx ec-to-address - v 111
-// #define P2PKH_ADDRESS_TESTNET "mwSnRsXSEq3d7LTGqe7AtJYNqhATwHdhMb"
+// #define p2pkh_address_TESTNET "mwSnRsXSEq3d7LTGqe7AtJYNqhATwHdhMb"
 
 TEST_CASE("stealth round trip", "[stealth]") {
-    ec_secret expected_stealth_private;
-    REQUIRE(decode_base16(expected_stealth_private, STEALTH_PRIVATE));
+    auto const expected_stealth_private = decode_base16<ec_secret_size>(stealth_private_hex);
+    REQUIRE(expected_stealth_private);
 
     // Receiver generates a new scan private.
-    ec_secret scan_private;
+    auto const scan_private = decode_base16<ec_secret_size>(scan_private_hex);
+    REQUIRE(scan_private);
     ec_compressed scan_public;
-    REQUIRE(decode_base16(scan_private, SCAN_PRIVATE));
-    REQUIRE(secret_to_public(scan_public, scan_private));
-    REQUIRE(encode_base16(scan_public) == SCAN_PUBLIC);
+    REQUIRE(secret_to_public(scan_public, *scan_private));
+    REQUIRE(encode_base16(scan_public) == scan_public_hex);
 
     // Receiver generates a new spend private.
-    ec_secret spend_private;
+    auto const spend_private = decode_base16<ec_secret_size>(spend_private_hex);
+    REQUIRE(spend_private);
     ec_compressed spend_public;
-    REQUIRE(decode_base16(spend_private, SPEND_PRIVATE));
-    REQUIRE(secret_to_public(spend_public, spend_private));
-    REQUIRE(encode_base16(spend_public) == SPEND_PUBLIC);
+    REQUIRE(secret_to_public(spend_public, *spend_private));
+    REQUIRE(encode_base16(spend_public) == spend_public_hex);
 
     // Sender generates a new ephemeral key.
-    ec_secret ephemeral_private;
+    auto const ephemeral_private = decode_base16<ec_secret_size>(ephemeral_private_hex);
+    REQUIRE(ephemeral_private);
     ec_compressed ephemeral_public;
-    REQUIRE(decode_base16(ephemeral_private, EPHEMERAL_PRIVATE));
-    REQUIRE(secret_to_public(ephemeral_public, ephemeral_private));
-    REQUIRE(encode_base16(ephemeral_public) == EPHEMERAL_PUBLIC);
+    REQUIRE(secret_to_public(ephemeral_public, *ephemeral_private));
+    REQUIRE(encode_base16(ephemeral_public) == ephemeral_public_hex);
 
     // Sender derives stealth public, requiring ephemeral private.
     ec_compressed sender_public;
-    REQUIRE(uncover_stealth(sender_public, scan_public, ephemeral_private, spend_public));
-    REQUIRE(encode_base16(sender_public) == STEALTH_PUBLIC);
+    REQUIRE(uncover_stealth(sender_public, scan_public, *ephemeral_private, spend_public));
+    REQUIRE(encode_base16(sender_public) == stealth_public_hex);
 
     // Receiver derives stealth public, requiring scan private.
     ec_compressed receiver_public;
-    REQUIRE(uncover_stealth(receiver_public, ephemeral_public, scan_private, spend_public));
-    REQUIRE(encode_base16(receiver_public) == STEALTH_PUBLIC);
+    REQUIRE(uncover_stealth(receiver_public, ephemeral_public, *scan_private, spend_public));
+    REQUIRE(encode_base16(receiver_public) == stealth_public_hex);
 
     // Only reciever can derive stealth private, as it requires both scan and spend private.
-    ec_secret stealth_private;
-    REQUIRE(uncover_stealth(stealth_private, ephemeral_public, scan_private, spend_private));
+    ec_secret stealth_priv;
+    REQUIRE(uncover_stealth(stealth_priv, ephemeral_public, *scan_private, *spend_private));
 
     // This shows that both parties have actually generated stealth public.
-    ec_compressed stealth_public;
-    REQUIRE(secret_to_public(stealth_public, stealth_private));
-    REQUIRE(encode_base16(stealth_public) == STEALTH_PUBLIC);
+    ec_compressed stealth_pub;
+    REQUIRE(secret_to_public(stealth_pub, stealth_priv));
+    REQUIRE(encode_base16(stealth_pub) == stealth_public_hex);
 
     // Both parties therefore have the ability to generate the p2pkh address.
     // versioning: stealth_address::main corresponds to payment_address::main_p2pkh
-    wallet::payment_address address(wallet::ec_public{stealth_public}, wallet::payment_address::mainnet_p2kh);
-    REQUIRE(address.encoded_legacy() == P2PKH_ADDRESS);
+    wallet::payment_address address(wallet::ec_public{stealth_pub}, wallet::payment_address::mainnet_p2kh);
+    REQUIRE(address.encoded_legacy() == p2pkh_address);
 }
 
 TEST_CASE("verify string constructor", "[stealth]") {

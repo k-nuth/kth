@@ -7,14 +7,12 @@
 #include "doctest.h"
 
 #include <kth/domain/chain/transaction.hpp>
-// #include <kth/domain/utility/container_source.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/container_source.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/istream_reader.hpp>
 
 
-using kth::base16_literal;
 using kth::data_chunk;
 using kth::data_source;
 using kth::istream_reader;

@@ -7,8 +7,9 @@
 using namespace kth;
 using namespace kd;
 
+namespace {
+
 // Test helper.
-static
 bool all_valid(chain::transaction::list const& transactions) {
     auto valid = true;
 
@@ -29,6 +30,8 @@ bool all_valid(chain::transaction::list const& transactions) {
     return valid;
 }
 
+} // anonymous namespace
+
 // Start Test Suite: chain block tests
 
 TEST_CASE("block proof2 genesis mainnet expected", "[chain block]") {
@@ -37,96 +40,110 @@ TEST_CASE("block proof2 genesis mainnet expected", "[chain block]") {
 }
 
 TEST_CASE("block locator size zero backoff returns top plus one", "[chain block]") {
-    size_t top = 7u;
+    constexpr size_t top = 7u;
     REQUIRE(top + 1 == chain::block::locator_size(top));
 }
 
 TEST_CASE("block locator size positive backoff returns log plus eleven", "[chain block]") {
-    size_t top = 138u;
+    constexpr size_t top = 138u;
     REQUIRE(18u == chain::block::locator_size(top));
 }
 
 TEST_CASE("block locator heights zero backoff returns top to zero", "[chain block]") {
-    const chain::block::indexes expected{7u, 6u, 5u, 4u, 3u, 2u, 1u, 0u};
-    size_t top = 7u;
-    auto result = chain::block::locator_heights(top);
+    constexpr size_t top = 7u;
+    constexpr chain::block::indexes expected{7u, 6u, 5u, 4u, 3u, 2u, 1u, 0u};
+    auto const result = chain::block::locator_heights(top);
     REQUIRE(expected.size() == result.size());
     REQUIRE(expected == result);
 }
 
 TEST_CASE("block locator heights positive backoff returns top plus log offset to zero", "[chain block]") {
-    const chain::block::indexes expected{
+    constexpr chain::block::indexes expected {
         138u, 137u, 136u, 135u, 134u, 133u, 132u, 131u, 130u,
-        129u, 128u, 126u, 122u, 114u, 98u, 66u, 2u, 0u};
+        129u, 128u, 126u, 122u, 114u, 98u, 66u, 2u, 0u
+    };
 
-    size_t top = 138u;
-    auto result = chain::block::locator_heights(top);
+    constexpr size_t top = 138u;
+    auto const result = chain::block::locator_heights(top);
     REQUIRE(expected.size() == result.size());
     REQUIRE(expected == result);
 }
 
 TEST_CASE("block constructor 1 always invalid", "[chain block]") {
-    chain::block instance;
+    chain::block const instance;
     REQUIRE( ! instance.is_valid());
 }
 
 TEST_CASE("block constructor 2 always equals params", "[chain block]") {
-    chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-                               531234u,
-                               6523454u,
-                               68644u);
+    chain::header const header {
+        10u,
+        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        531234u,
+        6523454u,
+        68644u
+    };
 
     chain::transaction::list const transactions{
         chain::transaction(1, 48, {}, {}),
         chain::transaction(2, 32, {}, {}),
-        chain::transaction(4, 16, {}, {})};
+        chain::transaction(4, 16, {}, {})
+    };
 
-    chain::block instance(header, transactions);
+    chain::block const instance(header, transactions);
     REQUIRE(instance.is_valid());
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
 }
 
 TEST_CASE("block constructor 3 always equals params", "[chain block]") {
-    chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-                               531234u,
-                               6523454u,
-                               68644u);
+    chain::header const header {
+        10u,
+        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        531234u,
+        6523454u,
+        68644u
+    };
 
     chain::transaction::list const transactions{
         chain::transaction(1, 48, {}, {}),
         chain::transaction(2, 32, {}, {}),
-        chain::transaction(4, 16, {}, {})};
+        chain::transaction(4, 16, {}, {})
+    };
 
     // These must be non-const.
     chain::header dup_header(header);
     chain::transaction::list dup_transactions(transactions);
 
-    chain::block instance(std::move(dup_header), std::move(dup_transactions));
+    chain::block const instance {
+        std::move(dup_header), 
+        std::move(dup_transactions)
+    };
+
     REQUIRE(instance.is_valid());
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
 }
 
 TEST_CASE("block constructor 4 always equals params", "[chain block]") {
-    chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-                               531234u,
-                               6523454u,
-                               68644u);
+    chain::header const header {
+        10u,
+        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        531234u,
+        6523454u,
+        68644u
+    };
 
     chain::transaction::list const transactions{
         chain::transaction(1, 48, {}, {}),
         chain::transaction(2, 32, {}, {}),
-        chain::transaction(4, 16, {}, {})};
+        chain::transaction(4, 16, {}, {})
+    };
 
-    chain::block value(header, transactions);
-    chain::block instance(value);
+    chain::block const value(header, transactions);
+    chain::block const instance(value);
     REQUIRE(instance.is_valid());
     REQUIRE(value == instance);
     REQUIRE(header == instance.header());
@@ -134,34 +151,38 @@ TEST_CASE("block constructor 4 always equals params", "[chain block]") {
 }
 
 TEST_CASE("block constructor 5 always equals params", "[chain block]") {
-    chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-                               531234u,
-                               6523454u,
-                               68644u);
+    chain::header const header {
+        10u,
+        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        531234u,
+        6523454u,
+        68644u
+    };
 
     chain::transaction::list const transactions{
         chain::transaction(1, 48, {}, {}),
         chain::transaction(2, 32, {}, {}),
-        chain::transaction(4, 16, {}, {})};
+        chain::transaction(4, 16, {}, {})
+    };
 
     // This must be non-const.
     chain::block value(header, transactions);
 
-    chain::block instance(std::move(value));
+    chain::block const instance(std::move(value));
+
     REQUIRE(instance.is_valid());
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
 }
 
 TEST_CASE("block  hash  always  returns header hash", "[chain block]") {
-    chain::block instance;
+    chain::block const instance;
     REQUIRE(instance.header().hash() == instance.hash());
 }
 
 TEST_CASE("block  is valid merkle root  uninitialized  returns true", "[chain block]") {
-    chain::block instance;
+    chain::block const instance;
     REQUIRE(instance.is_valid_merkle_root());
 }
 
@@ -172,7 +193,7 @@ TEST_CASE("block  is valid merkle root  non empty tx invalid block  returns fals
 }
 
 TEST_CASE("block  is valid merkle root  valid  returns true", "[chain block]") {
-    auto const raw_block = to_chunk(base16_literal(
+     auto const raw_block = to_chunk(
         "010000007f110631052deeee06f0754a3629ad7663e56359fd5f3aa7b3e30a0000000"
         "0005f55996827d9712147a8eb6d7bae44175fe0bcfa967e424a25bfe9f4dc118244d6"
         "7fb74c9d8e2f1bea5ee82a03010000000100000000000000000000000000000000000"
@@ -194,7 +215,7 @@ TEST_CASE("block  is valid merkle root  valid  returns true", "[chain block]") {
         "6239861e49507f09b7568189efe8d327c3384a4e488f8c534484835f8020b3669e5ae"
         "bffffffff0200ac23fc060000001976a914b9a2c9700ff9519516b21af338d28d53dd"
         "f5349388ac00743ba40b0000001976a914eb675c349c474bec8dea2d79d12cff6f330"
-        "ab48788ac00000000"));
+        "ab48788ac00000000"_base16);
 
     byte_reader reader(raw_block);
     auto const result = chain::block::from_data(reader);
@@ -205,19 +226,19 @@ TEST_CASE("block  is valid merkle root  valid  returns true", "[chain block]") {
 // Start Test Suite: block serialization tests
 
 TEST_CASE("block from data insufficient bytes  failure", "[block serialization]") {
-    data_chunk data(10);
+    data_chunk const data(10);
     byte_reader reader(data);
     auto const result = chain::block::from_data(reader);
     REQUIRE( ! result);
 }
 
 TEST_CASE("block from data insufficient transaction bytes  failure", "[block serialization]") {
-    data_chunk const data = to_chunk(base16_literal(
+    data_chunk const data = to_chunk(
         "010000007f110631052deeee06f0754a3629ad7663e56359fd5f3aa7b3e30a00"
         "000000005f55996827d9712147a8eb6d7bae44175fe0bcfa967e424a25bfe9f4"
         "dc118244d67fb74c9d8e2f1bea5ee82a03010000000100000000000000000000"
         "00000000000000000000000000000000000000000000ffffffff07049d8e2f1b"
-        "0114ffffffff0100f2052a0100000043410437b36a7221bc977dce712728a954"));
+        "0114ffffffff0100f2052a0100000043410437b36a7221bc977dce712728a954"_base16);
 
     byte_reader reader(data);
     auto const result = chain::block::from_data(reader);
@@ -275,7 +296,7 @@ TEST_CASE("block from data genesis mainnet  success", "[block serialization]") {
     REQUIRE(genesis.header().serialized_size() == 80u);
 
     // Save genesis block.
-    auto raw_block = genesis.to_data();
+    auto const raw_block = genesis.to_data();
     REQUIRE(raw_block.size() == 285u);
 
     // Reload genesis block.
@@ -297,7 +318,7 @@ TEST_CASE("block  factory from data 2  genesis mainnet  success", "[block serial
     REQUIRE(genesis.header().serialized_size() == 80u);
 
     // Save genesis block.
-    auto raw_block = genesis.to_data();
+    auto const raw_block = genesis.to_data();
     REQUIRE(raw_block.size() == 285u);
 
     // Reload genesis block.
@@ -319,7 +340,7 @@ TEST_CASE("block  factory from data 3  genesis mainnet  success", "[block serial
     REQUIRE(genesis.header().serialized_size() == 80u);
 
     // Save genesis block.
-    data_chunk raw_block = genesis.to_data();
+    data_chunk const raw_block = genesis.to_data();
     REQUIRE(raw_block.size() == 285u);
 
     // Reload genesis block.
@@ -340,13 +361,13 @@ TEST_CASE("block  factory from data 3  genesis mainnet  success", "[block serial
 // Start Test Suite: block generate merkle root tests
 
 TEST_CASE("block  generate merkle root  block with zero transactions  matches null hash", "[block generate merkle root]") {
-    chain::block empty;
+    chain::block const empty;
     REQUIRE(empty.generate_merkle_root() == null_hash);
 }
 
 TEST_CASE("block  generate merkle root  block with multiple transactions  matches historic data", "[block generate merkle root]") {
     // encodes the 100,000 block data.
-    data_chunk const raw = to_chunk(base16_literal(
+    data_chunk const raw = to_chunk(
         "010000007f110631052deeee06f0754a3629ad7663e56359fd5f3aa7b3e30a00"
         "000000005f55996827d9712147a8eb6d7bae44175fe0bcfa967e424a25bfe9f4"
         "dc118244d67fb74c9d8e2f1bea5ee82a03010000000100000000000000000000"
@@ -369,7 +390,7 @@ TEST_CASE("block  generate merkle root  block with multiple transactions  matche
         "01260f09b8520b196c2f6ec3d06239861e49507f09b7568189efe8d327c3384a"
         "4e488f8c534484835f8020b3669e5aebffffffff0200ac23fc060000001976a9"
         "14b9a2c9700ff9519516b21af338d28d53ddf5349388ac00743ba40b00000019"
-        "76a914eb675c349c474bec8dea2d79d12cff6f330ab48788ac00000000"));
+        "76a914eb675c349c474bec8dea2d79d12cff6f330ab48788ac00000000"_base16);
 
     byte_reader reader(raw);
     auto const result = chain::block::from_data(reader);
@@ -387,29 +408,34 @@ TEST_CASE("block  generate merkle root  block with multiple transactions  matche
 }
 
 TEST_CASE("block  header accessor  always  returns initialized value", "[block generate merkle root]") {
-    chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-                               531234u,
-                               6523454u,
-                               68644u);
+    chain::header const header {
+        10u,
+        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        531234u,
+        6523454u,
+        68644u
+    };
 
     chain::transaction::list const transactions{
         chain::transaction(1, 48, {}, {}),
         chain::transaction(2, 32, {}, {}),
-        chain::transaction(4, 16, {}, {})};
+        chain::transaction(4, 16, {}, {})
+    };
 
-    chain::block instance(header, transactions);
+    chain::block const instance(header, transactions);
     REQUIRE(header == instance.header());
 }
 
 TEST_CASE("block  header setter 1  roundtrip  success", "[block generate merkle root]") {
-    chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-                               531234u,
-                               6523454u,
-                               68644u);
+    chain::header const header {
+        10u,
+        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        531234u,
+        6523454u,
+        68644u
+    };
 
     chain::block instance;
     REQUIRE(header != instance.header());
@@ -418,12 +444,14 @@ TEST_CASE("block  header setter 1  roundtrip  success", "[block generate merkle 
 }
 
 TEST_CASE("block  header setter 2  roundtrip  success", "[block generate merkle root]") {
-    chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-                               531234u,
-                               6523454u,
-                               68644u);
+    chain::header const header {
+        10u,
+        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        531234u,
+        6523454u,
+        68644u
+    };
 
     // This must be non-const.
     chain::header dup_header(header);
@@ -435,19 +463,22 @@ TEST_CASE("block  header setter 2  roundtrip  success", "[block generate merkle 
 }
 
 TEST_CASE("block  transactions accessor  always  returns initialized value", "[block generate merkle root]") {
-    chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-                               531234u,
-                               6523454u,
-                               68644u);
+    chain::header const header {
+        10u,
+        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        531234u,
+        6523454u,
+        68644u
+    };
 
     chain::transaction::list const transactions{
         chain::transaction(1, 48, {}, {}),
         chain::transaction(2, 32, {}, {}),
-        chain::transaction(4, 16, {}, {})};
+        chain::transaction(4, 16, {}, {})
+    };
 
-    chain::block instance(header, transactions);
+    chain::block const instance(header, transactions);
     REQUIRE(transactions == instance.transactions());
 }
 
@@ -455,7 +486,8 @@ TEST_CASE("block  transactions setter 1  roundtrip  success", "[block generate m
     chain::transaction::list const transactions{
         chain::transaction(1, 48, {}, {}),
         chain::transaction(2, 32, {}, {}),
-        chain::transaction(4, 16, {}, {})};
+        chain::transaction(4, 16, {}, {})
+    };
 
     chain::block instance;
     REQUIRE(transactions != instance.transactions());
@@ -467,7 +499,8 @@ TEST_CASE("block  transactions setter 2  roundtrip  success", "[block generate m
     chain::transaction::list const transactions{
         chain::transaction(1, 48, {}, {}),
         chain::transaction(2, 32, {}, {}),
-        chain::transaction(4, 16, {}, {})};
+        chain::transaction(4, 16, {}, {})
+    };
 
     // This must be non-const.
     chain::transaction::list dup_transactions(transactions);
@@ -479,17 +512,20 @@ TEST_CASE("block  transactions setter 2  roundtrip  success", "[block generate m
 }
 
 TEST_CASE("block  operator assign equals  always  matches equivalent", "[block generate merkle root]") {
-    chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-                               531234u,
-                               6523454u,
-                               68644u);
+    chain::header const header(
+        10u,
+        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        531234u,
+        6523454u,
+        68644u
+    );
 
     chain::transaction::list const transactions{
         chain::transaction(1, 48, {}, {}),
         chain::transaction(2, 32, {}, {}),
-        chain::transaction(4, 16, {}, {})};
+        chain::transaction(4, 16, {}, {})
+    };
 
     // This must be non-const.
     chain::block value(header, transactions);
@@ -504,66 +540,86 @@ TEST_CASE("block  operator assign equals  always  matches equivalent", "[block g
 }
 
 TEST_CASE("block  operator boolean equals  duplicates  returns true", "[block generate merkle root]") {
-    const chain::block expected(
-        chain::header(10u,
-                      hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                      hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-                      531234u,
-                      6523454u,
-                      68644u),
-        {chain::transaction(1, 48, {}, {}),
-         chain::transaction(2, 32, {}, {}),
-         chain::transaction(4, 16, {}, {})});
+    chain::block const expected(
+        chain::header {
+            10u,
+            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            531234u,
+            6523454u,
+            68644u
+        },
+        {
+            chain::transaction(1, 48, {}, {}),
+            chain::transaction(2, 32, {}, {}),
+            chain::transaction(4, 16, {}, {})
+        }
+    );
 
-    chain::block instance(expected);
+    chain::block const instance(expected);
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("block  operator boolean equals  differs  returns false", "[block generate merkle root]") {
-    const chain::block expected(
-        chain::header(10u,
-                      hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                      hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-                      531234u,
-                      6523454u,
-                      68644u),
-        {chain::transaction(1, 48, {}, {}),
-         chain::transaction(2, 32, {}, {}),
-         chain::transaction(4, 16, {}, {})});
+    chain::block const expected(
+        chain::header {
+            10u,
+            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            531234u,
+            6523454u,
+            68644u
+        },
+        {
+            chain::transaction(1, 48, {}, {}),
+            chain::transaction(2, 32, {}, {}),
+            chain::transaction(4, 16, {}, {})
+        }
+    );
 
-    chain::block instance;
+    chain::block const instance;
     REQUIRE( ! (instance == expected));
 }
 
 TEST_CASE("block  operator boolean not equals  duplicates  returns false", "[block generate merkle root]") {
-    const chain::block expected(
-        chain::header(10u,
-                      hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                      hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-                      531234u,
-                      6523454u,
-                      68644u),
-        {chain::transaction(1, 48, {}, {}),
-         chain::transaction(2, 32, {}, {}),
-         chain::transaction(4, 16, {}, {})});
+    chain::block const expected {
+        chain::header {
+            10u,
+            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            531234u,
+            6523454u,
+            68644u
+        },
+        {
+            chain::transaction(1, 48, {}, {}),
+            chain::transaction(2, 32, {}, {}),
+            chain::transaction(4, 16, {}, {})
+        }
+    );
 
-    chain::block instance(expected);
+    chain::block const instance(expected);
     REQUIRE( ! (instance != expected));
 }
 
 TEST_CASE("block  operator boolean not equals  differs  returns true", "[block generate merkle root]") {
-    const chain::block expected(
-        chain::header(10u,
-                      hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                      hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
-                      531234u,
-                      6523454u,
-                      68644u),
-        {chain::transaction(1, 48, {}, {}),
-         chain::transaction(2, 32, {}, {}),
-         chain::transaction(4, 16, {}, {})});
+    chain::block const expected(
+        chain::header {
+            10u,
+            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            531234u,
+            6523454u,
+            68644u
+        },
+        {
+            chain::transaction(1, 48, {}, {}),
+            chain::transaction(2, 32, {}, {}),
+            chain::transaction(4, 16, {}, {})
+        }
+    );
 
-    chain::block instance;
+    chain::block const instance;
     REQUIRE(instance != expected);
 }
 
@@ -572,7 +628,7 @@ TEST_CASE("block  operator boolean not equals  differs  returns true", "[block g
 // Start Test Suite: block is distinct transaction set tests
 
 TEST_CASE("block  distinct transactions  empty  true", "[block is distinct transaction set]") {
-    chain::block value;
+    chain::block const value;
     REQUIRE(value.is_distinct_transaction_set());
 }
 
@@ -608,9 +664,9 @@ TEST_CASE("validate block  is distinct tx set  partialy distinct not adjacent by
 
 #if defined(KTH_CURRENCY_BCH)
 TEST_CASE("validate block is cash pow valid true", "[block is distinct transaction set]") {
-    uint32_t old_bits = 402736949;
-    const domain::chain::compact bits(old_bits);
-    uint256_t target(bits);
+    constexpr uint32_t old_bits = 402736949;
+    constexpr domain::chain::compact bits(old_bits);
+    constexpr uint256_t target(bits);
     REQUIRE(domain::chain::compact(domain::chain::chain_state::difficulty_adjustment_cash(target)).normal() == 402757890);
 }
 #endif  //KTH_CURRENCY_BCH
@@ -620,7 +676,7 @@ TEST_CASE("validate block is cash pow valid true", "[block is distinct transacti
 // Start Test Suite: block is forward reference tests
 
 TEST_CASE("block  is forward reference  no transactions  false", "[block is forward reference]") {
-    chain::block value;
+    chain::block const value;
     REQUIRE( ! value.is_forward_reference());
 }
 
@@ -631,9 +687,9 @@ TEST_CASE("block  is forward reference  multiple empty transactions  false", "[b
 }
 
 TEST_CASE("block  is forward reference  backward reference  false", "[block is forward reference]") {
+    chain::transaction const before{2, 0, {}, {}};
+    chain::transaction const after{1, 0, {{{before.hash(), 0}, {}, 0}}, {}};
     chain::block value;
-    chain::transaction before{2, 0, {}, {}};
-    chain::transaction after{1, 0, {{{before.hash(), 0}, {}, 0}}, {}};
     value.set_transactions({before, after});
     REQUIRE( ! value.is_forward_reference());
 }
@@ -645,20 +701,18 @@ TEST_CASE("block  is forward reference  duplicate transactions  false", "[block 
 }
 
 TEST_CASE("block  is forward reference  coinbase and multiple empty transactions  false", "[block is forward reference]") {
+    chain::transaction const coinbase{1, 0, {{{null_hash, chain::point::null_index}, {}, 0}}, {}};
     chain::block value;
-    chain::transaction coinbase{1, 0, {{{null_hash, chain::point::null_index}, {}, 0}}, {}};
     value.set_transactions({coinbase, {2, 0, {}, {}}, {3, 0, {}, {}}});
     REQUIRE( ! value.is_forward_reference());
 }
 
 TEST_CASE("block  is forward reference  forward reference  true", "[block is forward reference]") {
+    chain::transaction const after{2, 0, {}, {}};
+    chain::transaction const before{1, 0, {{{after.hash(), 0}, {}, 0}}, {}};
     chain::block value;
-    chain::transaction after{2, 0, {}, {}};
-    chain::transaction before{1, 0, {{{after.hash(), 0}, {}, 0}}, {}};
     value.set_transactions({before, after});
     REQUIRE(value.is_forward_reference());
 }
-
-// End Test Suite
 
 // End Test Suite

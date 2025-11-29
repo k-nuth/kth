@@ -188,7 +188,7 @@ TEST_CASE("script one hash literal same", "[script]") {
 }
 
 TEST_CASE("script from data testnet 119058 invalid op codes success", "[script]") {
-    auto const raw_script = to_chunk(base16_literal("0130323066643366303435313438356531306633383837363437356630643265396130393739343332353534313766653139316438623963623230653430643863333030326431373463336539306366323433393231383761313037623634373337633937333135633932393264653431373731636565613062323563633534353732653302ae"));
+    auto const raw_script = to_chunk("0130323066643366303435313438356531306633383837363437356630643265396130393739343332353534313766653139316438623963623230653430643863333030326431373463336539306366323433393231383761313037623634373337633937333135633932393264653431373731636565613062323563633534353732653302ae"_base16);
 
     script parsed;
     byte_reader reader(raw_script);
@@ -198,7 +198,7 @@ TEST_CASE("script from data testnet 119058 invalid op codes success", "[script]"
 }
 
 TEST_CASE("script from data parse success", "[script]") {
-    auto const raw_script = to_chunk(base16_literal("3045022100ff1fc58dbd608e5e05846a8e6b45a46ad49878aef6879ad1a7cf4c5a7f853683022074a6a10f6053ab3cddc5620d169c7374cd42c1416c51b9744db2c8d9febfb84d01"));
+    auto const raw_script = to_chunk("3045022100ff1fc58dbd608e5e05846a8e6b45a46ad49878aef6879ad1a7cf4c5a7f853683022074a6a10f6053ab3cddc5620d169c7374cd42c1416c51b9744db2c8d9febfb84d01"_base16);
 
     byte_reader reader(raw_script);
     auto result = script::from_data(reader, true);
@@ -207,7 +207,7 @@ TEST_CASE("script from data parse success", "[script]") {
 }
 
 TEST_CASE("script from data to data roundtrips", "[script]") {
-    auto const normal_output_script = to_chunk(base16_literal("76a91406ccef231c2db72526df9338894ccf9355e8f12188ac"));
+    auto const normal_output_script = to_chunk("76a91406ccef231c2db72526df9338894ccf9355e8f12188ac"_base16);
 
     byte_reader reader(normal_output_script);
     auto result = script::from_data(reader, false);
@@ -227,24 +227,7 @@ TEST_CASE("script from data to data roundtrips", "[script]") {
 }
 
 TEST_CASE("script from data to data weird roundtrips", "[script]") {
-    auto const weird_raw_script = to_chunk(base16_literal(
-        "0c49206c69656b20636174732e483045022100c7387f64e1f4"
-        "cf654cae3b28a15f7572106d6c1319ddcdc878e636ccb83845"
-        "e30220050ebf440160a4c0db5623e0cb1562f46401a7ff5b87"
-        "7aa03415ae134e8c71c901534d4f0176519c6375522103b124"
-        "c48bbff7ebe16e7bd2b2f2b561aa53791da678a73d2777cc1c"
-        "a4619ab6f72103ad6bb76e00d124f07a22680e39debd4dc4bd"
-        "b1aa4b893720dd05af3c50560fdd52af67529c63552103b124"
-        "c48bbff7ebe16e7bd2b2f2b561aa53791da678a73d2777cc1c"
-        "a4619ab6f721025098a1d5a338592bf1e015468ec5a8fafc1f"
-        "c9217feb5cb33597f3613a2165e9210360cfabc01d52eaaeb3"
-        "976a5de05ff0cfa76d0af42d3d7e1b4c233ee8a00655ed2103"
-        "f571540c81fd9dbf9622ca00cfe95762143f2eab6b65150365"
-        "bb34ac533160432102bc2b4be1bca32b9d97e2d6fb255504f4"
-        "bc96e01aaca6e29bfa3f8bea65d8865855af672103ad6bb76e"
-        "00d124f07a22680e39debd4dc4bdb1aa4b893720dd05af3c50"
-        "560fddada820a4d933888318a23c28fb5fc67aca8530524e20"
-        "74b1d185dbf5b4db4ddb0642848868685174519c6351670068"));
+    auto const weird_raw_script = to_chunk("0c49206c69656b20636174732e483045022100c7387f64e1f4cf654cae3b28a15f7572106d6c1319ddcdc878e636ccb83845e30220050ebf440160a4c0db5623e0cb1562f46401a7ff5b877aa03415ae134e8c71c901534d4f0176519c6375522103b124c48bbff7ebe16e7bd2b2f2b561aa53791da678a73d2777cc1ca4619ab6f72103ad6bb76e00d124f07a22680e39debd4dc4bdb1aa4b893720dd05af3c50560fdd52af67529c63552103b124c48bbff7ebe16e7bd2b2f2b561aa53791da678a73d2777cc1ca4619ab6f721025098a1d5a338592bf1e015468ec5a8fafc1fc9217feb5cb33597f3613a2165e9210360cfabc01d52eaaeb3976a5de05ff0cfa76d0af42d3d7e1b4c233ee8a00655ed2103f571540c81fd9dbf9622ca00cfe95762143f2eab6b65150365bb34ac533160432102bc2b4be1bca32b9d97e2d6fb255504f4bc96e01aaca6e29bfa3f8bea65d8865855af672103ad6bb76e00d124f07a22680e39debd4dc4bdb1aa4b893720dd05af3c50560fddada820a4d933888318a23c28fb5fc67aca8530524e2074b1d185dbf5b4db4ddb0642848868685174519c6351670068"_base16);
 
     script weird;
     byte_reader reader(weird_raw_script);
@@ -257,7 +240,7 @@ TEST_CASE("script from data to data weird roundtrips", "[script]") {
 }
 
 TEST_CASE("script factory from data chunk test", "[script]") {
-    auto const raw = to_chunk(base16_literal("76a914fc7b44566256621affb1541cc9d59f08336d276b88ac"));
+    auto const raw = to_chunk("76a914fc7b44566256621affb1541cc9d59f08336d276b88ac"_base16);
     byte_reader reader(raw);
     auto const result_exp = script::from_data(reader, false);
     REQUIRE(result_exp);
@@ -268,10 +251,7 @@ TEST_CASE("script factory from data chunk test", "[script]") {
 
 
 TEST_CASE("script from data  first byte invalid wire code  success", "[script]") {
-    auto const raw = to_chunk(base16_literal(
-        "bb566a54e38193e381aee4b896e7958ce381afe496e4babae381abe38288e381"
-        "a3e381a6e7ac91e9a194e38292e5a5aae3828fe3828ce3828be7bea9e58b99e3"
-        "8292e8a8ade38191e381a6e381afe38184e381aae38184"));
+    auto const raw = to_chunk("bb566a54e38193e381aee4b896e7958ce381afe496e4babae381abe38288e381a3e381a6e7ac91e9a194e38292e5a5aae3828fe3828ce3828be7bea9e58b99e38292e8a8ade38191e381a6e381afe38184e381aae38184"_base16);
 
     script instance;
     byte_reader reader(raw);
@@ -281,10 +261,7 @@ TEST_CASE("script from data  first byte invalid wire code  success", "[script]")
 }
 
 TEST_CASE("script from data  internal invalid wire code  success", "[script]") {
-    auto const raw = to_chunk(base16_literal(
-        "566a54e38193e381aee4b896e7958ce381afe4bb96e4babae381abe38288e381"
-        "a3e381a6e7ac91e9a194e38292e5a5aae3828fe3828ce3828be7bea9e58b99e3"
-        "8292e8a8ade38191e381a6e381afe38184e381aae38184"));
+    auto const raw = to_chunk("566a54e38193e381aee4b896e7958ce381afe4bb96e4babae381abe38288e381a3e381a6e7ac91e9a194e38292e5a5aae3828fe3828ce3828be7bea9e58b99e38292e8a8ade38191e381a6e381afe38184e381aae38184"_base16);
 
     script instance;
     byte_reader reader(raw);
@@ -870,9 +847,9 @@ TEST_CASE("script construction failures", "[script]") {
 // }
 
 TEST_CASE("script create endorsement  single input no output  expected", "[script]") {
-    data_chunk tx_data;
-    decode_base16(tx_data, "0100000001b3807042c92f449bbf79b33ca59d7dfec7f4cc71096704a9c526dddf496ee0970000000000ffffffff0000000000");
-    byte_reader reader(tx_data);
+    auto const tx_data = decode_base16("0100000001b3807042c92f449bbf79b33ca59d7dfec7f4cc71096704a9c526dddf496ee0970000000000ffffffff0000000000");
+    REQUIRE(tx_data);
+    byte_reader reader(*tx_data);
     auto result = transaction::from_data(reader, true);
     REQUIRE(result);
     auto const new_tx = std::move(*result);
@@ -887,7 +864,7 @@ TEST_CASE("script create endorsement  single input no output  expected", "[scrip
     auto const active_forks = rule_fork::bch_uahf; // Enable BCH UAHF fork for proper BCH behavior
     auto out_result = script::create_endorsement(secret, prevout_script, new_tx, index, sighash_type, active_forks);
     REQUIRE(out_result.has_value());
-    
+
     auto const& out = out_result.value();
     auto const result2 = encode_base16(out);
     auto const expected = "304402207b7390c5835b71a874d47f08675688baac0ff2e936761f725b8ec56878b599a20220673f3643dd95f5b7041cd6b78ed0eb32b0a32c8069e61af9ac81bd50e891279e01";
@@ -895,9 +872,9 @@ TEST_CASE("script create endorsement  single input no output  expected", "[scrip
 }
 
 TEST_CASE("script generate signature hash  all  expected", "[script]") {
-    data_chunk tx_data;
-    decode_base16(tx_data, "0100000001b3807042c92f449bbf79b33ca59d7dfec7f4cc71096704a9c526dddf496ee0970000000000ffffffff0000000000");
-    byte_reader reader(tx_data);
+    auto const tx_data = decode_base16("0100000001b3807042c92f449bbf79b33ca59d7dfec7f4cc71096704a9c526dddf496ee0970000000000ffffffff0000000000");
+    REQUIRE(tx_data);
+    byte_reader reader(*tx_data);
     auto result = transaction::from_data(reader, true);
     REQUIRE(result);
     auto const new_tx = std::move(*result);

@@ -13,7 +13,7 @@ using namespace kd;
 // Invalid reject payload from [46.101.110.115:8333] bad data stream
 // This contradicts docs in that it is tx with readable text vs. hash.
 // tx : nonstandard : too-long-mempool-chain : <empty>
-#define MALFORMED_REJECT "0274784016746f6f2d6c6f6e672d6d656d706f6f6c2d636861696e"
+constexpr char malformed_reject[] = "0274784016746f6f2d6c6f6e672d6d656d706f6f6c2d636861696e";
 
 static std::string const reason_text = "My Reason...";
 static auto const version_maximum = message::version::level::maximum;
@@ -27,9 +27,9 @@ static hash_digest const data{
 // Start Test Suite: reject tests
 
 TEST_CASE("reject  factory from data  tx nonstandard empty data valid", "[reject]") {
-    data_chunk payload;
-    REQUIRE(decode_base16(payload, MALFORMED_REJECT));
-    byte_reader reader(payload);
+    auto const payload = decode_base16(malformed_reject);
+    REQUIRE(payload);
+    byte_reader reader(*payload);
     auto const result_exp = message::reject::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const reject = std::move(*result_exp);

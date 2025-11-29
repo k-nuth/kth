@@ -19,7 +19,7 @@ using namespace kth::domain::wallet;
 #ifdef WITH_ICU
 
 TEST_CASE("encrypted  fixture  unicode passphrase  matches encrypted test vector", "[encrypted]") {
-    auto const encoded_password = base16_literal("cf92cc8100f0909080f09f92a9");
+    auto const encoded_password = "cf92cc8100f0909080f09f92a9"_base16;
     std::string passphrase(encoded_password.begin(), encoded_password.end());
 
     // This confirms that the passphrase decodes as expected in BIP38.
@@ -41,7 +41,7 @@ TEST_CASE("encrypted  create token lot  lot overlow  false", "[encrypted  create
     size_t const lot = 1048575 + 1;
     size_t const sequence = 0;
     auto const passphrase = "";
-    auto const salt = base16_literal("baadf00d");
+    auto const salt = "baadf00d"_base16;
     encrypted_token out_token;
     REQUIRE( ! create_token(out_token, passphrase, salt, lot, sequence));
 }
@@ -50,7 +50,7 @@ TEST_CASE("encrypted  create token lot  sequence overlow  false", "[encrypted  c
     size_t const lot = 0;
     size_t const sequence = 4095 + 1;
     auto const passphrase = "";
-    auto const salt = base16_literal("baadf00d");
+    auto const salt = "baadf00d"_base16;
     encrypted_token out_token;
     REQUIRE( ! create_token(out_token, passphrase, salt, lot, sequence));
 }
@@ -59,7 +59,7 @@ TEST_CASE("encrypted  create token lot  defaults  expected", "[encrypted  create
     size_t const lot = 0;
     size_t const sequence = 0;
     auto const passphrase = "";
-    auto const salt = base16_literal("baadf00d");
+    auto const salt = "baadf00d"_base16;
     KD_REQUIRE_CREATE_TOKEN_LOT(passphrase, salt, lot, sequence);
     REQUIRE(encode_base58(out_token) == "passphrasecpXbDpHuo8F7yQVcg1eQKPuX7rzGwBtEH1YSZnKbyk75x3rugZu1ci4RyF4rEn");
 }
@@ -68,7 +68,7 @@ TEST_CASE("encrypted  create token lot  passphrase  expected", "[encrypted  crea
     size_t const lot = 0;
     size_t const sequence = 0;
     auto const passphrase = "passphrase";
-    auto const salt = base16_literal("baadf00d");
+    auto const salt = "baadf00d"_base16;
     KD_REQUIRE_CREATE_TOKEN_LOT(passphrase, salt, lot, sequence);
     REQUIRE(encode_base58(out_token) == "passphrasecpXbDpHuo8F7x4pQXMhsJs2j7L8LTV8ujk9jGqgzUrafBeto9VrabP5SmvANvz");
 }
@@ -77,7 +77,7 @@ TEST_CASE("encrypted  create token lot  passphrase lot max  expected", "[encrypt
     size_t const lot = 1048575;
     size_t const sequence = 0;
     auto const passphrase = "passphrase";
-    auto const salt = base16_literal("baadf00d");
+    auto const salt = "baadf00d"_base16;
     KD_REQUIRE_CREATE_TOKEN_LOT(passphrase, salt, lot, sequence);
     REQUIRE(encode_base58(out_token) == "passphrasecpXbDpHuo8FGWnwMTnTFiHSDnqyARArE2YSFQzMHtCZvM2oWg2K3Ua2crKyc11");
 }
@@ -86,7 +86,7 @@ TEST_CASE("encrypted  create token lot  passphrase sequence max  expected", "[en
     size_t const lot = 0;
     size_t const sequence = 4095;
     auto const passphrase = "passphrase";
-    auto const salt = base16_literal("baadf00d");
+    auto const salt = "baadf00d"_base16;
     KD_REQUIRE_CREATE_TOKEN_LOT(passphrase, salt, lot, sequence);
     REQUIRE(encode_base58(out_token) == "passphrasecpXbDpHuo8FGWnwMTnTFiHSDnqyARArE2YSFQzMHtCZvM2oWg2K3Ua2crKyc11");
 }
@@ -95,7 +95,7 @@ TEST_CASE("encrypted  create token lot  passphrase lot sequence  expected", "[en
     size_t const lot = 42;
     size_t const sequence = 42;
     auto const passphrase = "passphrase";
-    auto const salt = base16_literal("baadf00d");
+    auto const salt = "baadf00d"_base16;
     KD_REQUIRE_CREATE_TOKEN_LOT(passphrase, salt, lot, sequence);
     REQUIRE(encode_base58(out_token) == "passphrasecpXbDpHuo8FGWnwMTnTFiHSDnqyARArE2YSFQzMHtCZvM2oWg2K3Ua2crKyc11");
 }
@@ -112,14 +112,14 @@ TEST_CASE("encrypted  create token lot  passphrase lot sequence  expected", "[en
 
 TEST_CASE("encrypted  create token entropy  defaults  expected", "[encrypted  create token entropy]") {
     auto const passphrase = "";
-    auto const entropy = base16_literal("baadf00dbaadf00d");
+    auto const entropy = "baadf00dbaadf00d"_base16;
     KD_CREATE_TOKEN_ENTROPY(passphrase, entropy);
     REQUIRE(encode_base58(out_token) == "passphraseqVHzjNrYRo5G6yLmJ7TQ49fKnQtsgjybNgNHAKBCQKoFZcTNjNJtg4oCUgtPt3");
 }
 
 TEST_CASE("encrypted  create token entropy  passphrase  expected", "[encrypted  create token entropy]") {
     auto const passphrase = "passphrase";
-    auto const entropy = base16_literal("baadf00dbaadf00d");
+    auto const entropy = "baadf00dbaadf00d"_base16;
     KD_CREATE_TOKEN_ENTROPY(passphrase, entropy);
     REQUIRE(encode_base58(out_token) == "passphraseqVHzjNrYRo5G6sfRB4YdSaQ2m8URnkBYS1UT6JBju5G5o45YRZKLDpK6J3PEGq");
 }
@@ -140,7 +140,7 @@ TEST_CASE("encrypted  encrypt private  vector 0  expected", "[encrypted  encrypt
     auto compression = false;
     uint8_t const version = 0x00;
     auto const expected = "6PRVWUbkzzsbcVac2qwfssoUJAN1Xhrg6bNk8J7Nzm5H7kxEbn2Nh2ZoGg";
-    auto const secret = base16_literal("cbf4b9f70470856bb4f40f80b87edb90865997ffee6df315ab166d713af433a5");
+    auto const secret = "cbf4b9f70470856bb4f40f80b87edb90865997ffee6df315ab166d713af433a5"_base16;
     KD_REQUIRE_ENCRYPT(secret, "TestingOneTwoThree", version, compression, expected);
 }
 
@@ -149,7 +149,7 @@ TEST_CASE("encrypted  encrypt private  vector 1  expected", "[encrypted  encrypt
     auto compression = false;
     uint8_t const version = 0x00;
     auto const expected = "6PRNFFkZc2NZ6dJqFfhRoFNMR9Lnyj7dYGrzdgXXVMXcxoKTePPX1dWByq";
-    auto const secret = base16_literal("09c2686880095b1a4c249ee3ac4eea8a014f11e6f986d0b5025ac1f39afbd9ae");
+    auto const secret = "09c2686880095b1a4c249ee3ac4eea8a014f11e6f986d0b5025ac1f39afbd9ae"_base16;
     KD_REQUIRE_ENCRYPT(secret, "Satoshi", version, compression, expected);
 }
 
@@ -158,7 +158,7 @@ TEST_CASE("encrypted  encrypt private  vector 2 compressed  expected", "[encrypt
     auto compression = true;
     uint8_t const version = 0x00;
     auto const expected = "6PYNKZ1EAgYgmQfmNVamxyXVWHzK5s6DGhwP4J5o44cvXdoY7sRzhtpUeo";
-    auto const secret = base16_literal("cbf4b9f70470856bb4f40f80b87edb90865997ffee6df315ab166d713af433a5");
+    auto const secret = "cbf4b9f70470856bb4f40f80b87edb90865997ffee6df315ab166d713af433a5"_base16;
     KD_REQUIRE_ENCRYPT(secret, "TestingOneTwoThree", version, compression, expected);
 }
 
@@ -167,7 +167,7 @@ TEST_CASE("encrypted  encrypt private  vector 3 compressed  expected", "[encrypt
     auto compression = true;
     uint8_t const version = 0x00;
     auto const expected = "6PYLtMnXvfG3oJde97zRyLYFZCYizPU5T3LwgdYJz1fRhh16bU7u6PPmY7";
-    auto const secret = base16_literal("09c2686880095b1a4c249ee3ac4eea8a014f11e6f986d0b5025ac1f39afbd9ae");
+    auto const secret = "09c2686880095b1a4c249ee3ac4eea8a014f11e6f986d0b5025ac1f39afbd9ae"_base16;
     KD_REQUIRE_ENCRYPT(secret, "Satoshi", version, compression, expected);
 }
 
@@ -175,10 +175,10 @@ TEST_CASE("encrypted  encrypt private  vector 3 compressed  expected", "[encrypt
 TEST_CASE("encrypted  encrypt private  vector unicode  expected", "[encrypted  encrypt private]") {
     auto compression = false;
     uint8_t const version = 0x00;
-    auto const encoded_password = base16_literal("cf92cc8100f0909080f09f92a9");
+    auto const encoded_password = "cf92cc8100f0909080f09f92a9"_base16;
     std::string passphrase(encoded_password.begin(), encoded_password.end());
     auto const expected = "6PRW5o9FLp4gJDDVqJQKJFTpMvdsSGJxMYHtHaQBF3ooa8mwD69bapcDQn";
-    auto const secret = base16_literal("64eeab5f9be2a01a8365a579511eb3373c87c40da6d2a25f05bda68fe077b66e");
+    auto const secret = "64eeab5f9be2a01a8365a579511eb3373c87c40da6d2a25f05bda68fe077b66e"_base16;
     KD_REQUIRE_ENCRYPT(secret, passphrase, version, compression, expected);
 }
 
@@ -370,7 +370,7 @@ TEST_CASE("encrypted  decrypt public  vector 9  expected", "[encrypted  decrypt 
 TEST_CASE("encrypted  create key pair  bad checksum  false", "[encrypted  create key pair]") {
     auto compression = false;
     uint8_t const version = 0x00;
-    auto const seed = base16_literal("d36d8e703d8bd5445044178f69087657fba73d9f3ff211f7");
+    auto const seed = "d36d8e703d8bd5445044178f69087657fba73d9f3ff211f7"_base16;
     auto const token = base58_literal("passphraseo59BauW85etaRsKpbbTrEa5RRYw6bq5K9yrDf4r4N5fcirPdtDKmfJw9oYNoGN");
     ec_compressed out_point;
     encrypted_private out_private;
@@ -381,7 +381,7 @@ TEST_CASE("encrypted  create key pair  bad checksum  false", "[encrypted  create
 TEST_CASE("encrypted  create key pair  vector 8  expected", "[encrypted  create key pair]") {
     auto compression = false;
     uint8_t const version = 0x00;
-    auto const seed = base16_literal("d36d8e703d8bd5445044178f69087657fba73d9f3ff211f7");
+    auto const seed = "d36d8e703d8bd5445044178f69087657fba73d9f3ff211f7"_base16;
     auto const token = base58_literal("passphraseo59BauW85etaRsKpbbTrEa5RRYw6bq5K9yrDf4r4N5fcirPdtDKmfJw9oYNoGM");
     KD_REQUIRE_CREATE_KEY_PAIR(token, seed, version, compression);
     REQUIRE(encode_base58(out_private) == "6PfPAw5HErFdzMyBvGMwSfSWjKmzgm3jDg7RxQyVCSSBJFZLAZ6hVupmpn");
@@ -395,7 +395,7 @@ TEST_CASE("encrypted  create key pair  vector 8  expected", "[encrypted  create 
 TEST_CASE("encrypted  create key pair  vector 9  expected", "[encrypted  create key pair]") {
     auto compression = false;
     uint8_t const version = 0x00;
-    auto const seed = base16_literal("bbeac8b9bb39381520b6873553544b387bcaa19112602230");
+    auto const seed = "bbeac8b9bb39381520b6873553544b387bcaa19112602230"_base16;
     auto const token = base58_literal("passphraseouGLY8yjTZQ5Q2bTo8rtKfdbHz4tme7QuPheRgES8KnT6pX5yxFauYhv3SVPDD");
     KD_REQUIRE_CREATE_KEY_PAIR(token, seed, version, compression);
     REQUIRE(encode_base58(out_private) == "6PfU2yS6DUHjgH8wmsJRT1rHWXRofmDV5UJ3dypocew56BDcw5TQJXFYfm");
@@ -409,7 +409,7 @@ TEST_CASE("encrypted  create key pair  vector 9  expected", "[encrypted  create 
 TEST_CASE("encrypted  create key pair  vector 9 compressed  expected", "[encrypted  create key pair]") {
     auto compression = true;
     uint8_t const version = 0x00;
-    auto const seed = base16_literal("bbeac8b9bb39381520b6873553544b387bcaa19112602230");
+    auto const seed = "bbeac8b9bb39381520b6873553544b387bcaa19112602230"_base16;
     auto const token = base58_literal("passphraseouGLY8yjTZQ5Q2bTo8rtKfdbHz4tme7QuPheRgES8KnT6pX5yxFauYhv3SVPDD");
     KD_REQUIRE_CREATE_KEY_PAIR(token, seed, version, compression);
     REQUIRE(encode_base58(out_private) == "6PnQ4ihgH1pxeUWa1SDPZ4xToaTdLtjebd8Qw6KJf8xDCW67ssaAqWuJkw");
@@ -420,7 +420,7 @@ TEST_CASE("encrypted  create key pair  vector 9 compressed  expected", "[encrypt
 TEST_CASE("encrypted  create key pair  vector 9 compressed testnet  expected", "[encrypted  create key pair]") {
     auto compression = true;
     uint8_t const version = 111;
-    auto const seed = base16_literal("bbeac8b9bb39381520b6873553544b387bcaa19112602230");
+    auto const seed = "bbeac8b9bb39381520b6873553544b387bcaa19112602230"_base16;
     auto const token = base58_literal("passphraseouGLY8yjTZQ5Q2bTo8rtKfdbHz4tme7QuPheRgES8KnT6pX5yxFauYhv3SVPDD");
     KD_REQUIRE_CREATE_KEY_PAIR(token, seed, version, compression);
     REQUIRE(encode_base58(out_private) == "8FELCpEDogaLG3WkLhSVpKKravcNDZ7HAQ7jwHApt1Rn4BHqaLAfo9nrRD");
@@ -442,7 +442,7 @@ TEST_CASE("encrypted  create key pair  vector 9 compressed testnet  expected", "
     REQUIRE(create_key_pair(out_private, out_public, out_point, token, seed, version, compressed))
 
 TEST_CASE("encrypted  create key pair with confirmation  bad checksum  false", "[encrypted  create key pair with confirmation]") {
-    auto const seed = base16_literal("d36d8e703d8bd5445044178f69087657fba73d9f3ff211f7");
+    auto const seed = "d36d8e703d8bd5445044178f69087657fba73d9f3ff211f7"_base16;
     auto const token = base58_literal("passphraseo59BauW85etaRsKpbbTrEa5RRYw6bq5K9yrDf4r4N5fcirPdtDKmfJw9oYNoGN");
     ec_compressed out_point;
     encrypted_public out_public;
@@ -454,7 +454,7 @@ TEST_CASE("encrypted  create key pair with confirmation  bad checksum  false", "
 TEST_CASE("encrypted  create key pair with confirmation  vector 8  expected", "[encrypted  create key pair with confirmation]") {
     auto compression = false;
     uint8_t const version = 0x00;
-    auto const seed = base16_literal("d36d8e703d8bd5445044178f69087657fba73d9f3ff211f7");
+    auto const seed = "d36d8e703d8bd5445044178f69087657fba73d9f3ff211f7"_base16;
     auto const token = base58_literal("passphraseo59BauW85etaRsKpbbTrEa5RRYw6bq5K9yrDf4r4N5fcirPdtDKmfJw9oYNoGM");
     KD_REQUIRE_CREATE_KEY_PAIR_CONFIRMATION(token, seed, version, compression);
     REQUIRE(encode_base58(out_private) == "6PfPAw5HErFdzMyBvGMwSfSWjKmzgm3jDg7RxQyVCSSBJFZLAZ6hVupmpn");
@@ -469,7 +469,7 @@ TEST_CASE("encrypted  create key pair with confirmation  vector 8  expected", "[
 TEST_CASE("encrypted  create key pair with confirmation  vector 9  expected", "[encrypted  create key pair with confirmation]") {
     auto compression = false;
     uint8_t const version = 0x00;
-    auto const seed = base16_literal("bbeac8b9bb39381520b6873553544b387bcaa19112602230");
+    auto const seed = "bbeac8b9bb39381520b6873553544b387bcaa19112602230"_base16;
     auto const token = base58_literal("passphraseouGLY8yjTZQ5Q2bTo8rtKfdbHz4tme7QuPheRgES8KnT6pX5yxFauYhv3SVPDD");
     KD_REQUIRE_CREATE_KEY_PAIR_CONFIRMATION(token, seed, version, compression);
     REQUIRE(encode_base58(out_private) == "6PfU2yS6DUHjgH8wmsJRT1rHWXRofmDV5UJ3dypocew56BDcw5TQJXFYfm");
@@ -484,7 +484,7 @@ TEST_CASE("encrypted  create key pair with confirmation  vector 9  expected", "[
 TEST_CASE("encrypted  create key pair with confirmation  vector 9 compressed  expected", "[encrypted  create key pair with confirmation]") {
     auto compression = true;
     uint8_t const version = 0x00;
-    auto const seed = base16_literal("bbeac8b9bb39381520b6873553544b387bcaa19112602230");
+    auto const seed = "bbeac8b9bb39381520b6873553544b387bcaa19112602230"_base16;
     auto const token = base58_literal("passphraseouGLY8yjTZQ5Q2bTo8rtKfdbHz4tme7QuPheRgES8KnT6pX5yxFauYhv3SVPDD");
     KD_REQUIRE_CREATE_KEY_PAIR_CONFIRMATION(token, seed, version, compression);
     REQUIRE(encode_base58(out_private) == "6PnQ4ihgH1pxeUWa1SDPZ4xToaTdLtjebd8Qw6KJf8xDCW67ssaAqWuJkw");
@@ -496,7 +496,7 @@ TEST_CASE("encrypted  create key pair with confirmation  vector 9 compressed  ex
 TEST_CASE("encrypted  create key pair with confirmation  vector 9 compressed testnet  expected", "[encrypted  create key pair with confirmation]") {
     auto compression = true;
     uint8_t const version = 111;
-    auto const seed = base16_literal("bbeac8b9bb39381520b6873553544b387bcaa19112602230");
+    auto const seed = "bbeac8b9bb39381520b6873553544b387bcaa19112602230"_base16;
     auto const token = base58_literal("passphraseouGLY8yjTZQ5Q2bTo8rtKfdbHz4tme7QuPheRgES8KnT6pX5yxFauYhv3SVPDD");
     KD_REQUIRE_CREATE_KEY_PAIR_CONFIRMATION(token, seed, version, compression);
     REQUIRE(encode_base58(out_private) == "8FELCpEDogaLG3WkLhSVpKKravcNDZ7HAQ7jwHApt1Rn4BHqaLAfo9nrRD");
@@ -513,14 +513,14 @@ TEST_CASE("encrypted  create key pair with confirmation  vector 9 compressed tes
 // Start Test Suite: encrypted  round trips
 
 TEST_CASE("encrypted  encrypt  compressed testnet  matches secret version and compression", "[encrypted  round trips]") {
-    auto const secret = base16_literal("09c2686880095b1a4c249ee3ac4eea8a014f11e6f986d0b5025ac1f39afbd9ae");
+    auto const secret = "09c2686880095b1a4c249ee3ac4eea8a014f11e6f986d0b5025ac1f39afbd9ae"_base16;
     auto const passphrase = "passphrase";
 
     // Encrypt the secret as a private key.
     encrypted_private out_private_key;
     uint8_t const version = 111;
     auto const is_compressed = true;
-    auto const seed = base16_literal("baadf00dbaadf00dbaadf00dbaadf00dbaadf00dbaadf00d");
+    auto const seed = "baadf00dbaadf00dbaadf00dbaadf00dbaadf00dbaadf00d"_base16;
     REQUIRE(encrypt(out_private_key, secret, passphrase, version, is_compressed));
 
     // Decrypt the secret from the private key.
@@ -538,7 +538,7 @@ TEST_CASE("encrypted  create token entropy  private uncompressed testnet  decryp
     // Create the token.
     encrypted_token out_token;
     auto const passphrase = "passphrase";
-    auto const entropy = base16_literal("baadf00dbaadf00d");
+    auto const entropy = "baadf00dbaadf00d"_base16;
     REQUIRE(create_token(out_token, passphrase, entropy));
     REQUIRE(encode_base58(out_token) == "passphraseqVHzjNrYRo5G6sfRB4YdSaQ2m8URnkBYS1UT6JBju5G5o45YRZKLDpK6J3PEGq");
 
@@ -548,7 +548,7 @@ TEST_CASE("encrypted  create token entropy  private uncompressed testnet  decryp
     encrypted_private out_private_key;
     uint8_t const version = 111;
     auto const is_compressed = false;
-    auto const seed = base16_literal("baadf00dbaadf00dbaadf00dbaadf00dbaadf00dbaadf00d");
+    auto const seed = "baadf00dbaadf00dbaadf00dbaadf00dbaadf00dbaadf00d"_base16;
     REQUIRE(create_key_pair(out_private_key, out_point, token, seed, version, is_compressed));
 
     // Extract the secret from the private key.
@@ -571,7 +571,7 @@ TEST_CASE("encrypted  create token lot  private and public compressed testnet  d
     // Create the token.
     encrypted_token out_token;
     auto const passphrase = "passphrase";
-    auto const salt = base16_literal("baadf00d");
+    auto const salt = "baadf00d"_base16;
     REQUIRE(create_token(out_token, passphrase, salt, 42, 24));
     REQUIRE(encode_base58(out_token) == "passphrasecpXbDpHuo8FGWnwMTnTFiHSDnqyARArE2YSFQzMHtCZvM2oWg2K3Ua2crKyc11");
 
@@ -582,7 +582,7 @@ TEST_CASE("encrypted  create token lot  private and public compressed testnet  d
     encrypted_public out_public_key;
     uint8_t const version = 111;
     auto const is_compressed = true;
-    auto const seed = base16_literal("baadf00dbaadf00dbaadf00dbaadf00dbaadf00dbaadf00d");
+    auto const seed = "baadf00dbaadf00dbaadf00dbaadf00dbaadf00dbaadf00d"_base16;
     REQUIRE(create_key_pair(out_private_key, out_public_key, out_point, token, seed, version, is_compressed));
 
     // Extract the secret from the private key.
@@ -626,7 +626,7 @@ TEST_CASE("encrypted  create token lot  private and public compressed testnet  d
 // TEST_CASE("encrypted  create key pair  all versions  print private and public encrypted keys", "[None]")
 //{
 //    encrypted_private out_private_key;
-//    auto const secret = base16_literal("09c2686880095b1a4c249ee3ac4eea8a014f11e6f986d0b5025ac1f39afbd9ae");
+//    auto const secret = "09c2686880095b1a4c249ee3ac4eea8a014f11e6f986d0b5025ac1f39afbd9ae"_base16;
 //
 //    auto const compressed = true;
 //    for (size_t version = 0x00; version <= 0xFF; ++version)
@@ -643,13 +643,13 @@ TEST_CASE("encrypted  create token lot  private and public compressed testnet  d
 // TEST_CASE("encrypted  create key pair  all multiplied versions  print private and public encrypted keys", "[None]")
 //{
 //    encrypted_token out_token;
-//    create_token(out_token, "passphrase", base16_literal("baadf00dbaadf00d"));
+//    create_token(out_token, "passphrase", "baadf00dbaadf00d"_base16);
 //
 //    auto const& token = out_token;
 //    ec_compressed unused;
 //    encrypted_private out_private_key;
 //    encrypted_public out_public_key;
-//    auto const seed = base16_literal("baadf00dbaadf00dbaadf00dbaadf00dbaadf00dbaadf00d");
+//    auto const seed = "baadf00dbaadf00dbaadf00dbaadf00dbaadf00dbaadf00d"_base16;
 //
 //    auto const compressed = true;
 //    for (size_t version = 0x00; version <= 0xFF; ++version)

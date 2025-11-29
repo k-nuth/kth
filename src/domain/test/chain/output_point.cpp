@@ -8,7 +8,7 @@ using namespace kth;
 using namespace kd;
 
 auto const hash1 = hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
-auto const valid_raw_output_point = to_chunk(base16_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f00000015"));
+auto const valid_raw_output_point = to_chunk("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f00000015"_base16);
 
 // Start Test Suite: output point tests
 
@@ -104,7 +104,7 @@ TEST_CASE("output point from data roundtrip  success", "[output point]") {
 }
 
 TEST_CASE("output point from data roundtrip  success 2", "[output point]") {
-    static auto const data = to_chunk(base16_literal("46682488f0a721124a3905a1bb72445bf13493e2cd46c5c0c8db1c15afa0d58e00000000"));
+    static auto const data = to_chunk("46682488f0a721124a3905a1bb72445bf13493e2cd46c5c0c8db1c15afa0d58e00000000"_base16);
     REQUIRE(data == (data_chunk{
                               0x46, 0x68, 0x24, 0x88, 0xf0, 0xa7, 0x21, 0x12, 0x4a, 0x39, 0x05, 0xa1,
                               0xbb, 0x72, 0x44, 0x5b, 0xf1, 0x34, 0x93, 0xe2, 0xcd, 0x46, 0xc5, 0xc0,
@@ -124,7 +124,7 @@ TEST_CASE("output point from data roundtrip  success 2", "[output point]") {
 }
 
 TEST_CASE("output point  factory from data 2  roundtrip  success", "[output point]") {
-    static auto const data = to_chunk(base16_literal("46682488f0a721124a3905a1bb72445bf13493e2cd46c5c0c8db1c15afa0d58e00000000"));
+    static auto const data = to_chunk("46682488f0a721124a3905a1bb72445bf13493e2cd46c5c0c8db1c15afa0d58e00000000"_base16);
     REQUIRE(data == (data_chunk{
                               0x46, 0x68, 0x24, 0x88, 0xf0, 0xa7, 0x21, 0x12, 0x4a, 0x39, 0x05, 0xa1,
                               0xbb, 0x72, 0x44, 0x5b, 0xf1, 0x34, 0x93, 0xe2, 0xcd, 0x46, 0xc5, 0xc0,
@@ -144,7 +144,7 @@ TEST_CASE("output point  factory from data 2  roundtrip  success", "[output poin
 }
 
 TEST_CASE("output point  factory from data 3  roundtrip  success", "[output point]") {
-    static auto const data = to_chunk(base16_literal("46682488f0a721124a3905a1bb72445bf13493e2cd46c5c0c8db1c15afa0d58e00000000"));
+    static auto const data = to_chunk("46682488f0a721124a3905a1bb72445bf13493e2cd46c5c0c8db1c15afa0d58e00000000"_base16);
     REQUIRE(data == (data_chunk{
                               0x46, 0x68, 0x24, 0x88, 0xf0, 0xa7, 0x21, 0x12, 0x4a, 0x39, 0x05, 0xa1,
                               0xbb, 0x72, 0x44, 0x5b, 0xf1, 0x34, 0x93, 0xe2, 0xcd, 0x46, 0xc5, 0xc0,

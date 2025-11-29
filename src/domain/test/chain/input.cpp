@@ -8,12 +8,7 @@ using namespace kth;
 using namespace kd;
 using namespace kth::domain::chain;
 
-data_chunk valid_raw_input = to_chunk(base16_literal(
-    "54b755c39207d443fd96a8d12c94446a1c6f66e39c95e894c23418d7501f681b01000"
-    "0006b48304502203267910f55f2297360198fff57a3631be850965344370f732950b4"
-    "7795737875022100f7da90b82d24e6e957264b17d3e5042bab8946ee5fc676d15d915"
-    "da450151d36012103893d5a06201d5cf61400e96fa4a7514fc12ab45166ace618d68b"
-    "8066c9c585f9ffffffff"));
+data_chunk valid_raw_input = to_chunk("54b755c39207d443fd96a8d12c94446a1c6f66e39c95e894c23418d7501f681b010000006b48304502203267910f55f2297360198fff57a3631be850965344370f732950b47795737875022100f7da90b82d24e6e957264b17d3e5042bab8946ee5fc676d15d915da450151d36012103893d5a06201d5cf61400e96fa4a7514fc12ab45166ace618d68b8066c9c585f9ffffffff"_base16);
 
 // Start Test Suite: input tests
 
@@ -24,7 +19,7 @@ TEST_CASE("input  constructor 1  always  returns default initialized", "[input]"
 
 TEST_CASE("input  constructor 2  valid input  returns input initialized", "[input]") {
     output_point const previous_output{null_hash, 5434u};
-    auto script_data = to_chunk(base16_literal("ece424a6bb6ddf4db592c0faed60685047a361b1"));
+    auto script_data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(script_data);
     auto script_result = script::from_data(reader, false);
     REQUIRE(script_result);
@@ -41,7 +36,7 @@ TEST_CASE("input  constructor 2  valid input  returns input initialized", "[inpu
 
 TEST_CASE("input  constructor 3  valid input  returns input initialized", "[input]") {
     output_point const previous_output{null_hash, 5434u};
-    auto script_data = to_chunk(base16_literal("ece424a6bb6ddf4db592c0faed60685047a361b1"));
+    auto script_data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(script_data);
     auto script_result = script::from_data(reader, false);
     REQUIRE(script_result);
@@ -89,7 +84,7 @@ TEST_CASE("input from data insufficient data  failure", "[input]") {
 }
 
 TEST_CASE("input from data valid data  success", "[input]") {
-    auto const junk = base16_literal("000000000000005739943a9c29a1955dfae2b3f37de547005bfb9535192e5fb0000000000000005739943a9c29a1955dfae2b3f37de547005bfb9535192e5fb0");
+    auto const junk = "000000000000005739943a9c29a1955dfae2b3f37de547005bfb9535192e5fb0000000000000005739943a9c29a1955dfae2b3f37de547005bfb9535192e5fb0"_base16;
 
     byte_reader reader(junk);
     auto result = input::from_data(reader, true);
@@ -225,7 +220,7 @@ TEST_CASE("input  is locked  disabled time type sequence age below minimum  fals
 }
 
 TEST_CASE("input  signature operations  bip16 inactive  returns script sigops", "[input]") {
-    auto const raw_script = to_chunk(base16_literal("02acad"));
+    auto const raw_script = to_chunk("02acad"_base16);
     byte_reader reader(raw_script);
     auto result = script::from_data(reader, true);
     REQUIRE(result);
@@ -236,7 +231,7 @@ TEST_CASE("input  signature operations  bip16 inactive  returns script sigops", 
 }
 
 TEST_CASE("input  signature operations  bip16 active cache empty  returns script sigops", "[input]") {
-    auto const raw_script = to_chunk(base16_literal("02acad"));
+    auto const raw_script = to_chunk("02acad"_base16);
     byte_reader reader(raw_script);
     auto result = script::from_data(reader, true);
     REQUIRE(result);
@@ -275,7 +270,7 @@ TEST_CASE("input  previous output setter 2  roundtrip  success", "[input]") {
 }
 
 TEST_CASE("input  script setter 1  roundtrip  success", "[input]") {
-    auto const data = to_chunk(base16_literal("ece424a6bb6ddf4db592c0faed60685047a361b1"));
+    auto const data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(data);
     auto result = script::from_data(reader, false);
     REQUIRE(result);
@@ -290,7 +285,7 @@ TEST_CASE("input  script setter 1  roundtrip  success", "[input]") {
 }
 
 TEST_CASE("input  script setter 2  roundtrip  success", "[input]") {
-    auto const data = to_chunk(base16_literal("ece424a6bb6ddf4db592c0faed60685047a361b1"));
+    auto const data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(data);
     auto result = script::from_data(reader, false);
     REQUIRE(result);

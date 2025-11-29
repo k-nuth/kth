@@ -8,7 +8,7 @@ using namespace kth;
 using namespace kd;
 using namespace kth::domain::machine;
 
-data_chunk valid_raw_operation = to_chunk(base16_literal("0900ff11ee22bb33aa44"));
+data_chunk valid_raw_operation = to_chunk("0900ff11ee22bb33aa44"_base16);
 
 // Start Test Suite: operation tests
 
@@ -22,7 +22,7 @@ TEST_CASE("operation  constructor 1  always  returns default initialized", "[ope
 }
 
 TEST_CASE("operation  constructor 2  valid input  returns input initialized", "[operation]") {
-    auto const data = to_chunk(base16_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"));
+    auto const data = to_chunk("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_base16);
     auto dup_data = data;
     operation instance(std::move(dup_data));
 
@@ -32,7 +32,7 @@ TEST_CASE("operation  constructor 2  valid input  returns input initialized", "[
 }
 
 TEST_CASE("operation  constructor 3  valid input  returns input initialized", "[operation]") {
-    auto const data = to_chunk(base16_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"));
+    auto const data = to_chunk("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_base16);
     operation instance(data);
 
     REQUIRE(instance.is_valid());
@@ -41,7 +41,7 @@ TEST_CASE("operation  constructor 3  valid input  returns input initialized", "[
 }
 
 TEST_CASE("operation  constructor 4  valid input  returns input initialized", "[operation]") {
-    operation const expected(to_chunk(base16_literal("23156214")));
+    operation const expected(to_chunk("23156214"_base16));
     operation instance(expected);
 
     REQUIRE(instance.is_valid());
@@ -49,7 +49,7 @@ TEST_CASE("operation  constructor 4  valid input  returns input initialized", "[
 }
 
 TEST_CASE("operation  constructor 5  valid input  returns input initialized", "[operation]") {
-    operation expected(to_chunk(base16_literal("23156214")));
+    operation expected(to_chunk("23156214"_base16));
     operation instance(std::move(expected));
 
     REQUIRE(instance.is_valid());
@@ -63,8 +63,8 @@ TEST_CASE("operation from data insufficient bytes  failure", "[operation]") {
 }
 
 TEST_CASE("operation from data roundtrip push size 0  success", "[operation]") {
-    auto const data0 = to_chunk(base16_literal(""));
-    auto const raw_operation = to_chunk(base16_literal("00"));
+    auto const data0 = to_chunk(""_base16);
+    auto const raw_operation = to_chunk("00"_base16);
     operation instance;
 
     byte_reader reader(raw_operation);
@@ -87,7 +87,7 @@ TEST_CASE("operation from data roundtrip push size 0  success", "[operation]") {
 
 TEST_CASE("operation from data roundtrip push size 75  success", "[operation]") {
     auto const data75 = data_chunk(75, '.');
-    auto const raw_operation = build_chunk({base16_literal("4b"), data75});
+    auto const raw_operation = build_chunk({"4b"_base16, data75});
     operation instance;
 
     byte_reader reader(raw_operation);
@@ -190,9 +190,7 @@ TEST_CASE("operation from data roundtrip push positive 16  success", "[operation
 
 TEST_CASE("operation from data roundtrip push one size  success", "[operation]") {
     auto const data255 = data_chunk(255, '.');
-    auto const raw_operation = build_chunk({base16_literal("4c"
-                                                           "ff"),
-                                            data255});
+    auto const raw_operation = build_chunk({"4cff"_base16, data255});
     operation instance;
 
     byte_reader reader(raw_operation);
@@ -215,9 +213,7 @@ TEST_CASE("operation from data roundtrip push one size  success", "[operation]")
 
 TEST_CASE("operation from data roundtrip push two size  success", "[operation]") {
     auto const data520 = data_chunk(520, '.');
-    auto const raw_operation = build_chunk({base16_literal("4d"
-                                                           "0802"),
-                                            data520});
+    auto const raw_operation = build_chunk({"4d0802"_base16, data520});
     operation instance;
 
     byte_reader reader(raw_operation);
@@ -242,9 +238,7 @@ TEST_CASE("operation from data roundtrip push two size  success", "[operation]")
 
 TEST_CASE("operation from data roundtrip push four size  success", "[operation]") {
     auto const data520 = data_chunk(520, '.');
-    auto const raw_operation = build_chunk({base16_literal("4e"
-                                                           "08020000"),
-                                            data520});
+    auto const raw_operation = build_chunk({"4e08020000"_base16, data520});
     operation instance;
 
     byte_reader reader(raw_operation);

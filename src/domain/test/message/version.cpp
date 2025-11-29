@@ -29,9 +29,9 @@ auto const version_maximum = message::version::level::maximum;
 // Start Test Suite: version tests
 
 TEST_CASE("version  factory  therealbitcoin dot org valid", "[version]") {
-    data_chunk payload;
-    REQUIRE(decode_base16(payload, NO_RELAY_THEREALBITCOIN_1));
-    byte_reader reader(payload);
+    auto const payload = decode_base16(NO_RELAY_THEREALBITCOIN_1);
+    REQUIRE(payload);
+    byte_reader reader(*payload);
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const version = std::move(*result_exp);
@@ -39,9 +39,9 @@ TEST_CASE("version  factory  therealbitcoin dot org valid", "[version]") {
 }
 
 TEST_CASE("version  factory  anarchistprime1 valid", "[version]") {
-    data_chunk payload;
-    REQUIRE(decode_base16(payload, NO_RELAY_ANARCHISTPRIME_1));
-    byte_reader reader(payload);
+    auto const payload = decode_base16(NO_RELAY_ANARCHISTPRIME_1);
+    REQUIRE(payload);
+    byte_reader reader(*payload);
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const version = std::move(*result_exp);
@@ -49,9 +49,9 @@ TEST_CASE("version  factory  anarchistprime1 valid", "[version]") {
 }
 
 TEST_CASE("version  factory  anarchistprime2 valid", "[version]") {
-    data_chunk payload;
-    REQUIRE(decode_base16(payload, NO_RELAY_ANARCHISTPRIME_2));
-    byte_reader reader(payload);
+    auto const payload = decode_base16(NO_RELAY_ANARCHISTPRIME_2);
+    REQUIRE(payload);
+    byte_reader reader(*payload);
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const version = std::move(*result_exp);
@@ -59,9 +59,9 @@ TEST_CASE("version  factory  anarchistprime2 valid", "[version]") {
 }
 
 TEST_CASE("version  factory  falcon1 valid", "[version]") {
-    data_chunk payload;
-    REQUIRE(decode_base16(payload, NO_RELAY_FALCON_1));
-    byte_reader reader(payload);
+    auto const payload = decode_base16(NO_RELAY_FALCON_1);
+    REQUIRE(payload);
+    byte_reader reader(*payload);
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const version = std::move(*result_exp);
@@ -69,9 +69,9 @@ TEST_CASE("version  factory  falcon1 valid", "[version]") {
 }
 
 TEST_CASE("version  factory  falcon2 valid", "[version]") {
-    data_chunk payload;
-    REQUIRE(decode_base16(payload, NO_RELAY_FALCON_2));
-    byte_reader reader(payload);
+    auto const payload = decode_base16(NO_RELAY_FALCON_2);
+    REQUIRE(payload);
+    byte_reader reader(*payload);
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const version = std::move(*result_exp);
@@ -79,9 +79,9 @@ TEST_CASE("version  factory  falcon2 valid", "[version]") {
 }
 
 TEST_CASE("version  factory  satoshi1 valid", "[version]") {
-    data_chunk payload;
-    REQUIRE(decode_base16(payload, NO_RELAY_SATOSHI_1));
-    byte_reader reader(payload);
+    auto const payload = decode_base16(NO_RELAY_SATOSHI_1);
+    REQUIRE(payload);
+    byte_reader reader(*payload);
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const version = std::move(*result_exp);

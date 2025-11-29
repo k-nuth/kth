@@ -7,7 +7,7 @@
 using namespace kth;
 using namespace kd;
 
-data_chunk valid_raw_output = to_chunk(base16_literal("20300500000000001976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+data_chunk valid_raw_output = to_chunk("20300500000000001976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
 // Start Test Suite: output tests
 
@@ -18,7 +18,7 @@ TEST_CASE("output constructor 1 always returns default initialized", "[output]")
 
 TEST_CASE("output constructor 2  valid input  returns input initialized", "[output]") {
     uint64_t value = 643u;
-    auto const data = to_chunk(base16_literal("ece424a6bb6ddf4db592c0faed60685047a361b1"));
+    auto const data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(data);
     auto const script_result = chain::script::from_data(reader, false);
     REQUIRE(script_result);
@@ -33,7 +33,7 @@ TEST_CASE("output constructor 2  valid input  returns input initialized", "[outp
 
 TEST_CASE("output constructor 3  valid input  returns input initialized", "[output]") {
     uint64_t value = 643u;
-    auto const data = to_chunk(base16_literal("ece424a6bb6ddf4db592c0faed60685047a361b1"));
+    auto const data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(data);
     auto const script_result = chain::script::from_data(reader, false);
     REQUIRE(script_result);
@@ -144,7 +144,7 @@ TEST_CASE("output value  roundtrip  success", "[output]") {
 }
 
 TEST_CASE("output script setter 1  roundtrip  success", "[output]") {
-    auto const data = to_chunk(base16_literal("ece424a6bb6ddf4db592c0faed60685047a361b1"));
+    auto const data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(data);
     auto const value_result = chain::script::from_data(reader, false);
     REQUIRE(value_result);
@@ -162,7 +162,7 @@ TEST_CASE("output script setter 1  roundtrip  success", "[output]") {
 
 TEST_CASE("output script setter 2  roundtrip  success", "[output]") {
     chain::script value;
-    auto const data = to_chunk(base16_literal("ece424a6bb6ddf4db592c0faed60685047a361b1"));
+    auto const data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(data);
     auto result = chain::script::from_data(reader, false);
     REQUIRE(result);
@@ -254,7 +254,7 @@ TEST_CASE("output operator boolean not equals  differs  returns true", "[output]
 // Cash Tokens ------------------------------------------------------------------------------
 
 TEST_CASE("output deserialization with just FT amount 1", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "3c" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1001" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000003cefbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb100176a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -277,7 +277,7 @@ TEST_CASE("output deserialization with just FT amount 1", "[output]") {
 }
 
 TEST_CASE("output deserialization with just FT amount 252", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "3c" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb10fc" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000003cefbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb10fc76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -300,7 +300,7 @@ TEST_CASE("output deserialization with just FT amount 252", "[output]") {
 }
 
 TEST_CASE("output deserialization with just FT amount 253", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "3e" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb10fdfd00" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000003eefbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb10fdfd0076a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -323,7 +323,7 @@ TEST_CASE("output deserialization with just FT amount 253", "[output]") {
 }
 
 TEST_CASE("output deserialization with just FT amount 9223372036854775807", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "44" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb10ffffffffffffffff7f" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("203005000000000044efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb10ffffffffffffffff7f76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -346,7 +346,7 @@ TEST_CASE("output deserialization with just FT amount 9223372036854775807", "[ou
 }
 
 TEST_CASE("output deserialization with just immutable NFT 0-byte commitment", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "3b" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb20" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000003befbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2076a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -370,7 +370,7 @@ TEST_CASE("output deserialization with just immutable NFT 0-byte commitment", "[
 }
 
 TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - FT amount 1", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "3c" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb3001" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000003cefbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb300176a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -396,7 +396,7 @@ TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - 
 }
 
 TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - FT amount 253", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "3e" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb30fdfd00" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000003eefbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb30fdfd0076a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -422,7 +422,7 @@ TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - 
 }
 
 TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - FT amount 9223372036854775807", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "44" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb30ffffffffffffffff7f" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("203005000000000044efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb30ffffffffffffffff7f76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -448,7 +448,7 @@ TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - 
 }
 
 TEST_CASE("output deserialization with just immutable NFT 1-byte commitment", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "3d" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb6001cc" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000003defbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb6001cc76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -473,7 +473,7 @@ TEST_CASE("output deserialization with just immutable NFT 1-byte commitment", "[
 }
 
 TEST_CASE("output deserialization with both - immutable NFT 1-byte commitment - FT amount 252", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "3e" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7001ccfc" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000003eefbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7001ccfc76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -500,7 +500,7 @@ TEST_CASE("output deserialization with both - immutable NFT 1-byte commitment - 
 }
 
 TEST_CASE("output deserialization with both - immutable NFT 2-byte commitment - FT amount 253", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "41" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7002ccccfdfd00" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("203005000000000041efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7002ccccfdfd0076a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -527,7 +527,7 @@ TEST_CASE("output deserialization with both - immutable NFT 2-byte commitment - 
 }
 
 TEST_CASE("output deserialization with both - immutable NFT 10-byte commitment - FT amount 65535", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "49" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb700accccccccccccccccccccfdffff" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("203005000000000049efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb700accccccccccccccccccccfdffff76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -554,7 +554,7 @@ TEST_CASE("output deserialization with both - immutable NFT 10-byte commitment -
 }
 
 TEST_CASE("output deserialization with both - immutable NFT 40-byte commitment - FT amount 65536", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "69" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7028ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccfe00000100" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("203005000000000069efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7028ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccfe0000010076a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -581,7 +581,7 @@ TEST_CASE("output deserialization with both - immutable NFT 40-byte commitment -
 }
 
 TEST_CASE("output deserialization with just mutable NFT 0-byte commitment", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "3b" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb21" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000003befbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2176a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -605,7 +605,7 @@ TEST_CASE("output deserialization with just mutable NFT 0-byte commitment", "[ou
 }
 
 TEST_CASE("output deserialization with both - mutable NFT 0-byte commitment - FT amount 4294967295", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "40" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb31feffffffff" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("203005000000000040efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb31feffffffff76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -631,7 +631,7 @@ TEST_CASE("output deserialization with both - mutable NFT 0-byte commitment - FT
 }
 
 TEST_CASE("output deserialization with just mutable NFT 1-byte commitment", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "3d" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb6101cc" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000003defbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb6101cc76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -656,7 +656,7 @@ TEST_CASE("output deserialization with just mutable NFT 1-byte commitment", "[ou
 }
 
 TEST_CASE("output deserialization with both - mutable NFT 1-byte commitment - FT amount 4294967296", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "46" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7101ccff0000000001000000" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("203005000000000046efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7101ccff000000000100000076a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -683,7 +683,7 @@ TEST_CASE("output deserialization with both - mutable NFT 1-byte commitment - FT
 }
 
 TEST_CASE("output deserialization with both - mutable NFT 2-byte commitment - FT amount 9223372036854775807", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "47" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7102ccccffffffffffffffff7f" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("203005000000000047efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7102ccccffffffffffffffff7f76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -710,7 +710,7 @@ TEST_CASE("output deserialization with both - mutable NFT 2-byte commitment - FT
 }
 
 TEST_CASE("output deserialization with both - mutable NFT 10-byte commitment - FT amount 1", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "47" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb710acccccccccccccccccccc01" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("203005000000000047efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb710acccccccccccccccccccc0176a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -737,7 +737,7 @@ TEST_CASE("output deserialization with both - mutable NFT 10-byte commitment - F
 }
 
 TEST_CASE("output deserialization with both - mutable NFT 40-byte commitment - FT amount 252", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "65" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7128ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccfc" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("203005000000000065efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7128ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccfc76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -764,7 +764,7 @@ TEST_CASE("output deserialization with both - mutable NFT 40-byte commitment - F
 }
 
 TEST_CASE("output deserialization with just minting NFT 0-byte commitment", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "3b" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb22" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000003befbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2276a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -788,7 +788,7 @@ TEST_CASE("output deserialization with just minting NFT 0-byte commitment", "[ou
 }
 
 TEST_CASE("output deserialization with both - minting NFT 0-byte commitment - FT amount 253", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "3e" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb32fdfd00" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000003eefbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb32fdfd0076a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -814,7 +814,7 @@ TEST_CASE("output deserialization with both - minting NFT 0-byte commitment - FT
 }
 
 TEST_CASE("output deserialization with just minting NFT 1-byte commitment", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "3d" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb6201cc" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000003defbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb6201cc76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -839,7 +839,7 @@ TEST_CASE("output deserialization with just minting NFT 1-byte commitment", "[ou
 }
 
 TEST_CASE("output deserialization with both - minting NFT 1-byte commitment - FT amount 65535", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "40" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7201ccfdffff" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("203005000000000040efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7201ccfdffff76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -866,7 +866,7 @@ TEST_CASE("output deserialization with both - minting NFT 1-byte commitment - FT
 }
 
 TEST_CASE("output deserialization with both - minting NFT 2-byte commitment - FT amount 65536", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "43" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7202ccccfe00000100" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("203005000000000043efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7202ccccfe0000010076a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -893,7 +893,7 @@ TEST_CASE("output deserialization with both - minting NFT 2-byte commitment - FT
 }
 
 TEST_CASE("output deserialization with both - minting NFT 10-byte commitment - FT amount 4294967297", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "4f" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb720accccccccccccccccccccff0100000001000000" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000004fefbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb720accccccccccccccccccccff010000000100000076a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -920,7 +920,7 @@ TEST_CASE("output deserialization with both - minting NFT 10-byte commitment - F
 }
 
 TEST_CASE("output deserialization with both - minting NFT 40-byte commitment - FT amount 9223372036854775807", "[output]") {
-    auto const data = to_chunk(base16_literal("2030050000000000" "6d" "efbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7228ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccffffffffffffffff7f" "76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"));
+    auto const data = to_chunk("20300500000000006defbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7228ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccffffffffffffffff7f76a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);
@@ -947,7 +947,7 @@ TEST_CASE("output deserialization with both - minting NFT 40-byte commitment - F
 }
 
 TEST_CASE("output deserialization ...", "[output]") {
-    auto const data = to_chunk(base16_literal("e803000000000000" "3c" "efb43378d02ca3a5ef93f150d44b3be4f098f103e4336062ee2142d03ddd9ac629100a" "76a91448a5e322b29f3db7297f4dc744e30bca63a0179d88ac"));
+    auto const data = to_chunk("e8030000000000003cefb43378d02ca3a5ef93f150d44b3be4f098f103e4336062ee2142d03ddd9ac629100a76a91448a5e322b29f3db7297f4dc744e30bca63a0179d88ac"_base16);
 
     chain::output instance;
     byte_reader reader(data);

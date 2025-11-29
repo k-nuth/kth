@@ -152,12 +152,9 @@ TEST_CASE("compact block from data insufficient bytes  failure", "[compact block
     REQUIRE( ! result);
 }
 
+// TODO(fernando): review - original hex had 267 chars (odd), base16_literal truncated last char silently. Fixed to 266 chars.
 TEST_CASE("compact block from data insufficient bytes mid transaction  failure", "[compact block]") {
-    auto const raw = to_chunk(base16_literal(
-        "0a0000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000"
-        "00003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
-        "221b08003e8a6300240c0100d2040000000000000400000012121212121234343434"
-        "3434565656565678789a9a02010000000100000000000001000000010000000"));
+    auto const raw = to_chunk("0a0000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d61900000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a221b08003e8a6300240c0100d20400000000000004000000121212121212343434343434565656565678789a9a0201000000010000000000000100000001000000"_base16);
 
     message::compact_block instance{};
     byte_reader reader(raw);
@@ -166,11 +163,7 @@ TEST_CASE("compact block from data insufficient bytes mid transaction  failure",
 }
 
 TEST_CASE("compact block from data insufficient version  failure", "[compact block]") {
-    auto const raw = to_chunk(base16_literal(
-        "0a0000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000"
-        "00003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
-        "221b08003e8a6300240c0100d2040000000000000400000012121212121234343434"
-        "3434565656565678789a9a0201000000010000000000000100000001000000000000"));
+    auto const raw = to_chunk("0a0000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d61900000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a221b08003e8a6300240c0100d20400000000000004000000121212121212343434343434565656565678789a9a0201000000010000000000000100000001000000000000"_base16);
 
     byte_reader reader(raw);
     auto result_exp = message::compact_block::from_data(reader, message::compact_block::version_minimum);
@@ -185,11 +178,7 @@ TEST_CASE("compact block from data insufficient version  failure", "[compact blo
 }
 
 TEST_CASE("compact block from data valid input  success", "[compact block]") {
-    auto const raw = to_chunk(base16_literal(
-        "0a0000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000"
-        "00003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
-        "221b08003e8a6300240c0100d2040000000000000400000012121212121234343434"
-        "3434565656565678789a9a0201000000010000000000000100000001000000000000"));
+    auto const raw = to_chunk("0a0000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d61900000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a221b08003e8a6300240c0100d20400000000000004000000121212121212343434343434565656565678789a9a0201000000010000000000000100000001000000000000"_base16);
 
     byte_reader reader(raw);
     auto result_exp = message::compact_block::from_data(reader, message::compact_block::version_minimum);
@@ -208,8 +197,6 @@ TEST_CASE("compact block from data valid input  success", "[compact block]") {
     REQUIRE(data.size() == result.serialized_size(message::compact_block::version_minimum));
     REQUIRE(expected.serialized_size(message::compact_block::version_minimum) == result.serialized_size(message::compact_block::version_minimum));
 }
-
-
 
 TEST_CASE("compact block  header accessor 1  always  returns initialized value", "[compact block]") {
     chain::header const header(10u,

@@ -12,42 +12,42 @@ using namespace kth::domain::wallet;
 
 // TODO(legacy): add version tests
 
-#define SECRET "8010b1bb119ad37d4b65a1022a314897b1b3614b345974332cb1b9582cf03536"
-#define WIF_COMPRESSED "L1WepftUBemj6H4XQovkiW1ARVjxMqaw4oj2kmkYqdG1xTnBcHfC"
-#define WIF_UNCOMPRESSED "5JngqQmHagNTknnCshzVUysLMWAjT23FWs1TgNU5wyFH5SB3hrP"
+constexpr auto secret = "8010b1bb119ad37d4b65a1022a314897b1b3614b345974332cb1b9582cf03536"_base16;
+constexpr auto wif_compressed_str = "L1WepftUBemj6H4XQovkiW1ARVjxMqaw4oj2kmkYqdG1xTnBcHfC";
+constexpr auto wif_uncompressed_str = "5JngqQmHagNTknnCshzVUysLMWAjT23FWs1TgNU5wyFH5SB3hrP";
 
 // TODO(legacy): implement testnet version tests
 //#define WIF_COMPRESSED_TESTNET "cRseHatKciTzFiXnoDjt5pWE3j3N2Hgd8qsVsCD4Ljv2DCwuD1V6"
 //#define WIF_UNCOMPRESSED_TESTNET "92ZKR9aqAuSbirHVW3tQMaRJ1AXScBaSrosQkzpbHhzKrVBsZBL"
 
-TEST_CASE("ec private  compressed wif  compressed  test", "[ec private]") {
-    REQUIRE(ec_private(WIF_COMPRESSED).compressed());
+TEST_CASE("ec private compressed wif compressed test", "[ec private]") {
+    REQUIRE(ec_private(wif_compressed_str).compressed());
 }
 
-TEST_CASE("ec private  uncompressed wif  not compressed  test", "[ec private]") {
-    REQUIRE( ! ec_private(WIF_UNCOMPRESSED).compressed());
+TEST_CASE("ec private uncompressed wif not compressed test", "[ec private]") {
+    REQUIRE( ! ec_private(wif_uncompressed_str).compressed());
 }
 
-TEST_CASE("ec private  encode wif  compressed  test", "[ec private]") {
-    REQUIRE(ec_private(base16_literal(SECRET)).encoded() == WIF_COMPRESSED);
+TEST_CASE("ec private encode wif compressed test", "[ec private]") {
+    REQUIRE(ec_private(secret).encoded() == wif_compressed_str);
 }
 
-TEST_CASE("ec private  encode wif  uncompressed  test", "[ec private]") {
-    REQUIRE(ec_private(base16_literal(SECRET), 0x8000, false).encoded() == WIF_UNCOMPRESSED);
+TEST_CASE("ec private encode wif uncompressed test", "[ec private]") {
+    REQUIRE(ec_private(secret, 0x8000, false).encoded() == wif_uncompressed_str);
 }
 
-TEST_CASE("ec private  decode wif  compressed  test", "[ec private]") {
-    ec_private secret(WIF_COMPRESSED);
-    REQUIRE(encode_base16(secret.secret()) == SECRET);
-    REQUIRE(secret.version() == 0x8000);
-    REQUIRE(secret.compressed());
+TEST_CASE("ec private decode wif compressed test", "[ec private]") {
+    ec_private priv(wif_compressed_str);
+    REQUIRE(priv.secret() == secret);
+    REQUIRE(priv.version() == 0x8000);
+    REQUIRE(priv.compressed());
 }
 
-TEST_CASE("ec private  decode wif  uncompressed  test", "[ec private]") {
-    ec_private secret(WIF_UNCOMPRESSED);
-    REQUIRE(encode_base16(secret.secret()) == SECRET);
-    REQUIRE(secret.version() == 0x8000);
-    REQUIRE( ! secret.compressed());
+TEST_CASE("ec private decode wif uncompressed test", "[ec private]") {
+    ec_private priv(wif_uncompressed_str);
+    REQUIRE(priv.secret() == secret);
+    REQUIRE(priv.version() == 0x8000);
+    REQUIRE( ! priv.compressed());
 }
 
 // End Test Suite

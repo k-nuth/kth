@@ -15,8 +15,8 @@ TEST_CASE("alert  constructor 1  always invalid", "[alert]") {
 }
 
 TEST_CASE("alert  constructor 2  always  equals params", "[alert]") {
-    data_chunk const payload = to_chunk(base16_literal("0123456789abcdef"));
-    data_chunk const signature = to_chunk(base16_literal("fedcba9876543210"));
+    data_chunk const payload = to_chunk("0123456789abcdef"_base16);
+    data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
     message::alert instance(payload, signature);
 
@@ -26,8 +26,8 @@ TEST_CASE("alert  constructor 2  always  equals params", "[alert]") {
 }
 
 TEST_CASE("alert  constructor 3  always  equals params", "[alert]") {
-    auto const payload = to_chunk(base16_literal("0123456789abcdef"));
-    auto const signature = to_chunk(base16_literal("fedcba9876543210"));
+    auto const payload = to_chunk("0123456789abcdef"_base16);
+    auto const signature = to_chunk("fedcba9876543210"_base16);
     auto dup_payload = payload;
     auto dup_signature = signature;
 
@@ -39,8 +39,8 @@ TEST_CASE("alert  constructor 3  always  equals params", "[alert]") {
 }
 
 TEST_CASE("alert  constructor 4  always  equals params", "[alert]") {
-    data_chunk const payload = to_chunk(base16_literal("0123456789abcdef"));
-    data_chunk const signature = to_chunk(base16_literal("fedcba9876543210"));
+    data_chunk const payload = to_chunk("0123456789abcdef"_base16);
+    data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
     message::alert value(payload, signature);
     message::alert instance(value);
@@ -52,8 +52,8 @@ TEST_CASE("alert  constructor 4  always  equals params", "[alert]") {
 }
 
 TEST_CASE("alert  constructor 5  always  equals params", "[alert]") {
-    data_chunk const payload = to_chunk(base16_literal("0123456789abcdef"));
-    data_chunk const signature = to_chunk(base16_literal("fedcba9876543210"));
+    data_chunk const payload = to_chunk("0123456789abcdef"_base16);
+    data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
     message::alert value(payload, signature);
     message::alert instance(std::move(value));
@@ -155,23 +155,23 @@ TEST_CASE("alert from data roundtrip  success", "[alert]") {
 
 
 TEST_CASE("alert  payload accessor 1  always  returns initialized", "[alert]") {
-    data_chunk const payload = to_chunk(base16_literal("0123456789abcdef"));
-    data_chunk const signature = to_chunk(base16_literal("fedcba9876543210"));
+    data_chunk const payload = to_chunk("0123456789abcdef"_base16);
+    data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
     message::alert instance(payload, signature);
     REQUIRE(payload == instance.payload());
 }
 
 TEST_CASE("alert  payload accessor 2  always  returns initialized", "[alert]") {
-    data_chunk const payload = to_chunk(base16_literal("0123456789abcdef"));
-    data_chunk const signature = to_chunk(base16_literal("fedcba9876543210"));
+    data_chunk const payload = to_chunk("0123456789abcdef"_base16);
+    data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
     const message::alert instance(payload, signature);
     REQUIRE(payload == instance.payload());
 }
 
 TEST_CASE("alert  payload setter 1  roundtrip  success", "[alert]") {
-    auto const value = to_chunk(base16_literal("aabbccddeeff"));
+    auto const value = to_chunk("aabbccddeeff"_base16);
     message::alert instance;
     REQUIRE(instance.payload() != value);
     instance.set_payload(value);
@@ -179,7 +179,7 @@ TEST_CASE("alert  payload setter 1  roundtrip  success", "[alert]") {
 }
 
 TEST_CASE("alert  payload setter 2  roundtrip  success", "[alert]") {
-    auto const value = to_chunk(base16_literal("aabbccddeeff"));
+    auto const value = to_chunk("aabbccddeeff"_base16);
     auto dup_value = value;
     message::alert instance;
     REQUIRE(instance.payload() != value);
@@ -188,23 +188,23 @@ TEST_CASE("alert  payload setter 2  roundtrip  success", "[alert]") {
 }
 
 TEST_CASE("alert  signature accessor 1  always  returns initialized", "[alert]") {
-    data_chunk const payload = to_chunk(base16_literal("0123456789abcdef"));
-    data_chunk const signature = to_chunk(base16_literal("fedcba9876543210"));
+    data_chunk const payload = to_chunk("0123456789abcdef"_base16);
+    data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
     message::alert instance(payload, signature);
     REQUIRE(signature == instance.signature());
 }
 
 TEST_CASE("alert  signature accessor 2  always  returns initialized", "[alert]") {
-    data_chunk const payload = to_chunk(base16_literal("0123456789abcdef"));
-    data_chunk const signature = to_chunk(base16_literal("fedcba9876543210"));
+    data_chunk const payload = to_chunk("0123456789abcdef"_base16);
+    data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
     const message::alert instance(payload, signature);
     REQUIRE(signature == instance.signature());
 }
 
 TEST_CASE("alert  signature setter 1  roundtrip  success", "[alert]") {
-    auto const value = to_chunk(base16_literal("aabbccddeeff"));
+    auto const value = to_chunk("aabbccddeeff"_base16);
     message::alert instance;
     REQUIRE(instance.signature() != value);
     instance.set_signature(value);
@@ -212,7 +212,7 @@ TEST_CASE("alert  signature setter 1  roundtrip  success", "[alert]") {
 }
 
 TEST_CASE("alert  signature setter 2  roundtrip  success", "[alert]") {
-    auto const value = to_chunk(base16_literal("aabbccddeeff"));
+    auto const value = to_chunk("aabbccddeeff"_base16);
     auto dup_value = value;
     message::alert instance;
     REQUIRE(instance.signature() != value);
@@ -221,8 +221,8 @@ TEST_CASE("alert  signature setter 2  roundtrip  success", "[alert]") {
 }
 
 TEST_CASE("alert  operator assign equals  always  matches equivalent", "[alert]") {
-    data_chunk const payload = to_chunk(base16_literal("0123456789abcdef"));
-    data_chunk const signature = to_chunk(base16_literal("fedcba9876543210"));
+    data_chunk const payload = to_chunk("0123456789abcdef"_base16);
+    data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
     message::alert value(payload, signature);
 
@@ -239,8 +239,8 @@ TEST_CASE("alert  operator assign equals  always  matches equivalent", "[alert]"
 
 TEST_CASE("alert  operator boolean equals  duplicates  returns true", "[alert]") {
     const message::alert expected(
-        to_chunk(base16_literal("0123456789abcdef")),
-        to_chunk(base16_literal("fedcba9876543210")));
+        to_chunk("0123456789abcdef"_base16),
+        to_chunk("fedcba9876543210"_base16));
 
     message::alert instance(expected);
     REQUIRE(instance == expected);
@@ -248,8 +248,8 @@ TEST_CASE("alert  operator boolean equals  duplicates  returns true", "[alert]")
 
 TEST_CASE("alert  operator boolean equals  differs  returns false", "[alert]") {
     const message::alert expected(
-        to_chunk(base16_literal("0123456789abcdef")),
-        to_chunk(base16_literal("fedcba9876543210")));
+        to_chunk("0123456789abcdef"_base16),
+        to_chunk("fedcba9876543210"_base16));
 
     message::alert instance;
     REQUIRE(instance != expected);
@@ -257,8 +257,8 @@ TEST_CASE("alert  operator boolean equals  differs  returns false", "[alert]") {
 
 TEST_CASE("alert  operator boolean not equals  duplicates  returns false", "[alert]") {
     const message::alert expected(
-        to_chunk(base16_literal("0123456789abcdef")),
-        to_chunk(base16_literal("fedcba9876543210")));
+        to_chunk("0123456789abcdef"_base16),
+        to_chunk("fedcba9876543210"_base16));
 
     message::alert instance(expected);
     REQUIRE(instance == expected);
@@ -266,8 +266,8 @@ TEST_CASE("alert  operator boolean not equals  duplicates  returns false", "[ale
 
 TEST_CASE("alert  operator boolean not equals  differs  returns true", "[alert]") {
     const message::alert expected(
-        to_chunk(base16_literal("0123456789abcdef")),
-        to_chunk(base16_literal("fedcba9876543210")));
+        to_chunk("0123456789abcdef"_base16),
+        to_chunk("fedcba9876543210"_base16));
 
     message::alert instance;
     REQUIRE(instance != expected);
