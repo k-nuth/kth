@@ -149,7 +149,6 @@ public:
 
     uint64_t fees() const;
     // point::list previous_outputs() const;
-    point::list missing_previous_outputs() const;
     // hash_list missing_previous_transactions() const;
     uint64_t total_input_value() const;
     uint64_t total_output_value() const;

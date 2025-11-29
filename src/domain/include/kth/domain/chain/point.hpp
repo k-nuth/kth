@@ -80,6 +80,12 @@ struct KD_API point {
     static
     expect<point> from_data(byte_reader& reader, bool wire = true);
 
+    /// Returns a null point (coinbase input reference).
+    [[nodiscard]]
+    static constexpr point null() noexcept {
+        return point{null_hash, null_index};
+    }
+
     // constexpr
     [[nodiscard]]
     bool is_valid() const;
@@ -161,8 +167,13 @@ struct KD_API point {
     void reset();
 
 private:
+    // Design note: A default-constructed point is "uninitialized" (not valid).
+    // A "null" point (null_hash + null_index) represents a coinbase input and IS valid.
+    // These are distinct concepts:
+    //   - is_valid(): has been properly initialized (explicitly or via deserialization)
+    //   - is_null(): references no previous output (coinbase input)
     hash_digest hash_{null_hash};
-    uint32_t index_{0};
+    uint32_t index_{0};  // Intentionally 0, not null_index. See comment above.
     bool valid_{false};
 };
 

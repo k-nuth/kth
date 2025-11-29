@@ -654,33 +654,6 @@ inline size_t multisig_sigops(bool accurate, opcode code) {
 
 // ------------------------------------------------------------------
 
-// operation::list operations(script_basis const& script) {
-//     data_source istream(script.bytes());
-//     istream_reader stream_r(istream);
-//     auto const size = script.bytes().size();
-
-//     operation::list res;
-//     // One operation per byte is the upper limit of operations.
-//     res.reserve(size);
-
-//     // ************************************************************************
-//     // CONSENSUS: In the case of a coinbase script we must parse the entire
-//     // script, beyond just the BIP34 requirements, so that sigops can be
-//     // calculated from the script. These are counted despite being irrelevant.
-//     // In this case an invalid script is parsed to the extent possible.
-//     // ************************************************************************
-
-//     // If an op fails it is pushed to operations and the loop terminates.
-//     // To validate the ops the caller must test the last op.is_valid(), or may
-//     // text script.is_valid_operations(), which is done in script validation.
-//     while ( ! stream_r.is_exhausted()) {
-//         res.push_back(create<operation>(stream_r));
-//     }
-
-//     res.shrink_to_fit();
-//     return res;
-// }
-
 operation::list operations(script_basis const& script) {
     byte_reader reader(script.bytes());
     auto const size = script.bytes().size();

@@ -236,55 +236,6 @@ operation::iterator script::end() const {
 // Properties (size, accessors, cache).
 //-----------------------------------------------------------------------------
 
-// // protected
-// operation::list const& script::operations() const {
-//     ///////////////////////////////////////////////////////////////////////////
-//     // Critical Section
-//     mutex_.lock_upgrade();
-
-//     if (cached_) {
-//         mutex_.unlock_upgrade();
-//         //---------------------------------------------------------------------
-//         return operations_;
-//     }
-
-//     // operation op;
-//     data_source istream(bytes_);
-//     istream_reader stream_r(istream);
-//     auto const size = bytes_.size();
-
-//     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//     mutex_.unlock_upgrade_and_lock();
-
-//     // One operation per byte is the upper limit of operations.
-//     operations_.reserve(size);
-
-//     // ************************************************************************
-//     // CONSENSUS: In the case of a coinbase script we must parse the entire
-//     // script, beyond just the BIP34 requirements, so that sigops can be
-//     // calculated from the script. These are counted despite being irrelevant.
-//     // In this case an invalid script is parsed to the extent possible.
-//     // ************************************************************************
-
-//     // If an op fails it is pushed to operations and the loop terminates.
-//     // To validate the ops the caller must test the last op.is_valid(), or may
-//     // text script.is_valid_operations(), which is done in script validation.
-//     while ( ! stream_r.is_exhausted()) {
-//         // op.from_data(stream_r);
-//         // operations_.push_back(std::move(op));
-//         operations_.push_back(create<operation>(stream_r));
-//     }
-
-//     operations_.shrink_to_fit();
-//     cached_ = true;
-
-//     mutex_.unlock();
-//     ///////////////////////////////////////////////////////////////////////////
-
-//     return operations_;
-// }
-
-
 // protected
 operation::list const& script::operations() const {
 #if ! defined(__EMSCRIPTEN__)
