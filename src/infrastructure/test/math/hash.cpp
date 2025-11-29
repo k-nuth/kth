@@ -13,23 +13,23 @@ using namespace kth;
 
 TEST_CASE("sha1 hash test", "[hash tests]") {
     for (auto const& result: sha1_tests) {
-        data_chunk data;
-        REQUIRE(decode_base16(data, result.input));
-        REQUIRE(encode_base16(sha1_hash(data)) == result.result);
+        auto const data = decode_base16(result.input);
+        REQUIRE(data);
+        REQUIRE(encode_base16(sha1_hash(*data)) == result.result);
     }
 }
 
 TEST_CASE("ripemd hash test", "[hash tests]") {
     for (auto const& result: ripemd_tests) {
-        data_chunk data;
-        REQUIRE(decode_base16(data, result.input));
-        REQUIRE(encode_base16(ripemd160_hash(data)) == result.result);
+        auto const data = decode_base16(result.input);
+        REQUIRE(data);
+        REQUIRE(encode_base16(ripemd160_hash(*data)) == result.result);
     }
 
     auto const ripemd_hash1 = bitcoin_short_hash(to_array(110));
     REQUIRE(encode_base16(ripemd_hash1) == "17d040b739d639c729daaf627eaff88cfe4207f4");
 
-    auto const ripemd_hash2 = bitcoin_short_hash(base16_literal("020641fde3a85beb8321033516de7ec01c35de96e945bf76c3768784a905471986"));
+    auto const ripemd_hash2 = bitcoin_short_hash("020641fde3a85beb8321033516de7ec01c35de96e945bf76c3768784a905471986"_base16);
     REQUIRE(encode_base16(ripemd_hash2) == "c23e37c6fad06deab545f952992c8f28cb02bbe5");
 }
 

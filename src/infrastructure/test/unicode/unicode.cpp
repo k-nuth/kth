@@ -16,13 +16,13 @@ using namespace kth;
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki
 TEST_CASE("infrastructure unicode to normal nfc form validation", "[infrastructure][unicode]") {
-    data_chunk original;
-    REQUIRE(decode_base16(original, "cf92cc8100f0909080f09f92a9"));
-    std::string original_string(original.begin(), original.end());
+    auto const original = decode_base16("cf92cc8100f0909080f09f92a9");
+    REQUIRE(original);
+    std::string original_string(original->begin(), original->end());
 
-    data_chunk normal;
-    REQUIRE(decode_base16(normal, "cf9300f0909080f09f92a9"));
-    std::string expected_normal_string(normal.begin(), normal.end());
+    auto const normal = decode_base16("cf9300f0909080f09f92a9");
+    REQUIRE(normal);
+    std::string expected_normal_string(normal->begin(), normal->end());
 
     auto const derived_normal_string = kth::to_normal_nfc_form(original_string);
     REQUIRE(expected_normal_string == derived_normal_string);

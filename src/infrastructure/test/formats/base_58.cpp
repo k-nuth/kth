@@ -10,11 +10,12 @@ using namespace kth;
 // Start Test Suite: base 58 tests
 
 void encdec_test(std::string const& hex, std::string const& encoded) {
-    data_chunk data, decoded;
-    REQUIRE(decode_base16(data, hex));
-    REQUIRE(encode_base58(data) == encoded);
+    auto const data = decode_base16(hex);
+    REQUIRE(data);
+    REQUIRE(encode_base58(*data) == encoded);
+    data_chunk decoded;
     REQUIRE(decode_base58(decoded, encoded));
-    REQUIRE(decoded == data);
+    REQUIRE(decoded == *data);
 }
 
 TEST_CASE("infrastructure base58 encode and decode various test vectors", "[infrastructure][base58]") {

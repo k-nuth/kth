@@ -45,48 +45,48 @@ TEST_CASE("infrastructure mnemonic decode with bx test vectors", "[infrastructur
 
 TEST_CASE("infrastructure mnemonic create from entropy trezor vectors", "[infrastructure][mnemonic]") {
     for (mnemonic_result const& vector : mnemonic_trezor_vectors) {
-        data_chunk entropy;
-        decode_base16(entropy, vector.entropy);
-        auto const mnemonic = create_mnemonic(entropy, vector.language);
+        auto const entropy = decode_base16(vector.entropy);
+        REQUIRE(entropy);
+        auto const mnemonic = create_mnemonic(*entropy, vector.language);
         REQUIRE(mnemonic.size() > 0);
         REQUIRE(join(mnemonic, ",") == vector.mnemonic);
         REQUIRE(validate_mnemonic(mnemonic));
     }
 }
 
-TEST_CASE("mnemonic  create mnemonic  bx", "[mnemonic tests]") {
+TEST_CASE("mnemonic create mnemonic bx", "[mnemonic tests]") {
     for (const mnemonic_result& vector: mnemonic_bx_new_vectors) {
-        data_chunk entropy;
-        decode_base16(entropy, vector.entropy);
-        auto const mnemonic = create_mnemonic(entropy, vector.language);
+        auto const entropy = decode_base16(vector.entropy);
+        REQUIRE(entropy);
+        auto const mnemonic = create_mnemonic(*entropy, vector.language);
         REQUIRE(mnemonic.size() > 0);
         REQUIRE(join(mnemonic, ",") == vector.mnemonic);
         REQUIRE(validate_mnemonic(mnemonic));
     }
 }
 
-TEST_CASE("mnemonic  validate mnemonic  invalid", "[mnemonic tests]") {
+TEST_CASE("mnemonic validate mnemonic invalid", "[mnemonic tests]") {
     for (auto const& mnemonic: invalid_mnemonic_tests) {
         auto const words = split(mnemonic, ",");
         REQUIRE( ! validate_mnemonic(words));
     }
 }
 
-TEST_CASE("mnemonic  create mnemonic  tiny", "[mnemonic tests]") {
+TEST_CASE("mnemonic create mnemonic tiny", "[mnemonic tests]") {
     data_chunk const entropy(4, 0xa9);
     auto const mnemonic = create_mnemonic(entropy);
     REQUIRE(mnemonic.size() == 3u);
     REQUIRE(validate_mnemonic(mnemonic));
 }
 
-TEST_CASE("mnemonic  create mnemonic  giant", "[mnemonic tests]") {
+TEST_CASE("mnemonic create mnemonic giant", "[mnemonic tests]") {
     data_chunk const entropy(1024, 0xa9);
     auto const mnemonic = create_mnemonic(entropy);
     REQUIRE(mnemonic.size() == 768u);
     REQUIRE(validate_mnemonic(mnemonic));
 }
 
-TEST_CASE("mnemonic  dictionary  en es  no intersection", "[mnemonic tests]") {
+TEST_CASE("mnemonic dictionary en es no intersection", "[mnemonic tests]") {
     auto const& english = language::en;
     auto const& spanish = language::es;
     size_t intersection = 0;
@@ -100,7 +100,7 @@ TEST_CASE("mnemonic  dictionary  en es  no intersection", "[mnemonic tests]") {
     REQUIRE(intersection == 0u);
 }
 
-TEST_CASE("mnemonic  dictionary  en it  no intersection", "[mnemonic tests]") {
+TEST_CASE("mnemonic dictionary en it no intersection", "[mnemonic tests]") {
     auto const& english = language::en;
     auto const& italian = language::it;
     size_t intersection = 0;
@@ -114,7 +114,7 @@ TEST_CASE("mnemonic  dictionary  en it  no intersection", "[mnemonic tests]") {
     REQUIRE(intersection == 0u);
 }
 
-TEST_CASE("mnemonic  dictionary  fr es  no intersection", "[mnemonic tests]") {
+TEST_CASE("mnemonic dictionary fr es no intersection", "[mnemonic tests]") {
     auto const& french = language::fr;
     auto const& spanish = language::es;
     size_t intersection = 0;
@@ -128,7 +128,7 @@ TEST_CASE("mnemonic  dictionary  fr es  no intersection", "[mnemonic tests]") {
     REQUIRE(intersection == 0u);
 }
 
-TEST_CASE("mnemonic  dictionary  it es  no intersection", "[mnemonic tests]") {
+TEST_CASE("mnemonic dictionary it es no intersection", "[mnemonic tests]") {
     auto const& italian = language::it;
     auto const& spanish = language::es;
     size_t intersection = 0;
@@ -142,7 +142,7 @@ TEST_CASE("mnemonic  dictionary  it es  no intersection", "[mnemonic tests]") {
     REQUIRE(intersection == 0u);
 }
 
-TEST_CASE("mnemonic  dictionary  fr it  no intersection", "[mnemonic tests]") {
+TEST_CASE("mnemonic dictionary fr it no intersection", "[mnemonic tests]") {
     auto const& french = language::fr;
     auto const& italian = language::it;
     size_t intersection = 0;
@@ -156,7 +156,7 @@ TEST_CASE("mnemonic  dictionary  fr it  no intersection", "[mnemonic tests]") {
     REQUIRE(intersection == 0u);
 }
 
-TEST_CASE("mnemonic  dictionary  cs ru  no intersection", "[mnemonic tests]") {
+TEST_CASE("mnemonic dictionary cs ru no intersection", "[mnemonic tests]") {
     auto const& czech = language::cs;
     auto const& russian = language::ru;
     size_t intersection = 0;
@@ -170,7 +170,7 @@ TEST_CASE("mnemonic  dictionary  cs ru  no intersection", "[mnemonic tests]") {
     REQUIRE(intersection == 0u);
 }
 
-TEST_CASE("mnemonic  dictionary  cs uk  no intersection", "[mnemonic tests]") {
+TEST_CASE("mnemonic dictionary cs uk no intersection", "[mnemonic tests]") {
     auto const& czech = language::cs;
     auto const& ukranian = language::uk;
     size_t intersection = 0;
@@ -184,7 +184,7 @@ TEST_CASE("mnemonic  dictionary  cs uk  no intersection", "[mnemonic tests]") {
     REQUIRE(intersection == 0u);
 }
 
-TEST_CASE("mnemonic  dictionary  zh Hans Hant  intersection", "[mnemonic tests]") {
+TEST_CASE("mnemonic dictionary zh Hans Hant intersection", "[mnemonic tests]") {
     auto const& simplified = language::zh_Hans;
     auto const& traditional = language::zh_Hant;
     size_t intersection = 0;

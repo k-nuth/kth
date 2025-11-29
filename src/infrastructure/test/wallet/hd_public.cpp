@@ -12,29 +12,29 @@ using namespace kth::infrastructure::wallet;
 
 // TODO: test altchain
 
-#define SHORT_SEED "000102030405060708090a0b0c0d0e0f"
-#define LONG_SEED "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
+constexpr char short_seed[] = "000102030405060708090a0b0c0d0e0f";
+constexpr char long_seed[] = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542";
 
-TEST_CASE("hd public  derive public  invalid  false", "[hd public tests]") {
-    data_chunk seed;
-    REQUIRE(decode_base16(seed, SHORT_SEED));
+TEST_CASE("hd public derive public invalid false", "[hd public tests]") {
+    auto const seed = decode_base16(short_seed);
+    REQUIRE(seed);
 
-    hd_private const m(seed, hd_private::mainnet);
+    hd_private const m(*seed, hd_private::mainnet);
     hd_public const m_pub = m;
     REQUIRE( ! m_pub.derive_public(hd_first_hardened_key));
 }
 
-TEST_CASE("hd public  encoded  round trip  expected", "[hd public tests]") {
+TEST_CASE("hd public encoded round trip expected", "[hd public tests]") {
     static auto const encoded = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8";
     hd_public const key(encoded);
     REQUIRE(key.encoded() == encoded);
 }
 
-TEST_CASE("hd public  derive public  short seed  expected", "[hd public tests]") {
-    data_chunk seed;
-    REQUIRE(decode_base16(seed, SHORT_SEED));
+TEST_CASE("hd public derive public short seed expected", "[hd public tests]") {
+    auto const seed = decode_base16(short_seed);
+    REQUIRE(seed);
 
-    hd_private const m(seed, hd_private::mainnet);
+    hd_private const m(*seed, hd_private::mainnet);
     auto const m0h = m.derive_private(hd_first_hardened_key);
     auto const m0h1 = m0h.derive_private(1);
 
@@ -53,11 +53,11 @@ TEST_CASE("hd public  derive public  short seed  expected", "[hd public tests]")
     REQUIRE(m0h12h2x_pub.encoded() == "xpub6H1LXWLaKsWFhvm6RVpEL9P4KfRZSW7abD2ttkWP3SSQvnyA8FSVqNTEcYFgJS2UaFcxupHiYkro49S8yGasTvXEYBVPamhGW6cFJodrTHy");
 }
 
-TEST_CASE("hd public  derive public  long seed  expected", "[hd public tests]") {
-    data_chunk seed;
-    REQUIRE(decode_base16(seed, LONG_SEED));
+TEST_CASE("hd public derive public long seed expected", "[hd public tests]") {
+    auto const seed = decode_base16(long_seed);
+    REQUIRE(seed);
 
-    hd_private const m(seed, hd_private::mainnet);
+    hd_private const m(*seed, hd_private::mainnet);
     auto const m0 = m.derive_private(0);
     auto const m0xH = m0.derive_private(2147483647 + hd_first_hardened_key);
     auto const m0xH1 = m0xH.derive_private(1);

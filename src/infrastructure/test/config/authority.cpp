@@ -475,6 +475,7 @@ TEST_CASE("authority  inequality  ipv6 ipv6  false", "[authority  inequality]") 
 // Start Test Suite: authority  construct
 
 #if ! defined(__EMSCRIPTEN__)
+
 TEST_CASE("authority  construct  bogus ip  throws invalid option", "[authority  construct]") {
     REQUIRE_THROWS_AS([](){authority host("bogus");}(), invalid_option_value);
 }
@@ -490,7 +491,9 @@ TEST_CASE("authority should throw invalid option exception for invalid IPv6", "[
 TEST_CASE("authority  construct  invalid port  throws invalid option", "[authority  construct]") {
     REQUIRE_THROWS_AS([](){authority host("[::]:12345678901");}(), invalid_option_value);
 }
+
 #else
+
 TEST_CASE("authority  construct  bogus ip  throws invalid option", "[authority  construct]") {
     REQUIRE_THROWS_AS([](){authority host("bogus");}(), std::invalid_argument);
 }
@@ -506,6 +509,7 @@ TEST_CASE("authority  construct  invalid ipv6  throws invalid option", "[authori
 TEST_CASE("authority  construct  invalid port  throws invalid option", "[authority  construct]") {
     REQUIRE_THROWS_AS([](){authority host("[::]:12345678901");}(), std::invalid_argument);
 }
+
 #endif
 
 // End Test Suite

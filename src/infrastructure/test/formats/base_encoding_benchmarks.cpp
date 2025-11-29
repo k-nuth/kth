@@ -76,33 +76,28 @@ void benchmark_base16() {
     // Decoding benchmarks
     Bench().title("Base16 Decoding").relative(true)
         .run("decode 32B (hash)", [&] {
-            data_chunk result;
             ankerl::nanobench::doNotOptimizeAway(
-                decode_base16(result, small_encoded)
+                decode_base16(small_encoded)
             );
         })
         .run("decode 256B", [&] {
-            data_chunk result;
             ankerl::nanobench::doNotOptimizeAway(
-                decode_base16(result, medium_encoded)
+                decode_base16(medium_encoded)
             );
         })
         .run("decode 1KB", [&] {
-            data_chunk result;
             ankerl::nanobench::doNotOptimizeAway(
-                decode_base16(result, large_encoded)
+                decode_base16(large_encoded)
             );
         })
         .run("decode 16KB", [&] {
-            data_chunk result;
             ankerl::nanobench::doNotOptimizeAway(
-                decode_base16(result, xl_encoded)
+                decode_base16(xl_encoded)
             );
         })
         .run("decode 64KB", [&] {
-            data_chunk result;
             ankerl::nanobench::doNotOptimizeAway(
-                decode_base16(result, xxl_encoded)
+                decode_base16(xxl_encoded)
             );
         });
 }
@@ -345,8 +340,7 @@ void benchmark_cross_encoding() {
     // Compare decoding speeds
     Bench().title("Decoding Comparison (256B)").relative(true)
         .run("Base16", [&] {
-            data_chunk result;
-            ankerl::nanobench::doNotOptimizeAway(decode_base16(result, enc16));
+            ankerl::nanobench::doNotOptimizeAway(decode_base16(enc16));
         })
         .run("Base58", [&] {
             data_chunk result;
