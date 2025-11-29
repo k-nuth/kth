@@ -4,24 +4,11 @@
 
 #include <kth/infrastructure/config/base16.hpp>
 
-#include <iostream>
-#include <sstream>
 #include <string>
 
-#if ! defined(__EMSCRIPTEN__)
-#include <boost/program_options.hpp>
-#endif
-
-#include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
-#include <kth/infrastructure/utility/data.hpp>
 
 namespace kth::infrastructure::config {
-
-
-base16::base16(std::string_view hexcode) {
-    std::stringstream(std::string(hexcode)) >> *this;
-}
 
 base16::base16(data_chunk const& value)
     : value_(value)
@@ -39,25 +26,24 @@ base16::operator data_slice() const noexcept {
     return value_;
 }
 
-std::istream& operator>>(std::istream& input, base16& argument) {
-    std::string hexcode;
-    input >> hexcode;
-
-    if ( ! decode_base16(argument.value_, hexcode)) {
-#if ! defined(__EMSCRIPTEN__)
-        using namespace boost::program_options;
-        BOOST_THROW_EXCEPTION(invalid_option_value(hexcode));
-#else
-        throw std::invalid_argument(hexcode);
-#endif
-    }
-
-    return input;
+data_chunk const& base16::data() const noexcept {
+    return value_;
 }
 
-std::ostream& operator<<(std::ostream& output, base16 const& argument) {
-    output << encode_base16(argument.value_);
-    return output;
+data_slice base16::as_slice() const noexcept {
+    return value_;
+}
+
+std::expected<base16, std::error_code> base16::from_string(std::string_view text) noexcept {
+    auto result = decode_base16(text);
+    if ( ! result) {
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    }
+    return base16(std::move(*result));
+}
+
+std::string base16::to_string() const {
+    return encode_base16(value_);
 }
 
 } // namespace kth::infrastructure::config

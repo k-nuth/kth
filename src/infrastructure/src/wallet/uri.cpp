@@ -12,6 +12,17 @@
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 
+namespace {
+
+constexpr uint8_t decode_hex_digit(char c) noexcept {
+    if (c >= '0' && c <= '9') return uint8_t(c - '0');
+    if (c >= 'A' && c <= 'F') return uint8_t(c - 'A' + 10);
+    if (c >= 'a' && c <= 'f') return uint8_t(c - 'a' + 10);
+    return 0;
+}
+
+} // anonymous namespace
+
 namespace kth::infrastructure::wallet {
 
 // These character classification functions correspond to RFC 3986.
@@ -89,8 +100,7 @@ std::string unescape(std::string const& in) {
     auto i = in.begin();
     while (in.end() != i) {
         if ('%' == *i && 2 < in.end() - i && is_base16(i[1]) && is_base16(i[2])) {
-            char const temp[] = { i[1], i[2], 0 };
-            out.push_back(base16_literal(temp)[0]);
+            out.push_back(uint8_t((decode_hex_digit(i[1]) << 4) | decode_hex_digit(i[2])));
             i += 3;
         } else {
             out.push_back(*i);

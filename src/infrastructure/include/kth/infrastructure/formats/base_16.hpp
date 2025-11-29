@@ -5,6 +5,7 @@
 #ifndef KTH_INFRASTUCTURE_BASE_16_HPP
 #define KTH_INFRASTUCTURE_BASE_16_HPP
 
+#include <expected>
 #include <string>
 #include <string_view>
 
@@ -12,6 +13,11 @@
 #include <kth/infrastructure/math/hash.hpp>
 
 namespace kth {
+
+enum class base16_errc {
+    odd_length,
+    invalid_character
+};
 
 /**
  * Returns true if a character is a hexadecimal digit.
@@ -27,24 +33,14 @@ KI_API std::string encode_base16(data_slice data);
 
 /**
  * Convert a hex string into bytes.
- * @return false if the input is malformed.
  */
-KI_API bool decode_base16(data_chunk& out, std::string_view in);
+[[nodiscard]] constexpr std::expected<data_chunk, base16_errc> decode_base16(std::string_view in);
 
 /**
  * Converts a hex string to a number of bytes.
- * @return false if the input is malformed, or the wrong length.
  */
 template <size_t Size>
-bool decode_base16(byte_array<Size>& out, std::string_view in);
-
-/**
- * Converts a hex string literal to a data array.
- * This would be better as a C++11 user-defined literal,
- * but MSVC doesn't support those.
- */
-template <size_t Size>
-byte_array<(Size - 1) / 2> base16_literal(char const (&string)[Size]);
+[[nodiscard]] constexpr std::expected<byte_array<Size>, base16_errc> decode_base16(std::string_view in);
 
 /**
  * Converts a bitcoin_hash to a string.

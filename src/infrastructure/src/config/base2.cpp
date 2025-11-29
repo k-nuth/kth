@@ -17,10 +17,6 @@
 
 namespace kth::infrastructure::config {
 
-base2::base2(std::string_view binary) {
-    std::stringstream(std::string(binary)) >> *this;
-}
-
 base2::base2(binary const& value)
     : value_(value)
 {}
@@ -33,27 +29,15 @@ base2::operator binary const&() const noexcept {
     return value_;
 }
 
-std::istream& operator>>(std::istream& input, base2& argument) {
-    std::string binary;
-    input >> binary;
-
-    if ( ! binary::is_base2(binary)) {
-#if ! defined(__EMSCRIPTEN__)
-        using namespace boost::program_options;
-        BOOST_THROW_EXCEPTION(invalid_option_value(binary));
-#else
-        throw std::invalid_argument(binary);
-#endif
+std::expected<base2, std::error_code> base2::from_string(std::string_view text) noexcept {
+    if ( ! binary::is_base2(text)) {
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
-
-    std::stringstream(binary) >> argument.value_;
-
-    return input;
+    return base2(binary(text));
 }
 
-std::ostream& operator<<(std::ostream& output, const base2& argument) {
-    output << argument.value_;
-    return output;
+std::string base2::to_string() const {
+    return value_.encoded();
 }
 
 } // namespace kth::infrastructure::config

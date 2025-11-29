@@ -43,7 +43,8 @@ std::istream& operator>>(std::istream& input, hash160& argument) {
     std::string hexcode;
     input >> hexcode;
 
-    if ( ! decode_base16(argument.value_, hexcode)) {
+    auto result = decode_base16<short_hash_size>(hexcode);
+    if ( ! result) {
 #if ! defined(__EMSCRIPTEN__)
         using namespace boost::program_options;
         BOOST_THROW_EXCEPTION(invalid_option_value(hexcode));
@@ -51,6 +52,7 @@ std::istream& operator>>(std::istream& input, hash160& argument) {
         throw std::invalid_argument(hexcode);
 #endif
     }
+    argument.value_ = *result;
 
     return input;
 }

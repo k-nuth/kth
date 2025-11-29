@@ -7,9 +7,10 @@
 
 #include <array>
 #include <cstdint>
-#include <iostream>
+#include <expected>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -24,9 +25,6 @@ struct KI_API base16 {
     base16() = default;
 
     explicit
-    base16(std::string_view hexcode);
-
-    explicit
     base16(data_chunk const& value);
 
     explicit
@@ -39,7 +37,8 @@ struct KI_API base16 {
     template <size_t Size>
     explicit
     base16(byte_array<Size> const& value)
-        : value_(value.begin(), value.end()) {}
+        : value_(value.begin(), value.end()) 
+    {}
 
     /**
      * Overload cast to internal type.
@@ -56,22 +55,33 @@ struct KI_API base16 {
     operator data_slice() const noexcept;
 
     /**
-     * Overload stream in. If input is invalid sets no bytes in argument.
-     * @param[in]   input     The input stream to read the value from.
-     * @param[out]  argument  The object to receive the read value.
-     * @return                The input stream reference.
+     * Get the underlying data.
+     * @return  Reference to the internal data.
      */
-    friend
-    std::istream& operator>>(std::istream& input, base16& argument);
+    [[nodiscard]]
+    data_chunk const& data() const noexcept;
 
     /**
-     * Overload stream out.
-     * @param[in]   output    The output stream to write the value to.
-     * @param[out]  argument  The object from which to obtain the value.
-     * @return                The output stream reference.
+     * Get the underlying data as a slice.
+     * @return  The internal data as a slice.
      */
-    friend
-    std::ostream& operator<<(std::ostream& output, base16 const& argument);
+    [[nodiscard]]
+    data_slice as_slice() const noexcept;
+
+    /**
+     * Parse a base16 string into a base16 object.
+     * @param[in]  text  The base16 encoded string to parse.
+     * @return           The parsed base16 object or an error.
+     */
+    [[nodiscard]] static
+    std::expected<base16, std::error_code> from_string(std::string_view text) noexcept;
+
+    /**
+     * Serialize the value to a base16 encoded string.
+     * @return  The base16 encoded string.
+     */
+    [[nodiscard]]
+    std::string to_string() const;
 
 private:
     data_chunk value_;

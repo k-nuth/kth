@@ -5,9 +5,10 @@
 #ifndef KTH_INFRASTUCTURE_CONFIG_BASE58_HPP
 #define KTH_INFRASTUCTURE_CONFIG_BASE58_HPP
 
-#include <iostream>
+#include <expected>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -19,9 +20,6 @@ namespace kth::infrastructure::config {
  */
 struct KI_API base58 {
     base58() = default;
-
-    explicit
-    base58(std::string_view base58);
 
     explicit
     base58(data_chunk const& value);
@@ -44,22 +42,33 @@ struct KI_API base58 {
     operator data_slice() const noexcept;
 
     /**
-     * Overload stream in. Throws if input is invalid.
-     * @param[in]   input     The input stream to read the value from.
-     * @param[out]  argument  The object to receive the read value.
-     * @return                The input stream reference.
+     * Get the underlying data.
+     * @return  Reference to the internal data.
      */
-    friend
-    std::istream& operator>>(std::istream& input, base58& argument);
+    [[nodiscard]]
+    data_chunk const& data() const noexcept;
 
     /**
-     * Overload stream out.
-     * @param[in]   output    The output stream to write the value to.
-     * @param[out]  argument  The object from which to obtain the value.
-     * @return                The output stream reference.
+     * Get the underlying data as a slice.
+     * @return  The internal data as a slice.
      */
-    friend
-    std::ostream& operator<<(std::ostream& output, const base58& argument);
+    [[nodiscard]]
+    data_slice as_slice() const noexcept;
+
+    /**
+     * Parse a base58 string into a base58 object.
+     * @param[in]  text  The base58 encoded string to parse.
+     * @return           The parsed base58 object or an error.
+     */
+    [[nodiscard]] static
+    std::expected<base58, std::error_code> from_string(std::string_view text) noexcept;
+
+    /**
+     * Serialize the value to a base58 encoded string.
+     * @return  The base58 encoded string.
+     */
+    [[nodiscard]]
+    std::string to_string() const;
 
 private:
     data_chunk value_;

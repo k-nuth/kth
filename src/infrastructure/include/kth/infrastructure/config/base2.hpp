@@ -6,9 +6,10 @@
 #define KTH_INFRASTUCTURE_CONFIG_BASE2_HPP
 
 #include <cstddef>
-#include <iostream>
+#include <expected>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/utility/binary.hpp>
@@ -20,13 +21,6 @@ namespace kth::infrastructure::config {
  */
 struct KI_API base2 {
     base2() = default;
-
-    /**
-     * Initialization constructor.
-     * @param[in]  bin  The value to initialize with.
-     */
-    explicit
-    base2(std::string_view binary);
 
     /**
      * @param[in]  value  The value to initialize with.
@@ -47,22 +41,19 @@ struct KI_API base2 {
     operator binary const&() const noexcept;
 
     /**
-     * Overload stream in. If input is invalid sets no bytes in argument.
-     * @param[in]   input     The input stream to read the value from.
-     * @param[out]  argument  The object to receive the read value.
-     * @return                The input stream reference.
+     * Parse a base2 string into a base2 object.
+     * @param[in]  text  The base2 encoded string to parse.
+     * @return           The parsed base2 object or an error.
      */
-    friend
-    std::istream& operator>>(std::istream& input, base2& argument);
+    [[nodiscard]] static
+    std::expected<base2, std::error_code> from_string(std::string_view text) noexcept;
 
     /**
-     * Overload stream out.
-     * @param[in]   output    The output stream to write the value to.
-     * @param[out]  argument  The object from which to obtain the value.
-     * @return                The output stream reference.
+     * Serialize the value to a base2 encoded string.
+     * @return  The base2 encoded string.
      */
-    friend
-    std::ostream& operator<<(std::ostream& output, const base2& argument);
+    [[nodiscard]]
+    std::string to_string() const;
 
 private:
     binary value_;

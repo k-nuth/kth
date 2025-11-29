@@ -4,27 +4,11 @@
 
 #include <kth/infrastructure/config/base58.hpp>
 
-#include <iostream>
-#include <sstream>
 #include <string>
 
-#if ! defined(__EMSCRIPTEN__)
-#include <boost/program_options.hpp>
-#endif
-
-#include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/formats/base_58.hpp>
-#include <kth/infrastructure/utility/data.hpp>
 
 namespace kth::infrastructure::config {
-
-// base58::base58()
-// {
-// }
-
-base58::base58(std::string_view base58) {
-    std::stringstream(std::string(base58)) >> *this;
-}
 
 base58::base58(data_chunk const& value)
     : value_(value)
@@ -42,25 +26,24 @@ base58::operator data_slice() const noexcept {
     return value_;
 }
 
-std::istream& operator>>(std::istream& input, base58& argument) {
-    std::string base58;
-    input >> base58;
-
-    if ( ! decode_base58(argument.value_, base58)) {
-#if ! defined(__EMSCRIPTEN__)
-        using namespace boost::program_options;
-        BOOST_THROW_EXCEPTION(invalid_option_value(base58));
-#else
-        throw std::invalid_argument(base58);
-#endif
-    }
-
-    return input;
+data_chunk const& base58::data() const noexcept {
+    return value_;
 }
 
-std::ostream& operator<<(std::ostream& output, const base58& argument) {
-    output << encode_base58(argument.value_);
-    return output;
+data_slice base58::as_slice() const noexcept {
+    return value_;
+}
+
+std::expected<base58, std::error_code> base58::from_string(std::string_view text) noexcept {
+    data_chunk value;
+    if ( ! decode_base58(value, text)) {
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    }
+    return base58(std::move(value));
+}
+
+std::string base58::to_string() const {
+    return encode_base58(value_);
 }
 
 } // namespace kth::infrastructure::config
