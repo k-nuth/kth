@@ -182,7 +182,7 @@ std::string test_name_bchn(bchn_script_test const& test) {
 //------------------------------------------------------------------------------
 
 TEST_CASE("script one hash literal same", "[script]") {
-    static auto const hash_one = hash_literal("0000000000000000000000000000000000000000000000000000000000000001");
+    static auto const hash_one = "0000000000000000000000000000000000000000000000000000000000000001"_hash;
     static hash_digest const one_hash{{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
     REQUIRE(one_hash == hash_one);
 }
@@ -831,7 +831,7 @@ TEST_CASE("script construction failures", "[script]") {
 //     script prevout_script;
 //     REQUIRE(prevout_script.from_string("dup hash160 [88350574280395ad2c3e2ee20e322073d94e5e40] equalverify checksig"));
 
-//     ec_secret const secret = hash_literal("ce8f4b713ffdd2658900845251890f30371856be201cd1f5b3d970f793634333");
+//     ec_secret const secret = "ce8f4b713ffdd2658900845251890f30371856be201cd1f5b3d970f793634333"_hash;
 
 //     auto const index = 0u;
 //     auto const sighash_type = sighash_algorithm::all;
@@ -857,7 +857,7 @@ TEST_CASE("script create endorsement  single input no output  expected", "[scrip
     script prevout_script;
     REQUIRE(prevout_script.from_string("dup hash160 [88350574280395ad2c3e2ee20e322073d94e5e40] equalverify checksig"));
 
-    ec_secret const secret = hash_literal("ce8f4b713ffdd2658900845251890f30371856be201cd1f5b3d970f793634333");
+    ec_secret const secret = "ce8f4b713ffdd2658900845251890f30371856be201cd1f5b3d970f793634333"_hash;
 
     auto const index = 0u;
     auto const sighash_type = sighash_algorithm::all;

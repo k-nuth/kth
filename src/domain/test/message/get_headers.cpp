@@ -16,11 +16,11 @@ TEST_CASE("get headers  constructor 1  always invalid", "[get headers]") {
 
 TEST_CASE("get headers  constructor 2  always  equals params", "[get headers]") {
     hash_list starts = {
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")};
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash};
 
-    hash_digest stop = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest stop = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::get_headers instance(starts, stop);
     REQUIRE(instance.is_valid());
@@ -30,12 +30,12 @@ TEST_CASE("get headers  constructor 2  always  equals params", "[get headers]") 
 
 TEST_CASE("get headers  constructor 3  always  equals params", "[get headers]") {
     hash_list starts = {
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")};
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash};
     hash_list starts_duplicate = starts;
 
-    hash_digest stop = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest stop = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::get_headers instance(std::move(starts_duplicate), std::move(stop));
     REQUIRE(instance.is_valid());
@@ -45,11 +45,11 @@ TEST_CASE("get headers  constructor 3  always  equals params", "[get headers]") 
 
 TEST_CASE("get headers  constructor 4  always  equals params", "[get headers]") {
     hash_list starts = {
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")};
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash};
 
-    hash_digest stop = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest stop = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     const message::get_headers expected(starts, stop);
     message::get_headers instance(expected);
@@ -61,11 +61,11 @@ TEST_CASE("get headers  constructor 4  always  equals params", "[get headers]") 
 
 TEST_CASE("get headers  constructor 5  always  equals params", "[get headers]") {
     hash_list starts = {
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")};
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash};
 
-    hash_digest stop = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest stop = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::get_headers expected(starts, stop);
     message::get_headers instance(std::move(expected));
@@ -86,12 +86,12 @@ TEST_CASE("get headers from data insufficient bytes failure", "[get headers]") {
 TEST_CASE("get headers from data insufficient version failure", "[get headers]") {
     message::get_headers const expected {
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-            hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-            hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-            hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
-        }, hash_literal("7777777777777777777777777777777777777777777777777777777777777777")
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+            "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash
+        }, "7777777777777777777777777777777777777777777777777777777777777777"_hash
     };
 
     auto const data = expected.to_data(message::get_headers::version_minimum);
@@ -105,12 +105,12 @@ TEST_CASE("get headers from data insufficient version failure", "[get headers]")
 TEST_CASE("get headers from data valid input  success", "[get headers]") {
     message::get_headers const expected {
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-            hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-            hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-            hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
-        }, hash_literal("7777777777777777777777777777777777777777777777777777777777777777")
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+            "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash
+        }, "7777777777777777777777777777777777777777777777777777777777777777"_hash
     };
 
     auto const data = expected.to_data(message::get_headers::version_minimum);
@@ -131,14 +131,14 @@ TEST_CASE("get headers from data valid input  success", "[get headers]") {
 
 TEST_CASE("get headers  operator assign equals  always  matches equivalent", "[get headers]") {
     hash_list const start = {
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-        hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-        hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash
     };
 
-    hash_digest const stop = hash_literal("7777777777777777777777777777777777777777777777777777777777777777");
+    hash_digest const stop = "7777777777777777777777777777777777777777777777777777777777777777"_hash;
 
     message::get_headers value{start, stop};
 
@@ -156,12 +156,12 @@ TEST_CASE("get headers  operator assign equals  always  matches equivalent", "[g
 TEST_CASE("get headers  operator boolean equals  duplicates  returns true", "[get headers]") {
     message::get_headers const expected {
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-            hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-            hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-            hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
-        }, hash_literal("7777777777777777777777777777777777777777777777777777777777777777")
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+            "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash
+        }, "7777777777777777777777777777777777777777777777777777777777777777"_hash
     };
 
     message::get_headers instance(expected);
@@ -171,12 +171,12 @@ TEST_CASE("get headers  operator boolean equals  duplicates  returns true", "[ge
 TEST_CASE("get headers  operator boolean equals  differs  returns false", "[get headers]") {
     message::get_headers const expected {
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-            hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-            hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-            hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
-        }, hash_literal("7777777777777777777777777777777777777777777777777777777777777777")
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+            "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash
+        }, "7777777777777777777777777777777777777777777777777777777777777777"_hash
     };
 
     message::get_headers instance;
@@ -186,12 +186,12 @@ TEST_CASE("get headers  operator boolean equals  differs  returns false", "[get 
 TEST_CASE("get headers  operator boolean not equals  duplicates  returns false", "[get headers]") {
     message::get_headers const expected {
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-            hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-            hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-            hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
-        }, hash_literal("7777777777777777777777777777777777777777777777777777777777777777")
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+            "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash
+        }, "7777777777777777777777777777777777777777777777777777777777777777"_hash
     };
 
     message::get_headers instance(expected);
@@ -201,12 +201,12 @@ TEST_CASE("get headers  operator boolean not equals  duplicates  returns false",
 TEST_CASE("get headers  operator boolean not equals  differs  returns true", "[get headers]") {
     message::get_headers const expected {
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-            hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-            hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-            hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
-        }, hash_literal("7777777777777777777777777777777777777777777777777777777777777777")
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+            "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash
+        }, "7777777777777777777777777777777777777777777777777777777777777777"_hash
     };
 
     message::get_headers instance;

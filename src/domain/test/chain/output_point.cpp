@@ -7,7 +7,7 @@
 using namespace kth;
 using namespace kd;
 
-auto const hash1 = hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+auto const hash1 = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 auto const valid_raw_output_point = to_chunk("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f00000015"_base16);
 
 // Start Test Suite: output point tests

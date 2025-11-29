@@ -10,8 +10,7 @@ using namespace kth::domain::chain;
 
 // Start Test Suite: point value tests
 
-static auto const hash1 = hash_literal(
-    "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+static auto const hash1 = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
 TEST_CASE("point value  default constructor  always  zero value", "[point value]") {
     static point_value const instance;

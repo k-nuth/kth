@@ -34,7 +34,7 @@ constexpr auto tx1 =
     "0000001976a9141ee32412020a324b93b1a1acfdfff6ab9ca8fac288ac000000"
     "00"_base16;
 
-constexpr char tx1_hash_hex[] = "bf7c3f5a69a78edd81f3eff7e93a37fb2d7da394d48db4d85e7e5353b9b8e270";
+static auto const tx1_hash = "bf7c3f5a69a78edd81f3eff7e93a37fb2d7da394d48db4d85e7e5353b9b8e270"_hash;
 
 constexpr auto tx3_wire_serialized =
     "010000000209e300a61db28e4fd3562aec52647646fc55aa3e3f7d824f20f451"
@@ -82,7 +82,8 @@ constexpr auto tx4 =
     "ffff02c0e1e400000000001976a914884c09d7e1f6420976c40e040c30b2b622"
     "10c3d488ac20300500000000001976a914905f933de850988603aafeeb2fd7fc"
     "e61e66fe5d88ac00000000"_base16;
-constexpr char tx4_hash_hex[] = "8a6d9302fbe24f0ec756a94ecfc837eaffe16c43d1e68c62dfe980d99eea556f";
+
+static auto const tx4_hash = "8a6d9302fbe24f0ec756a94ecfc837eaffe16c43d1e68c62dfe980d99eea556f"_hash;
 
 constexpr char tx4_text[] = 
     "Transaction:\n"
@@ -134,7 +135,8 @@ constexpr auto tx7 =
     "a54e38193e381aee4b896e7958ce381afe4bb96e4babae381abe38288e381a3e3"
     "81a6e7ac91e9a194e38292e5a5aae3828fe3828ce3828be7bea9e58b99e38292e"
     "8a8ade38191e381a6e381afe38184e381aae3818400000000"_base16;
-constexpr char tx7_hash_hex[] = "cb1e303db604f066225eb14d59d3f8d2231200817bc9d4610d2802586bd93f8a";
+
+static auto const tx7_hash = "cb1e303db604f066225eb14d59d3f8d2231200817bc9d4610d2802586bd93f8a"_hash;
 
 TEST_CASE("chain transaction  constructor 2  valid input  returns input initialized", "[chain transaction]") {
     uint32_t version = 2345u;
@@ -228,7 +230,7 @@ TEST_CASE("chain transaction  constructor 6  valid input  returns input initiali
     auto result = chain::transaction::from_data(reader, true);
     REQUIRE(result);
     auto const expected = std::move(*result);
-    hash_digest const expected_hash = hash_literal(tx1_hash_hex);
+    hash_digest const expected_hash = tx1_hash;
 
     chain::transaction instance(expected, expected_hash);
     REQUIRE(instance.is_valid());
@@ -243,7 +245,7 @@ TEST_CASE("chain transaction  constructor 7  valid input  returns input initiali
     auto result = chain::transaction::from_data(reader, true);
     REQUIRE(result);
     auto const expected = std::move(*result);
-    hash_digest const expected_hash = hash_literal(tx1_hash_hex);
+    hash_digest const expected_hash = tx1_hash;
 
     chain::transaction instance(std::move(expected), expected_hash);
     REQUIRE(instance.is_valid());
@@ -467,7 +469,7 @@ TEST_CASE("chain transaction from data compare wire to store  success", "[None]"
 }
 
 TEST_CASE("chain transaction  factory data 1  case 1  success", "[chain transaction]") {
-    static auto const tx_hash = hash_literal(tx1_hash_hex);
+    static auto const tx_hash = tx1_hash;
     static auto const raw_tx = to_chunk(tx1);
     REQUIRE(raw_tx.size() == 225u);
 
@@ -487,7 +489,7 @@ TEST_CASE("chain transaction  factory data 1  case 1  success", "[chain transact
 }
 
 TEST_CASE("chain transaction  factory data 1  case 2  success", "[chain transaction]") {
-    static auto const tx_hash = hash_literal(tx4_hash_hex);
+    static auto const tx_hash = tx4_hash;
     static auto const raw_tx = to_chunk(tx4);
     REQUIRE(raw_tx.size() == 523u);
 
@@ -875,7 +877,7 @@ TEST_CASE("chain transaction  is dusty  two outputs limit between both  returns 
     REQUIRE(instance.is_dusty(258000001));
 }
 
-auto const hash1 = hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+auto const hash1 = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
 TEST_CASE("chain transaction  is mature  no inputs  returns true", "[chain transaction]") {
     chain::transaction instance;
@@ -1003,7 +1005,7 @@ TEST_CASE("chain transaction  operator boolean not equals  differs  returns true
 
 TEST_CASE("chain transaction  hash  block320670  success", "[chain transaction]") {
     // This is a garbage script that collides with the former opcode::raw_data sentinel.
-    static auto const expected = hash_literal(tx7_hash_hex);
+    static auto const expected = tx7_hash;
     static auto const data = to_chunk(tx7);
     chain::transaction instance;
     byte_reader reader(data);
@@ -1014,4 +1016,3 @@ TEST_CASE("chain transaction  hash  block320670  success", "[chain transaction]"
     REQUIRE(data == instance.to_data());
 }
 
-// End Test Suite

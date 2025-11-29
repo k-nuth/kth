@@ -107,6 +107,21 @@ constexpr auto operator""_base16() {
     return result;
 }
 
+template <fixed_string Str>
+concept hash_literal = base16_literal<Str> && (Str.size() == 2 * hash_size);
+
+// User-defined literal for bitcoin hash: "000...abc"_hash
+// Bitcoin hashes are displayed reversed (little-endian)
+// TODO(fernando): investigate if this can be consteval instead of constexpr
+template <fixed_string Str>
+    requires hash_literal<Str>
+constexpr hash_digest operator""_hash() {
+    hash_digest result{};
+    detail::decode_base16(result.data(), result.size(), Str.content);
+    std::reverse(result.begin(), result.end());
+    return result;
+}
+
 } // namespace kth
 
 #endif

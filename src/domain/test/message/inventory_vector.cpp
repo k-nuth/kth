@@ -65,7 +65,7 @@ TEST_CASE("inventory vector constructor 1 always invalid", "[inventory vector]")
 
 TEST_CASE("inventory vector constructor 2 always equals params", "[inventory vector]") {
     inventory_vector::type_id type = inventory_vector::type_id::block;
-    hash_digest hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     inventory_vector instance(type, hash);
     REQUIRE(instance.is_valid());
     REQUIRE(type == instance.type());
@@ -74,14 +74,14 @@ TEST_CASE("inventory vector constructor 2 always equals params", "[inventory vec
 
 TEST_CASE("inventory vector constructor 3 always equals params", "[inventory vector]") {
     inventory_vector::type_id type = inventory_vector::type_id::block;
-    hash_digest hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     inventory_vector instance(type, std::move(hash));
     REQUIRE(instance.is_valid());
 }
 
 TEST_CASE("inventory vector constructor 4 always equals params", "[inventory vector]") {
     inventory_vector::type_id type = inventory_vector::type_id::block;
-    hash_digest hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     inventory_vector const expected(type, hash);
     REQUIRE(expected.is_valid());
     inventory_vector instance(expected);
@@ -91,7 +91,7 @@ TEST_CASE("inventory vector constructor 4 always equals params", "[inventory vec
 
 TEST_CASE("inventory vector constructor 5 always equals params", "[inventory vector]") {
     inventory_vector::type_id type = inventory_vector::type_id::block;
-    hash_digest hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     inventory_vector expected(type, hash);
     REQUIRE(expected.is_valid());
     inventory_vector instance(std::move(expected));
@@ -174,7 +174,7 @@ TEST_CASE("inventory vector is transaction type non transaction type returns fal
 
 TEST_CASE("inventory vector type accessor always returns initialized value", "[inventory vector]") {
     inventory_vector::type_id type = inventory_vector::type_id::transaction;
-    hash_digest hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     inventory_vector instance(type, hash);
     REQUIRE(type == instance.type());
 }
@@ -189,13 +189,13 @@ TEST_CASE("inventory vector type setter  roundtrip  success", "[inventory vector
 
 TEST_CASE("inventory vector hash accessor always returns initialized value", "[inventory vector]") {
     inventory_vector::type_id type = inventory_vector::type_id::transaction;
-    hash_digest hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     inventory_vector instance(type, hash);
     REQUIRE(hash == instance.hash());
 }
 
 TEST_CASE("inventory vector hash setter 1  roundtrip  success", "[inventory vector]") {
-    hash_digest hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     inventory_vector instance;
     REQUIRE(hash != instance.hash());
     instance.set_hash(hash);
@@ -203,8 +203,8 @@ TEST_CASE("inventory vector hash setter 1  roundtrip  success", "[inventory vect
 }
 
 TEST_CASE("inventory vector hash setter 2  roundtrip  success", "[inventory vector]") {
-    hash_digest duplicate = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
-    hash_digest hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest duplicate = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
+    hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     inventory_vector instance;
     REQUIRE(duplicate != instance.hash());
     instance.set_hash(std::move(hash));
@@ -214,7 +214,7 @@ TEST_CASE("inventory vector hash setter 2  roundtrip  success", "[inventory vect
 TEST_CASE("inventory vector operator assign equals 1 always matches equivalent", "[inventory vector]") {
     inventory_vector value(
         inventory_vector::type_id::compact_block,
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
 
     REQUIRE(value.is_valid());
 
@@ -228,7 +228,7 @@ TEST_CASE("inventory vector operator assign equals 1 always matches equivalent",
 TEST_CASE("inventory vector operator assign equals 2 always matches equivalent", "[inventory vector]") {
     inventory_vector value(
         inventory_vector::type_id::compact_block,
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
 
     REQUIRE(value.is_valid());
 
@@ -243,7 +243,7 @@ TEST_CASE("inventory vector operator assign equals 2 always matches equivalent",
 TEST_CASE("inventory vector operator boolean equals duplicates returns true", "[inventory vector]") {
     inventory_vector const expected(
         inventory_vector::type_id::filtered_block,
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
 
     inventory_vector instance(expected);
     REQUIRE(instance == expected);
@@ -252,7 +252,7 @@ TEST_CASE("inventory vector operator boolean equals duplicates returns true", "[
 TEST_CASE("inventory vector operator boolean equals differs returns false", "[inventory vector]") {
     inventory_vector const expected(
         inventory_vector::type_id::filtered_block,
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
 
     inventory_vector instance;
     REQUIRE(instance != expected);
@@ -261,7 +261,7 @@ TEST_CASE("inventory vector operator boolean equals differs returns false", "[in
 TEST_CASE("inventory vector - reject  operator boolean not equals duplicates returns false", "[inventory vector]") {
     inventory_vector const expected(
         inventory_vector::type_id::filtered_block,
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
 
     inventory_vector instance(expected);
     REQUIRE(instance == expected);
@@ -270,7 +270,7 @@ TEST_CASE("inventory vector - reject  operator boolean not equals duplicates ret
 TEST_CASE("inventory vector - reject  operator boolean not equals differs returns true", "[inventory vector]") {
     inventory_vector const expected(
         inventory_vector::type_id::filtered_block,
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
 
     inventory_vector instance;
     REQUIRE(instance != expected);

@@ -16,8 +16,8 @@ TEST_CASE("message header constructor 1  always initialized invalid", "[message 
 
 TEST_CASE("message header  constructor 2  always  equals params", "[message header]") {
     uint32_t version = 10u;
-    hash_digest previous = hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
-    hash_digest merkle = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest previous = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
+    hash_digest merkle = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     uint32_t timestamp = 531234u;
     uint32_t bits = 6523454u;
     uint32_t nonce = 68644u;
@@ -34,8 +34,8 @@ TEST_CASE("message header  constructor 2  always  equals params", "[message head
 
 TEST_CASE("message header  constructor 3  always  equals params", "[message header]") {
     uint32_t version = 10u;
-    hash_digest previous = hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
-    hash_digest merkle = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest previous = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
+    hash_digest merkle = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     uint32_t timestamp = 531234u;
     uint32_t bits = 6523454u;
     uint32_t nonce = 68644u;
@@ -53,8 +53,8 @@ TEST_CASE("message header  constructor 3  always  equals params", "[message head
 TEST_CASE("message header  constructor 4  always  equals params", "[message header]") {
     chain::header const expected(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         1234u);
@@ -67,8 +67,8 @@ TEST_CASE("message header  constructor 4  always  equals params", "[message head
 TEST_CASE("message header  constructor 5  always  equals params", "[message header]") {
     chain::header expected(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         123u);
@@ -81,8 +81,8 @@ TEST_CASE("message header  constructor 5  always  equals params", "[message head
 TEST_CASE("message header  constructor 6  always  equals params", "[message header]") {
     const message::header expected(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u);
@@ -95,8 +95,8 @@ TEST_CASE("message header  constructor 6  always  equals params", "[message head
 TEST_CASE("message header  constructor 7  always  equals params", "[message header]") {
     message::header expected(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u);
@@ -119,8 +119,8 @@ TEST_CASE("message header from data valid input canonical version  no transactio
     auto const version = message::version::level::canonical;
     message::header expected{
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u};
@@ -142,8 +142,8 @@ TEST_CASE("message header from data valid input  success", "[message header]") {
     auto const version = message::header::version_minimum;
     message::header expected{
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u};
@@ -166,8 +166,8 @@ TEST_CASE("message header from data valid input  success", "[message header]") {
 TEST_CASE("message header  operator assign equals 1  always  matches equivalent", "[message header]") {
     chain::header value(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u);
@@ -185,8 +185,8 @@ TEST_CASE("message header  operator assign equals 1  always  matches equivalent"
 TEST_CASE("message header  operator assign equals 2  always  matches equivalent", "[message header]") {
     message::header value(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u);
@@ -204,8 +204,8 @@ TEST_CASE("message header  operator assign equals 2  always  matches equivalent"
 TEST_CASE("message header  operator boolean equals 1  duplicates  returns true", "[message header]") {
     chain::header const expected(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         3565u);
@@ -217,8 +217,8 @@ TEST_CASE("message header  operator boolean equals 1  duplicates  returns true",
 TEST_CASE("message header  operator boolean equals 1  differs  returns false", "[message header]") {
     chain::header const expected(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         6523454u,
         68644u,
         4453u);
@@ -230,8 +230,8 @@ TEST_CASE("message header  operator boolean equals 1  differs  returns false", "
 TEST_CASE("message header  operator boolean not equals 1  duplicates  returns false", "[message header]") {
     chain::header const expected(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         6523454u,
         68644u,
         2345u);
@@ -243,8 +243,8 @@ TEST_CASE("message header  operator boolean not equals 1  duplicates  returns fa
 TEST_CASE("message header  operator boolean not equals 1  differs  returns true", "[message header]") {
     chain::header const expected(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         68644u,
         47476u);
@@ -256,8 +256,8 @@ TEST_CASE("message header  operator boolean not equals 1  differs  returns true"
 TEST_CASE("message header  operator boolean equals 2  duplicates  returns true", "[message header]") {
     const message::header expected(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u);
@@ -269,8 +269,8 @@ TEST_CASE("message header  operator boolean equals 2  duplicates  returns true",
 TEST_CASE("message header  operator boolean equals 2  differs  returns false", "[message header]") {
     const message::header expected(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u);
@@ -282,8 +282,8 @@ TEST_CASE("message header  operator boolean equals 2  differs  returns false", "
 TEST_CASE("message header  operator boolean not equals 2  duplicates  returns false", "[message header]") {
     const message::header expected(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u);
@@ -295,8 +295,8 @@ TEST_CASE("message header  operator boolean not equals 2  duplicates  returns fa
 TEST_CASE("message header  operator boolean not equals 2  differs  returns true", "[message header]") {
     const message::header expected(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u);

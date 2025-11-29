@@ -19,15 +19,15 @@ TEST_CASE("headers  constructor 2  always  equals params", "[headers]") {
     header::list const expected{
         header(
             10u,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234u,
             6523454u,
             68644u),
         header(
             11234u,
-            hash_literal("abababababababababababababababababababababababababababababababab"),
-            hash_literal("fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"),
+            "abababababababababababababababababababababababababababababababab"_hash,
+            "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"_hash,
             753234u,
             4356344u,
             34564u)};
@@ -41,15 +41,15 @@ TEST_CASE("headers  constructor 3  always  equals params", "[headers]") {
     header::list const expected{
         header(
             10u,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234u,
             6523454u,
             68644u),
         header(
             11234u,
-            hash_literal("abababababababababababababababababababababababababababababababab"),
-            hash_literal("fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"),
+            "abababababababababababababababababababababababababababababababab"_hash,
+            "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"_hash,
             753234u,
             4356344u,
             34564u)};
@@ -63,15 +63,15 @@ TEST_CASE("headers  constructor 4  always  equals params", "[headers]") {
     headers instance(
         {header(
              10u,
-             hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-             hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+             "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+             "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
              531234u,
              6523454u,
              68644u),
          header(
              11234u,
-             hash_literal("abababababababababababababababababababababababababababababababab"),
-             hash_literal("fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"),
+             "abababababababababababababababababababababababababababababababab"_hash,
+             "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"_hash,
              753234u,
              4356344u,
              34564u)});
@@ -84,15 +84,15 @@ TEST_CASE("headers  constructor 5  always  equals params", "[headers]") {
     headers const expected(
         {header(
              10u,
-             hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-             hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+             "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+             "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
              531234u,
              6523454u,
              68644u),
          header(
              11234u,
-             hash_literal("abababababababababababababababababababababababababababababababab"),
-             hash_literal("fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"),
+             "abababababababababababababababababababababababababababababababab"_hash,
+             "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"_hash,
              753234u,
              4356344u,
              34564u)});
@@ -105,15 +105,15 @@ TEST_CASE("headers  constructor 6  always  equals params", "[headers]") {
     headers expected(
         {header(
              10u,
-             hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-             hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+             "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+             "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
              531234u,
              6523454u,
              68644u),
          header(
              11234u,
-             hash_literal("abababababababababababababababababababababababababababababababab"),
-             hash_literal("fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"),
+             "abababababababababababababababababababababababababababababababab"_hash,
+             "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"_hash,
              753234u,
              4356344u,
              34564u)});
@@ -133,8 +133,8 @@ TEST_CASE("headers from data insufficient bytes  failure", "[headers]") {
 TEST_CASE("headers from data insufficient version  failure", "[headers]") {
     static headers const expected{
         {10,
-         hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-         hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+         "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
          531234,
          6523454,
          68644}};
@@ -149,8 +149,8 @@ TEST_CASE("headers from data insufficient version  failure", "[headers]") {
 TEST_CASE("headers from data valid input  success", "[headers]") {
     static headers const expected{
         {10,
-         hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-         hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+         "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
          531234,
          6523454,
          68644}};
@@ -173,15 +173,15 @@ TEST_CASE("headers  elements accessor 1  always  returns initialized value", "[h
     header::list const expected{
         header(
             10u,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234u,
             6523454u,
             68644u),
         header(
             11234u,
-            hash_literal("abababababababababababababababababababababababababababababababab"),
-            hash_literal("fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"),
+            "abababababababababababababababababababababababababababababababab"_hash,
+            "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"_hash,
             753234u,
             4356344u,
             34564u)};
@@ -194,15 +194,15 @@ TEST_CASE("headers  elements accessor 2  always  returns initialized value", "[h
     header::list const expected{
         header(
             10u,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234u,
             6523454u,
             68644u),
         header(
             11234u,
-            hash_literal("abababababababababababababababababababababababababababababababab"),
-            hash_literal("fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"),
+            "abababababababababababababababababababababababababababababababab"_hash,
+            "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"_hash,
             753234u,
             4356344u,
             34564u)};
@@ -215,15 +215,15 @@ TEST_CASE("headers  command setter 1  roundtrip  success", "[headers]") {
     header::list const expected{
         header(
             10u,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234u,
             6523454u,
             68644u),
         header(
             11234u,
-            hash_literal("abababababababababababababababababababababababababababababababab"),
-            hash_literal("fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"),
+            "abababababababababababababababababababababababababababababababab"_hash,
+            "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"_hash,
             753234u,
             4356344u,
             34564u)};
@@ -238,15 +238,15 @@ TEST_CASE("headers  command setter 2  roundtrip  success", "[headers]") {
     header::list values{
         header(
             10u,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234u,
             6523454u,
             68644u),
         header(
             11234u,
-            hash_literal("abababababababababababababababababababababababababababababababab"),
-            hash_literal("fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"),
+            "abababababababababababababababababababababababababababababababab"_hash,
+            "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"_hash,
             753234u,
             4356344u,
             34564u)};
@@ -261,22 +261,22 @@ TEST_CASE("headers  operator assign equals  always  matches equivalent", "[heade
     message::headers value(
         {header{
              1u,
-             hash_literal("f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"),
-             hash_literal("0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"),
+             "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"_hash,
+             "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"_hash,
              10u,
              100u,
              1000u},
          header{
              2u,
-             hash_literal("abababababababababababababababababababababababababababababababab"),
-             hash_literal("babababababababababababababababababababababababababababababababa"),
+             "abababababababababababababababababababababababababababababababab"_hash,
+             "babababababababababababababababababababababababababababababababa"_hash,
              20u,
              200u,
              2000u},
          header{
              3u,
-             hash_literal("e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"),
-             hash_literal("7373737373737373737373737373737373737373737373737373737373737373"),
+             "e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"_hash,
+             "7373737373737373737373737373737373737373737373737373737373737373"_hash,
              30u,
              300u,
              3000u}});
@@ -292,22 +292,22 @@ TEST_CASE("headers  operator boolean equals  duplicates  returns true", "[header
     const message::headers expected(
         {header{
              1u,
-             hash_literal("f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"),
-             hash_literal("0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"),
+             "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"_hash,
+             "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"_hash,
              10u,
              100u,
              1000u},
          header{
              2u,
-             hash_literal("abababababababababababababababababababababababababababababababab"),
-             hash_literal("babababababababababababababababababababababababababababababababa"),
+             "abababababababababababababababababababababababababababababababab"_hash,
+             "babababababababababababababababababababababababababababababababa"_hash,
              20u,
              200u,
              2000u},
          header{
              3u,
-             hash_literal("e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"),
-             hash_literal("7373737373737373737373737373737373737373737373737373737373737373"),
+             "e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"_hash,
+             "7373737373737373737373737373737373737373737373737373737373737373"_hash,
              30u,
              300u,
              3000u}});
@@ -320,22 +320,22 @@ TEST_CASE("headers  operator boolean equals  differs  returns false", "[headers]
     const message::headers expected(
         {header{
              1u,
-             hash_literal("f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"),
-             hash_literal("0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"),
+             "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"_hash,
+             "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"_hash,
              10u,
              100u,
              1000u},
          header{
              2u,
-             hash_literal("abababababababababababababababababababababababababababababababab"),
-             hash_literal("babababababababababababababababababababababababababababababababa"),
+             "abababababababababababababababababababababababababababababababab"_hash,
+             "babababababababababababababababababababababababababababababababa"_hash,
              20u,
              200u,
              2000u},
          header{
              3u,
-             hash_literal("e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"),
-             hash_literal("7373737373737373737373737373737373737373737373737373737373737373"),
+             "e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"_hash,
+             "7373737373737373737373737373737373737373737373737373737373737373"_hash,
              30u,
              300u,
              3000u}});
@@ -348,22 +348,22 @@ TEST_CASE("headers  operator boolean not equals  duplicates  returns false", "[h
     const message::headers expected(
         {header{
              1u,
-             hash_literal("f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"),
-             hash_literal("0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"),
+             "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"_hash,
+             "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"_hash,
              10u,
              100u,
              1000u},
          header{
              2u,
-             hash_literal("abababababababababababababababababababababababababababababababab"),
-             hash_literal("babababababababababababababababababababababababababababababababa"),
+             "abababababababababababababababababababababababababababababababab"_hash,
+             "babababababababababababababababababababababababababababababababa"_hash,
              20u,
              200u,
              2000u},
          header{
              3u,
-             hash_literal("e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"),
-             hash_literal("7373737373737373737373737373737373737373737373737373737373737373"),
+             "e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"_hash,
+             "7373737373737373737373737373737373737373737373737373737373737373"_hash,
              30u,
              300u,
              3000u}});
@@ -376,22 +376,22 @@ TEST_CASE("headers  operator boolean not equals  differs  returns true", "[heade
     const message::headers expected(
         {header{
              1u,
-             hash_literal("f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"),
-             hash_literal("0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"),
+             "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"_hash,
+             "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"_hash,
              10u,
              100u,
              1000u},
          header{
              2u,
-             hash_literal("abababababababababababababababababababababababababababababababab"),
-             hash_literal("babababababababababababababababababababababababababababababababa"),
+             "abababababababababababababababababababababababababababababababab"_hash,
+             "babababababababababababababababababababababababababababababababa"_hash,
              20u,
              200u,
              2000u},
          header{
              3u,
-             hash_literal("e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"),
-             hash_literal("7373737373737373737373737373737373737373737373737373737373737373"),
+             "e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"_hash,
+             "7373737373737373737373737373737373737373737373737373737373737373"_hash,
              30u,
              300u,
              3000u}});
@@ -409,29 +409,29 @@ TEST_CASE("headers  to hashes  empty  returns empty list", "[headers]") {
 
 TEST_CASE("headers  to hashes  non empty  returns header hash list", "[headers]") {
     hash_list const expected{
-        hash_literal("108127a4f5955a546b78807166d8cb9cd3eee1ed530c14d51095bc798685f4d6"),
-        hash_literal("37ec64a548b6419769b152d70efc4c356f74c7fda567711d98cac3c55c34a890"),
-        hash_literal("d9bbb4b47ca45ec8477cba125262b07b17daae944b54d1780e0a6373d2eed879")};
+        "108127a4f5955a546b78807166d8cb9cd3eee1ed530c14d51095bc798685f4d6"_hash,
+        "37ec64a548b6419769b152d70efc4c356f74c7fda567711d98cac3c55c34a890"_hash,
+        "d9bbb4b47ca45ec8477cba125262b07b17daae944b54d1780e0a6373d2eed879"_hash};
 
     const message::headers instance(
         {header{
              1u,
-             hash_literal("f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"),
-             hash_literal("0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"),
+             "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"_hash,
+             "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"_hash,
              10u,
              100u,
              1000u},
          header{
              2u,
-             hash_literal("abababababababababababababababababababababababababababababababab"),
-             hash_literal("babababababababababababababababababababababababababababababababa"),
+             "abababababababababababababababababababababababababababababababab"_hash,
+             "babababababababababababababababababababababababababababababababa"_hash,
              20u,
              200u,
              2000u},
          header{
              3u,
-             hash_literal("e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"),
-             hash_literal("7373737373737373737373737373737373737373737373737373737373737373"),
+             "e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"_hash,
+             "7373737373737373737373737373737373737373737373737373737373737373"_hash,
              30u,
              300u,
              3000u}});
@@ -451,29 +451,29 @@ TEST_CASE("headers  to inventory  empty  returns empty list", "[headers]") {
 
 TEST_CASE("headers  to inventory  non empty  returns header hash inventory list", "[headers]") {
     inventory_vector::list const expected{
-        inventory_vector(inventory_vector::type_id::block, hash_literal("108127a4f5955a546b78807166d8cb9cd3eee1ed530c14d51095bc798685f4d6")),
-        inventory_vector(inventory_vector::type_id::block, hash_literal("37ec64a548b6419769b152d70efc4c356f74c7fda567711d98cac3c55c34a890")),
-        inventory_vector(inventory_vector::type_id::block, hash_literal("d9bbb4b47ca45ec8477cba125262b07b17daae944b54d1780e0a6373d2eed879"))};
+        inventory_vector(inventory_vector::type_id::block, "108127a4f5955a546b78807166d8cb9cd3eee1ed530c14d51095bc798685f4d6"_hash),
+        inventory_vector(inventory_vector::type_id::block, "37ec64a548b6419769b152d70efc4c356f74c7fda567711d98cac3c55c34a890"_hash),
+        inventory_vector(inventory_vector::type_id::block, "d9bbb4b47ca45ec8477cba125262b07b17daae944b54d1780e0a6373d2eed879"_hash)};
 
     headers const instance(
         {header{
              1u,
-             hash_literal("f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"),
-             hash_literal("0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"),
+             "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"_hash,
+             "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"_hash,
              10u,
              100u,
              1000u},
          header{
              2u,
-             hash_literal("abababababababababababababababababababababababababababababababab"),
-             hash_literal("babababababababababababababababababababababababababababababababa"),
+             "abababababababababababababababababababababababababababababababab"_hash,
+             "babababababababababababababababababababababababababababababababa"_hash,
              20u,
              200u,
              2000u},
          header{
              3u,
-             hash_literal("e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"),
-             hash_literal("7373737373737373737373737373737373737373737373737373737373737373"),
+             "e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"_hash,
+             "7373737373737373737373737373737373737373737373737373737373737373"_hash,
              30u,
              300u,
              3000u}});
@@ -493,8 +493,8 @@ TEST_CASE("headers  is sequential  empty  true", "[headers]") {
 TEST_CASE("headers  is sequential  single  true", "[headers]") {
     static header const first{
         1u,
-        hash_literal("f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"),
-        hash_literal("0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"),
+        "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"_hash,
+        "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"_hash,
         10u,
         100u,
         1000u};
@@ -506,8 +506,8 @@ TEST_CASE("headers  is sequential  single  true", "[headers]") {
 TEST_CASE("headers  is sequential  sequential  true", "[headers]") {
     static header const first{
         1u,
-        hash_literal("f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"),
-        hash_literal("0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"),
+        "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"_hash,
+        "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"_hash,
         10u,
         100u,
         1000u};
@@ -515,7 +515,7 @@ TEST_CASE("headers  is sequential  sequential  true", "[headers]") {
     static header const second{
         2u,
         first.hash(),
-        hash_literal("babababababababababababababababababababababababababababababababa"),
+        "babababababababababababababababababababababababababababababababa"_hash,
         20u,
         200u,
         2000u};
@@ -523,7 +523,7 @@ TEST_CASE("headers  is sequential  sequential  true", "[headers]") {
     static header const third{
         3u,
         second.hash(),
-        hash_literal("7373737373737373737373737373737373737373737373737373737373737373"),
+        "7373737373737373737373737373737373737373737373737373737373737373"_hash,
         30u,
         300u,
         3000u};
@@ -535,24 +535,24 @@ TEST_CASE("headers  is sequential  sequential  true", "[headers]") {
 TEST_CASE("headers  is sequential  disordered  false", "[headers]") {
     static header const first{
         1u,
-        hash_literal("f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"),
-        hash_literal("0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"),
+        "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"_hash,
+        "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"_hash,
         10u,
         100u,
         1000u};
 
     static header const second{
         2u,
-        hash_literal("abababababababababababababababababababababababababababababababab"),
-        hash_literal("babababababababababababababababababababababababababababababababa"),
+        "abababababababababababababababababababababababababababababababab"_hash,
+        "babababababababababababababababababababababababababababababababa"_hash,
         20u,
         200u,
         2000u};
 
     static header const third{
         3u,
-        hash_literal("e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"),
-        hash_literal("7373737373737373737373737373737373737373737373737373737373737373"),
+        "e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"_hash,
+        "7373737373737373737373737373737373737373737373737373737373737373"_hash,
         30u,
         300u,
         3000u};

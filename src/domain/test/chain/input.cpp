@@ -243,7 +243,7 @@ TEST_CASE("input  signature operations  bip16 active cache empty  returns script
 
 TEST_CASE("input  previous output setter 1  roundtrip  success", "[input]") {
     output_point const value{
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
         5434u};
 
     input instance;
@@ -256,7 +256,7 @@ TEST_CASE("input  previous output setter 1  roundtrip  success", "[input]") {
 
 TEST_CASE("input  previous output setter 2  roundtrip  success", "[input]") {
     output_point const value{
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
         5434u};
 
     auto dup_value = value;

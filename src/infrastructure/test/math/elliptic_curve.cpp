@@ -16,12 +16,12 @@ constexpr auto uncompressed1 = "0409ba8621aefd3b6ba4ca6d11a4746e8df8d35d9b51b383
 
 // Scenario 2
 constexpr auto compressed2 = "03bc88a1bd6ebac38e9a9ed58eda735352ad10650e235499b7318315cc26c9b55b"_base16;
-constexpr char sighash2_hex[] = "ed8f9b40c2d349c8a7e58cebe79faa25c21b6bb85b874901f72a1b3f1ad0a67f";
+static auto const sighash2 = "ed8f9b40c2d349c8a7e58cebe79faa25c21b6bb85b874901f72a1b3f1ad0a67f"_hash;
 constexpr auto der_signature2 = "3045022100bc494fbd09a8e77d8266e2abdea9aef08b9e71b451c7d8de9f63cda33a62437802206b93edd6af7c659db42c579eb34a3a4cb60c28b5a6bc86fd5266d42f6b8bb67d";
 
-// Scenario 3 - these use hash_literal() which reverses bytes
-constexpr char secret3_hex[] = "ce8f4b713ffdd2658900845251890f30371856be201cd1f5b3d970f793634333";
-constexpr char sighash3_hex[] = "f89572635651b2e4f89778350616989183c98d1a721c911324bf9f17a0cf5bf0";
+// Scenario 3
+static auto const secret3 = "ce8f4b713ffdd2658900845251890f30371856be201cd1f5b3d970f793634333"_hash;
+static auto const sighash3 = "f89572635651b2e4f89778350616989183c98d1a721c911324bf9f17a0cf5bf0"_hash;
 constexpr auto ec_signature3 = "17b7b25c48e4ed2bd43369fa282f608b4329d96409860ce832fd5497b65fe663b901e34dff5291868c4401c8c1c6ed23b1887139cc4cd6884f38b9d936356131"_base16;
 constexpr auto der_signature3 = "3044022063e65fb69754fd32e80c860964d929438b602f28fa6933d42bede4485cb2b717022031613536d9b9384f88d64ccc397188b123edc6c1c801448c869152ff4de301b9";
 
@@ -41,8 +41,6 @@ TEST_CASE("elliptic curve decompress positive test", "[elliptic curve tests]") {
 
 TEST_CASE("elliptic curve sign positive test", "[elliptic curve tests]") {
     ec_signature signature;
-    ec_secret const secret3 = hash_literal(secret3_hex);
-    hash_digest const sighash3 = hash_literal(sighash3_hex);
     REQUIRE(sign_ecdsa(signature, secret3, sighash3));
     REQUIRE(signature == ec_signature3);
 }
@@ -81,7 +79,7 @@ TEST_CASE("elliptic curve sign round trip negative test", "[elliptic curve tests
 TEST_CASE("elliptic curve verify signature positive test", "[elliptic curve tests]") {
     ec_signature signature;
     static auto const strict = false;
-    hash_digest const sighash = hash_literal(sighash2_hex);
+    hash_digest const sighash = sighash2;
     auto const distinguished = decode_base16(der_signature2);
     REQUIRE(distinguished);
     REQUIRE(parse_signature(signature, *distinguished, strict));
@@ -91,7 +89,7 @@ TEST_CASE("elliptic curve verify signature positive test", "[elliptic curve test
 TEST_CASE("elliptic curve verify signature negative test", "[elliptic curve tests]") {
     ec_signature signature;
     static auto const strict = false;
-    hash_digest const sighash = hash_literal(sighash2_hex);
+    hash_digest const sighash = sighash2;
     auto const distinguished = decode_base16(der_signature2);
     REQUIRE(distinguished);
     REQUIRE(parse_signature(signature, *distinguished, strict));
@@ -142,4 +140,3 @@ TEST_CASE("elliptic curve  ec multiply test", "[elliptic curve tests]") {
     REQUIRE(std::equal(public1.begin(), public1.end(), public2.begin()));
 }
 
-// End Test Suite

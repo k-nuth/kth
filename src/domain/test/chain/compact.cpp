@@ -12,8 +12,7 @@ using namespace kth;
 using namespace kd;
 using namespace kth::domain::chain;
 
-constexpr char primes_hex[] = "020305070b0d1113171d1f25292b2f353b3d4347494f53596165676b6d717f83";
-static auto const primes = hash_literal(primes_hex);
+static auto const primes = "020305070b0d1113171d1f25292b2f353b3d4347494f53596165676b6d717f83"_hash;
 
 static uint32_t factory(int32_t logical_exponent, bool negative, uint32_t mantissa) {
     // The exponent of a non-zero mantissa is valid from -3 to +29.

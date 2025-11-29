@@ -16,11 +16,11 @@ TEST_CASE("get blocks  constructor 1  always invalid", "[get blocks]") {
 
 TEST_CASE("get blocks  constructor 2  always  equals params", "[get blocks]") {
     hash_list const starts = {
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")};
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash};
 
-    hash_digest stop = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest stop = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::get_blocks instance(starts, stop);
     REQUIRE(instance.is_valid());
@@ -30,12 +30,12 @@ TEST_CASE("get blocks  constructor 2  always  equals params", "[get blocks]") {
 
 TEST_CASE("get blocks  constructor 3  always  equals params", "[get blocks]") {
     hash_list starts = {
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")};
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash};
     hash_list starts_duplicate = starts;
 
-    hash_digest stop = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest stop = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::get_blocks instance(std::move(starts_duplicate), std::move(stop));
     REQUIRE(instance.is_valid());
@@ -45,11 +45,11 @@ TEST_CASE("get blocks  constructor 3  always  equals params", "[get blocks]") {
 
 TEST_CASE("get blocks  constructor 4  always  equals params", "[get blocks]") {
     hash_list starts = {
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")};
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash};
 
-    hash_digest stop = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest stop = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     const message::get_blocks expected(starts, stop);
     message::get_blocks instance(expected);
@@ -61,11 +61,11 @@ TEST_CASE("get blocks  constructor 4  always  equals params", "[get blocks]") {
 
 TEST_CASE("get blocks  constructor 5  always  equals params", "[get blocks]") {
     hash_list starts = {
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")};
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash};
 
-    hash_digest stop = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest stop = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::get_blocks expected(starts, stop);
     message::get_blocks instance(std::move(expected));
@@ -85,12 +85,12 @@ TEST_CASE("get blocks from data insufficient bytes  failure", "[get blocks]") {
 
 TEST_CASE("get blocks from data valid input  success", "[get blocks]") {
     const message::get_blocks expected{
-        {hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-         hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-         hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-         hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-         hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")},
-        hash_literal("7777777777777777777777777777777777777777777777777777777777777777")};
+        {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+         "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+         "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash},
+        "7777777777777777777777777777777777777777777777777777777777777777"_hash};
 
     auto const data = expected.to_data(message::version::level::minimum);
     byte_reader reader(data);
@@ -108,41 +108,41 @@ TEST_CASE("get blocks from data valid input  success", "[get blocks]") {
 
 TEST_CASE("get blocks  start hashes accessor 1  always  returns initialized value", "[get blocks]") {
     hash_list expected = {
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-        hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-        hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")};
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash};
 
     message::get_blocks instance{
         expected,
-        hash_literal("7777777777777777777777777777777777777777777777777777777777777777")};
+        "7777777777777777777777777777777777777777777777777777777777777777"_hash};
 
     REQUIRE(expected == instance.start_hashes());
 }
 
 TEST_CASE("get blocks  start hashes accessor 2  always  returns initialized value", "[get blocks]") {
     hash_list expected = {
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-        hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-        hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")};
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash};
 
     const message::get_blocks instance{
         expected,
-        hash_literal("7777777777777777777777777777777777777777777777777777777777777777")};
+        "7777777777777777777777777777777777777777777777777777777777777777"_hash};
 
     REQUIRE(expected == instance.start_hashes());
 }
 
 TEST_CASE("get blocks  start hashes setter 1  roundtrip  success", "[get blocks]") {
     hash_list const values = {
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-        hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-        hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")};
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash};
 
     message::get_blocks instance;
     REQUIRE(values != instance.start_hashes());
@@ -152,11 +152,11 @@ TEST_CASE("get blocks  start hashes setter 1  roundtrip  success", "[get blocks]
 
 TEST_CASE("get blocks  start hashes setter 2  roundtrip  success", "[get blocks]") {
     hash_list values = {
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-        hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-        hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")};
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash};
 
     hash_list values_duplicate = values;
 
@@ -167,37 +167,35 @@ TEST_CASE("get blocks  start hashes setter 2  roundtrip  success", "[get blocks]
 }
 
 TEST_CASE("get blocks  stop hash accessor 1  always  returns initialized value", "[get blocks]") {
-    hash_digest expected = hash_literal(
-        "7777777777777777777777777777777777777777777777777777777777777777");
+    hash_digest expected = "7777777777777777777777777777777777777777777777777777777777777777"_hash;
 
     message::get_blocks instance{
-        {hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-         hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-         hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-         hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-         hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")},
+        {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+         "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+         "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash},
         expected};
 
     REQUIRE(expected == instance.stop_hash());
 }
 
 TEST_CASE("get blocks  stop hash accessor 2  always  returns initialized value", "[get blocks]") {
-    hash_digest expected = hash_literal(
-        "7777777777777777777777777777777777777777777777777777777777777777");
+    hash_digest expected = "7777777777777777777777777777777777777777777777777777777777777777"_hash;
 
     const message::get_blocks instance{
-        {hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-         hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-         hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-         hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-         hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")},
+        {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+         "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+         "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash},
         expected};
 
     REQUIRE(expected == instance.stop_hash());
 }
 
 TEST_CASE("get blocks  stop hash setter 1  roundtrip  success", "[get blocks]") {
-    hash_digest value = hash_literal("7777777777777777777777777777777777777777777777777777777777777777");
+    hash_digest value = "7777777777777777777777777777777777777777777777777777777777777777"_hash;
     message::get_blocks instance;
     REQUIRE(value != instance.stop_hash());
     instance.set_stop_hash(value);
@@ -205,7 +203,7 @@ TEST_CASE("get blocks  stop hash setter 1  roundtrip  success", "[get blocks]") 
 }
 
 TEST_CASE("get blocks  stop hash setter 2  roundtrip  success", "[get blocks]") {
-    hash_digest value = hash_literal("7777777777777777777777777777777777777777777777777777777777777777");
+    hash_digest value = "7777777777777777777777777777777777777777777777777777777777777777"_hash;
     message::get_blocks instance;
     REQUIRE(value != instance.stop_hash());
     instance.set_stop_hash(std::move(value));
@@ -214,13 +212,13 @@ TEST_CASE("get blocks  stop hash setter 2  roundtrip  success", "[get blocks]") 
 
 TEST_CASE("get blocks  operator assign equals  always  matches equivalent", "[get blocks]") {
     hash_list start = {
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-        hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-        hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")};
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash};
 
-    hash_digest stop = hash_literal("7777777777777777777777777777777777777777777777777777777777777777");
+    hash_digest stop = "7777777777777777777777777777777777777777777777777777777777777777"_hash;
 
     message::get_blocks value{start, stop};
 
@@ -237,12 +235,12 @@ TEST_CASE("get blocks  operator assign equals  always  matches equivalent", "[ge
 
 TEST_CASE("get blocks  operator boolean equals  duplicates  returns true", "[get blocks]") {
     const message::get_blocks expected{
-        {hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-         hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-         hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-         hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-         hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")},
-        hash_literal("7777777777777777777777777777777777777777777777777777777777777777")};
+        {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+         "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+         "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash},
+        "7777777777777777777777777777777777777777777777777777777777777777"_hash};
 
     message::get_blocks instance(expected);
     REQUIRE(instance == expected);
@@ -250,12 +248,12 @@ TEST_CASE("get blocks  operator boolean equals  duplicates  returns true", "[get
 
 TEST_CASE("get blocks  operator boolean equals  differs  returns false", "[get blocks]") {
     const message::get_blocks expected{
-        {hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-         hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-         hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-         hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-         hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")},
-        hash_literal("7777777777777777777777777777777777777777777777777777777777777777")};
+        {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+         "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+         "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash},
+        "7777777777777777777777777777777777777777777777777777777777777777"_hash};
 
     message::get_blocks instance;
     REQUIRE(instance != expected);
@@ -263,12 +261,12 @@ TEST_CASE("get blocks  operator boolean equals  differs  returns false", "[get b
 
 TEST_CASE("get blocks  operator boolean not equals  duplicates  returns false", "[get blocks]") {
     const message::get_blocks expected{
-        {hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-         hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-         hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-         hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-         hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")},
-        hash_literal("7777777777777777777777777777777777777777777777777777777777777777")};
+        {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+         "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+         "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash},
+        "7777777777777777777777777777777777777777777777777777777777777777"_hash};
 
     message::get_blocks instance(expected);
     REQUIRE(instance == expected);
@@ -276,15 +274,14 @@ TEST_CASE("get blocks  operator boolean not equals  duplicates  returns false", 
 
 TEST_CASE("get blocks  operator boolean not equals  differs  returns true", "[get blocks]") {
     const message::get_blocks expected{
-        {hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-         hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-         hash_literal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-         hash_literal("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
-         hash_literal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")},
-        hash_literal("7777777777777777777777777777777777777777777777777777777777777777")};
+        {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
+         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
+         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
+         "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"_hash,
+         "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash},
+        "7777777777777777777777777777777777777777777777777777777777777777"_hash};
 
     message::get_blocks instance;
     REQUIRE(instance != expected);
 }
 
-// End Test Suite

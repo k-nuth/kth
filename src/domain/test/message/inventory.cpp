@@ -32,7 +32,7 @@ TEST_CASE("inventory  constructor 2  always  equals params", "[inventory]") {
 
 TEST_CASE("inventory  constructor 3  always  equals params", "[inventory]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
-    auto hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::inventory_vector::list values =
         {
             message::inventory_vector(type, hash)};
@@ -47,7 +47,7 @@ TEST_CASE("inventory  constructor 3  always  equals params", "[inventory]") {
 
 TEST_CASE("inventory  constructor 4  always  equals params", "[inventory]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
-    auto hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     hash_list const hashes = {hash};
 
     message::inventory instance(hashes, type);
@@ -60,7 +60,7 @@ TEST_CASE("inventory  constructor 4  always  equals params", "[inventory]") {
 
 TEST_CASE("inventory  constructor 5  always  equals params", "[inventory]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
-    auto hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::inventory instance{{type, hash}};
     REQUIRE(instance.is_valid());
@@ -72,7 +72,7 @@ TEST_CASE("inventory  constructor 5  always  equals params", "[inventory]") {
 
 TEST_CASE("inventory  constructor 6  always  equals params", "[inventory]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
-    auto hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     const message::inventory value{{type, hash}};
     REQUIRE(value.is_valid());
@@ -86,7 +86,7 @@ TEST_CASE("inventory  constructor 6  always  equals params", "[inventory]") {
 
 TEST_CASE("inventory  constructor 7  always  equals params", "[inventory]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
-    auto hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::inventory value{{type, hash}};
     REQUIRE(value.is_valid());
@@ -132,7 +132,7 @@ TEST_CASE("inventory  inventories accessor 1  always  returns initialized value"
     const message::inventory_vector::list values =
         {
             message::inventory_vector(message::inventory_vector::type_id::error,
-                                      hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))};
+                                      "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)};
 
     message::inventory instance(values);
     REQUIRE(values == instance.inventories());
@@ -142,7 +142,7 @@ TEST_CASE("inventory  inventories accessor 2  always  returns initialized value"
     const message::inventory_vector::list values =
         {
             message::inventory_vector(message::inventory_vector::type_id::error,
-                                      hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))};
+                                      "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)};
 
     const message::inventory instance(values);
     REQUIRE(values == instance.inventories());
@@ -152,7 +152,7 @@ TEST_CASE("inventory  inventories setter 1  roundtrip  success", "[inventory]") 
     const message::inventory_vector::list values =
         {
             message::inventory_vector(message::inventory_vector::type_id::error,
-                                      hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))};
+                                      "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)};
 
     message::inventory instance;
     REQUIRE(values != instance.inventories());
@@ -164,7 +164,7 @@ TEST_CASE("inventory  inventories setter 2  roundtrip  success", "[inventory]") 
     message::inventory_vector::list values =
         {
             message::inventory_vector(message::inventory_vector::type_id::error,
-                                      hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))};
+                                      "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)};
 
     message::inventory instance;
     REQUIRE(0u == instance.inventories().size());
@@ -176,7 +176,7 @@ TEST_CASE("inventory  operator assign equals  always  matches equivalent", "[inv
     const message::inventory_vector::list elements =
         {
             message::inventory_vector(message::inventory_vector::type_id::error,
-                                      hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))};
+                                      "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)};
 
     message::inventory instance;
     REQUIRE( ! instance.is_valid());
@@ -189,7 +189,7 @@ TEST_CASE("inventory  operator assign equals  always  matches equivalent", "[inv
 TEST_CASE("inventory  operator boolean equals  duplicates  returns true", "[inventory]") {
     const message::inventory expected(
         {message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))});
+                                   "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
 
     message::inventory instance(expected);
     REQUIRE(instance == expected);
@@ -198,7 +198,7 @@ TEST_CASE("inventory  operator boolean equals  duplicates  returns true", "[inve
 TEST_CASE("inventory  operator boolean equals  differs  returns false", "[inventory]") {
     const message::inventory expected(
         {message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))});
+                                   "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
 
     message::inventory instance;
     REQUIRE(instance != expected);
@@ -207,7 +207,7 @@ TEST_CASE("inventory  operator boolean equals  differs  returns false", "[invent
 TEST_CASE("inventory  operator boolean not equals  duplicates  returns false", "[inventory]") {
     const message::inventory expected(
         {message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))});
+                                   "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
 
     message::inventory instance(expected);
     REQUIRE(instance == expected);
@@ -216,7 +216,7 @@ TEST_CASE("inventory  operator boolean not equals  duplicates  returns false", "
 TEST_CASE("inventory  operator boolean not equals  differs  returns true", "[inventory]") {
     const message::inventory expected(
         {message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))});
+                                   "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
 
     message::inventory instance;
     REQUIRE(instance != expected);
@@ -225,7 +225,7 @@ TEST_CASE("inventory  operator boolean not equals  differs  returns true", "[inv
 TEST_CASE("inventory  count  no matching type  returns zero", "[inventory]") {
     message::inventory instance(
         {message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))});
+                                   "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
 
     REQUIRE(0u == instance.count(message::inventory_vector::type_id::block));
 }
@@ -233,13 +233,13 @@ TEST_CASE("inventory  count  no matching type  returns zero", "[inventory]") {
 TEST_CASE("inventory  count  matching type  returns count", "[inventory]") {
     message::inventory instance(
         {message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b")),
+                                   "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash),
          message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b")),
+                                   "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash),
          message::inventory_vector(message::inventory_vector::type_id::block,
-                                   hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b")),
+                                   "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash),
          message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))});
+                                   "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
 
     REQUIRE(3u == instance.count(message::inventory_vector::type_id::error));
 }
@@ -249,13 +249,13 @@ TEST_CASE("inventory  to hashes  matching type  returns empty list", "[inventory
 
     message::inventory instance(
         {message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("1111111111111111111111111111111111111111111111111111111111111111")),
+                                   "1111111111111111111111111111111111111111111111111111111111111111"_hash),
          message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("2222222222222222222222222222222222222222222222222222222222222222")),
+                                   "2222222222222222222222222222222222222222222222222222222222222222"_hash),
          message::inventory_vector(message::inventory_vector::type_id::block,
-                                   hash_literal("3333333333333333333333333333333333333333333333333333333333333333")),
+                                   "3333333333333333333333333333333333333333333333333333333333333333"_hash),
          message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4444444444444444444444444444444444444444444444444444444444444444"))});
+                                   "4444444444444444444444444444444444444444444444444444444444444444"_hash)});
 
     hash_list result;
     instance.to_hashes(result, message::inventory_vector::type_id::transaction);
@@ -264,19 +264,19 @@ TEST_CASE("inventory  to hashes  matching type  returns empty list", "[inventory
 
 TEST_CASE("inventory  to hashes  matching type  returns hashes", "[inventory]") {
     hash_list const hashes = {
-        hash_literal("1111111111111111111111111111111111111111111111111111111111111111"),
-        hash_literal("2222222222222222222222222222222222222222222222222222222222222222"),
-        hash_literal("4444444444444444444444444444444444444444444444444444444444444444")};
+        "1111111111111111111111111111111111111111111111111111111111111111"_hash,
+        "2222222222222222222222222222222222222222222222222222222222222222"_hash,
+        "4444444444444444444444444444444444444444444444444444444444444444"_hash};
 
     message::inventory instance(
         {message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("1111111111111111111111111111111111111111111111111111111111111111")),
+                                   "1111111111111111111111111111111111111111111111111111111111111111"_hash),
          message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("2222222222222222222222222222222222222222222222222222222222222222")),
+                                   "2222222222222222222222222222222222222222222222222222222222222222"_hash),
          message::inventory_vector(message::inventory_vector::type_id::block,
-                                   hash_literal("3333333333333333333333333333333333333333333333333333333333333333")),
+                                   "3333333333333333333333333333333333333333333333333333333333333333"_hash),
          message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4444444444444444444444444444444444444444444444444444444444444444"))});
+                                   "4444444444444444444444444444444444444444444444444444444444444444"_hash)});
 
     hash_list result;
     instance.to_hashes(result, message::inventory_vector::type_id::error);
@@ -288,13 +288,13 @@ TEST_CASE("inventory  reduce  matching type  returns empty list", "[inventory]")
 
     message::inventory instance(
         {message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("1111111111111111111111111111111111111111111111111111111111111111")),
+                                   "1111111111111111111111111111111111111111111111111111111111111111"_hash),
          message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("2222222222222222222222222222222222222222222222222222222222222222")),
+                                   "2222222222222222222222222222222222222222222222222222222222222222"_hash),
          message::inventory_vector(message::inventory_vector::type_id::block,
-                                   hash_literal("3333333333333333333333333333333333333333333333333333333333333333")),
+                                   "3333333333333333333333333333333333333333333333333333333333333333"_hash),
          message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4444444444444444444444444444444444444444444444444444444444444444"))});
+                                   "4444444444444444444444444444444444444444444444444444444444444444"_hash)});
 
     message::inventory_vector::list result;
     instance.reduce(result, message::inventory_vector::type_id::transaction);
@@ -304,21 +304,21 @@ TEST_CASE("inventory  reduce  matching type  returns empty list", "[inventory]")
 TEST_CASE("inventory  reduce  matching type  returns matches", "[inventory]") {
     const message::inventory_vector::list expected = {
         message::inventory_vector(message::inventory_vector::type_id::error,
-                                  hash_literal("1111111111111111111111111111111111111111111111111111111111111111")),
+                                  "1111111111111111111111111111111111111111111111111111111111111111"_hash),
         message::inventory_vector(message::inventory_vector::type_id::error,
-                                  hash_literal("2222222222222222222222222222222222222222222222222222222222222222")),
+                                  "2222222222222222222222222222222222222222222222222222222222222222"_hash),
         message::inventory_vector(message::inventory_vector::type_id::error,
-                                  hash_literal("4444444444444444444444444444444444444444444444444444444444444444"))};
+                                  "4444444444444444444444444444444444444444444444444444444444444444"_hash)};
 
     message::inventory instance(
         {message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("1111111111111111111111111111111111111111111111111111111111111111")),
+                                   "1111111111111111111111111111111111111111111111111111111111111111"_hash),
          message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("2222222222222222222222222222222222222222222222222222222222222222")),
+                                   "2222222222222222222222222222222222222222222222222222222222222222"_hash),
          message::inventory_vector(message::inventory_vector::type_id::block,
-                                   hash_literal("3333333333333333333333333333333333333333333333333333333333333333")),
+                                   "3333333333333333333333333333333333333333333333333333333333333333"_hash),
          message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4444444444444444444444444444444444444444444444444444444444444444"))});
+                                   "4444444444444444444444444444444444444444444444444444444444444444"_hash)});
 
     message::inventory_vector::list result;
     instance.reduce(result, message::inventory_vector::type_id::error);

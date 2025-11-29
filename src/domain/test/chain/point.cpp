@@ -17,7 +17,7 @@ TEST_CASE("point  constructor 1  always  returns default initialized", "[point]"
 }
 
 TEST_CASE("point  constructor 2  valid input  returns input initialized", "[point]") {
-    auto const hash = hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+    auto const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
     uint32_t index = 1234u;
 
     chain::point instance(hash, index);
@@ -27,7 +27,7 @@ TEST_CASE("point  constructor 2  valid input  returns input initialized", "[poin
 }
 
 TEST_CASE("point  constructor 3  valid input  returns input initialized", "[point]") {
-    auto const hash = hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+    auto const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
     uint32_t index = 1234u;
 
     // This must be non-const.
@@ -41,7 +41,7 @@ TEST_CASE("point  constructor 3  valid input  returns input initialized", "[poin
 
 TEST_CASE("point  constructor 4  valid input  returns input initialized", "[point]") {
     const chain::point expected{
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
         524342u};
 
     chain::point instance(expected);
@@ -52,7 +52,7 @@ TEST_CASE("point  constructor 4  valid input  returns input initialized", "[poin
 TEST_CASE("point  constructor 5  valid input  returns input initialized", "[point]") {
     // This must be non-const.
     chain::point expected{
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
         524342u};
 
     chain::point instance(std::move(expected));
@@ -123,7 +123,7 @@ TEST_CASE("point from data roundtrip  success 2", "[point]") {
 
 
 TEST_CASE("point  hash setter 1  roundtrip  success", "[point]") {
-    auto const value = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    auto const value = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     chain::point instance;
     REQUIRE(value != instance.hash());
@@ -132,7 +132,7 @@ TEST_CASE("point  hash setter 1  roundtrip  success", "[point]") {
 }
 
 TEST_CASE("point  hash setter 2  roundtrip  success", "[point]") {
-    auto const value = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    auto const value = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     // This must be non-const.
     auto dup_value = value;
@@ -228,25 +228,25 @@ TEST_CASE("point  operator boolean not equals  differs  returns true", "[point]"
 }
 
 TEST_CASE("point  checksum  all ones  returns all ones", "[point]") {
-    static auto const tx_hash = hash_literal("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+    static auto const tx_hash = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"_hash;
     chain::point instance(tx_hash, 0xffffffff);
     REQUIRE(instance.checksum() == 0xffffffffffffffff);
 }
 
 TEST_CASE("point  checksum  all zeroes  returns all zeroes", "[point]") {
-    static auto const tx_hash = hash_literal("0000000000000000000000000000000000000000000000000000000000000000");
+    static auto const tx_hash = "0000000000000000000000000000000000000000000000000000000000000000"_hash;
     chain::point instance(tx_hash, 0x00000000);
     REQUIRE(instance.checksum() == 0x0000000000000000);
 }
 
 TEST_CASE("point  checksum  pattern one  returns expected", "[point]") {
-    static auto const tx_hash = hash_literal("000000000000000000000000aaaaaaaaaaaaaaaa000000000000000000000000");
+    static auto const tx_hash = "000000000000000000000000aaaaaaaaaaaaaaaa000000000000000000000000"_hash;
     chain::point instance(tx_hash, 0x00000001);
     REQUIRE(instance.checksum() == 0xaaaaaaaaaaaa8001);
 }
 
 TEST_CASE("point  checksum  pattern high  returns expected", "[point]") {
-    static auto const tx_hash = hash_literal("ffffffffffffffffffffffff01234567aaaaaaaaffffffffffffffffffffffff");
+    static auto const tx_hash = "ffffffffffffffffffffffff01234567aaaaaaaaffffffffffffffffffffffff"_hash;
     chain::point instance(tx_hash, 0x89abcdef);
     REQUIRE(instance.checksum() == 0x1234567aaaacdef);
 }

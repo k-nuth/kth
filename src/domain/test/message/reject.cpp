@@ -45,7 +45,7 @@ TEST_CASE("reject  constructor 2  always  equals params", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
-    hash_digest data = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject instance(code, message, reason, data);
     REQUIRE(instance.is_valid());
     REQUIRE(code == instance.code());
@@ -58,7 +58,7 @@ TEST_CASE("reject  constructor 3  always  equals params", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "sadfasdgd";
     std::string reason = "jgfghkggfsr";
-    hash_digest data = hash_literal("ce8f4b713ffdd2658900845251890f30371856be201cd1f5b3d970f793634333");
+    hash_digest data = "ce8f4b713ffdd2658900845251890f30371856be201cd1f5b3d970f793634333"_hash;
     message::reject instance(code, std::move(message), std::move(reason), std::move(data));
     REQUIRE(instance.is_valid());
 }
@@ -67,7 +67,7 @@ TEST_CASE("reject  constructor 4  always  equals params", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
-    hash_digest data = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject expected(code, message, reason, data);
     message::reject instance(expected);
     REQUIRE(instance.is_valid());
@@ -82,7 +82,7 @@ TEST_CASE("reject  constructor 5  always  equals params", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
-    hash_digest data = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject expected(code, message, reason, data);
     message::reject instance(std::move(expected));
     REQUIRE(instance.is_valid());
@@ -285,7 +285,7 @@ TEST_CASE("reject  code accessor  always  returns initialized value", "[reject]"
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
-    hash_digest data = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject instance(code, message, reason, data);
     REQUIRE(code == instance.code());
 }
@@ -294,7 +294,7 @@ TEST_CASE("reject  code setter  roundtrip  success", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
-    hash_digest data = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject instance;
     REQUIRE(code != instance.code());
     instance.set_code(code);
@@ -305,7 +305,7 @@ TEST_CASE("reject  message accessor 1  always  returns initialized value", "[rej
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
-    hash_digest data = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject instance(code, message, reason, data);
     REQUIRE(message == instance.message());
 }
@@ -314,7 +314,7 @@ TEST_CASE("reject  message accessor 2  always  returns initialized value", "[rej
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
-    hash_digest data = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     const message::reject instance(code, message, reason, data);
     REQUIRE(message == instance.message());
 }
@@ -340,7 +340,7 @@ TEST_CASE("reject  reason accessor 1  always  returns initialized value", "[reje
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
-    hash_digest data = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject instance(code, message, reason, data);
     REQUIRE(reason == instance.reason());
 }
@@ -349,7 +349,7 @@ TEST_CASE("reject  reason accessor 2  always  returns initialized value", "[reje
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
-    hash_digest data = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     const message::reject instance(code, message, reason, data);
     REQUIRE(reason == instance.reason());
 }
@@ -375,7 +375,7 @@ TEST_CASE("reject  data accessor 1  always  returns initialized value", "[reject
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
-    hash_digest data = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject instance(code, message, reason, data);
     REQUIRE(data == instance.data());
 }
@@ -384,13 +384,13 @@ TEST_CASE("reject  data accessor 2  always  returns initialized value", "[reject
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
-    hash_digest data = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     const message::reject instance(code, message, reason, data);
     REQUIRE(data == instance.data());
 }
 
 TEST_CASE("reject  data setter 1  roundtrip  success", "[reject]") {
-    hash_digest data = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject instance;
     REQUIRE(data != instance.data());
     instance.set_data(data);
@@ -398,8 +398,8 @@ TEST_CASE("reject  data setter 1  roundtrip  success", "[reject]") {
 }
 
 TEST_CASE("reject  data setter 2  roundtrip  success", "[reject]") {
-    hash_digest duplicate = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
-    hash_digest data = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    hash_digest duplicate = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
+    hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject instance;
     REQUIRE(duplicate != instance.data());
     instance.set_data(std::move(data));
@@ -411,7 +411,7 @@ TEST_CASE("reject  operator assign equals  always  matches equivalent", "[reject
         message::reject::reason_code::dust,
         "My Message",
         "My Reason",
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
 
     REQUIRE(value.is_valid());
 
@@ -427,7 +427,7 @@ TEST_CASE("reject  operator boolean equals  duplicates  returns true", "[reject]
         message::reject::reason_code::dust,
         "My Message",
         "My Reason",
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
 
     message::reject instance(expected);
     REQUIRE(instance == expected);
@@ -438,7 +438,7 @@ TEST_CASE("reject  operator boolean equals  differs  returns false", "[reject]")
         message::reject::reason_code::dust,
         "My Message",
         "My Reason",
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
 
     message::reject instance;
     REQUIRE(instance != expected);
@@ -449,7 +449,7 @@ TEST_CASE("reject - reject  operator boolean not equals  duplicates  returns fal
         message::reject::reason_code::dust,
         "My Message",
         "My Reason",
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
 
     message::reject instance(expected);
     REQUIRE(instance == expected);
@@ -460,7 +460,7 @@ TEST_CASE("reject - reject  operator boolean not equals  differs  returns true",
         message::reject::reason_code::dust,
         "My Message",
         "My Reason",
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
 
     message::reject instance;
     REQUIRE(instance != expected);

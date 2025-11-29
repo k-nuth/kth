@@ -77,8 +77,8 @@ TEST_CASE("block constructor 1 always invalid", "[chain block]") {
 TEST_CASE("block constructor 2 always equals params", "[chain block]") {
     chain::header const header {
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u
@@ -99,8 +99,8 @@ TEST_CASE("block constructor 2 always equals params", "[chain block]") {
 TEST_CASE("block constructor 3 always equals params", "[chain block]") {
     chain::header const header {
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u
@@ -129,8 +129,8 @@ TEST_CASE("block constructor 3 always equals params", "[chain block]") {
 TEST_CASE("block constructor 4 always equals params", "[chain block]") {
     chain::header const header {
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u
@@ -153,8 +153,8 @@ TEST_CASE("block constructor 4 always equals params", "[chain block]") {
 TEST_CASE("block constructor 5 always equals params", "[chain block]") {
     chain::header const header {
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u
@@ -410,8 +410,8 @@ TEST_CASE("block  generate merkle root  block with multiple transactions  matche
 TEST_CASE("block  header accessor  always  returns initialized value", "[block generate merkle root]") {
     chain::header const header {
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u
@@ -430,8 +430,8 @@ TEST_CASE("block  header accessor  always  returns initialized value", "[block g
 TEST_CASE("block  header setter 1  roundtrip  success", "[block generate merkle root]") {
     chain::header const header {
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u
@@ -446,8 +446,8 @@ TEST_CASE("block  header setter 1  roundtrip  success", "[block generate merkle 
 TEST_CASE("block  header setter 2  roundtrip  success", "[block generate merkle root]") {
     chain::header const header {
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u
@@ -465,8 +465,8 @@ TEST_CASE("block  header setter 2  roundtrip  success", "[block generate merkle 
 TEST_CASE("block  transactions accessor  always  returns initialized value", "[block generate merkle root]") {
     chain::header const header {
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u
@@ -514,8 +514,8 @@ TEST_CASE("block  transactions setter 2  roundtrip  success", "[block generate m
 TEST_CASE("block  operator assign equals  always  matches equivalent", "[block generate merkle root]") {
     chain::header const header(
         10u,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234u,
         6523454u,
         68644u
@@ -543,8 +543,8 @@ TEST_CASE("block  operator boolean equals  duplicates  returns true", "[block ge
     chain::block const expected(
         chain::header {
             10u,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234u,
             6523454u,
             68644u
@@ -564,8 +564,8 @@ TEST_CASE("block  operator boolean equals  differs  returns false", "[block gene
     chain::block const expected(
         chain::header {
             10u,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234u,
             6523454u,
             68644u
@@ -585,8 +585,8 @@ TEST_CASE("block  operator boolean not equals  duplicates  returns false", "[blo
     chain::block const expected {
         chain::header {
             10u,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234u,
             6523454u,
             68644u
@@ -606,8 +606,8 @@ TEST_CASE("block  operator boolean not equals  differs  returns true", "[block g
     chain::block const expected(
         chain::header {
             10u,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234u,
             6523454u,
             68644u

@@ -55,12 +55,6 @@ KI_API std::string encode_hash(hash_digest hash);
  */
 KI_API bool decode_hash(hash_digest& out, std::string_view in);
 
-/**
- * Convert a hex string literal into a bitcoin_hash.
- * The bitcoin_hash format is like base16, but with the bytes reversed.
- */
-KI_API hash_digest hash_literal(char const (&string)[2*hash_size + 1]);
-
 } // namespace kth
 
 #include <kth/infrastructure/impl/formats/base_16.ipp>

@@ -12,8 +12,8 @@ using namespace kth::blockchain;
 
 // Start Test Suite: block entry tests
 
-static auto const hash42 = hash_literal("4242424242424242424242424242424242424242424242424242424242424242");
-static auto const default_block_hash = hash_literal("14508459b221041eab257d2baaa7459775ba748246c8403609eb708f0e57e74b");
+static auto const hash42 = "4242424242424242424242424242424242424242424242424242424242424242"_hash;
+static auto const default_block_hash = "14508459b221041eab257d2baaa7459775ba748246c8403609eb708f0e57e74b"_hash;
 
 // construct1/block
 

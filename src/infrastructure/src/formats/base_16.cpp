@@ -52,12 +52,4 @@ bool decode_hash(hash_digest& out, std::string_view in) {
     return true;
 }
 
-hash_digest hash_literal(char const (&string)[2 * hash_size + 1]) {
-    hash_digest out;
-    [[maybe_unused]] auto const success = detail::decode_base16(out.data(), out.size(), string);
-    KTH_ASSERT(success);
-    std::reverse(out.begin(), out.end());
-    return out;
-}
-
 } // namespace kth

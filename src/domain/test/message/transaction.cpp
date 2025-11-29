@@ -20,7 +20,7 @@ constexpr auto raw_tx1 =
     "001976a914d9d78e26df4e4601cf9b26d09c7b280ee764469f88ac80c4600f00"
     "0000001976a9141ee32412020a324b93b1a1acfdfff6ab9ca8fac288ac000000"
     "00"_base16;
-constexpr char raw_tx1_hash_hex[] = "bf7c3f5a69a78edd81f3eff7e93a37fb2d7da394d48db4d85e7e5353b9b8e270";
+static auto const raw_tx1_hash = "bf7c3f5a69a78edd81f3eff7e93a37fb2d7da394d48db4d85e7e5353b9b8e270"_hash;
 
 // Junk data for testing
 constexpr auto junk_data =
@@ -46,7 +46,7 @@ constexpr auto raw_tx2 =
     "ffff02c0e1e400000000001976a914884c09d7e1f6420976c40e040c30b2b622"
     "10c3d488ac20300500000000001976a914905f933de850988603aafeeb2fd7fc"
     "e61e66fe5d88ac00000000"_base16;
-constexpr char raw_tx2_hash_hex[] = "8a6d9302fbe24f0ec756a94ecfc837eaffe16c43d1e68c62dfe980d99eea556f";
+static auto const raw_tx2_hash = "8a6d9302fbe24f0ec756a94ecfc837eaffe16c43d1e68c62dfe980d99eea556f"_hash;
 
 // Start Test Suite: message transaction tests
 
@@ -163,7 +163,7 @@ TEST_CASE("message transaction from data valid junk  success", "[message transac
 }
 
 TEST_CASE("message transaction from data case 1 valid data  success", "[message transaction]") {
-    hash_digest tx_hash = hash_literal(raw_tx1_hash_hex);
+    hash_digest tx_hash = raw_tx1_hash;
     data_chunk raw_tx = to_chunk(raw_tx1);
     REQUIRE(raw_tx.size() == 225u);
 
@@ -182,7 +182,7 @@ TEST_CASE("message transaction from data case 1 valid data  success", "[message 
 }
 
 TEST_CASE("message transaction from data case 2 valid data  success", "[message transaction]") {
-    hash_digest tx_hash = hash_literal(raw_tx2_hash_hex);
+    hash_digest tx_hash = raw_tx2_hash;
     data_chunk raw_tx = to_chunk(raw_tx2);
     REQUIRE(raw_tx.size() == 523u);
 
@@ -337,4 +337,3 @@ TEST_CASE("message transaction  operator boolean not equals 2  differs  returns 
     REQUIRE(alpha != beta);
 }
 
-// End Test Suite

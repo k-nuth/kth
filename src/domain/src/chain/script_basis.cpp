@@ -47,7 +47,7 @@ namespace kth::domain::chain {
 
 // bit.ly/2cPazSa
 static
-auto const one_hash = hash_literal("0000000000000000000000000000000000000000000000000000000000000001"); //NOLINT
+auto const one_hash = "0000000000000000000000000000000000000000000000000000000000000001"_hash; //NOLINT
 
 // Constructors.
 //-----------------------------------------------------------------------------

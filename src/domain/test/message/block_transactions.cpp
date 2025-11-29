@@ -15,8 +15,7 @@ TEST_CASE("block transactions  constructor 1  always invalid", "[block transacti
 }
 
 TEST_CASE("block transactions  constructor 2  always  equals params", "[block transactions]") {
-    hash_digest const hash = hash_literal(
-        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+    hash_digest const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
     chain::transaction::list const transactions = {
         chain::transaction(1, 48, {}, {}),
@@ -30,8 +29,7 @@ TEST_CASE("block transactions  constructor 2  always  equals params", "[block tr
 }
 
 TEST_CASE("block transactions  constructor 3  always  equals params", "[block transactions]") {
-    hash_digest const hash = hash_literal(
-        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+    hash_digest const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
     hash_digest dup_hash = hash;
 
     chain::transaction::list const transactions = {
@@ -49,8 +47,7 @@ TEST_CASE("block transactions  constructor 3  always  equals params", "[block tr
 }
 
 TEST_CASE("block transactions  constructor 4  always  equals params", "[block transactions]") {
-    hash_digest const hash = hash_literal(
-        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+    hash_digest const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
     chain::transaction::list const transactions = {
         chain::transaction(1, 48, {}, {}),
@@ -67,8 +64,7 @@ TEST_CASE("block transactions  constructor 4  always  equals params", "[block tr
 }
 
 TEST_CASE("block transactions  constructor 5  always  equals params", "[block transactions]") {
-    hash_digest const hash = hash_literal(
-        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+    hash_digest const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
     chain::transaction::list const transactions = {
         chain::transaction(1, 48, {}, {}),
@@ -218,8 +214,7 @@ TEST_CASE("block transactions from data valid input  success", "[block transacti
 }
 
 TEST_CASE("block transactions  block hash accessor 1  always  returns initialized value", "[block transactions]") {
-    hash_digest const hash = hash_literal(
-        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+    hash_digest const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
     chain::transaction::list const transactions = {
         chain::transaction(1, 48, {}, {}),
@@ -231,8 +226,7 @@ TEST_CASE("block transactions  block hash accessor 1  always  returns initialize
 }
 
 TEST_CASE("block transactions  block hash accessor 2  always  returns initialized value", "[block transactions]") {
-    hash_digest const hash = hash_literal(
-        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+    hash_digest const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
     chain::transaction::list const transactions = {
         chain::transaction(1, 48, {}, {}),
@@ -244,8 +238,7 @@ TEST_CASE("block transactions  block hash accessor 2  always  returns initialize
 }
 
 TEST_CASE("block transactions  block hash setter 1  roundtrip  success", "[block transactions]") {
-    hash_digest const hash = hash_literal(
-        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+    hash_digest const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
     message::block_transactions instance;
     REQUIRE(hash != instance.block_hash());
@@ -254,8 +247,7 @@ TEST_CASE("block transactions  block hash setter 1  roundtrip  success", "[block
 }
 
 TEST_CASE("block transactions  block hash setter 2  roundtrip  success", "[block transactions]") {
-    hash_digest const hash = hash_literal(
-        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+    hash_digest const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
     hash_digest dup_hash = hash;
     message::block_transactions instance;
@@ -265,8 +257,7 @@ TEST_CASE("block transactions  block hash setter 2  roundtrip  success", "[block
 }
 
 TEST_CASE("block transactions  transactions accessor 1  always  returns initialized value", "[block transactions]") {
-    hash_digest const hash = hash_literal(
-        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+    hash_digest const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
     chain::transaction::list const transactions = {
         chain::transaction(1, 48, {}, {}),
@@ -278,8 +269,7 @@ TEST_CASE("block transactions  transactions accessor 1  always  returns initiali
 }
 
 TEST_CASE("block transactions  transactions accessor 2  always  returns initialized value", "[block transactions]") {
-    hash_digest const hash = hash_literal(
-        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+    hash_digest const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
     chain::transaction::list const transactions = {
         chain::transaction(1, 48, {}, {}),
@@ -316,8 +306,7 @@ TEST_CASE("block transactions  transactions setter 2  roundtrip  success", "[blo
 }
 
 TEST_CASE("block transactions  operator assign equals  always  matches equivalent", "[block transactions]") {
-    hash_digest const hash = hash_literal(
-        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+    hash_digest const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
     chain::transaction::list const transactions = {
         chain::transaction(1, 48, {}, {}),
@@ -336,7 +325,7 @@ TEST_CASE("block transactions  operator assign equals  always  matches equivalen
 
 TEST_CASE("block transactions  operator boolean equals  duplicates  returns true", "[block transactions]") {
     const message::block_transactions expected(
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
         {chain::transaction(1, 48, {}, {}),
          chain::transaction(2, 32, {}, {}),
          chain::transaction(4, 16, {}, {})});
@@ -347,7 +336,7 @@ TEST_CASE("block transactions  operator boolean equals  duplicates  returns true
 
 TEST_CASE("block transactions  operator boolean equals  differs  returns false", "[block transactions]") {
     const message::block_transactions expected(
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
         {chain::transaction(1, 48, {}, {}),
          chain::transaction(2, 32, {}, {}),
          chain::transaction(4, 16, {}, {})});
@@ -358,7 +347,7 @@ TEST_CASE("block transactions  operator boolean equals  differs  returns false",
 
 TEST_CASE("block transactions  operator boolean not equals  duplicates  returns false", "[block transactions]") {
     const message::block_transactions expected(
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
         {chain::transaction(1, 48, {}, {}),
          chain::transaction(2, 32, {}, {}),
          chain::transaction(4, 16, {}, {})});
@@ -369,7 +358,7 @@ TEST_CASE("block transactions  operator boolean not equals  duplicates  returns 
 
 TEST_CASE("block transactions  operator boolean not equals  differs  returns true", "[block transactions]") {
     const message::block_transactions expected(
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
         {chain::transaction(1, 48, {}, {}),
          chain::transaction(2, 32, {}, {}),
          chain::transaction(4, 16, {}, {})});
@@ -378,4 +367,3 @@ TEST_CASE("block transactions  operator boolean not equals  differs  returns tru
     REQUIRE(instance != expected);
 }
 
-// End Test Suite

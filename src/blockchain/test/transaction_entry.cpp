@@ -17,7 +17,7 @@ using namespace kd::machine;
 // Start Test Suite: transaction entry tests
 
 static
-auto const default_tx_hash = hash_literal("f702453dd03b0f055e5437d76128141803984fb10acb85fc3b2184fae2f3fa78");
+auto const default_tx_hash = "f702453dd03b0f055e5437d76128141803984fb10acb85fc3b2184fae2f3fa78"_hash;
 
 static
 chain_state::data data() {

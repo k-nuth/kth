@@ -17,8 +17,8 @@ TEST_CASE("merkle block  constructor 1  always invalid", "[merkle block]") {
 TEST_CASE("merkle block  constructor 2  always  equals params", "[merkle block]") {
     chain::header const header(
         10,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234,
         6523454,
         68644);
@@ -26,9 +26,9 @@ TEST_CASE("merkle block  constructor 2  always  equals params", "[merkle block]"
     size_t const count = 1234u;
 
     hash_list const hashes{
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-        hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-        hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+        "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
     };
     data_chunk const flags{0xae, 0x56, 0x0f};
 
@@ -44,16 +44,16 @@ TEST_CASE("merkle block  constructor 3  always  equals params", "[merkle block]"
     const message::merkle_block instance(
         chain::header{
             10,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234,
             6523454,
             68644},
         1234u,
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-            hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+            "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
         },
         {0xae, 0x56, 0x0f});
 
@@ -64,16 +64,16 @@ TEST_CASE("merkle block  constructor 4  always  equals params", "[merkle block]"
     const message::merkle_block expected(
         chain::header{
             10,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234,
             6523454,
             68644},
         4321234u,
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-            hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+            "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
         },
         {0xae, 0x56, 0x0f});
 
@@ -85,8 +85,8 @@ TEST_CASE("merkle block  constructor 4  always  equals params", "[merkle block]"
 TEST_CASE("merkle block  constructor 5  always  equals params", "[merkle block]") {
     chain::header const header(
         10,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234,
         6523454,
         68644);
@@ -94,9 +94,9 @@ TEST_CASE("merkle block  constructor 5  always  equals params", "[merkle block]"
     size_t const count = 654576u;
 
     hash_list const hashes{
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-        hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-        hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+        "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
     };
     data_chunk const flags{0xae, 0x56, 0x0f};
 
@@ -122,13 +122,13 @@ TEST_CASE("from data insufficient data fails", "[merkle block]") {
 TEST_CASE("from data insufficient version fails", "[merkle block]") {
     const message::merkle_block expected{
         {10,
-         hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-         hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+         "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
          531234,
          6523454,
          68644},
         34523u,
-        {hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b")},
+        {"4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash},
         {0x00}};
 
     auto const data = expected.to_data(message::version::level::maximum);
@@ -143,13 +143,13 @@ TEST_CASE("from data insufficient version fails", "[merkle block]") {
 TEST_CASE("merkle block - roundtrip to data factory from data chunk", "[merkle block]") {
     const message::merkle_block expected{
         {10,
-         hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-         hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+         "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
          531234,
          6523454,
          68644},
         45633u,
-        {hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b")},
+        {"4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash},
         {0x00}};
 
     auto const data = expected.to_data(message::version::level::maximum);
@@ -167,8 +167,8 @@ TEST_CASE("merkle block - roundtrip to data factory from data chunk", "[merkle b
 TEST_CASE("merkle block  header accessor 1  always  returns initialized value", "[merkle block]") {
     chain::header const expected{
         10,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234,
         6523454,
         68644};
@@ -177,9 +177,9 @@ TEST_CASE("merkle block  header accessor 1  always  returns initialized value", 
         expected,
         753u,
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-            hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+            "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
         },
         {0xae, 0x56, 0x0f});
 
@@ -189,8 +189,8 @@ TEST_CASE("merkle block  header accessor 1  always  returns initialized value", 
 TEST_CASE("merkle block  header accessor 2  always  returns initialized value", "[merkle block]") {
     chain::header const expected{
         10,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234,
         6523454,
         68644};
@@ -199,9 +199,9 @@ TEST_CASE("merkle block  header accessor 2  always  returns initialized value", 
         expected,
         9542u,
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-            hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+            "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
         },
         {0xae, 0x56, 0x0f});
 
@@ -211,8 +211,8 @@ TEST_CASE("merkle block  header accessor 2  always  returns initialized value", 
 TEST_CASE("merkle block  header setter 1  roundtrip  success", "[merkle block]") {
     chain::header const expected{
         10,
-        hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-        hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         531234,
         6523454,
         68644};
@@ -229,8 +229,8 @@ TEST_CASE("merkle block  header setter 2  roundtrip  success", "[merkle block]")
     instance.set_header(
         chain::header{
             10,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234,
             6523454,
             68644});
@@ -240,16 +240,16 @@ TEST_CASE("merkle block  header setter 2  roundtrip  success", "[merkle block]")
 
 TEST_CASE("merkle block  hashes accessor 1  always  returns initialized value", "[merkle block]") {
     hash_list const expected{
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-        hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-        hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+        "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
     };
 
     const message::merkle_block instance(
         chain::header{
             10,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234,
             6523454,
             68644},
@@ -262,16 +262,16 @@ TEST_CASE("merkle block  hashes accessor 1  always  returns initialized value", 
 
 TEST_CASE("merkle block  hashes accessor 2  always  returns initialized value", "[merkle block]") {
     hash_list const expected{
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-        hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-        hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+        "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
     };
 
     const message::merkle_block instance(
         chain::header{
             10,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234,
             6523454,
             68644},
@@ -284,9 +284,9 @@ TEST_CASE("merkle block  hashes accessor 2  always  returns initialized value", 
 
 TEST_CASE("merkle block  hashes setter 1  roundtrip  success", "[merkle block]") {
     hash_list const expected{
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-        hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-        hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+        "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
     };
 
     message::merkle_block instance;
@@ -299,9 +299,9 @@ TEST_CASE("merkle block  hashes setter 2  roundtrip  success", "[merkle block]")
     message::merkle_block instance;
     REQUIRE(instance.hashes().empty());
     instance.set_hashes(hash_list{
-        hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-        hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-        hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+        "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
     });
 
     REQUIRE( ! instance.hashes().empty());
@@ -313,16 +313,16 @@ TEST_CASE("merkle block  flags accessor 1  always  returns initialized value", "
     const message::merkle_block instance(
         chain::header{
             10,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234,
             6523454,
             68644},
         8264u,
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-            hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+            "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
         },
         expected);
 
@@ -335,16 +335,16 @@ TEST_CASE("merkle block  flags accessor 2  always  returns initialized value", "
     const message::merkle_block instance(
         chain::header{
             10,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234,
             6523454,
             68644},
         6428u,
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-            hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+            "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
         },
         expected);
 
@@ -370,16 +370,16 @@ TEST_CASE("merkle block  operator assign equals  always  matches equivalent", "[
     message::merkle_block value(
         chain::header{
             10,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234,
             6523454,
             68644},
         3197u,
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-            hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+            "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
         },
         {0xae, 0x56, 0x0f});
 
@@ -396,16 +396,16 @@ TEST_CASE("merkle block  operator boolean equals  duplicates  returns true", "[m
     const message::merkle_block expected(
         chain::header{
             10,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234,
             6523454,
             68644},
         9821u,
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-            hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+            "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
         },
         {0xae, 0x56, 0x0f});
 
@@ -417,16 +417,16 @@ TEST_CASE("merkle block  operator boolean equals  differs  returns false", "[mer
     const message::merkle_block expected(
         chain::header{
             10,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234,
             6523454,
             68644},
         1469u,
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-            hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+            "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
         },
         {0xae, 0x56, 0x0f});
 
@@ -438,16 +438,16 @@ TEST_CASE("merkle block  operator boolean not equals  duplicates  returns false"
     const message::merkle_block expected(
         chain::header{
             10,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234,
             6523454,
             68644},
         3524u,
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-            hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+            "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
         },
         {0xae, 0x56, 0x0f});
 
@@ -459,16 +459,16 @@ TEST_CASE("merkle block  operator boolean not equals  differs  returns true", "[
     const message::merkle_block expected(
         chain::header{
             10,
-            hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
             531234,
             6523454,
             68644},
         8642u,
         {
-            hash_literal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"),
-            hash_literal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-            hash_literal("ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
+            "ccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddd"_hash,
         },
         {0xae, 0x56, 0x0f});
 

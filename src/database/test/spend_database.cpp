@@ -32,15 +32,15 @@ BOOST_FIXTURE_TEST_SUITE(database_tests, spend_database_directory_setup_fixture)
 
 #ifdef KTH_DB_SPEND
 TEST_CASE("spend database  test", "[None]") {
-    domain::chain::output_point key1{ hash_literal("4129e76f363f9742bc98dd3d40c99c9066e4d53b8e10e5097bd6f7b5059d7c53"), 110 };
-    domain::chain::output_point key2{ hash_literal("eefa5d23968584be9d8d064bcf99c24666e4d53b8e10e5097bd6f7b5059d7c53"), 4 };
-    domain::chain::output_point key3{ hash_literal("4129e76f363f9742bc98dd3d40c99c90eefa5d23968584be9d8d064bcf99c246"), 8 };
-    domain::chain::output_point key4{ hash_literal("80d9e7012b5b171bf78e75b52d2d149580d9e7012b5b171bf78e75b52d2d1495"), 9 };
+    domain::chain::output_point key1{ "4129e76f363f9742bc98dd3d40c99c9066e4d53b8e10e5097bd6f7b5059d7c53"_hash, 110 };
+    domain::chain::output_point key2{ "eefa5d23968584be9d8d064bcf99c24666e4d53b8e10e5097bd6f7b5059d7c53"_hash, 4 };
+    domain::chain::output_point key3{ "4129e76f363f9742bc98dd3d40c99c90eefa5d23968584be9d8d064bcf99c246"_hash, 8 };
+    domain::chain::output_point key4{ "80d9e7012b5b171bf78e75b52d2d149580d9e7012b5b171bf78e75b52d2d1495"_hash, 9 };
 
-    domain::chain::input_point value1{ hash_literal("4742b3eac32d35961f9da9d42d495ff1d90aba96944cac3e715047256f7016d1"), 1 };
-    domain::chain::input_point value2{ hash_literal("d90aba96944cac3e715047256f7016d1d90aba96944cac3e715047256f7016d1"), 2 };
-    domain::chain::input_point value3{ hash_literal("3cc768bbaef30587c72c6eba8dbf6aeec4ef24172ae6fe357f2e24c2b0fa44d5"), 3 };
-    domain::chain::input_point value4{ hash_literal("4742b3eac32d35961f9da9d42d495ff13cc768bbaef30587c72c6eba8dbf6aee"), 4 };
+    domain::chain::input_point value1{ "4742b3eac32d35961f9da9d42d495ff1d90aba96944cac3e715047256f7016d1"_hash, 1 };
+    domain::chain::input_point value2{ "d90aba96944cac3e715047256f7016d1d90aba96944cac3e715047256f7016d1"_hash, 2 };
+    domain::chain::input_point value3{ "3cc768bbaef30587c72c6eba8dbf6aeec4ef24172ae6fe357f2e24c2b0fa44d5"_hash, 3 };
+    domain::chain::input_point value4{ "4742b3eac32d35961f9da9d42d495ff13cc768bbaef30587c72c6eba8dbf6aee"_hash, 4 };
 
     store::create(DIRECTORY "/spend");
     spend_database db(DIRECTORY "/spend", 1000, 50);

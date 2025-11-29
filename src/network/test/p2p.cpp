@@ -178,7 +178,7 @@ TEST_CASE("p2p set top block1 values expected", "[p2p tests]") {
     network::settings const configuration;
     p2p network(configuration);
     size_t const expected_height = 42;
-    auto const expected_hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    auto const expected_hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     network.set_top_block({ expected_hash, expected_height });
     REQUIRE(network.top_block().hash() == expected_hash);
     REQUIRE(network.top_block().height() == expected_height);
@@ -189,7 +189,7 @@ TEST_CASE("p2p set top block2 values expected", "[p2p tests]") {
     network::settings const configuration;
     p2p network(configuration);
     size_t const expected_height = 42;
-    auto const hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     infrastructure::config::checkpoint const expected{ hash, expected_height };
     network.set_top_block(expected);
     REQUIRE(network.top_block().hash() == expected.hash());

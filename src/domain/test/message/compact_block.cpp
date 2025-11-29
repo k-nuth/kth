@@ -23,8 +23,8 @@ uint64_t convert_to_uint64t(std::string const& rawdata) {
 
 TEST_CASE("compact block  constructor 2  always  equals params", "[compact block]") {
     chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                               "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                               "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                                531234u,
                                6523454u,
                                68644u);
@@ -52,8 +52,8 @@ TEST_CASE("compact block  constructor 2  always  equals params", "[compact block
 
 TEST_CASE("compact block  constructor 3  always  equals params", "[compact block]") {
     chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                               "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                               "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                                531234u,
                                6523454u,
                                68644u);
@@ -85,8 +85,8 @@ TEST_CASE("compact block  constructor 3  always  equals params", "[compact block
 
 TEST_CASE("compact block  constructor 4  always  equals params", "[compact block]") {
     chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                               "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                               "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                                531234u,
                                6523454u,
                                68644u);
@@ -116,8 +116,8 @@ TEST_CASE("compact block  constructor 4  always  equals params", "[compact block
 
 TEST_CASE("compact block  constructor 5  always  equals params", "[compact block]") {
     chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                               "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                               "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                                531234u,
                                6523454u,
                                68644u);
@@ -200,8 +200,8 @@ TEST_CASE("compact block from data valid input  success", "[compact block]") {
 
 TEST_CASE("compact block  header accessor 1  always  returns initialized value", "[compact block]") {
     chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                               "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                               "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                                531234u,
                                6523454u,
                                68644u);
@@ -224,8 +224,8 @@ TEST_CASE("compact block  header accessor 1  always  returns initialized value",
 
 TEST_CASE("compact block  header accessor 2  always  returns initialized value", "[compact block]") {
     chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                               "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                               "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                                531234u,
                                6523454u,
                                68644u);
@@ -248,8 +248,8 @@ TEST_CASE("compact block  header accessor 2  always  returns initialized value",
 
 TEST_CASE("compact block  header setter 1  roundtrip  success", "[compact block]") {
     chain::header const value(10u,
-                              hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                              hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                              "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                              "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                               531234u,
                               6523454u,
                               68644u);
@@ -262,8 +262,8 @@ TEST_CASE("compact block  header setter 1  roundtrip  success", "[compact block]
 
 TEST_CASE("compact block  header setter 2  roundtrip  success", "[compact block]") {
     chain::header const value(10u,
-                              hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                              hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                              "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                              "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                               531234u,
                               6523454u,
                               68644u);
@@ -277,8 +277,8 @@ TEST_CASE("compact block  header setter 2  roundtrip  success", "[compact block]
 
 TEST_CASE("compact block  nonce accessor  always  returns initialized value", "[compact block]") {
     chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                               "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                               "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                                531234u,
                                6523454u,
                                68644u);
@@ -310,8 +310,8 @@ TEST_CASE("compact block  nonce setter  roundtrip  success", "[compact block]") 
 
 TEST_CASE("compact block  short ids accessor 1  always  returns initialized value", "[compact block]") {
     chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                               "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                               "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                                531234u,
                                6523454u,
                                68644u);
@@ -334,8 +334,8 @@ TEST_CASE("compact block  short ids accessor 1  always  returns initialized valu
 
 TEST_CASE("compact block  short ids accessor 2  always  returns initialized value", "[compact block]") {
     chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                               "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                               "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                                531234u,
                                6523454u,
                                68644u);
@@ -385,8 +385,8 @@ TEST_CASE("compact block  short ids setter 2  roundtrip  success", "[compact blo
 
 TEST_CASE("compact block  transactions accessor 1  always  returns initialized value", "[compact block]") {
     chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                               "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                               "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                                531234u,
                                6523454u,
                                68644u);
@@ -409,8 +409,8 @@ TEST_CASE("compact block  transactions accessor 1  always  returns initialized v
 
 TEST_CASE("compact block  transactions accessor 2  always  returns initialized value", "[compact block]") {
     chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                               "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                               "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                                531234u,
                                6523454u,
                                68644u);
@@ -458,8 +458,8 @@ TEST_CASE("compact block  transactions setter 2  roundtrip  success", "[compact 
 
 TEST_CASE("compact block  operator assign equals  always  matches equivalent", "[compact block]") {
     chain::header const header(10u,
-                               hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                               hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                               "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                               "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                                531234u,
                                6523454u,
                                68644u);
@@ -491,8 +491,8 @@ TEST_CASE("compact block  operator assign equals  always  matches equivalent", "
 TEST_CASE("compact block  operator boolean equals  duplicates  returns true", "[compact block]") {
     const message::compact_block expected(
         chain::header(10u,
-                      hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                      hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                      "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                      "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                       531234u,
                       6523454u,
                       68644u),
@@ -512,8 +512,8 @@ TEST_CASE("compact block  operator boolean equals  duplicates  returns true", "[
 TEST_CASE("compact block  operator boolean equals  differs  returns false", "[compact block]") {
     const message::compact_block expected(
         chain::header(10u,
-                      hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                      hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                      "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                      "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                       531234u,
                       6523454u,
                       68644u),
@@ -533,8 +533,8 @@ TEST_CASE("compact block  operator boolean equals  differs  returns false", "[co
 TEST_CASE("compact block  operator boolean not equals  duplicates  returns false", "[compact block]") {
     const message::compact_block expected(
         chain::header(10u,
-                      hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                      hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                      "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                      "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                       531234u,
                       6523454u,
                       68644u),
@@ -554,8 +554,8 @@ TEST_CASE("compact block  operator boolean not equals  duplicates  returns false
 TEST_CASE("compact block  operator boolean not equals  differs  returns true", "[compact block]") {
     const message::compact_block expected(
         chain::header(10u,
-                      hash_literal("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-                      hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+                      "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
+                      "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
                       531234u,
                       6523454u,
                       68644u),

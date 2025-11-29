@@ -32,7 +32,7 @@ TEST_CASE("not found  constructor 2  always  equals params", "[not found]") {
 
 TEST_CASE("not found  constructor 3  always  equals params", "[not found]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
-    auto hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::inventory_vector::list values =
         {
             message::inventory_vector(type, hash)};
@@ -47,7 +47,7 @@ TEST_CASE("not found  constructor 3  always  equals params", "[not found]") {
 
 TEST_CASE("not found  constructor 4  always  equals params", "[not found]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
-    auto hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     hash_list const hashes = {hash};
 
     message::not_found instance(hashes, type);
@@ -60,7 +60,7 @@ TEST_CASE("not found  constructor 4  always  equals params", "[not found]") {
 
 TEST_CASE("not found  constructor 5  always  equals params", "[not found]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
-    auto hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::not_found instance{{type, hash}};
     REQUIRE(instance.is_valid());
@@ -72,7 +72,7 @@ TEST_CASE("not found  constructor 5  always  equals params", "[not found]") {
 
 TEST_CASE("not found  constructor 6  always  equals params", "[not found]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
-    auto hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     const message::not_found value{{type, hash}};
     REQUIRE(value.is_valid());
@@ -86,7 +86,7 @@ TEST_CASE("not found  constructor 6  always  equals params", "[not found]") {
 
 TEST_CASE("not found  constructor 7  always  equals params", "[not found]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
-    auto hash = hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+    auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::not_found value{{type, hash}};
     REQUIRE(value.is_valid());
@@ -148,7 +148,7 @@ TEST_CASE("not found  operator assign equals  always  matches equivalent", "[not
     const message::inventory_vector::list elements =
         {
             message::inventory_vector(message::inventory_vector::type_id::error,
-                                      hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))};
+                                      "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)};
 
     message::not_found value(elements);
     REQUIRE(value.is_valid());
@@ -164,7 +164,7 @@ TEST_CASE("not found  operator assign equals  always  matches equivalent", "[not
 TEST_CASE("not found  operator boolean equals  duplicates  returns true", "[not found]") {
     const message::not_found expected(
         {message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))});
+                                   "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
 
     message::not_found instance(expected);
     REQUIRE(instance == expected);
@@ -173,7 +173,7 @@ TEST_CASE("not found  operator boolean equals  duplicates  returns true", "[not 
 TEST_CASE("not found  operator boolean equals  differs  returns false", "[not found]") {
     const message::not_found expected(
         {message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))});
+                                   "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
 
     message::not_found instance;
     REQUIRE(instance != expected);
@@ -182,7 +182,7 @@ TEST_CASE("not found  operator boolean equals  differs  returns false", "[not fo
 TEST_CASE("not found  operator boolean not equals  duplicates  returns false", "[not found]") {
     const message::not_found expected(
         {message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))});
+                                   "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
 
     message::not_found instance(expected);
     REQUIRE(instance == expected);
@@ -191,7 +191,7 @@ TEST_CASE("not found  operator boolean not equals  duplicates  returns false", "
 TEST_CASE("not found  operator boolean not equals  differs  returns true", "[not found]") {
     const message::not_found expected(
         {message::inventory_vector(message::inventory_vector::type_id::error,
-                                   hash_literal("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"))});
+                                   "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
 
     message::not_found instance;
     REQUIRE(instance != expected);
