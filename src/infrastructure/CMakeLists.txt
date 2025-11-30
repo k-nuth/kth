@@ -501,7 +501,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/config/endpoint.cpp
     test/config/hash256.cpp
 
-
     test/formats/base_10.cpp
     test/formats/base_16.cpp
     test/formats/base_58.cpp

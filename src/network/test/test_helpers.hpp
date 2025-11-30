@@ -5,7 +5,9 @@
 #ifndef KTH_NETWORK_TEST_HELPERS_HPP
 #define KTH_NETWORK_TEST_HELPERS_HPP
 
-// Include the central test helpers from domain
+// Include the central test helpers from domain (which includes infrastructure)
 #include "../../domain/test/test_helpers.hpp"
+
+#include <kth/network.hpp>
 
 #endif // KTH_NETWORK_TEST_HELPERS_HPP

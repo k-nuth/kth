@@ -15,28 +15,14 @@ using namespace kth;
 using namespace kd::message;
 using namespace kth::network;
 
-#define TEST_SET_NAME \
-    "p2p_tests"
+constexpr auto test_set_name = "p2p_tests";
 
 #define TEST_NAME \
     Catch::getResultCapture().getCurrentTestName()
 
-// TODO: build mock and/or use dedicated test service.
-#define SEED1 "testnet-seed.bitcoin.petertodd.org:18333"
-#define SEED2 "testnet-seed.bitcoin.schildbach.de:18333"
-
-// NOTE: this is insufficient as the address varies.
-#define SEED1_AUTHORITIES \
-    { \
-      { "52.8.185.53:18333" }, \
-      { "178.21.118.174:18333" }, \
-      { "[2604:880:d:2f::c7b2]:18333" }, \
-      { "[2604:a880:1:20::269:b001]:18333" }, \
-      { "[2602:ffea:1001:6ff::f922]:18333" }, \
-      { "[2401:2500:203:9:153:120:11:18]:18333" }, \
-      { "[2600:3c00::f03c:91ff:fe89:305f]:18333" }, \
-      { "[2600:3c01::f03c:91ff:fe98:68bb]:18333" } \
-    }
+// BCH testnet seeds
+constexpr auto seed1 = "testnet-seed.bchd.cash:18333";
+constexpr auto seed2 = "seed.tbch.loping.net:18333";
 
 #define SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(name) \
     auto name = network::settings(domain::config::network::testnet); \
@@ -47,7 +33,7 @@ using namespace kth::network;
 #define SETTINGS_TESTNET_ONE_THREAD_ONE_SEED(name) \
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(name); \
     name.host_pool_capacity = 42; \
-    name.seeds = { { SEED1 } }; \
+    name.seeds = { { seed1 } }; \
     name.hosts_file = get_log_path(TEST_NAME, "hosts")
 
 #define SETTINGS_TESTNET_THREE_THREADS_ONE_SEED_FIVE_OUTBOUND(name) \
@@ -55,7 +41,7 @@ using namespace kth::network;
     name.threads = 3; \
     name.host_pool_capacity = 42; \
     name.outbound_connections = 5; \
-    name.seeds = { { SEED1 } }; \
+    name.seeds = { { seed1 } }; \
     name.hosts_file = get_log_path(TEST_NAME, "hosts")
 
 std::string get_log_path(std::string const& test, std::string const& file) {
@@ -229,7 +215,7 @@ TEST_CASE("p2p start no sessions start success start operation fail", "[p2p test
 ////    REQUIRE(start_result(network) == error::success);
 ////}
 
-TEST_CASE("p2p start seed session handshake timeout start peer throttling stop success", "[p2p tests]") {
+TEST_CASE("p2p start seed session handshake timeout start peer throttling stop success", "[p2p tests][integration]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_ONE_SEED(configuration);
     configuration.channel_handshake_seconds = 0;
@@ -244,7 +230,7 @@ TEST_CASE("p2p start seed session handshake timeout start peer throttling stop s
     REQUIRE(network.stop());
 }
 
-TEST_CASE("p2p start seed session connect timeout start peer throttling stop success", "[p2p tests]") {
+TEST_CASE("p2p start seed session connect timeout start peer throttling stop success", "[p2p tests][integration]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_ONE_SEED(configuration);
     configuration.connect_timeout_seconds = 0;
@@ -253,7 +239,7 @@ TEST_CASE("p2p start seed session connect timeout start peer throttling stop suc
     REQUIRE(network.stop());
 }
 
-TEST_CASE("p2p start seed session germination timeout start peer throttling stop success", "[p2p tests]") {
+TEST_CASE("p2p start seed session germination timeout start peer throttling stop success", "[p2p tests][integration]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_ONE_SEED(configuration);
     configuration.channel_germination_seconds = 0;
@@ -262,7 +248,7 @@ TEST_CASE("p2p start seed session germination timeout start peer throttling stop
     REQUIRE(network.stop());
 }
 
-TEST_CASE("p2p start seed session inactivity timeout start peer throttling stop success", "[p2p tests]") {
+TEST_CASE("p2p start seed session inactivity timeout start peer throttling stop success", "[p2p tests][integration]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_ONE_SEED(configuration);
     configuration.channel_inactivity_minutes = 0;
@@ -271,7 +257,7 @@ TEST_CASE("p2p start seed session inactivity timeout start peer throttling stop 
     REQUIRE(network.stop());
 }
 
-TEST_CASE("p2p start seed session expiration timeout start peer throttling stop success", "[p2p tests]") {
+TEST_CASE("p2p start seed session expiration timeout start peer throttling stop success", "[p2p tests][integration]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_ONE_SEED(configuration);
     configuration.channel_expiration_minutes = 0;
@@ -280,16 +266,17 @@ TEST_CASE("p2p start seed session expiration timeout start peer throttling stop 
     REQUIRE(network.stop());
 }
 
+// TODO: implement seed1_authorities with current BCH testnet addresses
 // Disabled for live test reliability.
 // This may fail due to missing blacklist entries for the specified host.
-////TEST_CASE("p2p  start  seed session blacklisted  start operation fail stop success", "[p2p tests]")
+////TEST_CASE("p2p start seed session blacklisted start operation fail stop success", "[p2p tests]")
 ////{
 ////    print_headers(TEST_NAME);
 ////    SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
 ////    configuration.host_pool_capacity = 42;
 ////    configuration.hosts_file = get_log_path(TEST_NAME, "hosts");
-////    configuration.seeds = { { SEED1 } };
-////    configuration.blacklist = SEED1_AUTHORITIES;
+////    configuration.seeds = { { seed1 } };
+////    configuration.blacklist = seed1_authorities;
 ////    p2p network(configuration);
 ////    REQUIRE(start_result(network) == error::operation_failed);
 ////    REQUIRE(network.stop());
@@ -307,15 +294,15 @@ TEST_CASE("p2p connect not started service stopped", "[p2p tests]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);
-    infrastructure::config::endpoint const host(SEED1);
+    infrastructure::config::endpoint const host(seed1);
     REQUIRE(connect_result(network, host) == error::service_stopped);
 }
 
-TEST_CASE("p2p connect started success", "[p2p tests]") {
+TEST_CASE("p2p connect started success", "[p2p tests][integration]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);
-    infrastructure::config::endpoint const host(SEED1);
+    infrastructure::config::endpoint const host(seed1);
     REQUIRE(start_result(network) == error::success);
     REQUIRE(run_result(network) == error::success);
     REQUIRE(connect_result(network, host) == error::success);
@@ -328,7 +315,7 @@ TEST_CASE("p2p connect started success", "[p2p tests]") {
 ////    print_headers(TEST_NAME);
 ////    SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
 ////    p2p network(configuration);
-////    infrastructure::config::endpoint const host(SEED1);
+////    infrastructure::config::endpoint const host(seed1);
 ////    REQUIRE(start_result(network) == error::success);
 ////    REQUIRE(run_result(network) == error::success);
 ////    REQUIRE(connect_result(network, host) == error::success);
@@ -361,30 +348,30 @@ TEST_CASE("p2p subscribe started stop service stopped", "[p2p tests]") {
     network.subscribe_connection(handler);
 }
 
-TEST_CASE("p2p subscribe started connect1 success", "[p2p tests]") {
+TEST_CASE("p2p subscribe started connect1 success", "[p2p tests][integration]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);
-    infrastructure::config::endpoint const host(SEED1);
+    infrastructure::config::endpoint const host(seed1);
     REQUIRE(start_result(network) == error::success);
     REQUIRE(subscribe_connect1_result(network, host) == error::success);
 }
 
-TEST_CASE("p2p subscribe started connect2 success", "[p2p tests]") {
+TEST_CASE("p2p subscribe started connect2 success", "[p2p tests][integration]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);
-    infrastructure::config::endpoint const host(SEED1);
+    infrastructure::config::endpoint const host(seed1);
     REQUIRE(start_result(network) == error::success);
     REQUIRE(subscribe_connect2_result(network, host) == error::success);
 }
 
-TEST_CASE("p2p broadcast ping two distinct hosts two sends and successful completion", "[p2p tests]") {
+TEST_CASE("p2p broadcast ping two distinct hosts two sends and successful completion", "[p2p tests][integration]") {
     print_headers(TEST_NAME);
     SETTINGS_TESTNET_ONE_THREAD_NO_CONNECTIONS(configuration);
     p2p network(configuration);
-    infrastructure::config::endpoint const host1(SEED1);
-    infrastructure::config::endpoint const host2(SEED2);
+    infrastructure::config::endpoint const host1(seed1);
+    infrastructure::config::endpoint const host2(seed2);
     REQUIRE(start_result(network) == error::success);
     REQUIRE(run_result(network) == error::success);
     REQUIRE(connect_result(network, host1) == error::success);
