@@ -14,7 +14,6 @@
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/istream_reader.hpp>
 
 // Test macros
 #define CHECK_MESSAGE(cond, msg) do { INFO(msg); CHECK(cond); } while((void)0, 0)

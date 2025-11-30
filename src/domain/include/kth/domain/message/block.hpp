@@ -24,7 +24,6 @@
 
 #include <kth/domain/concepts.hpp>
 
-#include <kth/infrastructure/utility/istream_reader.hpp>
 
 namespace kth::domain::message {
 

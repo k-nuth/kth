@@ -20,10 +20,9 @@
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
-#include <kth/infrastructure/utility/container_source.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
-#include <kth/infrastructure/utility/istream_reader.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
 #include <kth/infrastructure/utility/serializer.hpp>
 // #include <kth/infrastructure/wallet/ec_private.hpp>
@@ -100,30 +99,50 @@ hd_private hd_private::from_key(hd_key const& key, uint32_t public_prefix) {
 }
 
 hd_private hd_private::from_key(hd_key const& key, uint64_t prefixes) {
-    stream_source<hd_key> istream(key);
-    istream_reader reader(istream);
+    byte_reader reader(key);
 
-    auto const prefix = reader.read_4_bytes_big_endian();
+    auto const prefix = reader.read_big_endian<uint32_t>();
+    if ( ! prefix || *prefix != to_prefix(prefixes)) {
+        return {};
+    }
+
     auto const depth = reader.read_byte();
-    auto const parent = reader.read_4_bytes_big_endian();
-    auto const child = reader.read_4_bytes_big_endian();
-    auto const chain = reader.read_forward<hd_chain_code_size>();
-    reader.read_byte();
-    auto const secret = reader.read_forward<ec_secret_size>();
+    if ( ! depth) {
+        return {};
+    }
 
-    // Validate the prefix against the provided value.
-    if (prefix != to_prefix(prefixes)) {
+    auto const parent = reader.read_big_endian<uint32_t>();
+    if ( ! parent) {
+        return {};
+    }
+
+    auto const child = reader.read_big_endian<uint32_t>();
+    if ( ! child) {
+        return {};
+    }
+
+    auto const chain = reader.read_packed<hd_chain_code>();
+    if ( ! chain) {
+        return {};
+    }
+
+    if ( ! reader.skip(1)) {  // padding byte
+        return {};
+    }
+
+    auto const secret = reader.read_packed<ec_secret>();
+    if ( ! secret) {
         return {};
     }
 
     hd_lineage const lineage {
         prefixes,
-        depth,
-        parent,
-        child
+        *depth,
+        *parent,
+        *child
     };
 
-    return hd_private(secret, chain, lineage);
+    return hd_private(*secret, *chain, lineage);
 }
 
 hd_private hd_private::from_string(std::string const& encoded, uint32_t public_prefix) {

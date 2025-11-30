@@ -134,11 +134,11 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os != "Emscripten":
             self.requires("simdutf/7.1.0", transitive_headers=True, transitive_libs=True)
 
-        # if self.options.with_png:
-        #     self.requires("libpng/1.6.34@kth/stable", transitive_headers=True, transitive_libs=True)
+        if self.options.with_png:
+            self.requires("libpng/1.6.51", transitive_headers=True, transitive_libs=True)
 
-        # if self.options.with_qrencode:
-        #     self.requires("libqrencode/4.0.0@kth/stable", transitive_headers=True, transitive_libs=True)
+        if self.options.with_qrencode:
+            self.requires("libqrencode/4.1.1", transitive_headers=True, transitive_libs=True)
 
         # if self.options.asio_standalone:
         #     self.requires("asio/1.24.0", transitive_headers=True, transitive_libs=True)
@@ -215,8 +215,8 @@ class KthRecipe(KnuthConanFileV2):
         
         tc.variables["WITH_EXAMPLES"] = option_on_off(self.options.with_examples)
         tc.variables["WITH_ICU"] = option_on_off(self.options.with_icu)
-        tc.variables["WITH_PNG"] = option_on_off(self.options.with_png)
-        tc.variables["WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
+        tc.variables["KTH_WITH_PNG"] = option_on_off(self.options.with_png)
+        tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
 
         # Secp256k1 --------------------------------------------
         tc.variables["SECP256K1_ENABLE_COVERAGE"] = option_on_off(self.options.secp256k1_enable_coverage)
@@ -310,7 +310,12 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["infrastructure"].libs = ["infrastructure"]
         self.cpp_info.components["infrastructure"].names["cmake_find_package"] = "infrastructure"
         self.cpp_info.components["infrastructure"].names["cmake_find_package_multi"] = "infrastructure"
-        self.cpp_info.components["infrastructure"].defines = static_defines
+        infrastructure_defines = list(static_defines)
+        if self.options.with_png:
+            infrastructure_defines.append("KTH_WITH_PNG")
+        if self.options.with_qrencode:
+            infrastructure_defines.append("KTH_WITH_QRENCODE")
+        self.cpp_info.components["infrastructure"].defines = infrastructure_defines
         # Infrastructure core dependencies: secp256k1, boost, fmt, ctre, spdlog, simdutf (non-wasm)
         self.cpp_info.components["infrastructure"].requires = [
             "secp256k1",
@@ -322,6 +327,11 @@ class KthRecipe(KnuthConanFileV2):
         # Add simdutf for SIMD-optimized base encoding (not available for WebAssembly)
         if self.settings.os != "Emscripten":
             self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
+        # Add libpng and libqrencode when enabled
+        if self.options.with_png:
+            self.cpp_info.components["infrastructure"].requires.append("libpng::libpng")
+        if self.options.with_qrencode:
+            self.cpp_info.components["infrastructure"].requires.append("libqrencode::libqrencode")
         
         
         # Domain models and business logic

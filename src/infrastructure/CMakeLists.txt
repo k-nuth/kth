@@ -15,8 +15,8 @@ option(GLOBAL_BUILD "" ON)
 option(ENABLE_POSITION_INDEPENDENT_CODE "Enable POSITION_INDEPENDENT_CODE property" ON)
 option(WITH_EXAMPLES "Compile with examples." OFF)
 option(WITH_ICU "Compile with International Components for Unicode." OFF)
-option(WITH_PNG "Compile with Libpng support." OFF)
-option(WITH_QRENCODE "Compile with QREncode." OFF)
+option(KTH_WITH_PNG "Compile with Libpng support." OFF)
+option(KTH_WITH_QRENCODE "Compile with QREncode." OFF)
 option(JUST_KTH_SOURCES "Just Knuth source code to be linted." OFF)
 
 
@@ -24,12 +24,12 @@ if (WITH_ICU)
   add_definitions(-DWITH_ICU -DBOOST_HAS_ICU)
 endif()
 
-if (WITH_PNG)
-  add_definitions(-DWITH_PNG)
+if (KTH_WITH_PNG)
+  add_definitions(-DKTH_WITH_PNG)
 endif()
 
-if (WITH_QRENCODE)
-  add_definitions(-DWITH_QRENCODE)
+if (KTH_WITH_QRENCODE)
+  add_definitions(-DKTH_WITH_QRENCODE)
 endif()
 
 
@@ -71,6 +71,13 @@ if (WITH_ICU)
   find_package(ICU REQUIRED)
 endif()
 
+if (KTH_WITH_PNG)
+  find_package(PNG REQUIRED)
+endif()
+
+if (KTH_WITH_QRENCODE)
+  find_package(libqrencode REQUIRED)
+endif()
 
 include(CheckCXXCompilerFlag)
 
@@ -199,7 +206,6 @@ set(kth_sources_just_legacy
         src/utility/dispatcher.cpp
         src/utility/flush_lock.cpp
         src/utility/interprocess_lock.cpp
-        src/utility/istream_reader.cpp
         src/utility/monitor.cpp
         src/utility/ostream_writer.cpp
         src/utility/prioritized_mutex.cpp
@@ -245,14 +251,14 @@ set(kth_sources_just_legacy
   src/log/sink.cpp
 )
 
-if (WITH_PNG)
+if (KTH_WITH_PNG)
   set(kth_sources_just_legacy
     ${kth_sources_just_legacy}
     src/utility/png.cpp
   )
 endif()
 
-if (WITH_QRENCODE)
+if (KTH_WITH_QRENCODE)
   set(kth_sources_just_legacy
     ${kth_sources_just_legacy}
     src/wallet/qrcode.cpp
@@ -328,7 +334,6 @@ set(kth_headers
     include/kth/infrastructure/impl/utility/data.ipp
     include/kth/infrastructure/impl/utility/deserializer.ipp
     include/kth/infrastructure/impl/utility/endian.ipp
-    include/kth/infrastructure/impl/utility/istream_reader.ipp
     include/kth/infrastructure/impl/utility/ostream_writer.ipp
     include/kth/infrastructure/impl/utility/pending.ipp
     include/kth/infrastructure/impl/utility/resubscriber.ipp
@@ -369,12 +374,10 @@ set(kth_headers
     include/kth/infrastructure/utility/exceptions.hpp
     include/kth/infrastructure/utility/flush_lock.hpp
     include/kth/infrastructure/utility/interprocess_lock.hpp
-    include/kth/infrastructure/utility/istream_reader.hpp
     include/kth/infrastructure/utility/monitor.hpp
     include/kth/infrastructure/utility/noncopyable.hpp
     include/kth/infrastructure/utility/ostream_writer.hpp
     include/kth/infrastructure/utility/pending.hpp
-    include/kth/infrastructure/utility/png.hpp
     include/kth/infrastructure/utility/prioritized_mutex.hpp
 
     include/kth/infrastructure/utility/pseudo_random.hpp
@@ -404,13 +407,24 @@ set(kth_headers
     include/kth/infrastructure/wallet/hd_public.hpp
     include/kth/infrastructure/wallet/mini_keys.hpp
     include/kth/infrastructure/wallet/mnemonic.hpp
-    include/kth/infrastructure/wallet/qrcode.hpp
     include/kth/infrastructure/wallet/uri.hpp
 
     include/kth/infrastructure.hpp
 )
 
+if (KTH_WITH_PNG)
+  set(kth_headers
+    ${kth_headers}
+    include/kth/infrastructure/utility/png.hpp
+  )
+endif()
 
+if (KTH_WITH_QRENCODE)
+  set(kth_headers
+    ${kth_headers}
+    include/kth/infrastructure/wallet/qrcode.hpp
+  )
+endif()
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
@@ -453,6 +467,14 @@ endif()
 
 if (WITH_ICU)
   target_link_libraries(${PROJECT_NAME} PUBLIC ICU::icuuc)
+endif()
+
+if (KTH_WITH_PNG)
+  target_link_libraries(${PROJECT_NAME} PUBLIC PNG::PNG)
+endif()
+
+if (KTH_WITH_QRENCODE)
+  target_link_libraries(${PROJECT_NAME} PUBLIC libqrencode::libqrencode)
 endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_THREAD_LIBS_INIT})
@@ -508,7 +530,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/endian.cpp
     test/utility/operators.cpp
     test/utility/serializer.cpp
-    test/utility/stream.cpp
+    test/utility/byte_reader.cpp
     test/utility/thread.cpp
 
     test/wallet/hd_private.cpp
@@ -528,17 +550,17 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     )
   endif()
 
-  if (WITH_PNG)
+  if (KTH_WITH_PNG)
     set(kth_test_sources
         ${kth_test_sources}
-        src/utility/png.cpp
+        test/utility/png.cpp
     )
   endif()
 
-  if (WITH_QRENCODE)
+  if (KTH_WITH_QRENCODE)
     set(kth_test_sources
         ${kth_test_sources}
-        src/wallet/qrcode.cpp
+        test/wallet/qrcode.cpp
     )
   endif()
 

@@ -20,15 +20,21 @@ echo "Building version: ${VERSION} with test: ${TEST}"
 # conan lock create conanfile.py --version "${VERSION}" --lockfile=conan.lock --lockfile-out=build/conan.lock
 # conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing
 
-cmake --preset conan-release \
-         -DCMAKE_VERBOSE_MAKEFILE=ON \
-         -DGLOBAL_BUILD=ON \
-         -DENABLE_TEST=ON \
-         -DCMAKE_BUILD_TYPE=Release
+# Only configure if not already configured or if explicitly requested
+if [ ! -f "build/build/Release/CMakeCache.txt" ] || [ "$RECONFIGURE" = "1" ]; then
+    echo "Configuring CMake..."
+    cmake --preset conan-release \
+             -DCMAKE_VERBOSE_MAKEFILE=ON \
+             -DGLOBAL_BUILD=ON \
+             -DENABLE_TEST=ON \
+             -DCMAKE_BUILD_TYPE=Release
 
-if [ $? -ne 0 ]; then
-    echo "CMake configuration failed"
-    exit 1
+    if [ $? -ne 0 ]; then
+        echo "CMake configuration failed"
+        exit 1
+    fi
+else
+    echo "Skipping CMake configuration (already configured). Set RECONFIGURE=1 to force."
 fi
 
 cmake --build --preset conan-release --parallel

@@ -88,13 +88,15 @@
 #include <kth/infrastructure/utility/exceptions.hpp>
 #include <kth/infrastructure/utility/flush_lock.hpp>
 #include <kth/infrastructure/utility/interprocess_lock.hpp>
-#include <kth/infrastructure/utility/istream_reader.hpp>
 #include <kth/infrastructure/utility/monitor.hpp>
 #include <kth/infrastructure/utility/noncopyable.hpp>
 #include <kth/infrastructure/utility/operators.hpp>
 #include <kth/infrastructure/utility/ostream_writer.hpp>
 
+#ifdef KTH_WITH_PNG
 #include <kth/infrastructure/utility/png.hpp>
+#endif
+
 #include <kth/infrastructure/utility/prioritized_mutex.hpp>
 
 #include <kth/infrastructure/utility/pseudo_random.hpp>
@@ -123,8 +125,11 @@
 // #include <kth/infrastructure/wallet/message.hpp>
 #include <kth/infrastructure/wallet/mini_keys.hpp>
 #include <kth/infrastructure/wallet/mnemonic.hpp>
-#include <kth/infrastructure/wallet/qrcode.hpp>
 #include <kth/infrastructure/wallet/uri.hpp>
+
+#ifdef KTH_WITH_QRENCODE
+#include <kth/infrastructure/wallet/qrcode.hpp>
+#endif
 
 #if ! defined(__EMSCRIPTEN__)
 

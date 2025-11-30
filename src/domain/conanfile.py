@@ -85,9 +85,7 @@ class KnuthDomainConan(KnuthConanFileV2):
         tc = self.cmake_toolchain_basis()
         # tc.variables["CMAKE_VERBOSE_MAKEFILE"] = True
         tc.variables["WITH_ICU"] = option_on_off(self.options.with_icu)
-        tc.variables["WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
-        # tc.variables["WITH_PNG"] = option_on_off(self.options.with_png)
-        tc.variables["WITH_PNG"] = option_on_off(self.options.with_qrencode)
+        tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
 
         tc.generate()

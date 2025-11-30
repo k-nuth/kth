@@ -69,7 +69,7 @@ class KnuthInfrastructureConan(KnuthConanFileV2):
         self.requires("spdlog/1.15.1", transitive_headers=True, transitive_libs=True)
 
         if self.options.with_png:
-            self.requires("libpng/1.6.40", transitive_headers=True, transitive_libs=True)
+            self.requires("libpng/1.6.51", transitive_headers=True, transitive_libs=True)
 
         if self.options.with_qrencode:
             self.requires("libqrencode/4.1.1", transitive_headers=True, transitive_libs=True)
@@ -109,10 +109,8 @@ class KnuthInfrastructureConan(KnuthConanFileV2):
         tc = self.cmake_toolchain_basis()
         # tc.variables["CMAKE_VERBOSE_MAKEFILE"] = True
         tc.variables["WITH_ICU"] = option_on_off(self.options.with_icu)
-        # tc.variables["WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
-        # tc.variables["WITH_PNG"] = option_on_off(self.options.with_qrencode)
-        tc.variables["WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
-        tc.variables["WITH_PNG"] = option_on_off(self.options.with_png)
+        tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
+        tc.variables["KTH_WITH_PNG"] = option_on_off(self.options.with_png)
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
         tc.generate()
         tc = CMakeDeps(self)
@@ -162,7 +160,10 @@ class KnuthInfrastructureConan(KnuthConanFileV2):
         else:
             self.cpp_info.requires.append("boost::boost")
 
-        #TODO(fernando): add the rest of the conditional dependencies
+        if self.options.with_png:
+            self.cpp_info.requires.append("libpng::libpng")
+        if self.options.with_qrencode:
+            self.cpp_info.requires.append("libqrencode::libqrencode")
 
 
         if self.settings.os == "Linux" or self.settings.os == "FreeBSD" or self.settings.os == "Emscripten":
@@ -177,4 +178,9 @@ class KnuthInfrastructureConan(KnuthConanFileV2):
 
         if not self.is_shared:
             self.cpp_info.defines.append("KI_STATIC")
+
+        if self.options.with_png:
+            self.cpp_info.defines.append("KTH_WITH_PNG")
+        if self.options.with_qrencode:
+            self.cpp_info.defines.append("KTH_WITH_QRENCODE")
 

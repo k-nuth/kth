@@ -70,36 +70,6 @@ Integer from_little_endian_unsafe(Iterator start) {
 }
 
 template <typename Integer>
-constexpr
-Integer from_big_endian_stream_unsafe(std::istream& stream) {
-    VERIFY_UNSIGNED(Integer);
-    Integer out = 0;
-
-    for (size_t i = sizeof(Integer); (i > 0) && stream; i--) {
-        uint8_t value = 0;
-        stream.read(reinterpret_cast<char*>(&value), sizeof value);
-        out |= static_cast<Integer>(value) << (8 * (i - 1));
-    }
-
-    return out;
-}
-
-template <typename Integer>
-constexpr
-Integer from_little_endian_stream_unsafe(std::istream& stream) {
-    VERIFY_UNSIGNED(Integer);
-    Integer out = 0;
-
-    for (size_t i = 0; (i < sizeof(Integer)) && stream; i++) {
-        uint8_t value = 0;
-        stream.read(reinterpret_cast<char*>(&value), sizeof value);
-        out |= static_cast<Integer>(value) << (8 * i);
-    }
-
-    return out;
-}
-
-template <typename Integer>
 byte_array<sizeof(Integer)> to_big_endian(Integer value) {
     VERIFY_UNSIGNED(Integer);
     byte_array<sizeof(Integer)> out;

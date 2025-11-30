@@ -18,10 +18,9 @@
 #include <kth/infrastructure/math/checksum.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/math/hash.hpp>
-#include <kth/infrastructure/utility/container_source.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
-#include <kth/infrastructure/utility/istream_reader.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
 // #include <kth/infrastructure/wallet/ec_public.hpp>
 #include <kth/infrastructure/wallet/hd_private.hpp>
@@ -86,31 +85,47 @@ hd_public hd_public::from_string(std::string const& encoded) {
 }
 
 hd_public hd_public::from_key(hd_key const& key, uint32_t prefix) {
-    stream_source<hd_key> istream(key);
-    istream_reader reader(istream);
+    byte_reader reader(key);
 
-    auto const actual_prefix = reader.read_4_bytes_big_endian();
+    auto const actual_prefix = reader.read_big_endian<uint32_t>();
+    if ( ! actual_prefix || *actual_prefix != prefix) {
+        return {};
+    }
+
     auto const depth = reader.read_byte();
-    auto const parent = reader.read_4_bytes_big_endian();
-    auto const child = reader.read_4_bytes_big_endian();
-    auto const chain = reader.read_forward<hd_chain_code_size>();
-    auto const compressed = reader.read_forward<ec_compressed_size>();
-    auto const point = to_array<ec_compressed_size>(compressed);
+    if ( ! depth) {
+        return {};
+    }
 
-    // Validate the prefix against the provided value.
-    if (actual_prefix != prefix) {
+    auto const parent = reader.read_big_endian<uint32_t>();
+    if ( ! parent) {
+        return {};
+    }
+
+    auto const child = reader.read_big_endian<uint32_t>();
+    if ( ! child) {
+        return {};
+    }
+
+    auto const chain = reader.read_packed<hd_chain_code>();
+    if ( ! chain) {
+        return {};
+    }
+
+    auto const point = reader.read_packed<ec_compressed>();
+    if ( ! point) {
         return {};
     }
 
     // The private prefix will be zero'd here, but there's no way to access it.
     hd_lineage const lineage {
         prefix,
-        depth,
-        parent,
-        child
+        *depth,
+        *parent,
+        *child
     };
 
-    return hd_public(compressed, chain, lineage);
+    return hd_public(*point, *chain, lineage);
 }
 
 hd_public hd_public::from_string(std::string const& encoded, uint32_t prefix) {

@@ -12,7 +12,6 @@
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/hash.hpp>
-#include <kth/infrastructure/utility/istream_reader.hpp>
 
 namespace kth::domain::message {
 
