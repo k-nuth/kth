@@ -15,7 +15,6 @@
 #include <kth/infrastructure/utility/reader.hpp>
 #include <kth/infrastructure/utility/writer.hpp>
 #include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/container_source.hpp>
 
 namespace kth::infrastructure::message {
 

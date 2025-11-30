@@ -14,7 +14,6 @@
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/container_source.hpp>
 
 namespace kth::domain::chain {
 

@@ -12,6 +12,7 @@
 #include <kth/infrastructure/constants.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
+#include <kth/infrastructure/utility/limits.hpp>
 
 namespace kth {
 

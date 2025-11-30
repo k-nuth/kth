@@ -8,7 +8,6 @@
 // #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/container_source.hpp>
 #include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::domain::message {

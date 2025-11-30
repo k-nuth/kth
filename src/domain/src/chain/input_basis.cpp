@@ -10,7 +10,6 @@
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/container_source.hpp>
 #include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::domain::chain {
