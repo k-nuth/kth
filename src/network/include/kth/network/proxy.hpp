@@ -87,8 +87,6 @@ protected:
     void handle_stopping() = 0;
 
 private:
-    using payload_source = byte_source<data_chunk>;
-    using payload_stream = boost::iostreams::stream<payload_source>;
     using command_ptr = std::shared_ptr<std::string>;
     using payload_ptr = std::shared_ptr<data_chunk>;
 

@@ -362,7 +362,6 @@ set(kth_headers
     include/kth/infrastructure/utility/color.hpp
     include/kth/infrastructure/utility/conditional_lock.hpp
     include/kth/infrastructure/utility/container_sink.hpp
-    include/kth/infrastructure/utility/container_source.hpp
     include/kth/infrastructure/utility/data.hpp
     include/kth/infrastructure/utility/deadline.hpp
     include/kth/infrastructure/utility/decorator.hpp
