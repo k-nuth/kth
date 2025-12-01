@@ -80,7 +80,6 @@
 #include <kth/infrastructure/utility/deadline.hpp>
 #include <kth/infrastructure/utility/decorator.hpp>
 
-#include <kth/infrastructure/utility/deserializer.hpp>
 #include <kth/infrastructure/utility/dispatcher.hpp>
 #include <kth/infrastructure/utility/enable_shared_from_base.hpp>
 #include <kth/infrastructure/utility/endian.hpp>

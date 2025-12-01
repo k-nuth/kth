@@ -5,7 +5,6 @@
 #include <kth/infrastructure/math/checksum.hpp>
 
 #include <kth/infrastructure/math/hash.hpp>
-#include <kth/infrastructure/utility/deserializer.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
 
 namespace kth {
@@ -19,20 +18,18 @@ void append_checksum(data_chunk& data)
 uint32_t bitcoin_checksum(data_slice data)
 {
     auto const hash = bitcoin_hash(data);
-    return from_little_endian_unsafe<uint32_t>(hash.begin());
+    return from_little_endian_unsafe<uint32_t>(hash);
 }
 
 bool verify_checksum(data_slice data)
 {
     if (data.size() < checksum_size) {
         return false;
-}
+    }
 
-    // TODO: create a bitcoin_checksum overload that can accept begin/end.
     auto const slice_size = data.size() - checksum_size;
-    data_slice slice(data.data(), slice_size);
-    auto checksum = from_little_endian_unsafe<uint32_t>(data.data() + slice_size);
-    return bitcoin_checksum(slice) == checksum;
+    auto const checksum = from_little_endian<uint32_t>(data.subspan(slice_size).first<sizeof(uint32_t)>());
+    return bitcoin_checksum(data.subspan(0, slice_size)) == checksum;
 }
 
 } // namespace kth

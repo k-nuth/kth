@@ -24,6 +24,7 @@ using byte_array = std::array<uint8_t, Size>;
 
 using byte_span = std::span<uint8_t const>;
 using byte_span_mut = std::span<uint8_t>;
+using data_slice = byte_span;  // Alias for backwards compatibility
 
 template <size_t Size>
 struct byte_array_parts {
@@ -33,7 +34,6 @@ struct byte_array_parts {
 
 // Define arbitrary byte storage types.
 using one_byte = byte_array<1>;
-using data_slice = std::span<uint8_t const>;
 using data_chunk = std::vector<uint8_t>;
 using data_queue = std::queue<data_chunk>;
 using data_stack = std::vector<data_chunk>;

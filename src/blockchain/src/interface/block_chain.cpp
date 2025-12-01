@@ -893,8 +893,8 @@ void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const
     std::vector<bool> have_txn(txn_available.size());
 
     auto header_hash = hash(block);
-    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash.begin());
-    auto k1 = from_little_endian_unsafe<uint64_t>(header_hash.begin() + sizeof(uint64_t));
+    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash);
+    auto k1 = from_little_endian_unsafe<uint64_t>(std::span{header_hash}.subspan(sizeof(uint64_t)));
 
     auto const result = database_.internal_db().get_all_transaction_unconfirmed();
 
@@ -942,8 +942,8 @@ safe_chain::mempool_mini_hash_map block_chain::get_mempool_mini_hash_map(domain:
 
     auto header_hash = hash(block);
 
-    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash.begin());
-    auto k1 = from_little_endian_unsafe<uint64_t>(header_hash.begin() + sizeof(uint64_t));
+    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash);
+    auto k1 = from_little_endian_unsafe<uint64_t>(std::span{header_hash}.subspan(sizeof(uint64_t)));
 
     safe_chain::mempool_mini_hash_map mempool;
 
@@ -1132,8 +1132,8 @@ void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const
     std::vector<bool> have_txn(txn_available.size());
 
     auto header_hash = hash(block);
-    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash.begin());
-    auto k1 = from_little_endian_unsafe<uint64_t>(header_hash.begin() + sizeof(uint64_t));
+    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash);
+    auto k1 = from_little_endian_unsafe<uint64_t>(std::span{header_hash}.subspan(sizeof(uint64_t)));
 
 
     // spdlog::info("[blockchain] fill_tx_list_from_mempool header_hash -> {} k0 {} k1 {}", encode_hash(header_hash), k0, k1);
@@ -1177,8 +1177,8 @@ safe_chain::mempool_mini_hash_map block_chain::get_mempool_mini_hash_map(domain:
 
     auto header_hash = hash(block);
 
-    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash.begin());
-    auto k1 = from_little_endian_unsafe<uint64_t>(header_hash.begin() + sizeof(uint64_t));
+    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash);
+    auto k1 = from_little_endian_unsafe<uint64_t>(std::span{header_hash}.subspan(sizeof(uint64_t)));
 
     safe_chain::mempool_mini_hash_map mempool;
 

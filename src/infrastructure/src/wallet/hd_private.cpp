@@ -94,7 +94,7 @@ hd_private hd_private::from_seed(data_slice seed, uint64_t prefixes) {
 }
 
 hd_private hd_private::from_key(hd_key const& key, uint32_t public_prefix) {
-    auto const prefix = from_big_endian_unsafe<uint32_t>(key.begin());
+    auto const prefix = from_big_endian_unsafe<uint32_t>(key);
     return from_key(key, to_prefixes(prefix, public_prefix));
 }
 

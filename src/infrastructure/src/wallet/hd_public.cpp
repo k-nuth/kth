@@ -71,7 +71,7 @@ hd_public hd_public::from_secret(ec_secret const& secret, const hd_chain_code& c
 }
 
 hd_public hd_public::from_key(hd_key const& key) {
-    auto const prefix = from_big_endian_unsafe<uint32_t>(key.begin());
+    auto const prefix = from_big_endian_unsafe<uint32_t>(key);
     return from_key(key, prefix);
 }
 
@@ -224,7 +224,7 @@ hd_public hd_public::derive_public(uint32_t index) const {
 
 uint32_t hd_public::fingerprint() const {
     auto const message_digest = bitcoin_short_hash(point_);
-    return from_big_endian_unsafe<uint32_t>(message_digest.begin());
+    return from_big_endian_unsafe<uint32_t>(message_digest);
 }
 
 // Operators.

@@ -283,7 +283,7 @@ set(kth_headers
     include/kth/infrastructure/compat.h
     include/kth/infrastructure/compat.hpp
     include/kth/infrastructure/constants.hpp
-    # include/kth/infrastructure/concepts.hpp
+    include/kth/infrastructure/concepts.hpp
     include/kth/infrastructure/define.hpp
     include/kth/infrastructure/error.hpp
     include/kth/infrastructure/handlers.hpp
@@ -332,8 +332,6 @@ set(kth_headers
 
     include/kth/infrastructure/impl/utility/collection.ipp
     include/kth/infrastructure/impl/utility/data.ipp
-    include/kth/infrastructure/impl/utility/deserializer.ipp
-    include/kth/infrastructure/impl/utility/endian.ipp
     include/kth/infrastructure/impl/utility/ostream_writer.ipp
     include/kth/infrastructure/impl/utility/pending.ipp
     include/kth/infrastructure/impl/utility/resubscriber.ipp
@@ -357,7 +355,7 @@ set(kth_headers
     include/kth/infrastructure/utility/assert.hpp
     include/kth/infrastructure/utility/atomic.hpp
     include/kth/infrastructure/utility/binary.hpp
-    # include/kth/infrastructure/utility/byte_reader.hpp
+    include/kth/infrastructure/utility/byte_reader.hpp
     include/kth/infrastructure/utility/collection.hpp
     include/kth/infrastructure/utility/color.hpp
     include/kth/infrastructure/utility/conditional_lock.hpp
@@ -366,7 +364,6 @@ set(kth_headers
     include/kth/infrastructure/utility/deadline.hpp
     include/kth/infrastructure/utility/decorator.hpp
     include/kth/infrastructure/utility/delegates.hpp
-    include/kth/infrastructure/utility/deserializer.hpp
     include/kth/infrastructure/utility/dispatcher.hpp
     include/kth/infrastructure/utility/enable_shared_from_base.hpp
     include/kth/infrastructure/utility/endian.hpp
@@ -381,7 +378,6 @@ set(kth_headers
 
     include/kth/infrastructure/utility/pseudo_random.hpp
     include/kth/infrastructure/utility/pseudo_random_broken_do_not_use.hpp
-
 
     include/kth/infrastructure/utility/reader.hpp
     include/kth/infrastructure/utility/resubscriber.hpp

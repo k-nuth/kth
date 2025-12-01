@@ -44,7 +44,9 @@ constexpr mini_hash null_mini_hash {{0, 0, 0, 0, 0, 0}};
 
 inline
 uint256_t to_uint256(hash_digest const& hash) {
-    return from_little_endian<uint256_t>(hash.begin(), hash.end());
+    uint256_t result;
+    import_bits(result, hash.begin(), hash.end(), 8, false);
+    return result;
 }
 
 /// Generate a scrypt hash to fill a byte array.

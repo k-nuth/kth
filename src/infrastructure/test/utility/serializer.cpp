@@ -22,319 +22,214 @@ TEST_CASE("serializer - roundtrip serialize deserialize", "[serializer tests]") 
     writer.write_bytes(to_chunk(to_little_endian<uint32_t>(0xbadf00d)));
     writer.write_string("hello");
 
-    auto reader = make_safe_deserializer(data.begin(), data.end());
-    REQUIRE(reader.read_byte() == 0x80u);
-    REQUIRE(reader.read_2_bytes_little_endian() == 0x8040u);
-    REQUIRE(reader.read_4_bytes_little_endian() == 0x80402010u);
-    REQUIRE(reader.read_8_bytes_little_endian() == 0x8040201011223344u);
-    REQUIRE(reader.read_4_bytes_big_endian() == 0x80402010u);
-    REQUIRE(reader.read_variable_little_endian() == 1234u);
-    REQUIRE(from_little_endian_unsafe<uint32_t>(reader.read_bytes(4).begin()) == 0xbadf00du);
-    REQUIRE(reader.read_string() == "hello");
-    REQUIRE(reader.read_byte() == 0u);
+    byte_reader reader(data);
+    REQUIRE(*reader.read_byte() == 0x80u);
+    REQUIRE(*reader.read_little_endian<uint16_t>() == 0x8040u);
+    REQUIRE(*reader.read_little_endian<uint32_t>() == 0x80402010u);
+    REQUIRE(*reader.read_little_endian<uint64_t>() == 0x8040201011223344u);
+    REQUIRE(*reader.read_big_endian<uint32_t>() == 0x80402010u);
+    REQUIRE(*reader.read_variable_little_endian() == 1234u);
+    REQUIRE(from_little_endian_unsafe<uint32_t>(*reader.read_bytes(4)) == 0xbadf00du);
+    REQUIRE(*reader.read_string() == "hello");
+    REQUIRE(*reader.read_byte() == 0u);
     REQUIRE(reader.is_exhausted());
 }
 
-TEST_CASE("serializer - deserializer exhaustion", "[serializer tests]") {
-    data_chunk data(42);
-    auto reader = make_safe_deserializer(data.begin(), data.end());
-    reader.read_bytes(42);
-    REQUIRE(reader);
+TEST_CASE("serializer - byte_reader exhaustion", "[serializer tests]") {
+    data_chunk const data(42);
+    byte_reader reader(data);
+    REQUIRE(reader.read_bytes(42).has_value());
     REQUIRE(reader.is_exhausted());
-    REQUIRE(reader.read_byte() == 0u);
-    REQUIRE( ! reader);
+    REQUIRE( ! reader.read_byte().has_value());
 }
 
 TEST_CASE("serializer - is exhausted initialized empty stream returns true", "[serializer tests]") {
-    data_chunk data(0);
-    auto source = make_safe_deserializer(data.begin(), data.end());
+    data_chunk const data(0);
+    byte_reader source(data);
     REQUIRE(source.is_exhausted());
-    REQUIRE((bool)source);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - is exhausted initialized nonempty stream returns false", "[serializer tests]") {
-    data_chunk data(1);
-    auto source = make_safe_deserializer(data.begin(), data.end());
+    data_chunk const data(1);
+    byte_reader source(data);
     REQUIRE( ! source.is_exhausted());
-    REQUIRE((bool)source);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - peek byte nonempty stream does not advance", "[serializer tests]") {
     uint8_t const expected = 0x42;
-    data_chunk data({ expected, 0x00 });
-    auto source = make_safe_deserializer(data.begin(), data.end());
-    REQUIRE(source.peek_byte() == expected);
-    REQUIRE(source.peek_byte() == expected);
-    REQUIRE(source.peek_byte() == expected);
-    REQUIRE((bool)source);
+    data_chunk const data({ expected, 0x00 });
+    byte_reader source(data);
+    REQUIRE(*source.peek_byte() == expected);
+    REQUIRE(*source.peek_byte() == expected);
+    REQUIRE(*source.peek_byte() == expected);
 }
 
 TEST_CASE("serializer - roundtrip byte", "[serializer tests]") {
     uint8_t const expected = 0xAA;
     data_chunk data(1);
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_byte(expected);
+    byte_reader source(data);
     auto const result = source.read_byte();
 
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - roundtrip error code", "[serializer tests]") {
     code const expected(error::futuristic_timestamp);
     data_chunk data(4);
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_error_code(expected);
-    auto const result = source.read_error_code();
+    byte_reader source(data);
+    auto const result = source.read_little_endian<uint32_t>();
 
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == code(static_cast<error::error_code_t>(*result)));
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - roundtrip 2 bytes little endian", "[serializer tests]") {
     const uint16_t expected = 43707;
     data_chunk data(2);
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_2_bytes_little_endian(expected);
-    auto const result = source.read_2_bytes_little_endian();
+    byte_reader source(data);
+    auto const result = source.read_little_endian<uint16_t>();
 
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
-
 }
 
 TEST_CASE("serializer - roundtrip 4 bytes little endian", "[serializer tests]") {
     const uint32_t expected = 2898120443;
     data_chunk data(4);
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_4_bytes_little_endian(expected);
-    auto const result = source.read_4_bytes_little_endian();
+    byte_reader source(data);
+    auto const result = source.read_little_endian<uint32_t>();
 
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - roundtrip 8 bytes little endian", "[serializer tests]") {
     uint64_t const expected = 0xd4b14be5d8f02abe;
     data_chunk data(8);
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_8_bytes_little_endian(expected);
-    auto const result = source.read_8_bytes_little_endian();
+    byte_reader source(data);
+    auto const result = source.read_little_endian<uint64_t>();
 
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - roundtrip 2 bytes big endian", "[serializer tests]") {
     const uint16_t expected = 43707;
     data_chunk data(2);
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_2_bytes_big_endian(expected);
-    auto const result = source.read_2_bytes_big_endian();
+    byte_reader source(data);
+    auto const result = source.read_big_endian<uint16_t>();
 
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - roundtrip 4 bytes big endian", "[serializer tests]") {
     const uint32_t expected = 2898120443;
     data_chunk data(4);
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_4_bytes_big_endian(expected);
-    auto const result = source.read_4_bytes_big_endian();
+    byte_reader source(data);
+    auto const result = source.read_big_endian<uint32_t>();
 
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - roundtrip 8 bytes big endian", "[serializer tests]") {
     uint64_t const expected = 0xd4b14be5d8f02abe;
     data_chunk data(8);
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_8_bytes_big_endian(expected);
-    auto const result = source.read_8_bytes_big_endian();
+    byte_reader source(data);
+    auto const result = source.read_big_endian<uint64_t>();
 
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
-
 
 TEST_CASE("serializer - roundtrip variable uint little endian 1 byte", "[serializer tests]") {
     uint64_t const expected = 0xAA;
     data_chunk data(1);
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_variable_little_endian(expected);
-
+    byte_reader source(data);
     auto const result = source.read_variable_little_endian();
 
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - roundtrip variable uint little endian 2 bytes", "[serializer tests]") {
     uint64_t const expected = 43707;
     data_chunk data(3);
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_variable_little_endian(expected);
-
+    byte_reader source(data);
     auto const result = source.read_variable_little_endian();
 
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - roundtrip variable uint little endian 4 bytes", "[serializer tests]") {
     uint64_t const expected = 2898120443;
     data_chunk data(sizeof(uint32_t) + 1);
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_variable_little_endian(expected);
-
+    byte_reader source(data);
     auto const result = source.read_variable_little_endian();
 
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - roundtrip variable uint little endian 8 bytes", "[serializer tests]") {
     uint64_t const expected = 0xd4b14be5d8f02abe;
     data_chunk data(sizeof(uint64_t) + 1);
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_variable_little_endian(expected);
-
+    byte_reader source(data);
     auto const result = source.read_variable_little_endian();
 
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
-}
-
-TEST_CASE("serializer - roundtrip variable uint big endian 1 byte", "[serializer tests]") {
-    uint64_t const expected = 0xAA;
-    data_chunk data(1);
-    auto source = make_safe_deserializer(data.begin(), data.end());
-    auto sink = make_unsafe_serializer(data.begin());
-
-    sink.write_variable_big_endian(expected);
-
-    auto const result = source.read_variable_big_endian();
-
-    REQUIRE(expected == result);
-    REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
-}
-
-TEST_CASE("serializer - roundtrip variable uint big endian 2 bytes", "[serializer tests]") {
-    uint64_t const expected = 43707;
-    data_chunk data(sizeof(uint16_t) + 1);
-    auto source = make_safe_deserializer(data.begin(), data.end());
-    auto sink = make_unsafe_serializer(data.begin());
-
-    sink.write_variable_big_endian(expected);
-
-    auto const result = source.read_variable_big_endian();
-
-    REQUIRE(expected == result);
-    REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
-}
-
-TEST_CASE("serializer - roundtrip variable uint big endian 4 bytes", "[serializer tests]") {
-    uint64_t const expected = 2898120443;
-    data_chunk data(sizeof(uint32_t) + 1);
-    auto source = make_safe_deserializer(data.begin(), data.end());
-    auto sink = make_unsafe_serializer(data.begin());
-
-    sink.write_variable_big_endian(expected);
-
-    auto const result = source.read_variable_big_endian();
-
-    REQUIRE(expected == result);
-    REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
-}
-
-TEST_CASE("serializer - roundtrip variable uint big endian 8 bytes", "[serializer tests]") {
-    uint64_t const expected = 0xd4b14be5d8f02abe;
-    data_chunk data(sizeof(uint64_t) + 1);
-    auto source = make_safe_deserializer(data.begin(), data.end());
-    auto sink = make_unsafe_serializer(data.begin());
-
-    sink.write_variable_big_endian(expected);
-
-    auto const result = source.read_variable_big_endian();
-
-    REQUIRE(expected == result);
-    REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - roundtrip data chunk", "[serializer tests]") {
@@ -348,18 +243,15 @@ TEST_CASE("serializer - roundtrip data chunk", "[serializer tests]") {
     };
 
     data_chunk data(expected.size());
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_bytes(expected);
-
+    byte_reader source(data);
     auto const result = source.read_bytes(expected.size());
 
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(std::ranges::equal(expected, *result));
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - roundtrip hash", "[serializer tests]") {
@@ -371,18 +263,15 @@ TEST_CASE("serializer - roundtrip hash", "[serializer tests]") {
     };
 
     data_chunk data(expected.size());
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_hash(expected);
+    byte_reader source(data);
+    auto const result = source.read_packed<hash_digest>();
 
-    auto const result = source.read_hash();
-
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - roundtrip short hash", "[serializer tests]") {
@@ -393,54 +282,45 @@ TEST_CASE("serializer - roundtrip short hash", "[serializer tests]") {
     };
 
     data_chunk data(expected.size());
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_short_hash(expected);
+    byte_reader source(data);
+    auto const result = source.read_packed<short_hash>();
 
-    auto const result = source.read_short_hash();
-
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - roundtrip fixed string", "[serializer tests]") {
     std::string const expected = "my string data";
 
     data_chunk data(expected.size());
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_string(expected, 10);
-
+    byte_reader source(data);
     auto const result = source.read_string(10);
 
-    REQUIRE(expected.substr(0, 10) == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected.substr(0, 10) == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - roundtrip string", "[serializer tests]") {
     std::string const expected = "my string data";
 
     data_chunk data((expected.length() + message::variable_uint_size(expected.length())));
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_string(expected);
-
+    byte_reader source(data);
     auto const result = source.read_string();
 
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(expected == *result);
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 TEST_CASE("serializer - read bytes to eof", "[serializer tests]") {
@@ -452,18 +332,15 @@ TEST_CASE("serializer - read bytes to eof", "[serializer tests]") {
     };
 
     data_chunk data(expected.size());
-    auto source = make_safe_deserializer(data.begin(), data.end());
     auto sink = make_unsafe_serializer(data.begin());
 
     sink.write_bytes(expected);
+    byte_reader source(data);
+    auto const result = source.read_remaining_bytes();
 
-    auto const result = source.read_bytes();
-
-    REQUIRE(expected == result);
+    REQUIRE(result.has_value());
+    REQUIRE(std::ranges::equal(expected, *result));
     REQUIRE((bool)sink);
-    REQUIRE((bool)source);
-    REQUIRE( ! sink == false);
-    REQUIRE( ! source == false);
 }
 
 // End Test Suite

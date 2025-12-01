@@ -40,7 +40,7 @@ bool to_stealth_prefix(uint32_t& out_prefix, script const& script) {
     ////constexpr size_t size = binary::bits_per_block * sizeof(uint32_t);
 
     auto const script_hash = bitcoin_hash(script.to_data(false));
-    out_prefix = from_little_endian_unsafe<uint32_t>(script_hash.begin());
+    out_prefix = from_little_endian_unsafe<uint32_t>(script_hash);
     return true;
 }
 
@@ -103,8 +103,8 @@ bool create_stealth_script(script& out_null_data, ec_secret const& secret, binar
     std::copy_n(bytes.begin(), pad_size, pad_begin);
 
     // Create an initial 32 bit nonce value from last word (avoiding pad).
-    auto const start = from_little_endian_unsafe<uint32_t>(bytes.begin() +
-                                                           max_pad_size);
+    // Safe: bytes is 64 bytes (sha512), max_pad_size is 44, we read 4 bytes: 44 + 4 = 48 < 64
+    auto const start = from_little_endian_unsafe<uint32_t>(std::span{bytes}.subspan(max_pad_size));
 
     // Mine a prefix into the double sha256 hash of the stealth script.
     // This will iterate up to 2^32 times before giving up.

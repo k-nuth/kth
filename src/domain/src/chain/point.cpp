@@ -194,7 +194,7 @@ uint64_t point::checksum() const {
     // Use an offset to the middle of the hash to avoid coincidental mining
     // of values into the front or back of tx hash (not a security feature).
     // Use most possible bits of tx hash to make intentional collision hard.
-    auto const tx = from_little_endian_unsafe<uint64_t>(hash_.begin() + 12);
+    auto const tx = from_little_endian_unsafe<uint64_t>(std::span{hash_}.subspan(12));
     auto const index = static_cast<uint64_t>(index_);
 
     auto const tx_upper_49_bits = tx & mask;
