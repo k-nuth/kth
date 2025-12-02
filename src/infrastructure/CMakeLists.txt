@@ -280,6 +280,7 @@ endif()
 set(kth_sources ${kth_sources} ${kth_sources_just_knuth})
 
 set(kth_headers
+    include/kth/infrastructure/compiler_constraints.hpp
     include/kth/infrastructure/compat.h
     include/kth/infrastructure/compat.hpp
     include/kth/infrastructure/constants.hpp
@@ -395,6 +396,7 @@ set(kth_headers
     include/kth/infrastructure/utility/track.hpp
     include/kth/infrastructure/utility/work.hpp
     include/kth/infrastructure/utility/writer.hpp
+    include/kth/infrastructure/utility/coroutine_config.hpp
 
     include/kth/infrastructure/wallet/cashaddr.hpp
     include/kth/infrastructure/wallet/dictionary.hpp
@@ -526,6 +528,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/serializer.cpp
     test/utility/byte_reader.cpp
     test/utility/thread.cpp
+    test/utility/coroutine_smoke_test.cpp
 
     test/wallet/hd_private.cpp
     test/wallet/hd_public.cpp
