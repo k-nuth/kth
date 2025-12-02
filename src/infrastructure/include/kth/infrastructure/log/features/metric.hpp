@@ -49,7 +49,7 @@ public:
     void metric(const metric_type& value);
 
 protected:
-    const metric_attribute& get_metric_attribute() const;
+    metric_attribute const& get_metric_attribute() const;
 
     template <typename Arguments>
     boost::log::record open_record_unlocked(Arguments const& arguments);

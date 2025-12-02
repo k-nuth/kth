@@ -82,15 +82,15 @@ struct KI_API hd_public {
     operator bool const() const;    //NOLINT
 
     explicit
-    operator const ec_compressed&() const;
+    operator ec_compressed const&() const;
 
     /// Serializer.
     std::string encoded() const;
 
     /// Accessors.
-    const hd_chain_code& chain_code() const;
+    hd_chain_code const& chain_code() const;
     hd_lineage const& lineage() const;
-    const ec_compressed& point() const;
+    ec_compressed const& point() const;
 
     /// Methods.
     hd_key to_hd_key() const;
@@ -99,7 +99,7 @@ struct KI_API hd_public {
 protected:
     /// Factories.
     static
-    hd_public from_secret(ec_secret const& secret, const hd_chain_code& chain_code, hd_lineage const& lineage);
+    hd_public from_secret(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage);
 
     /// Helpers.
     uint32_t fingerprint() const;
@@ -124,7 +124,7 @@ private:
     static
     hd_public from_string(std::string const& encoded, uint32_t prefix);
 
-    hd_public(const ec_compressed& point, const hd_chain_code& chain_code, hd_lineage const& lineage);
+    hd_public(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage);
 };
 
 } // namespace kth::infrastructure::wallet

@@ -267,7 +267,7 @@ TEST_CASE("data  to array slice  double long hash  expected", "[data tests]") {
 TEST_CASE("data  to chunk  long hash  expected", "[data tests]") {
     uint8_t const l = 42;
     uint8_t const u = 24;
-    const long_hash source
+    long_hash const source
     {
         {
             l, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,

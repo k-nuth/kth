@@ -175,7 +175,7 @@ void protocol_transaction_out::send_transaction(code const& ec, transaction_cons
 
         // TODO: move not_found to derived class protocol_block_out_70001.
         KTH_ASSERT( ! inventory->inventories().empty());
-        const not_found reply{ inventory->inventories().back() };
+        not_found const reply{ inventory->inventories().back() };
         SEND2(reply, handle_send, _1, reply.command);
         handle_send_next(error::success, inventory);
         return;

@@ -107,26 +107,26 @@ TEST_CASE("bitfield test1", "[stealth]") {
 
 TEST_CASE("bitfield test2", "[stealth]") {
     data_chunk const blocks{{0x8b, 0xf4, 0x1c, 0x69}};
-    const binary prefix(27, blocks);
+    binary const prefix(27, blocks);
     data_chunk const raw_bitfield{{0x8b, 0xf4, 0x1c, 0x79}};
     REQUIRE(raw_bitfield.size() * 8 >= prefix.size());
-    const binary compare(prefix.size(), raw_bitfield);
+    binary const compare(prefix.size(), raw_bitfield);
     REQUIRE(prefix == compare);
 }
 
 TEST_CASE("bitfield test3", "[stealth]") {
     data_chunk const blocks{{0x69, 0x1c, 0xf4, 0x8b}};
-    const binary prefix(32, blocks);
+    binary const prefix(32, blocks);
     data_chunk const raw_bitfield{{0x69, 0x1c, 0xf4, 0x8b}};
-    const binary compare(prefix.size(), raw_bitfield);
+    binary const compare(prefix.size(), raw_bitfield);
     REQUIRE(prefix == compare);
 }
 
 TEST_CASE("bitfield test4", "[stealth]") {
     data_chunk const blocks{{0x69, 0x1c, 0xf4, 0x8b}};
-    const binary prefix(29, blocks);
+    binary const prefix(29, blocks);
     data_chunk const raw_bitfield{{0x69, 0x1c, 0xf4, 0x8b}};
-    const binary compare(prefix.size(), raw_bitfield);
+    binary const compare(prefix.size(), raw_bitfield);
     REQUIRE(prefix == compare);
 }
 

@@ -760,8 +760,8 @@ inline
 int compare_uint64(KTH_DB_val const* a, KTH_DB_val const* b) {
 
     //TODO(fernando): check this casts... something smells bad
-    const uint64_t va = *(const uint64_t *)kth_db_get_data(*a);
-    const uint64_t vb = *(const uint64_t *)kth_db_get_data(*b);
+    uint64_t const va = *(uint64_t const *)kth_db_get_data(*a);
+    uint64_t const vb = *(uint64_t const *)kth_db_get_data(*b);
 
     //std::println("va: {}", va);
     //std::println("vb: {}", va);

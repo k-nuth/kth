@@ -48,7 +48,7 @@ public:
      * Override the equality operator.
      * @param[in]  other  The other object with which to compare.
      */
-    [[nodiscard]] bool operator==(const hash256& x) const noexcept;
+    [[nodiscard]] bool operator==(hash256 const& x) const noexcept;
 
     /**
      * Cast to internal type.
@@ -73,7 +73,7 @@ public:
      * @return                The output stream reference.
      */
     friend
-    std::ostream& operator<<(std::ostream& output, const hash256& argument);
+    std::ostream& operator<<(std::ostream& output, hash256 const& argument);
 
 private:
     hash_digest value_{null_hash};

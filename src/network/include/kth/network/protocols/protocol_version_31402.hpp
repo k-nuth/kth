@@ -60,11 +60,11 @@ protected:
 
     p2p& network_;
     std::string const user_agent_;
-    const uint32_t own_version_;
-    const uint64_t own_services_;
-    const uint64_t invalid_services_;
-    const uint32_t minimum_version_;
-    const uint64_t minimum_services_;
+    uint32_t const own_version_;
+    uint64_t const own_services_;
+    uint64_t const invalid_services_;
+    uint32_t const minimum_version_;
+    uint64_t const minimum_services_;
 };
 
 } // namespace kth::network

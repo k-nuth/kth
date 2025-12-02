@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
     }
 
     // This creates default configuration database only!
-    const settings configuration;
+    settings const configuration;
 
     if ( ! data_base(configuration).create(block::genesis_mainnet())) {
         std::println(stderr, "Failed to initialize database files.");

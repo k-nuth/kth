@@ -47,26 +47,26 @@ KI_API word_list create_mnemonic(byte_span entropy,
  * words are spelled correctly and the checksum matches.
  * The words must have been created using mnemonic encoding.
  */
-KI_API bool validate_mnemonic(const word_list& words,
-    const dictionary &lexicon);
+KI_API bool validate_mnemonic(word_list const& words,
+    dictionary const& lexicon);
 
 /**
  * Checks that a mnemonic is valid in at least one of the provided languages.
  */
-KI_API bool validate_mnemonic(const word_list& mnemonic,
-    const dictionary_list& lexicons=language::all);
+KI_API bool validate_mnemonic(word_list const& mnemonic,
+    dictionary_list const& lexicons=language::all);
 
 /**
  * Convert a mnemonic with no passphrase to a wallet-generation seed.
  */
-KI_API long_hash decode_mnemonic(const word_list& mnemonic);
+KI_API long_hash decode_mnemonic(word_list const& mnemonic);
 
 /**
  * Convert a mnemonic and passphrase to a wallet-generation seed.
  * Any passphrase can be used and will change the resulting seed.
  * The passphrase has to be normalized using ICU.
  */
-KI_API long_hash decode_mnemonic_normalized_passphrase(const word_list& mnemonic, std::string const& normalized_passphrase);
+KI_API long_hash decode_mnemonic_normalized_passphrase(word_list const& mnemonic, std::string const& normalized_passphrase);
 
 #ifdef WITH_ICU
 
@@ -74,7 +74,7 @@ KI_API long_hash decode_mnemonic_normalized_passphrase(const word_list& mnemonic
  * Convert a mnemonic and passphrase to a wallet-generation seed.
  * Any passphrase can be used and will change the resulting seed.
  */
-KI_API long_hash decode_mnemonic(const word_list& mnemonic,
+KI_API long_hash decode_mnemonic(word_list const& mnemonic,
     std::string const& passphrase);
 
 #endif

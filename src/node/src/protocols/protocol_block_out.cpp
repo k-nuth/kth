@@ -349,7 +349,7 @@ void protocol_block_out::send_block(code const& ec, block_const_ptr message, siz
 
         // TODO: move not_found to derived class protocol_block_out_70001.
         KTH_ASSERT( ! inventory->inventories().empty());
-        const not_found reply{ inventory->inventories().back() };
+        not_found const reply{ inventory->inventories().back() };
         SEND2(reply, handle_send, _1, reply.command);
         handle_send_next(error::success, inventory);
         return;
@@ -375,7 +375,7 @@ void protocol_block_out::send_merkle_block(code const& ec, merkle_block_const_pt
 
         // TODO: move not_found to derived class protocol_block_out_70001.
         KTH_ASSERT( ! inventory->inventories().empty());
-        const not_found reply{ inventory->inventories().back() };
+        not_found const reply{ inventory->inventories().back() };
         SEND2(reply, handle_send, _1, reply.command);
         handle_send_next(error::success, inventory);
         return;
@@ -401,7 +401,7 @@ void protocol_block_out::send_compact_block(code const& ec, compact_block_const_
 
         // TODO: move not_found to derived class protocol_block_out_70001.
         KTH_ASSERT( ! inventory->inventories().empty());
-        const not_found reply{ inventory->inventories().back() };
+        not_found const reply{ inventory->inventories().back() };
         SEND2(reply, handle_send, _1, reply.command);
         handle_send_next(error::success, inventory);
         return;

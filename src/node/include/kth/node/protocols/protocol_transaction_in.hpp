@@ -39,7 +39,7 @@ private:
 
     // These are thread safe.
     blockchain::safe_chain& chain_;
-    const uint64_t minimum_relay_fee_;
+    uint64_t const minimum_relay_fee_;
     bool const relay_from_peer_;
     bool const refresh_pool_;
 };

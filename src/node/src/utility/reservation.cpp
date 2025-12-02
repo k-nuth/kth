@@ -145,7 +145,7 @@ void reservation::clear_history() {
 
 // It is possible to get a rate update after idling and before starting anew.
 // This can reduce the average during startup of the new channel until start.
-void reservation::update_rate(size_t events, const microseconds& database) {
+void reservation::update_rate(size_t events, microseconds const& database) {
     // Critical Section
     ///////////////////////////////////////////////////////////////////////////
     history_mutex_.lock();

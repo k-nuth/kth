@@ -11,7 +11,7 @@
 
 namespace kth {
 
-std::string join(const string_list& words, std::string const& delimiter) {
+std::string join(string_list const& words, std::string const& delimiter) {
     return boost::join(words, delimiter);
 }
 

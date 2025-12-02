@@ -75,7 +75,7 @@ struct KB_API transaction_entry {
 
     /// Serializer for debugging (temporary).
     friend
-    std::ostream& operator<<(std::ostream& out, const transaction_entry& of);
+    std::ostream& operator<<(std::ostream& out, transaction_entry const& of);
 
 private:
     // These are non-const to allow for default copy construction.

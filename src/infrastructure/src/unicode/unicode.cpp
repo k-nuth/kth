@@ -81,7 +81,7 @@ static std::string normal_form(std::string const& value, norm_type form)
 {
     auto backend = localization_backend_manager::global();
     backend.select(KI_LOCALE_BACKEND);
-    const generator locale(backend);
+    generator const locale(backend);
     return normalize(value, form, locale(KI_LOCALE_UTF8));
 }
 

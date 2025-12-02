@@ -24,10 +24,10 @@ public:
     // ostream_writer(data_sink& stream);
 
     template <unsigned Size>
-    void write_forward(const byte_array<Size>& value);
+    void write_forward(byte_array<Size> const& value);
 
     template <unsigned Size>
-    void write_reverse(const byte_array<Size>& value);
+    void write_reverse(byte_array<Size> const& value);
 
     template <typename Integer>
     void write_big_endian(Integer value);

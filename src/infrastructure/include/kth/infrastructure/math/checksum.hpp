@@ -26,7 +26,7 @@ static constexpr size_t checksum_size = sizeof(uint32_t);
  * checksum.
  */
 template <size_t Size>
-bool build_checked_array(byte_array<Size>& out, const std::initializer_list<byte_span>& spans);
+bool build_checked_array(byte_array<Size>& out, std::initializer_list<byte_span> const& spans);
 
 /**
  * Appends a four-byte checksum into the end of an array.
@@ -44,7 +44,7 @@ bool insert_checksum(byte_array<Size>& out);
  */
 template <size_t Size>
 bool unwrap(uint8_t& out_version, byte_array<UNWRAP_SIZE(Size)>& out_payload,
-    const std::array<uint8_t, Size>& wrapped);
+    std::array<uint8_t, Size> const& wrapped);
 
 /**
  * Unwrap a wrapped payload and return the checksum.
@@ -57,7 +57,7 @@ bool unwrap(uint8_t& out_version, byte_array<UNWRAP_SIZE(Size)>& out_payload,
 template <size_t Size>
 bool unwrap(uint8_t& out_version,
     byte_array<UNWRAP_SIZE(Size)>& out_payload, uint32_t& out_checksum,
-    const std::array<uint8_t, Size>& wrapped);
+    std::array<uint8_t, Size> const& wrapped);
 
 /**
  * Wrap arbitrary data.
@@ -67,7 +67,7 @@ bool unwrap(uint8_t& out_version,
  */
 template <size_t Size>
 std::array<uint8_t, WRAP_SIZE(Size)> wrap(uint8_t version,
-    const std::array<uint8_t, Size>& payload);
+    std::array<uint8_t, Size> const& payload);
 
 /**
  * Appends a four-byte checksum of a data chunk to itself.

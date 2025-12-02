@@ -93,7 +93,7 @@ KD_API pt::ptree property_tree(const config::input& input);
  * @param[in]  json    Use json array formatting.
  * @return             A property tree.
  */
-KD_API pt::ptree property_tree(const std::vector<config::input>& inputs,
+KD_API pt::ptree property_tree(std::vector<config::input> const& inputs,
                                bool json);
 
 /**
@@ -156,7 +156,7 @@ KD_API pt::ptree property_tree(config::transaction const& transaction, bool json
  * @param[in]  json          Use json array formatting.
  * @return                   A property tree.
  */
-KD_API pt::ptree property_tree(const std::vector<config::transaction>& transactions,
+KD_API pt::ptree property_tree(std::vector<config::transaction> const& transactions,
                                bool json);
 
 /**
@@ -196,7 +196,7 @@ KD_API pt::ptree property_tree(hash_digest const& hash, size_t height, size_t in
  * @param[in]  settings   The list of settings.
  * @returns               A new property tree containing the settings.
  */
-KD_API pt::ptree property_tree(const settings_list& settings);
+KD_API pt::ptree property_tree(settings_list const& settings);
 
 } // namespace kth::domain
 

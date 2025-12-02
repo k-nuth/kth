@@ -32,7 +32,7 @@ uint8_t bip39_shift(size_t bit) {
     return (1 << (byte_bits - (bit % byte_bits) - 1));
 }
 
-bool validate_mnemonic(const word_list& words, const dictionary& lexicon) {
+bool validate_mnemonic(word_list const& words, dictionary const& lexicon) {
     auto const word_count = words.size();
     if ((word_count % mnemonic_word_multiple) != 0) {
         return false;
@@ -67,7 +67,7 @@ bool validate_mnemonic(const word_list& words, const dictionary& lexicon) {
     return std::equal(mnemonic.begin(), mnemonic.end(), words.begin());
 }
 
-word_list create_mnemonic(byte_span entropy, const dictionary &lexicon) {
+word_list create_mnemonic(byte_span entropy, dictionary const& lexicon) {
     if ((entropy.size() % mnemonic_seed_multiple) != 0) {
         return word_list();
     }
@@ -106,7 +106,7 @@ word_list create_mnemonic(byte_span entropy, const dictionary &lexicon) {
     return words;
 }
 
-bool validate_mnemonic(const word_list& mnemonic, const dictionary_list& lexicons) {
+bool validate_mnemonic(word_list const& mnemonic, dictionary_list const& lexicons) {
     for (auto const& lexicon: lexicons) {
         if (validate_mnemonic(mnemonic, *lexicon)) {
             return true;
@@ -116,13 +116,13 @@ bool validate_mnemonic(const word_list& mnemonic, const dictionary_list& lexicon
     return false;
 }
 
-long_hash decode_mnemonic(const word_list& mnemonic) {
+long_hash decode_mnemonic(word_list const& mnemonic) {
     auto const sentence = join(mnemonic);
     std::string const salt(passphrase_prefix);
     return pkcs5_pbkdf2_hmac_sha512(to_chunk(sentence), to_chunk(salt), hmac_iterations);
 }
 
-long_hash decode_mnemonic_normalized_passphrase(const word_list& mnemonic, std::string const& normalized_passphrase) {
+long_hash decode_mnemonic_normalized_passphrase(word_list const& mnemonic, std::string const& normalized_passphrase) {
     auto const sentence = join(mnemonic);
     std::string const prefix(passphrase_prefix);
     auto const salt = prefix + normalized_passphrase;
@@ -132,7 +132,7 @@ long_hash decode_mnemonic_normalized_passphrase(const word_list& mnemonic, std::
 
 #ifdef WITH_ICU
 
-long_hash decode_mnemonic(const word_list& mnemonic, std::string const& passphrase) {
+long_hash decode_mnemonic(word_list const& mnemonic, std::string const& passphrase) {
     auto const sentence = join(mnemonic);
     std::string const prefix(passphrase_prefix);
     auto const salt = to_normal_nfkd_form(prefix + passphrase);

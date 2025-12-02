@@ -168,7 +168,7 @@ void kth_chain_async_history(kth_chain_t chain, void* ctx, kth_payment_address_t
 }
 
 void kth_chain_async_confirmed_transactions(kth_chain_t chain, void* ctx, kth_payment_address_t address, uint64_t max, uint64_t start_height, kth_transactions_by_address_fetch_handler_t handler) {
-    safe_chain(chain).fetch_confirmed_transactions(kth_wallet_payment_address_const_cpp(address).hash20(), max, start_height, [chain, ctx, handler](std::error_code const& ec, const std::vector<kth::hash_digest>& txs) {
+    safe_chain(chain).fetch_confirmed_transactions(kth_wallet_payment_address_const_cpp(address).hash20(), max, start_height, [chain, ctx, handler](std::error_code const& ec, std::vector<kth::hash_digest> const& txs) {
         handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(txs, ec));
     });
 }

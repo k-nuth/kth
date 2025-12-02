@@ -30,7 +30,7 @@ protocol_seed_31402::protocol_seed_31402(p2p& network, channel::ptr channel)
 
 void protocol_seed_31402::start(event_handler handler) {
     auto const& settings = network_.network_settings();
-    const event_handler complete = BIND2(handle_seeding_complete, _1, handler);
+    event_handler const complete = BIND2(handle_seeding_complete, _1, handler);
 
     if (settings.host_pool_capacity == 0) {
         complete(error::not_found);
@@ -55,7 +55,7 @@ void protocol_seed_31402::send_own_address(settings const& settings) {
         return;
     }
 
-    const address self(network_address::list{network_address{ settings.self.to_network_address() } });
+    address const self(network_address::list{network_address{ settings.self.to_network_address() } });
 
     SEND1(self, handle_send_address, _1);
 }

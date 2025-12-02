@@ -43,7 +43,7 @@ endorsement::endorsement(data_chunk const& value)
     : value_(value) {
 }
 
-endorsement::endorsement(const endorsement& x)
+endorsement::endorsement(endorsement const& x)
     : endorsement(x.value_) {
 }
 
@@ -66,7 +66,7 @@ std::istream& operator>>(std::istream& input, endorsement& argument) {
     return input;
 }
 
-std::ostream& operator<<(std::ostream& output, const endorsement& argument) {
+std::ostream& operator<<(std::ostream& output, endorsement const& argument) {
     output << encode_endorsement(argument.value_);
     return output;
 }

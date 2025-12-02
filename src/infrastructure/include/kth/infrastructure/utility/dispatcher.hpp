@@ -35,7 +35,7 @@ namespace kth {
 /// If the ios service is stopped jobs will not be dispatched.
 class KI_API dispatcher : noncopyable {
 public:
-    using delay_handler = std::function<void (code const &)>;
+    using delay_handler = std::function<void (code const&)>;
 
     dispatcher(threadpool& pool, std::string const& name);
 
@@ -155,7 +155,7 @@ public:
     ////
     /////// Executes the job against each member of a collection concurrently.
     ////template <typename Element, typename Handler, typename... Args>
-    ////void parallel(const std::vector<Element>& collection,
+    ////void parallel(std::vector<Element> const& collection,
     ////    std::string const& name, Handler&& handler, Args... args)
     ////{
     ////    // Failures are suppressed, success always returned to handler.
@@ -168,7 +168,7 @@ public:
     ////
     /////// Disperses the job against each member of a collection without order.
     ////template <typename Element, typename Handler, typename... Args>
-    ////void disperse(const std::vector<Element>& collection,
+    ////void disperse(std::vector<Element> const& collection,
     ////    std::string const& name, Handler&& handler, Args... args)
     ////{
     ////    // Failures are suppressed, success always returned to handler.
@@ -181,7 +181,7 @@ public:
     ////
     /////// Disperses the job against each member of a collection with order.
     ////template <typename Element, typename Handler, typename... Args>
-    ////void serialize(const std::vector<Element>& collection,
+    ////void serialize(std::vector<Element> const& collection,
     ////    std::string const& name, Handler&& handler, Args... args)
     ////{
     ////    // Failures are suppressed, success always returned to handler.
@@ -194,7 +194,7 @@ public:
     ////
     /////// Sequences the job against each member of a collection with order.
     ////template <typename Element, typename Handler, typename... Args>
-    ////void sequential(const std::vector<Element>& collection,
+    ////void sequential(std::vector<Element> const& collection,
     ////    std::string const& name, Handler&& handler, Args... args)
     ////{
     ////    // Failures are suppressed, success always returned to handler.

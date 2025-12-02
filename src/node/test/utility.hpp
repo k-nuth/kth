@@ -73,7 +73,7 @@ public:
     // ------------------------------------------------------------------------
     bool stub(header_const_ptr header, size_t height);
     bool fill(block_const_ptr block, size_t height);
-    bool push(const block_const_ptr_list& blocks, size_t height);
+    bool push(block_const_ptr_list const& blocks, size_t height);
     bool pop(block_const_ptr_list& out_blocks, hash_digest const& fork_hash);
 
 private:

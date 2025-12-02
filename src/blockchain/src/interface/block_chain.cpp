@@ -1011,14 +1011,14 @@ std::vector<kth::blockchain::mempool_transaction_summary> block_chain::get_mempo
 
     std::vector<kth::blockchain::mempool_transaction_summary> ret;
     std::unordered_set<kth::domain::wallet::payment_address> addrs;
-    for (auto const & payment_address : payment_addresses) {
+    for (auto const& payment_address : payment_addresses) {
         kth::domain::wallet::payment_address address(payment_address);
         if (address){
             addrs.insert(address);
         }
     }
 
-    database_.transactions_unconfirmed().for_each_result([&](kth::database::transaction_unconfirmed_result const &tx_res) {
+    database_.transactions_unconfirmed().for_each_result([&](kth::database::transaction_unconfirmed_result const& tx_res) {
         auto tx = tx_res.transaction();
         tx.recompute_hash();
         size_t i = 0;
@@ -1074,7 +1074,7 @@ std::vector<domain::chain::transaction> block_chain::get_mempool_transactions_fr
 
     std::vector<domain::chain::transaction> ret;
 
-    database_.transactions_unconfirmed().for_each_result([&](kth::database::transaction_unconfirmed_result const &tx_res) {
+    database_.transactions_unconfirmed().for_each_result([&](kth::database::transaction_unconfirmed_result const& tx_res) {
         auto tx = tx_res.transaction();
         tx.recompute_hash();
 
@@ -1138,7 +1138,7 @@ void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const
 
     // spdlog::info("[blockchain] fill_tx_list_from_mempool header_hash -> {} k0 {} k1 {}", encode_hash(header_hash), k0, k1);
 
-    database_.transactions_unconfirmed().for_each([&](domain::chain::transaction const &tx) {
+    database_.transactions_unconfirmed().for_each([&](domain::chain::transaction const& tx) {
         uint64_t shortid = sip_hash_uint256(k0, k1, tx.hash()) & uint64_t(0xffffffffffff);
         // spdlog::info("[blockchain] mempool tx -> {} shortid {}", encode_hash(tx.hash()), shortid);
         auto idit = shorttxids.find(shortid);
@@ -1182,7 +1182,7 @@ safe_chain::mempool_mini_hash_map block_chain::get_mempool_mini_hash_map(domain:
 
     safe_chain::mempool_mini_hash_map mempool;
 
-    database_.transactions_unconfirmed().for_each([&](domain::chain::transaction const &tx) {
+    database_.transactions_unconfirmed().for_each([&](domain::chain::transaction const& tx) {
 
         auto sh = sip_hash_uint256(k0, k1, tx.hash());
 
@@ -1448,7 +1448,7 @@ void block_chain::fetch_history(short_hash const& address_hash, size_t limit, si
 
 }
 
-void block_chain::fetch_confirmed_transactions(const short_hash& address_hash, size_t limit, size_t from_height, confirmed_transactions_fetch_handler handler) const {
+void block_chain::fetch_confirmed_transactions(short_hash const& address_hash, size_t limit, size_t from_height, confirmed_transactions_fetch_handler handler) const {
     if (stopped()) {
         handler(error::service_stopped, {});
         return;
@@ -1463,7 +1463,7 @@ void block_chain::fetch_confirmed_transactions(const short_hash& address_hash, s
 
 
 #ifdef KTH_DB_STEALTH
-void block_chain::fetch_stealth(const binary& filter, size_t from_height, stealth_fetch_handler handler) const {
+void block_chain::fetch_stealth(binary const& filter, size_t from_height, stealth_fetch_handler handler) const {
     if (stopped()) {
         handler(error::service_stopped, {});
         return;

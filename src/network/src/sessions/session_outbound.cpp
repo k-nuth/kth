@@ -141,7 +141,7 @@ void session_outbound::handle_channel_stop(code const& ec, channel::ptr channel)
 // Pend outgoing connections so we can detect connection to self.
 
 void session_outbound::start_channel(channel::ptr channel, result_handler handle_started) {
-    const result_handler unpend_handler = BIND3(do_unpend, _1, channel, handle_started);
+    result_handler const unpend_handler = BIND3(do_unpend, _1, channel, handle_started);
 
     auto const ec = pend(channel);
 

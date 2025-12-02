@@ -14,27 +14,27 @@ using namespace kth::database;
 BOOST_AUTO_TEST_SUITE(unspent_outputs_tests)
 
 BOOST_AUTO_TEST_CASE(unspent_outputs__construct__capacity_0__disabled) {
-    const unspent_outputs cache(0);
+    unspent_outputs const cache(0);
     BOOST_REQUIRE(cache.disabled());
 }
 
 BOOST_AUTO_TEST_CASE(unspent_outputs__construct__capacity_42__not_disabled) {
-    const unspent_outputs cache(42);
+    unspent_outputs const cache(42);
     BOOST_REQUIRE( ! cache.disabled());
 }
 
 BOOST_AUTO_TEST_CASE(unspent_outputs__construct__capacity_0__size_0) {
-    const unspent_outputs cache(0);
+    unspent_outputs const cache(0);
     BOOST_REQUIRE_EQUAL(cache.size(), 0u);
 }
 
 BOOST_AUTO_TEST_CASE(unspent_outputs__construct__capacity_42__empty) {
-    const unspent_outputs cache(42);
+    unspent_outputs const cache(42);
     BOOST_REQUIRE(cache.empty());
 }
 
 BOOST_AUTO_TEST_CASE(unspent_outputs__hit_rate__default__1) {
-    const unspent_outputs cache(0);
+    unspent_outputs const cache(0);
     BOOST_REQUIRE_EQUAL(cache.hit_rate(), 1.0f);
 }
 

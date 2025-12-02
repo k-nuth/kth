@@ -43,8 +43,8 @@ private:
     static
     const byte_array<magic_size> magic_;
 
-    const ek_entropy entropy_;
-    const one_byte sign_;
+    ek_entropy const entropy_;
+    one_byte const sign_;
     hash_digest const data_;
 };
 

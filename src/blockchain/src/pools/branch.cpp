@@ -193,7 +193,7 @@ void branch::populate_spent(output_point const& outpoint) const {
     // TODO(legacy): use hash table storage of block's inputs for block pool entries.
     auto const blocks = [&outpoint](block_const_ptr block) {
         auto const transactions = [&outpoint](transaction const& tx) {
-            auto const prevout_match = [&outpoint](const input& input) {
+            auto const prevout_match = [&outpoint](input const& input) {
                 return input.previous_output() == outpoint;
             };
 

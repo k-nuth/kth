@@ -21,7 +21,7 @@ public:
 };
 
 static
-const error_category_impl& get_error_category_instance() {
+error_category_impl const& get_error_category_instance() {
     static error_category_impl instance;
     return instance;
 }

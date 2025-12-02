@@ -343,7 +343,7 @@ kth_error_code_t kth_chain_sync_confirmed_transactions(kth_chain_t chain, kth_pa
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
-    safe_chain(chain).fetch_confirmed_transactions(kth_wallet_payment_address_const_cpp(address).hash20(), max, start_height, [&](std::error_code const& ec, const std::vector<kth::hash_digest>& txs) {
+    safe_chain(chain).fetch_confirmed_transactions(kth_wallet_payment_address_const_cpp(address).hash20(), max, start_height, [&](std::error_code const& ec, std::vector<kth::hash_digest> const& txs) {
         *out_tx_hashes = kth::leak_if_success(txs, ec);
         res = kth::to_c_err(ec);
         latch.count_down();

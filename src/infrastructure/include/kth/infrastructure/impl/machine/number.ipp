@@ -412,7 +412,7 @@ std::expected<number, code> number::safe_mul(number const& x, number const& y) {
 // Minimally encoded
 //-----------------------------------------------------------------------------
 
-// bool ScriptNumEncoding::IsMinimallyEncoded(const std::vector<uint8_t> &vch, size_t maxIntegerSize) {
+// bool ScriptNumEncoding::IsMinimallyEncoded(std::vector<uint8_t> const&vch, size_t maxIntegerSize) {
 //     if (vch.size() > maxIntegerSize) {
 //         return false;
 //     }

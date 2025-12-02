@@ -60,7 +60,7 @@ domain::message::version protocol_version_70002::version_factory() const {
 
 bool protocol_version_70002::sufficient_peer(version_const_ptr message) {
     if (message->value() < minimum_version_) {
-        const reject version_rejection {
+        reject const version_rejection {
             reject::reason_code::obsolete,
             version::command,
             insufficient_version
@@ -68,7 +68,7 @@ bool protocol_version_70002::sufficient_peer(version_const_ptr message) {
 
         SEND2(version_rejection, handle_send, _1, reject::command);
     } else if ((message->services() & minimum_services_) != minimum_services_) {
-        const reject obsolete_rejection {
+        reject const obsolete_rejection {
             reject::reason_code::obsolete,
             version::command,
             insufficient_services

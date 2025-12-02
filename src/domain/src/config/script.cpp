@@ -40,7 +40,7 @@ script::script(data_chunk const& value) {
     value_ = std::move(*script_exp);
 }
 
-script::script(const std::vector<std::string>& tokens) {
+script::script(std::vector<std::string> const& tokens) {
     auto const mnemonic = join(tokens);
     std::stringstream(mnemonic) >> *this;
 }

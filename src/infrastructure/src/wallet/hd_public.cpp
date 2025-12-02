@@ -58,14 +58,14 @@ hd_public::hd_public(std::string const& encoded, uint32_t prefix)
     : hd_public(from_string(encoded, prefix))
 {}
 
-hd_public::hd_public(const ec_compressed& point, const hd_chain_code& chain_code, hd_lineage const& lineage)
+hd_public::hd_public(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage)
     : valid_(true), point_(point), chain_(chain_code), lineage_(lineage)
 {}
 
 // Factories.
 // ----------------------------------------------------------------------------
 
-hd_public hd_public::from_secret(ec_secret const& secret, const hd_chain_code& chain_code, hd_lineage const& lineage) {
+hd_public hd_public::from_secret(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage) {
     ec_compressed point;
     return secret_to_public(point, secret) ? hd_public(point, chain_code, lineage) : hd_public{};
 }
@@ -144,7 +144,7 @@ hd_public::operator bool const() const {
     return valid_;
 }
 
-hd_public::operator const ec_compressed&() const {
+hd_public::operator ec_compressed const&() const {
     return point_;
 }
 
@@ -158,7 +158,7 @@ std::string hd_public::encoded() const {
 // Accessors.
 // ----------------------------------------------------------------------------
 
-const hd_chain_code& hd_public::chain_code() const {
+hd_chain_code const& hd_public::chain_code() const {
     return chain_;
 }
 
@@ -166,7 +166,7 @@ hd_lineage const& hd_public::lineage() const {
     return lineage_;
 }
 
-const ec_compressed& hd_public::point() const {
+ec_compressed const& hd_public::point() const {
     return point_;
 }
 

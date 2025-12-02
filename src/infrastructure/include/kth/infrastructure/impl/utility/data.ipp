@@ -67,7 +67,7 @@ void extend_data(Target& bytes, const Extension& x) {
 
 // std::array<> is used in place of byte_array<> to enable Size deduction.
 template <size_t Start, size_t End, size_t Size>
-byte_array<End - Start> slice(const std::array<uint8_t, Size>& bytes) {
+byte_array<End - Start> slice(std::array<uint8_t, Size> const& bytes) {
     static_assert(End <= Size, "Slice end must not exceed array size.");
     byte_array<End - Start> out;
     std::copy(std::begin(bytes) + Start, std::begin(bytes) + End, out.begin());
@@ -75,23 +75,23 @@ byte_array<End - Start> slice(const std::array<uint8_t, Size>& bytes) {
 }
 
 template <size_t Left, size_t Right>
-byte_array<Left + Right> splice(const std::array<uint8_t, Left>& left, const std::array<uint8_t, Right>& right) {
+byte_array<Left + Right> splice(std::array<uint8_t, Left> const& left, std::array<uint8_t, Right> const& right) {
     byte_array<Left + Right> out;
     /* safe to ignore */ build_array<Left + Right>(out, { left, right });
     return out;
 }
 
 template <size_t Left, size_t Middle, size_t Right>
-byte_array<Left + Middle + Right> splice(const std::array<uint8_t, Left>& left,
-    const std::array<uint8_t, Middle>& middle,
-    const std::array<uint8_t, Right>& right) {
+byte_array<Left + Middle + Right> splice(std::array<uint8_t, Left> const& left,
+    std::array<uint8_t, Middle> const& middle,
+    std::array<uint8_t, Right> const& right) {
     byte_array<Left + Middle + Right> out;
     /* safe to ignore */ build_array(out, { left, middle, right });
     return out;
 }
 
 template <size_t Size>
-byte_array_parts<Size / 2> split(const byte_array<Size>& bytes) {
+byte_array_parts<Size / 2> split(byte_array<Size> const& bytes) {
     static_assert(Size != 0, "Split requires a non-zero parameter.");
     static_assert(Size % 2 == 0, "Split requires an even length parameter.");
     static size_t const half = Size / 2;

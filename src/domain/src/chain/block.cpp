@@ -332,8 +332,8 @@ chain::block block::genesis_chipnet() {
 // With a 32 bit chain the size of the result should not exceed 43 and with a
 // 64 bit chain should not exceed 75, using a limit of: 10 + log2(height) + 1.
 size_t block::locator_size(size_t top) {
-    const auto first_ten_or_top = std::min(size_t{10}, top);
-    const auto remaining = top - first_ten_or_top;
+    auto const first_ten_or_top = std::min(size_t{10}, top);
+    auto const remaining = top - first_ten_or_top;
 
     // Set log2(0) -> 0, log2(1) -> 1 and round up higher exponential backoff
     // results to next whole number by adding 0.5 and truncating.

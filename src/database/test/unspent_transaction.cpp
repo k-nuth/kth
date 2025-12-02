@@ -18,7 +18,7 @@ BOOST_AUTO_TEST_CASE(unspent_transaction__move__coinbase_tx_hash_height__expecte
     static const transaction tx{ 0, 0, { { { null_hash, point::null_index }, {}, 0 } }, {} };
     static auto const expected_height = 42u;
     unspent_transaction instance(tx, expected_height, 0, false);
-    const unspent_transaction moved(std::move(instance));
+    unspent_transaction const moved(std::move(instance));
     BOOST_REQUIRE(moved.hash() == tx.hash());
     BOOST_REQUIRE_EQUAL(moved.height(), expected_height);
     BOOST_REQUIRE_EQUAL(moved.is_coinbase(), true);
@@ -27,8 +27,8 @@ BOOST_AUTO_TEST_CASE(unspent_transaction__move__coinbase_tx_hash_height__expecte
 BOOST_AUTO_TEST_CASE(unspent_transaction__copy__coinbase_tx_hash_height__expected) {
     static const transaction tx{ 0, 0, { { { null_hash, point::null_index }, {}, 0 } }, {} };
     static auto const expected_height = 42u;
-    const unspent_transaction instance(tx, expected_height, 0, false);
-    const unspent_transaction copied(instance);
+    unspent_transaction const instance(tx, expected_height, 0, false);
+    unspent_transaction const copied(instance);
     BOOST_REQUIRE(copied.hash() == tx.hash());
     BOOST_REQUIRE_EQUAL(copied.height(), expected_height);
     BOOST_REQUIRE_EQUAL(copied.is_coinbase(), true);
@@ -64,7 +64,7 @@ BOOST_AUTO_TEST_CASE(unspent_transaction__outputs__construct1__tx_hash__empty) {
 
 BOOST_AUTO_TEST_CASE(unspent_transaction__outputs__construct2__empty) {
     static const transaction tx;
-    const output_point point{ tx.hash(), 42 };
+    output_point const point{ tx.hash(), 42 };
     BOOST_REQUIRE(unspent_transaction(point).outputs()->empty());
 }
 
@@ -87,7 +87,7 @@ BOOST_AUTO_TEST_CASE(unspent_transaction__move_assign__coinbase_tx_hash_height__
     static const transaction tx{ 0, 0, { { { null_hash, point::null_index }, {}, 0 } }, {} };
     static auto const expected_height = 42u;
     unspent_transaction instance(tx, expected_height, 0, false);
-    const unspent_transaction moved = std::move(instance);
+    unspent_transaction const moved = std::move(instance);
     BOOST_REQUIRE(moved.hash() == tx.hash());
     BOOST_REQUIRE_EQUAL(moved.height(), expected_height);
     BOOST_REQUIRE_EQUAL(moved.is_coinbase(), true);
@@ -96,8 +96,8 @@ BOOST_AUTO_TEST_CASE(unspent_transaction__move_assign__coinbase_tx_hash_height__
 BOOST_AUTO_TEST_CASE(unspent_transaction__copy_assign__coinbase_tx_hash_height__expected) {
     static const transaction tx{ 0, 0, { { { null_hash, point::null_index }, {}, 0 } }, {} };
     static auto const expected_height = 42u;
-    const unspent_transaction instance(tx, expected_height, 0, false);
-    const unspent_transaction copied = instance;
+    unspent_transaction const instance(tx, expected_height, 0, false);
+    unspent_transaction const copied = instance;
     BOOST_REQUIRE(copied.hash() == tx.hash());
     BOOST_REQUIRE_EQUAL(copied.height(), expected_height);
     BOOST_REQUIRE_EQUAL(copied.is_coinbase(), true);

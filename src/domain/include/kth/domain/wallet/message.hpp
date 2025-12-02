@@ -62,7 +62,7 @@ KD_API bool sign_message(message_signature& out_signature, byte_span message, ec
  * @return false if the signature does not match the address or if there are
  * any errors in the signature encoding.
  */
-KD_API bool verify_message(byte_span message, payment_address const& address, const message_signature& signature);
+KD_API bool verify_message(byte_span message, payment_address const& address, message_signature const& signature);
 
 /// Exposed primarily for independent testability.
 KD_API bool recovery_id_to_magic(uint8_t& out_magic, uint8_t recovery_id, bool compressed);

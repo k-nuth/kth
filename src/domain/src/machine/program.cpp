@@ -92,7 +92,7 @@ program::program(
 }
 
 // Condition, alternate, jump and operation_count are not copied.
-program::program(script const& script, const program& x)
+program::program(script const& script, program const& x)
     : script_(script),
       transaction_(x.transaction_),
       input_index_(x.input_index_),

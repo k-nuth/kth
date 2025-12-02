@@ -15,7 +15,7 @@ namespace kth::domain::wallet {
 
 template <size_t Size>
 parse_encrypted_prefix<Size>::parse_encrypted_prefix(
-    const byte_array<Size>& value)
+    byte_array<Size> const& value)
     : prefix_(value), valid_(false) {
 }
 

@@ -62,7 +62,7 @@ transaction_entry::ptr make_instance() {
 // construct1/tx
 
 TEST_CASE("transaction entry  construct1  default tx  expected values", "[transaction entry tests]") {
-    const transaction_entry instance(make_tx());
+    transaction_entry const instance(make_tx());
     REQUIRE(instance.is_anchor());
     REQUIRE(instance.fees() == 0);
     REQUIRE(instance.forks() == 0);
@@ -77,7 +77,7 @@ TEST_CASE("transaction entry  construct1  default tx  expected values", "[transa
 // construct2/hash
 
 TEST_CASE("transaction entry  construct1  default block hash  expected values", "[transaction entry tests]") {
-    const transaction_entry instance(make_tx()->hash());
+    transaction_entry const instance(make_tx()->hash());
     REQUIRE(instance.is_anchor());
     REQUIRE(instance.fees() == 0);
     REQUIRE(instance.forks() == 0);
@@ -123,7 +123,7 @@ TEST_CASE("transaction entry  mark  true false  expected", "[transaction entry t
 // is_marked
 
 TEST_CASE("transaction entry  mark  default  false", "[transaction entry tests]") {
-    const transaction_entry instance(make_tx());
+    transaction_entry const instance(make_tx());
     REQUIRE( ! instance.is_marked());
 }
 

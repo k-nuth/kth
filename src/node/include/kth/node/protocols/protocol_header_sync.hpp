@@ -43,7 +43,7 @@ private:
     // This is guarded by protocol_timer/deadline contract (exactly one call).
     size_t current_second_;
 
-    const uint32_t minimum_rate_;
+    uint32_t const minimum_rate_;
     size_t const start_size_;
 };
 

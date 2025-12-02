@@ -18,7 +18,7 @@ using namespace kth::infrastructure::config;
 // Start Test Suite: hash256  construct
 
 TEST_CASE("hash256  construct  default  null hash", "[hash256  construct]") {
-    const hash256 uninitialized_hash;
+    hash256 const uninitialized_hash;
     auto const expectation = encode_hash(kth::null_hash);
     auto const result = encode_hash(uninitialized_hash);
     REQUIRE(expectation == result);

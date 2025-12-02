@@ -92,19 +92,19 @@ int64_t time_incr_by_random_ramp_down(uint64_t iteration) {
     return int64_t(dist(trng)) * (1 + int64_t(iteration / 10));
 }
 
-void print_run_iteration(const uint64_t iteration,
-                         const uint64_t height,
-                         const uint64_t time,
-                         const uint32_t target_nbits) {
+void print_run_iteration(uint64_t const iteration,
+                         uint64_t const height,
+                         uint64_t const time,
+                         uint32_t const target_nbits) {
     std::printf("%" PRIu64 " %" PRIu64 " %" PRIu64 " 0x%08x\n", iteration, height, time, target_nbits);
 }
 
 // Perform one parameterized run to produce ASERT test vectors.
 void perform_run(const run_params& r_params, const Consensus::Params& chainparams) {
     assert(r_params.start_height >= r_params.anchor_height);
-    const arith_uint256 powLimit = UintToArith256(chainparams.powLimit);
-    const arith_uint256 refTarget = arith_uint256().SetCompact(r_params.anchor_nbits);
-    const uint32_t check_nbits = refTarget.GetCompact();
+    arith_uint256 const powLimit = UintToArith256(chainparams.powLimit);
+    arith_uint256 const refTarget = arith_uint256().SetCompact(r_params.anchor_nbits);
+    uint32_t const check_nbits = refTarget.GetCompact();
     assert(check_nbits == r_params.anchor_nbits);
 
     // Print run header info
@@ -150,7 +150,7 @@ void perform_run(const run_params& r_params, const Consensus::Params& chainparam
 void produce_asert_test_vectors() {
     DummyConfig config(CBaseChainParams::MAIN);
     const Consensus::Params &chainparams = config.GetChainParams().GetConsensus();
-    const arith_uint256 powLimit = UintToArith256(chainparams.powLimit);
+    arith_uint256 const powLimit = UintToArith256(chainparams.powLimit);
     uint32_t powLimit_nBits = powLimit.GetCompact();
 
     // Table of runs used to produce the test vectors.

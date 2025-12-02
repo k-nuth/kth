@@ -95,7 +95,7 @@ private:
     static hd_private from_string(std::string const& encoded, uint32_t public_prefix);
     static hd_private from_string(std::string const& encoded, uint64_t prefixes);
 
-    hd_private(ec_secret const& secret, const hd_chain_code& chain_code, hd_lineage const& lineage);
+    hd_private(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage);
 
     /// Members.
     /// This should be const, apart from the need to implement assignment.

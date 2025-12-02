@@ -35,7 +35,7 @@ class KI_API deadline
 {
 public:
     using ptr = std::shared_ptr<deadline>;
-    using handler = std::function<void (code const &)>;
+    using handler = std::function<void (code const&)>;
 
 
 #if ! defined(__EMSCRIPTEN__)

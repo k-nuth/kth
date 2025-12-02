@@ -110,7 +110,7 @@ void transaction_entry::remove_child(ptr child) {
     }
 }
 
-std::ostream& operator<<(std::ostream& out, const transaction_entry& of) {
+std::ostream& operator<<(std::ostream& out, transaction_entry const& of) {
     out << encode_hash(of.hash_)
         << " " << of.parents_.size()
         << " " << of.children_.size();

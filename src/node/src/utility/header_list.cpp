@@ -133,7 +133,7 @@ bool header_list::link(const domain::chain::header& header) const {
     return header.previous_block_hash() == list_.back().hash();
 }
 
-bool header_list::check(const header& header) const {
+bool header_list::check(header const& header) const {
     // This is a hack for successful compile - this is dead code.
     static auto const retarget = true;
 
@@ -141,7 +141,7 @@ bool header_list::check(const header& header) const {
     return ! header.check(retarget);
 }
 
-bool header_list::accept(const header& header) const {
+bool header_list::accept(header const& header) const {
     //// Parallel header download precludes validation of minimum_version,
     //// work_required and median_time_past, however checkpoints are verified.
     ////return !header.accept(...);

@@ -513,7 +513,7 @@ private:
     //blockchain::block_chain chain_;
 
 #if ! defined(__EMSCRIPTEN__)
-    const uint32_t protocol_maximum_;
+    uint32_t const protocol_maximum_;
 #endif
 
     const node::settings& node_settings_;

@@ -76,7 +76,7 @@ struct KD_API endorsement {
      * @return                The output stream reference.
      */
     friend std::ostream& operator<<(std::ostream& output,
-                                    const endorsement& argument);
+                                    endorsement const& argument);
 
 private:
     /**

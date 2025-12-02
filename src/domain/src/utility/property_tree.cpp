@@ -111,7 +111,7 @@ ptree property_tree(const config::input& input) {
     return tree;
 }
 
-ptree property_tree(const std::vector<config::input>& inputs, bool json) {
+ptree property_tree(std::vector<config::input> const& inputs, bool json) {
     auto const tx_inputs = cast<input, chain::input>(inputs);
 
     ptree tree;
@@ -200,7 +200,7 @@ ptree property_tree(const config::transaction& transaction, bool json) {
     return tree;
 }
 
-ptree property_tree(const std::vector<config::transaction>& transactions, bool json) {
+ptree property_tree(std::vector<config::transaction> const& transactions, bool json) {
     ptree tree;
     tree.add_child("transactions", property_tree_list_of_lists("transaction",
                                                                transactions, json));
@@ -241,7 +241,7 @@ ptree property_tree(hash_digest const& hash, size_t height, size_t index) {
 
 // settings
 
-ptree property_tree(const settings_list& settings) {
+ptree property_tree(settings_list const& settings) {
     ptree list;
 
     for (auto const& setting : settings) {

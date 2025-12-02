@@ -53,9 +53,9 @@ bool decode_base64(data_chunk& out, std::string_view in) {
 
 namespace kth {
 
-const static char pad = '=';
+constexpr char pad = '=';
 
-const static char table[] =
+constexpr char table[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 std::string encode_base64(byte_span unencoded)
@@ -104,7 +104,7 @@ std::string encode_base64(byte_span unencoded)
 
 bool decode_base64(data_chunk& out, std::string_view in)
 {
-    const static uint32_t mask = 0x000000FF;
+    constexpr uint32_t mask = 0x000000FF;
 
     auto const length = in.length();
     if ((length % 4) != 0) {

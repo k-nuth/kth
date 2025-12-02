@@ -11,21 +11,21 @@ using namespace kth::domain::message;
 // Start Test Suite: fee filter tests
 
 TEST_CASE("fee filter  constructor 1  always invalid", "[fee filter]") {
-    const fee_filter instance;
+    fee_filter const instance;
     REQUIRE( ! instance.is_valid());
 }
 
 TEST_CASE("fee filter  constructor 2  always  equals params", "[fee filter]") {
     uint64_t const value = 6434u;
-    const fee_filter instance(value);
+    fee_filter const instance(value);
     REQUIRE(instance.is_valid());
     REQUIRE(value == instance.minimum_fee());
 }
 
 TEST_CASE("fee filter  constructor 3  always  equals params", "[fee filter]") {
     uint64_t const fee = 6434u;
-    const fee_filter value(fee);
-    const fee_filter instance(value);
+    fee_filter const value(fee);
+    fee_filter const instance(value);
     REQUIRE(instance.is_valid());
     REQUIRE(fee == instance.minimum_fee());
     REQUIRE(value == instance);
@@ -33,8 +33,8 @@ TEST_CASE("fee filter  constructor 3  always  equals params", "[fee filter]") {
 
 TEST_CASE("fee filter  constructor 4  always  equals params", "[fee filter]") {
     uint64_t const fee = 6434u;
-    const fee_filter value(fee);
-    const fee_filter instance(std::move(value));
+    fee_filter const value(fee);
+    fee_filter const instance(std::move(value));
     REQUIRE(instance.is_valid());
     REQUIRE(fee == instance.minimum_fee());
 }
@@ -55,7 +55,7 @@ TEST_CASE("fee filter from data insufficient version failure", "[fee filter]") {
 }
 
 TEST_CASE("fee filter from data roundtrip  success", "[fee filter]") {
-    const fee_filter expected{123};
+    fee_filter const expected{123};
     auto const data = expected.to_data(fee_filter::version_maximum);
     byte_reader reader(data);
     auto const result_exp = fee_filter::from_data(reader, fee_filter::version_maximum);
@@ -90,25 +90,25 @@ TEST_CASE("fee filter  operator assign equals  always  matches equivalent", "[fe
 }
 
 TEST_CASE("fee filter  operator boolean equals  duplicates  returns true", "[fee filter]") {
-    const fee_filter expected(2453u);
+    fee_filter const expected(2453u);
     fee_filter instance(expected);
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("fee filter  operator boolean equals  differs  returns false", "[fee filter]") {
-    const fee_filter expected(2453u);
+    fee_filter const expected(2453u);
     fee_filter instance;
     REQUIRE( ! (instance == expected));
 }
 
 TEST_CASE("fee filter  operator boolean not equals  duplicates  returns false", "[fee filter]") {
-    const fee_filter expected(2453u);
+    fee_filter const expected(2453u);
     fee_filter instance(expected);
     REQUIRE( ! (instance != expected));
 }
 
 TEST_CASE("fee filter  operator boolean not equals  differs  returns true", "[fee filter]") {
-    const fee_filter expected(2453u);
+    fee_filter const expected(2453u);
     fee_filter instance;
     REQUIRE(instance != expected);
 }

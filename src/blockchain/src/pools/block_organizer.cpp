@@ -96,7 +96,7 @@ void block_organizer::organize(block_const_ptr block, result_handler handler) {
     // Reset the reusable promise.
     resume_ = std::promise<code>();
 
-    const result_handler complete = std::bind(&block_organizer::signal_completion, this, _1);
+    result_handler const complete = std::bind(&block_organizer::signal_completion, this, _1);
     auto const check_handler = std::bind(&block_organizer::handle_check, this, _1, block, complete);
 
     // Checks that are independent of chain state.

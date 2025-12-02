@@ -93,7 +93,7 @@ TEST_CASE("serializer - roundtrip error code", "[serializer tests]") {
 }
 
 TEST_CASE("serializer - roundtrip 2 bytes little endian", "[serializer tests]") {
-    const uint16_t expected = 43707;
+    constexpr uint16_t expected = 43707;
     data_chunk data(2);
     auto sink = make_unsafe_serializer(data.begin());
 
@@ -107,7 +107,7 @@ TEST_CASE("serializer - roundtrip 2 bytes little endian", "[serializer tests]") 
 }
 
 TEST_CASE("serializer - roundtrip 4 bytes little endian", "[serializer tests]") {
-    const uint32_t expected = 2898120443;
+    constexpr uint32_t expected = 2898120443;
     data_chunk data(4);
     auto sink = make_unsafe_serializer(data.begin());
 
@@ -121,7 +121,7 @@ TEST_CASE("serializer - roundtrip 4 bytes little endian", "[serializer tests]") 
 }
 
 TEST_CASE("serializer - roundtrip 8 bytes little endian", "[serializer tests]") {
-    uint64_t const expected = 0xd4b14be5d8f02abe;
+    constexpr uint64_t expected = 0xd4b14be5d8f02abe;
     data_chunk data(8);
     auto sink = make_unsafe_serializer(data.begin());
 
@@ -135,7 +135,7 @@ TEST_CASE("serializer - roundtrip 8 bytes little endian", "[serializer tests]") 
 }
 
 TEST_CASE("serializer - roundtrip 2 bytes big endian", "[serializer tests]") {
-    const uint16_t expected = 43707;
+    constexpr uint16_t expected = 43707;
     data_chunk data(2);
     auto sink = make_unsafe_serializer(data.begin());
 
@@ -149,7 +149,7 @@ TEST_CASE("serializer - roundtrip 2 bytes big endian", "[serializer tests]") {
 }
 
 TEST_CASE("serializer - roundtrip 4 bytes big endian", "[serializer tests]") {
-    const uint32_t expected = 2898120443;
+    constexpr uint32_t expected = 2898120443;
     data_chunk data(4);
     auto sink = make_unsafe_serializer(data.begin());
 

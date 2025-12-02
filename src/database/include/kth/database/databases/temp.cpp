@@ -30,7 +30,7 @@ void BlockchainLMDB::do_resize(uint64_t increase_size)
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   CRITICAL_REGION_LOCAL(m_synchronization_lock);
-  const uint64_t add_size = 1LL << 30;
+  constexpr uint64_t add_size = 1LL << 30;
   // check disk capacity
   try {
     kth::path path(m_folder);
@@ -118,7 +118,7 @@ void BlockchainLMDB::check_and_resize_for_batch(uint64_t batch_num_blocks, uint6
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   LOG_PRINT_L1("[" << __func__ << "] " << "checking DB size");
-  const uint64_t min_increase_size = 512 * (1 << 20);
+  constexpr uint64_t min_increase_size = 512 * (1 << 20);
   uint64_t threshold_size = 0;
   uint64_t increase_size = 0;
   if (batch_num_blocks > 0)
@@ -379,7 +379,7 @@ void BlockchainLMDB::open(std::string const& filename, int const db_flags)
   if(get_result == KTH_DB_SUCCESS) {
 
     //TODO: check this cast
-    const uint32_t db_version = *(const uint32_t*) kth_db_get_data(v);
+    uint32_t const db_version = *(uint32_t const*) kth_db_get_data(v);
     if (db_version > VERSION) {
       MWARNING("Existing lmdb database was made by a later version (" << db_version << "). We don't know how it will change yet.");
       compatible = false;
@@ -456,7 +456,7 @@ void BlockchainLMDB::close()
   m_open = false;
 }
 
-void BlockchainLMDB::safesyncmode(const bool onoff)
+void BlockchainLMDB::safesyncmode(bool const onoff)
 {
   MINFO("switching safe mode " << (onoff ? "on" : "off"));
   mdb_env_set_flags(m_env, KTH_DB_NOSYNC|KTH_DB_MAPASYNC, !onoff);

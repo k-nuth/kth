@@ -31,7 +31,7 @@ size_t check_list::size() const {
     ///////////////////////////////////////////////////////////////////////////
 }
 
-void check_list::reserve(const heights& heights) {
+void check_list::reserve(heights const& heights) {
     ///////////////////////////////////////////////////////////////////////////
     // Critical Section
     unique_lock lock(mutex_);

@@ -11,7 +11,7 @@
 namespace kth {
 
 template <unsigned Size>
-void ostream_writer::write_forward(const byte_array<Size>& value)
+void ostream_writer::write_forward(byte_array<Size> const& value)
 {
     auto const size = value.size();
     if (size > 0) {
@@ -20,7 +20,7 @@ void ostream_writer::write_forward(const byte_array<Size>& value)
 }
 
 template <unsigned Size>
-void ostream_writer::write_reverse(const byte_array<Size>& value)
+void ostream_writer::write_reverse(byte_array<Size> const& value)
 {
     for (unsigned i = 0; i < Size; i++) {
         write_byte(value[Size - (i + 1)]);

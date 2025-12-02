@@ -64,7 +64,7 @@ hd_private::hd_private(std::string const& encoded, uint64_t prefixes)
     : hd_private(from_string(encoded, prefixes))
 {}
 
-hd_private::hd_private(ec_secret const& secret, const hd_chain_code& chain_code, hd_lineage const& lineage)
+hd_private::hd_private(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage)
     : hd_public(from_secret(secret, chain_code, lineage))
     , secret_(secret)
 {}

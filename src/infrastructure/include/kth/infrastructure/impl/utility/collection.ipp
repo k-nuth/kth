@@ -16,7 +16,7 @@
 namespace kth {
 
 template <typename Source, typename Target>
-std::vector<Target> cast(const std::vector<Source>& source) {
+std::vector<Target> cast(std::vector<Source> const& source) {
     std::vector<Target> target(source.size());
     target.assign(source.begin(), source.end());
     return target;
@@ -31,7 +31,7 @@ std::vector<T>& distinct(std::vector<T>& list) {
 }
 
 template <typename Pair, typename Key>
-int find_pair_position(const std::vector<Pair>& list, const Key& key) {
+int find_pair_position(std::vector<Pair> const& list, const Key& key) {
     auto const predicate = [&](const Pair& pair) {
         return pair.first == key;
     };

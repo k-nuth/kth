@@ -43,7 +43,7 @@ struct KD_API script {
      * Initialization constructor.
      * @param[in]  tokens  The mnemonic tokens to initialize with.
      */
-    script(const std::vector<std::string>& tokens);
+    script(std::vector<std::string> const& tokens);
 
     /**
      * Copy constructor.

@@ -17,10 +17,10 @@ namespace kth::domain::wallet {
 
 template <size_t PrefixSize>
 parse_encrypted_key<PrefixSize>::parse_encrypted_key(
-    const byte_array<PrefixSize>& prefix,
-    const one_byte& flags,
-    const ek_salt& salt,
-    const ek_entropy& entropy)
+    byte_array<PrefixSize> const& prefix,
+    one_byte const& flags,
+    ek_salt const& salt,
+    ek_entropy const& entropy)
     : parse_encrypted_prefix<PrefixSize>(prefix),
       flags_(flags),
       salt_(salt),

@@ -41,8 +41,8 @@ private:
     static
     const byte_array<magic_size> magic_;
 
-    const quarter_hash data1_;
-    const half_hash data2_;
+    quarter_hash const data1_;
+    half_hash const data2_;
 };
 
 } // namespace kth::domain::wallet

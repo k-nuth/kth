@@ -23,7 +23,7 @@ namespace kth::domain::message {
 
 struct KD_API alert_payload {
     alert_payload() = default;
-    alert_payload(uint32_t version, uint64_t relay_until, uint64_t expiration, uint32_t id, uint32_t cancel, const std::vector<uint32_t>& set_cancel, uint32_t min_version, uint32_t max_version, const std::vector<std::string>& set_sub_version, uint32_t priority, std::string const& comment, std::string const& status_bar, std::string const& reserved);
+    alert_payload(uint32_t version, uint64_t relay_until, uint64_t expiration, uint32_t id, uint32_t cancel, std::vector<uint32_t> const& set_cancel, uint32_t min_version, uint32_t max_version, std::vector<std::string> const& set_sub_version, uint32_t priority, std::string const& comment, std::string const& status_bar, std::string const& reserved);
     alert_payload(uint32_t version, uint64_t relay_until, uint64_t expiration, uint32_t id, uint32_t cancel, std::vector<uint32_t>&& set_cancel, uint32_t min_version, uint32_t max_version, std::vector<std::string>&& set_sub_version, uint32_t priority, std::string&& comment, std::string&& status_bar, std::string&& reserved);
 
     bool operator==(alert_payload const& x) const;
@@ -57,9 +57,9 @@ struct KD_API alert_payload {
     std::vector<uint32_t>& set_cancel();
 
     [[nodiscard]]
-    const std::vector<uint32_t>& set_cancel() const;
+    std::vector<uint32_t> const& set_cancel() const;
 
-    void set_set_cancel(const std::vector<uint32_t>& value);
+    void set_set_cancel(std::vector<uint32_t> const& value);
     void set_set_cancel(std::vector<uint32_t>&& value);
 
     [[nodiscard]]
@@ -75,9 +75,9 @@ struct KD_API alert_payload {
     std::vector<std::string>& set_sub_version();
 
     [[nodiscard]]
-    const std::vector<std::string>& set_sub_version() const;
+    std::vector<std::string> const& set_sub_version() const;
 
-    void set_set_sub_version(const std::vector<std::string>& value);
+    void set_set_sub_version(std::vector<std::string> const& value);
     void set_set_sub_version(std::vector<std::string>&& value);
 
     [[nodiscard]]
@@ -226,7 +226,7 @@ struct KD_API alert_payload {
 
 
     static
-    const ec_uncompressed satoshi_public_key;
+    ec_uncompressed const satoshi_public_key;
 
 private:
     uint32_t version_{0};

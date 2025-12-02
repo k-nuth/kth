@@ -260,13 +260,13 @@ public:
     /// fetch the inpoint (spender) of an outpoint.
     void fetch_spend(const domain::chain::output_point& outpoint, spend_fetch_handler handler) const override;
     /// fetch outputs, values and spends for an address_hash.
-    void fetch_history(const short_hash& address_hash, size_t limit, size_t from_height, history_fetch_handler handler) const override;
+    void fetch_history(short_hash const& address_hash, size_t limit, size_t from_height, history_fetch_handler handler) const override;
 
     /// Fetch all the txns used by the wallet
-    void fetch_confirmed_transactions(const short_hash& address_hash, size_t limit, size_t from_height, confirmed_transactions_fetch_handler handler) const override;
+    void fetch_confirmed_transactions(short_hash const& address_hash, size_t limit, size_t from_height, confirmed_transactions_fetch_handler handler) const override;
 
 //     /// fetch stealth results.
-//     void fetch_stealth(const binary& filter, size_t from_height, stealth_fetch_handler handler) const override;
+//     void fetch_stealth(binary const& filter, size_t from_height, stealth_fetch_handler handler) const override;
 
     // Transaction Pool.
     //-------------------------------------------------------------------------
@@ -373,7 +373,7 @@ private:
     // These are thread safe.
     std::atomic<bool> stopped_;
     settings const& settings_;
-    const time_t notify_limit_seconds_;
+    time_t const notify_limit_seconds_;
     kth::atomic<block_const_ptr> last_block_;
 
     //TODO(kth):  dissabled this tx cache because we don't want special treatment for the last txn, it affects the explorer rpc methods

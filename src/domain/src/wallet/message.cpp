@@ -36,7 +36,7 @@ hash_digest hash_message(byte_span message) {
 
 static
 bool recover(short_hash& out_hash, bool compressed, ec_signature const& compact, uint8_t recovery_id, hash_digest const& message_digest) {
-    const recoverable_signature recoverable{
+    recoverable_signature const recoverable{
         compact,
         recovery_id};
 

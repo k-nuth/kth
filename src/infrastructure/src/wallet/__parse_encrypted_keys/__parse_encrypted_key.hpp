@@ -21,8 +21,8 @@ class parse_encrypted_key
   : public parse_encrypted_prefix<PrefixSize>
 {
 public:
-    parse_encrypted_key(const byte_array<PrefixSize>& prefix,
-        const one_byte& flags, const ek_salt& salt, const ek_entropy& entropy);
+    parse_encrypted_key(byte_array<PrefixSize> const& prefix,
+        one_byte const& flags, ek_salt const& salt, ek_entropy const& entropy);
 
     bool compressed() const;
     bool lot_sequence() const;
@@ -33,9 +33,9 @@ public:
     ek_entropy entropy() const;
 
 private:
-    const one_byte flags_;
-    const ek_salt salt_;
-    const ek_entropy entropy_;
+    one_byte const flags_;
+    ek_salt const salt_;
+    ek_entropy const entropy_;
 };
 
 } // namespace kth::infrastructure::wallet

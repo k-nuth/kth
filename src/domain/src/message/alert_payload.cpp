@@ -27,10 +27,10 @@ alert_payload::alert_payload(
     uint64_t expiration,
     uint32_t id,
     uint32_t cancel,
-    const std::vector<uint32_t>& set_cancel,
+    std::vector<uint32_t> const& set_cancel,
     uint32_t min_version,
     uint32_t max_version,
-    const std::vector<std::string>& set_sub_version,
+    std::vector<std::string> const& set_sub_version,
     uint32_t priority,
     std::string const& comment,
     std::string const& status_bar,
@@ -238,11 +238,11 @@ std::vector<uint32_t>& alert_payload::set_cancel() {
     return set_cancel_;
 }
 
-const std::vector<uint32_t>& alert_payload::set_cancel() const {
+std::vector<uint32_t> const& alert_payload::set_cancel() const {
     return set_cancel_;
 }
 
-void alert_payload::set_set_cancel(const std::vector<uint32_t>& value) {
+void alert_payload::set_set_cancel(std::vector<uint32_t> const& value) {
     set_cancel_ = value;
 }
 
@@ -270,11 +270,11 @@ std::vector<std::string>& alert_payload::set_sub_version() {
     return set_sub_version_;
 }
 
-const std::vector<std::string>& alert_payload::set_sub_version() const {
+std::vector<std::string> const& alert_payload::set_sub_version() const {
     return set_sub_version_;
 }
 
-void alert_payload::set_set_sub_version(const std::vector<std::string>& value) {
+void alert_payload::set_set_sub_version(std::vector<std::string> const& value) {
     set_sub_version_ = value;
 }
 

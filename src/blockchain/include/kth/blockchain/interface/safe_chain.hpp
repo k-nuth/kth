@@ -117,10 +117,10 @@ struct KB_API safe_chain {
 
     virtual void fetch_spend(const domain::chain::output_point& outpoint, spend_fetch_handler handler) const = 0;
 
-    virtual void fetch_history(const short_hash& address_hash, size_t limit, size_t from_height, history_fetch_handler handler) const = 0;
-    virtual void fetch_confirmed_transactions(const short_hash& address_hash, size_t limit, size_t from_height, confirmed_transactions_fetch_handler handler) const = 0;
+    virtual void fetch_history(short_hash const& address_hash, size_t limit, size_t from_height, history_fetch_handler handler) const = 0;
+    virtual void fetch_confirmed_transactions(short_hash const& address_hash, size_t limit, size_t from_height, confirmed_transactions_fetch_handler handler) const = 0;
 
-    // virtual void fetch_stealth(const binary& filter, size_t from_height, stealth_fetch_handler handler) const = 0;
+    // virtual void fetch_stealth(binary const& filter, size_t from_height, stealth_fetch_handler handler) const = 0;
 
     // Transaction Pool.
     //-------------------------------------------------------------------------
@@ -176,7 +176,7 @@ struct KB_API safe_chain {
 
     //TODO(Mario) temporary duplication
     /// Get a determination of whether the block hash exists in the store.
-    virtual bool get_block_exists_safe(hash_digest const & block_hash) const = 0;
+    virtual bool get_block_exists_safe(hash_digest const& block_hash) const = 0;
 
 };
 

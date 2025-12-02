@@ -82,7 +82,7 @@ bool protocol_address_31402::handle_receive_get_address(code const& ec, get_addr
     network_.fetch_addresses(addresses);
 
     if ( ! addresses.empty()) {
-        const address address_subset(addresses);
+        address const address_subset(addresses);
         SEND2(address_subset, handle_send, _1, self_.command);
 
         spdlog::debug("[network] Sending addresses to [{}] ({})", authority(), self_.addresses().size());

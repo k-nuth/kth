@@ -43,7 +43,7 @@ ec_private::ec_private(wif_compressed const& wif, uint8_t version)
     : ec_private(from_compressed(wif, version))
 {}
 
-ec_private::ec_private(const wif_uncompressed& wif, uint8_t version)
+ec_private::ec_private(wif_uncompressed const& wif, uint8_t version)
     : ec_private(from_uncompressed(wif, version))
 {}
 
@@ -91,7 +91,7 @@ ec_private ec_private::from_compressed(wif_compressed const& wif, uint8_t addres
     return ec_private(secret, version, true);
 }
 
-ec_private ec_private::from_uncompressed(const wif_uncompressed& wif, uint8_t address_version) {
+ec_private ec_private::from_uncompressed(wif_uncompressed const& wif, uint8_t address_version) {
     if ( ! is_wif(wif)) {
         return ec_private();
     }

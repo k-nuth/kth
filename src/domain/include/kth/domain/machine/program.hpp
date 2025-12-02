@@ -64,7 +64,7 @@ struct KD_API program {
     );
 
     /// Create using copied tx, input, forks, value, stack (prevout run).
-    program(chain::script const& script, const program& x);
+    program(chain::script const& script, program const& x);
 
     /// Create using copied tx, input, forks, value and moved stack (p2sh run).
     program(chain::script const& script, program&& x, bool move);

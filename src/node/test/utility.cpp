@@ -40,7 +40,7 @@ domain::message::headers::ptr message_factory(size_t count,
     auto& elements = headers->elements();
 
     for (size_t height = 0; height < count; ++height) {
-        const header current_header{ 0, previous_hash, {}, 0, 0, 0 };
+        header const current_header{ 0, previous_hash, {}, 0, 0, 0 };
         elements.push_back(current_header);
         previous_hash = current_header.hash();
     }
@@ -133,7 +133,7 @@ bool blockchain_fixture::get_output(domain::chain::output& out_output,
     return false;
 }
 
-bool blockchain_fixture::get_spender_hash(hash_digest& out_hash, const output_point& outpoint) const {
+bool blockchain_fixture::get_spender_hash(hash_digest& out_hash, output_point const& outpoint) const {
     return false;
 }
 
@@ -159,7 +159,7 @@ bool blockchain_fixture::fill(block_const_ptr block, size_t height) {
     return import_result_;
 }
 
-bool blockchain_fixture::push(const block_const_ptr_list& blocks,
+bool blockchain_fixture::push(block_const_ptr_list const& blocks,
     size_t height) {
     return false;
 }

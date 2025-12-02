@@ -112,7 +112,7 @@ enum ek_flag : uint8_t {
 KD_API bool create_key_pair(encrypted_private& out_private,
                             ec_compressed& out_point,
                             encrypted_token const& token,
-                            const ek_seed& seed,
+                            ek_seed const& seed,
                             uint8_t version,
                             bool compressed = true);
 
@@ -134,7 +134,7 @@ KD_API bool create_key_pair(encrypted_private& out_private,
                             encrypted_public& out_public,
                             ec_compressed& out_point,
                             encrypted_token const& token,
-                            const ek_seed& seed,
+                            ek_seed const& seed,
                             uint8_t version,
                             bool compressed = true);
 
@@ -149,7 +149,7 @@ KD_API bool create_key_pair(encrypted_private& out_private,
  */
 KD_API bool create_token(encrypted_token& out_token,
                          std::string const& passphrase,
-                         const ek_entropy& entropy);
+                         ek_entropy const& entropy);
 
 /**
  * Create an intermediate passphrase for subsequent key pair generation.
@@ -163,7 +163,7 @@ KD_API bool create_token(encrypted_token& out_token,
  */
 KD_API bool create_token(encrypted_token& out_token,
                          std::string const& passphrase,
-                         const ek_salt& salt,
+                         ek_salt const& salt,
                          uint32_t lot,
                          uint32_t sequence);
 

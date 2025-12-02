@@ -227,7 +227,7 @@ std::vector<hash_digest> internal_database_basis<Clock>::get_history_txns(short_
 
         if (entry_res3 && (from_height == 0 || entry_res3->height() >= from_height)) {
             // Avoid inserting the same tx
-            auto const & pair = temp.insert(entry_res3->point().hash());
+            auto const& pair = temp.insert(entry_res3->point().hash());
             if (pair.second){
                 // Add valid txns to the result vector
                 result.push_back(*pair.first);
@@ -246,7 +246,7 @@ std::vector<hash_digest> internal_database_basis<Clock>::get_history_txns(short_
 
             if (entry_res4 && (from_height == 0 || entry_res4->height() >= from_height)) {
                 // Avoid inserting the same tx
-                auto const & pair = temp.insert(entry_res4->point().hash());
+                auto const& pair = temp.insert(entry_res4->point().hash());
                 if (pair.second){
                     // Add valid txns to the result vector
                     result.push_back(*pair.first);

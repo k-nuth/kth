@@ -72,25 +72,25 @@ void extend_data(Target& bytes, const Extension& x);
  * Extracty a subarray from start position with length end minus start.
  */
 template <size_t Start, size_t End, size_t Size>
-byte_array<End - Start> slice(const std::array<uint8_t, Size>& bytes);
+byte_array<End - Start> slice(std::array<uint8_t, Size> const& bytes);
 
 /**
  * Break an evenly-sized array array into two equal length parts.
  */
 template <size_t Size>
-byte_array_parts<Size / 2> split(const byte_array<Size>& bytes);
+byte_array_parts<Size / 2> split(byte_array<Size> const& bytes);
 
 /**
  * Concatenate two arrays into a new array.
  */
 template <size_t Left, size_t Right>
-byte_array<Left + Right> splice(const std::array<uint8_t, Left>& left, const std::array<uint8_t, Right>& right);
+byte_array<Left + Right> splice(std::array<uint8_t, Left> const& left, std::array<uint8_t, Right> const& right);
 
 /**
  * Concatenate three arrays into a new array.
  */
 template <size_t Left, size_t Middle, size_t Right>
-byte_array<Left + Middle + Right> splice(const std::array<uint8_t, Left>& left, const std::array<uint8_t, Middle>& middle, const std::array<uint8_t, Right>& right);
+byte_array<Left + Middle + Right> splice(std::array<uint8_t, Left> const& left, std::array<uint8_t, Middle> const& middle, std::array<uint8_t, Right> const& right);
 
 /**
  * Convert a byte span to an array. Underfill is ok.

@@ -84,7 +84,7 @@ struct KD_API ec_private {
     ec_private(wif_compressed const& wif, uint8_t version = mainnet_p2kh);
     
     explicit
-    ec_private(const wif_uncompressed& wif, uint8_t version = mainnet_p2kh);
+    ec_private(wif_uncompressed const& wif, uint8_t version = mainnet_p2kh);
 
     /// The version is 16 bits. The most significant byte is the WIF prefix and
     /// the least significant byte is the address perfix. 0x8000 by default.
@@ -146,7 +146,7 @@ private:
     ec_private from_compressed(wif_compressed const& wif, uint8_t address_version);
 
     static
-    ec_private from_uncompressed(const wif_uncompressed& wif, uint8_t address_version);
+    ec_private from_uncompressed(wif_uncompressed const& wif, uint8_t address_version);
 
     /// Members.
     /// These should be const, apart from the need to implement assignment.

@@ -23,7 +23,7 @@ get_block_transactions::get_block_transactions()
     : block_hash_(null_hash)
 {}
 
-get_block_transactions::get_block_transactions(hash_digest const& block_hash, const std::vector<uint64_t>& indexes)
+get_block_transactions::get_block_transactions(hash_digest const& block_hash, std::vector<uint64_t> const& indexes)
     : block_hash_(block_hash)
     , indexes_(indexes)
 {}
@@ -125,11 +125,11 @@ std::vector<uint64_t>& get_block_transactions::indexes() {
     return indexes_;
 }
 
-const std::vector<uint64_t>& get_block_transactions::indexes() const {
+std::vector<uint64_t> const& get_block_transactions::indexes() const {
     return indexes_;
 }
 
-void get_block_transactions::set_indexes(const std::vector<uint64_t>& values) {
+void get_block_transactions::set_indexes(std::vector<uint64_t> const& values) {
     indexes_ = values;
 }
 

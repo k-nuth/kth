@@ -26,7 +26,7 @@ struct KND_API check_list {
 
     /// Reserve the entries indicated by the given heights.
     /// Any entry not reserved here will be ignored upon enqueue.
-    void reserve(const heights& heights);
+    void reserve(heights const& heights);
 
     /// Place a hash on the queue at the height if it has a reservation.
     void enqueue(hash_digest&& hash, size_t height);

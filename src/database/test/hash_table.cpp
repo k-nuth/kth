@@ -63,7 +63,7 @@ void create_database_file() {
     REQUIRE(header.create());
     REQUIRE(header.start());
 
-    const file_offset slab_start = header_size;
+    file_offset const slab_start = header_size;
 
     slab_manager alloc(file, slab_start);
     REQUIRE(alloc.create());

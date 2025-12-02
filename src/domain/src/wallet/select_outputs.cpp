@@ -15,7 +15,7 @@ namespace kth::domain::wallet {
 
 using namespace kth::domain::chain;
 
-void select_outputs::greedy(points_value& out, const points_value& unspent, uint64_t minimum_value) {
+void select_outputs::greedy(points_value& out, points_value const& unspent, uint64_t minimum_value) {
     out.points.clear();
 
     // The minimum required value does not exist.
@@ -71,7 +71,7 @@ void select_outputs::greedy(points_value& out, const points_value& unspent, uint
     KTH_ASSERT_MSG(false, "unreachable code reached");
 }
 
-void select_outputs::individual(points_value& out, const points_value& unspent, uint64_t minimum_value) {
+void select_outputs::individual(points_value& out, points_value const& unspent, uint64_t minimum_value) {
     out.points.clear();
     out.points.reserve(unspent.points.size());
 
@@ -91,7 +91,7 @@ void select_outputs::individual(points_value& out, const points_value& unspent, 
     std::sort(out.points.begin(), out.points.end(), lesser);
 }
 
-void select_outputs::select(points_value& out, const points_value& unspent, uint64_t minimum_value, algorithm option) {
+void select_outputs::select(points_value& out, points_value const& unspent, uint64_t minimum_value, algorithm option) {
     switch (option) {
         case algorithm::individual: {
             individual(out, unspent, minimum_value);

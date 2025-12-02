@@ -28,7 +28,7 @@ struct KD_API get_block_transactions {
     using const_ptr = std::shared_ptr<const get_block_transactions>;
 
     get_block_transactions();
-    get_block_transactions(hash_digest const& block_hash, const std::vector<uint64_t>& indexes);
+    get_block_transactions(hash_digest const& block_hash, std::vector<uint64_t> const& indexes);
     get_block_transactions(hash_digest const& block_hash, std::vector<uint64_t>&& indexes);
 
     bool operator==(get_block_transactions const& x) const;
@@ -44,9 +44,9 @@ struct KD_API get_block_transactions {
     std::vector<uint64_t>& indexes();
 
     [[nodiscard]]
-    const std::vector<uint64_t>& indexes() const;
+    std::vector<uint64_t> const& indexes() const;
 
-    void set_indexes(const std::vector<uint64_t>& values);
+    void set_indexes(std::vector<uint64_t> const& values);
     void set_indexes(std::vector<uint64_t>&& values);
 
     static

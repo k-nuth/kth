@@ -124,9 +124,9 @@ public:
 
     void set_version(uint32_t value);
     void set_locktime(uint32_t value);
-    void set_inputs(const ins& value);
+    void set_inputs(ins const& value);
     void set_inputs(ins&& value);
-    void set_outputs(const outs& value);
+    void set_outputs(outs const& value);
     void set_outputs(outs&& value);
 
     hash_digest outputs_hash() const;

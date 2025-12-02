@@ -52,7 +52,7 @@ std::istream& operator>>(std::istream& input, hash256& argument) {
     return input;
 }
 
-std::ostream& operator<<(std::ostream& output, const hash256& argument) {
+std::ostream& operator<<(std::ostream& output, hash256 const& argument) {
     output << encode_hash(argument.value_);
     return output;
 }

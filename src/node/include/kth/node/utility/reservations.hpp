@@ -79,7 +79,7 @@ private:
     // Thread safe.
     check_list& hashes_;
     std::atomic<size_t> max_request_;
-    const uint32_t timeout_;
+    uint32_t const timeout_;
 
     // Protected by block exclusivity and limited call scope.
     blockchain::fast_chain& chain_;

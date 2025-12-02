@@ -111,7 +111,7 @@ void protocol_double_spend_proof_out::send_ds_proof(code const& ec, double_spend
         spdlog::debug("[node] DSProof requested by [{}] not found.", authority());
 
         KTH_ASSERT( ! inventory->inventories().empty());
-        const not_found reply{ inventory->inventories().back() };
+        not_found const reply{ inventory->inventories().back() };
         SEND2(reply, handle_send, _1, reply.command);
         handle_send_next(error::success, inventory);
         return;

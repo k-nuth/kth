@@ -38,7 +38,7 @@ private:
     static
     const byte_array<magic_size> magic_;
 
-    const one_byte sign_;
+    one_byte const sign_;
     hash_digest const data_;
 };
 

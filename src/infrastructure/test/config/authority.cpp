@@ -73,63 +73,63 @@ TEST_CASE("authority port default zero", "[authority port]") {
 }
 
 TEST_CASE("authority port copy expected", "[authority port]") {
-    const uint16_t expected_port = 42;
-    const authority other(test_ipv6_address, expected_port);
-    const authority host(other);
+    constexpr uint16_t expected_port = 42;
+    authority const other(test_ipv6_address, expected_port);
+    authority const host(other);
     REQUIRE(host.port() == expected_port);
 }
 
 TEST_CASE("authority should extract port from IPv4 address with port", "[authority port]") {
-    const uint16_t expected_port = 42;
+    constexpr uint16_t expected_port = 42;
     std::stringstream address;
     address << KI_AUTHORITY_IPV4_ADDRESS ":" << expected_port;
-    const authority host(address.str());
+    authority const host(address.str());
     REQUIRE(host.port() == expected_port);
 }
 
 TEST_CASE("authority should extract port from IPv6 address with port", "[authority port]") {
-    const uint16_t expected_port = 42;
+    constexpr uint16_t expected_port = 42;
     std::stringstream address;
     address << "[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]:" << expected_port;
-    const authority host(address.str());
+    authority const host(address.str());
     REQUIRE(host.port() == expected_port);
 }
 
 TEST_CASE("authority should extract port from network address", "[authority port]") {
-    const uint16_t expected_port = 42;
+    constexpr uint16_t expected_port = 42;
     message::network_address const address {
         0, 0, test_ipv6_address, expected_port
     };
 
-    const authority host(address);
+    authority const host(address);
     REQUIRE(host.port() == expected_port);
 }
 
 TEST_CASE("authority should extract port from IP address constructor", "[authority port]") {
-    const uint16_t expected_port = 42;
-    const authority host(test_ipv6_address, expected_port);
+    constexpr uint16_t expected_port = 42;
+    authority const host(test_ipv6_address, expected_port);
     REQUIRE(host.port() == expected_port);
 }
 
 TEST_CASE("authority should extract port from hostname constructor", "[authority port]") {
-    const uint16_t expected_port = 42;
-    const authority host(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS, expected_port);
+    constexpr uint16_t expected_port = 42;
+    authority const host(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS, expected_port);
     REQUIRE(host.port() == expected_port);
 }
 
 #if ! defined(__EMSCRIPTEN__)
 TEST_CASE("authority  port  boost address  expected", "[authority  port]") {
-    const uint16_t expected_port = 42;
+    constexpr uint16_t expected_port = 42;
     auto const address = ::asio::ip::make_address(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS);
-    const authority host(address, expected_port);
+    authority const host(address, expected_port);
     REQUIRE(host.port() == expected_port);
 }
 
 TEST_CASE("authority  port  boost endpoint  expected", "[authority  port]") {
-    const uint16_t expected_port = 42;
+    constexpr uint16_t expected_port = 42;
     auto const address = ::asio::ip::make_address(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS);
     kth::asio::endpoint tcp_endpoint(address, expected_port);
-    const authority host(tcp_endpoint);
+    authority const host(tcp_endpoint);
     REQUIRE(host.port() == expected_port);
 }
 #endif
@@ -146,12 +146,12 @@ TEST_CASE("authority  bool  default  false", "[authority  ip]") {
 }
 
 TEST_CASE("authority  bool  zero port  false", "[authority  ip]") {
-    const authority host(test_ipv6_address, 0);
+    authority const host(test_ipv6_address, 0);
     REQUIRE( ! host);
 }
 
 TEST_CASE("authority  bool  nonzero port  true", "[authority  ip]") {
-    const authority host(test_ipv6_address, 42);
+    authority const host(test_ipv6_address, 42);
     REQUIRE(host);
 }
 
@@ -168,30 +168,30 @@ TEST_CASE("authority  ip  default  unspecified", "[authority  ip]") {
 
 TEST_CASE("authority  ip  copy  expected", "[authority  ip]") {
     auto const& expected_ip = test_ipv6_address;
-    const authority other(expected_ip, 42);
-    const authority host(other);
+    authority const other(expected_ip, 42);
+    authority const host(other);
     REQUIRE(ip_equal(host.ip(), expected_ip));
 }
 
 TEST_CASE("authority should parse IPv4 address from string", "[authority ip]") {
-    const authority host(KI_AUTHORITY_IPV4_ADDRESS ":42");
+    authority const host(KI_AUTHORITY_IPV4_ADDRESS ":42");
     REQUIRE(ip_equal(host.ip(), test_mapped_ip_address));
 }
 
 TEST_CASE("authority should parse IPv6 address from string", "[authority ip]") {
-    const authority host("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]:42");
+    authority const host("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]:42");
     REQUIRE(ip_equal(host.ip(), test_ipv6_address));
 }
 
 TEST_CASE("authority should parse IPv6 compatible address from string", "[authority ip]") {
     // KI_AUTHORITY_IPV6_COMPATIBLE_ADDRESS A|B variants are equivalent.
-    const authority host("[" KI_AUTHORITY_IPV6_COMPATIBLE_ADDRESS "]:42");
+    authority const host("[" KI_AUTHORITY_IPV6_COMPATIBLE_ADDRESS "]:42");
     REQUIRE(ip_equal(host.ip(), test_compatible_ip_address));
 }
 
 TEST_CASE("authority should parse IPv6 alternative compatible address from string", "[authority ip]") {
     // KI_AUTHORITY_IPV6_COMPATIBLE_ADDRESS A|B variants are equivalent.
-    const authority host("[" KI_AUTHORITY_IPV6_ALTERNATIVE_COMPATIBLE_ADDRESS "]:42");
+    authority const host("[" KI_AUTHORITY_IPV6_ALTERNATIVE_COMPATIBLE_ADDRESS "]:42");
     REQUIRE(ip_equal(host.ip(), test_compatible_ip_address));
 }
 
@@ -201,42 +201,42 @@ TEST_CASE("authority should extract IP from network address", "[authority ip]") 
         0, 0, test_ipv6_address, 42
     };
 
-    const authority host(address);
+    authority const host(address);
     REQUIRE(ip_equal(host.ip(), test_ipv6_address));
 }
 
 TEST_CASE("authority should extract IP from IP address constructor", "[authority ip]") {
     auto const& expected_ip = test_ipv6_address;
-    const authority host(expected_ip, 42);
+    authority const host(expected_ip, 42);
     REQUIRE(ip_equal(host.ip(), expected_ip));
 }
 
 TEST_CASE("authority should parse IPv4 from hostname string", "[authority ip]") {
-    const authority host(KI_AUTHORITY_IPV4_ADDRESS, 42);
+    authority const host(KI_AUTHORITY_IPV4_ADDRESS, 42);
     REQUIRE(ip_equal(host.ip(), test_mapped_ip_address));
 }
 
 TEST_CASE("authority should parse IPv6 from hostname string", "[authority ip]") {
-    const authority host(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS, 42);
+    authority const host(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS, 42);
     REQUIRE(ip_equal(host.ip(), test_ipv6_address));
 }
 
 TEST_CASE("authority should parse IPv6 from bracketed hostname string", "[authority ip]") {
-    const authority host("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]", 42);
+    authority const host("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]", 42);
     REQUIRE(ip_equal(host.ip(), test_ipv6_address));
 }
 
 #if ! defined(__EMSCRIPTEN__)
 TEST_CASE("authority  ip  boost address  expected", "[authority  ip]") {
     auto const address = ::asio::ip::make_address(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS);
-    const authority host(address, 42);
+    authority const host(address, 42);
     REQUIRE(ip_equal(host.ip(), test_ipv6_address));
 }
 
 TEST_CASE("authority  ip  boost endpoint  expected", "[authority  ip]") {
     auto const address = ::asio::ip::make_address(KI_AUTHORITY_IPV4_ADDRESS);
     kth::asio::endpoint tcp_endpoint(address, 42);
-    const authority host(tcp_endpoint);
+    authority const host(tcp_endpoint);
     REQUIRE(ip_equal(host.ip(), test_mapped_ip_address));
 }
 #endif
@@ -254,19 +254,19 @@ TEST_CASE("authority  to hostname  default  ipv6 unspecified", "[authority  to h
 
 TEST_CASE("authority  to hostname  ipv4 mapped ip address  ipv4", "[authority  to hostname]") {
     // A mapped ip address serializes as IPv4.
-    const authority host(test_mapped_ip_address, 0);
+    authority const host(test_mapped_ip_address, 0);
     REQUIRE(host.to_hostname() == KI_AUTHORITY_IPV4_ADDRESS);
 }
 
 TEST_CASE("authority  to hostname  ipv4 compatible ip address  ipv6 alternative", "[authority  to hostname]") {
     // A compatible ip address serializes as alternative notation IPv6.
-    const authority host(test_compatible_ip_address, 0);
+    authority const host(test_compatible_ip_address, 0);
     REQUIRE(host.to_hostname() == "[" KI_AUTHORITY_IPV6_ALTERNATIVE_COMPATIBLE_ADDRESS "]");
 }
 
 TEST_CASE("authority  to hostname  ipv6 address  ipv6 compressed", "[authority  to hostname]") {
     // An ipv6 address serializes using compression.
-    const authority host(test_ipv6_address, 0);
+    authority const host(test_ipv6_address, 0);
     REQUIRE(host.to_hostname() == "[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]");
 }
 
@@ -290,7 +290,7 @@ TEST_CASE("authority  to network address  ipv4 mapped ip address  ipv4", "[autho
         0, 0, test_mapped_ip_address, 42,
     };
 
-    const authority host(expected_address.ip(), expected_address.port());
+    authority const host(expected_address.ip(), expected_address.port());
     REQUIRE(net_equal(host.to_network_address(), expected_address));
 }
 
@@ -299,7 +299,7 @@ TEST_CASE("authority  to network address  ipv4 compatible ip address  ipv6 alter
         0, 0, test_compatible_ip_address, 42,
     };
 
-    const authority host(expected_address.ip(), expected_address.port());
+    authority const host(expected_address.ip(), expected_address.port());
     REQUIRE(net_equal(host.to_network_address(), expected_address));
 }
 
@@ -308,7 +308,7 @@ TEST_CASE("authority  to network address  ipv6 address  ipv6 compressed", "[auth
         0, 0, test_ipv6_address, 42,
     };
 
-    const authority host(expected_address.ip(), expected_address.port());
+    authority const host(expected_address.ip(), expected_address.port());
     REQUIRE(net_equal(host.to_network_address(), expected_address));
 }
 
@@ -325,7 +325,7 @@ TEST_CASE("authority  to string  default  unspecified", "[authority  to string]"
 
 TEST_CASE("authority  to string  unspecified  unspecified", "[authority  to string]") {
     auto const line = "[" KI_AUTHORITY_IPV6_UNSPECIFIED_ADDRESS "]";
-    const authority host(line);
+    authority const host(line);
     REQUIRE(host.to_string() == line);
 }
 
@@ -343,49 +343,49 @@ TEST_CASE("authority  to string  unspecified  unspecified", "[authority  to stri
 
 TEST_CASE("authority  to string  ipv4  expected", "[authority  to string]") {
     auto const line = KI_AUTHORITY_IPV4_ADDRESS;
-    const authority host(line);
+    authority const host(line);
     REQUIRE(host.to_string() == line);
 }
 
 TEST_CASE("authority  to string  ipv4 port  expected", "[authority  to string]") {
     auto const line = KI_AUTHORITY_IPV4_ADDRESS ":42";
-    const authority host(line);
+    authority const host(line);
     REQUIRE(host.to_string() == line);
 }
 
 TEST_CASE("authority  to string  ipv6  expected", "[authority  to string]") {
     auto const line = "[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]";
-    const authority host(line);
+    authority const host(line);
     REQUIRE(host.to_string() == line);
 }
 
 TEST_CASE("authority  to string  ipv6 port  expected", "[authority  to string]") {
     auto const line = "[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]:42";
-    const authority host(line);
+    authority const host(line);
     REQUIRE(host.to_string() == line);
 }
 
 TEST_CASE("authority  to string  ipv6 compatible  expected", "[authority  to string]") {
     // A compatible ip address serializes as alternative notation IPv6.
-    const authority host("[" KI_AUTHORITY_IPV6_COMPATIBLE_ADDRESS "]");
+    authority const host("[" KI_AUTHORITY_IPV6_COMPATIBLE_ADDRESS "]");
     REQUIRE(host.to_string() == "[" KI_AUTHORITY_IPV6_ALTERNATIVE_COMPATIBLE_ADDRESS "]");
 }
 
 TEST_CASE("authority  to string  ipv6 alternative compatible port  expected", "[authority  to string]") {
     // A compatible ip address serializes as alternative notation IPv6.
-    const authority host("[" KI_AUTHORITY_IPV6_COMPATIBLE_ADDRESS "]:42");
+    authority const host("[" KI_AUTHORITY_IPV6_COMPATIBLE_ADDRESS "]:42");
     REQUIRE(host.to_string() == "[" KI_AUTHORITY_IPV6_ALTERNATIVE_COMPATIBLE_ADDRESS "]:42");
 }
 
 TEST_CASE("authority  to string  ipv6 alternative compatible  expected", "[authority  to string]") {
     auto const line = "[" KI_AUTHORITY_IPV6_ALTERNATIVE_COMPATIBLE_ADDRESS "]";
-    const authority host(line);
+    authority const host(line);
     REQUIRE(host.to_string() == line);
 }
 
 TEST_CASE("authority  to string  ipv6 compatible port  expected", "[authority  to string]") {
     auto const line = "[" KI_AUTHORITY_IPV6_ALTERNATIVE_COMPATIBLE_ADDRESS "]:42";
-    const authority host(line);
+    authority const host(line);
     REQUIRE(host.to_string() == line);
 }
 
@@ -403,44 +403,44 @@ TEST_CASE("authority  equality  default default  true", "[authority  equality]")
 
 TEST_CASE("authority  equality  default unspecified port  false", "[authority  equality]") {
     authority const host1 {};
-    const authority host2(KI_AUTHORITY_IPV6_UNSPECIFIED_ADDRESS, 42);
+    authority const host2(KI_AUTHORITY_IPV6_UNSPECIFIED_ADDRESS, 42);
     REQUIRE( ! (host1 == host2));
 }
 
 TEST_CASE("authority  equality  ipv4 ipv4  true", "[authority  equality]") {
-    const authority host1(KI_AUTHORITY_IPV4_ADDRESS);
-    const authority host2(KI_AUTHORITY_IPV4_ADDRESS);
+    authority const host1(KI_AUTHORITY_IPV4_ADDRESS);
+    authority const host2(KI_AUTHORITY_IPV4_ADDRESS);
     REQUIRE(host1 == host2);
 }
 
 TEST_CASE("authority  equality  ipv4 ipv4 port  true", "[authority  equality]") {
-    const authority host1(KI_AUTHORITY_IPV4_ADDRESS);
-    const authority host2(KI_AUTHORITY_IPV4_ADDRESS, 42);
+    authority const host1(KI_AUTHORITY_IPV4_ADDRESS);
+    authority const host2(KI_AUTHORITY_IPV4_ADDRESS, 42);
     REQUIRE( ! (host1 == host2));
 }
 
 TEST_CASE("authority  equality  ipv4 ipv6  false", "[authority  equality]") {
-    const authority host1(KI_AUTHORITY_IPV4_ADDRESS);
-    const authority host2("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]");
+    authority const host1(KI_AUTHORITY_IPV4_ADDRESS);
+    authority const host2("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]");
     REQUIRE( ! (host1 == host2));
 }
 
 TEST_CASE("authority  equality  ipv6 ipv6  true", "[authority  equality]") {
-    const authority host1("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]");
-    const authority host2("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]");
+    authority const host1("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]");
+    authority const host2("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]");
     REQUIRE(host1 == host2);
 }
 
 TEST_CASE("authority  equality  ipv6 ipv6 port  false", "[authority  equality]") {
-    const authority host1("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]");
-    const authority host2(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS, 42);
+    authority const host1("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]");
+    authority const host2(KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS, 42);
     REQUIRE( ! (host1 == host2));
 }
 
 TEST_CASE("authority  equality  compatible alternative  true", "[authority  equality]") {
     // A compatible ip address is equivalent to its alternative addressing.
-    const authority host1("[" KI_AUTHORITY_IPV6_COMPATIBLE_ADDRESS "]");
-    const authority host2("[" KI_AUTHORITY_IPV6_ALTERNATIVE_COMPATIBLE_ADDRESS "]");
+    authority const host1("[" KI_AUTHORITY_IPV6_COMPATIBLE_ADDRESS "]");
+    authority const host2("[" KI_AUTHORITY_IPV6_ALTERNATIVE_COMPATIBLE_ADDRESS "]");
     REQUIRE(host1 == host2);
 }
 
@@ -458,13 +458,13 @@ TEST_CASE("authority  inequality  default default  false", "[authority  inequali
 
 TEST_CASE("authority  inequality  default unspecified port  true", "[authority  inequality]") {
     authority const host1 {};
-    const authority host2(KI_AUTHORITY_IPV6_UNSPECIFIED_ADDRESS, 42);
+    authority const host2(KI_AUTHORITY_IPV6_UNSPECIFIED_ADDRESS, 42);
     REQUIRE(host1 != host2);
 }
 
 TEST_CASE("authority  inequality  ipv6 ipv6  false", "[authority  inequality]") {
-    const authority host1("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]");
-    const authority host2("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]");
+    authority const host1("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]");
+    authority const host2("[" KI_AUTHORITY_IPV6_COMPRESSED_ADDRESS "]");
     REQUIRE( ! (host1 != host2));
 }
 

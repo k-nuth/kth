@@ -65,7 +65,7 @@ std::string serialize(const Value& value, std::string const& fallback="");
  * @param[in]  delimiter  The delimiter, defaults to " ".
  * @return                The resulting string.
  */
-KI_API std::string join(const string_list& words,
+KI_API std::string join(string_list const& words,
     std::string const& delimiter=" ");
 
 /**

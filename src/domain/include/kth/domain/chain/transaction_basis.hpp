@@ -64,7 +64,7 @@ namespace detail {
 
 // Write a length-prefixed collection of inputs or outputs to the sink.
 template <class Sink, class Put>
-void write(Sink& sink, const std::vector<Put>& puts, bool wire) {
+void write(Sink& sink, std::vector<Put> const& puts, bool wire) {
     sink.write_variable_little_endian(puts.size());
 
     auto const serialize = [&](const Put& put) {
@@ -175,18 +175,18 @@ struct KD_API transaction_basis {
     ins& inputs();
 
     [[nodiscard]]
-    const ins& inputs() const;
+    ins const& inputs() const;
 
-    void set_inputs(const ins& value);
+    void set_inputs(ins const& value);
     void set_inputs(ins&& value);
 
     // [[deprecated]] // unsafe
     outs& outputs();
 
     [[nodiscard]]
-    const outs& outputs() const;
+    outs const& outputs() const;
 
-    void set_outputs(const outs& value);
+    void set_outputs(outs const& value);
     void set_outputs(outs&& value);
 
     // Validation.
