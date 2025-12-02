@@ -16,7 +16,7 @@
         "nodejs/16.3.0#a7eaed2d69910ba185e2ddce7a926cd1%1699800365.225",
         "m4/1.4.19#b38ced39a01e31fef5435bc634461fd2%1700758725.451",
         "emsdk/3.1.73#7dd9b10cfb811b620856f87c3a71c070%1733421474.308",
-        "cmake/4.1.3#d862653d72f0d0560c0bd2f356cba3e7%1763665421.934"
+        "cmake/4.2.0#ae0a44f44a1ef9ab68fd4b3e9a1f8671%1764093466.37"
     ],
     "python_requires": [],
     "config_requires": []

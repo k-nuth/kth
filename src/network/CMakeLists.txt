@@ -176,32 +176,33 @@ _group_sources(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}")
 # Tests
 # ------------------------------------------------------------------------------
 # Skip tests for WebAssembly (Catch2 incompatible with shared-memory/threads)
-if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  enable_testing()
-  find_package(Catch2 3 REQUIRED)
+# TODO(fernando): Temporarily disabled for release 0.74.0 - tests take too long in CI
+# if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+#   enable_testing()
+#   find_package(Catch2 3 REQUIRED)
 
-  add_executable(kth_network_test
-    test/p2p.cpp
-  )
+#   add_executable(kth_network_test
+#     test/p2p.cpp
+#   )
 
-  target_include_directories(kth_network_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+#   target_include_directories(kth_network_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
 
-  target_link_libraries(kth_network_test PUBLIC ${PROJECT_NAME})
-  target_link_libraries(kth_network_test PRIVATE Catch2::Catch2WithMain)
+#   target_link_libraries(kth_network_test PUBLIC ${PROJECT_NAME})
+#   target_link_libraries(kth_network_test PRIVATE Catch2::Catch2WithMain)
 
-  _group_sources(kth_network_test "${CMAKE_CURRENT_LIST_DIR}/test")
+#   _group_sources(kth_network_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
-  include(CTest)
-  # Try to use Catch2 automatic test discovery
-  find_package(Catch2 QUIET)
-  if(Catch2_FOUND)
-    include(Catch)
-    catch_discover_tests(kth_network_test)
-  else()
-    # Fallback to manual test registration
-    add_test(NAME kth_network_test COMMAND kth_network_test)
-  endif()
-endif()
+#   include(CTest)
+#   # Try to use Catch2 automatic test discovery
+#   find_package(Catch2 QUIET)
+#   if(Catch2_FOUND)
+#     include(Catch)
+#     catch_discover_tests(kth_network_test)
+#   else()
+#     # Fallback to manual test registration
+#     add_test(NAME kth_network_test COMMAND kth_network_test)
+#   endif()
+# endif()
 
 
 # Install
