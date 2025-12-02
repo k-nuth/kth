@@ -196,10 +196,11 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(Catch2 QUIET)
   if(Catch2_FOUND)
     include(Catch)
-    catch_discover_tests(kth_network_test)
+    # Exclude [integration] tests - they require real TCP connections
+    catch_discover_tests(kth_network_test TEST_SPEC "~[integration]")
   else()
-    # Fallback to manual test registration
-    add_test(NAME kth_network_test COMMAND kth_network_test)
+    # Fallback to manual test registration (excludes integration tests)
+    add_test(NAME kth_network_test COMMAND kth_network_test "~[integration]")
   endif()
 endif()
 
