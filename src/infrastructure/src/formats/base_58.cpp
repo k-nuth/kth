@@ -35,7 +35,7 @@ auto search_first_nonzero(const Data& data) -> decltype(data.cbegin()) {
     return first_nonzero;
 }
 
-size_t count_leading_zeros(data_slice unencoded) {
+size_t count_leading_zeros(byte_span unencoded) {
     // Skip and count leading '1's.
     size_t leading_zeros = 0;
     for (uint8_t const byte: unencoded) {
@@ -60,7 +60,7 @@ void pack_value(data_chunk& indexes, size_t carry) {
     KTH_ASSERT(carry == 0);
 }
 
-std::string encode_base58(data_slice unencoded) {
+std::string encode_base58(byte_span unencoded) {
     size_t leading_zeros = count_leading_zeros(unencoded);
 
     // size = log(256) / log(58), rounded up.

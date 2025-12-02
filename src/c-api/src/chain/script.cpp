@@ -174,13 +174,13 @@ kth_bool_t  kth_chain_script_is_sign_script_hash_pattern(kth_operation_list_t op
 
 kth_operation_list_const_t kth_chain_script_to_null_data_pattern(uint8_t const* data, kth_size_t n) {
     // printf("kth_chain_script_to_null_data_pattern: data: %p, n: %u\n", data, n);
-    kth::data_slice data_cpp(data, data + n);
+    kth::byte_span data_cpp(data, data + n);
     auto res = kth::domain::chain::script::to_null_data_pattern(data_cpp);
     return kth::move_or_copy_and_leak(std::move(res));
 }
 
 kth_operation_list_const_t kth_chain_script_to_pay_public_key_pattern(uint8_t const* point, kth_size_t n) {
-    kth::data_slice point_cpp(point, point + n);
+    kth::byte_span point_cpp(point, point + n);
     auto res = kth::domain::chain::script::to_pay_public_key_pattern(point_cpp);
     return kth::move_or_copy_and_leak(std::move(res));
 }

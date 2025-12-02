@@ -66,7 +66,7 @@ public:
      * @return  This object's value cast to generic data.
      */
     explicit
-    operator data_slice() const;
+    operator byte_span() const;
 
     /**
      * Get the key as a base85 encoded (z85) string.

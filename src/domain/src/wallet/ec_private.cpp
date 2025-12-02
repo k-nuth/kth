@@ -54,7 +54,7 @@ ec_private::ec_private(ec_secret const& secret, uint16_t version, bool compress)
 // Validators.
 // ----------------------------------------------------------------------------
 
-bool ec_private::is_wif(data_slice decoded) {
+bool ec_private::is_wif(byte_span decoded) {
     auto const size = decoded.size();
     if (size != wif_compressed_size && size != wif_uncompressed_size) {
         return false;

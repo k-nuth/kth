@@ -26,7 +26,7 @@
 namespace kth {
 
 #if defined(KTH_CURRENCY_LTC)
-hash_digest litecoin_hash(data_slice data) {
+hash_digest litecoin_hash(byte_span data) {
     hash_digest hash;
     scrypt_1024_1_1_256(reinterpret_cast<char const*>(data.data()),
                         reinterpret_cast<char*>(hash.data()));

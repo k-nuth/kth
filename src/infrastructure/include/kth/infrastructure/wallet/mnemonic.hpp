@@ -39,7 +39,7 @@ using word_list = string_list;
  * selection. The mnemonic can later be converted to a seed for use in wallet
  * creation. Entropy byte count must be evenly divisible by 4.
  */
-KI_API word_list create_mnemonic(data_slice entropy,
+KI_API word_list create_mnemonic(byte_span entropy,
     dictionary const& lexicon=language::en);
 
 /**

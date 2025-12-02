@@ -36,7 +36,7 @@ byte_array<Size * 733 / 1000> base58_literal(char const(&string)[Size]);
  * Encode data as base58.
  * @return the base58 encoded string.
  */
-KI_API std::string encode_base58(data_slice unencoded);
+KI_API std::string encode_base58(byte_span unencoded);
 
 /**
  * Attempt to decode base58 data.

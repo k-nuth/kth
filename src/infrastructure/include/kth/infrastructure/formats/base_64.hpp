@@ -17,7 +17,7 @@ namespace kth {
  * Encode data as base64.
  * @return the base64 encoded string.
  */
-KI_API std::string encode_base64(data_slice unencoded);
+KI_API std::string encode_base64(byte_span unencoded);
 
 /**
  * Attempt to decode base64 data.

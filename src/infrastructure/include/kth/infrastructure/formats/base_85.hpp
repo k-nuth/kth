@@ -17,7 +17,7 @@ namespace kth {
  * Encode data as base85 (Z85).
  * @return false if the input is not of base85 size (% 4).
  */
-KI_API bool encode_base85(std::string& out, data_slice in);
+KI_API bool encode_base85(std::string& out, byte_span in);
 
 /**
  * Attempt to decode base85 (Z85) data.

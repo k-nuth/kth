@@ -24,7 +24,6 @@ using byte_array = std::array<uint8_t, Size>;
 
 using byte_span = std::span<uint8_t const>;
 using byte_span_mut = std::span<uint8_t>;
-using data_slice = byte_span;  // Alias for backwards compatibility
 
 template <size_t Size>
 struct byte_array_parts {
@@ -37,7 +36,7 @@ using one_byte = byte_array<1>;
 using data_chunk = std::vector<uint8_t>;
 using data_queue = std::queue<data_chunk>;
 using data_stack = std::vector<data_chunk>;
-using loaf = std::initializer_list<data_slice>;
+using loaf = std::initializer_list<byte_span>;
 
 /**
  * Create a single byte arrray with an initial value.
@@ -50,18 +49,18 @@ inline one_byte to_array(uint8_t byte);
 inline data_chunk to_chunk(uint8_t byte);
 
 /**
- * Concatenate several data slices into a single data_chunk.
+ * Concatenate several data spans into a single data_chunk.
  * @param  extra_reserve  Include this many additional bytes when calling
  * `reserve` on the data_chunk (as an optimization).
  */
-inline data_chunk build_chunk(loaf slices, size_t extra_reserve=0);
+inline data_chunk build_chunk(loaf spans, size_t extra_reserve=0);
 
 /**
- * Concatenate several data slices into a single fixed size array.
- * Returns false if the slices don't fit in the array. Underfill is ok.
+ * Concatenate several data spans into a single fixed size array.
+ * Returns false if the spans don't fit in the array. Underfill is ok.
  */
 template <size_t Size>
-bool build_array(byte_array<Size>& out, loaf slices);
+bool build_array(byte_array<Size>& out, loaf spans);
 
 /**
  * Extend iterable object by appending x.
@@ -94,10 +93,10 @@ template <size_t Left, size_t Middle, size_t Right>
 byte_array<Left + Middle + Right> splice(const std::array<uint8_t, Left>& left, const std::array<uint8_t, Middle>& middle, const std::array<uint8_t, Right>& right);
 
 /**
- * Convert the data slice to an array. Underfill is ok.
+ * Convert a byte span to an array. Underfill is ok.
  */
 template <size_t Size>
-byte_array<Size> to_array(data_slice bytes);
+byte_array<Size> to_array(byte_span bytes);
 
 /**
  * Create a data chunk from an iterable object.
@@ -117,7 +116,7 @@ bool starts_with(const typename Source::const_iterator& begin, const typename So
  * either buffer.
  */
 template <size_t Size>
-byte_array<Size> xor_data(data_slice bytes1, data_slice bytes2);
+byte_array<Size> xor_data(byte_span bytes1, byte_span bytes2);
 
 /**
  * Perform an exclusive or (xor) across two buffers to the length specified.
@@ -125,7 +124,7 @@ byte_array<Size> xor_data(data_slice bytes1, data_slice bytes2);
  * exceed either buffer.
  */
 template <size_t Size>
-byte_array<Size> xor_data(data_slice bytes1, data_slice bytes2, size_t offset);
+byte_array<Size> xor_data(byte_span bytes1, byte_span bytes2, size_t offset);
 
 /**
  * Perform an exclusive or (xor) across two buffers to the length specified.
@@ -133,7 +132,7 @@ byte_array<Size> xor_data(data_slice bytes1, data_slice bytes2, size_t offset);
  * exceed the respective buffers.
  */
 template <size_t Size>
-byte_array<Size> xor_data(data_slice bytes1, data_slice bytes2, size_t offset1, size_t offset2);
+byte_array<Size> xor_data(byte_span bytes1, byte_span bytes2, size_t offset1, size_t offset2);
 
 } // namespace kth
 

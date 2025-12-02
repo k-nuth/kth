@@ -25,26 +25,26 @@ data_chunk to_chunk(uint8_t byte) {
 }
 
 inline
-data_chunk build_chunk(loaf slices, size_t extra_reserve) {
+data_chunk build_chunk(loaf spans, size_t extra_reserve) {
     size_t size = 0;
-    for (auto const slice: slices) {
-        size += slice.size();
+    for (auto const span : spans) {
+        size += span.size();
     }
 
     data_chunk out;
     out.reserve(size + extra_reserve);
-    for (auto const slice: slices) {
-        out.insert(out.end(), slice.begin(), slice.end());
+    for (auto const span : spans) {
+        out.insert(out.end(), span.begin(), span.end());
     }
 
     return out;
 }
 
 template <size_t Size>
-bool build_array(byte_array<Size>& out, loaf slices) {
+bool build_array(byte_array<Size>& out, loaf spans) {
     size_t size = 0;
-    for (auto const slice: slices) {
-        size += slice.size();
+    for (auto const span : spans) {
+        size += span.size();
     }
 
     if (size > Size) {
@@ -52,9 +52,9 @@ bool build_array(byte_array<Size>& out, loaf slices) {
     }
 
     auto position = out.begin();
-    for (auto const slice: slices) {
-        std::copy(slice.begin(), slice.end(), position);
-        position += slice.size();
+    for (auto const span : spans) {
+        std::copy(span.begin(), span.end(), position);
+        position += span.size();
     }
 
     return true;
@@ -103,7 +103,7 @@ byte_array_parts<Size / 2> split(const byte_array<Size>& bytes) {
 
 // unsafe
 template <size_t Size>
-byte_array<Size> to_array(data_slice bytes) {
+byte_array<Size> to_array(byte_span bytes) {
     byte_array<Size> out;
     DEBUG_ONLY(auto const result =) build_array(out, { bytes });
     KTH_ASSERT(result);
@@ -125,19 +125,19 @@ bool starts_with(const typename Source::const_iterator& begin,
 
 // unsafe
 template <size_t Size>
-byte_array<Size> xor_data(data_slice bytes1, data_slice bytes2) {
+byte_array<Size> xor_data(byte_span bytes1, byte_span bytes2) {
     return xor_data<Size>(bytes1, bytes2, 0);
 }
 
 // unsafe
 template <size_t Size>
-byte_array<Size> xor_data(data_slice bytes1, data_slice bytes2, size_t offset) {
+byte_array<Size> xor_data(byte_span bytes1, byte_span bytes2, size_t offset) {
     return xor_data<Size>(bytes1, bytes2, offset, offset);
 }
 
 // unsafe
 template <size_t Size>
-byte_array<Size> xor_data(data_slice bytes1, data_slice bytes2, size_t offset1, size_t offset2) {
+byte_array<Size> xor_data(byte_span bytes1, byte_span bytes2, size_t offset1, size_t offset2) {
     KTH_ASSERT(offset1 + Size <= bytes1.size());
     KTH_ASSERT(offset2 + Size <= bytes2.size());
     auto const& data1 = bytes1.data();

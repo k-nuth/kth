@@ -72,7 +72,7 @@ hd_private::hd_private(ec_secret const& secret, const hd_chain_code& chain_code,
 // Factories.
 // ----------------------------------------------------------------------------
 
-hd_private hd_private::from_seed(data_slice seed, uint64_t prefixes) {
+hd_private hd_private::from_seed(byte_span seed, uint64_t prefixes) {
     // This is a magic constant from BIP32.
     static data_chunk const magic(to_chunk("Bitcoin seed"));
 

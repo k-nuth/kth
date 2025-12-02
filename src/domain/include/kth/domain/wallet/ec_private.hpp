@@ -136,7 +136,7 @@ struct KD_API ec_private {
 private:
     /// Validators.
     static
-    bool is_wif(data_slice decoded);
+    bool is_wif(byte_span decoded);
 
     /// Factories.
     static

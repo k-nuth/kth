@@ -29,7 +29,7 @@ bool is_base16(char c);
 /**
  * Convert data into a user-readable hex string.
  */
-KI_API std::string encode_base16(data_slice data);
+KI_API std::string encode_base16(byte_span data);
 
 /**
  * Convert a hex string into bytes.

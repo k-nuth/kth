@@ -35,7 +35,7 @@ struct KI_API binary {
     binary(std::string_view bit_string);
 
     binary(size_type size, uint32_t number);
-    binary(size_type size, data_slice blocks);
+    binary(size_type size, byte_span blocks);
 
     void resize(size_type size);
     [[nodiscard]] bool operator[](size_type index) const;
@@ -50,7 +50,7 @@ struct KI_API binary {
     void shift_right(size_type distance);
     [[nodiscard]] binary substring(size_type start, size_type length=max_size_t) const;
 
-    [[nodiscard]] bool is_prefix_of(data_slice field) const;
+    [[nodiscard]] bool is_prefix_of(byte_span field) const;
     [[nodiscard]] bool is_prefix_of(uint32_t field) const;
     [[nodiscard]] bool is_prefix_of(binary const& field) const;
 

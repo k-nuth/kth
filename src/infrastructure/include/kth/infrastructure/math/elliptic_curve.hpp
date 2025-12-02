@@ -134,13 +134,13 @@ KI_API bool verify(ec_uncompressed const& point);
 bool is_even_key(ec_compressed const& point);
 
 /// Fast detection of compressed public key structure.
-bool is_compressed_key(data_slice point);
+bool is_compressed_key(byte_span point);
 
 /// Fast detection of uncompressed public key structure.
-bool is_uncompressed_key(data_slice point);
+bool is_uncompressed_key(byte_span point);
 
 /// Fast detection of compressed or uncompressed public key structure.
-bool is_public_key(data_slice point);
+bool is_public_key(byte_span point);
 
 /// Fast detection of endorsement structure (DER with signature hash type).
 bool is_endorsement(endorsement const& endorsement);
@@ -177,7 +177,7 @@ KI_API bool verify_signature(ec_compressed const& point, hash_digest const& hash
 KI_API bool verify_signature(ec_uncompressed const& point, hash_digest const& hash, ec_signature const& signature);
 
 /// Verify an EC signature using a potential point.
-KI_API bool verify_signature(data_slice point, hash_digest const& hash, ec_signature const& signature);
+KI_API bool verify_signature(byte_span point, hash_digest const& hash, ec_signature const& signature);
 
 // Recoverable sign/recover
 // ----------------------------------------------------------------------------

@@ -17,7 +17,7 @@ static constexpr std::array<char, 16> hex_chars = {
     '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
 };
 
-std::string encode_base16(data_slice data) {
+std::string encode_base16(byte_span data) {
     std::string result(data.size() * 2, '\0');
     auto out = result.data();
     for (auto byte : data) {

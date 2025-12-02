@@ -16,8 +16,8 @@
 namespace kth {
 
 template <size_t Size>
-bool build_checked_array(byte_array<Size>& out, std::initializer_list<data_slice> const& slices) {
-    return build_array(out, slices) && insert_checksum(out);
+bool build_checked_array(byte_array<Size>& out, std::initializer_list<byte_span> const& spans) {
+    return build_array(out, spans) && insert_checksum(out);
 }
 
 template <size_t Size>

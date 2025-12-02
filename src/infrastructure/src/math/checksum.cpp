@@ -15,13 +15,13 @@ void append_checksum(data_chunk& data)
     extend_data(data, to_little_endian(checksum));
 }
 
-uint32_t bitcoin_checksum(data_slice data)
+uint32_t bitcoin_checksum(byte_span data)
 {
     auto const hash = bitcoin_hash(data);
     return from_little_endian_unsafe<uint32_t>(hash);
 }
 
-bool verify_checksum(data_slice data)
+bool verify_checksum(byte_span data)
 {
     if (data.size() < checksum_size) {
         return false;

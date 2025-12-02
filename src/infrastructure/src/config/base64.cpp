@@ -22,7 +22,7 @@ base64::operator data_chunk const&() const noexcept {
     return value_;
 }
 
-base64::operator data_slice() const noexcept {
+base64::operator byte_span() const noexcept {
     return value_;
 }
 
@@ -30,7 +30,7 @@ data_chunk const& base64::data() const noexcept {
     return value_;
 }
 
-data_slice base64::as_slice() const noexcept {
+byte_span base64::as_span() const noexcept {
     return value_;
 }
 

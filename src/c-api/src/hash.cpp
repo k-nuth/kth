@@ -44,14 +44,14 @@ void hex2bin(char const* src, uint8_t* target) {
 extern "C" {
 
 kth_hash_t kth_sha256_hash(uint8_t const* data, kth_size_t size) {
-    kth::data_slice slice(data, data + size);
-    auto hash = kth::sha256_hash(slice);
+    kth::byte_span span(data, data + size);
+    auto hash = kth::sha256_hash(span);
     return kth::to_hash_t(hash);
 }
 
 kth_hash_t kth_sha256_hash_reversed(uint8_t const* data, kth_size_t size) {
-    kth::data_slice slice(data, data + size);
-    auto hash = kth::sha256_hash(slice);
+    kth::byte_span span(data, data + size);
+    auto hash = kth::sha256_hash(span);
     std::reverse(hash.begin(), hash.end());
     return kth::to_hash_t(hash);
 }

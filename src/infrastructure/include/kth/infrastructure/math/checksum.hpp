@@ -22,11 +22,11 @@ static constexpr size_t checksum_size = sizeof(uint32_t);
 #define UNWRAP_SIZE(payload_size) (payload_size - checksum_size - 1)
 
 /**
- * Concatenate several data slices into a single fixed size array and append a
+ * Concatenate several data spans into a single fixed size array and append a
  * checksum.
  */
 template <size_t Size>
-bool build_checked_array(byte_array<Size>& out, const std::initializer_list<data_slice>& slices);
+bool build_checked_array(byte_array<Size>& out, const std::initializer_list<byte_span>& spans);
 
 /**
  * Appends a four-byte checksum into the end of an array.
@@ -79,13 +79,13 @@ KI_API void append_checksum(data_chunk& data);
  *
  * int(sha256(sha256(data))[-4:])
  */
-KI_API uint32_t bitcoin_checksum(data_slice data);
+KI_API uint32_t bitcoin_checksum(byte_span data);
 
 /**
  * Verifies the last four bytes of a data chunk are a valid checksum of the
  * earlier bytes. This is typically used to verify base58 data.
  */
-KI_API bool verify_checksum(data_slice data);
+KI_API bool verify_checksum(byte_span data);
 
 } // namespace kth
 

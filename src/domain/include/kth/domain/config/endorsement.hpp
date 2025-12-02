@@ -58,7 +58,7 @@ struct KD_API endorsement {
      * Overload cast to generic data reference.
      * @return  This object's value cast to a generic data reference.
      */
-    operator data_slice() const;
+    operator byte_span() const;
 
     /**
      * Overload stream in. If input is invalid sets no bytes in argument.

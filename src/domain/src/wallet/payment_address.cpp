@@ -84,7 +84,7 @@ payment_address payment_address::from_pay_public_key_hash_script(chain::script c
 // Validators.
 // ----------------------------------------------------------------------------
 
-bool payment_address::is_address(data_slice decoded) {
+bool payment_address::is_address(byte_span decoded) {
     return (decoded.size() == payment_size) && verify_checksum(decoded);
 }
 

@@ -235,10 +235,10 @@ public:
 
     /// Stack factories.
     static
-    operation::list to_null_data_pattern(data_slice data);
+    operation::list to_null_data_pattern(byte_span data);
 
     static
-    operation::list to_pay_public_key_pattern(data_slice point);
+    operation::list to_pay_public_key_pattern(byte_span point);
 
     static
     operation::list to_pay_public_key_hash_pattern(short_hash const& hash);

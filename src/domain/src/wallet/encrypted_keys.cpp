@@ -109,19 +109,19 @@ one_byte point_sign(const one_byte& single, hash_digest const& hash) {
 // ----------------------------------------------------------------------------
 
 static
-hash_digest scrypt_token(data_slice data, data_slice salt) {
+hash_digest scrypt_token(byte_span data, byte_span salt) {
     // Arbitrary scrypt parameters from BIP38.
     return scrypt<hash_size>(data, salt, 16384u, 8u, 8u);
 }
 
 static
-long_hash scrypt_pair(data_slice data, data_slice salt) {
+long_hash scrypt_pair(byte_span data, byte_span salt) {
     // Arbitrary scrypt parameters from BIP38.
     return scrypt<long_hash_size>(data, salt, 1024u, 1u, 1u);
 }
 
 static
-long_hash scrypt_private(data_slice data, data_slice salt) {
+long_hash scrypt_private(byte_span data, byte_span salt) {
     // Arbitrary scrypt parameters from BIP38.
     return scrypt<long_hash_size>(data, salt, 16384u, 8u, 8u);
 }
@@ -285,7 +285,7 @@ data_chunk normal(std::string const& passphrase) {
 static
 bool create_token(encrypted_token& out_token,
                          std::string const& passphrase,
-                         data_slice owner_salt,
+                         byte_span owner_salt,
                          const ek_entropy& owner_entropy,
                          const byte_array<parse_encrypted_token::prefix_size>& prefix) {
     KTH_ASSERT(owner_salt.size() == ek_salt_size ||

@@ -50,7 +50,7 @@ ec_public::ec_public(ec_compressed const& point, bool compress)
 // Validators.
 // ----------------------------------------------------------------------------
 
-bool ec_public::is_point(data_slice decoded) {
+bool ec_public::is_point(byte_span decoded) {
     return kth::is_public_key(decoded);
 }
 

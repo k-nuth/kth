@@ -134,7 +134,7 @@ struct KD_API payment_address {
 private:
     /// Validators.
     static
-    bool is_address(data_slice decoded);
+    bool is_address(byte_span decoded);
 
     /// Factories.
     static

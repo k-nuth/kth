@@ -42,36 +42,36 @@ void benchmark_base16() {
     Bench().title("Base16 Encoding").relative(true)
         .run("encode 32B (hash)", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base16(data_slice(small_data.data(), small_data.size()))
+                encode_base16(byte_span(small_data.data(), small_data.size()))
             );
         })
         .run("encode 256B", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base16(data_slice(medium_data.data(), medium_data.size()))
+                encode_base16(byte_span(medium_data.data(), medium_data.size()))
             );
         })
         .run("encode 1KB", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base16(data_slice(large_data.data(), large_data.size()))
+                encode_base16(byte_span(large_data.data(), large_data.size()))
             );
         })
         .run("encode 16KB", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base16(data_slice(xl_data.data(), xl_data.size()))
+                encode_base16(byte_span(xl_data.data(), xl_data.size()))
             );
         })
         .run("encode 64KB", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base16(data_slice(xxl_data.data(), xxl_data.size()))
+                encode_base16(byte_span(xxl_data.data(), xxl_data.size()))
             );
         });
 
     // Prepare encoded versions for decoding benchmarks
-    auto small_encoded = encode_base16(data_slice(small_data.data(), small_data.size()));
-    auto medium_encoded = encode_base16(data_slice(medium_data.data(), medium_data.size()));
-    auto large_encoded = encode_base16(data_slice(large_data.data(), large_data.size()));
-    auto xl_encoded = encode_base16(data_slice(xl_data.data(), xl_data.size()));
-    auto xxl_encoded = encode_base16(data_slice(xxl_data.data(), xxl_data.size()));
+    auto small_encoded = encode_base16(byte_span(small_data.data(), small_data.size()));
+    auto medium_encoded = encode_base16(byte_span(medium_data.data(), medium_data.size()));
+    auto large_encoded = encode_base16(byte_span(large_data.data(), large_data.size()));
+    auto xl_encoded = encode_base16(byte_span(xl_data.data(), xl_data.size()));
+    auto xxl_encoded = encode_base16(byte_span(xxl_data.data(), xxl_data.size()));
 
     // Decoding benchmarks
     Bench().title("Base16 Decoding").relative(true)
@@ -118,24 +118,24 @@ void benchmark_base58() {
     Bench().title("Base58 Encoding").relative(true)
         .run("encode 25B (address)", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base58(data_slice(small_data.data(), small_data.size()))
+                encode_base58(byte_span(small_data.data(), small_data.size()))
             );
         })
         .run("encode 128B", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base58(data_slice(medium_data.data(), medium_data.size()))
+                encode_base58(byte_span(medium_data.data(), medium_data.size()))
             );
         })
         .run("encode 512B", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base58(data_slice(large_data.data(), large_data.size()))
+                encode_base58(byte_span(large_data.data(), large_data.size()))
             );
         });
 
     // Prepare encoded versions
-    auto small_encoded = encode_base58(data_slice(small_data.data(), small_data.size()));
-    auto medium_encoded = encode_base58(data_slice(medium_data.data(), medium_data.size()));
-    auto large_encoded = encode_base58(data_slice(large_data.data(), large_data.size()));
+    auto small_encoded = encode_base58(byte_span(small_data.data(), small_data.size()));
+    auto medium_encoded = encode_base58(byte_span(medium_data.data(), medium_data.size()));
+    auto large_encoded = encode_base58(byte_span(large_data.data(), large_data.size()));
 
     // Decoding benchmarks
     Bench().title("Base58 Decoding").relative(true)
@@ -181,36 +181,36 @@ void benchmark_base64() {
     Bench().title("Base64 Encoding").relative(true)
         .run("encode 32B", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base64(data_slice(small_data.data(), small_data.size()))
+                encode_base64(byte_span(small_data.data(), small_data.size()))
             );
         })
         .run("encode 256B", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base64(data_slice(medium_data.data(), medium_data.size()))
+                encode_base64(byte_span(medium_data.data(), medium_data.size()))
             );
         })
         .run("encode 1KB", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base64(data_slice(large_data.data(), large_data.size()))
+                encode_base64(byte_span(large_data.data(), large_data.size()))
             );
         })
         .run("encode 16KB", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base64(data_slice(xl_data.data(), xl_data.size()))
+                encode_base64(byte_span(xl_data.data(), xl_data.size()))
             );
         })
         .run("encode 64KB", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base64(data_slice(xxl_data.data(), xxl_data.size()))
+                encode_base64(byte_span(xxl_data.data(), xxl_data.size()))
             );
         });
 
     // Prepare encoded versions
-    auto small_encoded = encode_base64(data_slice(small_data.data(), small_data.size()));
-    auto medium_encoded = encode_base64(data_slice(medium_data.data(), medium_data.size()));
-    auto large_encoded = encode_base64(data_slice(large_data.data(), large_data.size()));
-    auto xl_encoded = encode_base64(data_slice(xl_data.data(), xl_data.size()));
-    auto xxl_encoded = encode_base64(data_slice(xxl_data.data(), xxl_data.size()));
+    auto small_encoded = encode_base64(byte_span(small_data.data(), small_data.size()));
+    auto medium_encoded = encode_base64(byte_span(medium_data.data(), medium_data.size()));
+    auto large_encoded = encode_base64(byte_span(large_data.data(), large_data.size()));
+    auto xl_encoded = encode_base64(byte_span(xl_data.data(), xl_data.size()));
+    auto xxl_encoded = encode_base64(byte_span(xxl_data.data(), xxl_data.size()));
 
     // Decoding benchmarks
     Bench().title("Base64 Decoding").relative(true)
@@ -263,27 +263,27 @@ void benchmark_base85() {
         .run("encode 32B", [&] {
             std::string result;
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base85(result, data_slice(small_data.data(), small_data.size()))
+                encode_base85(result, byte_span(small_data.data(), small_data.size()))
             );
         })
         .run("encode 256B", [&] {
             std::string result;
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base85(result, data_slice(medium_data.data(), medium_data.size()))
+                encode_base85(result, byte_span(medium_data.data(), medium_data.size()))
             );
         })
         .run("encode 1KB", [&] {
             std::string result;
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base85(result, data_slice(large_data.data(), large_data.size()))
+                encode_base85(result, byte_span(large_data.data(), large_data.size()))
             );
         });
 
     // Prepare encoded versions
     std::string small_encoded, medium_encoded, large_encoded;
-    encode_base85(small_encoded, data_slice(small_data.data(), small_data.size()));
-    encode_base85(medium_encoded, data_slice(medium_data.data(), medium_data.size()));
-    encode_base85(large_encoded, data_slice(large_data.data(), large_data.size()));
+    encode_base85(small_encoded, byte_span(small_data.data(), small_data.size()));
+    encode_base85(medium_encoded, byte_span(medium_data.data(), medium_data.size()));
+    encode_base85(large_encoded, byte_span(large_data.data(), large_data.size()));
 
     // Decoding benchmarks
     Bench().title("Base85 Decoding").relative(true)
@@ -312,7 +312,7 @@ void benchmark_cross_encoding() {
 
     // Use 256 bytes for fair comparison
     auto test_data = generate_test_data(256);
-    auto data = data_slice(test_data.data(), test_data.size());
+    auto data = byte_span(test_data.data(), test_data.size());
 
     // Compare encoding speeds
     Bench().title("Encoding Comparison (256B)").relative(true)
@@ -382,7 +382,7 @@ void benchmark_bitcoin_operations() {
     Bench().title("Bitcoin Address Operations").relative(true)
         .run("encode address (Base58)", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base58(data_slice(address_data.data(), address_data.size()))
+                encode_base58(byte_span(address_data.data(), address_data.size()))
             );
         });
 
@@ -392,7 +392,7 @@ void benchmark_bitcoin_operations() {
     Bench().title("Script Encoding").relative(true)
         .run("encode script (hex)", [&] {
             ankerl::nanobench::doNotOptimizeAway(
-                encode_base16(data_slice(script_data.data(), script_data.size()))
+                encode_base16(byte_span(script_data.data(), script_data.size()))
             );
         });
 }

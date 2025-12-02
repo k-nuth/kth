@@ -52,7 +52,7 @@ struct KI_API base16 {
      * @return  This object's value cast to a generic data.
      */
     [[nodiscard]] explicit
-    operator data_slice() const noexcept;
+    operator byte_span() const noexcept;
 
     /**
      * Get the underlying data.
@@ -62,11 +62,11 @@ struct KI_API base16 {
     data_chunk const& data() const noexcept;
 
     /**
-     * Get the underlying data as a slice.
-     * @return  The internal data as a slice.
+     * Get the underlying data as a span.
+     * @return  The internal data as a span.
      */
     [[nodiscard]]
-    data_slice as_slice() const noexcept;
+    byte_span as_span() const noexcept;
 
     /**
      * Parse a base16 string into a base16 object.

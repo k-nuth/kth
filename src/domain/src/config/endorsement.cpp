@@ -31,7 +31,7 @@ bool decode_endorsement(kth::endorsement& endorsement,
 }
 
 static
-std::string encode_endorsement(data_slice signature) {
+std::string encode_endorsement(byte_span signature) {
     return encode_base16(signature);
 }
 
@@ -51,7 +51,7 @@ endorsement::operator data_chunk const&() const {
     return value_;
 }
 
-endorsement::operator data_slice() const {
+endorsement::operator byte_span() const {
     return value_;
 }
 

@@ -23,7 +23,7 @@ kth_binary_t kth_core_binary_construct_string(char const* string) {
 }
 
 kth_binary_t kth_core_binary_construct_blocks(kth_size_t bits_size, uint8_t* blocks, kth_size_t n) {
-    kth::data_slice blocks_cpp(blocks, blocks + n);
+    kth::byte_span blocks_cpp(blocks, blocks + n);
     return new kth::binary(bits_size, blocks_cpp);
 }
 

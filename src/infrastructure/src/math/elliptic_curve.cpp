@@ -181,7 +181,7 @@ bool verify(const ec_uncompressed& point) {
 // Detect public keys
 // ----------------------------------------------------------------------------
 
-bool is_compressed_key(data_slice point) {
+bool is_compressed_key(byte_span point) {
     auto const size = point.size();
     if (size != ec_compressed_size) {
         return false;
@@ -191,7 +191,7 @@ bool is_compressed_key(data_slice point) {
     return first == compressed_even || first == compressed_odd;
 }
 
-bool is_uncompressed_key(data_slice point) {
+bool is_uncompressed_key(byte_span point) {
     auto const size = point.size();
     if (size != ec_uncompressed_size) {
         return false;
@@ -201,7 +201,7 @@ bool is_uncompressed_key(data_slice point) {
     return first == uncompressed;
 }
 
-bool is_public_key(data_slice point) {
+bool is_public_key(byte_span point) {
     return is_compressed_key(point) || is_uncompressed_key(point);
 }
 
@@ -334,7 +334,7 @@ bool verify_signature(const ec_uncompressed& point, hash_digest const& hash, con
         verify_signature(context, pubkey, hash, signature);
 }
 
-bool verify_signature(data_slice point, hash_digest const& hash, const ec_signature& signature) {
+bool verify_signature(byte_span point, hash_digest const& hash, const ec_signature& signature) {
     // Copy to avoid exposing external types.
     secp256k1_ecdsa_signature parsed;
     std::copy_n(signature.begin(), ec_signature_size, std::begin(parsed.data));
@@ -345,7 +345,7 @@ bool verify_signature(data_slice point, hash_digest const& hash, const ec_signat
     auto const context = verification.context();
     secp256k1_ecdsa_signature_normalize(context, &normal, &parsed);
 
-    // This uses a data slice and calls secp256k1_ec_pubkey_parse() in place of
+    // This uses a byte span and calls secp256k1_ec_pubkey_parse() in place of
     // parse() so that we can support the der_verify data_chunk optimization.
     secp256k1_pubkey pubkey;
     auto const size = point.size();

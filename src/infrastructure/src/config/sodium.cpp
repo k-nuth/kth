@@ -38,7 +38,7 @@ sodium::operator hash_digest const&() const {
     return value_;
 }
 
-sodium::operator data_slice() const {
+sodium::operator byte_span() const {
     return value_;
 }
 

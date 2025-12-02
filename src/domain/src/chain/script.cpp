@@ -807,7 +807,7 @@ bool script::is_sign_script_hash_pattern(operation::list const& ops) {
     return !ops.empty() && is_push_only(ops) && !ops.back().data().empty();
 }
 
-operation::list script::to_null_data_pattern(data_slice data) {
+operation::list script::to_null_data_pattern(byte_span data) {
     if (data.size() > max_null_data_size) {
         return {};
     }
@@ -816,7 +816,7 @@ operation::list script::to_null_data_pattern(data_slice data) {
                            {to_chunk(data)}};
 }
 
-operation::list script::to_pay_public_key_pattern(data_slice point) {
+operation::list script::to_pay_public_key_pattern(byte_span point) {
     if ( ! is_public_key(point)) {
         return {};
     }

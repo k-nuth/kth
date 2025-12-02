@@ -67,7 +67,7 @@ bool validate_mnemonic(const word_list& words, const dictionary& lexicon) {
     return std::equal(mnemonic.begin(), mnemonic.end(), words.begin());
 }
 
-word_list create_mnemonic(data_slice entropy, const dictionary &lexicon) {
+word_list create_mnemonic(byte_span entropy, const dictionary &lexicon) {
     if ((entropy.size() % mnemonic_seed_multiple) != 0) {
         return word_list();
     }

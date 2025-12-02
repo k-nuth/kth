@@ -97,7 +97,7 @@ struct KD_API ec_public {
 private:
     /// Validators.
     static
-    bool is_point(data_slice decoded);
+    bool is_point(byte_span decoded);
 
     /// Factories.
     static

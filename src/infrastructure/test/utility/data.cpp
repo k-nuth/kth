@@ -20,7 +20,7 @@ TEST_CASE("infrastructure data to byte array", "[infrastructure][data]") {
     REQUIRE(result[0] == expected);
 }
 
-TEST_CASE("infrastructure data build chunk from empty slices", "[infrastructure][data]") {
+TEST_CASE("infrastructure data build chunk from empty spans", "[infrastructure][data]") {
     auto const result = build_chunk({});
     REQUIRE(result.empty());
 }
@@ -39,7 +39,7 @@ TEST_CASE("infrastructure data build chunk from single slice", "[infrastructure]
     REQUIRE(result[1] == expected);
 }
 
-TEST_CASE("infrastructure data build chunk from multiple slices", "[infrastructure][data]") {
+TEST_CASE("infrastructure data build chunk from multiple spans", "[infrastructure][data]") {
     size_t const size1 = 2;
     size_t const size2 = 1;
     size_t const size3 = 3;
@@ -69,7 +69,7 @@ TEST_CASE("infrastructure data build chunk with extra reserve capacity", "[infra
     REQUIRE(result.capacity() == size1 + size2 + size3 + reserve);
 }
 
-TEST_CASE("infrastructure data build array from empty slices", "[infrastructure][data]") {
+TEST_CASE("infrastructure data build array from empty spans", "[infrastructure][data]") {
     uint8_t const expected = 42;
     std::array<uint8_t, 3> value{ { 0, expected, 0 } };
     auto const result = build_array(value, {});
@@ -92,7 +92,7 @@ TEST_CASE("infrastructure data build array under capacity", "[infrastructure][da
     REQUIRE(value[2] == expected3);
 }
 
-TEST_CASE("infrastructure data build array exact fill from multiple slices", "[infrastructure][data]") {
+TEST_CASE("infrastructure data build array exact fill from multiple spans", "[infrastructure][data]") {
     size_t const size1 = 2;
     size_t const size2 = 1;
     size_t const size3 = 3;

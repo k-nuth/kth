@@ -13,7 +13,7 @@
 namespace kth {
 
 template <size_t Size>
-byte_array<Size> scrypt(data_slice data, data_slice salt, uint64_t N,
+byte_array<Size> scrypt(byte_span data, byte_span salt, uint64_t N,
     uint32_t p, uint32_t r)
 {
     auto const out = scrypt(data, salt, N, r, p, Size);

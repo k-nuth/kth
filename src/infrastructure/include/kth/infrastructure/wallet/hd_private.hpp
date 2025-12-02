@@ -87,7 +87,7 @@ public:
 
 private:
     /// Factories.
-    static hd_private from_seed(data_slice seed, uint64_t prefixes);
+    static hd_private from_seed(byte_span seed, uint64_t prefixes);
     static hd_private from_key(hd_key const& decoded);
     static hd_private from_key(hd_key const& key, uint32_t public_prefix);
     static hd_private from_key(hd_key const& key, uint64_t prefixes);

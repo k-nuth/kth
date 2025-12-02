@@ -165,8 +165,8 @@ data_chunk serialize(uint32_t version, const Message& packet, uint32_t magic) {
     KTH_ASSERT(data.size() == message_size);
 
     // Create the payload checksum without copying the buffer.
-    data_slice slice(data.data() + heading_size, data.data() + message_size);
-    auto const check = bitcoin_checksum(slice);
+    byte_span span(data.data() + heading_size, data.data() + message_size);
+    auto const check = bitcoin_checksum(span);
     auto const payload_size32 = *safe_unsigned<uint32_t>(payload_size);
 
     // Create and serialize the heading to a temporary variable (12 bytes).

@@ -26,7 +26,7 @@ using message_signature = byte_array<message_signature_size>;
 /**
  * Hashes a messages in preparation for signing.
  */
-KD_API hash_digest hash_message(data_slice message);
+KD_API hash_digest hash_message(byte_span message);
 
 /**
  * Signs a message using deterministic signature.
@@ -34,7 +34,7 @@ KD_API hash_digest hash_message(data_slice message);
  * This should be base64 encoded for presentation to the user.
  * @return true if wif is valid and signature encoding is successful.
  */
-KD_API bool sign_message(message_signature& out_signature, data_slice message, ec_private const& secret);
+KD_API bool sign_message(message_signature& out_signature, byte_span message, ec_private const& secret);
 
 /**
  * Signs a message using deterministic signature.
@@ -42,7 +42,7 @@ KD_API bool sign_message(message_signature& out_signature, data_slice message, e
  * This should be base64 encoded for presentation to the user.
  * @return true if wif is valid and signature encoding is successful.
  */
-KD_API bool sign_message(message_signature& out_signature, data_slice message, std::string const& wif);
+KD_API bool sign_message(message_signature& out_signature, byte_span message, std::string const& wif);
 
 /**
  * Signs a message using deterministic signature.
@@ -52,7 +52,7 @@ KD_API bool sign_message(message_signature& out_signature, data_slice message, s
  * private key is in compressed format.
  * @return true if signature encoding is successful.
  */
-KD_API bool sign_message(message_signature& out_signature, data_slice message, ec_secret const& secret, bool compressed = true);
+KD_API bool sign_message(message_signature& out_signature, byte_span message, ec_secret const& secret, bool compressed = true);
 
 /**
  * Verifies a message.
@@ -62,7 +62,7 @@ KD_API bool sign_message(message_signature& out_signature, data_slice message, e
  * @return false if the signature does not match the address or if there are
  * any errors in the signature encoding.
  */
-KD_API bool verify_message(data_slice message, payment_address const& address, const message_signature& signature);
+KD_API bool verify_message(byte_span message, payment_address const& address, const message_signature& signature);
 
 /// Exposed primarily for independent testability.
 KD_API bool recovery_id_to_magic(uint8_t& out_magic, uint8_t recovery_id, bool compressed);

@@ -15,7 +15,7 @@
 
 namespace kth {
 
-std::string encode_base64(data_slice unencoded) {
+std::string encode_base64(byte_span unencoded) {
     auto const input = reinterpret_cast<char const*>(unencoded.data());
     auto const size = unencoded.size();
     auto const output_size = simdutf::base64_length_from_binary(size);
@@ -58,7 +58,7 @@ const static char pad = '=';
 const static char table[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-std::string encode_base64(data_slice unencoded)
+std::string encode_base64(byte_span unencoded)
 {
     std::string encoded;
     auto const size = unencoded.size();

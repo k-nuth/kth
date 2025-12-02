@@ -22,7 +22,7 @@ base58::operator data_chunk const&() const noexcept {
     return value_;
 }
 
-base58::operator data_slice() const noexcept {
+base58::operator byte_span() const noexcept {
     return value_;
 }
 
@@ -30,7 +30,7 @@ data_chunk const& base58::data() const noexcept {
     return value_;
 }
 
-data_slice base58::as_slice() const noexcept {
+byte_span base58::as_span() const noexcept {
     return value_;
 }
 
