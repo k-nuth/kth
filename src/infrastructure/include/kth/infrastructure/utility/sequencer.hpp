@@ -10,22 +10,20 @@
 #include <queue>
 
 #include <kth/infrastructure/utility/asio.hpp>
+#include <kth/infrastructure/utility/asio_helper.hpp>
 #include <kth/infrastructure/utility/enable_shared_from_base.hpp>
 #include <kth/infrastructure/utility/thread.hpp>
-////#include <kth/infrastructure/utility/track.hpp>
 
 namespace kth {
 
-class sequencer
-    : public enable_shared_from_base<sequencer>
-    /*, track<sequencer>*/
-{
+class sequencer : public enable_shared_from_base<sequencer> {
 public:
     using ptr = std::shared_ptr<sequencer>;
-    using action = std::function<void ()>;
+    using action = std::function<void()>;
+    using executor_type = ::asio::any_io_executor;
 
     explicit
-    sequencer(asio::context& service);
+    sequencer(executor_type executor);
 
     ~sequencer();
 
@@ -33,8 +31,7 @@ public:
     void unlock();
 
 private:
-    // This is thread safe.
-    asio::context& service_;
+    executor_type executor_;
 
     // These are protected by mutex.
     bool executing_;

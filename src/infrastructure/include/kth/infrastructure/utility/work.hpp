@@ -13,40 +13,36 @@
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/utility/asio.hpp>
-#include <kth/infrastructure/utility/monitor.hpp>
+#include <kth/infrastructure/utility/asio_helper.hpp>
 #include <kth/infrastructure/utility/noncopyable.hpp>
 #include <kth/infrastructure/utility/sequencer.hpp>
 #include <kth/infrastructure/utility/threadpool.hpp>
 
 namespace kth {
 
-#define ORDERED "ordered"
-#define UNORDERED "unordered"
-#define CONCURRENT "concurrent"
-#define SEQUENCE "sequence"
-
-/// This  class is thread safe.
-/// boost asio class wrapper to enable work heap management.
-class KI_API work
-  : noncopyable
-{
+/// This class is thread safe.
+/// Executor-based work dispatcher for async operations.
+class KI_API work : noncopyable {
 public:
     using ptr = std::shared_ptr<work>;
+    using executor_type = ::asio::any_io_executor;
+    using strand_type = ::asio::strand<executor_type>;
 
     /// Create an instance.
     work(threadpool& pool, std::string const& name);
 
     /// Local execution for any operation, equivalent to std::bind.
     template <typename Handler, typename... Args>
-    static void bound(Handler&& handler, Args&&... args) {
+    static 
+    void bound(Handler&& handler, Args&&... args) {
         std::bind(std::forward<Handler>(handler), std::forward<Args>(args)...)();
     }
 
     /// Concurrent execution for any operation.
     template <typename Handler, typename... Args>
     void concurrent(Handler&& handler, Args&&... args) {
-        // Service post ensures the job does not execute in the current thread.
-        ::asio::post(service_, std::bind(std::forward<Handler>(handler), std::forward<Args>(args)...));
+        // Post ensures the job does not execute in the current thread.
+        ::asio::post(executor_, std::bind(std::forward<Handler>(handler), std::forward<Args>(args)...));
     }
 
     /// Sequential execution for synchronous operations.
@@ -60,11 +56,9 @@ public:
     /// Non-concurrent execution for synchronous operations.
     template <typename Handler, typename... Args>
     void unordered(Handler&& handler, Args&&... args) {
-        // Use a strand wrapper to prevent concurrency and a service post
+        // Use a strand wrapper to prevent concurrency and a post
         // to deny ordering while ensuring execution on another thread.
-        // TODO: Review bind_executor vs deprecated wrap() for behavioral differences
-        // See: https://github.com/k-nuth/kth-mono/issues/76
-        ::asio::post(service_, ::asio::bind_executor(strand_, std::bind(std::forward<Handler>(handler), std::forward<Args>(args)...)));
+        ::asio::post(executor_, ::asio::bind_executor(strand_, std::bind(std::forward<Handler>(handler), std::forward<Args>(args)...)));
     }
 
     /// Begin sequential execution for a set of asynchronous operations.
@@ -81,34 +75,16 @@ public:
         sequence_.unlock();
     }
 
-    ////size_t ordered_backlog();
-    ////size_t unordered_backlog();
-    ////size_t concurrent_backlog();
-    ////size_t sequential_backlog();
-    ////size_t combined_backlog();
+    /// Get the executor.
+    [[nodiscard]]
+    executor_type get_executor() const {
+        return executor_;
+    }
 
 private:
-    ////template <typename Handler>
-    ////auto inject(Handler&& handler, std::string const& context,
-    ////    monitor::count_ptr counter) -> std::function<void()>
-    ////{
-    ////    auto label = name_ + "_" + context;
-    ////    auto capture = std::make_shared<monitor>(counter, std::move(label));
-    ////    return [=]() { capture->invoke(handler); };
-
-    ////    //// TODO: use this to prevent handler copy into closure.
-    ////    ////return std::bind(&monitor::invoke<Handler>, capture,
-    ////    ////    std::forward<Handler>(handler));
-    ////}
-
-    // These are thread safe.
     std::string const name_;
-    ////monitor::count_ptr ordered_;
-    ////monitor::count_ptr unordered_;
-    ////monitor::count_ptr concurrent_;
-    ////monitor::count_ptr sequential_;
-    asio::context& service_;
-    asio::context::strand strand_;
+    executor_type executor_;
+    strand_type strand_;
     sequencer sequence_;
 };
 
