@@ -15,7 +15,7 @@ namespace kth {
 
 socket::socket(threadpool& thread)
     : thread_(thread)
-    , socket_(thread_.service())
+    , socket_(thread_.get_executor())
     /*, CONSTRUCT_TRACK(socket) */
 {}
 

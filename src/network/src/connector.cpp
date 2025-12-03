@@ -26,7 +26,7 @@ connector::connector(threadpool& pool, settings const& settings)
     , pool_(pool)
     , settings_(settings)
     , dispatch_(pool, NAME)
-    , resolver_(pool.service())
+    , resolver_(pool.get_executor())
     , CONSTRUCT_TRACK(connector)
 {}
 

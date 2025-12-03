@@ -17,6 +17,7 @@ option(WITH_EXAMPLES "Compile with examples." OFF)
 option(WITH_ICU "Compile with International Components for Unicode." OFF)
 option(KTH_WITH_PNG "Compile with Libpng support." OFF)
 option(KTH_WITH_QRENCODE "Compile with QREncode." OFF)
+option(KTH_ASIO_STANDALONE "Use standalone Asio instead of Boost.Asio" OFF)
 option(JUST_KTH_SOURCES "Just Knuth source code to be linted." OFF)
 
 
@@ -30,6 +31,11 @@ endif()
 
 if (KTH_WITH_QRENCODE)
   add_definitions(-DKTH_WITH_QRENCODE)
+endif()
+
+if (KTH_ASIO_STANDALONE)
+  add_definitions(-DKTH_ASIO_STANDALONE)
+  add_definitions(-DASIO_STANDALONE)
 endif()
 
 
@@ -77,6 +83,10 @@ endif()
 
 if (KTH_WITH_QRENCODE)
   find_package(libqrencode REQUIRED)
+endif()
+
+if (KTH_ASIO_STANDALONE)
+  find_package(asio REQUIRED)
 endif()
 
 include(CheckCXXCompilerFlag)
@@ -239,8 +249,6 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
     src/utility/pseudo_random_broken_do_not_use.cpp
 
-    src/utility/threadpool.cpp
-
     src/utility/work.cpp
   )
 endif()
@@ -396,6 +404,8 @@ set(kth_headers
     include/kth/infrastructure/utility/track.hpp
     include/kth/infrastructure/utility/work.hpp
     include/kth/infrastructure/utility/writer.hpp
+    include/kth/infrastructure/utility/async_channel.hpp
+    include/kth/infrastructure/utility/awaitable_helpers.hpp
     include/kth/infrastructure/utility/coroutine_config.hpp
 
     include/kth/infrastructure/wallet/cashaddr.hpp
@@ -474,6 +484,10 @@ if (KTH_WITH_QRENCODE)
   target_link_libraries(${PROJECT_NAME} PUBLIC libqrencode::libqrencode)
 endif()
 
+if (KTH_ASIO_STANDALONE)
+  target_link_libraries(${PROJECT_NAME} PUBLIC asio::asio)
+endif()
+
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_THREAD_LIBS_INIT})
 
 if (MINGW)
@@ -528,7 +542,10 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/serializer.cpp
     test/utility/byte_reader.cpp
     test/utility/thread.cpp
+    test/utility/threadpool.cpp
     test/utility/coroutine_smoke_test.cpp
+    test/utility/awaitable_helpers.cpp
+    test/utility/async_channel.cpp
 
     test/wallet/hd_private.cpp
     test/wallet/hd_public.cpp

@@ -26,7 +26,7 @@ acceptor::acceptor(threadpool& pool, settings const& settings)
     , pool_(pool)
     , settings_(settings)
     , dispatch_(pool, NAME)
-    , acceptor_(pool_.service())
+    , acceptor_(pool_.get_executor())
     , CONSTRUCT_TRACK(acceptor) {}
 
 acceptor::~acceptor() {
