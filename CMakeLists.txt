@@ -61,6 +61,14 @@ if (KTH_ASIO_STANDALONE)
     add_definitions(-DASIO_STANDALONE)
 endif()
 
+# jemalloc support
+option(KTH_WITH_JEMALLOC "Use jemalloc for memory allocation" OFF)
+if (KTH_WITH_JEMALLOC)
+    find_package(jemalloc REQUIRED)
+    add_definitions(-DKTH_WITH_JEMALLOC)
+    message(STATUS "Knuth: jemalloc enabled")
+endif()
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/ci_utils/cmake)
 include(KnuthTools)
 

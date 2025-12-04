@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+// See protocols_coro.hpp for documentation on what this file replaces.
+
 #include <kth/network/protocols_coro.hpp>
 
 #include <algorithm>
@@ -18,7 +20,7 @@ using namespace std::chrono_literals;
 // Message Helpers
 // =============================================================================
 
-::asio::awaitable<std::expected<raw_message, code>> wait_for_any_message(
+awaitable_expected<raw_message> wait_for_any_message(
     peer_session& peer,
     std::chrono::seconds timeout)
 {
@@ -121,7 +123,7 @@ bool validate_peer_version(
 
 } // anonymous namespace
 
-::asio::awaitable<std::expected<handshake_result, code>> perform_handshake(
+awaitable_expected<handshake_result> perform_handshake(
     peer_session& peer,
     handshake_config const& config)
 {
@@ -244,6 +246,9 @@ handshake_config make_handshake_config(
     peer_session& peer,
     std::chrono::seconds ping_interval)
 {
+    spdlog::trace("[protocol] Starting ping/pong loop for [{}] with interval {}s",
+        peer.authority(), ping_interval.count());
+
     auto executor = co_await ::asio::this_coro::executor;
     ::asio::steady_timer ping_timer(executor);
 
@@ -277,7 +282,7 @@ handshake_config make_handshake_config(
                     co_return ec;
                 }
 
-                spdlog::trace("[protocol] Sent ping to [{}] nonce={}", peer.authority(), last_ping_nonce);
+                spdlog::trace("[protocol] Sent ping to [{}]", peer.authority());
             }
         }
         else {
@@ -307,8 +312,7 @@ handshake_config make_handshake_config(
                 byte_reader pong_reader(raw.payload);
                 auto pong_result = domain::message::pong::from_data(pong_reader, peer.negotiated_version());
                 if (pong_result) {
-                    spdlog::trace("[protocol] Received pong from [{}] nonce={}",
-                        peer.authority(), pong_result->nonce());
+                    spdlog::trace("[protocol] Received pong from [{}]", peer.authority());
                 }
             }
             // Other messages are ignored by this protocol
@@ -322,7 +326,7 @@ handshake_config make_handshake_config(
 // Address Protocol
 // =============================================================================
 
-::asio::awaitable<std::expected<domain::message::address, code>> request_addresses(
+awaitable_expected<domain::message::address> request_addresses(
     peer_session& peer,
     std::chrono::seconds timeout)
 {
@@ -332,33 +336,32 @@ handshake_config make_handshake_config(
         co_return std::unexpected(ec);
     }
 
-    // Wait for addr response
-    auto deadline = std::chrono::steady_clock::now() + timeout;
+    // Wait for addr response on the dedicated channel
+    auto executor = co_await ::asio::this_coro::executor;
+    ::asio::steady_timer timer(executor, timeout);
 
-    while (true) {
-        auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
-            deadline - std::chrono::steady_clock::now());
+    auto result = co_await (
+        peer.addr_responses().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
+        timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
+    );
 
-        if (remaining <= 0s) {
-            co_return std::unexpected(error::channel_timeout);
-        }
-
-        auto msg_result = co_await wait_for_any_message(peer, remaining);
-        if (!msg_result) {
-            co_return std::unexpected(msg_result.error());
-        }
-
-        auto const& raw = *msg_result;
-        if (raw.heading.command() == domain::message::address::command) {
-            byte_reader reader(raw.payload);
-            auto addr_result = domain::message::address::from_data(reader, peer.negotiated_version());
-            if (!addr_result) {
-                co_return std::unexpected(error::bad_stream);
-            }
-            co_return std::move(*addr_result);
-        }
-        // Continue waiting for addr message
+    if (result.index() == 1) {
+        co_return std::unexpected(error::channel_timeout);
     }
+
+    auto& [recv_ec, raw] = std::get<0>(result);
+    if (recv_ec) {
+        co_return std::unexpected(error::channel_stopped);
+    }
+
+    // Parse the address message
+    byte_reader reader(raw.payload);
+    auto addr_result = domain::message::address::from_data(reader, peer.negotiated_version());
+    if (!addr_result) {
+        co_return std::unexpected(error::bad_stream);
+    }
+
+    co_return std::move(*addr_result);
 }
 
 ::asio::awaitable<code> send_addresses(
@@ -366,6 +369,380 @@ handshake_config make_handshake_config(
     domain::message::address const& addresses)
 {
     co_return co_await peer.send(addresses);
+}
+
+// =============================================================================
+// Blockchain Protocol Handlers
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Header Sync Protocol
+// -----------------------------------------------------------------------------
+
+awaitable_expected<domain::message::headers> request_headers(
+    peer_session& peer,
+    hash_list const& locator_hashes,
+    hash_digest const& stop_hash,
+    std::chrono::seconds timeout)
+{
+    // Build getheaders message
+    domain::message::get_headers request(locator_hashes, stop_hash);
+
+    spdlog::debug("[protocol] Requesting headers from [{}] with {} locator hashes",
+        peer.authority(), locator_hashes.size());
+
+    // Send getheaders
+    auto ec = co_await peer.send(request);
+    if (ec != error::success) {
+        spdlog::debug("[protocol] Failed to send getheaders to [{}]", peer.authority());
+        co_return std::unexpected(ec);
+    }
+
+    // Wait for headers response on the dedicated channel
+    // The message dispatcher routes 'headers' messages to this channel
+    auto executor = co_await ::asio::this_coro::executor;
+    ::asio::steady_timer timer(executor, timeout);
+
+    auto result = co_await (
+        peer.headers_responses().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
+        timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
+    );
+
+    if (result.index() == 1) {
+        spdlog::debug("[protocol] Timeout waiting for headers from [{}]", peer.authority());
+        co_return std::unexpected(error::channel_timeout);
+    }
+
+    auto& [recv_ec, raw] = std::get<0>(result);
+    if (recv_ec) {
+        spdlog::debug("[protocol] Channel error waiting for headers from [{}]", peer.authority());
+        co_return std::unexpected(error::channel_stopped);
+    }
+
+    // Parse the headers message
+    byte_reader reader(raw.payload);
+    auto headers_result = domain::message::headers::from_data(reader, peer.negotiated_version());
+    if (!headers_result) {
+        spdlog::debug("[protocol] Failed to parse headers from [{}]", peer.authority());
+        co_return std::unexpected(error::bad_stream);
+    }
+
+    spdlog::debug("[protocol] Received {} headers from [{}]",
+        headers_result->elements().size(), peer.authority());
+
+    co_return std::move(*headers_result);
+}
+
+awaitable_expected<domain::message::headers> request_headers_from(
+    peer_session& peer,
+    hash_digest const& from_hash,
+    std::chrono::seconds timeout)
+{
+    hash_list locator{from_hash};
+    co_return co_await request_headers(peer, locator, null_hash, timeout);
+}
+
+// -----------------------------------------------------------------------------
+// Block Sync Protocol
+// -----------------------------------------------------------------------------
+
+::asio::awaitable<code> request_blocks(
+    peer_session& peer,
+    hash_list const& block_hashes)
+{
+    if (block_hashes.empty()) {
+        co_return error::success;
+    }
+
+    // Build inventory for block request
+    domain::message::inventory_vector::list inventories;
+    inventories.reserve(block_hashes.size());
+
+    for (auto const& hash : block_hashes) {
+        inventories.emplace_back(domain::message::inventory_vector::type_id::block, hash);
+    }
+
+    domain::message::get_data request(std::move(inventories));
+
+    spdlog::debug("[protocol] Requesting {} blocks from [{}]",
+        block_hashes.size(), peer.authority());
+
+    // Send getdata - blocks will arrive asynchronously
+    co_return co_await peer.send(request);
+}
+
+awaitable_expected<domain::message::block> request_block(
+    peer_session& peer,
+    hash_digest const& block_hash,
+    std::chrono::seconds timeout)
+{
+    // Build single-block getdata
+    domain::message::inventory_vector::list inventories{
+        {domain::message::inventory_vector::type_id::block, block_hash}
+    };
+    domain::message::get_data request(std::move(inventories));
+
+    spdlog::debug("[protocol] Requesting block {} from [{}]",
+        encode_hash(block_hash), peer.authority());
+
+    auto ec = co_await peer.send(request);
+    if (ec != error::success) {
+        co_return std::unexpected(ec);
+    }
+
+    // Wait for block response on the dedicated channel
+    auto executor = co_await ::asio::this_coro::executor;
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+
+    while (true) {
+        auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
+            deadline - std::chrono::steady_clock::now());
+
+        if (remaining <= 0s) {
+            spdlog::debug("[protocol] Timeout waiting for block from [{}]", peer.authority());
+            co_return std::unexpected(error::channel_timeout);
+        }
+
+        ::asio::steady_timer timer(executor, remaining);
+
+        auto result = co_await (
+            peer.block_responses().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
+            timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
+        );
+
+        if (result.index() == 1) {
+            spdlog::debug("[protocol] Timeout waiting for block from [{}]", peer.authority());
+            co_return std::unexpected(error::channel_timeout);
+        }
+
+        auto& [recv_ec, raw] = std::get<0>(result);
+        if (recv_ec) {
+            co_return std::unexpected(error::channel_stopped);
+        }
+
+        // Parse the block
+        byte_reader reader(raw.payload);
+        auto block_result = domain::message::block::from_data(reader, peer.negotiated_version());
+        if (!block_result) {
+            spdlog::debug("[protocol] Failed to parse block from [{}]", peer.authority());
+            co_return std::unexpected(error::bad_stream);
+        }
+
+        // Verify it's the block we requested
+        if (block_result->header().hash() != block_hash) {
+            spdlog::debug("[protocol] Received unexpected block from [{}]", peer.authority());
+            // Continue waiting for the correct block
+            continue;
+        }
+
+        spdlog::debug("[protocol] Received block {} from [{}]",
+            encode_hash(block_hash), peer.authority());
+
+        co_return std::move(*block_result);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Inventory Protocol
+// -----------------------------------------------------------------------------
+
+::asio::awaitable<code> send_inventory(
+    peer_session& peer,
+    domain::message::inventory const& inv)
+{
+    spdlog::trace("[protocol] Sending {} inventory items to [{}]",
+        inv.inventories().size(), peer.authority());
+    co_return co_await peer.send(inv);
+}
+
+::asio::awaitable<code> send_getdata(
+    peer_session& peer,
+    domain::message::get_data const& request)
+{
+    spdlog::trace("[protocol] Sending getdata for {} items to [{}]",
+        request.inventories().size(), peer.authority());
+    co_return co_await peer.send(request);
+}
+
+// -----------------------------------------------------------------------------
+// Transaction Protocol
+// -----------------------------------------------------------------------------
+
+::asio::awaitable<code> send_transaction(
+    peer_session& peer,
+    domain::message::transaction const& tx)
+{
+    spdlog::debug("[protocol] Sending transaction {} to [{}]",
+        encode_hash(tx.hash()), peer.authority());
+    co_return co_await peer.send(tx);
+}
+
+::asio::awaitable<code> request_mempool(
+    peer_session& peer)
+{
+    spdlog::debug("[protocol] Requesting mempool from [{}]", peer.authority());
+    co_return co_await peer.send(domain::message::memory_pool{});
+}
+
+// -----------------------------------------------------------------------------
+// Response Helpers (for serving peers)
+// -----------------------------------------------------------------------------
+
+::asio::awaitable<code> send_headers(
+    peer_session& peer,
+    domain::message::headers const& headers)
+{
+    spdlog::trace("[protocol] Sending {} headers to [{}]",
+        headers.elements().size(), peer.authority());
+    co_return co_await peer.send(headers);
+}
+
+::asio::awaitable<code> send_block(
+    peer_session& peer,
+    domain::message::block const& block)
+{
+    spdlog::trace("[protocol] Sending block {} to [{}]",
+        encode_hash(block.header().hash()), peer.authority());
+    co_return co_await peer.send(block);
+}
+
+::asio::awaitable<code> send_not_found(
+    peer_session& peer,
+    domain::message::not_found const& not_found)
+{
+    spdlog::trace("[protocol] Sending not_found for {} items to [{}]",
+        not_found.inventories().size(), peer.authority());
+    co_return co_await peer.send(not_found);
+}
+
+// -----------------------------------------------------------------------------
+// Message Parsing Helpers
+// -----------------------------------------------------------------------------
+// TODO(fernando): Consider making these generic with a single template function:
+//   template <typename Message>
+//   std::expected<Message, code> parse_message(raw_message const&, uint32_t version);
+//
+// TODO(fernando): These functions may be replaced by make_handler<Message>() from
+//   p2p_node.hpp if we move to a fully handler-based architecture. For now, these
+//   are useful for request/response protocols where we wait for specific messages.
+// -----------------------------------------------------------------------------
+
+std::expected<domain::message::get_headers, code> parse_getheaders(
+    raw_message const& raw,
+    uint32_t version)
+{
+    if (raw.heading.command() != domain::message::get_headers::command) {
+        return std::unexpected(error::bad_stream);
+    }
+    byte_reader reader(raw.payload);
+    auto result = domain::message::get_headers::from_data(reader, version);
+    if (!result) {
+        return std::unexpected(error::bad_stream);
+    }
+    return std::move(*result);
+}
+
+std::expected<domain::message::get_data, code> parse_getdata(
+    raw_message const& raw,
+    uint32_t version)
+{
+    if (raw.heading.command() != domain::message::get_data::command) {
+        return std::unexpected(error::bad_stream);
+    }
+    byte_reader reader(raw.payload);
+    auto result = domain::message::get_data::from_data(reader, version);
+    if (!result) {
+        return std::unexpected(error::bad_stream);
+    }
+    return std::move(*result);
+}
+
+std::expected<domain::message::inventory, code> parse_inventory(
+    raw_message const& raw,
+    uint32_t version)
+{
+    if (raw.heading.command() != domain::message::inventory::command) {
+        return std::unexpected(error::bad_stream);
+    }
+    byte_reader reader(raw.payload);
+    auto result = domain::message::inventory::from_data(reader, version);
+    if (!result) {
+        return std::unexpected(error::bad_stream);
+    }
+    return std::move(*result);
+}
+
+std::expected<domain::message::headers, code> parse_headers(
+    raw_message const& raw,
+    uint32_t version)
+{
+    if (raw.heading.command() != domain::message::headers::command) {
+        return std::unexpected(error::bad_stream);
+    }
+    byte_reader reader(raw.payload);
+    auto result = domain::message::headers::from_data(reader, version);
+    if (!result) {
+        return std::unexpected(error::bad_stream);
+    }
+    return std::move(*result);
+}
+
+std::expected<domain::message::block, code> parse_block(
+    raw_message const& raw,
+    uint32_t version)
+{
+    if (raw.heading.command() != domain::message::block::command) {
+        return std::unexpected(error::bad_stream);
+    }
+    byte_reader reader(raw.payload);
+    auto result = domain::message::block::from_data(reader, version);
+    if (!result) {
+        return std::unexpected(error::bad_stream);
+    }
+    return std::move(*result);
+}
+
+std::expected<domain::message::transaction, code> parse_transaction(
+    raw_message const& raw,
+    [[maybe_unused]] uint32_t version)
+{
+    if (raw.heading.command() != domain::message::transaction::command) {
+        return std::unexpected(error::bad_stream);
+    }
+    byte_reader reader(raw.payload);
+    auto result = domain::message::transaction::from_data(reader, true);
+    if (!result) {
+        return std::unexpected(error::bad_stream);
+    }
+    return std::move(*result);
+}
+
+// -----------------------------------------------------------------------------
+// Message Loop Handler
+// -----------------------------------------------------------------------------
+
+::asio::awaitable<code> run_message_loop(
+    peer_session& peer,
+    message_handler handler)
+{
+    while (!peer.stopped()) {
+        // Wait for next message (no timeout - runs until stopped)
+        auto result = co_await peer.messages().async_receive(
+            ::asio::as_tuple(::asio::use_awaitable));
+
+        auto& [ec, raw] = result;
+        if (ec) {
+            co_return error::channel_stopped;
+        }
+
+        // Dispatch to handler
+        bool continue_loop = co_await handler(raw);
+        if (!continue_loop) {
+            break;
+        }
+    }
+
+    co_return error::channel_stopped;
 }
 
 } // namespace kth::network

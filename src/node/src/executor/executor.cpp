@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <print>
+#include <thread>
 
 #include <boost/core/null_deleter.hpp>
 
@@ -19,6 +20,8 @@
 #include <kth/node/user_agent.hpp>
 #include <kth/node/version.hpp>
 
+#include <asio/co_spawn.hpp>
+#include <asio/detached.hpp>
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -64,6 +67,17 @@ executor::executor(kth::node::configuration const& config, bool stdout_enabled /
 #endif // ! defined(__EMSCRIPTEN__)
 }
 
+executor::~executor() {
+    if (running_) {
+        signal_stop();
+    }
+    // Ensure io_context is stopped and thread is joined
+    io_context_.stop();
+    if (io_thread_.joinable()) {
+        io_thread_.join();
+    }
+}
+
 void executor::print_version(std::string_view extra) {
     std::println(KTH_VERSION_MESSAGE, KTH_NODE_VERSION, extra, KTH_CURRENCY_SYMBOL_STR, KTH_MICROARCHITECTURE_STR, march_names());
 }
@@ -74,9 +88,12 @@ bool executor::init_directory(error_code& ec) {
 
     if (create_directories(directory, ec)) {
         spdlog::info("[node] {}", fmt::format(KTH_INITIALIZING_CHAIN, directory.string()));
+
         auto const genesis = kth::node::full_node::get_genesis_block(get_network(config_.network.identifier, config_.network.inbound_port == 48333));
         auto const& settings = config_.database;
-        auto const result = data_base(settings).create(genesis);
+
+        data_base db(settings);
+        auto const result = db.create(genesis);
 
         if ( ! result ) {
             spdlog::info("[node] {}", KTH_INITCHAIN_FAILED);
@@ -125,14 +142,20 @@ kth::node::full_node const& executor::node() const {
 bool executor::close() {
     spdlog::info("[node] {}", KTH_NODE_STOPPING);
 
-    // Close must be called from main thread.
-    if (node_->close()) {
+    if (node_) {
+        node_->stop();
+        node_->join();
         spdlog::info("[node] {}", KTH_NODE_STOPPED);
-        spdlog::info("[node] {}", KTH_GOOD_BYE);
-    } else {
-        spdlog::info("[node] {}", KTH_NODE_STOP_FAIL);
     }
 
+    // Stop the io_context and wait for the io thread to finish
+    io_context_.stop();
+    if (io_thread_.joinable()) {
+        io_thread_.join();
+    }
+
+    spdlog::info("[node] {}", KTH_GOOD_BYE);
+    running_ = false;
     return true;
 }
 
@@ -154,15 +177,53 @@ error_code executor::init_directory_if_necessary() {
     return ec;
 }
 
-bool executor::init_run_and_wait_for_signal(std::string_view extra, start_modules mods, kth::handle0 handler) {
+// Helper to run node in coroutine context
+void executor::run_node_async(start_modules mod) {
+    ::asio::co_spawn(io_context_, [this, mod]() -> ::asio::awaitable<void> {
+        // Start the node
+        auto start_ec = co_await node_->start();
+        if (start_ec != error::success) {
+            spdlog::error("[node] {}", fmt::format(KTH_NODE_START_FAIL, start_ec.message()));
+            if (run_handler_) {
+                run_handler_(start_ec);
+            }
+            co_return;
+        }
+
+        spdlog::info("[node] {}", KTH_NODE_SEEDED);
+
+        // Run the node (only for full mode, not just_chain)
+        if (mod != start_modules::just_chain) {
+            auto run_ec = co_await node_->run();
+            if (run_ec != error::success) {
+                spdlog::error("[node] {}", fmt::format(KTH_NODE_START_FAIL, run_ec.message()));
+                if (run_handler_) {
+                    run_handler_(run_ec);
+                }
+                co_return;
+            }
+        }
+
+        spdlog::info("[node] {}", KTH_NODE_STARTED);
+
+        if (run_handler_) {
+            run_handler_(error::success);
+        }
+    }, ::asio::detached);
+
+    // Run the io_context in a background thread (saved for proper shutdown)
+    io_thread_ = std::thread([this]() {
+        io_context_.run();
+    });
+}
+
+bool executor::init_run_and_wait_for_signal(std::string_view extra, start_modules mod, kth::handle0 handler) {
     run_handler_ = std::move(handler);
 
     initialize_output(extra, config_.database.db_mode);
 
     spdlog::info("[node] {}", KTH_NODE_INTERRUPT);
     spdlog::info("[node] {}", KTH_NODE_STARTING);
-    //TODO(fernando): Log Cryptocurrency
-    //TODO(fernando): Log Microarchitecture
 
     auto ec = init_directory_if_necessary();
     if (ec != error::success) {
@@ -178,27 +239,22 @@ bool executor::init_run_and_wait_for_signal(std::string_view extra, start_module
 
     // Now that the directory is verified we can create the node for it.
     node_ = std::make_shared<kth::node::full_node>(config_);
+    running_ = true;
 
-    // The callback may be returned on the same thread.
-    if (mods == start_modules::just_chain) {
-        node_->start_chain(std::bind(&executor::handle_started, this, _1, mods));
-    } else {
-        node_->start(std::bind(&executor::handle_started, this, _1, mods));
-    }
+    // Start and run the node asynchronously
+    run_node_async(mod);
 
     auto res = wait_for_signal_and_close();
     return res;
 }
 
-bool executor::init_run(std::string_view extra, start_modules mods, kth::handle0 handler) {
+bool executor::init_run(std::string_view extra, start_modules mod, kth::handle0 handler) {
     run_handler_ = std::move(handler);
 
     initialize_output(extra, config_.database.db_mode);
 
     spdlog::info("[node] {}", KTH_NODE_INTERRUPT);
     spdlog::info("[node] {}", KTH_NODE_STARTING);
-    //TODO(fernando): Log Cryptocurrency
-    //TODO(fernando): Log Microarchitecture
 
     auto ec = init_directory_if_necessary();
     if (ec != error::success) {
@@ -213,70 +269,18 @@ bool executor::init_run(std::string_view extra, start_modules mods, kth::handle0
 
     // Now that the directory is verified we can create the node for it.
     node_ = std::make_shared<kth::node::full_node>(config_);
+    running_ = true;
 
-    // The callback may be returned on the same thread.
-    if (mods == start_modules::just_chain) {
-        node_->start_chain(std::bind(&executor::handle_started, this, _1, mods));
-    } else {
-        node_->start(std::bind(&executor::handle_started, this, _1, mods));
-    }
+    // Start and run the node asynchronously
+    run_node_async(mod);
 
     return true;
 }
 
 #endif // ! defined(KTH_DB_READONLY)
 
-// Handle the completion of the start sequence and begin the run sequence.
-void executor::handle_started(kth::code const& ec, start_modules mods) {
-    if (ec) {
-        spdlog::error("[node] {}", fmt::format(KTH_NODE_START_FAIL, ec.message()));
-//        stop(ec);
-
-        if (run_handler_) {
-            run_handler_(ec);
-        }
-        return;
-    }
-
-    if (mods == start_modules::just_chain) {
-        node_->run_chain(std::bind(&executor::handle_running, this, _1));
-    } else {
-        spdlog::info("[node] {}", KTH_NODE_SEEDED);
-        // This is the beginning of the stop sequence.
-        node_->subscribe_stop(std::bind(&executor::handle_stopped, this, _1));
-        // This is the beginning of the run sequence.
-        node_->run(std::bind(&executor::handle_running, this, _1));
-    }
-}
-
-// This is the end of the run sequence.
-void executor::handle_running(kth::code const& ec) {
-    if (ec) {
-        spdlog::info("[node] {}", fmt::format(KTH_NODE_START_FAIL, ec.message()));
-//        stop(ec);
-
-        if (run_handler_) {
-            run_handler_(ec);
-        }
-
-        return;
-    }
-
-    spdlog::info("[node] {}", KTH_NODE_STARTED);
-
-    if (run_handler_) {
-        run_handler_(ec);
-    }
-}
-
 bool executor::stopped() const {
-    return node_->stopped();
-}
-
-// This is the end of the stop sequence.
-void executor::handle_stopped(kth::code const& /*ec*/) {
-    //stop(ec);
-    //stop();
+    return node_ ? node_->stopped() : true;
 }
 
 // Stop signal.

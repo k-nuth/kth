@@ -71,6 +71,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_icu": [True, False],
         "with_png": [True, False],
         "with_qrencode": [True, False],
+        "with_jemalloc": [True, False],
         "asio_standalone": [True, False],
 
         # secp256k1 options
@@ -111,6 +112,14 @@ class KthRecipe(KnuthConanFileV2):
         "with_icu": False,
         "with_png": False,
         "with_qrencode": False,
+        # WARNING: jemalloc causes crashes with LMDB (mdb_env_close/mdb_dbi_close segfaults).
+        # LMDB uses mmap extensively which conflicts with jemalloc's memory management.
+        # Potential solutions if jemalloc is needed:
+        #   1. Run with MALLOC_CONF="retain:true" (less aggressive munmap)
+        #   2. Use MDB_WRITEMAP flag in LMDB (writes directly to mmap, bypasses malloc)
+        #   3. Compile LMDB separately without jemalloc linkage
+        # For now, keep disabled until a proper solution is implemented.
+        "with_jemalloc": False,
         "asio_standalone": True,
 
         # secp256k1 options
@@ -163,6 +172,8 @@ class KthRecipe(KnuthConanFileV2):
         self.requires("ctre/3.10.0", transitive_headers=True, transitive_libs=True)
         self.requires("tiny-aes-c/1.0.0", transitive_headers=True, transitive_libs=True)
 
+        self.requires("ftxui/6.1.9", transitive_headers=True, transitive_libs=True)
+
         # simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)
         if self.settings.os != "Emscripten":
             self.requires("simdutf/7.1.0", transitive_headers=True, transitive_libs=True)
@@ -172,6 +183,10 @@ class KthRecipe(KnuthConanFileV2):
 
         if self.options.with_qrencode:
             self.requires("libqrencode/4.1.1", transitive_headers=True, transitive_libs=True)
+
+        if self.options.with_jemalloc:
+            # https://jasone.github.io/2025/06/12/jemalloc-postmortem/
+            self.requires("jemalloc/5.3.0", transitive_headers=True, transitive_libs=True)
 
         if self.options.asio_standalone:
             self.requires("asio/1.36.0", transitive_headers=True, transitive_libs=True)
@@ -250,6 +265,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["WITH_ICU"] = option_on_off(self.options.with_icu)
         tc.variables["KTH_WITH_PNG"] = option_on_off(self.options.with_png)
         tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
+        tc.variables["KTH_WITH_JEMALLOC"] = option_on_off(self.options.with_jemalloc)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
 
         # Secp256k1 --------------------------------------------
@@ -354,6 +370,8 @@ class KthRecipe(KnuthConanFileV2):
             infrastructure_defines.append("KTH_WITH_PNG")
         if self.options.with_qrencode:
             infrastructure_defines.append("KTH_WITH_QRENCODE")
+        if self.options.with_jemalloc:
+            infrastructure_defines.append("KTH_WITH_JEMALLOC")
         self.cpp_info.components["infrastructure"].defines = infrastructure_defines
         # Infrastructure core dependencies: secp256k1, boost, fmt, ctre, spdlog, simdutf (non-wasm)
         self.cpp_info.components["infrastructure"].requires = [
@@ -374,8 +392,11 @@ class KthRecipe(KnuthConanFileV2):
         # Add asio when using standalone mode
         if self.options.asio_standalone:
             self.cpp_info.components["infrastructure"].requires.append("asio::asio")
-        
-        
+        # Add jemalloc when enabled
+        if self.options.with_jemalloc:
+            self.cpp_info.components["infrastructure"].requires.append("jemalloc::jemalloc")
+
+
         # Domain models and business logic
         self.cpp_info.components["domain"].libs = ["domain"]
         self.cpp_info.components["domain"].names["cmake_find_package"] = "domain"

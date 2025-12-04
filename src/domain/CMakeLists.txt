@@ -28,7 +28,7 @@ if (KTH_WITH_QRENCODE)
   add_definitions(-DKTH_WITH_QRENCODE)
 endif()
 
-add_definitions(-DJEMALLOC)
+# JEMALLOC is now configured in the main CMakeLists.txt via conan
 
 
 if (JUST_KTH_SOURCES)
@@ -77,17 +77,11 @@ if (WITH_ICU)
 endif()
 
 find_package(tiny-aes-c REQUIRED)
-# # jemalloc
-# find_package(PkgConfig REQUIRED)
-# pkg_check_modules(JEMALLOC jemalloc)
 
-# message("-- Found jemalloc: JEMALLOC_INCLUDE_DIRS: ${JEMALLOC_INCLUDE_DIRS}")
-# message("-- Found jemalloc: JEMALLOC_LIBRARY_DIRS: ${JEMALLOC_LIBRARY_DIRS}")
-# message("-- Found jemalloc: JEMALLOC_CFLAGS_OTHER: ${JEMALLOC_CFLAGS_OTHER}")
-
-# include_directories(${JEMALLOC_INCLUDE_DIRS})
-# link_directories(${JEMALLOC_LIBRARY_DIRS})
-# add_definitions(${JEMALLOC_CFLAGS_OTHER})
+# jemalloc is now configured in the main CMakeLists.txt via conan
+if (KTH_WITH_JEMALLOC)
+  find_package(jemalloc REQUIRED)
+endif()
 
 
 
@@ -457,7 +451,9 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC infrastructure::infrastructure)
 target_link_libraries(${PROJECT_NAME} PUBLIC tiny-aes-c::tiny-aes-c)
-target_link_libraries(${PROJECT_NAME} PUBLIC ${JEMALLOC_LIBRARIES})
+if(KTH_WITH_JEMALLOC)
+  target_link_libraries(${PROJECT_NAME} PUBLIC jemalloc::jemalloc)
+endif()
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(${PROJECT_NAME} PUBLIC Boost::thread)
