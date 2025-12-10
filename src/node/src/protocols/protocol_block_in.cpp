@@ -434,14 +434,16 @@ bool protocol_block_in::handle_receive_compact_block(code const& ec, compact_blo
     //the header of the compact block is the header of the block
     auto const& header_temp = message->header();
 
+    auto const header_hash = chain::hash(header_temp);
+
     if ( ! header_temp.is_valid()) {
-        spdlog::debug("[node] Compact Block [{}] The compact block header is invalid [{}]", encode_hash(header_temp.hash()), authority());
+        spdlog::debug("[node] Compact Block [{}] The compact block header is invalid [{}]", encode_hash(header_hash), authority());
         stop(error::channel_stopped);
         return false;
     }
 
     //if the compact block exists in the map, is already in process
-    if (compact_blocks_map_.count(header_temp.hash()) > 0) {
+    if (compact_blocks_map_.count(header_hash) > 0) {
         return true;
     }
 
@@ -474,7 +476,7 @@ bool protocol_block_in::handle_receive_compact_block(code const& ec, compact_blo
     for (size_t i = 0; i < prefiled_txs.size(); ++i) {
         if ( ! prefiled_txs[i].is_valid()) {
 
-            spdlog::debug("[node] Compact Block [{}] The prefilled transaction is invalid [{}]", encode_hash(header_temp.hash()), authority());
+            spdlog::debug("[node] Compact Block [{}] The prefilled transaction is invalid [{}]", encode_hash(header_hash), authority());
             stop(error::channel_stopped);
             return false;
         }
@@ -486,7 +488,7 @@ bool protocol_block_in::handle_receive_compact_block(code const& ec, compact_blo
 
 
         if (lastprefilledindex > std::numeric_limits<uint16_t>::max()) {
-            spdlog::debug("[node] Compact Block [{}] The prefilled index {} is out of range [{}]", encode_hash(header_temp.hash()), lastprefilledindex, authority());
+            spdlog::debug("[node] Compact Block [{}] The prefilled index {} is out of range [{}]", encode_hash(header_hash), lastprefilledindex, authority());
             stop(error::channel_stopped);
             return false;
         }
@@ -497,7 +499,7 @@ bool protocol_block_in::handle_receive_compact_block(code const& ec, compact_blo
             // then we have txn for which we have neither a prefilled txn or a
             // shorttxid!
 
-            spdlog::debug("[node] Compact Block [{}] The prefilled index {} is out of range [{}]", encode_hash(header_temp.hash()), lastprefilledindex, authority());
+            spdlog::debug("[node] Compact Block [{}] The prefilled index {} is out of range [{}]", encode_hash(header_hash), lastprefilledindex, authority());
             stop(error::channel_stopped);
             return false;
         }
@@ -534,8 +536,8 @@ bool protocol_block_in::handle_receive_compact_block(code const& ec, compact_blo
             // Duplicate txindexes, the block is now in-flight, so
             // just request it.
 
-            spdlog::info("[node] Compact Block, sendening getdata for hash ({}) to [{}]", encode_hash(header_temp.hash()), authority());
-            send_get_data_compact_block(ec, header_temp.hash());
+            spdlog::info("[node] Compact Block, sendening getdata for hash ({}) to [{}]", encode_hash(header_hash), authority());
+            send_get_data_compact_block(ec, header_hash);
 
             return true;
         }
@@ -547,8 +549,8 @@ bool protocol_block_in::handle_receive_compact_block(code const& ec, compact_blo
     // overkill.
     if (shorttxids.size() != short_ids.size()) {
         // Short ID collision
-        spdlog::info("[node] Compact Block, sendening getdata for hash ({}) to [{}]", encode_hash(header_temp.hash()), authority());
-        send_get_data_compact_block(ec, header_temp.hash());
+        spdlog::info("[node] Compact Block, sendening getdata for hash ({}) to [{}]", encode_hash(header_hash), authority());
+        send_get_data_compact_block(ec, header_hash);
         return true;
     }
 
@@ -572,8 +574,8 @@ bool protocol_block_in::handle_receive_compact_block(code const& ec, compact_blo
         organize_block(tempblock);
         return true;
     } else {
-        compact_blocks_map_.emplace(header_temp.hash(), temp_compact_block{std::move(header_temp), std::move(txs_available)});
-        auto req_tx = get_block_transactions(header_temp.hash(),txs);
+        compact_blocks_map_.emplace(header_hash, temp_compact_block{std::move(header_temp), std::move(txs_available)});
+        auto req_tx = get_block_transactions(header_hash, txs);
         SEND2(req_tx, handle_send, _1, get_block_transactions::command);
         return true;
     }
@@ -597,7 +599,7 @@ void protocol_block_in::handle_store_block(code const& ec, block_const_ptr messa
         return;
     }
 
-    auto const hash = message->header().hash();
+    auto const hash = chain::hash(message->header());
 
     // Ask the peer for blocks from the chain top up to this orphan.
     if (ec == error::orphan_block) {

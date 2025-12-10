@@ -652,13 +652,13 @@ TEST_CASE("internal database  insert genesis", "[None]") {
     REQUIRE(db.push_block(genesis, 0, 1) == result_code::success);
 
     REQUIRE(db.get_header(genesis.hash()).first.is_valid());
-    REQUIRE(db.get_header(genesis.hash()).first.hash() == genesis.hash());
+    REQUIRE(chain::hash(db.get_header(genesis.hash()).first) == genesis.hash());
     REQUIRE(db.get_header(genesis.hash()).second == 0);
     REQUIRE(db.get_header(0).is_valid());
-    REQUIRE(db.get_header(0).hash() == genesis.hash());
+    REQUIRE(chain::hash(db.get_header(0)) == genesis.hash());
 
 
-    REQUIRE(db.get_block(0).header().hash() == genesis.hash());
+    REQUIRE(chain::hash(db.get_block(0).header()) == genesis.hash());
 
     hash_digest txid;
     std::string txid_enc = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b";

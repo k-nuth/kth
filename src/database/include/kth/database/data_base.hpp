@@ -65,7 +65,7 @@ public:
 
     /// Store a block in the database.
     /// Returns store_block_duplicate if a block already exists at height.
-    code insert(domain::chain::block const& block, size_t height);
+    code insert(domain::chain::block const& block, size_t height, uint32_t median_time_past);
 
     /// Add an unconfirmed tx to the store (without indexing).
     /// Returns unspent_duplicate if existing unspent hash duplicate exists.
@@ -73,7 +73,7 @@ public:
 
     /// Returns store_block_missing_parent if not linked.
     /// Returns store_block_invalid_height if height is not the current top + 1.
-    code push(domain::chain::block const& block, size_t height);
+    code push(domain::chain::block const& block, size_t height, uint32_t median_time_past);
 
     code prune_reorg();
 
@@ -83,7 +83,7 @@ public:
     // ------------------------------------------------------------------------
 
     /// Invoke pop_all and then push_all under a common lock.
-    void reorganize(infrastructure::config::checkpoint const& fork_point, block_const_ptr_list_const_ptr incoming_blocks, block_const_ptr_list_ptr outgoing_blocks, dispatcher& dispatch, result_handler handler);
+    void reorganize(infrastructure::config::checkpoint const& fork_point, block_const_ptr_list_const_ptr incoming_blocks, std::vector<uint32_t> const& median_time_pasts, block_const_ptr_list_ptr outgoing_blocks, dispatcher& dispatch, result_handler handler);
 #endif // ! defined(KTH_DB_READONLY)
 
 protected:
@@ -92,7 +92,7 @@ protected:
 #if ! defined(KTH_DB_READONLY)
 
     // Sets error if first_height is not the current top + 1 or not linked.
-    void push_all(block_const_ptr_list_const_ptr in_blocks, size_t first_height, dispatcher& dispatch, result_handler handler);
+    void push_all(block_const_ptr_list_const_ptr in_blocks, std::vector<uint32_t> const& median_time_pasts, size_t first_height, dispatcher& dispatch, result_handler handler);
 
     // Pop the set of blocks above the given hash.
     // Sets error if the database is corrupt or the hash doesn't exist.
@@ -124,11 +124,11 @@ private:
     // Asynchronous writers.
     // ------------------------------------------------------------------------
 #if ! defined(KTH_DB_READONLY)
-    void push_next(code const& ec, block_const_ptr_list_const_ptr blocks, size_t index, size_t height, dispatcher& dispatch, result_handler handler);
+    void push_next(code const& ec, block_const_ptr_list_const_ptr blocks, std::vector<uint32_t> const& median_time_pasts, size_t index, size_t height, dispatcher& dispatch, result_handler handler);
     void do_push(block_const_ptr block, size_t height, uint32_t median_time_past, dispatcher& dispatch, result_handler handler);
 
 
-    void handle_pop(code const& ec, block_const_ptr_list_const_ptr incoming_blocks, size_t first_height, dispatcher& dispatch, result_handler handler);
+    void handle_pop(code const& ec, block_const_ptr_list_const_ptr incoming_blocks, std::vector<uint32_t> const& median_time_pasts, size_t first_height, dispatcher& dispatch, result_handler handler);
     void handle_push(code const& ec, result_handler handler) const;
 #endif // ! defined(KTH_DB_READONLY)
 

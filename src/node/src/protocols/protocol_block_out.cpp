@@ -160,7 +160,7 @@ void protocol_block_out::handle_fetch_locator_headers(code const& ec, headers_pt
     ////    return;
 
     // Save the locator top to limit an overlapping future request.
-    last_locator_top_.store(message->elements().front().hash());
+    last_locator_top_.store(chain::hash(message->elements().front()));
 }
 
 bool protocol_block_out::handle_receive_get_block_transactions(code const& ec, get_block_transactions_const_ptr message) {
@@ -489,7 +489,7 @@ bool protocol_block_out::handle_reorganized(code ec, size_t fork_height, block_c
 
         for (auto const block: *incoming) {
             if (block->validation.originator != nonce()) {
-                announce.inventories().push_back({ inventory::type_id::block, block->header().hash() });
+                announce.inventories().push_back({ inventory::type_id::block, chain::hash(block->header()) });
             }
         }
 

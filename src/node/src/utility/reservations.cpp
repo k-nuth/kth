@@ -36,9 +36,9 @@ bool reservations::start() {
 }
 
 #if ! defined(KTH_DB_READONLY)
-bool reservations::import(block_const_ptr block, size_t height) {
+bool reservations::import(block_const_ptr block, size_t height, uint32_t median_time_past) {
     //#########################################################################
-    return chain_.insert(block, height);
+    return chain_.insert(block, height, median_time_past);
     //#########################################################################
 }
 #endif //! defined(KTH_DB_READONLY)

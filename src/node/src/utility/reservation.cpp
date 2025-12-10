@@ -271,7 +271,7 @@ void reservation::insert(hash_digest&& hash, size_t height) {
 #if ! defined(KTH_DB_READONLY)
 void reservation::import(block_const_ptr block) {
     size_t height;
-    auto const hash = block->header().hash();
+    auto const hash = chain::hash(block->header());
     auto const encoded = encode_hash(hash);
 
     if ( ! find_height_and_erase(hash, height)) {
@@ -281,7 +281,8 @@ void reservation::import(block_const_ptr block) {
 
     bool success;
     auto const importer = [this, &block, &height, &success]() {
-        success = reservations_.import(block, height);
+        // TODO: calculate proper MTP from the chain. For now using 0 as placeholder.
+        success = reservations_.import(block, height, 0);
     };
 
     // Do the block import with timer.

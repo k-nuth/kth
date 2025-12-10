@@ -42,7 +42,7 @@ domain::message::headers::ptr message_factory(size_t count,
     for (size_t height = 0; height < count; ++height) {
         header const current_header{ 0, previous_hash, {}, 0, 0, 0 };
         elements.push_back(current_header);
-        previous_hash = current_header.hash();
+        previous_hash = chain::hash(current_header);
     }
 
     return headers;

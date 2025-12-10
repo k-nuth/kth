@@ -167,7 +167,7 @@ bool block_chain::get_block_exists_safe(hash_digest const& block_hash) const {
 bool block_chain::get_block_hash(hash_digest& out_hash, size_t height) const {
     auto const result = database_.internal_db().get_header(height);
     if ( ! result.is_valid()) return false;
-    out_hash = result.hash();
+    out_hash = domain::chain::hash(result);
     return true;
 }
 
@@ -259,9 +259,8 @@ std::pair<bool, database::internal_database::utxo_pool_t> block_chain::get_utxo_
 // ----------------------------------------------------------------------------
 #if ! defined(KTH_DB_READONLY)
 
-// bool block_chain::insert(block_const_ptr block, size_t height, int) {
-bool block_chain::insert(block_const_ptr block, size_t height) {
-    return database_.insert(*block, height) == error::success;
+bool block_chain::insert(block_const_ptr block, size_t height, uint32_t median_time_past) {
+    return database_.insert(*block, height, median_time_past) == error::success;
 }
 
 void block_chain::push(transaction_const_ptr tx, dispatcher&, result_handler handler) {
@@ -640,7 +639,7 @@ void block_chain::fetch_locator_block_hashes(get_blocks_const_ptr locator,
         }
 
         static auto const id = inventory::type_id::block;
-        hashes->inventories().emplace_back(id, result.header().hash());
+        hashes->inventories().emplace_back(id, hash(result.header()));
     }
 
     handler(error::success, std::move(hashes));
@@ -1241,7 +1240,7 @@ void block_chain::fetch_block_hash_timestamp(size_t height, block_hash_time_fetc
         return;
     }
 
-    handler(error::success, result.hash(), result.timestamp(), height);
+    handler(error::success, hash(result), result.timestamp(), height);
 
 }
 
@@ -1406,7 +1405,7 @@ void block_chain::fetch_block_locator(block::indexes const& heights, block_locat
             handler(error::not_found, nullptr);
             break;
         }
-        hashes.push_back(result.hash());
+        hashes.push_back(hash(result));
     }
 
     handler(error::success, message);

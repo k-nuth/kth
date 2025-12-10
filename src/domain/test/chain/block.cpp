@@ -178,7 +178,7 @@ TEST_CASE("block constructor 5 always equals params", "[chain block]") {
 
 TEST_CASE("block  hash  always  returns header hash", "[chain block]") {
     chain::block const instance;
-    REQUIRE(instance.header().hash() == instance.hash());
+    REQUIRE(chain::hash(instance.header()) == instance.hash());
 }
 
 TEST_CASE("block  is valid merkle root  uninitialized  returns true", "[chain block]") {

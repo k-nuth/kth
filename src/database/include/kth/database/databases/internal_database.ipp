@@ -1002,7 +1002,7 @@ result_code internal_database_basis<Clock>::push_genesis(domain::chain::block co
         auto const& txs = block.transactions();
         auto const& coinbase = txs.front();
         auto const& hash = coinbase.hash();
-        auto const median_time_past = block.header().validation.median_time_past;
+        constexpr uint32_t median_time_past = 0u;  // Genesis block has no previous blocks, so MTP is 0.
 
         res = insert_transaction(tx_count, coinbase, 0, median_time_past, 0, db_txn);
         if (res != result_code::success && res != result_code::duplicated_key) {

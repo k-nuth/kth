@@ -514,7 +514,7 @@ TEST_CASE("headers  is sequential  sequential  true", "[headers]") {
 
     static header const second{
         2u,
-        first.hash(),
+        chain::hash(first),
         "babababababababababababababababababababababababababababababababa"_hash,
         20u,
         200u,
@@ -522,7 +522,7 @@ TEST_CASE("headers  is sequential  sequential  true", "[headers]") {
 
     static header const third{
         3u,
-        second.hash(),
+        chain::hash(second),
         "7373737373737373737373737373737373737373737373737373737373737373"_hash,
         30u,
         300u,

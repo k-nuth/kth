@@ -5,6 +5,7 @@
 #include <kth/blockchain/pools/branch.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <memory>
 #include <numeric>
@@ -122,9 +123,27 @@ size_t branch::height_at(size_t index) const {
 }
 
 // private
+// TODO: measure the cost of computing MTP on-the-fly vs storing it in the block.
+//       Previously: return (*blocks_)[index]->header().validation.median_time_past;
 uint32_t branch::median_time_past_at(size_t index) const {
     KTH_ASSERT(index < size());
-    return (*blocks_)[index]->header().validation.median_time_past;
+    // return (*blocks_)[index]->header().validation.median_time_past;
+
+    // Collect timestamps from blocks before index (not including index itself)
+    std::array<uint32_t, domain::chain::median_time_past_blocks> timestamps{};
+    size_t count = 0;
+
+    // Go backwards from index-1, collecting up to 11 timestamps
+    for (size_t i = 0; i < domain::chain::median_time_past_blocks && i < index; ++i) {
+        timestamps[count++] = (*blocks_)[index - 1 - i]->header().timestamp();
+    }
+
+    if (count == 0) {
+        return 0;
+    }
+
+    std::sort(timestamps.begin(), timestamps.begin() + count);
+    return timestamps[count / 2];
 }
 
 // TODO(legacy): absorb into the main chain for speed and code consolidation.
