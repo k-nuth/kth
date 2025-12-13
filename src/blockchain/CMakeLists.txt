@@ -55,6 +55,14 @@ endif()
 
 message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 
+# Block index capacity (number of blocks for static array allocation)
+# Default: 1,179,648 blocks (~2030, aligned to 2^16)
+if(NOT DEFINED KTH_BLOCK_INDEX_CAPACITY)
+  set(KTH_BLOCK_INDEX_CAPACITY 1179648)
+endif()
+message(STATUS "Knuth: Block index capacity: ${KTH_BLOCK_INDEX_CAPACITY}")
+add_definitions(-DKTH_BLOCK_INDEX_CAPACITY=${KTH_BLOCK_INDEX_CAPACITY})
+
 
 if (NOT GLOBAL_BUILD)
   find_package(database REQUIRED)
@@ -279,6 +287,79 @@ if (WITH_TOOLS)
 
   target_link_libraries(tools.initchain ${PROJECT_NAME})
   _group_sources(tools.initchain "${CMAKE_CURRENT_LIST_DIR}/tools/initchain")
+endif()
+
+# Benchmarks
+# ------------------------------------------------------------------------------
+if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  find_package(nanobench REQUIRED)
+  find_package(fmt REQUIRED)
+  find_package(Boost REQUIRED)
+
+  # ==========================================================================
+  # 1. Thread-safety tests with TSan (debug, -O1)
+  # ==========================================================================
+  add_executable(kth_blockchain_tsan_tests test/block_index_bench/benchmarks.cpp)
+  target_include_directories(kth_blockchain_tsan_tests PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test/block_index_bench>
+  )
+  target_link_libraries(kth_blockchain_tsan_tests PRIVATE nanobench::nanobench)
+  target_link_libraries(kth_blockchain_tsan_tests PRIVATE fmt::fmt-header-only)
+  target_link_libraries(kth_blockchain_tsan_tests PRIVATE Boost::boost)
+  target_link_libraries(kth_blockchain_tsan_tests PRIVATE ${PROJECT_NAME})
+  target_compile_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread -g -O1)
+  target_link_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread)
+  target_compile_definitions(kth_blockchain_tsan_tests PRIVATE TSAN_BUILD=1)
+  _group_sources(kth_blockchain_tsan_tests "${CMAKE_CURRENT_LIST_DIR}/test")
+
+  # ==========================================================================
+  # 2. Performance benchmarks (release, full optimization)
+  # ==========================================================================
+  add_executable(kth_blockchain_benchmarks test/block_index_bench/benchmarks.cpp)
+  target_include_directories(kth_blockchain_benchmarks PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test/block_index_bench>
+  )
+  target_link_libraries(kth_blockchain_benchmarks PRIVATE nanobench::nanobench)
+  target_link_libraries(kth_blockchain_benchmarks PRIVATE fmt::fmt-header-only)
+  target_link_libraries(kth_blockchain_benchmarks PRIVATE Boost::boost)
+  target_link_libraries(kth_blockchain_benchmarks PRIVATE ${PROJECT_NAME})
+  # Full optimization flags for accurate benchmarking
+  target_compile_options(kth_blockchain_benchmarks PRIVATE
+    -O3
+    -DNDEBUG
+    -march=native           # Use all CPU features available
+    -mtune=native           # Tune for current CPU
+    -ffast-math             # Aggressive floating-point optimizations
+    -funroll-loops          # Unroll loops
+    -fomit-frame-pointer    # Free up a register
+    -flto                   # Link-time optimization
+  )
+  target_link_options(kth_blockchain_benchmarks PRIVATE -flto)
+  target_compile_definitions(kth_blockchain_benchmarks PRIVATE BENCHMARK_BUILD=1)
+  _group_sources(kth_blockchain_benchmarks "${CMAKE_CURRENT_LIST_DIR}/test/block_index_bench")
+
+  # ==========================================================================
+  # 3. Minimal profiling executable (for Instruments/perf analysis)
+  # Uses modular headers from block_index_bench/
+  # ==========================================================================
+  add_executable(kth_blockchain_bench_profile test/block_index_bench/profile.cpp)
+  target_include_directories(kth_blockchain_bench_profile PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/block_index_bench
+  )
+  target_link_libraries(kth_blockchain_bench_profile PRIVATE fmt::fmt-header-only)
+  target_link_libraries(kth_blockchain_bench_profile PRIVATE Boost::boost)
+  # Optimized but with debug symbols for profiling
+  target_compile_options(kth_blockchain_bench_profile PRIVATE
+    -O3
+    -DNDEBUG
+    -g                        # Debug symbols for profiler
+    -fno-omit-frame-pointer   # Keep frame pointers for stack traces
+    -march=native
+    -mtune=native
+  )
+  _group_sources(kth_blockchain_bench_profile "${CMAKE_CURRENT_LIST_DIR}/test/block_index_bench")
 endif()
 
 # Install

@@ -3,12 +3,43 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 import os
+from datetime import datetime, timezone
 from conan import ConanFile
 from conan.tools.build.cppstd import check_min_cppstd
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
 from conan.tools.files import copy
 from kthbuild import KnuthConanFileV2, option_on_off
 from conan.tools.files import collect_libs
+
+
+# =============================================================================
+# Block capacity calculation for static array allocation
+# =============================================================================
+
+# Bitcoin genesis block: 2009-01-03 18:15:05 UTC (block 0)
+_GENESIS_TIMESTAMP = datetime(2009, 1, 3, 18, 15, 5, tzinfo=timezone.utc)
+_SECONDS_PER_BLOCK = 600  # 1 block every 10 minutes
+_BLOCK_ALIGNMENT = 65536  # 2^16, for nice alignment
+_BASE_PERIOD_YEAR = 2030
+_PERIOD_LENGTH_YEARS = 5
+
+
+def _get_target_year(compile_year: int) -> int:
+    """Calculate target year based on compilation year (5-year periods)."""
+    if compile_year < _BASE_PERIOD_YEAR:
+        return _BASE_PERIOD_YEAR
+    periods_since_base = (compile_year - _BASE_PERIOD_YEAR) // _PERIOD_LENGTH_YEARS
+    return _BASE_PERIOD_YEAR + (periods_since_base + 1) * _PERIOD_LENGTH_YEARS
+
+
+def _calculate_block_capacity(compile_year: int) -> int:
+    """Calculate block capacity aligned to 2^16 for a given compilation year."""
+    target_year = _get_target_year(compile_year)
+    target_date = datetime(target_year, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+    seconds_since_genesis = (target_date - _GENESIS_TIMESTAMP).total_seconds()
+    blocks_exact = seconds_since_genesis / _SECONDS_PER_BLOCK
+    # Round up to nearest multiple of alignment
+    return ((int(blocks_exact) + _BLOCK_ALIGNMENT - 1) // _BLOCK_ALIGNMENT) * _BLOCK_ALIGNMENT
 
 required_conan_version = ">=2.0"
 
@@ -246,6 +277,11 @@ class KthRecipe(KnuthConanFileV2):
         # Secp256k1 -------------------------------------------- (END)
 
         tc.variables["CURRENCY"] = self.options.currency
+
+        # Block index capacity based on compilation year
+        block_capacity = _calculate_block_capacity(datetime.now().year)
+        tc.variables["KTH_BLOCK_INDEX_CAPACITY"] = block_capacity
+        self.output.info(f"Block index capacity: {block_capacity:,} blocks")
 
         # Generate secp256k1 precomputed tables before CMake generation
         self._generate_secp256k1_tables()
