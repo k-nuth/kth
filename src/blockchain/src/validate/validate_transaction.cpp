@@ -11,14 +11,17 @@
 #include <functional>
 #include <memory>
 
-#include <kth/blockchain/interface/fast_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/blockchain/validate/validate_input.hpp>
 #include <kth/domain.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 
-#include <kth/infrastructure/utility/synchronizer.hpp>
+#include <asio/co_spawn.hpp>
+#include <asio/post.hpp>
+#include <asio/use_awaitable.hpp>
+#include <asio/experimental/concurrent_channel.hpp>
 
 namespace kth::blockchain {
 
@@ -34,20 +37,21 @@ using namespace std::placeholders;
 
 
 #if defined(KTH_WITH_MEMPOOL)
-validate_transaction::validate_transaction(dispatcher& dispatch, fast_chain const& chain, settings const& settings, mining::mempool const& mp)
+validate_transaction::validate_transaction(executor_type executor, size_t threads, block_chain const& chain, settings const& settings, mining::mempool const& mp)
 #else
-validate_transaction::validate_transaction(dispatcher& dispatch, fast_chain const& chain, settings const& settings)
+validate_transaction::validate_transaction(executor_type executor, size_t threads, block_chain const& chain, settings const& settings)
 #endif
   : stopped_(true),
     retarget_(settings.retarget),
-    dispatch_(dispatch),
+    executor_(std::move(executor)),
+    threads_(threads),
 
 #if defined(KTH_WITH_MEMPOOL)
-    transaction_populator_(dispatch, chain, mp),
+    transaction_populator_(executor_, threads_, chain, mp),
 #else
-    transaction_populator_(dispatch, chain),
+    transaction_populator_(executor_, threads_, chain),
 #endif
-    fast_chain_(chain)
+    chain_(chain)
 {
 }
 
@@ -68,70 +72,84 @@ void validate_transaction::stop()
 //-----------------------------------------------------------------------------
 // These checks are context free.
 
-void validate_transaction::check(transaction_const_ptr tx, result_handler handler) const {
+::asio::awaitable<code> validate_transaction::check(transaction_const_ptr tx) const {
     // Run context free checks.
-    handler(tx->check(true, retarget_));
+    co_return tx->check(true, retarget_);
 }
 
 // Accept sequence.
 //-----------------------------------------------------------------------------
 // These checks require chain and tx state (net height and enabled forks).
 
-void validate_transaction::accept(transaction_const_ptr tx, result_handler handler) const {
+::asio::awaitable<code> validate_transaction::accept(transaction_const_ptr tx) const {
     // Populate chain state of the next block (tx pool).
-    tx->validation.state = fast_chain_.chain_state();
+    tx->validation.state = chain_.chain_state();
 
     if ( ! tx->validation.state) {
-        handler(error::transaction_validation_state_failed);
-        return;
+        co_return error::transaction_validation_state_failed;
     }
 
-    transaction_populator_.populate(tx, std::bind(&validate_transaction::handle_populated, this, _1, tx, handler));
-}
+    auto const populate_ec = co_await transaction_populator_.populate(tx);
 
-void validate_transaction::handle_populated(code const& ec, transaction_const_ptr tx, result_handler handler) const {
     if (stopped()) {
-        handler(error::service_stopped);
-        return;
+        co_return error::service_stopped;
     }
 
-    if (ec) {
-        handler(ec);
-        return;
+    if (populate_ec) {
+        co_return populate_ec;
     }
 
     KTH_ASSERT(tx->validation.state);
 
     // Run contextual tx checks.
-    handler(tx->accept());
+    co_return tx->accept();
 }
 
 // Connect sequence.
 //-----------------------------------------------------------------------------
 // These checks require chain state, block state and perform script validation.
 
-void validate_transaction::connect(transaction_const_ptr tx, result_handler handler) const {
+::asio::awaitable<code> validate_transaction::connect(transaction_const_ptr tx) const {
     KTH_ASSERT(tx->validation.state);
     auto const total_inputs = tx->inputs().size();
 
     // Return if there are no inputs to validate (will fail later).
     if (total_inputs == 0) {
-        handler(error::success);
-        return;
+        co_return error::success;
     }
 
-    auto const buckets = std::min(dispatch_.size(), total_inputs);
-    auto const join_handler = synchronize(handler, buckets, NAME "_validate");
+    auto const buckets = std::min(threads_, total_inputs);
     KTH_ASSERT(buckets != 0);
 
-    // If the priority threadpool is shut down when this is called the handler
-    // will never be invoked, resulting in a threadpool.join indefinite hang.
+    // Use a channel to collect results from parallel tasks
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+    auto channel = std::make_shared<result_channel>(executor_, buckets);
+
+    // Launch parallel tasks
     for (size_t bucket = 0; bucket < buckets; ++bucket) {
-        dispatch_.concurrent(&validate_transaction::connect_inputs, this, tx, bucket, buckets, join_handler);
+        ::asio::post(executor_, [this, tx, bucket, buckets, channel]() {
+            auto result = connect_inputs_sync(tx, bucket, buckets);
+            channel->try_send(std::error_code{}, result);
+        });
     }
+
+    // Wait for all results - return first error or success if all succeed
+    code final_result = error::success;
+    for (size_t i = 0; i < buckets; ++i) {
+        auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+        if (ec) {
+            // Channel error - shouldn't happen
+            co_return error::operation_failed;
+        }
+        if (result != error::success && final_result == error::success) {
+            final_result = result;
+        }
+    }
+
+    co_return final_result;
 }
 
-void validate_transaction::connect_inputs(transaction_const_ptr tx, size_t bucket, size_t buckets, result_handler handler) const {
+code validate_transaction::connect_inputs_sync(transaction_const_ptr tx, size_t bucket, size_t buckets) const {
     KTH_ASSERT(bucket < buckets);
 
 #if defined(KTH_CURRENCY_BCH)
@@ -143,32 +161,28 @@ void validate_transaction::connect_inputs(transaction_const_ptr tx, size_t bucke
 
     for (auto input_index = bucket; input_index < inputs.size(); input_index = ceiling_add(input_index, buckets)) {
         if (stopped()) {
-            handler(error::service_stopped);
-            return;
+            return error::service_stopped;
         }
 
         auto const& prevout = inputs[input_index].previous_output();
 
         if ( ! prevout.validation.cache.is_valid()) {
-            handler(error::missing_previous_output);
-            return;
+            return error::missing_previous_output;
         }
 
         auto res = validate_input::verify_script(*tx, input_index, forks);
         if (res.first != error::success) {
-            handler(res.first);
-            return;
+            return res.first;
         }
 
 #if defined(KTH_CURRENCY_BCH)
         tx_sigchecks += res.second;
         if (tx_sigchecks > max_tx_sigchecks) {
-            handler(error::transaction_sigchecks_limit);
-            return;
+            return error::transaction_sigchecks_limit;
         }
 #endif
     }
-    handler(error::success);
+    return error::success;
 }
 
 } // namespace kth::blockchain

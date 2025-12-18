@@ -25,6 +25,10 @@ struct KD_API settings {
     uint64_t db_max_size;
     bool safe_mode;
     uint32_t cache_capacity;
+
+    /// Use parallel block push (true) or sequential (false).
+    /// Parallel may not provide benefits due to LMDB serialization.
+    bool parallel_block_push;
 };
 
 } // namespace kth::database

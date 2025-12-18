@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cstddef>
 
-#include <kth/blockchain/interface/fast_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain.hpp>
 
 namespace kth::blockchain {
@@ -15,39 +15,34 @@ namespace kth::blockchain {
 using namespace kd::chain;
 using namespace kth::database;
 
-#define NAME "populate_base"
-
-
 // Database access is limited to:
 // spend: { spender }
 // transaction: { exists, height, position, output }
 
-populate_base::populate_base(dispatcher& dispatch, fast_chain const& chain)
-    : dispatch_(dispatch)
-    , fast_chain_(chain)
+populate_base::populate_base(executor_type executor, size_t threads, block_chain const& chain)
+    : executor_(std::move(executor))
+    , threads_(threads)
+    , chain_(chain)
 {}
 
 // This is the only necessary file system read in block/tx validation.
-void populate_base::populate_duplicate(size_t branch_height, const domain::chain::transaction& tx, bool require_confirmed) const {
+void populate_base::populate_duplicate(size_t branch_height, domain::chain::transaction const& tx, bool require_confirmed) const {
     //Knuth: We are not validating tx duplication
     tx.validation.duplicate = false;
 }
 
-void populate_base::populate_pooled(const domain::chain::transaction& tx, uint32_t forks) const {
-    size_t height;
-    size_t position;
-
-    if (fast_chain_.get_transaction_position(height, position, tx.hash(), false)
-
-        && (position == position_max)) {
-
-        tx.validation.pooled = true;
-        tx.validation.current = (height == forks);
-        return;
-    }
-
+void populate_base::populate_pooled(domain::chain::transaction const& tx, uint32_t forks) const {
     tx.validation.pooled = false;
     tx.validation.current = false;
+    auto const result = chain_.get_transaction_position(tx.hash(), false);
+    if ( ! result) {
+        return;
+    }
+    if (result->second != position_max) {
+        return;
+    }
+    tx.validation.pooled = true;
+    tx.validation.current = (result->first == forks);
 }
 
 // Unspent outputs are cached by the store. If the cache is large enough this
@@ -68,9 +63,14 @@ void populate_base::populate_prevout(size_t branch_height, output_point const& o
     }
 
     //TODO(fernando): check the value of the parameters: branch_height and require_confirmed
-    if ( ! fast_chain_.get_utxo(prevout.cache, prevout.height, prevout.median_time_past, prevout.coinbase, outpoint, branch_height)) {
+    auto const utxo = chain_.get_utxo(outpoint, branch_height);
+    if ( ! utxo) {
         return;
     }
+    prevout.cache = utxo->output;
+    prevout.height = utxo->height;
+    prevout.median_time_past = utxo->median_time_past;
+    prevout.coinbase = utxo->coinbase;
 
     // BUGBUG: Spends are not marked as spent by unconfirmed transactions.
     // So tx pool transactions currently have no double spend limitation.
