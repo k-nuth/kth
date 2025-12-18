@@ -117,6 +117,7 @@ set(kth_headers
   include/kth/network/protocols/protocol.hpp
   include/kth/network/protocols/protocol_ping_60001.hpp
   include/kth/network/protocols/protocol_reject_70002.hpp
+  include/kth/network/protocols_coro.hpp
   include/kth/network/settings.hpp
   include/kth/network.hpp
 )
@@ -146,6 +147,7 @@ set(kth_sources
   src/p2p.cpp
   src/peer_session.cpp
   src/peer_manager.cpp
+  src/protocols_coro.cpp
   src/proxy.cpp
   src/settings.cpp
 )
@@ -186,6 +188,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/p2p.cpp
     test/peer_manager.cpp
     test/peer_session.cpp
+    test/protocols_coro.cpp
   )
 
   target_include_directories(kth_network_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
