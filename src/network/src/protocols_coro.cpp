@@ -59,7 +59,7 @@ domain::message::version make_version_message(
     domain::message::version version;
     version.set_value(config.protocol_version);
     version.set_services(config.services);
-    version.set_timestamp(static_cast<uint64_t>(zulu_time()));
+    version.set_timestamp(uint64_t(zulu_time()));
     version.set_address_receiver(peer_authority.to_network_address());
     version.set_nonce(config.nonce);
     version.set_user_agent(config.user_agent);
@@ -758,6 +758,9 @@ awaitable_expected<std::vector<block_with_height>> request_blocks_batch(
 
         auto height = it->second;
         expected_blocks.erase(it);
+
+        spdlog::debug("[protocol] Received block {} (height {}) from [{}]",
+            encode_hash(block_hash), height, peer.authority());
 
         received_blocks.push_back({height, std::move(*block_result)});
     }

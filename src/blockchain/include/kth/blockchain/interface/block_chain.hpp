@@ -37,6 +37,7 @@
 namespace kth::blockchain {
 
 using kth::awaitable_expected;
+using database::heights_t;
 
 /// Unified blockchain interface.
 /// Thread safety: get_* methods are NOT thread safe, fetch_* methods are thread safe.
@@ -80,6 +81,13 @@ struct KB_API block_chain {
     /// @param headers_pre_validated If true, skip header validation (for headers-first sync)
     [[nodiscard]]
     ::asio::awaitable<code> organize(block_const_ptr block, bool headers_pre_validated = false);
+
+    /// Fast IBD: store only block data without validation or UTXO updates.
+    /// For use under checkpoint where we trust the blocks.
+    /// @param block The block to store
+    /// @param height The height at which to store the block
+    [[nodiscard]]
+    ::asio::awaitable<code> organize_fast(block_const_ptr block, size_t height);
 
     [[nodiscard]]
     ::asio::awaitable<code> organize(transaction_const_ptr tx);
@@ -162,7 +170,7 @@ struct KB_API block_chain {
     // DATABASE READERS (Low-level, NOT thread safe)
     // =========================================================================
 
-    [[nodiscard]] std::expected<std::pair<size_t, size_t>, database::result_code> get_last_heights() const;
+    [[nodiscard]] std::expected<heights_t, database::result_code> get_last_heights() const;
     [[nodiscard]] std::expected<domain::chain::header, database::result_code> get_header(size_t height) const;
     [[nodiscard]] std::expected<database::header_with_abla_state_t, database::result_code> get_header_and_abla_state(size_t height) const;
     [[nodiscard]] std::expected<domain::chain::header::list, database::result_code> get_headers(size_t from, size_t to) const;
@@ -221,7 +229,7 @@ struct KB_API block_chain {
     [[nodiscard]] awaitable_expected<std::tuple<header_const_ptr, size_t, std::shared_ptr<hash_list>, uint64_t>>
     fetch_block_header_txs_size(hash_digest const& hash) const;
 
-    [[nodiscard]] awaitable_expected<size_t>
+    [[nodiscard]] awaitable_expected<heights_t>
     fetch_last_height() const;
 
     // Merkle/Compact blocks

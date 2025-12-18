@@ -30,6 +30,7 @@ boost::unordered_flat_map<std::string_view, std::string_view> const known_client
     {"Bitcoin Cash Node:", "BCHN"},
     {"Knuth:", "KTH"},
     {"Bitcoin ABC:", "ABC"},
+    {"Bitcoin XT:", "XT"},
     {"BitcoinUnlimited:", "BU"},
     {"BCH Unlimited:", "BU"},
     {"BUCash:", "BU"},
@@ -356,7 +357,7 @@ bool peer_session::record_pong_received(uint64_t nonce) {
     auto const now = std::chrono::steady_clock::now();
     auto const now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
         now.time_since_epoch()).count();
-    auto const latency_ms = static_cast<uint32_t>((now_ns - sent_ns) / 1'000'000);
+    auto const latency_ms = uint32_t((now_ns - sent_ns) / 1'000'000);
     ping_latency_ms_.store(latency_ms, std::memory_order_relaxed);
     pending_ping_nonce_.store(0, std::memory_order_relaxed);
     return true;
@@ -364,6 +365,19 @@ bool peer_session::record_pong_received(uint64_t nonce) {
 
 std::chrono::steady_clock::time_point peer_session::connection_time() const {
     return connection_time_;
+}
+
+// =============================================================================
+// Misbehavior Scoring
+// =============================================================================
+
+bool peer_session::misbehave(int score) {
+    auto const new_score = misbehavior_score_.fetch_add(score, std::memory_order_relaxed) + score;
+    return new_score >= misbehavior_ban_threshold;
+}
+
+int peer_session::misbehavior_score() const {
+    return misbehavior_score_.load(std::memory_order_relaxed);
 }
 
 // =============================================================================
@@ -577,7 +591,7 @@ awaitable_expected<peer_session::ptr> async_connect(
     if (is_ip_address) {
         // Hostname is already an IP address, skip DNS resolution
         direct_endpoint = ::asio::ip::tcp::endpoint(ip_address, port);
-        spdlog::debug("[async_connect] {} is an IP address, skipping DNS", hostname);
+        spdlog::trace("[async_connect] {} is an IP address, skipping DNS", hostname);
     } else {
         // Need DNS resolution
         auto resolver = std::make_shared<::asio::ip::tcp::resolver>(executor);

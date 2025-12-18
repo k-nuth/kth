@@ -291,6 +291,26 @@ public:
     [[nodiscard]]
     std::chrono::steady_clock::time_point connection_time() const;
 
+    // -------------------------------------------------------------------------
+    // Misbehavior scoring (BCHN-style)
+    // -------------------------------------------------------------------------
+
+    /// Ban threshold - peer is banned when score reaches this value
+    static constexpr int misbehavior_ban_threshold = 100;
+
+    /// Score penalties for various misbehaviors
+    static constexpr int misbehavior_timeout = 10;       // Timeout on request
+    static constexpr int misbehavior_invalid_data = 100; // Invalid headers/blocks (instant ban)
+
+    /// Record misbehavior and return true if peer should be banned
+    /// @param score Points to add to misbehavior score
+    /// @return true if score now exceeds ban threshold
+    bool misbehave(int score);
+
+    /// Get current misbehavior score
+    [[nodiscard]]
+    int misbehavior_score() const;
+
 private:
     // -------------------------------------------------------------------------
     // Internal coroutines
@@ -373,6 +393,9 @@ private:
     // Benign data races are acceptable for statistics
     std::atomic<uint64_t> pending_ping_nonce_{0};
     std::atomic<int64_t> pending_ping_time_ns_{0};
+
+    // Misbehavior scoring (BCHN-style)
+    std::atomic<int> misbehavior_score_{0};
 
     // Buffers (only accessed from read_loop, no synchronization needed)
     data_chunk heading_buffer_;

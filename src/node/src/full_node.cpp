@@ -12,7 +12,6 @@
 #include <kth/blockchain.hpp>
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
-#include <kth/node/sync_session.hpp>
 #include <kth/node/user_agent.hpp>
 
 #include <asio/co_spawn.hpp>
@@ -215,65 +214,32 @@ full_node::~full_node() {
 
 #if ! defined(__EMSCRIPTEN__)
 ::asio::awaitable<void> full_node::run_sync() {
-    spdlog::debug("[full_node] run_sync() starting");
-    auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor);
+    spdlog::debug("[full_node] run_sync() starting - CSP sync system");
 
-    while (!stopped()) {
-        // Wait until we have at least one connected peer
-        while (!stopped() && network_.connection_count() == 0) {
-            timer.expires_after(std::chrono::milliseconds(100));
-            auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-            if (ec || stopped()) {
-                spdlog::debug("[full_node] run_sync() exiting");
-                co_return;
-            }
-        }
+    // Create the header organizer (single instance for the sync lifetime)
+    blockchain::header_organizer organizer(
+        chain_.headers(),
+        chain_.chain_settings(),
+        network_type_
+    );
 
-        if (stopped()) {
-            co_return;
-        }
-
-        spdlog::info("[node] Starting initial block sync...");
-        auto result = co_await sync_from_best_peer(chain_, network_, network_type_);
-
-        if (stopped()) {
-            co_return;
-        }
-
-        if (result.error) {
-            spdlog::warn("[node] Sync failed: {} (connected peers: {}), retrying...",
-                result.error.message(), network_.connection_count());
-            // Brief delay to allow maintain_outbound_connections to find new peers
-            timer.expires_after(std::chrono::milliseconds(500));
-            auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-            if (ec || stopped()) {
-                co_return;
-            }
-            continue;
-        }
-
-        // Check if we actually synced something
-        if (result.headers_received > 0 || result.blocks_received > 0) {
-            spdlog::info("[node] Sync progress: {} headers, {} blocks, height {}",
-                result.headers_received, result.blocks_received, result.final_height);
-            // Continue syncing - there might be more blocks
-            if (stopped()) {
-                co_return;
-            }
-            continue;
-        }
-
-        // No sync happened - no peers ahead of us
-        // Wait longer before checking again (allows new peers to connect)
-        spdlog::debug("[node] No peers ahead of us at height {}, waiting for new peers...",
-            result.final_height);
-        timer.expires_after(std::chrono::seconds(5));
-        auto [ec2] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-        if (ec2 || stopped()) {
-            break;  // Timer cancelled or stop requested
-        }
+    // Initialize the organizer
+    if (!organizer.start()) {
+        spdlog::error("[full_node] Failed to start header organizer");
+        co_return;
     }
+
+    // Sync tip from chain's header index
+    organizer.sync_tip();
+
+    spdlog::info("[node] Starting CSP-based sync system...");
+
+    // Run the CSP sync orchestrator
+    // This will spawn all tasks (peer provider, header download/validation,
+    // block download/validation, coordinator) and wait until stopped
+    co_await sync::sync_orchestrator(chain_, organizer, network_);
+
+    organizer.stop();
     spdlog::debug("[full_node] run_sync() exiting");
 }
 #endif

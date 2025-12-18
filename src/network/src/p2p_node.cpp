@@ -28,6 +28,7 @@ p2p_node::p2p_node(settings const& settings)
     , top_block_({null_hash, 0})
     , new_peer_channel_(std::make_unique<concurrent_channel<peer_event>>(pool_.get_executor(), 100))
     , stop_signal_(std::make_unique<concurrent_event_channel>(pool_.get_executor(), 1))
+    , connected_peer_channel_(std::make_unique<concurrent_channel<peer_session::ptr>>(pool_.get_executor(), 100))
 {
     spdlog::debug("[p2p_node] p2p_node constructor - thread pool size: {}", pool_.size());
     // Register default message handlers using typed registration
@@ -147,6 +148,11 @@ void p2p_node::stop() {
     // Close the new peer channel to wake up peer_supervisor
     if (new_peer_channel_) {
         new_peer_channel_->close();
+    }
+
+    // Close the connected peer channel to wake up sync layer
+    if (connected_peer_channel_) {
+        connected_peer_channel_->close();
     }
 
     // Stop acceptor - this causes run_inbound() to exit
@@ -349,7 +355,7 @@ awaitable_expected<peer_session::ptr> p2p_node::connect(
         co_return std::unexpected(err);
     }
 
-    spdlog::info("[p2p_node] Connection complete with {}:{}, version {}, {}",
+    spdlog::debug("[p2p_node] Connected to {}:{}, version {}, {}",
         host, port, peer->negotiated_version(),
         peer->peer_version()->user_agent());
 
@@ -389,6 +395,10 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
     // For now, return empty - callers should use the async version
     // TODO: Consider removing this sync method or implementing properly
     return result;
+}
+
+concurrent_channel<peer_session::ptr>& p2p_node::connected_peers() {
+    return *connected_peer_channel_;
 }
 
 // Internal coroutines
@@ -492,8 +502,9 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
         co_await (
             peer->run() &&
             [&]() -> ::asio::awaitable<void> {
-                // Generate nonce for handshake
+                // Generate nonce for handshake and set on peer for identification
                 uint64_t nonce = generate_nonce();
+                peer->set_nonce(nonce);
 
                 // Perform handshake (uses channels - run() is running in parallel!)
                 spdlog::debug("[p2p_node] connect_to_seed: performing handshake for {}:{}", seed_host, seed_port);
@@ -937,8 +948,9 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
                 co_await (
                     peer->run() &&
                     [&]() -> ::asio::awaitable<void> {
-                        // Generate nonce for handshake
+                        // Generate nonce for handshake and set on peer for identification
                         uint64_t nonce = generate_nonce();
+                        peer->set_nonce(nonce);
                         auto config = make_handshake_config(settings_, top_block_.load().height(), nonce);
 
                         // Perform handshake (uses channels - run() is already running!)
@@ -966,6 +978,11 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
                             peer->stop();
                             co_return;
                         }
+
+                        // Notify sync layer of new peer (CSP pattern)
+                        spdlog::debug("[p2p_node] Connection complete with {}, version {}, {}",
+                            peer->authority(), peer->negotiated_version(), peer->short_user_agent());
+                        connected_peer_channel_->try_send(std::error_code{}, peer);
 
                         // Send initial ping to get latency data
                         {

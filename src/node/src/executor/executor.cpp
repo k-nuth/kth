@@ -19,6 +19,8 @@
 #include <kth/node/parser.hpp>
 #include <kth/domain/version.hpp>
 
+#include <crypto/sha256.h>
+
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/signal_set.hpp>
@@ -352,7 +354,7 @@ void executor::wait_for_stop_signal() {
     }
 
     auto signal_received = g_signal_received.load();
-    spdlog::info("[node] Stop signal detected (code: {}).", signal_received);
+    spdlog::info("[node] StopX signal detected (code: {}).", signal_received);
 
     // Restore previous handlers
     std::signal(SIGINT, prev_sigint);
@@ -530,6 +532,7 @@ void executor::initialize_output(std::string_view extra, db_mode_type db_mode) {
     spdlog::info("[node] Currency: {} - {}.", KTH_CURRENCY_SYMBOL_STR, KTH_CURRENCY_STR);
     spdlog::info("[node] Optimized for microarchitecture: {}.", KTH_MICROARCHITECTURE_STR);
     spdlog::info("[node] Built for CPU instructions/extensions: {}.", march_names());
+    spdlog::info("[node] SHA256 implementation: {}.", SHA256AutoDetect());
     spdlog::info("[node] Database type: {}.", db_type_str);
 
 #ifndef NDEBUG

@@ -49,6 +49,7 @@
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
+#include <kth/node/sync.hpp>
 
 #include <asio/awaitable.hpp>
 
