@@ -39,6 +39,7 @@ option(WITH_CONSOLE_NODE_CINT "" OFF)
 option(WITH_EXAMPLES "Compile with examples." OFF)
 option(ENABLE_SHARED "" OFF)
 option(ENABLE_SHARED_NODE_CINT "" ON)
+option(KTH_ASIO_STANDALONE "Use standalone Asio instead of Boost.Asio" OFF)
 
 # set(ENABLE_POSITION_INDEPENDENT_CODE ON)
 # set(WITH_CONSOLE OFF)
@@ -52,6 +53,12 @@ option(ENABLE_SHARED_NODE_CINT "" ON)
 
 if (WITH_LOCAL_MINING)
 	add_definitions(-DWITH_LOCAL_MINING)
+endif()
+
+# Asio standalone mode - define both our macro and Asio's expected macro
+if (KTH_ASIO_STANDALONE)
+    add_definitions(-DKTH_ASIO_STANDALONE)
+    add_definitions(-DASIO_STANDALONE)
 endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/ci_utils/cmake)
