@@ -90,70 +90,100 @@ if (ENABLE_SHARED)
 endif()
 
 
+# Modern coroutine-based headers (KEEP)
 set(kth_headers
-  include/kth/network/acceptor.hpp
   include/kth/network/define.hpp
   include/kth/network/peer_session.hpp
   include/kth/network/peer_manager.hpp
-  include/kth/network/proxy.hpp
-  include/kth/network/channel.hpp
-  include/kth/network/hosts.hpp
-  include/kth/network/p2p.hpp
   include/kth/network/p2p_node.hpp
-  include/kth/network/sessions/session_outbound.hpp
-  include/kth/network/sessions/session_seed.hpp
-  include/kth/network/sessions/session_inbound.hpp
-  include/kth/network/sessions/session_manual.hpp
-  include/kth/network/sessions/session_batch.hpp
-  include/kth/network/sessions/session.hpp
-  include/kth/network/connector.hpp
-  include/kth/network/message_subscriber.hpp
-  include/kth/network/protocols/protocol_version_70002.hpp
-  include/kth/network/protocols/protocol_seed_31402.hpp
-  include/kth/network/protocols/protocol_timer.hpp
-  include/kth/network/protocols/protocol_version_31402.hpp
-  include/kth/network/protocols/protocol_address_31402.hpp
-  include/kth/network/protocols/protocol_ping_31402.hpp
-  include/kth/network/protocols/protocol_events.hpp
-  include/kth/network/protocols/protocol.hpp
-  include/kth/network/protocols/protocol_ping_60001.hpp
-  include/kth/network/protocols/protocol_reject_70002.hpp
   include/kth/network/protocols_coro.hpp
   include/kth/network/settings.hpp
   include/kth/network/version.hpp
   include/kth/network.hpp
+  include/kth/network/hosts.hpp  # TODO: review - may need to modernize
+
+  # Message handlers (one per message type)
+  include/kth/network/handlers/ping.hpp
+  include/kth/network/handlers/pong.hpp
+
+  # =========================================================================
+  # LEGACY FILES - MOVED TO deprecated/ FOLDER
+  # These files have been moved to src/network/deprecated/ and marked
+  # with DEPRECATED headers. They are kept for reference during migration.
+  # See doc/asio.md for migration details.
+  # =========================================================================
+  # Legacy core headers - MOVED TO deprecated/
+  # deprecated/acceptor.hpp
+  # deprecated/channel.hpp
+  # deprecated/connector.hpp
+  # deprecated/message_subscriber.hpp
+  # deprecated/p2p.hpp
+  # deprecated/proxy.hpp
+  # Legacy sessions - MOVED TO deprecated/sessions/
+  # deprecated/sessions/session.hpp
+  # deprecated/sessions/session_batch.hpp
+  # deprecated/sessions/session_inbound.hpp
+  # deprecated/sessions/session_manual.hpp
+  # deprecated/sessions/session_outbound.hpp
+  # deprecated/sessions/session_seed.hpp
+  # Legacy protocols - MOVED TO deprecated/protocols/
+  # deprecated/protocols/protocol.hpp
+  # deprecated/protocols/protocol_events.hpp
+  # deprecated/protocols/protocol_timer.hpp
+  # deprecated/protocols/protocol_address_31402.hpp
+  # deprecated/protocols/protocol_ping_31402.hpp
+  # deprecated/protocols/protocol_ping_60001.hpp
+  # deprecated/protocols/protocol_reject_70002.hpp
+  # deprecated/protocols/protocol_seed_31402.hpp
+  # deprecated/protocols/protocol_version_31402.hpp
+  # deprecated/protocols/protocol_version_70002.hpp
 )
 
+# Modern coroutine-based sources (KEEP)
 set(kth_sources
-  src/protocols/protocol.cpp
-  src/protocols/protocol_address_31402.cpp
-  src/protocols/protocol_events.cpp
-  src/protocols/protocol_ping_31402.cpp
-  src/protocols/protocol_ping_60001.cpp
-  src/protocols/protocol_reject_70002.cpp
-  src/protocols/protocol_seed_31402.cpp
-  src/protocols/protocol_timer.cpp
-  src/protocols/protocol_version_31402.cpp
-  src/protocols/protocol_version_70002.cpp
-  src/sessions/session.cpp
-  src/sessions/session_batch.cpp
-  src/sessions/session_inbound.cpp
-  src/sessions/session_manual.cpp
-  src/sessions/session_outbound.cpp
-  src/sessions/session_seed.cpp
-  src/acceptor.cpp
-  src/channel.cpp
-  src/connector.cpp
-  src/hosts.cpp
-  src/message_subscriber.cpp
-  src/p2p.cpp
   src/p2p_node.cpp
   src/peer_session.cpp
   src/peer_manager.cpp
   src/protocols_coro.cpp
-  src/proxy.cpp
   src/settings.cpp
   src/version.cpp
+  src/hosts.cpp  # TODO: review - may need to modernize
+
+  # Message handlers (one per message type)
+  src/handlers/ping.cpp
+  src/handlers/pong.cpp
+
+  # =========================================================================
+  # LEGACY FILES - MOVED TO deprecated/ FOLDER
+  # These files have been moved to src/network/deprecated/ and marked
+  # with DEPRECATED headers. They are kept for reference during migration.
+  # See doc/asio.md for migration details.
+  # =========================================================================
+  # Legacy core - MOVED TO deprecated/
+  # deprecated/acceptor.cpp
+  # deprecated/channel.cpp
+  # deprecated/connector.cpp
+  # deprecated/message_subscriber.cpp
+  # deprecated/p2p.cpp
+  # deprecated/proxy.cpp
+  # Legacy sessions - MOVED TO deprecated/sessions/
+  # deprecated/sessions/session.cpp
+  # deprecated/sessions/session_batch.cpp
+  # deprecated/sessions/session_inbound.cpp
+  # deprecated/sessions/session_manual.cpp
+  # deprecated/sessions/session_outbound.cpp
+  # deprecated/sessions/session_seed.cpp
+  # Legacy protocols - MOVED TO deprecated/protocols/
+  # deprecated/protocols/protocol.cpp
+  # deprecated/protocols/protocol_events.cpp
+  # deprecated/protocols/protocol_timer.cpp
+  # deprecated/protocols/protocol_address_31402.cpp
+  # deprecated/protocols/protocol_ping_31402.cpp
+  # deprecated/protocols/protocol_ping_60001.cpp
+  # deprecated/protocols/protocol_reject_70002.cpp
+  # deprecated/protocols/protocol_seed_31402.cpp
+  # deprecated/protocols/protocol_version_31402.cpp
+  # deprecated/protocols/protocol_version_70002.cpp
 )
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
@@ -189,7 +219,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(Catch2 3 REQUIRED)
 
   add_executable(kth_network_test
-    test/p2p.cpp
+    # TODO: Migrate tests from test/p2p.cpp to test/p2p_node.cpp before deleting
+    # test/p2p.cpp  # Legacy test - COMMENTED OUT
     test/p2p_node.cpp
     test/peer_manager.cpp
     test/peer_session.cpp

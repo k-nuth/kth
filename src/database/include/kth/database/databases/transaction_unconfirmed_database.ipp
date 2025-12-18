@@ -10,18 +10,22 @@
 namespace kth::database {
 
 template <typename Clock>
-transaction_unconfirmed_entry internal_database_basis<Clock>::get_transaction_unconfirmed(hash_digest const& hash) const {
+std::expected<transaction_unconfirmed_entry, result_code> internal_database_basis<Clock>::get_transaction_unconfirmed(hash_digest const& hash) const {
 
     KTH_DB_txn* db_txn;
     auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (res != KTH_DB_SUCCESS) {
-        return {};
+        return std::unexpected(result_code::other);
     }
 
     auto const& ret = get_transaction_unconfirmed(hash, db_txn);
 
     if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
-        return {};
+        return std::unexpected(result_code::other);
+    }
+
+    if ( ! ret.is_valid()) {
+        return std::unexpected(result_code::key_not_found);
     }
 
     return ret;
@@ -46,21 +50,21 @@ transaction_unconfirmed_entry internal_database_basis<Clock>::get_transaction_un
 }
 
 template <typename Clock>
-std::vector<transaction_unconfirmed_entry> internal_database_basis<Clock>::get_all_transaction_unconfirmed() const {
+std::expected<std::vector<transaction_unconfirmed_entry>, result_code> internal_database_basis<Clock>::get_all_transaction_unconfirmed() const {
 
     std::vector<transaction_unconfirmed_entry> result;
 
     KTH_DB_txn* db_txn;
     auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (res != KTH_DB_SUCCESS) {
-        return result;
+        return std::unexpected(result_code::other);
     }
 
     KTH_DB_cursor* cursor;
 
     if (kth_db_cursor_open(db_txn, dbi_transaction_unconfirmed_db_, &cursor) != KTH_DB_SUCCESS) {
         kth_db_txn_commit(db_txn);
-        return result;
+        return std::unexpected(result_code::other);
     }
 
     KTH_DB_val key;
@@ -90,7 +94,7 @@ std::vector<transaction_unconfirmed_entry> internal_database_basis<Clock>::get_a
     kth_db_cursor_close(cursor);
 
     if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
-        return result;
+        return std::unexpected(result_code::other);
     }
 
     return result;

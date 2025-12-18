@@ -21,13 +21,15 @@ void initialize(std::string const& debug_file, std::string const& error_file, bo
 
         if (stdout_enabled) {
             auto stdout_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-            stdout_sink->set_level(spdlog::level::info);
+            stdout_sink->set_level(verbose ? spdlog::level::trace : spdlog::level::info);
             auto logger = std::make_shared<spdlog::logger>("", spdlog::sinks_init_list({debug_file_sink, error_file_sink, stdout_sink}));
             logger->set_level(verbose ? spdlog::level::trace : spdlog::level::debug);
+            logger->flush_on(spdlog::level::info);
             spdlog::set_default_logger(logger);
         } else {
             auto logger = std::make_shared<spdlog::logger>("", spdlog::sinks_init_list({debug_file_sink, error_file_sink}));
             logger->set_level(verbose ? spdlog::level::trace : spdlog::level::debug);
+            logger->flush_on(spdlog::level::debug);
             spdlog::set_default_logger(logger);
         }
 

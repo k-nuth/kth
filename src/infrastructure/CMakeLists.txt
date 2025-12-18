@@ -89,6 +89,13 @@ if (KTH_ASIO_STANDALONE)
   find_package(asio REQUIRED)
 endif()
 
+# jemalloc support for memory tracking
+option(KTH_WITH_JEMALLOC "Use jemalloc for memory allocation" OFF)
+if (KTH_WITH_JEMALLOC)
+  find_package(jemalloc REQUIRED)
+  add_definitions(-DKTH_WITH_JEMALLOC)
+endif()
+
 include(CheckCXXCompilerFlag)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/ci_utils/cmake)
@@ -213,7 +220,6 @@ set(kth_sources_just_legacy
 
         src/utility/binary.cpp
         src/utility/conditional_lock.cpp
-        src/utility/dispatcher.cpp
         src/utility/flush_lock.cpp
         src/utility/interprocess_lock.cpp
         src/utility/monitor.cpp
@@ -223,6 +229,7 @@ set(kth_sources_just_legacy
 
         src/utility/sequential_lock.cpp
         src/utility/string.cpp
+        src/utility/system_memory.cpp
         src/utility/thread.cpp
 
         src/wallet/dictionary.cpp
@@ -234,6 +241,9 @@ set(kth_sources_just_legacy
         src/wallet/uri.cpp
 
         src/utility/pseudo_random.cpp
+
+        # DEPRECATED - kept for backward compatibility during migration (see asio.md)
+        include/kth/infrastructure/deprecated/utility/dispatcher.cpp
     )
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
@@ -244,12 +254,13 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/config/printer.cpp
 
     src/utility/deadline.cpp
-    src/utility/sequencer.cpp
     src/utility/socket.cpp
 
     src/utility/pseudo_random_broken_do_not_use.cpp
 
-    src/utility/work.cpp
+    # DEPRECATED - kept for backward compatibility during migration (see asio.md)
+    include/kth/infrastructure/deprecated/utility/sequencer.cpp
+    include/kth/infrastructure/deprecated/utility/work.cpp
   )
 endif()
 
@@ -343,9 +354,7 @@ set(kth_headers
     include/kth/infrastructure/impl/utility/data.ipp
     include/kth/infrastructure/impl/utility/ostream_writer.ipp
     include/kth/infrastructure/impl/utility/pending.ipp
-    include/kth/infrastructure/impl/utility/resubscriber.ipp
     include/kth/infrastructure/impl/utility/serializer.ipp
-    include/kth/infrastructure/impl/utility/subscriber.ipp
     include/kth/infrastructure/impl/utility/string.ipp
     include/kth/infrastructure/impl/utility/track.ipp
 
@@ -372,8 +381,6 @@ set(kth_headers
     include/kth/infrastructure/utility/data.hpp
     include/kth/infrastructure/utility/deadline.hpp
     include/kth/infrastructure/utility/decorator.hpp
-    include/kth/infrastructure/utility/delegates.hpp
-    include/kth/infrastructure/utility/dispatcher.hpp
     include/kth/infrastructure/utility/enable_shared_from_base.hpp
     include/kth/infrastructure/utility/endian.hpp
     include/kth/infrastructure/utility/exceptions.hpp
@@ -389,20 +396,16 @@ set(kth_headers
     include/kth/infrastructure/utility/pseudo_random_broken_do_not_use.hpp
 
     include/kth/infrastructure/utility/reader.hpp
-    include/kth/infrastructure/utility/resubscriber.hpp
     include/kth/infrastructure/utility/scope_lock.hpp
-    include/kth/infrastructure/utility/sequencer.hpp
     include/kth/infrastructure/utility/sequential_lock.hpp
     include/kth/infrastructure/utility/serializer.hpp
     include/kth/infrastructure/utility/socket.hpp
     include/kth/infrastructure/utility/string.hpp
-    include/kth/infrastructure/utility/subscriber.hpp
-    include/kth/infrastructure/utility/synchronizer.hpp
+    include/kth/infrastructure/utility/system_memory.hpp
     include/kth/infrastructure/utility/thread.hpp
     include/kth/infrastructure/utility/threadpool.hpp
     include/kth/infrastructure/utility/timer.hpp
     include/kth/infrastructure/utility/track.hpp
-    include/kth/infrastructure/utility/work.hpp
     include/kth/infrastructure/utility/writer.hpp
     include/kth/infrastructure/utility/async_channel.hpp
     include/kth/infrastructure/utility/awaitable_helpers.hpp
@@ -417,6 +420,17 @@ set(kth_headers
     include/kth/infrastructure/wallet/uri.hpp
 
     include/kth/infrastructure.hpp
+
+    # DEPRECATED - moved to deprecated/ folder (see asio.md)
+    # deprecated/impl/utility/resubscriber.ipp
+    # deprecated/impl/utility/subscriber.ipp
+    # deprecated/utility/delegates.hpp
+    # deprecated/utility/dispatcher.hpp
+    # deprecated/utility/resubscriber.hpp
+    # deprecated/utility/sequencer.hpp
+    # deprecated/utility/subscriber.hpp
+    # deprecated/utility/synchronizer.hpp
+    # deprecated/utility/work.hpp
 )
 
 if (KTH_WITH_PNG)
@@ -486,6 +500,10 @@ endif()
 
 if (KTH_ASIO_STANDALONE)
   target_link_libraries(${PROJECT_NAME} PUBLIC asio::asio)
+endif()
+
+if (KTH_WITH_JEMALLOC)
+  target_link_libraries(${PROJECT_NAME} PUBLIC jemalloc::jemalloc)
 endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_THREAD_LIBS_INIT})

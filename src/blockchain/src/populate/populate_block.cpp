@@ -5,47 +5,49 @@
 #include <kth/blockchain/populate/populate_block.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <latch>
 
-#include <kth/blockchain/interface/fast_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/domain.hpp>
 
-#include <kth/infrastructure/utility/synchronizer.hpp>
+#include <asio/co_spawn.hpp>
+#include <asio/post.hpp>
+#include <asio/use_awaitable.hpp>
+#include <asio/experimental/concurrent_channel.hpp>
 
 namespace kth::blockchain {
 
 using namespace kd::chain;
 using namespace kd::machine;
 
-#define NAME "populate_block"
-
 // Database access is limited to calling populate_base.
 
 #if defined(KTH_WITH_MEMPOOL)
-populate_block::populate_block(dispatcher& dispatch, fast_chain const& chain, bool relay_transactions, mining::mempool const& mp)
+populate_block::populate_block(executor_type executor, size_t threads, block_chain const& chain, bool relay_transactions, mining::mempool const& mp)
 #else
-populate_block::populate_block(dispatcher& dispatch, fast_chain const& chain, bool relay_transactions)
+populate_block::populate_block(executor_type executor, size_t threads, block_chain const& chain, bool relay_transactions)
 #endif
-    : populate_base(dispatch, chain)
+    : populate_base(std::move(executor), threads, chain)
     , relay_transactions_(relay_transactions)
 #if defined(KTH_WITH_MEMPOOL)
     , mempool_(mp)
 #endif
 {}
 
-void populate_block::populate(branch::const_ptr branch, result_handler&& handler) const {
+::asio::awaitable<code> populate_block::populate(branch::const_ptr branch) const {
     auto const block = branch->top();
     KTH_ASSERT(block);
 
     auto const state = block->validation.state;
     KTH_ASSERT(state);
 
-    // Return if this blocks is under a checkpoint, block state not requried.
+    // Return if this blocks is under a checkpoint, block state not required.
     if (state->is_under_checkpoint()) {
-        handler(error::success);
-        return;
+        co_return error::success;
     }
 
     // Handle the coinbase as a special case tx.
@@ -55,12 +57,10 @@ void populate_block::populate(branch::const_ptr branch, result_handler&& handler
 
     // Return if there are no non-coinbase inputs to validate.
     if (non_coinbase_inputs == 0) {
-        handler(error::success);
-        return;
+        co_return error::success;
     }
 
-    auto const buckets = std::min(dispatch_.size(), non_coinbase_inputs);
-    auto const join_handler = synchronize(std::move(handler), buckets, NAME);
+    auto const buckets = std::min(threads_, non_coinbase_inputs);
     KTH_ASSERT(buckets != 0);
 
     auto branch_utxo = create_branch_utxo_set(branch);
@@ -69,13 +69,39 @@ void populate_block::populate(branch::const_ptr branch, result_handler&& handler
     auto validated_txs = mempool_.get_validated_txs_high();
 #endif
 
+    // Use a channel to collect results from parallel tasks
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+    auto channel = std::make_shared<result_channel>(executor_, buckets);
+
+    // Launch parallel tasks
     for (size_t bucket = 0; bucket < buckets; ++bucket) {
 #if defined(KTH_WITH_MEMPOOL)
-        dispatch_.concurrent(&populate_block::populate_transactions, this, branch, bucket, buckets, branch_utxo, validated_txs, join_handler);
+        ::asio::post(executor_, [this, branch, bucket, buckets, branch_utxo, validated_txs, channel]() {
+            auto result = populate_transactions_sync(branch, bucket, buckets, branch_utxo, validated_txs);
+            channel->try_send(std::error_code{}, result);
+        });
 #else
-        dispatch_.concurrent(&populate_block::populate_transactions, this, branch, bucket, buckets, branch_utxo, join_handler);
+        ::asio::post(executor_, [this, branch, bucket, buckets, branch_utxo, channel]() {
+            auto result = populate_transactions_sync(branch, bucket, buckets, branch_utxo);
+            channel->try_send(std::error_code{}, result);
+        });
 #endif
     }
+
+    // Wait for all results - return first error or success if all succeed
+    code final_result = error::success;
+    for (size_t i = 0; i < buckets; ++i) {
+        auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+        if (ec) {
+            // Channel error - shouldn't happen
+            co_return error::operation_failed;
+        }
+        if (result != error::success && final_result == error::success) {
+            final_result = result;
+        }
+    }
+
+    co_return final_result;
 }
 
 // Initialize the coinbase input for subsequent validation.
@@ -114,22 +140,24 @@ void populate_block::populate_coinbase(branch::const_ptr branch, block_const_ptr
 }
 
 populate_block::utxo_pool_t populate_block::get_reorg_subset_conditionally(size_t first_height, size_t& out_chain_top) const {
-
-    if ( ! fast_chain_.get_last_height(out_chain_top)) {
+    auto const heights = chain_.get_last_heights();
+    if ( ! heights) {
         out_chain_top = 0;
         return {};
     }
+
+    out_chain_top = heights->first;  // header_height
 
     if (first_height > out_chain_top) {
         return {};
     }
 
-    auto p = fast_chain_.get_utxo_pool_from(first_height, out_chain_top);
-    if ( ! p.first) {
+    auto p = chain_.get_utxo_pool_from(first_height, out_chain_top);
+    if ( ! p) {
         return {};
     }
 
-    return std::move(p.second);
+    return std::move(*p);
 }
 
 
@@ -153,11 +181,10 @@ void populate_block::populate_transaction_inputs(branch::const_ptr branch, domai
 }
 
 #if defined(KTH_WITH_MEMPOOL)
-void populate_block::populate_transactions(branch::const_ptr branch, size_t bucket, size_t buckets, local_utxo_set_t const& branch_utxo, mining::mempool::hash_index_t const& validated_txs, result_handler handler) const {
+code populate_block::populate_transactions_sync(branch::const_ptr branch, size_t bucket, size_t buckets, local_utxo_set_t const& branch_utxo, mining::mempool::hash_index_t const& validated_txs) const {
 #else
-void populate_block::populate_transactions(branch::const_ptr branch, size_t bucket, size_t buckets, local_utxo_set_t const& branch_utxo, result_handler handler) const {
+code populate_block::populate_transactions_sync(branch::const_ptr branch, size_t bucket, size_t buckets, local_utxo_set_t const& branch_utxo) const {
 #endif
-    // TODO(fernando): check how to replace it with UTXO
     KTH_ASSERT(bucket < buckets);
     auto const block = branch->top();
     auto const branch_height = branch->height();
@@ -183,7 +210,6 @@ void populate_block::populate_transactions(branch::const_ptr branch, size_t buck
         // unless tx relay is disabled. In that case duplication is unlikely.
         //---------------------------------------------------------------------
 
-        //TODO(fernando): check again why this is not implemented?
         if (relay_transactions_) {
             populate_base::populate_pooled(tx, forks);
         }
@@ -223,7 +249,7 @@ void populate_block::populate_transactions(branch::const_ptr branch, size_t buck
 #endif // defined(KTH_WITH_MEMPOOL)
     }
 
-    handler(error::success);
+    return error::success;
 }
 
 void populate_block::populate_from_reorg_subset(output_point const& outpoint, utxo_pool_t const& reorg_subset) const {

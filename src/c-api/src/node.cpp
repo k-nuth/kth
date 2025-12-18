@@ -109,7 +109,7 @@ kth_chain_t kth_node_get_chain(kth_node_t node) {
 
 kth_p2p_t kth_node_get_p2p(kth_node_t node) {
 #if ! defined(__EMSCRIPTEN__)
-    return &static_cast<kth::network::p2p&>(kth_node_cpp(node).node());
+    return &kth_node_cpp(node).node().network();
 #else
     return nullptr;
 #endif

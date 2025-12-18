@@ -4,11 +4,17 @@
 
 #include <test_helpers.hpp>
 
+#include <expected>
 #include <filesystem>
 #include <future>
 #include <memory>
 
 #include <kth/database.hpp>
+
+#include <asio/co_spawn.hpp>
+#include <asio/detached.hpp>
+#include <asio/thread_pool.hpp>
+#include <asio/use_future.hpp>
 
 using namespace kth::domain::chain;
 using namespace kth::database;
@@ -66,33 +72,29 @@ public:
     data_base_accessor(settings const& settings)
         : data_base(settings) {}
 
-    void push_all(block_const_ptr_list_const_ptr in_blocks, size_t first_height, dispatcher& dispatch, result_handler handler) {
-        data_base::push_all(in_blocks, first_height, dispatch, handler);
+    asio::awaitable<code> push_all(executor_type executor, block_const_ptr_list_const_ptr in_blocks, size_t first_height) {
+        return data_base::push_all(executor, in_blocks, first_height);
     }
 
-    void pop_above(block_const_ptr_list_ptr out_blocks, hash_digest const& fork_hash, dispatcher& dispatch, result_handler handler) {
-        data_base::pop_above(out_blocks, fork_hash, dispatch, handler);
+    asio::awaitable<std::expected<block_const_ptr_list_ptr> pop_above(executor_type executor, hash_digest const& fork_hash) {
+        return data_base::pop_above(executor, fork_hash);
     }
 };
 
 static
-code push_all_result(data_base_accessor& instance, block_const_ptr_list_const_ptr in_blocks, size_t first_height, dispatcher& dispatch) {
-    std::promise<code> promise;
-    auto const handler = [&promise](code ec) {
-        promise.set_value(ec);
-    };
-    instance.push_all(in_blocks, first_height, dispatch, handler);
-    return promise.get_future().get();
+code push_all_result(data_base_accessor& instance, block_const_ptr_list_const_ptr in_blocks, size_t first_height, asio::thread_pool& pool) {
+    auto future = asio::co_spawn(pool.get_executor(),
+        instance.push_all(pool.get_executor(), in_blocks, first_height),
+        asio::use_future);
+    return future.get();
 }
 
 static
-code pop_above_result(data_base_accessor& instance, block_const_ptr_list_ptr out_blocks, hash_digest const& fork_hash, dispatcher& dispatch) {
-    std::promise<code> promise;
-    auto const handler = [&promise](code ec) {
-        promise.set_value(ec);
-    };
-    instance.pop_above(out_blocks, fork_hash, dispatch, handler);
-    return promise.get_future().get();
+std::expected<block_const_ptr_list_ptr, code> pop_above_result(data_base_accessor& instance, hash_digest const& fork_hash, asio::thread_pool& pool) {
+    auto future = asio::co_spawn(pool.get_executor(),
+        instance.pop_above(pool.get_executor(), fork_hash),
+        asio::use_future);
+    return future.get();
 }
 
 // End Test Suite

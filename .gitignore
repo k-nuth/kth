@@ -10,3 +10,7 @@ CMakeUserPresets.json
 build-asan/
 test_runner/
 doc/release-notes/*.backup
+error.log
+debug.log
+*.mdb
+bchn/
