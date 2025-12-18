@@ -5,12 +5,20 @@
 #ifndef KTH_INFRASTRUCTURE_ASIO_HELPER_HPP_
 #define KTH_INFRASTRUCTURE_ASIO_HELPER_HPP_
 
-#if defined(ASIO_STANDALONE)
+#if defined(KTH_ASIO_STANDALONE)
 #include <asio.hpp>
+#include <asio/thread_pool.hpp>
+#include <asio/experimental/channel.hpp>
+#include <asio/experimental/concurrent_channel.hpp>
+#include <asio/experimental/awaitable_operators.hpp>
 #else
 
 #if ! defined(__EMSCRIPTEN__)
 #include <boost/asio.hpp>
+#include <boost/asio/thread_pool.hpp>
+#include <boost/asio/experimental/channel.hpp>
+#include <boost/asio/experimental/concurrent_channel.hpp>
+#include <boost/asio/experimental/awaitable_operators.hpp>
 #else
 #include <boost/asio/error.hpp>
 #endif

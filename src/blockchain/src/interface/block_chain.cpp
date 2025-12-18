@@ -84,7 +84,7 @@ block_chain::block_chain(threadpool& pool, blockchain::settings const& chain_set
     , chain_state_populator_(*this, chain_settings, network)
     , database_(database_settings)
     , validation_mutex_(relay_transactions)
-    , priority_pool_("blockchain", thread_ceiling(chain_settings.cores), priority(chain_settings.priority))
+    , priority_pool_(thread_ceiling(chain_settings.cores))
     , dispatch_(priority_pool_, NAME "_priority")
 
 #if defined(KTH_WITH_MEMPOOL)
@@ -411,7 +411,7 @@ bool block_chain::stop() {
     auto result = transaction_organizer_.stop() && block_organizer_.stop();
 
     // The priority pool must not be stopped while organizing.
-    priority_pool_.shutdown();
+    priority_pool_.stop();
 
     validation_mutex_.unlock_high_priority();
     ///////////////////////////////////////////////////////////////////////////
