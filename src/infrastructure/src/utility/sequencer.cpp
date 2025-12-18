@@ -12,35 +12,14 @@
 
 namespace kth {
 
-sequencer::sequencer(asio::context& service)
-    : service_(service), executing_(false)
+sequencer::sequencer(executor_type executor)
+    : executor_(std::move(executor))
+    , executing_(false)
 {}
 
 sequencer::~sequencer() {
     KTH_ASSERT_MSG(actions_.empty(), "sequencer not cleared");
 }
-
-// void sequencer::lock(action&& handler) {
-//     auto post = false;
-
-//     // Critical Section
-//     ///////////////////////////////////////////////////////////////////////
-//     mutex_.lock();
-
-//     if (executing_) {
-//         actions_.push(std::move(handler));
-//     } else {
-//         post = true;
-//         executing_ = true;
-//     }
-
-//     mutex_.unlock();
-//     ///////////////////////////////////////////////////////////////////////
-
-//     if (post) {
-//         ::asio::post(service_, std::move(handler));
-//     }
-// }
 
 void sequencer::lock(action&& handler) {
     // Critical Section
@@ -56,7 +35,7 @@ void sequencer::lock(action&& handler) {
     } //unlock()
     ///////////////////////////////////////////////////////////////////////
 
-    ::asio::post(service_, std::move(handler));
+    ::asio::post(executor_, std::move(handler));
 }
 
 
@@ -67,7 +46,6 @@ void sequencer::unlock() {
 
     // Critical Section
     ///////////////////////////////////////////////////////////////////////
-    // mutex_.lock();
     {
         unique_lock locker(mutex_);
 
@@ -85,7 +63,7 @@ void sequencer::unlock() {
     ///////////////////////////////////////////////////////////////////////
 
     if (handler) {
-        ::asio::post(service_, std::move(handler));
+        ::asio::post(executor_, std::move(handler));
     }
 }
 

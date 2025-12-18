@@ -26,13 +26,13 @@ using std::placeholders::_1;
 #if ! defined(__EMSCRIPTEN__)
 deadline::deadline(threadpool& pool)
     : duration_(asio::seconds(0))
-    , timer_(pool.service())
+    , timer_(pool.get_executor())
     /*, CONSTRUCT_TRACK(deadline)*/
 {}
 
 deadline::deadline(threadpool& pool, asio::duration duration)
     : duration_(duration)
-    , timer_(pool.service())
+    , timer_(pool.get_executor())
     /*, CONSTRUCT_TRACK(deadline)*/
 {}
 #endif
