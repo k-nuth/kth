@@ -90,7 +90,7 @@ full_node::~full_node() {
     auto ec = co_await network_.start();
     if (ec != error::success) {
         spdlog::error("[node] Failure starting network: {}", ec.message());
-        chain_.stop();
+        (void)chain_.stop();
         co_return ec;
     }
 #endif

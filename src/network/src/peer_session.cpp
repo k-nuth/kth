@@ -36,7 +36,7 @@ infrastructure::config::authority extract_authority(::asio::ip::tcp::socket cons
 // Construction / Destruction
 // =============================================================================
 
-peer_session::peer_session(socket_type socket, settings const& settings)
+peer_session::peer_session(socket_type socket, settings const& settings, bool inbound)
     : socket_(std::move(socket))
     , strand_(socket_.get_executor())
     , outbound_(strand_, 100)  // Buffer up to 100 outbound messages
@@ -56,9 +56,11 @@ peer_session::peer_session(socket_type socket, settings const& settings)
     , inactivity_timeout_(std::chrono::minutes(settings.channel_inactivity_minutes))
     , expiration_timeout_(std::chrono::minutes(settings.channel_expiration_minutes))
     , version_(settings.protocol_maximum)
+    , inbound_connection_(inbound)
     , heading_buffer_(heading::maximum_size())
 {
-    spdlog::debug("[peer_session] Constructor completed, authority: {}", authority());
+    spdlog::debug("[peer_session] Constructor completed, authority: {}, inbound: {}",
+        authority(), inbound_connection_);
 }
 
 peer_session::~peer_session() {
@@ -196,6 +198,73 @@ bool peer_session::notify() const {
 
 void peer_session::set_notify(bool value) {
     notify_.store(value);
+}
+
+bool peer_session::is_inbound() const {
+    return inbound_connection_;
+}
+
+bool peer_session::is_outbound() const {
+    return !inbound_connection_;
+}
+
+bool peer_session::is_full_node() const {
+    auto version = peer_version();
+    if (!version) {
+        return false;  // Unknown, assume not full node
+    }
+
+    // BCHN: fClient = !(services & NODE_NETWORK) && !(services & NODE_NETWORK_LIMITED)
+    // A full node has NODE_NETWORK or NODE_NETWORK_LIMITED
+    auto const services = version->services();
+    using svc = domain::message::version::service;
+    return (services & svc::node_network) != 0
+        || (services & svc::node_network_limited) != 0;
+}
+
+bool peer_session::is_client() const {
+    return !is_full_node();
+}
+
+bool peer_session::is_one_shot() const {
+    return one_shot_.load(std::memory_order_relaxed);
+}
+
+void peer_session::set_one_shot(bool value) {
+    one_shot_.store(value, std::memory_order_relaxed);
+}
+
+bool peer_session::has_permission(permission_flags flag) const {
+    auto const flags = permission_flags(permission_flags_.load(std::memory_order_relaxed));
+    return ::kth::network::has_permission(flags, flag);
+}
+
+permission_flags peer_session::permissions() const {
+    return permission_flags(permission_flags_.load(std::memory_order_relaxed));
+}
+
+void peer_session::set_permissions(permission_flags flags) {
+    permission_flags_.store(uint32_t(flags), std::memory_order_relaxed);
+}
+
+void peer_session::add_permission(permission_flags flag) {
+    auto current = permission_flags_.load(std::memory_order_relaxed);
+    auto const new_flags = current | uint32_t(flag);
+    permission_flags_.store(new_flags, std::memory_order_relaxed);
+}
+
+void peer_session::clear_permission(permission_flags flag) {
+    auto current = permission_flags_.load(std::memory_order_relaxed);
+    auto const new_flags = current & ~uint32_t(flag);
+    permission_flags_.store(new_flags, std::memory_order_relaxed);
+}
+
+bool peer_session::is_preferred_download() const {
+    // BCHN: fPreferredDownload = (!fInbound || HasPermission(PF_NOBAN))
+    //                            && !fOneShot && !fClient
+    return (is_outbound() || has_permission(permission_flags::noban))
+        && !is_one_shot()
+        && !is_client();
 }
 
 // =============================================================================
@@ -424,8 +493,19 @@ awaitable_expected<peer_session::ptr> async_connect(
 
     spdlog::debug("[async_connect] Connected to {}:{}", hostname, port);
     spdlog::debug("[async_connect] Creating peer_session...");
-    auto session = std::make_shared<peer_session>(std::move(socket), settings);
+    // Outbound connection (we connected to them)
+    auto session = std::make_shared<peer_session>(std::move(socket), settings, /*inbound=*/false);
     spdlog::debug("[async_connect] peer_session created, authority: {}", session->authority());
+
+    // Apply whitelist permissions (BCHN-style)
+    auto flags = settings.get_whitelist_permissions(session->authority());
+    if (flags != permission_flags::none) {
+        flags = settings.apply_legacy_whitelist_permissions(flags);
+        session->set_permissions(flags);
+        spdlog::debug("[async_connect] Applied whitelist permissions to [{}]: {}",
+            session->authority(), uint32_t(flags));
+    }
+
     co_return session;
 }
 
@@ -465,7 +545,19 @@ awaitable_expected<peer_session::ptr> async_accept(
             endpoint.address().to_string(), endpoint.port());
     }
 
-    co_return std::make_shared<peer_session>(std::move(socket), settings);
+    // Inbound connection (they connected to us)
+    auto session = std::make_shared<peer_session>(std::move(socket), settings, /*inbound=*/true);
+
+    // Apply whitelist permissions (BCHN-style)
+    auto flags = settings.get_whitelist_permissions(session->authority());
+    if (flags != permission_flags::none) {
+        flags = settings.apply_legacy_whitelist_permissions(flags);
+        session->set_permissions(flags);
+        spdlog::debug("[async_accept] Applied whitelist permissions to [{}]: {}",
+            session->authority(), uint32_t(flags));
+    }
+
+    co_return session;
 }
 
 awaitable_expected<::asio::ip::tcp::acceptor> async_listen(

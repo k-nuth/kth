@@ -83,6 +83,10 @@ void executor::print_version(std::string_view extra) {
 }
 
 #if ! defined(KTH_DB_READONLY)
+// TODO(fernando): This function inserts the genesis block directly into the DB,
+// bypassing the blockchain layer (header_organizer/block_chain). When we implement
+// persistence for header_index, we should reconsider this design - ideally genesis
+// should be added through the same path as other headers for consistency.
 bool executor::init_directory(error_code& ec) {
     auto const& directory = config_.database.directory;
 

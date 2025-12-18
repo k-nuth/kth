@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <latch>
 
+#include <kth/infrastructure/utility/stats.hpp>
 #include <kth/infrastructure/utility/system_memory.hpp>
 #include <kth/network/protocols_coro.hpp>
 
@@ -28,7 +29,7 @@ sync_session::sync_session(
     domain::config::network network,
     sync_config const& config)
     : chain_(chain)
-    , organizer_(chain, chain.chain_settings(), network)
+    , organizer_(chain.headers(), chain.chain_settings(), network)
     , peer_(std::move(peer))
     , config_(config)
 {
@@ -47,15 +48,16 @@ sync_session::sync_session(
 
     // Get hash of current header tip (for getheaders locator)
     if (header_height_ > 0) {
+        // TODO(fernando): resuming sync - headers in DB need to be loaded into header_index
         auto const hash = chain_.get_block_hash(header_height_);
         if (hash) {
             last_header_hash_ = *hash;
         }
     } else {
-        // Genesis block hash
-        auto const genesis_header = chain_.get_header(0);
-        if (genesis_header) {
-            last_header_hash_ = genesis_header->hash();
+        // Fresh start - get genesis hash
+        auto const genesis = chain_.get_header(0);
+        if (genesis) {
+            last_header_hash_ = genesis->hash();
         }
     }
 }
@@ -111,12 +113,28 @@ sync_session::ptr make_sync_session(
         spdlog::info("[sync] System memory: total {} MB, available {} MB",
             total_mem / (1024 * 1024), available_mem / (1024 * 1024));
 
-        // Initialize organizer with current state and expected headers
-        organizer_.start();
-        organizer_.initialize(header_height_, last_header_hash_, headers_to_sync);
+        // BCHN-style: Calculate headers sync deadline
+        // Timeout = base + per_header * expected_headers
+        headers_sync_start_ = clock::now();
+        auto const timeout_duration = config_.headers_download_timeout_base +
+            std::chrono::duration_cast<std::chrono::seconds>(
+                config_.headers_download_timeout_per_header * headers_to_sync);
+        headers_sync_deadline_ = headers_sync_start_ + timeout_duration;
 
-        auto const optimal_cache = organizer_.calculate_optimal_cache_size(headers_to_sync);
-        spdlog::info("[sync] Header cache: optimal size {} headers", optimal_cache);
+        auto const timeout_secs = std::chrono::duration_cast<std::chrono::seconds>(timeout_duration).count();
+        spdlog::info("[sync] Headers sync timeout: {}s (base: {}s + {}us/header * {} headers)",
+            timeout_secs,
+            config_.headers_download_timeout_base.count(),
+            config_.headers_download_timeout_per_header.count(),
+            headers_to_sync);
+
+        // Sync organizer tip from header_index (already initialized with genesis)
+        organizer_.start();
+        organizer_.sync_tip();
+
+        // TODO(fernando): calculate optimal cache size based on available memory
+        // auto const optimal_cache = organizer_.calculate_optimal_cache_size(headers_to_sync);
+        // spdlog::info("[sync] Header cache: optimal size {} headers", optimal_cache);
 
         // Measure memory before sync
         auto const mem_before = kth::get_resident_memory();
@@ -126,10 +144,23 @@ sync_session::ptr make_sync_session(
 
         // Sync headers until complete
         while (!peer_->stopped() && !synced_) {
+            // BCHN-style: Check if we've exceeded the headers sync deadline
+            if (clock::now() > headers_sync_deadline_) {
+                auto const elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                    clock::now() - headers_sync_start_).count();
+                spdlog::warn("[sync] Headers sync timeout after {}s from [{}], "
+                    "received {} headers (peer too slow)",
+                    elapsed, peer_->authority(), total_headers_);
+                headers_sync_timed_out_ = true;
+                result.error = error::channel_timeout;
+                result.timed_out = true;
+                co_return result;
+            }
+
             auto ec = co_await sync_headers_batch();
             if (ec) {
                 if (ec == error::channel_timeout) {
-                    spdlog::debug("[sync] Headers timeout from [{}], retrying...",
+                    spdlog::debug("[sync] Headers batch timeout from [{}], retrying...",
                         peer_->authority());
                     continue;
                 }
@@ -144,21 +175,31 @@ sync_session::ptr make_sync_session(
                 auto const headers_per_sec = elapsed_secs > 0 ? total_headers_ / elapsed_secs : 0;
 
                 auto const current_synced_height = header_height_ + total_headers_;
-                auto const hash_str = encode_hash(last_header_hash_);
 
                 if (target_height_ > 0) {
                     auto const percent = (current_synced_height * 100) / target_height_;
                     auto const remaining = headers_to_sync > total_headers_ ? headers_to_sync - total_headers_ : 0;
                     auto const eta_secs = headers_per_sec > 0 ? remaining / headers_per_sec : 0;
 
-                    spdlog::info("[sync] Headers: {:>7}/{} ({:>2}%), {:>6}/s, ETA {:>3}s, cache: {} headers",
+                    spdlog::info("[sync] {:>7}/{} ({:>2}%), {:>6}/s, ETA {:>3}s",
                         current_synced_height, target_height_, percent,
-                        headers_per_sec, eta_secs,
-                        organizer_.cache_size());
+                        headers_per_sec, eta_secs);
+
+#ifdef KTH_WITH_STATS
+                    // Print detailed stats when enabled
+                    auto const& stats = global_sync_stats();
+                    auto const batch_cnt = stats.batch_count.load(std::memory_order_relaxed);
+                    if (batch_cnt > 0) {
+                        auto const loc_ms = stats.batch_locator_ns.load() / 1000000 / batch_cnt;
+                        auto const net_ms = stats.batch_network_ns.load() / 1000000 / batch_cnt;
+                        auto const proc_ms = stats.batch_process_ns.load() / 1000000 / batch_cnt;
+                        spdlog::info("[stats] loc:{}ms net:{}ms proc:{}ms/batch", loc_ms, net_ms, proc_ms);
+                    }
+#endif
                 } else {
-                    spdlog::info("[sync] Headers: {:>7}, {:>6}/s, cache: {} headers",
+                    spdlog::info("[sync] {:>7}, {:>6}/s, index: {} headers",
                         current_synced_height, headers_per_sec,
-                        organizer_.cache_size());
+                        organizer_.size());
                 }
             }
         }
@@ -171,30 +212,29 @@ sync_session::ptr make_sync_session(
             total_headers_, mem_after_headers / (1024 * 1024),
             (mem_after_headers - mem_before) / (1024 * 1024), bytes_per_header);
 
-        // Flush remaining headers to database
-        if (organizer_.has_pending()) {
-            spdlog::info("[sync] Flushing {} cached headers to database...",
-                organizer_.cache_size());
-            auto const db_start = std::chrono::steady_clock::now();
-
-            auto const flush_ec = organizer_.flush();
-            if (flush_ec && flush_ec != error::duplicate_block) {
-                spdlog::warn("[sync] Failed to flush headers: {}", flush_ec.message());
-                result.error = flush_ec;
-                co_return result;
-            }
-
-            auto const db_elapsed = std::chrono::steady_clock::now() - db_start;
-            auto const db_ms = std::chrono::duration_cast<std::chrono::milliseconds>(db_elapsed).count();
-            spdlog::info("[sync] Headers flush completed in {}ms", db_ms);
-        }
+        // TODO(fernando): implement DB persistence for headers
+        // For now headers are kept in memory only (header_index)
+        // if (organizer_.has_pending()) {
+        //     spdlog::info("[sync] Flushing {} cached headers to database...",
+        //         organizer_.cache_size());
+        //     auto const db_start = std::chrono::steady_clock::now();
+        //
+        //     auto const flush_ec = organizer_.flush();
+        //     if (flush_ec && flush_ec != error::duplicate_block) {
+        //         spdlog::warn("[sync] Failed to flush headers: {}", flush_ec.message());
+        //         result.error = flush_ec;
+        //         co_return result;
+        //     }
+        //
+        //     auto const db_elapsed = std::chrono::steady_clock::now() - db_start;
+        //     auto const db_ms = std::chrono::duration_cast<std::chrono::milliseconds>(db_elapsed).count();
+        //     spdlog::info("[sync] Headers flush completed in {}ms", db_ms);
+        // }
 
         auto const final_header_height = organizer_.header_height();
         spdlog::info("[sync] Phase 1 complete: synced to height {} ({} new headers) from [{}]",
             final_header_height, total_headers_, peer_->authority());
 
-        // Clean up organizer
-        organizer_.clear_cache();
         organizer_.stop();
 
     } else {
@@ -252,14 +292,18 @@ sync_session::ptr make_sync_session(
 
 ::asio::awaitable<code> sync_session::sync_headers_batch() {
     // Build locator from current chain state
+    KTH_STATS_TIME_START(locator);
     auto locator = build_locator();
+    KTH_STATS_TIME_ADD(global_sync_stats(), locator, batch_locator_ns);
 
     spdlog::debug("[sync] Requesting headers from [{}] with {} locator hashes",
         peer_->authority(), locator.size());
 
     // Request headers
+    KTH_STATS_TIME_START(network);
     auto headers_result = co_await request_headers(
         *peer_, locator, null_hash, config_.headers_timeout);
+    KTH_STATS_TIME_ADD(global_sync_stats(), network, batch_network_ns);
 
     if (!headers_result) {
         spdlog::debug("[sync] Failed to get headers from [{}]: {}",
@@ -281,7 +325,13 @@ sync_session::ptr make_sync_session(
     }
 
     // Add headers to organizer (validates and caches)
+    KTH_STATS_TIME_START(process);
     auto const add_result = organizer_.add_headers(headers.elements());
+    KTH_STATS_TIME_ADD(global_sync_stats(), process, batch_process_ns);
+
+    // Increment batch count once per successful batch
+    KTH_STATS_INCREMENT(global_sync_stats(), batch_count);
+
     if (add_result.error) {
         spdlog::warn("[sync] Invalid headers from [{}]: {}",
             peer_->authority(), add_result.error.message());
@@ -292,9 +342,9 @@ sync_session::ptr make_sync_session(
     total_headers_ += add_result.headers_added;
     last_header_hash_ = organizer_.header_tip_hash();
 
-    spdlog::debug("[sync] Added {} headers, cache now {} headers ({} MB)",
-        add_result.headers_added, add_result.cache_size,
-        add_result.cache_memory_bytes / (1024 * 1024));
+    spdlog::debug("[sync] Added {} headers, index now {} headers ({} MB)",
+        add_result.headers_added, add_result.index_size,
+        add_result.index_memory_bytes / (1024 * 1024));
 
     // If we got fewer than max headers (2000), peer has no more
     if (count < config_.max_headers_per_request) {
@@ -387,44 +437,52 @@ sync_session::ptr make_sync_session(
 hash_list sync_session::build_locator() const {
     hash_list locator;
 
-    // Start with the tip (from organizer if we have cached headers)
-    auto const tip_hash = organizer_.header_tip_hash();
-    if (tip_hash != null_hash) {
-        locator.push_back(tip_hash);
-    } else if (last_header_hash_ != null_hash) {
-        locator.push_back(last_header_hash_);
+    // Use header_index for headers we've synced (much faster than DB)
+    auto const& index = organizer_.index();
+    auto const tip_idx = organizer_.tip_index();
+
+    if (tip_idx == blockchain::header_index::null_index) {
+        // No headers synced yet, just use genesis from DB
+        auto const genesis_hash = chain_.get_block_hash(0);
+        if (genesis_hash) {
+            locator.push_back(*genesis_hash);
+        }
+        return locator;
     }
 
-    // Add exponentially spaced hashes going back
+    // Start with tip
+    locator.push_back(index.get_hash(tip_idx));
+
+    // Use skip pointers for O(log n) traversal to build exponentially-spaced locator
     size_t step = 1;
-    size_t height = header_height_ + total_headers_;
+    auto current_idx = tip_idx;
+    int32_t current_height = index.get_height(tip_idx);
 
-    while (height > 0) {
-        if (height <= step) {
-            height = 0;
-        } else {
-            height -= step;
+    while (current_height > 0 && locator.size() < 64) {
+        int32_t target_height = current_height > static_cast<int32_t>(step)
+            ? current_height - static_cast<int32_t>(step)
+            : 0;
+
+        // Use O(log n) ancestor lookup via skip pointers
+        auto ancestor_idx = index.get_ancestor(current_idx, target_height);
+        if (ancestor_idx == blockchain::header_index::null_index) {
+            break;
         }
 
-        auto const hash = chain_.get_block_hash(height);
-        if (hash) {
-            locator.push_back(*hash);
-        }
+        locator.push_back(index.get_hash(ancestor_idx));
+        current_idx = ancestor_idx;
+        current_height = target_height;
 
         if (locator.size() >= 10) {
             step *= 2;
         }
-
-        if (locator.size() >= 64) {
-            break;
-        }
     }
 
-    // Always include genesis
-    if (height > 0) {
-        auto const genesis_hash = chain_.get_block_hash(0);
-        if (genesis_hash) {
-            locator.push_back(*genesis_hash);
+    // Always include genesis if not already included
+    if (current_height > 0) {
+        auto genesis_idx = index.get_ancestor(current_idx, 0);
+        if (genesis_idx != blockchain::header_index::null_index) {
+            locator.push_back(index.get_hash(genesis_idx));
         }
     }
 
@@ -440,12 +498,81 @@ bool sync_session::is_synced() const {
 }
 
 std::pair<size_t, size_t> sync_session::current_heights() const {
-    return {organizer_.header_height(), block_height_};
+    auto const h = organizer_.header_height();
+    return {h >= 0 ? size_t(h) : 0, block_height_};
 }
 
 // =============================================================================
 // Utility Functions
 // =============================================================================
+
+/// Select the best peer for sync using BCHN logic:
+/// 1. Prefer "preferred download" peers (fPreferredDownload in BCHN)
+/// 2. If no preferred peers available, use any full node that's ahead of us
+/// 3. Among candidates, prefer the one with highest reported height
+///
+/// BCHN's logic (net_processing.cpp):
+///   fPreferredDownload = (!fInbound || HasPermission(PF_NOBAN))
+///                        && !fOneShot && !fClient;
+///   fFetch = fPreferredDownload || (nPreferredDownload == 0 && !fClient && !fOneShot);
+static peer_session::ptr select_sync_peer(
+    std::vector<peer_session::ptr> const& peers,
+    size_t our_height)
+{
+    peer_session::ptr best_preferred = nullptr;
+    peer_session::ptr best_fallback = nullptr;
+    uint32_t best_preferred_height = 0;
+    uint32_t best_fallback_height = 0;
+
+    for (auto const& peer : peers) {
+        if (peer->stopped()) {
+            continue;
+        }
+
+        auto version = peer->peer_version();
+        if (!version) {
+            continue;
+        }
+
+        auto const height = version->start_height();
+
+        // Only consider peers ahead of us
+        if (height <= our_height) {
+            continue;
+        }
+
+        // BCHN: fPreferredDownload = (!fInbound || PF_NOBAN) && !fOneShot && !fClient
+        if (peer->is_preferred_download()) {
+            if (height > best_preferred_height) {
+                best_preferred = peer;
+                best_preferred_height = height;
+            }
+        } else if (!peer->is_one_shot() && !peer->is_client()) {
+            // BCHN fallback: nPreferredDownload == 0 && !fClient && !fOneShot
+            if (height > best_fallback_height) {
+                best_fallback = peer;
+                best_fallback_height = height;
+            }
+        }
+    }
+
+    // Prefer "preferred download" peer if available
+    if (best_preferred) {
+        spdlog::debug("[sync] Selected preferred peer with height {} (outbound or whitelisted full node)",
+            best_preferred_height);
+        return best_preferred;
+    }
+
+    // Fall back to any full node if no preferred peers available
+    // (BCHN: nPreferredDownload == 0 && !fClient && !fOneShot)
+    if (best_fallback) {
+        spdlog::debug("[sync] Selected fallback peer with height {} (no preferred peers available)",
+            best_fallback_height);
+        return best_fallback;
+    }
+
+    return nullptr;
+}
 
 ::asio::awaitable<sync_result> sync_from_best_peer(
     block_chain& chain,
@@ -462,6 +589,9 @@ std::pair<size_t, size_t> sync_session::current_heights() const {
         our_block_height = heights->second;
     }
 
+    // BCHN-style: don't wait for minimum peers, start sync immediately
+    // when any suitable peer is available
+
     // Get all connected peers
     auto peers = co_await p2p.peers().all();
 
@@ -471,30 +601,23 @@ std::pair<size_t, size_t> sync_session::current_heights() const {
         co_return result;
     }
 
-    spdlog::info("[sync] Selecting sync peer from {} connected peers, our height: {}",
-        peers.size(), our_block_height);
-
-    // Find peer with highest start_height that's ahead of us
-    peer_session::ptr best_peer;
-    uint32_t best_height = 0;
-
+    // Count peers by type for logging
+    size_t preferred_count = 0;
+    size_t full_node_count = 0;
     for (auto const& peer : peers) {
-        auto version = peer->peer_version();
-        if (!version) {
-            continue;
+        if (peer->is_preferred_download()) {
+            ++preferred_count;
         }
-
-        auto const peer_height = version->start_height();
-
-        if (peer_height <= our_block_height) {
-            continue;
-        }
-
-        if (peer_height > best_height) {
-            best_height = peer_height;
-            best_peer = peer;
+        if (peer->is_full_node()) {
+            ++full_node_count;
         }
     }
+
+    spdlog::info("[sync] Selecting sync peer from {} peers ({} preferred, {} full nodes), our height: {}",
+        peers.size(), preferred_count, full_node_count, our_block_height);
+
+    // Select best peer using BCHN logic
+    auto best_peer = select_sync_peer(peers, our_block_height);
 
     if (!best_peer) {
         spdlog::info("[sync] No peers ahead of us (height {}), already synced?", our_block_height);
@@ -503,11 +626,77 @@ std::pair<size_t, size_t> sync_session::current_heights() const {
         co_return result;
     }
 
-    spdlog::info("[sync] Selected peer [{}] with height {} for sync",
+    auto version = best_peer->peer_version();
+    auto const best_height = version ? version->start_height() : 0;
+
+    spdlog::info("[sync] Selected {} peer [{}] with height {} for sync",
+        best_peer->is_preferred_download() ? "preferred" : "fallback",
         best_peer->authority(), best_height);
 
+    // Run sync with selected peer
     auto session = make_sync_session(chain, best_peer, network, config);
-    co_return co_await session->run();
+    result = co_await session->run();
+
+    // BCHN-style: If sync failed (including timeout), try another peer
+    // Timeout means peer is too slow - disconnect and try another
+    if (result.error) {
+        if (result.timed_out) {
+            spdlog::warn("[sync] Peer [{}] timed out (too slow), disconnecting and trying another...",
+                best_peer->authority());
+            // BCHN disconnects slow peers
+            best_peer->stop(error::channel_timeout);
+        } else if (result.error == error::checkpoints_failed) {
+            // BCHN bans peers that send headers failing checkpoint validation
+            // This typically indicates a peer on a different chain (BSV, etc.)
+            spdlog::warn("[sync] Peer [{}] sent headers failing checkpoint (wrong chain?), banning...",
+                best_peer->authority());
+            p2p.ban_peer(best_peer, std::chrono::hours{24}, network::ban_reason::checkpoint_failed);
+        } else {
+            spdlog::warn("[sync] Sync with [{}] failed: {}, trying another peer...",
+                best_peer->authority(), result.error.message());
+        }
+
+        // Remove failed peer from consideration and try again
+        peers.erase(
+            std::remove(peers.begin(), peers.end(), best_peer),
+            peers.end());
+
+        // Retry with remaining peers (up to 2 more attempts)
+        constexpr int max_retries = 2;
+        for (int retry = 0; retry < max_retries && !peers.empty(); ++retry) {
+            auto retry_peer = select_sync_peer(peers, our_block_height);
+            if (!retry_peer) {
+                break;
+            }
+
+            version = retry_peer->peer_version();
+            auto const retry_height = version ? version->start_height() : 0;
+            spdlog::info("[sync] Retry {}/{}: {} peer [{}] height {}",
+                retry + 1, max_retries,
+                retry_peer->is_preferred_download() ? "preferred" : "fallback",
+                retry_peer->authority(), retry_height);
+
+            auto retry_session = make_sync_session(chain, retry_peer, network, config);
+            result = co_await retry_session->run();
+
+            if (!result.error) {
+                break;  // Success!
+            }
+
+            if (result.timed_out) {
+                spdlog::warn("[sync] Retry peer [{}] also timed out, disconnecting...",
+                    retry_peer->authority());
+                retry_peer->stop(error::channel_timeout);
+            }
+
+            // Remove this peer and try next
+            peers.erase(
+                std::remove(peers.begin(), peers.end(), retry_peer),
+                peers.end());
+        }
+    }
+
+    co_return result;
 }
 
 } // namespace kth::node
