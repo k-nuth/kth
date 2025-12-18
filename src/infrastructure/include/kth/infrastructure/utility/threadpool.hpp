@@ -8,12 +8,13 @@
 #include <cstddef>
 #include <thread>
 
-#include <kth/infrastructure/utility/asio_helper.hpp>
+#include <asio/thread_pool.hpp>
 
 namespace kth {
 
+// Wrapper over asio::thread_pool that tracks the thread count.
 struct threadpool {
-    explicit 
+    explicit
     threadpool(size_t num_threads = std::thread::hardware_concurrency())
         : num_threads_(num_threads == 0 ? std::thread::hardware_concurrency() : num_threads)
         , pool_(num_threads_)
@@ -27,12 +28,12 @@ struct threadpool {
     threadpool& operator=(threadpool&&) = delete;
 
     [[nodiscard]]
-    ::asio::thread_pool::executor_type get_executor() {
+    auto get_executor() {
         return pool_.get_executor();
     }
 
     [[nodiscard]]
-    ::asio::any_io_executor executor() {
+    auto executor() {
         return pool_.get_executor();
     }
 
@@ -44,9 +45,15 @@ struct threadpool {
         pool_.join();
     }
 
-    [[nodiscard]] 
+    [[nodiscard]]
     size_t size() const noexcept {
         return num_threads_;
+    }
+
+    // Access the underlying asio::thread_pool
+    [[nodiscard]]
+    ::asio::thread_pool& get() noexcept {
+        return pool_;
     }
 
 private:

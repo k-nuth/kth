@@ -26,6 +26,7 @@ if (BUILD_NODE_EXE AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     add_subdirectory(node-exe)
 endif()
 
-if (BUILD_C_API)
-    add_subdirectory(c-api)
-endif()
+# TODO(fernando): DESCOMENTAR ESTO CUANDO TERMINEMOS EL CLEANUP DE COROUTINES
+# if (BUILD_C_API)
+#     add_subdirectory(c-api)
+# endif()

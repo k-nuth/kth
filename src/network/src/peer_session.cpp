@@ -41,6 +41,9 @@ peer_session::peer_session(socket_type socket, settings const& settings)
     , strand_(socket_.get_executor())
     , outbound_(strand_, 100)  // Buffer up to 100 outbound messages
     , inbound_(strand_, 100)   // Buffer up to 100 inbound messages
+    , headers_responses_(strand_, 10)  // Response channels for request/response patterns
+    , block_responses_(strand_, 20)
+    , addr_responses_(strand_, 10)
     , inactivity_timer_(strand_)
     , expiration_timer_(strand_)
     , authority_(extract_authority(socket_))
@@ -54,7 +57,9 @@ peer_session::peer_session(socket_type socket, settings const& settings)
     , expiration_timeout_(std::chrono::minutes(settings.channel_expiration_minutes))
     , version_(settings.protocol_maximum)
     , heading_buffer_(heading::maximum_size())
-{}
+{
+    spdlog::debug("[peer_session] Constructor completed, authority: {}", authority());
+}
 
 peer_session::~peer_session() {
     stop(error::channel_stopped);
@@ -65,11 +70,15 @@ peer_session::~peer_session() {
 // =============================================================================
 
 ::asio::awaitable<code> peer_session::run() {
+    spdlog::debug("[peer_session] run() starting for [{}]", authority());
+
     if (stopped()) {
+        spdlog::debug("[peer_session] run() - already stopped [{}]", authority());
         co_return error::channel_stopped;
     }
 
     stopped_ = false;
+    spdlog::debug("[peer_session] run() - about to start loops for [{}]", authority());
 
     try {
         // Run all loops concurrently - when any completes/fails, all stop
@@ -83,6 +92,7 @@ peer_session::~peer_session() {
         spdlog::debug("[peer_session] Exception in run loop [{}]: {}", authority(), e.what());
     }
 
+    spdlog::debug("[peer_session] run() - loops completed for [{}]", authority());
     stop(error::channel_stopped);
     co_return error::channel_stopped;
 }
@@ -136,6 +146,18 @@ peer_session::inbound_channel& peer_session::messages() {
     return inbound_;
 }
 
+peer_session::response_channel& peer_session::headers_responses() {
+    return headers_responses_;
+}
+
+peer_session::response_channel& peer_session::block_responses() {
+    return block_responses_;
+}
+
+peer_session::response_channel& peer_session::addr_responses() {
+    return addr_responses_;
+}
+
 // =============================================================================
 // Properties
 // =============================================================================
@@ -181,6 +203,7 @@ void peer_session::set_notify(bool value) {
 // =============================================================================
 
 ::asio::awaitable<void> peer_session::read_loop() {
+    spdlog::debug("[peer_session] read_loop() starting for [{}]", authority());
     while (!stopped()) {
         auto result = co_await read_message();
 
@@ -208,6 +231,7 @@ void peer_session::set_notify(bool value) {
 }
 
 ::asio::awaitable<void> peer_session::write_loop() {
+    spdlog::debug("[peer_session] write_loop() starting for [{}]", authority());
     while (!stopped()) {
         auto [ec, data] = co_await outbound_.async_receive(
             ::asio::as_tuple(::asio::use_awaitable));
@@ -235,6 +259,7 @@ void peer_session::set_notify(bool value) {
 }
 
 ::asio::awaitable<void> peer_session::inactivity_timer() {
+    spdlog::debug("[peer_session] inactivity_timer() starting for [{}]", authority());
     while (!stopped()) {
         activity_signaled_ = false;
         inactivity_timer_.expires_after(inactivity_timeout_);
@@ -261,6 +286,7 @@ void peer_session::set_notify(bool value) {
 }
 
 ::asio::awaitable<void> peer_session::expiration_timer() {
+    spdlog::debug("[peer_session] expiration_timer() starting for [{}]", authority());
     expiration_timer_.expires_after(expiration_timeout_);
 
     auto [ec] = co_await expiration_timer_.async_wait(
@@ -274,7 +300,7 @@ void peer_session::set_notify(bool value) {
     stop(error::channel_timeout);
 }
 
-::asio::awaitable<std::expected<raw_message, code>> peer_session::read_message() {
+awaitable_expected<raw_message> peer_session::read_message() {
     // Read heading (24 bytes)
     auto [head_ec, head_bytes] = co_await ::asio::async_read(
         socket_,
@@ -349,7 +375,7 @@ void peer_session::signal_activity() {
 // Connection helpers - replace connector/acceptor classes
 // =============================================================================
 
-::asio::awaitable<std::expected<peer_session::ptr, code>> async_connect(
+awaitable_expected<peer_session::ptr> async_connect(
     ::asio::any_io_executor executor,
     std::string const& hostname,
     uint16_t port,
@@ -397,10 +423,13 @@ void peer_session::signal_activity() {
     }
 
     spdlog::debug("[async_connect] Connected to {}:{}", hostname, port);
-    co_return std::make_shared<peer_session>(std::move(socket), settings);
+    spdlog::debug("[async_connect] Creating peer_session...");
+    auto session = std::make_shared<peer_session>(std::move(socket), settings);
+    spdlog::debug("[async_connect] peer_session created, authority: {}", session->authority());
+    co_return session;
 }
 
-::asio::awaitable<std::expected<peer_session::ptr, code>> async_connect(
+awaitable_expected<peer_session::ptr> async_connect(
     ::asio::any_io_executor executor,
     infrastructure::config::authority const& authority,
     settings const& settings,
@@ -414,7 +443,7 @@ void peer_session::signal_activity() {
         timeout);
 }
 
-::asio::awaitable<std::expected<peer_session::ptr, code>> async_accept(
+awaitable_expected<peer_session::ptr> async_accept(
     ::asio::ip::tcp::acceptor& acceptor,
     settings const& settings)
 {
@@ -439,7 +468,7 @@ void peer_session::signal_activity() {
     co_return std::make_shared<peer_session>(std::move(socket), settings);
 }
 
-::asio::awaitable<std::expected<::asio::ip::tcp::acceptor, code>> async_listen(
+awaitable_expected<::asio::ip::tcp::acceptor> async_listen(
     ::asio::any_io_executor executor,
     uint16_t port)
 {

@@ -28,6 +28,8 @@
 
 namespace kth::network {
 
+using kth::awaitable_expected;
+
 // =============================================================================
 // peer_session: Modern coroutine-based peer connection handler
 // =============================================================================
@@ -121,6 +123,28 @@ public:
     inbound_channel& messages();
 
     // -------------------------------------------------------------------------
+    // Response channels (for request/response patterns like getheaders/headers)
+    // -------------------------------------------------------------------------
+
+    /// Channel for headers responses (filled by message handler when headers arrives)
+    using response_channel = concurrent_channel<raw_message>;
+
+    /// Get the channel for headers responses
+    /// The dispatcher should route 'headers' messages here when someone is waiting
+    [[nodiscard]]
+    response_channel& headers_responses();
+
+    /// Get the channel for block responses
+    /// The dispatcher should route 'block' messages here when someone is waiting
+    [[nodiscard]]
+    response_channel& block_responses();
+
+    /// Get the channel for address responses
+    /// The dispatcher should route 'addr' messages here when someone is waiting
+    [[nodiscard]]
+    response_channel& addr_responses();
+
+    // -------------------------------------------------------------------------
     // Properties
     // -------------------------------------------------------------------------
 
@@ -166,7 +190,7 @@ private:
     ::asio::awaitable<void> expiration_timer();
 
     /// Read a complete message (heading + payload)
-    ::asio::awaitable<std::expected<raw_message, code>> read_message();
+    awaitable_expected<raw_message> read_message();
 
     /// Signal activity (resets inactivity timer)
     void signal_activity();
@@ -182,6 +206,12 @@ private:
     // Channels for message passing
     outbound_channel outbound_;
     inbound_channel inbound_;
+
+    // Response channels for request/response patterns
+    // These are filled by the dispatcher when specific responses arrive
+    response_channel headers_responses_;
+    response_channel block_responses_;
+    response_channel addr_responses_;
 
     // Timers
     ::asio::steady_timer inactivity_timer_;
@@ -222,7 +252,7 @@ private:
 /// @param timeout Connection timeout
 /// @return awaitable that yields a peer_session::ptr or error code
 [[nodiscard]]
-::asio::awaitable<std::expected<peer_session::ptr, code>> async_connect(
+awaitable_expected<peer_session::ptr> async_connect(
     ::asio::any_io_executor executor,
     std::string const& hostname,
     uint16_t port,
@@ -231,7 +261,7 @@ private:
 
 /// Connect to a peer by authority (address:port)
 [[nodiscard]]
-::asio::awaitable<std::expected<peer_session::ptr, code>> async_connect(
+awaitable_expected<peer_session::ptr> async_connect(
     ::asio::any_io_executor executor,
     infrastructure::config::authority const& authority,
     settings const& settings,
@@ -242,7 +272,7 @@ private:
 /// @param settings Network settings for the connection
 /// @return awaitable that yields a peer_session::ptr or error code
 [[nodiscard]]
-::asio::awaitable<std::expected<peer_session::ptr, code>> async_accept(
+awaitable_expected<peer_session::ptr> async_accept(
     ::asio::ip::tcp::acceptor& acceptor,
     settings const& settings);
 
@@ -251,7 +281,7 @@ private:
 /// @param port The port to listen on
 /// @return awaitable that yields an acceptor or error code
 [[nodiscard]]
-::asio::awaitable<std::expected<::asio::ip::tcp::acceptor, code>> async_listen(
+awaitable_expected<::asio::ip::tcp::acceptor> async_listen(
     ::asio::any_io_executor executor,
     uint16_t port);
 

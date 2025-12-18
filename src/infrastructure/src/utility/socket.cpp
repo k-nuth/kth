@@ -9,7 +9,6 @@
 #include <kth/infrastructure/config/authority.hpp>
 #include <kth/infrastructure/utility/asio.hpp>
 #include <kth/infrastructure/utility/thread.hpp>
-#include <kth/infrastructure/utility/threadpool.hpp>
 
 namespace kth {
 
