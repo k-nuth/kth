@@ -17,6 +17,8 @@
 #include <kth/node/executor/executor_info.hpp>
 #include <kth/domain/version.hpp>
 
+#include <crypto/sha256.h>
+
 #include <spdlog/spdlog.h>
 
 #include "tui_dashboard.hpp"
@@ -85,7 +87,7 @@ bool run_with_log(kth::node::executor& host) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    spdlog::info("[node] Stop signal detected (code: {}).", g_signal_received.load());
+    spdlog::info("\n[node] Stop signal detected (code: {}).", g_signal_received.load());
 
     // Stop node (blocks until stopped)
     host.stop();
@@ -206,6 +208,10 @@ int kth::main(int argc, char* argv[]) {
     using namespace kth;
 
     set_utf8_stdio();
+
+    // Initialize SHA256 with best available implementation (ARM SHA-NI, x86 SHA-NI, AVX2, SSE4, etc.)
+    auto const sha256_impl = SHA256AutoDetect();
+
     auto const& args = const_cast<const char**>(argv);
 
     node::parser metadata(kth::domain::config::network::mainnet);

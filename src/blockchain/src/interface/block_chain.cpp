@@ -151,10 +151,9 @@ bool block_chain::start() {
         return false;
     }
 
-    auto const [header_height, block_height] = *heights;
-    spdlog::info("[blockchain] Database state: header_height={}, block_height={}", header_height, block_height);
+    spdlog::info("[blockchain] Database state: header_height={}, block_height={}", heights->header, heights->block);
 
-    if (header_height == 0) {
+    if (heights->header == 0) {
         // Only genesis in DB - just add genesis to index
         auto const genesis = get_header(0);
         if (genesis) {
@@ -168,7 +167,7 @@ bool block_chain::start() {
         }
     } else {
         // Load all headers from DB into header_index
-        spdlog::info("[blockchain] Loading {} headers from database into header_index...", header_height + 1);
+        spdlog::info("[blockchain] Loading {} headers from database into header_index...", heights->header + 1);
 
         auto const load_start = std::chrono::steady_clock::now();
 
@@ -176,8 +175,8 @@ bool block_chain::start() {
         constexpr size_t batch_size = 10000;
         size_t loaded = 0;
 
-        for (size_t from = 0; from <= header_height; from += batch_size) {
-            auto const to = std::min(from + batch_size - 1, header_height);
+        for (size_t from = 0; from <= heights->header; from += batch_size) {
+            auto const to = std::min(from + batch_size - 1, size_t(heights->header));
             auto const headers_result = get_headers(from, to);
 
             if ( ! headers_result) {
@@ -199,7 +198,7 @@ bool block_chain::start() {
 
             // Log progress every 100k headers
             if (loaded % 100000 < batch_size && loaded > 0) {
-                spdlog::info("[blockchain] Loaded {}/{} headers into index...", loaded, header_height + 1);
+                spdlog::info("[blockchain] Loaded {}/{} headers into index...", loaded, heights->header + 1);
             }
         }
 
@@ -240,6 +239,40 @@ bool block_chain::stopped() const {
     co_return co_await block_organizer_.organize(block, headers_pre_validated);
 }
 
+::asio::awaitable<code> block_chain::organize_fast(block_const_ptr block, size_t height) {
+    // Fast IBD: minimal validation + store block data
+    // Uses priority pool executor to avoid blocking the main executor
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+    auto channel = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
+
+    ::asio::post(priority_pool_.get_executor(), [this, block, height, channel]() {
+        // Timing: merkle validation
+        block->validation.start_check = asio::steady_clock::now();
+
+        // Validate merkle root (ensures transactions match header)
+        // This is the only validation needed since header was already validated
+        if (!block->is_valid_merkle_root()) {
+            channel->try_send(std::error_code{}, error::merkle_mismatch);
+            return;
+        }
+
+        // Timing: DB push
+        block->validation.start_push = asio::steady_clock::now();
+
+        auto result = database_.push_block_fast(*block, height);
+
+        block->validation.end_push = asio::steady_clock::now();
+
+        channel->try_send(std::error_code{}, result);
+    });
+
+    auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (ec) {
+        co_return error::operation_failed;
+    }
+    co_return result;
+}
+
 ::asio::awaitable<code> block_chain::organize(transaction_const_ptr tx) {
     co_return co_await transaction_organizer_.organize(tx);
 }
@@ -259,7 +292,7 @@ bool block_chain::stopped() const {
         co_return error::operation_failed;
     }
 
-    auto const next_height = heights->first + 1;  // header_height + 1
+    auto const next_height = heights->header + 1;
 
     // Store header in database with ABLA state = 0
     // The correct ABLA state will be set when the full block arrives via push_block
@@ -414,7 +447,7 @@ bool block_chain::is_stale() const {
     if ( ! top) {
         auto const heights = get_last_heights();
         if (heights) {
-            auto const last_height = heights->second;  // block_height
+            auto const last_height = heights->block;
             auto const last_header = get_header(last_height);
             if (last_header) {
                 last_timestamp = last_header->timestamp();
@@ -453,13 +486,8 @@ std::pair<std::vector<kth::mining::transaction_element>, uint64_t> block_chain::
 //     return true;
 // }
 
-std::expected<std::pair<size_t, size_t>, database::result_code> block_chain::get_last_heights() const {
-    auto result = database_.internal_db().get_last_heights();
-    if ( ! result) {
-        return std::unexpected(result.error());
-    }
-    auto const& [header_height, block_height] = *result;
-    return std::pair{size_t(header_height), size_t(block_height)};
+std::expected<heights_t, database::result_code> block_chain::get_last_heights() const {
+    return database_.internal_db().get_last_heights();
 }
 
 std::expected<domain::chain::header, database::result_code> block_chain::get_header(size_t height) const {
@@ -532,11 +560,10 @@ bool block_chain::block_exists(hash_digest const& block_hash) const {
         return false;
     }
 
-    auto const [header_height, block_height] = *heights;
     auto const this_block_height = header_result->second;
 
     // Block exists only if its height <= block_height
-    return this_block_height <= block_height;
+    return this_block_height <= heights->block;
 }
 
 std::expected<uint256_t, database::result_code> block_chain::get_branch_work(uint256_t const& maximum, size_t from_height) const {
@@ -546,7 +573,7 @@ std::expected<uint256_t, database::result_code> block_chain::get_branch_work(uin
     }
     // Use block_height (not header_height) for work comparison
     // With headers-first sync, we may have headers without full blocks
-    auto const top = heights->second;  // block_height
+    auto const top = heights->block;
 
     uint256_t out_work = 0;
     for (uint32_t height = from_height; height <= top && out_work < maximum; ++height) {
@@ -737,7 +764,7 @@ block_chain::fetch_block_header_txs_size(hash_digest const& hash) const {
     co_return std::tuple{hdr, height, tx_hashes, block_result->first.serialized_size()};
 }
 
-awaitable_expected<size_t>
+awaitable_expected<heights_t>
 block_chain::fetch_last_height() const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
@@ -748,7 +775,7 @@ block_chain::fetch_last_height() const {
         co_return std::unexpected(error::not_found);
     }
 
-    co_return size_t(result->first);  // header_height
+    co_return *result;
 }
 
 awaitable_expected<std::pair<merkle_block_ptr, size_t>>

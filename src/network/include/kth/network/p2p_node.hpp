@@ -243,6 +243,11 @@ public:
     [[nodiscard]]
     std::vector<peer_session::ptr> get_peers() const;
 
+    /// Get the channel that receives newly connected peers (CSP pattern)
+    /// Use this to subscribe to peer connection events without polling.
+    [[nodiscard]]
+    concurrent_channel<peer_session::ptr>& connected_peers();
+
     /// Get the thread pool
     [[nodiscard]]
     threadpool& thread_pool();
@@ -320,6 +325,10 @@ private:
 
     // Signal to stop the peer_supervisor gracefully
     std::unique_ptr<concurrent_event_channel> stop_signal_;
+
+    // Channel for notifying sync layer of newly connected peers (CSP pattern)
+    // Peers are sent here after successful handshake and addition to manager
+    std::unique_ptr<concurrent_channel<peer_session::ptr>> connected_peer_channel_;
 };
 
 } // namespace kth::network

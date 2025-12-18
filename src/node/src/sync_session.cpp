@@ -54,8 +54,8 @@ sync_session::sync_session(
     // Get current chain heights (header-sync and block-sync)
     auto const heights = chain_.get_last_heights();
     if (heights) {
-        header_height_ = heights->first;   // header-sync height
-        block_height_ = heights->second;   // block-sync height
+        header_height_ = heights->header;
+        block_height_ = heights->block;
     }
 
     // Use provided target height if given, otherwise use peer's start_height
@@ -284,7 +284,7 @@ sync_session::ptr make_sync_session(
     {
         // Get current DB header height to determine what needs persisting
         auto const db_heights = chain_.get_last_heights();
-        size_t db_header_height = db_heights ? db_heights->first : 0;
+        size_t db_header_height = db_heights ? db_heights->header : 0;
 
         // Only persist if we have new headers beyond what's in DB
         if (final_header_height > 0 && size_t(final_header_height) > db_header_height) {
@@ -324,8 +324,8 @@ sync_session::ptr make_sync_session(
                 chain_,
                 organizer_,
                 *p2p_node_,
-                static_cast<uint32_t>(block_height_ + 1),
-                static_cast<uint32_t>(final_header_height),
+                uint32_t(block_height_ + 1),
+                uint32_t(final_header_height),
                 parallel_config);
 
             if (parallel_result.error) {
@@ -675,8 +675,8 @@ static peer_session::ptr select_sync_peer(
     size_t our_db_header_height = 0;
     auto const heights = chain.get_last_heights();
     if (heights) {
-        our_db_header_height = heights->first;
-        our_block_height = heights->second;
+        our_db_header_height = heights->header;
+        our_block_height = heights->block;
     }
     // Header index may have more headers than persisted to DB
     size_t our_header_height = chain.headers().size();
@@ -907,7 +907,7 @@ static ::asio::awaitable<void> persist_headers_background(
 
         for (size_t h = height; h <= batch_end; ++h) {
             // During IBD, index == height (headers added in order)
-            batch.push_back(index.get_header(static_cast<uint32_t>(h)));
+            batch.push_back(index.get_header(uint32_t(h)));
         }
 
         // Persist batch to database
