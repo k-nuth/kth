@@ -133,6 +133,7 @@ set(kth_sources_just_legacy
   src/pools/block_organizer.cpp
   src/pools/block_pool.cpp
   src/pools/branch.cpp
+  src/pools/header_organizer.cpp
   src/pools/transaction_entry.cpp
   src/pools/transaction_organizer.cpp
   src/pools/transaction_pool.cpp
@@ -142,6 +143,7 @@ set(kth_sources_just_legacy
   src/populate/populate_chain_state.cpp
   src/populate/populate_transaction.cpp
   src/validate/validate_block.cpp
+  src/validate/validate_header.cpp
   src/validate/validate_input.cpp
   src/validate/validate_transaction.cpp
   src/settings.cpp
@@ -161,17 +163,16 @@ set(kth_sources
 set(kth_headers
   include/kth/blockchain.hpp
   include/kth/blockchain/interface
-  include/kth/blockchain/interface/fast_chain.hpp
   include/kth/blockchain/interface/block_chain.hpp
-  include/kth/blockchain/interface/safe_chain.hpp
   include/kth/blockchain/define.hpp
   include/kth/blockchain/populate/populate_transaction.hpp
   include/kth/blockchain/populate/populate_chain_state.hpp
   include/kth/blockchain/populate/populate_block.hpp
   include/kth/blockchain/populate/populate_base.hpp
+  include/kth/blockchain/validate/validate_block.hpp
+  include/kth/blockchain/validate/validate_header.hpp
   include/kth/blockchain/validate/validate_input.hpp
   include/kth/blockchain/validate/validate_transaction.hpp
-  include/kth/blockchain/validate/validate_block.hpp
   include/kth/blockchain/pools/block_entry.hpp
   include/kth/blockchain/pools/transaction_pool.hpp
   include/kth/blockchain/pools/transaction_entry.hpp
@@ -179,6 +180,7 @@ set(kth_headers
   include/kth/blockchain/pools/block_organizer.hpp
   include/kth/blockchain/pools/branch.hpp
   include/kth/blockchain/pools/block_pool.hpp
+  include/kth/blockchain/pools/header_organizer.hpp
   include/kth/blockchain/pools/transaction_organizer.hpp
   include/kth/blockchain/mining/mempool_v1_old.hpp
   include/kth/blockchain/mining/prioritizer.hpp

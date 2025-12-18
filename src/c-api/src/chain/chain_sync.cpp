@@ -13,7 +13,7 @@
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/message/merkle_block.hpp>
 #include <kth/domain/chain/transaction.hpp>
-#include <kth/blockchain/interface/safe_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 
 #include <kth/capi/chain/block_list.h>
 #include <kth/capi/conversions.hpp>
@@ -23,8 +23,8 @@
 namespace {
 
 inline
-kth::blockchain::safe_chain& safe_chain(kth_chain_t chain) {
-    return *static_cast<kth::blockchain::safe_chain*>(chain);
+kth::blockchain::block_chain& safe_chain(kth_chain_t chain) {
+    return *static_cast<kth::blockchain::block_chain*>(chain);
 }
 
 inline

@@ -5,9 +5,12 @@
 #ifndef KTH_INFRASTRUCTURE_HANDLERS_HPP
 #define KTH_INFRASTRUCTURE_HANDLERS_HPP
 
+#include <expected>
 #include <functional>
 
 #include <kth/infrastructure/error.hpp>
+
+#include <asio/awaitable.hpp>
 
 namespace kth {
 
@@ -21,6 +24,9 @@ using handle2 = std::function<void(code const&, const Type1&, const Type2&)>;
 
 template <typename Type1, typename Type2, typename Type3>
 using handle3 = std::function<void(code const&, const Type1&, const Type2&, const Type3&)>;
+
+template <typename T, typename E = code>
+using awaitable_expected = ::asio::awaitable<std::expected<T, E>>;
 
 } // namespace kth
 

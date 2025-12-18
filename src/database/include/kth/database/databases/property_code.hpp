@@ -17,6 +17,8 @@ namespace kth::database {
 
 enum class property_code {
     db_mode = 0,
+    last_header_height = 1,
+    last_block_height = 2,
 };
 
 enum class db_mode_type {

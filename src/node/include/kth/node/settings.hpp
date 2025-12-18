@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <kth/domain.hpp>
+#include <kth/infrastructure/display_mode.hpp>
 #include <kth/node/define.hpp>
 
 namespace kth::node {
@@ -23,6 +24,9 @@ struct KND_API settings {
     bool refresh_transactions;
     bool compact_blocks_high_bandwidth;
     bool ds_proofs_enabled;
+
+    /// Display mode for console output (tui, log, daemon)
+    display_mode display{display_mode::log};
 
     /// Helpers.
     asio::duration block_latency() const;

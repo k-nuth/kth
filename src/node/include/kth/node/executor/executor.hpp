@@ -5,6 +5,7 @@
 #ifndef KTH_NODE_EXE_EXECUTOR_HPP_
 #define KTH_NODE_EXE_EXECUTOR_HPP_
 
+#include <atomic>
 #include <future>
 #include <iostream>
 #include <string_view>
@@ -16,10 +17,13 @@
 #include <kth/node/full_node.hpp>
 #include <kth/node/executor/executor_info.hpp>
 
+#include <asio/io_context.hpp>
+
 namespace kth::node {
 
 struct executor {
     executor(kth::node::configuration const& config, bool stdout_enabled = true);
+    ~executor();
 
     executor(executor const&) = delete;
     void operator=(executor const&) = delete;
@@ -28,21 +32,25 @@ struct executor {
     bool do_initchain(std::string_view extra);
 #endif
 
-    // bool run(kth::handle0 handler);
-
 #if ! defined(KTH_DB_READONLY)
-    bool init_run(std::string_view extra, start_modules mod, kth::handle0 handler);
+    /// Initialize and run the node, blocking until signal or error
     bool init_run_and_wait_for_signal(std::string_view extra, start_modules mod, kth::handle0 handler);
+
+    /// Initialize and run the node without blocking
+    bool init_run(std::string_view extra, start_modules mod, kth::handle0 handler);
 #endif
 
+    /// Signal the node to stop
     void signal_stop();
 
-    // Close must be called from main thread.
+    /// Stop and cleanup the node (must be called from main thread)
     bool close();
 
+    /// Access the full node
     kth::node::full_node& node();
     kth::node::full_node const& node() const;
 
+    /// Check if node is stopped
     bool stopped() const;
 
     void print_version(std::string_view extra);
@@ -54,7 +62,6 @@ struct executor {
 #endif
 
     bool verify_directory();
-    bool run();
 
 private:
     bool wait_for_signal_and_close();
@@ -66,9 +73,7 @@ private:
     static
     void handle_stop(int code);
 
-    void handle_started(kth::code const& ec, start_modules mod);
-    void handle_running(kth::code const& ec);
-    void handle_stopped(kth::code const& ec);
+    void run_node_async(start_modules mod);
 
     // Termination state
     static std::promise<kth::code> stopping_;
@@ -77,6 +82,11 @@ private:
     kth::node::configuration config_;
     kth::node::full_node::ptr node_;
     kth::handle0 run_handler_;
+
+    // IO context for running coroutines
+    ::asio::io_context io_context_;
+    std::thread io_thread_;
+    std::atomic<bool> running_{false};
 };
 
 // Localizable messages.

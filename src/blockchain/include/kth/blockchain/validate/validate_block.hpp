@@ -11,11 +11,13 @@
 #include <memory>
 
 #include <kth/blockchain/define.hpp>
-#include <kth/blockchain/interface/fast_chain.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/populate/populate_block.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/domain.hpp>
+
+#include <asio/any_io_executor.hpp>
+#include <asio/awaitable.hpp>
 
 #if defined(KTH_WITH_MEMPOOL)
 #include <kth/mining/mempool.hpp>
@@ -23,29 +25,38 @@
 
 namespace kth::blockchain {
 
+// Forward declaration
+struct block_chain;
+
 /// This class is NOT thread safe.
 struct KB_API validate_block {
-    using result_handler = handle0;
+    using executor_type = ::asio::any_io_executor;
 
 #if defined(KTH_WITH_MEMPOOL)
-    validate_block(dispatcher& dispatch, fast_chain const& chain, settings const& settings, domain::config::network network, bool relay_transactions, mining::mempool const& mp);
+    validate_block(executor_type executor, size_t threads, block_chain const& chain, settings const& settings, domain::config::network network, bool relay_transactions, mining::mempool const& mp);
 #else
-    validate_block(dispatcher& dispatch, fast_chain const& chain, settings const& settings, domain::config::network network, bool relay_transactions);
+    validate_block(executor_type executor, size_t threads, block_chain const& chain, settings const& settings, domain::config::network network, bool relay_transactions);
 #endif
 
     void start();
     void stop();
 
-    void check(block_const_ptr block, result_handler handler) const;
-    void accept(branch::const_ptr branch, result_handler handler) const;
-    void connect(branch::const_ptr branch, result_handler handler) const;
+    [[nodiscard]]
+    ::asio::awaitable<code> check(block_const_ptr block) const;
+
+    [[nodiscard]]
+    ::asio::awaitable<code> accept(branch::const_ptr branch) const;
+
+    [[nodiscard]]
+    ::asio::awaitable<code> connect(branch::const_ptr branch) const;
 
 protected:
-    inline
+    [[nodiscard]]
     bool stopped() const {
         return stopped_;
     }
 
+    [[nodiscard]]
     float hit_rate() const;
 
 private:
@@ -53,21 +64,24 @@ private:
     using atomic_counter_ptr = std::shared_ptr<atomic_counter>;
 
     static
-    void dump(code const& ec, const domain::chain::transaction& tx, uint32_t input_index, uint32_t forks, size_t height);
+    void dump(code const& ec, domain::chain::transaction const& tx, uint32_t input_index, uint32_t forks, size_t height);
 
-    void check_block(block_const_ptr block, size_t bucket, size_t buckets, result_handler handler) const;
-    void handle_checked(code const& ec, block_const_ptr block, result_handler handler) const;
-    void handle_populated(code const& ec, block_const_ptr block, result_handler handler) const;
-    void accept_transactions(block_const_ptr block, size_t bucket, size_t buckets, atomic_counter_ptr sigops, bool bip16, bool bip141, result_handler handler) const;
-    void handle_accepted(code const& ec, block_const_ptr block, atomic_counter_ptr sigops, bool bip141, result_handler handler) const;
-    void connect_inputs(block_const_ptr block, size_t bucket, size_t buckets, result_handler handler) const;
-    void handle_connected(code const& ec, block_const_ptr block, result_handler handler) const;
+    // Synchronous helpers for parallel execution (called within asio::post)
+    [[nodiscard]]
+    code check_block_bucket(block_const_ptr block, size_t bucket, size_t buckets) const;
+
+    [[nodiscard]]
+    code accept_transactions_bucket(block_const_ptr block, size_t bucket, size_t buckets, atomic_counter_ptr sigops, bool bip16, bool bip141) const;
+
+    [[nodiscard]]
+    code connect_inputs_bucket(block_const_ptr block, size_t bucket, size_t buckets) const;
 
     // These are thread safe.
     std::atomic<bool> stopped_;
-    fast_chain const& fast_chain_;
+    block_chain const& chain_;
     domain::config::network network_;
-    dispatcher& priority_dispatch_;
+    executor_type executor_;
+    size_t threads_;
     mutable atomic_counter hits_;
     mutable atomic_counter queries_;
 

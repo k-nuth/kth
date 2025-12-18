@@ -415,11 +415,11 @@ int main(int /*argc*/, char* /*argv*/[]) {
 
 // int xxx = 0;
 
-// int kth_chain_subscribe_blockchain_handler(kth_node_t exec, kth_chain_t chain, void* ctx, int error, uint64_t fork_height, kth_block_list_t blocks_incoming, kth_block_list_t blocks_replaced) {
-//     //printf("chain_subscribe_blockchain_handler error: %d\n", error);
+// int kth_chain_subscribe_block_handler(kth_node_t exec, kth_chain_t chain, void* ctx, int error, uint64_t fork_height, kth_block_list_t blocks_incoming, kth_block_list_t blocks_replaced) {
+//     //printf("chain_subscribe_block_handler error: %d\n", error);
 
 //     if (kth_node_stopped(exec) == 1 || error == 1) {
-//         printf("chain_subscribe_blockchain_handler -- stopping -- error: %d\n", error);
+//         printf("chain_subscribe_block_handler -- stopping -- error: %d\n", error);
 //         return 0;
 //     }
 
@@ -483,7 +483,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
 
 //     printf("**-- 4\n");
 
-//     kth_chain_subscribe_blockchain(exec, chain, nullptr, kth_chain_subscribe_blockchain_handler);
+//     kth_chain_subscribe_blockchain(exec, chain, nullptr, kth_chain_subscribe_block_handler);
 
 //     printf("**-- 5\n");
 

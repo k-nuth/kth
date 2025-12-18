@@ -93,13 +93,24 @@ endif()
 
 # Build
 # ------------------------------------------------------------------------------
-add_executable(${PROJECT_NAME} src/main.cpp)
+add_executable(${PROJECT_NAME}
+    src/main.cpp
+    src/tui_dashboard.cpp
+)
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX CXX_STANDARD 23 CXX_STANDARD_REQUIRED TRUE)
 
 # Note: These should be inherited from node::node target via Conan
 # target_compile_definitions(${PROJECT_NAME} PUBLIC -DKND_STATIC -DKB_STATIC -DKN_STATIC)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC node::node)
+# Find FTXUI for TUI dashboard
+find_package(ftxui REQUIRED)
+
+target_link_libraries(${PROJECT_NAME} PUBLIC
+    node::node
+    ftxui::screen
+    ftxui::dom
+    ftxui::component
+)
 
 if (MINGW)
   target_link_libraries(${PROJECT_NAME} PUBLIC ws2_32 wsock32)
