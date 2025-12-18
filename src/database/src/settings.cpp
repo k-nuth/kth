@@ -43,6 +43,7 @@ settings::settings()
     , db_max_size(get_db_max_size_mainnet(db_mode))
     , safe_mode(true)
     , cache_capacity(0)
+    , parallel_block_push(true)  // default to parallel (original behavior)
 {}
 
 settings::settings(domain::config::network context)

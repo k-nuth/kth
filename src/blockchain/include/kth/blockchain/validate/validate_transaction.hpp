@@ -9,11 +9,13 @@
 #include <cstddef>
 
 #include <kth/blockchain/define.hpp>
-#include <kth/blockchain/interface/fast_chain.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/populate/populate_transaction.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/domain.hpp>
+
+#include <asio/any_io_executor.hpp>
+#include <asio/awaitable.hpp>
 
 #if defined(KTH_WITH_MEMPOOL)
 #include <kth/mining/mempool.hpp>
@@ -21,23 +23,30 @@
 
 namespace kth::blockchain {
 
+// Forward declaration
+struct block_chain;
+
 /// This class is NOT thread safe.
 struct KB_API validate_transaction {
-    // using result_handler = handle0;
-    using result_handler = handle0;
+    using executor_type = ::asio::any_io_executor;
 
 #if defined(KTH_WITH_MEMPOOL)
-    validate_transaction(dispatcher& dispatch, fast_chain const& chain, settings const& settings, mining::mempool const& mp);
+    validate_transaction(executor_type executor, size_t threads, block_chain const& chain, settings const& settings, mining::mempool const& mp);
 #else
-    validate_transaction(dispatcher& dispatch, fast_chain const& chain, settings const& settings);
+    validate_transaction(executor_type executor, size_t threads, block_chain const& chain, settings const& settings);
 #endif
 
     void start();
     void stop();
 
-    void check(transaction_const_ptr tx, result_handler handler) const;
-    void accept(transaction_const_ptr tx, result_handler handler) const;
-    void connect(transaction_const_ptr tx, result_handler handler) const;
+    [[nodiscard]]
+    ::asio::awaitable<code> check(transaction_const_ptr tx) const;
+
+    [[nodiscard]]
+    ::asio::awaitable<code> accept(transaction_const_ptr tx) const;
+
+    [[nodiscard]]
+    ::asio::awaitable<code> connect(transaction_const_ptr tx) const;
 
 protected:
     inline
@@ -46,14 +55,14 @@ protected:
     }
 
 private:
-    void handle_populated(code const& ec, transaction_const_ptr tx, result_handler handler) const;
-    void connect_inputs(transaction_const_ptr tx, size_t bucket, size_t buckets, result_handler handler) const;
+    code connect_inputs_sync(transaction_const_ptr tx, size_t bucket, size_t buckets) const;
 
     // These are thread safe.
     std::atomic<bool> stopped_;
     bool const retarget_;
-    fast_chain const& fast_chain_;
-    dispatcher& dispatch_;
+    block_chain const& chain_;
+    executor_type executor_;
+    size_t threads_;
 
     // Caller must not invoke accept/connect concurrently.
     populate_transaction transaction_populator_;
