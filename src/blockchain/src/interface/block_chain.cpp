@@ -111,7 +111,7 @@ block_chain::block_chain(threadpool& pool,
 }
 
 block_chain::~block_chain() {
-    close();
+    (void)close();
 }
 
 // =============================================================================
@@ -140,6 +140,18 @@ bool block_chain::start() {
     if ( ! block_organizer_.start()) {
         spdlog::error("[blockchain] Failed to start block organizer.");
         return false;
+    }
+
+    // Initialize header_index with genesis block
+    auto const genesis = get_header(0);
+    if (genesis) {
+        auto const hash = genesis->hash();
+        auto const [inserted, index, capacity_warning] = header_index_.add(hash, *genesis);
+        if ( ! inserted) {
+            spdlog::error("[blockchain] Failed to initialize header index with genesis block.");
+            return false;
+        }
+        spdlog::info("[blockchain] Header index initialized with genesis: {}", encode_hash(hash));
     }
 
     return true;
@@ -871,7 +883,7 @@ block_chain::fetch_locator_block_headers(get_headers_const_ptr locator,
         }
     }
 
-    auto message = std::make_shared<headers>();
+    auto message = std::make_shared<domain::message::headers>();
     message->elements().reserve(floor_subtract(end, begin));
 
     for (auto height = begin; height < end; ++height) {

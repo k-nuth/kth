@@ -5,6 +5,7 @@
 #include <kth/network/settings.hpp>
 
 #include <kth/domain.hpp>
+#include <kth/network/net_permissions.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 
 namespace kth::network {
@@ -194,6 +195,51 @@ duration settings::channel_expiration() const {
 
 duration settings::channel_germination() const {
     return seconds(channel_germination_seconds);
+}
+
+permission_flags settings::get_whitelist_permissions(
+    infrastructure::config::authority const& addr) const {
+
+    // Check whitelist entries for matching address
+    for (auto const& entry : whitelist) {
+        // TODO(kth): implement proper subnet matching
+        // For now, simple IP comparison
+        if (entry.subnet.ip() == addr.ip()) {
+            return entry.flags;
+        }
+    }
+
+    return permission_flags::none;
+}
+
+permission_flags settings::apply_legacy_whitelist_permissions(permission_flags flags) const {
+    // BCHN: NetPermissions::AddFlag in net_permissions.cpp
+    // This applies -whitelistforcerelay and -whitelistrelay legacy options
+    // to implicit permissions (permissions without explicit @permissions prefix)
+
+    if ( ! has_permission(flags, permission_flags::is_implicit)) {
+        // Explicit permissions - don't modify
+        return flags;
+    }
+
+    // Remove the implicit flag marker
+    clear_permission(flags, permission_flags::is_implicit);
+
+    // Apply legacy whitelist behavior
+    // BCHN: if (gArgs.GetBoolArg("-whitelistforcerelay", DEFAULT_WHITELISTFORCERELAY))
+    if (whitelist_force_relay) {
+        add_permission(flags, permission_flags::forcerelay);
+    }
+
+    // BCHN: if (gArgs.GetBoolArg("-whitelistrelay", DEFAULT_WHITELISTRELAY))
+    if (whitelist_relay) {
+        add_permission(flags, permission_flags::relay);
+    }
+
+    // BCHN also adds noban by default for implicit whitelist
+    add_permission(flags, permission_flags::noban);
+
+    return flags;
 }
 
 } // namespace kth::network

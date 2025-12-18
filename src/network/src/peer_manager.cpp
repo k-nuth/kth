@@ -133,6 +133,17 @@ peer_manager::~peer_manager() {
     }, ::asio::use_awaitable);
 }
 
+::asio::awaitable<bool> peer_manager::exists_by_ip(::asio::ip::address const& ip) const {
+    co_return co_await ::asio::co_spawn(strand_, [this, &ip]() -> ::asio::awaitable<bool> {
+        for (auto const& [nonce, peer] : peers_) {
+            if (peer->authority().asio_ip() == ip) {
+                co_return true;
+            }
+        }
+        co_return false;
+    }, ::asio::use_awaitable);
+}
+
 ::asio::awaitable<peer_session::ptr> peer_manager::find_by_nonce(uint64_t nonce) const {
     co_return co_await ::asio::co_spawn(strand_, [this, nonce]() -> ::asio::awaitable<peer_session::ptr> {
         auto it = peers_.find(nonce);

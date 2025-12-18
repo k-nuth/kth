@@ -101,6 +101,7 @@
 #include <kth/infrastructure/utility/pseudo_random.hpp>
 #include <kth/infrastructure/utility/pseudo_random_broken_do_not_use.hpp>
 #include <kth/infrastructure/utility/reader.hpp>
+#include <kth/infrastructure/utility/salted_hashers.hpp>
 #include <kth/infrastructure/utility/scope_lock.hpp>
 #include <kth/infrastructure/utility/sequential_lock.hpp>
 #include <kth/infrastructure/utility/serializer.hpp>
