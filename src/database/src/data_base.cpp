@@ -132,7 +132,7 @@ uint32_t get_next_height(internal_database const& db) {
 
 static inline
 hash_digest get_previous_hash(internal_database const& db, size_t height) {
-    return height == 0 ? null_hash : db.get_header(height - 1).hash();
+    return height == 0 ? null_hash : domain::chain::hash(db.get_header(height - 1));
 }
 
 //TODO(fernando): const?
@@ -175,10 +175,7 @@ code data_base::verify_push(block const& block, size_t height) const {
 
 // Add block to the database at the given height (gaps allowed/created).
 // This is designed for write concurrency but only with itself.
-code data_base::insert(domain::chain::block const& block, size_t height) {
-
-    auto const median_time_past = block.header().validation.median_time_past;
-
+code data_base::insert(domain::chain::block const& block, size_t height, uint32_t median_time_past) {
     auto const ec = verify_insert(block, height);
 
     if (ec) return ec;
@@ -210,8 +207,7 @@ code data_base::push(domain::chain::transaction const& tx, uint32_t forks) {
 #if ! defined(KTH_DB_READONLY)
 // Add a block in order (creates no gaps, must be at top).
 // This is designed for write exclusivity and read concurrency.
-code data_base::push(block const& block, size_t height) {
-    auto const median_time_past = block.header().validation.median_time_past;
+code data_base::push(block const& block, size_t height, uint32_t median_time_past) {
     auto res = internal_db_->push_block(block, height, median_time_past);
     if ( ! succeed(res)) {
         return error::database_push_failed;   //TODO(fernando): create a new operation_failed
@@ -291,15 +287,14 @@ bool data_base::pop_outputs(const output::list& outputs, size_t height) {
 // Add a list of blocks in order.
 // If the dispatch threadpool is shut down when this is running the handler
 // will never be invoked, resulting in a threadpool.join indefinite hang.
-void data_base::push_all(block_const_ptr_list_const_ptr in_blocks, size_t first_height, dispatcher& dispatch, result_handler handler) {
+void data_base::push_all(block_const_ptr_list_const_ptr in_blocks, std::vector<uint32_t> const& median_time_pasts, size_t first_height, dispatcher& dispatch, result_handler handler) {
     DEBUG_ONLY(*safe_add(in_blocks->size(), first_height));
 
     // This is the beginning of the push_all sequence.
-    push_next(error::success, in_blocks, 0, first_height, dispatch, handler);
+    push_next(error::success, in_blocks, median_time_pasts, 0, first_height, dispatch, handler);
 }
 
-// TODO(legacy): resolve inconsistency with height and median_time_past passing.
-void data_base::push_next(code const& ec, block_const_ptr_list_const_ptr blocks, size_t index, size_t height, dispatcher& dispatch, result_handler handler) {
+void data_base::push_next(code const& ec, block_const_ptr_list_const_ptr blocks, std::vector<uint32_t> const& median_time_pasts, size_t index, size_t height, dispatcher& dispatch, result_handler handler) {
     if (ec || index >= blocks->size()) {
         // This ends the loop.
         handler(ec);
@@ -307,12 +302,12 @@ void data_base::push_next(code const& ec, block_const_ptr_list_const_ptr blocks,
     }
 
     auto const block = (*blocks)[index];
-    auto const median_time_past = block->header().validation.median_time_past;
+    auto const median_time_past = median_time_pasts[index];
 
     // Set push start time for the block.
     block->validation.start_push = asio::steady_clock::now();
 
-    result_handler const next = std::bind(&data_base::push_next, this, _1, blocks, index + 1, height + 1, std::ref(dispatch), handler);
+    result_handler const next = std::bind(&data_base::push_next, this, _1, blocks, std::cref(median_time_pasts), index + 1, height + 1, std::ref(dispatch), handler);
 
     // This is the beginning of the block sub-sequence.
     dispatch.concurrent(&data_base::do_push, this, block, height, median_time_past, std::ref(dispatch), next);
@@ -389,15 +384,15 @@ code data_base::prune_reorg() {
 
 #if ! defined(KTH_DB_READONLY)
 // This is designed for write exclusivity and read concurrency.
-void data_base::reorganize(infrastructure::config::checkpoint const& fork_point, block_const_ptr_list_const_ptr incoming_blocks, block_const_ptr_list_ptr outgoing_blocks, dispatcher& dispatch, result_handler handler) {
+void data_base::reorganize(infrastructure::config::checkpoint const& fork_point, block_const_ptr_list_const_ptr incoming_blocks, std::vector<uint32_t> const& median_time_pasts, block_const_ptr_list_ptr outgoing_blocks, dispatcher& dispatch, result_handler handler) {
     auto const next_height = *safe_add(fork_point.height(), size_t(1));
     // TODO: remove std::bind, use lambda instead.
     // TOOD: Even better use C++20 coroutines.
-    result_handler const pop_handler = std::bind(&data_base::handle_pop, this, _1, incoming_blocks, next_height, std::ref(dispatch), handler);
+    result_handler const pop_handler = std::bind(&data_base::handle_pop, this, _1, incoming_blocks, std::cref(median_time_pasts), next_height, std::ref(dispatch), handler);
     pop_above(outgoing_blocks, fork_point.hash(), dispatch, pop_handler);
 }
 
-void data_base::handle_pop(code const& ec, block_const_ptr_list_const_ptr incoming_blocks, size_t first_height, dispatcher& dispatch, result_handler handler) {
+void data_base::handle_pop(code const& ec, block_const_ptr_list_const_ptr incoming_blocks, std::vector<uint32_t> const& median_time_pasts, size_t first_height, dispatcher& dispatch, result_handler handler) {
     result_handler const push_handler = std::bind(&data_base::handle_push, this, _1, handler);
 
     if (ec) {
@@ -405,7 +400,7 @@ void data_base::handle_pop(code const& ec, block_const_ptr_list_const_ptr incomi
         return;
     }
 
-    push_all(incoming_blocks, first_height, std::ref(dispatch), push_handler);
+    push_all(incoming_blocks, median_time_pasts, first_height, std::ref(dispatch), push_handler);
 }
 
 // We never invoke the caller's handler under the mutex, we never fail to clear

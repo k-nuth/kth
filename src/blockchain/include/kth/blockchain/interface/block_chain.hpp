@@ -119,8 +119,7 @@ public:
 
     /// Insert a block to the blockchain, height is checked for existence.
     /// Reads and reorgs are undefined when chain is gapped.
-    bool insert(block_const_ptr block, size_t height) override;
-    // bool insert(block_const_ptr block, size_t height, int) override;
+    bool insert(block_const_ptr block, size_t height, uint32_t median_time_past) override;
 
     /// Push an unconfirmed transaction to the tx table and index outputs.
     void push(transaction_const_ptr tx, dispatcher& dispatch, result_handler handler) override;

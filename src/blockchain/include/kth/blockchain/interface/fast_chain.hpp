@@ -83,8 +83,7 @@ struct KB_API fast_chain {
 
 #if ! defined(KTH_DB_READONLY)
     /// Insert a block to the blockchain, height is checked for existence.
-    // virtual bool insert(block_const_ptr block, size_t height, int) = 0;
-    virtual bool insert(block_const_ptr block, size_t height) = 0;
+    virtual bool insert(block_const_ptr block, size_t height, uint32_t median_time_past) = 0;
 
     /// Push an unconfirmed transaction to the tx table and index outputs.
     virtual void push(transaction_const_ptr tx, dispatcher& dispatch,

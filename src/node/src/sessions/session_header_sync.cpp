@@ -172,7 +172,7 @@ void session_header_sync::handle_complete(code const& ec, header_list::ptr row, 
 
     // Store the hash if there is a gap reservation.
     for (auto const& header: headers) {
-        hashes_.enqueue(header.hash(), height++);
+        hashes_.enqueue(chain::hash(header), height++);
     }
 
     spdlog::debug("[node] Completed header slot ({})", row->slot());

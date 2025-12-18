@@ -46,7 +46,7 @@ struct KND_API reservations {
 
 #if ! defined(KTH_DB_READONLY)
     /// Import the given block to the blockchain at the specified height.
-    bool import(block_const_ptr block, size_t height);
+    bool import(block_const_ptr block, size_t height, uint32_t median_time_past);
 #endif
 
     /// Populate a starved row by taking half of the hashes from a weak row.

@@ -10,6 +10,7 @@
 #include <istream>
 #include <utility>
 
+#include <kth/domain/chain/header.hpp>
 #include <kth/domain/message/inventory.hpp>
 #include <kth/domain/message/inventory_vector.hpp>
 #include <kth/domain/message/version.hpp>
@@ -107,14 +108,14 @@ bool headers::is_sequential() const {
         return true;
     }
 
-    auto previous = elements_.front().hash();
+    auto previous = chain::hash(elements_.front());
 
     for (auto it = elements_.begin() + 1; it != elements_.end(); ++it) {
         if (it->previous_block_hash() != previous) {
             return false;
         }
 
-        previous = it->hash();
+        previous = chain::hash(*it);
     }
 
     return true;
@@ -124,7 +125,7 @@ void headers::to_hashes(hash_list& out) const {
     out.clear();
     out.reserve(elements_.size());
     auto const map = [&out](header const& header) {
-        out.push_back(header.hash());
+        out.push_back(chain::hash(header));
     };
 
     std::for_each(elements_.begin(), elements_.end(), map);
@@ -135,7 +136,7 @@ void headers::to_inventory(inventory_vector::list& out,
     out.clear();
     out.reserve(elements_.size());
     auto const map = [&out, type](header const& header) {
-        out.emplace_back(type, header.hash());
+        out.emplace_back(type, chain::hash(header));
     };
 
     std::for_each(elements_.begin(), elements_.end(), map);

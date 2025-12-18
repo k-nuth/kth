@@ -281,7 +281,7 @@ bool full_node::handle_reorganized(code ec, size_t fork_height, block_const_ptr_
     }
 
     for (auto const block: *outgoing) {
-        spdlog::debug("[node] Reorganization moved block to orphan pool [{}]", encode_hash(block->header().hash()));
+        spdlog::debug("[node] Reorganization moved block to orphan pool [{}]", encode_hash(chain::hash(block->header())));
     }
 
     auto const height = *safe_add(fork_height, incoming->size());

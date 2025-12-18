@@ -47,7 +47,7 @@ hash_digest header_list::previous_hash() const {
     // Critical Section.
     shared_lock lock(mutex_);
 
-    return list_.empty() ? start_.hash() : list_.back().hash();
+    return list_.empty() ? start_.hash() : chain::hash(list_.back());
     ///////////////////////////////////////////////////////////////////////////
 }
 
@@ -130,7 +130,7 @@ bool header_list::link(const domain::chain::header& header) const {
     }
 
     // Avoid copying and temporary reference assignment.
-    return header.previous_block_hash() == list_.back().hash();
+    return header.previous_block_hash() == chain::hash(list_.back());
 }
 
 bool header_list::check(header const& header) const {
@@ -147,7 +147,7 @@ bool header_list::accept(header const& header) const {
     ////return !header.accept(...);
 
     // Verify last checkpoint.
-    return remaining() > 1 || header.hash() == stop_.hash();
+    return remaining() > 1 || chain::hash(header) == stop_.hash();
 }
 
 } // namespace kth::node

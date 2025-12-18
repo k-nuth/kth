@@ -162,8 +162,8 @@ set(kth_sources_just_legacy
         src/chain/block.cpp
         src/chain/chain_state.cpp
         src/chain/compact.cpp
-        src/chain/header_basis.cpp
-        src/chain/header.cpp
+        src/chain/header_raw.cpp
+        src/chain/header_members.cpp
         src/chain/input_basis.cpp
         src/chain/input.cpp
         src/chain/output_basis.cpp
@@ -339,7 +339,7 @@ set(kth_headers
     include/kth/domain/concepts.hpp
     include/kth/domain/chain/points_value.hpp
     include/kth/domain/chain/chain_state.hpp
-    include/kth/domain/chain/header_basis.hpp
+    include/kth/domain/chain/header_raw.hpp
     include/kth/domain/chain/block_basis.hpp
     include/kth/domain/chain/input_point.hpp
     include/kth/domain/chain/input_basis.hpp
@@ -349,12 +349,13 @@ set(kth_headers
     include/kth/domain/chain/token_data.hpp
     include/kth/domain/chain/token_data_serialization.hpp
     include/kth/domain/chain/output_point.hpp
-    include/kth/domain/chain/hash_memoizer.hpp
+    # include/kth/domain/chain/hash_memoizer.hpp  # No longer used
     include/kth/domain/chain/script_basis.hpp
     include/kth/domain/chain/transaction_basis.hpp
     include/kth/domain/chain/stealth.hpp
     include/kth/domain/chain/point_iterator.hpp
     include/kth/domain/chain/header.hpp
+    include/kth/domain/chain/header_members.hpp
     include/kth/domain/chain/history.hpp
     include/kth/domain/chain/compact.hpp
     include/kth/domain/chain/input.hpp
@@ -616,6 +617,30 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # Fallback to manual test registration
     add_test(NAME kth_domain_test COMMAND kth_domain_test)
   endif()
+endif()
+
+# Benchmarks
+# ------------------------------------------------------------------------------
+if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  find_package(nanobench REQUIRED)
+
+  # Benchmark with header_raw implementation (default, array-based)
+  add_executable(kth_domain_benchmarks_header_raw
+    test/chain/header_benchmarks.cpp
+  )
+  target_include_directories(kth_domain_benchmarks_header_raw PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+  target_link_libraries(kth_domain_benchmarks_header_raw PRIVATE ${PROJECT_NAME})
+  target_link_libraries(kth_domain_benchmarks_header_raw PRIVATE nanobench::nanobench)
+  # No define needed - header_raw is the default
+
+  # Benchmark with header_members implementation (member-based)
+  add_executable(kth_domain_benchmarks_header_members
+    test/chain/header_benchmarks.cpp
+  )
+  target_include_directories(kth_domain_benchmarks_header_members PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+  target_link_libraries(kth_domain_benchmarks_header_members PRIVATE ${PROJECT_NAME})
+  target_link_libraries(kth_domain_benchmarks_header_members PRIVATE nanobench::nanobench)
+  target_compile_definitions(kth_domain_benchmarks_header_members PRIVATE KTH_USE_HEADER_MEMBERS)
 endif()
 
 # Examples
