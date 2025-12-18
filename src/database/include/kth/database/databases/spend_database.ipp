@@ -11,7 +11,7 @@ namespace kth::database {
 
 //public
 template <typename Clock>
-domain::chain::input_point internal_database_basis<Clock>::get_spend(domain::chain::output_point const& point) const {
+std::expected<domain::chain::input_point, result_code> internal_database_basis<Clock>::get_spend(domain::chain::output_point const& point) const {
 
     auto keyarr = point.to_data(KTH_INTERNAL_DB_WIRE);
     auto key = kth_db_make_value(keyarr.size(), keyarr.data());
@@ -21,14 +21,17 @@ domain::chain::input_point internal_database_basis<Clock>::get_spend(domain::cha
     auto res0 = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (res0 != KTH_DB_SUCCESS) {
         spdlog::info("[database] Error begining LMDB Transaction [get_spend] {}", res0);
-        return domain::chain::input_point{};
+        return std::unexpected(result_code::other);
     }
 
     res0 = kth_db_get(db_txn, dbi_spend_db_, &key, &value);
+    if (res0 == KTH_DB_NOTFOUND) {
+        kth_db_txn_commit(db_txn);
+        return std::unexpected(result_code::key_not_found);
+    }
     if (res0 != KTH_DB_SUCCESS) {
         kth_db_txn_commit(db_txn);
-        // kth_db_txn_abort(db_txn);
-        return domain::chain::input_point{};
+        return std::unexpected(result_code::other);
     }
 
     auto data = db_value_to_data_chunk(value);
@@ -36,13 +39,13 @@ domain::chain::input_point internal_database_basis<Clock>::get_spend(domain::cha
     res0 = kth_db_txn_commit(db_txn);
     if (res0 != KTH_DB_SUCCESS) {
         spdlog::debug("[database] Error commiting LMDB Transaction [get_spend] {}", res0);
-        return domain::chain::input_point{};
+        return std::unexpected(result_code::other);
     }
 
     byte_reader reader(data);
     auto res_input = domain::chain::input_point::from_data(reader);
     if ( ! res_input) {
-        return domain::chain::input_point{};
+        return std::unexpected(result_code::other);
     }
     return *res_input;
 }

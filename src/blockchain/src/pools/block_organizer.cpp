@@ -6,22 +6,24 @@
 
 #include <cstddef>
 #include <functional>
-#include <future>
 #include <memory>
 #include <utility>
 
-#include <kth/blockchain/interface/fast_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/pools/block_pool.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/blockchain/validate/validate_block.hpp>
 #include <kth/domain.hpp>
 
+#include <asio/co_spawn.hpp>
+#include <asio/use_awaitable.hpp>
+#include <asio/use_future.hpp>
+
 namespace kth::blockchain {
 
 using namespace kd::chain;
 using namespace kd::config;
-using namespace std::placeholders;
 
 #define NAME "block_organizer"
 
@@ -32,21 +34,22 @@ using namespace std::placeholders;
 // transaction: { exists, height, output }
 
 #if defined(KTH_WITH_MEMPOOL)
-block_organizer::block_organizer(prioritized_mutex& mutex, dispatcher& dispatch, threadpool& thread_pool, fast_chain& chain, settings const& settings, domain::config::network network, bool relay_transactions, mining::mempool& mp)
+block_organizer::block_organizer(prioritized_mutex& mutex, executor_type executor, size_t threads, threadpool& thread_pool, block_chain& chain, settings const& settings, domain::config::network network, bool relay_transactions, mining::mempool& mp)
 #else
-block_organizer::block_organizer(prioritized_mutex& mutex, dispatcher& dispatch, threadpool& thread_pool, fast_chain& chain, settings const& settings, domain::config::network network, bool relay_transactions)
+block_organizer::block_organizer(prioritized_mutex& mutex, executor_type executor, size_t threads, threadpool& thread_pool, block_chain& chain, settings const& settings, domain::config::network network, bool relay_transactions)
 #endif
-    : fast_chain_(chain)
+    : chain_(chain)
     , mutex_(mutex)
     , stopped_(true)
-    , dispatch_(dispatch)
+    , executor_(std::move(executor))
+    , threads_(threads)
     , block_pool_(settings.reorganization_limit)
 #if defined(KTH_WITH_MEMPOOL)
-    , validator_(dispatch, fast_chain_, settings, network, relay_transactions, mp)
+    , validator_(executor_, threads_, chain_, settings, network, relay_transactions, mp)
 #else
-    , validator_(dispatch, fast_chain_, settings, network, relay_transactions)
+    , validator_(executor_, threads_, chain_, settings, network, relay_transactions)
 #endif
-    , subscriber_(std::make_shared<reorganize_subscriber>(thread_pool, NAME))
+    , broadcaster_(executor_)
 
 #if defined(KTH_WITH_MEMPOOL)
     , mempool_(mp)
@@ -65,15 +68,14 @@ bool block_organizer::stopped() const {
 
 bool block_organizer::start() {
     stopped_ = false;
-    subscriber_->start();
+    broadcaster_.start();
     validator_.start();
     return true;
 }
 
 bool block_organizer::stop() {
     validator_.stop();
-    subscriber_->stop();
-    subscriber_->invoke(error::service_stopped, 0, {}, {});
+    broadcaster_.stop();
     stopped_ = true;
     return true;
 }
@@ -81,60 +83,34 @@ bool block_organizer::stop() {
 // Organize sequence.
 //-----------------------------------------------------------------------------
 
-// This is called from blockchain::organize.
-void block_organizer::organize(block_const_ptr block, result_handler handler) {
+::asio::awaitable<code> block_organizer::organize(block_const_ptr block) {
     // Critical Section
     ///////////////////////////////////////////////////////////////////////////
-    mutex_.lock_high_priority();
+    mutex_.lock_high_priority(); //TODO: is it possible to remove this mutex?
+    //TODO: any smart way to avoid blocking other high priority tasks during await?
 
     if (stopped()) {
         mutex_.unlock_high_priority();
-        handler(error::service_stopped);
-        return;
+        co_return error::service_stopped;
     }
 
-    // Reset the reusable promise.
-    resume_ = std::promise<code>();
-
-    result_handler const complete = std::bind(&block_organizer::signal_completion, this, _1);
-    auto const check_handler = std::bind(&block_organizer::handle_check, this, _1, block, complete);
+    // The block hasn't been checked yet.
+    if (block->transactions().empty()) {
+        mutex_.unlock_high_priority();
+        co_return error::success;
+    }
 
     // Checks that are independent of chain state.
-    validator_.check(block, check_handler);
-
-    // Wait on completion signal.
-    // This is necessary in order to continue on a non-priority thread.
-    // If we do not wait on the original thread there may be none left.
-    auto ec = resume_.get_future().get();
-
-    mutex_.unlock_high_priority();
-    ///////////////////////////////////////////////////////////////////////////
-
-    // Invoke caller handler outside of critical section.
-    handler(ec);
-}
-
-// private
-void block_organizer::signal_completion(code const& ec) {
-    // This must be protected so that it is properly cleared.
-    // Signal completion, which results in original handler invoke with code.
-    resume_.set_value(ec);
-}
-
-// Verify sub-sequence.
-//-----------------------------------------------------------------------------
-
-// private
-void block_organizer::handle_check(code const& ec, block_const_ptr block, result_handler handler) {
+    auto ec = co_await validator_.check(block);
 
     if (stopped()) {
-        handler(error::service_stopped);
-        return;
+        mutex_.unlock_high_priority();
+        co_return error::service_stopped;
     }
 
     if (ec) {
-        handler(ec);
-        return;
+        mutex_.unlock_high_priority();
+        co_return ec;
     }
 
     // Verify the last branch block (all others are verified).
@@ -147,39 +123,115 @@ void block_organizer::handle_check(code const& ec, block_const_ptr block, result
     // it is not applied at the branch point, so some nodes will not see the
     // collision block and others will, depending on block order of arrival.
     //*************************************************************************
-    if (branch->empty() || fast_chain_.get_block_exists(block->hash())) {
-        handler(error::duplicate_block);
-        return;
+    if (branch->empty() || chain_.block_exists(block->hash())) {
+        mutex_.unlock_high_priority();
+        co_return error::duplicate_block;
     }
 
     if ( ! set_branch_height(branch)) {
-        handler(error::orphan_block);
-        return;
+        mutex_.unlock_high_priority();
+        co_return error::orphan_block;
     }
 
-
-    auto const accept_handler = std::bind(&block_organizer::handle_accept, this, _1, branch, handler);
-
     // Checks that are dependent on chain state and prevouts.
-    validator_.accept(branch, accept_handler);
-}
+    ec = co_await validator_.accept(branch);
 
-// private
-void block_organizer::handle_accept(code const& ec, branch::ptr branch, result_handler handler) {
     if (stopped()) {
-        handler(error::service_stopped);
-        return;
+        mutex_.unlock_high_priority();
+        co_return error::service_stopped;
     }
 
     if (ec) {
-        handler(ec);
-        return;
+        mutex_.unlock_high_priority();
+        co_return ec;
     }
 
-    auto const connect_handler = std::bind(&block_organizer::handle_connect, this, _1, branch, handler);
-
     // Checks that include script validation.
-    validator_.connect(branch, connect_handler);
+    ec = co_await validator_.connect(branch);
+
+    if (stopped()) {
+        mutex_.unlock_high_priority();
+        co_return error::service_stopped;
+    }
+
+    if (ec) {
+        mutex_.unlock_high_priority();
+        co_return ec;
+    }
+
+    auto& top_block = branch->top()->validation;
+    top_block.error = error::success;
+
+    auto& top_header = branch->top()->header().validation;
+    top_header.median_time_past = top_block.state->median_time_past();
+    top_header.height = branch->top_height();
+
+    auto const work = branch->work();
+    auto const first_height = branch->height() + 1u;
+    top_block.start_notify = asio::steady_clock::now();
+
+    // The chain query will stop if it reaches work level.
+    auto const threshold = chain_.get_branch_work(work, first_height);
+    if ( ! threshold) {
+        mutex_.unlock_high_priority();
+        co_return error::branch_work_failed;
+    }
+
+    // TODO(legacy): consider relay of pooled blocks by modifying subscriber semantics.
+    if (work <= *threshold) {
+        if ( ! top_block.simulate) {
+            block_pool_.add(branch->top());
+        }
+
+        mutex_.unlock_high_priority();
+        co_return error::insufficient_work;
+    }
+
+    //Note(fernando): If there is just one block, internal double spend was checked previously.
+    if (branch->blocks() && branch->blocks()->size() > 1) {
+        if (is_branch_double_spend(branch)) {
+            mutex_.unlock_high_priority();
+            co_return error::double_spend;
+        }
+    }
+
+    // TODO(legacy): create a simulated validation path that does not block others.
+    if (top_block.simulate) {
+        mutex_.unlock_high_priority();
+        co_return error::success;
+    }
+
+#if ! defined(KTH_DB_READONLY)
+    // Replace! Switch!
+    //#########################################################################
+    // Incoming blocks must have median_time_past set.
+    auto reorg_result = co_await chain_.reorganize(branch->fork_point(), branch->blocks());
+
+    if ( ! reorg_result.has_value()) {
+        spdlog::critical("[blockchain] Failure writing block to store, is now corrupted: {}", reorg_result.error().message());
+        mutex_.unlock_high_priority();
+        co_return reorg_result.error();
+    }
+
+    auto out_blocks = std::move(reorg_result.value());
+
+    block_pool_.remove(branch->blocks());
+    block_pool_.prune(branch->top_height());
+    block_pool_.add(out_blocks);
+
+#if defined(KTH_WITH_MEMPOOL)
+    organize_mempool(branch, branch->blocks(), out_blocks);
+#endif
+
+    // v3 reorg block order is reverse of v2, branch.back() is the new top.
+    notify(branch->height(), branch->blocks(), out_blocks);
+
+    chain_.prune_reorg_async();
+    //#########################################################################
+#endif // ! defined(KTH_DB_READONLY)
+
+    mutex_.unlock_high_priority();
+    co_return ec;
 }
 
 bool block_organizer::is_branch_double_spend(branch::ptr const& branch) const {
@@ -230,10 +282,15 @@ void block_organizer::populate_prevout_1(branch::const_ptr branch, domain::chain
     }
 
     //TODO(fernando): check the value of the parameters: branch_height and require_confirmed
-    if ( ! fast_chain_.get_utxo(prevout.cache, prevout.height, prevout.median_time_past, prevout.coinbase, outpoint, branch_height)) {
+    auto const utxo = chain_.get_utxo(outpoint, branch_height);
+    if ( ! utxo) {
         // std::println("{}", "outpoint not found in UTXO: " << encode_hash(outpoint.hash()) << " - " << outpoint.index());
         return;
     }
+    prevout.cache = utxo->output;
+    prevout.height = utxo->height;
+    prevout.median_time_past = utxo->median_time_past;
+    prevout.coinbase = utxo->coinbase;
 
     // BUGBUG: Spends are not marked as spent by unconfirmed transactions.
     // So tx pool transactions currently have no double spend limitation.
@@ -311,7 +368,7 @@ void block_organizer::organize_mempool(branch::const_ptr branch, block_const_ptr
 
             mempool_.remove(block->transactions().begin() + 1, block->transactions().end(), block->non_coinbase_input_count());
 
-            if ( ! fast_chain_.is_stale_fast() && ! outgoing_blocks->empty()) {
+            if ( ! chain_.is_stale() && ! outgoing_blocks->empty()) {
                 std::for_each(block->transactions().begin() + 1, block->transactions().end(), [&txs_in, &prevouts_in](domain::chain::transaction const& tx){
                     txs_in.insert(tx.hash());
 
@@ -323,7 +380,7 @@ void block_organizer::organize_mempool(branch::const_ptr branch, block_const_ptr
         }
     }
 
-    if ( ! fast_chain_.is_stale_fast() && ! outgoing_blocks->empty()) {
+    if ( ! chain_.is_stale() && ! outgoing_blocks->empty()) {
         auto branch_utxo = create_outgoing_utxo_set(outgoing_blocks);
 
         for (auto const& block : *outgoing_blocks) {
@@ -342,7 +399,7 @@ void block_organizer::organize_mempool(branch::const_ptr branch, block_const_ptr
                         });
 
                         if ( ! double_spend) {
-                            tx.validation.state = fast_chain_.chain_state();
+                            tx.validation.state = chain_.chain_state();
                             populate_transaction_inputs(branch, tx.inputs(), branch_utxo);
                             mempool_.add(tx);       //TODO(fernando): add bulk
                         }
@@ -354,119 +411,19 @@ void block_organizer::organize_mempool(branch::const_ptr branch, block_const_ptr
 }
 #endif // defined(KTH_WITH_MEMPOOL)
 
-// private
-void block_organizer::handle_connect(code const& ec, branch::ptr branch, result_handler handler) {
-
-    if (stopped()) {
-        handler(error::service_stopped);
-        return;
-    }
-
-    if (ec) {
-        handler(ec);
-        return;
-    }
-
-    auto& top_block = branch->top()->validation;
-    top_block.error = error::success;
-
-    auto& top_header = branch->top()->header().validation;
-    top_header.median_time_past = top_block.state->median_time_past();
-    top_header.height = branch->top_height();
-
-    uint256_t threshold;
-    auto const work = branch->work();
-    auto const first_height = branch->height() + 1u;
-    top_block.start_notify = asio::steady_clock::now();
-
-    // The chain query will stop if it reaches work level.
-    if ( ! fast_chain_.get_branch_work(threshold, work, first_height)) {
-        handler(error::branch_work_failed);
-        return;
-    }
-
-    // TODO(legacy): consider relay of pooled blocks by modifying subscriber semantics.
-    if (work <= threshold) {
-        if ( ! top_block.simulate) {
-            block_pool_.add(branch->top());
-        }
-
-        handler(error::insufficient_work);
-        return;
-    }
-
-    //Note(fernando): If there is just one block, internal double spend was checked previously.
-    if (branch->blocks() && branch->blocks()->size() > 1) {
-        if (is_branch_double_spend(branch)) {
-            handler(error::double_spend);
-            return;
-        }
-    }
-
-    // TODO(legacy): create a simulated validation path that does not block others.
-    if (top_block.simulate) {
-        handler(error::success);
-        return;
-    }
-
-
-#if ! defined(KTH_DB_READONLY)
-    // Get the outgoing blocks to forward to reorg handler.
-    auto const out_blocks = std::make_shared<block_const_ptr_list>();
-    auto const reorganized_handler = std::bind(&block_organizer::handle_reorganized, this, _1, branch, out_blocks, handler);
-
-    // Replace! Switch!
-    //#########################################################################
-    // Incoming blocks must have median_time_past set.
-    fast_chain_.reorganize(branch->fork_point(), branch->blocks(), out_blocks, dispatch_, reorganized_handler);
-    //#########################################################################
-#endif // ! defined(KTH_DB_READONLY)
-}
-
-#if ! defined(KTH_DB_READONLY)
-// private
-// Outgoing blocks must have median_time_past set.
-void block_organizer::handle_reorganized(code const& ec, branch::const_ptr branch, block_const_ptr_list_ptr outgoing, result_handler handler) {
-    if (ec) {
-        spdlog::critical("[blockchain] Failure writing block to store, is now corrupted: {}", ec.message());
-        handler(ec);
-        return;
-    }
-
-    block_pool_.remove(branch->blocks());
-    block_pool_.prune(branch->top_height());
-    block_pool_.add(outgoing);
-
-
-#if defined(KTH_WITH_MEMPOOL)
-    organize_mempool(branch, branch->blocks(), outgoing);
-#endif
-
-    // v3 reorg block order is reverse of v2, branch.back() is the new top.
-    notify(branch->height(), branch->blocks(), outgoing);
-
-    fast_chain_.prune_reorg_async();
-    //fast_chain_.set_database_flags();
-
-    handler(error::success);
-}
-#endif // ! defined(KTH_DB_READONLY)
-
 // Subscription.
 //-----------------------------------------------------------------------------
 
-// private
 void block_organizer::notify(size_t branch_height, block_const_ptr_list_const_ptr branch, block_const_ptr_list_const_ptr original) {
-    // This invokes handlers within the criticial section (deadlock risk).
-    subscriber_->invoke(error::success, branch_height, branch, original);
+    broadcaster_.publish(branch_height, branch, original);
 }
 
-void block_organizer::subscribe(reorganize_handler&& handler) {
-    subscriber_->subscribe(std::move(handler), error::service_stopped, 0, {}, {});
+block_organizer::block_broadcaster::channel_ptr block_organizer::subscribe() {
+    return broadcaster_.subscribe();
 }
 
-void block_organizer::unsubscribe() {
-    subscriber_->relay(error::success, 0, {}, {});
+void block_organizer::unsubscribe(block_broadcaster::channel_ptr const& channel) {
+    broadcaster_.unsubscribe(channel);
 }
 
 // Queries.
@@ -481,14 +438,13 @@ void block_organizer::filter(get_data_ptr message) const {
 
 // TODO(legacy): store this in the block pool and avoid this query.
 bool block_organizer::set_branch_height(branch::ptr branch) {
-    size_t height;
-
     // Get blockchain parent of the oldest branch block.
-    if ( ! fast_chain_.get_height(height, branch->hash())) {
+    auto const height = chain_.get_height(branch->hash());
+    if ( ! height) {
         return false;
     }
 
-    branch->set_height(height);
+    branch->set_height(*height);
     return true;
 }
 
