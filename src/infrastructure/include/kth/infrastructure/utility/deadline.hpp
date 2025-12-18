@@ -14,10 +14,7 @@
 #include <kth/infrastructure/utility/enable_shared_from_base.hpp>
 #include <kth/infrastructure/utility/noncopyable.hpp>
 #include <kth/infrastructure/utility/thread.hpp>
-
-#if ! defined(__EMSCRIPTEN__)
 #include <kth/infrastructure/utility/threadpool.hpp>
-#endif
 
 ////#include <kth/infrastructure/utility/track.hpp>
 

@@ -6,7 +6,7 @@
 
 #include <tuple>
 
-#include <kth/blockchain/interface/safe_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 
 #include <kth/capi/helpers.hpp>
 #include <kth/capi/type_conversions.h>

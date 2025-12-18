@@ -5,7 +5,9 @@
 #ifndef KTH_DATABASE_INTERNAL_DATABASE_HPP_
 #define KTH_DATABASE_INTERNAL_DATABASE_HPP_
 
+#include <expected>
 #include <filesystem>
+#include <tuple>
 
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/interprocess/mapped_region.hpp>
@@ -100,16 +102,33 @@ struct KD_API internal_database_basis {
     //TODO(fernando): optimization: consider passing a list of outputs to insert and a list of inputs to delete instead of an entire Block.
     //                  avoiding inserting and erasing internal spenders
     result_code push_block(domain::chain::block const& block, uint32_t height, uint32_t median_time_past);
+
+    // Headers-first sync: store header without full block data (ABLA state = zeros)
+    result_code push_header(domain::chain::header const& header, uint32_t height);
+
+    // Headers-first sync: store header with explicit ABLA state
+    result_code push_header(domain::chain::header const& header, uint32_t height, uint64_t block_size, uint64_t control_block_size, uint64_t elastic_buffer_size);
+
+    // Headers-first sync: store multiple headers in a single transaction (batch)
+    // start_height is the height of the first header in the list
+    result_code push_headers_batch(domain::chain::header::list const& headers, uint32_t start_height);
 #endif
 
-    utxo_entry get_utxo(domain::chain::output_point const& point) const;
+    std::expected<utxo_entry, result_code> get_utxo(domain::chain::output_point const& point) const;
 
-    result_code get_last_height(uint32_t& out_height) const;
+    // Height tracking via properties table
+    // Returns pair of (header_height, block_height) or error
+    std::expected<std::pair<uint32_t, uint32_t>, result_code> get_last_heights() const;
 
-    std::pair<domain::chain::header, uint32_t> get_header(hash_digest const& hash) const;
-    domain::chain::header get_header(uint32_t height) const;
-    domain::chain::header::list get_headers(uint32_t from, uint32_t to) const;
-    std::optional<header_with_abla_state_t> get_header_and_abla_state(uint32_t height) const;
+#if ! defined(KTH_DB_READONLY)
+    result_code set_last_header_height(uint32_t height);
+    result_code set_last_block_height(uint32_t height);
+#endif
+
+    std::expected<std::pair<domain::chain::header, uint32_t>, result_code> get_header(hash_digest const& hash) const;
+    std::expected<domain::chain::header, result_code> get_header(uint32_t height) const;
+    std::expected<domain::chain::header::list, result_code> get_headers(uint32_t from, uint32_t to) const;
+    std::expected<header_with_abla_state_t, result_code> get_header_and_abla_state(uint32_t height) const;
 
 #if ! defined(KTH_DB_READONLY)
     result_code pop_block(domain::chain::block& out_block);
@@ -117,23 +136,23 @@ struct KD_API internal_database_basis {
     result_code prune();
 #endif
 
-    std::pair<result_code, utxo_pool_t> get_utxo_pool_from(uint32_t from, uint32_t to) const;
+    std::expected<utxo_pool_t, result_code> get_utxo_pool_from(uint32_t from, uint32_t to) const;
 
     //bool set_fast_flags_environment(bool enabled);
 
-    std::pair<domain::chain::block, uint32_t> get_block(hash_digest const& hash) const;
-    domain::chain::block get_block(uint32_t height) const;
+    std::expected<std::pair<domain::chain::block, uint32_t>, result_code> get_block(hash_digest const& hash) const;
+    std::expected<domain::chain::block, result_code> get_block(uint32_t height) const;
 
-    transaction_entry get_transaction(hash_digest const& hash, size_t fork_height) const;
+    std::expected<transaction_entry, result_code> get_transaction(hash_digest const& hash, size_t fork_height) const;
 
-    domain::chain::history_compact::list get_history(short_hash const& key, size_t limit, size_t from_height) const;
-    std::vector<hash_digest> get_history_txns(short_hash const& key, size_t limit, size_t from_height) const;
+    std::expected<domain::chain::history_compact::list, result_code> get_history(short_hash const& key, size_t limit, size_t from_height) const;
+    std::expected<std::vector<hash_digest>, result_code> get_history_txns(short_hash const& key, size_t limit, size_t from_height) const;
 
-    domain::chain::input_point get_spend(domain::chain::output_point const& point) const;
+    std::expected<domain::chain::input_point, result_code> get_spend(domain::chain::output_point const& point) const;
 
-    std::vector<transaction_unconfirmed_entry> get_all_transaction_unconfirmed() const;
+    std::expected<std::vector<transaction_unconfirmed_entry>, result_code> get_all_transaction_unconfirmed() const;
 
-    transaction_unconfirmed_entry get_transaction_unconfirmed(hash_digest const& hash) const;
+    std::expected<transaction_unconfirmed_entry, result_code> get_transaction_unconfirmed(hash_digest const& hash) const;
 
 #if ! defined(KTH_DB_READONLY)
     result_code push_transaction_unconfirmed(domain::chain::transaction const& tx, uint32_t height);
@@ -143,9 +162,17 @@ private:
 
 #if ! defined(KTH_DB_READONLY)
     bool create_db_mode_property();
+    bool create_height_properties();
 #endif
 
     bool verify_db_mode_property() const;
+
+    // Property helpers (with transaction)
+    std::expected<uint32_t, result_code> get_property_height(property_code prop, KTH_DB_txn* db_txn) const;
+#if ! defined(KTH_DB_READONLY)
+    result_code set_property_height(property_code prop, uint32_t height);
+    result_code set_property_height(property_code prop, uint32_t height, KTH_DB_txn* db_txn);
+#endif
 
     bool open_internal();
 
@@ -159,7 +186,7 @@ private:
 
     bool open_databases();
 
-    utxo_entry get_utxo(domain::chain::output_point const& point, KTH_DB_txn* db_txn) const;
+    std::expected<utxo_entry, result_code> get_utxo(domain::chain::output_point const& point, KTH_DB_txn* db_txn) const;
 
 #if ! defined(KTH_DB_READONLY)
     result_code insert_reorg_pool(uint32_t height, KTH_DB_val& key, KTH_DB_txn* db_txn);
@@ -184,6 +211,12 @@ private:
     result_code push_transactions_non_coinbase(uint32_t height, data_chunk const& fixed_data, I f, I l, bool insert_reorg, KTH_DB_txn* db_txn);
 
     result_code push_block_header(domain::chain::block const& block, uint32_t height, KTH_DB_txn* db_txn);
+
+    // Headers-first sync: store header only (without block data)
+    result_code push_header_only(domain::chain::header const& header, uint32_t height, KTH_DB_txn* db_txn);
+
+    // Headers-first sync: store header with explicit ABLA state
+    result_code push_header_with_abla(domain::chain::header const& header, uint32_t height, uint64_t block_size, uint64_t control_block_size, uint64_t elastic_buffer_size, KTH_DB_txn* db_txn);
 
     result_code push_block_reorg(domain::chain::block const& block, uint32_t height, KTH_DB_txn* db_txn);
 
@@ -215,11 +248,11 @@ private:
     result_code remove_block(domain::chain::block const& block, uint32_t height, KTH_DB_txn* db_txn);
 #endif
 
-    domain::chain::header get_header(uint32_t height, KTH_DB_txn* db_txn) const;
-    std::optional<header_with_abla_state_t> get_header_and_abla_state(uint32_t height, KTH_DB_txn* db_txn) const;
+    std::expected<domain::chain::header, result_code> get_header(uint32_t height, KTH_DB_txn* db_txn) const;
+    std::expected<header_with_abla_state_t, result_code> get_header_and_abla_state(uint32_t height, KTH_DB_txn* db_txn) const;
 
-    domain::chain::block get_block_reorg(uint32_t height, KTH_DB_txn* db_txn) const;
-    domain::chain::block get_block_reorg(uint32_t height) const;
+    std::expected<domain::chain::block, result_code> get_block_reorg(uint32_t height, KTH_DB_txn* db_txn) const;
+    std::expected<domain::chain::block, result_code> get_block_reorg(uint32_t height) const;
 
 #if ! defined(KTH_DB_READONLY)
     result_code remove_block(domain::chain::block const& block, uint32_t height);
@@ -227,7 +260,7 @@ private:
     result_code prune_reorg_block(uint32_t amount_to_delete, KTH_DB_txn* db_txn);
 #endif
 
-    result_code get_first_reorg_block_height(uint32_t& out_height) const;
+    std::expected<uint32_t, result_code> get_first_reorg_block_height() const;
 
     //TODO(fernando): is taking KTH_DB_val by value, is that Ok?
     result_code insert_reorg_into_pool(utxo_pool_t& pool, KTH_DB_val key_point, KTH_DB_txn* db_txn) const;
@@ -236,9 +269,9 @@ private:
     result_code remove_blocks_db(uint32_t height, KTH_DB_txn* db_txn);
 #endif
 
-    domain::chain::block get_block(uint32_t height, KTH_DB_txn* db_txn) const;
+    std::expected<domain::chain::block, result_code> get_block(uint32_t height, KTH_DB_txn* db_txn) const;
 
-    domain::chain::block get_block(hash_digest const& hash, KTH_DB_txn* db_txn) const;
+    std::expected<domain::chain::block, result_code> get_block(hash_digest const& hash, KTH_DB_txn* db_txn) const;
 
 #if ! defined(KTH_DB_READONLY)
     result_code insert_block(domain::chain::block const& block, uint32_t height, uint64_t tx_count, KTH_DB_txn* db_txn);

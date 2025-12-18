@@ -4,6 +4,9 @@
 
 #include <kth/network/p2p_node.hpp>
 
+#include <kth/network/handlers/ping.hpp>
+#include <kth/network/handlers/pong.hpp>
+
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/use_awaitable.hpp>
 
@@ -22,7 +25,14 @@ p2p_node::p2p_node(settings const& settings)
     , manager_(pool_.get_executor())
     , hosts_(settings)
     , top_block_({null_hash, 0})
-{}
+{
+    spdlog::debug("[p2p_node] p2p_node constructor - member init complete");
+    // Register default message handlers using typed registration
+    // The make_handler<> wrapper handles parsing automatically
+    dispatcher_.register_handler<domain::message::ping>(handlers::ping::handle);
+    dispatcher_.register_handler<domain::message::pong>(handlers::pong::handle);
+    spdlog::debug("[p2p_node] p2p_node constructor completed successfully");
+}
 
 p2p_node::~p2p_node() {
     stop();
@@ -36,13 +46,7 @@ p2p_node::~p2p_node() {
 
     stopped_ = false;
 
-    // Load hosts from file
-    auto ec = hosts_.start();
-    if (ec) {
-        spdlog::error("[p2p_node] Failed to load hosts: {}", ec.message());
-        co_return ec;
-    }
-
+    // hosts_ loads from file in constructor
     spdlog::info("[p2p_node] Loaded {} host addresses", hosts_.count());
 
     // Seed if needed
@@ -93,8 +97,7 @@ void p2p_node::stop() {
     // Stop all peers
     manager_.stop_all();
 
-    // Save hosts
-    hosts_.stop();
+    // hosts_ saves to file in destructor
 
     // Stop thread pool
     pool_.stop();
@@ -119,6 +122,58 @@ size_t p2p_node::connection_count() const {
     return manager_.count_snapshot();
 }
 
+threadpool& p2p_node::thread_pool() {
+    return pool_;
+}
+
+message_dispatcher& p2p_node::dispatcher() {
+    return dispatcher_;
+}
+
+// =============================================================================
+// Message Dispatcher implementation
+// =============================================================================
+
+::asio::awaitable<bool> message_dispatcher::dispatch(peer_session& peer, raw_message const& msg) {
+    auto const& command = msg.heading.command();
+
+    spdlog::debug("[dispatcher] Dispatching '{}' from [{}]", command, peer.authority());
+
+    // Look for specific handler
+    auto it = handlers_.find(command);
+    if (it != handlers_.end()) {
+        auto result = co_await it->second(peer, msg);
+        switch (result) {
+            case message_result::disconnect:
+                co_return false;
+            case message_result::continue_processing:
+            case message_result::handled:
+                co_return true;
+            case message_result::not_handled:
+                // Fall through to default handler
+                break;
+        }
+    }
+
+    // Try default handler
+    if (default_handler_) {
+        auto result = co_await default_handler_(peer, msg);
+        co_return result != message_result::disconnect;
+    }
+
+    // No handler - just continue
+    spdlog::trace("[dispatcher] Unhandled message '{}' from [{}]", command, peer.authority());
+    co_return true;
+}
+
+void message_dispatcher::register_handler(std::string const& command, message_handler_fn handler) {
+    handlers_[command] = std::move(handler);
+}
+
+void message_dispatcher::set_default_handler(message_handler_fn handler) {
+    default_handler_ = std::move(handler);
+}
+
 infrastructure::config::checkpoint p2p_node::top_block() const {
     return top_block_.load();
 }
@@ -134,7 +189,7 @@ void p2p_node::set_top_block(infrastructure::config::checkpoint&& top) {
 // Manual connections
 // -----------------------------------------------------------------------------
 
-::asio::awaitable<std::expected<peer_session::ptr, code>> p2p_node::connect(
+awaitable_expected<peer_session::ptr> p2p_node::connect(
     std::string const& host,
     uint16_t port)
 {
@@ -198,7 +253,7 @@ size_t p2p_node::address_count() const {
     return hosts_.count();
 }
 
-code p2p_node::store(address const& addr) {
+bool p2p_node::store(address const& addr) {
     return hosts_.store(addr);
 }
 
@@ -206,7 +261,7 @@ code p2p_node::fetch_address(address& out) const {
     return hosts_.fetch(out);
 }
 
-code p2p_node::remove(address const& addr) {
+bool p2p_node::remove(address const& addr) {
     return hosts_.remove(addr);
 }
 
@@ -231,64 +286,177 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
 
 ::asio::awaitable<void> p2p_node::run_seeding() {
     spdlog::info("[p2p_node] Starting seeding from {} seeds", settings_.seeds.size());
+    spdlog::debug("[p2p_node] run_seeding: before seeds check");
+
+    if (settings_.seeds.empty()) {
+        spdlog::info("[p2p_node] No seeds configured");
+        co_return;
+    }
+
+    spdlog::debug("[p2p_node] run_seeding: getting executor");
+    auto executor = co_await ::asio::this_coro::executor;
+    spdlog::debug("[p2p_node] run_seeding: got executor");
+
+    // Track seeds completed
+    auto seeds_completed = std::make_shared<std::atomic<size_t>>(0);
+    auto const total_seeds = settings_.seeds.size();
+    spdlog::debug("[p2p_node] run_seeding: total_seeds = {}", total_seeds);
+
+    // Copy seeds to avoid reference issues in coroutines
+    spdlog::debug("[p2p_node] run_seeding: copying seeds");
+    std::vector<infrastructure::config::endpoint> seeds_copy(
+        settings_.seeds.begin(), settings_.seeds.end());
+    spdlog::debug("[p2p_node] run_seeding: seeds copied, count = {}", seeds_copy.size());
+
+    // Launch seed connections in parallel
+    for (size_t i = 0; i < seeds_copy.size(); ++i) {
+        if (stopped_) break;
+
+        auto const& seed = seeds_copy[i];
+        spdlog::debug("[p2p_node] run_seeding: processing seed {} of {}", i + 1, seeds_copy.size());
+
+        auto seed_host = seed.host();
+        auto seed_port = seed.port();
+        spdlog::debug("[p2p_node] run_seeding: seed {}:{}", seed_host, seed_port);
+
+        // Use member function instead of lambda to avoid capture lifetime issues
+        spdlog::debug("[p2p_node] run_seeding: about to co_spawn connect_to_seed for {}:{}", seed_host, seed_port);
+        ::asio::co_spawn(executor,
+            connect_to_seed(std::move(seed_host), seed_port, seeds_completed),
+            ::asio::detached);
+        spdlog::debug("[p2p_node] run_seeding: co_spawned connect_to_seed");
+    }
+
+    spdlog::debug("[p2p_node] run_seeding: all seed tasks spawned, entering wait loop");
+
+    // Wait for seeds with simple timeout
+    auto const max_wait = std::chrono::seconds(settings_.connect_timeout_seconds + 35);
+    auto const start_time = std::chrono::steady_clock::now();
+
+    while (*seeds_completed < total_seeds && !stopped_) {
+        // Check elapsed time
+        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        if (elapsed >= max_wait) {
+            spdlog::debug("[p2p_node] Seeding timeout reached");
+            break;
+        }
+
+        // Early exit if we have enough addresses
+        if (hosts_.count() >= settings_.host_pool_capacity / 4) {
+            spdlog::info("[p2p_node] Collected sufficient addresses, stopping seeding early");
+            break;
+        }
+
+        // Wait a bit before checking again
+        ::asio::steady_timer check_timer(executor);
+        check_timer.expires_after(1s);
+        co_await check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+    }
+
+    spdlog::info("[p2p_node] Seeding complete, {} addresses available", hosts_.count());
+}
+
+::asio::awaitable<void> p2p_node::connect_to_seed(
+    std::string seed_host,
+    uint16_t seed_port,
+    std::shared_ptr<std::atomic<size_t>> seeds_completed)
+{
+    spdlog::debug("[p2p_node] connect_to_seed: starting for {}:{}", seed_host, seed_port);
 
     auto executor = co_await ::asio::this_coro::executor;
 
-    for (auto const& seed : settings_.seeds) {
-        if (stopped_) break;
-
-        spdlog::debug("[p2p_node] Connecting to seed {}:{}", seed.host(), seed.port());
-
-        // Use async_connect from peer_session.hpp
+    try {
         auto result = co_await async_connect(
             executor,
-            seed.host(),
-            seed.port(),
+            seed_host,
+            seed_port,
             settings_,
             std::chrono::seconds(settings_.connect_timeout_seconds));
 
         if (!result) {
             spdlog::debug("[p2p_node] Failed to connect to seed {}:{} - {}",
-                seed.host(), seed.port(), result.error().message());
-            continue;
+                seed_host, seed_port, result.error().message());
+            ++(*seeds_completed);
+            co_return;
         }
 
+        spdlog::debug("[p2p_node] connect_to_seed: connected to {}:{}", seed_host, seed_port);
         auto peer = *result;
 
         // Start the session's message pump
+        spdlog::debug("[p2p_node] connect_to_seed: spawning peer->run() for {}:{}", seed_host, seed_port);
         ::asio::co_spawn(executor, peer->run(), ::asio::detached);
 
         // Generate nonce for handshake
         uint64_t nonce = generate_nonce();
 
         // Perform handshake
+        spdlog::debug("[p2p_node] connect_to_seed: performing handshake for {}:{}", seed_host, seed_port);
         auto config = make_handshake_config(settings_, top_block_.load().height(), nonce);
         auto handshake_result = co_await perform_handshake(*peer, config);
 
         if (!handshake_result) {
             peer->stop();
             spdlog::debug("[p2p_node] Seed handshake failed {}:{} - {}",
-                seed.host(), seed.port(), handshake_result.error().message());
-            continue;
+                seed_host, seed_port, handshake_result.error().message());
+            ++(*seeds_completed);
+            co_return;
         }
 
-        // Request addresses
-        auto addr_result = co_await request_addresses(*peer, 30s);
+        spdlog::debug("[p2p_node] connect_to_seed: handshake complete for {}:{}", seed_host, seed_port);
 
-        if (addr_result) {
-            spdlog::info("[p2p_node] Got {} addresses from seed {}:{}",
-                addr_result->addresses().size(), seed.host(), seed.port());
+        // Send getaddr request
+        auto ec = co_await peer->send(domain::message::get_address{});
+        if (ec != error::success) {
+            peer->stop();
+            ++(*seeds_completed);
+            co_return;
+        }
 
-            for (auto const& addr : addr_result->addresses()) {
-                hosts_.store(addr);
+        // Wait for addr response with timeout
+        ::asio::steady_timer timer(executor);
+        timer.expires_after(30s);
+        bool got_addresses = false;
+
+        while (!got_addresses && !peer->stopped()) {
+            auto msg_result = co_await (
+                peer->messages().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
+                timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
+            );
+
+            if (msg_result.index() == 1) {
+                // Timeout
+                break;
+            }
+
+            auto& [recv_ec, raw] = std::get<0>(msg_result);
+            if (recv_ec) {
+                break;
+            }
+
+            if (raw.heading.command() == domain::message::address::command) {
+                byte_reader reader(raw.payload);
+                auto addr_result = domain::message::address::from_data(
+                    reader, peer->negotiated_version());
+                if (addr_result) {
+                    auto const count = addr_result->addresses().size();
+                    spdlog::info("[p2p_node] Got {} addresses from seed {}:{}",
+                        count, seed_host, seed_port);
+
+                    for (auto const& addr : addr_result->addresses()) {
+                        hosts_.store(addr);
+                    }
+                    got_addresses = true;
+                }
             }
         }
 
-        // Disconnect from seed
         peer->stop();
+    } catch (std::exception const& e) {
+        spdlog::debug("[p2p_node] Seed {} exception: {}", seed_host, e.what());
     }
 
-    spdlog::info("[p2p_node] Seeding complete, {} addresses available", hosts_.count());
+    ++(*seeds_completed);
 }
 
 ::asio::awaitable<void> p2p_node::run_outbound() {
@@ -365,13 +533,98 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
 }
 
 ::asio::awaitable<void> p2p_node::run_peer_protocols(peer_session::ptr peer) {
-    // Run ping/pong to keep connection alive
-    co_await run_ping_pong(*peer, std::chrono::seconds(settings_.channel_heartbeat_minutes * 60));
+    spdlog::debug("[p2p_node] Starting protocols for peer [{}]", peer->authority());
+
+    auto executor = co_await ::asio::this_coro::executor;
+    ::asio::steady_timer ping_timer(executor);
+    auto const ping_interval = std::chrono::seconds(settings_.channel_heartbeat_minutes * 60);
+
+    spdlog::debug("[p2p_node] Ping interval for [{}]: {}s", peer->authority(), ping_interval.count());
+
+    while (!peer->stopped() && !stopped_) {
+        ping_timer.expires_after(ping_interval);
+
+        // Wait for message or ping timer
+        auto result = co_await (
+            peer->messages().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
+            ping_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
+        );
+
+        if (peer->stopped() || stopped_) {
+            break;
+        }
+
+        if (result.index() == 1) {
+            // Timer expired - send ping
+            auto [timer_ec] = std::get<1>(result);
+            if (!timer_ec) {
+                uint64_t nonce = 0;
+                pseudo_random::fill(reinterpret_cast<uint8_t*>(&nonce), sizeof(nonce));
+                domain::message::ping ping_msg(nonce);
+
+                auto ec = co_await peer->send(ping_msg);
+                if (ec != error::success) {
+                    spdlog::debug("[p2p_node] Failed to send ping to [{}]", peer->authority());
+                    break;
+                }
+                spdlog::trace("[p2p_node] Sent ping to [{}]", peer->authority());
+            }
+            continue;
+        }
+
+        // Message received
+        auto& [ec, raw] = std::get<0>(result);
+        if (ec) {
+            break;
+        }
+
+        auto const& command = raw.heading.command();
+
+        // Route response messages to their dedicated channels
+        // These are consumed by request_headers, request_block, request_addresses
+        // Using try_send - if channel is full or no one is waiting, message is dropped
+        // (this is correct behavior: unsolicited responses are ignored)
+        if (command == domain::message::headers::command) {
+            auto [send_ec] = co_await peer->headers_responses().async_send(
+                std::error_code{}, raw, ::asio::as_tuple(::asio::use_awaitable));
+            if (!send_ec) {
+                continue;  // Message delivered to response channel
+            }
+            // Channel full or closed - fall through to dispatcher
+        } else if (command == domain::message::block::command) {
+            auto [send_ec] = co_await peer->block_responses().async_send(
+                std::error_code{}, raw, ::asio::as_tuple(::asio::use_awaitable));
+            if (!send_ec) {
+                continue;
+            }
+        } else if (command == domain::message::address::command) {
+            auto [send_ec] = co_await peer->addr_responses().async_send(
+                std::error_code{}, raw, ::asio::as_tuple(::asio::use_awaitable));
+            if (!send_ec) {
+                continue;
+            }
+        }
+
+        // Dispatch message through handlers
+        bool should_continue = co_await dispatcher_.dispatch(*peer, raw);
+        if (!should_continue) {
+            spdlog::debug("[p2p_node] Handler requested disconnect for [{}]", peer->authority());
+            break;
+        }
+    }
+
+    // Cleanup
+    spdlog::debug("[p2p_node] Ending protocols for peer [{}]", peer->authority());
+    peer->stop();
+    co_await manager_.remove(peer);
 }
 
 ::asio::awaitable<void> p2p_node::maintain_outbound_connections() {
     auto executor = co_await ::asio::this_coro::executor;
     ::asio::steady_timer timer(executor);
+
+    // Maximum number of parallel connection attempts
+    constexpr size_t max_parallel_attempts = 8;
 
     while (!stopped_) {
         auto const current_count = manager_.count_snapshot();
@@ -381,28 +634,67 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
             // Need more connections
             auto const needed = target - current_count;
 
-            for (size_t i = 0; i < needed && !stopped_; ++i) {
+            // Always try max_parallel_attempts to find working peers faster
+            // Many addresses may be stale, so cast a wide net
+            auto const batch_size = max_parallel_attempts;
+            std::vector<domain::message::network_address> addresses;
+            addresses.reserve(batch_size);
+
+            for (size_t i = 0; i < batch_size && !stopped_; ++i) {
                 domain::message::network_address addr;
                 auto ec = hosts_.fetch(addr);
-
                 if (ec) {
-                    spdlog::debug("[p2p_node] No addresses available for outbound");
                     break;
                 }
+                addresses.push_back(addr);
+            }
 
-                auto const authority = infrastructure::config::authority(addr);
-                auto result = co_await connect(authority.to_hostname(), authority.port());
+            if (addresses.empty()) {
+                spdlog::debug("[p2p_node] No addresses available for outbound");
+            } else {
+                spdlog::debug("[p2p_node] Attempting {} parallel connections (need {}, have {})",
+                    addresses.size(), needed, current_count);
 
-                if (!result) {
-                    spdlog::debug("[p2p_node] Failed to connect to {}: {}",
-                        authority, result.error().message());
-                    hosts_.remove(addr);
+                // Launch connection attempts in parallel
+                std::vector<::asio::awaitable<void>> tasks;
+                tasks.reserve(addresses.size());
+
+                // Track successful connections with a shared atomic counter
+                auto success_count = std::make_shared<std::atomic<size_t>>(0);
+
+                for (auto const& addr : addresses) {
+                    auto task = [this, addr, success_count]() -> ::asio::awaitable<void> {
+                        auto const authority = infrastructure::config::authority(addr);
+                        spdlog::trace("[p2p_node] Attempting connection to {}", authority);
+
+                        auto result = co_await connect(authority.to_hostname(), authority.port());
+
+                        if (!result) {
+                            spdlog::trace("[p2p_node] Connection failed to {}: {}",
+                                authority, result.error().message());
+                            hosts_.remove(addr);
+                        } else {
+                            spdlog::debug("[p2p_node] Connected to {}", authority);
+                            ++(*success_count);
+                        }
+                    };
+
+                    // Spawn each connection attempt
+                    ::asio::co_spawn(executor, task(), ::asio::detached);
                 }
+
+                // Give connection attempts time to complete
+                // Use a shorter wait since they're running in parallel
+                timer.expires_after(std::chrono::seconds(settings_.connect_timeout_seconds + 2));
+                co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+
+                // Continue loop to check if we need more connections
+                continue;
             }
         }
 
-        // Wait before next check
-        timer.expires_after(std::chrono::seconds(settings_.connect_batch_size > 0 ? 5 : 30));
+        // Wait before next check when we have enough connections
+        timer.expires_after(std::chrono::seconds(30));
         co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
     }
 }

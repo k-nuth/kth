@@ -6,42 +6,93 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <random>
 #include <string>
 #include <vector>
+
 #include <kth/domain.hpp>
 #include <kth/network/settings.hpp>
 
 namespace kth::network {
 
-using namespace kth::config;
+namespace {
 
-#define NAME "hosts"
+// Check if address is IPv4-mapped in IPv6 (::ffff:x.x.x.x)
+// Bitcoin protocol stores all IPs as 16-byte IPv6, with IPv4 mapped as ::ffff:x.x.x.x
+// TODO(fernando): This IPv4-only filter is temporary. IPv6 addresses are being rejected
+//   because ASIO resolver fails with "Host not found" for many IPv6 addresses.
+//   Need to investigate: is it a resolver configuration issue, or are the IPv6 addresses
+//   from peers simply invalid/unreachable? For now, IPv4-only is faster and more reliable.
+inline bool is_ipv4_mapped(infrastructure::message::ip_address const& ip) {
+    return ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0 &&
+           ip[4] == 0 && ip[5] == 0 && ip[6] == 0 && ip[7] == 0 &&
+           ip[8] == 0 && ip[9] == 0 && ip[10] == 0xff && ip[11] == 0xff;
+}
 
-// TODO: change to network_address bimap hash table with services and age.
+} // anonymous namespace
+
 hosts::hosts(settings const& settings)
-    : capacity_(std::min(max_address, size_t(settings.host_pool_capacity)))
-    , buffer_(std::max(capacity_, size_t(1u)))
-    , stopped_(true)
-    , file_path_(settings.hosts_file)
+    : capacity_(std::min(max_address, static_cast<size_t>(settings.host_pool_capacity)))
     , disabled_(capacity_ == 0)
-{}
+    , file_path_(settings.hosts_file)
+    , addresses_(capacity_ > 0 ? capacity_ : 1)
+{
+    if ( ! disabled_) {
+        load_from_file();
+    }
+}
 
-// private
-hosts::iterator hosts::find(address const& host) {
-    auto const found = [&host](address const& entry) {
-        return entry.port() == host.port() && entry.ip() == host.ip();
-    };
+hosts::~hosts() {
+    if ( ! disabled_) {
+        save_to_file();
+    }
+}
 
-    return std::find_if(buffer_.begin(), buffer_.end(), found);
+void hosts::load_from_file() {
+    kth::ifstream file(file_path_.string());
+    if (file.bad()) {
+        spdlog::debug("[hosts] No hosts file found or error reading.");
+        return;
+    }
+
+    std::string line;
+    size_t loaded = 0;
+
+    while (std::getline(file, line)) {
+        infrastructure::config::authority host(line);
+
+        if (host.port() != 0) {
+            auto const addr = host.to_network_address();
+            // Filter: routable + IPv4 only (for now) - TODO
+            if (addr.is_routable() && is_ipv4_mapped(addr.ip())) {
+                if (addresses_.insert(addr)) {
+                    ++loaded;
+                }
+            }
+        }
+    }
+
+    spdlog::debug("[hosts] Loaded {} addresses from file.", loaded);
+}
+
+void hosts::save_to_file() const {
+    kth::ofstream file(file_path_.string());
+    if (file.bad()) {
+        spdlog::debug("[hosts] Failed to save hosts file.");
+        return;
+    }
+
+    size_t saved = 0;
+    addresses_.cvisit_all([&](address const& addr) {
+        file << infrastructure::config::authority(addr) << std::endl;
+        ++saved;
+    });
+
+    spdlog::debug("[hosts] Saved {} addresses to file.", saved);
 }
 
 size_t hosts::count() const {
-    // Critical Section
-    ///////////////////////////////////////////////////////////////////////////
-    shared_lock lock(mutex_);
-
-    return buffer_.size();
-    ///////////////////////////////////////////////////////////////////////////
+    return addresses_.size();
 }
 
 code hosts::fetch(address& out) const {
@@ -49,281 +100,124 @@ code hosts::fetch(address& out) const {
         return error::not_found;
     }
 
-    // Critical Section
-    ///////////////////////////////////////////////////////////////////////////
-    shared_lock lock(mutex_);
-
-    if (stopped_) {
-        return error::service_stopped;
-    }
-
-    if (buffer_.empty()) {
+    auto const size = addresses_.size();
+    if (size == 0) {
         return error::not_found;
     }
 
-    // Randomly select an address from the buffer.
-    auto const random = pseudo_random_broken_do_not_use::next(0, buffer_.size() - 1);
-    auto const index = size_t(random);
-    out = buffer_[index];
-    return error::success;
-    ///////////////////////////////////////////////////////////////////////////
+    // Select a random index
+    auto const random_index = pseudo_random_broken_do_not_use::next(0, size - 1);
+
+    // Visit elements to find the one at random_index
+    size_t current = 0;
+    bool found = false;
+
+    addresses_.cvisit_all([&](address const& addr) {
+        if (found) return;
+        if (current == static_cast<size_t>(random_index)) {
+            out = addr;
+            found = true;
+        }
+        ++current;
+    });
+
+    return found ? error::success : error::not_found;
 }
 
-code hosts::fetch(address::list& out) const {
-    if (disabled_) {
-        return error::not_found;
-    }
-
-    // Critical Section
-    ///////////////////////////////////////////////////////////////////////////
-    {
-        shared_lock lock(mutex_);
-
-        if (stopped_) {
-            return error::service_stopped;
-        }
-
-        if (buffer_.empty()) {
-            return error::not_found;
-        }
-
-        auto const out_count = std::min(buffer_.size(), capacity_) / size_t(pseudo_random_broken_do_not_use::next(1, 20));
-
-        if (out_count == 0) {
-            return error::success;
-        }
-
-        out.reserve(out_count);
-        for (size_t index = 0; index < out_count; ++index) {
-            out.push_back(buffer_[index]);
-        }
-    }
-    ///////////////////////////////////////////////////////////////////////////
-
-    pseudo_random_broken_do_not_use::shuffle(out);
-    return error::success;
-}
-
-// load
-code hosts::start() {
-    if (disabled_) {
-        return error::success;
-    }
-
-    // Critical Section
-    ///////////////////////////////////////////////////////////////////////////
-    mutex_.lock_upgrade();
-
-    if ( ! stopped_) {
-        mutex_.unlock_upgrade();
-        //---------------------------------------------------------------------
-        return error::operation_failed;
-    }
-
-    mutex_.unlock_upgrade_and_lock();
-    //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    stopped_ = false;
-    kth::ifstream file(file_path_.string());
-    auto const file_error = file.bad();
-
-    if ( ! file_error) {
-        std::string line;
-
-        while (std::getline(file, line)) {
-            // TODO: create full space-delimited network_address serialization.
-            // Use to/from string format as opposed to wire serialization.
-            infrastructure::config::authority host(line);
-
-            if (host.port() != 0) {
-                buffer_.push_back(host.to_network_address());
-            }
-        }
-    }
-
-    mutex_.unlock();
-    ///////////////////////////////////////////////////////////////////////////
-
-    if (file_error) {
-        spdlog::debug("[network] Failed to save hosts file.");
-        return error::file_system;
-    }
-
-    return error::success;
-}
-
-// load
-code hosts::stop() {
-    if (disabled_) {
-        return error::success;
-    }
-
-    // Critical Section
-    ///////////////////////////////////////////////////////////////////////////
-    mutex_.lock_upgrade();
-
-    if (stopped_) {
-        mutex_.unlock_upgrade();
-        //---------------------------------------------------------------------
-        return error::success;
-    }
-
-    mutex_.unlock_upgrade_and_lock();
-    //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    stopped_ = true;
-    kth::ofstream file(file_path_.string());
-    auto const file_error = file.bad();
-
-    if ( ! file_error) {
-        for (auto const& entry: buffer_) {
-            // TODO: create full space-delimited network_address serialization.
-            // Use to/from string format as opposed to wire serialization.
-            file << infrastructure::config::authority(entry) << std::endl;
-        }
-
-        buffer_.clear();
-    }
-
-    mutex_.unlock();
-    ///////////////////////////////////////////////////////////////////////////
-
-    if (file_error) {
-        spdlog::debug("[network] Failed to load hosts file.");
-        return error::file_system;
-    }
-
-    return error::success;
-}
-
-code hosts::remove(address const& host) {
+code hosts::fetch(address::list& out, size_t requested_count) const {
     if (disabled_) {
         return error::not_found;
     }
 
-    // Critical Section
-    ///////////////////////////////////////////////////////////////////////////
-    mutex_.lock_upgrade();
-
-    if (stopped_) {
-        mutex_.unlock_upgrade();
-        //---------------------------------------------------------------------
-        return error::service_stopped;
+    auto const size = addresses_.size();
+    if (size == 0) {
+        return error::not_found;
     }
 
-    auto it = find(host);
+    // Collect all addresses first
+    address::list all;
+    all.reserve(size);
 
-    if (it != buffer_.end()) {
-        mutex_.unlock_upgrade_and_lock();
-        //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        buffer_.erase(it);
+    addresses_.cvisit_all([&](address const& addr) {
+        all.push_back(addr);
+    });
 
-        mutex_.unlock();
-        //---------------------------------------------------------------------
-        return error::success;
+    // Shuffle and take requested count
+    pseudo_random_broken_do_not_use::shuffle(all);
+
+    auto const take_count = std::min(requested_count, all.size());
+    out.reserve(take_count);
+    for (size_t i = 0; i < take_count; ++i) {
+        out.push_back(all[i]);
     }
-
-    mutex_.unlock_upgrade();
-    ///////////////////////////////////////////////////////////////////////////
-
-    return error::not_found;
-}
-
-code hosts::store(address const& host) {
-    if (disabled_) {
-        return error::success;
-    }
-
-    if ( ! host.is_valid()) {
-        // Do not treat invalid address as an error, just log it.
-        spdlog::debug("[network] Invalid host address from peer.");
-        return error::success;
-    }
-
-    // Critical Section
-    ///////////////////////////////////////////////////////////////////////////
-    mutex_.lock_upgrade();
-
-    if (stopped_) {
-        mutex_.unlock_upgrade();
-        //---------------------------------------------------------------------
-        return error::service_stopped;
-    }
-
-    if (find(host) == buffer_.end()) {
-        mutex_.unlock_upgrade_and_lock();
-        //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        buffer_.push_back(host);
-
-        mutex_.unlock();
-        //---------------------------------------------------------------------
-        return error::success;
-    }
-
-    mutex_.unlock_upgrade();
-    ///////////////////////////////////////////////////////////////////////////
-
-    ////// We don't treat redundant address as an error, just log it.
-    ////spdlog::debug("[network]
-    ////] Redundant host address [{}] from peer.", authority(host));
 
     return error::success;
 }
 
-void hosts::store(address::list const& hosts, result_handler handler) {
-    if (disabled_ || hosts.empty()) {
-        handler(error::success);
-        return;
+bool hosts::remove(address const& host) {
+    if (disabled_) {
+        return false;
     }
 
-    // Critical Section
-    ///////////////////////////////////////////////////////////////////////////
-    mutex_.lock_upgrade();
+    return addresses_.erase(host) > 0;
+}
 
-    if (stopped_) {
-        mutex_.unlock_upgrade();
-        //---------------------------------------------------------------------
-        handler(error::service_stopped);
-        return;
+bool hosts::store(address const& host) {
+    if (disabled_) {
+        return false;
     }
 
-    // Accept between 1 and all of this peer's addresses up to capacity.
-    auto const capacity = buffer_.capacity();
-    auto const usable = std::min(hosts.size(), capacity);
-    auto const random = size_t(pseudo_random_broken_do_not_use::next(1, usable));
+    // Filter non-routable addresses
+    if ( ! host.is_routable()) {
+        return false;
+    }
 
-    // But always accept at least the amount we are short if available.
-    auto const gap = capacity - buffer_.size();
-    auto const accept = std::max(gap, random);
+    // IPv4 only for now (see TODO above)
+    if ( ! is_ipv4_mapped(host.ip())) {
+        return false;
+    }
 
-    // Convert minimum desired to step for iteration, no less than 1.
-    auto const step = std::max(usable / accept, size_t(1));
+    // Check capacity
+    if (addresses_.size() >= capacity_) {
+        return false;
+    }
+
+    return addresses_.insert(host);
+}
+
+size_t hosts::store(address::list const& hosts_list) {
+    if (disabled_ || hosts_list.empty()) {
+        return 0;
+    }
+
     size_t accepted = 0;
 
-    mutex_.unlock_upgrade_and_lock();
-    //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-    for (size_t index = 0; index < usable; index = ceiling_add(index, step)) {
-        auto const& host = hosts[index];
-
-        // Do not treat invalid address as an error, just log it.
-        if ( ! host.is_valid())
-        {
-            spdlog::debug("[network] Invalid host address from peer.");
+    for (auto const& host : hosts_list) {
+        // Filter non-routable addresses
+        if ( ! host.is_routable()) {
             continue;
         }
 
-        // Do not allow duplicates in the host cache.
-        if (find(host) == buffer_.end()) {
+        // IPv4 only for now (see TODO above)
+        if ( ! is_ipv4_mapped(host.ip())) {
+            continue;
+        }
+
+        // Check capacity
+        if (addresses_.size() >= capacity_) {
+            break;
+        }
+
+        if (addresses_.insert(host)) {
             ++accepted;
-            buffer_.push_back(host);
         }
     }
 
-    mutex_.unlock();
-    ///////////////////////////////////////////////////////////////////////////
+    if (accepted > 0) {
+        spdlog::debug("[hosts] Accepted {} of {} addresses.", accepted, hosts_list.size());
+    }
 
-    spdlog::debug("[network] Accepted ({} of {}) host addresses from peer.", accepted, hosts.size());
-
-    handler(error::success);
+    return accepted;
 }
 
 } // namespace kth::network

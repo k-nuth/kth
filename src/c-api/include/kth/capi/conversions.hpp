@@ -25,7 +25,7 @@
 #include <kth/domain/wallet/wallet_manager.hpp>
 
 // #ifndef __EMSCRIPTEN__
-#include <kth/blockchain/interface/safe_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 // #endif
 
 KTH_CONV_DECLARE(chain, kth_block_t, kth::domain::chain::block, block)
