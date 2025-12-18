@@ -6,13 +6,11 @@
 #define KTH_INFRASTRUCTURE_BYTES_READER_HPP
 
 #include <cstdint>
-#include <vector>
-#include <span>
-#include <expected>
 #include <cstring>
-#include <iostream>
-
-//TODO: Mover a otro lugar
+#include <expected>
+#include <span>
+#include <string>
+#include <vector>
 
 #include <kth/infrastructure/concepts.hpp>
 #include <kth/infrastructure/constants.hpp>
@@ -27,18 +25,22 @@ template <typename T>
 using expect = std::expected<T, code>;
 
 struct byte_reader {
-    explicit
+    constexpr explicit
     byte_reader(byte_span buffer)
         : buffer_(buffer)
         , position_(0)
     {}
 
+    [[nodiscard]] constexpr
     size_t buffer_size() const { return buffer_.size(); }
 
+    [[nodiscard]] constexpr
     size_t remaining_size() const { return buffer_.size() - position_; }
 
+    [[nodiscard]] constexpr
     size_t position() const { return position_; }
 
+    [[nodiscard]] constexpr
     expect<void> skip(size_t count) {
         if (position_ + count > buffer_.size()) {
             return std::unexpected(error::skip_past_end_of_buffer);
@@ -47,10 +49,26 @@ struct byte_reader {
         return {};
     }
 
+    constexpr
+    void unsafe_skip_byte() {
+        ++position_;
+    }
+
+    [[nodiscard]] constexpr
+    expect<void> skip_byte() {
+        if (position_ >= buffer_.size()) {
+            return std::unexpected(error::skip_past_end_of_buffer);
+        }
+        unsafe_skip_byte();
+        return {};
+    }
+
+    constexpr
     byte unsafe_read_byte() {
         return buffer_[position_++];
     }
 
+    [[nodiscard]] constexpr
     expect<byte> read_byte() {
         if (position_ >= buffer_.size()) {
             return std::unexpected(error::read_past_end_of_buffer);
@@ -58,31 +76,63 @@ struct byte_reader {
         return unsafe_read_byte();
     }
 
-    expect<byte> peek_byte() {
+    [[nodiscard]] constexpr
+    expect<byte> peek_byte() const {
         if (position_ >= buffer_.size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
         return buffer_[position_];
     }
 
+    [[nodiscard]] constexpr
     expect<byte_span> read_bytes(size_t size) {
         if (position_ + size > buffer_.size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
-        auto start = position_;
+        auto const start = position_;
         position_ += size;
         return buffer_.subspan(start, size);
     }
 
-    expect<byte_span> read_remaining_bytes() {
-        return read_bytes(buffer_.size() - position_);
+    // Read bytes directly into a destination buffer.
+    // Size to read is determined by dest.size().
+    [[nodiscard]]
+    expect<void> read_bytes_to(std::span<uint8_t> dest) {
+        if (position_ + dest.size() > buffer_.size()) {
+            return std::unexpected(error::read_past_end_of_buffer);
+        }
+        std::memcpy(dest.data(), buffer_.data() + position_, dest.size());
+        position_ += dest.size();
+        return {};
     }
 
-    expect<void> skip_remaining() {
-        return skip(buffer_.size() - position_);
+    // Read bytes directly into a fixed-size array.
+    template <size_t N>
+    [[nodiscard]]
+    expect<std::array<uint8_t, N>> read_array() {
+        if (position_ + N > buffer_.size()) {
+            return std::unexpected(error::read_past_end_of_buffer);
+        }
+        std::array<uint8_t, N> result;
+        std::memcpy(result.data(), buffer_.data() + position_, N);
+        position_ += N;
+        return result;
+    }
+
+    [[nodiscard]] constexpr
+    expect<byte_span> read_remaining_bytes() {
+        auto const start = position_;
+        position_ = buffer_.size();
+        return buffer_.subspan(start);
+    }
+
+    constexpr
+    void skip_remaining() {
+        position_ = buffer_.size();
     }
 
     template <std::integral I>
+    [[nodiscard]]
     expect<I> read_little_endian() {
         if (position_ + sizeof(I) > buffer_.size()) {
             return std::unexpected(error::read_past_end_of_buffer);
@@ -94,6 +144,7 @@ struct byte_reader {
     }
 
     template <std::integral I>
+    [[nodiscard]] constexpr
     expect<I> read_big_endian() {
         if (position_ + sizeof(I) > buffer_.size()) {
             return std::unexpected(error::read_past_end_of_buffer);
@@ -106,6 +157,7 @@ struct byte_reader {
     }
 
     template <trivially_copyable T>
+    [[nodiscard]]
     expect<T> read_packed() {
         if (position_ + sizeof(T) > buffer_.size()) {
             return std::unexpected(error::read_past_end_of_buffer);
@@ -116,73 +168,39 @@ struct byte_reader {
         return value;
     }
 
+    [[nodiscard]]
     expect<uint64_t> read_variable_little_endian() {
         auto const value_exp = read_byte();
         if ( ! value_exp) {
-            // return value_exp.error();
             return value_exp;
         }
         auto const value = *value_exp;
 
         switch (value) {
-            case varint_eight_bytes: {
+            case varint_eight_bytes:
                 return read_little_endian<uint64_t>();
-            }
-            case varint_four_bytes: {
+            case varint_four_bytes:
                 return read_little_endian<uint32_t>();
-            }
-            case varint_two_bytes: {
+            case varint_two_bytes:
                 return read_little_endian<uint16_t>();
-            }
-            default: {
+            default:
                 return value;
-            }
         }
     }
 
+    [[nodiscard]]
     expect<size_t> read_size_little_endian() {
-        // constexpr uint64_t max_size_t = std::numeric_limits<size_t>::max();
-
         auto const size_exp = read_variable_little_endian();
         if ( ! size_exp) {
             return size_exp;
         }
-        auto const size = *size_exp;
-        if (size <= max_size_t) {
-            return size_t(size);
-        }
-
-        return std::unexpected(error::read_past_end_of_buffer);
+        // Note: size_t may be smaller than uint64_t on some platforms.
+        // but Knuth requires sizeof(size_t) >= sizeof(uint64_t).
+        return size_t(*size_exp);
     }
 
-
-    // std::string istream_reader::read_string() {
-    //     return read_string(read_size_little_endian());
-    // }
-
-    // // Removes trailing zeros, required for bitcoin string comparisons.
-    // std::string istream_reader::read_string(size_t size) {
-    //     std::string out;
-    //     out.reserve(size);
-    //     auto terminated = false;
-
-    //     // Read all size characters, pushing all non-null (may be many).
-    //     for (size_t index = 0; index < size && !empty(); ++index) {
-    //         auto const character = read_byte();
-    //         terminated |= (character == string_terminator);
-
-    //         // Stop pushing characters at the first null.
-    //         if ( ! terminated) {
-    //             out.push_back(character);
-    //         }
-    //     }
-
-    //     // Reduce the allocation to the number of characters pushed.
-    //     out.shrink_to_fit();
-    //     return out;
-    // }
-
     // Removes trailing zeros, required for bitcoin string comparisons.
+    [[nodiscard]]
     expect<std::string> read_string(size_t size) {
         if (position_ + size > buffer_.size()) {
             return std::unexpected(error::read_past_end_of_buffer);
@@ -190,13 +208,11 @@ struct byte_reader {
 
         std::string out;
         out.reserve(size);
-        auto terminated = false;
+        bool terminated = false;
 
         for (size_t i = 0; i < size; ++i) {
-            // No need to check for error, we know the size is correct.
             auto const character = unsafe_read_byte();
             terminated |= (character == string_terminator);
-
             if ( ! terminated) {
                 out.push_back(character);
             }
@@ -205,6 +221,7 @@ struct byte_reader {
         return out;
     }
 
+    [[nodiscard]]
     expect<std::string> read_string() {
         auto const size = read_size_little_endian();
         if ( ! size) {
@@ -213,10 +230,12 @@ struct byte_reader {
         return read_string(*size);
     }
 
+    [[nodiscard]] constexpr
     bool is_exhausted() const {
         return position_ >= buffer_.size();
     }
 
+    constexpr
     void reset() {
         position_ = 0;
     }
@@ -225,13 +244,6 @@ private:
     byte_span buffer_;
     size_t position_;
 };
-
-// bool starts_with(byte_reader& reader, byte_span value) {
-//     if (reader.remaining_size() < value.size()) {
-//         return false;
-//     }
-//     return std::equal(value.begin(), value.end(), reader.buffer_.begin() + reader.position_);
-// }
 
 } // namespace kth
 

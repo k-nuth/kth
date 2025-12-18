@@ -300,9 +300,9 @@ TEST_CASE("byte_reader - remaining_size decreases as reading", "[byte_reader tes
     byte_reader reader(buffer);
 
     REQUIRE(reader.remaining_size() == 5);
-    reader.read_byte();
+    [[maybe_unused]] auto r1 = reader.skip(1);
     REQUIRE(reader.remaining_size() == 4);
-    reader.read_bytes(2);
+    [[maybe_unused]] auto r2 = reader.read_bytes(2);
     REQUIRE(reader.remaining_size() == 2);
 }
 
@@ -310,7 +310,7 @@ TEST_CASE("byte_reader - reset restores position to beginning", "[byte_reader te
     data_chunk const buffer{0x01, 0x02, 0x03};
     byte_reader reader(buffer);
 
-    reader.read_bytes(2);
+    [[maybe_unused]] auto r = reader.read_bytes(2);
     REQUIRE(reader.position() == 2);
 
     reader.reset();
@@ -323,8 +323,90 @@ TEST_CASE("byte_reader - buffer_size returns total size", "[byte_reader tests]")
     byte_reader reader(buffer);
 
     REQUIRE(reader.buffer_size() == 5);
-    reader.read_bytes(3);
+    [[maybe_unused]] auto r = reader.read_bytes(3);
     REQUIRE(reader.buffer_size() == 5);  // Total size unchanged
+}
+
+TEST_CASE("byte_reader - skip_byte advances position by one", "[byte_reader tests]") {
+    data_chunk const buffer{0x01, 0x02, 0x03};
+    byte_reader reader(buffer);
+
+    REQUIRE(reader.position() == 0);
+    auto result = reader.skip_byte();
+    REQUIRE(result.has_value());
+    REQUIRE(reader.position() == 1);
+
+    result = reader.skip_byte();
+    REQUIRE(result.has_value());
+    REQUIRE(reader.position() == 2);
+}
+
+TEST_CASE("byte_reader - skip_byte fails at end of buffer", "[byte_reader tests]") {
+    data_chunk const buffer{0x01};
+    byte_reader reader(buffer);
+
+    auto result = reader.skip_byte();
+    REQUIRE(result.has_value());
+    REQUIRE(reader.position() == 1);
+
+    result = reader.skip_byte();
+    REQUIRE( ! result.has_value());
+    REQUIRE(result.error() == error::skip_past_end_of_buffer);
+}
+
+TEST_CASE("byte_reader - unsafe_skip_byte advances position without bounds check", "[byte_reader tests]") {
+    data_chunk const buffer{0x01, 0x02, 0x03};
+    byte_reader reader(buffer);
+
+    REQUIRE(reader.position() == 0);
+    reader.unsafe_skip_byte();
+    REQUIRE(reader.position() == 1);
+    reader.unsafe_skip_byte();
+    REQUIRE(reader.position() == 2);
+}
+
+TEST_CASE("byte_reader - read_bytes_to copies bytes to destination", "[byte_reader tests]") {
+    data_chunk const buffer{0x01, 0x02, 0x03, 0x04, 0x05};
+    byte_reader reader(buffer);
+
+    std::array<uint8_t, 3> dest{};
+    auto result = reader.read_bytes_to(dest);
+    REQUIRE(result.has_value());
+    REQUIRE(dest[0] == 0x01);
+    REQUIRE(dest[1] == 0x02);
+    REQUIRE(dest[2] == 0x03);
+    REQUIRE(reader.position() == 3);
+}
+
+TEST_CASE("byte_reader - read_bytes_to fails when not enough bytes", "[byte_reader tests]") {
+    data_chunk const buffer{0x01, 0x02};
+    byte_reader reader(buffer);
+
+    std::array<uint8_t, 5> dest{};
+    auto result = reader.read_bytes_to(dest);
+    REQUIRE( ! result.has_value());
+    REQUIRE(result.error() == error::read_past_end_of_buffer);
+}
+
+TEST_CASE("byte_reader - read_array returns fixed-size array", "[byte_reader tests]") {
+    data_chunk const buffer{0x01, 0x02, 0x03, 0x04, 0x05};
+    byte_reader reader(buffer);
+
+    auto result = reader.read_array<3>();
+    REQUIRE(result.has_value());
+    REQUIRE((*result)[0] == 0x01);
+    REQUIRE((*result)[1] == 0x02);
+    REQUIRE((*result)[2] == 0x03);
+    REQUIRE(reader.position() == 3);
+}
+
+TEST_CASE("byte_reader - read_array fails when not enough bytes", "[byte_reader tests]") {
+    data_chunk const buffer{0x01, 0x02};
+    byte_reader reader(buffer);
+
+    auto result = reader.read_array<5>();
+    REQUIRE( ! result.has_value());
+    REQUIRE(result.error() == error::read_past_end_of_buffer);
 }
 
 // End Test Suite
