@@ -71,6 +71,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_icu": [True, False],
         "with_png": [True, False],
         "with_qrencode": [True, False],
+        "asio_standalone": [True, False],
 
         # secp256k1 options
         "secp256k1_enable_coverage": [True, False],
@@ -110,7 +111,8 @@ class KthRecipe(KnuthConanFileV2):
         "with_icu": False,
         "with_png": False,
         "with_qrencode": False,
-        
+        "asio_standalone": True,
+
         # secp256k1 options
         "secp256k1_enable_coverage": False,
         "secp256k1_enable_branch_coverage": False,
@@ -171,8 +173,8 @@ class KthRecipe(KnuthConanFileV2):
         if self.options.with_qrencode:
             self.requires("libqrencode/4.1.1", transitive_headers=True, transitive_libs=True)
 
-        # if self.options.asio_standalone:
-        #     self.requires("asio/1.24.0", transitive_headers=True, transitive_libs=True)
+        if self.options.asio_standalone:
+            self.requires("asio/1.36.0", transitive_headers=True, transitive_libs=True)
 
 
     def build_requirements(self):
@@ -248,6 +250,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["WITH_ICU"] = option_on_off(self.options.with_icu)
         tc.variables["KTH_WITH_PNG"] = option_on_off(self.options.with_png)
         tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
+        tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
 
         # Secp256k1 --------------------------------------------
         tc.variables["SECP256K1_ENABLE_COVERAGE"] = option_on_off(self.options.secp256k1_enable_coverage)
@@ -368,6 +371,9 @@ class KthRecipe(KnuthConanFileV2):
             self.cpp_info.components["infrastructure"].requires.append("libpng::libpng")
         if self.options.with_qrencode:
             self.cpp_info.components["infrastructure"].requires.append("libqrencode::libqrencode")
+        # Add asio when using standalone mode
+        if self.options.asio_standalone:
+            self.cpp_info.components["infrastructure"].requires.append("asio::asio")
         
         
         # Domain models and business logic

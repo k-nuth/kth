@@ -118,6 +118,8 @@
 #include <kth/infrastructure/utility/threadpool.hpp>
 #include <kth/infrastructure/utility/timer.hpp>
 #include <kth/infrastructure/utility/track.hpp>
+#include <kth/infrastructure/utility/async_channel.hpp>
+#include <kth/infrastructure/utility/awaitable_helpers.hpp>
 
 #include <kth/infrastructure/utility/writer.hpp>
 
