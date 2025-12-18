@@ -36,6 +36,7 @@
 #include <kth/network/protocols/protocol_version_31402.hpp>
 #include <kth/network/protocols/protocol_version_70002.hpp>
 #include <kth/network/protocols_coro.hpp>
+#include <kth/network/p2p_node.hpp>
 #include <kth/network/sessions/session.hpp>
 #include <kth/network/sessions/session_batch.hpp>
 #include <kth/network/sessions/session_inbound.hpp>
