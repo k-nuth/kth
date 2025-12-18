@@ -17,7 +17,7 @@
 
 // #ifndef __EMSCRIPTEN__
 #include <kth/node/executor/executor_info.hpp>
-#include <kth/node/version.hpp>
+#include <kth/domain/version.hpp>
 // #endif
 
 extern "C" {
@@ -36,11 +36,7 @@ char const* kth_node_capi_version() {
 }
 
 char const* kth_node_cppapi_version() {
-// #ifndef __EMSCRIPTEN__
-    return kth::node::version();
-// #else
-//     return "0.0.0";
-// #endif
+    return kth::version.data();
 }
 
 char const* kth_node_microarchitecture() {

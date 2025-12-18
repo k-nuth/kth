@@ -283,6 +283,11 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_BLOCK_INDEX_CAPACITY"] = block_capacity
         self.output.info(f"Block index capacity: {block_capacity:,} blocks")
 
+        # Pass version to CMake for C++ code generation
+        kth_version = str(self.version) if self.version else "0.0.0-dev"
+        tc.variables["KTH_VERSION"] = kth_version
+        self.output.info(f"Knuth Node version: {kth_version}")
+
         # Generate secp256k1 precomputed tables before CMake generation
         self._generate_secp256k1_tables()
         

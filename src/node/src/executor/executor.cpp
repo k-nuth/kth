@@ -17,7 +17,7 @@
 #include <kth/node.hpp>
 #include <kth/node/parser.hpp>
 #include <kth/node/user_agent.hpp>
-#include <kth/node/version.hpp>
+#include <kth/domain/version.hpp>
 
 
 #include <spdlog/spdlog.h>
@@ -65,7 +65,7 @@ executor::executor(kth::node::configuration const& config, bool stdout_enabled /
 }
 
 void executor::print_version(std::string_view extra) {
-    std::println(KTH_VERSION_MESSAGE, KTH_NODE_VERSION, extra, KTH_CURRENCY_SYMBOL_STR, KTH_MICROARCHITECTURE_STR, march_names());
+    std::println(KTH_VERSION_MESSAGE, kth::version, extra, KTH_CURRENCY_SYMBOL_STR, KTH_MICROARCHITECTURE_STR, march_names());
 }
 
 #if ! defined(KTH_DB_READONLY)
@@ -311,7 +311,7 @@ void executor::stop(kth::code const& ec) {
 // ----------------------------------------------------------------------------
 
 void executor::print_ascii_art() {
-    std::print("{}", R"(    ...
+    std::print(R"(    ...
     .-=*#%%=                            :-=+++*#:
     :+*%%%@=                            .:--#@@#.
        :%%@=                      .:.      :%@#.
@@ -329,8 +329,14 @@ void executor::print_ascii_art() {
     ........  ..  ....   ...                ..
 
           High Performance Bitcoin Cash Node
-
 )");
+    // Center version under the slogan
+    constexpr char slogan[] = "High Performance Bitcoin Cash Node";
+    constexpr auto slogan_start = 10;
+    auto version_text = std::format("v{}", kth::version);
+    auto padding = slogan_start + (sizeof(slogan) - 1 - version_text.size()) / 2;
+    std::println("{:>{}}", version_text, padding + version_text.size());
+    std::println();
 }
 
 // Set up logging.
@@ -356,7 +362,7 @@ void executor::initialize_output(std::string_view extra, db_mode_type db_mode) {
         db_type_str = KTH_DB_TYPE_PRUNED;
     }
 
-    spdlog::info("[node] {}", fmt::format(KTH_VERSION_MESSAGE_INIT, KTH_NODE_VERSION));
+    spdlog::info("[node] {}", fmt::format(KTH_VERSION_MESSAGE_INIT, kth::version));
     spdlog::info("[node] {}", extra);
     spdlog::info("[node] {}", fmt::format(KTH_CRYPTOCURRENCY_INIT, KTH_CURRENCY_SYMBOL_STR, KTH_CURRENCY_STR));
     spdlog::info("[node] {}", fmt::format(KTH_MICROARCHITECTURE_INIT, KTH_MICROARCHITECTURE_STR));

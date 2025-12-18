@@ -21,7 +21,6 @@
 #include <kth/node/full_node.hpp>
 #include <kth/node/parser.hpp>
 #include <kth/node/settings.hpp>
-#include <kth/node/version.hpp>
 #include <kth/node/executor/executor.hpp>
 
 #if ! defined(__EMSCRIPTEN__)

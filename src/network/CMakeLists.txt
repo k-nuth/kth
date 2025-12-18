@@ -116,7 +116,6 @@ set(kth_headers
   include/kth/network/protocols/protocol_ping_60001.hpp
   include/kth/network/protocols/protocol_reject_70002.hpp
   include/kth/network/settings.hpp
-  include/kth/network/version.hpp
   include/kth/network.hpp
 )
 
@@ -145,7 +144,6 @@ set(kth_sources
   src/p2p.cpp
   src/proxy.cpp
   src/settings.cpp
-  src/version.cpp
 )
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})

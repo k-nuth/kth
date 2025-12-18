@@ -276,7 +276,6 @@ set(kth_headers
   include/kth/consensus/conversions.hpp
   include/kth/consensus/define.hpp
   include/kth/consensus/export.hpp
-  include/kth/consensus/version.hpp
 )
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers} $<TARGET_OBJECTS:${PROJECT_NAME}-clone>)

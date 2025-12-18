@@ -57,10 +57,20 @@ endif()
 
 message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 
+# Generate version.hpp from template (conan -> cmake -> C++)
+if (NOT DEFINED KTH_VERSION)
+  set(KTH_VERSION "0.0.0-dev")
+endif()
+message(STATUS "Knuth: Version: ${KTH_VERSION}")
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/kth/domain/version.hpp.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/kth/domain/version.hpp
+    @ONLY
+)
+
 set(Boost_DEBUG ON)
 
-find_package(Boost 1.81.0 COMPONENTS program_options REQUIRED)
-find_package(Boost 1.81.0 COMPONENTS thread REQUIRED)
+find_package(Boost COMPONENTS program_options thread REQUIRED)
 
 find_package(Threads REQUIRED)
 
@@ -198,7 +208,6 @@ set(kth_sources_just_legacy
         src/utility/property_tree.cpp
 
         src/multi_crypto_support.cpp
-        src/version.cpp
 
         src/math/stealth.cpp
         src/math/external/scrypt.h
@@ -648,4 +657,3 @@ install(EXPORT ${PROJECT_NAME}-targets
     NAMESPACE ${PROJECT_NAME}::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
 )
-

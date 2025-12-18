@@ -14,7 +14,6 @@
 #include <kth/consensus/conversions.hpp>
 #include <kth/consensus/define.hpp>
 #include <kth/consensus/export.hpp>
-#include <kth/consensus/version.hpp>
 
 #include "primitives/transaction.h"
 #include "pubkey.h"
@@ -289,10 +288,6 @@ verify_result_type verify_script(
 
     sig_checks = metrics.nSigChecks;
     return script_error_to_verify_result(error);
-}
-
-char const* version() {
-    return KTH_CONSENSUS_VERSION;
 }
 
 } // namespace kth::consensus

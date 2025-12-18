@@ -19,7 +19,6 @@
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/handlers.hpp>
 #include <kth/infrastructure/path.hpp>
-#include <kth/infrastructure/version.hpp>
 
 #include <kth/infrastructure/config/authority.hpp>
 #include <kth/infrastructure/config/base16.hpp>

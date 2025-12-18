@@ -17,7 +17,6 @@
 #include <kth/database/define.hpp>
 #include <kth/database/settings.hpp>
 #include <kth/database/store.hpp>
-#include <kth/database/version.hpp>
 #include <kth/database/databases/internal_database.hpp>
 
 #endif
