@@ -99,6 +99,7 @@ set(kth_headers
   include/kth/network/channel.hpp
   include/kth/network/hosts.hpp
   include/kth/network/p2p.hpp
+  include/kth/network/p2p_node.hpp
   include/kth/network/sessions/session_outbound.hpp
   include/kth/network/sessions/session_seed.hpp
   include/kth/network/sessions/session_inbound.hpp
@@ -145,6 +146,7 @@ set(kth_sources
   src/hosts.cpp
   src/message_subscriber.cpp
   src/p2p.cpp
+  src/p2p_node.cpp
   src/peer_session.cpp
   src/peer_manager.cpp
   src/protocols_coro.cpp
@@ -186,6 +188,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
   add_executable(kth_network_test
     test/p2p.cpp
+    test/p2p_node.cpp
     test/peer_manager.cpp
     test/peer_session.cpp
     test/protocols_coro.cpp
