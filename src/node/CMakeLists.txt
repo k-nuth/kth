@@ -147,22 +147,8 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   set(kth_sources_just_legacy
     ${kth_sources_just_legacy}
     src/full_node.cpp
+    src/sync_session.cpp
     src/executor/executor.cpp
-
-    src/protocols/protocol_block_in.cpp
-    src/protocols/protocol_block_out.cpp
-    src/protocols/protocol_block_sync.cpp
-    src/protocols/protocol_double_spend_proof_in.cpp
-    src/protocols/protocol_double_spend_proof_out.cpp
-    src/protocols/protocol_header_sync.cpp
-    src/protocols/protocol_transaction_in.cpp
-    src/protocols/protocol_transaction_out.cpp
-
-    src/sessions/session_block_sync.cpp
-    src/sessions/session_header_sync.cpp
-    src/sessions/session_inbound.cpp
-    src/sessions/session_manual.cpp
-    src/sessions/session_outbound.cpp
 
     src/utility/reservation.cpp
     src/utility/reservations.cpp
@@ -196,29 +182,9 @@ set(kth_headers
   include/kth/node/utility/reservations.hpp
   include/kth/node/settings.hpp
   include/kth/node/full_node.hpp
+  include/kth/node/sync_session.hpp
   include/kth/node/parser.hpp
 )
-
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  set(kth_headers
-    ${kth_headers}
-    include/kth/node/sessions/session_header_sync.hpp
-    include/kth/node/sessions/session_outbound.hpp
-    include/kth/node/sessions/session_inbound.hpp
-    include/kth/node/sessions/session_block_sync.hpp
-    include/kth/node/sessions/session_manual.hpp
-    include/kth/node/sessions/session.hpp
-    include/kth/node/protocols/protocol_block_sync.hpp
-    include/kth/node/protocols/protocol_header_sync.hpp
-    include/kth/node/protocols/protocol_block_in.hpp
-    include/kth/node/protocols/protocol_transaction_out.hpp
-    include/kth/node/protocols/protocol_double_spend_proof_out.hpp
-    include/kth/node/protocols/protocol_double_spend_proof_in.hpp
-    include/kth/node/protocols/protocol_transaction_in.hpp
-    include/kth/node/protocols/protocol_block_out.hpp
-  )
-endif()
-
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})

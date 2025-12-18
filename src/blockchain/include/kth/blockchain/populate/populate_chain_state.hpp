@@ -10,15 +10,17 @@
 
 #include <kth/domain.hpp>
 #include <kth/blockchain/define.hpp>
-#include <kth/blockchain/interface/fast_chain.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/settings.hpp>
 
 namespace kth::blockchain {
 
+// Forward declaration
+struct block_chain;
+
 /// This class is NOT thread safe.
 struct KB_API populate_chain_state {
-    populate_chain_state(fast_chain const& chain, settings const& settings, domain::config::network network);
+    populate_chain_state(block_chain const& chain, settings const& settings, domain::config::network network);
 
     /// Populate chain state for the tx pool (start).
     domain::chain::chain_state::ptr populate() const;
@@ -66,7 +68,7 @@ private:
 
     // Populate is guarded against concurrent callers but because it uses the fast
     // chain it must not be invoked during chain writes.
-    fast_chain const& fast_chain_;
+    block_chain const& chain_;
     mutable shared_mutex mutex_;
 };
 

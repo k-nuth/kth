@@ -7,9 +7,12 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
@@ -30,6 +33,96 @@
 #include <asio/thread_pool.hpp>
 
 namespace kth::network {
+
+using kth::awaitable_expected;
+
+// =============================================================================
+// Message Handler Interface
+// =============================================================================
+
+/// Result of processing a message
+enum class message_result {
+    continue_processing,  // Keep processing messages
+    disconnect,           // Disconnect the peer
+    handled,              // Message was handled, continue
+    not_handled           // Message was not handled by this handler
+};
+
+/// Handler for incoming raw messages
+/// Return message_result to indicate what to do next
+using message_handler_fn = std::function<::asio::awaitable<message_result>(
+    peer_session& peer,
+    raw_message const& msg
+)>;
+
+/// Handler for typed (already parsed) messages
+/// Template parameter Message is the domain message type (e.g., domain::message::ping)
+template <typename Message>
+using typed_message_handler_fn = std::function<::asio::awaitable<message_result>(
+    peer_session& peer,
+    Message const& msg
+)>;
+
+/// Creates a raw message handler from a typed handler
+/// Handles parsing boilerplate: byte_reader creation, from_data call, error handling
+template <typename Message>
+message_handler_fn make_handler(typed_message_handler_fn<Message> typed_handler) {
+    return [typed_handler = std::move(typed_handler)](
+        peer_session& peer,
+        raw_message const& raw
+    ) -> ::asio::awaitable<message_result> {
+        byte_reader reader(raw.payload);
+        auto result = Message::from_data(reader, peer.negotiated_version());
+
+        if (!result) {
+            spdlog::debug("[handler] Failed to parse {} from [{}]",
+                Message::command, peer.authority());
+            co_return message_result::continue_processing;
+        }
+
+        co_return co_await typed_handler(peer, *result);
+    };
+}
+
+/// Overload for function pointers
+template <typename Message>
+message_handler_fn make_handler(
+    ::asio::awaitable<message_result>(*handler)(peer_session&, Message const&)
+) {
+    return make_handler<Message>(typed_message_handler_fn<Message>(handler));
+}
+
+/// Dispatcher that routes messages to appropriate handlers
+/// This is the mutable part - handlers can be added/removed
+class KN_API message_dispatcher {
+public:
+    /// Process a message through registered handlers
+    /// Returns true to continue, false to disconnect
+    ::asio::awaitable<bool> dispatch(peer_session& peer, raw_message const& msg);
+
+    /// Register a raw handler for a specific command
+    void register_handler(std::string const& command, message_handler_fn handler);
+
+    /// Register a typed handler for a specific message type
+    /// The message type must have a static 'command' string member
+    template <typename Message>
+    void register_handler(typed_message_handler_fn<Message> handler) {
+        handlers_[Message::command] = make_handler<Message>(std::move(handler));
+    }
+
+    /// Register a typed handler from a function pointer
+    template <typename Message>
+    void register_handler(::asio::awaitable<message_result>(*handler)(peer_session&, Message const&)) {
+        handlers_[Message::command] = make_handler<Message>(handler);
+    }
+
+    /// Register a default handler for unhandled messages
+    void set_default_handler(message_handler_fn handler);
+
+private:
+    boost::unordered_flat_map<std::string, message_handler_fn> handlers_;
+    message_handler_fn default_handler_;
+};
 
 // =============================================================================
 // Connection result (combines peer_session with handshake info)
@@ -89,7 +182,7 @@ public:
     // -------------------------------------------------------------------------
 
     /// Connect to a specific peer and perform handshake
-    ::asio::awaitable<std::expected<peer_session::ptr, code>> connect(
+    awaitable_expected<peer_session::ptr> connect(
         std::string const& host,
         uint16_t port);
 
@@ -99,9 +192,9 @@ public:
     [[nodiscard]]
     size_t address_count() const;
 
-    code store(address const& addr);
+    bool store(address const& addr);
     code fetch_address(address& out) const;
-    code remove(address const& addr);
+    bool remove(address const& addr);
 
     // Broadcasting
     // -------------------------------------------------------------------------
@@ -123,6 +216,17 @@ public:
     [[nodiscard]]
     std::vector<peer_session::ptr> get_peers() const;
 
+    /// Get the thread pool
+    [[nodiscard]]
+    threadpool& thread_pool();
+
+    // Message handling
+    // -------------------------------------------------------------------------
+
+    /// Get the message dispatcher for registering handlers
+    [[nodiscard]]
+    message_dispatcher& dispatcher();
+
 private:
     // Internal coroutines
     ::asio::awaitable<void> run_seeding();
@@ -131,10 +235,16 @@ private:
     ::asio::awaitable<void> run_peer_protocols(peer_session::ptr peer);
     ::asio::awaitable<void> maintain_outbound_connections();
 
+    // Helper for seeding - takes params by value to avoid lambda capture issues
+    ::asio::awaitable<void> connect_to_seed(
+        std::string seed_host,
+        uint16_t seed_port,
+        std::shared_ptr<std::atomic<size_t>> seeds_completed);
+
     uint64_t generate_nonce();
 
     settings const& settings_;
-    ::asio::thread_pool pool_;
+    threadpool pool_;
     peer_manager manager_;
     hosts hosts_;
 
@@ -144,6 +254,9 @@ private:
     std::atomic<bool> stopped_{true};
     std::atomic<bool> seeded_{false};
     kth::atomic<infrastructure::config::checkpoint> top_block_;
+
+    // Message dispatcher for routing messages to handlers
+    message_dispatcher dispatcher_;
 };
 
 } // namespace kth::network
