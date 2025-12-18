@@ -20,6 +20,7 @@
 #include <kth/network/hosts.hpp>
 #include <kth/network/message_subscriber.hpp>
 #include <kth/network/p2p.hpp>
+#include <kth/network/peer_manager.hpp>
 #include <kth/network/peer_session.hpp>
 #include <kth/network/proxy.hpp>
 #include <kth/network/settings.hpp>
