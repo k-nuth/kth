@@ -12,6 +12,9 @@
  * Maintainers: Do not include this header internal to this library.
  */
 
+// Compiler constraints - must be first to fail early on incompatible compilers
+#include <kth/infrastructure/compiler_constraints.hpp>
+
 #include <kth/infrastructure/compat.h>
 #include <kth/infrastructure/compat.hpp>
 #include <kth/infrastructure/constants.hpp>
@@ -70,6 +73,7 @@
 
 #include <kth/infrastructure/utility/asio.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
+#include <kth/infrastructure/utility/coroutine_config.hpp>
 #include <kth/infrastructure/utility/atomic.hpp>
 #include <kth/infrastructure/utility/binary.hpp>
 #include <kth/infrastructure/utility/collection.hpp>
