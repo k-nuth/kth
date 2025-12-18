@@ -145,7 +145,6 @@ set(kth_sources_just_legacy
   src/validate/validate_input.cpp
   src/validate/validate_transaction.cpp
   src/settings.cpp
-  src/version.cpp
 )
 
 if (NOT JUST_KTH_SOURCES)
@@ -194,7 +193,6 @@ set(kth_headers
   include/kth/blockchain/mining/mempool_v2.hpp
   include/kth/blockchain/mining/partially_indexed_node.hpp
   include/kth/blockchain/settings.hpp
-  include/kth/blockchain/version.hpp
 )
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})

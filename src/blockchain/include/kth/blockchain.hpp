@@ -20,7 +20,6 @@
 
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/settings.hpp>
-#include <kth/blockchain/version.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/interface/fast_chain.hpp>
 #include <kth/blockchain/interface/safe_chain.hpp>

@@ -15,8 +15,6 @@ namespace kth::consensus {
 // These are not published in the public header but are exposed here for test.
 KC_API verify_result_type script_error_to_verify_result(ScriptError code);
 
-KC_API char const* version();
-
 } // namespace kth::consensus
 
 #endif

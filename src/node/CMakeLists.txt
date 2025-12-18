@@ -136,7 +136,6 @@ set(kth_sources_just_legacy
   src/executor/executor_info.cpp
   src/parser.cpp
   src/settings.cpp
-  src/version.cpp
   src/user_agent.cpp
 
   src/utility/check_list.cpp
@@ -198,7 +197,6 @@ set(kth_headers
   include/kth/node/settings.hpp
   include/kth/node/full_node.hpp
   include/kth/node/parser.hpp
-  include/kth/node/version.hpp
 )
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")

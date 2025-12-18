@@ -112,7 +112,6 @@ set(kth_sources_just_kth
     src/data_base.cpp
     src/settings.cpp
     src/store.cpp
-    src/version.cpp
 
     src/databases/header_abla_entry.cpp
     src/databases/utxo_entry.cpp
@@ -155,7 +154,6 @@ set(kth_headers
   include/kth/database/settings.hpp
   # include/kth/database/unspent_outputs.hpp
   # include/kth/database/unspent_transaction.hpp
-  include/kth/database/version.hpp
   include/kth/database.hpp
 )
 

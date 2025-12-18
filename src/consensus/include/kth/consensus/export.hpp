@@ -10,7 +10,6 @@
 #include <vector>
 
 #include <kth/consensus/define.hpp>
-#include <kth/consensus/version.hpp>
 
 namespace kth::consensus {
 

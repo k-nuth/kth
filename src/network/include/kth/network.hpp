@@ -22,7 +22,6 @@
 #include <kth/network/p2p.hpp>
 #include <kth/network/proxy.hpp>
 #include <kth/network/settings.hpp>
-#include <kth/network/version.hpp>
 #include <kth/network/protocols/protocol.hpp>
 #include <kth/network/protocols/protocol_address_31402.hpp>
 #include <kth/network/protocols/protocol_events.hpp>

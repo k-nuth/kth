@@ -3,23 +3,22 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <cstdio>
-
-#include <string_view>
+#include <format>
 #include <iostream>
+#include <string_view>
 
 #include <kth/node.hpp>
 #include <boost/iostreams/device/file_descriptor.hpp>
 #include <kth/node/executor/executor.hpp>
 #include <kth/node/executor/executor_info.hpp>
-
-#include "version.hpp"
+#include <kth/domain/version.hpp>
 
 KTH_USE_MAIN
 
 static auto const application_name = "kth";
 
-std::string_view version() {
-    return "Node exe v" KTH_NODE_EXE_VERSION;
+std::string version() {
+    return std::format("Knuth v{}", kth::version);
 }
 
 void do_help(kth::node::parser& metadata, std::ostream& output) {

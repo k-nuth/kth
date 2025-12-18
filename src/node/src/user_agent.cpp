@@ -3,18 +3,17 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/node/user_agent.hpp>
-#include <kth/node/version.hpp>
+
+#include <format>
+
+#include <kth/domain/version.hpp>
 
 namespace kth::node {
 
 std::string get_user_agent() {
-#if defined(KTH_CURRENCY_BCH)
-    return "/kth-bch:" KTH_NODE_VERSION "/";
-#elif defined(KTH_CURRENCY_BTC)
-    return "/kth-btc:" KTH_NODE_VERSION "/";
-#elif defined(KTH_CURRENCY_LTC)
-    return "/kth-ltc:" KTH_NODE_VERSION "/";
-#endif
+    // Format: /ClientName:Version(Currency)/
+    // Example: /Knuth:0.74.0(BCH)/
+    return std::format("/{}:{}({})/", kth::client_name, kth::version, kth::currency);
 }
 
 } // namespace kth::node

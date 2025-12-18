@@ -147,7 +147,6 @@ set(kth_sources_just_legacy
         src/config/sodium.cpp
 
         src/error.cpp
-        src/version.cpp
 
         src/formats/base_10.cpp
         src/formats/base_16.cpp
@@ -288,7 +287,6 @@ set(kth_headers
     include/kth/infrastructure/error.hpp
     include/kth/infrastructure/handlers.hpp
     include/kth/infrastructure/path.hpp
-    include/kth/infrastructure/version.hpp
 
     include/kth/infrastructure/machine/number.hpp
     include/kth/infrastructure/machine/script_pattern.hpp

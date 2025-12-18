@@ -114,7 +114,7 @@ private:
 #define KTH_VERSION_MESSAGE "Knuth Node\n  C++ lib v{}\n  {}\n  Currency: {}\n  Microarchitecture: {}\n  Built for CPU instructions/extensions: {}\n  (Debug Build)"
 #endif
 
-#define KTH_VERSION_MESSAGE_INIT "Node C++ lib v{}."
+#define KTH_VERSION_MESSAGE_INIT "Knuth v{}"
 #define KTH_CRYPTOCURRENCY_INIT "Currency: {} - {}."
 #define KTH_MICROARCHITECTURE_INIT "Optimized for microarchitecture: {}."
 #define KTH_MARCH_EXTS_INIT "Built for CPU instructions/extensions: {}."
