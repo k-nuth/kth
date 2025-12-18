@@ -227,6 +227,7 @@ set(kth_sources_just_legacy
         src/utility/scope_lock.cpp
 
         src/utility/sequential_lock.cpp
+        src/utility/stats.cpp
         src/utility/string.cpp
         src/utility/system_memory.cpp
         src/utility/thread.cpp
@@ -394,6 +395,7 @@ set(kth_headers
     include/kth/infrastructure/utility/pseudo_random_broken_do_not_use.hpp
 
     include/kth/infrastructure/utility/reader.hpp
+    include/kth/infrastructure/utility/salted_hashers.hpp
     include/kth/infrastructure/utility/scope_lock.hpp
     include/kth/infrastructure/utility/sequential_lock.hpp
     include/kth/infrastructure/utility/serializer.hpp

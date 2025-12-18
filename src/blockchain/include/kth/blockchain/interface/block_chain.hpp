@@ -19,6 +19,7 @@
 #include <kth/domain.hpp>
 
 #include <kth/blockchain/define.hpp>
+#include <kth/blockchain/header_index.hpp>
 #include <kth/blockchain/pools/block_organizer.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/pools/mempool_transaction_summary.hpp>
@@ -147,6 +148,10 @@ struct KB_API block_chain {
     bool is_stale() const;
     settings const& chain_settings() const;
     executor_type executor() const;
+
+    /// Access the header index (for headers-first sync).
+    [[nodiscard]] header_index& headers() { return header_index_; }
+    [[nodiscard]] header_index const& headers() const { return header_index_; }
 
 #if defined(KTH_WITH_MEMPOOL)
     std::pair<std::vector<kth::mining::transaction_element>, uint64_t> get_block_template() const;
@@ -357,6 +362,7 @@ private:
 
     transaction_organizer transaction_organizer_;
     block_organizer block_organizer_;
+    header_index header_index_;
 };
 
 } // namespace kth::blockchain

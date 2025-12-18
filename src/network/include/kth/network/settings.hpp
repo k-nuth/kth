@@ -12,6 +12,7 @@
 #include <kth/infrastructure.hpp>
 
 #include <kth/network/define.hpp>
+#include <kth/network/net_permissions.hpp>
 
 namespace kth::network {
 
@@ -66,6 +67,18 @@ struct KN_API settings {
 #endif
     ;
 
+    // Whitelist configuration (BCHN-style permissions)
+    // Peers matching these subnets get special permissions
+    std::vector<whitelist_permissions> whitelist;
+
+    // Whitebind configuration
+    // Bind addresses with permissions for incoming connections
+    std::vector<whitebind_permissions> whitebind;
+
+    // Legacy whitelist behavior flags (BCHN compatibility)
+    bool whitelist_force_relay{false};  // -whitelistforcerelay
+    bool whitelist_relay{true};         // -whitelistrelay
+
     /// Helpers.
     asio::duration connect_timeout() const;
     asio::duration channel_handshake() const;
@@ -73,6 +86,17 @@ struct KN_API settings {
     asio::duration channel_inactivity() const;
     asio::duration channel_expiration() const;
     asio::duration channel_germination() const;
+
+    /// Get permissions for an address based on whitelist configuration
+    /// Returns permission_flags::none if address is not whitelisted
+    [[nodiscard]]
+    permission_flags get_whitelist_permissions(
+        infrastructure::config::authority const& addr) const;
+
+    /// Apply legacy whitelist behavior to implicit permissions
+    /// (BCHN: -whitelistforcerelay, -whitelistrelay)
+    [[nodiscard]]
+    permission_flags apply_legacy_whitelist_permissions(permission_flags flags) const;
 };
 
 } // namespace kth::network

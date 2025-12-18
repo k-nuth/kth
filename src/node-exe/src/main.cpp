@@ -17,7 +17,6 @@
 #include <kth/node/executor/executor_info.hpp>
 #include <kth/domain/version.hpp>
 
-#include "version.hpp"
 #include "tui_dashboard.hpp"
 
 KTH_USE_MAIN
@@ -63,7 +62,7 @@ bool run_with_tui(kth::node::executor& host) {
 
     // Set initial status
     kth::node_exe::node_status status;
-    status.version = KTH_NODE_VERSION;
+    status.version = std::string(kth::version);
     status.network_name = "BCH Mainnet";  // TODO: get from config
     status.state = kth::node_exe::node_status::sync_state::starting;
     status.start_time = std::chrono::system_clock::now();  // Initialize start time

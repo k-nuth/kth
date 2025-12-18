@@ -92,7 +92,9 @@ endif()
 
 # Modern coroutine-based headers (KEEP)
 set(kth_headers
+  include/kth/network/banlist.hpp
   include/kth/network/define.hpp
+  include/kth/network/net_permissions.hpp
   include/kth/network/peer_session.hpp
   include/kth/network/peer_manager.hpp
   include/kth/network/p2p_node.hpp
@@ -140,12 +142,13 @@ set(kth_headers
 
 # Modern coroutine-based sources (KEEP)
 set(kth_sources
+  src/banlist.cpp
+  src/net_permissions.cpp
   src/p2p_node.cpp
   src/peer_session.cpp
   src/peer_manager.cpp
   src/protocols_coro.cpp
   src/settings.cpp
-  src/version.cpp
   src/hosts.cpp  # TODO: review - may need to modernize
 
   # Message handlers (one per message type)

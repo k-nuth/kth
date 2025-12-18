@@ -16,8 +16,6 @@
 #include <kth/network/define.hpp>
 #include <kth/network/settings.hpp>
 
-#include <kth/network/version.hpp>
-
 // Modern coroutine-based networking (keep these)
 #include <kth/network/peer_manager.hpp>
 #include <kth/network/peer_session.hpp>
