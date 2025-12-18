@@ -42,7 +42,7 @@
 // Reference: https://github.com/boostorg/asio
 // -----------------------------------------------------------------------------
 
-#if defined(ASIO_STANDALONE)
+#if defined(KTH_ASIO_STANDALONE)
     // Standalone Asio
     #include <asio/version.hpp>
     #define KTH_ASIO_VERSION ASIO_VERSION
