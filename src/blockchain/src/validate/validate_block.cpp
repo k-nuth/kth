@@ -10,45 +10,46 @@
 #include <functional>
 #include <memory>
 
-#include <kth/blockchain/interface/fast_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/settings.hpp>
+#include <kth/blockchain/validate/validate_header.hpp>
 #include <kth/blockchain/validate/validate_input.hpp>
 #include <kth/domain.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 
-#include <kth/infrastructure/utility/synchronizer.hpp>
+#include <asio/co_spawn.hpp>
+#include <asio/post.hpp>
+#include <asio/use_awaitable.hpp>
+#include <asio/experimental/concurrent_channel.hpp>
 
 namespace kth::blockchain {
 
 using namespace kd::chain;
 using namespace kd::machine;
 using kd::script_flags_t;
-using namespace std::placeholders;
-
-#define NAME "validate_block"
 
 // Database access is limited to: populator:
 // spend: { spender }
 // block: { bits, version, timestamp }
 // transaction: { exists, height, output }
 
-// If the priority threadpool is shut down when this is running the handlers
-// will never be invoked, resulting in a threadpool.join indefinite hang.
-
 #if defined(KTH_WITH_MEMPOOL)
-validate_block::validate_block(dispatcher& dispatch, fast_chain const& chain, settings const& settings, domain::config::network network, bool relay_transactions, mining::mempool const& mp)
+validate_block::validate_block(executor_type executor, size_t threads, block_chain const& chain, settings const& settings, domain::config::network network, bool relay_transactions, mining::mempool const& mp)
 #else
-validate_block::validate_block(dispatcher& dispatch, fast_chain const& chain, settings const& settings, domain::config::network network, bool relay_transactions)
+validate_block::validate_block(executor_type executor, size_t threads, block_chain const& chain, settings const& settings, domain::config::network network, bool relay_transactions)
 #endif
     : stopped_(true)
-    , fast_chain_(chain)
+    , chain_(chain)
     , network_(network)
-    , priority_dispatch_(dispatch)
+    , executor_(std::move(executor))
+    , threads_(threads)
+    , hits_(0)
+    , queries_(0)
 #if defined(KTH_WITH_MEMPOOL)
-    , block_populator_(dispatch, chain, relay_transactions, mp)
+    , block_populator_(executor_, threads_, chain, relay_transactions, mp)
 #else
-    , block_populator_(dispatch, chain, relay_transactions)
+    , block_populator_(executor_, threads_, chain, relay_transactions)
 #endif
 {}
 
@@ -67,33 +68,59 @@ void validate_block::stop() {
 //-----------------------------------------------------------------------------
 // These checks are context free.
 
-void validate_block::check(block_const_ptr block, result_handler handler) const {
+::asio::awaitable<code> validate_block::check(block_const_ptr block, bool headers_pre_validated) const {
     // The block hasn't been checked yet.
     if (block->transactions().empty()) {
-        handler(error::success);
-        return;
+        co_return error::success;
     }
-
-    result_handler complete_handler = std::bind(&validate_block::handle_checked, this, _1, block, handler);
 
     // TODO: make configurable for each parallel segment.
     // This one is more efficient with one thread than parallel.
-    auto const threads = std::min(size_t(1), priority_dispatch_.size());
+    auto const threads = std::min(size_t(1), threads_);
     auto const count = block->transactions().size();
     auto const buckets = std::min(threads, count);
     KTH_ASSERT(buckets != 0);
 
-    auto const join_handler = synchronize(std::move(complete_handler), buckets, NAME "_check");
+    // Use a channel to collect results from parallel tasks
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+    auto channel = std::make_shared<result_channel>(executor_, buckets);
 
+    // Launch parallel tasks
     for (size_t bucket = 0; bucket < buckets; ++bucket) {
-        priority_dispatch_.concurrent(&validate_block::check_block, this, block, bucket, buckets, join_handler);
+        ::asio::post(executor_, [this, block, bucket, buckets, channel]() {
+            auto result = check_block_bucket(block, bucket, buckets);
+            channel->try_send(std::error_code{}, result);
+        });
     }
+
+    // Wait for all results
+    code final_result = error::success;
+    for (size_t i = 0; i < buckets; ++i) {
+        auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+        if (ec) {
+            co_return error::operation_failed;
+        }
+        if (result != error::success && final_result == error::success) {
+            final_result = result;
+        }
+    }
+
+    if (final_result) {
+        co_return final_result;
+    }
+
+    // Run context free checks, sets time internally.
+    // For headers-first sync, skip header validation (PoW, timestamp) since
+    // headers were already validated during header sync.
+    if (headers_pre_validated) {
+        co_return block->check_body();
+    }
+    co_return block->check();
 }
 
-void validate_block::check_block(block_const_ptr block, size_t bucket, size_t buckets, result_handler handler) const {
+code validate_block::check_block_bucket(block_const_ptr block, size_t bucket, size_t buckets) const {
     if (stopped()) {
-        handler(error::service_stopped);
-        return;
+        return error::service_stopped;
     }
 
     auto const& txs = block->transactions();
@@ -103,24 +130,14 @@ void validate_block::check_block(block_const_ptr block, size_t bucket, size_t bu
         txs[tx].hash();
     }
 
-    handler(error::success);
-}
-
-void validate_block::handle_checked(code const& ec, block_const_ptr block, result_handler handler) const {
-    if (ec) {
-        handler(ec);
-        return;
-    }
-
-    // Run context free checks, sets time internally.
-    handler(block->check());
+    return error::success;
 }
 
 // Accept sequence.
 //-----------------------------------------------------------------------------
 // These checks require chain state, and block state if not under checkpoint.
 
-void validate_block::accept(branch::const_ptr branch, result_handler handler) const {
+::asio::awaitable<code> validate_block::accept(branch::const_ptr branch, bool headers_pre_validated) const {
     auto const block = branch->top();
     KTH_ASSERT(block);
 
@@ -128,120 +145,91 @@ void validate_block::accept(branch::const_ptr branch, result_handler handler) co
     block->validation.start_populate = asio::steady_clock::now();
 
     // Populate chain state for the next block.
-    block->validation.state = fast_chain_.chain_state(branch);
+    block->validation.state = chain_.chain_state(branch);
 
     if ( ! block->validation.state) {
-        handler(error::block_validation_state_failed);
-        return;
+        co_return error::block_validation_state_failed;
     }
 
     // Populate block state for the top block (others are valid).
-    block_populator_.populate(branch, std::bind(&validate_block::handle_populated, this, _1, block, handler));
-}
+    auto const populate_ec = co_await block_populator_.populate(branch);
 
-void validate_block::handle_populated(code const& ec, block_const_ptr block, result_handler handler) const {
     if (stopped()) {
-        handler(error::service_stopped);
-        return;
+        co_return error::service_stopped;
     }
 
-    if (ec) {
-        handler(ec);
-        return;
+    if (populate_ec) {
+        co_return populate_ec;
     }
 
     auto const& state = *block->validation.state;
-    auto const height = state.height();
-    auto const flags = state.enabled_flags();
-    auto const mtp = state.median_time_past();
-    auto const max_block_size_dyn = state.is_lobachevski_enabled()
-        ? state.dynamic_max_block_size()
-        : static_max_block_size(state.network());
-    auto const max_sigops = state.is_lobachevski_enabled()
-        ? state.dynamic_max_block_sigops()
-        : static_max_block_sigops(state.network());
-    auto const under_checkpoint = state.is_under_checkpoint();
 
     // Run contextual block non-tx checks (sets start time).
-    auto const error_code = block->accept(
-        flags, height, mtp, max_block_size_dyn, max_sigops, under_checkpoint, false /*transactions*/);
+    // For headers-first sync, skip header validation since headers were
+    // already validated during header sync.
+    if ( ! headers_pre_validated) {
+        // Full validation: validate header first
+        auto const header_ec = validate_header::accept_header(block->header(), block->hash(), state);
+        if (header_ec) {
+            co_return header_ec;
+        }
+    }
 
-    if (error_code) {
-        handler(error_code);
-        return;
+    // Validate block body (same for both cases)
+    auto const body_ec = accept_block_body(*block, state);
+    if (body_ec) {
+        co_return body_ec;
     }
 
     auto const sigops = std::make_shared<atomic_counter>(0);
+
 #if defined(KTH_CURRENCY_BCH)
     bool const bip141 = false;
 #else
-    auto const bip141 = state.is_enabled(domain::machine::script_flags::bip141_rule);
+    auto const bip141 = state.is_enabled(domain::machine::rule_fork::bip141_rule);
 #endif
 
-    result_handler complete_handler = std::bind(&validate_block::handle_accepted, this, _1, block, sigops, bip141, handler);
-
-    if (under_checkpoint) {
-        complete_handler(error::success);
-        return;
+    if (state.is_under_checkpoint()) {
+        co_return error::success;
     }
 
     auto const count = block->transactions().size();
-    auto const bip16 = state.is_enabled(domain::machine::script_flags::bip16_rule);
-    auto const buckets = std::min(priority_dispatch_.size(), count);
+    auto const bip16 = state.is_enabled(domain::machine::rule_fork::bip16_rule);
+    auto const buckets = std::min(threads_, count);
     KTH_ASSERT(buckets != 0);
 
-    auto const join_handler = synchronize(std::move(complete_handler), buckets, NAME "_accept");
+    // Use a channel to collect results from parallel tasks
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+    auto channel = std::make_shared<result_channel>(executor_, buckets);
 
+    // Launch parallel tasks
     for (size_t bucket = 0; bucket < buckets; ++bucket) {
-        priority_dispatch_.concurrent(&validate_block::accept_transactions, this, block, bucket, buckets, sigops, bip16, bip141, join_handler);
-    }
-}
-
-void validate_block::accept_transactions(block_const_ptr block, size_t bucket, size_t buckets, atomic_counter_ptr sigops, bool bip16, bool bip141, result_handler handler) const {
-#if defined(KTH_CURRENCY_BCH)
-    bip141 = false;
-#endif
-    if (stopped()) {
-        handler(error::service_stopped);
-        return;
+        ::asio::post(executor_, [this, block, bucket, buckets, sigops, bip16, bip141, channel]() {
+            auto result = accept_transactions_bucket(block, bucket, buckets, sigops, bip16, bip141);
+            channel->try_send(std::error_code{}, result);
+        });
     }
 
-    code ec(error::success);
-    auto const& state = *block->validation.state;
-    auto const flags = state.enabled_flags();
-    auto const height = state.height();
-    auto const mtp = state.median_time_past();
-    auto const max_sigops = state.is_lobachevski_enabled()
-        ? state.dynamic_max_block_sigops()
-        : static_max_block_sigops(state.network());
-    auto const under_checkpoint = state.is_under_checkpoint();
-    auto const& txs = block->transactions();
-    auto const count = txs.size();
-
-    // Run contextual tx non-script checks (not in tx order).
-    for (auto tx = bucket; tx < count && !ec; tx = ceiling_add(tx, buckets)) {
-        auto const& transaction = txs[tx];
-        if ( ! transaction.validation.validated) {
-            ec = transaction.accept(flags, height, mtp, max_sigops, under_checkpoint, false /*transaction_pool*/);
-        } else {
-            // spdlog::info("[blockchain] Transaction {} validation could be skiped.", encode_hash(transaction.hash()));
+    // Wait for all results
+    code accept_result = error::success;
+    for (size_t i = 0; i < buckets; ++i) {
+        auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+        if (ec) {
+            co_return error::operation_failed;
         }
-        *sigops += transaction.signature_operations(bip16, bip141);
+        if (result != error::success && accept_result == error::success) {
+            accept_result = result;
+        }
     }
 
-    handler(ec);
-}
-
-void validate_block::handle_accepted(code const& ec, block_const_ptr block, atomic_counter_ptr sigops, bool bip141, result_handler handler) const {
-    if (ec) {
-        handler(ec);
-        return;
+    if (accept_result) {
+        co_return accept_result;
     }
 
+    // Check sigops limit
 #if defined(KTH_CURRENCY_BCH)
     if (block->validation.state->is_fermat_enabled()) {
-        handler(error::success);
-        return;
+        co_return error::success;
     }
 
     size_t allowed_sigops = get_allowed_sigops(block->serialized_size(1));
@@ -250,14 +238,39 @@ void validate_block::handle_accepted(code const& ec, block_const_ptr block, atom
     auto const max_sigops = bip141 ? max_fast_sigops : get_allowed_sigops(block->serialized_size(1));
     auto const exceeded = *sigops > max_sigops;
 #endif
-    handler(exceeded ? error::block_embedded_sigop_limit : error::success);
+    co_return exceeded ? error::block_embedded_sigop_limit : error::success;
+}
+
+code validate_block::accept_transactions_bucket(block_const_ptr block, size_t bucket, size_t buckets, atomic_counter_ptr sigops, bool bip16, bool bip141) const {
+#if defined(KTH_CURRENCY_BCH)
+    bip141 = false;
+#endif
+    if (stopped()) {
+        return error::service_stopped;
+    }
+
+    code ec(error::success);
+    auto const& state = *block->validation.state;
+    auto const& txs = block->transactions();
+    auto const count = txs.size();
+
+    // Run contextual tx non-script checks (not in tx order).
+    for (auto tx = bucket; tx < count && !ec; tx = ceiling_add(tx, buckets)) {
+        auto const& transaction = txs[tx];
+        if ( ! transaction.validation.validated) {
+            ec = transaction.accept(state, false);
+        }
+        *sigops += transaction.signature_operations(bip16, bip141);
+    }
+
+    return ec;
 }
 
 // Connect sequence.
 //-----------------------------------------------------------------------------
 // These checks require chain state, block state and perform script validation.
 
-void validate_block::connect(branch::const_ptr branch, result_handler handler) const {
+::asio::awaitable<code> validate_block::connect(branch::const_ptr branch) const {
     auto const block = branch->top();
     KTH_ASSERT(block && block->validation.state);
 
@@ -265,36 +278,52 @@ void validate_block::connect(branch::const_ptr branch, result_handler handler) c
     block->validation.start_connect = asio::steady_clock::now();
 
     if (block->validation.state->is_under_checkpoint()) {
-        handler(error::success);
-        return;
+        co_return error::success;
     }
 
     auto const non_coinbase_inputs = block->total_inputs(false);
 
     // Return if there are no non-coinbase inputs to validate.
     if (non_coinbase_inputs == 0) {
-        handler(error::success);
-        return;
+        co_return error::success;
     }
 
     // Reset statistics for each block (treat coinbase as cached).
     hits_ = 0;
     queries_ = 0;
 
-    result_handler complete_handler = std::bind(&validate_block::handle_connected, this, _1, block, handler);
-
-    auto const threads = priority_dispatch_.size();
-    auto const buckets = std::min(threads, non_coinbase_inputs);
+    auto const buckets = std::min(threads_, non_coinbase_inputs);
     KTH_ASSERT(buckets != 0);
 
-    auto const join_handler = synchronize(std::move(complete_handler), buckets, NAME "_validate");
+    // Use a channel to collect results from parallel tasks
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+    auto channel = std::make_shared<result_channel>(executor_, buckets);
 
+    // Launch parallel tasks
     for (size_t bucket = 0; bucket < buckets; ++bucket) {
-        priority_dispatch_.concurrent(&validate_block::connect_inputs, this, block, bucket, buckets, join_handler);
+        ::asio::post(executor_, [this, block, bucket, buckets, channel]() {
+            auto result = connect_inputs_bucket(block, bucket, buckets);
+            channel->try_send(std::error_code{}, result);
+        });
     }
+
+    // Wait for all results
+    code connect_result = error::success;
+    for (size_t i = 0; i < buckets; ++i) {
+        auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+        if (ec) {
+            co_return error::operation_failed;
+        }
+        if (result != error::success && connect_result == error::success) {
+            connect_result = result;
+        }
+    }
+
+    block->validation.cache_efficiency = hit_rate();
+    co_return connect_result;
 }
 
-void validate_block::connect_inputs(block_const_ptr block, size_t bucket, size_t buckets, result_handler handler) const {
+code validate_block::connect_inputs_bucket(block_const_ptr block, size_t bucket, size_t buckets) const {
     KTH_ASSERT(bucket < buckets);
     code ec(error::success);
     auto const flags = block->validation.state->enabled_flags();
@@ -304,8 +333,6 @@ void validate_block::connect_inputs(block_const_ptr block, size_t bucket, size_t
 #if defined(KTH_CURRENCY_BCH)
     size_t block_sigchecks = 0;
 #endif
-
-    //TODO(fernando): count the coinbase sigchecks
 
     // Must skip coinbase here as it is already accounted for.
     for (auto tx = txs.begin() + 1; tx != txs.end(); ++tx) {
@@ -318,7 +345,6 @@ void validate_block::connect_inputs(block_const_ptr block, size_t bucket, size_t
         }
 
         // The tx was validated before its insertion in the mempool
-        // TODO(fernando): what happend with Blockchain forks?
         if (tx->validation.validated) {
             ++hits_;
             continue;
@@ -333,8 +359,7 @@ void validate_block::connect_inputs(block_const_ptr block, size_t bucket, size_t
             }
 
             if (stopped()) {
-                handler(error::service_stopped);
-                return;
+                return error::service_stopped;
             }
 
             auto const& prevout = inputs[input_index].previous_output();
@@ -352,7 +377,6 @@ void validate_block::connect_inputs(block_const_ptr block, size_t bucket, size_t
 
 #if defined(KTH_CURRENCY_BCH)
             block_sigchecks += sigchecks;
-            // if (block_sigchecks > get_max_block_sigchecks(network_)) {
             if (block_sigchecks > block->validation.state->dynamic_max_block_sigchecks()) {
                 ec = error::block_sigchecks_limit;
                 break;
@@ -367,18 +391,13 @@ void validate_block::connect_inputs(block_const_ptr block, size_t bucket, size_t
         }
     }
 
-    handler(ec);
+    return ec;
 }
 
 // The tx pool cache hit rate.
 float validate_block::hit_rate() const {
     // These values could overflow or divide by zero, but that's okay.
     return queries_ == 0 ? 0.0f : (hits_ * 1.0f / queries_);
-}
-
-void validate_block::handle_connected(code const& ec, block_const_ptr block, result_handler handler) const {
-    block->validation.cache_efficiency = hit_rate();
-    handler(ec);
 }
 
 // Utility.
@@ -399,6 +418,97 @@ void validate_block::dump(code const& ec, transaction const& tx, uint32_t input_
         " transaction  : {}",
         height, ec.message(), flags, hash, prevout.index(), encode_base16(script),
         prevout.validation.cache.value(), tx_hash, input_index, encode_base16(tx.to_data(true)));
+}
+
+// =============================================================================
+// Static validation functions (pure, no side effects)
+// These replace the accept/connect methods that were in block_basis.
+// =============================================================================
+
+code validate_block::accept_block_body(
+    domain::chain::block const& block,
+    domain::chain::chain_state const& state) {
+
+    auto const& header = block.header();
+    auto const block_size = block.serialized_size();
+
+    auto const bip16 = state.is_enabled(domain::machine::rule_fork::bip16_rule);
+    auto const bip34 = state.is_enabled(domain::machine::rule_fork::bip34_rule);
+    auto const bip113 = state.is_enabled(domain::machine::rule_fork::bip113_rule);
+    auto const bip141 = false;  // No segwit
+
+    // Block size validation
+#if defined(KTH_CURRENCY_BCH)
+    if (state.is_lobachevski_enabled()) {
+        if (block_size > state.dynamic_max_block_size()) {
+            return error::block_size_limit;
+        }
+    } else if (state.is_pythagoras_enabled()) {
+        if (block_size > static_max_block_size(state.network())) {
+            return error::block_size_limit;
+        }
+    } else {
+        if (block_size > max_block_size::mainnet_old) {
+            return error::block_size_limit;
+        }
+    }
+#else
+    if (block_size > max_block_size::mainnet_old) {
+        return error::block_size_limit;
+    }
+#endif
+
+    // Under checkpoint: Only verify merkle root (done in check_body)
+    if (state.is_under_checkpoint()) {
+        return error::success;
+    }
+
+    // Transaction ordering check
+#if defined(KTH_CURRENCY_BCH)
+    if (state.is_euclid_enabled()) {
+        if ( ! block.is_canonical_ordered()) {
+            return error::non_canonical_ordered;
+        }
+    } else {
+        if (block.is_forward_reference()) {
+            return error::forward_reference;
+        }
+    }
+#else
+    if (block.is_forward_reference()) {
+        return error::forward_reference;
+    }
+#endif
+
+    // Coinbase script height check (BIP34)
+    if (bip34 && !block.is_valid_coinbase_script(state.height())) {
+        return error::coinbase_height_mismatch;
+    }
+
+    // Coinbase claim check
+    if ( ! block.is_valid_coinbase_claim(state.height())) {
+        return error::coinbase_value_limit;
+    }
+
+    // Finality check
+    auto const block_time = bip113 ? state.median_time_past() : header.timestamp();
+    if ( ! block.is_final(state.height(), block_time)) {
+        return error::block_non_final;
+    }
+
+    // Sigops check (for non-Fermat BCH or BTC/LTC)
+#if defined(KTH_CURRENCY_BCH)
+    if ( ! state.is_fermat_enabled()) {
+#endif
+        size_t const allowed_sigops = get_allowed_sigops(block_size);
+        if (block.signature_operations(bip16, bip141) > allowed_sigops) {
+            return error::block_embedded_sigop_limit;
+        }
+#if defined(KTH_CURRENCY_BCH)
+    }
+#endif
+
+    return error::success;
 }
 
 } // namespace kth::blockchain

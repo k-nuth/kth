@@ -11,68 +11,76 @@ namespace kth::database {
 
 //public
 template <typename Clock>
-std::pair<domain::chain::block, uint32_t> internal_database_basis<Clock>::get_block(hash_digest const& hash) const {
+std::expected<std::pair<domain::chain::block, uint32_t>, result_code> internal_database_basis<Clock>::get_block(hash_digest const& hash) const {
     auto key = kth_db_make_value(hash.size(), const_cast<hash_digest&>(hash).data());
 
     KTH_DB_txn* db_txn;
     auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (res != KTH_DB_SUCCESS) {
-        return {};
+        return std::unexpected(result_code::other);
     }
 
     KTH_DB_val value;
-    if (kth_db_get(db_txn, dbi_block_header_by_hash_, &key, &value) != KTH_DB_SUCCESS) {
+    auto res0 = kth_db_get(db_txn, dbi_block_header_by_hash_, &key, &value);
+    if (res0 == KTH_DB_NOTFOUND) {
         kth_db_txn_commit(db_txn);
-        // kth_db_txn_abort(db_txn);
-        return {};
+        return std::unexpected(result_code::key_not_found);
+    }
+    if (res0 != KTH_DB_SUCCESS) {
+        kth_db_txn_commit(db_txn);
+        return std::unexpected(result_code::other);
     }
 
     // assert kth_db_get_size(value) == 4;
     auto height = *static_cast<uint32_t*>(kth_db_get_data(value));
 
-    auto block = get_block(height, db_txn);
+    auto block_result = get_block(height, db_txn);
 
     if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
-        return {};
+        return std::unexpected(result_code::other);
     }
 
-    return {block, height};
+    if ( ! block_result) {
+        return std::unexpected(block_result.error());
+    }
+
+    return std::make_pair(*block_result, height);
 }
 
 //public
 template <typename Clock>
-domain::chain::block internal_database_basis<Clock>::get_block(uint32_t height) const {
+std::expected<domain::chain::block, result_code> internal_database_basis<Clock>::get_block(uint32_t height) const {
     KTH_DB_txn* db_txn;
     auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (res != KTH_DB_SUCCESS) {
-        return domain::chain::block{};
+        return std::unexpected(result_code::other);
     }
 
-    auto block = get_block(height, db_txn);
+    auto result = get_block(height, db_txn);
 
     if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
-        return domain::chain::block{};
+        return std::unexpected(result_code::other);
     }
 
-    return block;
+    return result;
 }
 
 template <typename Clock>
-domain::chain::block internal_database_basis<Clock>::get_block(uint32_t height, KTH_DB_txn* db_txn) const {
+std::expected<domain::chain::block, result_code> internal_database_basis<Clock>::get_block(uint32_t height, KTH_DB_txn* db_txn) const {
 
     auto key = kth_db_make_value(sizeof(height), &height);
 
     if (db_mode_ == db_mode_type::full) {
-        auto header = get_header(height, db_txn);
-        if ( ! header.is_valid()) {
-            return {};
+        auto header_result = get_header(height, db_txn);
+        if ( ! header_result) {
+            return std::unexpected(header_result.error());
         }
 
         domain::chain::transaction::list tx_list;
 
         KTH_DB_cursor* cursor;
         if (kth_db_cursor_open(db_txn, dbi_block_db_, &cursor) != KTH_DB_SUCCESS) {
-            return {};
+            return std::unexpected(result_code::other);
         }
 
         KTH_DB_val value;
@@ -83,7 +91,8 @@ domain::chain::block internal_database_basis<Clock>::get_block(uint32_t height, 
             auto const entry = get_transaction(tx_id, db_txn);
 
             if ( ! entry.is_valid()) {
-                return {};
+                kth_db_cursor_close(cursor);
+                return std::unexpected(result_code::other);
             }
 
             tx_list.push_back(std::move(entry.transaction()));
@@ -97,26 +106,29 @@ domain::chain::block internal_database_basis<Clock>::get_block(uint32_t height, 
 
         kth_db_cursor_close(cursor);
 
-        return domain::chain::block{header, std::move(tx_list)};
+        return domain::chain::block{*header_result, std::move(tx_list)};
     } else if (db_mode_ == db_mode_type::blocks) {
         KTH_DB_val value;
 
-        if (kth_db_get(db_txn, dbi_block_db_, &key, &value) != KTH_DB_SUCCESS) {
-            return domain::chain::block{};
+        auto res0 = kth_db_get(db_txn, dbi_block_db_, &key, &value);
+        if (res0 == KTH_DB_NOTFOUND) {
+            return std::unexpected(result_code::key_not_found);
+        }
+        if (res0 != KTH_DB_SUCCESS) {
+            return std::unexpected(result_code::other);
         }
 
         auto data = db_value_to_data_chunk(value);
         byte_reader reader(data);
         auto res = domain::chain::block::from_data(reader);
         if ( ! res) {
-            return domain::chain::block{};
+            return std::unexpected(result_code::other);
         }
         return *res;
     }
     // db_mode_ == db_mode_type::pruned {
 
-    auto block = get_block_reorg(height, db_txn);
-    return block;
+    return get_block_reorg(height, db_txn);
 }
 
 

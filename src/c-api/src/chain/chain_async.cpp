@@ -13,17 +13,20 @@
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/message/merkle_block.hpp>
 #include <kth/domain/chain/transaction.hpp>
-#include <kth/blockchain/interface/safe_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 
 #include <kth/capi/chain/block_list.h>
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
 
+#include <asio/co_spawn.hpp>
+#include <asio/detached.hpp>
+
 namespace {
 
 inline
-kth::blockchain::safe_chain& safe_chain(kth_chain_t chain) {
-    return *static_cast<kth::blockchain::safe_chain*>(chain);
+kth::blockchain::block_chain& safe_chain(kth_chain_t chain) {
+    return *static_cast<kth::blockchain::block_chain*>(chain);
 }
 
 inline
@@ -186,15 +189,21 @@ void kth_chain_async_confirmed_transactions(kth_chain_t chain, void* ctx, kth_pa
 //-------------------------------------------------------------------------
 
 void kth_chain_async_organize_block(kth_chain_t chain, void* ctx, kth_block_t block, kth_result_handler_t handler) {
-    safe_chain(chain).organize(block_shared(block), [chain, ctx, handler](std::error_code const& ec) {
+    auto& bc = safe_chain(chain);
+    auto block_cpp = block_shared(block);
+    ::asio::co_spawn(bc.executor(), [&bc, block_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto ec = co_await bc.organize(block_cpp);
         handler(chain, ctx, kth::to_c_err(ec));
-    });
+    }, ::asio::detached);
 }
 
 void kth_chain_async_organize_transaction(kth_chain_t chain, void* ctx, kth_transaction_t transaction, kth_result_handler_t handler) {
-    safe_chain(chain).organize(tx_shared(transaction), [chain, ctx, handler](std::error_code const& ec) {
+    auto& bc = safe_chain(chain);
+    auto tx_cpp = tx_shared(transaction);
+    ::asio::co_spawn(bc.executor(), [&bc, tx_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto ec = co_await bc.organize(tx_cpp);
         handler(chain, ctx, kth::to_c_err(ec));
-    });
+    }, ::asio::detached);
 }
 
 } // extern "C"

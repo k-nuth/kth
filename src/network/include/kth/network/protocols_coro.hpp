@@ -5,6 +5,56 @@
 #ifndef KTH_NETWORK_PROTOCOLS_CORO_HPP
 #define KTH_NETWORK_PROTOCOLS_CORO_HPP
 
+// =============================================================================
+// Network Layer Protocol Handlers (Coroutine-based)
+// =============================================================================
+//
+// This file contains coroutine-based implementations of Bitcoin P2P network
+// layer protocols. These are generic networking protocols that don't require
+// blockchain state.
+//
+// WHAT THIS FILE PROVIDES:
+// ------------------------
+// - perform_handshake()  : Version/verack exchange and protocol negotiation
+// - run_ping_pong()      : Keepalive ping/pong loop
+// - request_addresses()  : Request peer addresses (getaddr)
+// - send_addresses()     : Send peer addresses (addr)
+//
+// LEGACY FILES THIS REPLACES:
+// ---------------------------
+// Once fully integrated, these coroutine functions replace the following
+// callback-based protocol classes:
+//
+// | Coroutine Function    | Replaces Legacy Files                              |
+// |-----------------------|----------------------------------------------------|
+// | perform_handshake()   | protocols/protocol_version_31402.hpp/.cpp          |
+// |                       | protocols/protocol_version_70002.hpp/.cpp          |
+// | run_ping_pong()       | protocols/protocol_ping_31402.hpp/.cpp             |
+// |                       | protocols/protocol_ping_60001.hpp/.cpp             |
+// | request_addresses()   | protocols/protocol_address_31402.hpp/.cpp          |
+// | send_addresses()      | protocols/protocol_seed_31402.hpp/.cpp             |
+//
+// BASE CLASSES (also to be removed):
+// | protocols/protocol.hpp/.cpp                                              |
+// | protocols/protocol_events.hpp/.cpp                                       |
+// | protocols/protocol_timer.hpp/.cpp                                        |
+//
+// NOT REPLACED HERE (handled elsewhere or deprecated):
+// | protocols/protocol_reject_70002.hpp/.cpp  - Reject messages (BIP 61)     |
+//
+// USAGE:
+// ------
+// These functions are designed to be used with peer_session and are typically
+// called from p2p_node or higher-level code:
+//
+//   auto result = co_await perform_handshake(peer, config);
+//   if (!result) { /* handle error */ }
+//
+//   // Run ping/pong in background
+//   asio::co_spawn(executor, run_ping_pong(peer, 120s), asio::detached);
+//
+// =============================================================================
+
 #include <chrono>
 #include <expected>
 #include <string>
@@ -22,6 +72,8 @@
 
 namespace kth::network {
 
+using kth::awaitable_expected;
+
 // =============================================================================
 // Message Helpers
 // =============================================================================
@@ -31,7 +83,7 @@ namespace kth::network {
 /// @param peer The peer session to receive from
 /// @param timeout Maximum time to wait for the message
 template <typename Message>
-::asio::awaitable<std::expected<Message, code>> wait_for_message(
+awaitable_expected<Message> wait_for_message(
     peer_session& peer,
     std::chrono::seconds timeout)
 {
@@ -77,7 +129,7 @@ template <typename Message>
 /// Wait for any message from the peer (returns raw_message)
 /// @param peer The peer session to receive from
 /// @param timeout Maximum time to wait
-::asio::awaitable<std::expected<raw_message, code>> wait_for_any_message(
+awaitable_expected<raw_message> wait_for_any_message(
     peer_session& peer,
     std::chrono::seconds timeout);
 
@@ -111,7 +163,7 @@ struct handshake_result {
 /// @param config Handshake configuration
 /// @return handshake_result on success, error code on failure
 [[nodiscard]]
-KN_API ::asio::awaitable<std::expected<handshake_result, code>> perform_handshake(
+KN_API awaitable_expected<handshake_result> perform_handshake(
     peer_session& peer,
     handshake_config const& config);
 
@@ -146,7 +198,7 @@ KN_API ::asio::awaitable<code> run_ping_pong(
 /// @param timeout Maximum time to wait for response
 /// @return Vector of addresses or error
 [[nodiscard]]
-KN_API ::asio::awaitable<std::expected<domain::message::address, code>> request_addresses(
+KN_API awaitable_expected<domain::message::address> request_addresses(
     peer_session& peer,
     std::chrono::seconds timeout);
 
@@ -157,6 +209,201 @@ KN_API ::asio::awaitable<std::expected<domain::message::address, code>> request_
 KN_API ::asio::awaitable<code> send_addresses(
     peer_session& peer,
     domain::message::address const& addresses);
+
+// =============================================================================
+// Blockchain Protocol Handlers (Headers-First Sync)
+// =============================================================================
+//
+// These protocols handle blockchain synchronization. Unlike the network layer
+// protocols above, these require interaction with blockchain state.
+//
+// SYNC FLOW (Headers-First):
+// --------------------------
+// 1. request_headers() - Send getheaders, receive headers
+// 2. Validate and store headers in blockchain
+// 3. request_blocks() - Send getdata for blocks we need
+// 4. Receive and validate blocks
+// 5. Repeat until synced
+//
+// ANNOUNCEMENT HANDLING:
+// ----------------------
+// - handle_inv() - Process inventory announcements from peers
+// - handle_headers() - Process unsolicited headers (after sendheaders)
+//
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Header Sync Protocol
+// -----------------------------------------------------------------------------
+
+/// Request headers from a peer using getheaders message
+/// @param peer The peer session
+/// @param locator_hashes Block locator hashes (most recent first)
+/// @param stop_hash Hash to stop at (null_hash for no limit)
+/// @param timeout Maximum time to wait for response
+/// @return Headers message or error
+[[nodiscard]]
+KN_API awaitable_expected<domain::message::headers> request_headers(
+    peer_session& peer,
+    hash_list const& locator_hashes,
+    hash_digest const& stop_hash,
+    std::chrono::seconds timeout);
+
+/// Request headers starting from a single known hash
+/// Convenience wrapper that creates a single-element locator
+[[nodiscard]]
+KN_API awaitable_expected<domain::message::headers> request_headers_from(
+    peer_session& peer,
+    hash_digest const& from_hash,
+    std::chrono::seconds timeout);
+
+// -----------------------------------------------------------------------------
+// Block Sync Protocol
+// -----------------------------------------------------------------------------
+
+/// Request blocks using getdata message
+/// @param peer The peer session
+/// @param block_hashes Hashes of blocks to request
+/// @return Error code (blocks arrive via message handler)
+[[nodiscard]]
+KN_API ::asio::awaitable<code> request_blocks(
+    peer_session& peer,
+    hash_list const& block_hashes);
+
+/// Request a single block
+/// @param peer The peer session
+/// @param block_hash Hash of block to request
+/// @param timeout Maximum time to wait for block
+/// @return Block message or error
+[[nodiscard]]
+KN_API awaitable_expected<domain::message::block> request_block(
+    peer_session& peer,
+    hash_digest const& block_hash,
+    std::chrono::seconds timeout);
+
+// -----------------------------------------------------------------------------
+// Inventory Protocol
+// -----------------------------------------------------------------------------
+
+/// Send inventory announcement to peer
+/// @param peer The peer session
+/// @param inv Inventory to announce
+[[nodiscard]]
+KN_API ::asio::awaitable<code> send_inventory(
+    peer_session& peer,
+    domain::message::inventory const& inv);
+
+/// Request data for inventory items
+/// @param peer The peer session
+/// @param inv Inventory items to request
+[[nodiscard]]
+KN_API ::asio::awaitable<code> send_getdata(
+    peer_session& peer,
+    domain::message::get_data const& request);
+
+// -----------------------------------------------------------------------------
+// Transaction Protocol
+// -----------------------------------------------------------------------------
+
+/// Send a transaction to peer
+/// @param peer The peer session
+/// @param tx Transaction to send
+[[nodiscard]]
+KN_API ::asio::awaitable<code> send_transaction(
+    peer_session& peer,
+    domain::message::transaction const& tx);
+
+/// Request mempool contents from peer (BIP 35)
+/// @param peer The peer session
+[[nodiscard]]
+KN_API ::asio::awaitable<code> request_mempool(
+    peer_session& peer);
+
+// -----------------------------------------------------------------------------
+// Response Helpers (for serving peers)
+// -----------------------------------------------------------------------------
+
+/// Send headers in response to getheaders request
+/// @param peer The peer session
+/// @param headers Headers to send
+[[nodiscard]]
+KN_API ::asio::awaitable<code> send_headers(
+    peer_session& peer,
+    domain::message::headers const& headers);
+
+/// Send a block in response to getdata request
+/// @param peer The peer session
+/// @param block Block to send
+[[nodiscard]]
+KN_API ::asio::awaitable<code> send_block(
+    peer_session& peer,
+    domain::message::block const& block);
+
+/// Send not_found for items we don't have
+/// @param peer The peer session
+/// @param not_found Items not found
+[[nodiscard]]
+KN_API ::asio::awaitable<code> send_not_found(
+    peer_session& peer,
+    domain::message::not_found const& not_found);
+
+// -----------------------------------------------------------------------------
+// Message Parsing Helpers
+// -----------------------------------------------------------------------------
+
+/// Parse a getheaders message from raw bytes
+[[nodiscard]]
+KN_API std::expected<domain::message::get_headers, code> parse_getheaders(
+    raw_message const& raw,
+    uint32_t version);
+
+/// Parse a getdata message from raw bytes
+[[nodiscard]]
+KN_API std::expected<domain::message::get_data, code> parse_getdata(
+    raw_message const& raw,
+    uint32_t version);
+
+/// Parse an inventory message from raw bytes
+[[nodiscard]]
+KN_API std::expected<domain::message::inventory, code> parse_inventory(
+    raw_message const& raw,
+    uint32_t version);
+
+/// Parse a headers message from raw bytes
+[[nodiscard]]
+KN_API std::expected<domain::message::headers, code> parse_headers(
+    raw_message const& raw,
+    uint32_t version);
+
+/// Parse a block message from raw bytes
+[[nodiscard]]
+KN_API std::expected<domain::message::block, code> parse_block(
+    raw_message const& raw,
+    uint32_t version);
+
+/// Parse a transaction message from raw bytes
+[[nodiscard]]
+KN_API std::expected<domain::message::transaction, code> parse_transaction(
+    raw_message const& raw,
+    uint32_t version);
+
+// -----------------------------------------------------------------------------
+// Message Loop Handler
+// -----------------------------------------------------------------------------
+
+/// Message handler callback type
+/// Return true to continue processing, false to stop
+using message_handler = std::function<::asio::awaitable<bool>(raw_message const&)>;
+
+/// Run a message processing loop
+/// Receives messages and dispatches to handler until stopped
+/// @param peer The peer session
+/// @param handler Callback for each message
+/// @return Error code when loop terminates
+[[nodiscard]]
+KN_API ::asio::awaitable<code> run_message_loop(
+    peer_session& peer,
+    message_handler handler);
 
 } // namespace kth::network
 

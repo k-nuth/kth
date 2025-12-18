@@ -11,7 +11,6 @@
 #include <kth/infrastructure/utility/thread.hpp>
 
 #if ! defined(__EMSCRIPTEN__)
-#include <kth/infrastructure/utility/threadpool.hpp>
 #endif
 
 #include <utility>

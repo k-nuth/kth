@@ -7,9 +7,11 @@
 
 // #include <kth/infrastructure.hpp>
 #include <kth/infrastructure/log/source.hpp>
+#include <spdlog/spdlog.h>
 
 namespace kth::database {
 
+//TODO: unordered_flat_map o concurrent_flat_map (necesitamos thread safety?)
 using utxo_pool_t = std::unordered_map<domain::chain::point, utxo_entry>;
 
 template <typename Clock>
@@ -53,12 +55,16 @@ bool internal_database_basis<Clock>::create() {
         return false;
     }
 
+    ret = create_height_properties();
+    if ( ! ret ) {
+        return false;
+    }
+
     return true;
 }
 
 template <typename Clock>
 bool internal_database_basis<Clock>::create_db_mode_property() {
-
     KTH_DB_txn* db_txn;
     auto res = kth_db_txn_begin(env_, NULL, 0, &db_txn);
     if (res != KTH_DB_SUCCESS) {
@@ -84,8 +90,144 @@ bool internal_database_basis<Clock>::create_db_mode_property() {
     return true;
 }
 
+template <typename Clock>
+bool internal_database_basis<Clock>::create_height_properties() {
+    KTH_DB_txn* db_txn;
+    auto res = kth_db_txn_begin(env_, NULL, 0, &db_txn);
+    if (res != KTH_DB_SUCCESS) {
+        return false;
+    }
+
+    // Initialize last_header_height to 0
+    uint32_t initial_height = 0;
+    property_code header_prop = property_code::last_header_height;
+    auto header_key = kth_db_make_value(sizeof(header_prop), &header_prop);
+    auto header_value = kth_db_make_value(sizeof(initial_height), &initial_height);
+
+    res = kth_db_put(db_txn, dbi_properties_, &header_key, &header_value, KTH_DB_NOOVERWRITE);
+    if (res != KTH_DB_SUCCESS) {
+        spdlog::error("[database] Failed saving last_header_height in DB Properties [create_height_properties] {}", static_cast<int32_t>(res));
+        kth_db_txn_abort(db_txn);
+        return false;
+    }
+
+    // Initialize last_block_height to 0
+    property_code block_prop = property_code::last_block_height;
+    auto block_key = kth_db_make_value(sizeof(block_prop), &block_prop);
+    auto block_value = kth_db_make_value(sizeof(initial_height), &initial_height);
+
+    res = kth_db_put(db_txn, dbi_properties_, &block_key, &block_value, KTH_DB_NOOVERWRITE);
+    if (res != KTH_DB_SUCCESS) {
+        spdlog::error("[database] Failed saving last_block_height in DB Properties [create_height_properties] {}", static_cast<int32_t>(res));
+        kth_db_txn_abort(db_txn);
+        return false;
+    }
+
+    res = kth_db_txn_commit(db_txn);
+    if (res != KTH_DB_SUCCESS) {
+        return false;
+    }
+
+    return true;
+}
+
 #endif // ! defined(KTH_DB_READONLY)
 
+// =============================================================================
+// Height Properties - Get/Set
+// =============================================================================
+
+template <typename Clock>
+std::expected<uint32_t, result_code> internal_database_basis<Clock>::get_property_height(property_code prop, KTH_DB_txn* db_txn) const {
+    auto key = kth_db_make_value(sizeof(prop), &prop);
+
+    KTH_DB_val value;
+    auto res = kth_db_get(db_txn, dbi_properties_, &key, &value);
+    if (res == KTH_DB_NOTFOUND) {
+        return std::unexpected(result_code::key_not_found);
+    }
+    if (res != KTH_DB_SUCCESS) {
+        return std::unexpected(result_code::other);
+    }
+
+    return *static_cast<uint32_t*>(kth_db_get_data(value));
+}
+
+template <typename Clock>
+std::expected<std::pair<uint32_t, uint32_t>, result_code> internal_database_basis<Clock>::get_last_heights() const {
+    KTH_DB_txn* db_txn;
+    auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
+    if (res != KTH_DB_SUCCESS) {
+        return std::unexpected(result_code::other);
+    }
+
+    auto header_result = get_property_height(property_code::last_header_height, db_txn);
+    if ( ! header_result) {
+        kth_db_txn_commit(db_txn);
+        return std::unexpected(header_result.error());
+    }
+
+    auto block_result = get_property_height(property_code::last_block_height, db_txn);
+    if ( ! block_result) {
+        kth_db_txn_commit(db_txn);
+        return std::unexpected(block_result.error());
+    }
+
+    if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
+        return std::unexpected(result_code::other);
+    }
+
+    return std::pair{*header_result, *block_result};
+}
+
+#if ! defined(KTH_DB_READONLY)
+
+template <typename Clock>
+result_code internal_database_basis<Clock>::set_property_height(property_code prop, uint32_t height) {
+    KTH_DB_txn* db_txn;
+    auto res = kth_db_txn_begin(env_, NULL, 0, &db_txn);
+    if (res != KTH_DB_SUCCESS) {
+        return result_code::other;
+    }
+
+    auto result = set_property_height(prop, height, db_txn);
+    if (result != result_code::success) {
+        kth_db_txn_abort(db_txn);
+        return result;
+    }
+
+    if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
+        return result_code::other;
+    }
+
+    return result_code::success;
+}
+
+template <typename Clock>
+result_code internal_database_basis<Clock>::set_property_height(property_code prop, uint32_t height, KTH_DB_txn* db_txn) {
+    auto key = kth_db_make_value(sizeof(prop), &prop);
+    auto value = kth_db_make_value(sizeof(height), &height);
+
+    auto res = kth_db_put(db_txn, dbi_properties_, &key, &value, 0);  // 0 = overwrite if exists
+    if (res != KTH_DB_SUCCESS) {
+        spdlog::error("[database] Failed updating height property in DB Properties [set_property_height] {}", static_cast<int32_t>(res));
+        return result_code::other;
+    }
+
+    return result_code::success;
+}
+
+template <typename Clock>
+result_code internal_database_basis<Clock>::set_last_header_height(uint32_t height) {
+    return set_property_height(property_code::last_header_height, height);
+}
+
+template <typename Clock>
+result_code internal_database_basis<Clock>::set_last_block_height(uint32_t height) {
+    return set_property_height(property_code::last_block_height, height);
+}
+
+#endif // ! defined(KTH_DB_READONLY)
 
 template <typename Clock>
 bool internal_database_basis<Clock>::open() {
@@ -154,10 +296,10 @@ bool internal_database_basis<Clock>::verify_db_mode_property() const {
 template <typename Clock>
 bool internal_database_basis<Clock>::close() {
     if (db_opened_) {
-
-        //TODO(fernando): check sync
-        //Force synchronous flush (use with KTH_DB_NOSYNC or MDB_NOMETASYNC, with other flags do nothing)
+        // Force synchronous flush (use with KTH_DB_NOSYNC or MDB_NOMETASYNC)
         kth_db_env_sync(env_, true);
+
+        // Close all DBIs before closing the environment
         kth_db_dbi_close(env_, dbi_block_header_);
         kth_db_dbi_close(env_, dbi_block_header_by_hash_);
         kth_db_dbi_close(env_, dbi_utxo_);
@@ -177,6 +319,7 @@ bool internal_database_basis<Clock>::close() {
             kth_db_dbi_close(env_, dbi_spend_db_);
             kth_db_dbi_close(env_, dbi_transaction_unconfirmed_db_);
         }
+
         db_opened_ = false;
     }
 
@@ -245,168 +388,182 @@ result_code internal_database_basis<Clock>::push_block(domain::chain::block cons
 
 
 template <typename Clock>
-utxo_entry internal_database_basis<Clock>::get_utxo(domain::chain::output_point const& point, KTH_DB_txn* db_txn) const {
-
+std::expected<utxo_entry, result_code> internal_database_basis<Clock>::get_utxo(domain::chain::output_point const& point, KTH_DB_txn* db_txn) const {
     auto keyarr = point.to_data(KTH_INTERNAL_DB_WIRE);
     auto key = kth_db_make_value(keyarr.size(), keyarr.data());
     KTH_DB_val value;
 
     auto res0 = kth_db_get(db_txn, dbi_utxo_, &key, &value);
+    if (res0 == KTH_DB_NOTFOUND) {
+        return std::unexpected(result_code::key_not_found);
+    }
     if (res0 != KTH_DB_SUCCESS) {
-        return utxo_entry{};
+        return std::unexpected(result_code::other);
     }
 
     auto data = db_value_to_data_chunk(value);
     byte_reader reader(data);
     auto res = utxo_entry::from_data(reader);
     if ( ! res) {
-        return utxo_entry{};
+        return std::unexpected(result_code::other);
     }
     return *res;
 }
 
 template <typename Clock>
-utxo_entry internal_database_basis<Clock>::get_utxo(domain::chain::output_point const& point) const {
-
+std::expected<utxo_entry, result_code> internal_database_basis<Clock>::get_utxo(domain::chain::output_point const& point) const {
     KTH_DB_txn* db_txn;
     auto res0 = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (res0 != KTH_DB_SUCCESS) {
         spdlog::error("[database] Error begining LMDB Transaction [get_utxo] {}", res0);
-        return {};
+        return std::unexpected(result_code::other);
     }
 
     auto ret = get_utxo(point, db_txn);
 
-    res0 = kth_db_txn_commit(db_txn);
-    if (res0 != KTH_DB_SUCCESS) {
+    if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
         spdlog::error("[database] Error commiting LMDB Transaction [get_utxo] {}", res0);
-        return {};
+        return std::unexpected(result_code::other);
     }
 
     return ret;
 }
 
+// Deprecated: use get_last_heights() instead
+// template <typename Clock>
+// result_code internal_database_basis<Clock>::get_last_height(uint32_t& out_height) const {
+//     KTH_DB_txn* db_txn;
+//     auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
+//     if (res != KTH_DB_SUCCESS) {
+//         return result_code::other;
+//     }
+//
+//     KTH_DB_cursor* cursor;
+//     if (kth_db_cursor_open(db_txn, dbi_block_header_, &cursor) != KTH_DB_SUCCESS) {
+//         kth_db_txn_commit(db_txn);
+//         return result_code::other;
+//     }
+//
+//     KTH_DB_val key;
+//     int rc;
+//     if ((rc = kth_db_cursor_get(cursor, &key, nullptr, KTH_DB_LAST)) != KTH_DB_SUCCESS) {
+//         return result_code::db_empty;
+//     }
+//
+//     // assert kth_db_get_size(key) == 4;
+//     out_height = *static_cast<uint32_t*>(kth_db_get_data(key));
+//
+//     kth_db_cursor_close(cursor);
+//
+//     // kth_db_txn_abort(db_txn);
+//     if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
+//         return result_code::other;
+//     }
+//
+//     return result_code::success;
+// }
+
 template <typename Clock>
-result_code internal_database_basis<Clock>::get_last_height(uint32_t& out_height) const {
-    KTH_DB_txn* db_txn;
-    auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
-    if (res != KTH_DB_SUCCESS) {
-        return result_code::other;
-    }
-
-    KTH_DB_cursor* cursor;
-    if (kth_db_cursor_open(db_txn, dbi_block_header_, &cursor) != KTH_DB_SUCCESS) {
-        kth_db_txn_commit(db_txn);
-        return result_code::other;
-    }
-
-    KTH_DB_val key;
-    int rc;
-    if ((rc = kth_db_cursor_get(cursor, &key, nullptr, KTH_DB_LAST)) != KTH_DB_SUCCESS) {
-        return result_code::db_empty;
-    }
-
-    // assert kth_db_get_size(key) == 4;
-    out_height = *static_cast<uint32_t*>(kth_db_get_data(key));
-
-    kth_db_cursor_close(cursor);
-
-    // kth_db_txn_abort(db_txn);
-    if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
-        return result_code::other;
-    }
-
-    return result_code::success;
-}
-
-template <typename Clock>
-std::pair<domain::chain::header, uint32_t> internal_database_basis<Clock>::get_header(hash_digest const& hash) const {
+std::expected<std::pair<domain::chain::header, uint32_t>, result_code> internal_database_basis<Clock>::get_header(hash_digest const& hash) const {
     auto key  = kth_db_make_value(hash.size(), const_cast<hash_digest&>(hash).data());
 
     KTH_DB_txn* db_txn;
     auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (res != KTH_DB_SUCCESS) {
-        return {};
+        return std::unexpected(result_code::other);
     }
 
     KTH_DB_val value;
-    if (kth_db_get(db_txn, dbi_block_header_by_hash_, &key, &value) != KTH_DB_SUCCESS) {
+    auto res0 = kth_db_get(db_txn, dbi_block_header_by_hash_, &key, &value);
+    if (res0 == KTH_DB_NOTFOUND) {
         kth_db_txn_commit(db_txn);
-        // kth_db_txn_abort(db_txn);
-        return {};
+        return std::unexpected(result_code::key_not_found);
+    }
+    if (res0 != KTH_DB_SUCCESS) {
+        kth_db_txn_commit(db_txn);
+        return std::unexpected(result_code::other);
     }
 
     // assert kth_db_get_size(value) == 4;
     auto height = *static_cast<uint32_t*>(kth_db_get_data(value));
 
-    auto header = get_header(height, db_txn);
+    auto header_result = get_header(height, db_txn);
 
     if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
-        return {};
+        return std::unexpected(result_code::other);
     }
 
-    return {header, height};
+    if ( ! header_result) {
+        return std::unexpected(header_result.error());
+    }
+
+    return std::make_pair(*header_result, height);
 }
 
 template <typename Clock>
-domain::chain::header internal_database_basis<Clock>::get_header(uint32_t height) const {
+std::expected<domain::chain::header, result_code> internal_database_basis<Clock>::get_header(uint32_t height) const {
     KTH_DB_txn* db_txn;
     auto ret1 = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (ret1 != KTH_DB_SUCCESS) {
-        return {};
+        return std::unexpected(result_code::other);
     }
 
-    auto ret2 = get_header(height, db_txn);
+    auto result = get_header(height, db_txn);
 
     if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
-        return {};
+        return std::unexpected(result_code::other);
     }
 
-    return ret2;
+    return result;
 }
 
 template <typename Clock>
-std::optional<header_with_abla_state_t> internal_database_basis<Clock>::get_header_and_abla_state(uint32_t height) const {
+std::expected<header_with_abla_state_t, result_code> internal_database_basis<Clock>::get_header_and_abla_state(uint32_t height) const {
     KTH_DB_txn* db_txn;
     auto zzz = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (zzz != KTH_DB_SUCCESS) {
-        return {};
+        return std::unexpected(result_code::other);
     }
 
-    auto res = get_header_and_abla_state(height, db_txn);
+    auto result = get_header_and_abla_state(height, db_txn);
 
     if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
-        return {};
+        return std::unexpected(result_code::other);
     }
 
-    return res;
+    return result;
 }
 
 template <typename Clock>
-domain::chain::header::list internal_database_basis<Clock>::get_headers(uint32_t from, uint32_t to) const {
+std::expected<domain::chain::header::list, result_code> internal_database_basis<Clock>::get_headers(uint32_t from, uint32_t to) const {
     // precondition: from <= to
     domain::chain::header::list list;
 
     KTH_DB_txn* db_txn;
     auto zzz = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (zzz != KTH_DB_SUCCESS) {
-        return list;
+        return std::unexpected(result_code::other);
     }
 
     KTH_DB_cursor* cursor;
     if (kth_db_cursor_open(db_txn, dbi_block_header_, &cursor) != KTH_DB_SUCCESS) {
         kth_db_txn_commit(db_txn);
-        return list;
+        return std::unexpected(result_code::other);
     }
 
     auto key = kth_db_make_value(sizeof(from), &from);
 
     KTH_DB_val value;
     int rc = kth_db_cursor_get(cursor, &key, &value, KTH_DB_SET);
+    if (rc == KTH_DB_NOTFOUND) {
+        kth_db_cursor_close(cursor);
+        kth_db_txn_commit(db_txn);
+        return std::unexpected(result_code::key_not_found);
+    }
     if (rc != KTH_DB_SUCCESS) {
         kth_db_cursor_close(cursor);
         kth_db_txn_commit(db_txn);
-        return list;
+        return std::unexpected(result_code::other);
     }
 
     auto data = db_value_to_data_chunk(value);
@@ -436,25 +593,25 @@ domain::chain::header::list internal_database_basis<Clock>::get_headers(uint32_t
 
 template <typename Clock>
 result_code internal_database_basis<Clock>::pop_block(domain::chain::block& out_block) {
-    uint32_t height;
-
     //TODO: (Mario) use only one transaction ?
 
     //TODO: (Mario) add overload with tx
     // The blockchain is empty (nothing to pop, not even genesis).
-    auto res = get_last_height(height);
-    if (res != result_code::success ) {
-        return res;
+    auto heights_result = get_last_heights();
+    if ( ! heights_result) {
+        return heights_result.error();
     }
+    auto const height = heights_result->first;  // header_height
 
     //TODO: (Mario) add overload with tx
     // This should never become invalid if this call is protected.
-    out_block = get_block_reorg(height);
-    if ( ! out_block.is_valid()) {
-        return result_code::key_not_found;
+    auto block_result = get_block_reorg(height);
+    if ( ! block_result) {
+        return block_result.error();
     }
+    out_block = std::move(*block_result);
 
-    res = remove_block(out_block, height);
+    auto res = remove_block(out_block, height);
     if (res != result_code::success) {
         return res;
     }
@@ -465,17 +622,21 @@ result_code internal_database_basis<Clock>::pop_block(domain::chain::block& out_
 template <typename Clock>
 result_code internal_database_basis<Clock>::prune() {
     //TODO: (Mario) add overload with tx
-    uint32_t last_height;
-    auto res = get_last_height(last_height);
-
-    if (res == result_code::db_empty) return result_code::no_data_to_prune;
-    if (res != result_code::success) return res;
+    auto heights_result = get_last_heights();
+    if ( ! heights_result) {
+        auto const err = heights_result.error();
+        if (err == result_code::db_empty) return result_code::no_data_to_prune;
+        return err;
+    }
+    auto const last_height = heights_result->first;  // header_height
     if (last_height < reorg_pool_limit_) return result_code::no_data_to_prune;
 
-    uint32_t first_height;
-    res = get_first_reorg_block_height(first_height);
-    if (res == result_code::db_empty) return result_code::no_data_to_prune;
-    if (res != result_code::success) return res;
+    auto first_height_result = get_first_reorg_block_height();
+    if ( ! first_height_result) {
+        if (first_height_result.error() == result_code::db_empty) return result_code::no_data_to_prune;
+        return first_height_result.error();
+    }
+    auto const first_height = *first_height_result;
     if (first_height > last_height) return result_code::db_corrupt;
 
     auto reorg_count = last_height - first_height + 1;
@@ -490,7 +651,7 @@ result_code internal_database_basis<Clock>::prune() {
         return result_code::other;
     }
 
-    res = prune_reorg_block(amount_to_delete, db_txn);
+    auto res = prune_reorg_block(amount_to_delete, db_txn);
     if (res != result_code::success) {
         kth_db_txn_abort(db_txn);
         return res;
@@ -550,20 +711,20 @@ result_code internal_database_basis<Clock>::insert_reorg_into_pool(utxo_pool_t& 
 }
 
 template <typename Clock>
-std::pair<result_code, utxo_pool_t> internal_database_basis<Clock>::get_utxo_pool_from(uint32_t from, uint32_t to) const {
+std::expected<utxo_pool_t, result_code> internal_database_basis<Clock>::get_utxo_pool_from(uint32_t from, uint32_t to) const {
     // precondition: from <= to
     utxo_pool_t pool;
 
     KTH_DB_txn* db_txn;
     auto zzz = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (zzz != KTH_DB_SUCCESS) {
-        return {result_code::other, pool};
+        return std::unexpected(result_code::other);
     }
 
     KTH_DB_cursor* cursor;
     if (kth_db_cursor_open(db_txn, dbi_reorg_index_, &cursor) != KTH_DB_SUCCESS) {
         kth_db_txn_commit(db_txn);
-        return {result_code::other, pool};
+        return std::unexpected(result_code::other);
     }
 
     auto key = kth_db_make_value(sizeof(from), &from);
@@ -574,31 +735,31 @@ std::pair<result_code, utxo_pool_t> internal_database_basis<Clock>::get_utxo_poo
     if (rc != KTH_DB_SUCCESS) {
         kth_db_cursor_close(cursor);
         kth_db_txn_commit(db_txn);
-        return {result_code::key_not_found, pool};
+        return std::unexpected(result_code::key_not_found);
     }
 
     auto current_height = *static_cast<uint32_t*>(kth_db_get_data(key));
     if (current_height < from) {
         kth_db_cursor_close(cursor);
         kth_db_txn_commit(db_txn);
-        return {result_code::other, pool};
+        return std::unexpected(result_code::other);
     }
     // if (current_height > from) {
     //     kth_db_cursor_close(cursor);
     //     kth_db_txn_commit(db_txn);
-    //     return {result_code::other, pool};
+    //     return std::unexpected(result_code::other);
     // }
     if (current_height > to) {
         kth_db_cursor_close(cursor);
         kth_db_txn_commit(db_txn);
-        return {result_code::other, pool};
+        return std::unexpected(result_code::other);
     }
 
     auto res = insert_reorg_into_pool(pool, value, db_txn);
     if (res != result_code::success) {
         kth_db_cursor_close(cursor);
         kth_db_txn_commit(db_txn);
-        return {res, pool};
+        return std::unexpected(res);
     }
 
     while ((rc = kth_db_cursor_get(cursor, &key, &value, KTH_DB_NEXT)) == KTH_DB_SUCCESS) {
@@ -606,24 +767,24 @@ std::pair<result_code, utxo_pool_t> internal_database_basis<Clock>::get_utxo_poo
         if (current_height > to) {
             kth_db_cursor_close(cursor);
             kth_db_txn_commit(db_txn);
-            return {result_code::other, pool};
+            return std::unexpected(result_code::other);
         }
 
         res = insert_reorg_into_pool(pool, value, db_txn);
         if (res != result_code::success) {
             kth_db_cursor_close(cursor);
             kth_db_txn_commit(db_txn);
-            return {res, pool};
+            return std::unexpected(res);
         }
     }
 
     kth_db_cursor_close(cursor);
 
     if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
-        return {result_code::other, pool};
+        return std::unexpected(result_code::other);
     }
 
-    return {result_code::success, pool};
+    return pool;
 }
 
 #if ! defined(KTH_DB_READONLY)
@@ -678,11 +839,15 @@ size_t internal_database_basis<Clock>::adjust_db_size(size_t size) const {
 
 template <typename Clock>
 bool internal_database_basis<Clock>::create_and_open_environment() {
+    spdlog::debug("[internal_database] create_and_open_environment() - starting");
+    spdlog::default_logger()->flush();
 
     if (kth_db_env_create(&env_) != KTH_DB_SUCCESS) {
         return false;
     }
     env_created_ = true;
+    spdlog::debug("[internal_database] create_and_open_environment() - env created, env_={}", (void*)env_);
+    spdlog::default_logger()->flush();
 
     // TODO(fernando): see what to do with mdb_env_set_maxreaders ----------------------------------------------
     // int threads = tools::get_max_concurrency();
@@ -773,13 +938,19 @@ template <typename Clock>
 bool internal_database_basis<Clock>::open_databases() {
     KTH_DB_txn* db_txn;
 
+    spdlog::debug("[internal_database] open_databases() - starting, thread_id={}", std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    spdlog::default_logger()->flush();
+
     auto res = kth_db_txn_begin(env_, NULL, KTH_DB_CONDITIONAL_READONLY, &db_txn);
     if (res != KTH_DB_SUCCESS) {
+        spdlog::error("[internal_database] open_databases() - failed to begin transaction: {}", res);
         return false;
     }
 
     auto open_db = [&](auto const& db_name, uint32_t flags, KTH_DB_dbi* dbi){
         auto result = kth_db_dbi_open(db_txn, db_name, flags, dbi);
+        spdlog::debug("[internal_database] open_databases() - opened {}: result={}, dbi={}", db_name, result, *dbi);
+        spdlog::default_logger()->flush();
         if (result != KTH_DB_SUCCESS) {
             kth_db_txn_abort(db_txn);
         }
@@ -809,7 +980,10 @@ bool internal_database_basis<Clock>::open_databases() {
         mdb_set_dupsort(db_txn, dbi_history_db_, compare_uint64);
     }
 
-    db_opened_ = kth_db_txn_commit(db_txn) == KTH_DB_SUCCESS;
+    auto commit_res = kth_db_txn_commit(db_txn);
+    db_opened_ = commit_res == KTH_DB_SUCCESS;
+    spdlog::debug("[internal_database] open_databases() - commit result={}, db_opened_={}", commit_res, db_opened_);
+    spdlog::default_logger()->flush();
     return db_opened_;
 }
 
@@ -978,6 +1152,12 @@ result_code internal_database_basis<Clock>::push_block(domain::chain::block cons
         return res;
     }
 
+    // Update last_block_height property
+    auto height_res = set_property_height(property_code::last_block_height, height, db_txn);
+    if (height_res != result_code::success) {
+        return height_res;
+    }
+
     if (res == result_code::success_duplicate_coinbase)
         return res;
 
@@ -1017,7 +1197,12 @@ result_code internal_database_basis<Clock>::push_genesis(domain::chain::block co
         res = insert_block(block, 0, 0, db_txn);
     }
 
-    return res;
+    if (res != result_code::success) {
+        return res;
+    }
+
+    // Update last_block_height property for genesis block
+    return set_property_height(property_code::last_block_height, 0, db_txn);
 }
 
 template <typename Clock>
@@ -1145,6 +1330,18 @@ result_code internal_database_basis<Clock>::remove_block(domain::chain::block co
         }
     }
 
+    // Update last_block_height and last_header_height to height - 1 (new chain tip)
+    auto const new_height = height > 0 ? height - 1 : 0;
+    res = set_property_height(property_code::last_block_height, new_height, db_txn);
+    if (res != result_code::success) {
+        return res;
+    }
+
+    res = set_property_height(property_code::last_header_height, new_height, db_txn);
+    if (res != result_code::success) {
+        return res;
+    }
+
     return result_code::success;
 }
 
@@ -1175,3 +1372,4 @@ result_code internal_database_basis<Clock>::remove_block(domain::chain::block co
 } // namespace kth::database
 
 #endif // KTH_DATABASE_INTERNAL_DATABASE_IPP_
+
