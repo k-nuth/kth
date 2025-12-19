@@ -61,7 +61,13 @@ executor::executor(kth::node::configuration const& config, bool stdout_enabled /
     auto& network = config_.network;
     auto const verbose = network.verbose;
 
-    network.user_agent = get_user_agent();
+    // Build user agent features list
+    std::vector<std::string> features;
+#if defined(KTH_CURRENCY_BCH)
+    features.push_back(format_eb(config_.chain.default_consensus_block_size));
+#endif
+
+    network.user_agent = get_user_agent(features);
 
     kth::log::initialize(network.debug_file.string(), network.error_file.string(), stdout_enabled, verbose);
 #endif // ! defined(__EMSCRIPTEN__)
@@ -83,6 +89,10 @@ void executor::print_version(std::string_view extra) {
 }
 
 #if ! defined(KTH_DB_READONLY)
+// TODO(fernando): This function inserts the genesis block directly into the DB,
+// bypassing the blockchain layer (header_organizer/block_chain). When we implement
+// persistence for header_index, we should reconsider this design - ideally genesis
+// should be added through the same path as other headers for consistency.
 bool executor::init_directory(error_code& ec) {
     auto const& directory = config_.database.directory;
 
@@ -367,7 +377,6 @@ void executor::initialize_output(std::string_view extra, db_mode_type db_mode) {
     }
 
     spdlog::info("[node] {}", fmt::format(KTH_VERSION_MESSAGE_INIT, kth::version));
-    spdlog::info("[node] {}", extra);
     spdlog::info("[node] {}", fmt::format(KTH_CRYPTOCURRENCY_INIT, KTH_CURRENCY_SYMBOL_STR, KTH_CURRENCY_STR));
     spdlog::info("[node] {}", fmt::format(KTH_MICROARCHITECTURE_INIT, KTH_MICROARCHITECTURE_STR));
     spdlog::info("[node] {}", fmt::format(KTH_MARCH_EXTS_INIT, march_names()));
