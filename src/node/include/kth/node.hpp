@@ -22,7 +22,6 @@
 #include <kth/node/parser.hpp>
 #include <kth/node/settings.hpp>
 #include <kth/node/sync_session.hpp>
-#include <kth/node/version.hpp>
 #include <kth/node/executor/executor.hpp>
 
 

@@ -16,6 +16,7 @@
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
 #include <kth/network/define.hpp>
+#include <kth/network/net_permissions.hpp>
 #include <kth/network/settings.hpp>
 
 // Asio includes for coroutines
@@ -71,7 +72,10 @@ public:
     using inbound_channel = concurrent_channel<raw_message>;
 
     /// Construct a peer session from an established socket
-    peer_session(socket_type socket, settings const& settings);
+    /// @param socket The connected socket
+    /// @param settings Network settings
+    /// @param inbound True if this is an inbound connection (we accepted it)
+    peer_session(socket_type socket, settings const& settings, bool inbound = false);
 
     /// Destructor - ensures clean shutdown
     ~peer_session();
@@ -152,6 +156,11 @@ public:
     [[nodiscard]]
     infrastructure::config::authority const& authority() const;
 
+    /// Get formatted string with authority and user agent (for logging)
+    /// Returns "[ip:port user_agent]" or "[ip:port]" if user agent not yet known
+    [[nodiscard]]
+    std::string authority_with_agent() const;
+
     /// Get/set the negotiated protocol version
     [[nodiscard]]
     uint32_t negotiated_version() const;
@@ -162,6 +171,10 @@ public:
     domain::message::version::const_ptr peer_version() const;
     void set_peer_version(domain::message::version::const_ptr value);
 
+    /// Get short user agent (e.g., "BCHN:28.0.1") - computed once from peer_version
+    [[nodiscard]]
+    std::string const& short_user_agent() const;
+
     /// Get/set the nonce for this connection
     [[nodiscard]]
     uint64_t nonce() const;
@@ -171,6 +184,53 @@ public:
     [[nodiscard]]
     bool notify() const;
     void set_notify(bool value);
+
+    /// Check if this is an inbound connection (peer connected to us)
+    [[nodiscard]]
+    bool is_inbound() const;
+
+    /// Check if this is an outbound connection (we connected to peer)
+    /// BCHN prefers outbound peers for sync (fPreferredDownload)
+    [[nodiscard]]
+    bool is_outbound() const;
+
+    /// Check if peer is a full node (has NODE_NETWORK or NODE_NETWORK_LIMITED service)
+    /// BCHN: fClient = !(services & NODE_NETWORK) && !(services & NODE_NETWORK_LIMITED)
+    [[nodiscard]]
+    bool is_full_node() const;
+
+    /// Check if peer is a light client (no NODE_NETWORK service)
+    [[nodiscard]]
+    bool is_client() const;
+
+    /// Check if this is a one-shot connection (connect, get addrs, disconnect)
+    [[nodiscard]]
+    bool is_one_shot() const;
+
+    /// Mark this as a one-shot connection
+    void set_one_shot(bool value);
+
+    /// Check if peer has a specific permission
+    [[nodiscard]]
+    bool has_permission(permission_flags flag) const;
+
+    /// Get all permission flags for this peer
+    [[nodiscard]]
+    permission_flags permissions() const;
+
+    /// Set permission flags for this peer
+    void set_permissions(permission_flags flags);
+
+    /// Add a permission flag
+    void add_permission(permission_flags flag);
+
+    /// Remove a permission flag
+    void clear_permission(permission_flags flag);
+
+    /// Check if this peer is preferred for download (BCHN fPreferredDownload)
+    /// fPreferredDownload = (!fInbound || HasPermission(PF_NOBAN)) && !fOneShot && !fClient
+    [[nodiscard]]
+    bool is_preferred_download() const;
 
 private:
     // -------------------------------------------------------------------------
@@ -234,6 +294,14 @@ private:
     std::atomic<uint64_t> nonce_{0};
     std::atomic<bool> notify_{true};
     kth::atomic<domain::message::version::const_ptr> peer_version_;
+    std::string short_user_agent_;  // Computed once from peer_version_ for logging
+
+    // Connection direction (set at construction, never changes)
+    bool const inbound_connection_;
+
+    // Connection flags (can be set after construction)
+    std::atomic<bool> one_shot_{false};
+    std::atomic<uint32_t> permission_flags_{uint32_t(permission_flags::none)};
 
     // Buffers (only accessed from read_loop, no synchronization needed)
     data_chunk heading_buffer_;
