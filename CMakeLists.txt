@@ -69,6 +69,13 @@ if (KTH_WITH_JEMALLOC)
     message(STATUS "Knuth: jemalloc enabled")
 endif()
 
+# Stats/profiling support
+option(KTH_WITH_STATS "Enable performance statistics collection" OFF)
+if (KTH_WITH_STATS)
+    add_definitions(-DKTH_WITH_STATS)
+    message(STATUS "Knuth: stats/profiling enabled")
+endif()
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/ci_utils/cmake)
 include(KnuthTools)
 
