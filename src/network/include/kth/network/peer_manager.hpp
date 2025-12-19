@@ -83,6 +83,11 @@ public:
     /// @return true if exists
     ::asio::awaitable<bool> exists_by_authority(infrastructure::config::authority const& authority) const;
 
+    /// Check if a peer with the given IP exists (ignores port)
+    /// @param ip The IP address to check
+    /// @return true if exists
+    ::asio::awaitable<bool> exists_by_ip(::asio::ip::address const& ip) const;
+
     /// Find a peer by nonce
     /// @param nonce The nonce to find
     /// @return The peer session or nullptr if not found

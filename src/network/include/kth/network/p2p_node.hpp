@@ -12,11 +12,13 @@
 #include <string>
 #include <vector>
 
+#include <boost/unordered/concurrent_flat_set.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
 
+#include <kth/network/banlist.hpp>
 #include <kth/network/define.hpp>
 #include <kth/network/hosts.hpp>
 #include <kth/network/peer_manager.hpp>
@@ -227,6 +229,26 @@ public:
     [[nodiscard]]
     message_dispatcher& dispatcher();
 
+    // Banlist management
+    // -------------------------------------------------------------------------
+
+    /// Get the banlist
+    [[nodiscard]]
+    banlist& bans();
+
+    [[nodiscard]]
+    banlist const& bans() const;
+
+    /// Ban a peer (convenience method)
+    void ban_peer(
+        peer_session::ptr const& peer,
+        std::chrono::seconds duration = banlist::default_ban_duration,
+        ban_reason reason = ban_reason::node_misbehaving);
+
+    /// Check if an address is banned
+    [[nodiscard]]
+    bool is_banned(infrastructure::config::authority const& authority) const;
+
 private:
     // Internal coroutines
     ::asio::awaitable<void> run_seeding();
@@ -247,6 +269,11 @@ private:
     threadpool pool_;
     peer_manager manager_;
     hosts hosts_;
+    banlist banlist_;
+
+    // Track IPs currently being connected to (for deduplication)
+    // Prevents multiple simultaneous connection attempts to the same IP
+    boost::concurrent_flat_set<::asio::ip::address, salted_ip_hasher> pending_connections_;
 
     // Acceptor for inbound connections
     std::unique_ptr<::asio::ip::tcp::acceptor> acceptor_;

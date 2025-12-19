@@ -90,7 +90,7 @@ full_node::~full_node() {
     auto ec = co_await network_.start();
     if (ec != error::success) {
         spdlog::error("[node] Failure starting network: {}", ec.message());
-        chain_.stop();
+        (void)chain_.stop();
         co_return ec;
     }
 #endif
@@ -163,24 +163,38 @@ full_node::~full_node() {
             auto executor = co_await ::asio::this_coro::executor;
             ::asio::steady_timer timer(executor);
 
-            // Wait until we have at least one connected peer
-            while (!stopped() && network_.connection_count() == 0) {
-                timer.expires_after(std::chrono::milliseconds(500));
-                co_await timer.async_wait(::asio::use_awaitable);
-            }
+            constexpr auto retry_delay = std::chrono::seconds(10);
 
-            if (stopped()) {
-                co_return;
-            }
+            while (!stopped()) {
+                // Wait until we have at least one connected peer
+                while (!stopped() && network_.connection_count() == 0) {
+                    timer.expires_after(std::chrono::milliseconds(500));
+                    co_await timer.async_wait(::asio::use_awaitable);
+                }
 
-            spdlog::info("[node] Starting initial block sync...");
-            auto result = co_await sync_from_best_peer(chain_, network_, network_type_);
+                if (stopped()) {
+                    co_return;
+                }
 
-            if (result.error) {
-                spdlog::warn("[node] Initial sync failed: {}", result.error.message());
-            } else {
+                spdlog::info("[node] Starting initial block sync...");
+                auto result = co_await sync_from_best_peer(chain_, network_, network_type_);
+
+                if (result.error) {
+                    spdlog::warn("[node] Sync failed: {}, retrying in {}s...",
+                        result.error.message(), retry_delay.count());
+
+                    // Wait before retrying
+                    timer.expires_after(retry_delay);
+                    auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+                    if (ec) {
+                        co_return;  // Timer cancelled, node stopping
+                    }
+                    continue;
+                }
+
                 spdlog::info("[node] Initial sync complete: {} headers, {} blocks, height {}",
                     result.headers_received, result.blocks_received, result.final_height);
+                break;  // Sync successful, exit loop
             }
         }, ::asio::detached);
 #endif
