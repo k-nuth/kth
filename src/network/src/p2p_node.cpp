@@ -130,6 +130,29 @@ message_dispatcher& p2p_node::dispatcher() {
     return dispatcher_;
 }
 
+banlist& p2p_node::bans() {
+    return banlist_;
+}
+
+banlist const& p2p_node::bans() const {
+    return banlist_;
+}
+
+void p2p_node::ban_peer(
+    peer_session::ptr const& peer,
+    std::chrono::seconds duration,
+    ban_reason reason)
+{
+    if (peer) {
+        banlist_.ban(peer->authority(), duration, reason);
+        peer->stop(error::channel_stopped);
+    }
+}
+
+bool p2p_node::is_banned(infrastructure::config::authority const& authority) const {
+    return banlist_.is_banned(authority);
+}
+
 // =============================================================================
 // Message Dispatcher implementation
 // =============================================================================
@@ -137,7 +160,7 @@ message_dispatcher& p2p_node::dispatcher() {
 ::asio::awaitable<bool> message_dispatcher::dispatch(peer_session& peer, raw_message const& msg) {
     auto const& command = msg.heading.command();
 
-    spdlog::debug("[dispatcher] Dispatching '{}' from [{}]", command, peer.authority());
+    spdlog::debug("[dispatcher] Dispatching '{}' from [{}]", command, peer.authority_with_agent());
 
     // Look for specific handler
     auto it = handlers_.find(command);
@@ -162,7 +185,7 @@ message_dispatcher& p2p_node::dispatcher() {
     }
 
     // No handler - just continue
-    spdlog::trace("[dispatcher] Unhandled message '{}' from [{}]", command, peer.authority());
+    spdlog::trace("[dispatcher] Unhandled message '{}' from [{}]", command, peer.authority_with_agent());
     co_return true;
 }
 
@@ -212,6 +235,21 @@ awaitable_expected<peer_session::ptr> p2p_node::connect(
     }
 
     auto peer = *result;
+    auto const ip = peer->authority().asio_ip();
+
+    // Check if already connected to this IP
+    if (co_await manager_.exists_by_ip(ip)) {
+        spdlog::debug("[p2p_node] Already connected to IP {}, skipping", ip.to_string());
+        peer->stop();
+        co_return std::unexpected(error::address_in_use);
+    }
+
+    // Check banlist before proceeding
+    if (banlist_.is_banned(peer->authority())) {
+        spdlog::debug("[p2p_node] Rejecting connection to banned peer {}:{}", host, port);
+        peer->stop();
+        co_return std::unexpected(error::address_blocked);
+    }
 
     // Start the session's message pump
     ::asio::co_spawn(executor, peer->run(), ::asio::detached);
@@ -230,8 +268,9 @@ awaitable_expected<peer_session::ptr> p2p_node::connect(
         co_return std::unexpected(handshake_result.error());
     }
 
-    spdlog::info("[p2p_node] Handshake complete with {}:{}, version {}",
-        host, port, handshake_result->negotiated_version);
+    spdlog::info("[p2p_node] Handshake complete with {}:{}, version {}, {}",
+        host, port, handshake_result->negotiated_version,
+        handshake_result->peer_version->user_agent());
 
     // Add to peer manager
     auto ec = co_await manager_.add(peer);
@@ -499,6 +538,14 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
 
         // Handle the new connection in a separate coroutine
         ::asio::co_spawn(executor, [this, peer, executor]() -> ::asio::awaitable<void> {
+            // Check banlist before proceeding
+            if (banlist_.is_banned(peer->authority())) {
+                spdlog::debug("[p2p_node] Rejecting inbound connection from banned peer {}",
+                    peer->authority());
+                peer->stop();
+                co_return;
+            }
+
             // Start the session's message pump
             ::asio::co_spawn(executor, peer->run(), ::asio::detached);
 
@@ -516,8 +563,9 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
                 co_return;
             }
 
-            spdlog::info("[p2p_node] Inbound handshake complete from {}, version {}",
-                peer->authority(), handshake_result->negotiated_version);
+            spdlog::info("[p2p_node] Inbound handshake complete from {}, version {}, {}",
+                peer->authority(), handshake_result->negotiated_version,
+                handshake_result->peer_version->user_agent());
 
             // Add to peer manager
             auto ec = co_await manager_.add(peer);
@@ -640,12 +688,44 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
             std::vector<domain::message::network_address> addresses;
             addresses.reserve(batch_size);
 
-            for (size_t i = 0; i < batch_size && !stopped_; ++i) {
+            // Fetch addresses, filtering out duplicates and already-connected IPs
+            for (size_t attempts = 0; attempts < batch_size * 3 && addresses.size() < batch_size && !stopped_; ++attempts) {
                 domain::message::network_address addr;
                 auto ec = hosts_.fetch(addr);
                 if (ec) {
                     break;
                 }
+
+                auto const authority = infrastructure::config::authority(addr);
+                auto const ip = authority.asio_ip();
+
+                // Skip if already pending connection to this IP
+                if (pending_connections_.contains(ip)) {
+                    continue;
+                }
+
+                // Skip if already connected to this IP
+                if (co_await manager_.exists_by_ip(ip)) {
+                    continue;
+                }
+
+                // Skip if banned
+                if (banlist_.is_banned(ip)) {
+                    continue;
+                }
+
+                // Check for duplicate IP in current batch
+                bool duplicate = false;
+                for (auto const& existing : addresses) {
+                    if (infrastructure::config::authority(existing).asio_ip() == ip) {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                if (duplicate) {
+                    continue;
+                }
+
                 addresses.push_back(addr);
             }
 
@@ -655,19 +735,24 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
                 spdlog::debug("[p2p_node] Attempting {} parallel connections (need {}, have {})",
                     addresses.size(), needed, current_count);
 
-                // Launch connection attempts in parallel
-                std::vector<::asio::awaitable<void>> tasks;
-                tasks.reserve(addresses.size());
-
                 // Track successful connections with a shared atomic counter
                 auto success_count = std::make_shared<std::atomic<size_t>>(0);
 
                 for (auto const& addr : addresses) {
-                    auto task = [this, addr, success_count]() -> ::asio::awaitable<void> {
+                    auto const authority = infrastructure::config::authority(addr);
+                    auto const ip = authority.asio_ip();
+
+                    // Add to pending connections before spawning
+                    pending_connections_.insert(ip);
+
+                    auto task = [this, addr, ip, success_count]() -> ::asio::awaitable<void> {
                         auto const authority = infrastructure::config::authority(addr);
                         spdlog::trace("[p2p_node] Attempting connection to {}", authority);
 
                         auto result = co_await connect(authority.to_hostname(), authority.port());
+
+                        // Remove from pending connections when done
+                        pending_connections_.erase(ip);
 
                         if (!result) {
                             spdlog::trace("[p2p_node] Connection failed to {}: {}",
