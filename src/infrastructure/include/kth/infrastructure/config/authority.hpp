@@ -5,6 +5,8 @@
 #ifndef KTH_INFRASTUCTURE_CONFIG_AUTHORITY_HPP
 #define KTH_INFRASTUCTURE_CONFIG_AUTHORITY_HPP
 
+//TODO: Refactor
+
 #include <cstdint>
 #include <iostream>
 #include <string>

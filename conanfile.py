@@ -32,8 +32,8 @@ def _get_target_year(compile_year: int) -> int:
     return _BASE_PERIOD_YEAR + (periods_since_base + 1) * _PERIOD_LENGTH_YEARS
 
 
-def _calculate_block_capacity(compile_year: int) -> int:
-    """Calculate block capacity aligned to 2^16 for a given compilation year."""
+def _calculate_header_capacity(compile_year: int) -> int:
+    """Calculate header index capacity aligned to 2^16 for a given compilation year."""
     target_year = _get_target_year(compile_year)
     target_date = datetime(target_year, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
     seconds_since_genesis = (target_date - _GENESIS_TIMESTAMP).total_seconds()
@@ -72,6 +72,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_png": [True, False],
         "with_qrencode": [True, False],
         "with_jemalloc": [True, False],
+        "with_stats": [True, False],
         "asio_standalone": [True, False],
 
         # secp256k1 options
@@ -120,6 +121,7 @@ class KthRecipe(KnuthConanFileV2):
         #   3. Compile LMDB separately without jemalloc linkage
         # For now, keep disabled until a proper solution is implemented.
         "with_jemalloc": False,
+        "with_stats": False,
         "asio_standalone": True,
 
         # secp256k1 options
@@ -272,6 +274,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_WITH_PNG"] = option_on_off(self.options.with_png)
         tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
         tc.variables["KTH_WITH_JEMALLOC"] = option_on_off(self.options.with_jemalloc)
+        tc.variables["KTH_WITH_STATS"] = option_on_off(self.options.with_stats)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
 
         # Secp256k1 --------------------------------------------
@@ -303,10 +306,10 @@ class KthRecipe(KnuthConanFileV2):
 
         tc.variables["CURRENCY"] = self.options.currency
 
-        # Block index capacity based on compilation year
-        block_capacity = _calculate_block_capacity(datetime.now().year)
-        tc.variables["KTH_BLOCK_INDEX_CAPACITY"] = block_capacity
-        self.output.info(f"Block index capacity: {block_capacity:,} blocks")
+        # Header index capacity based on compilation year
+        header_capacity = _calculate_header_capacity(datetime.now().year)
+        tc.variables["KTH_HEADER_INDEX_CAPACITY"] = header_capacity
+        self.output.info(f"Header index capacity: {header_capacity:,} headers")
 
         # Pass version to CMake for C++ code generation
         kth_version = str(self.version) if self.version else "0.0.0-dev"

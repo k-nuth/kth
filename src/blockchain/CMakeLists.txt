@@ -55,13 +55,13 @@ endif()
 
 message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 
-# Block index capacity (number of blocks for static array allocation)
-# Default: 1,179,648 blocks (~2030, aligned to 2^16)
-if(NOT DEFINED KTH_BLOCK_INDEX_CAPACITY)
-  set(KTH_BLOCK_INDEX_CAPACITY 1179648)
+# Header index capacity (number of headers for static array allocation)
+# Default: 1,179,648 headers (~2030, aligned to 2^16)
+if(NOT DEFINED KTH_HEADER_INDEX_CAPACITY)
+  set(KTH_HEADER_INDEX_CAPACITY 1179648)
 endif()
-message(STATUS "Knuth: Block index capacity: ${KTH_BLOCK_INDEX_CAPACITY}")
-add_definitions(-DKTH_BLOCK_INDEX_CAPACITY=${KTH_BLOCK_INDEX_CAPACITY})
+message(STATUS "Knuth: Header index capacity: ${KTH_HEADER_INDEX_CAPACITY}")
+add_definitions(-DKTH_HEADER_INDEX_CAPACITY=${KTH_HEADER_INDEX_CAPACITY})
 
 
 if (NOT GLOBAL_BUILD)
@@ -129,6 +129,7 @@ endif()
 set(kth_sources_just_legacy
   src/interface/block_chain.cpp
   # src/interface/block_chain_old_db.cpp
+  src/header_index.cpp
   src/pools/block_entry.cpp
   src/pools/block_organizer.cpp
   src/pools/block_pool.cpp
@@ -165,6 +166,7 @@ set(kth_headers
   include/kth/blockchain/interface
   include/kth/blockchain/interface/block_chain.hpp
   include/kth/blockchain/define.hpp
+  include/kth/blockchain/header_index.hpp
   include/kth/blockchain/populate/populate_transaction.hpp
   include/kth/blockchain/populate/populate_chain_state.hpp
   include/kth/blockchain/populate/populate_block.hpp
@@ -234,51 +236,53 @@ _group_sources(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}")
 
 # Tests
 # ------------------------------------------------------------------------------
-# if (ENABLE_TEST)
-#     enable_testing()
-#     find_package(Catch2 3 REQUIRED)
+if (ENABLE_TEST)
+    enable_testing()
+    find_package(Catch2 3 REQUIRED)
 
-#     set(kth_blockchain_test_sources
-#         test/block_chain.cpp
-#         test/block_entry.cpp
-#         test/block_pool.cpp
-#         test/branch.cpp
-#         test/transaction_entry.cpp
-#         test/transaction_pool.cpp
-#         test/validate_block.cpp
-#         test/validate_transaction.cpp
-#         test/utxo.cpp
-#         test/main.cpp
-#     )
+    set(kth_blockchain_test_sources
+        test/header_index.cpp
+    )
 
-#     if (WITH_MEMPOOL)
-#         set(kth_blockchain_test_sources
-#             ${kth_blockchain_test_sources}
-#             test/mempool_tests.cpp
-#         )
-#     endif()
+    # TODO(fernando): re-enable these tests when fixed
+    # test/block_chain.cpp
+    # test/block_entry.cpp
+    # test/block_pool.cpp
+    # test/branch.cpp
+    # test/transaction_entry.cpp
+    # test/transaction_pool.cpp
+    # test/validate_block.cpp
+    # test/validate_transaction.cpp
+    # test/utxo.cpp
 
-#     add_executable(kth_blockchain_test
-#         ${kth_blockchain_test_sources}
-#     )
+    if (WITH_MEMPOOL)
+        set(kth_blockchain_test_sources
+            ${kth_blockchain_test_sources}
+            test/mempool_tests.cpp
+        )
+    endif()
 
-#     target_include_directories(kth_blockchain_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
-#     target_link_libraries(kth_blockchain_test PUBLIC ${PROJECT_NAME})
-#     target_link_libraries(kth_blockchain_test PRIVATE Catch2::Catch2WithMain)
+    add_executable(kth_blockchain_test
+        ${kth_blockchain_test_sources}
+    )
 
-#     _group_sources(kth_blockchain_test "${CMAKE_CURRENT_LIST_DIR}/test")
+    target_include_directories(kth_blockchain_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_blockchain_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_blockchain_test PRIVATE Catch2::Catch2WithMain)
 
-#     include(CTest)
-#     # Try to use Catch2 automatic test discovery
-#     find_package(Catch2 QUIET)
-#     if(Catch2_FOUND)
-#       include(Catch)
-#       catch_discover_tests(kth_blockchain_test)
-#     else()
-#       # Fallback to manual test registration
-#       add_test(NAME kth_blockchain_test COMMAND kth_blockchain_test)
-#     endif()
-# endif()
+    _group_sources(kth_blockchain_test "${CMAKE_CURRENT_LIST_DIR}/test")
+
+    include(CTest)
+    # Try to use Catch2 automatic test discovery
+    find_package(Catch2 QUIET)
+    if(Catch2_FOUND)
+      include(Catch)
+      catch_discover_tests(kth_blockchain_test)
+    else()
+      # Fallback to manual test registration
+      add_test(NAME kth_blockchain_test COMMAND kth_blockchain_test)
+    endif()
+endif()
 
 # VM-Limits tests
 # Native VM tests always run; consensus comparison tests require WITH_CONSENSUS.
