@@ -263,32 +263,27 @@ sync_session::ptr make_sync_session(
 
     auto const final_header_height = organizer_.header_height();
     if (block_height_ < final_header_height) {
-        // We need to download blocks - get hashes from DB
+        // Get block hashes from header_index (not database - headers are in memory)
+        auto const blocks_to_download = final_header_height - block_height_;
+        spdlog::info("[sync] Phase 2: Need to download {} blocks ({} to {})",
+            blocks_to_download, block_height_ + 1, final_header_height);
+
         std::vector<hash_digest> block_hashes;
+        block_hashes.reserve(blocks_to_download);
 
-        if (block_height_ < final_header_height) {
-            auto const blocks_to_download = final_header_height - block_height_;
-            spdlog::info("[sync] Loading {} block hashes from database...", blocks_to_download);
-
-            block_hashes.reserve(blocks_to_download);
-            for (size_t h = block_height_ + 1; h <= size_t(final_header_height); ++h) {
-                auto const hash = chain_.get_block_hash(h);
-                if (hash) {
-                    block_hashes.push_back(*hash);
-                }
-            }
+        // During IBD, headers are added in order, so index == height for main chain
+        auto& idx = organizer_.index();
+        for (size_t h = block_height_ + 1; h <= size_t(final_header_height); ++h) {
+            block_hashes.push_back(idx.get_hash(h));
         }
 
-        if (!block_hashes.empty()) {
-            spdlog::info("[sync] Phase 2: Downloading blocks {}-{} ({} blocks) from [{}]",
-                block_height_ + 1, block_height_ + block_hashes.size(),
-                block_hashes.size(), peer_->authority());
+        spdlog::info("[sync] Phase 2: Downloading {} blocks from [{}]",
+            block_hashes.size(), peer_->authority());
 
-            auto ec = co_await sync_blocks(block_hashes);
-            if (ec) {
-                result.error = ec;
-                co_return result;
-            }
+        auto ec = co_await sync_blocks(block_hashes);
+        if (ec) {
+            result.error = ec;
+            co_return result;
         }
     }
 
