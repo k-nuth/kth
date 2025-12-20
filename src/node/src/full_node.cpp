@@ -13,6 +13,7 @@
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
 #include <kth/node/sync_session.hpp>
+#include <kth/node/user_agent.hpp>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
@@ -40,7 +41,8 @@ full_node::full_node(configuration const& configuration)
     , chain_settings_(configuration.chain)
     , network_type_(get_network(configuration.network.identifier, configuration.network.inbound_port == 48333))
     , chain_thread_pool_(configuration.chain.cores)
-    , network_(configuration.network)
+    , network_settings_(configuration.network)
+    , network_(network_settings_)
     , chain_(
         chain_thread_pool_,
         configuration.chain,
@@ -61,11 +63,23 @@ full_node::full_node(configuration const& configuration)
         network_type_
     )
 #endif
-{}
+{
+#if ! defined(__EMSCRIPTEN__)
+    // Set user agent after initialization (network_ holds reference to network_settings_)
+    std::vector<std::string> features;
+#if defined(KTH_CURRENCY_BCH)
+    features.push_back(format_eb(configuration.chain.default_consensus_block_size));
+#endif
+    network_settings_.user_agent = get_user_agent(features);
+#endif
+}
 
 full_node::~full_node() {
-    stop();
-    join();
+    // Only stop/join if not already stopped
+    if (!stopped()) {
+        stop();
+        join();
+    }
 }
 
 // =============================================================================

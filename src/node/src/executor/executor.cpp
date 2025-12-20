@@ -17,11 +17,11 @@
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node.hpp>
 #include <kth/node/parser.hpp>
-#include <kth/node/user_agent.hpp>
 #include <kth/domain/version.hpp>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
+#include <asio/signal_set.hpp>
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -45,59 +45,304 @@ using std::error_code;
 using kth::database::data_base;
 using std::placeholders::_1;
 
-// static auto const application_name = "kth";
-static constexpr int initialize_stop = 0;
 static constexpr int directory_exists = 0;
 static constexpr int directory_not_found = 2;
 static auto const mode = std::ofstream::out | std::ofstream::app;
 
-std::promise<kth::code> executor::stopping_; //NOLINT
+// =============================================================================
+// Construction / Destruction
+// =============================================================================
 
-executor::executor(kth::node::configuration const& config, bool stdout_enabled /*= true*/)
+executor::executor(kth::node::configuration const& config, bool stdout_enabled)
     : stdout_enabled_(stdout_enabled)
     , config_(config)
 {
 #if ! defined(__EMSCRIPTEN__)
-    auto& network = config_.network;
-    auto const verbose = network.verbose;
-
-    // Build user agent features list
-    std::vector<std::string> features;
-#if defined(KTH_CURRENCY_BCH)
-    features.push_back(format_eb(config_.chain.default_consensus_block_size));
-#endif
-
-    network.user_agent = get_user_agent(features);
-
-    kth::log::initialize(network.debug_file.string(), network.error_file.string(), stdout_enabled, verbose);
+    auto const& network = config_.network;
+    kth::log::initialize(network.debug_file.string(), network.error_file.string(), stdout_enabled, network.verbose);
 #endif // ! defined(__EMSCRIPTEN__)
 }
 
 executor::~executor() {
-    if (running_) {
-        signal_stop();
+    // Ensure clean shutdown
+    if (state_.load() == state::running) {
+        stop();
     }
-    // Ensure io_context is stopped and thread is joined
+}
+
+// =============================================================================
+// IO Thread Management
+// =============================================================================
+
+void executor::start_io_thread() {
+    // Create work guard to keep io_context alive even when there's no work
+    work_guard_.emplace(io_context_.get_executor());
+
+    // Start io_context in background thread
+    io_thread_ = std::thread([this]() {
+        io_context_.run();
+    });
+}
+
+void executor::stop_io_thread() {
+    // Release work guard to allow io_context to stop
+    work_guard_.reset();
+
+    // Stop io_context
     io_context_.stop();
+
+    // Wait for thread to finish
     if (io_thread_.joinable()) {
         io_thread_.join();
     }
 }
 
-void executor::print_version(std::string_view extra) {
-    std::println(KTH_VERSION_MESSAGE, kth::version, extra, KTH_CURRENCY_SYMBOL_STR, KTH_MICROARCHITECTURE_STR, march_names());
-}
+// =============================================================================
+// Async Lifecycle
+// =============================================================================
+
+void executor::start_async(start_handler handler) {
+    auto expected = state::stopped;
+    if (!state_.compare_exchange_strong(expected, state::starting)) {
+        if (handler) {
+            handler(error::operation_failed);  // Already started/starting/stopping
+        }
+        return;
+    }
+
+    // Initialize output and directory
+    initialize_output("", config_.database.db_mode);
+
+    spdlog::info("[node] Press CTRL-C to stop the node.");
+    spdlog::info("[node] Please wait while the node is starting...");
 
 #if ! defined(KTH_DB_READONLY)
-// TODO(fernando): This function inserts the genesis block directly into the DB,
-// bypassing the blockchain layer (header_organizer/block_chain). When we implement
-// persistence for header_index, we should reconsider this design - ideally genesis
-// should be added through the same path as other headers for consistency.
+    auto ec = init_directory_if_necessary();
+    if (ec != error::success) {
+        auto const& directory = config_.database.directory;
+        spdlog::error("[node] Failed to create directory {} with error, '{}'.", directory.string(), ec.message());
+        if (handler) {
+            handler(ec);
+        }
+        return;
+    }
+#endif
+
+    // Create the node
+    node_ = std::make_shared<kth::node::full_node>(config_);
+
+    // Start IO thread
+    start_io_thread();
+
+    // Spawn the startup coroutine
+    ::asio::co_spawn(io_context_, [this, handler]() -> ::asio::awaitable<void> {
+        // Start the node
+        auto start_ec = co_await node_->start();
+        if (start_ec != error::success) {
+            spdlog::error("[node] Node failed to start with error: {}.", start_ec.message());
+            if (handler) {
+                handler(start_ec);
+            }
+            co_return;
+        }
+
+        spdlog::info("[node] Seeding is complete.");
+
+        // Run the node (starts P2P, sync, etc.)
+        auto run_ec = co_await node_->run();
+        if (run_ec != error::success) {
+            spdlog::error("[node] Node failed to start with error: {}.", run_ec.message());
+            if (handler) {
+                handler(run_ec);
+            }
+            co_return;
+        }
+
+        spdlog::info("[node] Node is started.");
+
+        // Mark as running
+        state_ = state::running;
+
+        // Notify handler
+        if (handler) {
+            handler(error::success);
+        }
+
+        // Also notify sync version if waiting
+        {
+            std::lock_guard<std::mutex> lock(start_mutex_);
+            start_result_ = error::success;
+        }
+        start_cv_.notify_all();
+
+    }, [this, handler](std::exception_ptr ep) {
+        if (ep) {
+            try {
+                std::rethrow_exception(ep);
+            } catch (std::exception const& e) {
+                spdlog::error("[node] Startup exception: {}", e.what());
+            }
+            if (handler) {
+                handler(error::operation_failed);
+            }
+            // Notify sync version
+            {
+                std::lock_guard<std::mutex> lock(start_mutex_);
+                start_result_ = error::operation_failed;
+            }
+            start_cv_.notify_all();
+        }
+    });
+}
+
+void executor::stop_async(stop_handler handler) {
+    auto expected = state::running;
+    if (!state_.compare_exchange_strong(expected, state::stopping)) {
+        // Not running or already stopping
+        if (handler) {
+            handler();
+        }
+        return;
+    }
+
+    spdlog::info("[node] Please wait while the node is stopping...");
+
+    // Stop node
+    if (node_) {
+        node_->stop();
+    }
+
+    // Spawn cleanup coroutine
+    ::asio::co_spawn(io_context_, [this, handler]() -> ::asio::awaitable<void> {
+        // Wait for node to finish
+        if (node_) {
+            node_->join();
+        }
+
+        spdlog::info("[node] Node stopped successfully.");
+
+        state_ = state::stopped;
+
+        if (handler) {
+            handler();
+        }
+
+        spdlog::info("[node] Good bye!");
+        co_return;
+    }, ::asio::detached);
+}
+
+// =============================================================================
+// Sync Lifecycle
+// =============================================================================
+
+code executor::start() {
+    std::unique_lock<std::mutex> lock(start_mutex_);
+
+    // Start async
+    start_async(nullptr);
+
+    // Wait for completion
+    start_cv_.wait(lock, [this]() {
+        return state_.load() == state::running || start_result_ != error::success;
+    });
+
+    return start_result_;
+}
+
+void executor::stop() {
+    if (state_.load() != state::running) {
+        return;
+    }
+
+    std::promise<void> done_promise;
+    auto done_future = done_promise.get_future();
+
+    stop_async([&done_promise]() {
+        done_promise.set_value();
+    });
+
+    // Wait for stop to complete
+    done_future.wait();
+
+    // Destroy node BEFORE stopping io_context
+    // (node's components use io_context for timer cancellation, etc.)
+    node_.reset();
+
+    // Stop IO thread
+    stop_io_thread();
+}
+
+void executor::wait_for_stop_signal() {
+    std::promise<int> signal_promise;
+    auto signal_future = signal_promise.get_future();
+
+    // Use a separate io_context for signal handling
+    ::asio::io_context signal_context;
+    auto work_guard = ::asio::make_work_guard(signal_context);
+    ::asio::signal_set signals(signal_context, SIGINT, SIGTERM);
+
+    signals.async_wait([&signal_promise, &work_guard](std::error_code const& ec, int signal_number) {
+        if (!ec) {
+            signal_promise.set_value(signal_number);
+        }
+        work_guard.reset();  // Allow io_context to stop
+    });
+
+    // Run io_context in background thread
+    std::thread signal_thread([&signal_context]() {
+        signal_context.run();
+    });
+
+    // Wait for signal
+    auto signal_received = signal_future.get();
+    spdlog::info("[node] Stop signal detected (code: {}).", signal_received);
+
+    // Cleanup
+    if (signal_thread.joinable()) {
+        signal_thread.join();
+    }
+}
+
+// =============================================================================
+// State
+// =============================================================================
+
+bool executor::running() const {
+    return state_.load() == state::running;
+}
+
+bool executor::started() const {
+    auto s = state_.load();
+    return s == state::starting || s == state::running || s == state::stopping;
+}
+
+bool executor::stopped() const {
+    return state_.load() == state::stopped;
+}
+
+// =============================================================================
+// Node Access
+// =============================================================================
+
+kth::node::full_node& executor::node() {
+    return *node_;
+}
+
+kth::node::full_node const& executor::node() const {
+    return *node_;
+}
+
+// =============================================================================
+// Initialization Helpers
+// =============================================================================
+
+#if ! defined(KTH_DB_READONLY)
 bool executor::init_directory(error_code& ec) {
     auto const& directory = config_.database.directory;
 
     if (create_directories(directory, ec)) {
-        spdlog::info("[node] {}", fmt::format(KTH_INITIALIZING_CHAIN, directory.string()));
+        spdlog::info("[node] Please wait while initializing {} directory...", directory.string());
 
         auto const genesis = kth::node::full_node::get_genesis_block(get_network(config_.network.identifier, config_.network.inbound_port == 48333));
         auto const& settings = config_.database;
@@ -105,19 +350,18 @@ bool executor::init_directory(error_code& ec) {
         data_base db(settings);
         auto const result = db.create(genesis);
 
-        if ( ! result ) {
-            spdlog::info("[node] {}", KTH_INITCHAIN_FAILED);
+        if (!result) {
+            spdlog::info("[node] Error creating database files.");
             return false;
         }
 
-        spdlog::info("[node] {}", KTH_INITCHAIN_COMPLETE);
+        spdlog::info("[node] Completed initialization.");
         return true;
     }
 
     return false;
 }
 
-// CAPI
 bool executor::do_initchain(std::string_view extra) {
     initialize_output(extra, config_.database.db_mode);
 
@@ -130,53 +374,13 @@ bool executor::do_initchain(std::string_view extra) {
     auto const& directory = config_.database.directory;
 
     if (ec.value() == directory_exists) {
-        spdlog::error("[node] {}", fmt::format(KTH_INITCHAIN_EXISTS, directory.string()));
+        spdlog::error("[node] Failed because the directory {} already exists.", directory.string());
         return false;
     }
 
-    spdlog::error("[node] {}", fmt::format(KTH_INITCHAIN_NEW, directory.string(), ec.message()));
+    spdlog::error("[node] Failed to create directory {} with error, '{}'.", directory.string(), ec.message());
     return false;
 }
-
-#endif // ! defined(KTH_DB_READONLY)
-
-kth::node::full_node& executor::node() {
-    return *node_;
-}
-
-kth::node::full_node const& executor::node() const {
-    return *node_;
-}
-
-// Close must be called from main thread.
-bool executor::close() {
-    spdlog::info("[node] {}", KTH_NODE_STOPPING);
-
-    if (node_) {
-        node_->stop();
-        node_->join();
-        spdlog::info("[node] {}", KTH_NODE_STOPPED);
-    }
-
-    // Stop the io_context and wait for the io thread to finish
-    io_context_.stop();
-    if (io_thread_.joinable()) {
-        io_thread_.join();
-    }
-
-    spdlog::info("[node] {}", KTH_GOOD_BYE);
-    running_ = false;
-    return true;
-}
-
-// private
-bool executor::wait_for_signal_and_close() {
-    // Wait for stop. Ensure calling close from the main thread.
-    stopping_.get_future().wait();
-    return close();
-}
-
-#if ! defined(KTH_DB_READONLY)
 
 error_code executor::init_directory_if_necessary() {
     if (verify_directory()) return error::success;
@@ -186,143 +390,35 @@ error_code executor::init_directory_if_necessary() {
 
     return ec;
 }
-
-// Helper to run node in coroutine context
-void executor::run_node_async(start_modules mod) {
-    ::asio::co_spawn(io_context_, [this, mod]() -> ::asio::awaitable<void> {
-        // Start the node
-        auto start_ec = co_await node_->start();
-        if (start_ec != error::success) {
-            spdlog::error("[node] {}", fmt::format(KTH_NODE_START_FAIL, start_ec.message()));
-            if (run_handler_) {
-                run_handler_(start_ec);
-            }
-            co_return;
-        }
-
-        spdlog::info("[node] {}", KTH_NODE_SEEDED);
-
-        // Run the node (only for full mode, not just_chain)
-        if (mod != start_modules::just_chain) {
-            auto run_ec = co_await node_->run();
-            if (run_ec != error::success) {
-                spdlog::error("[node] {}", fmt::format(KTH_NODE_START_FAIL, run_ec.message()));
-                if (run_handler_) {
-                    run_handler_(run_ec);
-                }
-                co_return;
-            }
-        }
-
-        spdlog::info("[node] {}", KTH_NODE_STARTED);
-
-        if (run_handler_) {
-            run_handler_(error::success);
-        }
-    }, ::asio::detached);
-
-    // Run the io_context in a background thread (saved for proper shutdown)
-    io_thread_ = std::thread([this]() {
-        io_context_.run();
-    });
-}
-
-bool executor::init_run_and_wait_for_signal(std::string_view extra, start_modules mod, kth::handle0 handler) {
-    run_handler_ = std::move(handler);
-
-    initialize_output(extra, config_.database.db_mode);
-
-    spdlog::info("[node] {}", KTH_NODE_INTERRUPT);
-    spdlog::info("[node] {}", KTH_NODE_STARTING);
-
-    auto ec = init_directory_if_necessary();
-    if (ec != error::success) {
-        auto const& directory = config_.database.directory;
-        spdlog::error("[node] {}", fmt::format(KTH_INITCHAIN_NEW, directory.string(), ec.message()));
-
-        if (run_handler_) {
-            run_handler_(ec);
-        }
-        auto res = wait_for_signal_and_close();
-        return false;
-    }
-
-    // Now that the directory is verified we can create the node for it.
-    node_ = std::make_shared<kth::node::full_node>(config_);
-    running_ = true;
-
-    // Start and run the node asynchronously
-    run_node_async(mod);
-
-    auto res = wait_for_signal_and_close();
-    return res;
-}
-
-bool executor::init_run(std::string_view extra, start_modules mod, kth::handle0 handler) {
-    run_handler_ = std::move(handler);
-
-    initialize_output(extra, config_.database.db_mode);
-
-    spdlog::info("[node] {}", KTH_NODE_INTERRUPT);
-    spdlog::info("[node] {}", KTH_NODE_STARTING);
-
-    auto ec = init_directory_if_necessary();
-    if (ec != error::success) {
-        auto const& directory = config_.database.directory;
-        spdlog::error("[node] {}", fmt::format(KTH_INITCHAIN_NEW, directory.string(), ec.message()));
-
-        if (run_handler_) {
-            run_handler_(ec);
-        }
-        return false;
-    }
-
-    // Now that the directory is verified we can create the node for it.
-    node_ = std::make_shared<kth::node::full_node>(config_);
-    running_ = true;
-
-    // Start and run the node asynchronously
-    run_node_async(mod);
-
-    return true;
-}
-
 #endif // ! defined(KTH_DB_READONLY)
 
-bool executor::stopped() const {
-    return node_ ? node_->stopped() : true;
-}
+bool executor::verify_directory() {
+    error_code ec;
+    auto const& directory = config_.database.directory;
 
-// Stop signal.
-// ----------------------------------------------------------------------------
-
-void executor::handle_stop(int code) {
-    // Reinitialize after each capture to prevent hard shutdown.
-    // Do not capture failure signals as calling stop can cause flush lock file
-    // to clear due to the aborted thread dropping the flush lock mutex.
-    std::signal(SIGINT, handle_stop);
-    std::signal(SIGTERM, handle_stop);
-
-    if (code == initialize_stop) {
-        return;
+    if (exists(directory, ec)) {
+        return true;
     }
 
-    spdlog::info("[node] {}", fmt::format(KTH_NODE_SIGNALED, code));
-    stop(kth::error::success);
+    if (ec.value() == directory_not_found) {
+        spdlog::error("[node] The {} directory is not initialized, run: kth --initchain", directory.string());
+        return false;
+    }
+
+    auto const message = ec.message();
+    spdlog::error("[node] Failed to test directory {} with error, '{}'.", directory.string(), message);
+    return false;
 }
 
-void executor::signal_stop() {
-    stop(kth::code());
+void executor::print_version(std::string_view extra) {
+#ifdef NDEBUG
+    std::println("Knuth Node\n  C++ lib v{}\n  {}\n  Currency: {}\n  Microarchitecture: {}\n  Built for CPU instructions/extensions: {}",
+        kth::version, extra, KTH_CURRENCY_SYMBOL_STR, KTH_MICROARCHITECTURE_STR, march_names());
+#else
+    std::println("Knuth Node\n  C++ lib v{}\n  {}\n  Currency: {}\n  Microarchitecture: {}\n  Built for CPU instructions/extensions: {}\n  (Debug Build)",
+        kth::version, extra, KTH_CURRENCY_SYMBOL_STR, KTH_MICROARCHITECTURE_STR, march_names());
+#endif
 }
-
-// Manage the race between console stop and server stop.
-void executor::stop(kth::code const& ec) {
-    static std::once_flag stop_mutex;
-    std::call_once(stop_mutex, [&](){ stopping_.set_value(ec); });
-}
-
-// Utilities.
-// ----------------------------------------------------------------------------
 
 void executor::print_ascii_art() {
     std::print(R"(    ...
@@ -344,7 +440,6 @@ void executor::print_ascii_art() {
 
           High Performance Bitcoin Cash Node
 )");
-    // Center version under the slogan
     constexpr char slogan[] = "High Performance Bitcoin Cash Node";
     constexpr auto slogan_start = 10;
     auto version_text = std::format("v{}", kth::version);
@@ -353,7 +448,6 @@ void executor::print_ascii_art() {
     std::println();
 }
 
-// Set up logging.
 void executor::initialize_output(std::string_view extra, db_mode_type db_mode) {
     auto const& file = config_.file;
 
@@ -362,9 +456,9 @@ void executor::initialize_output(std::string_view extra, db_mode_type db_mode) {
     }
 
     if (file.empty()) {
-        spdlog::info("[node] {}", KTH_USING_DEFAULT_CONFIG);
+        spdlog::info("[node] Using default configuration settings.");
     } else {
-        spdlog::info("[node] {}", fmt::format(KTH_USING_CONFIG_FILE, file.string()));
+        spdlog::info("[node] Using config file: {}", file.string());
     }
 
     std::string_view db_type_str;
@@ -376,38 +470,21 @@ void executor::initialize_output(std::string_view extra, db_mode_type db_mode) {
         db_type_str = KTH_DB_TYPE_PRUNED;
     }
 
-    spdlog::info("[node] {}", fmt::format(KTH_VERSION_MESSAGE_INIT, kth::version));
-    spdlog::info("[node] {}", fmt::format(KTH_CRYPTOCURRENCY_INIT, KTH_CURRENCY_SYMBOL_STR, KTH_CURRENCY_STR));
-    spdlog::info("[node] {}", fmt::format(KTH_MICROARCHITECTURE_INIT, KTH_MICROARCHITECTURE_STR));
-    spdlog::info("[node] {}", fmt::format(KTH_MARCH_EXTS_INIT, march_names()));
-    spdlog::info("[node] {}", fmt::format(KTH_DB_TYPE_INIT, db_type_str));
+    spdlog::info("[node] Knuth v{}", kth::version);
+    spdlog::info("[node] Currency: {} - {}.", KTH_CURRENCY_SYMBOL_STR, KTH_CURRENCY_STR);
+    spdlog::info("[node] Optimized for microarchitecture: {}.", KTH_MICROARCHITECTURE_STR);
+    spdlog::info("[node] Built for CPU instructions/extensions: {}.", march_names());
+    spdlog::info("[node] Database type: {}.", db_type_str);
 
 #ifndef NDEBUG
-    spdlog::info("[node] {}", KTH_DEBUG_BUILD_INIT);
+    spdlog::info("[node] (Debug Build)");
 #endif
 
-    spdlog::info("[node] {}", fmt::format(KTH_NETWORK_INIT, name(kth::get_network(config_.network.identifier, config_.network.inbound_port == 48333)), config_.network.identifier));
-    spdlog::info("[node] {}", fmt::format(KTH_BLOCKCHAIN_CORES_INIT, kth::thread_ceiling(config_.chain.cores)));
-    spdlog::info("[node] {}", fmt::format(KTH_NETWORK_CORES_INIT, kth::thread_ceiling(config_.network.threads)));
-}
-
-// Use missing directory as a sentinel indicating lack of initialization.
-bool executor::verify_directory() {
-    error_code ec;
-    auto const& directory = config_.database.directory;
-
-    if (exists(directory, ec)) {
-        return true;
-    }
-
-    if (ec.value() == directory_not_found) {
-        spdlog::error("[node] {}", fmt::format(KTH_UNINITIALIZED_CHAIN, directory.string()));
-        return false;
-    }
-
-    auto const message = ec.message();
-    spdlog::error("[node] {}", fmt::format(KTH_INITCHAIN_TRY, directory.string(), message));
-    return false;
+    auto const network_id = config_.network.identifier;
+    auto const network_type = kth::get_network(network_id, config_.network.inbound_port == 48333);
+    spdlog::info("[node] Network: {0} ({1} - {1:#x}).", name(network_type), network_id);
+    spdlog::info("[node] Blockchain configured to use {} threads.", kth::thread_ceiling(config_.chain.cores));
+    spdlog::info("[node] Networking configured to use {} threads.", kth::thread_ceiling(config_.network.threads));
 }
 
 } // namespace kth::node

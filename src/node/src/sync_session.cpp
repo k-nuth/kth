@@ -27,7 +27,8 @@ sync_session::sync_session(
     block_chain& chain,
     peer_session::ptr peer,
     domain::config::network network,
-    sync_config const& config)
+    sync_config const& config,
+    size_t target_height)
     : chain_(chain)
     , organizer_(chain.headers(), chain.chain_settings(), network)
     , peer_(std::move(peer))
@@ -40,10 +41,14 @@ sync_session::sync_session(
         block_height_ = heights->second;   // block-sync height
     }
 
-    // Get target height from peer's version message
-    auto peer_version = peer_->peer_version();
-    if (peer_version) {
-        target_height_ = peer_version->start_height();
+    // Use provided target height if given, otherwise use peer's start_height
+    if (target_height > 0) {
+        target_height_ = target_height;
+    } else {
+        auto peer_version = peer_->peer_version();
+        if (peer_version) {
+            target_height_ = peer_version->start_height();
+        }
     }
 
     // Get hash of current header tip (for getheaders locator)
@@ -66,9 +71,10 @@ sync_session::ptr make_sync_session(
     block_chain& chain,
     peer_session::ptr peer,
     domain::config::network network,
-    sync_config const& config)
+    sync_config const& config,
+    size_t target_height)
 {
-    return std::make_shared<sync_session>(chain, peer, network, config);
+    return std::make_shared<sync_session>(chain, peer, network, config, target_height);
 }
 
 // =============================================================================
@@ -624,8 +630,18 @@ static peer_session::ptr select_sync_peer(
         }
     }
 
-    spdlog::info("[sync] Selecting sync peer from {} peers ({} preferred, {} full nodes), our height: {}",
-        peers.size(), preferred_count, full_node_count, our_block_height);
+    // Calculate max height across all peers (BCHN-style)
+    // Don't trust just one peer's reported height
+    size_t max_peer_height = 0;
+    for (auto const& peer : peers) {
+        auto version = peer->peer_version();
+        if (version) {
+            max_peer_height = std::max(max_peer_height, size_t(version->start_height()));
+        }
+    }
+
+    spdlog::info("[sync] Selecting sync peer from {} peers ({} preferred, {} full nodes), our height: {}, max peer height: {}",
+        peers.size(), preferred_count, full_node_count, our_block_height, max_peer_height);
 
     // Select best peer using BCHN logic
     auto best_peer = select_sync_peer(peers, our_block_height);
@@ -640,12 +656,12 @@ static peer_session::ptr select_sync_peer(
     auto version = best_peer->peer_version();
     auto const best_height = version ? version->start_height() : 0;
 
-    spdlog::info("[sync] Selected {} peer [{}] with height {} for sync",
+    spdlog::info("[sync] Selected {} peer [{}] with height {} for sync (target: {})",
         best_peer->is_preferred_download() ? "preferred" : "fallback",
-        best_peer->authority(), best_height);
+        best_peer->authority(), best_height, max_peer_height);
 
-    // Run sync with selected peer
-    auto session = make_sync_session(chain, best_peer, network, config);
+    // Run sync with selected peer, using max_peer_height as target
+    auto session = make_sync_session(chain, best_peer, network, config, max_peer_height);
     result = co_await session->run();
 
     // BCHN-style: If sync failed (including timeout), try another peer
@@ -683,12 +699,12 @@ static peer_session::ptr select_sync_peer(
             ++retry;
             version = retry_peer->peer_version();
             auto const retry_height = version ? version->start_height() : 0;
-            spdlog::info("[sync] Retry {}: {} peer [{}] height {}",
+            spdlog::info("[sync] Retry {}: {} peer [{}] height {} (target: {})",
                 retry,
                 retry_peer->is_preferred_download() ? "preferred" : "fallback",
-                retry_peer->authority(), retry_height);
+                retry_peer->authority(), retry_height, max_peer_height);
 
-            auto retry_session = make_sync_session(chain, retry_peer, network, config);
+            auto retry_session = make_sync_session(chain, retry_peer, network, config, max_peer_height);
             result = co_await retry_session->run();
 
             if (!result.error) {
