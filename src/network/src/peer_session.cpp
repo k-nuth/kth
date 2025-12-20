@@ -31,6 +31,7 @@ boost::unordered_flat_map<std::string_view, std::string_view> const known_client
     {"Knuth:", "KTH"},
     {"Bitcoin ABC:", "ABC"},
     {"BitcoinUnlimited:", "BU"},
+    {"BCH Unlimited:", "BU"},
     {"BUCash:", "BU"},
 };
 
@@ -319,6 +320,51 @@ bool peer_session::is_preferred_download() const {
 }
 
 // =============================================================================
+// Statistics (lock-free, benign data races acceptable)
+// =============================================================================
+
+size_t peer_session::bytes_received() const {
+    return bytes_received_.load(std::memory_order_relaxed);
+}
+
+size_t peer_session::bytes_sent() const {
+    return bytes_sent_.load(std::memory_order_relaxed);
+}
+
+uint32_t peer_session::ping_latency_ms() const {
+    return ping_latency_ms_.load(std::memory_order_relaxed);
+}
+
+void peer_session::record_ping_sent(uint64_t nonce) {
+    // Store time as nanoseconds since steady_clock epoch for lock-free access
+    auto const now = std::chrono::steady_clock::now();
+    auto const ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        now.time_since_epoch()).count();
+    pending_ping_time_ns_.store(ns, std::memory_order_relaxed);
+    pending_ping_nonce_.store(nonce, std::memory_order_relaxed);
+}
+
+bool peer_session::record_pong_received(uint64_t nonce) {
+    auto const expected_nonce = pending_ping_nonce_.load(std::memory_order_relaxed);
+    if (expected_nonce == 0 || nonce != expected_nonce) {
+        return false;
+    }
+
+    auto const sent_ns = pending_ping_time_ns_.load(std::memory_order_relaxed);
+    auto const now = std::chrono::steady_clock::now();
+    auto const now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        now.time_since_epoch()).count();
+    auto const latency_ms = static_cast<uint32_t>((now_ns - sent_ns) / 1'000'000);
+    ping_latency_ms_.store(latency_ms, std::memory_order_relaxed);
+    pending_ping_nonce_.store(0, std::memory_order_relaxed);
+    return true;
+}
+
+std::chrono::steady_clock::time_point peer_session::connection_time() const {
+    return connection_time_;
+}
+
+// =============================================================================
 // Internal Coroutines
 // =============================================================================
 
@@ -373,6 +419,9 @@ bool peer_session::is_preferred_download() const {
             stop(error::boost_to_error_code(write_ec));
             co_return;
         }
+
+        // Track bytes sent
+        bytes_sent_.fetch_add(bytes_written, std::memory_order_relaxed);
 
         spdlog::trace("[peer_session] Sent {} bytes to [{}]", bytes_written, authority());
     }
@@ -478,6 +527,9 @@ awaitable_expected<raw_message> peer_session::read_message() {
             head.command(), authority_with_agent());
         co_return std::unexpected(error::bad_stream);
     }
+
+    // Track bytes received (header + payload)
+    bytes_received_.fetch_add(heading::maximum_size() + head.payload_size(), std::memory_order_relaxed);
 
     spdlog::debug("[peer_session] Received {} from [{}] ({} bytes)",
         head.command(), authority_with_agent(), head.payload_size());

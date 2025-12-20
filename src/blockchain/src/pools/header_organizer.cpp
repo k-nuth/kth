@@ -149,6 +149,13 @@ int32_t header_organizer::header_height() const {
     return index_.get_height(tip_index_);
 }
 
+uint32_t header_organizer::tip_timestamp() const {
+    if (tip_index_ == header_index::null_index) {
+        return 0;
+    }
+    return index_.get_timestamp(tip_index_);
+}
+
 // =============================================================================
 // Validation
 // =============================================================================

@@ -106,6 +106,11 @@ struct KB_API header_organizer {
     [[nodiscard]]
     hash_digest const& header_tip_hash() const { return tip_hash_; }
 
+    /// Get the timestamp of the header tip.
+    /// Used for BCHN-style progress calculation.
+    [[nodiscard]]
+    uint32_t tip_timestamp() const;
+
     /// Get the number of headers in the index.
     [[nodiscard]]
     size_t size() const { return index_.size(); }
