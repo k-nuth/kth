@@ -113,11 +113,13 @@ public:
     using ptr = std::shared_ptr<sync_session>;
 
     /// Construct sync session
+    /// @param target_height Override target height (0 = use peer's start_height)
     sync_session(
         blockchain::block_chain& chain,
         network::peer_session::ptr peer,
         domain::config::network network,
-        sync_config const& config = {});
+        sync_config const& config = {},
+        size_t target_height = 0);
 
     /// Run synchronization with peer
     /// Returns when synced or on error
@@ -164,12 +166,14 @@ private:
 };
 
 /// Create a sync session for a peer
+/// @param target_height Override target height (0 = use peer's start_height)
 [[nodiscard]]
 KND_API sync_session::ptr make_sync_session(
     blockchain::block_chain& chain,
     network::peer_session::ptr peer,
     domain::config::network network,
-    sync_config const& config = {});
+    sync_config const& config = {},
+    size_t target_height = 0);
 
 /// Run sync with the best available peer
 /// Selects peer based on start_height from version message

@@ -88,7 +88,7 @@ peer_manager::~peer_manager() {
 }
 
 ::asio::awaitable<void> peer_manager::remove(peer_session::ptr peer) {
-    if (!peer) {
+    if (!peer || stopped()) {
         co_return;
     }
 
@@ -102,6 +102,11 @@ peer_manager::~peer_manager() {
 }
 
 ::asio::awaitable<void> peer_manager::remove_by_nonce(uint64_t nonce) {
+    // Skip if already stopped - the destructor will handle cleanup
+    if (stopped()) {
+        co_return;
+    }
+
     co_await ::asio::co_spawn(strand_, [this, nonce]() -> ::asio::awaitable<void> {
         auto it = peers_.find(nonce);
         if (it != peers_.end()) {
@@ -115,6 +120,9 @@ peer_manager::~peer_manager() {
 }
 
 ::asio::awaitable<bool> peer_manager::exists_by_nonce(uint64_t nonce) const {
+    if (stopped()) {
+        co_return false;
+    }
     co_return co_await ::asio::co_spawn(strand_, [this, nonce]() -> ::asio::awaitable<bool> {
         co_return peers_.find(nonce) != peers_.end();
     }, ::asio::use_awaitable);
@@ -123,6 +131,9 @@ peer_manager::~peer_manager() {
 ::asio::awaitable<bool> peer_manager::exists_by_authority(
     infrastructure::config::authority const& authority) const
 {
+    if (stopped()) {
+        co_return false;
+    }
     co_return co_await ::asio::co_spawn(strand_, [this, &authority]() -> ::asio::awaitable<bool> {
         for (auto const& [nonce, peer] : peers_) {
             if (peer->authority() == authority) {
@@ -134,6 +145,9 @@ peer_manager::~peer_manager() {
 }
 
 ::asio::awaitable<bool> peer_manager::exists_by_ip(::asio::ip::address const& ip) const {
+    if (stopped()) {
+        co_return false;
+    }
     co_return co_await ::asio::co_spawn(strand_, [this, &ip]() -> ::asio::awaitable<bool> {
         for (auto const& [nonce, peer] : peers_) {
             if (peer->authority().asio_ip() == ip) {
@@ -145,6 +159,9 @@ peer_manager::~peer_manager() {
 }
 
 ::asio::awaitable<peer_session::ptr> peer_manager::find_by_nonce(uint64_t nonce) const {
+    if (stopped()) {
+        co_return nullptr;
+    }
     co_return co_await ::asio::co_spawn(strand_, [this, nonce]() -> ::asio::awaitable<peer_session::ptr> {
         auto it = peers_.find(nonce);
         if (it != peers_.end()) {
@@ -155,6 +172,9 @@ peer_manager::~peer_manager() {
 }
 
 ::asio::awaitable<std::vector<peer_session::ptr>> peer_manager::all() const {
+    if (stopped()) {
+        co_return std::vector<peer_session::ptr>{};
+    }
     co_return co_await ::asio::co_spawn(strand_, [this]() -> ::asio::awaitable<std::vector<peer_session::ptr>> {
         std::vector<peer_session::ptr> result;
         result.reserve(peers_.size());
@@ -166,6 +186,9 @@ peer_manager::~peer_manager() {
 }
 
 ::asio::awaitable<size_t> peer_manager::count() const {
+    if (stopped()) {
+        co_return 0;
+    }
     co_return co_await ::asio::co_spawn(strand_, [this]() -> ::asio::awaitable<size_t> {
         co_return peers_.size();
     }, ::asio::use_awaitable);

@@ -5,7 +5,6 @@
 #include <kth/capi/node.h>
 
 #include <cstdio>
-#include <latch>
 #include <memory>
 
 #include <boost/iostreams/device/file_descriptor.hpp>
@@ -55,48 +54,42 @@ int kth_node_initchain(kth_node_t node) {
 
 #if ! defined(KTH_DB_READONLY)
 void kth_node_init_run_and_wait_for_signal(kth_node_t node, void* ctx, kth_start_modules_t mods, kth_run_handler_t handler) {
-    kth_node_cpp(node).init_run_and_wait_for_signal(
-        version(),
-        kth::start_modules_to_cpp(mods),
-        [node, ctx, handler](std::error_code const& ec) {
-            if (handler != nullptr) {
-                handler(node, ctx, kth::to_c_err(ec));
-            }
-    });
+    // Start node
+    auto ec = kth_node_cpp(node).start();
+    if (handler != nullptr) {
+        handler(node, ctx, kth::to_c_err(ec));
+    }
+
+    if (ec == kth::error::success) {
+        // Wait for signal
+        kth_node_cpp(node).wait_for_stop_signal();
+        // Stop node
+        kth_node_cpp(node).stop();
+    }
 }
 
 void kth_node_init_run(kth_node_t node, void* ctx, kth_start_modules_t mods, kth_run_handler_t handler) {
-    kth_node_cpp(node).init_run(version(), kth::start_modules_to_cpp(mods),
-        [node, ctx, handler](std::error_code const& ec) {
-            if (handler != nullptr) {
-                handler(node, ctx, kth::to_c_err(ec));
-            }
+    kth_node_cpp(node).start_async([node, ctx, handler](kth::code ec) {
+        if (handler != nullptr) {
+            handler(node, ctx, kth::to_c_err(ec));
+        }
     });
 }
 
 kth_error_code_t kth_node_init_run_sync(kth_node_t node, kth_start_modules_t mods) {
-    std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
-    kth_error_code_t res;
-
-    kth_node_cpp(node).init_run(version(), kth::start_modules_to_cpp(mods),
-        [&](std::error_code const& ec) {
-            res = kth::to_c_err(ec);
-            latch.count_down();
-        }
-    );
-
-    latch.wait();
-    return res;
+    auto ec = kth_node_cpp(node).start();
+    return kth::to_c_err(ec);
 }
 
 #endif // ! defined(KTH_DB_READONLY)
 
 void kth_node_signal_stop(kth_node_t node) {
-    kth_node_cpp(node).signal_stop();
+    kth_node_cpp(node).stop_async();
 }
 
 int kth_node_close(kth_node_t node) {
-    return kth_node_cpp(node).close();
+    kth_node_cpp(node).stop();
+    return 1;  // Success
 }
 
 int kth_node_stopped(kth_node_t node) {
