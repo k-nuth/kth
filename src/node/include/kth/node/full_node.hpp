@@ -223,6 +223,7 @@ private:
 
     // Core components (composition, not inheritance)
 #if ! defined(__EMSCRIPTEN__)
+    kth::network::settings network_settings_;  // Own copy, allows modification (e.g., user_agent)
     kth::network::p2p_node network_;
 #endif
     blockchain::block_chain chain_;

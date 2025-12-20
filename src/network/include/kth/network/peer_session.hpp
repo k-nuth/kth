@@ -232,6 +232,32 @@ public:
     [[nodiscard]]
     bool is_preferred_download() const;
 
+    // -------------------------------------------------------------------------
+    // Statistics (lock-free, benign data races acceptable)
+    // -------------------------------------------------------------------------
+
+    /// Get total bytes received from this peer
+    [[nodiscard]]
+    size_t bytes_received() const;
+
+    /// Get total bytes sent to this peer
+    [[nodiscard]]
+    size_t bytes_sent() const;
+
+    /// Get last ping latency in milliseconds
+    [[nodiscard]]
+    uint32_t ping_latency_ms() const;
+
+    /// Record a ping sent (store nonce and time for latency calculation)
+    void record_ping_sent(uint64_t nonce);
+
+    /// Record a pong received, returns true if nonce matches pending ping
+    bool record_pong_received(uint64_t nonce);
+
+    /// Get connection time
+    [[nodiscard]]
+    std::chrono::steady_clock::time_point connection_time() const;
+
 private:
     // -------------------------------------------------------------------------
     // Internal coroutines
@@ -302,6 +328,18 @@ private:
     // Connection flags (can be set after construction)
     std::atomic<bool> one_shot_{false};
     std::atomic<uint32_t> permission_flags_{uint32_t(permission_flags::none)};
+
+    // Statistics (lock-free, benign data races acceptable)
+    std::atomic<size_t> bytes_received_{0};
+    std::atomic<size_t> bytes_sent_{0};
+    std::atomic<uint32_t> ping_latency_ms_{0};
+    std::chrono::steady_clock::time_point connection_time_{std::chrono::steady_clock::now()};
+
+    // Ping tracking (lock-free)
+    // We store time as nanoseconds since steady_clock epoch for atomic access
+    // Benign data races are acceptable for statistics
+    std::atomic<uint64_t> pending_ping_nonce_{0};
+    std::atomic<int64_t> pending_ping_time_ns_{0};
 
     // Buffers (only accessed from read_loop, no synchronization needed)
     data_chunk heading_buffer_;
