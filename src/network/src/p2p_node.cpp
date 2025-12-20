@@ -272,6 +272,17 @@ awaitable_expected<peer_session::ptr> p2p_node::connect(
         host, port, handshake_result->negotiated_version,
         handshake_result->peer_version->user_agent());
 
+    // Send initial ping immediately to get latency data quickly (like BCHN)
+    {
+        uint64_t nonce = 0;
+        pseudo_random::fill(reinterpret_cast<uint8_t*>(&nonce), sizeof(nonce));
+        domain::message::ping ping_msg(nonce);
+        auto ec = co_await peer->send(ping_msg);
+        if (ec == error::success) {
+            peer->record_ping_sent(nonce);
+        }
+    }
+
     // Add to peer manager
     auto ec = co_await manager_.add(peer);
     if (ec != error::success) {
@@ -567,6 +578,17 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
                 peer->authority(), handshake_result->negotiated_version,
                 handshake_result->peer_version->user_agent());
 
+            // Send initial ping immediately to get latency data quickly (like BCHN)
+            {
+                uint64_t nonce = 0;
+                pseudo_random::fill(reinterpret_cast<uint8_t*>(&nonce), sizeof(nonce));
+                domain::message::ping ping_msg(nonce);
+                auto ec = co_await peer->send(ping_msg);
+                if (ec == error::success) {
+                    peer->record_ping_sent(nonce);
+                }
+            }
+
             // Add to peer manager
             auto ec = co_await manager_.add(peer);
             if (ec != error::success) {
@@ -615,6 +637,7 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
                     spdlog::debug("[p2p_node] Failed to send ping to [{}]", peer->authority());
                     break;
                 }
+                peer->record_ping_sent(nonce);
                 spdlog::trace("[p2p_node] Sent ping to [{}]", peer->authority());
             }
             continue;
