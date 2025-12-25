@@ -88,8 +88,8 @@ settings::settings(domain::config::network context)
             seeds.emplace_back("bchseed.c3-soft.com", 8333);                  // C3 Soft (NilacTheGrim)
             seeds.emplace_back("bch.bitjson.com", 8333);                      // Jason Dreyzehner
 
-            // TODO(fernando): TEMPORARY - hardcoded peer for testing
-            peers.emplace_back("194.14.247.36", 8333);
+            // // TODO(fernando): TEMPORARY - hardcoded peer for testing
+            // peers.emplace_back("194.14.247.36", 8333);
 #else
             identifier = netmagic::btc_mainnet;
             seeds.reserve(6);
