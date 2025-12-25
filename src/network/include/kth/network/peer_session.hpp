@@ -127,6 +127,39 @@ public:
     inbound_channel& messages();
 
     // -------------------------------------------------------------------------
+    // Direct I/O (for handshake before run() starts)
+    // -------------------------------------------------------------------------
+    // These methods read/write directly to the socket without using channels.
+    // Use ONLY before calling run() - after run() starts, use send() and messages().
+
+    /// Read a message directly from the socket (bypasses inbound channel)
+    /// Use this for handshake before run() is started
+    [[nodiscard]]
+    awaitable_expected<raw_message> read_message_direct();
+
+    /// Send a message directly to the socket (bypasses outbound channel)
+    /// Use this for handshake before run() is started
+    template <typename Message>
+    ::asio::awaitable<code> send_direct(Message const& message) {
+        if (stopped()) {
+            co_return error::channel_stopped;
+        }
+
+        auto data = domain::message::serialize(version_.load(), message, protocol_magic_);
+        auto [ec, bytes_written] = co_await ::asio::async_write(
+            socket_,
+            ::asio::buffer(data),
+            ::asio::as_tuple(::asio::use_awaitable));
+
+        if (ec) {
+            co_return error::boost_to_error_code(ec);
+        }
+
+        bytes_sent_.fetch_add(bytes_written, std::memory_order_relaxed);
+        co_return error::success;
+    }
+
+    // -------------------------------------------------------------------------
     // Response channels (for request/response patterns like getheaders/headers)
     // -------------------------------------------------------------------------
 
