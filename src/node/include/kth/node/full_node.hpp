@@ -213,6 +213,12 @@ private:
         block_const_ptr_list_const_ptr incoming,
         block_const_ptr_list_const_ptr outgoing);
 
+    // Background task coroutines (for structured concurrency)
+    ::asio::awaitable<void> run_blockchain_subscriber();
+#if ! defined(__EMSCRIPTEN__)
+    ::asio::awaitable<void> run_sync();
+#endif
+
     // Configuration references (stored in configuration object)
     node::settings const& node_settings_;
     blockchain::settings const& chain_settings_;

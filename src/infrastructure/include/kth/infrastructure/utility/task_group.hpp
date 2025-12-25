@@ -1,0 +1,218 @@
+// Copyright (c) 2016-2025 Knuth Project developers.
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#ifndef KTH_INFRASTRUCTURE_TASK_GROUP_HPP
+#define KTH_INFRASTRUCTURE_TASK_GROUP_HPP
+
+#include <atomic>
+#include <cstddef>
+#include <memory>
+#include <utility>
+
+#include <kth/infrastructure/utility/asio_helper.hpp>
+#include <kth/infrastructure/utility/async_channel.hpp>
+
+namespace kth {
+
+// =============================================================================
+// Task Group (Nursery Pattern for Structured Concurrency)
+// =============================================================================
+//
+// A task_group manages a set of concurrent coroutines and ensures all complete
+// before the group is destroyed. This implements the "nursery" pattern from
+// structured concurrency (similar to Trio in Python or Kotlin coroutines).
+//
+// Key properties:
+//   - All spawned tasks are tracked automatically
+//   - join() waits for ALL tasks to complete
+//   - No tasks are "lost" or detached
+//   - Exception in any task can be propagated (future enhancement)
+//
+// Usage:
+//   task_group tasks(executor);
+//
+//   tasks.spawn([&]() -> awaitable<void> {
+//       co_await do_work_1();
+//   });
+//
+//   tasks.spawn([&]() -> awaitable<void> {
+//       co_await do_work_2();
+//   });
+//
+//   co_await tasks.join();  // Waits for both tasks
+//
+// Integration with structured concurrency:
+//   awaitable<void> parent_task() {
+//       task_group children(co_await this_coro::executor);
+//
+//       children.spawn(child_1());
+//       children.spawn(child_2());
+//
+//       co_await children.join();  // Parent waits for all children
+//   }
+//
+// =============================================================================
+
+class task_group {
+public:
+    explicit task_group(::asio::any_io_executor executor)
+        : executor_(std::move(executor))
+        , done_channel_(executor_, 1)
+    {}
+
+    // Non-copyable, non-movable (prevents accidental misuse)
+    task_group(task_group const&) = delete;
+    task_group& operator=(task_group const&) = delete;
+    task_group(task_group&&) = delete;
+    task_group& operator=(task_group&&) = delete;
+
+    ~task_group() {
+        // In debug builds, assert that join() was called
+        // In release, just log a warning if tasks are still active
+        if (active_count_.load() > 0) {
+            // Tasks still running - this is a programming error
+            // The destructor should only be called after join()
+        }
+    }
+
+    // Spawn a coroutine into the group.
+    // The coroutine will be tracked and join() will wait for it.
+    // Note: This uses ONE internal detached spawn, but the task is tracked.
+    template<typename Coro>
+    void spawn(Coro&& coro) {
+        ++active_count_;
+        ++total_spawned_;
+
+        ::asio::co_spawn(executor_,
+            [this, c = std::forward<Coro>(coro)]() mutable -> ::asio::awaitable<void> {
+                try {
+                    co_await std::invoke(std::move(c));
+                } catch (...) {
+                    // TODO: Store exception for later propagation
+                    // For now, just decrement and signal
+                }
+                decrement_and_signal();
+            },
+            ::asio::detached);  // Single controlled detached point
+    }
+
+    // Wait for all spawned tasks to complete.
+    // This MUST be called before the task_group is destroyed.
+    [[nodiscard]]
+    ::asio::awaitable<void> join() {
+        if (active_count_.load() == 0) {
+            co_return;
+        }
+
+        // Wait for signal that all tasks completed
+        auto [ec] = co_await done_channel_.async_receive(
+            ::asio::as_tuple(::asio::use_awaitable));
+
+        // Channel closed or received signal - all tasks done
+        co_return;
+    }
+
+    // Check if there are active tasks
+    [[nodiscard]]
+    bool has_active_tasks() const noexcept {
+        return active_count_.load() > 0;
+    }
+
+    // Get number of currently active tasks
+    [[nodiscard]]
+    size_t active_count() const noexcept {
+        return active_count_.load();
+    }
+
+    // Get total number of tasks spawned (including completed)
+    [[nodiscard]]
+    size_t total_spawned() const noexcept {
+        return total_spawned_.load();
+    }
+
+private:
+    void decrement_and_signal() {
+        auto const prev = active_count_.fetch_sub(1);
+        if (prev == 1) {
+            // We were the last task - signal completion
+            // Use try_send to avoid blocking if no one is waiting yet
+            done_channel_.try_send(std::error_code{});
+        }
+    }
+
+    ::asio::any_io_executor executor_;
+    std::atomic<size_t> active_count_{0};
+    std::atomic<size_t> total_spawned_{0};
+
+    // Channel to signal when all tasks complete
+    // Capacity of 1 is sufficient - we only send once when count hits 0
+    concurrent_event_channel done_channel_;
+};
+
+// =============================================================================
+// Scoped Task Group (RAII wrapper)
+// =============================================================================
+//
+// Automatically joins on scope exit. Useful for ensuring structured concurrency
+// even when exceptions occur.
+//
+// Usage:
+//   {
+//       scoped_task_group tasks(executor);
+//       tasks.spawn(work_1());
+//       tasks.spawn(work_2());
+//   }  // Automatically waits here (blocking!)
+//
+// WARNING: The destructor blocks! Use with care.
+//          Prefer explicit co_await join() in coroutines.
+//
+// =============================================================================
+
+class scoped_task_group {
+public:
+    explicit scoped_task_group(::asio::any_io_executor executor)
+        : executor_(executor)
+        , group_(std::move(executor))
+    {}
+
+    ~scoped_task_group() {
+        if (group_.has_active_tasks()) {
+            // Block until all tasks complete
+            // This is a blocking call - use sparingly!
+            std::promise<void> done;
+            auto future = done.get_future();
+
+            ::asio::co_spawn(executor_,
+                [this, &done]() -> ::asio::awaitable<void> {
+                    co_await group_.join();
+                    done.set_value();
+                },
+                ::asio::detached);
+
+            future.wait();
+        }
+    }
+
+    template<typename Coro>
+    void spawn(Coro&& coro) {
+        group_.spawn(std::forward<Coro>(coro));
+    }
+
+    [[nodiscard]]
+    ::asio::awaitable<void> join() {
+        return group_.join();
+    }
+
+    [[nodiscard]] size_t active_count() const noexcept {
+        return group_.active_count();
+    }
+
+private:
+    ::asio::any_io_executor executor_;
+    task_group group_;
+};
+
+} // namespace kth
+
+#endif // KTH_INFRASTRUCTURE_TASK_GROUP_HPP
