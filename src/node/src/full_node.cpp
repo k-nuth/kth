@@ -19,12 +19,14 @@
 #include <asio/detached.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/use_awaitable.hpp>
+#include <asio/experimental/awaitable_operators.hpp>
 
 namespace kth::node {
 
 using namespace kth::blockchain;
 using namespace kth::domain::chain;
 using namespace kth::domain::config;
+using namespace ::asio::experimental::awaitable_operators;
 
 #if ! defined(__EMSCRIPTEN__)
 using namespace kth::network;
@@ -65,6 +67,9 @@ full_node::full_node(configuration const& configuration)
 #endif
 {
 #if ! defined(__EMSCRIPTEN__)
+    spdlog::debug("[full_node] configuration.network.threads = {}", configuration.network.threads);
+    spdlog::debug("[full_node] network_settings_.threads = {}", network_settings_.threads);
+
     // Set user agent after initialization (network_ holds reference to network_settings_)
     std::vector<std::string> features;
 #if defined(KTH_CURRENCY_BCH)
@@ -140,81 +145,94 @@ full_node::~full_node() {
 
     spdlog::info("[node] Node start heights: header-sync ({}), block-sync ({}).", header_height, block_height);
 
-    // Subscribe to blockchain reorganizations
-    auto blockchain_channel = subscribe_blockchain();
-    if (blockchain_channel) {
-        ::asio::co_spawn(chain_.executor(), [this, blockchain_channel]() -> ::asio::awaitable<void> {
-            while (blockchain_channel->is_open() && !stopped()) {
-                auto result = co_await blockchain_channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
-                auto& [ec, fork_height, incoming, outgoing] = result;
-
-                if (ec) {
-                    break;
-                }
-
-                if ( ! handle_reorganized(error::success, fork_height, incoming, outgoing)) {
-                    unsubscribe_blockchain(blockchain_channel);
-                    break;
-                }
-            }
-        }, ::asio::detached);
-    }
-
 #if ! defined(__EMSCRIPTEN__)
-    // Run the P2P network (starts connections and protocol handlers)
-    auto ec = co_await network_.run();
-    if (ec != error::success) {
-        spdlog::error("[node] Failure running network: {}", ec.message());
-        co_return ec;
-    }
-
-    // Start sync in background
-    // TODO(fernando): Make this configurable and add proper sync management
-    // TODO(fernando): blockchain::block_chain should migrate to coroutines
-    //   (organize, fetch_*, etc.) to eliminate callbacks and std::promise usage
-    ::asio::co_spawn(network_.thread_pool().get_executor(),
-        [this]() -> ::asio::awaitable<void> {
-            auto executor = co_await ::asio::this_coro::executor;
-            ::asio::steady_timer timer(executor);
-
-            constexpr auto retry_delay = std::chrono::seconds(10);
-
-            while (!stopped()) {
-                // Wait until we have at least one connected peer
-                while (!stopped() && network_.connection_count() == 0) {
-                    timer.expires_after(std::chrono::milliseconds(500));
-                    co_await timer.async_wait(::asio::use_awaitable);
-                }
-
-                if (stopped()) {
-                    co_return;
-                }
-
-                spdlog::info("[node] Starting initial block sync...");
-                auto result = co_await sync_from_best_peer(chain_, network_, network_type_);
-
-                if (result.error) {
-                    spdlog::warn("[node] Sync failed: {}, retrying in {}s...",
-                        result.error.message(), retry_delay.count());
-
-                    // Wait before retrying
-                    timer.expires_after(retry_delay);
-                    auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-                    if (ec) {
-                        co_return;  // Timer cancelled, node stopping
-                    }
-                    continue;
-                }
-
-                spdlog::info("[node] Initial sync complete: {} headers, {} blocks, height {}",
-                    result.headers_received, result.blocks_received, result.final_height);
-                break;  // Sync successful, exit loop
-            }
-        }, ::asio::detached);
+    // Run all background tasks in parallel using structured concurrency.
+    // This blocks until ALL tasks complete (i.e., until stop() is called).
+    // No detached coroutines - everything is properly awaited.
+    spdlog::debug("[full_node] Starting parallel tasks with && operator");
+    co_await (
+        run_blockchain_subscriber() &&
+        network_.run() &&
+        run_sync()
+    );
+    spdlog::debug("[full_node] All parallel tasks completed");
+#else
+    // WASM: only blockchain subscriber (no network)
+    co_await run_blockchain_subscriber();
 #endif
 
     co_return error::success;
 }
+
+::asio::awaitable<void> full_node::run_blockchain_subscriber() {
+    spdlog::debug("[full_node] run_blockchain_subscriber() starting");
+    auto blockchain_channel = subscribe_blockchain();
+    if (!blockchain_channel) {
+        spdlog::debug("[full_node] run_blockchain_subscriber() - no channel, exiting");
+        co_return;
+    }
+    spdlog::debug("[full_node] run_blockchain_subscriber() - channel obtained, entering loop");
+
+    while (blockchain_channel->is_open() && !stopped()) {
+        auto result = co_await blockchain_channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+        auto& [ec, fork_height, incoming, outgoing] = result;
+
+        if (ec) {
+            break;
+        }
+
+        if (!handle_reorganized(error::success, fork_height, incoming, outgoing)) {
+            unsubscribe_blockchain(blockchain_channel);
+            break;
+        }
+    }
+}
+
+#if ! defined(__EMSCRIPTEN__)
+::asio::awaitable<void> full_node::run_sync() {
+    spdlog::debug("[full_node] run_sync() starting");
+    auto executor = co_await ::asio::this_coro::executor;
+    ::asio::steady_timer timer(executor);
+
+    constexpr auto retry_delay = std::chrono::seconds(10);
+
+    while (!stopped()) {
+        // Wait until we have at least one connected peer
+        spdlog::debug("[full_node] run_sync() waiting for peers, count={}", network_.connection_count());
+        while (!stopped() && network_.connection_count() == 0) {
+            timer.expires_after(std::chrono::milliseconds(500));
+            auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                co_return;
+            }
+        }
+
+        if (stopped()) {
+            co_return;
+        }
+
+        spdlog::info("[node] Starting initial block sync...");
+        auto result = co_await sync_from_best_peer(chain_, network_, network_type_);
+
+        if (result.error) {
+            spdlog::warn("[node] Sync failed: {}, retrying in {}s...",
+                result.error.message(), retry_delay.count());
+
+            // Wait before retrying
+            timer.expires_after(retry_delay);
+            auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                co_return;  // Timer cancelled, node stopping
+            }
+            continue;
+        }
+
+        spdlog::info("[node] Initial sync complete: {} headers, {} blocks, height {}",
+            result.headers_received, result.blocks_received, result.final_height);
+        break;  // Sync successful, exit loop
+    }
+}
+#endif
 
 void full_node::stop() {
 #if ! defined(__EMSCRIPTEN__)
