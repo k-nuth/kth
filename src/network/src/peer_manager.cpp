@@ -88,7 +88,7 @@ peer_manager::~peer_manager() {
 }
 
 ::asio::awaitable<void> peer_manager::remove(peer_session::ptr peer) {
-    if (!peer || stopped()) {
+    if (!peer) {
         co_return;
     }
 
@@ -102,10 +102,10 @@ peer_manager::~peer_manager() {
 }
 
 ::asio::awaitable<void> peer_manager::remove_by_nonce(uint64_t nonce) {
-    // Skip if already stopped - the destructor will handle cleanup
-    if (stopped()) {
-        co_return;
-    }
+    // Note: With structured concurrency, remove() is called from peer tasks
+    // that are tracked by task_group. The peer_supervisor waits for all tasks
+    // to complete before shutdown finishes, so this operation is safe.
+    // We don't check stopped() because we want cleanup to proceed normally.
 
     co_await ::asio::co_spawn(strand_, [this, nonce]() -> ::asio::awaitable<void> {
         auto it = peers_.find(nonce);
@@ -222,8 +222,9 @@ void peer_manager::stop_all() {
 
     spdlog::debug("[peer_manager] Stopping all peers");
 
-    // Post to strand to safely iterate and clean up
-    // Note: Callers should run the io_context to ensure completion
+    // Post to strand to safely stop all peers and clear the map.
+    // Note: With structured concurrency, peer tasks may still call remove() after
+    // this, but remove() handles "not found" gracefully (just does nothing).
     ::asio::post(strand_, [this]() {
         for (auto& [nonce, peer] : peers_) {
             peer->stop();
