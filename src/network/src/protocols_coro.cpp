@@ -219,6 +219,132 @@ awaitable_expected<handshake_result> perform_handshake(
     co_return handshake_result{peer_version, negotiated};
 }
 
+// =============================================================================
+// Direct Handshake (no message pump required)
+// =============================================================================
+//
+// This version of handshake reads/writes directly to the socket without
+// needing peer->run() to be running. This enables structured concurrency
+// by eliminating the need to spawn run() with detached before handshake.
+//
+// After handshake completes, the peer is sent to peer_supervisor which
+// spawns run() + protocols in a tracked task_group.
+//
+// =============================================================================
+
+awaitable_expected<handshake_result> perform_handshake_direct(
+    peer_session& peer,
+    handshake_config const& config)
+{
+    auto const& authority = peer.authority();
+
+    spdlog::debug("[protocol] Starting direct handshake with [{}]", authority);
+
+    // Send our version message (directly to socket)
+    auto version_msg = make_version_message(config, authority);
+    auto send_ec = co_await peer.send_direct(version_msg);
+    if (send_ec != error::success) {
+        spdlog::debug("[protocol] Failed to send version to [{}]", authority);
+        co_return std::unexpected(send_ec);
+    }
+
+    // We need to receive both version and verack from the peer
+    // The order may vary, so we track what we've received
+    bool got_version = false;
+    bool got_verack = false;
+    domain::message::version::const_ptr peer_version;
+
+    auto deadline = std::chrono::steady_clock::now() + config.timeout;
+    auto executor = co_await ::asio::this_coro::executor;
+
+    while (!got_version || !got_verack) {
+        auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
+            deadline - std::chrono::steady_clock::now());
+
+        if (remaining <= 0s) {
+            spdlog::debug("[protocol] Handshake timeout with [{}]", authority);
+            co_return std::unexpected(error::channel_timeout);
+        }
+
+        // Read message directly from socket with timeout
+        // Use racing pattern with timer
+        ::asio::steady_timer timer(executor, remaining);
+
+        auto result = co_await (
+            peer.read_message_direct() ||
+            timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
+        );
+
+        // Check which completed first
+        if (result.index() == 1) {
+            // Timer won - timeout
+            spdlog::debug("[protocol] Handshake timeout with [{}]", authority);
+            co_return std::unexpected(error::channel_timeout);
+        }
+
+        // Message received
+        auto& msg_result = std::get<0>(result);
+        if (!msg_result) {
+            spdlog::debug("[protocol] Failed to receive message from [{}]: {}",
+                authority, msg_result.error().message());
+            co_return std::unexpected(msg_result.error());
+        }
+
+        auto const& raw = *msg_result;
+        auto const& command = raw.heading.command();
+
+        if (command == domain::message::version::command && !got_version) {
+            // Parse version message
+            byte_reader reader(raw.payload);
+            auto version_result = domain::message::version::from_data(reader, peer.negotiated_version());
+            if (!version_result) {
+                spdlog::debug("[protocol] Failed to parse version from [{}]", authority);
+                co_return std::unexpected(error::bad_stream);
+            }
+            auto version = std::make_shared<domain::message::version>(std::move(*version_result));
+
+            spdlog::debug("[protocol] Received version from [{}] protocol ({}) user agent: {}",
+                authority, version->value(), version->user_agent());
+
+            // Validate
+            if (!validate_peer_version(*version, config, authority)) {
+                co_return std::unexpected(error::channel_stopped);
+            }
+
+            peer_version = version;
+            got_version = true;
+
+            // Send verack in response (directly to socket)
+            auto verack_ec = co_await peer.send_direct(domain::message::verack{});
+            if (verack_ec != error::success) {
+                spdlog::debug("[protocol] Failed to send verack to [{}]", authority);
+                co_return std::unexpected(verack_ec);
+            }
+        }
+        else if (command == domain::message::verack::command && !got_verack) {
+            spdlog::debug("[protocol] Received verack from [{}]", authority);
+            got_verack = true;
+        }
+        else {
+            // Unexpected message during handshake - log but continue
+            spdlog::debug("[protocol] Unexpected message '{}' during handshake with [{}]",
+                command, authority);
+        }
+    }
+
+    // Calculate negotiated version
+    auto negotiated = std::min(peer_version->value(), config.protocol_version);
+
+    // Update peer session
+    peer.set_peer_version(peer_version);
+    peer.set_negotiated_version(negotiated);
+
+    spdlog::debug("[protocol] Direct handshake complete with [{}], negotiated version {}",
+        authority, negotiated);
+
+    co_return handshake_result{peer_version, negotiated};
+}
+
 handshake_config make_handshake_config(
     settings const& network_settings,
     uint32_t current_height,

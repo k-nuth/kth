@@ -143,24 +143,19 @@ void executor::start_async(start_handler handler) {
             if (handler) {
                 handler(start_ec);
             }
+            // Notify sync version
+            {
+                std::lock_guard<std::mutex> lock(start_mutex_);
+                start_result_ = start_ec;
+            }
+            start_cv_.notify_all();
             co_return;
         }
 
         spdlog::info("[node] Seeding is complete.");
 
-        // Run the node (starts P2P, sync, etc.)
-        auto run_ec = co_await node_->run();
-        if (run_ec != error::success) {
-            spdlog::error("[node] Node failed to start with error: {}.", run_ec.message());
-            if (handler) {
-                handler(run_ec);
-            }
-            co_return;
-        }
-
-        spdlog::info("[node] Node is started.");
-
-        // Mark as running
+        // Mark as running BEFORE calling run() so start() can return
+        // run() blocks until the node is stopped, so we must notify first
         state_ = state::running;
 
         // Notify handler
@@ -168,12 +163,23 @@ void executor::start_async(start_handler handler) {
             handler(error::success);
         }
 
-        // Also notify sync version if waiting
+        // Notify sync version so start() can return
         {
             std::lock_guard<std::mutex> lock(start_mutex_);
             start_result_ = error::success;
         }
         start_cv_.notify_all();
+
+        spdlog::info("[node] Node is started.");
+
+        // Run the node (starts P2P, sync, etc.)
+        // This blocks until the node is stopped (via stop())
+        auto run_ec = co_await node_->run();
+        if (run_ec != error::success && run_ec != error::service_stopped) {
+            spdlog::error("[node] Node run ended with error: {}.", run_ec.message());
+        }
+
+        spdlog::debug("[node] Node run() completed.");
 
     }, [this, handler](std::exception_ptr ep) {
         if (ep) {
@@ -242,10 +248,14 @@ code executor::start() {
     // Start async
     start_async(nullptr);
 
-    // Wait for completion
-    start_cv_.wait(lock, [this]() {
+    // Wait for completion with periodic wakeup
+    // This allows external signal handlers to interrupt us
+    while (!start_cv_.wait_for(lock, std::chrono::milliseconds(100), [this]() {
         return state_.load() == state::running || start_result_ != error::success;
-    });
+    })) {
+        // Check if we should abort (e.g., signal received)
+        // The caller can check g_signal_received after start() returns
+    }
 
     return start_result_;
 }
@@ -273,35 +283,40 @@ void executor::stop() {
     stop_io_thread();
 }
 
+// Global variable for signal handling (required for std::signal)
+namespace {
+    std::atomic<int> g_signal_received{0};
+    std::atomic<bool> g_signal_waiting{false};
+
+    void signal_handler(int signal_number) {
+        // Immediate print to stderr (unbuffered) so user sees it right away
+        // Note: fprintf is async-signal-safe, std::println is not
+        std::fprintf(stderr, "\n[node] Signal %d received - initiating shutdown...\n", signal_number);
+        std::fflush(stderr);
+        g_signal_received.store(signal_number);
+    }
+}
+
 void executor::wait_for_stop_signal() {
-    std::promise<int> signal_promise;
-    auto signal_future = signal_promise.get_future();
+    // Mark that we're waiting for a signal
+    g_signal_waiting.store(true);
 
-    // Use a separate io_context for signal handling
-    ::asio::io_context signal_context;
-    auto work_guard = ::asio::make_work_guard(signal_context);
-    ::asio::signal_set signals(signal_context, SIGINT, SIGTERM);
+    // Install signal handlers using std::signal (simpler and more reliable)
+    auto prev_sigint = std::signal(SIGINT, signal_handler);
+    auto prev_sigterm = std::signal(SIGTERM, signal_handler);
 
-    signals.async_wait([&signal_promise, &work_guard](std::error_code const& ec, int signal_number) {
-        if (!ec) {
-            signal_promise.set_value(signal_number);
-        }
-        work_guard.reset();  // Allow io_context to stop
-    });
+    // Poll for signal (simple and reliable)
+    while (g_signal_received.load() == 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 
-    // Run io_context in background thread
-    std::thread signal_thread([&signal_context]() {
-        signal_context.run();
-    });
-
-    // Wait for signal
-    auto signal_received = signal_future.get();
+    auto signal_received = g_signal_received.load();
     spdlog::info("[node] Stop signal detected (code: {}).", signal_received);
 
-    // Cleanup
-    if (signal_thread.joinable()) {
-        signal_thread.join();
-    }
+    // Restore previous handlers
+    std::signal(SIGINT, prev_sigint);
+    std::signal(SIGTERM, prev_sigterm);
+    g_signal_waiting.store(false);
 }
 
 // =============================================================================

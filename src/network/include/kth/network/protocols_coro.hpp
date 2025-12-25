@@ -167,6 +167,23 @@ KN_API awaitable_expected<handshake_result> perform_handshake(
     peer_session& peer,
     handshake_config const& config);
 
+/// Perform version handshake using direct socket I/O (no message pump needed)
+/// This version reads/writes directly to the socket, so peer->run() does NOT
+/// need to be running. Use this to avoid detached coroutines in connect/accept.
+///
+/// Usage:
+///   auto peer = co_await async_connect(...);
+///   auto result = co_await perform_handshake_direct(*peer, config);  // No run() needed!
+///   // After handshake, send peer to supervisor which starts run()
+///
+/// @param peer The peer session (run() must NOT be running yet)
+/// @param config Handshake configuration
+/// @return handshake_result on success, error code on failure
+[[nodiscard]]
+KN_API awaitable_expected<handshake_result> perform_handshake_direct(
+    peer_session& peer,
+    handshake_config const& config);
+
 /// Create handshake config from network settings
 [[nodiscard]]
 KN_API handshake_config make_handshake_config(
