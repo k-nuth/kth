@@ -24,6 +24,7 @@ p2p_node::p2p_node(settings const& settings)
     , pool_(thread_ceiling(settings.threads))  // 0 means use all cores
     , manager_(pool_.get_executor())
     , hosts_(settings)
+    , banlist_(settings.banlist_file)
     , top_block_({null_hash, 0})
     , new_peer_channel_(std::make_unique<concurrent_channel<peer_event>>(pool_.get_executor(), 100))
     , stop_signal_(std::make_unique<concurrent_event_channel>(pool_.get_executor(), 1))
@@ -36,8 +37,11 @@ p2p_node::p2p_node(settings const& settings)
 }
 
 p2p_node::~p2p_node() {
+    spdlog::debug("[p2p_node] destructor starting");
     stop();
+    spdlog::debug("[p2p_node] destructor - stop() done, calling join()...");
     join();
+    spdlog::debug("[p2p_node] destructor done");
 }
 
 ::asio::awaitable<code> p2p_node::start() {
@@ -47,8 +51,14 @@ p2p_node::~p2p_node() {
 
     stopped_ = false;
 
+    // Load banlist from file (persisted bans survive restarts)
+    if (!banlist_.load()) {
+        spdlog::warn("[p2p_node] Failed to load banlist from file");
+    }
+
     // hosts_ loads from file in constructor
-    spdlog::info("[p2p_node] Loaded {} host addresses", hosts_.count());
+    spdlog::info("[p2p_node] Loaded {} host addresses, {} banned IPs",
+        hosts_.count(), banlist_.size());
 
     // Seed if needed
     if (hosts_.count() < settings_.host_pool_capacity / 2) {
@@ -148,6 +158,9 @@ void p2p_node::stop() {
     // Stop all peers - this causes peer->run() to exit, which allows
     // peer_supervisor's peer_tasks.join() to complete
     manager_.stop_all();
+
+    // Save banlist to file (final save before shutdown)
+    banlist_.save();
 
     // hosts_ saves to file in destructor
 
@@ -700,8 +713,11 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
 
     // Cleanup
     spdlog::debug("[p2p_node] Ending protocols for peer [{}]", peer->authority());
+    spdlog::debug("[p2p_node] Calling peer->stop() for [{}]", peer->authority());
     peer->stop();
+    spdlog::debug("[p2p_node] Calling manager_.remove() for [{}]", peer->authority());
     co_await manager_.remove(peer);
+    spdlog::debug("[p2p_node] manager_.remove() completed for [{}]", peer->authority());
 }
 
 ::asio::awaitable<void> p2p_node::maintain_outbound_connections() {
@@ -715,7 +731,7 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
         co_await ::asio::post(executor, ::asio::use_awaitable);
     }
 
-    spdlog::debug("[p2p_node] maintain_outbound_connections started");
+    spdlog::info("[p2p_node] maintain_outbound_connections started, target: {} peers", settings_.outbound_connections);
 
     // Maximum number of parallel connection attempts
     constexpr size_t max_parallel_attempts = 8;
@@ -723,16 +739,25 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
     while (!stopped_) {
         auto const current_count = manager_.count_snapshot();
         auto const target = settings_.outbound_connections;
+        auto const host_count = hosts_.count();
+        auto const ban_count = banlist_.size();
 
         if (current_count < target) {
             // Need more connections
             auto const needed = target - current_count;
+
+            spdlog::debug("[p2p_node] Connections: {}/{}, hosts: {}, banned: {}",
+                current_count, target, host_count, ban_count);
 
             // Always try max_parallel_attempts to find working peers faster
             // Many addresses may be stale, so cast a wide net
             auto const batch_size = max_parallel_attempts;
             std::vector<domain::message::network_address> addresses;
             addresses.reserve(batch_size);
+
+            size_t skipped_banned = 0;
+            size_t skipped_connected = 0;
+            size_t skipped_pending = 0;
 
             // Fetch addresses, filtering out duplicates and already-connected IPs
             for (size_t attempts = 0; attempts < batch_size * 3 && addresses.size() < batch_size && !stopped_; ++attempts) {
@@ -747,16 +772,19 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
 
                 // Skip if already pending connection to this IP
                 if (pending_connections_.contains(ip)) {
+                    ++skipped_pending;
                     continue;
                 }
 
                 // Skip if already connected to this IP
                 if (co_await manager_.exists_by_ip(ip)) {
+                    ++skipped_connected;
                     continue;
                 }
 
                 // Skip if banned
                 if (banlist_.is_banned(ip)) {
+                    ++skipped_banned;
                     continue;
                 }
 
@@ -776,7 +804,14 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
             }
 
             if (addresses.empty()) {
-                spdlog::debug("[p2p_node] No addresses available for outbound");
+                spdlog::warn("[p2p_node] No addresses available (hosts: {}, banned: {}, skipped: {} banned, {} connected, {} pending)",
+                    host_count, ban_count, skipped_banned, skipped_connected, skipped_pending);
+
+                // Re-seed if host pool is too low
+                if (host_count < settings_.host_pool_capacity / 4) {
+                    spdlog::info("[p2p_node] Host pool low ({}), triggering re-seed...", host_count);
+                    co_await run_seeding();
+                }
             } else {
                 spdlog::debug("[p2p_node] Attempting {} parallel connections (need {}, have {})",
                     addresses.size(), needed, current_count);
@@ -818,12 +853,24 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
             }
         }
 
-        // Wait before next check (short interval so shutdown is responsive)
-        // NOTE: We don't use || with stop_signal_ because the || operator in asio
-        // waits for BOTH operations to complete, not just the first one.
-        timer.expires_after(std::chrono::seconds(5));
-        co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-        // Loop will exit on next iteration if stopped_ is true
+        // Wait before next check
+        // Use shorter interval when we're below target to recover faster from bans
+        // Keep wait_time short to allow quick shutdown response
+        auto const wait_time = (current_count < target)
+            ? std::chrono::milliseconds(500)  // Fast retry when below target
+            : std::chrono::seconds(5);        // Normal check when at target
+
+        // Log status periodically when at target
+        if (current_count >= target) {
+            spdlog::debug("[p2p_node] Connections at target: {}/{}, hosts: {}, banned: {}",
+                current_count, target, host_count, ban_count);
+        }
+
+        timer.expires_after(wait_time);
+        auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+        if (ec) {
+            break;  // Timer cancelled (shutdown)
+        }
     }
 }
 
@@ -907,10 +954,6 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
                             peer->stop();
                             co_return;
                         }
-
-                        spdlog::info("[p2p_node] Handshake complete with [{}], version {}, {}",
-                            peer->authority(), handshake_result->negotiated_version,
-                            handshake_result->peer_version->user_agent());
 
                         // Add to peer manager
                         auto add_ec = co_await manager_.add(peer);

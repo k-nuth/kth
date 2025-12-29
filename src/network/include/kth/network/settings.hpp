@@ -42,6 +42,7 @@ struct KN_API settings {
     uint32_t channel_germination_seconds;
     uint32_t host_pool_capacity;
     kth::path hosts_file;
+    kth::path banlist_file;
     infrastructure::config::authority self;
     infrastructure::config::authority::list blacklist;
     infrastructure::config::endpoint::list peers;

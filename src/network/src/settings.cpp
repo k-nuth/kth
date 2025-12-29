@@ -37,6 +37,7 @@ settings::settings()
     , channel_germination_seconds(30)
     , host_pool_capacity(1000)
     , hosts_file("hosts.cache")
+    , banlist_file("banlist.dat")
     , self(unspecified_network_address)
     // , bitcoin_cash(false)
 
