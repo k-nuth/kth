@@ -5,6 +5,7 @@
 #include <kth/blockchain/interface/block_chain.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -142,16 +143,69 @@ bool block_chain::start() {
         return false;
     }
 
-    // Initialize header_index with genesis block
-    auto const genesis = get_header(0);
-    if (genesis) {
-        auto const hash = genesis->hash();
-        auto const [inserted, index, capacity_warning] = header_index_.add(hash, *genesis);
-        if ( ! inserted) {
-            spdlog::error("[blockchain] Failed to initialize header index with genesis block.");
-            return false;
+    // Load all headers from database into header_index
+    // This allows resuming sync from where we left off
+    auto const heights = get_last_heights();
+    if ( ! heights) {
+        spdlog::error("[blockchain] Failed to get last heights from database.");
+        return false;
+    }
+
+    auto const [header_height, block_height] = *heights;
+    spdlog::info("[blockchain] Database state: header_height={}, block_height={}", header_height, block_height);
+
+    if (header_height == 0) {
+        // Only genesis in DB - just add genesis to index
+        auto const genesis = get_header(0);
+        if (genesis) {
+            auto const hash = genesis->hash();
+            auto const [inserted, idx, capacity_warning] = header_index_.add(hash, *genesis);
+            if ( ! inserted) {
+                spdlog::error("[blockchain] Failed to initialize header index with genesis block.");
+                return false;
+            }
+            spdlog::info("[blockchain] Header index initialized with genesis: {}", encode_hash(hash));
         }
-        spdlog::info("[blockchain] Header index initialized with genesis: {}", encode_hash(hash));
+    } else {
+        // Load all headers from DB into header_index
+        spdlog::info("[blockchain] Loading {} headers from database into header_index...", header_height + 1);
+
+        auto const load_start = std::chrono::steady_clock::now();
+
+        // Load in batches to avoid memory spikes
+        constexpr size_t batch_size = 10000;
+        size_t loaded = 0;
+
+        for (size_t from = 0; from <= header_height; from += batch_size) {
+            auto const to = std::min(from + batch_size - 1, header_height);
+            auto const headers_result = get_headers(from, to);
+
+            if ( ! headers_result) {
+                spdlog::error("[blockchain] Failed to load headers from {} to {}", from, to);
+                return false;
+            }
+
+            size_t height = from;
+            for (auto const& header : *headers_result) {
+                auto const hash = header.hash();
+                auto const [inserted, idx, capacity_warning] = header_index_.add(hash, header);
+                if ( ! inserted && height > 0) {
+                    // Genesis might already be added, ignore that case
+                    spdlog::warn("[blockchain] Failed to add header at height {} to index", height);
+                }
+                ++height;
+                ++loaded;
+            }
+
+            // Log progress every 100k headers
+            if (loaded % 100000 < batch_size && loaded > 0) {
+                spdlog::info("[blockchain] Loaded {}/{} headers into index...", loaded, header_height + 1);
+            }
+        }
+
+        auto const elapsed = std::chrono::steady_clock::now() - load_start;
+        auto const elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+        spdlog::info("[blockchain] Loaded {} headers into header_index in {}ms", loaded, elapsed_ms);
     }
 
     return true;
@@ -182,8 +236,8 @@ bool block_chain::stopped() const {
 // ORGANIZERS (Core blockchain operations)
 // =============================================================================
 
-::asio::awaitable<code> block_chain::organize(block_const_ptr block) {
-    co_return co_await block_organizer_.organize(block);
+::asio::awaitable<code> block_chain::organize(block_const_ptr block, bool headers_pre_validated) {
+    co_return co_await block_organizer_.organize(block, headers_pre_validated);
 }
 
 ::asio::awaitable<code> block_chain::organize(transaction_const_ptr tx) {
@@ -405,7 +459,7 @@ std::expected<std::pair<size_t, size_t>, database::result_code> block_chain::get
         return std::unexpected(result.error());
     }
     auto const& [header_height, block_height] = *result;
-    return std::pair{static_cast<size_t>(header_height), static_cast<size_t>(block_height)};
+    return std::pair{size_t(header_height), size_t(block_height)};
 }
 
 std::expected<domain::chain::header, database::result_code> block_chain::get_header(size_t height) const {
@@ -460,8 +514,29 @@ std::expected<hash_digest, database::result_code> block_chain::get_block_hash(si
     return result->hash();
 }
 
-bool block_chain::block_exists(hash_digest const& block_hash) const {
+bool block_chain::header_exists(hash_digest const& block_hash) const {
     return database_.internal_db().get_header(block_hash).has_value();
+}
+
+bool block_chain::block_exists(hash_digest const& block_hash) const {
+    // Check if full block exists (not just header)
+    // With headers-first sync, headers may exist without full blocks
+    auto const header_result = database_.internal_db().get_header(block_hash);
+    if (!header_result) {
+        return false;  // Header doesn't exist, so block doesn't exist
+    }
+
+    // Header exists - check if we have the full block
+    auto const heights = database_.internal_db().get_last_heights();
+    if (!heights) {
+        return false;
+    }
+
+    auto const [header_height, block_height] = *heights;
+    auto const this_block_height = header_result->second;
+
+    // Block exists only if its height <= block_height
+    return this_block_height <= block_height;
 }
 
 std::expected<uint256_t, database::result_code> block_chain::get_branch_work(uint256_t const& maximum, size_t from_height) const {
@@ -469,7 +544,9 @@ std::expected<uint256_t, database::result_code> block_chain::get_branch_work(uin
     if ( ! heights) {
         return std::unexpected(heights.error());
     }
-    auto const top = heights->first;  // header_height
+    // Use block_height (not header_height) for work comparison
+    // With headers-first sync, we may have headers without full blocks
+    auto const top = heights->second;  // block_height
 
     uint256_t out_work = 0;
     for (uint32_t height = from_height; height <= top && out_work < maximum; ++height) {

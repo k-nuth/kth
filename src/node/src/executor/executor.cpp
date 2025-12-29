@@ -85,16 +85,20 @@ void executor::start_io_thread() {
 }
 
 void executor::stop_io_thread() {
+    spdlog::debug("[executor] stop_io_thread() - releasing work guard...");
     // Release work guard to allow io_context to stop
     work_guard_.reset();
 
+    spdlog::debug("[executor] stop_io_thread() - stopping io_context...");
     // Stop io_context
     io_context_.stop();
 
+    spdlog::debug("[executor] stop_io_thread() - joining io thread...");
     // Wait for thread to finish
     if (io_thread_.joinable()) {
         io_thread_.join();
     }
+    spdlog::debug("[executor] stop_io_thread() - done");
 }
 
 // =============================================================================
@@ -109,6 +113,10 @@ void executor::start_async(start_handler handler) {
         }
         return;
     }
+
+    // Initialize the run_completed promise/future pair for this run
+    run_completed_promise_ = std::promise<void>();
+    run_completed_future_ = run_completed_promise_.get_future();
 
     // Initialize output and directory
     initialize_output("", config_.database.db_mode);
@@ -149,6 +157,8 @@ void executor::start_async(start_handler handler) {
                 start_result_ = start_ec;
             }
             start_cv_.notify_all();
+            // Signal run completed (early exit) so stop() doesn't hang
+            run_completed_promise_.set_value();
             co_return;
         }
 
@@ -179,7 +189,10 @@ void executor::start_async(start_handler handler) {
             spdlog::error("[node] Node run ended with error: {}.", run_ec.message());
         }
 
-        spdlog::debug("[node] Node run() completed.");
+        spdlog::debug("[node] Node run() completed, signaling run_completed_promise.");
+
+        // Signal that run() has completed - stop() waits for this before destroying the node
+        run_completed_promise_.set_value();
 
     }, [this, handler](std::exception_ptr ep) {
         if (ep) {
@@ -197,6 +210,9 @@ void executor::start_async(start_handler handler) {
                 start_result_ = error::operation_failed;
             }
             start_cv_.notify_all();
+
+            // Signal run completed (with error) so stop() doesn't hang
+            run_completed_promise_.set_value();
         }
     });
 }
@@ -218,24 +234,34 @@ void executor::stop_async(stop_handler handler) {
         node_->stop();
     }
 
-    // Spawn cleanup coroutine
-    ::asio::co_spawn(io_context_, [this, handler]() -> ::asio::awaitable<void> {
-        // Wait for node to finish
+    // Cleanup must happen on a separate thread to avoid blocking io_context.
+    // The cleanup thread waits for run() to complete before calling join().
+    std::thread cleanup_thread([this, handler]() {
+        // CRITICAL: Wait for run() to fully complete before cleanup.
+        // run() may still be inside chain.organize() when stop() is called.
+        // We must wait for all coroutines to exit before destroying resources.
+        spdlog::debug("[executor] Waiting for run() to complete...");
+        if (run_completed_future_.valid()) {
+            run_completed_future_.wait();
+        }
+        spdlog::debug("[executor] run() completed, proceeding with cleanup");
+
+        // Now it's safe to join (all coroutines have exited)
         if (node_) {
             node_->join();
         }
 
         spdlog::info("[node] Node stopped successfully.");
+        spdlog::info("[node] Good bye!");
 
         state_ = state::stopped;
 
+        // Handler MUST be called LAST - caller may destroy objects after this
         if (handler) {
             handler();
         }
-
-        spdlog::info("[node] Good bye!");
-        co_return;
-    }, ::asio::detached);
+    });
+    cleanup_thread.detach();
 }
 
 // =============================================================================
@@ -272,15 +298,30 @@ void executor::stop() {
         done_promise.set_value();
     });
 
-    // Wait for stop to complete
+    // Wait for stop_async's cleanup coroutine to complete
     done_future.wait();
+
+    spdlog::debug("[executor] stop() - cleanup coroutine completed, waiting for run() to complete...");
+
+    // CRITICAL: Wait for run() coroutine to fully complete before destroying the node.
+    // This ensures all parallel_sync and other coroutines have finished and won't
+    // access destroyed objects. Without this, we get segfaults on shutdown.
+    if (run_completed_future_.valid()) {
+        run_completed_future_.wait();
+    }
+
+    spdlog::debug("[executor] stop() - run() completed, destroying node...");
 
     // Destroy node BEFORE stopping io_context
     // (node's components use io_context for timer cancellation, etc.)
     node_.reset();
 
+    spdlog::debug("[executor] stop() - node destroyed, stopping io thread...");
+
     // Stop IO thread
     stop_io_thread();
+
+    spdlog::debug("[executor] stop() - io thread stopped, exiting stop()");
 }
 
 // Global variable for signal handling (required for std::signal)
@@ -291,8 +332,8 @@ namespace {
     void signal_handler(int signal_number) {
         // Immediate print to stderr (unbuffered) so user sees it right away
         // Note: fprintf is async-signal-safe, std::println is not
-        std::fprintf(stderr, "\n[node] Signal %d received - initiating shutdown...\n", signal_number);
-        std::fflush(stderr);
+        // std::fprintf(stderr, "\n[node] Signal %d received - initiating shutdown...\n", signal_number);
+        // std::fflush(stderr);
         g_signal_received.store(signal_number);
     }
 }
