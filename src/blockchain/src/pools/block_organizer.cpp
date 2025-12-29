@@ -83,7 +83,7 @@ bool block_organizer::stop() {
 // Organize sequence.
 //-----------------------------------------------------------------------------
 
-::asio::awaitable<code> block_organizer::organize(block_const_ptr block) {
+::asio::awaitable<code> block_organizer::organize(block_const_ptr block, bool headers_pre_validated) {
     // Critical Section
     ///////////////////////////////////////////////////////////////////////////
     mutex_.lock_high_priority(); //TODO: is it possible to remove this mutex?
@@ -101,7 +101,8 @@ bool block_organizer::stop() {
     }
 
     // Checks that are independent of chain state.
-    auto ec = co_await validator_.check(block);
+    // For headers-first sync, skip header validation since headers were already validated.
+    auto ec = co_await validator_.check(block, headers_pre_validated);
 
     if (stopped()) {
         mutex_.unlock_high_priority();
@@ -134,7 +135,8 @@ bool block_organizer::stop() {
     }
 
     // Checks that are dependent on chain state and prevouts.
-    ec = co_await validator_.accept(branch);
+    // For headers-first sync, use accept_body() to skip header validation.
+    ec = co_await validator_.accept(branch, headers_pre_validated);
 
     if (stopped()) {
         mutex_.unlock_high_priority();

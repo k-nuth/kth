@@ -92,13 +92,17 @@ peer_manager::~peer_manager() {
         co_return;
     }
 
+    spdlog::debug("[peer_manager] remove() called for peer [{}]", peer->authority());
+
     auto nonce = peer->nonce();
     if (nonce == 0) {
         auto const& auth = peer->authority();
         nonce = std::hash<std::string>{}(auth.to_string());
     }
 
+    spdlog::debug("[peer_manager] remove() calling remove_by_nonce for peer [{}]", peer->authority());
     co_await remove_by_nonce(nonce);
+    spdlog::debug("[peer_manager] remove() completed for peer [{}]", peer->authority());
 }
 
 ::asio::awaitable<void> peer_manager::remove_by_nonce(uint64_t nonce) {
@@ -107,16 +111,23 @@ peer_manager::~peer_manager() {
     // to complete before shutdown finishes, so this operation is safe.
     // We don't check stopped() because we want cleanup to proceed normally.
 
+    spdlog::debug("[peer_manager] remove_by_nonce() starting co_spawn on strand for nonce {}", nonce);
+
     co_await ::asio::co_spawn(strand_, [this, nonce]() -> ::asio::awaitable<void> {
+        spdlog::debug("[peer_manager] remove_by_nonce() inside strand lambda for nonce {}", nonce);
         auto it = peers_.find(nonce);
         if (it != peers_.end()) {
             spdlog::debug("[peer_manager] Removed peer [{}], remaining: {}",
                 it->second->authority(), peers_.size() - 1);
             peers_.erase(it);
             count_.store(peers_.size());
+        } else {
+            spdlog::debug("[peer_manager] Peer with nonce {} not found in map", nonce);
         }
         co_return;
     }, ::asio::use_awaitable);
+
+    spdlog::debug("[peer_manager] remove_by_nonce() co_spawn completed for nonce {}", nonce);
 }
 
 ::asio::awaitable<bool> peer_manager::exists_by_nonce(uint64_t nonce) const {

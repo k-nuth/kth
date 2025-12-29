@@ -148,8 +148,4 @@ code header::check(bool retarget) const {
     return header_basis::check(hash_pow(), retarget);
 }
 
-code header::accept(chain_state const& state) const {
-    return header_basis::accept(state, hash_pow());
-}
-
 } // namespace kth::domain::chain

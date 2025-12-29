@@ -8,6 +8,8 @@
 
 #include <algorithm>
 
+#include <boost/unordered/unordered_flat_map.hpp>
+
 #include <asio/co_spawn.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
 
@@ -666,6 +668,108 @@ awaitable_expected<domain::message::block> request_block(
 
         co_return std::move(*block_result);
     }
+}
+
+awaitable_expected<std::vector<block_with_height>> request_blocks_batch(
+    peer_session& peer,
+    std::vector<std::pair<uint32_t, hash_digest>> const& blocks,
+    std::chrono::seconds timeout)
+{
+    if (blocks.empty()) {
+        co_return std::vector<block_with_height>{};
+    }
+
+    // Build hash -> height lookup map
+    boost::unordered_flat_map<hash_digest, uint32_t> expected_blocks;
+    expected_blocks.reserve(blocks.size());
+
+    // Build inventory list for getdata
+    domain::message::inventory_vector::list inventories;
+    inventories.reserve(blocks.size());
+
+    for (auto const& [height, hash] : blocks) {
+        expected_blocks[hash] = height;
+        inventories.emplace_back(domain::message::inventory_vector::type_id::block, hash);
+    }
+
+    domain::message::get_data request(std::move(inventories));
+
+    spdlog::debug("[protocol] Requesting {} blocks in batch from [{}] ({}-{})",
+        blocks.size(), peer.authority(),
+        blocks.front().first, blocks.back().first);
+
+    // Send ONE getdata with all block hashes
+    auto ec = co_await peer.send(request);
+    if (ec != error::success) {
+        co_return std::unexpected(ec);
+    }
+
+    // Receive blocks as they arrive
+    auto executor = co_await ::asio::this_coro::executor;
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+
+    std::vector<block_with_height> received_blocks;
+    received_blocks.reserve(blocks.size());
+
+    while (received_blocks.size() < blocks.size()) {
+        auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
+            deadline - std::chrono::steady_clock::now());
+
+        if (remaining <= 0s) {
+            spdlog::debug("[protocol] Timeout waiting for batch blocks from [{}] ({}/{} received)",
+                peer.authority(), received_blocks.size(), blocks.size());
+            co_return std::unexpected(error::channel_timeout);
+        }
+
+        ::asio::steady_timer timer(executor, remaining);
+
+        auto result = co_await (
+            peer.block_responses().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
+            timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
+        );
+
+        if (result.index() == 1) {
+            spdlog::debug("[protocol] Timeout waiting for batch blocks from [{}]", peer.authority());
+            co_return std::unexpected(error::channel_timeout);
+        }
+
+        auto& [recv_ec, raw] = std::get<0>(result);
+        if (recv_ec) {
+            co_return std::unexpected(error::channel_stopped);
+        }
+
+        // Parse the block
+        byte_reader reader(raw.payload);
+        auto block_result = domain::message::block::from_data(reader, peer.negotiated_version());
+        if (!block_result) {
+            spdlog::debug("[protocol] Failed to parse block from [{}]", peer.authority());
+            co_return std::unexpected(error::bad_stream);
+        }
+
+        // Look up the height for this block
+        auto const block_hash = block_result->header().hash();
+        auto it = expected_blocks.find(block_hash);
+        if (it == expected_blocks.end()) {
+            // Not a block we requested - ignore (could be from another request)
+            spdlog::trace("[protocol] Received unexpected block from [{}], ignoring",
+                peer.authority());
+            continue;
+        }
+
+        auto height = it->second;
+        expected_blocks.erase(it);
+
+        received_blocks.push_back({height, std::move(*block_result)});
+    }
+
+    // Sort by height for caller convenience
+    std::sort(received_blocks.begin(), received_blocks.end(),
+        [](auto const& a, auto const& b) { return a.height < b.height; });
+
+    spdlog::debug("[protocol] Received {} blocks in batch from [{}]",
+        received_blocks.size(), peer.authority());
+
+    co_return received_blocks;
 }
 
 // -----------------------------------------------------------------------------

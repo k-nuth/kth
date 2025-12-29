@@ -77,8 +77,9 @@ struct KB_API block_chain {
     // ORGANIZERS (Core blockchain operations)
     // =========================================================================
 
+    /// @param headers_pre_validated If true, skip header validation (for headers-first sync)
     [[nodiscard]]
-    ::asio::awaitable<code> organize(block_const_ptr block);
+    ::asio::awaitable<code> organize(block_const_ptr block, bool headers_pre_validated = false);
 
     [[nodiscard]]
     ::asio::awaitable<code> organize(transaction_const_ptr tx);
@@ -191,6 +192,7 @@ struct KB_API block_chain {
     [[nodiscard]] std::expected<std::pair<size_t, size_t>, database::result_code> get_transaction_position(
         hash_digest const& hash, bool require_confirmed) const;
 
+    [[nodiscard]] bool header_exists(hash_digest const& block_hash) const;
     [[nodiscard]] bool block_exists(hash_digest const& block_hash) const;
 
     // =========================================================================
