@@ -124,10 +124,13 @@ protected:
     bool stopped() const { return stopped_; }
 
 private:
-    // Validate a single header against expected previous
+    // Validate a single header with full chain-state validation
+    // Includes: PoW check, difficulty, checkpoint, version, MTP
     [[nodiscard]]
-    code validate(domain::chain::header const& header, int32_t height,
-                  hash_digest const& previous) const;
+    code validate_full(domain::chain::header const& header,
+                       hash_digest const& hash,
+                       int32_t height,
+                       header_index::index_t parent_idx) const;
 
     // Members
     header_index& index_;

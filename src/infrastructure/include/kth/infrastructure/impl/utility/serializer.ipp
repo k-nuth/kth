@@ -228,7 +228,7 @@ size_t serializer<Iterator>::read_size_big_endian() {
     // This facilitates safely passing the size into a follow-on writer.
     // Return zero allows follow-on use before testing reader state.
     if (size <= max_size_t) {
-        return static_cast<size_t>(size);
+        return size_t(size);
     }
 
     valid_ = false;
@@ -259,7 +259,7 @@ size_t serializer<Iterator>::read_size_little_endian() {
     // This facilitates safely passing the size into a follow-on writer.
     // Return zero allows follow-on use before testing reader state.
     if (size <= max_size_t) {
-        return static_cast<size_t>(size);
+        return size_t(size);
     }
 
     valid_ = false;

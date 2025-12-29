@@ -95,8 +95,8 @@ void parser::set_default_configuration() {
     // Logs will slow things if not rotated.
     configured.network.rotation_size = 10000000;
 
-    // With block-first sync the count should be low until complete.
-    configured.network.outbound_connections = 2;
+    // Headers-first sync allows parallel block downloads from multiple peers.
+    configured.network.outbound_connections = 8;
 
     // A node allows 1000 host names by default.
     configured.network.host_pool_capacity = 1000;

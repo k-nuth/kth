@@ -7,7 +7,9 @@
 
 #include <atomic>
 #include <cstddef>
+#include <concepts>
 #include <memory>
+#include <type_traits>
 #include <utility>
 
 #include <kth/infrastructure/utility/asio_helper.hpp>
@@ -79,6 +81,10 @@ public:
     // Spawn a coroutine into the group.
     // The coroutine will be tracked and join() will wait for it.
     // Note: This uses ONE internal detached spawn, but the task is tracked.
+    //
+    // Accepts either:
+    //   - An awaitable<void> directly: tasks.spawn(some_coro())
+    //   - A callable returning awaitable<void>: tasks.spawn([&]() -> awaitable<void> { ... })
     template<typename Coro>
     void spawn(Coro&& coro) {
         ++active_count_;
@@ -87,7 +93,13 @@ public:
         ::asio::co_spawn(executor_,
             [this, c = std::forward<Coro>(coro)]() mutable -> ::asio::awaitable<void> {
                 try {
-                    co_await std::invoke(std::move(c));
+                    if constexpr (std::is_invocable_v<Coro>) {
+                        // It's a callable (lambda, function) - invoke it to get the awaitable
+                        co_await std::invoke(std::move(c));
+                    } else {
+                        // It's already an awaitable - just await it directly
+                        co_await std::move(c);
+                    }
                 } catch (...) {
                     // TODO: Store exception for later propagation
                     // For now, just decrement and signal
