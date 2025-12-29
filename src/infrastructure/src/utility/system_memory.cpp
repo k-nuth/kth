@@ -34,7 +34,7 @@ size_t get_total_system_memory() {
     MEMORYSTATUSEX status;
     status.dwLength = sizeof(status);
     if (GlobalMemoryStatusEx(&status)) {
-        return static_cast<size_t>(status.ullTotalPhys);
+        return size_t(status.ullTotalPhys);
     }
     return 0;
 #elif defined(__APPLE__)
@@ -42,14 +42,14 @@ size_t get_total_system_memory() {
     uint64_t memsize = 0;
     size_t len = sizeof(memsize);
     if (sysctl(mib, 2, &memsize, &len, nullptr, 0) == 0) {
-        return static_cast<size_t>(memsize);
+        return size_t(memsize);
     }
     return 0;
 #elif defined(__FreeBSD__)
     uint64_t memsize = 0;
     size_t len = sizeof(memsize);
     if (sysctlbyname("hw.physmem", &memsize, &len, nullptr, 0) == 0) {
-        return static_cast<size_t>(memsize);
+        return size_t(memsize);
     }
     return 0;
 #elif defined(__linux__)
@@ -68,7 +68,7 @@ size_t get_available_system_memory() {
     MEMORYSTATUSEX status;
     status.dwLength = sizeof(status);
     if (GlobalMemoryStatusEx(&status)) {
-        return static_cast<size_t>(status.ullAvailPhys);
+        return size_t(status.ullAvailPhys);
     }
     return 0;
 #elif defined(__APPLE__)
@@ -84,7 +84,7 @@ size_t get_available_system_memory() {
 
         // Available = free + inactive + purgeable (can be reclaimed)
         uint64_t available = (uint64_t)(vm_stats.free_count + vm_stats.inactive_count + vm_stats.purgeable_count) * page_size;
-        return static_cast<size_t>(available);
+        return size_t(available);
     }
     return 0;
 #elif defined(__FreeBSD__)
@@ -97,7 +97,7 @@ size_t get_available_system_memory() {
         unsigned int inactive_count = 0;
         len = sizeof(inactive_count);
         sysctlbyname("vm.stats.vm.v_inactive_count", &inactive_count, &len, nullptr, 0);
-        return static_cast<size_t>((free_count + inactive_count)) * page_size;
+        return size_t((free_count + inactive_count)) * page_size;
     }
     return 0;
 #elif defined(__linux__)
@@ -109,7 +109,7 @@ size_t get_available_system_memory() {
             unsigned long long mem_kb;
             if (sscanf(line, "MemAvailable: %llu kB", &mem_kb) == 1) {
                 fclose(f);
-                return static_cast<size_t>(mem_kb * 1024);
+                return size_t(mem_kb * 1024);
             }
         }
         fclose(f);
@@ -143,7 +143,7 @@ size_t get_resident_memory() {
 #elif defined(_WIN32)
     PROCESS_MEMORY_COUNTERS pmc;
     if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
-        return static_cast<size_t>(pmc.WorkingSetSize);
+        return size_t(pmc.WorkingSetSize);
     }
     return 0;
 #elif defined(__APPLE__)
@@ -157,7 +157,7 @@ size_t get_resident_memory() {
     struct rusage usage;
     if (getrusage(RUSAGE_SELF, &usage) == 0) {
         // ru_maxrss is in kilobytes on FreeBSD
-        return static_cast<size_t>(usage.ru_maxrss) * 1024;
+        return size_t(usage.ru_maxrss) * 1024;
     }
     return 0;
 #elif defined(__linux__)

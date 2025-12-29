@@ -22,6 +22,8 @@
 #include <kth/node/parser.hpp>
 #include <kth/node/settings.hpp>
 #include <kth/node/sync_session.hpp>
+#include <kth/node/block_download_coordinator.hpp>
+#include <kth/node/parallel_sync.hpp>
 #include <kth/node/executor/executor.hpp>
 
 

@@ -48,8 +48,8 @@ namespace {
     std::atomic<int> g_signal_received{0};
 
     extern "C" void log_mode_signal_handler(int signal_number) {
-        std::fprintf(stderr, "\n[node] Signal %d received - initiating shutdown...\n", signal_number);
-        std::fflush(stderr);
+        // std::fprintf(stderr, "\n[node] Signal %d received - initiating shutdown...\n", signal_number);
+        // std::fflush(stderr);
         g_signal_received.store(signal_number);
     }
 }

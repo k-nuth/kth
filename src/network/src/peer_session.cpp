@@ -567,82 +567,98 @@ awaitable_expected<peer_session::ptr> async_connect(
 {
     using namespace ::asio::experimental::awaitable_operators;
 
-    // Create resolver
-    auto resolver = std::make_shared<::asio::ip::tcp::resolver>(executor);
+    // Try to parse hostname as IP address first (skip DNS for IPs)
+    std::error_code ip_parse_ec;
+    auto ip_address = ::asio::ip::make_address(hostname, ip_parse_ec);
 
-    // DNS resolution timeout (5 seconds should be plenty for DNS)
-    auto dns_timer = std::make_shared<::asio::steady_timer>(executor);
-    dns_timer->expires_after(std::chrono::seconds(5));
+    ::asio::ip::tcp::endpoint direct_endpoint;
+    bool is_ip_address = !ip_parse_ec;
 
-    auto start_time = std::chrono::steady_clock::now();
-    spdlog::debug("[async_connect] Starting DNS resolution for {} with 5s timeout", hostname);
+    if (is_ip_address) {
+        // Hostname is already an IP address, skip DNS resolution
+        direct_endpoint = ::asio::ip::tcp::endpoint(ip_address, port);
+        spdlog::debug("[async_connect] {} is an IP address, skipping DNS", hostname);
+    } else {
+        // Need DNS resolution
+        auto resolver = std::make_shared<::asio::ip::tcp::resolver>(executor);
 
-    // Use a channel to get the first result (DNS or timeout)
-    auto result_channel = std::make_shared<concurrent_channel<
-        std::variant<
-            std::tuple<std::error_code, ::asio::ip::tcp::resolver::results_type>,
-            std::error_code
-        >
-    >>(executor, 1);
+        // DNS resolution timeout (5 seconds should be plenty for DNS)
+        auto dns_timer = std::make_shared<::asio::steady_timer>(executor);
+        dns_timer->expires_after(std::chrono::seconds(5));
 
-    // Spawn DNS resolution
-    ::asio::co_spawn(executor, [resolver, hostname, port, result_channel]() -> ::asio::awaitable<void> {
-        auto [ec, endpoints] = co_await resolver->async_resolve(
-            hostname, std::to_string(port), ::asio::as_tuple(::asio::use_awaitable));
-        result_channel->try_send(std::error_code{},
-            std::variant<std::tuple<std::error_code, ::asio::ip::tcp::resolver::results_type>, std::error_code>{
-                std::make_tuple(ec, endpoints)});
-    }, ::asio::detached);
+        auto start_time = std::chrono::steady_clock::now();
+        spdlog::debug("[async_connect] Starting DNS resolution for {} with 5s timeout", hostname);
 
-    // Spawn timer
-    ::asio::co_spawn(executor, [dns_timer, result_channel]() -> ::asio::awaitable<void> {
-        auto [ec] = co_await dns_timer->async_wait(::asio::as_tuple(::asio::use_awaitable));
-        if (!ec) {
+        // Use a channel to get the first result (DNS or timeout)
+        auto result_channel = std::make_shared<concurrent_channel<
+            std::variant<
+                std::tuple<std::error_code, ::asio::ip::tcp::resolver::results_type>,
+                std::error_code
+            >
+        >>(executor, 1);
+
+        // Spawn DNS resolution
+        ::asio::co_spawn(executor, [resolver, hostname, port, result_channel]() -> ::asio::awaitable<void> {
+            auto [ec, endpoints] = co_await resolver->async_resolve(
+                hostname, std::to_string(port), ::asio::as_tuple(::asio::use_awaitable));
             result_channel->try_send(std::error_code{},
                 std::variant<std::tuple<std::error_code, ::asio::ip::tcp::resolver::results_type>, std::error_code>{
-                    std::make_error_code(std::errc::timed_out)});
+                    std::make_tuple(ec, endpoints)});
+        }, ::asio::detached);
+
+        // Spawn timer
+        ::asio::co_spawn(executor, [dns_timer, result_channel]() -> ::asio::awaitable<void> {
+            auto [ec] = co_await dns_timer->async_wait(::asio::as_tuple(::asio::use_awaitable));
+            if (!ec) {
+                result_channel->try_send(std::error_code{},
+                    std::variant<std::tuple<std::error_code, ::asio::ip::tcp::resolver::results_type>, std::error_code>{
+                        std::make_error_code(std::errc::timed_out)});
+            }
+        }, ::asio::detached);
+
+        // Wait for first result
+        auto [recv_ec, result] = co_await result_channel->async_receive(
+            ::asio::as_tuple(::asio::use_awaitable));
+
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start_time).count();
+
+        // Cancel whichever didn't complete
+        resolver->cancel();
+        dns_timer->cancel();
+
+        if (recv_ec) {
+            spdlog::debug("[async_connect] DNS channel error for {}: {}", hostname, recv_ec.message());
+            co_return std::unexpected(error::resolve_failed);
         }
-    }, ::asio::detached);
 
-    // Wait for first result
-    auto [recv_ec, result] = co_await result_channel->async_receive(
-        ::asio::as_tuple(::asio::use_awaitable));
+        // Check which result we got
+        if (result.index() == 1) {
+            // Timeout
+            spdlog::debug("[async_connect] DNS resolution for {} timed out after {}ms", hostname, elapsed);
+            co_return std::unexpected(error::resolve_failed);
+        }
 
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - start_time).count();
+        auto [resolve_ec, endpoints] = std::get<0>(result);
+        spdlog::debug("[async_connect] DNS completed for {} in {}ms, ec={}", hostname, elapsed, resolve_ec.message());
 
-    // Cancel whichever didn't complete
-    resolver->cancel();
-    dns_timer->cancel();
+        if (resolve_ec) {
+            spdlog::debug("[async_connect] Failed to resolve {}: {}", hostname, resolve_ec.message());
+            co_return std::unexpected(error::resolve_failed);
+        }
 
-    if (recv_ec) {
-        spdlog::debug("[async_connect] DNS channel error for {}: {}", hostname, recv_ec.message());
-        co_return std::unexpected(error::resolve_failed);
+        // Use first resolved endpoint
+        direct_endpoint = *endpoints.begin();
     }
 
-    // Check which result we got
-    if (result.index() == 1) {
-        // Timeout
-        spdlog::debug("[async_connect] DNS resolution for {} timed out after {}ms", hostname, elapsed);
-        co_return std::unexpected(error::resolve_failed);
-    }
-
-    auto [resolve_ec, endpoints] = std::get<0>(result);
-    spdlog::debug("[async_connect] DNS completed for {} in {}ms, ec={}", hostname, elapsed, resolve_ec.message());
-
-    if (resolve_ec) {
-        spdlog::debug("[async_connect] Failed to resolve {}: {}", hostname, resolve_ec.message());
-        co_return std::unexpected(error::resolve_failed);
-    }
-
-    // Create socket and timer for timeout
+    // Create socket and timer for connection timeout
     ::asio::ip::tcp::socket socket(executor);
     ::asio::steady_timer timer(executor);
     timer.expires_after(timeout);
 
-    // Race: connect vs timeout
+    // Race: connect vs timeout (use single endpoint connect)
     auto connect_result = co_await (
-        ::asio::async_connect(socket, endpoints, ::asio::as_tuple(::asio::use_awaitable)) ||
+        socket.async_connect(direct_endpoint, ::asio::as_tuple(::asio::use_awaitable)) ||
         timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
     );
 
@@ -652,7 +668,7 @@ awaitable_expected<peer_session::ptr> async_connect(
         co_return std::unexpected(error::channel_timeout);
     }
 
-    auto [connect_ec, endpoint] = std::get<0>(connect_result);
+    auto [connect_ec] = std::get<0>(connect_result);
     if (connect_ec) {
         spdlog::debug("[async_connect] Failed to connect to {}:{}: {}",
             hostname, port, connect_ec.message());

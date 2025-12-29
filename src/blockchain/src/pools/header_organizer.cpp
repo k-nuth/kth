@@ -82,9 +82,15 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
         height, encode_hash(tip_hash_));
 
     for (auto const& header : headers) {
-        // Validate header
+        // Compute hash first (needed for validation)
+        KTH_STATS_TIME_START(hash);
+        auto const hash = header.hash();
+        KTH_STATS_TIME_END(global_sync_stats(), hash, hash_time_ns, hash_calls);
+
+        // Validate header with full chain-state validation
+        // This includes: PoW check, difficulty, checkpoint, version, MTP
         KTH_STATS_TIME_START(validate);
-        auto const ec = validate(header, height, prev_hash);
+        auto const ec = validate_full(header, hash, height, tip_index_);
         KTH_STATS_TIME_END(global_sync_stats(), validate, validate_time_ns, validate_calls);
 
         if (ec) {
@@ -93,11 +99,6 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
             result.error = ec;
             break;
         }
-
-        // Compute hash and add to index
-        KTH_STATS_TIME_START(hash);
-        auto const hash = header.hash();
-        KTH_STATS_TIME_END(global_sync_stats(), hash, hash_time_ns, hash_calls);
 
         KTH_STATS_TIME_START(index_add);
         auto const add_result = index_.add(hash, header);
@@ -123,10 +124,10 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
         }
 
         // Log progress every 1000 headers
-        if (result.headers_added > 0 && result.headers_added % 1000 == 0) {
-            spdlog::debug("[header_organizer] Validated {} headers, height {}...",
-                result.headers_added, height - 1);
-        }
+        // if (result.headers_added > 0 && result.headers_added % 1000 == 0) {
+        //     spdlog::debug("[header_organizer] Validated {} headers, height {}...",
+        //         result.headers_added, height - 1);
+        // }
     }
 
     spdlog::debug("[header_organizer] Validation complete: {} headers added, total size {}",
@@ -160,9 +161,22 @@ uint32_t header_organizer::tip_timestamp() const {
 // Validation
 // =============================================================================
 
-code header_organizer::validate(domain::chain::header const& header, int32_t height,
-                                hash_digest const& previous) const {
-    return validator_.validate(header, static_cast<size_t>(height), previous);
+code header_organizer::validate_full(domain::chain::header const& header,
+                                     hash_digest const& hash,
+                                     int32_t height,
+                                     header_index::index_t parent_idx) const {
+    // First do context-free check (PoW, timestamp not too far in future)
+    // Skip PoW check if under checkpoint (trusted headers)
+    if (!validator_.is_under_checkpoint(size_t(height))) {
+        auto const ec = validator_.check(header);
+        if (ec) {
+            return ec;
+        }
+    }
+
+    // Then do full accept validation with chain_state built from header_index
+    // This validates: difficulty, checkpoint, version, MTP
+    return validator_.accept_full(header, hash, size_t(height), parent_idx, index_);
 }
 
 } // namespace kth::blockchain

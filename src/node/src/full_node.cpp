@@ -80,11 +80,14 @@ full_node::full_node(configuration const& configuration)
 }
 
 full_node::~full_node() {
+    spdlog::debug("[full_node] destructor starting");
     // Only stop/join if not already stopped
     if (!stopped()) {
+        spdlog::debug("[full_node] destructor - not stopped, calling stop/join");
         stop();
         join();
     }
+    spdlog::debug("[full_node] destructor - about to destroy members");
 }
 
 // =============================================================================
@@ -173,19 +176,41 @@ full_node::~full_node() {
     }
     spdlog::debug("[full_node] run_blockchain_subscriber() - channel obtained, entering loop");
 
-    while (blockchain_channel->is_open() && !stopped()) {
-        auto result = co_await blockchain_channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
-        auto& [ec, fork_height, incoming, outgoing] = result;
+    auto executor = co_await ::asio::this_coro::executor;
+    ::asio::steady_timer timer(executor);
 
-        if (ec) {
-            break;
-        }
+    while (!stopped()) {
+        // Non-blocking try_receive
+        size_t fork_height{};
+        block_const_ptr_list_const_ptr incoming{};
+        block_const_ptr_list_const_ptr outgoing{};
 
-        if (!handle_reorganized(error::success, fork_height, incoming, outgoing)) {
-            unsubscribe_blockchain(blockchain_channel);
+        bool received = blockchain_channel->try_receive([&](std::error_code ec, size_t fh, auto in, auto out) {
+            if (!ec) {
+                fork_height = fh;
+                incoming = std::move(in);
+                outgoing = std::move(out);
+            }
+        });
+
+        if (received) {
+            if (!handle_reorganized(error::success, fork_height, incoming, outgoing)) {
+                unsubscribe_blockchain(blockchain_channel);
+                break;
+            }
+        } else if (!blockchain_channel->is_open()) {
+            // Channel closed
             break;
+        } else {
+            // No data, sleep briefly
+            timer.expires_after(std::chrono::milliseconds(100));
+            auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                break;  // Timer cancelled
+            }
         }
     }
+    spdlog::debug("[full_node] run_blockchain_subscriber() exiting");
 }
 
 #if ! defined(__EMSCRIPTEN__)
@@ -194,15 +219,13 @@ full_node::~full_node() {
     auto executor = co_await ::asio::this_coro::executor;
     ::asio::steady_timer timer(executor);
 
-    constexpr auto retry_delay = std::chrono::seconds(10);
-
     while (!stopped()) {
         // Wait until we have at least one connected peer
-        spdlog::debug("[full_node] run_sync() waiting for peers, count={}", network_.connection_count());
         while (!stopped() && network_.connection_count() == 0) {
-            timer.expires_after(std::chrono::milliseconds(500));
+            timer.expires_after(std::chrono::milliseconds(100));
             auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-            if (ec) {
+            if (ec || stopped()) {
+                spdlog::debug("[full_node] run_sync() exiting");
                 co_return;
             }
         }
@@ -214,40 +237,67 @@ full_node::~full_node() {
         spdlog::info("[node] Starting initial block sync...");
         auto result = co_await sync_from_best_peer(chain_, network_, network_type_);
 
-        if (result.error) {
-            spdlog::warn("[node] Sync failed: {}, retrying in {}s...",
-                result.error.message(), retry_delay.count());
+        if (stopped()) {
+            co_return;
+        }
 
-            // Wait before retrying
-            timer.expires_after(retry_delay);
+        if (result.error) {
+            spdlog::warn("[node] Sync failed: {} (connected peers: {}), retrying...",
+                result.error.message(), network_.connection_count());
+            // Brief delay to allow maintain_outbound_connections to find new peers
+            timer.expires_after(std::chrono::milliseconds(500));
             auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-            if (ec) {
-                co_return;  // Timer cancelled, node stopping
+            if (ec || stopped()) {
+                co_return;
             }
             continue;
         }
 
-        spdlog::info("[node] Initial sync complete: {} headers, {} blocks, height {}",
-            result.headers_received, result.blocks_received, result.final_height);
-        break;  // Sync successful, exit loop
+        // Check if we actually synced something
+        if (result.headers_received > 0 || result.blocks_received > 0) {
+            spdlog::info("[node] Sync progress: {} headers, {} blocks, height {}",
+                result.headers_received, result.blocks_received, result.final_height);
+            // Continue syncing - there might be more blocks
+            if (stopped()) {
+                co_return;
+            }
+            continue;
+        }
+
+        // No sync happened - no peers ahead of us
+        // Wait longer before checking again (allows new peers to connect)
+        spdlog::debug("[node] No peers ahead of us at height {}, waiting for new peers...",
+            result.final_height);
+        timer.expires_after(std::chrono::seconds(5));
+        auto [ec2] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+        if (ec2 || stopped()) {
+            break;  // Timer cancelled or stop requested
+        }
     }
+    spdlog::debug("[full_node] run_sync() exiting");
 }
 #endif
 
 void full_node::stop() {
 #if ! defined(__EMSCRIPTEN__)
+    // IMPORTANT: Only stop the network here, NOT the chain!
+    // The chain must remain operational until run() completes because
+    // run_sync() may still be inside chain.organize() when this is called.
+    // chain_.stop() is called in join() after run() has fully exited.
     network_.stop();
 #endif
-
-    if (!chain_.stop()) {
-        spdlog::error("[node] Failed to stop blockchain.");
-    }
 }
 
 void full_node::join() {
 #if ! defined(__EMSCRIPTEN__)
     network_.join();
 #endif
+
+    // Now that run() has exited (all coroutines done), it's safe to stop the chain.
+    // This must happen AFTER run() completes to avoid crashes in chain.organize().
+    if (!chain_.stop()) {
+        spdlog::error("[node] Failed to stop blockchain.");
+    }
 
     if (!chain_.close()) {
         spdlog::error("[node] Failed to close blockchain.");
