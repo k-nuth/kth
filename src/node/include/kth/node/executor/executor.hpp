@@ -142,6 +142,10 @@ private:
     std::mutex start_mutex_;
     std::condition_variable start_cv_;
     code start_result_{error::success};
+
+    // Tracks when run() coroutine completes (for safe shutdown)
+    std::promise<void> run_completed_promise_;
+    std::future<void> run_completed_future_;
 };
 
 } // namespace kth::node

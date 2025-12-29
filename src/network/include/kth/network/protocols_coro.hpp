@@ -298,6 +298,26 @@ KN_API awaitable_expected<domain::message::block> request_block(
     hash_digest const& block_hash,
     std::chrono::seconds timeout);
 
+/// Result of batch block request - block with its height
+struct block_with_height {
+    uint32_t height;
+    domain::message::block block;
+};
+
+/// Request multiple blocks in a single getdata (batch mode)
+/// Sends ONE getdata with all hashes and receives blocks as they arrive.
+/// Much more efficient than requesting blocks one at a time.
+/// @param peer The peer session
+/// @param blocks Vector of {height, hash} pairs to request
+/// @param timeout Maximum time to wait for ALL blocks
+/// @return Vector of received blocks with heights, or error
+/// @note Blocks may be received out of order; vector is sorted by height on return
+[[nodiscard]]
+KN_API awaitable_expected<std::vector<block_with_height>> request_blocks_batch(
+    peer_session& peer,
+    std::vector<std::pair<uint32_t, hash_digest>> const& blocks,
+    std::chrono::seconds timeout);
+
 // -----------------------------------------------------------------------------
 // Inventory Protocol
 // -----------------------------------------------------------------------------
