@@ -6,8 +6,11 @@
 #define KTH_NODE_EXE_EXECUTOR_HPP_
 
 #include <atomic>
+#include <condition_variable>
+#include <functional>
 #include <future>
 #include <iostream>
+#include <mutex>
 #include <string_view>
 
 #include <kth/database/databases/property_code.hpp>
@@ -18,121 +21,132 @@
 #include <kth/node/executor/executor_info.hpp>
 
 #include <asio/io_context.hpp>
+#include <asio/executor_work_guard.hpp>
 
 namespace kth::node {
 
-struct executor {
+/// Executor - manages the lifecycle of a full node
+///
+/// The executor owns the io_context and runs it internally in its own thread.
+/// This design allows the node to be used as a library from any language
+/// (via C API) without the caller needing to manage async execution.
+///
+/// Usage:
+///   executor exec(config);
+///   auto ec = exec.start();  // blocks until node is ready
+///   // ... use node ...
+///   exec.stop();  // blocks until node is stopped
+///
+class executor {
+public:
+    using start_handler = std::function<void(code)>;
+    using stop_handler = std::function<void()>;
+
     executor(kth::node::configuration const& config, bool stdout_enabled = true);
     ~executor();
 
     executor(executor const&) = delete;
-    void operator=(executor const&) = delete;
+    executor& operator=(executor const&) = delete;
+
+    // -------------------------------------------------------------------------
+    // Lifecycle - Async versions (callback-based, for C API and non-blocking use)
+    // -------------------------------------------------------------------------
+
+    /// Start the node asynchronously
+    /// @param handler Called when node is ready (or failed to start)
+    void start_async(start_handler handler);
+
+    /// Stop the node asynchronously
+    /// @param handler Called when node is fully stopped (optional)
+    void stop_async(stop_handler handler = nullptr);
+
+    // -------------------------------------------------------------------------
+    // Lifecycle - Sync versions (blocking, for simple use cases)
+    // -------------------------------------------------------------------------
+
+    /// Start the node and block until ready
+    /// @return Error code (success if node started successfully)
+    [[nodiscard]]
+    code start();
+
+    /// Stop the node and block until fully stopped
+    void stop();
+
+    /// Wait for stop signal (SIGINT/SIGTERM)
+    /// Blocks until signal received
+    void wait_for_stop_signal();
+
+    // -------------------------------------------------------------------------
+    // State
+    // -------------------------------------------------------------------------
+
+    /// Check if node is currently running (started and not stopped)
+    [[nodiscard]]
+    bool running() const;
+
+    /// Check if node has been started (may still be starting up)
+    [[nodiscard]]
+    bool started() const;
+
+    /// Check if node is stopped
+    [[nodiscard]]
+    bool stopped() const;
+
+    // -------------------------------------------------------------------------
+    // Node access (only valid when running)
+    // -------------------------------------------------------------------------
+
+    [[nodiscard]]
+    kth::node::full_node& node();
+
+    [[nodiscard]]
+    kth::node::full_node const& node() const;
+
+    // -------------------------------------------------------------------------
+    // Initialization helpers
+    // -------------------------------------------------------------------------
 
 #if ! defined(KTH_DB_READONLY)
     bool do_initchain(std::string_view extra);
-#endif
-
-#if ! defined(KTH_DB_READONLY)
-    /// Initialize and run the node, blocking until signal or error
-    bool init_run_and_wait_for_signal(std::string_view extra, start_modules mod, kth::handle0 handler);
-
-    /// Initialize and run the node without blocking
-    bool init_run(std::string_view extra, start_modules mod, kth::handle0 handler);
-#endif
-
-    /// Signal the node to stop
-    void signal_stop();
-
-    /// Stop and cleanup the node (must be called from main thread)
-    bool close();
-
-    /// Access the full node
-    kth::node::full_node& node();
-    kth::node::full_node const& node() const;
-
-    /// Check if node is stopped
-    bool stopped() const;
-
-    void print_version(std::string_view extra);
-    void initialize_output(std::string_view extra, kth::database::db_mode_type db_mode);
-
-#if ! defined(KTH_DB_READONLY)
     bool init_directory(std::error_code& ec);
     std::error_code init_directory_if_necessary();
 #endif
 
     bool verify_directory();
+    void print_version(std::string_view extra);
+    void initialize_output(std::string_view extra, kth::database::db_mode_type db_mode);
 
 private:
-    bool wait_for_signal_and_close();
     void print_ascii_art();
+    void start_io_thread();
+    void stop_io_thread();
 
-    static
-    void stop(kth::code const& ec);
-
-    static
-    void handle_stop(int code);
-
-    void run_node_async(start_modules mod);
-
-    // Termination state
-    static std::promise<kth::code> stopping_;
-
+    // Configuration
     bool stdout_enabled_;
     kth::node::configuration config_;
+
+    // Node instance
     kth::node::full_node::ptr node_;
-    kth::handle0 run_handler_;
 
-    // IO context for running coroutines
+    // IO context runs in its own thread
     ::asio::io_context io_context_;
+    using work_guard_type = ::asio::executor_work_guard<::asio::io_context::executor_type>;
+    std::optional<work_guard_type> work_guard_;
     std::thread io_thread_;
-    std::atomic<bool> running_{false};
+
+    // State tracking
+    enum class state { stopped, starting, running, stopping };
+    std::atomic<state> state_{state::stopped};
+
+    // Synchronization for sync versions
+    std::mutex start_mutex_;
+    std::condition_variable start_cv_;
+    code start_result_{error::success};
+
+    // Tracks when run() coroutine completes (for safe shutdown)
+    std::promise<void> run_completed_promise_;
+    std::future<void> run_completed_future_;
 };
-
-// Localizable messages.
-#define KTH_SETTINGS_MESSAGE "These are the configuration settings that can be set."
-#define KTH_INFORMATION_MESSAGE "Runs a Bitcoin Cash full-node."
-#define KTH_UNINITIALIZED_CHAIN "The {} directory is not initialized, run: kth --initchain"
-#define KTH_INITIALIZING_CHAIN "Please wait while initializing {} directory..."
-#define KTH_INITCHAIN_NEW "Failed to create directory {} with error, '{}'."
-#define KTH_INITCHAIN_EXISTS "Failed because the directory {} already exists."
-#define KTH_INITCHAIN_TRY "Failed to test directory {} with error, '{}'."
-#define KTH_INITCHAIN_COMPLETE "Completed initialization."
-#define KTH_INITCHAIN_FAILED "Error creating database files."
-
-#define KTH_NODE_INTERRUPT "Press CTRL-C to stop the node."
-#define KTH_NODE_STARTING "Please wait while the node is starting..."
-#define KTH_NODE_START_FAIL "Node failed to start with error, {}."
-#define KTH_NODE_SEEDED "Seeding is complete."
-#define KTH_NODE_STARTED "Node is started."
-
-#define KTH_NODE_SIGNALED "Stop signal detected (code: {})."
-#define KTH_NODE_STOPPING "Please wait while the node is stopping..."
-#define KTH_NODE_STOP_FAIL "Node failed to stop properly, see log."
-#define KTH_NODE_STOPPED "Node stopped successfully."
-#define KTH_GOOD_BYE "Good bye!"
-
-#define KTH_RPC_STOPPING "RPC-ZMQ service is stopping..."
-#define KTH_RPC_STOPPED "RPC-ZMQ service stopped successfully"
-
-#define KTH_USING_CONFIG_FILE "Using config file: {}"
-#define KTH_USING_DEFAULT_CONFIG "Using default configuration settings."
-
-#ifdef NDEBUG
-#define KTH_VERSION_MESSAGE "Knuth Node\n  C++ lib v{}\n  {}\n  Currency: {}\n  Microarchitecture: {}\n  Built for CPU instructions/extensions: {}"
-#else
-#define KTH_VERSION_MESSAGE "Knuth Node\n  C++ lib v{}\n  {}\n  Currency: {}\n  Microarchitecture: {}\n  Built for CPU instructions/extensions: {}\n  (Debug Build)"
-#endif
-
-#define KTH_VERSION_MESSAGE_INIT "Knuth v{}"
-#define KTH_CRYPTOCURRENCY_INIT "Currency: {} - {}."
-#define KTH_MICROARCHITECTURE_INIT "Optimized for microarchitecture: {}."
-#define KTH_MARCH_EXTS_INIT "Built for CPU instructions/extensions: {}."
-#define KTH_DB_TYPE_INIT "Database type: {}."
-#define KTH_DEBUG_BUILD_INIT "(Debug Build)"
-#define KTH_NETWORK_INIT "Network: {0} ({1} - {1:#x})."
-#define KTH_BLOCKCHAIN_CORES_INIT "Blockchain configured to use {} threads."
-#define KTH_NETWORK_CORES_INIT "Networking configured to use {} threads."
 
 } // namespace kth::node
 
