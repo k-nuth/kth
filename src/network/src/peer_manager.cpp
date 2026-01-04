@@ -92,29 +92,48 @@ peer_manager::~peer_manager() {
         co_return;
     }
 
+    spdlog::debug("[peer_manager] remove() called for peer [{}]", peer->authority());
+
     auto nonce = peer->nonce();
     if (nonce == 0) {
         auto const& auth = peer->authority();
         nonce = std::hash<std::string>{}(auth.to_string());
     }
 
+    spdlog::debug("[peer_manager] remove() calling remove_by_nonce for peer [{}]", peer->authority());
     co_await remove_by_nonce(nonce);
+    spdlog::debug("[peer_manager] remove() completed for peer [{}]", peer->authority());
 }
 
 ::asio::awaitable<void> peer_manager::remove_by_nonce(uint64_t nonce) {
+    // Note: With structured concurrency, remove() is called from peer tasks
+    // that are tracked by task_group. The peer_supervisor waits for all tasks
+    // to complete before shutdown finishes, so this operation is safe.
+    // We don't check stopped() because we want cleanup to proceed normally.
+
+    spdlog::debug("[peer_manager] remove_by_nonce() starting co_spawn on strand for nonce {}", nonce);
+
     co_await ::asio::co_spawn(strand_, [this, nonce]() -> ::asio::awaitable<void> {
+        spdlog::debug("[peer_manager] remove_by_nonce() inside strand lambda for nonce {}", nonce);
         auto it = peers_.find(nonce);
         if (it != peers_.end()) {
             spdlog::debug("[peer_manager] Removed peer [{}], remaining: {}",
                 it->second->authority(), peers_.size() - 1);
             peers_.erase(it);
             count_.store(peers_.size());
+        } else {
+            spdlog::debug("[peer_manager] Peer with nonce {} not found in map", nonce);
         }
         co_return;
     }, ::asio::use_awaitable);
+
+    spdlog::debug("[peer_manager] remove_by_nonce() co_spawn completed for nonce {}", nonce);
 }
 
 ::asio::awaitable<bool> peer_manager::exists_by_nonce(uint64_t nonce) const {
+    if (stopped()) {
+        co_return false;
+    }
     co_return co_await ::asio::co_spawn(strand_, [this, nonce]() -> ::asio::awaitable<bool> {
         co_return peers_.find(nonce) != peers_.end();
     }, ::asio::use_awaitable);
@@ -123,6 +142,9 @@ peer_manager::~peer_manager() {
 ::asio::awaitable<bool> peer_manager::exists_by_authority(
     infrastructure::config::authority const& authority) const
 {
+    if (stopped()) {
+        co_return false;
+    }
     co_return co_await ::asio::co_spawn(strand_, [this, &authority]() -> ::asio::awaitable<bool> {
         for (auto const& [nonce, peer] : peers_) {
             if (peer->authority() == authority) {
@@ -134,6 +156,9 @@ peer_manager::~peer_manager() {
 }
 
 ::asio::awaitable<bool> peer_manager::exists_by_ip(::asio::ip::address const& ip) const {
+    if (stopped()) {
+        co_return false;
+    }
     co_return co_await ::asio::co_spawn(strand_, [this, &ip]() -> ::asio::awaitable<bool> {
         for (auto const& [nonce, peer] : peers_) {
             if (peer->authority().asio_ip() == ip) {
@@ -145,6 +170,9 @@ peer_manager::~peer_manager() {
 }
 
 ::asio::awaitable<peer_session::ptr> peer_manager::find_by_nonce(uint64_t nonce) const {
+    if (stopped()) {
+        co_return nullptr;
+    }
     co_return co_await ::asio::co_spawn(strand_, [this, nonce]() -> ::asio::awaitable<peer_session::ptr> {
         auto it = peers_.find(nonce);
         if (it != peers_.end()) {
@@ -155,6 +183,9 @@ peer_manager::~peer_manager() {
 }
 
 ::asio::awaitable<std::vector<peer_session::ptr>> peer_manager::all() const {
+    if (stopped()) {
+        co_return std::vector<peer_session::ptr>{};
+    }
     co_return co_await ::asio::co_spawn(strand_, [this]() -> ::asio::awaitable<std::vector<peer_session::ptr>> {
         std::vector<peer_session::ptr> result;
         result.reserve(peers_.size());
@@ -166,6 +197,9 @@ peer_manager::~peer_manager() {
 }
 
 ::asio::awaitable<size_t> peer_manager::count() const {
+    if (stopped()) {
+        co_return 0;
+    }
     co_return co_await ::asio::co_spawn(strand_, [this]() -> ::asio::awaitable<size_t> {
         co_return peers_.size();
     }, ::asio::use_awaitable);
@@ -199,8 +233,9 @@ void peer_manager::stop_all() {
 
     spdlog::debug("[peer_manager] Stopping all peers");
 
-    // Post to strand to safely iterate and clean up
-    // Note: Callers should run the io_context to ensure completion
+    // Post to strand to safely stop all peers and clear the map.
+    // Note: With structured concurrency, peer tasks may still call remove() after
+    // this, but remove() handles "not found" gracefully (just does nothing).
     ::asio::post(strand_, [this]() {
         for (auto& [nonce, peer] : peers_) {
             peer->stop();

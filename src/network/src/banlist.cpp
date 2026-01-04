@@ -36,8 +36,25 @@ void banlist::ban(
 
     bans_.insert_or_assign(ip, entry);
 
-    spdlog::info("[banlist] Banned {} for {}s, reason: {}",
-        ip.to_string(), duration.count(), to_string(reason));
+    // Log with human-readable duration
+    auto const duration_secs = duration.count();
+    if (duration_secs >= 365 * 24 * 60 * 60) {
+        // More than a year = "permanent"
+        spdlog::info("[banlist] Banned {} permanently, reason: {}",
+            ip.to_string(), to_string(reason));
+    } else if (duration_secs >= 24 * 60 * 60) {
+        spdlog::info("[banlist] Banned {} for {} days, reason: {}",
+            ip.to_string(), duration_secs / (24 * 60 * 60), to_string(reason));
+    } else if (duration_secs >= 60 * 60) {
+        spdlog::info("[banlist] Banned {} for {} hours, reason: {}",
+            ip.to_string(), duration_secs / (60 * 60), to_string(reason));
+    } else {
+        spdlog::info("[banlist] Banned {} for {}s, reason: {}",
+            ip.to_string(), duration_secs, to_string(reason));
+    }
+
+    // Persist to file immediately (bans are rare, so I/O overhead is acceptable)
+    save();
 }
 
 void banlist::ban(
@@ -52,6 +69,7 @@ bool banlist::unban(::asio::ip::address const& ip) {
     auto const erased = bans_.erase(ip);
     if (erased > 0) {
         spdlog::info("[banlist] Unbanned {}", ip.to_string());
+        save();  // Persist immediately
         return true;
     }
     return false;
@@ -94,6 +112,7 @@ size_t banlist::size() const {
 void banlist::clear() {
     bans_.clear();
     spdlog::info("[banlist] Cleared all bans");
+    save();  // Persist immediately
 }
 
 void banlist::sweep_expired() {
