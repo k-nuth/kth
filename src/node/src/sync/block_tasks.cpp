@@ -619,8 +619,8 @@ using namespace ::asio::experimental::awaitable_operators;
                 // Per-phase average times from validation_t
                 if (!fast_merkle_times.empty()) {
                     // Fast mode: show merkle + push breakdown
-                    spdlog::info("[validation] fast mode phases avg: merkle={:.3f}ms push={:.3f}ms",
-                        avg_vec(fast_merkle_times), avg_vec(fast_push_times));
+                    spdlog::info("[validation] height {} fast mode phases avg: merkle={:.3f}ms push={:.3f}ms",
+                        current_height, avg_vec(fast_merkle_times), avg_vec(fast_push_times));
                 } else if (!deser_times.empty()) {
                     // Full validation mode
                     spdlog::info("[validation] phases avg: "
