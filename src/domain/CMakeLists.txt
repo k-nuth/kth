@@ -627,6 +627,31 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   endif()
 endif()
 
+# Benchmarks
+# ------------------------------------------------------------------------------
+if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  find_package(nanobench REQUIRED)
+
+  # Merkle root benchmarks
+  add_executable(kth_domain_bench_merkle bench/merkle/benchmarks.cpp)
+  target_include_directories(kth_domain_bench_merkle PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/bench>)
+  # Include path for original kth SHA256 (for benchmark comparison)
+  target_include_directories(kth_domain_bench_merkle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../infrastructure/src/math)
+  target_link_libraries(kth_domain_bench_merkle PRIVATE ${PROJECT_NAME})
+  target_link_libraries(kth_domain_bench_merkle PRIVATE nanobench::nanobench)
+
+  # Hash (SHA256 / bitcoin_hash) benchmarks
+  add_executable(kth_domain_bench_hash bench/hash/benchmarks.cpp)
+  target_include_directories(kth_domain_bench_hash PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/bench>)
+  # Include path for original kth SHA256 (for benchmark comparison)
+  target_include_directories(kth_domain_bench_hash PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../infrastructure/src/math)
+  target_link_libraries(kth_domain_bench_hash PRIVATE ${PROJECT_NAME})
+  target_link_libraries(kth_domain_bench_hash PRIVATE nanobench::nanobench)
+
+  _group_sources(kth_domain_bench_merkle "${CMAKE_CURRENT_LIST_DIR}/bench")
+  _group_sources(kth_domain_bench_hash "${CMAKE_CURRENT_LIST_DIR}/bench")
+endif()
+
 # Examples
 # ------------------------------------------------------------------------------
 if (WITH_EXAMPLES)
