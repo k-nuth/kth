@@ -149,13 +149,12 @@ static
     // multiple input channels.
     // =========================================================================
 
-    // Peer distribution
-    peer_channel peers_for_headers(executor, 100);
+    // Peer distribution (only for blocks now - headers use single input channel)
     peer_channel peers_for_blocks(executor, 100);
 
-    // Header pipeline
-    header_request_channel header_requests(executor, 10);
-    header_download_channel downloaded_headers(executor, 100);
+    // Header pipeline - single input channel for header_download (CSP pattern)
+    header_download_input_channel header_download_input(executor, 100);
+    header_download_output_channel header_download_output(executor, 100);
     header_validated_channel validated_headers(executor, 100);
 
     // Block pipeline
@@ -175,10 +174,30 @@ static
     // -------------------------------------------------------------------------
     // 1. Peer provider - receives connected peers from network and distributes
     // -------------------------------------------------------------------------
-    peer_issue_channel header_peer_issues(executor, 10);
+    // Unified input channel for peer_provider (CSP pattern - single channel)
+    peer_provider_input_channel peer_provider_input(executor, 100);
+
+    // Bridge task: forwards from network.connected_peers() to unified channel
+    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
+        spdlog::debug("[peer_bridge] Started, forwarding peers to peer_provider");
+        try {
+            while (!network.stopped()) {
+                auto [ec, peer] = co_await network.connected_peers().async_receive(
+                    ::asio::as_tuple(::asio::use_awaitable));
+                if (ec) {
+                    spdlog::debug("[peer_bridge] Network channel closed: {}", ec.message());
+                    break;
+                }
+                peer_provider_input.try_send(std::error_code{}, new_peer{peer});
+            }
+        } catch (std::exception const& e) {
+            spdlog::error("[peer_bridge] Exception: {}", e.what());
+        }
+        spdlog::debug("[peer_bridge] Ended");
+    });
 
     all_tasks.spawn([&]() -> ::asio::awaitable<void> {
-        spdlog::info("[peer_provider] Task started, waiting for peers from network...");
+        spdlog::info("[peer_provider] Task started, waiting for peers...");
 
         // Maintain full list of connected peers - single source of truth
         std::vector<network::peer_session::ptr> all_peers;
@@ -191,61 +210,57 @@ static
             // Remove stopped peers first
             std::erase_if(all_peers, [](auto const& p) { return p->stopped(); });
 
-            spdlog::debug("[peer_provider] Broadcasting {} peers to sync tasks", all_peers.size());
-
             // For headers: filter out bad peers
             std::vector<network::peer_session::ptr> header_peers;
             header_peers.reserve(all_peers.size());
             for (auto const& p : all_peers) {
                 if (!header_bad_peers.contains(p->nonce())) {
                     header_peers.push_back(p);
+                } else {
+                    spdlog::info("[peer_provider] Filtering peer {} (nonce={}) - in bad list",
+                        p->authority_with_agent(), p->nonce());
                 }
             }
 
-            // Send filtered list to headers, full list to blocks
-            peers_for_headers.try_send(std::error_code{}, peers_updated{header_peers});
+            spdlog::info("[peer_provider] Broadcasting {} peers to sync tasks (all={}, bad_list={})",
+                header_peers.size(), all_peers.size(), header_bad_peers.size());
+
+            // Send filtered list to headers (via unified input channel), full list to blocks
+            header_download_input.try_send(std::error_code{}, peers_updated{header_peers});
             peers_for_blocks.try_send(std::error_code{}, peers_updated{all_peers});
         };
 
         try {
-            // Receive from network OR peer issues
+            // Single channel, FIFO processing - no priority issues
             while (!network.stopped()) {
-                auto event = co_await (
-                    network.connected_peers().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-                    header_peer_issues.async_receive(::asio::as_tuple(::asio::use_awaitable))
-                );
+                auto [ec, event] = co_await peer_provider_input.async_receive(
+                    ::asio::as_tuple(::asio::use_awaitable));
 
-                if (event.index() == 0) {
+                if (ec) {
+                    spdlog::debug("[peer_provider] Input channel closed: {}", ec.message());
+                    break;
+                }
+
+                if (auto* np = std::get_if<new_peer>(&event)) {
                     // New peer from network
-                    auto [ec, peer] = std::get<0>(event);
-                    if (ec) {
-                        spdlog::debug("[peer_provider] Network channel closed: {}", ec.message());
-                        break;
-                    }
+                    if (np->peer->stopped()) continue;
 
-                    if (peer->stopped()) continue;
-
-                    spdlog::debug("[peer_provider] New peer connected: {}", peer->authority_with_agent());
-                    all_peers.push_back(peer);
+                    spdlog::info("[peer_provider] New peer connected: {} (nonce={})",
+                        np->peer->authority_with_agent(), np->peer->nonce());
+                    all_peers.push_back(np->peer);
                     broadcast_peers();
-                } else {
+                } else if (auto* issue = std::get_if<peer_issue>(&event)) {
                     // Peer issue report from header_download
-                    auto [ec, issue] = std::get<1>(event);
-                    if (ec) {
-                        spdlog::debug("[peer_provider] Peer issues channel closed");
-                        continue;  // Don't break, keep listening for network peers
-                    }
-
-                    spdlog::info("[peer_provider] Peer {} reported issue: {}, excluding from header sync",
-                        issue.peer->authority_with_agent(), issue.error.message());
-                    header_bad_peers.insert(issue.peer->nonce());
+                    spdlog::info("[peer_provider] Peer {} (nonce={}) reported issue: {}, excluding from header sync",
+                        issue->peer->authority_with_agent(), issue->peer->nonce(), issue->error.message());
+                    header_bad_peers.insert(issue->peer->nonce());
 
                     // Update peer's misbehavior score (timeout = 10 points)
                     // If score reaches threshold (100), the peer will be banned
-                    if (issue.peer->misbehave(network::peer_session::misbehavior_timeout)) {
+                    if (issue->peer->misbehave(network::peer_session::misbehavior_timeout)) {
                         spdlog::warn("[peer_provider] Peer {} reached misbehavior threshold, banning",
-                            issue.peer->authority_with_agent());
-                        network.ban_peer(issue.peer, std::chrono::hours{24}, network::ban_reason::node_misbehaving);
+                            issue->peer->authority_with_agent());
+                        network.ban_peer(issue->peer, std::chrono::hours{24}, network::ban_reason::node_misbehaving);
                     }
 
                     // Broadcast updated (filtered) list immediately
@@ -258,20 +273,18 @@ static
 
         // Network stopped - signal all tasks to stop
         spdlog::info("[peer_provider] Network stopped, signaling all tasks to stop");
+        header_download_input.try_send(std::error_code{}, stop_request{});
         stop_signal.close();
 
         spdlog::debug("[peer_provider] Task ended");
     });
 
     // -------------------------------------------------------------------------
-    // 2. Header download task
+    // 2. Header download task (1 input, 1 output)
     // -------------------------------------------------------------------------
     all_tasks.spawn(header_download_task(
-        peers_for_headers,
-        header_peer_issues,
-        header_requests,
-        downloaded_headers,
-        stop_signal
+        header_download_input,
+        header_download_output
     ));
 
     // -------------------------------------------------------------------------
@@ -279,7 +292,7 @@ static
     // -------------------------------------------------------------------------
     all_tasks.spawn(header_validation_task(
         organizer,
-        downloaded_headers,
+        header_download_output,
         validated_headers,
         stop_signal
     ));
@@ -342,7 +355,7 @@ static
             static_cast<blockchain::header_index::index_t>(headers_synced_to));
 
         spdlog::debug("[sync_coordinator] Starting header sync from height {}", headers_synced_to);
-        header_requests.try_send(std::error_code{}, header_request{
+        header_download_input.try_send(std::error_code{}, header_request{
             .from_height = headers_synced_to,
             .from_hash = from_hash
         });
@@ -385,11 +398,19 @@ static
                         spdlog::debug("[sync_coordinator] Headers synced to {} before failure", headers_synced_to);
                     }
 
+                    // Inform peer_provider about the failed peer
+                    if (result.source_peer) {
+                        peer_provider_input.try_send(std::error_code{}, peer_issue{
+                            .peer = result.source_peer,
+                            .error = result.result
+                        });
+                    }
+
                     // Ban peer if they sent invalid data (not network errors)
                     // Invalid data = 100 points = instant ban
                     if (result.source_peer && is_bannable_error(result.result)) {
                         result.source_peer->misbehave(network::peer_session::misbehavior_invalid_data);
-                        spdlog::warn("[sync_coordinator] Banning peer {} for invalid headers: {}",
+                        spdlog::debug("[sync_coordinator] Banning peer {} for invalid headers: {}",
                             result.source_peer->authority_with_agent(), result.result.message());
                         network.ban_peer(result.source_peer, std::chrono::hours{24 * 365}, network::ban_reason::node_misbehaving);
                     }
@@ -401,7 +422,7 @@ static
                     spdlog::debug("[sync_coordinator] Retrying header sync from height {} with another peer",
                         headers_synced_to);
 
-                    bool sent = header_requests.try_send(std::error_code{}, header_request{
+                    bool sent = header_download_input.try_send(std::error_code{}, header_request{
                         .from_height = headers_synced_to,
                         .from_hash = next_hash
                     });
@@ -456,7 +477,7 @@ static
                         auto next_hash = organizer.index().get_hash(
                             static_cast<blockchain::header_index::index_t>(headers_synced_to));
 
-                        bool sent = header_requests.try_send(std::error_code{}, header_request{
+                        bool sent = header_download_input.try_send(std::error_code{}, header_request{
                             .from_height = headers_synced_to,
                             .from_hash = next_hash
                         });
@@ -499,7 +520,7 @@ static
                         auto next_hash = organizer.index().get_hash(
                             static_cast<blockchain::header_index::index_t>(headers_synced_to));
 
-                        header_requests.try_send(std::error_code{}, header_request{
+                        header_download_input.try_send(std::error_code{}, header_request{
                             .from_height = headers_synced_to,
                             .from_hash = next_hash
                         });
@@ -530,7 +551,7 @@ static
                     // Invalid data = 100 points = instant ban
                     if (result.source_peer && is_bannable_error(result.result)) {
                         result.source_peer->misbehave(network::peer_session::misbehavior_invalid_data);
-                        spdlog::warn("[sync_coordinator] Banning peer {} for invalid block: {}",
+                        spdlog::debug("[sync_coordinator] Banning peer {} for invalid block: {}",
                             result.source_peer->authority_with_agent(), result.result.message());
                         network.ban_peer(result.source_peer, std::chrono::hours{24 * 365}, network::ban_reason::node_misbehaving);
                     }
