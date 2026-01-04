@@ -28,6 +28,9 @@ struct peers_updated {
 // Header sync messages
 // -----------------------------------------------------------------------------
 
+// Signal to stop processing
+struct stop_request {};
+
 struct header_request {
     uint32_t from_height;
     hash_digest from_hash;
@@ -52,7 +55,11 @@ struct peer_issue {
 };
 
 // Header download task output (can be headers or failure report)
-using header_download_event = std::variant<downloaded_headers, peer_failure_report>;
+using header_download_output = std::variant<downloaded_headers, peer_failure_report>;
+
+// Header download task input - single channel with all message types (CSP pattern)
+// Messages are processed in FIFO order, no arbitrary priority
+using header_download_input = std::variant<stop_request, peers_updated, header_request>;
 
 struct headers_validated {
     uint32_t height;
@@ -83,18 +90,35 @@ struct block_validated {
     network::peer_session::ptr source_peer;  // For banning on validation failure
 };
 
+// -----------------------------------------------------------------------------
+// Peer provider messages (unified input channel)
+// -----------------------------------------------------------------------------
+
+// New peer connected from network
+struct new_peer {
+    network::peer_session::ptr peer;
+};
+
+// Peer provider input - single channel for CSP pattern
+using peer_provider_input = std::variant<new_peer, peer_issue>;
+
 // =============================================================================
 // Channel Type Aliases
 // =============================================================================
 
-// Peer distribution
+// Peer provider (unified input)
+using peer_provider_input_channel = concurrent_channel<peer_provider_input>;
+
+// Peer distribution (output)
 using peer_channel = concurrent_channel<peers_updated>;
-using peer_issue_channel = concurrent_channel<peer_issue>;
 
 // Header sync pipeline
-using header_request_channel = concurrent_channel<header_request>;
-using header_download_channel = concurrent_channel<header_download_event>;
+using header_download_input_channel = concurrent_channel<header_download_input>;
+using header_download_output_channel = concurrent_channel<header_download_output>;
 using header_validated_channel = concurrent_channel<headers_validated>;
+
+// Legacy aliases (for block sync which still uses separate channels)
+using header_request_channel = concurrent_channel<header_request>;
 
 // Block sync pipeline
 using block_request_channel = concurrent_channel<block_range_request>;

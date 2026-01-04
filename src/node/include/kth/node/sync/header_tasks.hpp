@@ -16,21 +16,17 @@ namespace kth::node::sync {
 // Header Download Task
 // =============================================================================
 //
-// Downloads headers from peers.
-// - Receives peers from peer_channel (already filtered by peer_provider)
-// - Receives requests from header_request_channel
-// - Sends downloaded headers to header_download_channel
-// - Reports peer issues to peer_issue_channel (peer_provider filters them)
+// Downloads headers from peers using CSP pattern.
+// - Input: single channel with variant (stop, peers_updated, header_request)
+// - Output: single channel with variant (downloaded_headers, peer_failure_report)
+// - Messages processed in FIFO order (no arbitrary priority)
 // - Uses sticky peer selection (same peer until failure)
 //
 // =============================================================================
 
 ::asio::awaitable<void> header_download_task(
-    peer_channel& peers,
-    peer_issue_channel& peer_issues,
-    header_request_channel& requests,
-    header_download_channel& output,
-    stop_channel& stop
+    header_download_input_channel& input,
+    header_download_output_channel& output
 );
 
 // =============================================================================
@@ -38,7 +34,7 @@ namespace kth::node::sync {
 // =============================================================================
 //
 // Validates headers and writes to organizer.
-// - Receives headers from header_download_channel
+// - Receives headers from header_download_output_channel
 // - Writes to header_organizer (SINGLE WRITER - no lock needed)
 // - Sends validation results to header_validated_channel
 //
@@ -46,7 +42,7 @@ namespace kth::node::sync {
 
 ::asio::awaitable<void> header_validation_task(
     blockchain::header_organizer& organizer,
-    header_download_channel& input,
+    header_download_output_channel& input,
     header_validated_channel& output,
     stop_channel& stop
 );
