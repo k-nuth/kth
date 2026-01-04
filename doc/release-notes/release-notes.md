@@ -1,3 +1,19 @@
+# version 0.75.0
+
+You can install Knuth node version v0.75.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* bench: experimental block_index_store implementations by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/150
+* feature: add new byte_reader functions for optimized deserialization by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/149
+* refactor: centralize version management in domain module by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/153
+* perf(merkle): optimize merkle root with Bitcoin Core SHA256 by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/159
+* chore(deps): update boost to 1.90.0 by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/160
+* release: 0.75.0 by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/161
+
+
+**Full Changelog**: https://github.com/k-nuth/kth-mono/compare/v0.74.0...v0.75.0
+
+
 # version 0.74.0
 
 You can install Knuth node version v0.74.0 [using these instructions](https://kth.cash/#download).
