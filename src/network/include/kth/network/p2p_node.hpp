@@ -136,6 +136,31 @@ struct connection_result {
 };
 
 // =============================================================================
+// Peer event (for peer_supervisor channel)
+// =============================================================================
+
+enum class peer_direction {
+    inbound,
+    outbound
+};
+
+/// Result of handshake sent back to connect() caller
+struct handshake_response {
+    code result;  // error::success or error code
+};
+
+/// Channel type for handshake response (one-shot)
+using handshake_response_channel = concurrent_channel<handshake_response>;
+
+struct peer_event {
+    peer_session::ptr peer;
+    peer_direction direction;
+    // Optional response channel for connect() to wait on handshake result
+    // If nullptr, no response is expected (e.g., for seeding connections)
+    std::shared_ptr<handshake_response_channel> response_channel;
+};
+
+// =============================================================================
 // P2P Node (main networking class)
 // =============================================================================
 
@@ -257,6 +282,9 @@ private:
     ::asio::awaitable<void> run_peer_protocols(peer_session::ptr peer);
     ::asio::awaitable<void> maintain_outbound_connections();
 
+    // Peer supervisor - manages all peer lifecycles (structured concurrency)
+    ::asio::awaitable<void> peer_supervisor();
+
     // Helper for seeding - takes params by value to avoid lambda capture issues
     ::asio::awaitable<void> connect_to_seed(
         std::string seed_host,
@@ -280,10 +308,18 @@ private:
 
     std::atomic<bool> stopped_{true};
     std::atomic<bool> seeded_{false};
+    std::atomic<bool> supervisor_ready_{false};  // Signals that peer_supervisor is ready
     kth::atomic<infrastructure::config::checkpoint> top_block_;
 
     // Message dispatcher for routing messages to handlers
     message_dispatcher dispatcher_;
+
+    // Channels for structured concurrency (peer_supervisor pattern)
+    // New peers are sent here by run_inbound/run_outbound, processed by peer_supervisor
+    std::unique_ptr<concurrent_channel<peer_event>> new_peer_channel_;
+
+    // Signal to stop the peer_supervisor gracefully
+    std::unique_ptr<concurrent_event_channel> stop_signal_;
 };
 
 } // namespace kth::network

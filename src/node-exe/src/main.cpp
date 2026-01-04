@@ -2,20 +2,22 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <cstdio>
-
-#include <format>
+#include <atomic>
 #include <chrono>
-#include <string_view>
+#include <csignal>
+#include <cstdio>
+#include <format>
 #include <iostream>
+#include <string_view>
 #include <thread>
 
 #include <kth/node.hpp>
 #include <kth/infrastructure/display_mode.hpp>
-#include <boost/iostreams/device/file_descriptor.hpp>
 #include <kth/node/executor/executor.hpp>
 #include <kth/node/executor/executor_info.hpp>
 #include <kth/domain/version.hpp>
+
+#include <spdlog/spdlog.h>
 
 #include "tui_dashboard.hpp"
 
@@ -29,25 +31,70 @@ std::string version() {
 
 void do_help(kth::node::parser& metadata, std::ostream& output) {
     auto const options = metadata.load_options();
-    kth::infrastructure::config::printer help(options, application_name, KTH_INFORMATION_MESSAGE);
+    kth::infrastructure::config::printer help(options, application_name, "Runs a Bitcoin Cash full-node.");
     help.initialize();
     help.commandline(output);
 }
 
 void do_settings(kth::node::parser& metadata, std::ostream& output) {
     auto const settings = metadata.load_settings();
-    kth::infrastructure::config::printer print(settings, application_name, KTH_SETTINGS_MESSAGE);
+    kth::infrastructure::config::printer print(settings, application_name, "These are the configuration settings that can be set.");
     print.initialize();
     print.settings(output);
 }
 
+// Global signal state for run_with_log
+namespace {
+    std::atomic<int> g_signal_received{0};
+
+    extern "C" void log_mode_signal_handler(int signal_number) {
+        // std::fprintf(stderr, "\n[node] Signal %d received - initiating shutdown...\n", signal_number);
+        // std::fflush(stderr);
+        g_signal_received.store(signal_number);
+    }
+}
+
 bool run_with_log(kth::node::executor& host) {
     // Traditional log mode - scrolling output
-    return host.init_run_and_wait_for_signal(version(), kth::node::start_modules::all, [&host](std::error_code const& ec) {
-        if (ec != kth::error::success) {
-            host.signal_stop();
-        }
-    });
+
+    // Install signal handler IMMEDIATELY so Ctrl-C works during startup
+    g_signal_received.store(0);
+    auto prev_sigint = std::signal(SIGINT, log_mode_signal_handler);
+    auto prev_sigterm = std::signal(SIGTERM, log_mode_signal_handler);
+
+    // Start node (blocks until ready)
+    auto ec = host.start();
+    if (ec != kth::error::success) {
+        // Restore handlers
+        std::signal(SIGINT, prev_sigint);
+        std::signal(SIGTERM, prev_sigterm);
+        return false;
+    }
+
+    // Check if signal was received during startup
+    if (g_signal_received.load() != 0) {
+        spdlog::info("[node] Signal received during startup, stopping...");
+        host.stop();
+        std::signal(SIGINT, prev_sigint);
+        std::signal(SIGTERM, prev_sigterm);
+        return true;
+    }
+
+    // Wait for SIGINT/SIGTERM (poll the atomic)
+    while (g_signal_received.load() == 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    spdlog::info("[node] Stop signal detected (code: {}).", g_signal_received.load());
+
+    // Stop node (blocks until stopped)
+    host.stop();
+
+    // Restore handlers
+    std::signal(SIGINT, prev_sigint);
+    std::signal(SIGTERM, prev_sigterm);
+
+    return true;
 }
 
 bool run_with_tui(kth::node::executor& host) {
@@ -65,7 +112,7 @@ bool run_with_tui(kth::node::executor& host) {
     status.version = std::string(kth::version);
     status.network_name = "BCH Mainnet";  // TODO: get from config
     status.state = kth::node_exe::node_status::sync_state::starting;
-    status.start_time = std::chrono::system_clock::now();  // Initialize start time
+    status.start_time = std::chrono::system_clock::now();
     dashboard->update_status(status);
 
     // Start TUI
@@ -76,44 +123,33 @@ bool run_with_tui(kth::node::executor& host) {
         return run_with_log(host);  // Fallback to log mode
     }
 
-    // Run node (non-blocking)
-    bool init_ok = host.init_run(version(), kth::node::start_modules::all, [&host, &dashboard, &status](std::error_code const& ec) {
-        if (ec != kth::error::success) {
-            status.state = kth::node_exe::node_status::sync_state::error;
-            dashboard->update_status(status);
-            dashboard->request_exit();  // Signal TUI to exit on error
-        }
-    });
-
-    if (!init_ok) {
+    // Start node (blocks until ready)
+    auto ec = host.start();
+    if (ec != kth::error::success) {
         dashboard->stop();
         return false;
     }
 
-    // TODO(fernando): Update dashboard periodically with node status
-    // This would be done via a callback mechanism from the node
+    // Update status to syncing headers
+    status.state = kth::node_exe::node_status::sync_state::syncing_headers;
+    dashboard->update_status(status);
 
-    // Wait for TUI exit (user pressed q or ESC, or node error)
+    // Wait for TUI exit (user pressed q or ESC)
     while (dashboard->is_running()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    // Stop node if TUI exited
-    if (!host.stopped()) {
-        host.signal_stop();
-    }
-
+    // Stop TUI first
     dashboard->stop();
-    return host.close();
+
+    // Stop node (blocks until stopped)
+    host.stop();
+    return true;
 }
 
 bool run_daemon(kth::node::executor& host) {
-    // Daemon mode - minimal output, suitable for systemd
-    return host.init_run_and_wait_for_signal(version(), kth::node::start_modules::all, [&host](std::error_code const& ec) {
-        if (ec != kth::error::success) {
-            host.signal_stop();
-        }
-    });
+    // Daemon mode - same as log mode but for systemd
+    return run_with_log(host);
 }
 
 bool run(kth::node::executor& host, kth::display_mode mode) {

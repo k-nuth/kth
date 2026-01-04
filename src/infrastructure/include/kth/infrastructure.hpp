@@ -113,6 +113,8 @@
 #include <kth/infrastructure/utility/track.hpp>
 #include <kth/infrastructure/utility/async_channel.hpp>
 #include <kth/infrastructure/utility/awaitable_helpers.hpp>
+#include <kth/infrastructure/utility/cpu_executor.hpp>
+#include <kth/infrastructure/utility/task_group.hpp>
 #include <kth/infrastructure/utility/writer.hpp>
 
 #include <kth/infrastructure/wallet/dictionary.hpp>
