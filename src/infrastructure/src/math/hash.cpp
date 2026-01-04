@@ -17,8 +17,14 @@
 #include "../math/external/pkcs5_pbkdf2.h"
 #include "../math/external/ripemd160.h"
 #include "../math/external/sha1.h"
-#include "../math/external/sha256.h"
 #include "../math/external/sha512.h"
+
+// Bitcoin Core optimized SHA256 implementation
+// Uses ARM SHA-NI on Apple Silicon, x86 SHA-NI/AVX2/SSE4 on Intel/AMD
+#include <crypto/sha256.h>
+
+// Original kth SHA256 implementation (kept for reference/benchmarks)
+// #include "../math/external/sha256.h"
 
 //TODO(fernando): see what to do with Currency
 // #ifdef KTH_CURRENCY_LTC
@@ -26,6 +32,59 @@
 // #endif //KTH_CURRENCY_LTC
 
 namespace kth {
+
+// =============================================================================
+// SHA256 implementation using Bitcoin Core's optimized code
+// Uses hardware acceleration when available:
+// - ARM: SHA-NI crypto extensions (Apple Silicon, ARM64 Linux)
+// - x86: SHA-NI, AVX2, SSE4.1, SSE4 (auto-detected)
+// =============================================================================
+
+hash_digest sha256_hash(byte_span data) {
+    hash_digest hash;
+    CSHA256().Write(data.data(), data.size()).Finalize(hash.data());
+    return hash;
+}
+
+// Original implementation (kept for benchmarks):
+// hash_digest sha256_hash(byte_span data) {
+//     hash_digest hash;
+//     SHA256_(data.data(), data.size(), hash.data());
+//     return hash;
+// }
+
+data_chunk sha256_hash_chunk(byte_span data) {
+    data_chunk hash(hash_size);
+    CSHA256().Write(data.data(), data.size()).Finalize(hash.data());
+    return hash;
+}
+
+// Original implementation (kept for benchmarks):
+// data_chunk sha256_hash_chunk(byte_span data) {
+//     data_chunk hash(hash_size);
+//     SHA256_(data.data(), data.size(), hash.data());
+//     return hash;
+// }
+
+hash_digest sha256_hash(byte_span first, byte_span second) {
+    hash_digest hash;
+    CSHA256()
+        .Write(first.data(), first.size())
+        .Write(second.data(), second.size())
+        .Finalize(hash.data());
+    return hash;
+}
+
+// Original implementation (kept for benchmarks):
+// hash_digest sha256_hash(byte_span first, byte_span second) {
+//     hash_digest hash;
+//     SHA256CTX context;
+//     SHA256Init(&context);
+//     SHA256Update(&context, first.data(), first.size());
+//     SHA256Update(&context, second.data(), second.size());
+//     SHA256Final(&context, hash.data());
+//     return hash;
+// }
 
 hash_digest bitcoin_hash(byte_span data) {
     return sha256_hash(sha256_hash(data));
@@ -65,28 +124,6 @@ short_hash sha1_hash(byte_span data) {
 data_chunk sha1_hash_chunk(byte_span data) {
     data_chunk hash(short_hash_size);
     SHA1_(data.data(), data.size(), hash.data());
-    return hash;
-}
-
-hash_digest sha256_hash(byte_span data) {
-    hash_digest hash;
-    SHA256_(data.data(), data.size(), hash.data());
-    return hash;
-}
-
-data_chunk sha256_hash_chunk(byte_span data) {
-    data_chunk hash(hash_size);
-    SHA256_(data.data(), data.size(), hash.data());
-    return hash;
-}
-
-hash_digest sha256_hash(byte_span first, byte_span second) {
-    hash_digest hash;
-    SHA256CTX context;
-    SHA256Init(&context);
-    SHA256Update(&context, first.data(), first.size());
-    SHA256Update(&context, second.data(), second.size());
-    SHA256Final(&context, hash.data());
     return hash;
 }
 

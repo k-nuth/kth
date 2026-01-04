@@ -419,6 +419,127 @@ if (KTH_WITH_QRENCODE)
   )
 endif()
 
+# =============================================================================
+# Bitcoin Core SHA256 (third-party) - compiled directly into infrastructure
+# =============================================================================
+set(bitcoin_core_crypto_sources
+    third-party/bitcoin-core/crypto/sha256.cpp
+)
+
+if(NOT MSVC)
+    include(CheckCXXSourceCompiles)
+
+    # Check for SSE4.1 intrinsics
+    set(SSE41_CXXFLAGS -msse4.1)
+    set(CMAKE_REQUIRED_FLAGS "${SSE41_CXXFLAGS}")
+    check_cxx_source_compiles("
+        #include <immintrin.h>
+        int main() {
+            __m128i a = _mm_set1_epi32(0);
+            __m128i b = _mm_set1_epi32(1);
+            __m128i r = _mm_blend_epi16(a, b, 0xFF);
+            return _mm_extract_epi32(r, 3);
+        }
+    " HAVE_SSE41)
+    unset(CMAKE_REQUIRED_FLAGS)
+
+    # Check for AVX2 intrinsics
+    set(AVX2_CXXFLAGS -mavx -mavx2)
+    list(JOIN AVX2_CXXFLAGS " " CMAKE_REQUIRED_FLAGS)
+    check_cxx_source_compiles("
+        #include <immintrin.h>
+        int main() {
+            __m256i l = _mm256_set1_epi32(0);
+            return _mm256_extract_epi32(l, 7);
+        }
+    " HAVE_AVX2)
+    unset(CMAKE_REQUIRED_FLAGS)
+
+    # Check for x86 SHA-NI intrinsics
+    set(X86_SHANI_CXXFLAGS -msse4 -msha)
+    list(JOIN X86_SHANI_CXXFLAGS " " CMAKE_REQUIRED_FLAGS)
+    check_cxx_source_compiles("
+        #include <immintrin.h>
+        int main() {
+            __m128i i = _mm_set1_epi32(0);
+            __m128i j = _mm_set1_epi32(1);
+            __m128i k = _mm_set1_epi32(2);
+            return _mm_extract_epi32(_mm_sha256rnds2_epu32(i, j, k), 0);
+        }
+    " HAVE_X86_SHANI)
+    unset(CMAKE_REQUIRED_FLAGS)
+
+    # Check for ARMv8 SHA-NI intrinsics (Apple Silicon, ARM64 Linux)
+    set(ARM_SHANI_CXXFLAGS -march=armv8-a+crypto)
+    set(CMAKE_REQUIRED_FLAGS "${ARM_SHANI_CXXFLAGS}")
+    check_cxx_source_compiles("
+        #include <arm_neon.h>
+        int main() {
+            uint32x4_t a, b, c;
+            vsha256h2q_u32(a, b, c);
+            vsha256hq_u32(a, b, c);
+            vsha256su0q_u32(a, b);
+            vsha256su1q_u32(a, b, c);
+        }
+    " HAVE_ARM_SHANI)
+    unset(CMAKE_REQUIRED_FLAGS)
+endif()
+
+# SSE4.1 (for SHA256D64 4-way)
+if(HAVE_SSE41)
+    list(APPEND bitcoin_core_crypto_sources
+        third-party/bitcoin-core/crypto/sha256_sse41.cpp
+    )
+    set_property(SOURCE third-party/bitcoin-core/crypto/sha256_sse41.cpp
+        PROPERTY COMPILE_OPTIONS ${SSE41_CXXFLAGS}
+    )
+
+    # SSE4 transform (only on x86_64)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
+        list(APPEND bitcoin_core_crypto_sources
+            third-party/bitcoin-core/crypto/sha256_sse4.cpp
+        )
+        set_property(SOURCE third-party/bitcoin-core/crypto/sha256_sse4.cpp
+            PROPERTY COMPILE_OPTIONS ${SSE41_CXXFLAGS}
+        )
+    endif()
+endif()
+
+# AVX2 (for SHA256D64 8-way)
+if(HAVE_AVX2)
+    list(APPEND bitcoin_core_crypto_sources
+        third-party/bitcoin-core/crypto/sha256_avx2.cpp
+    )
+    set_property(SOURCE third-party/bitcoin-core/crypto/sha256_avx2.cpp
+        PROPERTY COMPILE_OPTIONS ${AVX2_CXXFLAGS}
+    )
+endif()
+
+# x86 SHA-NI
+if(HAVE_X86_SHANI)
+    list(APPEND bitcoin_core_crypto_sources
+        third-party/bitcoin-core/crypto/sha256_x86_shani.cpp
+    )
+    set_property(SOURCE third-party/bitcoin-core/crypto/sha256_x86_shani.cpp
+        PROPERTY COMPILE_OPTIONS ${SSE41_CXXFLAGS} ${X86_SHANI_CXXFLAGS}
+    )
+endif()
+
+# ARM SHA-NI (Apple Silicon, ARM64)
+if(HAVE_ARM_SHANI)
+    list(APPEND bitcoin_core_crypto_sources
+        third-party/bitcoin-core/crypto/sha256_arm_shani.cpp
+    )
+    set_property(SOURCE third-party/bitcoin-core/crypto/sha256_arm_shani.cpp
+        PROPERTY COMPILE_OPTIONS ${ARM_SHANI_CXXFLAGS}
+    )
+endif()
+
+set(kth_sources ${kth_sources} ${bitcoin_core_crypto_sources})
+
+# =============================================================================
+# Main library
+# =============================================================================
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX CXX_STANDARD 23 CXX_STANDARD_REQUIRED TRUE)
@@ -429,7 +550,22 @@ endif(ENABLE_POSITION_INDEPENDENT_CODE)
 
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third-party/bitcoin-core>
   $<INSTALL_INTERFACE:include>)
+
+# Enable SHA256 optimizations based on detected CPU features
+if(HAVE_SSE41)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_SSE41)
+endif()
+if(HAVE_AVX2)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_AVX2)
+endif()
+if(HAVE_X86_SHANI)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_X86_SHANI)
+endif()
+if(HAVE_ARM_SHANI)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_ARM_SHANI)
+endif()
 
 if (NOT ENABLE_SHARED)
     target_compile_definitions(${PROJECT_NAME} PUBLIC -DKI_STATIC)

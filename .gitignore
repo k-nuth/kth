@@ -12,6 +12,6 @@ test_runner/
 doc/release-notes/*.backup
 src/domain/CMakeLists.txt
 bchn/
+/bitcoin-core/
 *.mdb
 *.log
-
