@@ -31,12 +31,13 @@ settings::settings()
     , connect_batch_size(5)
     , connect_timeout_seconds(5)
     , channel_handshake_seconds(6000)
-    , channel_heartbeat_minutes(5)
+    , channel_heartbeat_minutes(2)  // BCHN: PING_INTERVAL = 2 minutes
     , channel_inactivity_minutes(10)
     , channel_expiration_minutes(60)
     , channel_germination_seconds(30)
     , host_pool_capacity(1000)
     , hosts_file("hosts.cache")
+    , banlist_file("banlist.dat")
     , self(unspecified_network_address)
     // , bitcoin_cash(false)
 
@@ -85,6 +86,9 @@ settings::settings(domain::config::network context)
             seeds.emplace_back("dnsseed.electroncash.de", 8333);              // Electroncash.de
             seeds.emplace_back("bchseed.c3-soft.com", 8333);                  // C3 Soft (NilacTheGrim)
             seeds.emplace_back("bch.bitjson.com", 8333);                      // Jason Dreyzehner
+
+            // // TODO(fernando): TEMPORARY - hardcoded peer for testing
+            // peers.emplace_back("194.14.247.36", 8333);
 #else
             identifier = netmagic::btc_mainnet;
             seeds.reserve(6);

@@ -5,7 +5,11 @@
 #include <kth/network/peer_session.hpp>
 
 #include <chrono>
+#include <format>
+#include <string_view>
 #include <utility>
+
+#include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
@@ -19,6 +23,40 @@ using namespace ::asio::experimental::awaitable_operators;
 using namespace kth::domain::message;
 
 namespace {
+
+// Map from long client name to short name for logging
+// "/Bitcoin Cash Node:28.0.1(EB32.0)/" -> "BCHN:28.0.1"
+boost::unordered_flat_map<std::string_view, std::string_view> const known_clients = {
+    {"Bitcoin Cash Node:", "BCHN"},
+    {"Knuth:", "KTH"},
+    {"Bitcoin ABC:", "ABC"},
+    {"BitcoinUnlimited:", "BU"},
+    {"BCH Unlimited:", "BU"},
+    {"BUCash:", "BU"},
+};
+
+// Summarize user agent for logging
+std::string summarize_user_agent(std::string const& user_agent) {
+    if (user_agent.empty()) {
+        return "Unknown";
+    }
+
+    for (auto const& [search, short_name] : known_clients) {
+        auto pos = user_agent.find(search);
+        if (pos != std::string::npos) {
+            // Extract version: starts after the search string, ends at '(' or '/' or end
+            auto version_start = pos + search.size();
+            auto version_end = user_agent.find_first_of("(/", version_start);
+            if (version_end == std::string::npos) {
+                version_end = user_agent.size();
+            }
+            auto version = user_agent.substr(version_start, version_end - version_start);
+            return std::format("{}:{}", short_name, version);
+        }
+    }
+
+    return "Other";
+}
 
 // Helper to extract authority from socket
 infrastructure::config::authority extract_authority(::asio::ip::tcp::socket const& socket) {
@@ -36,7 +74,7 @@ infrastructure::config::authority extract_authority(::asio::ip::tcp::socket cons
 // Construction / Destruction
 // =============================================================================
 
-peer_session::peer_session(socket_type socket, settings const& settings)
+peer_session::peer_session(socket_type socket, settings const& settings, bool inbound)
     : socket_(std::move(socket))
     , strand_(socket_.get_executor())
     , outbound_(strand_, 100)  // Buffer up to 100 outbound messages
@@ -56,9 +94,11 @@ peer_session::peer_session(socket_type socket, settings const& settings)
     , inactivity_timeout_(std::chrono::minutes(settings.channel_inactivity_minutes))
     , expiration_timeout_(std::chrono::minutes(settings.channel_expiration_minutes))
     , version_(settings.protocol_maximum)
+    , inbound_connection_(inbound)
     , heading_buffer_(heading::maximum_size())
 {
-    spdlog::debug("[peer_session] Constructor completed, authority: {}", authority());
+    spdlog::debug("[peer_session] Constructor completed, authority: {}, inbound: {}",
+        authority(), inbound_connection_);
 }
 
 peer_session::~peer_session() {
@@ -111,6 +151,8 @@ void peer_session::stop(code const& ec) {
     // Close channels
     outbound_.close();
     inbound_.close();
+    headers_responses_.close();
+    block_responses_.close();
 
     // Shutdown socket
     boost_code ignore;
@@ -166,6 +208,13 @@ infrastructure::config::authority const& peer_session::authority() const {
     return authority_;
 }
 
+std::string peer_session::authority_with_agent() const {
+    if ( ! short_user_agent_.empty()) {
+        return std::format("{} {}", authority_.to_string(), short_user_agent_);
+    }
+    return authority_.to_string();
+}
+
 uint32_t peer_session::negotiated_version() const {
     return version_.load();
 }
@@ -179,7 +228,14 @@ domain::message::version::const_ptr peer_session::peer_version() const {
 }
 
 void peer_session::set_peer_version(domain::message::version::const_ptr value) {
+    if (value) {
+        short_user_agent_ = summarize_user_agent(value->user_agent());
+    }
     peer_version_.store(std::move(value));
+}
+
+std::string const& peer_session::short_user_agent() const {
+    return short_user_agent_;
 }
 
 uint64_t peer_session::nonce() const {
@@ -196,6 +252,118 @@ bool peer_session::notify() const {
 
 void peer_session::set_notify(bool value) {
     notify_.store(value);
+}
+
+bool peer_session::is_inbound() const {
+    return inbound_connection_;
+}
+
+bool peer_session::is_outbound() const {
+    return !inbound_connection_;
+}
+
+bool peer_session::is_full_node() const {
+    auto version = peer_version();
+    if (!version) {
+        return false;  // Unknown, assume not full node
+    }
+
+    // BCHN: fClient = !(services & NODE_NETWORK) && !(services & NODE_NETWORK_LIMITED)
+    // A full node has NODE_NETWORK or NODE_NETWORK_LIMITED
+    auto const services = version->services();
+    using svc = domain::message::version::service;
+    return (services & svc::node_network) != 0
+        || (services & svc::node_network_limited) != 0;
+}
+
+bool peer_session::is_client() const {
+    return !is_full_node();
+}
+
+bool peer_session::is_one_shot() const {
+    return one_shot_.load(std::memory_order_relaxed);
+}
+
+void peer_session::set_one_shot(bool value) {
+    one_shot_.store(value, std::memory_order_relaxed);
+}
+
+bool peer_session::has_permission(permission_flags flag) const {
+    auto const flags = permission_flags(permission_flags_.load(std::memory_order_relaxed));
+    return ::kth::network::has_permission(flags, flag);
+}
+
+permission_flags peer_session::permissions() const {
+    return permission_flags(permission_flags_.load(std::memory_order_relaxed));
+}
+
+void peer_session::set_permissions(permission_flags flags) {
+    permission_flags_.store(uint32_t(flags), std::memory_order_relaxed);
+}
+
+void peer_session::add_permission(permission_flags flag) {
+    auto current = permission_flags_.load(std::memory_order_relaxed);
+    auto const new_flags = current | uint32_t(flag);
+    permission_flags_.store(new_flags, std::memory_order_relaxed);
+}
+
+void peer_session::clear_permission(permission_flags flag) {
+    auto current = permission_flags_.load(std::memory_order_relaxed);
+    auto const new_flags = current & ~uint32_t(flag);
+    permission_flags_.store(new_flags, std::memory_order_relaxed);
+}
+
+bool peer_session::is_preferred_download() const {
+    // BCHN: fPreferredDownload = (!fInbound || HasPermission(PF_NOBAN))
+    //                            && !fOneShot && !fClient
+    return (is_outbound() || has_permission(permission_flags::noban))
+        && !is_one_shot()
+        && !is_client();
+}
+
+// =============================================================================
+// Statistics (lock-free, benign data races acceptable)
+// =============================================================================
+
+size_t peer_session::bytes_received() const {
+    return bytes_received_.load(std::memory_order_relaxed);
+}
+
+size_t peer_session::bytes_sent() const {
+    return bytes_sent_.load(std::memory_order_relaxed);
+}
+
+uint32_t peer_session::ping_latency_ms() const {
+    return ping_latency_ms_.load(std::memory_order_relaxed);
+}
+
+void peer_session::record_ping_sent(uint64_t nonce) {
+    // Store time as nanoseconds since steady_clock epoch for lock-free access
+    auto const now = std::chrono::steady_clock::now();
+    auto const ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        now.time_since_epoch()).count();
+    pending_ping_time_ns_.store(ns, std::memory_order_relaxed);
+    pending_ping_nonce_.store(nonce, std::memory_order_relaxed);
+}
+
+bool peer_session::record_pong_received(uint64_t nonce) {
+    auto const expected_nonce = pending_ping_nonce_.load(std::memory_order_relaxed);
+    if (expected_nonce == 0 || nonce != expected_nonce) {
+        return false;
+    }
+
+    auto const sent_ns = pending_ping_time_ns_.load(std::memory_order_relaxed);
+    auto const now = std::chrono::steady_clock::now();
+    auto const now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        now.time_since_epoch()).count();
+    auto const latency_ms = static_cast<uint32_t>((now_ns - sent_ns) / 1'000'000);
+    ping_latency_ms_.store(latency_ms, std::memory_order_relaxed);
+    pending_ping_nonce_.store(0, std::memory_order_relaxed);
+    return true;
+}
+
+std::chrono::steady_clock::time_point peer_session::connection_time() const {
+    return connection_time_;
 }
 
 // =============================================================================
@@ -253,6 +421,9 @@ void peer_session::set_notify(bool value) {
             stop(error::boost_to_error_code(write_ec));
             co_return;
         }
+
+        // Track bytes sent
+        bytes_sent_.fetch_add(bytes_written, std::memory_order_relaxed);
 
         spdlog::trace("[peer_session] Sent {} bytes to [{}]", bytes_written, authority());
     }
@@ -355,14 +526,26 @@ awaitable_expected<raw_message> peer_session::read_message() {
     // Validate checksum if required
     if (validate_checksum_ && head.checksum() != bitcoin_checksum(payload)) {
         spdlog::warn("[peer_session] Invalid checksum for {} from [{}]",
-            head.command(), authority());
+            head.command(), authority_with_agent());
         co_return std::unexpected(error::bad_stream);
     }
 
+    // Track bytes received (header + payload)
+    bytes_received_.fetch_add(heading::maximum_size() + head.payload_size(), std::memory_order_relaxed);
+
     spdlog::debug("[peer_session] Received {} from [{}] ({} bytes)",
-        head.command(), authority(), head.payload_size());
+        head.command(), authority_with_agent(), head.payload_size());
 
     co_return raw_message{head, std::move(payload)};
+}
+
+// =============================================================================
+// Direct I/O (for handshake before run() starts)
+// =============================================================================
+
+awaitable_expected<raw_message> peer_session::read_message_direct() {
+    // Just delegate to the private read_message() implementation
+    return read_message();
 }
 
 void peer_session::signal_activity() {
@@ -384,38 +567,108 @@ awaitable_expected<peer_session::ptr> async_connect(
 {
     using namespace ::asio::experimental::awaitable_operators;
 
-    // Create resolver
-    ::asio::ip::tcp::resolver resolver(executor);
+    // Try to parse hostname as IP address first (skip DNS for IPs)
+    std::error_code ip_parse_ec;
+    auto ip_address = ::asio::ip::make_address(hostname, ip_parse_ec);
 
-    // Resolve hostname
-    auto [resolve_ec, endpoints] = co_await resolver.async_resolve(
-        hostname,
-        std::to_string(port),
-        ::asio::as_tuple(::asio::use_awaitable));
+    ::asio::ip::tcp::endpoint direct_endpoint;
+    bool is_ip_address = !ip_parse_ec;
 
-    if (resolve_ec) {
-        spdlog::debug("[async_connect] Failed to resolve {}: {}", hostname, resolve_ec.message());
-        co_return std::unexpected(error::resolve_failed);
+    if (is_ip_address) {
+        // Hostname is already an IP address, skip DNS resolution
+        direct_endpoint = ::asio::ip::tcp::endpoint(ip_address, port);
+        spdlog::debug("[async_connect] {} is an IP address, skipping DNS", hostname);
+    } else {
+        // Need DNS resolution
+        auto resolver = std::make_shared<::asio::ip::tcp::resolver>(executor);
+
+        // DNS resolution timeout (5 seconds should be plenty for DNS)
+        auto dns_timer = std::make_shared<::asio::steady_timer>(executor);
+        dns_timer->expires_after(std::chrono::seconds(5));
+
+        auto start_time = std::chrono::steady_clock::now();
+        spdlog::debug("[async_connect] Starting DNS resolution for {} with 5s timeout", hostname);
+
+        // Use a channel to get the first result (DNS or timeout)
+        auto result_channel = std::make_shared<concurrent_channel<
+            std::variant<
+                std::tuple<std::error_code, ::asio::ip::tcp::resolver::results_type>,
+                std::error_code
+            >
+        >>(executor, 1);
+
+        // Spawn DNS resolution
+        ::asio::co_spawn(executor, [resolver, hostname, port, result_channel]() -> ::asio::awaitable<void> {
+            auto [ec, endpoints] = co_await resolver->async_resolve(
+                hostname, std::to_string(port), ::asio::as_tuple(::asio::use_awaitable));
+            result_channel->try_send(std::error_code{},
+                std::variant<std::tuple<std::error_code, ::asio::ip::tcp::resolver::results_type>, std::error_code>{
+                    std::make_tuple(ec, endpoints)});
+        }, ::asio::detached);
+
+        // Spawn timer
+        ::asio::co_spawn(executor, [dns_timer, result_channel]() -> ::asio::awaitable<void> {
+            auto [ec] = co_await dns_timer->async_wait(::asio::as_tuple(::asio::use_awaitable));
+            if (!ec) {
+                result_channel->try_send(std::error_code{},
+                    std::variant<std::tuple<std::error_code, ::asio::ip::tcp::resolver::results_type>, std::error_code>{
+                        std::make_error_code(std::errc::timed_out)});
+            }
+        }, ::asio::detached);
+
+        // Wait for first result
+        auto [recv_ec, result] = co_await result_channel->async_receive(
+            ::asio::as_tuple(::asio::use_awaitable));
+
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start_time).count();
+
+        // Cancel whichever didn't complete
+        resolver->cancel();
+        dns_timer->cancel();
+
+        if (recv_ec) {
+            spdlog::debug("[async_connect] DNS channel error for {}: {}", hostname, recv_ec.message());
+            co_return std::unexpected(error::resolve_failed);
+        }
+
+        // Check which result we got
+        if (result.index() == 1) {
+            // Timeout
+            spdlog::debug("[async_connect] DNS resolution for {} timed out after {}ms", hostname, elapsed);
+            co_return std::unexpected(error::resolve_failed);
+        }
+
+        auto [resolve_ec, endpoints] = std::get<0>(result);
+        spdlog::debug("[async_connect] DNS completed for {} in {}ms, ec={}", hostname, elapsed, resolve_ec.message());
+
+        if (resolve_ec) {
+            spdlog::debug("[async_connect] Failed to resolve {}: {}", hostname, resolve_ec.message());
+            co_return std::unexpected(error::resolve_failed);
+        }
+
+        // Use first resolved endpoint
+        direct_endpoint = *endpoints.begin();
     }
 
-    // Create socket and timer for timeout
+    // Create socket and timer for connection timeout
     ::asio::ip::tcp::socket socket(executor);
     ::asio::steady_timer timer(executor);
     timer.expires_after(timeout);
 
-    // Race: connect vs timeout
-    auto result = co_await (
-        ::asio::async_connect(socket, endpoints, ::asio::as_tuple(::asio::use_awaitable)) ||
+    // Race: connect vs timeout (use single endpoint connect)
+    auto connect_result = co_await (
+        socket.async_connect(direct_endpoint, ::asio::as_tuple(::asio::use_awaitable)) ||
         timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
     );
 
-    if (result.index() == 1) {
+    if (connect_result.index() == 1) {
         // Timeout won
         spdlog::debug("[async_connect] Connection to {}:{} timed out", hostname, port);
         co_return std::unexpected(error::channel_timeout);
     }
 
-    auto [connect_ec, endpoint] = std::get<0>(result);
+    auto [connect_ec] = std::get<0>(connect_result);
     if (connect_ec) {
         spdlog::debug("[async_connect] Failed to connect to {}:{}: {}",
             hostname, port, connect_ec.message());
@@ -424,8 +677,19 @@ awaitable_expected<peer_session::ptr> async_connect(
 
     spdlog::debug("[async_connect] Connected to {}:{}", hostname, port);
     spdlog::debug("[async_connect] Creating peer_session...");
-    auto session = std::make_shared<peer_session>(std::move(socket), settings);
+    // Outbound connection (we connected to them)
+    auto session = std::make_shared<peer_session>(std::move(socket), settings, /*inbound=*/false);
     spdlog::debug("[async_connect] peer_session created, authority: {}", session->authority());
+
+    // Apply whitelist permissions (BCHN-style)
+    auto flags = settings.get_whitelist_permissions(session->authority());
+    if (flags != permission_flags::none) {
+        flags = settings.apply_legacy_whitelist_permissions(flags);
+        session->set_permissions(flags);
+        spdlog::debug("[async_connect] Applied whitelist permissions to [{}]: {}",
+            session->authority(), uint32_t(flags));
+    }
+
     co_return session;
 }
 
@@ -465,7 +729,19 @@ awaitable_expected<peer_session::ptr> async_accept(
             endpoint.address().to_string(), endpoint.port());
     }
 
-    co_return std::make_shared<peer_session>(std::move(socket), settings);
+    // Inbound connection (they connected to us)
+    auto session = std::make_shared<peer_session>(std::move(socket), settings, /*inbound=*/true);
+
+    // Apply whitelist permissions (BCHN-style)
+    auto flags = settings.get_whitelist_permissions(session->authority());
+    if (flags != permission_flags::none) {
+        flags = settings.apply_legacy_whitelist_permissions(flags);
+        session->set_permissions(flags);
+        spdlog::debug("[async_accept] Applied whitelist permissions to [{}]: {}",
+            session->authority(), uint32_t(flags));
+    }
+
+    co_return session;
 }
 
 awaitable_expected<::asio::ip::tcp::acceptor> async_listen(

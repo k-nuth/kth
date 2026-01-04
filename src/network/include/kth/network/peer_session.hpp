@@ -16,6 +16,7 @@
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
 #include <kth/network/define.hpp>
+#include <kth/network/net_permissions.hpp>
 #include <kth/network/settings.hpp>
 
 // Asio includes for coroutines
@@ -71,7 +72,10 @@ public:
     using inbound_channel = concurrent_channel<raw_message>;
 
     /// Construct a peer session from an established socket
-    peer_session(socket_type socket, settings const& settings);
+    /// @param socket The connected socket
+    /// @param settings Network settings
+    /// @param inbound True if this is an inbound connection (we accepted it)
+    peer_session(socket_type socket, settings const& settings, bool inbound = false);
 
     /// Destructor - ensures clean shutdown
     ~peer_session();
@@ -123,6 +127,39 @@ public:
     inbound_channel& messages();
 
     // -------------------------------------------------------------------------
+    // Direct I/O (for handshake before run() starts)
+    // -------------------------------------------------------------------------
+    // These methods read/write directly to the socket without using channels.
+    // Use ONLY before calling run() - after run() starts, use send() and messages().
+
+    /// Read a message directly from the socket (bypasses inbound channel)
+    /// Use this for handshake before run() is started
+    [[nodiscard]]
+    awaitable_expected<raw_message> read_message_direct();
+
+    /// Send a message directly to the socket (bypasses outbound channel)
+    /// Use this for handshake before run() is started
+    template <typename Message>
+    ::asio::awaitable<code> send_direct(Message const& message) {
+        if (stopped()) {
+            co_return error::channel_stopped;
+        }
+
+        auto data = domain::message::serialize(version_.load(), message, protocol_magic_);
+        auto [ec, bytes_written] = co_await ::asio::async_write(
+            socket_,
+            ::asio::buffer(data),
+            ::asio::as_tuple(::asio::use_awaitable));
+
+        if (ec) {
+            co_return error::boost_to_error_code(ec);
+        }
+
+        bytes_sent_.fetch_add(bytes_written, std::memory_order_relaxed);
+        co_return error::success;
+    }
+
+    // -------------------------------------------------------------------------
     // Response channels (for request/response patterns like getheaders/headers)
     // -------------------------------------------------------------------------
 
@@ -152,6 +189,11 @@ public:
     [[nodiscard]]
     infrastructure::config::authority const& authority() const;
 
+    /// Get formatted string with authority and user agent (for logging)
+    /// Returns "[ip:port user_agent]" or "[ip:port]" if user agent not yet known
+    [[nodiscard]]
+    std::string authority_with_agent() const;
+
     /// Get/set the negotiated protocol version
     [[nodiscard]]
     uint32_t negotiated_version() const;
@@ -162,6 +204,10 @@ public:
     domain::message::version::const_ptr peer_version() const;
     void set_peer_version(domain::message::version::const_ptr value);
 
+    /// Get short user agent (e.g., "BCHN:28.0.1") - computed once from peer_version
+    [[nodiscard]]
+    std::string const& short_user_agent() const;
+
     /// Get/set the nonce for this connection
     [[nodiscard]]
     uint64_t nonce() const;
@@ -171,6 +217,79 @@ public:
     [[nodiscard]]
     bool notify() const;
     void set_notify(bool value);
+
+    /// Check if this is an inbound connection (peer connected to us)
+    [[nodiscard]]
+    bool is_inbound() const;
+
+    /// Check if this is an outbound connection (we connected to peer)
+    /// BCHN prefers outbound peers for sync (fPreferredDownload)
+    [[nodiscard]]
+    bool is_outbound() const;
+
+    /// Check if peer is a full node (has NODE_NETWORK or NODE_NETWORK_LIMITED service)
+    /// BCHN: fClient = !(services & NODE_NETWORK) && !(services & NODE_NETWORK_LIMITED)
+    [[nodiscard]]
+    bool is_full_node() const;
+
+    /// Check if peer is a light client (no NODE_NETWORK service)
+    [[nodiscard]]
+    bool is_client() const;
+
+    /// Check if this is a one-shot connection (connect, get addrs, disconnect)
+    [[nodiscard]]
+    bool is_one_shot() const;
+
+    /// Mark this as a one-shot connection
+    void set_one_shot(bool value);
+
+    /// Check if peer has a specific permission
+    [[nodiscard]]
+    bool has_permission(permission_flags flag) const;
+
+    /// Get all permission flags for this peer
+    [[nodiscard]]
+    permission_flags permissions() const;
+
+    /// Set permission flags for this peer
+    void set_permissions(permission_flags flags);
+
+    /// Add a permission flag
+    void add_permission(permission_flags flag);
+
+    /// Remove a permission flag
+    void clear_permission(permission_flags flag);
+
+    /// Check if this peer is preferred for download (BCHN fPreferredDownload)
+    /// fPreferredDownload = (!fInbound || HasPermission(PF_NOBAN)) && !fOneShot && !fClient
+    [[nodiscard]]
+    bool is_preferred_download() const;
+
+    // -------------------------------------------------------------------------
+    // Statistics (lock-free, benign data races acceptable)
+    // -------------------------------------------------------------------------
+
+    /// Get total bytes received from this peer
+    [[nodiscard]]
+    size_t bytes_received() const;
+
+    /// Get total bytes sent to this peer
+    [[nodiscard]]
+    size_t bytes_sent() const;
+
+    /// Get last ping latency in milliseconds
+    [[nodiscard]]
+    uint32_t ping_latency_ms() const;
+
+    /// Record a ping sent (store nonce and time for latency calculation)
+    void record_ping_sent(uint64_t nonce);
+
+    /// Record a pong received, returns true if nonce matches pending ping
+    bool record_pong_received(uint64_t nonce);
+
+    /// Get connection time
+    [[nodiscard]]
+    std::chrono::steady_clock::time_point connection_time() const;
 
 private:
     // -------------------------------------------------------------------------
@@ -234,6 +353,26 @@ private:
     std::atomic<uint64_t> nonce_{0};
     std::atomic<bool> notify_{true};
     kth::atomic<domain::message::version::const_ptr> peer_version_;
+    std::string short_user_agent_;  // Computed once from peer_version_ for logging
+
+    // Connection direction (set at construction, never changes)
+    bool const inbound_connection_;
+
+    // Connection flags (can be set after construction)
+    std::atomic<bool> one_shot_{false};
+    std::atomic<uint32_t> permission_flags_{uint32_t(permission_flags::none)};
+
+    // Statistics (lock-free, benign data races acceptable)
+    std::atomic<size_t> bytes_received_{0};
+    std::atomic<size_t> bytes_sent_{0};
+    std::atomic<uint32_t> ping_latency_ms_{0};
+    std::chrono::steady_clock::time_point connection_time_{std::chrono::steady_clock::now()};
+
+    // Ping tracking (lock-free)
+    // We store time as nanoseconds since steady_clock epoch for atomic access
+    // Benign data races are acceptable for statistics
+    std::atomic<uint64_t> pending_ping_nonce_{0};
+    std::atomic<int64_t> pending_ping_time_ns_{0};
 
     // Buffers (only accessed from read_loop, no synchronization needed)
     data_chunk heading_buffer_;
