@@ -340,7 +340,7 @@ size_t block::locator_size(size_t top) {
     if (remaining < 2) {
         return top + size_t{1};
     }
-    return first_ten_or_top + size_t(std::log2(remaining) + 0.5) + size_t{1};
+    return first_ten_or_top + static_cast<size_t>(std::log2(remaining) + 0.5) + size_t{1};
 }
 
 // This algorithm is a network best practice, not a consensus rule.
@@ -429,10 +429,20 @@ code block::check() const {
     return block_basis::check(serialized_size());
 }
 
-// Check block body only (skip header validation for headers-first sync).
-code block::check_body() const {
-    validation.start_check = asio::steady_clock::now();
-    return block_basis::check_body(serialized_size());
+code block::accept(bool transactions) const {
+    auto const state = validation.state;
+    return state ? accept(*state, transactions) : error::operation_failed;
+}
+
+// These checks assume that prevout caching is completed on all tx.inputs.
+code block::accept(chain_state const& state, bool transactions) const {
+    validation.start_accept = asio::steady_clock::now();
+    return block_basis::accept(state, serialized_size(), transactions);
+}
+
+code block::connect() const {
+    auto const state = validation.state;
+    return state ? block_basis::connect(*state) : error::operation_failed;
 }
 
 } // namespace kth::domain::chain

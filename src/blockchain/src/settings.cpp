@@ -70,12 +70,6 @@ settings::settings(domain::config::network net) {
     }
 
     checkpoints = domain::config::default_checkpoints(net);
-
-    // Pre-compute sorted list and max height
-    checkpoints_sorted = infrastructure::config::checkpoint::sort(checkpoints);
-    if (!checkpoints_sorted.empty()) {
-        max_checkpoint_height = checkpoints_sorted.back().height();
-    }
 }
 
 domain::script_flags_t settings::enabled_flags() const {

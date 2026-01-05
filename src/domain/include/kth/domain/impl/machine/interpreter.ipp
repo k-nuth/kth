@@ -2601,7 +2601,7 @@ interpreter::result interpreter::op_active_bytecode(program& program) {
     auto const script_end = active.end();
     
     // Calculate the size of the active bytecode
-    auto const script_size = size_t(script_end - begin_code_hash);
+    auto const script_size = static_cast<size_t>(script_end - begin_code_hash);
     
     // Check maximum script element size constraint
     auto const max_script_element_size = program.max_script_element_size();

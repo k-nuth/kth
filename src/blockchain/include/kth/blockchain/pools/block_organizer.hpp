@@ -50,9 +50,8 @@ struct KB_API block_organizer {
     bool stop();
 
     /// Organize a block - coroutine version
-    /// @param headers_pre_validated If true, skip header validation (for headers-first sync)
     [[nodiscard]]
-    ::asio::awaitable<code> organize(block_const_ptr block, bool headers_pre_validated = false);
+    ::asio::awaitable<code> organize(block_const_ptr block);
 
     [[nodiscard]]
     block_broadcaster::channel_ptr subscribe();
