@@ -127,39 +127,6 @@ public:
     inbound_channel& messages();
 
     // -------------------------------------------------------------------------
-    // Direct I/O (for handshake before run() starts)
-    // -------------------------------------------------------------------------
-    // These methods read/write directly to the socket without using channels.
-    // Use ONLY before calling run() - after run() starts, use send() and messages().
-
-    /// Read a message directly from the socket (bypasses inbound channel)
-    /// Use this for handshake before run() is started
-    [[nodiscard]]
-    awaitable_expected<raw_message> read_message_direct();
-
-    /// Send a message directly to the socket (bypasses outbound channel)
-    /// Use this for handshake before run() is started
-    template <typename Message>
-    ::asio::awaitable<code> send_direct(Message const& message) {
-        if (stopped()) {
-            co_return error::channel_stopped;
-        }
-
-        auto data = domain::message::serialize(version_.load(), message, protocol_magic_);
-        auto [ec, bytes_written] = co_await ::asio::async_write(
-            socket_,
-            ::asio::buffer(data),
-            ::asio::as_tuple(::asio::use_awaitable));
-
-        if (ec) {
-            co_return error::boost_to_error_code(ec);
-        }
-
-        bytes_sent_.fetch_add(bytes_written, std::memory_order_relaxed);
-        co_return error::success;
-    }
-
-    // -------------------------------------------------------------------------
     // Response channels (for request/response patterns like getheaders/headers)
     // -------------------------------------------------------------------------
 
@@ -265,32 +232,6 @@ public:
     [[nodiscard]]
     bool is_preferred_download() const;
 
-    // -------------------------------------------------------------------------
-    // Statistics (lock-free, benign data races acceptable)
-    // -------------------------------------------------------------------------
-
-    /// Get total bytes received from this peer
-    [[nodiscard]]
-    size_t bytes_received() const;
-
-    /// Get total bytes sent to this peer
-    [[nodiscard]]
-    size_t bytes_sent() const;
-
-    /// Get last ping latency in milliseconds
-    [[nodiscard]]
-    uint32_t ping_latency_ms() const;
-
-    /// Record a ping sent (store nonce and time for latency calculation)
-    void record_ping_sent(uint64_t nonce);
-
-    /// Record a pong received, returns true if nonce matches pending ping
-    bool record_pong_received(uint64_t nonce);
-
-    /// Get connection time
-    [[nodiscard]]
-    std::chrono::steady_clock::time_point connection_time() const;
-
 private:
     // -------------------------------------------------------------------------
     // Internal coroutines
@@ -361,18 +302,6 @@ private:
     // Connection flags (can be set after construction)
     std::atomic<bool> one_shot_{false};
     std::atomic<uint32_t> permission_flags_{uint32_t(permission_flags::none)};
-
-    // Statistics (lock-free, benign data races acceptable)
-    std::atomic<size_t> bytes_received_{0};
-    std::atomic<size_t> bytes_sent_{0};
-    std::atomic<uint32_t> ping_latency_ms_{0};
-    std::chrono::steady_clock::time_point connection_time_{std::chrono::steady_clock::now()};
-
-    // Ping tracking (lock-free)
-    // We store time as nanoseconds since steady_clock epoch for atomic access
-    // Benign data races are acceptable for statistics
-    std::atomic<uint64_t> pending_ping_nonce_{0};
-    std::atomic<int64_t> pending_ping_time_ns_{0};
 
     // Buffers (only accessed from read_loop, no synchronization needed)
     data_chunk heading_buffer_;

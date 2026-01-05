@@ -13,7 +13,6 @@
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/settings.hpp>
-#include <kth/blockchain/validate/validate_header.hpp>
 #include <kth/blockchain/validate/validate_input.hpp>
 #include <kth/domain.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
@@ -67,7 +66,7 @@ void validate_block::stop() {
 //-----------------------------------------------------------------------------
 // These checks are context free.
 
-::asio::awaitable<code> validate_block::check(block_const_ptr block, bool headers_pre_validated) const {
+::asio::awaitable<code> validate_block::check(block_const_ptr block) const {
     // The block hasn't been checked yet.
     if (block->transactions().empty()) {
         co_return error::success;
@@ -109,11 +108,6 @@ void validate_block::stop() {
     }
 
     // Run context free checks, sets time internally.
-    // For headers-first sync, skip header validation (PoW, timestamp) since
-    // headers were already validated during header sync.
-    if (headers_pre_validated) {
-        co_return block->check_body();
-    }
     co_return block->check();
 }
 
@@ -136,7 +130,7 @@ code validate_block::check_block_bucket(block_const_ptr block, size_t bucket, si
 //-----------------------------------------------------------------------------
 // These checks require chain state, and block state if not under checkpoint.
 
-::asio::awaitable<code> validate_block::accept(branch::const_ptr branch, bool headers_pre_validated) const {
+::asio::awaitable<code> validate_block::accept(branch::const_ptr branch) const {
     auto const block = branch->top();
     KTH_ASSERT(block);
 
@@ -161,39 +155,30 @@ code validate_block::check_block_bucket(block_const_ptr block, size_t bucket, si
         co_return populate_ec;
     }
 
-    auto const& state = *block->validation.state;
+    auto const height = block->validation.state->height();
 
     // Run contextual block non-tx checks (sets start time).
-    // For headers-first sync, skip header validation since headers were
-    // already validated during header sync.
-    if ( ! headers_pre_validated) {
-        // Full validation: validate header first
-        auto const header_ec = validate_header::accept_header(block->header(), block->hash(), state);
-        if (header_ec) {
-            co_return header_ec;
-        }
-    }
+    auto const error_code = block->accept(false);
 
-    // Validate block body (same for both cases)
-    auto const body_ec = accept_block_body(*block, state);
-    if (body_ec) {
-        co_return body_ec;
+    if (error_code) {
+        co_return error_code;
     }
 
     auto const sigops = std::make_shared<atomic_counter>(0);
-
+    auto const state = block->validation.state;
+    KTH_ASSERT(state);
 #if defined(KTH_CURRENCY_BCH)
     bool const bip141 = false;
 #else
-    auto const bip141 = state.is_enabled(domain::machine::rule_fork::bip141_rule);
+    auto const bip141 = state->is_enabled(domain::machine::rule_fork::bip141_rule);
 #endif
 
-    if (state.is_under_checkpoint()) {
+    if (state->is_under_checkpoint()) {
         co_return error::success;
     }
 
     auto const count = block->transactions().size();
-    auto const bip16 = state.is_enabled(domain::machine::rule_fork::bip16_rule);
+    auto const bip16 = state->is_enabled(domain::machine::rule_fork::bip16_rule);
     auto const buckets = std::min(threads_, count);
     KTH_ASSERT(buckets != 0);
 
@@ -417,97 +402,6 @@ void validate_block::dump(code const& ec, transaction const& tx, uint32_t input_
         " transaction  : {}",
         height, ec.message(), forks, hash, prevout.index(), encode_base16(script),
         prevout.validation.cache.value(), tx_hash, input_index, encode_base16(tx.to_data(true)));
-}
-
-// =============================================================================
-// Static validation functions (pure, no side effects)
-// These replace the accept/connect methods that were in block_basis.
-// =============================================================================
-
-code validate_block::accept_block_body(
-    domain::chain::block const& block,
-    domain::chain::chain_state const& state) {
-
-    auto const& header = block.header();
-    auto const block_size = block.serialized_size();
-
-    auto const bip16 = state.is_enabled(domain::machine::rule_fork::bip16_rule);
-    auto const bip34 = state.is_enabled(domain::machine::rule_fork::bip34_rule);
-    auto const bip113 = state.is_enabled(domain::machine::rule_fork::bip113_rule);
-    auto const bip141 = false;  // No segwit
-
-    // Block size validation
-#if defined(KTH_CURRENCY_BCH)
-    if (state.is_lobachevski_enabled()) {
-        if (block_size > state.dynamic_max_block_size()) {
-            return error::block_size_limit;
-        }
-    } else if (state.is_pythagoras_enabled()) {
-        if (block_size > static_max_block_size(state.network())) {
-            return error::block_size_limit;
-        }
-    } else {
-        if (block_size > max_block_size::mainnet_old) {
-            return error::block_size_limit;
-        }
-    }
-#else
-    if (block_size > max_block_size::mainnet_old) {
-        return error::block_size_limit;
-    }
-#endif
-
-    // Under checkpoint: Only verify merkle root (done in check_body)
-    if (state.is_under_checkpoint()) {
-        return error::success;
-    }
-
-    // Transaction ordering check
-#if defined(KTH_CURRENCY_BCH)
-    if (state.is_euclid_enabled()) {
-        if ( ! block.is_canonical_ordered()) {
-            return error::non_canonical_ordered;
-        }
-    } else {
-        if (block.is_forward_reference()) {
-            return error::forward_reference;
-        }
-    }
-#else
-    if (block.is_forward_reference()) {
-        return error::forward_reference;
-    }
-#endif
-
-    // Coinbase script height check (BIP34)
-    if (bip34 && !block.is_valid_coinbase_script(state.height())) {
-        return error::coinbase_height_mismatch;
-    }
-
-    // Coinbase claim check
-    if ( ! block.is_valid_coinbase_claim(state.height())) {
-        return error::coinbase_value_limit;
-    }
-
-    // Finality check
-    auto const block_time = bip113 ? state.median_time_past() : header.timestamp();
-    if ( ! block.is_final(state.height(), block_time)) {
-        return error::block_non_final;
-    }
-
-    // Sigops check (for non-Fermat BCH or BTC/LTC)
-#if defined(KTH_CURRENCY_BCH)
-    if ( ! state.is_fermat_enabled()) {
-#endif
-        size_t const allowed_sigops = get_allowed_sigops(block_size);
-        if (block.signature_operations(bip16, bip141) > allowed_sigops) {
-            return error::block_embedded_sigop_limit;
-        }
-#if defined(KTH_CURRENCY_BCH)
-    }
-#endif
-
-    return error::success;
 }
 
 } // namespace kth::blockchain

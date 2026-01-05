@@ -59,7 +59,7 @@ int FindAndDelete(CScript &script, const CScript &b) {
     opcodetype opcode;
     do {
         result.insert(result.end(), pc2, pc);
-        while (size_t(end - pc) >= b.size() &&
+        while (static_cast<size_t>(end - pc) >= b.size() &&
                std::equal(b.begin(), b.end(), pc)) {
             pc = pc + b.size();
             ++nFound;

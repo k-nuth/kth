@@ -74,7 +74,7 @@ struct KI_API pseudo_random {
                 //TODO: replace exceptions with std::expected
                 throw std::runtime_error("getrandom() failed, errno=" + std::to_string(errno));
             }
-            offset += size_t(ret);
+            offset += static_cast<size_t>(ret);
         }
 #endif
     }
