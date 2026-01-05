@@ -179,7 +179,7 @@ asio::awaitable<int> racing_coro() {
     );
 
     // result.index() == 0 means timer1 won (expected)
-    co_return static_cast<int>(result.index());
+    co_return int(result.index());
 }
 
 // Coroutine using awaitable_operators (&& for parallel)

@@ -424,8 +424,8 @@ Element tui_dashboard::render_splash() {
         }
 
         int visible_chars = std::min(
-            static_cast<int>(line.size()),
-            static_cast<int>((elapsed - line_start_time) / char_delay_ms)
+            int(line.size()),
+            int((elapsed - line_start_time) / char_delay_ms)
         );
 
         std::string visible_text = line.substr(0, visible_chars);
@@ -442,7 +442,7 @@ Element tui_dashboard::render_splash() {
         }
 
         // Add blinking cursor at end if still typing this line
-        if (visible_chars < static_cast<int>(line.size()) && (elapsed / 100) % 2 == 0) {
+        if (visible_chars < int(line.size()) && (elapsed / 100) % 2 == 0) {
             visible_text += "█";
         }
 
@@ -457,13 +457,13 @@ Element tui_dashboard::render_splash() {
     if (elapsed > slogan_start) {
         int slogan_elapsed = elapsed - slogan_start;
         int visible_chars = std::min(
-            static_cast<int>(slogan.size()),
+            int(slogan.size()),
             slogan_elapsed / char_delay_ms
         );
         std::string visible_slogan = slogan.substr(0, visible_chars);
 
         // Blinking cursor
-        if (visible_chars < static_cast<int>(slogan.size()) && (elapsed / 100) % 2 == 0) {
+        if (visible_chars < int(slogan.size()) && (elapsed / 100) % 2 == 0) {
             visible_slogan += "█";
         }
 
@@ -892,7 +892,7 @@ Element tui_dashboard::render_sync_panel() {
         float progress = static_cast<float>(status_.headers_synced) /
                         static_cast<float>(status_.headers_total);
         progress = std::clamp(progress, 0.0f, 1.0f);
-        int pct = static_cast<int>(progress * 100);
+        int pct = int(progress * 100);
         bool done = status_.headers_synced >= status_.headers_total;
 
         rows.push_back(hbox({
@@ -923,7 +923,7 @@ Element tui_dashboard::render_sync_panel() {
         float progress = static_cast<float>(status_.blocks_synced) /
                         static_cast<float>(status_.blocks_total);
         progress = std::clamp(progress, 0.0f, 1.0f);
-        int pct = static_cast<int>(progress * 100);
+        int pct = int(progress * 100);
         bool done = status_.blocks_synced >= status_.blocks_total;
 
         rows.push_back(hbox({
@@ -1047,14 +1047,14 @@ Element tui_dashboard::render_mempool_panel() {
     if (status_.mempool_avg_fee > 0) {
         rows.push_back(hbox({
             text("Avg fee: ") | color(colors::gray),
-            text(std::to_string(static_cast<int>(status_.mempool_avg_fee)) + " sat/B") | color(colors::orange),
+            text(std::to_string(int(status_.mempool_avg_fee)) + " sat/B") | color(colors::orange),
         }));
     }
 
     if (status_.mempool_min_fee > 0) {
         rows.push_back(hbox({
             text("Min fee: ") | color(colors::gray),
-            text(std::to_string(static_cast<int>(status_.mempool_min_fee)) + " sat/B") | color(colors::green),
+            text(std::to_string(int(status_.mempool_min_fee)) + " sat/B") | color(colors::green),
         }));
     }
 

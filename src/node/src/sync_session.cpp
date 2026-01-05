@@ -546,8 +546,8 @@ hash_list sync_session::build_locator() const {
     int32_t current_height = index.get_height(tip_idx);
 
     while (current_height > 0 && locator.size() < 64) {
-        int32_t target_height = current_height > static_cast<int32_t>(step)
-            ? current_height - static_cast<int32_t>(step)
+        int32_t target_height = current_height > int32_t(step)
+            ? current_height - int32_t(step)
             : 0;
 
         // Use O(log n) ancestor lookup via skip pointers

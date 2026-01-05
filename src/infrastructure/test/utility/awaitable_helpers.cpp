@@ -147,7 +147,7 @@ std::error_code make_error_code(custom_error e) {
             }
         }
     } category;
-    return {static_cast<int>(e), category};
+    return {int(e), category};
 }
 
 awaitable<std::expected<std::string, custom_error>> expected_operation(bool succeed) {

@@ -552,18 +552,18 @@ using namespace ::asio::experimental::awaitable_operators;
             auto const current_height = current_thousand * 1000;
             auto const remaining = checkpoint_height > current_height
                 ? checkpoint_height - current_height : 0;
-            auto const eta_secs = rate > 0 ? static_cast<uint64_t>(remaining / rate) : 0;
+            auto const eta_secs = rate > 0 ? uint64_t(remaining / rate) : 0;
             auto const eta_mins = eta_secs / 60;
 
             // Show different label for fast mode vs full mode
             if (current_height <= checkpoint_height) {
                 spdlog::info("[block_sync:fast] {}/{} ({} blk/s, ETA: {}m) | {} peers | pending: {}",
-                    current_height, checkpoint_height, static_cast<int>(rate), eta_mins,
+                    current_height, checkpoint_height, int(rate), eta_mins,
                     last_seen_peers, pending.size());
             } else {
                 // TODO: For full validation mode, target is headers_synced_to not checkpoint
                 spdlog::info("[block_sync:full] {} ({} blk/s) | {} peers | pending: {}",
-                    current_height, static_cast<int>(rate),
+                    current_height, int(rate),
                     last_seen_peers, pending.size());
             }
 

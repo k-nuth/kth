@@ -106,7 +106,7 @@ bool internal_database_basis<Clock>::create_height_properties() {
 
     res = kth_db_put(db_txn, dbi_properties_, &header_key, &header_value, KTH_DB_NOOVERWRITE);
     if (res != KTH_DB_SUCCESS) {
-        spdlog::error("[database] Failed saving last_header_height in DB Properties [create_height_properties] {}", static_cast<int32_t>(res));
+        spdlog::error("[database] Failed saving last_header_height in DB Properties [create_height_properties] {}", int32_t(res));
         kth_db_txn_abort(db_txn);
         return false;
     }
@@ -118,7 +118,7 @@ bool internal_database_basis<Clock>::create_height_properties() {
 
     res = kth_db_put(db_txn, dbi_properties_, &block_key, &block_value, KTH_DB_NOOVERWRITE);
     if (res != KTH_DB_SUCCESS) {
-        spdlog::error("[database] Failed saving last_block_height in DB Properties [create_height_properties] {}", static_cast<int32_t>(res));
+        spdlog::error("[database] Failed saving last_block_height in DB Properties [create_height_properties] {}", int32_t(res));
         kth_db_txn_abort(db_txn);
         return false;
     }
@@ -210,7 +210,7 @@ result_code internal_database_basis<Clock>::set_property_height(property_code pr
 
     auto res = kth_db_put(db_txn, dbi_properties_, &key, &value, 0);  // 0 = overwrite if exists
     if (res != KTH_DB_SUCCESS) {
-        spdlog::error("[database] Failed updating height property in DB Properties [set_property_height] {}", static_cast<int32_t>(res));
+        spdlog::error("[database] Failed updating height property in DB Properties [set_property_height] {}", int32_t(res));
         return result_code::other;
     }
 

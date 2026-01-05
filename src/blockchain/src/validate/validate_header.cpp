@@ -177,7 +177,7 @@ std::expected<chain_state::data, code> validate_header::collect_historical_data(
     if (idx == header_index::null_index) {
         // Check if we collected all required data
         auto const parent_height = index.get_height(parent_idx);
-        if (parent_height + 1 < static_cast<int32_t>(max_count)) {
+        if (parent_height + 1 < int32_t(max_count)) {
             spdlog::warn("[validate_header] collect_historical_data: insufficient chain depth, "
                 "need {} but only have {}", max_count, parent_height + 1);
             return std::unexpected(error::operation_failed);
@@ -186,7 +186,7 @@ std::expected<chain_state::data, code> validate_header::collect_historical_data(
 
     // Collect retarget timestamp if needed (separate lookup via skip pointers)
     if (map.timestamp_retarget != chain_state::map::unrequested) {
-        auto const retarget_height = static_cast<int32_t>(map.timestamp_retarget);
+        auto const retarget_height = int32_t(map.timestamp_retarget);
         auto retarget_idx = index.get_ancestor(parent_idx, retarget_height);
 
         if (retarget_idx == header_index::null_index) {
@@ -276,7 +276,7 @@ std::expected<chain_state::data, code> validate_header::build_chain_state_data(
 
     // Handle collision hash (for duplicate tx hash detection)
     if (map.allow_collisions_height != chain_state::map::unrequested) {
-        auto const collision_idx = index.get_ancestor(parent_idx, static_cast<int32_t>(map.allow_collisions_height));
+        auto const collision_idx = index.get_ancestor(parent_idx, int32_t(map.allow_collisions_height));
         data.allow_collisions_hash = (collision_idx != header_index::null_index)
             ? index.get_hash(collision_idx)
             : null_hash;
@@ -287,7 +287,7 @@ std::expected<chain_state::data, code> validate_header::build_chain_state_data(
 #if ! defined(KTH_CURRENCY_BCH)
     // BIP9 bit0/bit1 hashes
     if (map.bip9_bit0_height != chain_state::map::unrequested) {
-        auto const bip9_idx = index.get_ancestor(parent_idx, static_cast<int32_t>(map.bip9_bit0_height));
+        auto const bip9_idx = index.get_ancestor(parent_idx, int32_t(map.bip9_bit0_height));
         data.bip9_bit0_hash = (bip9_idx != header_index::null_index)
             ? index.get_hash(bip9_idx)
             : null_hash;
@@ -296,7 +296,7 @@ std::expected<chain_state::data, code> validate_header::build_chain_state_data(
     }
 
     if (map.bip9_bit1_height != chain_state::map::unrequested) {
-        auto const bip9_idx = index.get_ancestor(parent_idx, static_cast<int32_t>(map.bip9_bit1_height));
+        auto const bip9_idx = index.get_ancestor(parent_idx, int32_t(map.bip9_bit1_height));
         data.bip9_bit1_hash = (bip9_idx != header_index::null_index)
             ? index.get_hash(bip9_idx)
             : null_hash;

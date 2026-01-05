@@ -363,7 +363,7 @@ static
         : 0;
 
     // Get checkpoint height for fast IBD
-    uint32_t const checkpoint_height = static_cast<uint32_t>(chain.chain_settings().max_checkpoint_height);
+    uint32_t const checkpoint_height = uint32_t(chain.chain_settings().max_checkpoint_height);
     spdlog::info("[sync_orchestrator] Fast IBD mode up to checkpoint height {}", checkpoint_height);
 
     all_tasks.spawn(block_validation_task(
