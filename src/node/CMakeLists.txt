@@ -153,10 +153,17 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/utility/reservation.cpp
     src/utility/reservations.cpp
 
+    # Legacy coordinators (to be removed)
     src/block_download_coordinator.cpp
     src/parallel_sync.cpp
     src/block_download_coordinator_v2.cpp
     src/parallel_sync_v2.cpp
+
+    # CSP-based sync system
+    src/sync/chunk_coordinator.cpp
+    src/sync/header_tasks.cpp
+    src/sync/block_tasks.cpp
+    src/sync/orchestrator.cpp
   )
 endif()
 
@@ -192,6 +199,14 @@ set(kth_headers
   include/kth/node/parallel_sync.hpp
   include/kth/node/block_download_coordinator_v2.hpp
   include/kth/node/parallel_sync_v2.hpp
+
+  # CSP-based sync system
+  include/kth/node/sync.hpp
+  include/kth/node/sync/messages.hpp
+  include/kth/node/sync/chunk_coordinator.hpp
+  include/kth/node/sync/header_tasks.hpp
+  include/kth/node/sync/block_tasks.hpp
+  include/kth/node/sync/orchestrator.hpp
 )
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})

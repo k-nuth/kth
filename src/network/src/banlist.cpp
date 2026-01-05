@@ -36,20 +36,20 @@ void banlist::ban(
 
     bans_.insert_or_assign(ip, entry);
 
-    // Log with human-readable duration
+    // Log with human-readable duration (debug level - banning is normal network behavior)
     auto const duration_secs = duration.count();
     if (duration_secs >= 365 * 24 * 60 * 60) {
         // More than a year = "permanent"
-        spdlog::info("[banlist] Banned {} permanently, reason: {}",
+        spdlog::debug("[banlist] Banned {} permanently, reason: {}",
             ip.to_string(), to_string(reason));
     } else if (duration_secs >= 24 * 60 * 60) {
-        spdlog::info("[banlist] Banned {} for {} days, reason: {}",
+        spdlog::debug("[banlist] Banned {} for {} days, reason: {}",
             ip.to_string(), duration_secs / (24 * 60 * 60), to_string(reason));
     } else if (duration_secs >= 60 * 60) {
-        spdlog::info("[banlist] Banned {} for {} hours, reason: {}",
+        spdlog::debug("[banlist] Banned {} for {} hours, reason: {}",
             ip.to_string(), duration_secs / (60 * 60), to_string(reason));
     } else {
-        spdlog::info("[banlist] Banned {} for {}s, reason: {}",
+        spdlog::debug("[banlist] Banned {} for {}s, reason: {}",
             ip.to_string(), duration_secs, to_string(reason));
     }
 

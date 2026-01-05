@@ -110,7 +110,7 @@ std::optional<uint32_t> block_download_coordinator_v2::claim_chunk() {
 
 std::pair<uint32_t, uint32_t> block_download_coordinator_v2::chunk_range(uint32_t chunk_id) const {
     uint32_t block_start = start_height_ + chunk_id * config_.chunk_size;
-    uint32_t block_end = std::min(block_start + static_cast<uint32_t>(config_.chunk_size) - 1, target_height_);
+    uint32_t block_end = std::min(block_start + uint32_t(config_.chunk_size) - 1, target_height_);
     return {block_start, block_end};
 }
 
@@ -248,10 +248,8 @@ bool block_download_coordinator_v2::is_complete() const {
     auto validated = blocks_validated_.load(std::memory_order_acquire);
     auto total = target_height_ - start_height_ + 1;
     bool complete = validated >= total;
-    if (complete) {
-        spdlog::info("[coordinator_v2] is_complete() = true: validated={}, total={}, start={}, target={}",
-            validated, total, start_height_, target_height_);
-    }
+    spdlog::info("[coordinator_v2] is_complete() at {}: validated={}, total={}, start={}, target={}, result={}",
+        static_cast<void const*>(this), validated, total, start_height_, target_height_, complete);
     return complete;
 }
 
@@ -301,7 +299,7 @@ block_download_coordinator_v2::progress block_download_coordinator_v2::get_progr
     uint32_t pending = 0;
     {
         std::lock_guard lock(const_cast<std::mutex&>(validation_mutex_));
-        pending = static_cast<uint32_t>(pending_blocks_.size());
+        pending = uint32_t(pending_blocks_.size());
     }
 
     return {
@@ -401,7 +399,7 @@ void block_download_coordinator_v2::set_failed(code reason) {
 }
 
 uint64_t block_download_coordinator_v2::now_ms() {
-    return static_cast<uint64_t>(
+    return uint64_t(
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()
         ).count()

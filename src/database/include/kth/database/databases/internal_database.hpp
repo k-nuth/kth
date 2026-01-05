@@ -52,6 +52,12 @@
 
 namespace kth::database {
 
+/// Heights stored in the database (headers and validated blocks).
+struct heights_t {
+    uint32_t header;  ///< Height of the last header
+    uint32_t block;   ///< Height of the last validated block
+};
+
 constexpr size_t max_dbs_full_ = 13;        // KTH_DB_NEW_FULL
 constexpr size_t max_dbs_blocks_ = 8;      // KTH_DB_NEW_BLOCKS
 constexpr size_t max_dbs_pruned_ = 7;       // KTH_DB_NEW_PRUNED
@@ -117,8 +123,7 @@ struct KD_API internal_database_basis {
     std::expected<utxo_entry, result_code> get_utxo(domain::chain::output_point const& point) const;
 
     // Height tracking via properties table
-    // Returns pair of (header_height, block_height) or error
-    std::expected<std::pair<uint32_t, uint32_t>, result_code> get_last_heights() const;
+    std::expected<heights_t, result_code> get_last_heights() const;
 
 #if ! defined(KTH_DB_READONLY)
     result_code set_last_header_height(uint32_t height);

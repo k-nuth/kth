@@ -78,7 +78,7 @@ data_chunk build_message_proto(std::string const& command, data_chunk const& pay
     std::copy_n(command.begin(), std::min(command.size(), size_t{12}), cmd.begin());
     message.insert(message.end(), cmd.begin(), cmd.end());
 
-    auto const size_le = to_little_endian(static_cast<uint32_t>(payload.size()));
+    auto const size_le = to_little_endian(uint32_t(payload.size()));
     message.insert(message.end(), size_le.begin(), size_le.end());
 
     auto const hash = bitcoin_hash(payload);
@@ -212,7 +212,7 @@ TEST_CASE("perform_handshake success", "[protocols_coro]") {
     domain::message::version remote_version;
     remote_version.set_value(70015);
     remote_version.set_services(0);
-    remote_version.set_timestamp(static_cast<uint64_t>(zulu_time()));
+    remote_version.set_timestamp(uint64_t(zulu_time()));
     remote_version.set_nonce(99999);
     remote_version.set_user_agent("/RemotePeer:1.0/");
     remote_version.set_start_height(50000);
@@ -299,7 +299,7 @@ TEST_CASE("perform_handshake rejects low version peer", "[protocols_coro]") {
     domain::message::version remote_version;
     remote_version.set_value(31402);  // Too low
     remote_version.set_services(0);
-    remote_version.set_timestamp(static_cast<uint64_t>(zulu_time()));
+    remote_version.set_timestamp(uint64_t(zulu_time()));
     remote_version.set_nonce(99999);
     remote_version.set_user_agent("/OldPeer:0.1/");
     remote_version.set_start_height(50000);

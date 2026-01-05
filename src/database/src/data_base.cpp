@@ -129,7 +129,7 @@ uint32_t get_next_header_height(internal_database const& db) {
     if ( ! result) {
         return 0;
     }
-    return result->first + 1;  // header_height + 1
+    return result->header + 1;
 }
 
 static inline
@@ -278,7 +278,7 @@ code data_base::push_headers_batch(header::list const& headers, size_t start_hei
         return error::success;
     }
 
-    auto res = internal_db_->push_headers_batch(headers, static_cast<uint32_t>(start_height));
+    auto res = internal_db_->push_headers_batch(headers, uint32_t(start_height));
     if ( ! succeed(res)) {
         return error::database_push_failed;
     }
@@ -456,7 +456,7 @@ awaitable_expected<block_const_ptr_list_ptr> data_base::pop_above(executor_type 
     if ( ! heights) {
         co_return std::unexpected(error::chain_reorganization_failed);
     }
-    auto const top = heights->second;  // block_height
+    auto const top = heights->block;
 
     auto const fork = header_result->second;
     auto const size = top - fork;
