@@ -23,7 +23,7 @@ bool png::write_png(byte_span data, uint32_t size, std::ostream& out) {
 
 extern "C" void sink_write(png_structp png_ptr, png_bytep data, png_size_t length) {
     static_assert(sizeof(length) <= sizeof(size_t), "png_size_t too large");
-    auto const size = size_t(length);
+    auto const size = static_cast<size_t>(length);
     auto& sink = *reinterpret_cast<ostream_writer*>(png_get_io_ptr(png_ptr));
     sink.write_bytes(reinterpret_cast<uint8_t const*>(data), size);
 }

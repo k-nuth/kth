@@ -62,14 +62,13 @@ tui_dashboard::tui_dashboard() {
     splash_start_ = std::chrono::steady_clock::now();
 
     // Define navigable screens (after splash)
-    // TODO: Only DASHBOARD and LOGS for now, others coming later
     navigable_screens_ = {
         screen_id::dashboard,
-        // screen_id::network,
-        // screen_id::blockchain,
-        // screen_id::mempool,
+        screen_id::network,
+        screen_id::blockchain,
+        screen_id::mempool,
         screen_id::logs,
-        // screen_id::terminal,
+        screen_id::terminal,
     };
 
     // Initialize terminal with welcome message
@@ -236,21 +235,6 @@ void tui_dashboard::update_status(node_status const& status) {
     {
         std::lock_guard<std::mutex> lock(status_mutex_);
         status_ = status;
-    }
-    auto* scr = screen_.load();
-    if (scr != nullptr) {
-        scr->PostEvent(Event::Custom);
-    }
-}
-
-void tui_dashboard::add_log(std::string const& message) {
-    {
-        std::lock_guard<std::mutex> lock(status_mutex_);
-        status_.recent_logs.push_back(message);
-        // Keep only last 100 logs
-        while (status_.recent_logs.size() > 100) {
-            status_.recent_logs.erase(status_.recent_logs.begin());
-        }
     }
     auto* scr = screen_.load();
     if (scr != nullptr) {
@@ -530,107 +514,7 @@ Element tui_dashboard::render_dashboard() {
 }
 
 Element tui_dashboard::render_network_screen() {
-    Elements peer_rows;
-
-    // Header row
-    peer_rows.push_back(hbox({
-        text("  ") | size(WIDTH, EQUAL, 2),
-        text("ADDRESS") | bold | color(colors::kth_light) | size(WIDTH, EQUAL, 22),
-        text("USER AGENT") | bold | color(colors::kth_light) | size(WIDTH, EQUAL, 16),
-        text("HEIGHT") | bold | color(colors::kth_light) | size(WIDTH, EQUAL, 10),
-        text("RECV") | bold | color(colors::kth_light) | size(WIDTH, EQUAL, 10),
-        text("SENT") | bold | color(colors::kth_light) | size(WIDTH, EQUAL, 10),
-        text("PING") | bold | color(colors::kth_light) | size(WIDTH, EQUAL, 8),
-        text("TIME") | bold | color(colors::kth_light) | size(WIDTH, EQUAL, 8),
-    }));
-
-    peer_rows.push_back(separator() | color(colors::dark_gray));
-
-    if (status_.peers.empty()) {
-        peer_rows.push_back(text("  No peers connected...") | color(colors::gray) | dim);
-    } else {
-        for (auto const& peer : status_.peers) {
-            // Direction indicator
-            auto direction = peer.is_inbound ?
-                text("↓ ") | color(colors::kth_violet) :
-                text("↑ ") | color(colors::cyan);
-
-            // Ping color based on latency
-            auto ping_col = peer.ping_ms == 0 ? colors::gray :
-                            peer.ping_ms < 100 ? colors::green :
-                            peer.ping_ms < 300 ? colors::orange : colors::red;
-
-            auto ping_str = peer.ping_ms > 0 ?
-                std::to_string(peer.ping_ms) + "ms" : "-";
-
-            // Connected time
-            auto time_str = format_duration(peer.connected_duration);
-            // Shorten to just the most significant part
-            if (peer.connected_duration.count() >= 86400) {
-                time_str = std::to_string(peer.connected_duration.count() / 86400) + "d";
-            } else if (peer.connected_duration.count() >= 3600) {
-                time_str = std::to_string(peer.connected_duration.count() / 3600) + "h";
-            } else if (peer.connected_duration.count() >= 60) {
-                time_str = std::to_string(peer.connected_duration.count() / 60) + "m";
-            } else {
-                time_str = std::to_string(peer.connected_duration.count()) + "s";
-            }
-
-            // User agent - truncate if too long
-            auto user_agent = peer.user_agent;
-            if (user_agent.length() > 14) {
-                user_agent = user_agent.substr(0, 14) + "..";
-            }
-            if (user_agent.empty()) {
-                user_agent = "Unknown";
-            }
-
-            // Preferred indicator
-            auto preferred_indicator = peer.is_preferred ?
-                text("★") | color(colors::bch_green) | bold :
-                text(" ");
-
-            peer_rows.push_back(hbox({
-                direction,
-                text(peer.address) | color(colors::white) | size(WIDTH, EQUAL, 22),
-                text(user_agent) | color(colors::cyan) | size(WIDTH, EQUAL, 16),
-                text(format_number(peer.start_height)) | color(colors::gray) | size(WIDTH, EQUAL, 10),
-                text(format_bytes(peer.bytes_received)) | color(colors::green) | size(WIDTH, EQUAL, 10),
-                text(format_bytes(peer.bytes_sent)) | color(colors::blue) | size(WIDTH, EQUAL, 10),
-                text(ping_str) | color(ping_col) | size(WIDTH, EQUAL, 8),
-                text(time_str) | color(colors::gray) | size(WIDTH, EQUAL, 8),
-            }));
-        }
-    }
-
-    // Summary footer
-    Elements summary;
-    summary.push_back(separator() | color(colors::dark_gray));
-    summary.push_back(hbox({
-        text("Total: ") | color(colors::gray),
-        text(std::to_string(status_.peers_outbound + status_.peers_inbound)) | bold | color(colors::white),
-        text(" peers (") | color(colors::gray),
-        text("↑" + std::to_string(status_.peers_outbound)) | color(colors::cyan),
-        text(" out, ") | color(colors::gray),
-        text("↓" + std::to_string(status_.peers_inbound)) | color(colors::kth_violet),
-        text(" in)") | color(colors::gray),
-        filler(),
-        text("Avg ping: ") | color(colors::gray),
-        text(status_.avg_ping_ms > 0 ? std::to_string(status_.avg_ping_ms) + "ms" : "-") |
-            color(status_.avg_ping_ms < 100 ? colors::green :
-                  status_.avg_ping_ms < 300 ? colors::orange : colors::red),
-    }));
-
-    return vbox({
-        render_header_bar(),
-        separator() | color(colors::dark_gray),
-        window(text(" ⚡ CONNECTED PEERS ") | bold | color(colors::cyan),
-            vbox(peer_rows) | flex) | flex,
-        vbox(summary),
-        separator() | color(colors::dark_gray),
-        render_navigation_bar(),
-        render_footer(),
-    }) | border | color(colors::kth_purple);
+    return render_placeholder("NETWORK");
 }
 
 Element tui_dashboard::render_blockchain_screen() {
@@ -642,56 +526,7 @@ Element tui_dashboard::render_mempool_screen() {
 }
 
 Element tui_dashboard::render_logs_screen() {
-    Elements log_lines;
-
-    if (status_.recent_logs.empty()) {
-        log_lines.push_back(text("  No logs yet...") | color(colors::gray) | dim);
-    } else {
-        // Show last N logs that fit
-        size_t const max_visible = 20;
-        size_t start = status_.recent_logs.size() > max_visible ?
-                       status_.recent_logs.size() - max_visible : 0;
-
-        for (size_t i = start; i < status_.recent_logs.size(); ++i) {
-            auto const& log = status_.recent_logs[i];
-
-            // Color based on log level (detect from content)
-            Color log_color = colors::white;
-            if (log.find("[error]") != std::string::npos ||
-                log.find("[ERROR]") != std::string::npos ||
-                log.find("Error") != std::string::npos) {
-                log_color = colors::red;
-            } else if (log.find("[warn]") != std::string::npos ||
-                       log.find("[WARN]") != std::string::npos ||
-                       log.find("Warning") != std::string::npos) {
-                log_color = colors::orange;
-            } else if (log.find("[info]") != std::string::npos ||
-                       log.find("[INFO]") != std::string::npos) {
-                log_color = colors::cyan;
-            } else if (log.find("[debug]") != std::string::npos ||
-                       log.find("[DEBUG]") != std::string::npos) {
-                log_color = colors::gray;
-            }
-
-            // Truncate long lines
-            std::string display_log = log;
-            if (display_log.length() > 100) {
-                display_log = display_log.substr(0, 97) + "...";
-            }
-
-            log_lines.push_back(text(display_log) | color(log_color));
-        }
-    }
-
-    return vbox({
-        render_header_bar(),
-        separator() | color(colors::dark_gray),
-        window(text(" 📋 LOGS ") | bold | color(colors::kth_violet),
-            vbox(log_lines) | flex) | flex,
-        separator() | color(colors::dark_gray),
-        render_navigation_bar(),
-        render_footer(),
-    }) | border | color(colors::kth_purple);
+    return render_placeholder("LOGS");
 }
 
 Element tui_dashboard::render_terminal_screen() {
@@ -968,9 +803,8 @@ Element tui_dashboard::render_network_panel() {
 
     Elements rows;
 
-    // Header: Peers count and listen port
     rows.push_back(hbox({
-        text("○ ") | color(total_peers > 0 ? colors::green : colors::red),
+        text("⬡ ") | color(total_peers > 0 ? colors::green : colors::red),
         text("Peers: ") | color(colors::gray),
         text(std::to_string(total_peers)) | bold | color(total_peers > 0 ? colors::green : colors::red),
         text("  (") | color(colors::dark_gray),
@@ -979,53 +813,31 @@ Element tui_dashboard::render_network_panel() {
         text(")") | color(colors::dark_gray),
     }));
 
-    rows.push_back(hbox({
-        text("Listen: ") | color(colors::gray),
-        text(":8333") | color(colors::white),  // TODO: get from config
-    }));
-
     rows.push_back(text(""));
 
-    // Connected peers header
-    rows.push_back(text("Connected peers:") | color(colors::gray));
+    rows.push_back(hbox({
+        text("↓ ") | color(colors::green) | bold,
+        text(format_bytes_speed(status_.bytes_received)) | color(colors::green),
+        text("  "),
+        text("↑ ") | color(colors::blue) | bold,
+        text(format_bytes_speed(status_.bytes_sent)) | color(colors::blue),
+    }));
 
-    // Show each peer
-    if (status_.peers.empty()) {
-        rows.push_back(text("  (none)") | color(colors::dark_gray) | dim);
-    } else {
-        for (auto const& peer : status_.peers) {
-            // Direction
-            std::string direction = peer.is_inbound ? "IN " : "OUT";
-            auto dir_color = peer.is_inbound ? colors::kth_violet : colors::cyan;
+    if (status_.total_bytes_received > 0 || status_.total_bytes_sent > 0) {
+        rows.push_back(hbox({
+            text("Total: ") | color(colors::gray),
+            text("↓" + format_bytes(status_.total_bytes_received)) | color(colors::green) | dim,
+            text(" ↑" + format_bytes(status_.total_bytes_sent)) | color(colors::blue) | dim,
+        }));
+    }
 
-            // User agent - truncate if needed
-            std::string agent = peer.user_agent;
-            if (agent.empty()) agent = "Unknown";
-            if (agent.length() > 12) agent = agent.substr(0, 12);
-
-            // Format: OUT ip:port  UserAgent  H:height ↓recv ↑sent pingms
-            auto ping_color = peer.ping_ms == 0 ? colors::gray :
-                              peer.ping_ms < 200 ? colors::green :
-                              peer.ping_ms < 500 ? colors::orange : colors::red;
-
-            auto ping_str = peer.ping_ms > 0 ?
-                std::to_string(peer.ping_ms) + "ms" : "-";
-
-            rows.push_back(hbox({
-                text(direction + " ") | color(dir_color),
-                text(peer.address) | color(colors::white),
-                text("  "),
-                text(agent) | color(colors::cyan),
-                text("  "),
-                text("H:" + format_number(peer.start_height)) | color(colors::gray),
-                text(" "),
-                text("↓" + format_bytes(peer.bytes_received)) | color(colors::green),
-                text(" "),
-                text("↑" + format_bytes(peer.bytes_sent)) | color(colors::blue),
-                text(" "),
-                text(ping_str) | color(ping_color),
-            }));
-        }
+    if (status_.avg_ping_ms > 0) {
+        rows.push_back(hbox({
+            text("Ping: ") | color(colors::gray),
+            text(std::to_string(status_.avg_ping_ms) + "ms") | color(
+                status_.avg_ping_ms < 100 ? colors::green :
+                status_.avg_ping_ms < 500 ? colors::orange : colors::red),
+        }));
     }
 
     return window(text(" ⚡ NETWORK ") | bold | color(colors::cyan), vbox(rows) | flex) | flex;

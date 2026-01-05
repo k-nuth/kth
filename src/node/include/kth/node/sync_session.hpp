@@ -44,7 +44,6 @@
 #include <kth/blockchain/pools/header_organizer.hpp>
 #include <kth/network.hpp>
 #include <kth/node/define.hpp>
-#include <kth/node/parallel_sync.hpp>
 
 #include <asio/awaitable.hpp>
 
@@ -87,9 +86,9 @@ struct sync_config {
     /// If peer doesn't respond with better chain after this, disconnect
     std::chrono::seconds headers_response_timeout{2 * 60};
 
-    /// Block stalling timeout (BCHN: 10 seconds for individual blocks)
-    /// If a block request hasn't completed in this time, reassign to another peer
-    std::chrono::seconds block_stalling_timeout{10};
+    /// Block stalling timeout (BCHN: 2 seconds)
+    /// If block download window can't move for this long, disconnect
+    std::chrono::seconds block_stalling_timeout{2};
 
     /// Block download timeout base, in units of block interval (BCHN: 10 min equivalent)
     /// Actual timeout = block_interval * (base + per_peer * num_other_peers)
@@ -114,19 +113,11 @@ public:
     using ptr = std::shared_ptr<sync_session>;
 
     /// Construct sync session
-    /// @param chain Blockchain reference
-    /// @param peer Primary peer for header sync
-    /// @param network Network type (mainnet/testnet)
-    /// @param config Sync configuration
-    /// @param target_height Override target height (0 = use peer's start_height)
-    /// @param p2p_node Optional p2p_node for parallel block download (nullptr = sequential)
     sync_session(
         blockchain::block_chain& chain,
         network::peer_session::ptr peer,
         domain::config::network network,
-        sync_config const& config = {},
-        size_t target_height = 0,
-        network::p2p_node* p2p_node = nullptr);
+        sync_config const& config = {});
 
     /// Run synchronization with peer
     /// Returns when synced or on error
@@ -150,13 +141,9 @@ private:
     ::asio::awaitable<code> sync_headers_batch();
     ::asio::awaitable<code> sync_blocks(std::vector<hash_digest> const& hashes);
 
-    // Background task to persist headers from header_index to database
-    ::asio::awaitable<void> persist_headers_to_db(size_t start_height, size_t end_height);
-
     blockchain::block_chain& chain_;
     blockchain::header_organizer organizer_;
     network::peer_session::ptr peer_;
-    network::p2p_node* p2p_node_;  // Optional: for parallel block download
     sync_config config_;
 
     size_t header_height_{0};  // Current header-sync height (from DB at start)
@@ -177,16 +164,12 @@ private:
 };
 
 /// Create a sync session for a peer
-/// @param target_height Override target height (0 = use peer's start_height)
-/// @param p2p_node Optional p2p_node for parallel block download (nullptr = sequential)
 [[nodiscard]]
 KND_API sync_session::ptr make_sync_session(
     blockchain::block_chain& chain,
     network::peer_session::ptr peer,
     domain::config::network network,
-    sync_config const& config = {},
-    size_t target_height = 0,
-    network::p2p_node* p2p_node = nullptr);
+    sync_config const& config = {});
 
 /// Run sync with the best available peer
 /// Selects peer based on start_height from version message

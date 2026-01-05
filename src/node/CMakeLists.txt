@@ -153,10 +153,6 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/utility/reservation.cpp
     src/utility/reservations.cpp
 
-    src/block_download_coordinator.cpp
-    src/parallel_sync.cpp
-    src/block_download_coordinator_v2.cpp
-    src/parallel_sync_v2.cpp
   )
 endif()
 
@@ -188,10 +184,6 @@ set(kth_headers
   include/kth/node/full_node.hpp
   include/kth/node/sync_session.hpp
   include/kth/node/parser.hpp
-  include/kth/node/block_download_coordinator.hpp
-  include/kth/node/parallel_sync.hpp
-  include/kth/node/block_download_coordinator_v2.hpp
-  include/kth/node/parallel_sync_v2.hpp
 )
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
