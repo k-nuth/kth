@@ -61,6 +61,9 @@ using header_download_output = std::variant<downloaded_headers, peer_failure_rep
 // Messages are processed in FIFO order, no arbitrary priority
 using header_download_input = std::variant<stop_request, peers_updated, header_request>;
 
+// Header validation task input - single channel (CSP pattern)
+using header_validation_input = std::variant<stop_request, downloaded_headers, peer_failure_report>;
+
 struct headers_validated {
     uint32_t height;
     size_t count;
@@ -90,6 +93,12 @@ struct block_validated {
     network::peer_session::ptr source_peer;  // For banning on validation failure
 };
 
+// Block download supervisor input - single channel (CSP pattern)
+using block_download_input = std::variant<stop_request, peers_updated, block_range_request>;
+
+// Block validation task input - single channel (CSP pattern)
+using block_validation_input = std::variant<stop_request, downloaded_block>;
+
 // -----------------------------------------------------------------------------
 // Peer provider messages (unified input channel)
 // -----------------------------------------------------------------------------
@@ -112,17 +121,16 @@ using peer_provider_input_channel = concurrent_channel<peer_provider_input>;
 // Peer distribution (output)
 using peer_channel = concurrent_channel<peers_updated>;
 
-// Header sync pipeline
+// Header sync pipeline (CSP pattern - single input/output per task)
 using header_download_input_channel = concurrent_channel<header_download_input>;
 using header_download_output_channel = concurrent_channel<header_download_output>;
+using header_validation_input_channel = concurrent_channel<header_validation_input>;
 using header_validated_channel = concurrent_channel<headers_validated>;
 
-// Legacy aliases (for block sync which still uses separate channels)
-using header_request_channel = concurrent_channel<header_request>;
-
-// Block sync pipeline
-using block_request_channel = concurrent_channel<block_range_request>;
+// Block sync pipeline (CSP pattern - single input/output per task)
+using block_download_input_channel = concurrent_channel<block_download_input>;
 using block_download_channel = concurrent_channel<downloaded_block>;
+using block_validation_input_channel = concurrent_channel<block_validation_input>;
 using block_validated_channel = concurrent_channel<block_validated>;
 
 // Control
