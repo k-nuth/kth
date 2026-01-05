@@ -13,14 +13,8 @@ namespace kth::network::handlers::pong {
     peer_session& peer,
     domain::message::pong const& msg)
 {
-    // Record pong to calculate latency
-    if (peer.record_pong_received(msg.nonce())) {
-        spdlog::trace("[pong] Received pong from [{}], nonce: {}, latency: {}ms",
-            peer.authority(), msg.nonce(), peer.ping_latency_ms());
-    } else {
-        spdlog::trace("[pong] Received unexpected pong from [{}], nonce: {}",
-            peer.authority(), msg.nonce());
-    }
+    // Just acknowledge receipt - could verify nonce if we tracked sent pings
+    spdlog::trace("[pong] Received pong from [{}], nonce: {}", peer.authority(), msg.nonce());
     co_return message_result::handled;
 }
 

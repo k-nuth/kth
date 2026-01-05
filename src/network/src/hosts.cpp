@@ -32,7 +32,7 @@ inline bool is_ipv4_mapped(infrastructure::message::ip_address const& ip) {
 } // anonymous namespace
 
 hosts::hosts(settings const& settings)
-    : capacity_(std::min(max_address, size_t(settings.host_pool_capacity)))
+    : capacity_(std::min(max_address, static_cast<size_t>(settings.host_pool_capacity)))
     , disabled_(capacity_ == 0)
     , file_path_(settings.hosts_file)
     , addresses_(capacity_ > 0 ? capacity_ : 1)
@@ -114,7 +114,7 @@ code hosts::fetch(address& out) const {
 
     addresses_.cvisit_all([&](address const& addr) {
         if (found) return;
-        if (current == size_t(random_index)) {
+        if (current == static_cast<size_t>(random_index)) {
             out = addr;
             found = true;
         }

@@ -3960,7 +3960,7 @@ void test_soa_traversal_unlock_after_lookup() {
     for (size_t t = 0; t < num_traversers; ++t) {
         threads.emplace_back([&store, &cached_indices, &stop, &traverse_count, t, traversal_depth] {
             std::mt19937 rng(t);
-            std::uniform_int_distribution<size_t> dist(size_t(traversal_depth), cached_indices.size() - 1);
+            std::uniform_int_distribution<size_t> dist(static_cast<size_t>(traversal_depth), cached_indices.size() - 1);
             while (!stop.load(std::memory_order_relaxed)) {
                 // Use CACHED index - no lock, no synchronization with writers!
                 uint32_t start_idx = cached_indices[dist(rng)];
