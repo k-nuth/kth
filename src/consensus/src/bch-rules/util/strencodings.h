@@ -252,7 +252,7 @@ bool ConvertBits(const O &outfn, I it, I end) {
     constexpr size_t maxv = (size_t{1} << tobits) - 1u;
     constexpr size_t max_acc = (size_t{1} << (frombits + tobits - 1u)) - 1u;
     while (it != end) {
-        acc = ((acc << frombits) | size_t(*it)) & max_acc;
+        acc = ((acc << frombits) | static_cast<size_t>(*it)) & max_acc;
         bits += frombits;
         while (bits >= tobits) {
             bits -= tobits;

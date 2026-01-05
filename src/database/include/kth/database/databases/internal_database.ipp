@@ -1103,16 +1103,9 @@ template <typename Clock>
 result_code internal_database_basis<Clock>::push_block(domain::chain::block const& block, uint32_t height, uint32_t median_time_past, bool insert_reorg, KTH_DB_txn* db_txn) {
     //precondition: block.transactions().size() >= 1
 
-    result_code res = result_code::success;
-
-    // With headers-first sync, header usually already exists.
-    // Only write header if it doesn't exist (for backward compatibility/edge cases).
-    auto existing_header = get_header(height, db_txn);
-    if ( ! existing_header.has_value()) {
-        res = push_block_header(block, height, db_txn);
-        if (res != result_code::success) {
-            return res;
-        }
+    auto res = push_block_header(block, height, db_txn);
+    if (res != result_code::success) {
+        return res;
     }
 
     auto const& txs = block.transactions();

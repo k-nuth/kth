@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include <kth/domain/chain/chain_state.hpp>
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/domain/concepts.hpp>
@@ -158,13 +159,20 @@ struct KD_API block_basis {
     [[nodiscard]]
     code check(size_t serialized_size_false) const;
 
-    /// Check block body only (skip header validation for headers-first sync).
-    /// Use this when headers have already been validated during header sync.
-    [[nodiscard]]
-    code check_body(size_t serialized_size_false) const;
-
     [[nodiscard]]
     code check_transactions() const;
+
+    [[nodiscard]]
+    code accept(chain_state const& state, size_t serialized_size, bool transactions = true) const;
+
+    [[nodiscard]]
+    code accept_transactions(chain_state const& state) const;
+
+    [[nodiscard]]
+    code connect(chain_state const& state) const;
+
+    [[nodiscard]]
+    code connect_transactions(chain_state const& state) const;
 
 // protected:
     void reset();

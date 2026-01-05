@@ -36,7 +36,7 @@ populate_chain_state::populate_chain_state(block_chain const& chain, settings co
       settings_(settings),
 #endif //KTH_CURRENCY_BCH
       configured_forks_(settings.enabled_forks())
-    , checkpoints_(settings.checkpoints_sorted)
+    , checkpoints_(infrastructure::config::checkpoint::sort(settings.checkpoints))
     , network_(network)
     , chain_(chain)
 {}

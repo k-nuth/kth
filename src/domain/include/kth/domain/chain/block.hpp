@@ -144,10 +144,9 @@ public:
     size_t total_inputs(bool with_coinbase = true) const;
 
     code check() const;
-
-    /// Check block body only (skip header validation for headers-first sync).
-    /// Use this when headers have already been validated during header sync.
-    code check_body() const;
+    code accept(bool transactions = true) const;
+    code accept(chain_state const& state, bool transactions = true) const;
+    code connect() const;
 
     // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
     mutable validation_t validation{};
