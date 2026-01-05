@@ -25,31 +25,60 @@ using namespace ::asio::experimental::awaitable_operators;
 
 ::asio::awaitable<void> header_download_task(
     peer_channel& peers,
+    peer_issue_channel& peer_issues,
     header_request_channel& requests,
     header_download_channel& output,
     stop_channel& stop
 ) {
     spdlog::debug("[header_download] Task started");
 
-    // Local copy of peers - updated whenever we receive peers_updated
+    // Local copy of peers - updated by peer_provider (already filtered)
     std::vector<network::peer_session::ptr> available_peers;
     std::optional<header_request> pending_request;  // Buffered request waiting for peers
-    size_t current_peer_index = 0;  // Round-robin peer selection
 
-    // Helper to get next peer (round-robin)
-    auto get_next_peer = [&]() -> network::peer_session::ptr {
-        // Clean stopped peers first
-        std::erase_if(available_peers, [](auto const& p) { return p->stopped(); });
-        if (available_peers.empty()) {
-            return nullptr;
+    // Sticky peer selection - use same peer until failure
+    network::peer_session::ptr current_peer;
+
+    // Track last failed peer nonce - don't reselect until we get peers_updated
+    std::optional<uint64_t> last_failed_nonce;
+
+    // Helper to get peer for headers (sticky - same peer until failure)
+    auto get_header_peer = [&]() -> network::peer_session::ptr {
+        // If current peer is still valid and in available list, use it
+        if (current_peer && !current_peer->stopped()) {
+            // Don't use if it just failed (waiting for peers_updated)
+            if (last_failed_nonce && current_peer->nonce() == *last_failed_nonce) {
+                current_peer = nullptr;
+            } else {
+                // Check if still in available_peers (peer_provider may have removed it)
+                for (auto const& p : available_peers) {
+                    if (p->nonce() == current_peer->nonce()) {
+                        return current_peer;
+                    }
+                }
+                // Current peer was removed by peer_provider, clear it
+                current_peer = nullptr;
+            }
         }
-        current_peer_index = current_peer_index % available_peers.size();
-        return available_peers[current_peer_index++];
+
+        // Need to select a new peer - skip the last failed one
+        std::erase_if(available_peers, [](auto const& p) { return p->stopped(); });
+
+        for (auto const& p : available_peers) {
+            if (!last_failed_nonce || p->nonce() != *last_failed_nonce) {
+                current_peer = p;
+                spdlog::info("[header_download] Selected peer: {}", current_peer->authority_with_agent());
+                return current_peer;
+            }
+        }
+
+        // All peers are either stopped or the failed one - wait for peers_updated
+        return nullptr;
     };
 
     // Helper lambda to process a request
     auto process_request = [&](header_request const& request) -> ::asio::awaitable<void> {
-        auto peer = get_next_peer();
+        auto peer = get_header_peer();
         if (!peer) {
             spdlog::debug("[header_download] No peers available, buffering request for height {}",
                 request.from_height);
@@ -67,13 +96,30 @@ using namespace ::asio::experimental::awaitable_operators;
         if (!result) {
             spdlog::warn("[header_download] Failed to get headers from {}: {}",
                 peer->authority_with_agent(), result.error().message());
-            // Report failure to coordinator (peer manager will handle it)
-            output.try_send(std::error_code{}, peer_failure_report{
+
+            // Report issue to peer_provider - it will filter this peer
+            peer_issues.try_send(std::error_code{}, peer_issue{
                 .peer = peer,
                 .error = result.error()
             });
-            // Don't clear pending_request - coordinator will send updated peer list
-            // and we'll retry with the next peer
+
+            // Mark this peer as failed - don't reselect until peers_updated
+            last_failed_nonce = peer->nonce();
+            current_peer = nullptr;
+
+            // Report failure to coordinator
+            auto [send_ec] = co_await output.async_send(
+                std::error_code{},
+                peer_failure_report{
+                    .peer = peer,
+                    .error = result.error()
+                },
+                ::asio::as_tuple(::asio::use_awaitable)
+            );
+            if (send_ec) {
+                spdlog::warn("[header_download] Failed to send peer failure report: {}", send_ec.message());
+            }
+            // Keep request pending - will retry with new peer after peers_updated
             pending_request = request;
             co_return;
         }
@@ -82,11 +128,18 @@ using namespace ::asio::experimental::awaitable_operators;
             spdlog::debug("[header_download] No new headers from {} (at tip), triggering block sync",
                 peer->authority_with_agent());
             // Send empty message to signal sync complete
-            output.try_send(std::error_code{}, downloaded_headers{
-                .headers = {},
-                .start_height = request.from_height,
-                .source_peer = peer
-            });
+            auto [send_ec] = co_await output.async_send(
+                std::error_code{},
+                downloaded_headers{
+                    .headers = {},
+                    .start_height = request.from_height,
+                    .source_peer = peer
+                },
+                ::asio::as_tuple(::asio::use_awaitable)
+            );
+            if (send_ec) {
+                spdlog::warn("[header_download] Failed to send empty headers: {}", send_ec.message());
+            }
             pending_request.reset();
             co_return;
         }
@@ -95,22 +148,34 @@ using namespace ::asio::experimental::awaitable_operators;
             result->elements().size(), peer->authority_with_agent());
 
         // Send to validation
-        output.try_send(std::error_code{}, downloaded_headers{
-            .headers = result->elements(),
-            .start_height = request.from_height + 1,
-            .source_peer = peer
-        });
+        auto [send_ec] = co_await output.async_send(
+            std::error_code{},
+            downloaded_headers{
+                .headers = result->elements(),
+                .start_height = request.from_height + 1,
+                .source_peer = peer
+            },
+            ::asio::as_tuple(::asio::use_awaitable)
+        );
+        if (send_ec) {
+            spdlog::warn("[header_download] Failed to send headers to validation: {}", send_ec.message());
+            pending_request = request;
+            co_return;
+        }
 
         // Clear pending since we processed it
         pending_request.reset();
     };
 
     while (true) {
-        // Wait for: stop (priority), peers update, or request
+        // Wait for: stop (priority), request (priority over peers), peers update
+        spdlog::debug("[header_download] Waiting for events (peers={}, pending={})",
+            available_peers.size(), pending_request.has_value());
+
         auto event = co_await (
             stop.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-            peers.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-            requests.async_receive(::asio::as_tuple(::asio::use_awaitable))
+            requests.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
+            peers.async_receive(::asio::as_tuple(::asio::use_awaitable))
         );
 
         if (event.index() == 0) {
@@ -119,14 +184,29 @@ using namespace ::asio::experimental::awaitable_operators;
         }
 
         if (event.index() == 1) {
+            // New request received - process it
+            auto [ec, request] = std::get<1>(event);
+            if (ec) {
+                spdlog::debug("[header_download] Requests channel closed");
+                break;
+            }
+            spdlog::debug("[header_download] Request received: height={}", request.from_height);
+
+            co_await process_request(request);
+            continue;
+        }
+
+        if (event.index() == 2) {
             // Peers list updated
-            auto [ec, peers_msg] = std::get<1>(event);
+            auto [ec, peers_msg] = std::get<2>(event);
             if (ec) {
                 spdlog::debug("[header_download] Peers channel closed");
                 break;
             }
 
             available_peers = peers_msg.peers;
+            // Clear failed nonce - peer_provider has filtered the bad peer
+            last_failed_nonce.reset();
             spdlog::debug("[header_download] Peers updated: {} peers available",
                 available_peers.size());
 
@@ -138,16 +218,6 @@ using namespace ::asio::experimental::awaitable_operators;
             }
             continue;
         }
-
-        // New request received (index 2)
-        auto [ec, request] = std::get<2>(event);
-        if (ec) {
-            spdlog::debug("[header_download] Requests channel closed");
-            break;
-        }
-        spdlog::debug("[header_download] Request received: height={}", request.from_height);
-
-        co_await process_request(request);
     }
 
     // Close output channel to signal validation task that no more headers are coming
@@ -196,18 +266,39 @@ using namespace ::asio::experimental::awaitable_operators;
             spdlog::debug("[header_validation] Added {} headers, total index size: {}",
                 result.headers_added, result.index_size);
 
-            bool sent = output.try_send(std::error_code{}, headers_validated{
-                .height = uint32_t(organizer.header_height()),
-                .count = result.headers_added,
-                .result = result.error,
-                .source_peer = downloaded->source_peer
-            });
-            spdlog::debug("[header_validation] Sent to output channel: {}", sent ? "success" : "FAILED");
+            auto [send_ec] = co_await output.async_send(
+                std::error_code{},
+                headers_validated{
+                    .height = uint32_t(organizer.header_height()),
+                    .count = result.headers_added,
+                    .result = result.error,
+                    .source_peer = downloaded->source_peer
+                },
+                ::asio::as_tuple(::asio::use_awaitable)
+            );
+            if (send_ec) {
+                spdlog::warn("[header_validation] Failed to send validation result: {}", send_ec.message());
+                break;
+            }
         } else if (auto* failure = std::get_if<peer_failure_report>(&download_event)) {
-            // Peer failure - just log, coordinator should handle this
+            // Peer failure - forward to coordinator so it can retry with another peer
             spdlog::debug("[header_validation] Received peer failure report for {}: {}",
                 failure->peer->authority_with_agent(), failure->error.message());
-            // Could forward to coordinator via another channel if needed
+
+            // Forward failure to coordinator - it will retry header sync
+            auto [send_ec] = co_await output.async_send(
+                std::error_code{},
+                headers_validated{
+                    .height = uint32_t(organizer.header_height()),
+                    .count = 0,
+                    .result = failure->error,
+                    .source_peer = failure->peer
+                },
+                ::asio::as_tuple(::asio::use_awaitable)
+            );
+            if (send_ec) {
+                spdlog::warn("[header_validation] Failed to forward peer failure: {}", send_ec.message());
+            }
         }
     }
 

@@ -17,15 +17,17 @@ namespace kth::node::sync {
 // =============================================================================
 //
 // Downloads headers from peers.
-// - Receives peers from peer_channel
+// - Receives peers from peer_channel (already filtered by peer_provider)
 // - Receives requests from header_request_channel
 // - Sends downloaded headers to header_download_channel
-// - Owns its list of available peers (not shared)
+// - Reports peer issues to peer_issue_channel (peer_provider filters them)
+// - Uses sticky peer selection (same peer until failure)
 //
 // =============================================================================
 
 ::asio::awaitable<void> header_download_task(
     peer_channel& peers,
+    peer_issue_channel& peer_issues,
     header_request_channel& requests,
     header_download_channel& output,
     stop_channel& stop

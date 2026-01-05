@@ -6,6 +6,7 @@
 
 #include <chrono>
 
+#include <boost/unordered/unordered_flat_set.hpp>
 #include <spdlog/spdlog.h>
 
 #include <asio/co_spawn.hpp>
@@ -23,6 +24,41 @@ namespace kth::node::sync {
 using namespace ::asio::experimental::awaitable_operators;
 
 // =============================================================================
+// Error Classification
+// =============================================================================
+// Determines if an error indicates the peer sent invalid data (ban) vs
+// network/timeout issues (don't ban).
+
+[[nodiscard]]
+static bool is_bannable_error(code const& ec) {
+    if (!ec) return false;
+
+    // Network errors - DON'T ban (not malicious, just connectivity issues)
+    switch (ec.value()) {
+        case error::success:
+        case error::service_stopped:
+        case error::operation_failed:
+        case error::resolve_failed:
+        case error::network_unreachable:
+        case error::address_in_use:
+        case error::listen_failed:
+        case error::accept_failed:
+        case error::bad_stream:
+        case error::channel_timeout:
+        case error::address_blocked:
+        case error::channel_stopped:
+        case error::peer_throttling:
+        case error::not_found:              // Data not available yet
+        case error::orphan_block:           // Just out of order, not invalid
+        case error::orphan_transaction:
+            return false;
+        default:
+            // Any other error is a validation failure -> BAN
+            return true;
+    }
+}
+
+// =============================================================================
 // Header Persistence (background task)
 // =============================================================================
 
@@ -38,7 +74,7 @@ static
     }
 
     auto const total = end_height - start_height + 1;
-    spdlog::debug("[header_persist] Starting: {} headers ({} to {})", total, start_height, end_height);
+    spdlog::info("[header_persist] Starting: {} headers ({} to {})", total, start_height, end_height);
 
     auto const start_time = std::chrono::steady_clock::now();
     constexpr size_t batch_size = 1000;
@@ -64,12 +100,12 @@ static
         persisted += batch.size();
         height = batch_end + 1;
 
-        // Log progress every 50000 headers
-        if (persisted % 50000 < batch_size) {
+        // Log progress every 100000 headers
+        if (persisted % 100000 < batch_size) {
             auto const elapsed = std::chrono::steady_clock::now() - start_time;
             auto const elapsed_secs = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
             auto const rate = elapsed_secs > 0 ? persisted / elapsed_secs : persisted;
-            spdlog::debug("[header_persist] Progress: {}/{} ({}/s)", persisted, total, rate);
+            spdlog::info("[header_persist] {}/{} ({}/s)", persisted, total, rate);
         }
 
         // Yield to allow other coroutines to run
@@ -77,8 +113,9 @@ static
     }
 
     auto const elapsed = std::chrono::steady_clock::now() - start_time;
-    auto const elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-    spdlog::debug("[header_persist] Complete: {} headers in {}ms", persisted, elapsed_ms);
+    auto const elapsed_secs = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+    auto const rate = elapsed_secs > 0 ? persisted / elapsed_secs : persisted;
+    spdlog::info("[header_persist] Complete: {} headers in {}s ({}/s)", persisted, elapsed_secs, rate);
 }
 
 // =============================================================================
@@ -96,6 +133,20 @@ static
 
     // =========================================================================
     // CHANNELS - The ONLY way tasks communicate
+    // =========================================================================
+    //
+    // TODO(fernando): Refactor channel architecture. Currently header_download
+    // communicates with 3 entities (peer_provider, sync_coordinator, header_validation)
+    // via multiple channels. Channels should connect exactly 2 entities.
+    //
+    // Proposed architecture:
+    //   - header_download ↔ header_manager (single bidirectional channel)
+    //   - header_manager ↔ peer_provider (for peer issues)
+    //   - header_manager ↔ header_validation (for validation)
+    //   - header_manager ↔ sync_coordinator (for orchestration)
+    //
+    // This would make the data flow cleaner and avoid priority issues between
+    // multiple input channels.
     // =========================================================================
 
     // Peer distribution
@@ -124,11 +175,16 @@ static
     // -------------------------------------------------------------------------
     // 1. Peer provider - receives connected peers from network and distributes
     // -------------------------------------------------------------------------
+    peer_issue_channel header_peer_issues(executor, 10);
+
     all_tasks.spawn([&]() -> ::asio::awaitable<void> {
         spdlog::info("[peer_provider] Task started, waiting for peers from network...");
 
         // Maintain full list of connected peers - single source of truth
         std::vector<network::peer_session::ptr> all_peers;
+
+        // Peers that had issues during header sync (by nonce) - don't use for headers
+        boost::unordered_flat_set<uint64_t> header_bad_peers;
 
         // Helper to clean stopped peers and send updated list
         auto broadcast_peers = [&]() {
@@ -137,29 +193,64 @@ static
 
             spdlog::debug("[peer_provider] Broadcasting {} peers to sync tasks", all_peers.size());
 
-            // Send full list to both pipelines
-            peers_for_headers.try_send(std::error_code{}, peers_updated{all_peers});
+            // For headers: filter out bad peers
+            std::vector<network::peer_session::ptr> header_peers;
+            header_peers.reserve(all_peers.size());
+            for (auto const& p : all_peers) {
+                if (!header_bad_peers.contains(p->nonce())) {
+                    header_peers.push_back(p);
+                }
+            }
+
+            // Send filtered list to headers, full list to blocks
+            peers_for_headers.try_send(std::error_code{}, peers_updated{header_peers});
             peers_for_blocks.try_send(std::error_code{}, peers_updated{all_peers});
         };
 
         try {
-            // Receive peers from network's channel (CSP push, no polling!)
+            // Receive from network OR peer issues
             while (!network.stopped()) {
-                auto [ec, peer] = co_await network.connected_peers().async_receive(
-                    ::asio::as_tuple(::asio::use_awaitable));
+                auto event = co_await (
+                    network.connected_peers().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
+                    header_peer_issues.async_receive(::asio::as_tuple(::asio::use_awaitable))
+                );
 
-                if (ec) {
-                    spdlog::debug("[peer_provider] Channel closed or error: {}", ec.message());
-                    break;
+                if (event.index() == 0) {
+                    // New peer from network
+                    auto [ec, peer] = std::get<0>(event);
+                    if (ec) {
+                        spdlog::debug("[peer_provider] Network channel closed: {}", ec.message());
+                        break;
+                    }
+
+                    if (peer->stopped()) continue;
+
+                    spdlog::debug("[peer_provider] New peer connected: {}", peer->authority_with_agent());
+                    all_peers.push_back(peer);
+                    broadcast_peers();
+                } else {
+                    // Peer issue report from header_download
+                    auto [ec, issue] = std::get<1>(event);
+                    if (ec) {
+                        spdlog::debug("[peer_provider] Peer issues channel closed");
+                        continue;  // Don't break, keep listening for network peers
+                    }
+
+                    spdlog::info("[peer_provider] Peer {} reported issue: {}, excluding from header sync",
+                        issue.peer->authority_with_agent(), issue.error.message());
+                    header_bad_peers.insert(issue.peer->nonce());
+
+                    // Update peer's misbehavior score (timeout = 10 points)
+                    // If score reaches threshold (100), the peer will be banned
+                    if (issue.peer->misbehave(network::peer_session::misbehavior_timeout)) {
+                        spdlog::warn("[peer_provider] Peer {} reached misbehavior threshold, banning",
+                            issue.peer->authority_with_agent());
+                        network.ban_peer(issue.peer, std::chrono::hours{24}, network::ban_reason::node_misbehaving);
+                    }
+
+                    // Broadcast updated (filtered) list immediately
+                    broadcast_peers();
                 }
-
-                if (peer->stopped()) continue;
-
-                spdlog::debug("[peer_provider] New peer connected: {}", peer->authority_with_agent());
-
-                // Add to our list and broadcast updated list
-                all_peers.push_back(peer);
-                broadcast_peers();
             }
         } catch (std::exception const& e) {
             spdlog::error("[peer_provider] Exception: {}", e.what());
@@ -177,6 +268,7 @@ static
     // -------------------------------------------------------------------------
     all_tasks.spawn(header_download_task(
         peers_for_headers,
+        header_peer_issues,
         header_requests,
         downloaded_headers,
         stop_signal
@@ -211,12 +303,17 @@ static
         ? heights_result->block
         : 0;
 
+    // Get checkpoint height for fast IBD
+    uint32_t const checkpoint_height = static_cast<uint32_t>(chain.chain_settings().max_checkpoint_height);
+    spdlog::info("[sync_orchestrator] Fast IBD mode up to checkpoint height {}", checkpoint_height);
+
     all_tasks.spawn(block_validation_task(
         chain,
         downloaded_blocks,
         validated_blocks,
         stop_signal,
-        initial_block_height + 1
+        initial_block_height + 1,
+        checkpoint_height
     ));
 
     // -------------------------------------------------------------------------
@@ -288,14 +385,13 @@ static
                         spdlog::debug("[sync_coordinator] Headers synced to {} before failure", headers_synced_to);
                     }
 
-                    // Ban peer if wrong chain (checkpoint failure or missing parent)
-                    if (result.source_peer && (
-                            result.result == error::checkpoints_failed ||
-                            result.result == error::store_block_missing_parent)) {
-                        spdlog::debug("[sync_coordinator] Banning peer {} for wrong chain: {}",
+                    // Ban peer if they sent invalid data (not network errors)
+                    // Invalid data = 100 points = instant ban
+                    if (result.source_peer && is_bannable_error(result.result)) {
+                        result.source_peer->misbehave(network::peer_session::misbehavior_invalid_data);
+                        spdlog::warn("[sync_coordinator] Banning peer {} for invalid headers: {}",
                             result.source_peer->authority_with_agent(), result.result.message());
-                        // ban_peer() is thread-safe: banlist uses concurrent_flat_map, stop() uses atomic
-                        network.ban_peer(result.source_peer, std::chrono::hours{24 * 365}, network::ban_reason::checkpoint_failed);
+                        network.ban_peer(result.source_peer, std::chrono::hours{24 * 365}, network::ban_reason::node_misbehaving);
                     }
 
                     // Retry header sync from current position with another peer
@@ -305,21 +401,23 @@ static
                     spdlog::debug("[sync_coordinator] Retrying header sync from height {} with another peer",
                         headers_synced_to);
 
-                    header_requests.try_send(std::error_code{}, header_request{
+                    bool sent = header_requests.try_send(std::error_code{}, header_request{
                         .from_height = headers_synced_to,
                         .from_hash = next_hash
                     });
+                    spdlog::debug("[sync_coordinator] Header request sent (retry): {}", sent ? "ok" : "FAILED");
                 } else if (result.count > 0) {
                     headers_synced_to = result.height;
 
-                    // Log progress with ETA every 10000 headers
+                    // Log progress every 5000 headers
                     auto const headers_downloaded = headers_synced_to - headers_at_start;
-                    if (headers_downloaded % 10000 < max_headers_per_batch) {
+                    if (headers_downloaded % 5000 < max_headers_per_batch) {
                         auto const elapsed = std::chrono::steady_clock::now() - header_sync_start;
                         auto const elapsed_secs = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
                         auto const rate = elapsed_secs > 0 ? headers_downloaded / elapsed_secs : 0;
-                        spdlog::debug("[sync_coordinator] Headers: {} | {}/s",
-                            headers_synced_to, rate);
+
+                        // Note: we don't know the exact tip until header sync completes
+                        spdlog::info("[header_sync] height {} ({}/s)", headers_synced_to, rate);
                     }
 
                     // Check if this is the last batch (less than max headers)
@@ -358,10 +456,11 @@ static
                         auto next_hash = organizer.index().get_hash(
                             static_cast<blockchain::header_index::index_t>(headers_synced_to));
 
-                        header_requests.try_send(std::error_code{}, header_request{
+                        bool sent = header_requests.try_send(std::error_code{}, header_request{
                             .from_height = headers_synced_to,
                             .from_hash = next_hash
                         });
+                        spdlog::debug("[sync_coordinator] Header request sent (continue): {}", sent ? "ok" : "FAILED");
                     }
                 } else if (result.count == 0) {
                     // No new headers - header sync complete (at tip)
@@ -426,6 +525,15 @@ static
                 } else {
                     spdlog::error("[sync_coordinator] Block validation failed at {}: {}",
                         result.height, result.result.message());
+
+                    // Ban peer if they sent invalid block (not network errors)
+                    // Invalid data = 100 points = instant ban
+                    if (result.source_peer && is_bannable_error(result.result)) {
+                        result.source_peer->misbehave(network::peer_session::misbehavior_invalid_data);
+                        spdlog::warn("[sync_coordinator] Banning peer {} for invalid block: {}",
+                            result.source_peer->authority_with_agent(), result.result.message());
+                        network.ban_peer(result.source_peer, std::chrono::hours{24 * 365}, network::ban_reason::node_misbehaving);
+                    }
                     break;
                 }
             }

@@ -64,6 +64,8 @@ namespace kth::node::sync {
 // - Buffers out-of-order blocks (OWNED state, not shared)
 // - Writes to block_chain (SINGLE WRITER - no lock needed)
 // - Sends validation results to block_validated_channel
+// - Uses organize_fast() under checkpoint for fast IBD (no UTXO updates)
+// - Uses organize() above checkpoint for full validation
 //
 // =============================================================================
 
@@ -72,7 +74,8 @@ namespace kth::node::sync {
     block_download_channel& input,
     block_validated_channel& output,
     stop_channel& stop,
-    uint32_t start_height
+    uint32_t start_height,
+    uint32_t checkpoint_height  // Use fast mode up to this height
 );
 
 } // namespace kth::node::sync

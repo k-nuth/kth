@@ -109,6 +109,9 @@ struct KD_API internal_database_basis {
     //                  avoiding inserting and erasing internal spenders
     result_code push_block(domain::chain::block const& block, uint32_t height, uint32_t median_time_past);
 
+    // Fast IBD: store only block data without UTXO updates (for blocks under checkpoint)
+    result_code push_block_fast(domain::chain::block const& block, uint32_t height);
+
     // Headers-first sync: store header without full block data (ABLA state = zeros)
     result_code push_header(domain::chain::header const& header, uint32_t height);
 

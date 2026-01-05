@@ -425,6 +425,38 @@ result_code internal_database_basis<Clock>::push_block(domain::chain::block cons
     return res;
 }
 
+template <typename Clock>
+result_code internal_database_basis<Clock>::push_block_fast(domain::chain::block const& block, uint32_t height) {
+    KTH_DB_txn* db_txn;
+    auto res0 = kth_db_txn_begin(env_, NULL, 0, &db_txn);
+    if (res0 != KTH_DB_SUCCESS) {
+        spdlog::error("[database] Error beginning LMDB Transaction [push_block_fast] {}", res0);
+        return result_code::other;
+    }
+
+    // Only store the block data, skip UTXO updates
+    auto res = insert_block(block, height, 0, db_txn);
+    if (res != result_code::success) {
+        kth_db_txn_abort(db_txn);
+        return res;
+    }
+
+    // Update last_block_height property
+    res = set_property_height(property_code::last_block_height, height, db_txn);
+    if (res != result_code::success) {
+        kth_db_txn_abort(db_txn);
+        return res;
+    }
+
+    auto res2 = kth_db_txn_commit(db_txn);
+    if (res2 != KTH_DB_SUCCESS) {
+        spdlog::error("[database] Error committing LMDB Transaction [push_block_fast] {}", res2);
+        return result_code::other;
+    }
+
+    return result_code::success;
+}
+
 #endif // ! defined(KTH_DB_READONLY)
 
 

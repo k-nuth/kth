@@ -230,6 +230,15 @@ code data_base::push(block const& block, size_t height) {
     return error::success;
 }
 
+// Fast IBD: store only block data without UTXO updates.
+code data_base::push_block_fast(block const& block, size_t height) {
+    auto res = internal_db_->push_block_fast(block, height);
+    if ( ! succeed(res)) {
+        return error::database_push_failed;
+    }
+    return error::success;
+}
+
 // Add a header for headers-first sync (without full block data).
 // This is designed for write exclusivity and read concurrency.
 code data_base::push_header(header const& header, size_t height) {

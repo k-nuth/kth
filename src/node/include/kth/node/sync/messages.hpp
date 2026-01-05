@@ -45,6 +45,12 @@ struct peer_failure_report {
     code error;
 };
 
+// Report peer issue to peer_provider (for filtering from peer list)
+struct peer_issue {
+    network::peer_session::ptr peer;
+    code error;
+};
+
 // Header download task output (can be headers or failure report)
 using header_download_event = std::variant<downloaded_headers, peer_failure_report>;
 
@@ -74,6 +80,7 @@ struct downloaded_block {
 struct block_validated {
     uint32_t height;
     code result;
+    network::peer_session::ptr source_peer;  // For banning on validation failure
 };
 
 // =============================================================================
@@ -82,6 +89,7 @@ struct block_validated {
 
 // Peer distribution
 using peer_channel = concurrent_channel<peers_updated>;
+using peer_issue_channel = concurrent_channel<peer_issue>;
 
 // Header sync pipeline
 using header_request_channel = concurrent_channel<header_request>;

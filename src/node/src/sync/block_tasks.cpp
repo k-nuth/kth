@@ -396,14 +396,16 @@ using namespace ::asio::experimental::awaitable_operators;
     block_download_channel& input,
     block_validated_channel& output,
     stop_channel& stop,
-    uint32_t start_height
+    uint32_t start_height,
+    uint32_t checkpoint_height
 ) {
-    spdlog::debug("[block_validation] Task started at height {}", start_height);
+    spdlog::debug("[block_validation] Task started at height {}, checkpoint at {}",
+        start_height, checkpoint_height);
 
     // OWNED state - not shared with anyone
     uint32_t next_height = start_height;
     uint32_t last_seen_peers = 0;
-    boost::unordered_flat_map<uint32_t, domain::message::block::const_ptr> pending;
+    boost::unordered_flat_map<uint32_t, downloaded_block> pending;
 
     size_t validated_count = 0;
     auto const start_time = std::chrono::steady_clock::now();
@@ -413,7 +415,12 @@ using namespace ::asio::experimental::awaitable_operators;
     std::vector<uint64_t> organize_times_us;  // microseconds for precision
     organize_times_us.reserve(1000);
 
-    // Per-phase timing from validation_t (microseconds)
+    // Fast mode timing (merkle + push only)
+    std::vector<int64_t> fast_merkle_times, fast_push_times;
+    fast_merkle_times.reserve(1000);
+    fast_push_times.reserve(1000);
+
+    // Per-phase timing from validation_t (microseconds) - full validation only
     std::vector<int64_t> deser_times, check_times, pop_times, accept_times;
     std::vector<int64_t> connect_times, notify_times, push_times;
     auto reserve_phase_vecs = [&]() {
@@ -448,8 +455,8 @@ using namespace ::asio::experimental::awaitable_operators;
         // Track latest peer count for display
         last_seen_peers = downloaded.active_peers;
 
-        // Always add to pending first (simplifies logic)
-        pending[downloaded.height] = downloaded.block;
+        // Always add to pending first (simplifies logic) - store full struct for source_peer tracking
+        pending[downloaded.height] = downloaded;
 
         // Log periodically when buffering a lot
         if (pending.size() % 1000 == 0 && !pending.contains(next_height)) {
@@ -479,27 +486,52 @@ using namespace ::asio::experimental::awaitable_operators;
 
             // Measure organize time
             auto organize_start = std::chrono::steady_clock::now();
-            result = co_await chain.organize(it->second, /*headers_pre_validated=*/true);
+
+            // Use fast mode under checkpoint, full validation above
+            if (next_height <= checkpoint_height) {
+                result = co_await chain.organize_fast(it->second.block, next_height);
+            } else {
+                result = co_await chain.organize(it->second.block, /*headers_pre_validated=*/true);
+            }
+
             auto organize_us = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - organize_start).count();
             organize_times_us.push_back(organize_us);
 
+            // Log slow blocks (>100ms) for diagnosis
+            if (organize_us > 100000) {  // 100ms
+                auto const& txs = it->second.block->transactions();
+                size_t tx_count = txs.size();
+                size_t total_bytes = it->second.block->serialized_size(true);
+                spdlog::warn("[block_validation] Slow block at height {}: {}ms, {} txs, {} bytes",
+                    next_height, organize_us / 1000, tx_count, total_bytes);
+            }
+
             // Collect per-phase timing from validation_t
-            auto const& v = it->second->validation;
+            auto const& v = it->second.block->validation;
             auto to_us = [](auto start, auto end) {
                 return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
             };
-            deser_times.push_back(to_us(v.start_deserialize, v.end_deserialize));
-            check_times.push_back(to_us(v.start_check, v.start_populate));
-            pop_times.push_back(to_us(v.start_populate, v.start_accept));
-            accept_times.push_back(to_us(v.start_accept, v.start_connect));
-            connect_times.push_back(to_us(v.start_connect, v.start_notify));
-            notify_times.push_back(to_us(v.start_notify, v.start_push));
-            push_times.push_back(to_us(v.start_push, v.end_push));
+
+            if (next_height <= checkpoint_height) {
+                // Fast mode: merkle + push only
+                fast_merkle_times.push_back(to_us(v.start_check, v.start_push));
+                fast_push_times.push_back(to_us(v.start_push, v.end_push));
+            } else {
+                // Full validation mode
+                deser_times.push_back(to_us(v.start_deserialize, v.end_deserialize));
+                check_times.push_back(to_us(v.start_check, v.start_populate));
+                pop_times.push_back(to_us(v.start_populate, v.start_accept));
+                accept_times.push_back(to_us(v.start_accept, v.start_connect));
+                connect_times.push_back(to_us(v.start_connect, v.start_notify));
+                notify_times.push_back(to_us(v.start_notify, v.start_push));
+                push_times.push_back(to_us(v.start_push, v.end_push));
+            }
 
             output.try_send(std::error_code{}, block_validated{
                 .height = next_height,
-                .result = result
+                .result = result,
+                .source_peer = it->second.source_peer
             });
 
             pending.erase(it);
@@ -522,9 +554,24 @@ using namespace ::asio::experimental::awaitable_operators;
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
             double rate = elapsed > 0 ? static_cast<double>(validated_count) / elapsed : 0;
 
-            spdlog::info("[sync] Height: {} | {} blk/s | {} peers | pending: {}",
-                current_thousand * 1000, static_cast<int>(rate),
-                last_seen_peers, pending.size());
+            // Calculate ETA
+            auto const current_height = current_thousand * 1000;
+            auto const remaining = checkpoint_height > current_height
+                ? checkpoint_height - current_height : 0;
+            auto const eta_secs = rate > 0 ? static_cast<uint64_t>(remaining / rate) : 0;
+            auto const eta_mins = eta_secs / 60;
+
+            // Show different label for fast mode vs full mode
+            if (current_height <= checkpoint_height) {
+                spdlog::info("[block_sync:fast] {}/{} ({} blk/s, ETA: {}m) | {} peers | pending: {}",
+                    current_height, checkpoint_height, static_cast<int>(rate), eta_mins,
+                    last_seen_peers, pending.size());
+            } else {
+                // TODO: For full validation mode, target is headers_synced_to not checkpoint
+                spdlog::info("[block_sync:full] {} ({} blk/s) | {} peers | pending: {}",
+                    current_height, static_cast<int>(rate),
+                    last_seen_peers, pending.size());
+            }
 
             // Print validation timing stats if we have data
             if (!organize_times_us.empty()) {
@@ -562,7 +609,6 @@ using namespace ::asio::experimental::awaitable_operators;
                     min_us / 1000.0, avg_us / 1000.0, median_us / 1000.0,
                     p95_us / 1000.0, p99_us / 1000.0, max_us / 1000.0, stddev_us / 1000.0);
 
-                // Per-phase average times from validation_t
                 auto avg_vec = [](std::vector<int64_t> const& v) -> double {
                     if (v.empty()) return 0.0;
                     int64_t sum = 0;
@@ -570,15 +616,25 @@ using namespace ::asio::experimental::awaitable_operators;
                     return static_cast<double>(sum) / v.size() / 1000.0;  // to ms
                 };
 
-                spdlog::info("[validation] phases avg: "
-                    "deser={:.2f}ms check={:.2f}ms populate={:.2f}ms accept={:.2f}ms "
-                    "connect={:.2f}ms notify={:.2f}ms push={:.2f}ms",
-                    avg_vec(deser_times), avg_vec(check_times), avg_vec(pop_times),
-                    avg_vec(accept_times), avg_vec(connect_times), avg_vec(notify_times),
-                    avg_vec(push_times));
+                // Per-phase average times from validation_t
+                if (!fast_merkle_times.empty()) {
+                    // Fast mode: show merkle + push breakdown
+                    spdlog::info("[validation] fast mode phases avg: merkle={:.3f}ms push={:.3f}ms",
+                        avg_vec(fast_merkle_times), avg_vec(fast_push_times));
+                } else if (!deser_times.empty()) {
+                    // Full validation mode
+                    spdlog::info("[validation] phases avg: "
+                        "deser={:.2f}ms check={:.2f}ms populate={:.2f}ms accept={:.2f}ms "
+                        "connect={:.2f}ms notify={:.2f}ms push={:.2f}ms",
+                        avg_vec(deser_times), avg_vec(check_times), avg_vec(pop_times),
+                        avg_vec(accept_times), avg_vec(connect_times), avg_vec(notify_times),
+                        avg_vec(push_times));
+                }
 
                 // Reset for next window
                 organize_times_us.clear();
+                fast_merkle_times.clear();
+                fast_push_times.clear();
                 deser_times.clear();
                 check_times.clear();
                 pop_times.clear();
