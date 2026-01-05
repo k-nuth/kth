@@ -129,7 +129,7 @@ bool populate_chain_state::populate_timestamps(chain_state::data& data, chain_st
     }
 
     if (is_transaction_pool(branch)) {
-        data.timestamp.self = static_cast<uint32_t>(zulu_time());
+        data.timestamp.self = uint32_t(zulu_time());
         return true;
     }
 

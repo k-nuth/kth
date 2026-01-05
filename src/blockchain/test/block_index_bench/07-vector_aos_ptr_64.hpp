@@ -59,7 +59,7 @@ public:
         assert(reserved_ && "Must call preallocate() before add()");
         assert(blocks_.size() < blocks_.capacity() && "Vector would reallocate!");
 
-        uint32_t const idx = static_cast<uint32_t>(blocks_.size());
+        uint32_t const idx = uint32_t(blocks_.size());
 
         block_index* parent_ptr = nullptr;
         int32_t height = 0;

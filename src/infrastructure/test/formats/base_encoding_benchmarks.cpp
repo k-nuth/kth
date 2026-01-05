@@ -15,7 +15,7 @@ using ankerl::nanobench::Bench;
 std::vector<uint8_t> generate_test_data(size_t size) {
     std::vector<uint8_t> data(size);
     for (size_t i = 0; i < size; ++i) {
-        data[i] = static_cast<uint8_t>(i * 137);  // Pseudo-random pattern
+        data[i] = uint8_t(i * 137);  // Pseudo-random pattern
     }
     return data;
 }

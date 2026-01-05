@@ -98,7 +98,7 @@ uint8_t kth_wallet_payment_address_version(kth_payment_address_t payment_address
 }
 
 kth_bool_t kth_wallet_payment_address_is_valid(kth_payment_address_t payment_address) {
-    return kth::bool_to_int(static_cast<bool>(kth_wallet_payment_address_const_cpp(payment_address)));
+    return kth::bool_to_int(bool(kth_wallet_payment_address_const_cpp(payment_address)));
 }
 
 kth_payment_address_list_const_t kth_wallet_payment_address_extract(kth_script_t script, uint8_t p2kh_version, uint8_t p2sh_version) {

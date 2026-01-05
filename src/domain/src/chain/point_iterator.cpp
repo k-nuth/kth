@@ -19,8 +19,8 @@
 
 namespace kth::domain::chain {
 
-// static auto const point_size = static_cast<unsigned>(std::tuple_size<point>::value);
-constexpr auto point_size = static_cast<unsigned>(std::tuple_size<point>::value);
+// static auto const point_size = unsigned(std::tuple_size<point>::value);
+constexpr auto point_size = unsigned(std::tuple_size<point>::value);
 
 // Constructors.
 //-----------------------------------------------------------------------------
@@ -44,7 +44,7 @@ uint8_t point_iterator::current() const {
 
     // TODO(legacy): move the little-endian iterator into endian.hpp.
     auto const position = current_ - hash_size;
-    return static_cast<uint8_t>(point_->index() >> (position * byte_bits));
+    return uint8_t(point_->index() >> (position * byte_bits));
 }
 
 point_iterator::pointer point_iterator::operator->() const {
@@ -78,11 +78,11 @@ point_iterator::iterator point_iterator::operator--(int) {
 }
 
 point_iterator point_iterator::operator+(int value) const {
-    return value < 0 ? decrease(static_cast<unsigned>(std::abs(value))) : increase(value);
+    return value < 0 ? decrease(unsigned(std::abs(value))) : increase(value);
 }
 
 point_iterator point_iterator::operator-(int value) const {
-    return value < 0 ? increase(static_cast<unsigned>(std::abs(value))) : decrease(value);
+    return value < 0 ? increase(unsigned(std::abs(value))) : decrease(value);
 }
 
 bool point_iterator::operator==(point_iterator const& x) const {

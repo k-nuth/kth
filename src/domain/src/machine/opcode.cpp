@@ -25,7 +25,7 @@ if (norm == text) { out_code = opcode::code; return true; }
 if (norm == text || norm == alias) { out_code = opcode::code; return true; }
 
 std::string opcode_to_string(opcode value, uint32_t active_forks) {
-    static auto const push_zero = static_cast<uint8_t>(opcode::reserved_80);
+    static auto const push_zero = uint8_t(opcode::reserved_80);
 
     switch (value) {
         // Prefer traditional aliases.
@@ -705,7 +705,7 @@ bool opcode_from_string(opcode& out_code, std::string const& value) {       //NO
 }
 
 std::string opcode_to_hexadecimal(opcode code) {
-    return "0x" + encode_base16(data_chunk{ static_cast<uint8_t>(code) });
+    return "0x" + encode_base16(data_chunk{ uint8_t(code) });
 }
 
 bool opcode_from_hexadecimal(opcode& out_code, std::string const& value) {

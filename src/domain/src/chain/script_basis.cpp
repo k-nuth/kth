@@ -284,7 +284,7 @@ sighash_algorithm to_sighash_enum(uint8_t sighash_type) {
 
 inline
 uint8_t is_sighash_enum(uint8_t sighash_type, sighash_algorithm value) {
-    return static_cast<uint8_t>(
+    return uint8_t(
         to_sighash_enum(sighash_type) == value
     );
 }
@@ -436,8 +436,8 @@ bool script_basis::is_null_data_pattern(operation::list const& ops) {
 // multisig is not indexable and p2sh multisig is byte-limited to 15 sigs.
 // The satoshi client policy limit is 3 signatures for bare multisig.
 bool script_basis::is_pay_multisig_pattern(operation::list const& ops) {
-    static constexpr auto op_1 = static_cast<uint8_t>(opcode::push_positive_1);
-    static constexpr auto op_16 = static_cast<uint8_t>(opcode::push_positive_16);
+    static constexpr auto op_1 = uint8_t(opcode::push_positive_1);
+    static constexpr auto op_16 = uint8_t(opcode::push_positive_16);
 
     auto const op_count = ops.size();
 
@@ -445,8 +445,8 @@ bool script_basis::is_pay_multisig_pattern(operation::list const& ops) {
         return false;
     }
 
-    auto const op_m = static_cast<uint8_t>(ops[0].code());
-    auto const op_n = static_cast<uint8_t>(ops[op_count - 2].code());
+    auto const op_m = uint8_t(ops[0].code());
+    auto const op_n = uint8_t(ops[op_count - 2].code());
 
     if (op_m < op_1 || op_m > op_n || op_n < op_1 || op_n > op_16) {
         return false;
@@ -609,8 +609,8 @@ operation::list script_basis::to_pay_multisig_pattern(uint8_t signatures,
 // The embedded script is limited to 520 bytes, an effective limit of 15 for
 // p2sh multisig, which can be as low as 7 when using all uncompressed keys.
 operation::list script_basis::to_pay_multisig_pattern(uint8_t signatures, data_stack const& points) {
-    static constexpr auto op_81 = static_cast<uint8_t>(opcode::push_positive_1);
-    static constexpr auto op_96 = static_cast<uint8_t>(opcode::push_positive_16);
+    static constexpr auto op_81 = uint8_t(opcode::push_positive_1);
+    static constexpr auto op_96 = uint8_t(opcode::push_positive_16);
     static constexpr auto zero = op_81 - 1;
     static constexpr auto max = op_96 - zero;
 

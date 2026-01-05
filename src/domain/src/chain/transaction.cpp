@@ -549,7 +549,7 @@ code transaction::connect_input(chain_state const& state, size_t input_index) co
     }
 
     auto const forks = state.enabled_forks();
-    auto const index32 = static_cast<uint32_t>(input_index);
+    auto const index32 = uint32_t(input_index);
 
     // Verify the transaction input script against the previous output.
     // return script::verify(*this, index32, forks);

@@ -121,7 +121,7 @@ void protocol_header_sync::handle_event(code const& ec, event_handler complete) 
     // TODO: replace rate backoff with peer competition.
     //=========================================================================
     // It was a timeout so another expiry period has passed (overflow ok here).
-    current_second_ += static_cast<size_t>(expiry_interval.count());
+    current_second_ += size_t(expiry_interval.count());
     auto rate = (headers_->previous_height() - start_size_) / current_second_;
     //=========================================================================
 

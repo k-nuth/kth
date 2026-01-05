@@ -60,7 +60,7 @@ uint32_t add(hash_digest const& hash, header_data const& hdr) {
         return it->second;
     }
 
-    uint32_t const idx = static_cast<uint32_t>(blocks_.size());
+    uint32_t const idx = uint32_t(blocks_.size());
 
     // Find parent
     uint32_t parent_idx = null_index;

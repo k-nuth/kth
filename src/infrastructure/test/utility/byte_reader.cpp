@@ -247,7 +247,7 @@ TEST_CASE("byte_reader - read_string fixed size with null terminator", "[byte_re
 TEST_CASE("byte_reader - read_string with varint prefix", "[byte_reader tests]") {
     std::string const expected = "my string data";
     data_chunk buffer;
-    buffer.push_back(static_cast<uint8_t>(expected.length()));  // varint length
+    buffer.push_back(uint8_t(expected.length()));  // varint length
     buffer.insert(buffer.end(), expected.begin(), expected.end());
 
     byte_reader reader(buffer);

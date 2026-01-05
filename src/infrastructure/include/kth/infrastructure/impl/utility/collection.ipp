@@ -42,7 +42,7 @@ int find_pair_position(std::vector<Pair> const& list, const Key& key) {
         return -1;
     }
 
-    return static_cast<int>(distance(list.begin(), it));
+    return int(distance(list.begin(), it));
 }
 
 template <typename T, typename Container>
@@ -53,7 +53,7 @@ int find_position(const Container& list, T const& value) {
         return -1;
     }
 
-    return static_cast<int>(std::distance(list.begin(), it));
+    return int(std::distance(list.begin(), it));
 }
 
 template <typename T, typename Predicate>

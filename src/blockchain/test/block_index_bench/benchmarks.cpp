@@ -103,7 +103,7 @@ std::vector<kth::block_const_ptr> generate_kth_chain(size_t length) {
     kth::hash_digest prev_hash = kth::null_hash;  // Genesis has null prev hash
 
     for (size_t i = 0; i < length; ++i) {
-        auto block = create_kth_block(prev_hash, static_cast<uint32_t>(i));
+        auto block = create_kth_block(prev_hash, uint32_t(i));
         chain.push_back(block);
         prev_hash = block->hash();  // Next block points to this one
     }
@@ -912,7 +912,7 @@ void benchmark_daa_get_ancestor_skip() {
 
     //     std::vector<std::pair<vector_aos_ptr_compact::block_index*, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - daa_window);
+    //         queries.emplace_back(store.find(chain[h].first), int(h) - daa_window);
     //     }
 
     //     size_t sample_idx = 0;
@@ -933,7 +933,7 @@ void benchmark_daa_get_ancestor_skip() {
 
     //     std::vector<std::pair<hash_digest, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(chain[h].first, static_cast<int>(h) - daa_window);
+    //         queries.emplace_back(chain[h].first, int(h) - daa_window);
     //     }
 
     //     size_t sample_idx = 0;
@@ -959,7 +959,7 @@ void benchmark_daa_get_ancestor_skip() {
 
         std::vector<std::pair<bchn_style::block_index*, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - daa_window);
+            queries.emplace_back(store.find(chain[h].first), int(h) - daa_window);
         }
 
         size_t sample_idx = 0;
@@ -981,7 +981,7 @@ void benchmark_daa_get_ancestor_skip() {
 
     //     std::vector<std::pair<vector_aos_ptr_prefetch::block_index*, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - daa_window);
+    //         queries.emplace_back(store.find(chain[h].first), int(h) - daa_window);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1003,7 +1003,7 @@ void benchmark_daa_get_ancestor_skip() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - daa_window);
+            queries.emplace_back(h, int(h) - daa_window);
         }
 
         size_t sample_idx = 0;
@@ -1025,7 +1025,7 @@ void benchmark_daa_get_ancestor_skip() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - daa_window);
+            queries.emplace_back(h, int(h) - daa_window);
         }
 
         size_t sample_idx = 0;
@@ -1046,7 +1046,7 @@ void benchmark_daa_get_ancestor_skip() {
 
     //     std::vector<std::pair<uint32_t, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(h, static_cast<int>(h) - daa_window);
+    //         queries.emplace_back(h, int(h) - daa_window);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1067,7 +1067,7 @@ void benchmark_daa_get_ancestor_skip() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - daa_window);
+            queries.emplace_back(h, int(h) - daa_window);
         }
 
         size_t sample_idx = 0;
@@ -1089,7 +1089,7 @@ void benchmark_daa_get_ancestor_skip() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - daa_window);
+            queries.emplace_back(h, int(h) - daa_window);
         }
 
         size_t sample_idx = 0;
@@ -1110,7 +1110,7 @@ void benchmark_daa_get_ancestor_skip() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - daa_window);
+            queries.emplace_back(h, int(h) - daa_window);
         }
 
         size_t sample_idx = 0;
@@ -1131,7 +1131,7 @@ void benchmark_daa_get_ancestor_skip() {
 
     //     std::vector<std::pair<uint32_t, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(h, static_cast<int>(h) - daa_window);
+    //         queries.emplace_back(h, int(h) - daa_window);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1152,7 +1152,7 @@ void benchmark_daa_get_ancestor_skip() {
 
     //     std::vector<std::pair<uint32_t, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(h, static_cast<int>(h) - daa_window);
+    //         queries.emplace_back(h, int(h) - daa_window);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1191,7 +1191,7 @@ void benchmark_finalization_check_skip() {
 
     //     std::vector<std::pair<vector_aos_ptr_compact::block_index*, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - max_reorg_depth);
+    //         queries.emplace_back(store.find(chain[h].first), int(h) - max_reorg_depth);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1212,7 +1212,7 @@ void benchmark_finalization_check_skip() {
 
     //     std::vector<std::pair<hash_digest, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(chain[h].first, static_cast<int>(h) - max_reorg_depth);
+    //         queries.emplace_back(chain[h].first, int(h) - max_reorg_depth);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1238,7 +1238,7 @@ void benchmark_finalization_check_skip() {
 
         std::vector<std::pair<bchn_style::block_index*, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - max_reorg_depth);
+            queries.emplace_back(store.find(chain[h].first), int(h) - max_reorg_depth);
         }
 
         size_t sample_idx = 0;
@@ -1260,7 +1260,7 @@ void benchmark_finalization_check_skip() {
 
     //     std::vector<std::pair<vector_aos_ptr_prefetch::block_index*, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - max_reorg_depth);
+    //         queries.emplace_back(store.find(chain[h].first), int(h) - max_reorg_depth);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1282,7 +1282,7 @@ void benchmark_finalization_check_skip() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - max_reorg_depth);
+            queries.emplace_back(h, int(h) - max_reorg_depth);
         }
 
         size_t sample_idx = 0;
@@ -1304,7 +1304,7 @@ void benchmark_finalization_check_skip() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - max_reorg_depth);
+            queries.emplace_back(h, int(h) - max_reorg_depth);
         }
 
         size_t sample_idx = 0;
@@ -1325,7 +1325,7 @@ void benchmark_finalization_check_skip() {
 
     //     std::vector<std::pair<uint32_t, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(h, static_cast<int>(h) - max_reorg_depth);
+    //         queries.emplace_back(h, int(h) - max_reorg_depth);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1346,7 +1346,7 @@ void benchmark_finalization_check_skip() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - max_reorg_depth);
+            queries.emplace_back(h, int(h) - max_reorg_depth);
         }
 
         size_t sample_idx = 0;
@@ -1368,7 +1368,7 @@ void benchmark_finalization_check_skip() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - max_reorg_depth);
+            queries.emplace_back(h, int(h) - max_reorg_depth);
         }
 
         size_t sample_idx = 0;
@@ -1389,7 +1389,7 @@ void benchmark_finalization_check_skip() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - max_reorg_depth);
+            queries.emplace_back(h, int(h) - max_reorg_depth);
         }
 
         size_t sample_idx = 0;
@@ -1410,7 +1410,7 @@ void benchmark_finalization_check_skip() {
 
     //     std::vector<std::pair<uint32_t, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(h, static_cast<int>(h) - max_reorg_depth);
+    //         queries.emplace_back(h, int(h) - max_reorg_depth);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1449,7 +1449,7 @@ void benchmark_daa_get_ancestor_linear() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - daa_window);
+            queries.emplace_back(h, int(h) - daa_window);
         }
 
         size_t sample_idx = 0;
@@ -1471,7 +1471,7 @@ void benchmark_daa_get_ancestor_linear() {
 
     //     std::vector<std::pair<vector_aos_ptr_compact::block_index*, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - daa_window);
+    //         queries.emplace_back(store.find(chain[h].first), int(h) - daa_window);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1493,7 +1493,7 @@ void benchmark_daa_get_ancestor_linear() {
 
     //     std::vector<std::pair<vector_aos_ptr_64::block_index*, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - daa_window);
+    //         queries.emplace_back(store.find(chain[h].first), int(h) - daa_window);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1514,7 +1514,7 @@ void benchmark_daa_get_ancestor_linear() {
 
     //     std::vector<std::pair<hash_digest, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(chain[h].first, static_cast<int>(h) - daa_window);
+    //         queries.emplace_back(chain[h].first, int(h) - daa_window);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1540,7 +1540,7 @@ void benchmark_daa_get_ancestor_linear() {
 
         std::vector<std::pair<bchn_style::block_index*, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - daa_window);
+            queries.emplace_back(store.find(chain[h].first), int(h) - daa_window);
         }
 
         size_t sample_idx = 0;
@@ -1562,7 +1562,7 @@ void benchmark_daa_get_ancestor_linear() {
 
     //     std::vector<std::pair<vector_aos_ptr::block_index*, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - daa_window);
+    //         queries.emplace_back(store.find(chain[h].first), int(h) - daa_window);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1584,7 +1584,7 @@ void benchmark_daa_get_ancestor_linear() {
 
     //     std::vector<std::pair<vector_aos_ptr_prefetch::block_index*, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - daa_window);
+    //         queries.emplace_back(store.find(chain[h].first), int(h) - daa_window);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1605,7 +1605,7 @@ void benchmark_daa_get_ancestor_linear() {
 
         std::vector<std::pair<concurrent_node::block_index*, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - daa_window);
+            queries.emplace_back(store.find(chain[h].first), int(h) - daa_window);
         }
 
         size_t sample_idx = 0;
@@ -1627,7 +1627,7 @@ void benchmark_daa_get_ancestor_linear() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - daa_window);
+            queries.emplace_back(h, int(h) - daa_window);
         }
 
         size_t sample_idx = 0;
@@ -1648,7 +1648,7 @@ void benchmark_daa_get_ancestor_linear() {
 
     //     std::vector<std::pair<uint32_t, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(h, static_cast<int>(h) - daa_window);
+    //         queries.emplace_back(h, int(h) - daa_window);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1669,7 +1669,7 @@ void benchmark_daa_get_ancestor_linear() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - daa_window);
+            queries.emplace_back(h, int(h) - daa_window);
         }
 
         size_t sample_idx = 0;
@@ -1691,7 +1691,7 @@ void benchmark_daa_get_ancestor_linear() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - daa_window);
+            queries.emplace_back(h, int(h) - daa_window);
         }
 
         size_t sample_idx = 0;
@@ -1712,7 +1712,7 @@ void benchmark_daa_get_ancestor_linear() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - daa_window);
+            queries.emplace_back(h, int(h) - daa_window);
         }
 
         size_t sample_idx = 0;
@@ -1733,7 +1733,7 @@ void benchmark_daa_get_ancestor_linear() {
 
     //     std::vector<std::pair<uint32_t, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(h, static_cast<int>(h) - daa_window);
+    //         queries.emplace_back(h, int(h) - daa_window);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1772,7 +1772,7 @@ void benchmark_finalization_check_linear() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - max_reorg_depth);
+            queries.emplace_back(h, int(h) - max_reorg_depth);
         }
 
         size_t sample_idx = 0;
@@ -1794,7 +1794,7 @@ void benchmark_finalization_check_linear() {
 
     //     std::vector<std::pair<vector_aos_ptr_compact::block_index*, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - max_reorg_depth);
+    //         queries.emplace_back(store.find(chain[h].first), int(h) - max_reorg_depth);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1816,7 +1816,7 @@ void benchmark_finalization_check_linear() {
 
     //     std::vector<std::pair<vector_aos_ptr_64::block_index*, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - max_reorg_depth);
+    //         queries.emplace_back(store.find(chain[h].first), int(h) - max_reorg_depth);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1837,7 +1837,7 @@ void benchmark_finalization_check_linear() {
 
     //     std::vector<std::pair<hash_digest, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(chain[h].first, static_cast<int>(h) - max_reorg_depth);
+    //         queries.emplace_back(chain[h].first, int(h) - max_reorg_depth);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1863,7 +1863,7 @@ void benchmark_finalization_check_linear() {
 
         std::vector<std::pair<bchn_style::block_index*, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - max_reorg_depth);
+            queries.emplace_back(store.find(chain[h].first), int(h) - max_reorg_depth);
         }
 
         size_t sample_idx = 0;
@@ -1885,7 +1885,7 @@ void benchmark_finalization_check_linear() {
 
     //     std::vector<std::pair<vector_aos_ptr::block_index*, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - max_reorg_depth);
+    //         queries.emplace_back(store.find(chain[h].first), int(h) - max_reorg_depth);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1907,7 +1907,7 @@ void benchmark_finalization_check_linear() {
 
     //     std::vector<std::pair<vector_aos_ptr_prefetch::block_index*, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - max_reorg_depth);
+    //         queries.emplace_back(store.find(chain[h].first), int(h) - max_reorg_depth);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1928,7 +1928,7 @@ void benchmark_finalization_check_linear() {
 
         std::vector<std::pair<concurrent_node::block_index*, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(store.find(chain[h].first), static_cast<int>(h) - max_reorg_depth);
+            queries.emplace_back(store.find(chain[h].first), int(h) - max_reorg_depth);
         }
 
         size_t sample_idx = 0;
@@ -1950,7 +1950,7 @@ void benchmark_finalization_check_linear() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - max_reorg_depth);
+            queries.emplace_back(h, int(h) - max_reorg_depth);
         }
 
         size_t sample_idx = 0;
@@ -1971,7 +1971,7 @@ void benchmark_finalization_check_linear() {
 
     //     std::vector<std::pair<uint32_t, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(h, static_cast<int>(h) - max_reorg_depth);
+    //         queries.emplace_back(h, int(h) - max_reorg_depth);
     //     }
 
     //     size_t sample_idx = 0;
@@ -1992,7 +1992,7 @@ void benchmark_finalization_check_linear() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - max_reorg_depth);
+            queries.emplace_back(h, int(h) - max_reorg_depth);
         }
 
         size_t sample_idx = 0;
@@ -2013,7 +2013,7 @@ void benchmark_finalization_check_linear() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - max_reorg_depth);
+            queries.emplace_back(h, int(h) - max_reorg_depth);
         }
 
         size_t sample_idx = 0;
@@ -2034,7 +2034,7 @@ void benchmark_finalization_check_linear() {
 
         std::vector<std::pair<uint32_t, int>> queries;
         for (uint32_t h : start_heights) {
-            queries.emplace_back(h, static_cast<int>(h) - max_reorg_depth);
+            queries.emplace_back(h, int(h) - max_reorg_depth);
         }
 
         size_t sample_idx = 0;
@@ -2055,7 +2055,7 @@ void benchmark_finalization_check_linear() {
 
     //     std::vector<std::pair<uint32_t, int>> queries;
     //     for (uint32_t h : start_heights) {
-    //         queries.emplace_back(h, static_cast<int>(h) - max_reorg_depth);
+    //         queries.emplace_back(h, int(h) - max_reorg_depth);
     //     }
 
     //     size_t sample_idx = 0;
@@ -2099,7 +2099,7 @@ void benchmark_find_common_ancestor() {
             std::vector<std::pair<uint32_t, uint32_t>> queries;
             for (uint32_t h : start_heights) {
                 uint32_t tip_idx = h;
-                uint32_t fork_idx = store.get_ancestor_linear(tip_idx, static_cast<int>(h) - fork_depth);
+                uint32_t fork_idx = store.get_ancestor_linear(tip_idx, int(h) - fork_depth);
                 queries.emplace_back(tip_idx, fork_idx);
             }
 
@@ -2124,7 +2124,7 @@ void benchmark_find_common_ancestor() {
         //     std::vector<std::pair<vector_aos_ptr_compact::block_index*, vector_aos_ptr_compact::block_index*>> queries;
         //     for (uint32_t h : start_heights) {
         //         auto* tip = store.find(chain[h].first);
-        //         auto* fork_point = vector_aos_ptr_compact::block_index_store::get_ancestor_skip(tip, static_cast<int>(h) - fork_depth);
+        //         auto* fork_point = vector_aos_ptr_compact::block_index_store::get_ancestor_skip(tip, int(h) - fork_depth);
         //         queries.emplace_back(tip, fork_point);
         //     }
 
@@ -2148,7 +2148,7 @@ void benchmark_find_common_ancestor() {
         //     // Cache hash pairs for lookup (not pointers!)
         //     std::vector<std::pair<hash_digest, int>> query_hashes;
         //     for (uint32_t h : start_heights) {
-        //         query_hashes.emplace_back(chain[h].first, static_cast<int>(h) - fork_depth);
+        //         query_hashes.emplace_back(chain[h].first, int(h) - fork_depth);
         //     }
 
         //     size_t sample_idx = 0;
@@ -2177,7 +2177,7 @@ void benchmark_find_common_ancestor() {
             std::vector<std::pair<bchn_style::block_index*, bchn_style::block_index*>> queries;
             for (uint32_t h : start_heights) {
                 auto* tip = store.find(chain[h].first);
-                auto* fork_point = bchn_style::get_ancestor_skip(tip, static_cast<int>(h) - fork_depth);
+                auto* fork_point = bchn_style::get_ancestor_skip(tip, int(h) - fork_depth);
                 queries.emplace_back(tip, fork_point);
             }
 
@@ -2202,7 +2202,7 @@ void benchmark_find_common_ancestor() {
         //     std::vector<std::pair<vector_aos_ptr::block_index*, vector_aos_ptr::block_index*>> queries;
         //     for (uint32_t h : start_heights) {
         //         auto* tip = store.find(chain[h].first);
-        //         auto* fork_point = vector_aos_ptr::block_index_store::get_ancestor_linear(tip, static_cast<int>(h) - fork_depth);
+        //         auto* fork_point = vector_aos_ptr::block_index_store::get_ancestor_linear(tip, int(h) - fork_depth);
         //         queries.emplace_back(tip, fork_point);
         //     }
 
@@ -2227,7 +2227,7 @@ void benchmark_find_common_ancestor() {
         //     std::vector<std::pair<vector_aos_ptr_prefetch::block_index*, vector_aos_ptr_prefetch::block_index*>> queries;
         //     for (uint32_t h : start_heights) {
         //         auto* tip = store.find(chain[h].first);
-        //         auto* fork_point = vector_aos_ptr_prefetch::block_index_store::get_ancestor_skip(tip, static_cast<int>(h) - fork_depth);
+        //         auto* fork_point = vector_aos_ptr_prefetch::block_index_store::get_ancestor_skip(tip, int(h) - fork_depth);
         //         queries.emplace_back(tip, fork_point);
         //     }
 
@@ -2251,7 +2251,7 @@ void benchmark_find_common_ancestor() {
             std::vector<std::pair<concurrent_node::block_index*, concurrent_node::block_index*>> queries;
             for (uint32_t h : start_heights) {
                 auto* tip = store.find(chain[h].first);
-                auto* fork_point = concurrent_node::block_index_store::get_ancestor_linear(tip, static_cast<int>(h) - fork_depth);
+                auto* fork_point = concurrent_node::block_index_store::get_ancestor_linear(tip, int(h) - fork_depth);
                 queries.emplace_back(tip, fork_point);
             }
 
@@ -2276,7 +2276,7 @@ void benchmark_find_common_ancestor() {
             std::vector<std::pair<uint32_t, uint32_t>> queries;
             for (uint32_t h : start_heights) {
                 uint32_t tip_idx = h;
-                uint32_t fork_idx = store.get_ancestor_linear(tip_idx, static_cast<int>(h) - fork_depth);
+                uint32_t fork_idx = store.get_ancestor_linear(tip_idx, int(h) - fork_depth);
                 queries.emplace_back(tip_idx, fork_idx);
             }
 
@@ -2300,7 +2300,7 @@ void benchmark_find_common_ancestor() {
         //     std::vector<std::pair<uint32_t, uint32_t>> queries;
         //     for (uint32_t h : start_heights) {
         //         uint32_t tip_idx = h;
-        //         uint32_t fork_idx = store.get_ancestor_linear(tip_idx, static_cast<int>(h) - fork_depth);
+        //         uint32_t fork_idx = store.get_ancestor_linear(tip_idx, int(h) - fork_depth);
         //         queries.emplace_back(tip_idx, fork_idx);
         //     }
 
@@ -2324,7 +2324,7 @@ void benchmark_find_common_ancestor() {
             std::vector<std::pair<uint32_t, uint32_t>> queries;
             for (uint32_t h : start_heights) {
                 uint32_t tip_idx = h;
-                uint32_t fork_idx = store.get_ancestor_linear(tip_idx, static_cast<int>(h) - fork_depth);
+                uint32_t fork_idx = store.get_ancestor_linear(tip_idx, int(h) - fork_depth);
                 queries.emplace_back(tip_idx, fork_idx);
             }
 
@@ -2348,7 +2348,7 @@ void benchmark_find_common_ancestor() {
             std::vector<std::pair<uint32_t, uint32_t>> queries;
             for (uint32_t h : start_heights) {
                 uint32_t tip_idx = h;
-                uint32_t fork_idx = store.get_ancestor_linear(tip_idx, static_cast<int>(h) - fork_depth);
+                uint32_t fork_idx = store.get_ancestor_linear(tip_idx, int(h) - fork_depth);
                 queries.emplace_back(tip_idx, fork_idx);
             }
 
@@ -2372,7 +2372,7 @@ void benchmark_find_common_ancestor() {
             std::vector<std::pair<uint32_t, uint32_t>> queries;
             for (uint32_t h : start_heights) {
                 uint32_t tip_idx = h;
-                uint32_t fork_idx = store.get_ancestor_linear(tip_idx, static_cast<int>(h) - fork_depth);
+                uint32_t fork_idx = store.get_ancestor_linear(tip_idx, int(h) - fork_depth);
                 queries.emplace_back(tip_idx, fork_idx);
             }
 
@@ -2396,7 +2396,7 @@ void benchmark_find_common_ancestor() {
         //     std::vector<std::pair<uint32_t, uint32_t>> queries;
         //     for (uint32_t h : start_heights) {
         //         uint32_t tip_idx = h;
-        //         uint32_t fork_idx = store.get_ancestor_linear(tip_idx, static_cast<int>(h) - fork_depth);
+        //         uint32_t fork_idx = store.get_ancestor_linear(tip_idx, int(h) - fork_depth);
         //         queries.emplace_back(tip_idx, fork_idx);
         //     }
 
@@ -2420,7 +2420,7 @@ void benchmark_find_common_ancestor() {
         //     std::vector<std::pair<hash_digest, hash_digest>> queries;
         //     for (uint32_t h : start_heights) {
         //         hash_digest tip_hash = chain[h].first;
-        //         hash_digest fork_hash = store.get_ancestor_linear(tip_hash, static_cast<int>(h) - fork_depth);
+        //         hash_digest fork_hash = store.get_ancestor_linear(tip_hash, int(h) - fork_depth);
         //         queries.emplace_back(tip_hash, fork_hash);
         //     }
 
@@ -2858,7 +2858,7 @@ void run_tsan_test(
     // Readers
     for (size_t r = 0; r < cfg.num_readers; ++r) {
         threads.emplace_back([&, r] {
-            std::mt19937 rng(static_cast<unsigned>(r));
+            std::mt19937 rng(unsigned(r));
             std::uniform_int_distribution<size_t> dist(0, cached_starts.size() - 1);
             while (!start_flag.load(std::memory_order_acquire)) {
                 std::this_thread::yield();
@@ -3297,7 +3297,7 @@ void test_bchn_api_correct_usage() {
                 auto* block = store.lookup_block_index(hashes[dist(rng)]);
                 if (block) {
                     // SAFE: lock is held, can modify status
-                    block->status = static_cast<uint32_t>(w + 1);
+                    block->status = uint32_t(w + 1);
                     ++write_count;
                 }
             }
@@ -3379,7 +3379,7 @@ void test_bchn_api_incorrect_usage() {
                 auto* block = store.find(hashes[dist(rng)]);
                 if (block) {
                     // DATA RACE: lock was released, but we're still using the pointer!
-                    block->status = static_cast<uint32_t>(w + 1);
+                    block->status = uint32_t(w + 1);
                     ++write_count;
                 }
             }
@@ -3456,7 +3456,7 @@ void test_concurrent_node_api_correct_usage() {
             std::uniform_int_distribution<size_t> dist(0, hashes.size() - 1);
             while (!stop.load(std::memory_order_relaxed)) {
                 // CORRECT: Use set_status() which uses visit() internally
-                if (store.set_status(hashes[dist(rng)], static_cast<uint32_t>(w + 1))) {
+                if (store.set_status(hashes[dist(rng)], uint32_t(w + 1))) {
                     ++write_count;
                 }
             }
@@ -3530,7 +3530,7 @@ void test_concurrent_node_api_incorrect_usage() {
                 auto* block = store.find(hashes[dist(rng)]);
                 if (block) {
                     // DATA RACE: accessing block outside of visit()!
-                    block->status = static_cast<uint32_t>(w + 1);
+                    block->status = uint32_t(w + 1);
                     ++write_count;
                 }
             }
@@ -3960,7 +3960,7 @@ void test_soa_traversal_unlock_after_lookup() {
     for (size_t t = 0; t < num_traversers; ++t) {
         threads.emplace_back([&store, &cached_indices, &stop, &traverse_count, t, traversal_depth] {
             std::mt19937 rng(t);
-            std::uniform_int_distribution<size_t> dist(static_cast<size_t>(traversal_depth), cached_indices.size() - 1);
+            std::uniform_int_distribution<size_t> dist(size_t(traversal_depth), cached_indices.size() - 1);
             while (!stop.load(std::memory_order_relaxed)) {
                 // Use CACHED index - no lock, no synchronization with writers!
                 uint32_t start_idx = cached_indices[dist(rng)];
@@ -4036,7 +4036,7 @@ void test_soa_vector_race_unsafe() {
     // Multiple readers - read while writer is inserting
     for (size_t r = 0; r < num_readers; ++r) {
         threads.emplace_back([&store, &start_flag, &stop, &read_count, r] {
-            std::mt19937 rng(static_cast<unsigned>(r));
+            std::mt19937 rng(unsigned(r));
             while (!start_flag.load(std::memory_order_relaxed)) {
                 std::this_thread::yield();
             }
@@ -4046,7 +4046,7 @@ void test_soa_vector_race_unsafe() {
                 if (sz == 0) continue;
 
                 // Read random index (races with push_back and resize)
-                uint32_t idx = rng() % static_cast<uint32_t>(sz);
+                uint32_t idx = rng() % uint32_t(sz);
                 uint32_t parent = store.get_parent_idx(idx);
                 (void)parent;
 
@@ -4109,7 +4109,7 @@ void benchmark_memory_layout() {
 //         vec_store.add(hash, hdr);
 //     }
 
-//     uint32_t tip_idx = static_cast<uint32_t>(num_blocks - 1);
+//     uint32_t tip_idx = uint32_t(num_blocks - 1);
 
 //     fmt::print("Starting traversals...\n");
 

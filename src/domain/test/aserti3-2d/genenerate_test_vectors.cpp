@@ -175,7 +175,7 @@ void produce_asert_test_vectors() {
         },
 
         { "run4 - from minimum target, a series of halflife schedule jumps, doubling target at each block",
-            0x01010000, 1ULL, 0ULL, 2ULL, 600 + static_cast<uint64_t>(time_incr_by_extra_halflife(0)), 256-31, height_incr_by_one, time_incr_by_extra_halflife
+            0x01010000, 1ULL, 0ULL, 2ULL, 600 + uint64_t(time_incr_by_extra_halflife(0)), 256-31, height_incr_by_one, time_incr_by_extra_halflife
         },
 
         { "run5 - from POW limit, a series of halflife block height jumps w/o time increment, halving target at each block",

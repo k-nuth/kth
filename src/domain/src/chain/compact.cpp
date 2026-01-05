@@ -126,7 +126,7 @@ bool compact::from_compact(uint256_t& out, uint32_t compact) {
     auto mantissa = compact & mantissa_max;
 
     // Shift off the mantissa and sign to get the exponent byte.
-    auto const exponent = static_cast<uint8_t>(compact >> mantissa_bits);
+    auto const exponent = uint8_t(compact >> mantissa_bits);
 
     // Shift the mantissa into the big number.
     if (exponent <= 3) {
@@ -148,12 +148,12 @@ bool compact::from_compact(uint256_t& out, uint32_t compact) {
 
 uint32_t compact::from_big(uint256_t const& big) {
     // This value is limited to 32, so exponent cannot overflow.
-    auto exponent = static_cast<uint8_t>(logical_size(big));
+    auto exponent = uint8_t(logical_size(big));
 
     // Shift the big number significant digits into the mantissa.
-    auto const mantissa64 = exponent <= 3 ? static_cast<uint64_t>(big) << shift_low(exponent) : static_cast<uint64_t>(big >> shift_high(exponent));
+    auto const mantissa64 = exponent <= 3 ? uint64_t(big) << shift_low(exponent) : uint64_t(big >> shift_high(exponent));
 
-    auto mantissa = static_cast<uint32_t>(mantissa64);
+    auto mantissa = uint32_t(mantissa64);
 
     //*************************************************************************
     // CONSENSUS: Satoshi used a signed implementation to represent unsigned.
@@ -169,7 +169,7 @@ uint32_t compact::from_big(uint256_t const& big) {
     KTH_ASSERT_MSG((mantissa & mantissa_mask) == 0, "value exceess");
 
     // Assemble the compact notation.
-    return (static_cast<uint32_t>(exponent) << mantissa_bits) | mantissa;
+    return (uint32_t(exponent) << mantissa_bits) | mantissa;
 }
 
 } // namespace kth::domain::chain

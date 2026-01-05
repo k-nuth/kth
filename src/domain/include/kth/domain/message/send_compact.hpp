@@ -55,7 +55,7 @@ struct KD_API send_compact {
 
     template <typename W>
     void to_data(uint32_t /*version*/, W& sink) const {
-        sink.write_byte(static_cast<uint8_t>(high_bandwidth_mode_));
+        sink.write_byte(uint8_t(high_bandwidth_mode_));
         sink.write_8_bytes_little_endian(this->version_);
     }
 

@@ -155,7 +155,7 @@ void session_header_sync::attach_protocols(channel::ptr channel, header_list::pt
 void session_header_sync::handle_complete(code const& ec, header_list::ptr row, result_handler handler) {
     if (ec) {
         // Reduce the rate minimum so that we don't get hung up.
-        minimum_rate_ = static_cast<uint32_t>(minimum_rate_ * back_off_factor);
+        minimum_rate_ = uint32_t(minimum_rate_ * back_off_factor);
 
         // There is no failure scenario, we ignore the result code here.
         new_connection(row, handler);

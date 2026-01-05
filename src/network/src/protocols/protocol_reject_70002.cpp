@@ -61,7 +61,7 @@ bool protocol_reject_70002::handle_receive_reject(code const& ec, reject_const_p
     }
 
     auto const code = reject->code();
-    spdlog::debug("[network] Received {} reject ({}) from [{}] '{}'{}", message, static_cast<uint16_t>(code), authority(), reject->reason(), hash);
+    spdlog::debug("[network] Received {} reject ({}) from [{}] '{}'{}", message, uint16_t(code), authority(), reject->reason(), hash);
     return true;
 }
 

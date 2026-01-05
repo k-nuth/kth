@@ -28,7 +28,7 @@ std::string encode_base16(byte_span data) {
 }
 
 bool is_base16(char c) {
-    return hex_decode_table[static_cast<uint8_t>(c)] != 255;
+    return hex_decode_table[uint8_t(c)] != 255;
 }
 
 // Bitcoin hash format (these are all reversed):

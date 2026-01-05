@@ -21,7 +21,7 @@
 extern "C" {
 
 kth_currency_t kth_node_settings_get_currency() {
-    return static_cast<kth_currency_t>(static_cast<int>(kth::get_currency()));
+    return static_cast<kth_currency_t>(int(kth::get_currency()));
 }
 
 #if ! defined(__EMSCRIPTEN__)
@@ -34,7 +34,7 @@ kth_network_t kth_node_settings_get_network(kth_node_t exec) {
     auto id = sett.identifier;
     bool is_chipnet = sett.inbound_port == 48333;
 
-    return static_cast<kth_network_t>(static_cast<int>(kth::get_network(id, is_chipnet)));
+    return static_cast<kth_network_t>(int(kth::get_network(id, is_chipnet)));
 }
 #endif
 

@@ -64,13 +64,13 @@ bool number::set_data(data_chunk const& data, size_t max_size) {
 
     // This is "from little endian" with a variable buffer.
     for (size_t i = 0; i != data.size(); ++i) {
-        value_ |= static_cast<int64_t>(data[i]) << (8 * i);
+        value_ |= int64_t(data[i]) << (8 * i);
     }
 
     if (is_negative(data)) {
         auto const last_shift = 8 * (data.size() - 1);
         auto const mask = ~(negative_bit << last_shift);
-        value_ = -1 * (static_cast<int64_t>(value_ & mask));
+        value_ = -1 * (int64_t(value_ & mask));
     }
 
     return true;
@@ -89,7 +89,7 @@ data_chunk number::data() const {
 
     // This is "to little endian" with a minimal buffer.
     while (absolute != 0) {
-        data.push_back(static_cast<uint8_t>(absolute));
+        data.push_back(uint8_t(absolute));
         absolute >>= 8;
     }
 

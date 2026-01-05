@@ -283,7 +283,7 @@ static number_compare MakeCompare(int64_t const num1, int64_t const num2) {
 static
 void write_bytes(kth::data_chunk chunk, std::ostream& out) {
     for (auto const& byte : chunk)
-        out << fmt::format(" 0x%02x, ", static_cast<uint16_t>(byte));
+        out << fmt::format(" 0x%02x, ", uint16_t(byte));
 }
 
 static

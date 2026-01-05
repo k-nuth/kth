@@ -31,7 +31,7 @@ inline
 uint64_t to_relay_fee(float minimum_byte_fee) {
     // Spending one standard prevout with one output is nominally 189 bytes.
     static size_t const small_transaction_size = 189;
-    return static_cast<uint64_t>(minimum_byte_fee * small_transaction_size);
+    return uint64_t(minimum_byte_fee * small_transaction_size);
 }
 
 protocol_transaction_in::protocol_transaction_in(full_node& node, channel::ptr channel, safe_chain& chain)

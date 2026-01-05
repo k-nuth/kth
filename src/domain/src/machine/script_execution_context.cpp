@@ -19,11 +19,11 @@ chain::transaction const& script_execution_context::transaction() const {
 }
 
 uint32_t script_execution_context::input_count() const {
-    return static_cast<uint32_t>(transaction_.inputs().size());
+    return uint32_t(transaction_.inputs().size());
 }
 
 uint32_t script_execution_context::output_count() const {
-    return static_cast<uint32_t>(transaction_.outputs().size());
+    return uint32_t(transaction_.outputs().size());
 }
 
 uint32_t script_execution_context::tx_version() const {

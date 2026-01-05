@@ -108,7 +108,7 @@ public:
 
         // 1. First: insert into vector, get index
         auto it = blocks_.push_back(entry);
-        uint32_t idx = static_cast<uint32_t>(it - blocks_.begin());
+        uint32_t idx = uint32_t(it - blocks_.begin());
 
         // 2. Then: insert into map
         hash_to_idx_.insert({hash, idx});

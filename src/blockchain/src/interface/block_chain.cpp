@@ -106,7 +106,7 @@ block_chain::block_chain(threadpool& pool, blockchain::settings const& chain_set
 
 uint32_t get_clock_now() {
     auto const now = std::chrono::high_resolution_clock::now();
-    return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count());
+    return uint32_t(std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count());
 }
 
 bool block_chain::get_output(domain::chain::output& out_output, size_t& out_height,
