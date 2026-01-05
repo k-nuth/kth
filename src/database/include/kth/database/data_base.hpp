@@ -80,6 +80,10 @@ public:
     /// Returns store_block_invalid_height if height is not the current top + 1.
     code push(domain::chain::block const& block, size_t height);
 
+    /// Fast IBD: store only block data without UTXO updates (for blocks under checkpoint).
+    /// Much faster than push() but requires a second pass to build UTXO set.
+    code push_block_fast(domain::chain::block const& block, size_t height);
+
     /// Push a header for headers-first sync (without full block data).
     /// Returns store_block_invalid_height if height is not the current top + 1.
     code push_header(domain::chain::header const& header, size_t height);
