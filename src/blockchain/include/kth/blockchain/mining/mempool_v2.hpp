@@ -72,7 +72,7 @@ std::set<typename Container::value_type, Cmp> to_ordered_set(F f, Container cons
 
 constexpr inline
 double benefit(uint64_t fee, size_t size) {
-    return static_cast<double>(fee) / size;
+    return double(fee) / size;
 }
 
 struct fee_per_size_cmp {

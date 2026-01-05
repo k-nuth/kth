@@ -122,7 +122,7 @@ template <typename Clock>
 inline
 uint32_t internal_database_basis<Clock>::get_clock_now() const {
     auto const now = std::chrono::high_resolution_clock::now();
-    return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+    return uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
 }
 
 #if ! defined(KTH_DB_READONLY)

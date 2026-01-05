@@ -434,7 +434,7 @@ kth_size_t kth_vm_program_conditional_stack_size(kth_program_t program) {
 // }
 
 // kth_bool_t kth_wallet_payment_address_is_valid(kth_payment_address_t payment_address) {
-//     return kth::bool_to_int(static_cast<bool>(kth_wallet_payment_address_const_cpp(payment_address)));
+//     return kth::bool_to_int(bool(kth_wallet_payment_address_const_cpp(payment_address)));
 // }
 
 // // payment_address_list_t kth_wallet_payment_address_extract(chain::script_t const* script, uint8_t p2kh_version, uint8_t p2sh_version) {

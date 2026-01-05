@@ -135,7 +135,7 @@ point_iterator point::begin() const {
 }
 
 point_iterator point::end() const {
-    return {*this, static_cast<unsigned>(store_point_size)};
+    return {*this, unsigned(store_point_size)};
 }
 
 // Properties.
@@ -195,7 +195,7 @@ uint64_t point::checksum() const {
     // of values into the front or back of tx hash (not a security feature).
     // Use most possible bits of tx hash to make intentional collision hard.
     auto const tx = from_little_endian_unsafe<uint64_t>(std::span{hash_}.subspan(12));
-    auto const index = static_cast<uint64_t>(index_);
+    auto const index = uint64_t(index_);
 
     auto const tx_upper_49_bits = tx & mask;
     auto const index_lower_15_bits = index & ~mask;

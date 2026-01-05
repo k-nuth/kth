@@ -92,7 +92,7 @@ private:
             return it->second;
         }
 
-        uint32_t const idx = static_cast<uint32_t>(parent_indices_.size());
+        uint32_t const idx = uint32_t(parent_indices_.size());
 
         // Find parent
         uint32_t parent_idx = null_index;

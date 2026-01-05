@@ -233,7 +233,7 @@ TEST_CASE("unicode  to utf8 environment  null termination  test", "[unicode test
     std::vector<const wchar_t*> wide_environment = { L"ascii", nullptr };
 
     auto variables = const_cast<wchar_t**>(&wide_environment[0]);
-    auto expected_count = static_cast<int>(wide_environment.size()) - 1;
+    auto expected_count = int(wide_environment.size()) - 1;
 
     auto environment = to_utf8(variables);
     auto narrow_environment = reinterpret_cast<char**>(&environment[0]);
@@ -252,7 +252,7 @@ TEST_CASE("unicode  to utf8 environment  null termination  test", "[unicode test
 //     std::vector<const wchar_t*> wide_args = { L"ascii", nullptr };
 
 //     auto argv = const_cast<wchar_t**>(&wide_args[0]);
-//     auto argc = static_cast<int>(wide_args.size()) - 1;
+//     auto argc = int(wide_args.size()) - 1;
 
 //     auto buffer = to_utf8(argc, argv);
 //     auto narrow_args = reinterpret_cast<char**>(&buffer[0]);
@@ -267,7 +267,7 @@ TEST_CASE("unicode  to utf8 environment  null termination  test", "[unicode test
 //     std::vector<const wchar_t*> wide_args = { L"ascii", non_literal_utf16, nullptr };
 
 //     auto argv = const_cast<wchar_t**>(&wide_args[0]);
-//     auto argc = static_cast<int>(wide_args.size()) - 1;
+//     auto argc = int(wide_args.size()) - 1;
 
 //     auto buffer = to_utf8(argc, argv);
 //     auto narrow_args = reinterpret_cast<char**>(&buffer[0]);
@@ -280,7 +280,7 @@ TEST_CASE("unicode  to utf8 main  null termination  test", "[unicode tests]") {
     std::vector<const wchar_t*> wide_args = { L"ascii", nullptr };
 
     auto argv = const_cast<wchar_t**>(&wide_args[0]);
-    auto argc = static_cast<int>(wide_args.size()) - 1;
+    auto argc = int(wide_args.size()) - 1;
 
     auto buffer = to_utf8(argc, argv);
     auto narrow_args = reinterpret_cast<char**>(&buffer[0]);

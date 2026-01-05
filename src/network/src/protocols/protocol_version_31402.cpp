@@ -71,13 +71,13 @@ domain::message::version protocol_version_31402::version_factory() const {
     domain::message::version version;
     version.set_value(own_version_);
     version.set_services(own_services_);
-    version.set_timestamp(static_cast<uint64_t>(zulu_time()));
+    version.set_timestamp(uint64_t(zulu_time()));
     version.set_address_receiver(authority().to_network_address());
     version.set_address_sender(settings.self.to_network_address());
     version.set_nonce(nonce());
     // version.set_user_agent(get_user_agent());
     version.set_user_agent(user_agent_);
-    version.set_start_height(static_cast<uint32_t>(height));
+    version.set_start_height(uint32_t(height));
 
     // The peer's services cannot be reflected, so zero it.
     version.address_receiver().set_services(version::service::none);

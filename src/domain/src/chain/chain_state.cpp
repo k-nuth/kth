@@ -415,7 +415,7 @@ chain_state::activations chain_state::activation(data const& values, uint32_t fo
     // performed this comparison using the signed integer version value.
     //*************************************************************************
     auto const ge = [](uint32_t value, size_t version) {
-        return static_cast<int32_t>(value) >= version;
+        return int32_t(value) >= version;
     };
 
     // Declare bip34-based version predicates.
@@ -906,7 +906,7 @@ auto timestamps_position(chain_state::timestamps const& times, size_t last_n = m
 
 std::vector<typename chain_state::timestamps::value_type> timestamps_subset(chain_state::timestamps const& times, size_t last_n = median_time_past_interval) {
     auto at = timestamps_position(times, last_n);
-    auto n = (std::min)(static_cast<size_t>(std::distance(at, times.end())), median_time_past_interval);
+    auto n = (std::min)(size_t(std::distance(at, times.end())), median_time_past_interval);
     std::vector<typename chain_state::timestamps::value_type> subset(n);
     std::copy_n(at, n, subset.begin());
     return subset;

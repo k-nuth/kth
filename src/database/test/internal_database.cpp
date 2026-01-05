@@ -208,7 +208,7 @@ void print_db_entries_count(KTH_DB_env* env_, KTH_DB_dbi& dbi ) {
     MDB_stat db_stats;
     auto ret = mdb_stat(txn, dbi, &db_stats);
     if (ret != KTH_DB_SUCCESS) {
-        std::println("Error getting entries {}", static_cast<int32_t>(ret));
+        std::println("Error getting entries {}", int32_t(ret));
         kth_db_txn_commit(txn);
         return;
     }

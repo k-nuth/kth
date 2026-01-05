@@ -75,17 +75,17 @@ struct KD_API operation {
     void to_data(W& sink) const {
         auto const size = data_.size();
 
-        sink.write_byte(static_cast<uint8_t>(code_));
+        sink.write_byte(uint8_t(code_));
 
         switch (code_) {
             case opcode::push_one_size:
-                sink.write_byte(static_cast<uint8_t>(size));
+                sink.write_byte(uint8_t(size));
                 break;
             case opcode::push_two_size:
-                sink.write_2_bytes_little_endian(static_cast<uint16_t>(size));
+                sink.write_2_bytes_little_endian(uint16_t(size));
                 break;
             case opcode::push_four_size:
-                sink.write_4_bytes_little_endian(static_cast<uint32_t>(size));
+                sink.write_4_bytes_little_endian(uint32_t(size));
                 break;
             default:
                 break;

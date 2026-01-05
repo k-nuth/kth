@@ -29,8 +29,8 @@ inline bool is_text_token(std::string const& token) {
 }
 
 inline bool is_valid_data_size(opcode code, size_t size) {
-    constexpr auto op_75 = static_cast<uint8_t>(opcode::push_size_75);
-    auto const value = static_cast<uint8_t>(code);
+    constexpr auto op_75 = uint8_t(opcode::push_size_75);
+    auto const value = uint8_t(code);
     return value > op_75 || value == size;
 }
 
@@ -48,7 +48,7 @@ static
 bool opcode_from_data_prefix(opcode& out_code,
                                     std::string const& prefix,
                                     data_chunk const& data) {
-    constexpr auto op_75 = static_cast<uint8_t>(opcode::push_size_75);
+    constexpr auto op_75 = uint8_t(opcode::push_size_75);
     auto const size = data.size();
     out_code = operation::opcode_from_size(size);
 

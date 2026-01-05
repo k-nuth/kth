@@ -110,7 +110,7 @@ public:
             [&](auto& x) {
                 // Newly inserted - push to vector and get index
                 auto it = blocks_.push_back(entry);
-                x.second = static_cast<uint32_t>(it - blocks_.begin());
+                x.second = uint32_t(it - blocks_.begin());
                 result_idx = x.second;
             },
             [&](auto const& x) {

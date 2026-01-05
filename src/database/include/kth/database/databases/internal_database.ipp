@@ -71,7 +71,7 @@ bool internal_database_basis<Clock>::create_db_mode_property() {
 
     res = kth_db_put(db_txn, dbi_properties_, &key, &value, KTH_DB_NOOVERWRITE);
     if (res != KTH_DB_SUCCESS) {
-        spdlog::error("[database] Failed saving in DB Properties [create_db_mode_property] {}", static_cast<int32_t>(res));
+        spdlog::error("[database] Failed saving in DB Properties [create_db_mode_property] {}", int32_t(res));
         kth_db_txn_abort(db_txn);
         return false;
     }
@@ -131,7 +131,7 @@ bool internal_database_basis<Clock>::verify_db_mode_property() const {
 
     res = kth_db_get(db_txn, dbi_properties_, &key, &value);
     if (res != KTH_DB_SUCCESS) {
-        spdlog::error("[database] Failed getting DB Properties [verify_db_mode_property] {}", static_cast<int32_t>(res));
+        spdlog::error("[database] Failed getting DB Properties [verify_db_mode_property] {}", int32_t(res));
         kth_db_txn_abort(db_txn);
         return false;
     }
@@ -144,7 +144,7 @@ bool internal_database_basis<Clock>::verify_db_mode_property() const {
     }
 
     if (db_mode_ != db_mode_db) {
-        spdlog::error("[database] Error validating DB Mode, the node is compiled for another DB mode. Node DB Mode: {}, Actual DB Mode: {}", static_cast<uint32_t>(db_mode_), static_cast<uint32_t>(db_mode_db));
+        spdlog::error("[database] Error validating DB Mode, the node is compiled for another DB mode. Node DB Mode: {}, Actual DB Mode: {}", uint32_t(db_mode_), uint32_t(db_mode_db));
         return false;
     }
 
@@ -693,7 +693,7 @@ bool internal_database_basis<Clock>::create_and_open_environment() {
 
     auto res = kth_db_env_set_mapsize(env_, adjust_db_size(db_max_size_));
     if (res != KTH_DB_SUCCESS) {
-        spdlog::error("[database] Error setting max memory map size. Verify do you have enough free space. [create_and_open_environment] {}", static_cast<int32_t>(res));
+        spdlog::error("[database] Error setting max memory map size. Verify do you have enough free space. [create_and_open_environment] {}", int32_t(res));
         return false;
     }
 
@@ -747,7 +747,7 @@ bool internal_database_basis<Clock>::set_fast_flags_environment(bool enabled) {
     //KTH_DB_WRITEMAP |
     auto res = mdb_env_set_flags(env_, KTH_DB_MAPASYNC, enabled ? 1 : 0);
     if ( res != KTH_DB_SUCCESS ) {
-        spdlog::error("[database] Error setting LMDB Environmet flags. [set_fast_flags_environment] {}", static_cast<int32_t>(res));
+        spdlog::error("[database] Error setting LMDB Environmet flags. [set_fast_flags_environment] {}", int32_t(res));
         return false;
     }
 

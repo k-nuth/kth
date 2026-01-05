@@ -340,7 +340,7 @@ size_t block::locator_size(size_t top) {
     if (remaining < 2) {
         return top + size_t{1};
     }
-    return first_ten_or_top + static_cast<size_t>(std::log2(remaining) + 0.5) + size_t{1};
+    return first_ten_or_top + size_t(std::log2(remaining) + 0.5) + size_t{1};
 }
 
 // This algorithm is a network best practice, not a consensus rule.

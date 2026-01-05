@@ -41,7 +41,7 @@ void kth_chain_transaction_destruct(kth_transaction_t transaction) {
 }
 
 kth_bool_t kth_chain_transaction_is_valid(kth_transaction_t transaction) {
-    return static_cast<int>(kth_chain_transaction_const_cpp(transaction).is_valid());
+    return int(kth_chain_transaction_const_cpp(transaction).is_valid());
 }
 
 uint32_t kth_chain_transaction_version(kth_transaction_t transaction) {
@@ -106,39 +106,39 @@ uint64_t kth_chain_transaction_total_output_value(kth_transaction_t transaction)
 }
 
 kth_bool_t kth_chain_transaction_is_coinbase(kth_transaction_t transaction) {
-    return static_cast<int>(kth_chain_transaction_const_cpp(transaction).is_coinbase());
+    return int(kth_chain_transaction_const_cpp(transaction).is_coinbase());
 }
 
 kth_bool_t kth_chain_transaction_is_null_non_coinbase(kth_transaction_t transaction) {
-    return static_cast<int>(kth_chain_transaction_const_cpp(transaction).is_null_non_coinbase());
+    return int(kth_chain_transaction_const_cpp(transaction).is_null_non_coinbase());
 }
 
 kth_bool_t kth_chain_transaction_is_oversized_coinbase(kth_transaction_t transaction) {
-    return static_cast<int>(kth_chain_transaction_const_cpp(transaction).is_oversized_coinbase());
+    return int(kth_chain_transaction_const_cpp(transaction).is_oversized_coinbase());
 }
 
 kth_bool_t kth_chain_transaction_is_mature(kth_transaction_t transaction, kth_size_t target_height) {
-    return static_cast<int>(kth_chain_transaction_const_cpp(transaction).is_mature(target_height));
+    return int(kth_chain_transaction_const_cpp(transaction).is_mature(target_height));
 }
 
 kth_bool_t kth_chain_transaction_is_overspent(kth_transaction_t transaction) {
-    return static_cast<int>(kth_chain_transaction_const_cpp(transaction).is_overspent());
+    return int(kth_chain_transaction_const_cpp(transaction).is_overspent());
 }
 
 kth_bool_t kth_chain_transaction_is_double_spend(kth_transaction_t transaction, kth_bool_t include_unconfirmed) {
-    return static_cast<int>(kth_chain_transaction_const_cpp(transaction).is_double_spend(kth::int_to_bool(include_unconfirmed)));
+    return int(kth_chain_transaction_const_cpp(transaction).is_double_spend(kth::int_to_bool(include_unconfirmed)));
 }
 
 kth_bool_t kth_chain_transaction_is_missing_previous_outputs(kth_transaction_t transaction) {
-    return static_cast<int>(kth_chain_transaction_const_cpp(transaction).is_missing_previous_outputs());
+    return int(kth_chain_transaction_const_cpp(transaction).is_missing_previous_outputs());
 }
 
 kth_bool_t kth_chain_transaction_is_final(kth_transaction_t transaction, kth_size_t block_height, uint32_t kth_block_time) {
-    return static_cast<int>(kth_chain_transaction_const_cpp(transaction).is_final(block_height, kth_block_time));
+    return int(kth_chain_transaction_const_cpp(transaction).is_final(block_height, kth_block_time));
 }
 
 kth_bool_t kth_chain_transaction_is_locktime_conflict(kth_transaction_t transaction) {
-    return static_cast<int>(kth_chain_transaction_const_cpp(transaction).is_locktime_conflict());
+    return int(kth_chain_transaction_const_cpp(transaction).is_locktime_conflict());
 }
 
 kth_output_list_t kth_chain_transaction_outputs(kth_transaction_t transaction) {

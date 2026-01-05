@@ -106,7 +106,7 @@ To safe_to_signed(From unsigned_value) {
     static_assert(sizeof(uint64_t) >= sizeof(To), "safe assign out of range");
     static auto const signed_maximum = (std::numeric_limits<To>::max)();
 
-    if (unsigned_value > static_cast<uint64_t>(signed_maximum))
+    if (unsigned_value > uint64_t(signed_maximum))
         throw std::range_error("to signed assignment out of range");
 
     return static_cast<To>(unsigned_value);
@@ -118,7 +118,7 @@ To safe_to_unsigned(From signed_value) {
     static auto const unsigned_maximum = (std::numeric_limits<To>::max)();
 
     if (signed_value < 0 ||
-        static_cast<uint64_t>(signed_value) > unsigned_maximum)
+        uint64_t(signed_value) > unsigned_maximum)
         throw std::range_error("to unsigned assignment out of range");
 
     return static_cast<To>(signed_value);

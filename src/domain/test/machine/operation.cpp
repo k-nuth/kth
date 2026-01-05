@@ -109,7 +109,7 @@ TEST_CASE("operation from data roundtrip push size 75  success", "[operation]") 
 }
 
 TEST_CASE("operation from data roundtrip push negative 1  success", "[operation]") {
-    static auto const op_79 = static_cast<uint8_t>(opcode::push_negative_1);
+    static auto const op_79 = uint8_t(opcode::push_negative_1);
     auto const data1 = data_chunk{op_79};
     auto const raw_operation = data1;
     operation instance;
@@ -136,7 +136,7 @@ TEST_CASE("operation from data roundtrip push negative 1  success", "[operation]
 }
 
 TEST_CASE("operation from data roundtrip push positive 1  success", "[operation]") {
-    static auto const op_81 = static_cast<uint8_t>(opcode::push_positive_1);
+    static auto const op_81 = uint8_t(opcode::push_positive_1);
     auto const data1 = data_chunk{op_81};
     auto const raw_operation = data1;
     operation instance;
@@ -163,7 +163,7 @@ TEST_CASE("operation from data roundtrip push positive 1  success", "[operation]
 }
 
 TEST_CASE("operation from data roundtrip push positive 16  success", "[operation]") {
-    static auto const op_96 = static_cast<uint8_t>(opcode::push_positive_16);
+    static auto const op_96 = uint8_t(opcode::push_positive_16);
     auto const data1 = data_chunk{op_96};
     auto const raw_operation = data1;
 

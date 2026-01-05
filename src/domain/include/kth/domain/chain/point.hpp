@@ -105,7 +105,7 @@ struct KD_API point {
             sink.write_4_bytes_little_endian(index_);
         } else {
             KTH_ASSERT(index_ == null_index || index_ < max_uint16);
-            sink.write_2_bytes_little_endian(static_cast<uint16_t>(index_));
+            sink.write_2_bytes_little_endian(uint16_t(index_));
         }
     }
 

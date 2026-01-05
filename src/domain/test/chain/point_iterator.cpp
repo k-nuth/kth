@@ -19,7 +19,7 @@ TEST_CASE("point iterator  operator bool  not at end  returns true", "[point ite
 
 TEST_CASE("point iterator  operator bool at end  returns false", "[point iterator]") {
     point value;
-    point_iterator instance(value, static_cast<unsigned>(value.serialized_size(false)));
+    point_iterator instance(value, unsigned(value.serialized_size(false)));
     REQUIRE( ! instance);
 }
 

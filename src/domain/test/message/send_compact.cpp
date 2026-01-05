@@ -60,7 +60,7 @@ TEST_CASE("send compact  from data 1  invalid mode byte  failure", "[send compac
     message::send_compact msg;
     byte_reader reader(raw_data);
     auto exp_result = message::send_compact::from_data(reader, message::send_compact::version_minimum);
-    bool result = static_cast<bool>(exp_result);
+    bool result = bool(exp_result);
     if (result) msg = std::move(*exp_result);
     REQUIRE( ! result);
 }
@@ -71,7 +71,7 @@ TEST_CASE("send compact  from data 1  insufficient version  failure", "[send com
     message::send_compact msg;
     byte_reader reader(raw_data);
     auto exp_result = message::send_compact::from_data(reader, message::send_compact::version_minimum - 1);
-    bool result = static_cast<bool>(exp_result);
+    bool result = bool(exp_result);
     if (result) msg = std::move(*exp_result);
     REQUIRE( ! result);
 }

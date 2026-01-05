@@ -26,7 +26,7 @@ TEST_CASE("limits cast add  uint32 to int64 maximum plus 0  returns maximum", "[
 }
 
 TEST_CASE("limits cast add  uint32 to int64 maximum plus maximum returns twice maximum", "[limits]") {
-    static int64_t const expected = 2 * static_cast<int64_t>(max_uint32);
+    static int64_t const expected = 2 * int64_t(max_uint32);
     REQUIRE(cast_add<int64_t>(max_uint32, max_uint32) == expected);
 }
 
@@ -39,7 +39,7 @@ TEST_CASE("limits cast subtract  uint32 to int64 0  returns 0", "[limits]") {
 }
 
 TEST_CASE("limits cast subtract  uint32 to int64 0 minus maximum returns negtive maximum", "[limits]") {
-    static int64_t const expected = -1 * static_cast<int64_t>(max_uint32);
+    static int64_t const expected = -1 * int64_t(max_uint32);
     REQUIRE(cast_subtract<int64_t>(uint32_t{0}, max_uint32) == expected);
 }
 

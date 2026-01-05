@@ -328,7 +328,7 @@ TEST_CASE("chain header  is valid timestamp  timestamp less than 2 hours from no
     chain::header instance;
     auto const now = std::chrono::system_clock::now();
     auto const now_time = std::chrono::system_clock::to_time_t(now);
-    instance.set_timestamp(static_cast<uint32_t>(now_time));
+    instance.set_timestamp(uint32_t(now_time));
     REQUIRE(instance.is_valid_timestamp());
 }
 
@@ -337,7 +337,7 @@ TEST_CASE("chain header  is valid timestamp  timestamp greater than 2 hours from
     auto const now = std::chrono::system_clock::now();
     auto const duration = std::chrono::hours(3);
     auto const future = std::chrono::system_clock::to_time_t(now + duration);
-    instance.set_timestamp(static_cast<uint32_t>(future));
+    instance.set_timestamp(uint32_t(future));
     REQUIRE( ! instance.is_valid_timestamp());
 }
 

@@ -73,13 +73,13 @@ void serializer<Iterator>::write_8_bytes_big_endian(uint64_t value) {
 template <typename Iterator>
 void serializer<Iterator>::write_variable_big_endian(uint64_t value) {
     if (value < varint_two_bytes) {
-        write_byte(static_cast<uint8_t>(value));
+        write_byte(uint8_t(value));
     } else if (value <= max_uint16) {
         write_byte(varint_two_bytes);
-        write_2_bytes_big_endian(static_cast<uint16_t>(value));
+        write_2_bytes_big_endian(uint16_t(value));
     } else if (value <= max_uint32) {
         write_byte(varint_four_bytes);
-        write_4_bytes_big_endian(static_cast<uint32_t>(value));
+        write_4_bytes_big_endian(uint32_t(value));
     } else {
         write_byte(varint_eight_bytes);
         write_8_bytes_big_endian(value);
@@ -96,7 +96,7 @@ void serializer<Iterator>::write_size_big_endian(size_t value) {
 
 template <typename Iterator>
 void serializer<Iterator>::write_error_code(code const& ec) {
-    write_4_bytes_little_endian(static_cast<uint32_t>(ec.value()));
+    write_4_bytes_little_endian(uint32_t(ec.value()));
 }
 
 template <typename Iterator>
@@ -117,13 +117,13 @@ void serializer<Iterator>::write_8_bytes_little_endian(uint64_t value) {
 template <typename Iterator>
 void serializer<Iterator>::write_variable_little_endian(uint64_t value) {
     if (value < varint_two_bytes) {
-        write_byte(static_cast<uint8_t>(value));
+        write_byte(uint8_t(value));
     } else if (value <= max_uint16) {
         write_byte(varint_two_bytes);
-        write_2_bytes_little_endian(static_cast<uint16_t>(value));
+        write_2_bytes_little_endian(uint16_t(value));
     } else if (value <= max_uint32) {
         write_byte(varint_four_bytes);
-        write_4_bytes_little_endian(static_cast<uint32_t>(value));
+        write_4_bytes_little_endian(uint32_t(value));
     } else {
         write_byte(varint_eight_bytes);
         write_8_bytes_little_endian(value);
@@ -228,7 +228,7 @@ size_t serializer<Iterator>::read_size_big_endian() {
     // This facilitates safely passing the size into a follow-on writer.
     // Return zero allows follow-on use before testing reader state.
     if (size <= max_size_t) {
-        return static_cast<size_t>(size);
+        return size_t(size);
     }
 
     valid_ = false;
@@ -259,7 +259,7 @@ size_t serializer<Iterator>::read_size_little_endian() {
     // This facilitates safely passing the size into a follow-on writer.
     // Return zero allows follow-on use before testing reader state.
     if (size <= max_size_t) {
-        return static_cast<size_t>(size);
+        return size_t(size);
     }
 
     valid_ = false;

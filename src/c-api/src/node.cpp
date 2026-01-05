@@ -100,7 +100,7 @@ int kth_node_close(kth_node_t node) {
 }
 
 int kth_node_stopped(kth_node_t node) {
-    return static_cast<int>(kth_node_cpp(node).stopped());
+    return int(kth_node_cpp(node).stopped());
 }
 
 kth_chain_t kth_node_get_chain(kth_node_t node) {

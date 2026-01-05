@@ -112,7 +112,7 @@ I floor_subtract(I left, I right) {
 //     static_assert(sizeof(uint64_t) >= sizeof(To), "safe assign out of range");
 //     static auto const signed_maximum = (std::numeric_limits<To>::max)();
 
-//     if (unsigned_value > static_cast<uint64_t>(signed_maximum)) {
+//     if (unsigned_value > uint64_t(signed_maximum)) {
 //         throw std::range_error("to signed assignment out of range");
 //     }
 
@@ -124,7 +124,7 @@ I floor_subtract(I left, I right) {
 //     static_assert(sizeof(uint64_t) >= sizeof(To), "safe assign out of range");
 //     static auto const unsigned_maximum = (std::numeric_limits<To>::max)();
 
-//     if (signed_value < 0 || static_cast<uint64_t>(signed_value) > unsigned_maximum) {
+//     if (signed_value < 0 || uint64_t(signed_value) > unsigned_maximum) {
 //         throw std::range_error("to unsigned assignment out of range");
 //     }
 
@@ -193,7 +193,7 @@ expected<To, code> safe_to_signed(From unsigned_value) {
     static_assert(sizeof(uint64_t) >= sizeof(To), "safe assign out of range");
     static auto const signed_maximum = (std::numeric_limits<To>::max)();
 
-    if (unsigned_value > static_cast<uint64_t>(signed_maximum)) {
+    if (unsigned_value > uint64_t(signed_maximum)) {
         return std::unexpected(error::out_of_range);
     }
 
@@ -205,7 +205,7 @@ expected<To, code> safe_to_unsigned(From signed_value) {
     static_assert(sizeof(uint64_t) >= sizeof(To), "safe assign out of range");
     static auto const unsigned_maximum = (std::numeric_limits<To>::max());
 
-    if (signed_value < 0 || static_cast<uint64_t>(signed_value) > unsigned_maximum) {
+    if (signed_value < 0 || uint64_t(signed_value) > unsigned_maximum) {
         return std::unexpected(error::out_of_range);
     }
 

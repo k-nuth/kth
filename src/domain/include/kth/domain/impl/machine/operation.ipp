@@ -138,7 +138,7 @@ data_chunk const& operation::data() const {
 // template <typename R>
 // inline
 // uint32_t operation::read_data_size(opcode code, R& source) {
-//     constexpr auto op_75 = static_cast<uint8_t>(opcode::push_size_75);
+//     constexpr auto op_75 = uint8_t(opcode::push_size_75);
 
 //     switch (code) {
 //         case opcode::push_one_size:
@@ -148,14 +148,14 @@ data_chunk const& operation::data() const {
 //         case opcode::push_four_size:
 //             return source.read_4_bytes_little_endian();
 //         default:
-//             auto const byte = static_cast<uint8_t>(code);
+//             auto const byte = uint8_t(code);
 //             return byte <= op_75 ? byte : 0;
 //     }
 // }
 
 inline
 expect<uint32_t> operation::read_data_size(opcode code, byte_reader& reader) {
-    constexpr auto op_75 = static_cast<uint8_t>(opcode::push_size_75);
+    constexpr auto op_75 = uint8_t(opcode::push_size_75);
 
     switch (code) {
         case opcode::push_one_size:
@@ -173,7 +173,7 @@ expect<uint32_t> operation::read_data_size(opcode code, byte_reader& reader) {
 inline
 opcode operation::opcode_from_size(size_t size) {
     KTH_ASSERT(size <= max_uint32);
-    constexpr auto op_75 = static_cast<uint8_t>(opcode::push_size_75);
+    constexpr auto op_75 = uint8_t(opcode::push_size_75);
 
     if (size <= op_75) {
         return static_cast<opcode>(size);
@@ -230,40 +230,40 @@ inline
 opcode operation::opcode_from_positive(uint8_t value) {
     KTH_ASSERT(value >= number::positive_1);
     KTH_ASSERT(value <= number::positive_16);
-    constexpr auto op_81 = static_cast<uint8_t>(opcode::push_positive_1);
+    constexpr auto op_81 = uint8_t(opcode::push_positive_1);
     return static_cast<opcode>(value + op_81 - 1);
 }
 
 inline
 uint8_t operation::opcode_to_positive(opcode code) {
     KTH_ASSERT(is_positive(code));
-    constexpr auto op_81 = static_cast<uint8_t>(opcode::push_positive_1);
-    return static_cast<uint8_t>(code) - op_81 + 1;
+    constexpr auto op_81 = uint8_t(opcode::push_positive_1);
+    return uint8_t(code) - op_81 + 1;
 }
 
 // opcode: [0..79, 81..96]
 inline
 bool operation::is_push(opcode code) {
-    constexpr auto op_80 = static_cast<uint8_t>(opcode::reserved_80);
-    constexpr auto op_96 = static_cast<uint8_t>(opcode::push_positive_16);
-    auto const value = static_cast<uint8_t>(code);
+    constexpr auto op_80 = uint8_t(opcode::reserved_80);
+    constexpr auto op_96 = uint8_t(opcode::push_positive_16);
+    auto const value = uint8_t(code);
     return value <= op_96 && value != op_80;
 }
 
 // opcode: [1..78]
 inline
 bool operation::is_payload(opcode code) {
-    constexpr auto op_1 = static_cast<uint8_t>(opcode::push_size_1);
-    constexpr auto op_78 = static_cast<uint8_t>(opcode::push_four_size);
-    auto const value = static_cast<uint8_t>(code);
+    constexpr auto op_1 = uint8_t(opcode::push_size_1);
+    constexpr auto op_78 = uint8_t(opcode::push_four_size);
+    auto const value = uint8_t(code);
     return value >= op_1 && value <= op_78;
 }
 
 // opcode: [97..255]
 inline
 bool operation::is_counted(opcode code) {
-    constexpr auto op_97 = static_cast<uint8_t>(opcode::nop);
-    auto const value = static_cast<uint8_t>(code);
+    constexpr auto op_97 = uint8_t(opcode::nop);
+    auto const value = uint8_t(code);
     return value >= op_97;
 }
 
@@ -282,17 +282,17 @@ bool operation::is_numeric(opcode code) {
 // stack: [1..16]
 inline
 bool operation::is_positive(opcode code) {
-    constexpr auto op_81 = static_cast<uint8_t>(opcode::push_positive_1);
-    constexpr auto op_96 = static_cast<uint8_t>(opcode::push_positive_16);
-    auto const value = static_cast<uint8_t>(code);
+    constexpr auto op_81 = uint8_t(opcode::push_positive_1);
+    constexpr auto op_96 = uint8_t(opcode::push_positive_16);
+    auto const value = uint8_t(code);
     return value >= op_81 && value <= op_96;
 }
 
 // opcode: [80, 98, 137, 138, 186..255]
 inline
 bool operation::is_reserved(opcode code) {
-    constexpr auto op_212 = static_cast<uint8_t>(opcode::reserved_212);
-    constexpr auto op_255 = static_cast<uint8_t>(opcode::reserved_255);
+    constexpr auto op_212 = uint8_t(opcode::reserved_212);
+    constexpr auto op_255 = uint8_t(opcode::reserved_255);
 
     switch (code) {
         case opcode::reserved_80:
@@ -384,8 +384,8 @@ bool operation::is_conditional(opcode code) {
 // opcode: [0..96]
 inline
 bool operation::is_relaxed_push(opcode code) {
-    constexpr auto op_96 = static_cast<uint8_t>(opcode::push_positive_16);
-    auto const value = static_cast<uint8_t>(code);
+    constexpr auto op_96 = uint8_t(opcode::push_positive_16);
+    auto const value = uint8_t(code);
     return value <= op_96;
 }
 

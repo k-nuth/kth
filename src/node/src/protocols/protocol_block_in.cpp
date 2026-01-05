@@ -710,12 +710,12 @@ bool enabled(size_t height) {
 inline
 float difference(const asio::time_point& start, const asio::time_point& end) {
     auto const elapsed = duration_cast<asio::microseconds>(end - start);
-    return static_cast<float>(elapsed.count());
+    return float(elapsed.count());
 }
 
 inline
 size_t unit_cost(const asio::time_point& start, const asio::time_point& end, size_t value) {
-    return static_cast<size_t>(std::round(difference(start, end) / value));
+    return size_t(std::round(difference(start, end) / value));
 }
 
 inline

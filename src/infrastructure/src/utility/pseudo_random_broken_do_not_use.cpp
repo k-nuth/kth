@@ -37,7 +37,7 @@ void pseudo_random_broken_do_not_use_fill(data_chunk& out) {
 static
 uint32_t get_clock_seed() {
     auto const now = high_resolution_clock::now();
-    return static_cast<uint32_t>(now.time_since_epoch().count());
+    return uint32_t(now.time_since_epoch().count());
 }
 
 std::mt19937& pseudo_random_broken_do_not_use::_get_twister_broken_do_not_use() {
@@ -90,7 +90,7 @@ asio::duration pseudo_random_broken_do_not_use::duration(asio::duration const& e
     }
 
     // [0..2^64) % 2500 => [0..2500]
-    auto const random_offset = static_cast<int>(pseudo_random_broken_do_not_use::next(0, limit));
+    auto const random_offset = int(pseudo_random_broken_do_not_use::next(0, limit));
 
     // (10000 - [0..2500]) => [7500..10000]
     auto const expires = max_expire - random_offset;

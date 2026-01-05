@@ -33,14 +33,6 @@ kth_ec_compressed_t kth_wallet_ec_compressed_list_nth(kth_ec_compressed_list_t l
     return detail::to_ec_compressed_t(x);
 }
 
-
-// template <typename HashCpp, typename HashC>
-// inline
-// void copy_c_hash(HashCpp const& in, HashC* out) {
-//     //precondition: size of out->hash is greater or equal than in.size()
-//     std::copy_n(in.begin(), in.size(), static_cast<uint8_t*>(out->hash));
-// }
-
 void kth_wallet_ec_compressed_list_nth_out(kth_ec_compressed_list_t l, kth_size_t n, kth_ec_compressed_t* out_elem) {
     auto const& x = kth_wallet_ec_compressed_list_cpp(l)[n];
     // kth::copy_c_hash(x, out_elem);

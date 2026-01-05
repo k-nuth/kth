@@ -163,7 +163,7 @@ data_chunk expand_prefix(std::string_view prefix) {
     data_chunk ret;
     ret.resize(prefix.size() + 1);
     for (size_t i = 0; i < prefix.size(); ++i) {
-        ret[i] = static_cast<uint8_t>(prefix[i]) & 0x1fu;
+        ret[i] = uint8_t(prefix[i]) & 0x1fu;
     }
 
     ret[prefix.size()] = 0;

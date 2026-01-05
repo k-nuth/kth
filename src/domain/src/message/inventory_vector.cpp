@@ -14,7 +14,7 @@
 namespace kth::domain::message {
 
 uint32_t inventory_vector::to_number(type_id type) {
-    return static_cast<uint32_t>(type);
+    return uint32_t(type);
 }
 
 inventory_vector::type_id inventory_vector::to_type(uint32_t value) {

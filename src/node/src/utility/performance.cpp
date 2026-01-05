@@ -10,7 +10,7 @@ namespace kth::node {
 
 double performance::normal() const {
     // If numerator is small we can overflow (infinity).
-    return divide<double>(events, static_cast<double>(window) - database);
+    return divide<double>(events, double(window) - database);
 }
 
 double performance::total() const {

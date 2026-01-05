@@ -400,7 +400,7 @@ uint64_t transaction_organizer::price(transaction_const_ptr tx) const {
     auto sigop = sigop_fee > 0 ? sigop_fee * tx->signature_operations() : 0;
 
     // Require at least one satoshi per tx if there are any fees configured.
-    return std::max(uint64_t(1), static_cast<uint64_t>(byte + sigop));
+    return std::max(uint64_t(1), uint64_t(byte + sigop));
 }
 
 } // namespace kth::blockchain

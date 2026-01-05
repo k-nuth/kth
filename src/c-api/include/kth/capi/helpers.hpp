@@ -260,7 +260,7 @@ std::decay_t<T>* move_or_copy_and_leak(T&& x) {
 
 inline
 int bool_to_int(bool x) {
-    // return static_cast<int>(x);
+    // return int(x);
     return x;
 }
 

@@ -195,7 +195,7 @@ def migrate_entity_from_data(content, file_path):
             if type_name:
                 new_lines.append(f'{indent}byte_reader reader({data_var});')
                 new_lines.append(f'{indent}auto exp_result = {type_name}::from_data(reader, {version_var});')
-                new_lines.append(f'{indent}bool result = static_cast<bool>(exp_result);')
+                new_lines.append(f'{indent}bool result = bool(exp_result);')
                 new_lines.append(f'{indent}if (result) {instance_name} = std::move(*exp_result);')
                 modified = True
                 print(f"  Migrated bool entity_from_data in {file_path}:{i+1}")

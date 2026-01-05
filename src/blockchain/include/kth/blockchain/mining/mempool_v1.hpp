@@ -108,8 +108,8 @@ void sort_ltor(bool sorted, all_transactions_t& all, std::vector<size_t>& candid
             auto const& a = all[ia];
             auto const& b = all[ib];
             // return fee_per_size_cmp{}(a, b);
-            auto const value_a = static_cast<double>(a.children_fees()) / a.children_size();
-            auto const value_b = static_cast<double>(b.children_fees()) / b.children_size();
+            auto const value_a = double(a.children_fees()) / a.children_size();
+            auto const value_b = double(b.children_fees()) / b.children_size();
             return value_b < value_a;
         };
         // candidates.sort(cmp);
@@ -1284,8 +1284,8 @@ private:
         auto const& node_a = all_transactions_[a];
         auto const& node_b = all_transactions_[b];
 
-        auto const value_a = static_cast<double>(node_a.children_fees()) / node_a.children_size();
-        auto const value_b = static_cast<double>(node_b.children_fees()) / node_b.children_size();
+        auto const value_a = double(node_a.children_fees()) / node_a.children_size();
+        auto const value_b = double(node_b.children_fees()) / node_b.children_size();
 
         return value_b < value_a;
     }
@@ -1359,7 +1359,7 @@ private:
     removal_list_t what_to_remove(index_t to_insert_index, uint64_t fees, size_t size, size_t sigops) const {
         //precondition: candidate_transactions_.size() > 0
 
-        auto pack_benefit = static_cast<double>(fees) / size;
+        auto pack_benefit = double(fees) / size;
 
         auto it = candidate_transactions_.end() - 1;
 
@@ -1385,7 +1385,7 @@ private:
                     fee_accum += std::get<0>(res);
                     size_accum += std::get<1>(res);
 
-                    auto to_remove_benefit = static_cast<double>(fee_accum) / size_accum;
+                    auto to_remove_benefit = double(fee_accum) / size_accum;
                     if (pack_benefit <= to_remove_benefit) {
                         return {};
                     }
@@ -1738,14 +1738,14 @@ private:
 
     void reindex_parent_for_removal(mining::node const& node, mining::node& parent, index_t parent_index) {
         // cout << "reindex_parent_quitar\n";
-        auto node_benefit = static_cast<double>(node.fee()) / node.size();
-        auto accum_benefit = static_cast<double>(parent.children_fees()) / parent.children_size();
+        auto node_benefit = double(node.fee()) / node.size();
+        auto accum_benefit = double(parent.children_fees()) / parent.children_size();
 
         // reduce_values(node, parent);
         parent.decrement_values(node.fee(), node.size(), node.sigops());
 
 #ifndef NDEBUG
-        auto accum_benefit_new = static_cast<double>(parent.children_fees()) / parent.children_size();
+        auto accum_benefit_new = double(parent.children_fees()) / parent.children_size();
 #endif
 
         if (node_benefit == accum_benefit) {
@@ -1844,10 +1844,10 @@ private:
 
     //TODO(review-Dario): This method is very hard to follow
     void reindex_parent_from_insertion(mining::node const& node, mining::node& parent, index_t parent_index) {
-        auto node_benefit = static_cast<double>(node.fee()) / node.size();                          //a
-        auto accum_benefit = static_cast<double>(parent.children_fees()) / parent.children_size();  //b
-        auto node_accum_benefit = static_cast<double>(node.children_fees()) / node.children_size(); //c
-        auto old_accum_benefit = static_cast<double>(parent.children_fees() - node.fee()) / (parent.children_size() - node.size());  //d?
+        auto node_benefit = double(node.fee()) / node.size();                          //a
+        auto accum_benefit = double(parent.children_fees()) / parent.children_size();  //b
+        auto node_accum_benefit = double(node.children_fees()) / node.children_size(); //c
+        auto old_accum_benefit = double(parent.children_fees() - node.fee()) / (parent.children_size() - node.size());  //d?
 
         // std::print("{}", "node_benefit:       " << node_benefit << "\n");
         // std::print("{}", "accum_benefit:      " << accum_benefit << "\n");
@@ -2004,7 +2004,7 @@ private:
     //     std::println("");
     //     for (auto mi : candidate_transactions_) {
     //         auto& temp_node = all_transactions_[mi];
-    //         auto benefit = static_cast<double>(temp_node.children_fees()) / temp_node.children_size();
+    //         auto benefit = double(temp_node.children_fees()) / temp_node.children_size();
     //         std::print("{}, ", benefit);
     //     }
     //     std::println("");
@@ -2036,10 +2036,10 @@ private:
 
             if (parent.candidate_index() != null_index) {
 
-                // auto parent_benefit = static_cast<double>(parent.children_fees()) / parent.children_size();
+                // auto parent_benefit = double(parent.children_fees()) / parent.children_size();
                 // std::print("{}", "Parent stage0 benefit " << parent_benefit << "\n");
                 parent.increment_values(node.fee(), node.size(), node.sigops());
-                // parent_benefit = static_cast<double>(parent.children_fees()) / parent.children_size();
+                // parent_benefit = double(parent.children_fees()) / parent.children_size();
                 // std::print("{}", "Parent stage1 benefit " << parent_benefit << "\n");
 
                 reindex_parent_from_insertion(node, parent, pi);
@@ -2063,7 +2063,7 @@ private:
         auto& node = all_transactions_[node_index];
 
         // std::println("--------------------------------------------------");
-        // auto node_benefit = static_cast<double>(node.children_fees()) / node.children_size();
+        // auto node_benefit = double(node.children_fees()) / node.children_size();
         // std::print("{}", "Before insert " << node_index << "\n");
         // std::print("{}", "New node benefit " << node_benefit << "\n");
         // print_candidates();

@@ -187,7 +187,7 @@ stealth_address stealth_address::from_stealth(binary const& filter,
 
     // Coerce signatures to a valid range.
     auto const maximum = signatures == 0 || signatures > spend_keys_size;
-    auto const coerced = maximum ? static_cast<uint8_t>(spend_keys_size) : signatures;
+    auto const coerced = maximum ? uint8_t(spend_keys_size) : signatures;
 
     // Parameter order is used to change the constructor signature.
     return {version, filter, scan_key, spenders, coerced};
@@ -244,7 +244,7 @@ data_chunk stealth_address::to_chunk() const {
     extend_data(address, scan_key_);
 
     // Spend_pubkeys must have been guarded against a max size of 255.
-    auto number_spend_pubkeys = static_cast<uint8_t>(spend_keys_.size());
+    auto number_spend_pubkeys = uint8_t(spend_keys_.size());
 
     // Adjust for key reuse.
     if (reuse_key()) {
@@ -264,7 +264,7 @@ data_chunk stealth_address::to_chunk() const {
 
     // The prefix must be guarded against a size greater than 32
     // so that the bitfield can convert into uint32_t and sized by uint8_t.
-    auto const prefix_number_bits = static_cast<uint8_t>(filter_.size());
+    auto const prefix_number_bits = uint8_t(filter_.size());
 
     // Serialize the prefix bytes/blocks.
     address.push_back(prefix_number_bits);

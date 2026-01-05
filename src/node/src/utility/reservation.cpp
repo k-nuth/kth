@@ -160,7 +160,7 @@ void reservation::update_rate(size_t events, microseconds const& database) {
     for (auto it = history_.begin(); it != history_.end() && it->time < start; it = history_.erase(it));
 
     auto const window_full = history_count > history_.size();
-    auto const event_cost = static_cast<uint64_t>(database.count());
+    auto const event_cost = uint64_t(database.count());
     history_.push_back({ events, event_cost, event_start });
 
     // We can't set the rate until we have a period (two or more data points).
@@ -181,7 +181,7 @@ void reservation::update_rate(size_t events, microseconds const& database) {
     // Calculate the duration of the rate window.
     auto window = window_full ? rate_window() : (end - history_.front().time);
     auto count = duration_cast<microseconds>(window).count();
-    rate.window = static_cast<uint64_t>(count);
+    rate.window = uint64_t(count);
 
     history_mutex_.unlock();
     ///////////////////////////////////////////////////////////////////////////
