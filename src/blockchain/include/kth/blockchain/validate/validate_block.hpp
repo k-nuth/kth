@@ -41,14 +41,31 @@ struct KB_API validate_block {
     void start();
     void stop();
 
+    /// @param headers_pre_validated If true, skip header validation (for headers-first sync)
     [[nodiscard]]
-    ::asio::awaitable<code> check(block_const_ptr block) const;
+    ::asio::awaitable<code> check(block_const_ptr block, bool headers_pre_validated = false) const;
 
+    /// @param headers_pre_validated If true, use accept_body() to skip header validation
     [[nodiscard]]
-    ::asio::awaitable<code> accept(branch::const_ptr branch) const;
+    ::asio::awaitable<code> accept(branch::const_ptr branch, bool headers_pre_validated = false) const;
 
     [[nodiscard]]
     ::asio::awaitable<code> connect(branch::const_ptr branch) const;
+
+    // =========================================================================
+    // Static validation functions (pure, no side effects)
+    // These replace the accept/connect methods that were in block_basis.
+    // =========================================================================
+
+    /// Validate block body against chain state (skip header validation).
+    /// Validates: block size, transaction ordering, coinbase, finality.
+    /// @param block The block to validate.
+    /// @param state The chain state for context.
+    /// @return error::success or validation error.
+    [[nodiscard]]
+    static code accept_block_body(
+        domain::chain::block const& block,
+        domain::chain::chain_state const& state);
 
 protected:
     [[nodiscard]]

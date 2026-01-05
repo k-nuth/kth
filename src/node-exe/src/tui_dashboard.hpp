@@ -32,6 +32,19 @@ enum class screen_id {
     terminal,    // C64-style terminal
 };
 
+/// Per-peer information for TUI display
+struct peer_info {
+    std::string address;           // IP:port
+    std::string user_agent;        // Short user agent (e.g., "BCHN:28.0.1")
+    uint32_t start_height{0};      // Peer's reported height
+    size_t bytes_received{0};      // Total bytes received from peer
+    size_t bytes_sent{0};          // Total bytes sent to peer
+    uint32_t ping_ms{0};           // Last ping latency in ms
+    bool is_inbound{false};        // true if peer connected to us
+    bool is_preferred{false};      // true if preferred for download (BCHN fPreferredDownload)
+    std::chrono::seconds connected_duration{0};  // How long connected
+};
+
 /// Node status for TUI display - Mining focused
 struct node_status {
     // Version & Network
@@ -72,6 +85,9 @@ struct node_status {
     size_t total_bytes_sent{0};       // total bytes
     size_t avg_ping_ms{0};
 
+    // Connected peers (for Network screen)
+    std::vector<peer_info> peers;
+
     // Mempool
     size_t mempool_tx_count{0};
     size_t mempool_size_bytes{0};
@@ -87,6 +103,9 @@ struct node_status {
     size_t db_cache_size{0};
     double cpu_usage{0.0};
     size_t memory_usage{0};
+
+    // Logs (for Logs screen)
+    std::vector<std::string> recent_logs;
 };
 
 /// TUI Dashboard using FTXUI - Multi-screen with animations
@@ -105,6 +124,9 @@ public:
 
     /// Update node status (thread-safe)
     void update_status(node_status const& status);
+
+    /// Add a log message (thread-safe)
+    void add_log(std::string const& message);
 
     /// Check if TUI is running
     bool is_running() const;
