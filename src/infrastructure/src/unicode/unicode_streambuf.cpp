@@ -50,7 +50,7 @@ std::streambuf::int_type unicode_streambuf::underflow() {
     auto const size = static_cast<std::streamsize>(wide_size_);
 
     // Read from the wide input buffer.
-    auto const read = static_cast<size_t>(wide_buffer_->sgetn(wide_, size));
+    auto const read = size_t(wide_buffer_->sgetn(wide_, size));
 
     // Handle read termination.
     if (read == 0) {
