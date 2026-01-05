@@ -82,7 +82,7 @@ data_chunk build_message(std::string const& command, data_chunk const& payload, 
     message.insert(message.end(), cmd.begin(), cmd.end());
 
     // Payload size (4 bytes, little-endian)
-    auto const size_le = to_little_endian(static_cast<uint32_t>(payload.size()));
+    auto const size_le = to_little_endian(uint32_t(payload.size()));
     message.insert(message.end(), size_le.begin(), size_le.end());
 
     // Checksum (4 bytes) - first 4 bytes of double SHA256

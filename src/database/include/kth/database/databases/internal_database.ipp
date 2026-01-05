@@ -195,7 +195,7 @@ std::expected<uint32_t, result_code> internal_database_basis<Clock>::get_propert
 }
 
 template <typename Clock>
-std::expected<std::pair<uint32_t, uint32_t>, result_code> internal_database_basis<Clock>::get_last_heights() const {
+std::expected<heights_t, result_code> internal_database_basis<Clock>::get_last_heights() const {
     KTH_DB_txn* db_txn;
     auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (res != KTH_DB_SUCCESS) {
@@ -218,7 +218,7 @@ std::expected<std::pair<uint32_t, uint32_t>, result_code> internal_database_basi
         return std::unexpected(result_code::other);
     }
 
-    return std::pair{*header_result, *block_result};
+    return heights_t{*header_result, *block_result};
 }
 
 #if ! defined(KTH_DB_READONLY)
@@ -642,7 +642,7 @@ result_code internal_database_basis<Clock>::pop_block(domain::chain::block& out_
     if ( ! heights_result) {
         return heights_result.error();
     }
-    auto const height = heights_result->first;  // header_height
+    auto const height = heights_result->header;
 
     //TODO: (Mario) add overload with tx
     // This should never become invalid if this call is protected.
@@ -669,7 +669,7 @@ result_code internal_database_basis<Clock>::prune() {
         if (err == result_code::db_empty) return result_code::no_data_to_prune;
         return err;
     }
-    auto const last_height = heights_result->first;  // header_height
+    auto const last_height = heights_result->header;
     if (last_height < reorg_pool_limit_) return result_code::no_data_to_prune;
 
     auto first_height_result = get_first_reorg_block_height();

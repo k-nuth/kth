@@ -1,0 +1,80 @@
+// Copyright (c) 2016-2025 Knuth Project developers.
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#ifndef KTH_NODE_SYNC_BLOCK_TASKS_HPP
+#define KTH_NODE_SYNC_BLOCK_TASKS_HPP
+
+#include <atomic>
+
+#include <asio/awaitable.hpp>
+
+#include <kth/blockchain.hpp>
+#include <kth/node/sync/chunk_coordinator.hpp>
+#include <kth/node/sync/messages.hpp>
+
+namespace kth::node::sync {
+
+// =============================================================================
+// Block Download Supervisor
+// =============================================================================
+//
+// Manages block download tasks. Spawns one download task per peer.
+// - Receives peers from peer_channel
+// - Receives block range requests from block_request_channel
+// - Sends downloaded blocks to block_download_channel
+// - Creates chunk_coordinator for lock-free chunk assignment
+// - Maintains internal task_group for download workers
+//
+// =============================================================================
+
+::asio::awaitable<void> block_download_supervisor(
+    peer_channel& peers,
+    block_request_channel& requests,
+    block_download_channel& output,
+    stop_channel& stop,
+    blockchain::header_organizer& organizer  // read-only for hashes
+);
+
+// =============================================================================
+// Block Download Task (internal, spawned by supervisor)
+// =============================================================================
+//
+// Downloads blocks from a single peer.
+// - Claims chunks via chunk_coordinator (lock-free CAS)
+// - Downloads blocks and sends to block_download_channel
+// - Reports success/failure to coordinator for proper retry handling
+// - Exits when peer disconnects or no more chunks
+//
+// =============================================================================
+
+::asio::awaitable<void> block_download_task(
+    network::peer_session::ptr peer,
+    chunk_coordinator& coordinator,          // Lock-free chunk assignment
+    std::atomic<uint32_t>& active_peers,     // Atomic peer counter for metrics
+    block_download_channel& output
+);
+
+// =============================================================================
+// Block Validation Task
+// =============================================================================
+//
+// Validates blocks in order and writes to chain.
+// - Receives blocks from block_download_channel
+// - Buffers out-of-order blocks (OWNED state, not shared)
+// - Writes to block_chain (SINGLE WRITER - no lock needed)
+// - Sends validation results to block_validated_channel
+//
+// =============================================================================
+
+::asio::awaitable<void> block_validation_task(
+    blockchain::block_chain& chain,
+    block_download_channel& input,
+    block_validated_channel& output,
+    stop_channel& stop,
+    uint32_t start_height
+);
+
+} // namespace kth::node::sync
+
+#endif // KTH_NODE_SYNC_BLOCK_TASKS_HPP

@@ -289,12 +289,12 @@ block_download_coordinator::progress block_download_coordinator::get_progress() 
     }
 
     return {
-        .blocks_downloaded = static_cast<uint32_t>(
+        .blocks_downloaded = uint32_t(
             (next_height_to_assign_ - start_height_) - in_flight_.size() + pending_blocks_.size()),
         .blocks_validated = blocks_validated_.load(),
-        .blocks_in_flight = static_cast<uint32_t>(in_flight_.size()),
-        .blocks_pending = static_cast<uint32_t>(pending_blocks_.size()),
-        .active_peers = static_cast<uint32_t>(unique_peers.size()),
+        .blocks_in_flight = uint32_t(in_flight_.size()),
+        .blocks_pending = uint32_t(pending_blocks_.size()),
+        .active_peers = uint32_t(unique_peers.size()),
         .start_height = start_height_,
         .target_height = target_height_,
         .start_time = start_time_

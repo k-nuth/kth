@@ -166,7 +166,7 @@ namespace {
             uint32_t total_blocks = progress.target_height - progress.start_height + 1;
             uint32_t remaining = total_blocks - progress.blocks_validated;
             uint32_t eta_secs = blocks_per_sec > 0
-                ? static_cast<uint32_t>(static_cast<double>(remaining) / blocks_per_sec)
+                ? uint32_t(static_cast<double>(remaining) / blocks_per_sec)
                 : 0;
 
             uint32_t eta_hours = eta_secs / 3600;
@@ -360,7 +360,7 @@ namespace {
     auto progress = coordinator.get_progress();
     parallel_sync_result_v2 result{
         .error = coordinator.has_failed() ? coordinator.failure_reason() : error::success,
-        .blocks_downloaded = progress.chunks_completed * static_cast<uint32_t>(config.chunk_size),
+        .blocks_downloaded = progress.chunks_completed * uint32_t(config.chunk_size),
         .blocks_validated = progress.blocks_validated,
         .final_height = start_height + progress.blocks_validated - 1
     };

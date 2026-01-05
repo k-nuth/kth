@@ -170,7 +170,7 @@ namespace {
             uint32_t total_blocks = progress.target_height - progress.start_height + 1;
             uint32_t remaining = total_blocks - progress.blocks_validated;
             uint32_t eta_secs = blocks_per_sec > 0
-                ? static_cast<uint32_t>(static_cast<double>(remaining) / blocks_per_sec)
+                ? uint32_t(static_cast<double>(remaining) / blocks_per_sec)
                 : 0;
 
             // Format ETA as HH:MM:SS
