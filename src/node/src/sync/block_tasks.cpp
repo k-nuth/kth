@@ -36,9 +36,11 @@ using namespace ::asio::experimental::awaitable_operators;
     network::peer_session::ptr peer,
     chunk_coordinator& coordinator,
     std::atomic<uint32_t>& active_peers,
-    block_download_channel& output
+    block_download_channel& output,
+    download_task_feedback_channel& feedback
 ) {
     auto const addr = peer->authority_with_agent();
+    auto const peer_nonce = peer->nonce();
     size_t chunks_downloaded = 0;
 
     // Timing stats accumulation
@@ -52,7 +54,7 @@ using namespace ::asio::experimental::awaitable_operators;
     spdlog::debug("[block_download] Task started for peer {} (active peers: {})",
         addr, peer_count);
 
-    // RAII guard to decrement on exit and log stats
+    // RAII guard for counter decrement and stats logging
     struct peer_guard {
         std::atomic<uint32_t>& counter;
         std::string const& addr;
@@ -118,7 +120,7 @@ using namespace ::asio::experimental::awaitable_operators;
             }
             // Slots busy - wait with backoff before retry (avoid busy-wait)
             ::asio::steady_timer timer(executor);
-            timer.expires_after(std::chrono::milliseconds(100));
+            timer.expires_after(std::chrono::milliseconds(20));
             co_await timer.async_wait(::asio::use_awaitable);
             continue;
         }
@@ -217,6 +219,16 @@ using namespace ::asio::experimental::awaitable_operators;
         }
     }
 
+    // Notify supervisor that this task is ending (CSP: communicate via channel)
+    auto [send_ec] = co_await feedback.async_send(
+        std::error_code{},
+        download_task_ended{peer_nonce},
+        ::asio::as_tuple(::asio::use_awaitable)
+    );
+    if (send_ec) {
+        spdlog::debug("[block_download] Failed to send task_ended for peer {}: {}", addr, send_ec.message());
+    }
+
     spdlog::debug("[block_download] Peer {} task exiting cleanly", addr);
 }
 
@@ -239,8 +251,11 @@ using namespace ::asio::experimental::awaitable_operators;
     std::unique_ptr<chunk_coordinator> coordinator;
     std::atomic<uint32_t> active_peers{0};
 
-    // Track peers that already have running download tasks (by address string)
-    boost::unordered_flat_set<std::string> spawned_peers;
+    // Track peers that already have running download tasks (by nonce)
+    boost::unordered_flat_set<uint64_t> spawned_peers;
+
+    // Internal feedback channel for tasks to notify when they end
+    download_task_feedback_channel task_feedback(executor, 64);
 
     // Buffer peers that arrive before we have a range
     std::vector<network::peer_session::ptr> pending_peers;
@@ -256,36 +271,48 @@ using namespace ::asio::experimental::awaitable_operators;
     auto spawn_download = [&](network::peer_session::ptr peer) -> bool {
         if (peer->stopped() || !coordinator) return false;
 
-        auto addr_key = peer->authority().to_string();
-        if (spawned_peers.contains(addr_key)) {
+        auto const nonce = peer->nonce();
+        if (spawned_peers.contains(nonce)) {
             return false;  // Already has a running task
         }
 
         spdlog::debug("[block_supervisor] Spawning download task for peer {}", peer->authority_with_agent());
-        spawned_peers.insert(addr_key);
+        spawned_peers.insert(nonce);
         download_tasks.spawn(block_download_task(
             peer,
             *coordinator,
             active_peers,
-            output
+            output,
+            task_feedback
         ));
         return true;
     };
 
-    // Single channel with variant + internal timer for timeouts
+    // Listen to: input channel, feedback channel, and timeout timer
     while (true) {
-        // Wait for input OR timeout (timer is internal, not a channel message)
         auto event = co_await (
             input.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
+            task_feedback.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
             timeout_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
         );
 
-        // Timeout timer fired (index 1)
-        if (event.index() == 1) {
+        // Timeout timer fired (index 2)
+        if (event.index() == 2) {
             if (coordinator && !coordinator->is_stopped()) {
                 coordinator->check_timeouts();
             }
             reset_timer();
+            continue;
+        }
+
+        // Task feedback - a download task has ended (index 1)
+        if (event.index() == 1) {
+            auto [fb_ec, fb_msg] = std::get<1>(event);
+            if (!fb_ec) {
+                spawned_peers.erase(fb_msg.peer_nonce);
+                spdlog::debug("[block_supervisor] Task ended, removed peer nonce {} from spawned set",
+                    fb_msg.peer_nonce);
+            }
             continue;
         }
 
@@ -361,10 +388,11 @@ using namespace ::asio::experimental::awaitable_operators;
         coordinator->stop();
     }
 
-    // Close output channel BEFORE waiting - this unblocks any download tasks
-    // that are stuck in async_send() waiting for validation to consume
-    spdlog::debug("[block_supervisor] Closing output channel...");
+    // Close channels BEFORE waiting - this unblocks any download tasks
+    // that are stuck in async_send() waiting for consumers
+    spdlog::debug("[block_supervisor] Closing output and feedback channels...");
     output.close();
+    task_feedback.close();
 
     // NOW wait for all download tasks to finish
     spdlog::debug("[block_supervisor] Waiting for {} download tasks to complete...",
@@ -410,6 +438,8 @@ using namespace ::asio::experimental::awaitable_operators;
     std::vector<int64_t> fast_merkle_times, fast_push_times;
     fast_merkle_times.reserve(1000);
     fast_push_times.reserve(1000);
+    uint64_t fast_total_txs = 0;      // Total transactions in window
+    uint64_t fast_total_bytes = 0;    // Total bytes in window
 
     // Per-phase timing from validation_t (microseconds) - full validation only
     std::vector<int64_t> deser_times, check_times, pop_times, accept_times;
@@ -511,6 +541,8 @@ using namespace ::asio::experimental::awaitable_operators;
                 // Fast mode: merkle + push only
                 fast_merkle_times.push_back(to_us(v.start_check, v.start_push));
                 fast_push_times.push_back(to_us(v.start_push, v.end_push));
+                fast_total_txs += it->second.block->transactions().size();
+                fast_total_bytes += it->second.block->serialized_size(true);
             } else {
                 // Full validation mode
                 deser_times.push_back(to_us(v.start_deserialize, v.end_deserialize));
@@ -613,8 +645,23 @@ using namespace ::asio::experimental::awaitable_operators;
                 // Per-phase average times from validation_t
                 if (!fast_merkle_times.empty()) {
                     // Fast mode: show merkle + push breakdown
-                    spdlog::info("[validation] height {} fast mode phases avg: merkle={:.3f}ms push={:.3f}ms",
-                        current_height, avg_vec(fast_merkle_times), avg_vec(fast_push_times));
+                    double merkle_avg_ms = avg_vec(fast_merkle_times);
+                    double push_avg_ms = avg_vec(fast_push_times);
+
+                    // Calculate per-tx merkle time (microseconds)
+                    int64_t total_merkle_us = 0;
+                    for (auto t : fast_merkle_times) total_merkle_us += t;
+                    double merkle_per_tx_us = fast_total_txs > 0
+                        ? static_cast<double>(total_merkle_us) / fast_total_txs : 0.0;
+
+                    // Calculate per-byte push time (nanoseconds)
+                    int64_t total_push_us = 0;
+                    for (auto t : fast_push_times) total_push_us += t;
+                    double push_per_byte_ns = fast_total_bytes > 0
+                        ? static_cast<double>(total_push_us) * 1000.0 / fast_total_bytes : 0.0;
+
+                    spdlog::info("[validation] height {} fast mode avg: merkle={:.3f}ms ({:.2f}us/tx) push={:.3f}ms ({:.2f}ns/byte)",
+                        current_height, merkle_avg_ms, merkle_per_tx_us, push_avg_ms, push_per_byte_ns);
                 } else if (!deser_times.empty()) {
                     // Full validation mode
                     spdlog::info("[validation] phases avg: "
@@ -629,6 +676,8 @@ using namespace ::asio::experimental::awaitable_operators;
                 organize_times_us.clear();
                 fast_merkle_times.clear();
                 fast_push_times.clear();
+                fast_total_txs = 0;
+                fast_total_bytes = 0;
                 deser_times.clear();
                 check_times.clear();
                 pop_times.clear();

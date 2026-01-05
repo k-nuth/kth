@@ -93,6 +93,11 @@ struct block_validated {
     network::peer_session::ptr source_peer;  // For banning on validation failure
 };
 
+// Report that a download task has ended (for cleanup of spawned_peers)
+struct download_task_ended {
+    uint64_t peer_nonce;  // peer->nonce() for lookup in spawned_peers
+};
+
 // Block download supervisor input - single channel (CSP pattern)
 using block_download_input = std::variant<stop_request, peers_updated, block_range_request>;
 
@@ -132,6 +137,9 @@ using block_download_input_channel = concurrent_channel<block_download_input>;
 using block_download_channel = concurrent_channel<downloaded_block>;
 using block_validation_input_channel = concurrent_channel<block_validation_input>;
 using block_validated_channel = concurrent_channel<block_validated>;
+
+// Internal feedback channel for download tasks to notify supervisor when they end
+using download_task_feedback_channel = concurrent_channel<download_task_ended>;
 
 // Control
 using stop_channel = concurrent_event_channel;

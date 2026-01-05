@@ -49,7 +49,8 @@ namespace kth::node::sync {
     network::peer_session::ptr peer,
     chunk_coordinator& coordinator,          // Lock-free chunk assignment
     std::atomic<uint32_t>& active_peers,     // Atomic peer counter for metrics
-    block_download_channel& output
+    block_download_channel& output,
+    download_task_feedback_channel& feedback // Notify supervisor when task ends
 );
 
 // =============================================================================

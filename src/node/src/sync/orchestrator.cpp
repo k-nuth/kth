@@ -475,9 +475,9 @@ static
                 } else if (result.count > 0) {
                     headers_synced_to = result.height;
 
-                    // Log progress every 5000 headers
+                    // Log progress every 10000 headers
                     auto const headers_downloaded = headers_synced_to - headers_at_start;
-                    if (headers_downloaded % 5000 < max_headers_per_batch) {
+                    if (headers_downloaded % 10000 == 0) {
                         auto const elapsed = std::chrono::steady_clock::now() - header_sync_start;
                         auto const elapsed_secs = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
                         auto const rate = elapsed_secs > 0 ? headers_downloaded / elapsed_secs : 0;

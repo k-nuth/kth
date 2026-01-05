@@ -314,7 +314,7 @@ sync_session::ptr make_sync_session(
             // Convert sync_config to parallel_download_config_v2 (lock-free coordinator)
             parallel_download_config_v2 parallel_config{
                 .chunk_size = 16,  // Blocks per chunk (Bitcoin protocol limit)
-                .slots_multiplier = 100,  // slots_per_round = max_peers * 100
+                .slots_multiplier = 200,  // slots_per_round = max_peers * 200
                 .max_peers = 8,
                 .stall_timeout = std::chrono::seconds(config_.block_stalling_timeout),
                 .timeout_check_interval = std::chrono::seconds(5)
