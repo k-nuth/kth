@@ -502,7 +502,7 @@ size_t locator_size(size_t top) {
     auto const first_ten_or_top = std::min(size_t(10), top);
     auto const remaining = top - first_ten_or_top;
     auto const back_off = remaining == 0 ? 0.0 : remaining == 1 ? 1.0 : std::log2(remaining);
-    auto const rounded_up_log = static_cast<size_t>(std::nearbyint(back_off));
+    auto const rounded_up_log = size_t(std::nearbyint(back_off));
     return first_ten_or_top + rounded_up_log + size_t(1);
 }
 
