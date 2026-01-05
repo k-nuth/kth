@@ -225,10 +225,8 @@ using namespace ::asio::experimental::awaitable_operators;
 // =============================================================================
 
 ::asio::awaitable<void> block_download_supervisor(
-    peer_channel& peers,
-    block_request_channel& requests,
+    block_download_input_channel& input,
     block_download_channel& output,
-    stop_channel& stop,
     blockchain::header_organizer& organizer
 ) {
     auto executor = co_await ::asio::this_coro::executor;
@@ -274,18 +272,16 @@ using namespace ::asio::experimental::awaitable_operators;
         return true;
     };
 
+    // Single channel with variant + internal timer for timeouts
     while (true) {
-        // Stop signal first to prioritize shutdown
+        // Wait for input OR timeout (timer is internal, not a channel message)
         auto event = co_await (
-            stop.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-            peers.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-            requests.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
+            input.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
             timeout_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
         );
 
-        // Timeout timer fired (index 3)
-        if (event.index() == 3) {
-            // Check if we should stop before processing timeout
+        // Timeout timer fired (index 1)
+        if (event.index() == 1) {
             if (coordinator && !coordinator->is_stopped()) {
                 coordinator->check_timeouts();
             }
@@ -293,7 +289,15 @@ using namespace ::asio::experimental::awaitable_operators;
             continue;
         }
 
-        if (event.index() == 0) {
+        // Input channel message (index 0)
+        auto [ec, msg] = std::get<0>(event);
+        if (ec) {
+            spdlog::debug("[block_supervisor] Input channel closed");
+            break;
+        }
+
+        // Process message based on variant type (FIFO order guaranteed)
+        if (std::holds_alternative<stop_request>(msg)) {
             spdlog::debug("[block_supervisor] Stop signal received");
             if (coordinator) {
                 coordinator->stop();
@@ -301,23 +305,16 @@ using namespace ::asio::experimental::awaitable_operators;
             break;
         }
 
-        if (event.index() == 2) {
-            // New block range request
-            auto [ec, request] = std::get<2>(event);
-            if (ec) {
-                spdlog::debug("[block_supervisor] Requests channel closed");
-                break;
-            }
-
+        if (auto* request = std::get_if<block_range_request>(&msg)) {
             spdlog::info("[block_supervisor] New range request: {} to {} ({} blocks)",
-                request.start_height, request.end_height,
-                request.end_height - request.start_height + 1);
+                request->start_height, request->end_height,
+                request->end_height - request->start_height + 1);
 
             // Create new coordinator for this range
             coordinator = std::make_unique<chunk_coordinator>(
                 organizer.index(),
-                request.start_height,
-                request.end_height
+                request->start_height,
+                request->end_height
             );
 
             // Spawn tasks for any pending peers
@@ -332,30 +329,25 @@ using namespace ::asio::experimental::awaitable_operators;
             continue;
         }
 
-        // Peers list updated (index 1)
-        auto [ec, peers_msg] = std::get<1>(event);
-        if (ec) {
-            spdlog::debug("[block_supervisor] Peers channel closed");
-            break;
-        }
-
-        if (!coordinator) {
-            // Buffer peers until we have a range request
-            pending_peers = peers_msg.peers;
-            spdlog::debug("[block_supervisor] Buffered {} peers (waiting for range)",
-                pending_peers.size());
-            continue;
-        }
-
-        // Spawn tasks for any new peers in the list
-        size_t spawned = 0;
-        for (auto const& peer : peers_msg.peers) {
-            if (spawn_download(peer)) {
-                ++spawned;
+        if (auto* peers_msg = std::get_if<peers_updated>(&msg)) {
+            if (!coordinator) {
+                // Buffer peers until we have a range request
+                pending_peers = peers_msg->peers;
+                spdlog::debug("[block_supervisor] Buffered {} peers (waiting for range)",
+                    pending_peers.size());
+                continue;
             }
-        }
-        if (spawned > 0) {
-            spdlog::debug("[block_supervisor] Spawned {} new download tasks", spawned);
+
+            // Spawn tasks for any new peers in the list
+            size_t spawned = 0;
+            for (auto const& peer : peers_msg->peers) {
+                if (spawn_download(peer)) {
+                    ++spawned;
+                }
+            }
+            if (spawned > 0) {
+                spdlog::debug("[block_supervisor] Spawned {} new download tasks", spawned);
+            }
         }
     }
 
@@ -393,9 +385,8 @@ using namespace ::asio::experimental::awaitable_operators;
 
 ::asio::awaitable<void> block_validation_task(
     blockchain::block_chain& chain,
-    block_download_channel& input,
+    block_validation_input_channel& input,
     block_validated_channel& output,
-    stop_channel& stop,
     uint32_t start_height,
     uint32_t checkpoint_height
 ) {
@@ -434,23 +425,26 @@ using namespace ::asio::experimental::awaitable_operators;
     };
     reserve_phase_vecs();
 
+    // Single channel, FIFO processing - no priority issues
     while (true) {
-        // Stop signal first in || to prioritize shutdown over buffered data
-        auto event = co_await (
-            stop.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-            input.async_receive(::asio::as_tuple(::asio::use_awaitable))
-        );
+        auto [ec, msg] = co_await input.async_receive(
+            ::asio::as_tuple(::asio::use_awaitable));
 
-        if (event.index() == 0) {
-            spdlog::debug("[block_validation] Stop signal received");
-            break;
-        }
-
-        auto [ec, downloaded] = std::get<1>(event);
         if (ec) {
             spdlog::debug("[block_validation] Input channel closed");
             break;
         }
+
+        // Process message based on variant type (FIFO order guaranteed)
+        if (std::holds_alternative<stop_request>(msg)) {
+            spdlog::debug("[block_validation] Stop signal received");
+            break;
+        }
+
+        auto* downloaded_ptr = std::get_if<downloaded_block>(&msg);
+        if (!downloaded_ptr) continue;
+
+        auto& downloaded = *downloaded_ptr;
 
         // Track latest peer count for display
         last_seen_peers = downloaded.active_peers;

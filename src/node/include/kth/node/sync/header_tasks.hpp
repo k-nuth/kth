@@ -34,17 +34,16 @@ namespace kth::node::sync {
 // =============================================================================
 //
 // Validates headers and writes to organizer.
-// - Receives headers from header_download_output_channel
+// - Input: single channel with variant (stop, downloaded_headers, peer_failure_report)
+// - Output: validation results to header_validated_channel
 // - Writes to header_organizer (SINGLE WRITER - no lock needed)
-// - Sends validation results to header_validated_channel
 //
 // =============================================================================
 
 ::asio::awaitable<void> header_validation_task(
     blockchain::header_organizer& organizer,
-    header_download_output_channel& input,
-    header_validated_channel& output,
-    stop_channel& stop
+    header_validation_input_channel& input,
+    header_validated_channel& output
 );
 
 } // namespace kth::node::sync

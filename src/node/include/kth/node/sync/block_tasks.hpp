@@ -20,19 +20,16 @@ namespace kth::node::sync {
 // =============================================================================
 //
 // Manages block download tasks. Spawns one download task per peer.
-// - Receives peers from peer_channel
-// - Receives block range requests from block_request_channel
-// - Sends downloaded blocks to block_download_channel
+// - Input: single channel with variant (stop, peers_updated, block_range_request)
+// - Output: downloaded blocks to block_download_channel
 // - Creates chunk_coordinator for lock-free chunk assignment
 // - Maintains internal task_group for download workers
 //
 // =============================================================================
 
 ::asio::awaitable<void> block_download_supervisor(
-    peer_channel& peers,
-    block_request_channel& requests,
+    block_download_input_channel& input,
     block_download_channel& output,
-    stop_channel& stop,
     blockchain::header_organizer& organizer  // read-only for hashes
 );
 
@@ -60,10 +57,10 @@ namespace kth::node::sync {
 // =============================================================================
 //
 // Validates blocks in order and writes to chain.
-// - Receives blocks from block_download_channel
+// - Input: single channel with variant (stop, downloaded_block)
+// - Output: validation results to block_validated_channel
 // - Buffers out-of-order blocks (OWNED state, not shared)
 // - Writes to block_chain (SINGLE WRITER - no lock needed)
-// - Sends validation results to block_validated_channel
 // - Uses organize_fast() under checkpoint for fast IBD (no UTXO updates)
 // - Uses organize() above checkpoint for full validation
 //
@@ -71,9 +68,8 @@ namespace kth::node::sync {
 
 ::asio::awaitable<void> block_validation_task(
     blockchain::block_chain& chain,
-    block_download_channel& input,
+    block_validation_input_channel& input,
     block_validated_channel& output,
-    stop_channel& stop,
     uint32_t start_height,
     uint32_t checkpoint_height  // Use fast mode up to this height
 );

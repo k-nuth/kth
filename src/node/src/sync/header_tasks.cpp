@@ -211,32 +211,28 @@ using namespace ::asio::experimental::awaitable_operators;
 
 ::asio::awaitable<void> header_validation_task(
     blockchain::header_organizer& organizer,
-    header_download_output_channel& input,
-    header_validated_channel& output,
-    stop_channel& stop
+    header_validation_input_channel& input,
+    header_validated_channel& output
 ) {
     spdlog::debug("[header_validation] Task started");
 
+    // Single channel, FIFO processing - no priority issues
     while (true) {
-        // Stop signal first in || to prioritize shutdown over buffered data
-        auto event = co_await (
-            stop.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-            input.async_receive(::asio::as_tuple(::asio::use_awaitable))
-        );
+        auto [ec, msg] = co_await input.async_receive(
+            ::asio::as_tuple(::asio::use_awaitable));
 
-        if (event.index() == 0) {
-            spdlog::debug("[header_validation] Stop signal received");
-            break;
-        }
-
-        auto [ec, download_event] = std::get<1>(event);
         if (ec) {
             spdlog::debug("[header_validation] Input channel closed");
             break;
         }
 
-        // Handle variant: only process downloaded_headers
-        if (auto* downloaded = std::get_if<downloaded_headers>(&download_event)) {
+        // Process message based on variant type (FIFO order guaranteed)
+        if (std::holds_alternative<stop_request>(msg)) {
+            spdlog::debug("[header_validation] Stop signal received");
+            break;
+        }
+
+        if (auto* downloaded = std::get_if<downloaded_headers>(&msg)) {
             spdlog::debug("[header_validation] Validating {} headers from height {}",
                 downloaded->headers.size(), downloaded->start_height);
 
@@ -260,7 +256,7 @@ using namespace ::asio::experimental::awaitable_operators;
                 spdlog::warn("[header_validation] Failed to send validation result: {}", send_ec.message());
                 break;
             }
-        } else if (auto* failure = std::get_if<peer_failure_report>(&download_event)) {
+        } else if (auto* failure = std::get_if<peer_failure_report>(&msg)) {
             // Peer failure - forward to coordinator so it can retry with another peer
             spdlog::debug("[header_validation] Received peer failure report for {}: {}",
                 failure->peer->authority_with_agent(), failure->error.message());

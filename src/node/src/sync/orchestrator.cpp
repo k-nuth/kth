@@ -149,17 +149,16 @@ static
     // multiple input channels.
     // =========================================================================
 
-    // Peer distribution (only for blocks now - headers use single input channel)
-    peer_channel peers_for_blocks(executor, 100);
-
-    // Header pipeline - single input channel for header_download (CSP pattern)
+    // Header pipeline - single input channels (CSP pattern)
     header_download_input_channel header_download_input(executor, 100);
     header_download_output_channel header_download_output(executor, 100);
+    header_validation_input_channel header_validation_input(executor, 100);
     header_validated_channel validated_headers(executor, 100);
 
-    // Block pipeline
-    block_request_channel block_requests(executor, 10);
+    // Block pipeline - single input channels (CSP pattern)
+    block_download_input_channel block_download_input(executor, 100);
     block_download_channel downloaded_blocks(executor, 1000);  // Buffer for out-of-order blocks
+    block_validation_input_channel block_validation_input(executor, 1000);
     block_validated_channel validated_blocks(executor, 100);
 
     // Control
@@ -225,9 +224,9 @@ static
             spdlog::info("[peer_provider] Broadcasting {} peers to sync tasks (all={}, bad_list={})",
                 header_peers.size(), all_peers.size(), header_bad_peers.size());
 
-            // Send filtered list to headers (via unified input channel), full list to blocks
+            // Send filtered list to headers, full list to blocks (via unified input channels)
             header_download_input.try_send(std::error_code{}, peers_updated{header_peers});
-            peers_for_blocks.try_send(std::error_code{}, peers_updated{all_peers});
+            block_download_input.try_send(std::error_code{}, peers_updated{all_peers});
         };
 
         try {
@@ -274,6 +273,9 @@ static
         // Network stopped - signal all tasks to stop
         spdlog::info("[peer_provider] Network stopped, signaling all tasks to stop");
         header_download_input.try_send(std::error_code{}, stop_request{});
+        header_validation_input.try_send(std::error_code{}, stop_request{});
+        block_download_input.try_send(std::error_code{}, stop_request{});
+        block_validation_input.try_send(std::error_code{}, stop_request{});
         stop_signal.close();
 
         spdlog::debug("[peer_provider] Task ended");
@@ -288,28 +290,72 @@ static
     ));
 
     // -------------------------------------------------------------------------
-    // 3. Header validation task
+    // 3. Header validation bridge (forwards headers to validation input)
+    // -------------------------------------------------------------------------
+    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
+        spdlog::debug("[header_bridge] Started, forwarding to validation");
+        try {
+            while (true) {
+                auto [ec, msg] = co_await header_download_output.async_receive(
+                    ::asio::as_tuple(::asio::use_awaitable));
+                if (ec) {
+                    spdlog::debug("[header_bridge] Download channel closed: {}", ec.message());
+                    break;
+                }
+                // Forward variant contents to validation input
+                if (auto* headers = std::get_if<downloaded_headers>(&msg)) {
+                    header_validation_input.try_send(std::error_code{}, *headers);
+                } else if (auto* failure = std::get_if<peer_failure_report>(&msg)) {
+                    header_validation_input.try_send(std::error_code{}, *failure);
+                }
+            }
+        } catch (std::exception const& e) {
+            spdlog::error("[header_bridge] Exception: {}", e.what());
+        }
+        spdlog::debug("[header_bridge] Ended");
+    });
+
+    // -------------------------------------------------------------------------
+    // 4. Header validation task (1 input, 1 output)
     // -------------------------------------------------------------------------
     all_tasks.spawn(header_validation_task(
         organizer,
-        header_download_output,
-        validated_headers,
-        stop_signal
+        header_validation_input,
+        validated_headers
     ));
 
     // -------------------------------------------------------------------------
-    // 4. Block download supervisor (spawns per-peer download tasks)
+    // 5. Block download supervisor (1 input, 1 output)
     // -------------------------------------------------------------------------
     all_tasks.spawn(block_download_supervisor(
-        peers_for_blocks,
-        block_requests,
+        block_download_input,
         downloaded_blocks,
-        stop_signal,
         organizer
     ));
 
     // -------------------------------------------------------------------------
-    // 5. Block validation task
+    // 6. Block validation bridge (forwards downloaded blocks to validation input)
+    // -------------------------------------------------------------------------
+    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
+        spdlog::debug("[block_bridge] Started, forwarding blocks to validation");
+        try {
+            while (true) {
+                auto [ec, block] = co_await downloaded_blocks.async_receive(
+                    ::asio::as_tuple(::asio::use_awaitable));
+                if (ec) {
+                    spdlog::debug("[block_bridge] Download channel closed: {}", ec.message());
+                    break;
+                }
+                block_validation_input.try_send(std::error_code{}, std::move(block));
+            }
+        } catch (std::exception const& e) {
+            spdlog::error("[block_bridge] Exception: {}", e.what());
+        }
+        spdlog::debug("[block_bridge] Ended");
+    });
+
+    // -------------------------------------------------------------------------
+    // 7. Block validation task (1 input, 1 output)
     // -------------------------------------------------------------------------
     auto heights_result = co_await chain.fetch_last_height();
     uint32_t const initial_block_height = heights_result
@@ -322,15 +368,14 @@ static
 
     all_tasks.spawn(block_validation_task(
         chain,
-        downloaded_blocks,
+        block_validation_input,
         validated_blocks,
-        stop_signal,
         initial_block_height + 1,
         checkpoint_height
     ));
 
     // -------------------------------------------------------------------------
-    // 6. Sync coordinator - orchestrates the sync flow
+    // 8. Sync coordinator - orchestrates the sync flow
     // -------------------------------------------------------------------------
     all_tasks.spawn([&]() -> ::asio::awaitable<void> {
         spdlog::debug("[sync_coordinator] Task started");
@@ -467,7 +512,7 @@ static
                                 blocks_synced_to + 1, headers_synced_to,
                                 headers_synced_to - blocks_synced_to);
 
-                            block_requests.try_send(std::error_code{}, block_range_request{
+                            block_download_input.try_send(std::error_code{}, block_range_request{
                                 .start_height = blocks_synced_to + 1,
                                 .end_height = headers_synced_to
                             });
@@ -503,7 +548,7 @@ static
                             blocks_synced_to + 1, headers_synced_to,
                             headers_synced_to - blocks_synced_to);
 
-                        block_requests.try_send(std::error_code{}, block_range_request{
+                        block_download_input.try_send(std::error_code{}, block_range_request{
                             .start_height = blocks_synced_to + 1,
                             .end_height = headers_synced_to
                         });
