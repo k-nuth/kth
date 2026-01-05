@@ -131,47 +131,6 @@ bool internal_database_basis<Clock>::create_height_properties() {
     return true;
 }
 
-template <typename Clock>
-bool internal_database_basis<Clock>::create_height_properties() {
-    KTH_DB_txn* db_txn;
-    auto res = kth_db_txn_begin(env_, NULL, 0, &db_txn);
-    if (res != KTH_DB_SUCCESS) {
-        return false;
-    }
-
-    // Initialize last_header_height to 0
-    uint32_t initial_height = 0;
-    property_code header_prop = property_code::last_header_height;
-    auto header_key = kth_db_make_value(sizeof(header_prop), &header_prop);
-    auto header_value = kth_db_make_value(sizeof(initial_height), &initial_height);
-
-    res = kth_db_put(db_txn, dbi_properties_, &header_key, &header_value, KTH_DB_NOOVERWRITE);
-    if (res != KTH_DB_SUCCESS) {
-        spdlog::error("[database] Failed saving last_header_height in DB Properties [create_height_properties] {}", static_cast<int32_t>(res));
-        kth_db_txn_abort(db_txn);
-        return false;
-    }
-
-    // Initialize last_block_height to 0
-    property_code block_prop = property_code::last_block_height;
-    auto block_key = kth_db_make_value(sizeof(block_prop), &block_prop);
-    auto block_value = kth_db_make_value(sizeof(initial_height), &initial_height);
-
-    res = kth_db_put(db_txn, dbi_properties_, &block_key, &block_value, KTH_DB_NOOVERWRITE);
-    if (res != KTH_DB_SUCCESS) {
-        spdlog::error("[database] Failed saving last_block_height in DB Properties [create_height_properties] {}", static_cast<int32_t>(res));
-        kth_db_txn_abort(db_txn);
-        return false;
-    }
-
-    res = kth_db_txn_commit(db_txn);
-    if (res != KTH_DB_SUCCESS) {
-        return false;
-    }
-
-    return true;
-}
-
 #endif // ! defined(KTH_DB_READONLY)
 
 // =============================================================================
