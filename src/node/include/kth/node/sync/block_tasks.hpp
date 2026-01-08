@@ -16,6 +16,17 @@
 namespace kth::node::sync {
 
 // =============================================================================
+// Pipeline Counters for debugging block loss
+// =============================================================================
+
+extern std::atomic<uint64_t> g_blocks_sent_by_tasks;
+extern std::atomic<uint64_t> g_blocks_received_by_supervisor;
+extern std::atomic<uint64_t> g_blocks_forwarded_by_supervisor;
+extern std::atomic<uint64_t> g_blocks_received_by_bridge;
+extern std::atomic<uint64_t> g_blocks_forwarded_by_bridge;
+extern std::atomic<uint64_t> g_blocks_received_by_validation;
+
+// =============================================================================
 // Block Download Supervisor
 // =============================================================================
 //
@@ -29,7 +40,7 @@ namespace kth::node::sync {
 
 ::asio::awaitable<void> block_download_supervisor(
     block_download_input_channel& input,
-    block_download_channel& output,
+    block_download_channel& output,  // carries blocks + performance stats
     blockchain::header_organizer& organizer  // read-only for hashes
 );
 
@@ -49,8 +60,7 @@ namespace kth::node::sync {
     network::peer_session::ptr peer,
     chunk_coordinator& coordinator,          // Lock-free chunk assignment
     std::atomic<uint32_t>& active_peers,     // Atomic peer counter for metrics
-    block_download_channel& output,
-    download_task_feedback_channel& feedback // Notify supervisor when task ends
+    block_download_task_output_channel& output  // Single output: blocks + task_ended
 );
 
 // =============================================================================

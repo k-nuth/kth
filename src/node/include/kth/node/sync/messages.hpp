@@ -48,21 +48,62 @@ struct peer_failure_report {
     code error;
 };
 
-// Report peer issue to peer_provider (for filtering from peer list)
-struct peer_issue {
+// Report peer error to peer_provider - it decides what action to take (ban, exclude, etc.)
+struct peer_error {
     network::peer_session::ptr peer;
     code error;
 };
 
-// Header download task output (can be headers or failure report)
-using header_download_output = std::variant<downloaded_headers, peer_failure_report>;
+// Report peer download performance to peer_provider (for slow peer eviction)
+struct peer_performance {
+    uint64_t peer_nonce;  // Use nonce since peer might disconnect before message arrives
+    uint32_t blocks_downloaded;
+    uint32_t download_time_ms;
+};
 
-// Header download task input - single channel with all message types (CSP pattern)
-// Messages are processed in FIFO order, no arbitrary priority
-using header_download_input = std::variant<stop_request, peers_updated, header_request>;
+// Report header download performance to peer_provider
+struct header_performance {
+    uint64_t peer_nonce;
+    uint32_t headers_downloaded;
+    uint32_t download_time_ms;
+};
+
+// Report that a header download task has ended
+struct header_download_task_ended {
+    uint64_t peer_nonce;
+};
+
+// Start parallel header sync from a given height
+struct start_header_sync {
+    uint32_t from_height;
+    hash_digest from_hash;
+};
+
+// Header download task output - single channel with headers, lifecycle, and performance
+using header_download_task_output = std::variant<downloaded_headers, header_download_task_ended, header_performance>;
+
+// Periodic timeout for supervisors (shared by header and block supervisors)
+struct supervisor_timeout {};
+
+// Header download supervisor unified event (combines all input sources)
+using header_supervisor_event = std::variant<
+    stop_request,
+    peers_updated,
+    start_header_sync,
+    downloaded_headers,
+    header_download_task_ended,
+    supervisor_timeout,
+    header_performance
+>;
+
+// Header supervisor output - carries headers and performance stats
+using header_supervisor_output = std::variant<downloaded_headers, header_performance>;
+
+// Header download supervisor input - single channel (CSP pattern)
+using header_download_input = std::variant<stop_request, peers_updated, start_header_sync>;
 
 // Header validation task input - single channel (CSP pattern)
-using header_validation_input = std::variant<stop_request, downloaded_headers, peer_failure_report>;
+using header_validation_input = std::variant<stop_request, downloaded_headers>;
 
 struct headers_validated {
     uint32_t height;
@@ -101,6 +142,21 @@ struct download_task_ended {
 // Block download supervisor input - single channel (CSP pattern)
 using block_download_input = std::variant<stop_request, peers_updated, block_range_request>;
 
+// Block download task output - single channel with blocks, lifecycle, and performance
+using block_download_task_output = std::variant<downloaded_block, download_task_ended, peer_performance>;
+
+// Block download supervisor unified event (combines all input sources to avoid || operator)
+// This prevents message loss that occurs when async_receive is cancelled by ||
+using block_supervisor_event = std::variant<
+    stop_request,
+    peers_updated,
+    block_range_request,
+    downloaded_block,
+    download_task_ended,
+    supervisor_timeout,
+    peer_performance
+>;
+
 // Block validation task input - single channel (CSP pattern)
 using block_validation_input = std::variant<stop_request, downloaded_block>;
 
@@ -114,7 +170,7 @@ struct new_peer {
 };
 
 // Peer provider input - single channel for CSP pattern
-using peer_provider_input = std::variant<new_peer, peer_issue>;
+using peer_provider_input = std::variant<new_peer, peer_error, peer_performance, header_performance>;
 
 // =============================================================================
 // Channel Type Aliases
@@ -128,21 +184,38 @@ using peer_channel = concurrent_channel<peers_updated>;
 
 // Header sync pipeline (CSP pattern - single input/output per task)
 using header_download_input_channel = concurrent_channel<header_download_input>;
-using header_download_output_channel = concurrent_channel<header_download_output>;
+using header_download_task_output_channel = concurrent_channel<header_download_task_output>;
+using header_supervisor_event_channel = concurrent_channel<header_supervisor_event>;  // unified input
+using header_download_channel = concurrent_channel<header_supervisor_output>;  // supervisor -> bridge
 using header_validation_input_channel = concurrent_channel<header_validation_input>;
 using header_validated_channel = concurrent_channel<headers_validated>;
 
 // Block sync pipeline (CSP pattern - single input/output per task)
 using block_download_input_channel = concurrent_channel<block_download_input>;
-using block_download_channel = concurrent_channel<downloaded_block>;
+using block_download_task_output_channel = concurrent_channel<block_download_task_output>;
+using block_supervisor_event_channel = concurrent_channel<block_supervisor_event>;  // unified input
+// Supervisor output - carries blocks and performance stats
+using block_supervisor_output = std::variant<downloaded_block, peer_performance>;
+using block_download_channel = concurrent_channel<block_supervisor_output>;  // supervisor -> bridge
 using block_validation_input_channel = concurrent_channel<block_validation_input>;
 using block_validated_channel = concurrent_channel<block_validated>;
 
-// Internal feedback channel for download tasks to notify supervisor when they end
-using download_task_feedback_channel = concurrent_channel<download_task_ended>;
-
 // Control
 using stop_channel = concurrent_event_channel;
+
+// -----------------------------------------------------------------------------
+// Sync coordinator messages (unified input channel)
+// -----------------------------------------------------------------------------
+
+// Sync coordinator unified event (combines all input sources to avoid || operator)
+// This prevents message loss that occurs when async_receive is cancelled by ||
+using sync_coordinator_event = std::variant<
+    stop_request,
+    headers_validated,
+    block_validated
+>;
+
+using sync_coordinator_event_channel = concurrent_channel<sync_coordinator_event>;
 
 } // namespace kth::node::sync
 

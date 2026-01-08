@@ -161,6 +161,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
     # CSP-based sync system
     src/sync/chunk_coordinator.cpp
+    src/sync/header_chunk_coordinator.cpp
     src/sync/header_tasks.cpp
     src/sync/block_tasks.cpp
     src/sync/orchestrator.cpp

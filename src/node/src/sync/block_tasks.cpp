@@ -29,6 +29,20 @@ namespace kth::node::sync {
 using namespace ::asio::experimental::awaitable_operators;
 
 // =============================================================================
+// Pipeline Counters for debugging block loss
+// =============================================================================
+// These atomic counters track blocks through the pipeline to identify where
+// blocks are being lost.
+
+// Global counters - accessible from other files for bridge tracking
+std::atomic<uint64_t> g_blocks_sent_by_tasks{0};       // Sent from download tasks to task_output
+std::atomic<uint64_t> g_blocks_received_by_supervisor{0}; // Received by supervisor from task_output
+std::atomic<uint64_t> g_blocks_forwarded_by_supervisor{0}; // Forwarded by supervisor to downloaded_blocks
+std::atomic<uint64_t> g_blocks_received_by_bridge{0}; // Received by bridge from downloaded_blocks
+std::atomic<uint64_t> g_blocks_forwarded_by_bridge{0}; // Forwarded by bridge to validation_input
+std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validation task
+
+// =============================================================================
 // Block Download Task (per-peer)
 // =============================================================================
 
@@ -36,8 +50,7 @@ using namespace ::asio::experimental::awaitable_operators;
     network::peer_session::ptr peer,
     chunk_coordinator& coordinator,
     std::atomic<uint32_t>& active_peers,
-    block_download_channel& output,
-    download_task_feedback_channel& feedback
+    block_download_task_output_channel& output
 ) {
     auto const addr = peer->authority_with_agent();
     auto const peer_nonce = peer->nonce();
@@ -165,6 +178,15 @@ using namespace ::asio::experimental::awaitable_operators;
             break;
         }
 
+        // Validate we got all expected blocks
+        auto const expected_count = chunk_end - chunk_start + 1;
+        if (result->size() != expected_count) {
+            spdlog::warn("[block_download] Peer {} returned {} blocks for chunk {} (expected {}), failing chunk",
+                addr, result->size(), chunk_id, expected_count);
+            coordinator.chunk_failed(chunk_id);
+            continue;  // Try another chunk instead of disconnecting
+        }
+
         spdlog::debug("[block_download] Peer {} downloaded {} blocks for chunk {} in {}ms",
             addr, result->size(), chunk_id, download_ms);
         download_times_ms.push_back(download_ms);
@@ -173,10 +195,11 @@ using namespace ::asio::experimental::awaitable_operators;
         auto send_start = std::chrono::steady_clock::now();
         auto const current_peers = active_peers.load(std::memory_order_relaxed);
         for (auto& blk : *result) {
+            auto const height = blk.height;
             auto [send_ec] = co_await output.async_send(
                 std::error_code{},
                 downloaded_block{
-                    .height = blk.height,
+                    .height = height,
                     .block = std::make_shared<domain::message::block const>(std::move(blk.block)),
                     .source_peer = peer,
                     .active_peers = current_peers
@@ -185,11 +208,13 @@ using namespace ::asio::experimental::awaitable_operators;
             );
             if (send_ec) {
                 spdlog::warn("[block_download] Failed to send block {} to channel: {}",
-                    blk.height, send_ec.message());
+                    height, send_ec.message());
                 // Channel closed - abort
                 coordinator.chunk_failed(chunk_id);
                 co_return;
             }
+            // Track successful sends for pipeline debugging
+            g_blocks_sent_by_tasks.fetch_add(1, std::memory_order_relaxed);
         }
         auto send_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - send_start).count();
@@ -199,6 +224,13 @@ using namespace ::asio::experimental::awaitable_operators;
         coordinator.chunk_completed(chunk_id);
         current_chunk_id.reset();  // Clear - chunk successfully handed off
         ++chunks_downloaded;
+
+        // Report performance to peer_provider (via supervisor)
+        output.try_send(std::error_code{}, peer_performance{
+            .peer_nonce = peer_nonce,
+            .blocks_downloaded = expected_count,
+            .download_time_ms = static_cast<uint32_t>(download_ms)
+        });
     }
 
     } catch (::asio::system_error const& e) {
@@ -220,16 +252,17 @@ using namespace ::asio::experimental::awaitable_operators;
     }
 
     // Notify supervisor that this task is ending (CSP: communicate via channel)
-    auto [send_ec] = co_await feedback.async_send(
+    spdlog::debug("[block_download:shutdown] Peer {} - sending task_ended notification...", addr);
+    auto [send_ec] = co_await output.async_send(
         std::error_code{},
         download_task_ended{peer_nonce},
         ::asio::as_tuple(::asio::use_awaitable)
     );
     if (send_ec) {
-        spdlog::debug("[block_download] Failed to send task_ended for peer {}: {}", addr, send_ec.message());
+        spdlog::debug("[block_download:shutdown] Failed to send task_ended for peer {}: {}", addr, send_ec.message());
     }
 
-    spdlog::debug("[block_download] Peer {} task exiting cleanly", addr);
+    spdlog::info("[block_download:shutdown] Peer {} task exiting cleanly (downloaded {} chunks)", addr, chunks_downloaded);
 }
 
 // =============================================================================
@@ -245,7 +278,7 @@ using namespace ::asio::experimental::awaitable_operators;
 
     spdlog::debug("[block_supervisor] Task started");
 
-    task_group download_tasks(executor);
+    task_group tasks(executor);
 
     // Coordinator - created when we get a range
     std::unique_ptr<chunk_coordinator> coordinator;
@@ -254,18 +287,23 @@ using namespace ::asio::experimental::awaitable_operators;
     // Track peers that already have running download tasks (by nonce)
     boost::unordered_flat_set<uint64_t> spawned_peers;
 
-    // Internal feedback channel for tasks to notify when they end
-    download_task_feedback_channel task_feedback(executor, 64);
+    // Internal channel for tasks output (blocks + task_ended)
+    block_download_task_output_channel task_output(executor, 256);
+
+    // UNIFIED EVENT CHANNEL - combines all input sources
+    // This avoids the || operator between multiple channels which causes message loss
+    block_supervisor_event_channel events(executor, 512);
+
+    // Stats
+    uint64_t blocks_forwarded = 0;
+    auto last_stats_time = std::chrono::steady_clock::now();
 
     // Buffer peers that arrive before we have a range
     std::vector<network::peer_session::ptr> pending_peers;
 
-    // Timeout check timer (checks for stalled chunks every 10 seconds)
+    // Timer for periodic timeout checks (created here so we can cancel it on shutdown)
     ::asio::steady_timer timeout_timer(executor);
-    auto reset_timer = [&]() {
-        timeout_timer.expires_after(std::chrono::seconds(10));
-    };
-    reset_timer();
+    std::atomic<bool> timer_running{true};
 
     // Helper to spawn download task for a peer (returns true if spawned)
     auto spawn_download = [&](network::peer_session::ptr peer) -> bool {
@@ -278,58 +316,159 @@ using namespace ::asio::experimental::awaitable_operators;
 
         spdlog::debug("[block_supervisor] Spawning download task for peer {}", peer->authority_with_agent());
         spawned_peers.insert(nonce);
-        download_tasks.spawn(block_download_task(
+        tasks.spawn(block_download_task(
             peer,
             *coordinator,
             active_peers,
-            output,
-            task_feedback
+            task_output
         ));
         return true;
     };
 
-    // Listen to: input channel, feedback channel, and timeout timer
+    // -------------------------------------------------------------------------
+    // Timer task: sends supervisor_timeout to unified events channel
+    // Uses external timeout_timer that can be cancelled on shutdown
+    // -------------------------------------------------------------------------
+    tasks.spawn([&, &timer = timeout_timer]() -> ::asio::awaitable<void> {
+        spdlog::debug("[block_supervisor:timer] Started");
+        while (timer_running.load(std::memory_order_relaxed)) {
+            timer.expires_after(std::chrono::seconds(10));
+            auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            if (ec || !timer_running.load(std::memory_order_relaxed)) break;
+            // Send timeout message to unified channel
+            auto [send_ec] = co_await events.async_send(
+                std::error_code{}, supervisor_timeout{},
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (send_ec) break;
+        }
+        spdlog::debug("[block_supervisor:timer] Ended");
+    });
+
+    // -------------------------------------------------------------------------
+    // Bridge: input channel -> unified events channel
+    // -------------------------------------------------------------------------
+    tasks.spawn([&]() -> ::asio::awaitable<void> {
+        spdlog::debug("[block_supervisor:input_bridge] Started");
+        while (true) {
+            auto [ec, msg] = co_await input.async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                spdlog::debug("[block_supervisor:input_bridge] Channel closed: {}", ec.message());
+                break;
+            }
+            // Forward to unified channel - use async_send to never lose messages
+            auto forward = [&](auto&& m) -> ::asio::awaitable<bool> {
+                auto [send_ec] = co_await events.async_send(
+                    std::error_code{}, std::forward<decltype(m)>(m),
+                    ::asio::as_tuple(::asio::use_awaitable));
+                co_return !send_ec;
+            };
+
+            bool ok = true;
+            if (std::holds_alternative<stop_request>(msg)) {
+                ok = co_await forward(stop_request{});
+            } else if (auto* peers = std::get_if<peers_updated>(&msg)) {
+                ok = co_await forward(*peers);
+            } else if (auto* range = std::get_if<block_range_request>(&msg)) {
+                ok = co_await forward(*range);
+            }
+            if (!ok) break;
+        }
+        spdlog::debug("[block_supervisor:input_bridge] Ended");
+    });
+
+    // -------------------------------------------------------------------------
+    // Bridge: task_output channel -> unified events channel
+    // -------------------------------------------------------------------------
+    tasks.spawn([&]() -> ::asio::awaitable<void> {
+        spdlog::debug("[block_supervisor:task_bridge] Started");
+        while (true) {
+            auto [ec, msg] = co_await task_output.async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                spdlog::debug("[block_supervisor:task_bridge] Channel closed: {}", ec.message());
+                break;
+            }
+            // Forward to unified channel - use async_send to never lose messages
+            std::error_code send_ec;
+            if (auto* block = std::get_if<downloaded_block>(&msg)) {
+                g_blocks_received_by_supervisor.fetch_add(1, std::memory_order_relaxed);
+                auto [err] = co_await events.async_send(
+                    std::error_code{}, std::move(*block),
+                    ::asio::as_tuple(::asio::use_awaitable));
+                send_ec = err;
+            } else if (auto* ended = std::get_if<download_task_ended>(&msg)) {
+                auto [err] = co_await events.async_send(
+                    std::error_code{}, *ended,
+                    ::asio::as_tuple(::asio::use_awaitable));
+                send_ec = err;
+            } else if (auto* perf = std::get_if<peer_performance>(&msg)) {
+                auto [err] = co_await events.async_send(
+                    std::error_code{}, *perf,
+                    ::asio::as_tuple(::asio::use_awaitable));
+                send_ec = err;
+            }
+            if (send_ec) {
+                spdlog::debug("[block_supervisor:task_bridge] Send failed: {}", send_ec.message());
+                break;
+            }
+        }
+        spdlog::debug("[block_supervisor:task_bridge] Ended");
+    });
+
+    // -------------------------------------------------------------------------
+    // Main loop: ONLY receives from unified channel (no || operator at all)
+    // -------------------------------------------------------------------------
     while (true) {
-        auto event = co_await (
-            input.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-            task_feedback.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-            timeout_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-        );
-
-        // Timeout timer fired (index 2)
-        if (event.index() == 2) {
-            if (coordinator && !coordinator->is_stopped()) {
-                coordinator->check_timeouts();
-            }
-            reset_timer();
-            continue;
-        }
-
-        // Task feedback - a download task has ended (index 1)
-        if (event.index() == 1) {
-            auto [fb_ec, fb_msg] = std::get<1>(event);
-            if (!fb_ec) {
-                spawned_peers.erase(fb_msg.peer_nonce);
-                spdlog::debug("[block_supervisor] Task ended, removed peer nonce {} from spawned set",
-                    fb_msg.peer_nonce);
-            }
-            continue;
-        }
-
-        // Input channel message (index 0)
-        auto [ec, msg] = std::get<0>(event);
+        auto [ec, msg] = co_await events.async_receive(
+            ::asio::as_tuple(::asio::use_awaitable));
         if (ec) {
-            spdlog::debug("[block_supervisor] Input channel closed");
+            spdlog::debug("[block_supervisor] Events channel closed");
             break;
         }
 
         // Process message based on variant type (FIFO order guaranteed)
         if (std::holds_alternative<stop_request>(msg)) {
-            spdlog::debug("[block_supervisor] Stop signal received");
+            spdlog::info("[block_supervisor] Stop signal received");
             if (coordinator) {
+                spdlog::info("[block_supervisor] Stopping coordinator...");
                 coordinator->stop();
             }
             break;
+        }
+
+        if (auto* block = std::get_if<downloaded_block>(&msg)) {
+            auto const height = block->height;
+
+            // Forward block to validation
+            auto [send_ec] = co_await output.async_send(
+                std::error_code{},
+                std::move(*block),
+                ::asio::as_tuple(::asio::use_awaitable)
+            );
+            if (send_ec) {
+                spdlog::warn("[block_supervisor] Failed to forward block {} to validation: {}", height, send_ec.message());
+            } else {
+                // Track successful forward for pipeline debugging
+                g_blocks_forwarded_by_supervisor.fetch_add(1, std::memory_order_relaxed);
+            }
+            ++blocks_forwarded;
+
+            // Log stats periodically
+            auto now = std::chrono::steady_clock::now();
+            if (now - last_stats_time >= std::chrono::seconds(10)) {
+                spdlog::info("[block_supervisor] Stats: {} blocks forwarded, {} peers spawned",
+                    blocks_forwarded, spawned_peers.size());
+                last_stats_time = now;
+            }
+            continue;
+        }
+
+        if (auto* ended = std::get_if<download_task_ended>(&msg)) {
+            spawned_peers.erase(ended->peer_nonce);
+            spdlog::debug("[block_supervisor] Task ended, removed peer nonce {} from spawned set",
+                ended->peer_nonce);
+            continue;
         }
 
         if (auto* request = std::get_if<block_range_request>(&msg)) {
@@ -375,36 +514,57 @@ using namespace ::asio::experimental::awaitable_operators;
             if (spawned > 0) {
                 spdlog::debug("[block_supervisor] Spawned {} new download tasks", spawned);
             }
+            continue;
+        }
+
+        if (std::holds_alternative<supervisor_timeout>(msg)) {
+            // Periodic timeout - check for stalled chunks
+            if (coordinator && !coordinator->is_stopped()) {
+                coordinator->check_timeouts();
+            }
+            continue;
+        }
+
+        if (auto* perf = std::get_if<peer_performance>(&msg)) {
+            // Forward performance stats through output (bridge will route to peer_provider)
+            auto [send_ec] = co_await output.async_send(
+                std::error_code{}, *perf,
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (send_ec) {
+                spdlog::debug("[block_supervisor] Failed to send performance stats: {}", send_ec.message());
+            }
+            continue;
         }
     }
 
-    // Cancel timer to prevent dangling operations
-    spdlog::debug("[block_supervisor] Cancelling timeout timer...");
-    timeout_timer.cancel();
+    // Stop timer task - set flag AND cancel timer to wake it immediately
+    spdlog::info("[block_supervisor:shutdown] Step 1/5: Stopping timer task...");
+    timer_running.store(false, std::memory_order_relaxed);
+    timeout_timer.cancel();  // Wake up timer immediately instead of waiting 10s
 
     // IMPORTANT: Stop coordinator FIRST to signal all tasks to exit
     if (coordinator) {
-        spdlog::debug("[block_supervisor] Stopping coordinator...");
+        spdlog::info("[block_supervisor:shutdown] Step 2/5: Stopping coordinator...");
         coordinator->stop();
     }
 
-    // Close channels BEFORE waiting - this unblocks any download tasks
-    // that are stuck in async_send() waiting for consumers
-    spdlog::debug("[block_supervisor] Closing output and feedback channels...");
+    // Close channels BEFORE waiting - this unblocks any download tasks and bridges
+    spdlog::info("[block_supervisor:shutdown] Step 3/5: Closing channels...");
     output.close();
-    task_feedback.close();
+    task_output.close();
+    events.close();
 
-    // NOW wait for all download tasks to finish
-    spdlog::debug("[block_supervisor] Waiting for {} download tasks to complete...",
-        download_tasks.active_count());
-    co_await download_tasks.join();
-    spdlog::debug("[block_supervisor] All download tasks completed");
+    // NOW wait for all tasks (download tasks + bridges) to finish
+    auto const active = tasks.active_count();
+    spdlog::info("[block_supervisor:shutdown] Step 4/5: Waiting for {} tasks to complete...", active);
+    co_await tasks.join();
+    spdlog::info("[block_supervisor:shutdown] Step 5/5: All tasks completed");
 
     // NOW it's safe to destroy the coordinator
-    spdlog::debug("[block_supervisor] Destroying coordinator...");
+    spdlog::info("[block_supervisor] Destroying coordinator...");
     coordinator.reset();
 
-    spdlog::debug("[block_supervisor] Task ended cleanly");
+    spdlog::info("[block_supervisor] Task ended cleanly");
 }
 
 // =============================================================================
@@ -455,6 +615,15 @@ using namespace ::asio::experimental::awaitable_operators;
     };
     reserve_phase_vecs();
 
+    // Time-based progress tracking (fallback for boundary-based logging)
+    auto last_progress_log = std::chrono::steady_clock::now();
+    constexpr auto progress_log_interval = std::chrono::seconds(10);
+
+    // Track when we started waiting for a specific height (for stuck detection)
+    uint32_t waiting_for_height = 0;
+    auto waiting_since = std::chrono::steady_clock::now();
+    constexpr auto stuck_threshold = std::chrono::seconds(30);
+
     // Single channel, FIFO processing - no priority issues
     while (true) {
         auto [ec, msg] = co_await input.async_receive(
@@ -472,9 +641,15 @@ using namespace ::asio::experimental::awaitable_operators;
         }
 
         auto* downloaded_ptr = std::get_if<downloaded_block>(&msg);
-        if (!downloaded_ptr) continue;
+        if (!downloaded_ptr) {
+            spdlog::warn("[block_validation] Received non-block message, variant index: {}", msg.index());
+            continue;
+        }
 
         auto& downloaded = *downloaded_ptr;
+
+        // Track received for pipeline debugging
+        g_blocks_received_by_validation.fetch_add(1, std::memory_order_relaxed);
 
         // Track latest peer count for display
         last_seen_peers = downloaded.active_peers;
@@ -482,16 +657,95 @@ using namespace ::asio::experimental::awaitable_operators;
         // Always add to pending first (simplifies logic) - store full struct for source_peer tracking
         pending[downloaded.height] = downloaded;
 
-        // Log periodically when buffering a lot
-        if (pending.size() % 1000 == 0 && !pending.contains(next_height)) {
-            spdlog::debug("[sync] Buffered {} blocks (waiting for height {}, received {})",
-                pending.size(), next_height, downloaded.height);
-        }
-
         // Check if we can process the next expected block (either just received or already buffered)
         if (!pending.contains(next_height)) {
+            // Track how long we've been waiting for this specific height
+            auto now = std::chrono::steady_clock::now();
+            if (waiting_for_height != next_height) {
+                // Started waiting for a new height
+                waiting_for_height = next_height;
+                waiting_since = now;
+            }
+
+            // Time-based progress even when waiting for blocks
+            if (now - last_progress_log >= progress_log_interval) {
+                last_progress_log = now;
+                auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
+                double rate = elapsed > 0 ? static_cast<double>(validated_count) / elapsed : 0;
+                auto waiting_secs = std::chrono::duration_cast<std::chrono::seconds>(now - waiting_since).count();
+                spdlog::info("[block_sync:waiting] validated={} pending={} (waiting for height {} for {}s) | {:.0f} blk/s",
+                    validated_count, pending.size(), next_height, waiting_secs, rate);
+            }
+
+            // If we've been waiting too long for the same height, log detailed diagnostics
+            if (now - waiting_since >= stuck_threshold) {
+                // Find min/max heights in pending buffer
+                uint32_t min_h = UINT32_MAX, max_h = 0;
+                for (auto const& [h, _] : pending) {
+                    min_h = std::min(min_h, h);
+                    max_h = std::max(max_h, h);
+                }
+
+                // Check which blocks we have in the chunk containing next_height
+                // Assuming chunk_size of 16, find chunk boundaries
+                constexpr uint32_t chunk_size = 16;
+                uint32_t chunk_start = ((next_height - 1) / chunk_size) * chunk_size + 1;
+                uint32_t chunk_end = chunk_start + chunk_size - 1;
+
+                std::string chunk_status;
+                for (uint32_t h = chunk_start; h <= chunk_end; ++h) {
+                    if (!chunk_status.empty()) chunk_status += " ";
+                    if (pending.contains(h)) {
+                        chunk_status += std::to_string(h) + ":OK";
+                    } else if (h < next_height) {
+                        chunk_status += std::to_string(h) + ":validated";
+                    } else {
+                        chunk_status += std::to_string(h) + ":MISSING";
+                    }
+                }
+
+                // Pipeline counters for debugging
+                auto const task_sent = g_blocks_sent_by_tasks.load(std::memory_order_relaxed);
+                auto const sup_recv = g_blocks_received_by_supervisor.load(std::memory_order_relaxed);
+                auto const sup_fwd = g_blocks_forwarded_by_supervisor.load(std::memory_order_relaxed);
+                auto const brg_recv = g_blocks_received_by_bridge.load(std::memory_order_relaxed);
+                auto const brg_fwd = g_blocks_forwarded_by_bridge.load(std::memory_order_relaxed);
+                auto const val_recv = g_blocks_received_by_validation.load(std::memory_order_relaxed);
+
+                spdlog::warn("[block_sync:STUCK] Waiting for height {} for {}s! "
+                    "Pending: {} blocks [{}, {}]. "
+                    "Chunk [{}-{}]: [{}]",
+                    next_height,
+                    std::chrono::duration_cast<std::chrono::seconds>(now - waiting_since).count(),
+                    pending.size(), min_h, max_h,
+                    chunk_start, chunk_end, chunk_status);
+
+                spdlog::warn("[block_sync:STUCK] Pipeline counts: "
+                    "task_sent={} sup_recv={} sup_fwd={} brg_recv={} brg_fwd={} val_recv={}",
+                    task_sent, sup_recv, sup_fwd, brg_recv, brg_fwd, val_recv);
+
+                // Show where blocks are being lost (non-zero means loss)
+                auto const lost_task_sup = task_sent - sup_recv;
+                auto const lost_sup_fwd = sup_recv - sup_fwd;
+                auto const lost_sup_brg = sup_fwd - brg_recv;
+                auto const lost_brg_fwd = brg_recv - brg_fwd;
+                auto const lost_brg_val = brg_fwd - val_recv;
+
+                if (lost_task_sup > 0 || lost_sup_fwd > 0 || lost_sup_brg > 0 || lost_brg_fwd > 0 || lost_brg_val > 0) {
+                    spdlog::error("[block_sync:STUCK] BLOCK LOSS DETECTED: "
+                        "task->sup={} sup_recv->fwd={} sup->brg={} brg_recv->fwd={} brg->val={}",
+                        lost_task_sup, lost_sup_fwd, lost_sup_brg, lost_brg_fwd, lost_brg_val);
+                }
+
+                // Reset waiting_since to avoid spamming this log
+                waiting_since = now;
+            }
+
             continue;  // Gap not filled yet, wait for more blocks
         }
+
+        // We found the block we were waiting for, reset tracking
+        waiting_for_height = 0;
 
         // Log when we start validating (especially first block)
         if (validated_count == 0) {
@@ -521,6 +775,12 @@ using namespace ::asio::experimental::awaitable_operators;
             auto organize_us = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - organize_start).count();
             organize_times_us.push_back(organize_us);
+
+            // Debug: log first few validated blocks
+            if (validated_count < 5) {
+                spdlog::debug("[block_validation] Validated block {} in {}us, result: {}",
+                    next_height, organize_us, result ? result.message() : "success");
+            }
 
             // Log slow blocks (>100ms) for diagnosis
             if (organize_us > 100000) {  // 100ms
@@ -572,11 +832,17 @@ using namespace ::asio::experimental::awaitable_operators;
             }
         }
 
-        // Log progress at round 1000 boundaries (e.g., 228000, 229000)
+        // Log progress at round 1000 boundaries (e.g., 228000, 229000) OR every 10 seconds
+        auto now = std::chrono::steady_clock::now();
+        bool time_to_log = (now - last_progress_log >= progress_log_interval);
         uint32_t current_thousand = (next_height - 1) / 1000;
-        if (current_thousand > last_logged_thousand) {
-            last_logged_thousand = current_thousand;
-            auto now = std::chrono::steady_clock::now();
+        bool boundary_crossed = (current_thousand > last_logged_thousand);
+
+        if (boundary_crossed || time_to_log) {
+            if (boundary_crossed) {
+                last_logged_thousand = current_thousand;
+            }
+            last_progress_log = now;
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
             double rate = elapsed > 0 ? static_cast<double>(validated_count) / elapsed : 0;
 

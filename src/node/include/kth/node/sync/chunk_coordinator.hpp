@@ -49,12 +49,10 @@ struct chunk_coordinator_config {
 
     /// Slots per round = max_peers * multiplier
 
-    // /// Higher = less frequent round resets, more parallelism
-    // size_t slots_multiplier{100};
+    /// Higher = less frequent round resets, more parallelism
+    size_t slots_multiplier{100};
+    // size_t slots_multiplier{50};
     
-    /// Higher multiplier = more slots per round, less round-end waiting
-    size_t slots_multiplier{50};
-
     /// Maximum peers expected
     size_t max_peers{8};
 
