@@ -532,7 +532,7 @@ void executor::initialize_output(std::string_view extra, db_mode_type db_mode) {
     spdlog::info("[node] Currency: {} - {}.", KTH_CURRENCY_SYMBOL_STR, KTH_CURRENCY_STR);
     spdlog::info("[node] Optimized for microarchitecture: {}.", KTH_MICROARCHITECTURE_STR);
     spdlog::info("[node] Built for CPU instructions/extensions: {}.", march_names());
-    spdlog::info("[node] SHA256 implementation: {}.", SHA256AutoDetect());
+    spdlog::info("[node] SHA256 implementation: {}.", kth::SHA256AutoDetect());
     spdlog::info("[node] Database type: {}.", db_type_str);
 
 #ifndef NDEBUG
