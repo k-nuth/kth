@@ -151,7 +151,7 @@ static
 
     // Header pipeline - single input channels (CSP pattern)
     header_download_input_channel header_download_input(executor, 100);
-    header_download_channel downloaded_headers(executor, 1000);  // supervisor output: headers + performance
+    header_download_output_channel header_download_output(executor, 1000);  // task output: headers + failure + performance
     header_validation_input_channel header_validation_input(executor, 100);
     header_validated_channel validated_headers(executor, 100);
 
@@ -406,7 +406,7 @@ static
         // and output channels (for tasks blocked in async_send)
         spdlog::info("[peer_provider:shutdown] Step 2/3: Closing all channels...");
         header_download_input.close();
-        downloaded_headers.close();
+        header_download_output.close();
         header_validation_input.close();
         validated_headers.close();
         block_download_input.close();
@@ -423,32 +423,32 @@ static
     });
 
     // -------------------------------------------------------------------------
-    // 2. Header download supervisor (1 input, 1 output)
-    //    Manages parallel header downloads from multiple peers
+    // 2. Header download task (1 input, 1 output)
+    //    Sequential header download with sticky peer selection
     // -------------------------------------------------------------------------
-    all_tasks.spawn(header_download_supervisor(
+    all_tasks.spawn(header_download_task(
         header_download_input,
-        downloaded_headers,
-        organizer
+        header_download_output
     ));
 
     // -------------------------------------------------------------------------
-    // 3. Header supervisor output bridge (demultiplexes headers and performance)
+    // 3. Header download output bridge (demultiplexes headers, failures, and performance)
     //    - downloaded_headers → header_validation_input
+    //    - peer_failure_report → header_validation_input
     //    - header_performance → peer_provider_input
     // -------------------------------------------------------------------------
     all_tasks.spawn([&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[header_bridge] Started, demultiplexing supervisor output");
+        spdlog::debug("[header_bridge] Started, demultiplexing download output");
         try {
             while (true) {
-                auto [ec, msg] = co_await downloaded_headers.async_receive(
+                auto [ec, msg] = co_await header_download_output.async_receive(
                     ::asio::as_tuple(::asio::use_awaitable));
                 if (ec) {
                     spdlog::debug("[header_bridge] Download channel closed: {}", ec.message());
                     break;
                 }
 
-                if (auto* hdrs = std::get_if<sync::downloaded_headers>(&msg)) {
+                if (auto* hdrs = std::get_if<downloaded_headers>(&msg)) {
                     // Forward to validation
                     auto [send_ec] = co_await header_validation_input.async_send(
                         std::error_code{},
@@ -456,6 +456,16 @@ static
                         ::asio::as_tuple(::asio::use_awaitable));
                     if (send_ec) {
                         spdlog::warn("[header_bridge] Failed to send headers to validation: {}", send_ec.message());
+                        break;
+                    }
+                } else if (auto* failure = std::get_if<peer_failure_report>(&msg)) {
+                    // Forward failure report to validation (so it can forward to coordinator)
+                    auto [send_ec] = co_await header_validation_input.async_send(
+                        std::error_code{},
+                        std::move(*failure),
+                        ::asio::as_tuple(::asio::use_awaitable));
+                    if (send_ec) {
+                        spdlog::warn("[header_bridge] Failed to send failure report to validation: {}", send_ec.message());
                         break;
                     }
                 } else if (auto* perf = std::get_if<header_performance>(&msg)) {
@@ -481,7 +491,6 @@ static
     uint32_t const initial_header_height = uint32_t(organizer.header_height());
     all_tasks.spawn(header_validation_task(
         organizer,
-        initial_header_height,
         header_validation_input,
         validated_headers
     ));
@@ -651,7 +660,7 @@ static
             static_cast<blockchain::header_index::index_t>(headers_synced_to));
 
         spdlog::debug("[sync_coordinator] Starting parallel header sync from height {}", headers_synced_to);
-        header_download_input.try_send(std::error_code{}, start_header_sync{
+        header_download_input.try_send(std::error_code{}, header_request{
             .from_height = headers_synced_to,
             .from_hash = from_hash
         });
@@ -698,7 +707,7 @@ static
                     }
                     // Supervisor will handle retry with other peers via chunk coordinator
                 } else if (result->count > 0) {
-                    // Parallel header sync in progress - just track progress
+                    // Sequential header sync - track progress and request next batch
                     auto const prev_headers_synced = headers_synced_to;
                     headers_synced_to = result->height;
 
@@ -713,7 +722,15 @@ static
 
                         spdlog::info("[header_sync] height {} ({}/s)", headers_synced_to, rate);
                     }
-                    // Supervisor handles chunk management - no need to send next request
+
+                    // Request next batch of headers (sequential sync)
+                    auto next_hash = organizer.index().get_hash(
+                        static_cast<blockchain::header_index::index_t>(headers_synced_to));
+
+                    header_download_input.try_send(std::error_code{}, header_request{
+                        .from_height = headers_synced_to,
+                        .from_hash = next_hash
+                    });
                 } else if (result->count == 0) {
                     // Tip reached - header sync complete
                     header_sync_complete = true;
@@ -760,7 +777,7 @@ static
                         auto next_hash = organizer.index().get_hash(
                             static_cast<blockchain::header_index::index_t>(headers_synced_to));
 
-                        header_download_input.try_send(std::error_code{}, start_header_sync{
+                        header_download_input.try_send(std::error_code{}, header_request{
                             .from_height = headers_synced_to,
                             .from_hash = next_hash
                         });

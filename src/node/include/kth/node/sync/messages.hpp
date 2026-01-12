@@ -61,49 +61,22 @@ struct peer_performance {
     uint32_t download_time_ms;
 };
 
-// Report header download performance to peer_provider
+// Report header download performance to peer_provider (for slow peer eviction)
 struct header_performance {
     uint64_t peer_nonce;
     uint32_t headers_downloaded;
     uint32_t download_time_ms;
 };
 
-// Report that a header download task has ended
-struct header_download_task_ended {
-    uint64_t peer_nonce;
-};
+// Header download task output (can be headers, failure report, or performance)
+using header_download_output = std::variant<downloaded_headers, peer_failure_report, header_performance>;
 
-// Start parallel header sync from a given height
-struct start_header_sync {
-    uint32_t from_height;
-    hash_digest from_hash;
-};
-
-// Header download task output - single channel with headers, lifecycle, and performance
-using header_download_task_output = std::variant<downloaded_headers, header_download_task_ended, header_performance>;
-
-// Periodic timeout for supervisors (shared by header and block supervisors)
-struct supervisor_timeout {};
-
-// Header download supervisor unified event (combines all input sources)
-using header_supervisor_event = std::variant<
-    stop_request,
-    peers_updated,
-    start_header_sync,
-    downloaded_headers,
-    header_download_task_ended,
-    supervisor_timeout,
-    header_performance
->;
-
-// Header supervisor output - carries headers and performance stats
-using header_supervisor_output = std::variant<downloaded_headers, header_performance>;
-
-// Header download supervisor input - single channel (CSP pattern)
-using header_download_input = std::variant<stop_request, peers_updated, start_header_sync>;
+// Header download task input - single channel with all message types (CSP pattern)
+// Messages are processed in FIFO order, no arbitrary priority
+using header_download_input = std::variant<stop_request, peers_updated, header_request>;
 
 // Header validation task input - single channel (CSP pattern)
-using header_validation_input = std::variant<stop_request, downloaded_headers>;
+using header_validation_input = std::variant<stop_request, downloaded_headers, peer_failure_report>;
 
 struct headers_validated {
     uint32_t height;
@@ -115,6 +88,9 @@ struct headers_validated {
 // -----------------------------------------------------------------------------
 // Block sync messages
 // -----------------------------------------------------------------------------
+
+// Periodic timeout for supervisors
+struct supervisor_timeout {};
 
 struct block_range_request {
     uint32_t start_height;
@@ -184,9 +160,7 @@ using peer_channel = concurrent_channel<peers_updated>;
 
 // Header sync pipeline (CSP pattern - single input/output per task)
 using header_download_input_channel = concurrent_channel<header_download_input>;
-using header_download_task_output_channel = concurrent_channel<header_download_task_output>;
-using header_supervisor_event_channel = concurrent_channel<header_supervisor_event>;  // unified input
-using header_download_channel = concurrent_channel<header_supervisor_output>;  // supervisor -> bridge
+using header_download_output_channel = concurrent_channel<header_download_output>;
 using header_validation_input_channel = concurrent_channel<header_validation_input>;
 using header_validated_channel = concurrent_channel<headers_validated>;
 
