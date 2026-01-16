@@ -2858,7 +2858,7 @@ void run_tsan_test(
     // Readers
     for (size_t r = 0; r < cfg.num_readers; ++r) {
         threads.emplace_back([&, r] {
-            std::mt19937 rng(unsigned(r));
+            std::mt19937 rng{unsigned(r)};
             std::uniform_int_distribution<size_t> dist(0, cached_starts.size() - 1);
             while (!start_flag.load(std::memory_order_acquire)) {
                 std::this_thread::yield();
@@ -4036,7 +4036,7 @@ void test_soa_vector_race_unsafe() {
     // Multiple readers - read while writer is inserting
     for (size_t r = 0; r < num_readers; ++r) {
         threads.emplace_back([&store, &start_flag, &stop, &read_count, r] {
-            std::mt19937 rng(unsigned(r));
+            std::mt19937 rng{unsigned(r)};
             while (!start_flag.load(std::memory_order_relaxed)) {
                 std::this_thread::yield();
             }
