@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Pretty Test Runner for KTH Project
 # Uses Catch2 reporters for beautiful output

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Script to backfill missing release notes from GitHub
 # This script handles the multi-repo versioning complexity

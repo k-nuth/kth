@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Script to run clang-tidy analysis on C++ code
 # This mirrors the same check that runs in GitHub Actions

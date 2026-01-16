@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # VERSION=$(cat conanfile.py | grep "version" | cut -d '"' -f 2)
 VERSION="0.68.0"

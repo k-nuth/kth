@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Script to test sanitizer builds locally
 # This mirrors the sanitizer functionality in GitHub Actions build workflows
