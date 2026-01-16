@@ -527,8 +527,30 @@ class KthRecipe(KnuthConanFileV2):
             src_subdir.mkdir(exist_ok=True)
             
             # Run the generator tool from secp256k1 directory so it can write to src/ecmult_static_context.h
+            self.output.info(f"gen_context_exe: {gen_context_exe}")
+            self.output.info(f"gen_context_exe exists: {gen_context_exe.exists()}")
+
+            # Check binary type (static vs dynamic)
+            import shutil
+            file_cmd = shutil.which("file")
+            ldd_cmd = shutil.which("ldd")
+
+            if file_cmd:
+                file_result = subprocess.run([file_cmd, str(gen_context_exe)], capture_output=True, text=True)
+                self.output.info(f"Binary type: {file_result.stdout.strip()}")
+            else:
+                self.output.warning("'file' command not found")
+
+            if ldd_cmd:
+                ldd_result = subprocess.run([ldd_cmd, str(gen_context_exe)], capture_output=True, text=True)
+                self.output.info(f"ldd output: {ldd_result.stdout.strip()}")
+                if ldd_result.stderr:
+                    self.output.warning(f"ldd stderr: {ldd_result.stderr.strip()}")
+            else:
+                self.output.warning("'ldd' command not found")
+
             result = subprocess.run(
-                [str(gen_context_exe), 
+                [str(gen_context_exe),
                  str(self.options.secp256k1_ecmult_window_size),
                  str(self.options.secp256k1_ecmult_gen_precision)],
                 cwd=str(temp_dir),
