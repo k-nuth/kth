@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Script to sync release notes from GitHub Releases to local markdown file
 # Usage: ./sync_release_notes.sh

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Script to run include-what-you-use analysis on C++ code
 # This helps optimize #include dependencies and reduce compile times

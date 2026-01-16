@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Script to prepare version synchronization across all Knuth repositories
 # Usage: ./scripts/prepare_version_sync.sh <new_version>

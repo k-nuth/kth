@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # East const conversion script
 # Usage: ./scripts/east_const.sh

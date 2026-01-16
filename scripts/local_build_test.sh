@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Local Build and Test Script
 # Based on GitHub Actions build-without-container.yml workflow

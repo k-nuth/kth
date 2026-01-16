@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Script to check C++ code formatting with clang-format
 # This mirrors the same check that runs in GitHub Actions

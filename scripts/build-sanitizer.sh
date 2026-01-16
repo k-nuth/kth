@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Script to build locally with sanitizers enabled
 # Based on scripts/build.sh but with sanitizer support

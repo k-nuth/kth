@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Script to update version numbers in README files
 # Usage: ./update_readme_versions.sh <new_version>
