@@ -19,6 +19,7 @@ option(DB_READONLY_MODE "Readonly DB mode enabled." OFF)
 option(JUST_KTH_SOURCES "Just Knuth source code to be linted." OFF)
 
 option(GLOBAL_BUILD "" ON)
+option(ENABLE_TSAN_TESTS "Build TSAN tests" ON)
 
 
 if (WITH_MEMPOOL)
@@ -303,19 +304,21 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # ==========================================================================
   # 1. Thread-safety tests with TSan (debug, -O1)
   # ==========================================================================
-  add_executable(kth_blockchain_tsan_tests test/block_index_bench/benchmarks.cpp)
-  target_include_directories(kth_blockchain_tsan_tests PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test/block_index_bench>
-  )
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE nanobench::nanobench)
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE fmt::fmt-header-only)
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE Boost::boost)
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE ${PROJECT_NAME})
-  target_compile_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread -g -O1)
-  target_link_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread)
-  target_compile_definitions(kth_blockchain_tsan_tests PRIVATE TSAN_BUILD=1)
-  _group_sources(kth_blockchain_tsan_tests "${CMAKE_CURRENT_LIST_DIR}/test")
+  if (ENABLE_TSAN_TESTS)
+    add_executable(kth_blockchain_tsan_tests test/block_index_bench/benchmarks.cpp)
+    target_include_directories(kth_blockchain_tsan_tests PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test/block_index_bench>
+    )
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE nanobench::nanobench)
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE fmt::fmt-header-only)
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE Boost::boost)
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE ${PROJECT_NAME})
+    target_compile_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread -g -O1)
+    target_link_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread)
+    target_compile_definitions(kth_blockchain_tsan_tests PRIVATE TSAN_BUILD=1)
+    _group_sources(kth_blockchain_tsan_tests "${CMAKE_CURRENT_LIST_DIR}/test")
+  endif()
 
   # ==========================================================================
   # 2. Performance benchmarks (release, full optimization)

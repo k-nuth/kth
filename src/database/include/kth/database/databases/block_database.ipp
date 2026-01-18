@@ -153,7 +153,21 @@ result_code internal_database_basis<Clock>::insert_block(domain::chain::block co
             }
 
             if (res != KTH_DB_SUCCESS) {
-                spdlog::info("[database] Error saving in Block DB [insert_block] {}", res);
+                if (res == MDB_MAP_FULL) {
+                    MDB_envinfo mei;
+                    mdb_env_info(env_, &mei);
+                    auto const map_gib = double(mei.me_mapsize) / (1024.0 * 1024.0 * 1024.0);
+                    std::error_code ec;
+                    auto const space_info = std::filesystem::space(db_dir_, ec);
+                    if (!ec) {
+                        auto const available_gib = double(space_info.available) / (1024.0 * 1024.0 * 1024.0);
+                        spdlog::error("[database] MDB_MAP_FULL: LMDB map exhausted. Map size: {:.1f} GiB | Disk available: {:.1f} GiB. Increase db_max_size.", map_gib, available_gib);
+                    } else {
+                        spdlog::error("[database] MDB_MAP_FULL: LMDB map exhausted. Map size: {:.1f} GiB. Increase db_max_size.", map_gib);
+                    }
+                } else {
+                    spdlog::info("[database] Error saving in Block DB [insert_block] {}", res);
+                }
                 return result_code::other;
             }
         }
@@ -169,7 +183,21 @@ result_code internal_database_basis<Clock>::insert_block(domain::chain::block co
         }
 
         if (res != KTH_DB_SUCCESS) {
-            spdlog::info("[database] Error saving in Block DB [insert_block] {}", res);
+            if (res == MDB_MAP_FULL) {
+                MDB_envinfo mei;
+                mdb_env_info(env_, &mei);
+                auto const map_gib = double(mei.me_mapsize) / (1024.0 * 1024.0 * 1024.0);
+                std::error_code ec;
+                auto const space_info = std::filesystem::space(db_dir_, ec);
+                if (!ec) {
+                    auto const available_gib = double(space_info.available) / (1024.0 * 1024.0 * 1024.0);
+                    spdlog::error("[database] MDB_MAP_FULL: LMDB map exhausted. Map size: {:.1f} GiB | Disk available: {:.1f} GiB. Increase db_max_size.", map_gib, available_gib);
+                } else {
+                    spdlog::error("[database] MDB_MAP_FULL: LMDB map exhausted. Map size: {:.1f} GiB. Increase db_max_size.", map_gib);
+                }
+            } else {
+                spdlog::info("[database] Error saving in Block DB [insert_block] {}", res);
+            }
             return result_code::other;
         }
     }

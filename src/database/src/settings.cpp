@@ -6,18 +6,21 @@
 
 #include <filesystem>
 
+#include <kth/infrastructure/utility/units.hpp>
+
 namespace kth::database {
 
 using namespace std::filesystem;
+using namespace kth; // for _GiB literals
 
-//TODO(fernando): look for good defaults
-constexpr auto db_size_pruned_mainnet  = 100 * (uint64_t(1) << 30); //100 GiB
-constexpr auto db_size_default_mainnet = 200 * (uint64_t(1) << 30); //200 GiB
-constexpr auto db_size_full_mainnet    = 600 * (uint64_t(1) << 30); //600 GiB
+// BCH blockchain is ~215 GB as of Jan 2026 (block ~934k)
+constexpr auto db_size_pruned_mainnet  = 200_GiB;
+constexpr auto db_size_default_mainnet = 400_GiB;
+constexpr auto db_size_full_mainnet    = 600_GiB;
 
-constexpr auto db_size_pruned_testnet4  =  5 * (uint64_t(1) << 30); // 5 GiB
-constexpr auto db_size_default_testnet4 = 20 * (uint64_t(1) << 30); //20 GiB
-constexpr auto db_size_full_testnet4    = 50 * (uint64_t(1) << 30); //50 GiB
+constexpr auto db_size_pruned_testnet4  =  5_GiB;
+constexpr auto db_size_default_testnet4 = 20_GiB;
+constexpr auto db_size_full_testnet4    = 50_GiB;
 
 constexpr
 auto get_db_max_size_mainnet(db_mode_type mode) {

@@ -102,16 +102,11 @@ using namespace ::asio::experimental::awaitable_operators;
             current_peer = nullptr;
 
             // Report failure to output (coordinator will inform peer_provider)
-            auto [send_ec] = co_await output.async_send(
-                std::error_code{},
-                peer_failure_report{
-                    .peer = peer,
-                    .error = result.error()
-                },
-                ::asio::as_tuple(::asio::use_awaitable)
-            );
-            if (send_ec) {
-                spdlog::warn("[header_download] Failed to send peer failure report: {}", send_ec.message());
+            if (!output.try_send(std::error_code{}, peer_failure_report{
+                .peer = peer,
+                .error = result.error()
+            })) {
+                spdlog::warn("[header_download] Channel full, peer failure report dropped");
             }
             // Keep request pending - will retry with new peer after peers_updated
             pending_request = request;
@@ -122,17 +117,12 @@ using namespace ::asio::experimental::awaitable_operators;
             spdlog::debug("[header_download] No new headers from {} (at tip), triggering block sync",
                 peer->authority_with_agent());
             // Send empty message to signal sync complete
-            auto [send_ec] = co_await output.async_send(
-                std::error_code{},
-                downloaded_headers{
-                    .headers = {},
-                    .start_height = request.from_height,
-                    .source_peer = peer
-                },
-                ::asio::as_tuple(::asio::use_awaitable)
-            );
-            if (send_ec) {
-                spdlog::warn("[header_download] Failed to send empty headers: {}", send_ec.message());
+            if (!output.try_send(std::error_code{}, downloaded_headers{
+                .headers = {},
+                .start_height = request.from_height,
+                .source_peer = peer
+            })) {
+                spdlog::warn("[header_download] Channel full, empty headers signal dropped");
             }
             pending_request.reset();
             co_return;
@@ -143,33 +133,23 @@ using namespace ::asio::experimental::awaitable_operators;
             headers_count, peer->authority_with_agent(), elapsed_ms);
 
         // Send to validation
-        auto [send_ec] = co_await output.async_send(
-            std::error_code{},
-            downloaded_headers{
-                .headers = result->elements(),
-                .start_height = request.from_height + 1,
-                .source_peer = peer
-            },
-            ::asio::as_tuple(::asio::use_awaitable)
-        );
-        if (send_ec) {
-            spdlog::warn("[header_download] Failed to send headers to validation: {}", send_ec.message());
+        if (!output.try_send(std::error_code{}, downloaded_headers{
+            .headers = result->elements(),
+            .start_height = request.from_height + 1,
+            .source_peer = peer
+        })) {
+            spdlog::warn("[header_download] Channel full, headers dropped");
             pending_request = request;
             co_return;
         }
 
         // Report performance to peer_provider (for slow peer tracking)
-        auto [perf_ec] = co_await output.async_send(
-            std::error_code{},
-            header_performance{
-                .peer_nonce = peer->nonce(),
-                .headers_downloaded = headers_count,
-                .download_time_ms = uint32_t(elapsed_ms)
-            },
-            ::asio::as_tuple(::asio::use_awaitable)
-        );
-        if (perf_ec) {
-            spdlog::debug("[header_download] Failed to send performance report: {}", perf_ec.message());
+        if (!output.try_send(std::error_code{}, header_performance{
+            .peer_nonce = peer->nonce(),
+            .headers_downloaded = headers_count,
+            .download_time_ms = uint32_t(elapsed_ms)
+        })) {
+            spdlog::debug("[header_download] Channel full, performance report dropped");
             // Non-fatal, continue
         }
 
@@ -219,8 +199,7 @@ using namespace ::asio::experimental::awaitable_operators;
         }
     }
 
-    // Close output channel to signal validation task that no more headers are coming
-    output.close();
+    // NOTE: Don't close output channel here - peer_provider closes all channels during shutdown
     spdlog::debug("[header_download] Task ended");
 }
 
@@ -261,18 +240,13 @@ using namespace ::asio::experimental::awaitable_operators;
             spdlog::debug("[header_validation] Added {} headers, total index size: {}",
                 result.headers_added, result.index_size);
 
-            auto [send_ec] = co_await output.async_send(
-                std::error_code{},
-                headers_validated{
-                    .height = uint32_t(organizer.header_height()),
-                    .count = result.headers_added,
-                    .result = result.error,
-                    .source_peer = downloaded->source_peer
-                },
-                ::asio::as_tuple(::asio::use_awaitable)
-            );
-            if (send_ec) {
-                spdlog::warn("[header_validation] Failed to send validation result: {}", send_ec.message());
+            if (!output.try_send(std::error_code{}, headers_validated{
+                .height = uint32_t(organizer.header_height()),
+                .count = result.headers_added,
+                .result = result.error,
+                .source_peer = downloaded->source_peer
+            })) {
+                spdlog::warn("[header_validation] Channel full, headers_validated dropped");
                 break;
             }
         } else if (auto* failure = std::get_if<peer_failure_report>(&msg)) {
@@ -281,24 +255,18 @@ using namespace ::asio::experimental::awaitable_operators;
                 failure->peer->authority_with_agent(), failure->error.message());
 
             // Forward failure to coordinator - it will retry header sync
-            auto [send_ec] = co_await output.async_send(
-                std::error_code{},
-                headers_validated{
-                    .height = uint32_t(organizer.header_height()),
-                    .count = 0,
-                    .result = failure->error,
-                    .source_peer = failure->peer
-                },
-                ::asio::as_tuple(::asio::use_awaitable)
-            );
-            if (send_ec) {
-                spdlog::warn("[header_validation] Failed to forward peer failure: {}", send_ec.message());
+            if (!output.try_send(std::error_code{}, headers_validated{
+                .height = uint32_t(organizer.header_height()),
+                .count = 0,
+                .result = failure->error,
+                .source_peer = failure->peer
+            })) {
+                spdlog::warn("[header_validation] Channel full, peer failure dropped");
             }
         }
     }
 
-    // Close output channel to signal coordinator
-    output.close();
+    // NOTE: Don't close output channel here - peer_provider closes all channels during shutdown
     spdlog::debug("[header_validation] Task ended");
 }
 

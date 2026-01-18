@@ -1,19 +1,19 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Incremental build with AddressSanitizer (assumes rebuild-asan.sh was run first)
-# Uses build-asan/ directory
+# Uses build_asan/ directory with RelWithDebInfo preset
 set -e
 
-BUILD_DIR="build-asan"
+BUILD_DIR="build_asan"
 
-if [ ! -d "${BUILD_DIR}/build/Release" ]; then
-    echo "Error: ${BUILD_DIR}/build/Release does not exist."
+if [ ! -d "${BUILD_DIR}/build/RelWithDebInfo" ]; then
+    echo "Error: ${BUILD_DIR}/build/RelWithDebInfo does not exist."
     echo "Run rebuild-asan.sh <version> first to do a full build."
     exit 1
 fi
 
 echo "Building with AddressSanitizer (incremental)..."
 
-cmake --build "${BUILD_DIR}/build/Release" --parallel
+cmake --build --preset conan-relwithdebinfo --parallel
 
 if [ $? -ne 0 ]; then
     echo "Build failed"
@@ -22,8 +22,8 @@ fi
 
 echo ""
 echo "Build complete!"
-echo "Binary at: ${BUILD_DIR}/build/Release/src/node-exe/kth"
+echo "Binary at: ${BUILD_DIR}/build/RelWithDebInfo/src/node-exe/kth"
 echo ""
 echo "To run:"
-echo "  export ASAN_OPTIONS='detect_leaks=1:abort_on_error=0:print_stats=1'"
-echo "  ${BUILD_DIR}/build/Release/src/node-exe/kth -c your_config.cfg"
+echo "  export ASAN_OPTIONS='detect_leaks=0:abort_on_error=1:print_stats=1:halt_on_error=0'"
+echo "  ${BUILD_DIR}/build/RelWithDebInfo/src/node-exe/kth -c your_config.cfg"

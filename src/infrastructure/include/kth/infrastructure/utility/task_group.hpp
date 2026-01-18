@@ -59,8 +59,7 @@ namespace kth {
 class task_group {
 public:
     explicit task_group(::asio::any_io_executor executor)
-        : executor_(std::move(executor))
-        , done_channel_(executor_, 1)
+        : state_(std::make_shared<shared_state>(executor))
     {}
 
     // Non-copyable, non-movable (prevents accidental misuse)
@@ -72,9 +71,11 @@ public:
     ~task_group() {
         // In debug builds, assert that join() was called
         // In release, just log a warning if tasks are still active
-        if (active_count_.load() > 0) {
+        if (state_->active_count.load() > 0) {
             // Tasks still running - this is a programming error
             // The destructor should only be called after join()
+            // However, with shared_state, the spawned coroutines will keep
+            // the state alive until they complete, preventing use-after-free.
         }
     }
 
@@ -87,11 +88,14 @@ public:
     //   - A callable returning awaitable<void>: tasks.spawn([&]() -> awaitable<void> { ... })
     template<typename Coro>
     void spawn(Coro&& coro) {
-        ++active_count_;
-        ++total_spawned_;
+        ++state_->active_count;
+        ++state_->total_spawned;
 
-        ::asio::co_spawn(executor_,
-            [this, c = std::forward<Coro>(coro)]() mutable -> ::asio::awaitable<void> {
+        // Capture shared_ptr to keep state alive even if task_group is destroyed
+        auto state = state_;
+
+        ::asio::co_spawn(state_->executor,
+            [state, c = std::forward<Coro>(coro)]() mutable -> ::asio::awaitable<void> {
                 try {
                     if constexpr (std::is_invocable_v<Coro>) {
                         // It's a callable (lambda, function) - invoke it to get the awaitable
@@ -104,7 +108,7 @@ public:
                     // TODO: Store exception for later propagation
                     // For now, just decrement and signal
                 }
-                decrement_and_signal();
+                state->decrement_and_signal();
             },
             ::asio::detached);  // Single controlled detached point
     }
@@ -113,12 +117,12 @@ public:
     // This MUST be called before the task_group is destroyed.
     [[nodiscard]]
     ::asio::awaitable<void> join() {
-        if (active_count_.load() == 0) {
+        if (state_->active_count.load() == 0) {
             co_return;
         }
 
         // Wait for signal that all tasks completed
-        auto [ec] = co_await done_channel_.async_receive(
+        auto [ec] = co_await state_->done_channel.async_receive(
             ::asio::as_tuple(::asio::use_awaitable));
 
         // Channel closed or received signal - all tasks done
@@ -128,38 +132,45 @@ public:
     // Check if there are active tasks
     [[nodiscard]]
     bool has_active_tasks() const noexcept {
-        return active_count_.load() > 0;
+        return state_->active_count.load() > 0;
     }
 
     // Get number of currently active tasks
     [[nodiscard]]
     size_t active_count() const noexcept {
-        return active_count_.load();
+        return state_->active_count.load();
     }
 
     // Get total number of tasks spawned (including completed)
     [[nodiscard]]
     size_t total_spawned() const noexcept {
-        return total_spawned_.load();
+        return state_->total_spawned.load();
     }
 
 private:
-    void decrement_and_signal() {
-        auto const prev = active_count_.fetch_sub(1);
-        if (prev == 1) {
-            // We were the last task - signal completion
-            // Use try_send to avoid blocking if no one is waiting yet
-            done_channel_.try_send(std::error_code{});
+    // Shared state that outlives the task_group if needed
+    struct shared_state {
+        explicit shared_state(::asio::any_io_executor exec)
+            : executor(std::move(exec))
+            , done_channel(executor, 1)
+        {}
+
+        void decrement_and_signal() {
+            auto const prev = active_count.fetch_sub(1);
+            if (prev == 1) {
+                // We were the last task - signal completion
+                // Use try_send to avoid blocking if no one is waiting yet
+                done_channel.try_send(std::error_code{});
+            }
         }
-    }
 
-    ::asio::any_io_executor executor_;
-    std::atomic<size_t> active_count_{0};
-    std::atomic<size_t> total_spawned_{0};
+        ::asio::any_io_executor executor;
+        std::atomic<size_t> active_count{0};
+        std::atomic<size_t> total_spawned{0};
+        concurrent_event_channel done_channel;
+    };
 
-    // Channel to signal when all tasks complete
-    // Capacity of 1 is sufficient - we only send once when count hits 0
-    concurrent_event_channel done_channel_;
+    std::shared_ptr<shared_state> state_;
 };
 
 // =============================================================================

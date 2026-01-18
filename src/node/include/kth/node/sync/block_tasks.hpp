@@ -6,6 +6,7 @@
 #define KTH_NODE_SYNC_BLOCK_TASKS_HPP
 
 #include <atomic>
+#include <memory>
 
 #include <asio/awaitable.hpp>
 
@@ -58,7 +59,7 @@ extern std::atomic<uint64_t> g_blocks_received_by_validation;
 
 ::asio::awaitable<void> block_download_task(
     network::peer_session::ptr peer,
-    chunk_coordinator& coordinator,          // Lock-free chunk assignment
+    std::shared_ptr<chunk_coordinator> coordinator,  // Lock-free chunk assignment (shared to keep alive)
     std::atomic<uint32_t>& active_peers,     // Atomic peer counter for metrics
     block_download_task_output_channel& output  // Single output: blocks + task_ended
 );

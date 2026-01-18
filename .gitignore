@@ -15,3 +15,4 @@ doc/release-notes/*.backup
 hosts.cache
 banlist.dat
 other-nodes/
+build_asan/

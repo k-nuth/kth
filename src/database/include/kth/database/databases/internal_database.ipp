@@ -888,7 +888,8 @@ bool internal_database_basis<Clock>::create_and_open_environment() {
     //     throw0(DB_ERROR(lmdb_error("Failed to set max number of readers: ", result).c_str()));
     // ----------------------------------------------------------------------------------------------------------------
 
-    auto res = kth_db_env_set_mapsize(env_, adjust_db_size(db_max_size_));
+    auto const adjusted_size = adjust_db_size(db_max_size_);
+    auto res = kth_db_env_set_mapsize(env_, adjusted_size);
     if (res != KTH_DB_SUCCESS) {
         spdlog::error("[database] Error setting max memory map size. Verify do you have enough free space. [create_and_open_environment] {}", int32_t(res));
         return false;
@@ -924,7 +925,37 @@ bool internal_database_basis<Clock>::create_and_open_environment() {
     }
 
     res = kth_db_env_open(env_, db_dir_.string().c_str(), mdb_flags, env_open_mode_);
-    return res == KTH_DB_SUCCESS;
+    if (res != KTH_DB_SUCCESS) {
+        spdlog::error("[database] Error opening LMDB environment: {}", res);
+        return false;
+    }
+
+    // Log LMDB storage status
+    {
+        MDB_envinfo mei;
+        MDB_stat mst;
+        mdb_env_info(env_, &mei);
+        mdb_env_stat(env_, &mst);
+
+        auto const map_gib = double(mei.me_mapsize) / (1024.0 * 1024.0 * 1024.0);
+        auto const used_bytes = mst.ms_psize * mei.me_last_pgno;
+        auto const used_gib = double(used_bytes) / (1024.0 * 1024.0 * 1024.0);
+        auto const pct_used = (double(used_bytes) / double(mei.me_mapsize)) * 100.0;
+
+        std::error_code ec;
+        auto const space_info = std::filesystem::space(db_dir_, ec);
+        auto const disk_gib = !ec ? double(space_info.available) / (1024.0 * 1024.0 * 1024.0) : 0.0;
+
+        if (pct_used >= 90.0) {
+            spdlog::warn("[database] Storage: {:.1f}/{:.1f} GiB ({:.0f}%) | Disk: {:.1f} GiB free - NEAR CAPACITY",
+                used_gib, map_gib, pct_used, disk_gib);
+        } else {
+            spdlog::info("[database] Storage: {:.1f}/{:.1f} GiB ({:.0f}%) | Disk: {:.1f} GiB free",
+                used_gib, map_gib, pct_used, disk_gib);
+        }
+    }
+
+    return true;
 }
 
 /*

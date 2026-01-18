@@ -204,11 +204,15 @@ static
                     spdlog::debug("[peer_bridge] Network channel closed: {}", ec.message());
                     break;
                 }
-                peer_provider_input.try_send(std::error_code{}, new_peer{peer});
+                if (!peer_provider_input.try_send(std::error_code{}, new_peer{peer})) {
+                    spdlog::warn("[peer_bridge] Channel full, new_peer dropped for {}", peer->authority_with_agent());
+                }
             }
         } catch (std::exception const& e) {
             spdlog::error("[peer_bridge] Exception: {}", e.what());
         }
+        // Cancel timer before exiting to ensure clean shutdown of || operator internals
+        check_timer.cancel();
         spdlog::debug("[peer_bridge] Ended");
     });
 
@@ -262,14 +266,18 @@ static
                 header_peers.size(), all_peers.size(), header_bad_peers.size());
 
             // Send filtered list to headers, full list to blocks (via unified input channels)
-            header_download_input.try_send(std::error_code{}, peers_updated{header_peers});
-            block_download_input.try_send(std::error_code{}, peers_updated{all_peers});
+            if (!header_download_input.try_send(std::error_code{}, peers_updated{header_peers})) {
+                spdlog::warn("[peer_provider] Channel full, peers_updated dropped for header_download");
+            }
+            if (!block_download_input.try_send(std::error_code{}, peers_updated{all_peers})) {
+                spdlog::warn("[peer_provider] Channel full, peers_updated dropped for block_download");
+            }
         };
 
-        try {
-            auto exec = co_await ::asio::this_coro::executor;
-            ::asio::steady_timer check_timer(exec);
+        auto exec = co_await ::asio::this_coro::executor;
+        ::asio::steady_timer check_timer(exec);
 
+        try {
             // Single channel, FIFO processing - check network.stopped() periodically
             while (!network.stopped()) {
                 // Use timer to periodically check if network stopped
@@ -392,19 +400,14 @@ static
             spdlog::error("[peer_provider] Exception: {}", e.what());
         }
 
-        // Network stopped - signal all tasks to stop
-        // Use async_send to GUARANTEE delivery (try_send can lose messages if channel is full)
-        spdlog::info("[peer_provider:shutdown] Step 1/3: Network stopped, sending stop_request to all tasks...");
-        co_await header_download_input.async_send(std::error_code{}, stop_request{}, ::asio::use_awaitable);
-        co_await header_validation_input.async_send(std::error_code{}, stop_request{}, ::asio::use_awaitable);
-        co_await block_download_input.async_send(std::error_code{}, stop_request{}, ::asio::use_awaitable);
-        co_await block_validation_input.async_send(std::error_code{}, stop_request{}, ::asio::use_awaitable);
-        co_await coordinator_events.async_send(std::error_code{}, stop_request{}, ::asio::use_awaitable);
+        // Cancel timer before any co_await to ensure clean shutdown of || operator internals
+        check_timer.cancel();
 
-        // Close ALL channels to wake up blocked coroutines
-        // This includes both input channels (for tasks blocked in async_receive)
-        // and output channels (for tasks blocked in async_send)
-        spdlog::info("[peer_provider:shutdown] Step 2/3: Closing all channels...");
+        // Network stopped - close channels FIRST to unblock any pending sends,
+        // then send stop signals. Closing channels will wake up blocked tasks immediately.
+        // NOTE: Only close channels that are NOT read with || operator + timer.
+        // Channels using || (stop_signal) must NOT be closed here to avoid SEGV.
+        spdlog::info("[peer_provider:shutdown] Closing all data channels...");
         header_download_input.close();
         header_download_output.close();
         header_validation_input.close();
@@ -413,12 +416,10 @@ static
         downloaded_blocks.close();
         block_validation_input.close();
         validated_blocks.close();
-        peer_provider_input.close();
         coordinator_events.close();
+        // NOTE: Do NOT close stop_signal - coordinator:stop_bridge uses || with timer
 
-        stop_signal.close();
-
-        spdlog::info("[peer_provider:shutdown] Step 3/3: Task ending");
+        spdlog::info("[peer_provider:shutdown] All channels closed, task ending");
         spdlog::debug("[peer_provider] Task ended");
     });
 
@@ -450,32 +451,20 @@ static
 
                 if (auto* hdrs = std::get_if<downloaded_headers>(&msg)) {
                     // Forward to validation
-                    auto [send_ec] = co_await header_validation_input.async_send(
-                        std::error_code{},
-                        std::move(*hdrs),
-                        ::asio::as_tuple(::asio::use_awaitable));
-                    if (send_ec) {
-                        spdlog::warn("[header_bridge] Failed to send headers to validation: {}", send_ec.message());
+                    if (!header_validation_input.try_send(std::error_code{}, std::move(*hdrs))) {
+                        spdlog::warn("[header_bridge] Channel full, headers dropped");
                         break;
                     }
                 } else if (auto* failure = std::get_if<peer_failure_report>(&msg)) {
                     // Forward failure report to validation (so it can forward to coordinator)
-                    auto [send_ec] = co_await header_validation_input.async_send(
-                        std::error_code{},
-                        std::move(*failure),
-                        ::asio::as_tuple(::asio::use_awaitable));
-                    if (send_ec) {
-                        spdlog::warn("[header_bridge] Failed to send failure report to validation: {}", send_ec.message());
+                    if (!header_validation_input.try_send(std::error_code{}, std::move(*failure))) {
+                        spdlog::warn("[header_bridge] Channel full, failure report dropped");
                         break;
                     }
                 } else if (auto* perf = std::get_if<header_performance>(&msg)) {
                     // Forward performance stats to peer_provider
-                    auto [send_ec] = co_await peer_provider_input.async_send(
-                        std::error_code{},
-                        *perf,
-                        ::asio::as_tuple(::asio::use_awaitable));
-                    if (send_ec) {
-                        spdlog::debug("[header_bridge] Failed to send performance stats: {}", send_ec.message());
+                    if (!peer_provider_input.try_send(std::error_code{}, *perf)) {
+                        spdlog::debug("[header_bridge] Channel full, performance stats dropped");
                     }
                 }
             }
@@ -525,23 +514,15 @@ static
                     g_blocks_received_by_bridge.fetch_add(1, std::memory_order_relaxed);
 
                     // Forward to validation
-                    auto [send_ec] = co_await block_validation_input.async_send(
-                        std::error_code{},
-                        std::move(*block),
-                        ::asio::as_tuple(::asio::use_awaitable));
-                    if (send_ec) {
-                        spdlog::warn("[block_bridge] Failed to send block to validation: {}", send_ec.message());
+                    if (!block_validation_input.try_send(std::error_code{}, std::move(*block))) {
+                        spdlog::warn("[block_bridge] Channel full, block {} dropped", block->height);
                         break;
                     }
                     g_blocks_forwarded_by_bridge.fetch_add(1, std::memory_order_relaxed);
                 } else if (auto* perf = std::get_if<peer_performance>(&msg)) {
                     // Forward performance stats to peer_provider
-                    auto [send_ec] = co_await peer_provider_input.async_send(
-                        std::error_code{},
-                        *perf,
-                        ::asio::as_tuple(::asio::use_awaitable));
-                    if (send_ec) {
-                        spdlog::debug("[block_bridge] Failed to send performance stats: {}", send_ec.message());
+                    if (!peer_provider_input.try_send(std::error_code{}, *perf)) {
+                        spdlog::debug("[block_bridge] Channel full, performance stats dropped");
                     }
                 }
             }
@@ -594,12 +575,16 @@ static
                 // Stop signal received
                 auto [ec] = std::get<0>(event);
                 if (!ec) {
-                    coordinator_events.try_send(std::error_code{}, stop_request{});
+                    if (!coordinator_events.try_send(std::error_code{}, stop_request{})) {
+                        spdlog::warn("[coordinator:stop_bridge] Channel full, stop_request dropped");
+                    }
                 }
                 break;
             }
             // Timer fired - loop to check network.stopped()
         }
+        // Cancel timer before exiting to ensure clean shutdown of || operator internals
+        check_timer.cancel();
         spdlog::debug("[coordinator:stop_bridge] Ended");
     });
 
@@ -613,10 +598,10 @@ static
                 spdlog::debug("[coordinator:headers_bridge] Channel closed: {}", ec.message());
                 break;
             }
-            auto [send_ec] = co_await coordinator_events.async_send(
-                std::error_code{}, result,
-                ::asio::as_tuple(::asio::use_awaitable));
-            if (send_ec) break;
+            if (!coordinator_events.try_send(std::error_code{}, result)) {
+                spdlog::warn("[coordinator:headers_bridge] Channel full, headers_validated dropped");
+                break;
+            }
         }
         spdlog::debug("[coordinator:headers_bridge] Ended");
     });
@@ -631,10 +616,10 @@ static
                 spdlog::debug("[coordinator:blocks_bridge] Channel closed: {}", ec.message());
                 break;
             }
-            auto [send_ec] = co_await coordinator_events.async_send(
-                std::error_code{}, result,
-                ::asio::as_tuple(::asio::use_awaitable));
-            if (send_ec) break;
+            if (!coordinator_events.try_send(std::error_code{}, result)) {
+                spdlog::warn("[coordinator:blocks_bridge] Channel full, block_validated dropped");
+                break;
+            }
         }
         spdlog::debug("[coordinator:blocks_bridge] Ended");
     });
@@ -660,10 +645,12 @@ static
             static_cast<blockchain::header_index::index_t>(headers_synced_to));
 
         spdlog::debug("[sync_coordinator] Starting parallel header sync from height {}", headers_synced_to);
-        header_download_input.try_send(std::error_code{}, header_request{
+        if (!header_download_input.try_send(std::error_code{}, header_request{
             .from_height = headers_synced_to,
             .from_hash = from_hash
-        });
+        })) {
+            spdlog::warn("[sync_coordinator] Channel full, initial header_request dropped");
+        }
 
         // Main loop: ONLY receives from unified channel (no || operator)
         while (true) {
@@ -700,12 +687,27 @@ static
 
                     // Report error to peer_provider - it decides what to do (ban, exclude, etc.)
                     if (result->source_peer) {
-                        peer_provider_input.try_send(std::error_code{}, peer_error{
+                        if (!peer_provider_input.try_send(std::error_code{}, peer_error{
                             .peer = result->source_peer,
                             .error = result->result
-                        });
+                        })) {
+                            spdlog::warn("[sync_coordinator] Channel full, peer_error dropped for header validation");
+                        }
                     }
-                    // Supervisor will handle retry with other peers via chunk coordinator
+
+                    // Retry header sync with a different peer
+                    auto retry_hash = organizer.index().get_hash(
+                        static_cast<blockchain::header_index::index_t>(headers_synced_to));
+
+                    spdlog::info("[sync_coordinator] Retrying header sync from height {} with different peer",
+                        headers_synced_to);
+
+                    if (!header_download_input.try_send(std::error_code{}, header_request{
+                        .from_height = headers_synced_to,
+                        .from_hash = retry_hash
+                    })) {
+                        spdlog::warn("[sync_coordinator] Channel full, retry header_request dropped");
+                    }
                 } else if (result->count > 0) {
                     // Sequential header sync - track progress and request next batch
                     auto const prev_headers_synced = headers_synced_to;
@@ -727,12 +729,14 @@ static
                     auto next_hash = organizer.index().get_hash(
                         static_cast<blockchain::header_index::index_t>(headers_synced_to));
 
-                    header_download_input.try_send(std::error_code{}, header_request{
+                    if (!header_download_input.try_send(std::error_code{}, header_request{
                         .from_height = headers_synced_to,
                         .from_hash = next_hash
-                    });
-                } else if (result->count == 0) {
-                    // Tip reached - header sync complete
+                    })) {
+                        spdlog::warn("[sync_coordinator] Channel full, next batch header_request dropped");
+                    }
+                } else if (result->count == 0 && !header_sync_complete) {
+                    // Tip reached - header sync complete (guard against duplicate events)
                     header_sync_complete = true;
 
                     auto const elapsed = std::chrono::steady_clock::now() - header_sync_start;
@@ -753,14 +757,28 @@ static
 
                     // Trigger block download if we have headers ahead of blocks
                     if (headers_synced_to > blocks_synced_to) {
-                        spdlog::info("[sync_coordinator] Starting block download: {} to {} ({} blocks)",
-                            blocks_synced_to + 1, headers_synced_to,
-                            headers_synced_to - blocks_synced_to);
+                        // Determine end height based on sync stage
+                        uint32_t end_height;
+                        if (blocks_synced_to < checkpoint_height) {
+                            // Fast sync stage: only download up to checkpoint
+                            end_height = checkpoint_height;
+                            spdlog::info("[sync_coordinator] Starting FAST block sync: {} to {} ({} blocks)",
+                                blocks_synced_to + 1, end_height,
+                                end_height - blocks_synced_to);
+                        } else {
+                            // Slow sync stage: download up to headers (requires UTXO)
+                            end_height = headers_synced_to;
+                            spdlog::info("[sync_coordinator] Starting SLOW block sync: {} to {} ({} blocks)",
+                                blocks_synced_to + 1, end_height,
+                                end_height - blocks_synced_to);
+                        }
 
-                        block_download_input.try_send(std::error_code{}, block_range_request{
+                        if (!block_download_input.try_send(std::error_code{}, block_range_request{
                             .start_height = blocks_synced_to + 1,
-                            .end_height = headers_synced_to
-                        });
+                            .end_height = end_height
+                        })) {
+                            spdlog::warn("[sync_coordinator] Channel full, block_range_request dropped");
+                        }
                     } else {
                         // Already synced - wait and check for new blocks later
                         spdlog::info("[sync_coordinator] Fully synced at height {}", blocks_synced_to);
@@ -777,10 +795,12 @@ static
                         auto next_hash = organizer.index().get_hash(
                             static_cast<blockchain::header_index::index_t>(headers_synced_to));
 
-                        header_download_input.try_send(std::error_code{}, header_request{
+                        if (!header_download_input.try_send(std::error_code{}, header_request{
                             .from_height = headers_synced_to,
                             .from_hash = next_hash
-                        });
+                        })) {
+                            spdlog::warn("[sync_coordinator] Channel full, new cycle header_request dropped");
+                        }
                     }
                 }
                 continue;
@@ -790,7 +810,16 @@ static
                 if (!result->result) {
                     blocks_synced_to = result->height;
 
-                    // Check if we've caught up to headers
+                    // Check if fast sync stage is complete
+                    if (blocks_synced_to == checkpoint_height) {
+                        spdlog::info("[sync_coordinator] *** FAST SYNC COMPLETE at checkpoint {} ***",
+                            checkpoint_height);
+                        spdlog::info("[sync_coordinator] TODO: Trigger UTXO build stage");
+                        // TODO: Trigger UTXO build stage
+                        // After UTXO build completes, trigger slow sync from checkpoint+1 to headers_synced_to
+                    }
+
+                    // Check if we've caught up to headers (slow sync complete)
                     if (blocks_synced_to >= headers_synced_to && header_sync_complete) {
                         spdlog::info("[sync_coordinator] Block sync caught up to headers at {}",
                             blocks_synced_to);
@@ -801,18 +830,23 @@ static
                         result->height, result->result.message());
 
                     // Report error to peer_provider - it decides what to do
+                    spdlog::debug("[sync_coordinator] Reporting error to peer_provider...");
                     if (result->source_peer) {
-                        peer_provider_input.try_send(std::error_code{}, peer_error{
+                        if (!peer_provider_input.try_send(std::error_code{}, peer_error{
                             .peer = result->source_peer,
                             .error = result->result
-                        });
+                        })) {
+                            spdlog::warn("[sync_coordinator] Channel full, peer_error dropped");
+                        }
                     }
+                    spdlog::debug("[sync_coordinator] Breaking out of event loop...");
                     break;
                 }
                 continue;
             }
         }
 
+        spdlog::debug("[sync_coordinator] Event loop ended, task completing...");
         spdlog::debug("[sync_coordinator] Task ended");
     });
 

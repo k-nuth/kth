@@ -48,7 +48,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
 
 ::asio::awaitable<void> block_download_task(
     network::peer_session::ptr peer,
-    chunk_coordinator& coordinator,
+    std::shared_ptr<chunk_coordinator> coordinator,
     std::atomic<uint32_t>& active_peers,
     block_download_task_output_channel& output
 ) {
@@ -122,12 +122,12 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
 
     auto executor = co_await ::asio::this_coro::executor;
 
-    while (!peer->stopped() && !coordinator.is_stopped()) {
+    while (!peer->stopped() && !coordinator->is_stopped()) {
         // Claim chunk via coordinator - lock-free CAS
-        auto maybe_chunk = coordinator.claim_chunk();
+        auto maybe_chunk = coordinator->claim_chunk();
         if (!maybe_chunk) {
             // No more chunks or all slots busy - wait and retry
-            if (coordinator.is_complete() || coordinator.is_stopped()) {
+            if (coordinator->is_complete() || coordinator->is_stopped()) {
                 spdlog::debug("[block_download] Peer {} - sync complete or stopped", addr);
                 break;
             }
@@ -140,7 +140,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
 
         uint32_t chunk_id = *maybe_chunk;
         current_chunk_id = chunk_id;  // Track for exception cleanup
-        auto [chunk_start, chunk_end] = coordinator.chunk_range(chunk_id);
+        auto [chunk_start, chunk_end] = coordinator->chunk_range(chunk_id);
 
         spdlog::debug("[block_download] Peer {} claiming chunk {} (blocks {}-{})",
             addr, chunk_id, chunk_start, chunk_end);
@@ -150,7 +150,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
         blocks.reserve(chunk_end - chunk_start + 1);
 
         for (uint32_t h = chunk_start; h <= chunk_end; ++h) {
-            auto hash = coordinator.get_block_hash(h);
+            auto hash = coordinator->get_block_hash(h);
             if (hash == null_hash) {
                 spdlog::error("[block_download] No hash for height {}", h);
                 continue;
@@ -159,7 +159,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
         }
 
         if (blocks.empty()) {
-            coordinator.chunk_failed(chunk_id);
+            coordinator->chunk_failed(chunk_id);
             continue;
         }
 
@@ -174,7 +174,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
             spdlog::debug("[block_download] Peer {} failed to download chunk {}: {}",
                 addr, chunk_id, result.error().message());
             // Report failure - slot reset to FREE for retry by another peer
-            coordinator.chunk_failed(chunk_id);
+            coordinator->chunk_failed(chunk_id);
             break;
         }
 
@@ -183,7 +183,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
         if (result->size() != expected_count) {
             spdlog::warn("[block_download] Peer {} returned {} blocks for chunk {} (expected {}), failing chunk",
                 addr, result->size(), chunk_id, expected_count);
-            coordinator.chunk_failed(chunk_id);
+            coordinator->chunk_failed(chunk_id);
             continue;  // Try another chunk instead of disconnecting
         }
 
@@ -196,21 +196,16 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
         auto const current_peers = active_peers.load(std::memory_order_relaxed);
         for (auto& blk : *result) {
             auto const height = blk.height;
-            auto [send_ec] = co_await output.async_send(
-                std::error_code{},
+            if (!output.try_send(std::error_code{},
                 downloaded_block{
                     .height = height,
                     .block = std::make_shared<domain::message::block const>(std::move(blk.block)),
                     .source_peer = peer,
                     .active_peers = current_peers
-                },
-                ::asio::as_tuple(::asio::use_awaitable)
-            );
-            if (send_ec) {
-                spdlog::warn("[block_download] Failed to send block {} to channel: {}",
-                    height, send_ec.message());
-                // Channel closed - abort
-                coordinator.chunk_failed(chunk_id);
+                })) {
+                spdlog::warn("[block_download] Channel full, block {} dropped", height);
+                // Channel full/closed - abort
+                coordinator->chunk_failed(chunk_id);
                 co_return;
             }
             // Track successful sends for pipeline debugging
@@ -221,45 +216,42 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
         send_times_ms.push_back(send_ms);
 
         // Report success only after all blocks sent
-        coordinator.chunk_completed(chunk_id);
+        coordinator->chunk_completed(chunk_id);
         current_chunk_id.reset();  // Clear - chunk successfully handed off
         ++chunks_downloaded;
 
         // Report performance to peer_provider (via supervisor)
-        output.try_send(std::error_code{}, peer_performance{
+        if (!output.try_send(std::error_code{}, peer_performance{
             .peer_nonce = peer_nonce,
             .blocks_downloaded = expected_count,
             .download_time_ms = static_cast<uint32_t>(download_ms)
-        });
+        })) {
+            spdlog::debug("[block_download] Channel full, peer_performance dropped");
+        }
     }
 
     } catch (::asio::system_error const& e) {
         // Asio system errors (e.g., operation_aborted during shutdown) are expected
         spdlog::debug("[block_download] Peer {} asio error: {} ({})", addr, e.what(), e.code().value());
         if (current_chunk_id) {
-            coordinator.chunk_failed(*current_chunk_id);
+            coordinator->chunk_failed(*current_chunk_id);
         }
     } catch (std::exception const& e) {
         spdlog::error("[block_download] Peer {} exception: {}", addr, e.what());
         if (current_chunk_id) {
-            coordinator.chunk_failed(*current_chunk_id);
+            coordinator->chunk_failed(*current_chunk_id);
         }
     } catch (...) {
         spdlog::error("[block_download] Peer {} unknown exception", addr);
         if (current_chunk_id) {
-            coordinator.chunk_failed(*current_chunk_id);
+            coordinator->chunk_failed(*current_chunk_id);
         }
     }
 
     // Notify supervisor that this task is ending (CSP: communicate via channel)
     spdlog::debug("[block_download:shutdown] Peer {} - sending task_ended notification...", addr);
-    auto [send_ec] = co_await output.async_send(
-        std::error_code{},
-        download_task_ended{peer_nonce},
-        ::asio::as_tuple(::asio::use_awaitable)
-    );
-    if (send_ec) {
-        spdlog::debug("[block_download:shutdown] Failed to send task_ended for peer {}: {}", addr, send_ec.message());
+    if (!output.try_send(std::error_code{}, download_task_ended{peer_nonce})) {
+        spdlog::debug("[block_download:shutdown] Channel full, task_ended dropped for peer {}", addr);
     }
 
     spdlog::info("[block_download:shutdown] Peer {} task exiting cleanly (downloaded {} chunks)", addr, chunks_downloaded);
@@ -281,7 +273,9 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
     task_group tasks(executor);
 
     // Coordinator - created when we get a range
-    std::unique_ptr<chunk_coordinator> coordinator;
+    // NOTE: Using shared_ptr so download tasks can safely hold a reference even if
+    // a new range request arrives. Each task keeps the old coordinator alive until done.
+    std::shared_ptr<chunk_coordinator> coordinator;
     std::atomic<uint32_t> active_peers{0};
 
     // Track peers that already have running download tasks (by nonce)
@@ -318,7 +312,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
         spawned_peers.insert(nonce);
         tasks.spawn(block_download_task(
             peer,
-            *coordinator,
+            coordinator,  // Pass shared_ptr - task keeps coordinator alive until done
             active_peers,
             task_output
         ));
@@ -336,10 +330,10 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
             auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
             if (ec || !timer_running.load(std::memory_order_relaxed)) break;
             // Send timeout message to unified channel
-            auto [send_ec] = co_await events.async_send(
-                std::error_code{}, supervisor_timeout{},
-                ::asio::as_tuple(::asio::use_awaitable));
-            if (send_ec) break;
+            if (!events.try_send(std::error_code{}, supervisor_timeout{})) {
+                spdlog::debug("[block_supervisor:timer] Channel full, timeout dropped");
+                break;
+            }
         }
         spdlog::debug("[block_supervisor:timer] Ended");
     });
@@ -354,25 +348,29 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
                 ::asio::as_tuple(::asio::use_awaitable));
             if (ec) {
                 spdlog::debug("[block_supervisor:input_bridge] Channel closed: {}", ec.message());
+                // Notify main loop to exit by sending stop_request
+                if (!events.try_send(std::error_code{}, stop_request{})) {
+                    spdlog::warn("[block_supervisor:input_bridge] Channel full, stop_request on close dropped");
+                }
                 break;
             }
-            // Forward to unified channel - use async_send to never lose messages
-            auto forward = [&](auto&& m) -> ::asio::awaitable<bool> {
-                auto [send_ec] = co_await events.async_send(
-                    std::error_code{}, std::forward<decltype(m)>(m),
-                    ::asio::as_tuple(::asio::use_awaitable));
-                co_return !send_ec;
-            };
-
-            bool ok = true;
+            // Forward to unified channel
             if (std::holds_alternative<stop_request>(msg)) {
-                ok = co_await forward(stop_request{});
+                if (!events.try_send(std::error_code{}, stop_request{})) {
+                    spdlog::warn("[block_supervisor:input_bridge] Channel full, stop_request dropped");
+                }
+                break;  // Exit after forwarding stop signal
             } else if (auto* peers = std::get_if<peers_updated>(&msg)) {
-                ok = co_await forward(*peers);
+                if (!events.try_send(std::error_code{}, *peers)) {
+                    spdlog::warn("[block_supervisor:input_bridge] Channel full, peers_updated dropped");
+                    break;
+                }
             } else if (auto* range = std::get_if<block_range_request>(&msg)) {
-                ok = co_await forward(*range);
+                if (!events.try_send(std::error_code{}, *range)) {
+                    spdlog::warn("[block_supervisor:input_bridge] Channel full, block_range_request dropped");
+                    break;
+                }
             }
-            if (!ok) break;
         }
         spdlog::debug("[block_supervisor:input_bridge] Ended");
     });
@@ -389,29 +387,26 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
                 spdlog::debug("[block_supervisor:task_bridge] Channel closed: {}", ec.message());
                 break;
             }
-            // Forward to unified channel - use async_send to never lose messages
-            std::error_code send_ec;
+            // Forward to unified channel
+            bool send_ok = true;
             if (auto* block = std::get_if<downloaded_block>(&msg)) {
                 g_blocks_received_by_supervisor.fetch_add(1, std::memory_order_relaxed);
-                auto [err] = co_await events.async_send(
-                    std::error_code{}, std::move(*block),
-                    ::asio::as_tuple(::asio::use_awaitable));
-                send_ec = err;
+                if (!events.try_send(std::error_code{}, std::move(*block))) {
+                    spdlog::warn("[block_supervisor:task_bridge] Channel full, block dropped");
+                    send_ok = false;
+                }
             } else if (auto* ended = std::get_if<download_task_ended>(&msg)) {
-                auto [err] = co_await events.async_send(
-                    std::error_code{}, *ended,
-                    ::asio::as_tuple(::asio::use_awaitable));
-                send_ec = err;
+                if (!events.try_send(std::error_code{}, *ended)) {
+                    spdlog::debug("[block_supervisor:task_bridge] Channel full, task_ended dropped");
+                    send_ok = false;
+                }
             } else if (auto* perf = std::get_if<peer_performance>(&msg)) {
-                auto [err] = co_await events.async_send(
-                    std::error_code{}, *perf,
-                    ::asio::as_tuple(::asio::use_awaitable));
-                send_ec = err;
+                if (!events.try_send(std::error_code{}, *perf)) {
+                    spdlog::debug("[block_supervisor:task_bridge] Channel full, peer_performance dropped");
+                    // Non-critical, continue
+                }
             }
-            if (send_ec) {
-                spdlog::debug("[block_supervisor:task_bridge] Send failed: {}", send_ec.message());
-                break;
-            }
+            if (!send_ok) break;
         }
         spdlog::debug("[block_supervisor:task_bridge] Ended");
     });
@@ -441,13 +436,8 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
             auto const height = block->height;
 
             // Forward block to validation
-            auto [send_ec] = co_await output.async_send(
-                std::error_code{},
-                std::move(*block),
-                ::asio::as_tuple(::asio::use_awaitable)
-            );
-            if (send_ec) {
-                spdlog::warn("[block_supervisor] Failed to forward block {} to validation: {}", height, send_ec.message());
+            if (!output.try_send(std::error_code{}, std::move(*block))) {
+                spdlog::warn("[block_supervisor] Channel full, block {} dropped", height);
             } else {
                 // Track successful forward for pipeline debugging
                 g_blocks_forwarded_by_supervisor.fetch_add(1, std::memory_order_relaxed);
@@ -476,8 +466,15 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
                 request->start_height, request->end_height,
                 request->end_height - request->start_height + 1);
 
+            // Stop old coordinator if one exists - this signals running tasks to exit gracefully
+            // Tasks hold shared_ptr so old coordinator stays alive until they finish
+            if (coordinator) {
+                spdlog::debug("[block_supervisor] Stopping old coordinator before creating new one");
+                coordinator->stop();
+            }
+
             // Create new coordinator for this range
-            coordinator = std::make_unique<chunk_coordinator>(
+            coordinator = std::make_shared<chunk_coordinator>(
                 organizer.index(),
                 request->start_height,
                 request->end_height
@@ -527,11 +524,8 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
 
         if (auto* perf = std::get_if<peer_performance>(&msg)) {
             // Forward performance stats through output (bridge will route to peer_provider)
-            auto [send_ec] = co_await output.async_send(
-                std::error_code{}, *perf,
-                ::asio::as_tuple(::asio::use_awaitable));
-            if (send_ec) {
-                spdlog::debug("[block_supervisor] Failed to send performance stats: {}", send_ec.message());
+            if (!output.try_send(std::error_code{}, *perf)) {
+                spdlog::debug("[block_supervisor] Channel full, peer_performance dropped");
             }
             continue;
         }
@@ -548,9 +542,9 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
         coordinator->stop();
     }
 
-    // Close channels BEFORE waiting - this unblocks any download tasks and bridges
-    spdlog::info("[block_supervisor:shutdown] Step 3/5: Closing channels...");
-    output.close();
+    // Close internal channels BEFORE waiting - this unblocks any download tasks and bridges
+    // NOTE: Don't close `output` - it's owned by sync_orchestrator, peer_provider closes it
+    spdlog::info("[block_supervisor:shutdown] Step 3/5: Closing internal channels...");
     task_output.close();
     events.close();
 
@@ -814,11 +808,13 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
                 push_times.push_back(to_us(v.start_push, v.end_push));
             }
 
-            output.try_send(std::error_code{}, block_validated{
+            if (!output.try_send(std::error_code{}, block_validated{
                 .height = next_height,
                 .result = result,
                 .source_peer = it->second.source_peer
-            });
+            })) {
+                spdlog::warn("[block_validation] Channel full, block_validated {} dropped", next_height);
+            }
 
             pending.erase(it);
             ++next_height;
@@ -955,8 +951,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
         }
     }
 
-    // Close output channel to signal coordinator
-    output.close();
+    // NOTE: Don't close output channel here - peer_provider closes all channels during shutdown
     spdlog::debug("[block_validation] Task ended, validated {} blocks", validated_count);
 }
 
