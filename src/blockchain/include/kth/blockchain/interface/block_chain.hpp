@@ -15,6 +15,9 @@
 
 #include <kth/infrastructure/utility/atomic.hpp>
 
+#include <boost/unordered/unordered_flat_map.hpp>
+#include <boost/unordered/unordered_flat_set.hpp>
+
 #include <kth/database.hpp>
 #include <kth/domain.hpp>
 
@@ -115,6 +118,24 @@ struct KB_API block_chain {
     [[nodiscard]] code push_sync(transaction_const_ptr tx);
     [[nodiscard]] bool insert(block_const_ptr block, size_t height);
     void prune_reorg_async();
+
+    // Apply a batch of UTXO changes (for UTXO set building after fast IBD)
+    [[nodiscard]]
+    database::result_code apply_utxo_delta(
+        boost::unordered_flat_map<domain::chain::point, database::utxo_entry> const& inserts,
+        boost::unordered_flat_set<domain::chain::point> const& deletes
+    );
+
+    // Get/set the last block height for which UTXO set was built
+    [[nodiscard]]
+    std::expected<uint32_t, database::result_code> get_utxo_built_height() const;
+
+    [[nodiscard]]
+    database::result_code set_utxo_built_height(uint32_t height);
+
+    // TODO(fernando): TEMPORARY - REMOVE THIS METHOD AFTER TESTING UTXO BUILD
+    [[nodiscard]]
+    database::result_code clear_utxo_set();
 #endif
 
     // =========================================================================

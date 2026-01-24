@@ -416,6 +416,100 @@ result_code internal_database_basis<Clock>::push_block_fast(domain::chain::block
     return result_code::success;
 }
 
+template <typename Clock>
+result_code internal_database_basis<Clock>::apply_utxo_delta(
+    boost::unordered_flat_map<domain::chain::point, utxo_entry> const& inserts,
+    boost::unordered_flat_set<domain::chain::point> const& deletes
+) {
+    KTH_DB_txn* db_txn;
+    auto res0 = kth_db_txn_begin(env_, NULL, 0, &db_txn);
+    if (res0 != KTH_DB_SUCCESS) {
+        spdlog::error("[database] Error beginning LMDB Transaction [apply_utxo_delta] {}", res0);
+        return result_code::other;
+    }
+
+    // 1. First, remove all UTXOs that were spent
+    for (auto const& point : deletes) {
+        auto res = remove_utxo(0, point, false, db_txn);
+        if (res != result_code::success && res != result_code::key_not_found) {
+            spdlog::error("[database] Error removing UTXO [apply_utxo_delta]");
+            kth_db_txn_abort(db_txn);
+            return res;
+        }
+    }
+
+    // 2. Then, insert all new UTXOs
+    for (auto const& [point, entry] : inserts) {
+        auto fixed = utxo_entry::to_data_fixed(entry.height(), entry.median_time_past(), entry.coinbase());
+        auto res = insert_utxo(point, entry.output(), fixed, db_txn);
+        if (res != result_code::success && res != result_code::duplicated_key) {
+            spdlog::error("[database] Error inserting UTXO [apply_utxo_delta]");
+            kth_db_txn_abort(db_txn);
+            return res;
+        }
+    }
+
+    auto res2 = kth_db_txn_commit(db_txn);
+    if (res2 != KTH_DB_SUCCESS) {
+        spdlog::error("[database] Error committing LMDB Transaction [apply_utxo_delta] {}", res2);
+        return result_code::other;
+    }
+
+    spdlog::info("[database] Applied UTXO delta: {} inserts, {} deletes", inserts.size(), deletes.size());
+    return result_code::success;
+}
+
+// TODO(fernando): TEMPORARY - REMOVE THIS METHOD AFTER TESTING UTXO BUILD
+template <typename Clock>
+result_code internal_database_basis<Clock>::clear_utxo_set() {
+    spdlog::warn("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    spdlog::warn("!!!  CLEARING UTXO SET - THIS IS TEMPORARY DEBUG CODE     !!!");
+    spdlog::warn("!!!  TODO: REMOVE clear_utxo_set() AFTER TESTING          !!!");
+    spdlog::warn("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    KTH_DB_txn* db_txn;
+    auto res0 = kth_db_txn_begin(env_, NULL, 0, &db_txn);
+    if (res0 != KTH_DB_SUCCESS) {
+        spdlog::error("[database] Error beginning LMDB Transaction [clear_utxo_set] {}", res0);
+        return result_code::other;
+    }
+
+    // mdb_drop with del=0 empties the database but keeps it
+    auto res = mdb_drop(db_txn, dbi_utxo_, 0);
+    if (res != MDB_SUCCESS) {
+        spdlog::error("[database] Error clearing UTXO database [clear_utxo_set] {}", res);
+        kth_db_txn_abort(db_txn);
+        return result_code::other;
+    }
+
+    // Also reset the utxo_built_height property to 0
+    auto res_prop = set_property_height(property_code::utxo_built_height, 0, db_txn);
+    if (res_prop != result_code::success) {
+        spdlog::warn("[database] Failed to reset utxo_built_height property");
+    }
+
+    auto res2 = kth_db_txn_commit(db_txn);
+    if (res2 != KTH_DB_SUCCESS) {
+        spdlog::error("[database] Error committing LMDB Transaction [clear_utxo_set] {}", res2);
+        return result_code::other;
+    }
+
+    spdlog::warn("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    spdlog::warn("!!!  UTXO SET CLEARED SUCCESSFULLY                        !!!");
+    spdlog::warn("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    return result_code::success;
+}
+
+template <typename Clock>
+std::expected<uint32_t, result_code> internal_database_basis<Clock>::get_utxo_built_height() const {
+    return get_property_height(property_code::utxo_built_height, nullptr);
+}
+
+template <typename Clock>
+result_code internal_database_basis<Clock>::set_utxo_built_height(uint32_t height) {
+    return set_property_height(property_code::utxo_built_height, height);
+}
+
 #endif // ! defined(KTH_DB_READONLY)
 
 

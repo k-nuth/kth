@@ -375,6 +375,26 @@ void block_chain::prune_reorg_async() {
     }
 }
 
+database::result_code block_chain::apply_utxo_delta(
+    boost::unordered_flat_map<domain::chain::point, database::utxo_entry> const& inserts,
+    boost::unordered_flat_set<domain::chain::point> const& deletes
+) {
+    return database_.internal_db().apply_utxo_delta(inserts, deletes);
+}
+
+std::expected<uint32_t, database::result_code> block_chain::get_utxo_built_height() const {
+    return database_.internal_db().get_utxo_built_height();
+}
+
+database::result_code block_chain::set_utxo_built_height(uint32_t height) {
+    return database_.internal_db().set_utxo_built_height(height);
+}
+
+// TODO(fernando): TEMPORARY - REMOVE THIS METHOD AFTER TESTING UTXO BUILD
+database::result_code block_chain::clear_utxo_set() {
+    return database_.internal_db().clear_utxo_set();
+}
+
 #endif // ! defined(KTH_DB_READONLY)
 
 // =============================================================================

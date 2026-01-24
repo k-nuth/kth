@@ -19,6 +19,7 @@ enum class property_code {
     db_mode = 0,
     last_header_height = 1,
     last_block_height = 2,
+    utxo_built_height = 3,  // Last block height for which UTXO set was built
 };
 
 enum class db_mode_type {

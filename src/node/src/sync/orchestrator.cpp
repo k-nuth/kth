@@ -16,6 +16,7 @@
 #include <asio/experimental/awaitable_operators.hpp>
 
 #include <kth/infrastructure/utility/task_group.hpp>
+#include <kth/blockchain/utxo_builder.hpp>
 #include <kth/node/sync/header_tasks.hpp>
 #include <kth/node/sync/block_tasks.hpp>
 
@@ -544,6 +545,58 @@ static
     uint32_t const checkpoint_height = uint32_t(chain.chain_settings().max_checkpoint_height);
     spdlog::info("[sync_orchestrator] Fast IBD mode up to checkpoint height {}", checkpoint_height);
 
+    // =========================================================================
+    // TODO(fernando): TEMPORARY - REMOVE THIS BLOCK AFTER TESTING UTXO BUILD
+    // =========================================================================
+    {
+        spdlog::warn("##############################################################");
+        spdlog::warn("###                                                        ###");
+        spdlog::warn("###   !!! TEMPORARY DEBUG CODE - CLEARING UTXO SET !!!     ###");
+        spdlog::warn("###   !!! REMOVE THIS AFTER TESTING IS COMPLETE   !!!      ###");
+        spdlog::warn("###                                                        ###");
+        spdlog::warn("##############################################################");
+
+        auto clear_result = chain.clear_utxo_set();
+        if (clear_result != database::result_code::success) {
+            spdlog::error("[sync_orchestrator] Failed to clear UTXO set!");
+        }
+
+        spdlog::warn("##############################################################");
+        spdlog::warn("###   UTXO SET CLEARED - WILL REBUILD FROM SCRATCH         ###");
+        spdlog::warn("##############################################################");
+    }
+    // =========================================================================
+    // END TEMPORARY CODE
+    // =========================================================================
+
+    // Check if we need to build UTXO set on startup
+    // This happens when fast sync completed in a previous session but UTXO wasn't built
+    if (initial_block_height >= checkpoint_height) {
+        auto utxo_height = chain.get_utxo_built_height();
+        uint32_t current_utxo_height = utxo_height.value_or(0);
+
+        if (current_utxo_height < checkpoint_height) {
+            spdlog::info("[sync_orchestrator] UTXO set incomplete (at {}), building to checkpoint {}...",
+                current_utxo_height, checkpoint_height);
+
+            auto utxo_result = co_await blockchain::build_utxo_set(
+                chain,
+                network.thread_pool().get(),
+                1,  // Start from block 1 (skip genesis)
+                checkpoint_height
+            );
+
+            if (utxo_result != database::result_code::success) {
+                spdlog::error("[sync_orchestrator] UTXO build failed on startup!");
+                co_return;
+            }
+
+            spdlog::info("[sync_orchestrator] UTXO set build complete on startup");
+        } else {
+            spdlog::info("[sync_orchestrator] UTXO set already built to height {}", current_utxo_height);
+        }
+    }
+
     all_tasks.spawn(block_validation_task(
         chain,
         block_validation_input,
@@ -814,9 +867,24 @@ static
                     if (blocks_synced_to == checkpoint_height) {
                         spdlog::info("[sync_coordinator] *** FAST SYNC COMPLETE at checkpoint {} ***",
                             checkpoint_height);
-                        spdlog::info("[sync_coordinator] TODO: Trigger UTXO build stage");
-                        // TODO: Trigger UTXO build stage
-                        // After UTXO build completes, trigger slow sync from checkpoint+1 to headers_synced_to
+                        spdlog::info("[sync_coordinator] Starting UTXO set build...");
+
+                        // Build UTXO set from all stored blocks
+                        auto utxo_result = co_await blockchain::build_utxo_set(
+                            chain,
+                            network.thread_pool().get(),
+                            1,  // Start from block 1 (skip genesis)
+                            checkpoint_height
+                        );
+
+                        if (utxo_result != database::result_code::success) {
+                            spdlog::error("[sync_coordinator] UTXO build failed!");
+                            break;
+                        }
+
+                        spdlog::info("[sync_coordinator] UTXO set build complete, ready for slow sync");
+                        // After UTXO build completes, slow sync continues automatically
+                        // from checkpoint+1 to headers_synced_to
                     }
 
                     // Check if we've caught up to headers (slow sync complete)

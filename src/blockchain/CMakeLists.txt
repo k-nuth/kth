@@ -149,6 +149,7 @@ set(kth_sources_just_legacy
   src/validate/validate_input.cpp
   src/validate/validate_transaction.cpp
   src/settings.cpp
+  src/utxo_builder.cpp
 )
 
 if (NOT JUST_KTH_SOURCES)

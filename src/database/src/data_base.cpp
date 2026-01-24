@@ -120,6 +120,10 @@ internal_database const& data_base::internal_db() const {
     return *internal_db_;
 }
 
+internal_database& data_base::internal_db() {
+    return *internal_db_;
+}
+
 // Synchronous writers.
 // ----------------------------------------------------------------------------
 

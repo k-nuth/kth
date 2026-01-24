@@ -61,6 +61,7 @@ public:
     // ------------------------------------------------------------------------
 
     internal_database const& internal_db() const;
+    internal_database& internal_db();
 
     // Synchronous writers.
     // ------------------------------------------------------------------------

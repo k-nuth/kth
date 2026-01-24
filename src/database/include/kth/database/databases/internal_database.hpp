@@ -11,6 +11,8 @@
 
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/interprocess/mapped_region.hpp>
+#include <boost/unordered/unordered_flat_map.hpp>
+#include <boost/unordered/unordered_flat_set.hpp>
 
 #include <kth/database/databases/generic_db.hpp>
 #include <kth/database/databases/property_code.hpp>
@@ -111,6 +113,22 @@ struct KD_API internal_database_basis {
 
     // Fast IBD: store only block data without UTXO updates (for blocks under checkpoint)
     result_code push_block_fast(domain::chain::block const& block, uint32_t height);
+
+    // Apply a batch of UTXO changes (for UTXO set building after fast IBD)
+    // - inserts: UTXOs to add (point -> utxo_entry)
+    // - deletes: UTXOs to remove (points)
+    result_code apply_utxo_delta(
+        boost::unordered_flat_map<domain::chain::point, utxo_entry> const& inserts,
+        boost::unordered_flat_set<domain::chain::point> const& deletes
+    );
+
+    // TODO(fernando): TEMPORARY - REMOVE THIS METHOD AFTER TESTING UTXO BUILD
+    // Clears the entire UTXO set for testing purposes
+    result_code clear_utxo_set();
+
+    // Get/set the last block height for which UTXO set was built
+    std::expected<uint32_t, result_code> get_utxo_built_height() const;
+    result_code set_utxo_built_height(uint32_t height);
 
     // Headers-first sync: store header without full block data (ABLA state = zeros)
     result_code push_header(domain::chain::header const& header, uint32_t height);
