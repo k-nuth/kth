@@ -115,11 +115,11 @@ struct KD_API internal_database_basis {
     result_code push_block_fast(domain::chain::block const& block, uint32_t height);
 
     // Apply a batch of UTXO changes (for UTXO set building after fast IBD)
-    // - inserts: UTXOs to add (point -> utxo_entry)
-    // - deletes: UTXOs to remove (points)
+    // - inserts: UTXOs to add (point -> utxo_entry, entry contains height)
+    // - deletes: UTXOs to remove (point -> height for traceability)
     result_code apply_utxo_delta(
         boost::unordered_flat_map<domain::chain::point, utxo_entry> const& inserts,
-        boost::unordered_flat_set<domain::chain::point> const& deletes
+        boost::unordered_flat_map<domain::chain::point, uint32_t> const& deletes
     );
 
     // TODO(fernando): TEMPORARY - REMOVE THIS METHOD AFTER TESTING UTXO BUILD
@@ -168,6 +168,10 @@ struct KD_API internal_database_basis {
 
     std::expected<std::pair<domain::chain::block, uint32_t>, result_code> get_block(hash_digest const& hash) const;
     std::expected<domain::chain::block, result_code> get_block(uint32_t height) const;
+    std::expected<domain::chain::block::list, result_code> get_blocks(uint32_t from, uint32_t to) const;
+
+    // Raw block data (without deserialization) - for performance measurement
+    std::expected<std::vector<data_chunk>, result_code> get_blocks_raw(uint32_t from, uint32_t to) const;
 
     std::expected<transaction_entry, result_code> get_transaction(hash_digest const& hash, size_t fork_height) const;
 

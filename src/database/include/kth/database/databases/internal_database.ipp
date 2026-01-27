@@ -419,7 +419,7 @@ result_code internal_database_basis<Clock>::push_block_fast(domain::chain::block
 template <typename Clock>
 result_code internal_database_basis<Clock>::apply_utxo_delta(
     boost::unordered_flat_map<domain::chain::point, utxo_entry> const& inserts,
-    boost::unordered_flat_set<domain::chain::point> const& deletes
+    boost::unordered_flat_map<domain::chain::point, uint32_t> const& deletes
 ) {
     KTH_DB_txn* db_txn;
     auto res0 = kth_db_txn_begin(env_, NULL, 0, &db_txn);
@@ -429,10 +429,10 @@ result_code internal_database_basis<Clock>::apply_utxo_delta(
     }
 
     // 1. First, remove all UTXOs that were spent
-    for (auto const& point : deletes) {
+    for (auto const& [point, height] : deletes) {
         auto res = remove_utxo(0, point, false, db_txn);
         if (res != result_code::success && res != result_code::key_not_found) {
-            spdlog::error("[database] Error removing UTXO [apply_utxo_delta]");
+            spdlog::error("[database] Error removing UTXO from block {} [apply_utxo_delta]", height);
             kth_db_txn_abort(db_txn);
             return res;
         }
@@ -443,7 +443,7 @@ result_code internal_database_basis<Clock>::apply_utxo_delta(
         auto fixed = utxo_entry::to_data_fixed(entry.height(), entry.median_time_past(), entry.coinbase());
         auto res = insert_utxo(point, entry.output(), fixed, db_txn);
         if (res != result_code::success && res != result_code::duplicated_key) {
-            spdlog::error("[database] Error inserting UTXO [apply_utxo_delta]");
+            spdlog::error("[database] Error inserting UTXO from block {} [apply_utxo_delta]", entry.height());
             kth_db_txn_abort(db_txn);
             return res;
         }

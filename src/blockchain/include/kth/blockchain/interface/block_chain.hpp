@@ -19,6 +19,7 @@
 #include <boost/unordered/unordered_flat_set.hpp>
 
 #include <kth/database.hpp>
+#include <kth/database/databases/utxoz_database.hpp>
 #include <kth/domain.hpp>
 
 #include <kth/blockchain/define.hpp>
@@ -123,7 +124,7 @@ struct KB_API block_chain {
     [[nodiscard]]
     database::result_code apply_utxo_delta(
         boost::unordered_flat_map<domain::chain::point, database::utxo_entry> const& inserts,
-        boost::unordered_flat_set<domain::chain::point> const& deletes
+        boost::unordered_flat_map<domain::chain::point, uint32_t> const& deletes
     );
 
     // Get/set the last block height for which UTXO set was built
@@ -136,6 +137,15 @@ struct KB_API block_chain {
     // TODO(fernando): TEMPORARY - REMOVE THIS METHOD AFTER TESTING UTXO BUILD
     [[nodiscard]]
     database::result_code clear_utxo_set();
+
+    // UTXO-Z maintenance operations
+    [[nodiscard]]
+    size_t utxo_deferred_deletions_size() const;
+
+    [[nodiscard]]
+    std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>> utxo_process_pending_deletions();
+
+    void utxo_compact();
 #endif
 
     // =========================================================================
@@ -234,6 +244,14 @@ struct KB_API block_chain {
 
     [[nodiscard]] awaitable_expected<std::pair<block_const_ptr, size_t>>
     fetch_block(hash_digest const& hash) const;
+
+    // Batch fetch: single LMDB transaction for multiple blocks (optimized for UTXO building)
+    [[nodiscard]] std::expected<domain::chain::block::list, database::result_code>
+    fetch_blocks(uint32_t from, uint32_t to) const;
+
+    // Raw batch fetch: returns serialized block data without deserialization
+    [[nodiscard]] std::expected<std::vector<data_chunk>, database::result_code>
+    fetch_blocks_raw(uint32_t from, uint32_t to) const;
 
     [[nodiscard]] awaitable_expected<std::pair<header_ptr, size_t>>
     fetch_block_header(size_t height) const;
@@ -394,6 +412,9 @@ private:
     transaction_organizer transaction_organizer_;
     block_organizer block_organizer_;
     header_index header_index_;
+
+    // UTXO-Z high-performance UTXO database
+    database::utxoz_database utxoz_db_;
 };
 
 } // namespace kth::blockchain

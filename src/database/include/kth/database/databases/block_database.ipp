@@ -131,6 +131,154 @@ std::expected<domain::chain::block, result_code> internal_database_basis<Clock>:
     return get_block_reorg(height, db_txn);
 }
 
+//public
+template <typename Clock>
+std::expected<domain::chain::block::list, result_code> internal_database_basis<Clock>::get_blocks(uint32_t from, uint32_t to) const {
+    // precondition: from <= to
+    // Only supports db_mode_type::blocks
+    if (db_mode_ != db_mode_type::blocks) {
+        return std::unexpected(result_code::other);
+    }
+
+    domain::chain::block::list list;
+    list.reserve(to - from + 1);
+
+    KTH_DB_txn* db_txn;
+    auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
+    if (res != KTH_DB_SUCCESS) {
+        return std::unexpected(result_code::other);
+    }
+
+    KTH_DB_cursor* cursor;
+    if (kth_db_cursor_open(db_txn, dbi_block_db_, &cursor) != KTH_DB_SUCCESS) {
+        kth_db_txn_commit(db_txn);
+        return std::unexpected(result_code::other);
+    }
+
+    auto key = kth_db_make_value(sizeof(from), &from);
+    KTH_DB_val value;
+
+    int rc = kth_db_cursor_get(cursor, &key, &value, KTH_DB_SET);
+    if (rc == KTH_DB_NOTFOUND) {
+        kth_db_cursor_close(cursor);
+        kth_db_txn_commit(db_txn);
+        return std::unexpected(result_code::key_not_found);
+    }
+    if (rc != KTH_DB_SUCCESS) {
+        kth_db_cursor_close(cursor);
+        kth_db_txn_commit(db_txn);
+        return std::unexpected(result_code::other);
+    }
+
+    // Process first block
+    {
+        auto data = db_value_to_data_chunk(value);
+        byte_reader reader(data);
+        auto block_res = domain::chain::block::from_data(reader);
+        if ( ! block_res) {
+            kth_db_cursor_close(cursor);
+            kth_db_txn_commit(db_txn);
+            return std::unexpected(result_code::other);
+        }
+        list.push_back(std::move(*block_res));
+    }
+
+    // Process remaining blocks
+    for (uint32_t h = from + 1; h <= to; ++h) {
+        rc = kth_db_cursor_get(cursor, &key, &value, KTH_DB_NEXT);
+        if (rc == KTH_DB_NOTFOUND) {
+            break;  // No more blocks
+        }
+        if (rc != KTH_DB_SUCCESS) {
+            kth_db_cursor_close(cursor);
+            kth_db_txn_commit(db_txn);
+            return std::unexpected(result_code::other);
+        }
+
+        auto data = db_value_to_data_chunk(value);
+        byte_reader reader(data);
+        auto block_res = domain::chain::block::from_data(reader);
+        if ( ! block_res) {
+            kth_db_cursor_close(cursor);
+            kth_db_txn_commit(db_txn);
+            return std::unexpected(result_code::other);
+        }
+        list.push_back(std::move(*block_res));
+    }
+
+    kth_db_cursor_close(cursor);
+
+    if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
+        return std::unexpected(result_code::other);
+    }
+
+    return list;
+}
+
+//public
+template <typename Clock>
+std::expected<std::vector<data_chunk>, result_code> internal_database_basis<Clock>::get_blocks_raw(uint32_t from, uint32_t to) const {
+    // precondition: from <= to
+    // Only supports db_mode_type::blocks
+    if (db_mode_ != db_mode_type::blocks) {
+        return std::unexpected(result_code::other);
+    }
+
+    std::vector<data_chunk> list;
+    list.reserve(to - from + 1);
+
+    KTH_DB_txn* db_txn;
+    auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
+    if (res != KTH_DB_SUCCESS) {
+        return std::unexpected(result_code::other);
+    }
+
+    KTH_DB_cursor* cursor;
+    if (kth_db_cursor_open(db_txn, dbi_block_db_, &cursor) != KTH_DB_SUCCESS) {
+        kth_db_txn_commit(db_txn);
+        return std::unexpected(result_code::other);
+    }
+
+    auto key = kth_db_make_value(sizeof(from), &from);
+    KTH_DB_val value;
+
+    int rc = kth_db_cursor_get(cursor, &key, &value, KTH_DB_SET);
+    if (rc == KTH_DB_NOTFOUND) {
+        kth_db_cursor_close(cursor);
+        kth_db_txn_commit(db_txn);
+        return std::unexpected(result_code::key_not_found);
+    }
+    if (rc != KTH_DB_SUCCESS) {
+        kth_db_cursor_close(cursor);
+        kth_db_txn_commit(db_txn);
+        return std::unexpected(result_code::other);
+    }
+
+    // Process first block
+    list.push_back(db_value_to_data_chunk(value));
+
+    // Process remaining blocks
+    for (uint32_t h = from + 1; h <= to; ++h) {
+        rc = kth_db_cursor_get(cursor, &key, &value, KTH_DB_NEXT);
+        if (rc == KTH_DB_NOTFOUND) {
+            break;  // No more blocks
+        }
+        if (rc != KTH_DB_SUCCESS) {
+            kth_db_cursor_close(cursor);
+            kth_db_txn_commit(db_txn);
+            return std::unexpected(result_code::other);
+        }
+        list.push_back(db_value_to_data_chunk(value));
+    }
+
+    kth_db_cursor_close(cursor);
+
+    if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
+        return std::unexpected(result_code::other);
+    }
+
+    return list;
+}
 
 #if ! defined(KTH_DB_READONLY)
 

@@ -16,3 +16,14 @@ hosts.cache
 banlist.dat
 other-nodes/
 build_asan/
+
+# Reference code
+bchn/
+
+# Data directories
+/blockchain/
+
+# Temp logs
+*.log.bk
+stdout*.txt
+fio.log

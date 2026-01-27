@@ -34,6 +34,8 @@
 #include <asio/use_awaitable.hpp>
 #include <asio/experimental/concurrent_channel.hpp>
 
+#include <utxoz/logging.hpp>
+
 namespace kth {
 
 time_t floor_subtract(time_t left, time_t right) {
@@ -126,6 +128,15 @@ bool block_chain::start() {
         spdlog::error("[blockchain] Failed to open database.");
         return false;
     }
+
+    // Open UTXO-Z database (in a subdirectory of the main database)
+    utxoz::set_log_prefix("UTXO-Z");
+    auto utxoz_path = database_.internal_db_dir.parent_path() / "utxoz";
+    if ( ! utxoz_db_.open(utxoz_path)) {
+        spdlog::error("[blockchain] Failed to open UTXO-Z database at {}", utxoz_path.string());
+        return false;
+    }
+    spdlog::info("[blockchain] UTXO-Z database opened at {}", utxoz_path.string());
 
     pool_state_ = chain_state_populator_.populate();
     if ( ! pool_state_) {
@@ -224,6 +235,7 @@ bool block_chain::stop() {
 bool block_chain::close() {
     auto const result = stop();
     priority_pool_.join();
+    utxoz_db_.close();
     return result && database_.close();
 }
 
@@ -377,9 +389,10 @@ void block_chain::prune_reorg_async() {
 
 database::result_code block_chain::apply_utxo_delta(
     boost::unordered_flat_map<domain::chain::point, database::utxo_entry> const& inserts,
-    boost::unordered_flat_set<domain::chain::point> const& deletes
+    boost::unordered_flat_map<domain::chain::point, uint32_t> const& deletes
 ) {
-    return database_.internal_db().apply_utxo_delta(inserts, deletes);
+    // Use UTXO-Z high-performance database
+    return utxoz_db_.apply_delta(inserts, deletes);
 }
 
 std::expected<uint32_t, database::result_code> block_chain::get_utxo_built_height() const {
@@ -393,6 +406,18 @@ database::result_code block_chain::set_utxo_built_height(uint32_t height) {
 // TODO(fernando): TEMPORARY - REMOVE THIS METHOD AFTER TESTING UTXO BUILD
 database::result_code block_chain::clear_utxo_set() {
     return database_.internal_db().clear_utxo_set();
+}
+
+size_t block_chain::utxo_deferred_deletions_size() const {
+    return utxoz_db_.deferred_deletions_size();
+}
+
+std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>> block_chain::utxo_process_pending_deletions() {
+    return utxoz_db_.process_pending_deletions();
+}
+
+void block_chain::utxo_compact() {
+    utxoz_db_.compact();
 }
 
 #endif // ! defined(KTH_DB_READONLY)
@@ -627,7 +652,8 @@ std::expected<block_chain::output_info, database::result_code> block_chain::get_
 std::expected<block_chain::output_info, database::result_code> block_chain::get_utxo(
     domain::chain::output_point const& outpoint, size_t branch_height) const {
 
-    auto entry = database_.internal_db().get_utxo(outpoint);
+    // Use UTXO-Z high-performance database
+    auto entry = utxoz_db_.find(outpoint, static_cast<uint32_t>(branch_height));
     if ( ! entry) {
         return std::unexpected(entry.error());
     }
@@ -708,6 +734,16 @@ block_chain::fetch_block(hash_digest const& hash) const {
     }
 
     co_return std::pair{std::make_shared<const block>(block_result->first), block_result->second};
+}
+
+std::expected<domain::chain::block::list, database::result_code>
+block_chain::fetch_blocks(uint32_t from, uint32_t to) const {
+    return database_.internal_db().get_blocks(from, to);
+}
+
+std::expected<std::vector<data_chunk>, database::result_code>
+block_chain::fetch_blocks_raw(uint32_t from, uint32_t to) const {
+    return database_.internal_db().get_blocks_raw(from, to);
 }
 
 awaitable_expected<std::pair<header_ptr, size_t>>
