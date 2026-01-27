@@ -583,7 +583,8 @@ static
                 chain,
                 network.thread_pool().get(),
                 1,  // Start from block 1 (skip genesis)
-                checkpoint_height
+                checkpoint_height,
+                blockchain::utxo_build_strategy::sequential_batch
             );
 
             if (utxo_result != database::result_code::success) {
@@ -874,7 +875,8 @@ static
                             chain,
                             network.thread_pool().get(),
                             1,  // Start from block 1 (skip genesis)
-                            checkpoint_height
+                            checkpoint_height,
+                            blockchain::utxo_build_strategy::sequential_batch
                         );
 
                         if (utxo_result != database::result_code::success) {
