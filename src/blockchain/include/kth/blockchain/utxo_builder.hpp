@@ -38,7 +38,7 @@ struct KB_API utxo_delta {
     using entry_t = database::utxo_entry;
 
     boost::unordered_flat_map<point_t, entry_t> inserts;
-    boost::unordered_flat_set<point_t> deletes;
+    boost::unordered_flat_map<point_t, uint32_t> deletes;  // point -> height (for traceability)
 
     // Merge another delta into this one (must be from a later block)
     void merge(utxo_delta&& other);
@@ -107,7 +107,7 @@ KB_API database::result_code apply_utxo_delta(
 // =============================================================================
 // Builds the UTXO set by processing blocks from start_height to end_height.
 // - Reads blocks from the database
-// - Processes them in parallel batches
+// - Processes them in batches (strategy determines parallelism)
 // - Calculates median_time_past for each block
 // - Applies the resulting delta to the database
 // =============================================================================
@@ -115,12 +115,26 @@ KB_API database::result_code apply_utxo_delta(
 // Forward declaration to avoid circular include
 struct block_chain;
 
+// Processing strategy for UTXO set building
+enum class utxo_build_strategy {
+    // Process 1000 blocks in parallel, merge internally, then apply to UTXO-Z
+    parallel_batch,
+
+    // Process 1000 blocks sequentially, merge internally, then apply to UTXO-Z
+    sequential_batch,
+
+    // Process 1 block at a time, apply directly to UTXO-Z
+    // (pending deletions and compact every 1000 blocks)
+    sequential_direct
+};
+
 [[nodiscard]]
 KB_API ::asio::awaitable<database::result_code> build_utxo_set(
     block_chain& chain,
     ::asio::thread_pool& pool,
     uint32_t start_height,
-    uint32_t end_height
+    uint32_t end_height,
+    utxo_build_strategy strategy = utxo_build_strategy::parallel_batch
 );
 
 } // namespace kth::blockchain
