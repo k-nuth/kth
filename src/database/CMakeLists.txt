@@ -56,6 +56,7 @@ if (NOT GLOBAL_BUILD)
 endif()
 
 find_package(lmdb 0.9.29 REQUIRED)
+find_package(utxoz REQUIRED)
 
 include(CheckCXXCompilerFlag)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/ci_utils/cmake)
@@ -115,6 +116,7 @@ set(kth_sources_just_kth
 
     src/databases/header_abla_entry.cpp
     src/databases/utxo_entry.cpp
+    src/databases/utxoz_database.cpp
     src/databases/history_entry.cpp
     src/databases/transaction_entry.cpp
     src/databases/transaction_unconfirmed_entry.cpp
@@ -148,6 +150,7 @@ set(kth_headers
   include/kth/database/databases/transaction_unconfirmed_entry.hpp
   include/kth/database/databases/header_abla_entry.hpp
   include/kth/database/databases/utxo_entry.hpp
+  include/kth/database/databases/utxoz_database.hpp
   include/kth/database/databases/spend_database.ipp
   include/kth/database/databases/utxo_database.ipp
   include/kth/database/databases/header_database.ipp
@@ -177,6 +180,7 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC domain::domain)
 target_link_libraries(${PROJECT_NAME} PUBLIC lmdb::lmdb)
+target_link_libraries(${PROJECT_NAME} PUBLIC utxoz::utxoz)
 
 if (MINGW)
     target_link_libraries(${PROJECT_NAME} PUBLIC ws2_32 wsock32)
