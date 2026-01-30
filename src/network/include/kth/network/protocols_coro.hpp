@@ -298,10 +298,20 @@ KN_API awaitable_expected<domain::message::block> request_block(
     hash_digest const& block_hash,
     std::chrono::seconds timeout);
 
-/// Result of batch block request - block with its height
+/// Result of batch block request - block with its height and timing info
 struct block_with_height {
     uint32_t height;
     domain::message::block block;
+    uint32_t network_wait_us{0};   // Time waiting for network (microseconds)
+    uint32_t deserialize_us{0};    // Time deserializing block (microseconds)
+    uint64_t received_at_us{0};    // Timestamp when received from network (microseconds since epoch)
+};
+
+/// Timing stats for a batch block request
+struct batch_timing_stats {
+    uint64_t total_network_wait_us{0};   // Total time waiting for blocks from network
+    uint64_t total_deserialize_us{0};    // Total time deserializing blocks
+    uint64_t send_request_us{0};         // Time to send getdata request
 };
 
 /// Request multiple blocks in a single getdata (batch mode)

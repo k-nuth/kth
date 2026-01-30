@@ -78,8 +78,45 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
     hash_digest prev_hash = tip_hash_;
     int32_t height = index_.get_height(tip_index_) + 1;
 
-    spdlog::debug("[header_organizer] Starting validation at height {}, tip_hash: {}",
-        height, encode_hash(tip_hash_));
+    spdlog::debug("[header_organizer] Starting validation at height {}, tip_hash: {}, tip_index: {}",
+        height, encode_hash(tip_hash_), tip_index_);
+
+    // 2026-01-28: Fix for duplicate/stale header batches causing "missing parent" errors.
+    // Symptom: After ABC peer fails checkpoint and sync retries with BCHN peer, BCHN headers
+    // are added successfully. But then a DUPLICATE retry request (from the ABC peer's
+    // channel_stopped event) causes the BCHN peer to send headers starting from an older
+    // point. The organizer tried to validate these at the current tip height, causing
+    // "missing parent" errors and banning innocent BCHN peers.
+    //
+    // Fix: Check if the first header's prev_hash matches our current tip. If not, check if
+    // it matches an older block in our chain. If so, these are stale/duplicate headers
+    // that can be silently skipped.
+    if (!headers.empty()) {
+        auto const& first_prev_hash = headers.front().previous_block_hash();
+        spdlog::debug("[header_organizer] First header prev_hash: {}",
+            encode_hash(first_prev_hash));
+
+        if (first_prev_hash != tip_hash_) {
+            // First header doesn't connect to our tip - check if it's a stale request
+            auto const existing_idx = index_.find(first_prev_hash);
+            if (existing_idx != header_index::null_index) {
+                // The prev_hash exists in our chain but is not the tip - stale request
+                auto const existing_height = index_.get_height(existing_idx);
+                auto const tip_height = index_.get_height(tip_index_);
+
+                if (existing_height < tip_height) {
+                    spdlog::info("[header_organizer] Skipping stale header batch: first header connects to "
+                        "height {} but tip is at height {} - likely duplicate retry request",
+                        existing_height, tip_height);
+                    result.error = error::success;  // Not an error, just nothing to do
+                    result.index_size = index_.size();
+                    result.index_memory_bytes = index_.memory_usage();
+                    return result;
+                }
+            }
+            // If prev_hash doesn't exist at all, let validation handle it (orphan block)
+        }
+    }
 
     for (auto const& header : headers) {
         // Compute hash first (needed for validation)

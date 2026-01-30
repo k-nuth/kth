@@ -7,24 +7,27 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <print>
+#include <thread>
 
 #include <spdlog/spdlog.h>
 
 #include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/ostream_writer.hpp>
+#include <kth/infrastructure/utility/stats.hpp>
 
 namespace kth::database {
 
 namespace {
 
 // Size of block file header: magic (4) + size (4)
-constexpr size_t BLOCK_HEADER_SIZE = 8;
+constexpr size_t block_header_size = 8;
 
 // Size of undo file header: magic (4) + size (4)
-constexpr size_t UNDO_HEADER_SIZE = 8;
+constexpr size_t undo_header_size = 8;
 
 // Size of undo checksum (SHA256)
-constexpr size_t UNDO_CHECKSUM_SIZE = 32;
+constexpr size_t undo_checksum_size = 32;
 
 } // anonymous namespace
 
@@ -38,7 +41,7 @@ block_store::block_store(std::filesystem::path blocks_dir, magic_t magic)
 }
 
 bool block_store::initialize() {
-    std::lock_guard lock(mutex_);
+    std::println("[block_store::initialize] thread_id: {}", std::this_thread::get_id());
 
     // Create directory if it doesn't exist
     std::error_code ec;
@@ -49,9 +52,7 @@ bool block_store::initialize() {
         return false;
     }
 
-    // Scan existing files to restore state
-    // TODO: Load file_info_ from LevelDB or similar persistent index
-    // For now, just detect the last file number
+    // Scan existing files and restore their sizes
     int file_num = 0;
     while (true) {
         flat_file_pos pos{file_num, 0};
@@ -59,15 +60,43 @@ bool block_store::initialize() {
         if (!std::filesystem::exists(path)) {
             break;
         }
+
+        // Get actual file size to know where to continue writing
+        std::error_code size_ec;
+        auto file_size = std::filesystem::file_size(path, size_ec);
+        if (size_ec) {
+            spdlog::warn("block_store::initialize: Failed to get size of {}: {}",
+                        path.string(), size_ec.message());
+            file_size = 0;
+        }
+
+        // Ensure file_info_ has space for this file
+        if (file_info_.size() <= static_cast<size_t>(file_num)) {
+            file_info_.resize(file_num + 1);
+        }
+        file_info_[file_num].size = static_cast<uint32_t>(file_size);
+
+        // Also check undo file size
+        flat_file_pos undo_pos{file_num, 0};
+        auto undo_path = undo_files_.file_name(undo_pos);
+        if (std::filesystem::exists(undo_path)) {
+            auto undo_size = std::filesystem::file_size(undo_path, size_ec);
+            if (!size_ec) {
+                file_info_[file_num].undo_size = static_cast<uint32_t>(undo_size);
+            }
+        }
+
         ++file_num;
     }
 
     if (file_num > 0) {
         last_block_file_ = file_num - 1;
-        file_info_.resize(file_num);
+        spdlog::info("block_store: restored {} block files, last file size: {} bytes",
+                    file_num, file_info_[last_block_file_].size);
+    } else {
+        spdlog::info("block_store: initialized with no existing files");
     }
 
-    spdlog::info("block_store: initialized with {} block files", file_info_.size());
     return true;
 }
 
@@ -81,10 +110,10 @@ flat_file_pos block_store::save_block(domain::chain::block const& block, uint32_
 }
 
 flat_file_pos block_store::save_block_raw(data_chunk const& raw_block, uint32_t height, uint64_t timestamp) {
-    std::lock_guard lock(mutex_);
+    // std::println("[block_store::save_block_raw] thread_id: {}", std::this_thread::get_id());
 
     auto const block_size = static_cast<uint32_t>(raw_block.size());
-    auto pos = find_block_pos(block_size + BLOCK_HEADER_SIZE, height, timestamp);
+    auto pos = find_block_pos(block_size + block_header_size, height, timestamp);
 
     if (pos.is_null()) {
         spdlog::error("block_store::save_block_raw: Failed to find position");
@@ -99,10 +128,10 @@ flat_file_pos block_store::save_block_raw(data_chunk const& raw_block, uint32_t 
 }
 
 flat_file_pos block_store::write_undo(block_undo const& undo, int32_t file_num, hash_digest const& prev_hash) {
-    std::lock_guard lock(mutex_);
+    std::println("[block_store::write_undo] thread_id: {}", std::this_thread::get_id());
 
     auto const undo_size = static_cast<uint32_t>(undo.serialized_size());
-    auto pos = find_undo_pos(file_num, undo_size + UNDO_HEADER_SIZE + UNDO_CHECKSUM_SIZE);
+    auto pos = find_undo_pos(file_num, undo_size + undo_header_size + undo_checksum_size);
 
     if (pos.is_null()) {
         spdlog::error("block_store::write_undo: Failed to find position");
@@ -150,7 +179,7 @@ block_store::read_block_raw(flat_file_pos const& pos) const {
     }
 
     // Seek back to read the header (we're positioned at block data)
-    if (std::fseek(file, -static_cast<long>(BLOCK_HEADER_SIZE), SEEK_CUR) != 0) {
+    if (std::fseek(file, -static_cast<long>(block_header_size), SEEK_CUR) != 0) {
         std::fclose(file);
         return std::unexpected(result_code::other);
     }
@@ -199,7 +228,7 @@ block_store::read_block_size(flat_file_pos const& pos) const {
     }
 
     // Seek back to read the header
-    if (std::fseek(file, -static_cast<long>(BLOCK_HEADER_SIZE), SEEK_CUR) != 0) {
+    if (std::fseek(file, -static_cast<long>(block_header_size), SEEK_CUR) != 0) {
         std::fclose(file);
         return std::unexpected(result_code::other);
     }
@@ -226,19 +255,86 @@ block_store::read_blocks_raw(std::vector<flat_file_pos> const& positions) const 
         return std::vector<data_chunk>{};
     }
 
-    std::vector<data_chunk> results;
-    results.reserve(positions.size());
+    // Create indexed positions to track original order
+    struct indexed_pos {
+        size_t original_idx;
+        flat_file_pos pos;
+    };
+    std::vector<indexed_pos> indexed;
+    indexed.reserve(positions.size());
+    for (size_t i = 0; i < positions.size(); ++i) {
+        indexed.push_back({i, positions[i]});
+    }
 
-    // Group by file for sequential I/O
-    // For now, simple implementation - read each block individually
-    // TODO: Optimize by grouping positions by file and reading sequentially
+    // Sort by file number, then by position within file (for sequential I/O)
+    std::sort(indexed.begin(), indexed.end(), [](auto const& a, auto const& b) {
+        if (a.pos.file != b.pos.file) return a.pos.file < b.pos.file;
+        return a.pos.pos < b.pos.pos;
+    });
 
-    for (auto const& pos : positions) {
-        auto result = read_block_raw(pos);
-        if (!result) {
-            return std::unexpected(result.error());
+    // Results in original order
+    std::vector<data_chunk> results(positions.size());
+
+    // Read blocks grouped by file
+    int32_t current_file = -1;
+    FILE* file = nullptr;
+
+    for (auto const& item : indexed) {
+        // Open new file if needed
+        if (item.pos.file != current_file) {
+            if (file) {
+                std::fclose(file);
+            }
+            file = block_files_.open(item.pos, true);
+            if (!file) {
+                spdlog::error("block_store::read_blocks_raw: Failed to open file {}", item.pos.file);
+                return std::unexpected(result_code::other);
+            }
+            current_file = item.pos.file;
+        } else {
+            // Seek to position within same file
+            if (std::fseek(file, static_cast<long>(item.pos.pos), SEEK_SET) != 0) {
+                std::fclose(file);
+                return std::unexpected(result_code::other);
+            }
         }
-        results.push_back(std::move(*result));
+
+        // Seek back to read the header (pos points to block data, after header)
+        if (std::fseek(file, -static_cast<long>(block_header_size), SEEK_CUR) != 0) {
+            std::fclose(file);
+            return std::unexpected(result_code::other);
+        }
+
+        // Read header: magic + size
+        std::array<uint8_t, 4> file_magic;
+        uint32_t block_size;
+
+        if (std::fread(file_magic.data(), 1, 4, file) != 4 ||
+            std::fread(&block_size, sizeof(block_size), 1, file) != 1) {
+            std::fclose(file);
+            return std::unexpected(result_code::other);
+        }
+
+        // Verify magic
+        if (file_magic != magic_) {
+            spdlog::error("block_store::read_blocks_raw: Magic mismatch at {}", item.pos.to_string());
+            std::fclose(file);
+            return std::unexpected(result_code::other);
+        }
+
+        // Read block data
+        data_chunk data(block_size);
+        if (std::fread(data.data(), 1, block_size, file) != block_size) {
+            std::fclose(file);
+            return std::unexpected(result_code::other);
+        }
+
+        // Store in original order
+        results[item.original_idx] = std::move(data);
+    }
+
+    if (file) {
+        std::fclose(file);
     }
 
     return results;
@@ -262,7 +358,7 @@ block_store::read_undo(flat_file_pos const& pos, hash_digest const& prev_hash) c
     uint32_t undo_size;
 
     // Seek back to header position
-    if (std::fseek(file, -static_cast<long>(UNDO_HEADER_SIZE), SEEK_CUR) != 0) {
+    if (std::fseek(file, -static_cast<long>(undo_header_size), SEEK_CUR) != 0) {
         std::fclose(file);
         return std::unexpected(result_code::other);
     }
@@ -285,7 +381,7 @@ block_store::read_undo(flat_file_pos const& pos, hash_digest const& prev_hash) c
     }
 
     // Read undo data + checksum
-    data_chunk data(undo_size + UNDO_CHECKSUM_SIZE);
+    data_chunk data(undo_size + undo_checksum_size);
     if (std::fread(data.data(), 1, data.size(), file) != data.size()) {
         std::fclose(file);
         return std::unexpected(result_code::other);
@@ -319,7 +415,7 @@ block_store::read_undo(flat_file_pos const& pos, hash_digest const& prev_hash) c
 // =============================================================================
 
 void block_store::flush(bool finalize) {
-    std::lock_guard lock(mutex_);
+    std::println("[block_store::flush] thread_id: {}", std::this_thread::get_id());
 
     flat_file_pos block_pos{last_block_file_, file_info_[last_block_file_].size};
     flat_file_pos undo_pos{last_block_file_, file_info_[last_block_file_].undo_size};
@@ -329,7 +425,7 @@ void block_store::flush(bool finalize) {
 }
 
 uint64_t block_store::calculate_disk_usage() const {
-    std::lock_guard lock(mutex_);
+    std::println("[block_store::calculate_disk_usage] thread_id: {}", std::this_thread::get_id());
 
     uint64_t total = 0;
     for (auto const& info : file_info_) {
@@ -339,12 +435,12 @@ uint64_t block_store::calculate_disk_usage() const {
 }
 
 size_t block_store::file_count() const {
-    std::lock_guard lock(mutex_);
+    std::println("[block_store::file_count] thread_id: {}", std::this_thread::get_id());
     return file_info_.size();
 }
 
 block_file_info const& block_store::file_info(size_t index) const {
-    std::lock_guard lock(mutex_);
+    std::println("[block_store::file_info] thread_id: {}", std::this_thread::get_id());
     return file_info_.at(index);
 }
 
@@ -421,6 +517,8 @@ bool block_store::write_block_to_disk(data_chunk const& raw_block, flat_file_pos
         return false;
     }
 
+    KTH_STATS_TIME_START(write_block);
+
     // Write header: magic + size
     auto const block_size = static_cast<uint32_t>(raw_block.size());
 
@@ -447,6 +545,9 @@ bool block_store::write_block_to_disk(data_chunk const& raw_block, flat_file_pos
         std::fclose(file);
         return false;
     }
+
+    KTH_STATS_TIME_END(global_sync_stats(), write_block, write_block_time_ns, write_block_calls);
+    KTH_STATS_ADD(global_sync_stats(), write_block_bytes, raw_block.size());
 
     std::fclose(file);
     return true;

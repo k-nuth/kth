@@ -4,6 +4,7 @@
 
 #include <kth/database/block_undo.hpp>
 
+#include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/ostream_writer.hpp>
 
@@ -35,12 +36,12 @@ std::expected<tx_undo, database::result_code> tx_undo::from_data(byte_reader& re
     tx_undo result;
 
     auto const count = reader.read_variable_little_endian();
-    if ( ! reader) {
+    if ( ! count) {
         return std::unexpected(result_code::other);
     }
 
-    result.prev_outputs.reserve(count);
-    for (uint64_t i = 0; i < count; ++i) {
+    result.prev_outputs.reserve(*count);
+    for (uint64_t i = 0; i < *count; ++i) {
         auto entry = utxo_entry::from_data(reader);
         if ( ! entry) {
             return std::unexpected(result_code::other);
@@ -77,12 +78,12 @@ std::expected<block_undo, database::result_code> block_undo::from_data(byte_read
     block_undo result;
 
     auto const count = reader.read_variable_little_endian();
-    if ( ! reader) {
+    if ( ! count) {
         return std::unexpected(result_code::other);
     }
 
-    result.tx_undos.reserve(count);
-    for (uint64_t i = 0; i < count; ++i) {
+    result.tx_undos.reserve(*count);
+    for (uint64_t i = 0; i < *count; ++i) {
         auto tx = tx_undo::from_data(reader);
         if ( ! tx) {
             return std::unexpected(result_code::other);

@@ -71,7 +71,7 @@ p2p_node::~p2p_node() {
 }
 
 ::asio::awaitable<code> p2p_node::run() {
-    spdlog::debug("[p2p_node] run() starting");
+    spdlog::info("[p2p_node] run() STARTING");
 
     if (stopped_) {
         spdlog::debug("[p2p_node] run() - already stopped");
@@ -126,7 +126,7 @@ p2p_node::~p2p_node() {
     spdlog::debug("[p2p_node] All tasks spawned, waiting on join...");
     // Wait for all tasks to complete (i.e., until stop() is called)
     co_await network_tasks.join();
-    spdlog::debug("[p2p_node] All tasks completed");
+    spdlog::info("[p2p_node] run() ENDED - all tasks completed");
 
     co_return error::success;
 }
@@ -644,28 +644,41 @@ concurrent_channel<peer_session::ptr>& p2p_node::connected_peers() {
     spdlog::debug("[p2p_node] Starting protocols for peer [{}]", peer->authority());
 
     auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer ping_timer(executor);
+    ::asio::steady_timer check_timer(executor);
     auto const ping_interval = std::chrono::seconds(settings_.channel_heartbeat_minutes * 60);
+    auto const check_interval = std::chrono::seconds(5);  // Check stopped flag every 5s
 
     spdlog::debug("[p2p_node] Ping interval for [{}]: {}s", peer->authority(), ping_interval.count());
 
-    while (!peer->stopped() && !stopped_) {
-        ping_timer.expires_after(ping_interval);
+    auto last_ping = std::chrono::steady_clock::now();
 
-        // Wait for message or ping timer
+    while (!peer->stopped() && !stopped_) {
+        // Use short check_interval for responsive shutdown, but track ping timing separately
+        check_timer.expires_after(check_interval);
+
+        // Wait for message or check timer
+        // Using short timer ensures we detect stopped status promptly
         auto result = co_await (
             peer->messages().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-            ping_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
+            check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
         );
 
         if (peer->stopped() || stopped_) {
+            spdlog::debug("[p2p_node:protocols] [{}] Breaking due to stopped flag", peer->authority());
             break;
         }
 
         if (result.index() == 1) {
-            // Timer expired - send ping
+            // Timer expired - check if we need to send ping
             auto [timer_ec] = std::get<1>(result);
-            if (!timer_ec) {
+            if (timer_ec) {
+                // Timer was cancelled (e.g., by message arrival) - this is fine
+                continue;
+            }
+
+            // Check if it's time to send a ping
+            auto now = std::chrono::steady_clock::now();
+            if (now - last_ping >= ping_interval) {
                 uint64_t nonce = 0;
                 pseudo_random::fill(reinterpret_cast<uint8_t*>(&nonce), sizeof(nonce));
                 domain::message::ping ping_msg(nonce);
@@ -677,6 +690,7 @@ concurrent_channel<peer_session::ptr>& p2p_node::connected_peers() {
                 }
                 peer->record_ping_sent(nonce);
                 spdlog::trace("[p2p_node] Sent ping to [{}]", peer->authority());
+                last_ping = now;
             }
             continue;
         }
@@ -684,6 +698,7 @@ concurrent_channel<peer_session::ptr>& p2p_node::connected_peers() {
         // Message received
         auto& [ec, raw] = std::get<0>(result);
         if (ec) {
+            spdlog::debug("[p2p_node:protocols] [{}] Message receive error: {}", peer->authority(), ec.message());
             break;
         }
 
@@ -946,7 +961,10 @@ concurrent_channel<peer_session::ptr>& p2p_node::connected_peers() {
         peer_tasks.spawn([this, peer, direction, response_channel]() -> ::asio::awaitable<void> {
             try {
                 co_await (
-                    peer->run() &&
+                    [&]() -> ::asio::awaitable<void> {
+                        co_await peer->run();
+                        spdlog::debug("[p2p_node] Peer [{}] run() completed", peer->authority());
+                    }() &&
                     [&]() -> ::asio::awaitable<void> {
                         // Generate nonce for handshake and set on peer for identification
                         uint64_t nonce = generate_nonce();
@@ -964,6 +982,7 @@ concurrent_channel<peer_session::ptr>& p2p_node::connected_peers() {
                                 response_channel->try_send(std::error_code{}, handshake_response{handshake_result.error()});
                             }
                             peer->stop();
+                            spdlog::debug("[p2p_node] Peer [{}] lambda completed (handshake failed)", peer->authority());
                             co_return;
                         }
 
@@ -976,6 +995,7 @@ concurrent_channel<peer_session::ptr>& p2p_node::connected_peers() {
                                 response_channel->try_send(std::error_code{}, handshake_response{add_ec});
                             }
                             peer->stop();
+                            spdlog::debug("[p2p_node] Peer [{}] lambda completed (add failed)", peer->authority());
                             co_return;
                         }
 
@@ -1002,8 +1022,10 @@ concurrent_channel<peer_session::ptr>& p2p_node::connected_peers() {
 
                         // Run protocols until peer disconnects
                         co_await run_peer_protocols(peer);
+                        spdlog::debug("[p2p_node] Peer [{}] lambda completed (protocols ended)", peer->authority());
                     }()
                 );
+                spdlog::debug("[p2p_node] Peer [{}] && operator completed", peer->authority());
             } catch (std::exception const& e) {
                 spdlog::debug("[p2p_node] Peer [{}] task exception: {}",
                     peer->authority(), e.what());
@@ -1029,6 +1051,16 @@ concurrent_channel<peer_session::ptr>& p2p_node::connected_peers() {
 
     spdlog::debug("[p2p_node] peer_supervisor waiting for {} active peer tasks",
         peer_tasks.active_count());
+
+    // Debug: identify which peers might be stuck
+    for (auto& peer : all_spawned_peers) {
+        if (!peer->stopped()) {
+            spdlog::warn("[p2p_node] Peer [{}] still not stopped after stop() call!", peer->authority());
+        }
+    }
+
+    // Log peers that are still "active" (their task hasn't completed)
+    spdlog::info("[p2p_node] Waiting for peer_tasks.join() - if this hangs, check which peer task didn't complete");
 
     // CRITICAL: Wait for all peer tasks to complete
     // This is the structured concurrency guarantee - no orphaned tasks!

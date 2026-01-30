@@ -19,6 +19,7 @@
 #include <boost/unordered/unordered_flat_set.hpp>
 
 #include <kth/database.hpp>
+#include <kth/database/block_store.hpp>
 #include <kth/database/databases/utxoz_database.hpp>
 #include <kth/domain.hpp>
 
@@ -73,7 +74,8 @@ struct KB_API block_chain {
     // LIFECYCLE
     // =========================================================================
 
-    [[nodiscard]] bool start();
+    /// @param disk_magic Magic bytes for block files (e.g., 0xd9b4bef9 for BCH mainnet)
+    [[nodiscard]] bool start(uint32_t disk_magic);
     [[nodiscard]] bool stop();
     [[nodiscard]] bool close();
     [[nodiscard]] bool stopped() const;
@@ -412,6 +414,9 @@ private:
     transaction_organizer transaction_organizer_;
     block_organizer block_organizer_;
     header_index header_index_;
+
+    // Flat file block storage (for fast sequential I/O during IBD)
+    std::unique_ptr<database::block_store> block_store_;
 
     // UTXO-Z high-performance UTXO database
     database::utxoz_database utxoz_db_;

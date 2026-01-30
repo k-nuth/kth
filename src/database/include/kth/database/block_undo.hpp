@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <kth/database/define.hpp>
+#include <kth/database/databases/result_code.hpp>
 #include <kth/database/databases/utxo_entry.hpp>
 #include <kth/domain.hpp>
 

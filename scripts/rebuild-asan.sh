@@ -31,11 +31,11 @@ rm -rf "$BUILD_DIR"
 rm -rf conan.lock
 
 echo "Creating conan lock files..."
-conan lock create conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" -s build_type=RelWithDebInfo --update
-conan lock create conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" -s build_type=RelWithDebInfo --lockfile=conan.lock --lockfile-out="${BUILD_DIR}/conan.lock"
+conan lock create conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" -o "&:with_stats=True" -s build_type=RelWithDebInfo --update
+conan lock create conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" -o "&:with_stats=True" -s build_type=RelWithDebInfo --lockfile=conan.lock --lockfile-out="${BUILD_DIR}/conan.lock"
 
 echo "Installing conan dependencies with RelWithDebInfo..."
-conan install conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" -s build_type=RelWithDebInfo --lockfile="${BUILD_DIR}/conan.lock" -of "${BUILD_DIR}" --build=missing
+conan install conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" -o "&:with_stats=True" -s build_type=RelWithDebInfo --lockfile="${BUILD_DIR}/conan.lock" -of "${BUILD_DIR}" --build=missing
 
 echo "Configuring CMake with AddressSanitizer + debug symbols..."
 # Use conan preset for RelWithDebInfo, add ASAN flags

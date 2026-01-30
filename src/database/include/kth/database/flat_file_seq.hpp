@@ -15,8 +15,9 @@
 
 namespace kth::database {
 
-/// Pre-allocation chunk size for block files (16 MiB)
-inline constexpr size_t BLOCKFILE_CHUNK_SIZE = 0x1000000;
+/// Pre-allocation chunk size for block files (128 MiB - same as max file size)
+/// Allocating the full file at once reduces syscall overhead during IBD.
+inline constexpr size_t BLOCKFILE_CHUNK_SIZE = 0x8000000;
 
 /// Pre-allocation chunk size for undo files (1 MiB)
 inline constexpr size_t UNDOFILE_CHUNK_SIZE = 0x100000;

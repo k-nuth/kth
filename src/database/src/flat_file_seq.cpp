@@ -11,6 +11,8 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include <kth/infrastructure/utility/stats.hpp>
+
 #ifdef _WIN32
 #include <io.h>
 #include <windows.h>
@@ -37,6 +39,8 @@ std::filesystem::path flat_file_seq::file_name(flat_file_pos const& pos) const {
 }
 
 FILE* flat_file_seq::open(flat_file_pos const& pos, bool read_only) const {
+    KTH_STATS_TIME_START(file_open);
+
     if (pos.is_null()) {
         return nullptr;
     }
@@ -72,6 +76,7 @@ FILE* flat_file_seq::open(flat_file_pos const& pos, bool read_only) const {
         }
     }
 
+    KTH_STATS_TIME_END(kth::global_sync_stats(), file_open, file_open_time_ns, file_open_calls);
     return file;
 }
 
@@ -91,7 +96,12 @@ size_t flat_file_seq::allocate(flat_file_pos const& pos, size_t add_size, bool& 
             if (file) {
                 spdlog::info("Pre-allocating up to position {:#x} in {}{:05}.dat",
                             new_size, prefix_, pos.file);
+
+                KTH_STATS_TIME_START(allocate);
                 allocate_file_range(file, pos.pos, inc_size);
+                KTH_STATS_TIME_END(kth::global_sync_stats(), allocate, allocate_time_ns, allocate_calls);
+                KTH_STATS_ADD(kth::global_sync_stats(), allocate_bytes, inc_size);
+
                 std::fclose(file);
                 return inc_size;
             }

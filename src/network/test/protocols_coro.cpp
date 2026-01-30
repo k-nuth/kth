@@ -140,7 +140,7 @@ TEST_CASE("wait_for_any_message receives message", "[protocols_coro]") {
     run_until_proto(ctx, [&]{ return done.load(); });
 
     peer->stop();
-    ctx.run_for(10ms);
+    kth::test::drain_context(ctx);
 
     REQUIRE(result.has_value());
     REQUIRE(result->heading.command() == "ping");
@@ -167,7 +167,7 @@ TEST_CASE("wait_for_any_message timeout", "[protocols_coro]") {
     run_until_proto(ctx, [&]{ return done.load(); }, 2000ms);
 
     peer->stop();
-    ctx.run_for(10ms);
+    kth::test::drain_context(ctx);
 
     REQUIRE(!result.has_value());
     REQUIRE(result.error() == error::channel_timeout);
@@ -232,7 +232,7 @@ TEST_CASE("perform_handshake success", "[protocols_coro]") {
     run_until_proto(ctx, [&]{ return done.load(); }, 2000ms);
 
     peer->stop();
-    ctx.run_for(10ms);
+    kth::test::drain_context(ctx);
 
     REQUIRE(result.has_value());
     REQUIRE(result->peer_version != nullptr);
@@ -263,7 +263,7 @@ TEST_CASE("perform_handshake timeout", "[protocols_coro]") {
     run_until_proto(ctx, [&]{ return done.load(); }, 3000ms);
 
     peer->stop();
-    ctx.run_for(10ms);
+    kth::test::drain_context(ctx);
 
     REQUIRE(!result.has_value());
     REQUIRE(result.error() == error::channel_timeout);
@@ -311,7 +311,7 @@ TEST_CASE("perform_handshake rejects low version peer", "[protocols_coro]") {
     run_until_proto(ctx, [&]{ return done.load(); }, 2000ms);
 
     peer->stop();
-    ctx.run_for(10ms);
+    kth::test::drain_context(ctx);
 
     REQUIRE(!result.has_value());
     REQUIRE(result.error() == error::channel_stopped);
@@ -361,7 +361,7 @@ TEST_CASE("run_ping_pong responds to ping", "[protocols_coro]") {
     run_until_proto(ctx, [&]{ return bytes_received.load() > 0; });
 
     peer->stop();
-    ctx.run_for(10ms);
+    kth::test::drain_context(ctx);
 
     REQUIRE(bytes_received > 0);
     REQUIRE(received_command == "pong");
@@ -401,7 +401,7 @@ TEST_CASE("run_ping_pong sends periodic pings", "[protocols_coro]") {
     run_until_proto(ctx, [&]{ return received_ping.load(); }, 3000ms);
 
     peer->stop();
-    ctx.run_for(10ms);
+    kth::test::drain_context(ctx);
 
     REQUIRE(received_ping);
 }

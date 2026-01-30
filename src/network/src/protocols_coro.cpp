@@ -698,8 +698,12 @@ awaitable_expected<std::vector<block_with_height>> request_blocks_batch(
         blocks.size(), peer.authority(),
         blocks.front().first, blocks.back().first);
 
-    // Send ONE getdata with all block hashes
+    // Send ONE getdata with all block hashes - measure send time
+    auto send_start = std::chrono::steady_clock::now();
     auto ec = co_await peer.send(request);
+    auto send_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - send_start).count();
+
     if (ec != error::success) {
         co_return std::unexpected(ec);
     }
@@ -710,6 +714,10 @@ awaitable_expected<std::vector<block_with_height>> request_blocks_batch(
 
     std::vector<block_with_height> received_blocks;
     received_blocks.reserve(blocks.size());
+
+    // Timing accumulators
+    uint64_t total_network_wait_us = 0;
+    uint64_t total_deserialize_us = 0;
 
     while (received_blocks.size() < blocks.size()) {
         auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
@@ -723,10 +731,14 @@ awaitable_expected<std::vector<block_with_height>> request_blocks_batch(
 
         ::asio::steady_timer timer(executor, remaining);
 
+        // Measure network wait time
+        auto network_start = std::chrono::steady_clock::now();
         auto result = co_await (
             peer.block_responses().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
             timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
         );
+        auto network_wait_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - network_start).count();
 
         if (result.index() == 1) {
             spdlog::debug("[protocol] Timeout waiting for batch blocks from [{}]", peer.authority());
@@ -738,13 +750,21 @@ awaitable_expected<std::vector<block_with_height>> request_blocks_batch(
             co_return std::unexpected(error::channel_stopped);
         }
 
-        // Parse the block
+        total_network_wait_us += network_wait_us;
+
+        // Parse the block - measure deserialization time
+        auto deser_start = std::chrono::steady_clock::now();
         byte_reader reader(raw.payload);
         auto block_result = domain::message::block::from_data(reader, peer.negotiated_version());
+        auto deser_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - deser_start).count();
+
         if (!block_result) {
             spdlog::debug("[protocol] Failed to parse block from [{}]", peer.authority());
             co_return std::unexpected(error::bad_stream);
         }
+
+        total_deserialize_us += deser_us;
 
         // Look up the height for this block
         auto const block_hash = block_result->header().hash();
@@ -762,15 +782,26 @@ awaitable_expected<std::vector<block_with_height>> request_blocks_batch(
         spdlog::debug("[protocol] Received block {} (height {}) from [{}]",
             encode_hash(block_hash), height, peer.authority());
 
-        received_blocks.push_back({height, std::move(*block_result)});
+        // Record timestamp when block was received from network
+        auto received_at = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+
+        received_blocks.push_back({
+            height,
+            std::move(*block_result),
+            static_cast<uint32_t>(network_wait_us),
+            static_cast<uint32_t>(deser_us),
+            static_cast<uint64_t>(received_at)
+        });
     }
 
     // Sort by height for caller convenience
     std::sort(received_blocks.begin(), received_blocks.end(),
         [](auto const& a, auto const& b) { return a.height < b.height; });
 
-    spdlog::debug("[protocol] Received {} blocks in batch from [{}]",
-        received_blocks.size(), peer.authority());
+    spdlog::debug("[protocol] Received {} blocks in batch from [{}] (send={}us net={}us deser={}us)",
+        received_blocks.size(), peer.authority(),
+        send_us, total_network_wait_us, total_deserialize_us);
 
     co_return received_blocks;
 }

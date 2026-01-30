@@ -94,22 +94,35 @@ using namespace ::asio::experimental::awaitable_operators;
         auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 
         if (!result) {
+            // 2026-01-28: Added detailed logging to diagnose segfault during shutdown.
+            // Symptom: After Ctrl-C, we see "Peer X failed: channel stopped" then immediate segfault.
+            // Adding checkpoints to identify exactly which operation crashes.
             spdlog::warn("[header_sync] Peer {} failed: {}",
                 peer->authority_with_agent(), result.error().message());
+            spdlog::warn("[header_sync] checkpoint 1: after log");
 
             // Mark this peer as failed - don't reselect until peers_updated
-            last_failed_nonce = peer->nonce();
+            auto const peer_nonce = peer->nonce();
+            spdlog::warn("[header_sync] checkpoint 2: got nonce {}", peer_nonce);
+            last_failed_nonce = peer_nonce;
             current_peer = nullptr;
+            spdlog::warn("[header_sync] checkpoint 3: cleared current_peer");
 
             // Report failure to output (coordinator will inform peer_provider)
-            if (!output.try_send(std::error_code{}, peer_failure_report{
+            // Note: During shutdown, the channel may be closed. try_send returns false on closed channel.
+            auto const error_to_report = result.error();
+            spdlog::warn("[header_sync] checkpoint 4: got error code");
+            bool send_ok = output.try_send(std::error_code{}, peer_failure_report{
                 .peer = peer,
-                .error = result.error()
-            })) {
-                spdlog::warn("[header_download] Channel full, peer failure report dropped");
+                .error = error_to_report
+            });
+            spdlog::warn("[header_sync] checkpoint 5: try_send returned {}", send_ok);
+            if (!send_ok) {
+                spdlog::warn("[header_download] Channel full or closed, peer failure report dropped");
             }
             // Keep request pending - will retry with new peer after peers_updated
             pending_request = request;
+            spdlog::warn("[header_sync] checkpoint 6: returning from error handler");
             co_return;
         }
 
@@ -178,8 +191,43 @@ using namespace ::asio::experimental::awaitable_operators;
 
         if (auto* peers_msg = std::get_if<peers_updated>(&event)) {
             available_peers = peers_msg->peers;
-            // Clear failed nonce - peer_provider has filtered the bad peer
-            last_failed_nonce.reset();
+
+            // 2026-01-28: Fix for header sync getting stuck retrying the same failed peer.
+            // Symptom: After a peer times out, the log showed:
+            //   [header_sync] Peer X failed: connection timed out
+            //   [header_sync] Using peer: X   <-- same peer immediately reselected!
+            // This repeated every 30 seconds indefinitely, ignoring 7-8 other available peers.
+            //
+            // Root cause: Race condition between peers_updated messages and peer failures.
+            // 1. peer_provider broadcasts peers (peer X in list)
+            // 2. header_download waits 30s for peer X response
+            // 3. Meanwhile, new peers connect -> peer_provider broadcasts again (X still in list)
+            // 4. Timeout fires, X fails -> last_failed_nonce = X
+            // 5. header_download processes queued peers_updated from step 3
+            // 6. OLD CODE: last_failed_nonce.reset() unconditionally <- BUG! Clears protection
+            // 7. header_download selects X again (still in the stale list)
+            //
+            // Fix: Only clear last_failed_nonce if the failed peer is NOT in the new list.
+            // If the failed peer is still present, this is a stale message from before the
+            // failure, so we keep the protection active.
+            if (last_failed_nonce) {
+                bool failed_peer_still_present = false;
+                for (auto const& p : available_peers) {
+                    if (p->nonce() == *last_failed_nonce) {
+                        failed_peer_still_present = true;
+                        break;
+                    }
+                }
+                if (!failed_peer_still_present) {
+                    spdlog::debug("[header_download] Failed peer {} no longer in list, clearing protection",
+                        *last_failed_nonce);
+                    last_failed_nonce.reset();
+                } else {
+                    spdlog::debug("[header_download] Failed peer {} still in list, keeping protection",
+                        *last_failed_nonce);
+                }
+            }
+
             spdlog::debug("[header_download] Peers updated: {} peers available",
                 available_peers.size());
 
@@ -200,7 +248,7 @@ using namespace ::asio::experimental::awaitable_operators;
     }
 
     // NOTE: Don't close output channel here - peer_provider closes all channels during shutdown
-    spdlog::debug("[header_download] Task ended");
+    spdlog::info("[header_download] Task ended");
 }
 
 // =============================================================================
@@ -267,7 +315,7 @@ using namespace ::asio::experimental::awaitable_operators;
     }
 
     // NOTE: Don't close output channel here - peer_provider closes all channels during shutdown
-    spdlog::debug("[header_validation] Task ended");
+    spdlog::info("[header_validation] Task ended");
 }
 
 } // namespace kth::node::sync

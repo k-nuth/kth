@@ -16,9 +16,9 @@ echo "Building version: ${VERSION} with test: ${TEST}"
 rm -rf build
 rm -rf conan.lock
 
-conan lock create conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" --update
-conan lock create conanfile.py --version "${VERSION}" -o "&:march_strategy=optimized" --lockfile=conan.lock --lockfile-out=build/conan.lock
-conan install conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" --lockfile=build/conan.lock -of build --build=missing
+conan lock create conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" -o "&:with_stats=True" --update
+conan lock create conanfile.py --version "${VERSION}" -o "&:march_strategy=optimized" -o "&:with_stats=True" --lockfile=conan.lock --lockfile-out=build/conan.lock
+conan install conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" -o "&:with_stats=True" --lockfile=build/conan.lock -of build --build=missing
 
 cmake --preset conan-release \
          -DCMAKE_VERBOSE_MAKEFILE=ON \

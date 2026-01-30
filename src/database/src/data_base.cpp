@@ -73,9 +73,9 @@ bool data_base::create(block const& genesis) {
         return false;
     }
 
-    // Store the first block.
-    auto res = push_genesis(genesis);
-    if (res != error::success) {
+    // Store the genesis header only (blocks are now stored in flat files).
+    auto res = internal_db_->push_header(genesis.header(), 0);
+    if ( ! succeed(res)) {
         return false;
     }
 
@@ -186,26 +186,30 @@ code data_base::verify_push(block const& block, size_t height) const {
 }
 
 
-#if ! defined(KTH_DB_READONLY)
+// =============================================================================
+// DEPRECATED: Block storage moved to flat files (blk*.dat)
+// =============================================================================
 
-// Add block to the database at the given height (gaps allowed/created).
-// This is designed for write concurrency but only with itself.
-code data_base::insert(domain::chain::block const& block, size_t height) {
-
-    auto const median_time_past = block.header().validation.median_time_past;
-
-    auto const ec = verify_insert(block, height);
-
-    if (ec) return ec;
-
-    auto res = internal_db_->push_block(block, height, median_time_past);
-    if ( ! succeed(res)) {
-        return error::database_insert_failed;   //TODO(fernando): create a new operation_failed
-    }
-
-    return error::success;
-}
-#endif //! defined(KTH_DB_READONLY)
+// #if ! defined(KTH_DB_READONLY)
+//
+// // Add block to the database at the given height (gaps allowed/created).
+// // This is designed for write concurrency but only with itself.
+// code data_base::insert(domain::chain::block const& block, size_t height) {
+//
+//     auto const median_time_past = block.header().validation.median_time_past;
+//
+//     auto const ec = verify_insert(block, height);
+//
+//     if (ec) return ec;
+//
+//     auto res = internal_db_->push_block(block, height, median_time_past);
+//     if ( ! succeed(res)) {
+//         return error::database_insert_failed;   //TODO(fernando): create a new operation_failed
+//     }
+//
+//     return error::success;
+// }
+// #endif //! defined(KTH_DB_READONLY)
 
 #if ! defined(KTH_DB_READONLY)
 
@@ -222,26 +226,28 @@ code data_base::push(domain::chain::transaction const& tx, uint32_t forks) {
 
 #endif // ! defined(KTH_DB_READONLY)
 
-#if ! defined(KTH_DB_READONLY)
-// Add a block in order (creates no gaps, must be at top).
-// This is designed for write exclusivity and read concurrency.
-code data_base::push(block const& block, size_t height) {
-    auto const median_time_past = block.header().validation.median_time_past;
-    auto res = internal_db_->push_block(block, height, median_time_past);
-    if ( ! succeed(res)) {
-        return error::database_push_failed;   //TODO(fernando): create a new operation_failed
-    }
-    return error::success;
-}
+// #if ! defined(KTH_DB_READONLY)
+// // Add a block in order (creates no gaps, must be at top).
+// // This is designed for write exclusivity and read concurrency.
+// code data_base::push(block const& block, size_t height) {
+//     auto const median_time_past = block.header().validation.median_time_past;
+//     auto res = internal_db_->push_block(block, height, median_time_past);
+//     if ( ! succeed(res)) {
+//         return error::database_push_failed;   //TODO(fernando): create a new operation_failed
+//     }
+//     return error::success;
+// }
+//
+// // Fast IBD: store only block data without UTXO updates.
+// code data_base::push_block_fast(block const& block, size_t height) {
+//     auto res = internal_db_->push_block_fast(block, height);
+//     if ( ! succeed(res)) {
+//         return error::database_push_failed;
+//     }
+//     return error::success;
+// }
 
-// Fast IBD: store only block data without UTXO updates.
-code data_base::push_block_fast(block const& block, size_t height) {
-    auto res = internal_db_->push_block_fast(block, height);
-    if ( ! succeed(res)) {
-        return error::database_push_failed;
-    }
-    return error::success;
-}
+#if ! defined(KTH_DB_READONLY)
 
 // Add a header for headers-first sync (without full block data).
 // This is designed for write exclusivity and read concurrency.
@@ -298,56 +304,63 @@ code data_base::push_headers_batch(header::list const& headers, size_t start_hei
     return error::success;
 }
 
-// private
-// Add the Genesis block
-code data_base::push_genesis(block const& block) {
-    auto res = internal_db_->push_genesis(block);
-    if ( ! succeed(res)) {
-        return error::database_push_failed;   //TODO(fernando): create a new operation_failed
-    }
-
-    return error::success;
-}
+// =============================================================================
+// DEPRECATED: Block storage moved to flat files (blk*.dat)
+// Genesis block is now stored in flat files
+// =============================================================================
+// // private
+// // Add the Genesis block
+// code data_base::push_genesis(block const& block) {
+//     auto res = internal_db_->push_genesis(block);
+//     if ( ! succeed(res)) {
+//         return error::database_push_failed;   //TODO(fernando): create a new operation_failed
+//     }
+//
+//     return error::success;
+// }
 #endif // ! defined(KTH_DB_READONLY)
 
 
 
-#if defined(KTH_CURRENCY_BCH)
-
-#if ! defined(KTH_DB_READONLY)
-// A false return implies store corruption.
-bool data_base::pop(block& out_block) {
-
-    auto const start_time = asio::steady_clock::now();
-
-    if (internal_db_->pop_block(out_block) != result_code::success) {
-        return false;
-    }
-
-    out_block.validation.error = error::success;
-    out_block.validation.start_pop = start_time;
-    return true;
-}
-#endif // ! defined(KTH_DB_READONLY)
-
-#else // KTH_CURRENCY_BCH
-
-#if ! defined(KTH_DB_READONLY)
-// A false return implies store corruption.
-bool data_base::pop(block& out_block) {
-
-    auto const start_time = asio::steady_clock::now();
-
-    if (internal_db_->pop_block(out_block) != result_code::success) {
-        return false;
-    }
-
-    out_block.validation.error = error::success;
-    out_block.validation.start_pop = start_time;
-    return true;
-}
-#endif //! defined(KTH_DB_READONLY)
-#endif // KTH_CURRENCY_BCH
+// =============================================================================
+// DEPRECATED: Block storage moved to flat files (blk*.dat)
+// =============================================================================
+// #if defined(KTH_CURRENCY_BCH)
+//
+// #if ! defined(KTH_DB_READONLY)
+// // A false return implies store corruption.
+// bool data_base::pop(block& out_block) {
+//
+//     auto const start_time = asio::steady_clock::now();
+//
+//     if (internal_db_->pop_block(out_block) != result_code::success) {
+//         return false;
+//     }
+//
+//     out_block.validation.error = error::success;
+//     out_block.validation.start_pop = start_time;
+//     return true;
+// }
+// #endif // ! defined(KTH_DB_READONLY)
+//
+// #else // KTH_CURRENCY_BCH
+//
+// #if ! defined(KTH_DB_READONLY)
+// // A false return implies store corruption.
+// bool data_base::pop(block& out_block) {
+//
+//     auto const start_time = asio::steady_clock::now();
+//
+//     if (internal_db_->pop_block(out_block) != result_code::success) {
+//         return false;
+//     }
+//
+//     out_block.validation.error = error::success;
+//     out_block.validation.start_pop = start_time;
+//     return true;
+// }
+// #endif //! defined(KTH_DB_READONLY)
+// #endif // KTH_CURRENCY_BCH
 
 
 #if ! defined(KTH_DB_READONLY)
@@ -366,136 +379,109 @@ bool data_base::pop_outputs(const output::list& outputs, size_t height) {
 // Coroutine writers.
 // ----------------------------------------------------------------------------
 
+// =============================================================================
+// DEPRECATED: Block storage moved to flat files (blk*.dat)
+// =============================================================================
+
+// #if ! defined(KTH_DB_READONLY)
+//
+// // Push a single block to the database (synchronous helper).
+// code data_base::do_push(block_const_ptr block, size_t height, uint32_t median_time_past) {
+//     auto res = internal_db_->push_block(*block, height, median_time_past);
+//     if ( ! succeed(res)) {
+//         return error::database_concurrent_push_failed;
+//     }
+//     block->validation.end_push = asio::steady_clock::now();
+//     return error::success;
+// }
+//
+// // Push all blocks sequentially (one after another).
+// ::asio::awaitable<code> data_base::push_all_sequential(executor_type executor, block_const_ptr_list_const_ptr in_blocks, size_t first_height) {
+//     DEBUG_ONLY(*safe_add(in_blocks->size(), first_height));
+//
+//     size_t height = first_height;
+//     for (auto const& block : *in_blocks) {
+//         auto const median_time_past = block->header().validation.median_time_past;
+//
+//         // Set push start time for the block.
+//         block->validation.start_push = asio::steady_clock::now();
+//
+//         // Push block synchronously.
+//         auto const ec = do_push(block, height, median_time_past);
+//         if (ec) {
+//             co_return ec;
+//         }
+//         ++height;
+//     }
+//     co_return error::success;
+// }
+//
+// // Push all blocks in parallel (dispatch all, collect results).
+// ::asio::awaitable<code> data_base::push_all_parallel(executor_type executor, block_const_ptr_list_const_ptr in_blocks, size_t first_height) {
+//     DEBUG_ONLY(*safe_add(in_blocks->size(), first_height));
+//
+//     auto const count = in_blocks->size();
+//     if (count == 0) {
+//         co_return error::success;
+//     }
+//
+//     using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+//     auto channel = std::make_shared<result_channel>(executor, count);
+//
+//     // Dispatch all push operations in parallel.
+//     size_t height = first_height;
+//     for (auto const& block : *in_blocks) {
+//         auto const median_time_past = block->header().validation.median_time_past;
+//         auto const block_height = height;
+//
+//         // Set push start time for the block.
+//         block->validation.start_push = asio::steady_clock::now();
+//
+//         ::asio::post(executor, [this, block, block_height, median_time_past, channel]() {
+//             auto const ec = do_push(block, block_height, median_time_past);
+//             channel->try_send(std::error_code{}, ec);
+//         });
+//
+//         ++height;
+//     }
+//
+//     // Collect results from all parallel operations.
+//     code final_result = error::success;
+//     for (size_t i = 0; i < count; ++i) {
+//         auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+//         if (ec) {
+//             // Channel error (shouldn't happen).
+//             final_result = error::database_concurrent_push_failed;
+//         } else if (result && !final_result) {
+//             // Store first error encountered.
+//             final_result = result;
+//         }
+//     }
+//
+//     co_return final_result;
+// }
+//
+// // Push all blocks starting at first_height.
+// // Selects parallel or sequential based on settings_.parallel_block_push.
+// ::asio::awaitable<code> data_base::push_all(executor_type executor, block_const_ptr_list_const_ptr in_blocks, size_t first_height) {
+//     if (settings_.parallel_block_push) {
+//         co_return co_await push_all_parallel(executor, in_blocks, first_height);
+//     } else {
+//         co_return co_await push_all_sequential(executor, in_blocks, first_height);
+//     }
+// }
+
+// =============================================================================
+// DEPRECATED: Block storage moved to flat files (blk*.dat)
+// Reorg logic needs to be reimplemented for flat files
+// =============================================================================
 #if ! defined(KTH_DB_READONLY)
-
-// Push a single block to the database (synchronous helper).
-code data_base::do_push(block_const_ptr block, size_t height, uint32_t median_time_past) {
-    auto res = internal_db_->push_block(*block, height, median_time_past);
-    if ( ! succeed(res)) {
-        return error::database_concurrent_push_failed;
-    }
-    block->validation.end_push = asio::steady_clock::now();
-    return error::success;
-}
-
-// Push all blocks sequentially (one after another).
-::asio::awaitable<code> data_base::push_all_sequential(executor_type executor, block_const_ptr_list_const_ptr in_blocks, size_t first_height) {
-    DEBUG_ONLY(*safe_add(in_blocks->size(), first_height));
-
-    size_t height = first_height;
-    for (auto const& block : *in_blocks) {
-        auto const median_time_past = block->header().validation.median_time_past;
-
-        // Set push start time for the block.
-        block->validation.start_push = asio::steady_clock::now();
-
-        // Push block synchronously.
-        auto const ec = do_push(block, height, median_time_past);
-        if (ec) {
-            co_return ec;
-        }
-        ++height;
-    }
-    co_return error::success;
-}
-
-// Push all blocks in parallel (dispatch all, collect results).
-::asio::awaitable<code> data_base::push_all_parallel(executor_type executor, block_const_ptr_list_const_ptr in_blocks, size_t first_height) {
-    DEBUG_ONLY(*safe_add(in_blocks->size(), first_height));
-
-    auto const count = in_blocks->size();
-    if (count == 0) {
-        co_return error::success;
-    }
-
-    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
-    auto channel = std::make_shared<result_channel>(executor, count);
-
-    // Dispatch all push operations in parallel.
-    size_t height = first_height;
-    for (auto const& block : *in_blocks) {
-        auto const median_time_past = block->header().validation.median_time_past;
-        auto const block_height = height;
-
-        // Set push start time for the block.
-        block->validation.start_push = asio::steady_clock::now();
-
-        ::asio::post(executor, [this, block, block_height, median_time_past, channel]() {
-            auto const ec = do_push(block, block_height, median_time_past);
-            channel->try_send(std::error_code{}, ec);
-        });
-
-        ++height;
-    }
-
-    // Collect results from all parallel operations.
-    code final_result = error::success;
-    for (size_t i = 0; i < count; ++i) {
-        auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
-        if (ec) {
-            // Channel error (shouldn't happen).
-            final_result = error::database_concurrent_push_failed;
-        } else if (result && !final_result) {
-            // Store first error encountered.
-            final_result = result;
-        }
-    }
-
-    co_return final_result;
-}
-
-// Push all blocks starting at first_height.
-// Selects parallel or sequential based on settings_.parallel_block_push.
-::asio::awaitable<code> data_base::push_all(executor_type executor, block_const_ptr_list_const_ptr in_blocks, size_t first_height) {
-    if (settings_.parallel_block_push) {
-        co_return co_await push_all_parallel(executor, in_blocks, first_height);
-    } else {
-        co_return co_await push_all_sequential(executor, in_blocks, first_height);
-    }
-}
 
 // Pop the set of blocks above the given hash.
 // Returns the popped blocks or an error if the database is corrupt or the hash doesn't exist.
 awaitable_expected<block_const_ptr_list_ptr> data_base::pop_above(executor_type executor, hash_digest const& fork_hash) {
-    auto out_blocks = std::make_shared<block_const_ptr_list>();
-
-    auto const header_result = internal_db_->get_header(fork_hash);
-    if ( ! header_result) {
-        co_return std::unexpected(error::chain_reorganization_failed);
-    }
-
-    // The fork point does not exist or failed to get it or the top, fail.
-    auto const heights = internal_db_->get_last_heights();
-    if ( ! heights) {
-        co_return std::unexpected(error::chain_reorganization_failed);
-    }
-    auto const top = heights->block;
-
-    auto const fork = header_result->second;
-    auto const size = top - fork;
-
-    // The fork is at the top of the chain, nothing to pop.
-    if (size == 0) {
-        co_return out_blocks;
-    }
-
-    // If the fork is at the top there is one block to pop, and so on.
-    out_blocks->reserve(size);
-
-    // Enqueue blocks so .front() is fork + 1 and .back() is top.
-    for (size_t height = top; height > fork; --height) {
-        domain::message::block next;
-
-        if ( ! pop(next)) {
-            co_return std::unexpected(error::database_insert_failed);
-        }
-
-        KTH_ASSERT(next.is_valid());
-        auto block = std::make_shared<domain::message::block const>(std::move(next));
-        out_blocks->insert(out_blocks->begin(), block);
-    }
-
-    co_return out_blocks;
+    // DEPRECATED: Reorg not yet supported with flat file block storage
+    co_return std::unexpected(error::operation_failed);
 }
 
 code data_base::prune_reorg() {
@@ -507,30 +493,34 @@ code data_base::prune_reorg() {
     return error::success;
 }
 
-// Invoke pop_above and then push_all.
-// Returns the outgoing blocks that were popped.
-awaitable_expected<block_const_ptr_list_ptr> data_base::reorganize(
-    executor_type executor,
-    infrastructure::config::checkpoint const& fork_point,
-    block_const_ptr_list_const_ptr incoming_blocks) {
+// =============================================================================
+// DEPRECATED: Block storage moved to flat files (blk*.dat)
+// =============================================================================
 
-    // Pop blocks above the fork point.
-    auto pop_result = co_await pop_above(executor, fork_point.hash());
-    if ( ! pop_result.has_value()) {
-        co_return std::unexpected(pop_result.error());
-    }
-
-    auto outgoing_blocks = std::move(pop_result.value());
-
-    // Push incoming blocks.
-    auto const next_height = *safe_add(fork_point.height(), size_t(1));
-    auto const push_ec = co_await push_all(executor, incoming_blocks, next_height);
-    if (push_ec) {
-        co_return std::unexpected(push_ec);
-    }
-
-    co_return outgoing_blocks;
-}
+// // Invoke pop_above and then push_all.
+// // Returns the outgoing blocks that were popped.
+// awaitable_expected<block_const_ptr_list_ptr> data_base::reorganize(
+//     executor_type executor,
+//     infrastructure::config::checkpoint const& fork_point,
+//     block_const_ptr_list_const_ptr incoming_blocks) {
+//
+//     // Pop blocks above the fork point.
+//     auto pop_result = co_await pop_above(executor, fork_point.hash());
+//     if ( ! pop_result.has_value()) {
+//         co_return std::unexpected(pop_result.error());
+//     }
+//
+//     auto outgoing_blocks = std::move(pop_result.value());
+//
+//     // Push incoming blocks.
+//     auto const next_height = *safe_add(fork_point.height(), size_t(1));
+//     auto const push_ec = co_await push_all(executor, incoming_blocks, next_height);
+//     if (push_ec) {
+//         co_return std::unexpected(push_ec);
+//     }
+//
+//     co_return outgoing_blocks;
+// }
 #endif // ! defined(KTH_DB_READONLY)
 
 } // namespace kth::database

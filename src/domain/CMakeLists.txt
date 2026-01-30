@@ -170,6 +170,7 @@ set(kth_sources_just_legacy
         src/chain/header.cpp
         src/chain/input_basis.cpp
         src/chain/input.cpp
+        src/chain/light_block.cpp
         src/chain/output_basis.cpp
         src/chain/output.cpp
         src/chain/output_point.cpp
@@ -346,6 +347,7 @@ set(kth_headers
     include/kth/domain/chain/block_basis.hpp
     include/kth/domain/chain/input_point.hpp
     include/kth/domain/chain/input_basis.hpp
+    include/kth/domain/chain/light_block.hpp
     include/kth/domain/chain/block.hpp
     include/kth/domain/chain/output.hpp
     include/kth/domain/chain/daa/aserti3_2d.hpp

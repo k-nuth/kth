@@ -214,7 +214,7 @@ static
         }
         // Cancel timer before exiting to ensure clean shutdown of || operator internals
         check_timer.cancel();
-        spdlog::debug("[peer_bridge] Ended");
+        spdlog::info("[peer_bridge] Task ended");
     });
 
     all_tasks.spawn([&]() -> ::asio::awaitable<void> {
@@ -421,7 +421,7 @@ static
         // NOTE: Do NOT close stop_signal - coordinator:stop_bridge uses || with timer
 
         spdlog::info("[peer_provider:shutdown] All channels closed, task ending");
-        spdlog::debug("[peer_provider] Task ended");
+        spdlog::info("[peer_provider] Task ended");
     });
 
     // -------------------------------------------------------------------------
@@ -472,7 +472,7 @@ static
         } catch (std::exception const& e) {
             spdlog::error("[header_bridge] Exception: {}", e.what());
         }
-        spdlog::debug("[header_bridge] Ended");
+        spdlog::info("[header_bridge] Task ended");
     });
 
     // -------------------------------------------------------------------------
@@ -500,28 +500,68 @@ static
     //    - peer_performance → peer_provider_input
     // -------------------------------------------------------------------------
     all_tasks.spawn([&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[block_bridge] Started, demultiplexing supervisor output");
+        spdlog::info("[block_bridge] Started, waiting for blocks from supervisor");
+        uint64_t blocks_forwarded = 0;
+
+        // Timing stats
+        uint64_t total_recv_wait_us = 0;
+        uint64_t total_send_wait_us = 0;
+        auto last_stats_time = std::chrono::steady_clock::now();
+
         try {
             while (true) {
+                // Measure time waiting to receive from supervisor
+                auto recv_start = std::chrono::steady_clock::now();
                 auto [ec, msg] = co_await downloaded_blocks.async_receive(
                     ::asio::as_tuple(::asio::use_awaitable));
+                auto recv_wait_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - recv_start).count();
+
                 if (ec) {
                     spdlog::debug("[block_bridge] Download channel closed: {}", ec.message());
                     break;
                 }
 
+                total_recv_wait_us += recv_wait_us;
+
                 if (auto* block = std::get_if<downloaded_block>(&msg)) {
                     // Track received for pipeline debugging
                     g_blocks_received_by_bridge.fetch_add(1, std::memory_order_relaxed);
 
-                    // Forward to validation
-                    if (!block_validation_input.try_send(std::error_code{}, std::move(*block))) {
-                        spdlog::warn("[block_bridge] Channel full, block {} dropped", block->height);
+                    // Log first few blocks and periodically
+                    if (blocks_forwarded < 10 || blocks_forwarded % 1000 == 0) {
+                        spdlog::info("[block_bridge] Received block {} from supervisor (total: {})",
+                            block->height, blocks_forwarded);
+                    }
+
+                    // Forward to validation with retry - measure send time
+                    auto send_start = std::chrono::steady_clock::now();
+                    bool sent = co_await try_send_with_retry(block_validation_input, std::move(*block), 20, std::chrono::milliseconds(10));
+                    auto send_wait_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::steady_clock::now() - send_start).count();
+
+                    if (!sent) {
+                        spdlog::error("[block_bridge] Validation channel full after retries! forwarded={}", blocks_forwarded);
                         break;
                     }
+
+                    total_send_wait_us += send_wait_us;
                     g_blocks_forwarded_by_bridge.fetch_add(1, std::memory_order_relaxed);
+                    ++blocks_forwarded;
+
+                    // Log timing stats every 10 seconds
+                    auto now = std::chrono::steady_clock::now();
+                    if (now - last_stats_time >= std::chrono::seconds(10)) {
+                        double avg_recv_ms = blocks_forwarded > 0
+                            ? static_cast<double>(total_recv_wait_us) / blocks_forwarded / 1000.0 : 0;
+                        double avg_send_ms = blocks_forwarded > 0
+                            ? static_cast<double>(total_send_wait_us) / blocks_forwarded / 1000.0 : 0;
+                        spdlog::info("[block_bridge] timing: recv_wait={:.2f}ms/blk send_wait={:.2f}ms/blk (n={})",
+                            avg_recv_ms, avg_send_ms, blocks_forwarded);
+                        last_stats_time = now;
+                    }
                 } else if (auto* perf = std::get_if<peer_performance>(&msg)) {
-                    // Forward performance stats to peer_provider
+                    // Forward performance stats to peer_provider (non-critical)
                     if (!peer_provider_input.try_send(std::error_code{}, *perf)) {
                         spdlog::debug("[block_bridge] Channel full, performance stats dropped");
                     }
@@ -530,7 +570,7 @@ static
         } catch (std::exception const& e) {
             spdlog::error("[block_bridge] Exception: {}", e.what());
         }
-        spdlog::debug("[block_bridge] Ended");
+        spdlog::info("[block_bridge] Task ended, forwarded {} blocks", blocks_forwarded);
     });
 
     // -------------------------------------------------------------------------
@@ -639,7 +679,7 @@ static
         }
         // Cancel timer before exiting to ensure clean shutdown of || operator internals
         check_timer.cancel();
-        spdlog::debug("[coordinator:stop_bridge] Ended");
+        spdlog::info("[coordinator:stop_bridge] Task ended");
     });
 
     // Bridge: validated_headers -> coordinator_events
@@ -657,7 +697,7 @@ static
                 break;
             }
         }
-        spdlog::debug("[coordinator:headers_bridge] Ended");
+        spdlog::info("[coordinator:headers_bridge] Task ended");
     });
 
     // Bridge: validated_blocks -> coordinator_events
@@ -675,7 +715,7 @@ static
                 break;
             }
         }
-        spdlog::debug("[coordinator:blocks_bridge] Ended");
+        spdlog::info("[coordinator:blocks_bridge] Task ended");
     });
 
     all_tasks.spawn([&]() -> ::asio::awaitable<void> {
@@ -753,8 +793,8 @@ static
                     auto retry_hash = organizer.index().get_hash(
                         static_cast<blockchain::header_index::index_t>(headers_synced_to));
 
-                    spdlog::info("[sync_coordinator] Retrying header sync from height {} with different peer",
-                        headers_synced_to);
+                    spdlog::info("[sync_coordinator] Retrying header sync from height {} with different peer, from_hash={}",
+                        headers_synced_to, encode_hash(retry_hash));
 
                     if (!header_download_input.try_send(std::error_code{}, header_request{
                         .from_height = headers_synced_to,
@@ -916,8 +956,8 @@ static
             }
         }
 
-        spdlog::debug("[sync_coordinator] Event loop ended, task completing...");
-        spdlog::debug("[sync_coordinator] Task ended");
+        spdlog::info("[sync_coordinator] Event loop ended, task completing...");
+        spdlog::info("[sync_coordinator] Task ended");
     });
 
     // Wait for all tasks

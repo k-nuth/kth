@@ -17,9 +17,9 @@ echo "Building version: ${VERSION} with test: ${TEST} (RelWithDebInfo)"
 rm -rf build
 rm -rf conan.lock
 
-conan lock create conanfile.py --version="${VERSION}" --update
-conan lock create conanfile.py --version "${VERSION}" --lockfile=conan.lock --lockfile-out=build/conan.lock
-conan install conanfile.py --version="${VERSION}" --lockfile=build/conan.lock -of build --build=missing -s build_type=RelWithDebInfo
+conan lock create conanfile.py --version="${VERSION}" -o "&:with_stats=True" --update
+conan lock create conanfile.py --version "${VERSION}" -o "&:with_stats=True" --lockfile=conan.lock --lockfile-out=build/conan.lock
+conan install conanfile.py --version="${VERSION}" -o "&:with_stats=True" --lockfile=build/conan.lock -of build --build=missing -s build_type=RelWithDebInfo
 
 cmake --preset conan-relwithdebinfo \
          -DCMAKE_VERBOSE_MAKEFILE=ON \

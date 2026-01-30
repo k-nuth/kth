@@ -199,17 +199,18 @@ utxo_delta process_blocks_sequential(std::vector<block_with_context> const& bloc
 
 // =============================================================================
 // Apply Delta to Database
+// DEPRECATED: UTXO storage moved to UTXOZ - this function is no longer used
 // =============================================================================
 
 database::result_code apply_utxo_delta(
     database::internal_database& db,
     utxo_delta const& delta
 ) {
-    spdlog::info("[utxo_builder] Applying delta: {} inserts, {} deletes",
-        delta.insert_count(), delta.delete_count());
-
-    // Delegate to database method which handles transaction properly
-    return db.apply_utxo_delta(delta.inserts, delta.deletes);
+    // LMDB UTXO storage removed - use UTXOZ instead via block_chain::apply_utxo_delta
+    (void)db;
+    (void)delta;
+    spdlog::warn("[utxo_builder] apply_utxo_delta(internal_database) is deprecated - use block_chain::apply_utxo_delta instead");
+    return database::result_code::other;
 }
 
 // =============================================================================

@@ -10,6 +10,7 @@
 #include <utility>
 
 #include <kth/blockchain.hpp>
+#include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
 #include <kth/node/user_agent.hpp>
@@ -100,8 +101,8 @@ full_node::~full_node() {
     }
 #endif
 
-    // Start the blockchain
-    if (!chain_.start()) {
+    // Start the blockchain (pass disk magic for block file storage)
+    if (!chain_.start(get_disk_magic(network_type_))) {
         spdlog::error("[node] Failure starting blockchain.");
         co_return error::operation_failed;
     }
@@ -167,7 +168,7 @@ full_node::~full_node() {
 }
 
 ::asio::awaitable<void> full_node::run_blockchain_subscriber() {
-    spdlog::debug("[full_node] run_blockchain_subscriber() starting");
+    spdlog::info("[full_node] run_blockchain_subscriber() STARTING");
     auto blockchain_channel = subscribe_blockchain();
     if (!blockchain_channel) {
         spdlog::debug("[full_node] run_blockchain_subscriber() - no channel, exiting");
@@ -209,12 +210,12 @@ full_node::~full_node() {
             }
         }
     }
-    spdlog::debug("[full_node] run_blockchain_subscriber() exiting");
+    spdlog::info("[full_node] run_blockchain_subscriber() ENDED");
 }
 
 #if ! defined(__EMSCRIPTEN__)
 ::asio::awaitable<void> full_node::run_sync() {
-    spdlog::debug("[full_node] run_sync() starting - CSP sync system");
+    spdlog::info("[full_node] run_sync() STARTING - CSP sync system");
 
     // Create the header organizer (single instance for the sync lifetime)
     blockchain::header_organizer organizer(
@@ -240,7 +241,7 @@ full_node::~full_node() {
     co_await sync::sync_orchestrator(chain_, organizer, network_);
 
     organizer.stop();
-    spdlog::debug("[full_node] run_sync() exiting");
+    spdlog::info("[full_node] run_sync() ENDED");
 }
 #endif
 

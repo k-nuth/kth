@@ -4,6 +4,8 @@
 
 #include <kth/blockchain/interface/block_chain.hpp>
 
+#include <kth/database/flat_file_pos.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
@@ -121,7 +123,7 @@ block_chain::~block_chain() {
 // LIFECYCLE
 // =============================================================================
 
-bool block_chain::start() {
+bool block_chain::start(uint32_t disk_magic) {
     stopped_ = false;
 
     if ( ! database_.open()) {
@@ -137,6 +139,17 @@ bool block_chain::start() {
         return false;
     }
     spdlog::info("[blockchain] UTXO-Z database opened at {}", utxoz_path.string());
+
+    // Initialize flat file block storage
+    // Convert disk magic to little-endian bytes for file header
+    auto blocks_path = database_.internal_db_dir.parent_path() / "blocks";
+    auto magic = to_little_endian(disk_magic);
+    block_store_ = std::make_unique<database::block_store>(blocks_path, magic);
+    if ( ! block_store_->initialize()) {
+        spdlog::error("[blockchain] Failed to initialize block store at {}", blocks_path.string());
+        return false;
+    }
+    spdlog::info("[blockchain] Block store initialized at {}", blocks_path.string());
 
     pool_state_ = chain_state_populator_.populate();
     if ( ! pool_state_) {
@@ -252,8 +265,18 @@ bool block_chain::stopped() const {
 }
 
 ::asio::awaitable<code> block_chain::organize_fast(block_const_ptr block, size_t height) {
-    // Fast IBD: minimal validation + store block data
-    // Uses priority pool executor to avoid blocking the main executor
+    // Fast IBD: minimal validation + store block data to flat files.
+    //
+    // Threading model:
+    // - Work is posted to priority_pool_ (appears parallel)
+    // - But caller does co_await before proceeding (sequential from caller's perspective)
+    // - Since there's only ONE caller (block_validation_task), operations are effectively sequential
+    // - Therefore block_store_ and header_index_ don't need mutex protection for these operations
+    //
+    // Why post to pool instead of running inline?
+    // - Avoids blocking the main executor while doing I/O
+    // - Allows the coroutine to suspend without consuming a system thread
+    //
     using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
     auto channel = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
 
@@ -271,11 +294,32 @@ bool block_chain::stopped() const {
         // Timing: DB push
         block->validation.start_push = asio::steady_clock::now();
 
-        auto result = database_.push_block_fast(*block, height);
+        // Save block to flat files (sequential I/O)
+        auto pos = block_store_->save_block(*block, static_cast<uint32_t>(height));
+        if (pos.is_null()) {
+            spdlog::error("[blockchain] Failed to save block {} to flat files", height);
+            channel->try_send(std::error_code{}, error::operation_failed);
+            return;
+        }
+
+        // Update header_index with block file position
+        auto const block_hash = block->hash();
+        auto const idx = header_index_.find(block_hash);
+        if (idx != header_index::null_index) {
+            header_index_.set_block_pos(idx, static_cast<int16_t>(pos.file), pos.pos);
+            header_index_.add_status(idx, header_status::have_data);
+        }
+
+        // TODO(fernando): Remove this once we fully migrate away from LMDB for blocks
+        // Also update last block height property in LMDB (for compatibility)
+        auto result = database_.internal_db().set_last_block_height(static_cast<uint32_t>(height));
+        if (result != database::result_code::success) {
+            spdlog::warn("[blockchain] Failed to update last_height in LMDB: {}", static_cast<int>(result));
+        }
 
         block->validation.end_push = asio::steady_clock::now();
 
-        channel->try_send(std::error_code{}, result);
+        channel->try_send(std::error_code{}, error::success);
     });
 
     auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
@@ -334,25 +378,12 @@ awaitable_expected<block_const_ptr_list_ptr> block_chain::reorganize(
     infrastructure::config::checkpoint const& fork_point,
     block_const_ptr_list_const_ptr incoming_blocks) {
 
-    if (incoming_blocks->empty()) {
-        co_return std::unexpected(error::reorganize_empty_blocks);
-    }
-
-    auto result = co_await database_.reorganize(priority_pool_.get_executor(), fork_point, incoming_blocks);
-
-    if ( ! result.has_value()) {
-        co_return std::unexpected(result.error());
-    }
-
-    auto const& top = incoming_blocks->back();
-    if ( ! top->validation.state) {
-        co_return std::unexpected(error::chain_state_invalid);
-    }
-
-    set_chain_state(top->validation.state);
-    last_block_.store(top);
-
-    co_return std::move(result.value());
+    // ==========================================================================
+    // DEPRECATED: Block storage moved to flat files (blk*.dat)
+    // ==========================================================================
+    (void)incoming_blocks;
+    (void)fork_point;
+    co_return std::unexpected(error::operation_failed);
 }
 
 ::asio::awaitable<code> block_chain::push(transaction_const_ptr tx) {
@@ -376,7 +407,10 @@ code block_chain::push_sync(transaction_const_ptr tx) {
 }
 
 bool block_chain::insert(block_const_ptr block, size_t height) {
-    return database_.insert(*block, height) == error::success;
+    // DEPRECATED: Block storage moved to flat files (blk*.dat)
+    (void)block;
+    (void)height;
+    return false;
 }
 
 void block_chain::prune_reorg_async() {
@@ -403,9 +437,9 @@ database::result_code block_chain::set_utxo_built_height(uint32_t height) {
     return database_.internal_db().set_utxo_built_height(height);
 }
 
-// TODO(fernando): TEMPORARY - REMOVE THIS METHOD AFTER TESTING UTXO BUILD
+// DEPRECATED: UTXO storage moved to UTXOZ
 database::result_code block_chain::clear_utxo_set() {
-    return database_.internal_db().clear_utxo_set();
+    return database::result_code::success;
 }
 
 size_t block_chain::utxo_deferred_deletions_size() const {
@@ -698,6 +732,8 @@ std::expected<std::pair<size_t, size_t>, database::result_code> block_chain::get
 // FETCH OPERATIONS (Thread safe, coroutine-based)
 // =============================================================================
 
+// DEPRECATED: Block storage moved to flat files (blk*.dat)
+// These functions will return not_found until we implement reading from flat files
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(size_t height) const {
     if (stopped()) {
@@ -709,12 +745,9 @@ block_chain::fetch_block(size_t height) const {
         co_return std::pair{cached, height};
     }
 
-    auto const block_result = database_.internal_db().get_block(height);
-    if ( ! block_result) {
-        co_return std::unexpected(error::not_found);
-    }
-
-    co_return std::pair{std::make_shared<const block>(*block_result), height};
+    // LMDB block storage removed - blocks now in flat files
+    (void)height;
+    co_return std::unexpected(error::not_found);
 }
 
 awaitable_expected<std::pair<block_const_ptr, size_t>>
@@ -728,22 +761,52 @@ block_chain::fetch_block(hash_digest const& hash) const {
         co_return std::pair{cached, cached->validation.state->height()};
     }
 
-    auto const block_result = database_.internal_db().get_block(hash);
-    if ( ! block_result) {
-        co_return std::unexpected(error::not_found);
-    }
-
-    co_return std::pair{std::make_shared<const block>(block_result->first), block_result->second};
+    // LMDB block storage removed - blocks now in flat files
+    (void)hash;
+    co_return std::unexpected(error::not_found);
 }
 
 std::expected<domain::chain::block::list, database::result_code>
 block_chain::fetch_blocks(uint32_t from, uint32_t to) const {
-    return database_.internal_db().get_blocks(from, to);
+    // LMDB block storage removed - blocks now in flat files
+    (void)from;
+    (void)to;
+    return std::unexpected(database::result_code::other);
 }
 
 std::expected<std::vector<data_chunk>, database::result_code>
 block_chain::fetch_blocks_raw(uint32_t from, uint32_t to) const {
-    return database_.internal_db().get_blocks_raw(from, to);
+    // Read blocks from flat files using positions stored in header_index
+    // NOTE: During IBD, blocks are stored sequentially, so index == height
+    std::vector<database::flat_file_pos> positions;
+    positions.reserve(to - from + 1);
+
+    for (uint32_t h = from; h <= to; ++h) {
+        // In IBD mode, the header index matches the height
+        auto const idx = static_cast<header_index::index_t>(h);
+
+        if (idx >= header_index_.size()) {
+            spdlog::error("[blockchain] fetch_blocks_raw: Height {} exceeds header_index size {}", h, header_index_.size());
+            return std::unexpected(database::result_code::key_not_found);
+        }
+
+        if (!header_index_.has_block_data(idx)) {
+            spdlog::error("[blockchain] fetch_blocks_raw: No block data for height {}", h);
+            return std::unexpected(database::result_code::key_not_found);
+        }
+
+        auto file_num = header_index_.get_file_number(idx);
+        auto data_pos = header_index_.get_data_pos(idx);
+        positions.emplace_back(file_num, data_pos);
+    }
+
+    // Read all blocks from flat files
+    auto result = block_store_->read_blocks_raw(positions);
+    if (!result) {
+        return std::unexpected(database::result_code::other);
+    }
+
+    return std::move(*result);
 }
 
 awaitable_expected<std::pair<header_ptr, size_t>>
@@ -802,22 +865,16 @@ block_chain::fetch_block_hash_timestamp(size_t height) const {
     co_return std::tuple{result->hash(), result->timestamp(), height};
 }
 
+// DEPRECATED: Block storage moved to flat files (blk*.dat)
 awaitable_expected<std::tuple<header_const_ptr, size_t, std::shared_ptr<hash_list>, uint64_t>>
 block_chain::fetch_block_header_txs_size(hash_digest const& hash) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
 
-    auto const block_result = database_.internal_db().get_block(hash);
-    if ( ! block_result) {
-        co_return std::unexpected(error::not_found);
-    }
-
-    auto const height = block_result->second;
-    auto const hdr = std::make_shared<const header>(block_result->first.header());
-    auto const tx_hashes = std::make_shared<hash_list>(block_result->first.to_hashes());
-
-    co_return std::tuple{hdr, height, tx_hashes, block_result->first.serialized_size()};
+    // LMDB block storage removed - blocks now in flat files
+    (void)hash;
+    co_return std::unexpected(error::not_found);
 }
 
 awaitable_expected<heights_t>
@@ -834,39 +891,28 @@ block_chain::fetch_last_height() const {
     co_return *result;
 }
 
+// DEPRECATED: Block storage moved to flat files (blk*.dat)
 awaitable_expected<std::pair<merkle_block_ptr, size_t>>
 block_chain::fetch_merkle_block(size_t height) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
 
-    auto const block_result = database_.internal_db().get_block(height);
-    if ( ! block_result) {
-        co_return std::unexpected(error::not_found);
-    }
-
-    auto merkle = std::make_shared<merkle_block>(block_result->header(),
-        block_result->transactions().size(), block_result->to_hashes(), data_chunk{});
-
-    co_return std::pair{merkle, height};
+    // LMDB block storage removed - blocks now in flat files
+    (void)height;
+    co_return std::unexpected(error::not_found);
 }
 
+// DEPRECATED: Block storage moved to flat files (blk*.dat)
 awaitable_expected<std::pair<merkle_block_ptr, size_t>>
 block_chain::fetch_merkle_block(hash_digest const& hash) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
 
-    auto const block_result = database_.internal_db().get_block(hash);
-    if ( ! block_result) {
-        co_return std::unexpected(error::not_found);
-    }
-    auto const& [block, height] = *block_result;
-
-    auto merkle = std::make_shared<merkle_block>(block.header(),
-        block.transactions().size(), block.to_hashes(), data_chunk{});
-
-    co_return std::pair{merkle, height};
+    // LMDB block storage removed - blocks now in flat files
+    (void)hash;
+    co_return std::unexpected(error::not_found);
 }
 
 awaitable_expected<std::pair<compact_block_ptr, size_t>>
@@ -959,6 +1005,7 @@ block_chain::fetch_unconfirmed_transaction(hash_digest const& hash) const {
     co_return std::make_shared<const transaction>(result->transaction());
 }
 
+// Modified to use get_header instead of get_block (blocks now in flat files)
 awaitable_expected<inventory_ptr>
 block_chain::fetch_locator_block_hashes(get_blocks_const_ptr locator,
                                         hash_digest const& threshold,
@@ -969,7 +1016,7 @@ block_chain::fetch_locator_block_hashes(get_blocks_const_ptr locator,
 
     uint32_t start = 0;
     for (auto const& hash : locator->start_hashes()) {
-        auto const result = database_.internal_db().get_block(hash);
+        auto const result = database_.internal_db().get_header(hash);
         if (result) {
             start = result->second;
             break;
@@ -980,14 +1027,14 @@ block_chain::fetch_locator_block_hashes(get_blocks_const_ptr locator,
     auto end = *safe_add(begin, uint32_t(limit));
 
     if (locator->stop_hash() != null_hash) {
-        auto const result = database_.internal_db().get_block(locator->stop_hash());
+        auto const result = database_.internal_db().get_header(locator->stop_hash());
         if (result) {
             end = std::min(result->second, end);
         }
     }
 
     if (threshold != null_hash) {
-        auto const result = database_.internal_db().get_block(threshold);
+        auto const result = database_.internal_db().get_header(threshold);
         if (result) {
             begin = std::max(result->second, begin);
         }
@@ -997,13 +1044,13 @@ block_chain::fetch_locator_block_hashes(get_blocks_const_ptr locator,
     hashes->inventories().reserve(floor_subtract(end, begin));
 
     for (auto height = begin; height < end; ++height) {
-        auto const result = database_.internal_db().get_block(height);
+        auto const result = database_.internal_db().get_header(height);
         if ( ! result) {
             hashes->inventories().shrink_to_fit();
             break;
         }
         static auto const id = inventory::type_id::block;
-        hashes->inventories().emplace_back(id, result->header().hash());
+        hashes->inventories().emplace_back(id, result->hash());
     }
 
     co_return hashes;

@@ -5,9 +5,14 @@
 #ifndef KTH_NODE_SYNC_MESSAGES_HPP
 #define KTH_NODE_SYNC_MESSAGES_HPP
 
+#include <chrono>
 #include <cstdint>
 #include <variant>
 #include <vector>
+
+#include <asio/steady_timer.hpp>
+#include <asio/this_coro.hpp>
+#include <asio/use_awaitable.hpp>
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure/utility/async_channel.hpp>
@@ -102,6 +107,11 @@ struct downloaded_block {
     domain::message::block::const_ptr block;
     network::peer_session::ptr source_peer;
     uint32_t active_peers;  // snapshot of active peer count at time of send
+    uint32_t deserialize_us{0};  // time spent deserializing this block (microseconds)
+    uint32_t network_wait_us{0}; // time spent waiting for network (microseconds)
+    // Pipeline latency tracking (microseconds since epoch, for measuring channel overhead)
+    uint64_t received_from_net_us{0};  // when block arrived from network
+    uint64_t sent_to_supervisor_us{0}; // when download task sent to supervisor
 };
 
 struct block_validated {
@@ -190,6 +200,41 @@ using sync_coordinator_event = std::variant<
 >;
 
 using sync_coordinator_event_channel = concurrent_channel<sync_coordinator_event>;
+
+// =============================================================================
+// Channel Utilities
+// =============================================================================
+
+/// Try to send a message to a channel with retries.
+/// Useful for avoiding message loss when the channel is temporarily full.
+/// Best for small/simple messages where copying is acceptable.
+/// @param channel The channel to send to.
+/// @param msg The message to send (copied on each attempt until success).
+/// @param max_attempts Maximum number of attempts before giving up.
+/// @param retry_delay Delay between retry attempts.
+/// @return true if message was sent successfully, false if all attempts failed.
+template <typename Channel, typename Msg>
+::asio::awaitable<bool> try_send_with_retry(
+    Channel& channel,
+    Msg msg,  // Take by value - caller decides whether to copy or move
+    int max_attempts = 5,
+    std::chrono::milliseconds retry_delay = std::chrono::milliseconds(10)
+) {
+    auto executor = co_await ::asio::this_coro::executor;
+    for (int attempt = 0; attempt < max_attempts; ++attempt) {
+        // Copy msg for try_send (preserves original for retry)
+        if (channel.try_send(std::error_code{}, Msg{msg})) {
+            co_return true;
+        }
+        // Wait before retrying (except on last attempt)
+        if (attempt + 1 < max_attempts) {
+            ::asio::steady_timer timer(executor);
+            timer.expires_after(retry_delay);
+            co_await timer.async_wait(::asio::use_awaitable);
+        }
+    }
+    co_return false;
+}
 
 } // namespace kth::node::sync
 

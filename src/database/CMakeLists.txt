@@ -120,6 +120,11 @@ set(kth_sources_just_kth
     src/databases/history_entry.cpp
     src/databases/transaction_entry.cpp
     src/databases/transaction_unconfirmed_entry.cpp
+
+    # Flat file block storage
+    src/flat_file_seq.cpp
+    src/block_undo.cpp
+    src/block_store.cpp
 )
 
 
@@ -133,6 +138,10 @@ set(kth_headers
   include/kth/database/currency_config.hpp
   include/kth/database/define.hpp
   include/kth/database/data_base.hpp
+  include/kth/database/flat_file_pos.hpp
+  include/kth/database/flat_file_seq.hpp
+  include/kth/database/block_undo.hpp
+  include/kth/database/block_store.hpp
   include/kth/database/databases/block_database.ipp
   include/kth/database/databases/property_code.hpp
   include/kth/database/databases/internal_database.ipp

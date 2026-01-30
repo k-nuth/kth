@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
-#include <mutex>
 #include <vector>
 
 #include <kth/database/define.hpp>
@@ -22,14 +21,14 @@ namespace kth::database {
 
 /// High-level API for storing blocks and undo data in flat files.
 /// Thread-safe.
-class KD_API block_store {
-public:
+struct KD_API block_store {
     using magic_t = std::array<uint8_t, 4>;
 
     /// Construct a block store.
     /// @param blocks_dir Directory for block and undo files.
     /// @param magic Network magic bytes (4 bytes).
-    explicit block_store(std::filesystem::path blocks_dir, magic_t magic);
+    explicit 
+    block_store(std::filesystem::path blocks_dir, magic_t magic);
 
     ~block_store() = default;
 
@@ -167,7 +166,13 @@ private:
     std::vector<block_file_info> file_info_;
     int32_t last_block_file_{0};
 
-    mutable std::mutex mutex_;
+    // Thread safety analysis:
+    // - file_info_ and last_block_file_ are modified only during writes
+    // - Reads don't modify internal state, they just read from disk at given positions
+    // - Currently assuming single-threaded writes (IBD is sequential)
+    // - If concurrent writes are needed, add mutex back and use it for BOTH reads and writes
+    // - Run with thread sanitizer (./scripts) to verify: ./build-linux-tsan.sh
+    // mutable std::mutex write_mutex_;
 };
 
 } // namespace kth::database
