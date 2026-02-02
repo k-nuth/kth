@@ -43,10 +43,6 @@ struct light_block {
     static
     expect<light_block> from_data(byte_reader& reader, bool wire = true);
 
-    /// Parse from raw byte span (convenience overload).
-    static
-    expect<light_block> from_data(byte_span data, bool wire = true);
-
     // Properties.
     //-------------------------------------------------------------------------
 
@@ -57,6 +53,10 @@ struct light_block {
     /// Get raw block data for disk storage.
     [[nodiscard]]
     data_chunk const& raw_data() const { return raw_data_; }
+
+    /// Get serialized size of the block.
+    [[nodiscard]]
+    size_t serialized_size(bool /*wire*/ = true) const { return raw_data_.size(); }
 
     /// Get number of transactions.
     [[nodiscard]]

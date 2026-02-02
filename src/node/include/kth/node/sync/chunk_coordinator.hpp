@@ -57,7 +57,8 @@ struct chunk_coordinator_config {
     size_t max_peers{8};
 
     /// Timeout before a slot is considered stalled (seconds)
-    uint32_t stall_timeout_secs{30};
+    /// 2026-02-02: Reduced from 30s to 10s to minimize stalls from slow peers
+    uint32_t stall_timeout_secs{10};
 };
 
 /// Lock-free chunk coordinator for parallel block downloads

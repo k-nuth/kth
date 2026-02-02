@@ -115,43 +115,9 @@ expect<light_block> light_block::from_data(byte_reader& reader, bool wire) {
         }
     }
 
-    // Note: byte_reader doesn't allow seeking back to get raw bytes.
-    // Use the span overload instead.
-    return std::unexpected(error::operation_failed);
-}
-
-// static
-expect<light_block> light_block::from_data(byte_span data, bool wire) {
-    byte_reader reader(data);
-
-    // 1. Parse header (80 bytes) - this is the only full parse
-    auto hdr = header::from_data(reader, wire);
-    if (!hdr) {
-        return std::unexpected(hdr.error());
-    }
-
-    // 2. Read transaction count (varint)
-    auto tx_count = reader.read_size_little_endian();
-    if (!tx_count) {
-        return std::unexpected(tx_count.error());
-    }
-
-    // 3. For each transaction: record start offset and skip
-    std::vector<uint32_t> offsets;
-    offsets.reserve(*tx_count);
-
-    for (size_t i = 0; i < *tx_count; ++i) {
-        offsets.push_back(uint32_t(reader.position()));
-
-        // Skip transaction
-        auto length = skip_transaction(reader);
-        if (!length) {
-            return std::unexpected(length.error());
-        }
-    }
-
-    // 4. Copy raw data (for disk storage)
-    data_chunk raw(data.begin(), data.end());
+    // 4. Copy raw data from reader's buffer (for disk storage)
+    auto const raw_span = reader.buffer().subspan(start_pos, reader.position() - start_pos);
+    data_chunk raw(raw_span.begin(), raw_span.end());
 
     light_block result;
     result.header_ = std::move(*hdr);

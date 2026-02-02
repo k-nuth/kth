@@ -244,6 +244,7 @@ if (ENABLE_TEST)
 
     set(kth_blockchain_test_sources
         test/header_index.cpp
+        test/header_organizer.cpp
     )
 
     # TODO(fernando): re-enable these tests when fixed

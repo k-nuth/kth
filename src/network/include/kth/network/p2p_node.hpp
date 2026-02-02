@@ -160,6 +160,15 @@ struct peer_event {
     std::shared_ptr<handshake_response_channel> response_channel;
 };
 
+/// Type of peer lifecycle event for sync layer notification
+enum class peer_event_type { connected, disconnected };
+
+/// Notification sent to sync layer when peer connects or disconnects
+struct peer_notification {
+    peer_session::ptr peer;
+    peer_event_type event;
+};
+
 // =============================================================================
 // P2P Node (main networking class)
 // =============================================================================
@@ -243,10 +252,10 @@ public:
     [[nodiscard]]
     std::vector<peer_session::ptr> get_peers() const;
 
-    /// Get the channel that receives newly connected peers (CSP pattern)
-    /// Use this to subscribe to peer connection events without polling.
+    /// Get the channel that receives peer lifecycle events (CSP pattern)
+    /// Use this to subscribe to peer connection/disconnection events.
     [[nodiscard]]
-    concurrent_channel<peer_session::ptr>& connected_peers();
+    concurrent_channel<peer_notification>& peer_events();
 
     /// Get the thread pool
     [[nodiscard]]
@@ -326,9 +335,9 @@ private:
     // Signal to stop the peer_supervisor gracefully
     std::unique_ptr<concurrent_event_channel> stop_signal_;
 
-    // Channel for notifying sync layer of newly connected peers (CSP pattern)
-    // Peers are sent here after successful handshake and addition to manager
-    std::unique_ptr<concurrent_channel<peer_session::ptr>> connected_peer_channel_;
+    // Channel for notifying sync layer of peer lifecycle events (CSP pattern)
+    // Peers are sent here on connection (after handshake) and disconnection
+    std::unique_ptr<concurrent_channel<peer_notification>> peer_notification_channel_;
 };
 
 } // namespace kth::network

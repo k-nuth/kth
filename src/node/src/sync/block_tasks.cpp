@@ -28,6 +28,7 @@
 namespace kth::node::sync {
 
 using namespace ::asio::experimental::awaitable_operators;
+using namespace std::chrono_literals;
 
 // =============================================================================
 // Pipeline Counters for debugging block loss
@@ -192,8 +193,8 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
 
         // Download from peer - measure time
         auto download_start = std::chrono::steady_clock::now();
-        auto result = co_await network::request_blocks_batch(
-            *peer, blocks, std::chrono::seconds(60));
+        auto result = co_await network::request_blocks_batch<network::sync_mode::fast>(
+            *peer, blocks, 60s);
         auto download_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - download_start).count();
 
@@ -252,9 +253,9 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
 
             // Use try_send_with_retry - retries with delays instead of blocking or giving up
             bool sent = co_await try_send_with_retry(output,
-                downloaded_block{
+                downloaded_light_block{
                     .height = height,
-                    .block = std::make_shared<domain::message::block const>(std::move(blk.block)),
+                    .block = std::make_shared<domain::chain::light_block const>(std::move(blk.block)),
                     .source_peer = peer,
                     .active_peers = current_peers,
                     .deserialize_us = blk.deserialize_us,
@@ -263,7 +264,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
                     .sent_to_supervisor_us = static_cast<uint64_t>(sent_to_supervisor_us)
                 },
                 50,  // 50 attempts
-                std::chrono::milliseconds(20)  // 20ms between attempts = 1 second total max wait
+                20ms  // 20ms between attempts = 1 second total max wait
             );
 
             if (!sent) {
@@ -373,6 +374,9 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
 
     // Stats
     uint64_t blocks_forwarded = 0;
+    uint64_t last_blocks_forwarded = 0;
+    uint64_t bytes_downloaded = 0;
+    uint64_t last_bytes_downloaded = 0;
     auto last_stats_time = std::chrono::steady_clock::now();
 
     // Buffer peers that arrive before we have a range
@@ -472,7 +476,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
                 break;
             }
             // Forward to unified channel
-            if (auto* block = std::get_if<downloaded_block>(&msg)) {
+            if (auto* block = std::get_if<downloaded_light_block>(&msg)) {
                 g_blocks_received_by_supervisor.fetch_add(1, std::memory_order_relaxed);
                 // Use try_send_with_retry for blocks
                 bool sent = co_await try_send_with_retry(events, std::move(*block), 20, std::chrono::milliseconds(10));
@@ -521,14 +525,17 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
             break;
         }
 
-        if (auto* block = std::get_if<downloaded_block>(&msg)) {
+        if (auto* block = std::get_if<downloaded_light_block>(&msg)) {
             auto const height = block->height;
 
             // Log first few blocks and periodically after that
             if (blocks_forwarded < 10 || blocks_forwarded % 1000 == 0) {
-                spdlog::info("[block_supervisor] Forwarding block {} (total forwarded: {})", height, blocks_forwarded);
+                spdlog::debug("[block_supervisor] Forwarding block {} (total forwarded: {})", height, blocks_forwarded);
             }
 
+            // TEMPORARY: Skip validation/storage for download-only benchmark
+            // TODO: Remove this block when done benchmarking
+#if 0
             // Forward block to validation with retry
             bool sent = co_await try_send_with_retry(output, std::move(*block), 20, std::chrono::milliseconds(10));
             if (!sent) {
@@ -536,23 +543,32 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
                     height, blocks_forwarded);
                 break;
             }
+#endif
             // Track successful forward for pipeline debugging
             g_blocks_forwarded_by_supervisor.fetch_add(1, std::memory_order_relaxed);
             ++blocks_forwarded;
+            bytes_downloaded += block->block->serialized_size();
 
             // Log stats periodically
             auto now = std::chrono::steady_clock::now();
-            if (now - last_stats_time >= std::chrono::seconds(10)) {
-                spdlog::info("[block_supervisor] Stats: {} blocks forwarded, {} peers spawned, {} events processed",
-                    blocks_forwarded, spawned_peers.size(), events_processed);
+            if (now - last_stats_time >= 2s) {
+                auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_stats_time).count();
+                auto blocks_delta = blocks_forwarded - last_blocks_forwarded;
+                auto bytes_delta = bytes_downloaded - last_bytes_downloaded;
+                auto blk_rate = elapsed_ms > 0 ? (blocks_delta * 1000 / elapsed_ms) : 0;
+                double mb_rate = elapsed_ms > 0 ? (double(bytes_delta) / 1024.0 / 1024.0) / (double(elapsed_ms) / 1000.0) : 0.0;
+                spdlog::info("[block_supervisor] Stats: {} blocks ({} blk/s, {:.1f} MB/s), {} peers downloading",
+                    blocks_forwarded, blk_rate, mb_rate, spawned_peers.size());
                 last_stats_time = now;
+                last_blocks_forwarded = blocks_forwarded;
+                last_bytes_downloaded = bytes_downloaded;
             }
             continue;
         }
 
         if (auto* ended = std::get_if<download_task_ended>(&msg)) {
             spawned_peers.erase(ended->peer_nonce);
-            spdlog::info("[block_supervisor] Task ended for nonce {}, spawned_peers now has {} entries",
+            spdlog::info("[block_supervisor:task_ended] nonce={}, remaining downloading={}",
                 ended->peer_nonce, spawned_peers.size());
             continue;
         }
@@ -589,8 +605,15 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
         }
 
         if (auto* peers_msg = std::get_if<peers_updated>(&msg)) {
-            spdlog::info("[block_supervisor] Received peers_updated with {} peers (coordinator={}, spawned_peers={})",
-                peers_msg->peers.size(), coordinator ? "yes" : "no", spawned_peers.size());
+            // Count idle peers (connected but not downloading)
+            size_t idle_count = 0;
+            for (auto const& peer : peers_msg->peers) {
+                if (!peer->stopped() && !spawned_peers.contains(peer->nonce())) {
+                    ++idle_count;
+                }
+            }
+            spdlog::info("[block_supervisor:peers_updated] received {} peers, {} idle, {} downloading (coordinator={})",
+                peers_msg->peers.size(), idle_count, spawned_peers.size(), coordinator ? "yes" : "no");
 
             if (!coordinator) {
                 // Buffer peers until we have a range request
@@ -617,7 +640,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
                     ++spawned;
                 }
             }
-            spdlog::info("[block_supervisor] peers_updated result: spawned={}, already_running={}, stopped={}",
+            spdlog::info("[block_supervisor:peers_updated] result: spawned={}, already_running={}, stopped={}",
                 spawned, already_spawned_count, stopped_count);
             continue;
         }
@@ -687,7 +710,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
     // OWNED state - not shared with anyone
     uint32_t next_height = start_height;
     uint32_t last_seen_peers = 0;
-    boost::unordered_flat_map<uint32_t, downloaded_block> pending;
+    boost::unordered_flat_map<uint32_t, downloaded_light_block> pending;
 
     size_t validated_count = 0;
     auto const start_time = std::chrono::steady_clock::now();
@@ -725,7 +748,8 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
     // Track when we started waiting for a specific height (for stuck detection)
     uint32_t waiting_for_height = 0;
     auto waiting_since = std::chrono::steady_clock::now();
-    constexpr auto stuck_threshold = std::chrono::seconds(30);
+    // 2026-02-02: Reduced from 30s to 10s to match chunk timeout
+    constexpr auto stuck_threshold = std::chrono::seconds(10);
 
     // Channel wait timing stats (accumulate per window)
     std::vector<uint64_t> recv_wait_times_us;
@@ -765,7 +789,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
             break;
         }
 
-        auto* downloaded_ptr = std::get_if<downloaded_block>(&msg);
+        auto* downloaded_ptr = std::get_if<downloaded_light_block>(&msg);
         if (!downloaded_ptr) {
             spdlog::warn("[block_validation] Received non-block message, variant index: {}", msg.index());
             continue;
@@ -914,12 +938,14 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
             // Measure organize time
             auto organize_start = std::chrono::steady_clock::now();
 
+#if 0  // TODO: disabled for light_block benchmark - needs message::block
             // Use fast mode under checkpoint, full validation above
             if (next_height <= checkpoint_height) {
                 result = co_await chain.organize_fast(it->second.block, next_height);
             } else {
                 result = co_await chain.organize(it->second.block, /*headers_pre_validated=*/true);
             }
+#endif
 
             auto organize_us = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - organize_start).count();
@@ -931,6 +957,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
                     next_height, organize_us, result ? result.message() : "success");
             }
 
+#if 0  // TODO: disabled for light_block benchmark - needs message::block
             // Log slow blocks (>100ms) for diagnosis
             if (organize_us > 100000) {  // 100ms
                 auto const& txs = it->second.block->transactions();
@@ -962,6 +989,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
                 notify_times.push_back(to_us(v.start_notify, v.start_push));
                 push_times.push_back(to_us(v.start_push, v.end_push));
             }
+#endif
 
             if (!output.try_send(std::error_code{}, block_validated{
                 .height = next_height,

@@ -105,10 +105,14 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
                 auto const tip_height = index_.get_height(tip_index_);
 
                 if (existing_height < tip_height) {
+                    // 2026-02-02: Return stale_chain error instead of success.
+                    // This prevents the coordinator from marking header sync as "complete"
+                    // when it receives a stale batch (which has headers_added = 0).
+                    // The coordinator will see this error and continue syncing instead of stopping.
                     spdlog::info("[header_organizer] Skipping stale header batch: first header connects to "
                         "height {} but tip is at height {} - likely duplicate retry request",
                         existing_height, tip_height);
-                    result.error = error::success;  // Not an error, just nothing to do
+                    result.error = error::stale_chain;  // Signal stale batch, not end of chain
                     result.index_size = index_.size();
                     result.index_memory_bytes = index_.memory_usage();
                     return result;

@@ -225,12 +225,23 @@ void peer_session::stop(code const& ec) {
     // Previously this caused ASAN heap-use-after-free, but that was fixed by making
     // run()'s || operator execute on the strand (co_spawn with strand_).
     //
-    // Channels closed:
-    // - inbound_: Used by run_peer_protocols() waiting for messages. Without this,
-    //             shutdown waits for ping_timer (2 minutes)!
-    // - outbound_: Used by write_loop() and send operations.
-    // - headers_responses_, block_responses_, addr_responses_: Used by request protocols.
-    spdlog::debug("[peer_session] stop() checkpoint 11: closing all channels");
+    // 2026-02-02: CRITICAL FIX - call cancel() BEFORE close()!
+    // close() marks the channel as closed but may not immediately complete pending operations.
+    // cancel() explicitly "cancels all asynchronous operations waiting on the channel".
+    // Without this, run_peer_protocols() using || operator can hang indefinitely because
+    // the async_receive() doesn't complete when only close() is called.
+    //
+    // Channels:
+    // - inbound_: Used by run_peer_protocols() waiting for messages
+    // - outbound_: Used by write_loop() and send operations
+    // - headers_responses_, block_responses_, addr_responses_: Used by request protocols
+    spdlog::debug("[peer_session] stop() checkpoint 11: canceling all channel operations");
+    inbound_.cancel();
+    outbound_.cancel();
+    headers_responses_.cancel();
+    block_responses_.cancel();
+    addr_responses_.cancel();
+    spdlog::debug("[peer_session] stop() checkpoint 11b: closing all channels");
     inbound_.close();
     outbound_.close();
     headers_responses_.close();

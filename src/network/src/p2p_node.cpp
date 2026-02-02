@@ -28,7 +28,7 @@ p2p_node::p2p_node(settings const& settings)
     , top_block_({null_hash, 0})
     , new_peer_channel_(std::make_unique<concurrent_channel<peer_event>>(pool_.get_executor(), 100))
     , stop_signal_(std::make_unique<concurrent_event_channel>(pool_.get_executor(), 1))
-    , connected_peer_channel_(std::make_unique<concurrent_channel<peer_session::ptr>>(pool_.get_executor(), 100))
+    , peer_notification_channel_(std::make_unique<concurrent_channel<peer_notification>>(pool_.get_executor(), 100))
 {
     spdlog::debug("[p2p_node] p2p_node constructor - thread pool size: {}", pool_.size());
     // Register default message handlers using typed registration
@@ -150,9 +150,9 @@ void p2p_node::stop() {
         new_peer_channel_->close();
     }
 
-    // Close the connected peer channel to wake up sync layer
-    if (connected_peer_channel_) {
-        connected_peer_channel_->close();
+    // Close the peer notification channel to wake up sync layer
+    if (peer_notification_channel_) {
+        peer_notification_channel_->close();
     }
 
     // Stop acceptor - this causes run_inbound() to exit
@@ -397,8 +397,8 @@ std::vector<peer_session::ptr> p2p_node::get_peers() const {
     return result;
 }
 
-concurrent_channel<peer_session::ptr>& p2p_node::connected_peers() {
-    return *connected_peer_channel_;
+concurrent_channel<peer_notification>& p2p_node::peer_events() {
+    return *peer_notification_channel_;
 }
 
 // Internal coroutines
@@ -760,13 +760,27 @@ concurrent_channel<peer_session::ptr>& p2p_node::connected_peers() {
     spdlog::info("[p2p_node] maintain_outbound_connections started, target: {} peers", settings_.outbound_connections);
 
     // Maximum number of parallel connection attempts
-    constexpr size_t max_parallel_attempts = 8;
+    // Should match or exceed outbound_connections target for faster peer acquisition
+    constexpr size_t max_parallel_attempts = 32;
+
+    // Periodic status log
+    auto last_status_log = std::chrono::steady_clock::now();
+    constexpr auto status_log_interval = 10s;
 
     while (!stopped_) {
         auto const current_count = manager_.count_snapshot();
         auto const target = settings_.outbound_connections;
         auto const host_count = hosts_.count();
         auto const ban_count = banlist_.size();
+        auto const pending_count = pending_connections_.size();
+
+        // Periodic status log
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_status_log >= status_log_interval) {
+            spdlog::info("[p2p_node:status] Peers: {}/{} (target), pending: {}, hosts: {}, banned: {}",
+                current_count, target, pending_count, host_count, ban_count);
+            last_status_log = now;
+        }
 
         if (current_count < target) {
             // Need more connections
@@ -886,12 +900,6 @@ concurrent_channel<peer_session::ptr>& p2p_node::connected_peers() {
             ? std::chrono::milliseconds(500)  // Fast retry when below target
             : std::chrono::seconds(5);        // Normal check when at target
 
-        // Log status periodically when at target
-        if (current_count >= target) {
-            spdlog::debug("[p2p_node] Connections at target: {}/{}, hosts: {}, banned: {}",
-                current_count, target, host_count, ban_count);
-        }
-
         timer.expires_after(wait_time);
         auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
         if (ec) {
@@ -1000,9 +1008,10 @@ concurrent_channel<peer_session::ptr>& p2p_node::connected_peers() {
                         }
 
                         // Notify sync layer of new peer (CSP pattern)
-                        spdlog::debug("[p2p_node] Connection complete with {}, version {}, {}",
-                            peer->authority(), peer->negotiated_version(), peer->short_user_agent());
-                        connected_peer_channel_->try_send(std::error_code{}, peer);
+                        spdlog::info("[p2p_node:peer_event] CONNECTED: {} (nonce={})",
+                            peer->authority(), peer->nonce());
+                        peer_notification_channel_->try_send(std::error_code{},
+                            peer_notification{peer, peer_event_type::connected});
 
                         // Send initial ping to get latency data
                         {
@@ -1022,6 +1031,13 @@ concurrent_channel<peer_session::ptr>& p2p_node::connected_peers() {
 
                         // Run protocols until peer disconnects
                         co_await run_peer_protocols(peer);
+
+                        // Notify sync layer of peer disconnection (CSP pattern)
+                        spdlog::info("[p2p_node:peer_event] DISCONNECTED: {} (nonce={})",
+                            peer->authority(), peer->nonce());
+                        peer_notification_channel_->try_send(std::error_code{},
+                            peer_notification{peer, peer_event_type::disconnected});
+
                         spdlog::debug("[p2p_node] Peer [{}] lambda completed (protocols ended)", peer->authority());
                     }()
                 );

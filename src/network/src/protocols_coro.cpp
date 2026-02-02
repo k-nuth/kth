@@ -599,84 +599,85 @@ awaitable_expected<domain::message::headers> request_headers_from(
     co_return co_await peer.send(request);
 }
 
-awaitable_expected<domain::message::block> request_block(
-    peer_session& peer,
-    hash_digest const& block_hash,
-    std::chrono::seconds timeout)
-{
-    // Build single-block getdata
-    domain::message::inventory_vector::list inventories{
-        {domain::message::inventory_vector::type_id::block, block_hash}
-    };
-    domain::message::get_data request(std::move(inventories));
+// awaitable_expected<domain::message::block> request_block(
+//     peer_session& peer,
+//     hash_digest const& block_hash,
+//     std::chrono::seconds timeout)
+// {
+//     // Build single-block getdata
+//     domain::message::inventory_vector::list inventories{
+//         {domain::message::inventory_vector::type_id::block, block_hash}
+//     };
+//     domain::message::get_data request(std::move(inventories));
 
-    spdlog::debug("[protocol] Requesting block {} from [{}]",
-        encode_hash(block_hash), peer.authority());
+//     spdlog::debug("[protocol] Requesting block {} from [{}]",
+//         encode_hash(block_hash), peer.authority());
 
-    auto ec = co_await peer.send(request);
-    if (ec != error::success) {
-        co_return std::unexpected(ec);
-    }
+//     auto ec = co_await peer.send(request);
+//     if (ec != error::success) {
+//         co_return std::unexpected(ec);
+//     }
 
-    // Wait for block response on the dedicated channel
-    auto executor = co_await ::asio::this_coro::executor;
-    auto deadline = std::chrono::steady_clock::now() + timeout;
+//     // Wait for block response on the dedicated channel
+//     auto executor = co_await ::asio::this_coro::executor;
+//     auto deadline = std::chrono::steady_clock::now() + timeout;
 
-    while (true) {
-        auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
-            deadline - std::chrono::steady_clock::now());
+//     while (true) {
+//         auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
+//             deadline - std::chrono::steady_clock::now());
 
-        if (remaining <= 0s) {
-            spdlog::debug("[protocol] Timeout waiting for block from [{}]", peer.authority());
-            co_return std::unexpected(error::channel_timeout);
-        }
+//         if (remaining <= 0s) {
+//             spdlog::debug("[protocol] Timeout waiting for block from [{}]", peer.authority());
+//             co_return std::unexpected(error::channel_timeout);
+//         }
 
-        ::asio::steady_timer timer(executor, remaining);
+//         ::asio::steady_timer timer(executor, remaining);
 
-        auto result = co_await (
-            peer.block_responses().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-            timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-        );
+//         auto result = co_await (
+//             peer.block_responses().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
+//             timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
+//         );
 
-        if (result.index() == 1) {
-            spdlog::debug("[protocol] Timeout waiting for block from [{}]", peer.authority());
-            co_return std::unexpected(error::channel_timeout);
-        }
+//         if (result.index() == 1) {
+//             spdlog::debug("[protocol] Timeout waiting for block from [{}]", peer.authority());
+//             co_return std::unexpected(error::channel_timeout);
+//         }
 
-        auto& [recv_ec, raw] = std::get<0>(result);
-        if (recv_ec) {
-            co_return std::unexpected(error::channel_stopped);
-        }
+//         auto& [recv_ec, raw] = std::get<0>(result);
+//         if (recv_ec) {
+//             co_return std::unexpected(error::channel_stopped);
+//         }
 
-        // Parse the block
-        byte_reader reader(raw.payload);
-        auto block_result = domain::message::block::from_data(reader, peer.negotiated_version());
-        if (!block_result) {
-            spdlog::debug("[protocol] Failed to parse block from [{}]", peer.authority());
-            co_return std::unexpected(error::bad_stream);
-        }
+//         // Parse the block
+//         byte_reader reader(raw.payload);
+//         auto block_result = domain::message::block::from_data(reader, peer.negotiated_version());
+//         if (!block_result) {
+//             spdlog::debug("[protocol] Failed to parse block from [{}]", peer.authority());
+//             co_return std::unexpected(error::bad_stream);
+//         }
 
-        // Verify it's the block we requested
-        if (block_result->header().hash() != block_hash) {
-            spdlog::debug("[protocol] Received unexpected block from [{}]", peer.authority());
-            // Continue waiting for the correct block
-            continue;
-        }
+//         // Verify it's the block we requested
+//         if (block_result->header().hash() != block_hash) {
+//             spdlog::debug("[protocol] Received unexpected block from [{}]", peer.authority());
+//             // Continue waiting for the correct block
+//             continue;
+//         }
 
-        spdlog::debug("[protocol] Received block {} from [{}]",
-            encode_hash(block_hash), peer.authority());
+//         spdlog::debug("[protocol] Received block {} from [{}]",
+//             encode_hash(block_hash), peer.authority());
 
-        co_return std::move(*block_result);
-    }
-}
+//         co_return std::move(*block_result);
+//     }
+// }
 
-awaitable_expected<std::vector<block_with_height>> request_blocks_batch(
+template<sync_mode Mode>
+awaitable_expected<std::vector<block_result<Mode>>> request_blocks_batch(
     peer_session& peer,
     std::vector<std::pair<uint32_t, hash_digest>> const& blocks,
     std::chrono::seconds timeout)
 {
     if (blocks.empty()) {
-        co_return std::vector<block_with_height>{};
+        co_return std::vector<block_result<Mode>>{};
     }
 
     // Build hash -> height lookup map
@@ -712,7 +713,7 @@ awaitable_expected<std::vector<block_with_height>> request_blocks_batch(
     auto executor = co_await ::asio::this_coro::executor;
     auto deadline = std::chrono::steady_clock::now() + timeout;
 
-    std::vector<block_with_height> received_blocks;
+    std::vector<block_result<Mode>> received_blocks;
     received_blocks.reserve(blocks.size());
 
     // Timing accumulators
@@ -753,24 +754,34 @@ awaitable_expected<std::vector<block_with_height>> request_blocks_batch(
         total_network_wait_us += network_wait_us;
 
         // Parse the block - measure deserialization time
+        // Use if constexpr to select between light_block (fast) and full block (slow)
         auto deser_start = std::chrono::steady_clock::now();
         byte_reader reader(raw.payload);
-        auto block_result = domain::message::block::from_data(reader, peer.negotiated_version());
+
+        // Only the parsing differs between modes
+        auto parse_block = [&]() {
+            if constexpr (Mode == sync_mode::fast) {
+                return domain::chain::light_block::from_data(reader, true);
+            } else {
+                return domain::message::block::from_data(reader, peer.negotiated_version());
+            }
+        };
+
+        auto block_parse_result = parse_block();
         auto deser_us = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - deser_start).count();
 
-        if (!block_result) {
+        if (!block_parse_result) {
             spdlog::debug("[protocol] Failed to parse block from [{}]", peer.authority());
             co_return std::unexpected(error::bad_stream);
         }
 
         total_deserialize_us += deser_us;
 
-        // Look up the height for this block
-        auto const block_hash = block_result->header().hash();
+        // Look up the height for this block (both types have .header().hash())
+        auto const block_hash = block_parse_result->header().hash();
         auto it = expected_blocks.find(block_hash);
         if (it == expected_blocks.end()) {
-            // Not a block we requested - ignore (could be from another request)
             spdlog::trace("[protocol] Received unexpected block from [{}], ignoring",
                 peer.authority());
             continue;
@@ -788,7 +799,7 @@ awaitable_expected<std::vector<block_with_height>> request_blocks_batch(
 
         received_blocks.push_back({
             height,
-            std::move(*block_result),
+            std::move(*block_parse_result),
             static_cast<uint32_t>(network_wait_us),
             static_cast<uint32_t>(deser_us),
             static_cast<uint64_t>(received_at)
@@ -805,6 +816,12 @@ awaitable_expected<std::vector<block_with_height>> request_blocks_batch(
 
     co_return received_blocks;
 }
+
+// Explicit instantiations for both sync modes
+template awaitable_expected<std::vector<block_result<sync_mode::fast>>> request_blocks_batch<sync_mode::fast>(
+    peer_session&, std::vector<std::pair<uint32_t, hash_digest>> const&, std::chrono::seconds);
+template awaitable_expected<std::vector<block_result<sync_mode::slow>>> request_blocks_batch<sync_mode::slow>(
+    peer_session&, std::vector<std::pair<uint32_t, hash_digest>> const&, std::chrono::seconds);
 
 // -----------------------------------------------------------------------------
 // Inventory Protocol
@@ -951,20 +968,20 @@ std::expected<domain::message::headers, code> parse_headers(
     return std::move(*result);
 }
 
-std::expected<domain::message::block, code> parse_block(
-    raw_message const& raw,
-    uint32_t version)
-{
-    if (raw.heading.command() != domain::message::block::command) {
-        return std::unexpected(error::bad_stream);
-    }
-    byte_reader reader(raw.payload);
-    auto result = domain::message::block::from_data(reader, version);
-    if (!result) {
-        return std::unexpected(error::bad_stream);
-    }
-    return std::move(*result);
-}
+// std::expected<domain::message::block, code> parse_block(
+//     raw_message const& raw,
+//     uint32_t version)
+// {
+//     if (raw.heading.command() != domain::message::block::command) {
+//         return std::unexpected(error::bad_stream);
+//     }
+//     byte_reader reader(raw.payload);
+//     auto result = domain::message::block::from_data(reader, version);
+//     if (!result) {
+//         return std::unexpected(error::bad_stream);
+//     }
+//     return std::move(*result);
+// }
 
 std::expected<domain::message::transaction, code> parse_transaction(
     raw_message const& raw,

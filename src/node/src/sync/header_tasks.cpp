@@ -8,6 +8,7 @@
 #include <optional>
 #include <vector>
 
+#include <boost/unordered/unordered_flat_set.hpp>
 #include <spdlog/spdlog.h>
 
 #include <asio/steady_timer.hpp>
@@ -40,6 +41,24 @@ using namespace ::asio::experimental::awaitable_operators;
     // Track last failed peer nonce - don't reselect until we get peers_updated
     std::optional<uint64_t> last_failed_nonce;
 
+    // Track peers that returned empty (at their tip) - don't reselect for headers
+    boost::unordered_flat_set<uint64_t> peers_at_tip;
+
+    // Track best known height from peer VERSION messages
+    // This tells us the highest height any peer claims to be at
+    uint32_t best_known_height = 0;
+
+    // Helper to compute best known height from available peers
+    auto update_best_known_height = [&]() {
+        best_known_height = 0;
+        for (auto const& p : available_peers) {
+            if (p->stopped()) continue;
+            if (auto pv = p->peer_version(); pv) {
+                best_known_height = std::max(best_known_height, pv->start_height());
+            }
+        }
+    };
+
     // Helper to get peer for headers (sticky - same peer until failure)
     auto get_header_peer = [&]() -> network::peer_session::ptr {
         // If current peer is still valid and in available list, use it
@@ -59,17 +78,18 @@ using namespace ::asio::experimental::awaitable_operators;
             }
         }
 
-        // Need to select a new peer - skip stopped peers and the last failed one
+        // Need to select a new peer - skip stopped peers, the last failed one, and peers at their tip
         // NOTE: Don't modify available_peers here - just skip invalid ones
         for (auto const& p : available_peers) {
             if (p->stopped()) continue;  // Skip stopped peers without erasing
             if (last_failed_nonce && p->nonce() == *last_failed_nonce) continue;  // Skip failed peer
+            if (peers_at_tip.contains(p->nonce())) continue;  // Skip peers that returned empty
             current_peer = p;
             spdlog::info("[header_sync] Using peer: {}", current_peer->authority_with_agent());
             return current_peer;
         }
 
-        // All peers are either stopped or the failed one - wait for peers_updated
+        // All peers are either stopped, failed, or at their tip - wait for peers_updated
         return nullptr;
     };
 
@@ -88,8 +108,9 @@ using namespace ::asio::experimental::awaitable_operators;
 
         // Download headers with timing
         auto start_time = std::chrono::steady_clock::now();
+        // 2026-02-02: Reduced from 30s to 10s to minimize stalls from slow peers
         auto result = co_await network::request_headers_from(
-            *peer, request.from_hash, std::chrono::seconds(30));
+            *peer, request.from_hash, std::chrono::seconds(10));
         auto elapsed = std::chrono::steady_clock::now() - start_time;
         auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 
@@ -127,17 +148,46 @@ using namespace ::asio::experimental::awaitable_operators;
         }
 
         if (result->elements().empty()) {
-            spdlog::debug("[header_download] No new headers from {} (at tip), triggering block sync",
-                peer->authority_with_agent());
-            // Send empty message to signal sync complete
-            if (!output.try_send(std::error_code{}, downloaded_headers{
-                .headers = {},
-                .start_height = request.from_height,
-                .source_peer = peer
-            })) {
-                spdlog::warn("[header_download] Channel full, empty headers signal dropped");
+            // Peer has no more headers - mark as "at their tip" and try another peer
+            auto peer_start_height = peer->peer_version() ? peer->peer_version()->start_height() : 0;
+            spdlog::info("[header_download] Peer {} (start_height={}) returned 0 headers at height {}, trying another peer ({} at tip so far)",
+                peer->authority_with_agent(), peer_start_height, request.from_height, peers_at_tip.size() + 1);
+
+            peers_at_tip.insert(peer->nonce());
+            current_peer = nullptr;  // Force selection of new peer
+
+            // Check if there's another peer available
+            auto next_peer = get_header_peer();
+            if (!next_peer) {
+                // All available peers have returned 0 headers
+                // Check if we've reached the best known height from peer announcements
+                if (request.from_height >= best_known_height) {
+                    // We've reached or exceeded the best known tip - signal sync complete
+                    spdlog::info("[header_download] All {} peers at their tip, signaling sync complete at height {} (best_known={})",
+                        available_peers.size(), request.from_height, best_known_height);
+
+                    if (!output.try_send(std::error_code{}, downloaded_headers{
+                        .headers = {},
+                        .start_height = request.from_height,
+                        .source_peer = peer
+                    })) {
+                        spdlog::warn("[header_download] Channel full, empty headers signal dropped");
+                    }
+                    pending_request.reset();
+                } else {
+                    // We're below the best known height but all peers returned 0
+                    // This is suspicious - peers claimed higher but can't provide headers
+                    // Keep request pending and wait for peers_updated (new peers or peers sync more)
+                    spdlog::warn("[header_download] All peers returned 0 but we're at {} < best_known={}, waiting for more peers",
+                        request.from_height, best_known_height);
+                    pending_request = request;
+                }
+                co_return;
             }
-            pending_request.reset();
+
+            // Another peer available - keep request pending for immediate retry
+            // (The main loop will process pending_request before waiting for new events)
+            pending_request = request;
             co_return;
         }
 
@@ -228,8 +278,43 @@ using namespace ::asio::experimental::awaitable_operators;
                 }
             }
 
-            spdlog::debug("[header_download] Peers updated: {} peers available",
-                available_peers.size());
+            // Update best known height from all peers
+            update_best_known_height();
+
+            spdlog::debug("[header_download] Peers updated: {} peers available, best_known_height={}",
+                available_peers.size(), best_known_height);
+
+            // 2026-02-02: Fix infinite loop in header sync completion detection.
+            //
+            // Bug: Previously we cleared ALL peers_at_tip on every peers_updated message.
+            // Since peers_updated fires frequently (peer connects/disconnects), we never
+            // reached the "all peers at tip" condition needed to complete header sync.
+            // The loop was:
+            //   1. BCHN peers return 0 headers → marked as at_tip
+            //   2. peers_updated arrives → clears peers_at_tip
+            //   3. Retry same BCHN peers → return 0 → marked as at_tip
+            //   4. Another peers_updated → ... infinite loop
+            //
+            // Fix: Only remove disconnected peers from peers_at_tip. Keep connected peers
+            // that already said they're at tip - they probably still are.
+            // Now when all available peers are in peers_at_tip, we correctly detect
+            // that header sync is complete and trigger block sync.
+            if (!peers_at_tip.empty()) {
+                size_t const before = peers_at_tip.size();
+                // Build set of current peer nonces for O(1) lookup
+                boost::unordered_flat_set<uint64_t> current_nonces;
+                for (auto const& p : available_peers) {
+                    current_nonces.insert(p->nonce());
+                }
+                // Remove peers that are no longer connected
+                erase_if(peers_at_tip, [&](uint64_t nonce) {
+                    return !current_nonces.contains(nonce);
+                });
+                if (peers_at_tip.size() != before) {
+                    spdlog::debug("[header_download] Removed {} disconnected peers from peers_at_tip (now {})",
+                        before - peers_at_tip.size(), peers_at_tip.size());
+                }
+            }
 
             // If we have a pending request and now have peers, process it
             if (pending_request && !available_peers.empty()) {

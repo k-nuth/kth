@@ -180,9 +180,9 @@ static
     // Unified input channel for peer_provider (CSP pattern - single channel)
     peer_provider_input_channel peer_provider_input(executor, 100);
 
-    // Bridge task: forwards from network.connected_peers() to unified channel
+    // Bridge task: forwards from network.peer_events() to unified channel
     all_tasks.spawn([&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[peer_bridge] Started, forwarding peers to peer_provider");
+        spdlog::debug("[peer_bridge] Started, forwarding peer events to peer_provider");
         auto exec = co_await ::asio::this_coro::executor;
         ::asio::steady_timer check_timer(exec);
 
@@ -191,7 +191,7 @@ static
                 // Use timer to periodically check if network stopped
                 check_timer.expires_after(std::chrono::milliseconds(500));
                 auto event = co_await (
-                    network.connected_peers().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
+                    network.peer_events().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
                     check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
                 );
 
@@ -200,13 +200,23 @@ static
                     continue;
                 }
 
-                auto [ec, peer] = std::get<0>(event);
+                auto [ec, notification] = std::get<0>(event);
                 if (ec) {
                     spdlog::debug("[peer_bridge] Network channel closed: {}", ec.message());
                     break;
                 }
-                if (!peer_provider_input.try_send(std::error_code{}, new_peer{peer})) {
-                    spdlog::warn("[peer_bridge] Channel full, new_peer dropped for {}", peer->authority_with_agent());
+
+                // Demultiplex based on event type
+                if (notification.event == network::peer_event_type::connected) {
+                    if (!peer_provider_input.try_send(std::error_code{}, new_peer{notification.peer})) {
+                        spdlog::warn("[peer_bridge] Channel full, new_peer dropped for {}",
+                            notification.peer->authority_with_agent());
+                    }
+                } else {
+                    if (!peer_provider_input.try_send(std::error_code{}, peer_disconnected{notification.peer})) {
+                        spdlog::warn("[peer_bridge] Channel full, peer_disconnected dropped for {}",
+                            notification.peer->authority_with_agent());
+                    }
                 }
             }
         } catch (std::exception const& e) {
@@ -217,6 +227,22 @@ static
         spdlog::info("[peer_bridge] Task ended");
     });
 
+    // -------------------------------------------------------------------------
+    // TODO(2026-02-02): REFACTOR peer_provider - separation of concerns
+    //
+    // Current problems:
+    // 1. peer_provider calls ban_peer() directly - banning logic should be in peer_manager
+    // 2. is_bannable_error() is here - should be in peer_manager
+    // 3. misbehave() only accumulates score - peer_manager should handle ban when threshold reached
+    //
+    // Correct architecture:
+    // 1. peer_provider ONLY reports behavior to peer_manager (misbehave, slow, timeout, etc.)
+    // 2. peer_manager decides if/when to ban based on reputation system
+    // 3. peer_manager notifies back what action was taken
+    // 4. peer_provider updates internal lists based on peer_manager's decisions
+    //
+    // peer_provider should be a "peer distributor" for sync tasks, not a reputation manager
+    // -------------------------------------------------------------------------
     all_tasks.spawn([&]() -> ::asio::awaitable<void> {
         spdlog::info("[peer_provider] Task started, waiting for peers...");
 
@@ -237,8 +263,12 @@ static
             }
         };
         boost::unordered_flat_map<uint64_t, peer_stats> peer_performance_stats;
-        constexpr uint32_t min_samples_for_eviction = 5;  // Need at least 5 chunks before evaluating
-        constexpr size_t max_peers = 8;
+        // 2026-02-02: Reduced from 5 to 3 to detect slow peers faster
+        constexpr uint32_t min_samples_for_eviction = 3;
+        // TODO(2026-02-02): This should come from a setting (e.g., settings.outbound_connections)
+        // Currently hardcoded - must be updated manually when changing peer limits!
+        // Used for slow peer eviction - only evict when at capacity
+        constexpr size_t max_peers = 32;
 
         // Helper to clean stopped peers and send updated list
         auto broadcast_peers = [&]() {
@@ -308,6 +338,22 @@ static
                         np->peer->authority_with_agent(), np->peer->nonce());
                     all_peers.push_back(np->peer);
                     broadcast_peers();
+                } else if (auto* dp = std::get_if<peer_disconnected>(&event_msg)) {
+                    // Peer disconnected from network
+                    spdlog::info("[peer_provider] Peer disconnected: {} (nonce={})",
+                        dp->peer->authority_with_agent(), dp->peer->nonce());
+
+                    // Remove from all_peers
+                    std::erase_if(all_peers, [&](auto const& p) {
+                        return p->nonce() == dp->peer->nonce();
+                    });
+
+                    // Clean up stats
+                    peer_performance_stats.erase(dp->peer->nonce());
+                    header_bad_peers.erase(dp->peer->nonce());
+
+                    // Broadcast updated list so supervisor can spawn replacements
+                    broadcast_peers();
                 } else if (auto* err = std::get_if<peer_error>(&event_msg)) {
                     // Peer error report - decide action based on error type
                     spdlog::info("[peer_provider] Peer {} (nonce={}) error: {}",
@@ -373,14 +419,17 @@ static
                             // Only evict if slowest is significantly worse (2x slower than median)
                             constexpr double eviction_threshold = 2.0;
                             if (slowest_avg > median_avg * eviction_threshold) {
-                                // Find the peer and disconnect (not ban)
+                                // Find the peer and report to reputation system
                                 for (auto it = all_peers.begin(); it != all_peers.end(); ++it) {
                                     if ((*it)->nonce() == slowest_nonce) {
                                         spdlog::info("[peer_provider] Evicting slow peer {} "
                                             "(avg {:.1f}ms/block, median {:.1f}ms/block, {:.1f}x slower)",
                                             (*it)->authority_with_agent(), slowest_avg, median_avg,
                                             slowest_avg / median_avg);
-                                        (*it)->stop(error::channel_stopped);  // Graceful disconnect
+                                        // 2026-02-02: Report to reputation system, ban if threshold reached
+                                        if ((*it)->misbehave(network::peer_session::misbehavior_slow_peer)) {
+                                            network.ban_peer(*it, std::chrono::hours{1}, network::ban_reason::node_misbehaving);
+                                        }
                                         peer_performance_stats.erase(slowest_nonce);
                                         all_peers.erase(it);
                                         broadcast_peers();
@@ -524,7 +573,7 @@ static
 
                 total_recv_wait_us += recv_wait_us;
 
-                if (auto* block = std::get_if<downloaded_block>(&msg)) {
+                if (auto* block = std::get_if<downloaded_light_block>(&msg)) {
                     // Track received for pipeline debugging
                     g_blocks_received_by_bridge.fetch_add(1, std::memory_order_relaxed);
 
@@ -830,7 +879,32 @@ static
                         spdlog::warn("[sync_coordinator] Channel full, next batch header_request dropped");
                     }
                 } else if (result->count == 0 && !header_sync_complete) {
-                    // Tip reached - header sync complete (guard against duplicate events)
+                    // All peers returned 0 headers - check if we've reached checkpoint
+                    if (headers_synced_to < checkpoint_height) {
+                        // Not at checkpoint yet - we need more headers but all peers are behind
+                        // Wait a bit and retry (peers might sync more)
+                        spdlog::warn("[sync_coordinator] All peers at height {} but checkpoint is {} - waiting and retrying",
+                            headers_synced_to, checkpoint_height);
+
+                        ::asio::steady_timer timer(exec);
+                        timer.expires_after(std::chrono::seconds(10));
+                        auto [timer_ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+                        if (timer_ec || network.stopped()) break;
+
+                        // Retry header sync
+                        auto retry_hash = organizer.index().get_hash(
+                            static_cast<blockchain::header_index::index_t>(headers_synced_to));
+
+                        if (!header_download_input.try_send(std::error_code{}, header_request{
+                            .from_height = headers_synced_to,
+                            .from_hash = retry_hash
+                        })) {
+                            spdlog::warn("[sync_coordinator] Channel full, retry header_request dropped");
+                        }
+                        continue;
+                    }
+
+                    // At or past checkpoint - header sync complete
                     header_sync_complete = true;
 
                     auto const elapsed = std::chrono::steady_clock::now() - header_sync_start;
@@ -854,7 +928,9 @@ static
                         // Determine end height based on sync stage
                         uint32_t end_height;
                         if (blocks_synced_to < checkpoint_height) {
-                            // Fast sync stage: only download up to checkpoint
+                            // Fast sync stage: download up to checkpoint
+                            // NOTE: We should only reach here if headers_synced_to >= checkpoint_height
+                            // because header_sync should not complete until we have checkpoint headers
                             end_height = checkpoint_height;
                             spdlog::info("[sync_coordinator] Starting FAST block sync: {} to {} ({} blocks)",
                                 blocks_synced_to + 1, end_height,
@@ -929,11 +1005,26 @@ static
                         // from checkpoint+1 to headers_synced_to
                     }
 
-                    // Check if we've caught up to headers (slow sync complete)
+                    // Check if we've caught up to headers
                     if (blocks_synced_to >= headers_synced_to && header_sync_complete) {
-                        spdlog::info("[sync_coordinator] Block sync caught up to headers at {}",
-                            blocks_synced_to);
-                        // Could trigger new header sync here if needed
+                        // Whether before or after checkpoint, we need to keep looking for more headers
+                        // to stay in sync with the network tip
+                        spdlog::info("[sync_coordinator] Block sync caught up to headers at {} (checkpoint={}), restarting header sync",
+                            blocks_synced_to, checkpoint_height);
+
+                        header_sync_complete = false;
+                        header_sync_start = std::chrono::steady_clock::now();
+                        headers_at_start = headers_synced_to;
+
+                        auto next_hash = organizer.index().get_hash(
+                            static_cast<blockchain::header_index::index_t>(headers_synced_to));
+
+                        if (!header_download_input.try_send(std::error_code{}, header_request{
+                            .from_height = headers_synced_to,
+                            .from_hash = next_hash
+                        })) {
+                            spdlog::warn("[sync_coordinator] Channel full, restart header_request dropped");
+                        }
                     }
                 } else {
                     spdlog::error("[sync_coordinator] Block validation failed at {}: {}",

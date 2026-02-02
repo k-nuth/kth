@@ -2043,6 +2043,279 @@ TEST_CASE("peer_session check_interval responsive to peer death",
 // Test that verifies the OLD buggy behavior would fail
 // This test uses the OLD pattern (long ping_interval without check_interval)
 // and demonstrates that it takes too long when channel close doesn't work
+// =============================================================================
+// Channel cancel() vs close() test - Issue #6 fix verification
+// =============================================================================
+//
+// 2026-02-02: Test for the specific fix where cancel() must be called BEFORE close()
+//
+// Root cause from debug.log analysis:
+//   - peer_tasks.join() hangs indefinitely
+//   - 8 peer tasks stuck in run_peer_protocols()
+//   - Channels were closed but async_receive() || timer didn't complete
+//
+// According to Boost.Asio documentation:
+//   - close() - marks channel as closed but doesn't cancel pending operations
+//   - cancel() - "cancels all asynchronous operations waiting on the channel"
+//
+// The fix: call cancel() BEFORE close() in peer_session::stop()
+//
+// This test verifies that the fix works by simulating the exact deadlock scenario
+
+TEST_CASE("peer_session channel cancel before close prevents deadlock",
+          "[peer_session][shutdown][cancel]") {
+    using namespace std::chrono_literals;
+    using namespace ::asio::experimental::awaitable_operators;
+
+    ::asio::io_context ctx;
+    auto settings = make_test_settings();
+
+    auto [client, server] = make_connected_sockets(ctx);
+    auto session = std::make_shared<peer_session>(std::move(server), settings);
+
+    std::atomic<bool> run_started{false};
+    std::atomic<bool> run_completed{false};
+    std::atomic<bool> protocol_started{false};
+    std::atomic<bool> protocol_completed{false};
+
+    // Start the session's run() loop
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        run_started = true;
+        co_await session->run();
+        run_completed = true;
+    }, ::asio::detached);
+
+    // Simulate run_peer_protocols() - the exact pattern that was deadlocking:
+    //   co_await (peer->messages().async_receive() || check_timer)
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        while (!run_started.load()) {
+            auto timer = ::asio::steady_timer(co_await ::asio::this_coro::executor, 1ms);
+            co_await timer.async_wait(::asio::use_awaitable);
+        }
+
+        protocol_started = true;
+
+        auto executor = co_await ::asio::this_coro::executor;
+        // Use 30 second timer to make the bug obvious if cancel() doesn't work
+        ::asio::steady_timer check_timer(executor, 30s);
+
+        auto receive_op = [&]() -> ::asio::awaitable<void> {
+            auto [ec, msg] = co_await session->messages().async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            // This should return with error::channel_cancelled when cancel() is called
+            co_return;
+        };
+
+        auto timer_op = [&]() -> ::asio::awaitable<void> {
+            co_await check_timer.async_wait(::asio::use_awaitable);
+        };
+
+        // This is the || operator pattern that was hanging
+        co_await (receive_op() || timer_op());
+
+        protocol_completed = true;
+    }, ::asio::detached);
+
+    // Run context in background thread
+    std::thread ctx_thread([&ctx]() { ctx.run(); });
+
+    // Wait for both to start
+    while (!run_started.load() || !protocol_started.load()) {
+        std::this_thread::sleep_for(1ms);
+    }
+    std::this_thread::sleep_for(50ms);  // Let them settle into co_await
+
+    // Now stop the session
+    // The fix: stop() calls cancel() before close() on all channels
+    auto stop_start = std::chrono::steady_clock::now();
+    session->stop(error::service_stopped);
+
+    // Also close client socket
+    boost_code ignored;
+    client.close(ignored);
+
+    // Wait for completion
+    // Bug: would hang for 30 seconds (timer duration)
+    // Fix: should complete almost immediately (< 2 seconds)
+    auto deadline = std::chrono::steady_clock::now() + 5s;
+    while ((!run_completed.load() || !protocol_completed.load()) &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(10ms);
+    }
+
+    auto stop_duration = std::chrono::steady_clock::now() - stop_start;
+    auto stop_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_duration).count();
+
+    ctx.stop();
+    ctx_thread.join();
+
+    // Verify everything completed
+    REQUIRE(run_completed);
+    REQUIRE(protocol_completed);
+
+    // Critical assertion: shutdown should be fast, not 30 seconds
+    INFO("Shutdown took " << stop_ms << "ms (should be < 2000ms, bug would cause ~30000ms)");
+    REQUIRE(stop_ms < 2000);
+}
+
+// Test with multiple channels - all should be cancelled properly
+TEST_CASE("peer_session all channels cancelled on stop",
+          "[peer_session][shutdown][cancel]") {
+    using namespace std::chrono_literals;
+    using namespace ::asio::experimental::awaitable_operators;
+
+    ::asio::io_context ctx;
+    auto settings = make_test_settings();
+
+    auto [client, server] = make_connected_sockets(ctx);
+    auto session = std::make_shared<peer_session>(std::move(server), settings);
+
+    std::atomic<bool> run_started{false};
+    std::atomic<bool> run_completed{false};
+    std::atomic<int> protocols_started{0};
+    std::atomic<int> protocols_completed{0};
+
+    constexpr int num_protocols = 4;  // messages, headers, blocks, addr
+
+    // Start the session's run() loop
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        run_started = true;
+        co_await session->run();
+        run_completed = true;
+    }, ::asio::detached);
+
+    // Spawn protocol waiting on messages()
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        while (!run_started.load()) {
+            auto timer = ::asio::steady_timer(co_await ::asio::this_coro::executor, 1ms);
+            co_await timer.async_wait(::asio::use_awaitable);
+        }
+        protocols_started.fetch_add(1);
+
+        auto executor = co_await ::asio::this_coro::executor;
+        ::asio::steady_timer timer(executor, 30s);
+
+        auto receive_op = [&]() -> ::asio::awaitable<void> {
+            auto [ec, msg] = co_await session->messages().async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            co_return;
+        };
+        auto timer_op = [&]() -> ::asio::awaitable<void> {
+            co_await timer.async_wait(::asio::use_awaitable);
+        };
+
+        co_await (receive_op() || timer_op());
+        protocols_completed.fetch_add(1);
+    }, ::asio::detached);
+
+    // Spawn protocol waiting on headers_responses()
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        while (!run_started.load()) {
+            auto timer = ::asio::steady_timer(co_await ::asio::this_coro::executor, 1ms);
+            co_await timer.async_wait(::asio::use_awaitable);
+        }
+        protocols_started.fetch_add(1);
+
+        auto executor = co_await ::asio::this_coro::executor;
+        ::asio::steady_timer timer(executor, 30s);
+
+        auto receive_op = [&]() -> ::asio::awaitable<void> {
+            auto [ec, msg] = co_await session->headers_responses().async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            co_return;
+        };
+        auto timer_op = [&]() -> ::asio::awaitable<void> {
+            co_await timer.async_wait(::asio::use_awaitable);
+        };
+
+        co_await (receive_op() || timer_op());
+        protocols_completed.fetch_add(1);
+    }, ::asio::detached);
+
+    // Spawn protocol waiting on block_responses()
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        while (!run_started.load()) {
+            auto timer = ::asio::steady_timer(co_await ::asio::this_coro::executor, 1ms);
+            co_await timer.async_wait(::asio::use_awaitable);
+        }
+        protocols_started.fetch_add(1);
+
+        auto executor = co_await ::asio::this_coro::executor;
+        ::asio::steady_timer timer(executor, 30s);
+
+        auto receive_op = [&]() -> ::asio::awaitable<void> {
+            auto [ec, msg] = co_await session->block_responses().async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            co_return;
+        };
+        auto timer_op = [&]() -> ::asio::awaitable<void> {
+            co_await timer.async_wait(::asio::use_awaitable);
+        };
+
+        co_await (receive_op() || timer_op());
+        protocols_completed.fetch_add(1);
+    }, ::asio::detached);
+
+    // Spawn protocol waiting on addr_responses()
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        while (!run_started.load()) {
+            auto timer = ::asio::steady_timer(co_await ::asio::this_coro::executor, 1ms);
+            co_await timer.async_wait(::asio::use_awaitable);
+        }
+        protocols_started.fetch_add(1);
+
+        auto executor = co_await ::asio::this_coro::executor;
+        ::asio::steady_timer timer(executor, 30s);
+
+        auto receive_op = [&]() -> ::asio::awaitable<void> {
+            auto [ec, msg] = co_await session->addr_responses().async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            co_return;
+        };
+        auto timer_op = [&]() -> ::asio::awaitable<void> {
+            co_await timer.async_wait(::asio::use_awaitable);
+        };
+
+        co_await (receive_op() || timer_op());
+        protocols_completed.fetch_add(1);
+    }, ::asio::detached);
+
+    // Run context in background thread
+    std::thread ctx_thread([&ctx]() { ctx.run(); });
+
+    // Wait for all to start
+    while (!run_started.load() || protocols_started.load() < num_protocols) {
+        std::this_thread::sleep_for(1ms);
+    }
+    std::this_thread::sleep_for(50ms);
+
+    // Stop and measure time
+    auto stop_start = std::chrono::steady_clock::now();
+    session->stop(error::service_stopped);
+
+    boost_code ignored;
+    client.close(ignored);
+
+    // Wait for completion
+    auto deadline = std::chrono::steady_clock::now() + 5s;
+    while ((!run_completed.load() || protocols_completed.load() < num_protocols) &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(10ms);
+    }
+
+    auto stop_duration = std::chrono::steady_clock::now() - stop_start;
+    auto stop_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_duration).count();
+
+    ctx.stop();
+    ctx_thread.join();
+
+    REQUIRE(run_completed);
+    REQUIRE(protocols_completed == num_protocols);
+
+    INFO("Shutdown with " << num_protocols << " protocols took " << stop_ms << "ms");
+    REQUIRE(stop_ms < 2000);
+}
+
 TEST_CASE("peer_session OLD pattern without check_interval is slow",
           "[peer_session][shutdown][check_interval][.][bug_demo]") {
     using namespace std::chrono_literals;

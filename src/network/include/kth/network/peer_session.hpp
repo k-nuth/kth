@@ -301,6 +301,7 @@ public:
     /// Score penalties for various misbehaviors
     static constexpr int misbehavior_timeout = 10;       // Timeout on request
     static constexpr int misbehavior_invalid_data = 100; // Invalid headers/blocks (instant ban)
+    static constexpr int misbehavior_slow_peer = 100;    // Too slow for sync (instant ban after detection)
 
     /// Record misbehavior and return true if peer should be banned
     /// @param score Points to add to misbehavior score

@@ -15,6 +15,7 @@
 #include <asio/use_awaitable.hpp>
 
 #include <kth/domain.hpp>
+#include <kth/domain/chain/light_block.hpp>
 #include <kth/infrastructure/utility/async_channel.hpp>
 #include <kth/network/peer_session.hpp>
 
@@ -102,9 +103,10 @@ struct block_range_request {
     uint32_t end_height;
 };
 
+template<typename BlockType>
 struct downloaded_block {
     uint32_t height;
-    domain::message::block::const_ptr block;
+    std::shared_ptr<BlockType const> block;
     network::peer_session::ptr source_peer;
     uint32_t active_peers;  // snapshot of active peer count at time of send
     uint32_t deserialize_us{0};  // time spent deserializing this block (microseconds)
@@ -113,6 +115,10 @@ struct downloaded_block {
     uint64_t received_from_net_us{0};  // when block arrived from network
     uint64_t sent_to_supervisor_us{0}; // when download task sent to supervisor
 };
+
+// Aliases for convenience
+using downloaded_full_block = downloaded_block<domain::message::block>;
+using downloaded_light_block = downloaded_block<domain::chain::light_block>;
 
 struct block_validated {
     uint32_t height;
@@ -129,7 +135,7 @@ struct download_task_ended {
 using block_download_input = std::variant<stop_request, peers_updated, block_range_request>;
 
 // Block download task output - single channel with blocks, lifecycle, and performance
-using block_download_task_output = std::variant<downloaded_block, download_task_ended, peer_performance>;
+using block_download_task_output = std::variant<downloaded_light_block, download_task_ended, peer_performance>;
 
 // Block download supervisor unified event (combines all input sources to avoid || operator)
 // This prevents message loss that occurs when async_receive is cancelled by ||
@@ -137,14 +143,14 @@ using block_supervisor_event = std::variant<
     stop_request,
     peers_updated,
     block_range_request,
-    downloaded_block,
+    downloaded_light_block,
     download_task_ended,
     supervisor_timeout,
     peer_performance
 >;
 
 // Block validation task input - single channel (CSP pattern)
-using block_validation_input = std::variant<stop_request, downloaded_block>;
+using block_validation_input = std::variant<stop_request, downloaded_light_block>;
 
 // -----------------------------------------------------------------------------
 // Peer provider messages (unified input channel)
@@ -155,8 +161,13 @@ struct new_peer {
     network::peer_session::ptr peer;
 };
 
+// Peer disconnected from network
+struct peer_disconnected {
+    network::peer_session::ptr peer;
+};
+
 // Peer provider input - single channel for CSP pattern
-using peer_provider_input = std::variant<new_peer, peer_error, peer_performance, header_performance>;
+using peer_provider_input = std::variant<new_peer, peer_disconnected, peer_error, peer_performance, header_performance>;
 
 // =============================================================================
 // Channel Type Aliases
@@ -179,7 +190,7 @@ using block_download_input_channel = concurrent_channel<block_download_input>;
 using block_download_task_output_channel = concurrent_channel<block_download_task_output>;
 using block_supervisor_event_channel = concurrent_channel<block_supervisor_event>;  // unified input
 // Supervisor output - carries blocks and performance stats
-using block_supervisor_output = std::variant<downloaded_block, peer_performance>;
+using block_supervisor_output = std::variant<downloaded_light_block, peer_performance>;
 using block_download_channel = concurrent_channel<block_supervisor_output>;  // supervisor -> bridge
 using block_validation_input_channel = concurrent_channel<block_validation_input>;
 using block_validated_channel = concurrent_channel<block_validated>;
