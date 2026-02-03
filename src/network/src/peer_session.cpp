@@ -111,6 +111,13 @@ peer_session::~peer_session() {
     boost_code ignore;
     socket_.close(ignore);
 
+    // Cancel before close to ensure any pending async ops are woken up
+    outbound_.cancel();
+    inbound_.cancel();
+    headers_responses_.cancel();
+    block_responses_.cancel();
+    addr_responses_.cancel();
+
     outbound_.close();
     inbound_.close();
     headers_responses_.close();

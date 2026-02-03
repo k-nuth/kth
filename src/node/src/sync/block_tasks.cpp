@@ -673,10 +673,13 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
         coordinator->stop();
     }
 
-    // Close internal channels BEFORE waiting - this unblocks any download tasks and bridges
+    // Cancel and close internal channels BEFORE waiting - this unblocks any download tasks and bridges
     // NOTE: Don't close `output` - it's owned by sync_orchestrator, peer_provider closes it
+    // NOTE: cancel() wakes up pending async ops, close() alone does NOT!
     spdlog::info("[block_supervisor:shutdown] Step 3/5: Closing internal channels...");
+    task_output.cancel();
     task_output.close();
+    events.cancel();
     events.close();
 
     // NOW wait for all tasks (download tasks + bridges) to finish

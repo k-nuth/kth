@@ -181,6 +181,11 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os != "Emscripten":
             self.requires("simdutf/7.1.0", transitive_headers=True, transitive_libs=True)
 
+        # simdjson for fast JSON parsing (not available for WebAssembly)
+        # TODO(2026-02-02): Check if simdjson adds WASM support in future versions
+        if self.settings.os != "Emscripten":
+            self.requires("simdjson/4.2.2", transitive_headers=True, transitive_libs=True)
+
         if self.options.with_png:
             self.requires("libpng/1.6.51", transitive_headers=True, transitive_libs=True)
 
@@ -384,7 +389,7 @@ class KthRecipe(KnuthConanFileV2):
         if self.options.with_jemalloc:
             infrastructure_defines.append("KTH_WITH_JEMALLOC")
         self.cpp_info.components["infrastructure"].defines = infrastructure_defines
-        # Infrastructure core dependencies: secp256k1, boost, fmt, ctre, spdlog, simdutf (non-wasm)
+        # Infrastructure core dependencies: secp256k1, boost, fmt, ctre, spdlog
         self.cpp_info.components["infrastructure"].requires = [
             "secp256k1",
             "boost::boost",
@@ -392,9 +397,10 @@ class KthRecipe(KnuthConanFileV2):
             "ctre::ctre",
             "spdlog::spdlog"
         ]
-        # Add simdutf for SIMD-optimized base encoding (not available for WebAssembly)
+        # Add simdutf and simdjson for SIMD-optimized operations (not available for WebAssembly)
         if self.settings.os != "Emscripten":
             self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
+            self.cpp_info.components["infrastructure"].requires.append("simdjson::simdjson")
         # Add libpng and libqrencode when enabled
         if self.options.with_png:
             self.cpp_info.components["infrastructure"].requires.append("libpng::libpng")
@@ -458,8 +464,8 @@ class KthRecipe(KnuthConanFileV2):
             self.cpp_info.components["network"].names["cmake_find_package"] = "network"
             self.cpp_info.components["network"].names["cmake_find_package_multi"] = "network"
             self.cpp_info.components["network"].defines = [currency_define] + static_defines
-            # Network depends on domain
-            self.cpp_info.components["network"].requires = ["domain"]
+            # Network depends on domain and simdjson (for peer_database JSON parsing)
+            self.cpp_info.components["network"].requires = ["domain", "simdjson::simdjson"]
         
         # Node implementation
         self.cpp_info.components["node"].libs = ["node"]

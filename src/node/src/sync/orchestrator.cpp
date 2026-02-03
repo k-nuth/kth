@@ -228,79 +228,35 @@ static
     });
 
     // -------------------------------------------------------------------------
-    // TODO(2026-02-02): REFACTOR peer_provider - separation of concerns
+    // peer_provider - Minimal peer distributor for sync tasks
     //
-    // Current problems:
-    // 1. peer_provider calls ban_peer() directly - banning logic should be in peer_manager
-    // 2. is_bannable_error() is here - should be in peer_manager
-    // 3. misbehave() only accumulates score - peer_manager should handle ban when threshold reached
+    // Responsibilities:
+    // - Receive peer connect/disconnect events from network
+    // - Broadcast peer list to header_download and block_download tasks
+    // - Report errors to network.report_misbehavior() (reputation system handles bans)
+    // - Record performance to network.record_peer_performance() (persistent storage)
+    // - Close channels on shutdown
     //
-    // Correct architecture:
-    // 1. peer_provider ONLY reports behavior to peer_manager (misbehave, slow, timeout, etc.)
-    // 2. peer_manager decides if/when to ban based on reputation system
-    // 3. peer_manager notifies back what action was taken
-    // 4. peer_provider updates internal lists based on peer_manager's decisions
-    //
-    // peer_provider should be a "peer distributor" for sync tasks, not a reputation manager
+    // All reputation tracking, ban decisions, and eviction logic are handled by
+    // peer_database in the network layer.
     // -------------------------------------------------------------------------
     all_tasks.spawn([&]() -> ::asio::awaitable<void> {
         spdlog::info("[peer_provider] Task started, waiting for peers...");
 
-        // Maintain full list of connected peers - single source of truth
-        std::vector<network::peer_session::ptr> all_peers;
+        // Local peer list for broadcasting to sync tasks
+        std::vector<network::peer_session::ptr> peers;
 
-        // Peers that had issues during header sync (by nonce) - don't use for headers
-        boost::unordered_flat_set<uint64_t> header_bad_peers;
-
-        // Performance tracking per peer (by nonce)
-        struct peer_stats {
-            uint64_t total_blocks{0};
-            uint64_t total_time_ms{0};
-            uint32_t sample_count{0};
-
-            double avg_ms_per_block() const {
-                return total_blocks > 0 ? double(total_time_ms) / double(total_blocks) : 0.0;
-            }
-        };
-        boost::unordered_flat_map<uint64_t, peer_stats> peer_performance_stats;
-        // 2026-02-02: Reduced from 5 to 3 to detect slow peers faster
-        constexpr uint32_t min_samples_for_eviction = 3;
-        // TODO(2026-02-02): This should come from a setting (e.g., settings.outbound_connections)
-        // Currently hardcoded - must be updated manually when changing peer limits!
-        // Used for slow peer eviction - only evict when at capacity
-        constexpr size_t max_peers = 32;
-
-        // Helper to clean stopped peers and send updated list
+        // Broadcast current peer list to download tasks
         auto broadcast_peers = [&]() {
-            // Remove stopped peers and clean their stats
-            std::erase_if(all_peers, [&](auto const& p) {
-                if (p->stopped()) {
-                    peer_performance_stats.erase(p->nonce());
-                    return true;
-                }
-                return false;
-            });
+            // Remove stopped peers
+            std::erase_if(peers, [](auto const& p) { return p->stopped(); });
 
-            // For headers: filter out bad peers
-            std::vector<network::peer_session::ptr> header_peers;
-            header_peers.reserve(all_peers.size());
-            for (auto const& p : all_peers) {
-                if (!header_bad_peers.contains(p->nonce())) {
-                    header_peers.push_back(p);
-                } else {
-                    spdlog::info("[peer_provider] Filtering peer {} (nonce={}) - in bad list",
-                        p->authority_with_agent(), p->nonce());
-                }
-            }
+            spdlog::info("[peer_provider] Broadcasting {} peers to sync tasks", peers.size());
 
-            spdlog::info("[peer_provider] Broadcasting {} peers to sync tasks (all={}, bad_list={})",
-                header_peers.size(), all_peers.size(), header_bad_peers.size());
-
-            // Send filtered list to headers, full list to blocks (via unified input channels)
-            if (!header_download_input.try_send(std::error_code{}, peers_updated{header_peers})) {
+            if (!header_download_input.try_send(std::error_code{}, peers_updated{peers})) {
                 spdlog::warn("[peer_provider] Channel full, peers_updated dropped for header_download");
             }
-            if (!block_download_input.try_send(std::error_code{}, peers_updated{all_peers})) {
+            if (!block_download_input.try_send(std::error_code{}, peers_updated{peers})) {
                 spdlog::warn("[peer_provider] Channel full, peers_updated dropped for block_download");
             }
         };
@@ -309,139 +265,59 @@ static
         ::asio::steady_timer check_timer(exec);
 
         try {
-            // Single channel, FIFO processing - check network.stopped() periodically
             while (!network.stopped()) {
-                // Use timer to periodically check if network stopped
                 check_timer.expires_after(std::chrono::milliseconds(500));
                 auto event = co_await (
                     peer_provider_input.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
                     check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
                 );
 
-                // Timer fired - just loop to check network.stopped()
-                if (event.index() == 1) {
-                    continue;
-                }
+                if (event.index() == 1) continue;  // Timer - check network.stopped()
 
                 auto [ec, msg] = std::get<0>(event);
                 if (ec) {
                     spdlog::debug("[peer_provider] Input channel closed: {}", ec.message());
                     break;
                 }
-                auto& event_msg = msg;
 
-                if (auto* np = std::get_if<new_peer>(&event_msg)) {
-                    // New peer from network
+                if (auto* np = std::get_if<new_peer>(&msg)) {
                     if (np->peer->stopped()) continue;
-
-                    spdlog::info("[peer_provider] New peer connected: {} (nonce={})",
+                    spdlog::info("[peer_provider] New peer: {} (nonce={})",
                         np->peer->authority_with_agent(), np->peer->nonce());
-                    all_peers.push_back(np->peer);
+                    peers.push_back(np->peer);
                     broadcast_peers();
-                } else if (auto* dp = std::get_if<peer_disconnected>(&event_msg)) {
-                    // Peer disconnected from network
+
+                } else if (auto* dp = std::get_if<peer_disconnected>(&msg)) {
                     spdlog::info("[peer_provider] Peer disconnected: {} (nonce={})",
                         dp->peer->authority_with_agent(), dp->peer->nonce());
-
-                    // Remove from all_peers
-                    std::erase_if(all_peers, [&](auto const& p) {
-                        return p->nonce() == dp->peer->nonce();
-                    });
-
-                    // Clean up stats
-                    peer_performance_stats.erase(dp->peer->nonce());
-                    header_bad_peers.erase(dp->peer->nonce());
-
-                    // Broadcast updated list so supervisor can spawn replacements
+                    std::erase_if(peers, [&](auto const& p) { return p->nonce() == dp->peer->nonce(); });
                     broadcast_peers();
-                } else if (auto* err = std::get_if<peer_error>(&event_msg)) {
-                    // Peer error report - decide action based on error type
-                    spdlog::info("[peer_provider] Peer {} (nonce={}) error: {}",
-                        err->peer->authority_with_agent(), err->peer->nonce(), err->error.message());
 
-                    // Always exclude from header sync
-                    header_bad_peers.insert(err->peer->nonce());
+                } else if (auto* err = std::get_if<peer_error>(&msg)) {
+                    spdlog::info("[peer_provider] Peer error: {} - {}",
+                        err->peer->authority_with_agent(), err->error.message());
 
-                    if (is_bannable_error(err->error)) {
-                        // Invalid data = instant ban (1 year)
-                        spdlog::warn("[peer_provider] Banning peer {} for invalid data: {}",
-                            err->peer->authority_with_agent(), err->error.message());
+                    // Report to reputation system - it decides if peer should be banned
+                    int score = is_bannable_error(err->error) ? 100 : 10;
+                    bool banned = network.report_misbehavior(err->peer, score, err->error.message());
 
-                        // Remove from all_peers
-                        std::erase_if(all_peers, [&](auto const& p) {
-                            return p->nonce() == err->peer->nonce();
-                        });
+                    if (banned) {
+                        // Peer was banned - remove from local list
+                        std::erase_if(peers, [&](auto const& p) { return p->nonce() == err->peer->nonce(); });
+                        broadcast_peers();
+                    }
 
-                        err->peer->misbehave(network::peer_session::misbehavior_invalid_data);
-                        network.ban_peer(err->peer, std::chrono::hours{24 * 365}, network::ban_reason::node_misbehaving);
-                    } else {
-                        // Network error (timeout, etc.) = accumulate misbehavior score
-                        if (err->peer->misbehave(network::peer_session::misbehavior_timeout)) {
-                            spdlog::warn("[peer_provider] Peer {} reached misbehavior threshold, banning",
-                                err->peer->authority_with_agent());
-                            network.ban_peer(err->peer, std::chrono::hours{24}, network::ban_reason::node_misbehaving);
+                } else if (auto* perf = std::get_if<peer_performance>(&msg)) {
+                    // Find peer by nonce and record to persistent storage
+                    for (auto const& p : peers) {
+                        if (p->nonce() == perf->peer_nonce) {
+                            network.record_peer_performance(p, perf->blocks_downloaded, perf->download_time_ms);
+                            break;
                         }
                     }
 
-                    // Broadcast updated (filtered) list
-                    broadcast_peers();
-                } else if (auto* perf = std::get_if<peer_performance>(&event_msg)) {
-                    // Update performance stats for this peer (block downloads)
-                    auto& stats = peer_performance_stats[perf->peer_nonce];
-                    stats.total_blocks += perf->blocks_downloaded;
-                    stats.total_time_ms += perf->download_time_ms;
-                    stats.sample_count++;
-
-                    // Check if we should evict slow peer (only when at max capacity)
-                    if (all_peers.size() >= max_peers) {
-                        // Collect peers with enough samples
-                        std::vector<std::pair<uint64_t, double>> peer_avgs;
-                        for (auto const& [nonce, pstats] : peer_performance_stats) {
-                            if (pstats.sample_count >= min_samples_for_eviction) {
-                                peer_avgs.emplace_back(nonce, pstats.avg_ms_per_block());
-                            }
-                        }
-
-                        // Need at least 3 peers with samples to make a fair comparison
-                        if (peer_avgs.size() >= 3) {
-                            // Sort by avg time
-                            std::sort(peer_avgs.begin(), peer_avgs.end(),
-                                [](auto const& a, auto const& b) { return a.second < b.second; });
-
-                            // Calculate median
-                            double median_avg = peer_avgs[peer_avgs.size() / 2].second;
-
-                            // Get slowest
-                            auto const& slowest = peer_avgs.back();
-                            uint64_t slowest_nonce = slowest.first;
-                            double slowest_avg = slowest.second;
-
-                            // Only evict if slowest is significantly worse (2x slower than median)
-                            constexpr double eviction_threshold = 2.0;
-                            if (slowest_avg > median_avg * eviction_threshold) {
-                                // Find the peer and report to reputation system
-                                for (auto it = all_peers.begin(); it != all_peers.end(); ++it) {
-                                    if ((*it)->nonce() == slowest_nonce) {
-                                        spdlog::info("[peer_provider] Evicting slow peer {} "
-                                            "(avg {:.1f}ms/block, median {:.1f}ms/block, {:.1f}x slower)",
-                                            (*it)->authority_with_agent(), slowest_avg, median_avg,
-                                            slowest_avg / median_avg);
-                                        // 2026-02-02: Report to reputation system, ban if threshold reached
-                                        if ((*it)->misbehave(network::peer_session::misbehavior_slow_peer)) {
-                                            network.ban_peer(*it, std::chrono::hours{1}, network::ban_reason::node_misbehaving);
-                                        }
-                                        peer_performance_stats.erase(slowest_nonce);
-                                        all_peers.erase(it);
-                                        broadcast_peers();
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else if (auto* hperf = std::get_if<header_performance>(&event_msg)) {
-                    // Header download performance - log but don't use for eviction
-                    // Header sync is too fast to reliably measure peer quality
+                } else if (auto* hperf = std::get_if<header_performance>(&msg)) {
+                    // Header performance - just log, not used for eviction
                     spdlog::debug("[peer_provider] Header perf: peer={}, headers={}, time={}ms",
                         hperf->peer_nonce, hperf->headers_downloaded, hperf->download_time_ms);
                 }
@@ -450,26 +326,30 @@ static
             spdlog::error("[peer_provider] Exception: {}", e.what());
         }
 
-        // Cancel timer before any co_await to ensure clean shutdown of || operator internals
         check_timer.cancel();
 
-        // Network stopped - close channels FIRST to unblock any pending sends,
-        // then send stop signals. Closing channels will wake up blocked tasks immediately.
-        // NOTE: Only close channels that are NOT read with || operator + timer.
-        // Channels using || (stop_signal) must NOT be closed here to avoid SEGV.
-        spdlog::info("[peer_provider:shutdown] Closing all data channels...");
+        // Cancel and close all data channels to unblock pending operations
+        // Note: cancel() wakes up pending async ops, close() alone does NOT!
+        spdlog::info("[peer_provider:shutdown] Closing channels...");
+        header_download_input.cancel();
         header_download_input.close();
+        header_download_output.cancel();
         header_download_output.close();
+        header_validation_input.cancel();
         header_validation_input.close();
+        validated_headers.cancel();
         validated_headers.close();
+        block_download_input.cancel();
         block_download_input.close();
+        downloaded_blocks.cancel();
         downloaded_blocks.close();
+        block_validation_input.cancel();
         block_validation_input.close();
+        validated_blocks.cancel();
         validated_blocks.close();
+        coordinator_events.cancel();
         coordinator_events.close();
-        // NOTE: Do NOT close stop_signal - coordinator:stop_bridge uses || with timer
 
-        spdlog::info("[peer_provider:shutdown] All channels closed, task ending");
         spdlog::info("[peer_provider] Task ended");
     });
 

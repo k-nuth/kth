@@ -117,15 +117,19 @@ public:
     // This MUST be called before the task_group is destroyed.
     [[nodiscard]]
     ::asio::awaitable<void> join() {
-        if (state_->active_count.load() == 0) {
-            co_return;
+        // Loop until all tasks complete.
+        // We need to loop because there's a race between checking active_count
+        // and starting to wait on the channel - tasks might complete in between.
+        while (state_->active_count.load() > 0) {
+            // Wait for signal that a task completed
+            auto [ec] = co_await state_->done_channel.async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+
+            // If channel is closed or errored, exit
+            if (ec) {
+                break;
+            }
         }
-
-        // Wait for signal that all tasks completed
-        auto [ec] = co_await state_->done_channel.async_receive(
-            ::asio::as_tuple(::asio::use_awaitable));
-
-        // Channel closed or received signal - all tasks done
         co_return;
     }
 
@@ -158,9 +162,12 @@ private:
         void decrement_and_signal() {
             auto const prev = active_count.fetch_sub(1);
             if (prev == 1) {
-                // We were the last task - signal completion
-                // Use try_send to avoid blocking if no one is waiting yet
-                done_channel.try_send(std::error_code{});
+                // Last task completed - cancel and close the channel.
+                // cancel() wakes up any pending async_receive with operation_aborted.
+                // close() prevents new operations.
+                // Note: close() alone does NOT cancel pending async operations!
+                done_channel.cancel();
+                done_channel.close();
             }
         }
 

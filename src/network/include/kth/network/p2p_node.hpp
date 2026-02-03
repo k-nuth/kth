@@ -12,15 +12,15 @@
 #include <string>
 #include <vector>
 
+#include <boost/unordered/concurrent_flat_map.hpp>
 #include <boost/unordered/concurrent_flat_set.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
 
-#include <kth/network/banlist.hpp>
 #include <kth/network/define.hpp>
-#include <kth/network/hosts.hpp>
+#include <kth/network/peer_database.hpp>
 #include <kth/network/peer_manager.hpp>
 #include <kth/network/peer_session.hpp>
 #include <kth/network/protocols_coro.hpp>
@@ -268,25 +268,56 @@ public:
     [[nodiscard]]
     message_dispatcher& dispatcher();
 
-    // Banlist management
+    // Ban management
     // -------------------------------------------------------------------------
-
-    /// Get the banlist
-    [[nodiscard]]
-    banlist& bans();
-
-    [[nodiscard]]
-    banlist const& bans() const;
 
     /// Ban a peer (convenience method)
     void ban_peer(
         peer_session::ptr const& peer,
-        std::chrono::seconds duration = banlist::default_ban_duration,
+        std::chrono::seconds duration = std::chrono::hours{24},
         ban_reason reason = ban_reason::node_misbehaving);
 
     /// Check if an address is banned
     [[nodiscard]]
     bool is_banned(infrastructure::config::authority const& authority) const;
+
+    // Peer database (unified peer storage with reputation and ban management)
+    // -------------------------------------------------------------------------
+
+    /// Get the peer database
+    [[nodiscard]]
+    peer_database& peer_db();
+
+    [[nodiscard]]
+    peer_database const& peer_db() const;
+
+    /// Report misbehavior from a peer, returns true if peer should be banned
+    /// @param peer The peer that misbehaved
+    /// @param score Misbehavior score to add (default thresholds: 10=minor, 50=major, 100=ban)
+    /// @param reason Human-readable reason for logging
+    /// @return true if peer exceeded ban threshold and was banned
+    bool report_misbehavior(
+        peer_session::ptr const& peer,
+        int score,
+        std::string_view reason = {});
+
+    /// Report misbehavior by authority
+    bool report_misbehavior(
+        infrastructure::config::authority const& authority,
+        int score,
+        std::string_view reason = {});
+
+    /// Record block download performance for a peer
+    void record_peer_performance(
+        peer_session::ptr const& peer,
+        uint32_t blocks,
+        uint32_t time_ms);
+
+    /// Record block download performance by authority
+    void record_peer_performance(
+        infrastructure::config::authority const& authority,
+        uint32_t blocks,
+        uint32_t time_ms);
 
 private:
     // Internal coroutines
@@ -310,12 +341,19 @@ private:
     settings const& settings_;
     threadpool pool_;
     peer_manager manager_;
-    hosts hosts_;
-    banlist banlist_;
+    peer_database peer_db_;  // Unified peer storage (hosts, bans, and reputation)
 
     // Track IPs currently being connected to (for deduplication)
     // Prevents multiple simultaneous connection attempts to the same IP
     boost::concurrent_flat_set<::asio::ip::address, salted_ip_hasher> pending_connections_;
+
+    // Track recently failed connection IPs with cooldown timestamp
+    // Prevents rapid reconnection to failing peers
+    boost::concurrent_flat_map<
+        ::asio::ip::address,
+        std::chrono::steady_clock::time_point,
+        salted_ip_hasher
+    > failed_connections_;
 
     // Acceptor for inbound connections
     std::unique_ptr<::asio::ip::tcp::acceptor> acceptor_;

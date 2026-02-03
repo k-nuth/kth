@@ -27,3 +27,6 @@ bchn/
 *.log.bk
 stdout*.txt
 fio.log
+
+# CTest temporary files
+Testing/

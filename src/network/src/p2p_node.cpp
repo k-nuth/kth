@@ -23,8 +23,7 @@ p2p_node::p2p_node(settings const& settings)
     : settings_(settings)
     , pool_(thread_ceiling(settings.threads))  // 0 means use all cores
     , manager_(pool_.get_executor())
-    , hosts_(settings)
-    , banlist_(settings.banlist_file)
+    , peer_db_(settings.peers_file, settings.host_pool_capacity)
     , top_block_({null_hash, 0})
     , new_peer_channel_(std::make_unique<concurrent_channel<peer_event>>(pool_.get_executor(), 100))
     , stop_signal_(std::make_unique<concurrent_event_channel>(pool_.get_executor(), 1))
@@ -52,17 +51,23 @@ p2p_node::~p2p_node() {
 
     stopped_ = false;
 
-    // Load banlist from file (persisted bans survive restarts)
-    if (!banlist_.load()) {
-        spdlog::warn("[p2p_node] Failed to load banlist from file");
+    // Load peer database (unified storage for hosts, bans, and reputation)
+    if (!peer_db_.load()) {
+        spdlog::warn("[p2p_node] Failed to load peer database, starting fresh");
+        // Try to import from legacy files
+        auto imported_hosts = peer_db_.import_hosts_cache(settings_.hosts_file);
+        auto imported_bans = peer_db_.import_banlist(settings_.banlist_file);
+        if (imported_hosts > 0 || imported_bans > 0) {
+            spdlog::info("[p2p_node] Imported {} hosts and {} bans from legacy files",
+                imported_hosts, imported_bans);
+        }
     }
 
-    // hosts_ loads from file in constructor
-    spdlog::info("[p2p_node] Loaded {} host addresses, {} banned IPs",
-        hosts_.count(), banlist_.size());
+    spdlog::info("[p2p_node] Loaded {} peers ({} available, {} banned)",
+        peer_db_.size(), peer_db_.available_count(), peer_db_.banned_count());
 
     // Seed if needed
-    if (hosts_.count() < settings_.host_pool_capacity / 2) {
+    if (peer_db_.available_count() < settings_.host_pool_capacity / 2) {
         co_await run_seeding();
     }
 
@@ -139,19 +144,21 @@ void p2p_node::stop() {
     stopped_ = true;
     supervisor_ready_ = false;  // Reset for potential restart
 
-    // Close stop_signal_ channel - this wakes up ALL waiters (peer_supervisor,
-    // maintain_outbound_connections) because async_receive returns error when closed
+    // Cancel and close channels - cancel() wakes up pending async ops, close() alone does NOT!
     if (stop_signal_) {
+        stop_signal_->cancel();
         stop_signal_->close();
     }
 
     // Close the new peer channel to wake up peer_supervisor
     if (new_peer_channel_) {
+        new_peer_channel_->cancel();
         new_peer_channel_->close();
     }
 
     // Close the peer notification channel to wake up sync layer
     if (peer_notification_channel_) {
+        peer_notification_channel_->cancel();
         peer_notification_channel_->close();
     }
 
@@ -165,10 +172,8 @@ void p2p_node::stop() {
     // peer_supervisor's peer_tasks.join() to complete
     manager_.stop_all();
 
-    // Save banlist to file (final save before shutdown)
-    banlist_.save();
-
-    // hosts_ saves to file in destructor
+    // Save peer database (unified storage)
+    peer_db_.save();
 
     // NOTE: We do NOT call pool_.stop() here!
     // With structured concurrency, all coroutines will complete naturally:
@@ -206,27 +211,80 @@ message_dispatcher& p2p_node::dispatcher() {
     return dispatcher_;
 }
 
-banlist& p2p_node::bans() {
-    return banlist_;
-}
-
-banlist const& p2p_node::bans() const {
-    return banlist_;
-}
-
 void p2p_node::ban_peer(
     peer_session::ptr const& peer,
     std::chrono::seconds duration,
     ban_reason reason)
 {
     if (peer) {
-        banlist_.ban(peer->authority(), duration, reason);
+        peer_db_.ban(peer->authority(), duration, reason);
         peer->stop(error::channel_stopped);
     }
 }
 
 bool p2p_node::is_banned(infrastructure::config::authority const& authority) const {
-    return banlist_.is_banned(authority);
+    return peer_db_.is_banned(authority);
+}
+
+// =============================================================================
+// Peer Database
+// =============================================================================
+
+peer_database& p2p_node::peer_db() {
+    return peer_db_;
+}
+
+peer_database const& p2p_node::peer_db() const {
+    return peer_db_;
+}
+
+bool p2p_node::report_misbehavior(
+    peer_session::ptr const& peer,
+    int score,
+    std::string_view reason)
+{
+    if (!peer) {
+        return false;
+    }
+    bool banned = report_misbehavior(peer->authority(), score, reason);
+    if (banned) {
+        // Disconnect the peer when they get banned
+        peer->stop();
+    }
+    return banned;
+}
+
+bool p2p_node::report_misbehavior(
+    infrastructure::config::authority const& authority,
+    int score,
+    std::string_view reason)
+{
+    if (!reason.empty()) {
+        spdlog::debug("[p2p_node] Misbehavior from [{}]: {} (score +{})",
+            authority.to_string(), reason, score);
+    }
+
+    // add_misbehavior auto-bans when threshold is reached and returns true if banned
+    return peer_db_.add_misbehavior(authority, score);
+}
+
+void p2p_node::record_peer_performance(
+    peer_session::ptr const& peer,
+    uint32_t blocks,
+    uint32_t time_ms)
+{
+    if (!peer) {
+        return;
+    }
+    record_peer_performance(peer->authority(), blocks, time_ms);
+}
+
+void p2p_node::record_peer_performance(
+    infrastructure::config::authority const& authority,
+    uint32_t blocks,
+    uint32_t time_ms)
+{
+    peer_db_.record_block_download(authority, blocks, time_ms);
 }
 
 // =============================================================================
@@ -320,8 +378,8 @@ awaitable_expected<peer_session::ptr> p2p_node::connect(
         co_return std::unexpected(error::address_in_use);
     }
 
-    // Check banlist before proceeding
-    if (banlist_.is_banned(peer->authority())) {
+    // Check if banned before proceeding
+    if (peer_db_.is_banned(peer->authority())) {
         spdlog::debug("[p2p_node] Rejecting connection to banned peer {}:{}", host, port);
         peer->stop();
         co_return std::unexpected(error::address_blocked);
@@ -366,19 +424,19 @@ awaitable_expected<peer_session::ptr> p2p_node::connect(
 // -----------------------------------------------------------------------------
 
 size_t p2p_node::address_count() const {
-    return hosts_.count();
+    return peer_db_.available_count();
 }
 
 bool p2p_node::store(address const& addr) {
-    return hosts_.store(addr);
+    return peer_db_.store_address(addr);
 }
 
 code p2p_node::fetch_address(address& out) const {
-    return hosts_.fetch(out);
+    return peer_db_.fetch_address(out);
 }
 
 bool p2p_node::remove(address const& addr) {
-    return hosts_.remove(addr);
+    return peer_db_.remove_address(addr);
 }
 
 // Peer access
@@ -452,7 +510,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
         }
 
         // Early exit if we have enough addresses
-        if (hosts_.count() >= settings_.host_pool_capacity / 4) {
+        if (peer_db_.available_count() >= settings_.host_pool_capacity / 4) {
             spdlog::info("[p2p_node] Collected sufficient addresses, stopping seeding early");
             break;
         }
@@ -465,7 +523,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
     // Wait for remaining tasks to complete (structured concurrency)
     co_await seed_tasks.join();
 
-    spdlog::info("[p2p_node] Seeding complete, {} addresses available", hosts_.count());
+    spdlog::info("[p2p_node] Seeding complete, {} addresses available", peer_db_.available_count());
 }
 
 ::asio::awaitable<void> p2p_node::connect_to_seed(
@@ -528,11 +586,15 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
                 }
 
                 // Wait for addr response with timeout
+                // Note: Some nodes send a small self-announcement addr (1-2 addresses)
+                // after handshake, before responding to getaddr with many addresses.
+                // We accumulate addresses and stop after getting enough or timeout.
                 ::asio::steady_timer timer(executor);
                 timer.expires_after(30s);
-                bool got_addresses = false;
+                size_t total_addresses = 0;
+                constexpr size_t minimum_useful_addresses = 10;
 
-                while (!got_addresses && !peer->stopped()) {
+                while (!peer->stopped()) {
                     auto msg_result = co_await (
                         peer->messages().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
                         timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
@@ -554,16 +616,23 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
                             reader, peer->negotiated_version());
                         if (addr_result) {
                             auto const count = addr_result->addresses().size();
-                            spdlog::info("[p2p_node] Got {} addresses from seed {}:{}",
-                                count, seed_host, seed_port);
-
                             for (auto const& addr : addr_result->addresses()) {
-                                hosts_.store(addr);
+                                peer_db_.store_address(addr);
                             }
-                            got_addresses = true;
+                            total_addresses += count;
+                            spdlog::debug("[p2p_node] Got {} addresses from seed {}:{} (total: {})",
+                                count, seed_host, seed_port, total_addresses);
+
+                            // If we got enough addresses, stop waiting
+                            if (total_addresses >= minimum_useful_addresses) {
+                                break;
+                            }
                         }
                     }
                 }
+
+                spdlog::info("[p2p_node] Seed {}:{} provided {} total addresses",
+                    seed_host, seed_port, total_addresses);
 
                 peer->stop();
             }()
@@ -618,8 +687,8 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 
         auto peer = *result;
 
-        // Check banlist before proceeding
-        if (banlist_.is_banned(peer->authority())) {
+        // Check if banned before proceeding
+        if (peer_db_.is_banned(peer->authority())) {
             spdlog::debug("[p2p_node] Rejecting inbound connection from banned peer {}",
                 peer->authority());
             peer->stop();
@@ -770,8 +839,8 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
     while (!stopped_) {
         auto const current_count = manager_.count_snapshot();
         auto const target = settings_.outbound_connections;
-        auto const host_count = hosts_.count();
-        auto const ban_count = banlist_.size();
+        auto const host_count = peer_db_.available_count();
+        auto const ban_count = peer_db_.banned_count();
         auto const pending_count = pending_connections_.size();
 
         // Periodic status log
@@ -798,17 +867,39 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
             size_t skipped_banned = 0;
             size_t skipped_connected = 0;
             size_t skipped_pending = 0;
+            size_t skipped_cooldown = 0;
+
+            // Cooldown duration for failed connections (30 seconds)
+            constexpr auto failed_cooldown = 30s;
+            auto const now_steady = std::chrono::steady_clock::now();
+
+            // Clean up expired cooldown entries periodically
+            failed_connections_.erase_if([&](auto const& entry) {
+                return entry.second <= now_steady;
+            });
 
             // Fetch addresses, filtering out duplicates and already-connected IPs
             for (size_t attempts = 0; attempts < batch_size * 3 && addresses.size() < batch_size && !stopped_; ++attempts) {
                 domain::message::network_address addr;
-                auto ec = hosts_.fetch(addr);
+                auto ec = peer_db_.fetch_address(addr);
                 if (ec) {
                     break;
                 }
 
                 auto const authority = infrastructure::config::authority(addr);
                 auto const ip = authority.asio_ip();
+
+                // Skip if in cooldown from recent failure
+                bool in_cooldown = false;
+                failed_connections_.cvisit(ip, [&](auto const& entry) {
+                    if (entry.second > now_steady) {
+                        in_cooldown = true;
+                    }
+                });
+                if (in_cooldown) {
+                    ++skipped_cooldown;
+                    continue;
+                }
 
                 // Skip if already pending connection to this IP
                 if (pending_connections_.contains(ip)) {
@@ -823,7 +914,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
                 }
 
                 // Skip if banned
-                if (banlist_.is_banned(ip)) {
+                if (peer_db_.is_banned(ip)) {
                     ++skipped_banned;
                     continue;
                 }
@@ -844,8 +935,8 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
             }
 
             if (addresses.empty()) {
-                spdlog::warn("[p2p_node] No addresses available (hosts: {}, banned: {}, skipped: {} banned, {} connected, {} pending)",
-                    host_count, ban_count, skipped_banned, skipped_connected, skipped_pending);
+                spdlog::warn("[p2p_node] No addresses available (hosts: {}, banned: {}, skipped: {} banned, {} connected, {} pending, {} cooldown)",
+                    host_count, ban_count, skipped_banned, skipped_connected, skipped_pending, skipped_cooldown);
 
                 // Re-seed if host pool is too low
                 if (host_count < settings_.host_pool_capacity / 4) {
@@ -866,7 +957,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
                     // Add to pending connections before spawning
                     pending_connections_.insert(ip);
 
-                    connection_tasks.spawn([this, addr, ip]() -> ::asio::awaitable<void> {
+                    connection_tasks.spawn([this, addr, ip, failed_cooldown]() -> ::asio::awaitable<void> {
                         auto const authority = infrastructure::config::authority(addr);
                         spdlog::trace("[p2p_node] Attempting connection to {}", authority);
 
@@ -878,8 +969,13 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
                         if (!result) {
                             spdlog::trace("[p2p_node] Connection failed to {}: {}",
                                 authority, result.error().message());
-                            hosts_.remove(addr);
+                            // Add to cooldown to prevent rapid reconnection
+                            failed_connections_.insert_or_assign(ip,
+                                std::chrono::steady_clock::now() + failed_cooldown);
+                            peer_db_.remove_address(addr);
                         } else {
+                            // Connection succeeded - remove from cooldown if present
+                            failed_connections_.erase(ip);
                             spdlog::debug("[p2p_node] Connected to {}", authority);
                         }
                     });
@@ -1007,6 +1103,18 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
                             co_return;
                         }
 
+                        // Update peer_database with version info from handshake
+                        if (auto ver = peer->peer_version(); ver) {
+                            auto record = peer_db_.get_or_create(peer->authority());
+                            record.user_agent = ver->user_agent();
+                            record.services = ver->services();
+                            record.record_success();
+                            peer_db_.update(record);
+                        }
+
+                        // Track connection time to detect quick disconnects
+                        auto const connection_start = std::chrono::steady_clock::now();
+
                         // Notify sync layer of new peer (CSP pattern)
                         spdlog::info("[p2p_node:peer_event] CONNECTED: {} (nonce={})",
                             peer->authority(), peer->nonce());
@@ -1031,6 +1139,25 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 
                         // Run protocols until peer disconnects
                         co_await run_peer_protocols(peer);
+
+                        // Check if connection was too short (quick disconnect = unreliable peer)
+                        auto const connection_duration = std::chrono::steady_clock::now() - connection_start;
+                        constexpr auto min_connection_duration = 5s;
+                        if (connection_duration < min_connection_duration) {
+                            // Add to cooldown to prevent rapid reconnection
+                            constexpr auto quick_disconnect_cooldown = 30s;
+                            failed_connections_.insert_or_assign(
+                                peer->authority().asio_ip(),
+                                std::chrono::steady_clock::now() + quick_disconnect_cooldown);
+
+                            // Report misbehavior (20 points per quick disconnect)
+                            // After 5 quick disconnects (100 points), peer gets auto-banned by peer_database
+                            peer_db_.add_misbehavior(peer->authority(), 20);
+
+                            spdlog::debug("[p2p_node] Quick disconnect from {} ({}ms), adding to cooldown and misbehavior",
+                                peer->authority(),
+                                std::chrono::duration_cast<std::chrono::milliseconds>(connection_duration).count());
+                        }
 
                         // Notify sync layer of peer disconnection (CSP pattern)
                         spdlog::info("[p2p_node:peer_event] DISCONNECTED: {} (nonce={})",
