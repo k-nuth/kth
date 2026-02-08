@@ -24,9 +24,13 @@ namespace kth::node::sync {
 //
 // =============================================================================
 
+// max_header_height: The maximum height to sync headers to.
+// When from_height >= max_header_height, signals sync complete.
+// Use 0 for unlimited (sync to network tip).
 ::asio::awaitable<void> header_download_task(
     header_download_input_channel& input,
-    header_download_output_channel& output
+    header_download_output_channel& output,
+    uint32_t max_header_height = 0
 );
 
 // =============================================================================

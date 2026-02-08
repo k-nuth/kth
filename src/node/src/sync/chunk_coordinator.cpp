@@ -45,9 +45,12 @@ std::optional<uint32_t> chunk_coordinator::claim_chunk() {
         return std::nullopt;
     }
 
-    // Wait if round is being reset (spin-wait, very brief)
-    while (resetting_.load(std::memory_order_acquire)) {
-        std::this_thread::yield();
+    // 2026-02-07: FIX - Don't spin-wait! In a single-threaded io_context with coroutines,
+    // spinning blocks ALL coroutines on that thread, causing deadlock.
+    // Instead, return nullopt so the caller can retry after yielding to the scheduler.
+    if (resetting_.load(std::memory_order_acquire)) {
+        spdlog::debug("[chunk_coordinator] Round reset in progress, caller should retry");
+        return std::nullopt;
     }
 
     uint32_t r = round_.load(std::memory_order_acquire);
@@ -88,6 +91,13 @@ std::optional<uint32_t> chunk_coordinator::claim_chunk() {
 
     if (all_completed) {
         try_advance_round();
+        // 2026-02-07: FIX - Check if sync is complete BEFORE recursive call.
+        // Without this check, when sync is complete try_advance_round() returns early
+        // without resetting slots. The recursive call sees all slots still COMPLETED,
+        // enters this branch again, and causes infinite recursion.
+        if (is_complete()) {
+            return std::nullopt;
+        }
         // Retry claim after round advance
         return claim_chunk();
     }

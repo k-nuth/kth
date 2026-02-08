@@ -27,9 +27,11 @@ using namespace ::asio::experimental::awaitable_operators;
 
 ::asio::awaitable<void> header_download_task(
     header_download_input_channel& input,
-    header_download_output_channel& output
+    header_download_output_channel& output,
+    uint32_t max_header_height
 ) {
-    spdlog::debug("[header_download] Task started");
+    spdlog::debug("[header_download] Task started (max_header_height={})",
+        max_header_height == 0 ? "unlimited" : std::to_string(max_header_height));
 
     // Local copy of peers - updated by peer_provider (already filtered)
     std::vector<network::peer_session::ptr> available_peers;
@@ -95,6 +97,23 @@ using namespace ::asio::experimental::awaitable_operators;
 
     // Helper lambda to process a request
     auto process_request = [&](header_request const& request) -> ::asio::awaitable<void> {
+        // Check if we've reached the max header height limit (if set)
+        if (max_header_height > 0 && request.from_height >= max_header_height) {
+            spdlog::info("[header_download] Reached max_header_height {} at from_height={}, signaling sync complete",
+                max_header_height, request.from_height);
+
+            // Signal sync complete with empty headers
+            if (!output.try_send(std::error_code{}, downloaded_headers{
+                .headers = {},
+                .start_height = request.from_height,
+                .source_peer = nullptr
+            })) {
+                spdlog::warn("[header_download] Channel full, max height signal dropped");
+            }
+            pending_request.reset();
+            co_return;
+        }
+
         auto peer = get_header_peer();
         if (!peer) {
             spdlog::debug("[header_download] No peers available, buffering request for height {}",
@@ -160,11 +179,15 @@ using namespace ::asio::experimental::awaitable_operators;
             auto next_peer = get_header_peer();
             if (!next_peer) {
                 // All available peers have returned 0 headers
-                // Check if we've reached the best known height from peer announcements
-                if (request.from_height >= best_known_height) {
-                    // We've reached or exceeded the best known tip - signal sync complete
-                    spdlog::info("[header_download] All {} peers at their tip, signaling sync complete at height {} (best_known={})",
-                        available_peers.size(), request.from_height, best_known_height);
+                // Check if we've reached max_header_height limit or best known height
+                bool const reached_max = max_header_height > 0 && request.from_height >= max_header_height;
+                bool const reached_tip = request.from_height >= best_known_height;
+
+                if (reached_max || reached_tip) {
+                    // We've reached the limit or the best known tip - signal sync complete
+                    spdlog::info("[header_download] All {} peers at their tip, signaling sync complete at height {} (best_known={}, max={})",
+                        available_peers.size(), request.from_height, best_known_height,
+                        max_header_height == 0 ? "unlimited" : std::to_string(max_header_height));
 
                     if (!output.try_send(std::error_code{}, downloaded_headers{
                         .headers = {},

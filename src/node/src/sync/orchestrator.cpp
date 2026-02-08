@@ -130,7 +130,12 @@ static
 ) {
     auto executor = co_await ::asio::this_coro::executor;
 
+    // 2026-02-07: Log which executor is being used for debugging
     spdlog::info("[sync_orchestrator] Starting CSP-based sync system");
+    spdlog::debug("[sync_orchestrator] this_coro::executor type: {}", typeid(executor).name());
+    spdlog::debug("[sync_orchestrator] Network threadpool executor type: {}",
+        typeid(network.thread_pool().get_executor()).name());
+    spdlog::debug("[sync_orchestrator] Network threadpool has {} threads", network.thread_pool().size());
 
     // =========================================================================
     // CHANNELS - The ONLY way tasks communicate
@@ -172,7 +177,7 @@ static
     // TASKS - All independent, communicate only via channels
     // =========================================================================
 
-    task_group all_tasks(executor);
+    task_group all_tasks("orchestrator_tasks", executor);
 
     // -------------------------------------------------------------------------
     // 1. Peer provider - receives connected peers from network and distributes
@@ -181,8 +186,9 @@ static
     peer_provider_input_channel peer_provider_input(executor, 100);
 
     // Bridge task: forwards from network.peer_events() to unified channel
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[peer_bridge] Started, forwarding peer events to peer_provider");
+    // 2026-02-07: Use simple timer polling instead of || operator to avoid potential issues
+    all_tasks.spawn("peer_bridge", [&]() -> ::asio::awaitable<void> {
+        spdlog::info("[peer_bridge] Started, forwarding peer events to peer_provider");
         auto exec = co_await ::asio::this_coro::executor;
         ::asio::steady_timer check_timer(exec);
 
@@ -220,7 +226,9 @@ static
                 }
             }
         } catch (std::exception const& e) {
-            spdlog::error("[peer_bridge] Exception: {}", e.what());
+            spdlog::error("[peer_bridge] EXCEPTION: {}", e.what());
+        } catch (...) {
+            spdlog::error("[peer_bridge] UNKNOWN EXCEPTION");
         }
         // Cancel timer before exiting to ensure clean shutdown of || operator internals
         check_timer.cancel();
@@ -240,7 +248,8 @@ static
     // All reputation tracking, ban decisions, and eviction logic are handled by
     // peer_database in the network layer.
     // -------------------------------------------------------------------------
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
+    // 2026-02-07: Added comprehensive exception handling for debugging
+    all_tasks.spawn("peer_provider", [&]() -> ::asio::awaitable<void> {
         spdlog::info("[peer_provider] Task started, waiting for peers...");
 
         // Local peer list for broadcasting to sync tasks
@@ -323,7 +332,9 @@ static
                 }
             }
         } catch (std::exception const& e) {
-            spdlog::error("[peer_provider] Exception: {}", e.what());
+            spdlog::error("[peer_provider] EXCEPTION: {}", e.what());
+        } catch (...) {
+            spdlog::error("[peer_provider] UNKNOWN EXCEPTION");
         }
 
         check_timer.cancel();
@@ -357,9 +368,11 @@ static
     // 2. Header download task (1 input, 1 output)
     //    Sequential header download with sticky peer selection
     // -------------------------------------------------------------------------
-    all_tasks.spawn(header_download_task(
+    auto const max_header_height = 0u;  // 0 = unlimited, download all headers from peers
+    all_tasks.spawn("header_download_task", header_download_task(
         header_download_input,
-        header_download_output
+        header_download_output,
+        max_header_height
     ));
 
     // -------------------------------------------------------------------------
@@ -368,7 +381,7 @@ static
     //    - peer_failure_report → header_validation_input
     //    - header_performance → peer_provider_input
     // -------------------------------------------------------------------------
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
+    all_tasks.spawn("header_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::debug("[header_bridge] Started, demultiplexing download output");
         try {
             while (true) {
@@ -408,7 +421,7 @@ static
     // 4. Header validation task (1 input, 1 output)
     // -------------------------------------------------------------------------
     uint32_t const initial_header_height = uint32_t(organizer.header_height());
-    all_tasks.spawn(header_validation_task(
+    all_tasks.spawn("header_validation_task", header_validation_task(
         organizer,
         header_validation_input,
         validated_headers
@@ -417,7 +430,7 @@ static
     // -------------------------------------------------------------------------
     // 5. Block download supervisor (1 input, 1 output)
     // -------------------------------------------------------------------------
-    all_tasks.spawn(block_download_supervisor(
+    all_tasks.spawn("block_download_supervisor", block_download_supervisor(
         block_download_input,
         downloaded_blocks,
         organizer
@@ -428,7 +441,12 @@ static
     //    - downloaded_block → block_validation_input
     //    - peer_performance → peer_provider_input
     // -------------------------------------------------------------------------
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
+    // 2026-02-07: Note - with block validation disabled (#if 0 in block_tasks.cpp),
+    // this task will wait forever on downloaded_blocks.async_receive() because
+    // block_supervisor never sends to the output channel. This is expected behavior
+    // when benchmarking download speed only. The task will be unblocked when
+    // peer_provider closes the channel during shutdown.
+    all_tasks.spawn("block_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::info("[block_bridge] Started, waiting for blocks from supervisor");
         uint64_t blocks_forwarded = 0;
 
@@ -497,7 +515,9 @@ static
                 }
             }
         } catch (std::exception const& e) {
-            spdlog::error("[block_bridge] Exception: {}", e.what());
+            spdlog::error("[block_bridge] EXCEPTION: {}", e.what());
+        } catch (...) {
+            spdlog::error("[block_bridge] UNKNOWN EXCEPTION");
         }
         spdlog::info("[block_bridge] Task ended, forwarded {} blocks", blocks_forwarded);
     });
@@ -511,6 +531,7 @@ static
         : 0;
 
     // Get checkpoint height for fast IBD
+    // max_checkpoint_height comes from the checkpoint list in parser.hpp
     uint32_t const checkpoint_height = uint32_t(chain.chain_settings().max_checkpoint_height);
     spdlog::info("[sync_orchestrator] Fast IBD mode up to checkpoint height {}", checkpoint_height);
 
@@ -567,7 +588,7 @@ static
         }
     }
 
-    all_tasks.spawn(block_validation_task(
+    all_tasks.spawn("block_validation_task", block_validation_task(
         chain,
         block_validation_input,
         validated_blocks,
@@ -581,38 +602,73 @@ static
     // -------------------------------------------------------------------------
 
     // Bridge: stop_signal -> coordinator_events
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[coordinator:stop_bridge] Started");
+    // 2026-02-07: Simplified to only poll network.stopped() via timer.
+    // The || operator with stop_signal channel was suspected of causing the timer to
+    // stop firing mysteriously. Since stop_signal is never used (nobody sends to it),
+    // we remove it from the || expression and just poll network.stopped().
+    all_tasks.spawn("coordinator_stop_bridge", [&]() -> ::asio::awaitable<void> {
+        spdlog::info("[coordinator:stop_bridge] Started");
         auto exec = co_await ::asio::this_coro::executor;
         ::asio::steady_timer check_timer(exec);
 
-        // stop_signal is an event channel, we need to check it periodically
-        while (!network.stopped()) {
-            check_timer.expires_after(std::chrono::milliseconds(100));
-            auto event = co_await (
-                stop_signal.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-                check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-            );
+        spdlog::debug("[coordinator:stop_bridge] Entering while loop, network.stopped()={}", network.stopped());
+        uint64_t loop_count = 0;
 
-            if (event.index() == 0) {
-                // Stop signal received
-                auto [ec] = std::get<0>(event);
-                if (!ec) {
-                    if (!coordinator_events.try_send(std::error_code{}, stop_request{})) {
-                        spdlog::warn("[coordinator:stop_bridge] Channel full, stop_request dropped");
-                    }
+        // 2026-02-07: Set to 1 to log every iteration for debugging, 100 for normal operation
+        constexpr uint64_t log_every_n = 1;
+
+        try {
+            // Simple timer-based polling - no || operator with channels
+            while (!network.stopped()) {
+                ++loop_count;
+                if (loop_count % log_every_n == 0) {
+                    spdlog::debug("[coordinator:stop_bridge] iter={} Setting timer", loop_count);
                 }
-                break;
+
+                check_timer.expires_after(std::chrono::milliseconds(100));
+
+                if (loop_count % log_every_n == 0) {
+                    spdlog::debug("[coordinator:stop_bridge] iter={} Awaiting timer", loop_count);
+                }
+
+                auto [ec] = co_await check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+
+                if (loop_count % log_every_n == 0) {
+                    spdlog::debug("[coordinator:stop_bridge] iter={} Timer returned ec={}",
+                        loop_count, ec ? ec.message() : "ok");
+                }
+
+                if (ec) {
+                    spdlog::debug("[coordinator:stop_bridge] Timer cancelled: {}", ec.message());
+                    break;
+                }
+
+                if (loop_count % log_every_n == 0) {
+                    spdlog::debug("[coordinator:stop_bridge] iter={} Looping back", loop_count);
+                }
             }
-            // Timer fired - loop to check network.stopped()
+            // 2026-02-07: If we exit the while loop, log why
+            spdlog::info("[coordinator:stop_bridge] Exited while loop - network.stopped()={}", network.stopped());
+        } catch (std::exception const& e) {
+            spdlog::error("[coordinator:stop_bridge] EXCEPTION: {}", e.what());
+        } catch (...) {
+            spdlog::error("[coordinator:stop_bridge] UNKNOWN EXCEPTION");
         }
-        // Cancel timer before exiting to ensure clean shutdown of || operator internals
+
+        spdlog::info("[coordinator:stop_bridge] Exited while loop after {} iterations, network.stopped()={}",
+            loop_count, network.stopped());
+
+        // 2026-02-07: FIX - Always send stop_request when exiting
+        if (!coordinator_events.try_send(std::error_code{}, stop_request{})) {
+            spdlog::debug("[coordinator:stop_bridge] Channel full on exit, stop_request dropped (may be duplicate)");
+        }
+
         check_timer.cancel();
         spdlog::info("[coordinator:stop_bridge] Task ended");
     });
 
     // Bridge: validated_headers -> coordinator_events
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
+    all_tasks.spawn("coordinator_headers_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::debug("[coordinator:headers_bridge] Started");
         while (true) {
             auto [ec, result] = co_await validated_headers.async_receive(
@@ -630,7 +686,7 @@ static
     });
 
     // Bridge: validated_blocks -> coordinator_events
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
+    all_tasks.spawn("coordinator_blocks_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::debug("[coordinator:blocks_bridge] Started");
         while (true) {
             auto [ec, result] = co_await validated_blocks.async_receive(
@@ -647,8 +703,10 @@ static
         spdlog::info("[coordinator:blocks_bridge] Task ended");
     });
 
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[sync_coordinator] Task started");
+    // 2026-02-07: Added comprehensive exception handling for debugging
+    all_tasks.spawn("sync_coordinator", [&]() -> ::asio::awaitable<void> {
+        spdlog::info("[sync_coordinator] Task started");
+        try {
 
         uint32_t blocks_synced_to = initial_block_height;
         uint32_t headers_synced_to = initial_header_height;
@@ -928,6 +986,11 @@ static
         }
 
         spdlog::info("[sync_coordinator] Event loop ended, task completing...");
+        } catch (std::exception const& e) {
+            spdlog::error("[sync_coordinator] EXCEPTION: {}", e.what());
+        } catch (...) {
+            spdlog::error("[sync_coordinator] UNKNOWN EXCEPTION");
+        }
         spdlog::info("[sync_coordinator] Task ended");
     });
 
