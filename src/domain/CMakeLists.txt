@@ -236,7 +236,9 @@ set(kth_sources_just_legacy
         src/message/prefilled_transaction.cpp
         src/message/reject.cpp
         src/message/send_compact.cpp
+        src/message/send_addrv2.cpp
         src/message/send_headers.cpp
+        src/message/addrv2.cpp
         src/message/transaction.cpp
         src/message/verack.cpp
         src/message/version.cpp
@@ -322,7 +324,9 @@ set(kth_headers
     include/kth/domain/message/ping.hpp
     include/kth/domain/message/pong.hpp
     include/kth/domain/message/double_spend_proof.hpp
+    include/kth/domain/message/send_addrv2.hpp
     include/kth/domain/message/send_headers.hpp
+    include/kth/domain/message/addrv2.hpp
     include/kth/domain/message/transaction.hpp
     include/kth/domain/message/reject.hpp
     include/kth/domain/message/compact_block.hpp
@@ -660,6 +664,25 @@ if (WITH_EXAMPLES)
   target_link_libraries(kth_domain_examples PUBLIC ${PROJECT_NAME})
 
   _group_sources(kth_domain_examples "${CMAKE_CURRENT_LIST_DIR}/examples")
+endif()
+
+# Standalone addrv2 parser comparison test (manual run)
+# Uses BCHN code directly for comparison
+# ------------------------------------------------------------------------------
+if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  add_executable(addrv2_bchn_comparison
+    test/message/addrv2_bchn_comparison.cpp
+    ${CMAKE_SOURCE_DIR}/bchn/src/netaddress.cpp
+    ${CMAKE_SOURCE_DIR}/bchn/src/crypto/sha256.cpp
+    ${CMAKE_SOURCE_DIR}/bchn/src/crypto/sha3.cpp
+    ${CMAKE_SOURCE_DIR}/bchn/src/crypto/siphash.cpp
+    ${CMAKE_SOURCE_DIR}/bchn/src/util/strencodings.cpp
+    ${CMAKE_SOURCE_DIR}/bchn/src/util/asmap.cpp
+  )
+  target_include_directories(addrv2_bchn_comparison PRIVATE
+    ${CMAKE_SOURCE_DIR}/bchn/src  # For BCHN includes
+  )
+  target_link_libraries(addrv2_bchn_comparison PUBLIC ${PROJECT_NAME})
 endif()
 
 # Install

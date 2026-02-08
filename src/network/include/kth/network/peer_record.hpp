@@ -13,6 +13,7 @@
 #include <kth/infrastructure.hpp>
 #include <kth/network/define.hpp>
 #include <kth/network/banlist.hpp>  // for ban_reason
+#include <kth/network/normalized_address.hpp>
 
 namespace kth::network {
 
@@ -74,17 +75,19 @@ struct KN_API peer_record {
     // -------------------------------------------------------------------------
     // Identity
     // -------------------------------------------------------------------------
-    infrastructure::config::authority address;  // IP:port
+    infrastructure::config::authority authority;
+    normalized_address ip;                      // Cached normalized IP (avoids repeated normalization)
     std::string user_agent;                     // e.g., "BCHN:28.0.1"
     uint64_t services{0};                       // NODE_NETWORK, NODE_BLOOM, etc.
 
     // -------------------------------------------------------------------------
     // Timestamps
     // -------------------------------------------------------------------------
-    time_point first_seen{};
-    time_point last_seen{};
-    time_point last_attempt{};
-    time_point last_success{};
+    time_point first_seen{};      // When we first added this peer to our database
+    time_point last_seen{};       // When we last received info about this peer (our clock)
+    time_point last_active{};     // Timestamp from addr message (when network says peer was active)
+    time_point last_attempt{};    // When we last tried to connect
+    time_point last_success{};    // When we last successfully connected
 
     // -------------------------------------------------------------------------
     // Reputation

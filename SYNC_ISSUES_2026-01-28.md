@@ -129,19 +129,41 @@ Después de que ABC falla checkpoint en height 661648, TODOS los peers BCHN subs
 
 ---
 
-### 6. Shutdown hang (2 peer tasks no completan)
+### 6. Shutdown hang (peer tasks no completan) - FIX PENDIENTE DE VERIFICAR
 
 **Síntoma:**
 ```
 [p2p_node] Waiting for peer_tasks.join() - if this hangs, check which peer task didn't complete
 ```
-El proceso queda colgado porque `peer_tasks.join()` espera indefinidamente. De 8 tasks activas, solo 6 completaban.
+El proceso queda colgado porque `peer_tasks.join()` espera indefinidamente. De 8 tasks activas, ninguna completaba.
 
-**Estado:** Agregado logging para identificar qué peers quedan colgados.
+**Causa raíz:** (2026-02-02) `run_peer_protocols()` usa el operador `||` entre `async_receive()` y un timer:
+```cpp
+auto result = co_await (
+    peer->messages().async_receive(...) ||
+    check_timer.async_wait(...)
+);
+```
+Cuando `peer_session::stop()` cerraba los canales con `close()`, las operaciones pendientes de `async_receive()` NO se cancelaban inmediatamente. Según la documentación de Boost.Asio:
+- `close()` - marca el canal como cerrado pero no cancela operaciones pendientes
+- `cancel()` - "cancels all asynchronous operations waiting on the channel"
 
-**Archivo:** `src/network/src/p2p_node.cpp`
+**Fix:** Llamar `cancel()` ANTES de `close()` en todos los canales:
+```cpp
+// En peer_session::stop()
+inbound_.cancel();      // Cancela async_receive() pendiente
+outbound_.cancel();
+headers_responses_.cancel();
+block_responses_.cancel();
+addr_responses_.cancel();
+// Luego close()
+inbound_.close();
+// ...
+```
 
-**Posible causa:** Uso de operador `||` con channels/timers que causa que algunas coroutines no terminen correctamente.
+**Archivo:** `src/network/src/peer_session.cpp:238-249`
+
+**Script de análisis:** `scripts/analysis/analyze-shutdown.py` - analiza el log para detectar peers bloqueados
 
 ---
 
@@ -267,6 +289,42 @@ El log se trunca a mitad de palabra ("stoppe" en vez de "stopped").
 | 4 | Header sync | Ctrl-C | Checkpoints en header_tasks.cpp |
 | 8 | Header sync | Espontáneo | Checkpoints en peer_session.cpp |
 | 10 | Block sync | Ctrl-C | Nuevo - crash en shutdown |
+
+---
+
+### 11. Header sync termina prematuramente (nuevo 2026-02-02)
+
+**Síntoma:** Header sync reporta "COMPLETE" en height 663647, pero la blockchain tiene 930k+ headers.
+
+**Log relevante:**
+```
+[header_organizer] Header validation failed at height 661648: block hash rejected by checkpoint
+[sync_coordinator] Retrying header sync from height 661647 with different peer...
+... (múltiples reintentos con ABC y BCHN peers)
+[header_sync] Header sync COMPLETE: 663647 headers in 60s (11060/s)
+... (sync termina pero debería continuar hasta 930k+)
+[sync_coordinator] Retrying header sync from height 663647 with different peer...
+[header_download] No peers available, buffering request for height 663647
+```
+
+**Análisis:**
+1. ABC peers fallan el checkpoint en height 661648 (están en la cadena ABC fork)
+2. Un peer BCHN (188.245.217.12) logra sincronizar hasta 663647
+3. El sync coordinator marca la sincronización como completa
+4. Pero 663647 NO es el tip real de la cadena - debería ser ~930k+
+
+**Posibles causas:**
+1. El peer BCHN que sincronizó (188.245.217.12) no estaba completamente sincronizado él mismo
+2. El peer devolvió una respuesta con menos de 2000 headers, lo que el sync interpreta como "fin de cadena"
+3. Bug en la lógica de detección de "sync complete" - podría ser que se basa en que un peer devuelve pocos headers en vez de verificar contra el best known height de los peers
+
+**Estado:** Nuevo, pendiente de investigar.
+
+**Posible fix:**
+- No marcar sync como completo hasta que el tip local sea >= best known height de algún peer conectado
+- O: continuar pidiendo headers a otros peers aunque uno devuelva respuesta vacía/corta
+
+**Archivo probable:** `src/node/src/sync/orchestrator.cpp` o lógica de sync_coordinator
 
 ---
 

@@ -17,7 +17,6 @@ banlist.dat
 other-nodes/
 build_asan/
 
-# Reference code
 bchn/
 
 # Data directories
@@ -30,3 +29,4 @@ fio.log
 
 # CTest temporary files
 Testing/
+peers.dat

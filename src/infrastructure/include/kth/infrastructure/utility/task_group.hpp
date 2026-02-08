@@ -6,14 +6,24 @@
 #define KTH_INFRASTRUCTURE_TASK_GROUP_HPP
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <concepts>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
+#include <spdlog/spdlog.h>
+
 #include <kth/infrastructure/utility/asio_helper.hpp>
-#include <kth/infrastructure/utility/async_channel.hpp>
+
+#if defined(KTH_ASIO_STANDALONE)
+#include <asio/steady_timer.hpp>
+#else
+#include <boost/asio/steady_timer.hpp>
+#endif
 
 namespace kth {
 
@@ -58,8 +68,9 @@ namespace kth {
 
 class task_group {
 public:
-    explicit task_group(::asio::any_io_executor executor)
-        : state_(std::make_shared<shared_state>(executor))
+    explicit 
+    task_group(std::string_view group_name, ::asio::any_io_executor executor)
+        : state_(std::make_shared<shared_state>(group_name, executor))
     {}
 
     // Non-copyable, non-movable (prevents accidental misuse)
@@ -84,18 +95,20 @@ public:
     // Note: This uses ONE internal detached spawn, but the task is tracked.
     //
     // Accepts either:
-    //   - An awaitable<void> directly: tasks.spawn(some_coro())
-    //   - A callable returning awaitable<void>: tasks.spawn([&]() -> awaitable<void> { ... })
+    //   - An awaitable<void> directly: tasks.spawn("name", some_coro())
+    //   - A callable returning awaitable<void>: tasks.spawn("name", [&]() -> awaitable<void> { ... })
     template<typename Coro>
-    void spawn(Coro&& coro) {
+    void spawn(std::string_view task_name, Coro&& coro) {
         ++state_->active_count;
         ++state_->total_spawned;
 
         // Capture shared_ptr to keep state alive even if task_group is destroyed
         auto state = state_;
+        std::string name{task_name};
 
         ::asio::co_spawn(state_->executor,
-            [state, c = std::forward<Coro>(coro)]() mutable -> ::asio::awaitable<void> {
+            [state, name = std::move(name), c = std::forward<Coro>(coro)]() mutable -> ::asio::awaitable<void> {
+                spdlog::debug("[task_group:{}] START: {} (active: {})", state->name, name, state->active_count.load());
                 try {
                     if constexpr (std::is_invocable_v<Coro>) {
                         // It's a callable (lambda, function) - invoke it to get the awaitable
@@ -105,9 +118,10 @@ public:
                         co_await std::move(c);
                     }
                 } catch (...) {
+                    spdlog::debug("[task_group:{}] EXCEPTION: {}", state->name, name);
                     // TODO: Store exception for later propagation
-                    // For now, just decrement and signal
                 }
+                spdlog::debug("[task_group:{}] END: {} (active: {})", state->name, name, state->active_count.load() - 1);
                 state->decrement_and_signal();
             },
             ::asio::detached);  // Single controlled detached point
@@ -117,18 +131,21 @@ public:
     // This MUST be called before the task_group is destroyed.
     [[nodiscard]]
     ::asio::awaitable<void> join() {
-        // Loop until all tasks complete.
-        // We need to loop because there's a race between checking active_count
-        // and starting to wait on the channel - tasks might complete in between.
+        // 2026-02-06: Simple polling approach for reliability.
+        // Channel-based signaling had race conditions causing deadlocks.
+        // Polling every 1ms is simple and reliable.
+        auto executor = co_await ::asio::this_coro::executor;
+        ::asio::steady_timer timer(executor);
+        uint64_t poll_count = 0;
         while (state_->active_count.load() > 0) {
-            // Wait for signal that a task completed
-            auto [ec] = co_await state_->done_channel.async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
-
-            // If channel is closed or errored, exit
-            if (ec) {
-                break;
+            ++poll_count;
+            // 2026-02-07: Log every ~1 second (1000 polls) for debugging hangs
+            if (poll_count % 1000 == 0) {
+                spdlog::debug("[task_group:{}] join() polling: {} active tasks remaining (poll #{})",
+                    state_->name, state_->active_count.load(), poll_count);
             }
+            timer.expires_after(std::chrono::milliseconds(1));
+            co_await timer.async_wait(::asio::use_awaitable);
         }
         co_return;
     }
@@ -154,27 +171,20 @@ public:
 private:
     // Shared state that outlives the task_group if needed
     struct shared_state {
-        explicit shared_state(::asio::any_io_executor exec)
-            : executor(std::move(exec))
-            , done_channel(executor, 1)
+        explicit shared_state(std::string_view group_name, ::asio::any_io_executor exec)
+            : name(group_name)
+            , executor(std::move(exec))
         {}
 
         void decrement_and_signal() {
-            auto const prev = active_count.fetch_sub(1);
-            if (prev == 1) {
-                // Last task completed - cancel and close the channel.
-                // cancel() wakes up any pending async_receive with operation_aborted.
-                // close() prevents new operations.
-                // Note: close() alone does NOT cancel pending async operations!
-                done_channel.cancel();
-                done_channel.close();
-            }
+            // 2026-02-06: Simple atomic decrement. join() polls active_count.
+            active_count.fetch_sub(1);
         }
 
+        std::string name;
         ::asio::any_io_executor executor;
         std::atomic<size_t> active_count{0};
         std::atomic<size_t> total_spawned{0};
-        concurrent_event_channel done_channel;
     };
 
     std::shared_ptr<shared_state> state_;
@@ -201,9 +211,9 @@ private:
 
 class scoped_task_group {
 public:
-    explicit scoped_task_group(::asio::any_io_executor executor)
+    explicit scoped_task_group(std::string_view group_name, ::asio::any_io_executor executor)
         : executor_(executor)
-        , group_(std::move(executor))
+        , group_(group_name, std::move(executor))
     {}
 
     ~scoped_task_group() {
@@ -225,8 +235,8 @@ public:
     }
 
     template<typename Coro>
-    void spawn(Coro&& coro) {
-        group_.spawn(std::forward<Coro>(coro));
+    void spawn(std::string_view task_name, Coro&& coro) {
+        group_.spawn(task_name, std::forward<Coro>(coro));
     }
 
     [[nodiscard]]

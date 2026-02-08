@@ -361,6 +361,9 @@ private:
     std::atomic<bool> stopped_{true};
     std::atomic<bool> seeded_{false};
     std::atomic<bool> supervisor_ready_{false};  // Signals that peer_supervisor is ready
+    std::atomic<int> seed_task_counter_{0};  // For unique seed task names in logging
+    std::atomic<int> conn_task_counter_{0};  // For unique connection task names in logging
+    std::atomic<int> peer_task_counter_{0};  // For unique peer task names in logging
     kth::atomic<infrastructure::config::checkpoint> top_block_;
 
     // Message dispatcher for routing messages to handlers

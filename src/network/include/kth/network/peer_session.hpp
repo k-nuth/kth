@@ -312,6 +312,18 @@ public:
     [[nodiscard]]
     int misbehavior_score() const;
 
+    // -------------------------------------------------------------------------
+    // BIP155 (addrv2) support
+    // -------------------------------------------------------------------------
+
+    /// Check if peer supports addrv2 (BIP155)
+    /// True if peer sent sendaddrv2 during handshake
+    [[nodiscard]]
+    bool wants_addrv2() const;
+
+    /// Mark that peer supports addrv2 (called when sendaddrv2 received)
+    void set_wants_addrv2(bool value);
+
 private:
     // -------------------------------------------------------------------------
     // Internal coroutines
@@ -397,6 +409,10 @@ private:
 
     // Misbehavior scoring (BCHN-style)
     std::atomic<int> misbehavior_score_{0};
+
+    // BIP155 (addrv2) support
+    // Set to true when peer sends sendaddrv2 during handshake
+    std::atomic<bool> wants_addrv2_{false};
 
     // Buffers (only accessed from read_loop, no synchronization needed)
     data_chunk heading_buffer_;

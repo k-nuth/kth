@@ -13,6 +13,7 @@
 
 #include <boost/unordered/unordered_flat_map.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
+#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
 #include <asio/post.hpp>
@@ -43,6 +44,9 @@ std::atomic<uint64_t> g_blocks_forwarded_by_supervisor{0}; // Forwarded by super
 std::atomic<uint64_t> g_blocks_received_by_bridge{0}; // Received by bridge from downloaded_blocks
 std::atomic<uint64_t> g_blocks_forwarded_by_bridge{0}; // Forwarded by bridge to validation_input
 std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validation task
+
+// 2026-02-07: Counter for unique block_download task IDs (helps identify tasks in logs)
+std::atomic<uint64_t> g_block_download_task_id{0};
 
 // =============================================================================
 // Block Download Task (per-peer)
@@ -354,7 +358,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
 
     spdlog::debug("[block_supervisor] Task started");
 
-    task_group tasks(executor);
+    task_group tasks("block_supervisor_tasks", executor);
 
     // Coordinator - created when we get a range
     // NOTE: Using shared_ptr so download tasks can safely hold a reference even if
@@ -397,7 +401,10 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
 
         spdlog::debug("[block_supervisor] Spawning download task for peer {}", peer->authority_with_agent());
         spawned_peers.insert(nonce);
-        tasks.spawn(block_download_task(
+        // 2026-02-07: task_id is a unique counter, nonce identifies the peer session
+        auto const task_id = g_block_download_task_id.fetch_add(1);
+        auto task_name = fmt::format("block_download_{}:{}:{}", peer->authority(), nonce, task_id);
+        tasks.spawn(task_name, block_download_task(
             peer,
             coordinator,  // Pass shared_ptr - task keeps coordinator alive until done
             active_peers,
@@ -410,7 +417,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
     // Timer task: sends supervisor_timeout to unified events channel
     // Uses external timeout_timer that can be cancelled on shutdown
     // -------------------------------------------------------------------------
-    tasks.spawn([&, &timer = timeout_timer]() -> ::asio::awaitable<void> {
+    tasks.spawn("block_supervisor_timer", [&, &timer = timeout_timer]() -> ::asio::awaitable<void> {
         spdlog::debug("[block_supervisor:timer] Started");
         while (timer_running.load(std::memory_order_relaxed)) {
             timer.expires_after(std::chrono::seconds(10));
@@ -428,7 +435,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
     // -------------------------------------------------------------------------
     // Bridge: input channel -> unified events channel
     // -------------------------------------------------------------------------
-    tasks.spawn([&]() -> ::asio::awaitable<void> {
+    tasks.spawn("block_supervisor_input_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::debug("[block_supervisor:input_bridge] Started");
         while (true) {
             auto [ec, msg] = co_await input.async_receive(
@@ -465,7 +472,7 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
     // -------------------------------------------------------------------------
     // Bridge: task_output channel -> unified events channel
     // -------------------------------------------------------------------------
-    tasks.spawn([&]() -> ::asio::awaitable<void> {
+    tasks.spawn("block_supervisor_task_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::debug("[block_supervisor:task_bridge] Started");
         uint64_t blocks_forwarded = 0;
         while (true) {

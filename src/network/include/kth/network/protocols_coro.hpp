@@ -230,13 +230,30 @@ KN_API awaitable_expected<domain::message::address> request_addresses(
     peer_session& peer,
     std::chrono::seconds timeout);
 
-/// Send our addresses to a peer
+/// Send our addresses to a peer (legacy addr format)
 /// @param peer The peer session
 /// @param addresses Addresses to send
 [[nodiscard]]
 KN_API ::asio::awaitable<code> send_addresses(
     peer_session& peer,
     domain::message::address const& addresses);
+
+/// Send our addresses to a peer (BIP155 addrv2 format)
+/// @param peer The peer session
+/// @param addresses Addresses to send in addrv2 format
+[[nodiscard]]
+KN_API ::asio::awaitable<code> send_addrv2(
+    peer_session& peer,
+    domain::message::addrv2 const& addresses);
+
+/// Send addresses using the appropriate format based on peer capabilities
+/// Automatically chooses addrv2 if peer signaled support, otherwise addr
+/// @param peer The peer session
+/// @param addresses Addresses to send (will be converted to appropriate format)
+[[nodiscard]]
+KN_API ::asio::awaitable<code> send_addresses_auto(
+    peer_session& peer,
+    infrastructure::message::network_address::list const& addresses);
 
 // =============================================================================
 // Blockchain Protocol Handlers (Headers-First Sync)

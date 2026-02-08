@@ -141,6 +141,18 @@ awaitable_expected<handshake_result> perform_handshake(
         co_return std::unexpected(send_ec);
     }
 
+    // BIP155: Send sendaddrv2 after VERSION but before VERACK
+    // This signals that we support receiving addrv2 messages
+    if (config.protocol_version >= domain::message::version::level::feature_negotiation) {
+        auto sendaddrv2_ec = co_await peer.send(domain::message::send_addrv2{});
+        if (sendaddrv2_ec != error::success) {
+            spdlog::debug("[protocol] Failed to send sendaddrv2 to [{}]", authority);
+            // Non-fatal - continue with handshake
+        } else {
+            spdlog::debug("[protocol] Sent sendaddrv2 to [{}]", authority);
+        }
+    }
+
     // We need to receive both version and verack from the peer
     // The order may vary, so we track what we've received
     bool got_version = false;
@@ -201,6 +213,11 @@ awaitable_expected<handshake_result> perform_handshake(
             spdlog::debug("[protocol] Received verack from [{}]", authority);
             got_verack = true;
         }
+        else if (command == domain::message::send_addrv2::command) {
+            // BIP155: Peer signals addrv2 support
+            spdlog::debug("[protocol] Received sendaddrv2 from [{}] - peer supports addrv2", authority);
+            peer.set_wants_addrv2(true);
+        }
         else {
             // Unexpected message during handshake - log but continue
             spdlog::debug("[protocol] Unexpected message '{}' during handshake with [{}]",
@@ -215,8 +232,8 @@ awaitable_expected<handshake_result> perform_handshake(
     peer.set_peer_version(peer_version);
     peer.set_negotiated_version(negotiated);
 
-    spdlog::debug("[protocol] Handshake complete with [{}], negotiated version {}",
-        authority, negotiated);
+    spdlog::debug("[protocol] Handshake complete with [{}], negotiated version {}, addrv2={}",
+        authority, negotiated, peer.wants_addrv2());
 
     co_return handshake_result{peer_version, negotiated};
 }
@@ -248,6 +265,18 @@ awaitable_expected<handshake_result> perform_handshake_direct(
     if (send_ec != error::success) {
         spdlog::debug("[protocol] Failed to send version to [{}]", authority);
         co_return std::unexpected(send_ec);
+    }
+
+    // BIP155: Send sendaddrv2 after VERSION but before VERACK
+    // This signals that we support receiving addrv2 messages
+    if (config.protocol_version >= domain::message::version::level::feature_negotiation) {
+        auto sendaddrv2_ec = co_await peer.send_direct(domain::message::send_addrv2{});
+        if (sendaddrv2_ec != error::success) {
+            spdlog::debug("[protocol] Failed to send sendaddrv2 to [{}]", authority);
+            // Non-fatal - continue with handshake
+        } else {
+            spdlog::debug("[protocol] Sent sendaddrv2 to [{}]", authority);
+        }
     }
 
     // We need to receive both version and verack from the peer
@@ -327,6 +356,11 @@ awaitable_expected<handshake_result> perform_handshake_direct(
             spdlog::debug("[protocol] Received verack from [{}]", authority);
             got_verack = true;
         }
+        else if (command == domain::message::send_addrv2::command) {
+            // BIP155: Peer signals addrv2 support
+            spdlog::debug("[protocol] Received sendaddrv2 from [{}] - peer supports addrv2", authority);
+            peer.set_wants_addrv2(true);
+        }
         else {
             // Unexpected message during handshake - log but continue
             spdlog::debug("[protocol] Unexpected message '{}' during handshake with [{}]",
@@ -341,8 +375,8 @@ awaitable_expected<handshake_result> perform_handshake_direct(
     peer.set_peer_version(peer_version);
     peer.set_negotiated_version(negotiated);
 
-    spdlog::debug("[protocol] Direct handshake complete with [{}], negotiated version {}",
-        authority, negotiated);
+    spdlog::debug("[protocol] Direct handshake complete with [{}], negotiated version {}, addrv2={}",
+        authority, negotiated, peer.wants_addrv2());
 
     co_return handshake_result{peer_version, negotiated};
 }
@@ -464,7 +498,7 @@ awaitable_expected<domain::message::address> request_addresses(
         co_return std::unexpected(ec);
     }
 
-    // Wait for addr response on the dedicated channel
+    // Wait for addr/addrv2 response on the dedicated channel
     auto executor = co_await ::asio::this_coro::executor;
     ::asio::steady_timer timer(executor, timeout);
 
@@ -482,10 +516,33 @@ awaitable_expected<domain::message::address> request_addresses(
         co_return std::unexpected(error::channel_stopped);
     }
 
-    // Parse the address message
+    auto const& command = raw.heading.command();
     byte_reader reader(raw.payload);
+
+    spdlog::info("[protocol] Received address response from [{}]: command='{}', payload_size={}",
+        peer.authority(), command, raw.payload.size());
+
+    // Handle both addr (legacy) and addrv2 (BIP155) formats
+    if (command == domain::message::addrv2::command) {
+        // Parse as addrv2 and convert to legacy address format
+        auto addrv2_result = domain::message::addrv2::from_data(reader, peer.negotiated_version());
+        if (!addrv2_result) {
+            spdlog::debug("[protocol] Failed to parse addrv2 from [{}]", peer.authority());
+            co_return std::unexpected(error::bad_stream);
+        }
+
+        // Convert to legacy format (only IPv4/IPv6 addresses)
+        auto addresses = addrv2_result->to_network_addresses();
+        spdlog::debug("[protocol] Parsed addrv2 from [{}]: {} entries, {} convertible to legacy",
+            peer.authority(), addrv2_result->addresses().size(), addresses.size());
+
+        co_return domain::message::address(std::move(addresses));
+    }
+
+    // Parse as legacy addr
     auto addr_result = domain::message::address::from_data(reader, peer.negotiated_version());
     if (!addr_result) {
+        spdlog::debug("[protocol] Failed to parse addr from [{}]", peer.authority());
         co_return std::unexpected(error::bad_stream);
     }
 
@@ -497,6 +554,31 @@ awaitable_expected<domain::message::address> request_addresses(
     domain::message::address const& addresses)
 {
     co_return co_await peer.send(addresses);
+}
+
+::asio::awaitable<code> send_addrv2(
+    peer_session& peer,
+    domain::message::addrv2 const& addresses)
+{
+    co_return co_await peer.send(addresses);
+}
+
+::asio::awaitable<code> send_addresses_auto(
+    peer_session& peer,
+    infrastructure::message::network_address::list const& addresses)
+{
+    // If peer supports addrv2, send addrv2; otherwise send addr
+    if (peer.wants_addrv2()) {
+        // Convert to addrv2 format
+        domain::message::addrv2::entry_list entries;
+        entries.reserve(addresses.size());
+        for (auto const& addr : addresses) {
+            entries.push_back(domain::message::addrv2_entry::from_network_address(addr));
+        }
+        co_return co_await peer.send(domain::message::addrv2(std::move(entries)));
+    } else {
+        co_return co_await peer.send(domain::message::address(addresses));
+    }
 }
 
 // =============================================================================

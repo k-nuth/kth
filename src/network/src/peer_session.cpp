@@ -477,6 +477,18 @@ int peer_session::misbehavior_score() const {
 }
 
 // =============================================================================
+// BIP155 (addrv2) support
+// =============================================================================
+
+bool peer_session::wants_addrv2() const {
+    return wants_addrv2_.load(std::memory_order_relaxed);
+}
+
+void peer_session::set_wants_addrv2(bool value) {
+    wants_addrv2_.store(value, std::memory_order_relaxed);
+}
+
+// =============================================================================
 // Internal Coroutines
 // =============================================================================
 

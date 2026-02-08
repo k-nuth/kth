@@ -9,6 +9,7 @@
 
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/use_awaitable.hpp>
+#include <fmt/format.h>
 
 namespace kth::network {
 
@@ -63,11 +64,12 @@ p2p_node::~p2p_node() {
         }
     }
 
+    auto const [available, banned] = peer_db_.count_by_status();
     spdlog::info("[p2p_node] Loaded {} peers ({} available, {} banned)",
-        peer_db_.size(), peer_db_.available_count(), peer_db_.banned_count());
+        peer_db_.size(), available, banned);
 
     // Seed if needed
-    if (peer_db_.available_count() < settings_.host_pool_capacity / 2) {
+    if (available < settings_.host_pool_capacity / 2) {
         co_await run_seeding();
     }
 
@@ -88,24 +90,24 @@ p2p_node::~p2p_node() {
     // on the caller's executor (which may be single-threaded). task_group
     // uses pool_.get_executor() which has multiple threads, allowing true
     // parallelism and proper coroutine scheduling.
-    task_group network_tasks(pool_.get_executor());
+    task_group network_tasks("network_tasks", pool_.get_executor());
 
     spdlog::debug("[p2p_node] Spawning peer_supervisor...");
-    network_tasks.spawn([this]() -> ::asio::awaitable<void> {
+    network_tasks.spawn("peer_supervisor", [this]() -> ::asio::awaitable<void> {
         spdlog::debug("[p2p_node] peer_supervisor coroutine starting");
         co_await peer_supervisor();
         spdlog::debug("[p2p_node] peer_supervisor coroutine finished");
     });
 
     spdlog::debug("[p2p_node] Spawning run_inbound...");
-    network_tasks.spawn([this]() -> ::asio::awaitable<void> {
+    network_tasks.spawn("run_inbound", [this]() -> ::asio::awaitable<void> {
         spdlog::debug("[p2p_node] run_inbound coroutine starting");
         co_await run_inbound();
         spdlog::debug("[p2p_node] run_inbound coroutine finished");
     });
 
     spdlog::debug("[p2p_node] Spawning run_outbound...");
-    network_tasks.spawn([this]() -> ::asio::awaitable<void> {
+    network_tasks.spawn("run_outbound", [this]() -> ::asio::awaitable<void> {
         spdlog::debug("[p2p_node] run_outbound coroutine starting");
         co_await run_outbound();
         spdlog::debug("[p2p_node] run_outbound coroutine finished");
@@ -173,7 +175,9 @@ void p2p_node::stop() {
     manager_.stop_all();
 
     // Save peer database (unified storage)
-    peer_db_.save();
+    if (!peer_db_.save()) {
+        spdlog::warn("[p2p_node] Failed to save peer database on shutdown");
+    }
 
     // NOTE: We do NOT call pool_.stop() here!
     // With structured concurrency, all coroutines will complete naturally:
@@ -424,7 +428,8 @@ awaitable_expected<peer_session::ptr> p2p_node::connect(
 // -----------------------------------------------------------------------------
 
 size_t p2p_node::address_count() const {
-    return peer_db_.available_count();
+    auto const [available, banned] = peer_db_.count_by_status();
+    return available;
 }
 
 bool p2p_node::store(address const& addr) {
@@ -479,7 +484,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
         settings_.seeds.begin(), settings_.seeds.end());
 
     // Use task_group for structured concurrency - no detached!
-    task_group seed_tasks(executor);
+    task_group seed_tasks("seed_tasks", executor);
 
     // Track seeds completed for early exit
     auto seeds_completed = std::make_shared<std::atomic<size_t>>(0);
@@ -489,7 +494,8 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
     for (auto const& seed : seeds_copy) {
         if (stopped_) break;
 
-        seed_tasks.spawn([this, host = seed.host(), port = seed.port(), seeds_completed]() -> ::asio::awaitable<void> {
+        auto task_name = fmt::format("seed_{}:{}:{}", seed.host(), seed.port(), seed_task_counter_.fetch_add(1));
+        seed_tasks.spawn(task_name, [this, host = seed.host(), port = seed.port(), seeds_completed]() -> ::asio::awaitable<void> {
             co_await connect_to_seed(host, port, seeds_completed);
         });
     }
@@ -510,7 +516,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
         }
 
         // Early exit if we have enough addresses
-        if (peer_db_.available_count() >= settings_.host_pool_capacity / 4) {
+        if (auto const [avail, _] = peer_db_.count_by_status(); avail >= settings_.host_pool_capacity / 4) {
             spdlog::info("[p2p_node] Collected sufficient addresses, stopping seeding early");
             break;
         }
@@ -523,7 +529,8 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
     // Wait for remaining tasks to complete (structured concurrency)
     co_await seed_tasks.join();
 
-    spdlog::info("[p2p_node] Seeding complete, {} addresses available", peer_db_.available_count());
+    auto const [available_after, _] = peer_db_.count_by_status();
+    spdlog::info("[p2p_node] Seeding complete, {} addresses available", available_after);
 }
 
 ::asio::awaitable<void> p2p_node::connect_to_seed(
@@ -610,18 +617,47 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
                         break;
                     }
 
-                    if (raw.heading.command() == domain::message::address::command) {
+                    auto const& command = raw.heading.command();
+                    if (command == domain::message::address::command ||
+                        command == domain::message::addrv2::command) {
+
                         byte_reader reader(raw.payload);
-                        auto addr_result = domain::message::address::from_data(
-                            reader, peer->negotiated_version());
-                        if (addr_result) {
-                            auto const count = addr_result->addresses().size();
-                            for (auto const& addr : addr_result->addresses()) {
-                                peer_db_.store_address(addr);
+                        infrastructure::message::network_address::list addresses;
+
+                        if (command == domain::message::addrv2::command) {
+                            // Parse as addrv2 (BIP155)
+                            auto addrv2_result = domain::message::addrv2::from_data(
+                                reader, peer->negotiated_version());
+                            if (addrv2_result) {
+                                addresses = addrv2_result->to_network_addresses();
+                                spdlog::info("[p2p_node] Seed {}:{} sent ADDRV2: {} entries, {} IPv4/IPv6",
+                                    seed_host, seed_port,
+                                    addrv2_result->addresses().size(), addresses.size());
                             }
-                            total_addresses += count;
+                        } else if (command == domain::message::address::command) {
+                            // Parse as legacy addr
+                            auto addr_result = domain::message::address::from_data(
+                                reader, peer->negotiated_version());
+                            if (addr_result) {
+                                addresses = std::move(addr_result->addresses());
+                                spdlog::info("[p2p_node] Seed {}:{} sent ADDR (legacy): {} entries",
+                                    seed_host, seed_port, addresses.size());
+                            }
+                        } else {
+                            spdlog::warn("[p2p_node] Seed {}:{} sent unknown address command: '{}'",
+                                seed_host, seed_port, command);
+                        }
+
+                        if (!addresses.empty()) {
+                            size_t stored = 0;
+                            for (auto const& addr : addresses) {
+                                if (peer_db_.store_address(addr)) {
+                                    ++stored;
+                                }
+                            }
+                            total_addresses += stored;
                             spdlog::debug("[p2p_node] Got {} addresses from seed {}:{} (total: {})",
-                                count, seed_host, seed_port, total_addresses);
+                                stored, seed_host, seed_port, total_addresses);
 
                             // If we got enough addresses, stop waiting
                             if (total_addresses >= minimum_useful_addresses) {
@@ -790,7 +826,10 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
             if (!send_ec) {
                 continue;
             }
-        } else if (command == domain::message::address::command) {
+        } else if (command == domain::message::address::command ||
+                   command == domain::message::addrv2::command) {
+            // Route both addr and addrv2 to the same channel
+            // The receiver will check the command to know which parser to use
             auto [send_ec] = co_await peer->addr_responses().async_send(
                 std::error_code{}, raw, ::asio::as_tuple(::asio::use_awaitable));
             if (!send_ec) {
@@ -839,8 +878,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
     while (!stopped_) {
         auto const current_count = manager_.count_snapshot();
         auto const target = settings_.outbound_connections;
-        auto const host_count = peer_db_.available_count();
-        auto const ban_count = peer_db_.banned_count();
+        auto const [host_count, ban_count] = peer_db_.count_by_status();
         auto const pending_count = pending_connections_.size();
 
         // Periodic status log
@@ -948,7 +986,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
                     addresses.size(), needed, current_count);
 
                 // Use task_group for structured concurrency - no detached!
-                task_group connection_tasks(executor);
+                task_group connection_tasks("connection_tasks", executor);
 
                 for (auto const& addr : addresses) {
                     auto const authority = infrastructure::config::authority(addr);
@@ -957,7 +995,8 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
                     // Add to pending connections before spawning
                     pending_connections_.insert(ip);
 
-                    connection_tasks.spawn([this, addr, ip, failed_cooldown]() -> ::asio::awaitable<void> {
+                    auto task_name = fmt::format("conn_{}:{}", authority, conn_task_counter_.fetch_add(1));
+                    connection_tasks.spawn(task_name, [this, addr, ip, failed_cooldown]() -> ::asio::awaitable<void> {
                         auto const authority = infrastructure::config::authority(addr);
                         spdlog::trace("[p2p_node] Attempting connection to {}", authority);
 
@@ -972,7 +1011,9 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
                             // Add to cooldown to prevent rapid reconnection
                             failed_connections_.insert_or_assign(ip,
                                 std::chrono::steady_clock::now() + failed_cooldown);
-                            peer_db_.remove_address(addr);
+                            if (peer_db_.remove_address(addr)) {
+                                spdlog::trace("[p2p_node] Removed failed address {} from database", authority);
+                            }
                         } else {
                             // Connection succeeded - remove from cooldown if present
                             failed_connections_.erase(ip);
@@ -1023,7 +1064,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 ::asio::awaitable<void> p2p_node::peer_supervisor() {
     spdlog::debug("[p2p_node] peer_supervisor started");
 
-    task_group peer_tasks(pool_.get_executor());
+    task_group peer_tasks("peer_tasks", pool_.get_executor());
 
     // Track ALL spawned peers (including those not yet in manager)
     // This is needed for clean shutdown - manager_.stop_all() only stops
@@ -1062,7 +1103,10 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
         // This runs: peer->run() && (handshake && add_to_manager && protocols)
         // The && operator ensures both branches run in parallel and we wait for both.
         // When peer disconnects, both exit and && completes.
-        peer_tasks.spawn([this, peer, direction, response_channel]() -> ::asio::awaitable<void> {
+        auto task_name = fmt::format("peer_{}_{}:{}",
+            direction == peer_direction::inbound ? "in" : "out",
+            peer->authority(), peer_task_counter_.fetch_add(1));
+        peer_tasks.spawn(task_name, [this, peer, direction, response_channel]() -> ::asio::awaitable<void> {
             try {
                 co_await (
                     [&]() -> ::asio::awaitable<void> {
@@ -1105,11 +1149,16 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 
                         // Update peer_database with version info from handshake
                         if (auto ver = peer->peer_version(); ver) {
-                            auto record = peer_db_.get_or_create(peer->authority());
-                            record.user_agent = ver->user_agent();
-                            record.services = ver->services();
-                            record.record_success();
-                            peer_db_.update(record);
+                            auto [record, result] = peer_db_.get_or_create(peer->authority());
+                            using enum get_result;
+                            if (result != created_not_stored) {
+                                // Record is in database (was existing or just created)
+                                record.user_agent = ver->user_agent();
+                                record.services = ver->services();
+                                record.record_success();
+                                (void)peer_db_.update(record);
+                            }
+                            // If created_not_stored: at capacity, data is lost (acceptable)
                         }
 
                         // Track connection time to detect quick disconnects
@@ -1152,7 +1201,10 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 
                             // Report misbehavior (20 points per quick disconnect)
                             // After 5 quick disconnects (100 points), peer gets auto-banned by peer_database
-                            peer_db_.add_misbehavior(peer->authority(), 20);
+                            if (peer_db_.add_misbehavior(peer->authority(), 20)) {
+                                spdlog::info("[p2p_node] Peer {} auto-banned due to repeated quick disconnects",
+                                    peer->authority());
+                            }
 
                             spdlog::debug("[p2p_node] Quick disconnect from {} ({}ms), adding to cooldown and misbehavior",
                                 peer->authority(),
@@ -1209,7 +1261,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
     // This is the structured concurrency guarantee - no orphaned tasks!
     co_await peer_tasks.join();
 
-    spdlog::debug("[p2p_node] peer_supervisor finished - all peer tasks completed");
+    spdlog::info("[p2p_node] peer_supervisor finished - all peer tasks completed");
 }
 
 uint64_t p2p_node::generate_nonce() {
