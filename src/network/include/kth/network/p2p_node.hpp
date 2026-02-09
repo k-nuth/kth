@@ -281,6 +281,17 @@ public:
     [[nodiscard]]
     bool is_banned(infrastructure::config::authority const& authority) const;
 
+    /// Check if a peer is slow based on download performance
+    /// @param authority The peer's address
+    /// @param threshold_ms Threshold in ms/block (default 500ms)
+    [[nodiscard]]
+    bool is_slow_peer(infrastructure::config::authority const& authority,
+                      double threshold_ms = 500.0) const;
+
+    /// Get peer's average download speed (ms per block), 0.0 if unknown
+    [[nodiscard]]
+    double get_peer_speed(infrastructure::config::authority const& authority) const;
+
     // Peer database (unified peer storage with reputation and ban management)
     // -------------------------------------------------------------------------
 

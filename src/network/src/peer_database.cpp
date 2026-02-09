@@ -545,6 +545,35 @@ double peer_database::get_median_performance() const {
     return avgs[avgs.size() / 2];
 }
 
+bool peer_database::is_slow_peer(infrastructure::config::authority const& auth,
+                                  double threshold_ms,
+                                  uint32_t min_samples) const
+{
+    auto const ip = normalized_address(auth.asio_ip());
+
+    bool is_slow = false;
+    records_.cvisit(ip, [&](auto const& entry) {
+        auto const& perf = entry.second.performance;
+        if (perf.sample_count >= min_samples && perf.avg_ms_per_block() > threshold_ms) {
+            is_slow = true;
+        }
+    });
+
+    return is_slow;
+}
+
+double peer_database::get_peer_speed(infrastructure::config::authority const& auth) const
+{
+    auto const ip = normalized_address(auth.asio_ip());
+
+    double speed = 0.0;
+    records_.cvisit(ip, [&](auto const& entry) {
+        speed = entry.second.performance.avg_ms_per_block();
+    });
+
+    return speed;
+}
+
 // =============================================================================
 // Query Operations
 // =============================================================================

@@ -186,6 +186,21 @@ struct KN_API peer_database {
     [[nodiscard]]
     double get_median_performance() const;
 
+    /// Check if a peer is slow based on download performance
+    /// Returns true if peer has enough samples and avg_ms_per_block > threshold
+    /// @param auth The peer's authority
+    /// @param threshold_ms Threshold in ms/block (default 500ms, ~2x typical good peer)
+    /// @param min_samples Minimum samples before marking slow (default 3)
+    [[nodiscard]]
+    bool is_slow_peer(infrastructure::config::authority const& auth,
+                      double threshold_ms = 500.0,
+                      uint32_t min_samples = 3) const;
+
+    /// Get peer's average download speed (ms per block)
+    /// Returns 0.0 if peer not found or no samples
+    [[nodiscard]]
+    double get_peer_speed(infrastructure::config::authority const& auth) const;
+
     // -------------------------------------------------------------------------
     // Query Operations
     // -------------------------------------------------------------------------

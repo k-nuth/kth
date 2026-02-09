@@ -291,6 +291,17 @@ void p2p_node::record_peer_performance(
     peer_db_.record_block_download(authority, blocks, time_ms);
 }
 
+bool p2p_node::is_slow_peer(infrastructure::config::authority const& authority,
+                             double threshold_ms) const
+{
+    return peer_db_.is_slow_peer(authority, threshold_ms);
+}
+
+double p2p_node::get_peer_speed(infrastructure::config::authority const& authority) const
+{
+    return peer_db_.get_peer_speed(authority);
+}
+
 // =============================================================================
 // Message Dispatcher implementation
 // =============================================================================
@@ -871,23 +882,29 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
     // Should match or exceed outbound_connections target for faster peer acquisition
     constexpr size_t max_parallel_attempts = 32;
 
-    // Periodic status log
-    auto last_status_log = std::chrono::steady_clock::now();
-    constexpr auto status_log_interval = 10s;
+    // Spawn independent status logging task (doesn't block on connection attempts)
+    ::asio::co_spawn(executor, [this]() -> ::asio::awaitable<void> {
+        auto exec = co_await ::asio::this_coro::executor;
+        ::asio::steady_timer status_timer(exec);
+        while (!stopped_) {
+            status_timer.expires_after(10s);
+            auto [ec] = co_await status_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            if (ec || stopped_) break;
+
+            auto const current = manager_.count_snapshot();
+            auto const target = settings_.outbound_connections;
+            auto const [hosts, banned] = peer_db_.count_by_status();
+            auto const pending = pending_connections_.size();
+            spdlog::info("[p2p_node:status] Peers: {}/{} (target), pending: {}, hosts: {}, banned: {}",
+                current, target, pending, hosts, banned);
+        }
+    }, ::asio::detached);
 
     while (!stopped_) {
         auto const current_count = manager_.count_snapshot();
         auto const target = settings_.outbound_connections;
         auto const [host_count, ban_count] = peer_db_.count_by_status();
         auto const pending_count = pending_connections_.size();
-
-        // Periodic status log
-        auto now = std::chrono::steady_clock::now();
-        if (now - last_status_log >= status_log_interval) {
-            spdlog::info("[p2p_node:status] Peers: {}/{} (target), pending: {}, hosts: {}, banned: {}",
-                current_count, target, pending_count, host_count, ban_count);
-            last_status_log = now;
-        }
 
         if (current_count < target) {
             // Need more connections

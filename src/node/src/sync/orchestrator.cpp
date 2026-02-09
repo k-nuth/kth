@@ -260,12 +260,34 @@ static
             // Remove stopped peers
             std::erase_if(peers, [](auto const& p) { return p->stopped(); });
 
-            spdlog::info("[peer_provider] Broadcasting {} peers to sync tasks", peers.size());
+            // Filter out slow peers for block download (threshold: 500ms/block, min 3 samples)
+            std::vector<network::peer_session::ptr> fast_peers;
+            fast_peers.reserve(peers.size());
+            size_t slow_count = 0;
+            for (auto const& p : peers) {
+                if (network.is_slow_peer(p->authority())) {
+                    ++slow_count;
+                    auto speed = network.get_peer_speed(p->authority());
+                    spdlog::debug("[peer_provider] Excluding slow peer {} ({:.1f}ms/block)",
+                        p->authority(), speed);
+                } else {
+                    fast_peers.push_back(p);
+                }
+            }
 
+            if (slow_count > 0) {
+                spdlog::info("[peer_provider] Broadcasting {} peers ({} slow excluded) to sync tasks",
+                    fast_peers.size(), slow_count);
+            } else {
+                spdlog::info("[peer_provider] Broadcasting {} peers to sync tasks", peers.size());
+            }
+
+            // Headers: send all peers (headers are small, slow is less of an issue)
             if (!header_download_input.try_send(std::error_code{}, peers_updated{peers})) {
                 spdlog::warn("[peer_provider] Channel full, peers_updated dropped for header_download");
             }
-            if (!block_download_input.try_send(std::error_code{}, peers_updated{peers})) {
+            // Blocks: send only fast peers (slow peers degrade throughput significantly)
+            if (!block_download_input.try_send(std::error_code{}, peers_updated{fast_peers})) {
                 spdlog::warn("[peer_provider] Channel full, peers_updated dropped for block_download");
             }
         };
@@ -318,11 +340,19 @@ static
 
                 } else if (auto* perf = std::get_if<peer_performance>(&msg)) {
                     // Find peer by nonce and record to persistent storage
+                    bool found = false;
                     for (auto const& p : peers) {
                         if (p->nonce() == perf->peer_nonce) {
                             network.record_peer_performance(p, perf->blocks_downloaded, perf->download_time_ms);
+                            auto speed = network.get_peer_speed(p->authority());
+                            spdlog::debug("[peer_provider] Perf recorded: {} blocks={}  time={}ms  avg={:.1f}ms/blk",
+                                p->authority(), perf->blocks_downloaded, perf->download_time_ms, speed);
+                            found = true;
                             break;
                         }
+                    }
+                    if (!found) {
+                        spdlog::debug("[peer_provider] Perf for unknown nonce {}", perf->peer_nonce);
                     }
 
                 } else if (auto* hperf = std::get_if<header_performance>(&msg)) {
