@@ -40,7 +40,7 @@ using error_code_t = boost::system::error_code;
 // Start Test Suite: task_group tests
 
 TEST_CASE("task_group spawn single task join completes", "[task_group tests]") {
-    threadpool pool(2);
+    threadpool pool("test", 2);
     auto executor = pool.get_executor();
 
     std::promise<void> done;
@@ -75,7 +75,7 @@ TEST_CASE("task_group spawn single task join completes", "[task_group tests]") {
 }
 
 TEST_CASE("task_group spawn multiple tasks join waits for all", "[task_group tests]") {
-    threadpool pool(4);
+    threadpool pool("test", 4);
     auto executor = pool.get_executor();
 
     std::promise<void> done;
@@ -113,7 +113,7 @@ TEST_CASE("task_group spawn multiple tasks join waits for all", "[task_group tes
 }
 
 TEST_CASE("task_group join does not deadlock when tasks complete before join starts", "[task_group tests]") {
-    threadpool pool(4);
+    threadpool pool("test", 4);
     auto executor = pool.get_executor();
 
     std::promise<void> done;
@@ -156,7 +156,7 @@ TEST_CASE("task_group join does not deadlock when tasks complete before join sta
 }
 
 TEST_CASE("task_group handles rapid task completion without deadlock", "[task_group tests]") {
-    threadpool pool(8);
+    threadpool pool("test", 8);
     auto executor = pool.get_executor();
 
     std::promise<void> done;
@@ -196,7 +196,7 @@ TEST_CASE("task_group handles rapid task completion without deadlock", "[task_gr
 }
 
 TEST_CASE("task_group exception in task still allows join to complete", "[task_group tests]") {
-    threadpool pool(2);
+    threadpool pool("test", 2);
     auto executor = pool.get_executor();
 
     std::promise<void> done;
@@ -237,7 +237,7 @@ TEST_CASE("task_group exception in task still allows join to complete", "[task_g
 }
 
 TEST_CASE("task_group has_active_tasks returns correct value", "[task_group tests]") {
-    threadpool pool(2);
+    threadpool pool("test", 2);
     auto executor = pool.get_executor();
 
     std::promise<void> done;
@@ -284,7 +284,7 @@ TEST_CASE("task_group has_active_tasks returns correct value", "[task_group test
 TEST_CASE("task_group stress test mimics p2p_node shutdown", "[task_group tests][stress]") {
     // Run the test multiple times to increase chance of hitting race conditions
     for (int iteration = 0; iteration < 10; ++iteration) {
-        threadpool pool(8);
+        threadpool pool("test", 8);
         auto executor = pool.get_executor();
 
         std::promise<void> done;
@@ -345,7 +345,7 @@ TEST_CASE("task_group stress test mimics p2p_node shutdown", "[task_group tests]
 TEST_CASE("task_group polling task must notify channel waiters on exit", "[task_group tests]") {
     constexpr bool SEND_NOTIFICATION = true;  // Set to false to see deadlock
 
-    threadpool pool(4);
+    threadpool pool("test", 4);
     auto executor = pool.get_executor();
 
     std::promise<void> done;

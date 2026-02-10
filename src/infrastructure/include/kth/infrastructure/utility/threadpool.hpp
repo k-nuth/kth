@@ -6,8 +6,10 @@
 #define KTH_INFRASTRUCTURE_THREADPOOL_HPP
 
 #include <cstddef>
+#include <string_view>
 #include <thread>
 
+#include <spdlog/spdlog.h>
 #include <asio/thread_pool.hpp>
 
 namespace kth {
@@ -15,12 +17,17 @@ namespace kth {
 // Wrapper over asio::thread_pool that tracks the thread count.
 struct threadpool {
     explicit
-    threadpool(size_t num_threads = std::thread::hardware_concurrency())
-        : num_threads_(num_threads == 0 ? std::thread::hardware_concurrency() : num_threads)
+    threadpool(std::string_view name, size_t num_threads = std::thread::hardware_concurrency())
+        : name_(name)
+        , num_threads_(num_threads == 0 ? std::thread::hardware_concurrency() : num_threads)
         , pool_(num_threads_)
-    {}
+    {
+        spdlog::info("[threadpool] '{}' created with {} threads", name_, num_threads_);
+    }
 
-    ~threadpool() = default;
+    ~threadpool() {
+        spdlog::info("[threadpool] '{}' destroyed ({} threads)", name_, num_threads_);
+    }
 
     threadpool(threadpool const&) = delete;
     threadpool& operator=(threadpool const&) = delete;
@@ -57,6 +64,7 @@ struct threadpool {
     }
 
 private:
+    std::string_view name_;
     size_t num_threads_;
     ::asio::thread_pool pool_;
 };

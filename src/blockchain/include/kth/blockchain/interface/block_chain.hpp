@@ -56,8 +56,7 @@ struct KB_API block_chain {
     // CONSTRUCTION
     // =========================================================================
 
-    block_chain(threadpool& pool,
-                blockchain::settings const& chain_settings,
+    block_chain(blockchain::settings const& chain_settings,
                 database::settings const& database_settings,
                 domain::config::network network,
                 bool relay_transactions = true);
@@ -69,6 +68,12 @@ struct KB_API block_chain {
     block_chain& operator=(block_chain const&) = delete;
     block_chain(block_chain&&) = delete;
     block_chain& operator=(block_chain&&) = delete;
+
+    // =========================================================================
+    // THREAD POOL
+    // =========================================================================
+
+    [[nodiscard]] threadpool& thread_pool() { return priority_pool_; }
 
     // =========================================================================
     // LIFECYCLE

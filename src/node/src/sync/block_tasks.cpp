@@ -9,6 +9,7 @@
 #include <cmath>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <vector>
 
 #include <boost/unordered/unordered_flat_map.hpp>
@@ -150,8 +151,9 @@ std::atomic<uint64_t> g_block_download_task_id{0};
     auto executor = co_await ::asio::this_coro::executor;
 
     // Log initial state
-    spdlog::info("[block_download] Peer {} entering main loop (peer_stopped={}, coord_stopped={}, coord_complete={})",
-        addr, peer->stopped(), coordinator->is_stopped(), coordinator->is_complete());
+    spdlog::info("[block_download] Peer {} entering main loop (peer_stopped={}, coord_stopped={}, coord_complete={}, thread_id={})",
+        addr, peer->stopped(), coordinator->is_stopped(), coordinator->is_complete(),
+        std::hash<std::thread::id>{}(std::this_thread::get_id()));
 
     while (!peer->stopped() && !coordinator->is_stopped()) {
         // Claim chunk via coordinator - lock-free CAS
@@ -356,7 +358,8 @@ std::atomic<uint64_t> g_block_download_task_id{0};
 ) {
     auto executor = co_await ::asio::this_coro::executor;
 
-    spdlog::debug("[block_supervisor] Task started");
+    spdlog::info("[block_supervisor] Task started (thread_id={})",
+        std::hash<std::thread::id>{}(std::this_thread::get_id()));
 
     task_group tasks("block_supervisor_tasks", executor);
 

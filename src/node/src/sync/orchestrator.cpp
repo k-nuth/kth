@@ -5,6 +5,7 @@
 #include <kth/node/sync/orchestrator.hpp>
 
 #include <chrono>
+#include <thread>
 
 #include <boost/unordered/unordered_flat_set.hpp>
 #include <spdlog/spdlog.h>
@@ -131,7 +132,8 @@ static
     auto executor = co_await ::asio::this_coro::executor;
 
     // 2026-02-07: Log which executor is being used for debugging
-    spdlog::info("[sync_orchestrator] Starting CSP-based sync system");
+    spdlog::info("[sync_orchestrator] Starting CSP-based sync system (thread_id={})",
+        std::hash<std::thread::id>{}(std::this_thread::get_id()));
     spdlog::debug("[sync_orchestrator] this_coro::executor type: {}", typeid(executor).name());
     spdlog::debug("[sync_orchestrator] Network threadpool executor type: {}",
         typeid(network.thread_pool().get_executor()).name());

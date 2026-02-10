@@ -91,8 +91,7 @@ static auto const hour_seconds = 3600u;
 // CONSTRUCTION
 // =============================================================================
 
-block_chain::block_chain(threadpool& pool,
-                         blockchain::settings const& chain_settings,
+block_chain::block_chain(blockchain::settings const& chain_settings,
                          database::settings const& database_settings,
                          domain::config::network network,
                          bool relay_transactions)
@@ -102,7 +101,7 @@ block_chain::block_chain(threadpool& pool,
     , chain_state_populator_(*this, chain_settings, network)
     , database_(database_settings)
     , validation_mutex_(relay_transactions)
-    , priority_pool_(thread_ceiling(chain_settings.cores))
+    , priority_pool_("priority", thread_ceiling(chain_settings.cores))
 #if defined(KTH_WITH_MEMPOOL)
     , mempool_(chain_settings.mempool_max_template_size, chain_settings.mempool_size_multiplier)
     , transaction_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings, mempool_)

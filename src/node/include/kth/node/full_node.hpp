@@ -225,9 +225,6 @@ private:
     blockchain::settings const& chain_settings_;
     domain::config::network network_type_;
 
-    // Thread pool for blockchain operations (validation, DB)
-    threadpool chain_thread_pool_;
-
     // Core components (composition, not inheritance)
 #if ! defined(__EMSCRIPTEN__)
     kth::network::settings network_settings_;  // Own copy, allows modification (e.g., user_agent)

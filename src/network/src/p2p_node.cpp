@@ -22,7 +22,7 @@ using namespace std::chrono_literals;
 
 p2p_node::p2p_node(settings const& settings)
     : settings_(settings)
-    , pool_(thread_ceiling(settings.threads))  // 0 means use all cores
+    , pool_("network", thread_ceiling(settings.threads))  // 0 means use all cores
     , manager_(pool_.get_executor())
     , peer_db_(settings.peers_file, settings.host_pool_capacity)
     , top_block_({null_hash, 0})
