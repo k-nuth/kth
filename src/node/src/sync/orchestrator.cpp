@@ -169,6 +169,11 @@ static
     block_validation_input_channel block_validation_input(executor, 1000);
     block_validated_channel validated_blocks(executor, 100);
 
+    // Fast validation pipeline (chunk-based, bypasses supervisor→bridge→validation)
+    // Capacity 32 (was 256): limits max buffered blocks to 32×16=512 for backpressure
+    fast_validation_input_channel fast_val_input(executor, 32);
+    chunk_validated_channel validated_chunks(executor, 32);
+
     // Control
     stop_channel stop_signal(executor, 1);
 
@@ -390,6 +395,10 @@ static
         block_validation_input.close();
         validated_blocks.cancel();
         validated_blocks.close();
+        fast_val_input.cancel();
+        fast_val_input.close();
+        validated_chunks.cancel();
+        validated_chunks.close();
         coordinator_events.cancel();
         coordinator_events.close();
 
@@ -465,7 +474,8 @@ static
     all_tasks.spawn("block_download_supervisor", block_download_supervisor(
         block_download_input,
         downloaded_blocks,
-        organizer
+        organizer,
+        &fast_val_input  // chunk-based fast validation
     ));
 
     // -------------------------------------------------------------------------
@@ -629,6 +639,33 @@ static
     ));
 
     // -------------------------------------------------------------------------
+    // 7b. Fast validation task (chunk-based, parallel merkle)
+    // -------------------------------------------------------------------------
+    all_tasks.spawn("fast_validation_task", fast_validation_task(
+        chain,
+        fast_val_input,
+        validated_chunks
+    ));
+
+    // Bridge: validated_chunks -> coordinator_events
+    all_tasks.spawn("coordinator_chunks_bridge", [&]() -> ::asio::awaitable<void> {
+        spdlog::debug("[coordinator:chunks_bridge] Started");
+        while (true) {
+            auto [ec, result] = co_await validated_chunks.async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                spdlog::debug("[coordinator:chunks_bridge] Channel closed: {}", ec.message());
+                break;
+            }
+            if (!coordinator_events.try_send(std::error_code{}, result)) {
+                spdlog::warn("[coordinator:chunks_bridge] Channel full, chunk_validated dropped");
+                break;
+            }
+        }
+        spdlog::info("[coordinator:chunks_bridge] Task ended");
+    });
+
+    // -------------------------------------------------------------------------
     // 8. Sync coordinator - orchestrates the sync flow
     // Uses unified event channel to avoid || operator between multiple channels
     // -------------------------------------------------------------------------
@@ -747,6 +784,9 @@ static
         // For ETA calculation
         auto header_sync_start = std::chrono::steady_clock::now();
         uint32_t headers_at_start = headers_synced_to;
+
+        // Buffer for out-of-order chunk validation results (keyed by start_height)
+        boost::unordered_flat_map<uint32_t, chunk_validated> pending_chunks;
 
         spdlog::info("[sync_coordinator] Initial state: blocks={}, headers={}",
             blocks_synced_to, headers_synced_to);
@@ -1011,6 +1051,86 @@ static
                         }
                     }
                     spdlog::debug("[sync_coordinator] Breaking out of event loop...");
+                    break;
+                }
+                continue;
+            }
+
+            if (auto* result = std::get_if<chunk_validated>(&event)) {
+                if (!result->result) {
+                    // Buffer the chunk result (chunks may arrive out of order)
+                    pending_chunks[result->start_height] = *result;
+
+                    // Advance blocks_synced_to through consecutive completed chunks
+                    while (true) {
+                        auto it = pending_chunks.find(blocks_synced_to + 1);
+                        if (it == pending_chunks.end()) break;
+                        blocks_synced_to = it->second.start_height + it->second.block_count - 1;
+                        pending_chunks.erase(it);
+                    }
+
+                    // Log progress periodically (every 1000 blocks)
+                    static uint32_t last_logged_k = 0;
+                    uint32_t current_k = blocks_synced_to / 1000;
+                    if (current_k > last_logged_k) {
+                        last_logged_k = current_k;
+                        spdlog::info("[sync_coordinator:fast] {}/{} validated (pending_chunks: {})",
+                            blocks_synced_to, checkpoint_height, pending_chunks.size());
+                    }
+
+                    // Check if fast sync stage is complete
+                    if (blocks_synced_to >= checkpoint_height) {
+                        spdlog::info("[sync_coordinator] *** FAST SYNC COMPLETE at checkpoint {} ***",
+                            checkpoint_height);
+                        spdlog::info("[sync_coordinator] Starting UTXO set build...");
+
+                        auto utxo_result = co_await blockchain::build_utxo_set(
+                            chain,
+                            network.thread_pool().get(),
+                            1,  // Start from block 1 (skip genesis)
+                            checkpoint_height,
+                            blockchain::utxo_build_strategy::sequential_batch
+                        );
+
+                        if (utxo_result != database::result_code::success) {
+                            spdlog::error("[sync_coordinator] UTXO build failed!");
+                            break;
+                        }
+
+                        spdlog::info("[sync_coordinator] UTXO set build complete, ready for slow sync");
+                    }
+
+                    // Check if we've caught up to headers
+                    if (blocks_synced_to >= headers_synced_to && header_sync_complete) {
+                        spdlog::info("[sync_coordinator] Block sync caught up to headers at {} (checkpoint={}), restarting header sync",
+                            blocks_synced_to, checkpoint_height);
+
+                        header_sync_complete = false;
+                        header_sync_start = std::chrono::steady_clock::now();
+                        headers_at_start = headers_synced_to;
+
+                        auto next_hash = organizer.index().get_hash(
+                            static_cast<blockchain::header_index::index_t>(headers_synced_to));
+
+                        if (!header_download_input.try_send(std::error_code{}, header_request{
+                            .from_height = headers_synced_to,
+                            .from_hash = next_hash
+                        })) {
+                            spdlog::warn("[sync_coordinator] Channel full, restart header_request dropped");
+                        }
+                    }
+                } else {
+                    spdlog::error("[sync_coordinator] Chunk validation failed at height {}: {}",
+                        result->start_height, result->result.message());
+
+                    if (result->source_peer) {
+                        if (!peer_provider_input.try_send(std::error_code{}, peer_error{
+                            .peer = result->source_peer,
+                            .error = result->result
+                        })) {
+                            spdlog::warn("[sync_coordinator] Channel full, peer_error dropped");
+                        }
+                    }
                     break;
                 }
                 continue;

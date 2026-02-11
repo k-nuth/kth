@@ -5,6 +5,7 @@
 #ifndef KTH_DOMAIN_CHAIN_LIGHT_BLOCK_HPP
 #define KTH_DOMAIN_CHAIN_LIGHT_BLOCK_HPP
 
+#include <atomic>
 #include <cstdint>
 #include <expected>
 #include <span>
@@ -33,6 +34,32 @@ namespace kth::domain::chain {
 ///
 /// Merkle root is computed on-demand by hashing raw tx bytes directly.
 struct light_block {
+    // Instance tracking (debug: detect leaks)
+    //-------------------------------------------------------------------------
+
+    static inline std::atomic<int64_t> live_instances{0};
+
+    light_block() { live_instances.fetch_add(1, std::memory_order_relaxed); }
+    ~light_block() { live_instances.fetch_sub(1, std::memory_order_relaxed); }
+
+    light_block(light_block const& o)
+        : header_(o.header_), raw_data_(o.raw_data_), tx_offsets_(o.tx_offsets_)
+    { live_instances.fetch_add(1, std::memory_order_relaxed); }
+
+    light_block(light_block&& o) noexcept
+        : header_(std::move(o.header_)), raw_data_(std::move(o.raw_data_)), tx_offsets_(std::move(o.tx_offsets_))
+    { live_instances.fetch_add(1, std::memory_order_relaxed); }
+
+    light_block& operator=(light_block const& o) {
+        if (this != &o) { header_ = o.header_; raw_data_ = o.raw_data_; tx_offsets_ = o.tx_offsets_; }
+        return *this;
+    }
+
+    light_block& operator=(light_block&& o) noexcept {
+        if (this != &o) { header_ = std::move(o.header_); raw_data_ = std::move(o.raw_data_); tx_offsets_ = std::move(o.tx_offsets_); }
+        return *this;
+    }
+
     // Deserialization.
     //-------------------------------------------------------------------------
 

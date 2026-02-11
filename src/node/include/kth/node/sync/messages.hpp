@@ -126,6 +126,21 @@ struct block_validated {
     network::peer_session::ptr source_peer;  // For banning on validation failure
 };
 
+// Chunk-based messages for fast validation pipeline (bypasses supervisor→bridge→validation)
+struct downloaded_chunk {
+    uint32_t start_height;
+    uint32_t chunk_id;
+    std::vector<std::shared_ptr<domain::chain::light_block const>> blocks;
+    network::peer_session::ptr source_peer;
+};
+
+struct chunk_validated {
+    uint32_t start_height;
+    uint32_t block_count;
+    code result;
+    network::peer_session::ptr source_peer;
+};
+
 // Report that a download task has ended (for cleanup of spawned_peers)
 struct download_task_ended {
     uint64_t peer_nonce;  // peer->nonce() for lookup in spawned_peers
@@ -195,6 +210,11 @@ using block_download_channel = concurrent_channel<block_supervisor_output>;  // 
 using block_validation_input_channel = concurrent_channel<block_validation_input>;
 using block_validated_channel = concurrent_channel<block_validated>;
 
+// Fast validation pipeline (chunk-based, bypasses supervisor→bridge→validation)
+using fast_validation_input = std::variant<stop_request, downloaded_chunk>;
+using fast_validation_input_channel = concurrent_channel<fast_validation_input>;
+using chunk_validated_channel = concurrent_channel<chunk_validated>;
+
 // Control
 using stop_channel = concurrent_event_channel;
 
@@ -207,7 +227,8 @@ using stop_channel = concurrent_event_channel;
 using sync_coordinator_event = std::variant<
     stop_request,
     headers_validated,
-    block_validated
+    block_validated,
+    chunk_validated
 >;
 
 using sync_coordinator_event_channel = concurrent_channel<sync_coordinator_event>;

@@ -101,7 +101,7 @@ block_chain::block_chain(blockchain::settings const& chain_settings,
     , chain_state_populator_(*this, chain_settings, network)
     , database_(database_settings)
     , validation_mutex_(relay_transactions)
-    , priority_pool_("priority", thread_ceiling(chain_settings.cores))
+    , priority_pool_("priority", std::min(size_t(8), thread_ceiling(chain_settings.cores)))
 #if defined(KTH_WITH_MEMPOOL)
     , mempool_(chain_settings.mempool_max_template_size, chain_settings.mempool_size_multiplier)
     , transaction_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings, mempool_)
@@ -263,8 +263,8 @@ bool block_chain::stopped() const {
     co_return co_await block_organizer_.organize(block, headers_pre_validated);
 }
 
-::asio::awaitable<code> block_chain::organize_fast(block_const_ptr block, size_t height) {
-    // Fast IBD: minimal validation + store block data to flat files.
+::asio::awaitable<code> block_chain::organize_fast(std::shared_ptr<domain::chain::light_block const> block, size_t height) {
+    // Fast IBD: merkle validation + (later) store block data to flat files.
     //
     // Threading model:
     // - Work is posted to priority_pool_ (appears parallel)
@@ -280,19 +280,15 @@ bool block_chain::stopped() const {
     auto channel = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
 
     ::asio::post(priority_pool_.get_executor(), [this, block, height, channel]() {
-        // Timing: merkle validation
-        block->validation.start_check = asio::steady_clock::now();
-
         // Validate merkle root (ensures transactions match header)
         // This is the only validation needed since header was already validated
-        if (!block->is_valid_merkle_root()) {
+        if ( ! block->is_valid_merkle_root()) {
+            spdlog::error("[blockchain] Merkle mismatch at height {}", height);
             channel->try_send(std::error_code{}, error::merkle_mismatch);
             return;
         }
 
-        // Timing: DB push
-        block->validation.start_push = asio::steady_clock::now();
-
+#if 0  // Stage 3: disk storage (not yet enabled)
         // Save block to flat files (sequential I/O)
         auto pos = block_store_->save_block(*block, static_cast<uint32_t>(height));
         if (pos.is_null()) {
@@ -302,7 +298,7 @@ bool block_chain::stopped() const {
         }
 
         // Update header_index with block file position
-        auto const block_hash = block->hash();
+        auto const block_hash = block->header().hash();
         auto const idx = header_index_.find(block_hash);
         if (idx != header_index::null_index) {
             header_index_.set_block_pos(idx, static_cast<int16_t>(pos.file), pos.pos);
@@ -315,8 +311,7 @@ bool block_chain::stopped() const {
         if (result != database::result_code::success) {
             spdlog::warn("[blockchain] Failed to update last_height in LMDB: {}", static_cast<int>(result));
         }
-
-        block->validation.end_push = asio::steady_clock::now();
+#endif
 
         channel->try_send(std::error_code{}, error::success);
     });
@@ -326,6 +321,106 @@ bool block_chain::stopped() const {
         co_return error::operation_failed;
     }
     co_return result;
+}
+
+// Toggle between validation strategies:
+//   true  = 1 task per chunk (serial merkle on single pool thread)
+//   false = 1 task per block (parallel merkle across pool threads)
+static constexpr bool chunk_serial_validation = false;
+
+::asio::awaitable<code> block_chain::validate_chunk(
+    std::vector<std::shared_ptr<domain::chain::light_block const>> const& blocks,
+    uint32_t start_height
+) {
+    auto const n = blocks.size();
+    if (n == 0) co_return error::success;
+
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+    auto channel = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
+
+    auto const chunk_start_time = std::chrono::steady_clock::now();
+
+    if constexpr (chunk_serial_validation) {
+        // =====================================================================
+        // Variant A: 1 task per chunk — serial merkle on a single pool thread
+        // =====================================================================
+        ::asio::post(priority_pool_.get_executor(), [&blocks, start_height, n, channel]() {
+            auto const tid = std::hash<std::thread::id>{}(std::this_thread::get_id());
+            auto const t0 = std::chrono::steady_clock::now();
+
+            code first_error;
+            for (size_t i = 0; i < n; ++i) {
+                if ( ! blocks[i]->is_valid_merkle_root()) {
+                    spdlog::error("[validate_chunk:serial] Merkle MISMATCH height {} thread {}",
+                        start_height + i, tid);
+                    if ( ! first_error) {
+                        first_error = error::merkle_mismatch;
+                    }
+                }
+            }
+
+            auto const elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - t0).count();
+            spdlog::debug("[validate_chunk:serial] {} blocks at {} on thread {} in {}us ({:.1f}us/blk)",
+                n, start_height, tid, elapsed_us, static_cast<double>(elapsed_us) / n);
+
+            channel->try_send(std::error_code{}, first_error);
+        });
+
+        auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+        if (ec) {
+            co_return error::operation_failed;
+        }
+
+        auto const chunk_elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - chunk_start_time).count();
+        spdlog::debug("[validate_chunk:serial] chunk at {} wall time {}us", start_height, chunk_elapsed_us);
+
+        co_return result;
+    } else {
+        // =====================================================================
+        // Variant B: 1 task per block — parallel merkle across pool threads
+        // =====================================================================
+        auto parallel_channel = std::make_shared<result_channel>(priority_pool_.get_executor(), n);
+
+        for (size_t i = 0; i < n; ++i) {
+            ::asio::post(priority_pool_.get_executor(), [block = blocks[i], height = start_height + i, parallel_channel]() {
+                auto const t0 = std::chrono::steady_clock::now();
+                auto const tid = std::hash<std::thread::id>{}(std::this_thread::get_id());
+
+                bool valid = block->is_valid_merkle_root();
+
+                auto const elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - t0).count();
+
+                if ( ! valid) {
+                    spdlog::error("[validate_chunk:parallel] Merkle MISMATCH height {} thread {} ({}us)", height, tid, elapsed_us);
+                    parallel_channel->try_send(std::error_code{}, error::merkle_mismatch);
+                    return;
+                }
+                spdlog::trace("[validate_chunk:parallel] height {} thread {} ({}us)", height, tid, elapsed_us);
+                parallel_channel->try_send(std::error_code{}, error::success);
+            });
+        }
+
+        code final_result;
+        for (size_t i = 0; i < n; ++i) {
+            auto [ec, result] = co_await parallel_channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                co_return error::operation_failed;
+            }
+            if (result && !final_result) {
+                final_result = result;
+            }
+        }
+
+        auto const chunk_elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - chunk_start_time).count();
+        spdlog::debug("[validate_chunk:parallel] chunk at {} ({} blocks) wall time {}us ({:.1f}us/blk)",
+            start_height, n, chunk_elapsed_us, static_cast<double>(chunk_elapsed_us) / n);
+
+        co_return final_result;
+    }
 }
 
 ::asio::awaitable<code> block_chain::organize(transaction_const_ptr tx) {

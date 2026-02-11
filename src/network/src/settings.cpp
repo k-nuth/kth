@@ -15,7 +15,7 @@ using namespace kd::message;
 
 // Common default values (no settings context).
 settings::settings()
-    : threads(0)
+    : threads(4)
     , protocol_maximum(version::level::maximum)
     , protocol_minimum(version::level::minimum)
     , services(version::service::node_network)

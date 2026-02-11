@@ -22,6 +22,7 @@
 #include <kth/database/block_store.hpp>
 #include <kth/database/databases/utxoz_database.hpp>
 #include <kth/domain.hpp>
+#include <kth/domain/chain/light_block.hpp>
 
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/header_index.hpp>
@@ -93,12 +94,17 @@ struct KB_API block_chain {
     [[nodiscard]]
     ::asio::awaitable<code> organize(block_const_ptr block, bool headers_pre_validated = false);
 
-    /// Fast IBD: store only block data without validation or UTXO updates.
-    /// For use under checkpoint where we trust the blocks.
-    /// @param block The block to store
-    /// @param height The height at which to store the block
+    /// Fast IBD: merkle validation (+ disk storage when enabled) for blocks under checkpoint.
+    /// Posts work to priority_pool_ so network pool stays free for downloads.
     [[nodiscard]]
-    ::asio::awaitable<code> organize_fast(block_const_ptr block, size_t height);
+    ::asio::awaitable<code> organize_fast(std::shared_ptr<domain::chain::light_block const> block, size_t height);
+
+    /// Fast IBD: parallel merkle validation for a chunk of light_blocks.
+    /// Posts N merkle checks to priority_pool_ in parallel, awaits all results.
+    [[nodiscard]]
+    ::asio::awaitable<code> validate_chunk(
+        std::vector<std::shared_ptr<domain::chain::light_block const>> const& blocks,
+        uint32_t start_height);
 
     [[nodiscard]]
     ::asio::awaitable<code> organize(transaction_const_ptr tx);
