@@ -67,6 +67,23 @@ struct KD_API block_store {
     [[nodiscard]]
     flat_file_pos save_block_raw(data_chunk const& raw_block, uint32_t height, uint64_t timestamp);
 
+    /// Allocate space for a raw block without writing data.
+    /// Thread-safe: serializes access to allocation state via internal mutex.
+    /// @param raw_block_size Size of the raw block data (excluding header).
+    /// @param height Block height.
+    /// @param timestamp Block timestamp.
+    /// @return Position of the allocated region (header start), or null on error.
+    [[nodiscard]]
+    flat_file_pos allocate_block_space(uint32_t raw_block_size, uint32_t height, uint64_t timestamp);
+
+    /// Write a raw block at a pre-allocated position.
+    /// Thread-safe for non-overlapping positions (each call opens its own FILE*).
+    /// @param raw_block Serialized block data.
+    /// @param header_pos Position returned by allocate_block_space (header start).
+    /// @return Position of block data (after header), or null on error.
+    [[nodiscard]]
+    flat_file_pos write_block_at(data_chunk const& raw_block, flat_file_pos header_pos);
+
     /// Write undo data for a block.
     /// @param undo The undo data.
     /// @param file_num File number where the block is stored.
@@ -166,13 +183,10 @@ private:
     std::vector<block_file_info> file_info_;
     int32_t last_block_file_{0};
 
-    // Thread safety analysis:
-    // - file_info_ and last_block_file_ are modified only during writes
-    // - Reads don't modify internal state, they just read from disk at given positions
-    // - Currently assuming single-threaded writes (IBD is sequential)
-    // - If concurrent writes are needed, add mutex back and use it for BOTH reads and writes
-    // - Run with thread sanitizer (./scripts) to verify: ./build-linux-tsan.sh
-    // mutable std::mutex write_mutex_;
+    // Thread safety:
+    // - allocate_block_space() must be called serially (single coroutine / single pool thread)
+    // - write_block_at() is safe for concurrent calls to non-overlapping positions
+    // - Reads don't modify internal state
 };
 
 } // namespace kth::database

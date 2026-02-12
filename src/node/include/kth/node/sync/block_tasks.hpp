@@ -104,7 +104,25 @@ extern std::atomic<uint64_t> g_blocks_received_by_validation;
 ::asio::awaitable<void> fast_validation_task(
     blockchain::block_chain& chain,
     fast_validation_input_channel& input,
-    chunk_validated_channel& output
+    chunk_validated_channel& output,
+    block_storage_input_channel* storage = nullptr  // if non-null, forward valid chunks here
+);
+
+// =============================================================================
+// Block Storage Task (writes validated blocks to flat files)
+// =============================================================================
+//
+// Receives validated chunks (with block data) from fast_validation_task,
+// buffers out-of-order chunks, and flushes them sequentially via
+// chain.store_block(). Sends chunk_validated to coordinator once stored.
+//
+// =============================================================================
+
+::asio::awaitable<void> block_storage_task(
+    blockchain::block_chain& chain,
+    block_storage_input_channel& input,
+    chunk_validated_channel& output,
+    uint32_t start_height
 );
 
 } // namespace kth::node::sync

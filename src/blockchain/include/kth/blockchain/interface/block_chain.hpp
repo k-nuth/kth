@@ -106,6 +106,20 @@ struct KB_API block_chain {
         std::vector<std::shared_ptr<domain::chain::light_block const>> const& blocks,
         uint32_t start_height);
 
+    /// Fast IBD: store a validated light_block to flat files + update header_index + LMDB height.
+    /// Posts disk I/O to priority_pool_ so the network executor stays free.
+    [[nodiscard]]
+    ::asio::awaitable<code> store_block(
+        std::shared_ptr<domain::chain::light_block const> const& block,
+        uint32_t height);
+
+    /// Fast IBD: store an entire chunk of validated light_blocks in a single post to pool.
+    /// Eliminates per-block post+await round-trip overhead (1 round-trip instead of N).
+    [[nodiscard]]
+    ::asio::awaitable<code> store_chunk(
+        std::vector<std::shared_ptr<domain::chain::light_block const>> const& blocks,
+        uint32_t start_height);
+
     [[nodiscard]]
     ::asio::awaitable<code> organize(transaction_const_ptr tx);
 
@@ -139,6 +153,10 @@ struct KB_API block_chain {
         boost::unordered_flat_map<domain::chain::point, database::utxo_entry> const& inserts,
         boost::unordered_flat_map<domain::chain::point, uint32_t> const& deletes
     );
+
+    // Set last block height in LMDB (for fast IBD storage progress tracking)
+    [[nodiscard]]
+    database::result_code set_last_block_height(uint32_t height);
 
     // Get/set the last block height for which UTXO set was built
     [[nodiscard]]

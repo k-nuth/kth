@@ -52,6 +52,9 @@ std::atomic<uint64_t> g_blocks_received_by_validation{0}; // Received by validat
 // 2026-02-07: Counter for unique block_download task IDs (helps identify tasks in logs)
 std::atomic<uint64_t> g_block_download_task_id{0};
 
+// Active download peer count (updated by supervisor, read by fast_validation for stats)
+std::atomic<uint32_t> g_active_download_peers{0};
+
 // =============================================================================
 // Block Download Task (per-peer)
 // =============================================================================
@@ -252,6 +255,7 @@ std::atomic<uint64_t> g_block_download_task_id{0};
                 chunk_blocks.push_back(std::make_shared<domain::chain::light_block const>(std::move(blk.block)));
             }
 
+            // Backpressure: retry for up to 60 seconds (storage is slower than download)
             bool sent = co_await try_send_with_retry(*fast_val,
                 downloaded_chunk{
                     .start_height = chunk_start,
@@ -259,12 +263,12 @@ std::atomic<uint64_t> g_block_download_task_id{0};
                     .blocks = std::move(chunk_blocks),
                     .source_peer = peer
                 },
-                50,  // 50 attempts
-                20ms  // 20ms between attempts = 1 second total max wait
+                600,   // 600 attempts
+                100ms  // 100ms between attempts = 60 seconds total max wait
             );
 
             if (!sent) {
-                spdlog::error("[block_download] Fast validation channel full after 50 retries for chunk {} - consumer may be stuck!",
+                spdlog::error("[block_download] Fast validation channel full after 60s for chunk {} - storage bottleneck!",
                     chunk_id);
                 coordinator->chunk_failed(chunk_id);
                 send_error = true;
@@ -436,6 +440,7 @@ std::atomic<uint64_t> g_block_download_task_id{0};
 
         spdlog::debug("[block_supervisor] Spawning download task for peer {}", peer->authority_with_agent());
         spawned_peers.insert(nonce);
+        g_active_download_peers.store(static_cast<uint32_t>(spawned_peers.size()), std::memory_order_relaxed);
         // 2026-02-07: task_id is a unique counter, nonce identifies the peer session
         auto const task_id = g_block_download_task_id.fetch_add(1);
         auto task_name = fmt::format("block_download_{}:{}:{}", peer->authority(), nonce, task_id);
@@ -610,6 +615,7 @@ std::atomic<uint64_t> g_block_download_task_id{0};
 
         if (auto* ended = std::get_if<download_task_ended>(&msg)) {
             spawned_peers.erase(ended->peer_nonce);
+            g_active_download_peers.store(static_cast<uint32_t>(spawned_peers.size()), std::memory_order_relaxed);
             spdlog::info("[block_supervisor:task_ended] nonce={}, remaining downloading={}",
                 ended->peer_nonce, spawned_peers.size());
             continue;
@@ -1257,13 +1263,20 @@ std::atomic<uint64_t> g_block_download_task_id{0};
 ::asio::awaitable<void> fast_validation_task(
     blockchain::block_chain& chain,
     fast_validation_input_channel& input,
-    chunk_validated_channel& output
+    chunk_validated_channel& output,
+    block_storage_input_channel* storage
 ) {
-    spdlog::info("[fast_validation] Task started");
+    spdlog::info("[fast_validation] Task started (storage={})", storage ? "yes" : "no");
 
     uint64_t chunks_validated = 0;
     uint64_t blocks_validated = 0;
+    uint64_t bytes_validated = 0;
     auto start_time = std::chrono::steady_clock::now();
+
+    // Time-based stats (every 5 seconds)
+    auto last_stats_time = start_time;
+    uint64_t last_blocks = 0;
+    uint64_t last_bytes = 0;
 
     // RSS tracking helper (Linux: reads /proc/self/statm)
     auto get_rss_mb = []() -> double {
@@ -1296,46 +1309,304 @@ std::atomic<uint64_t> g_block_download_task_id{0};
         auto const chunk_start = chunk.start_height;
         auto const chunk_peer = chunk.source_peer;
 
+        // Track bytes before validation (blocks are still in memory)
+        uint64_t chunk_bytes = 0;
+        for (auto const& blk : chunk.blocks) {
+            chunk_bytes += blk->raw_data().size();
+        }
+
         auto val_start = std::chrono::steady_clock::now();
         auto result = co_await chain.validate_chunk(chunk.blocks, chunk_start);
         auto val_us = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - val_start).count();
 
-        // Release block memory IMMEDIATELY after validation
-        // Don't wait for next loop iteration — reduces peak RSS
-        chunk.blocks.clear();
-        chunk.blocks.shrink_to_fit();
-        chunk.source_peer.reset();
-
         ++chunks_validated;
         blocks_validated += chunk_block_count;
+        bytes_validated += chunk_bytes;
 
-        // Log periodically with RSS tracking + light_block instance count
-        if (chunks_validated % 100 == 0) {
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - start_time).count();
-            double rate = elapsed > 0 ? static_cast<double>(blocks_validated) / elapsed : 0;
+        // Time-based stats logging (every 5 seconds)
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_stats_time >= 5s) {
+            auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_stats_time).count();
+            auto blocks_delta = blocks_validated - last_blocks;
+            auto bytes_delta = bytes_validated - last_bytes;
+            auto blk_rate = elapsed_ms > 0 ? (blocks_delta * 1000 / elapsed_ms) : 0UL;
+            double mb_rate = elapsed_ms > 0 ? (double(bytes_delta) / 1024.0 / 1024.0) / (double(elapsed_ms) / 1000.0) : 0.0;
+            auto peers = g_active_download_peers.load(std::memory_order_relaxed);
             auto current_rss = get_rss_mb();
             auto live_blocks = domain::chain::light_block::live_instances.load(std::memory_order_relaxed);
-            spdlog::info("[fast_validation] {} chunks ({} blocks) validated, {:.0f} blk/s, last chunk {}us, RSS: {:.0f} MB (+{:.0f}), live_light_blocks: {}",
-                chunks_validated, blocks_validated, rate, val_us,
-                current_rss, current_rss - initial_rss, live_blocks);
+
+            spdlog::info("[sync] Stats: {} blocks at height {} ({} blk/s, {:.1f} MB/s), {} peers downloading, RSS: {:.0f} MB, live_blocks: {}",
+                blocks_validated, chunk_start + chunk_block_count - 1,
+                blk_rate, mb_rate, peers, current_rss, live_blocks);
+
+            last_stats_time = now;
+            last_blocks = blocks_validated;
+            last_bytes = bytes_validated;
         }
 
-        if ( ! co_await try_send_with_retry(output, chunk_validated{
-            .start_height = chunk_start,
-            .block_count = static_cast<uint32_t>(chunk_block_count),
-            .result = result,
-            .source_peer = chunk_peer
-        })) {
-            spdlog::error("[fast_validation] Output channel full after retries!");
-            break;
+        if (!result && storage) {
+            // Valid chunk: forward to storage task (with block data intact)
+            if ( ! co_await try_send_with_retry(*storage, downloaded_chunk{
+                .start_height = chunk_start,
+                .chunk_id = chunk.chunk_id,
+                .blocks = std::move(chunk.blocks),
+                .source_peer = chunk_peer
+            })) {
+                spdlog::error("[fast_validation] Storage channel full after retries!");
+                break;
+            }
+        } else {
+            // No storage channel or validation failed:
+            // Release block memory and send result directly to coordinator
+            chunk.blocks.clear();
+            chunk.blocks.shrink_to_fit();
+            chunk.source_peer.reset();
+
+            if ( ! co_await try_send_with_retry(output, chunk_validated{
+                .start_height = chunk_start,
+                .block_count = static_cast<uint32_t>(chunk_block_count),
+                .result = result,
+                .source_peer = chunk_peer
+            })) {
+                spdlog::error("[fast_validation] Output channel full after retries!");
+                break;
+            }
         }
     }
 
     auto final_rss = get_rss_mb();
     spdlog::info("[fast_validation] Task ended, validated {} chunks ({} blocks), RSS: {:.0f} MB (delta: +{:.0f})",
         chunks_validated, blocks_validated, final_rss, final_rss - initial_rss);
+}
+
+// =============================================================================
+// Block Storage Task (writes validated blocks to flat files)
+// =============================================================================
+//
+// Option 2: Parallel writes with pre-allocated positions.
+// - No out-of-order buffer — writes each chunk immediately on arrival.
+// - store_chunk() internally: 1 serial allocation + N parallel writes.
+// - LMDB height updated with max (chunks may arrive out of order).
+// - Eliminates the stall-on-gap problem from the previous sequential design.
+//
+// =============================================================================
+
+::asio::awaitable<void> block_storage_task(
+    blockchain::block_chain& chain,
+    block_storage_input_channel& input,
+    chunk_validated_channel& output,
+    uint32_t start_height
+) {
+    spdlog::info("[block_storage] Task started at height {}", start_height);
+
+    uint64_t chunks_stored = 0;
+    uint64_t blocks_stored = 0;
+    uint32_t max_stored_height = start_height > 0 ? start_height - 1 : 0;
+    uint32_t contiguous_height = start_height;  // all blocks in [start_height, contiguous_height) are stored
+    auto task_start = std::chrono::steady_clock::now();
+
+    // Collect chunk start heights in arrival order for fragmentation analysis.
+    // Since allocation is serial (single coroutine), arrival order = disk order.
+    std::vector<uint32_t> chunk_arrival_order;
+    chunk_arrival_order.reserve(64000);
+
+    // RSS tracking helper
+    auto get_rss_mb = []() -> double {
+        std::ifstream statm("/proc/self/statm");
+        if (!statm.is_open()) return 0.0;
+        size_t size_pages = 0, resident_pages = 0;
+        statm >> size_pages >> resident_pages;
+        auto const page_size = sysconf(_SC_PAGESIZE);
+        return static_cast<double>(resident_pages) * page_size / (1024.0 * 1024.0);
+    };
+
+    auto initial_rss = get_rss_mb();
+
+    while (true) {
+        auto [ec, msg] = co_await input.async_receive(
+            ::asio::as_tuple(::asio::use_awaitable));
+        if (ec) {
+            spdlog::debug("[block_storage] Input channel closed: {}", ec.message());
+            break;
+        }
+
+        if (std::holds_alternative<stop_request>(msg)) {
+            spdlog::debug("[block_storage] Stop signal received");
+            break;
+        }
+
+        auto& chunk = std::get<downloaded_chunk>(msg);
+        auto const chunk_start = chunk.start_height;
+        auto const chunk_count = static_cast<uint32_t>(chunk.blocks.size());
+        auto const chunk_peer = chunk.source_peer;
+
+        auto store_start = std::chrono::steady_clock::now();
+
+        // Store chunk immediately — no ordering required.
+        // store_chunk() does: 1 serial allocation + N parallel writes + header_index update.
+        auto store_error = co_await chain.store_chunk(chunk.blocks, chunk_start);
+        if (store_error) {
+            spdlog::error("[block_storage] Failed to store chunk at {}: {}",
+                chunk_start, store_error.message());
+        }
+
+        auto store_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - store_start).count();
+
+        // Release block memory after storing
+        chunk.blocks.clear();
+        chunk.blocks.shrink_to_fit();
+
+        if (!store_error) {
+            auto const chunk_last = chunk_start + chunk_count - 1;
+            if (chunk_last > max_stored_height) {
+                max_stored_height = chunk_last;
+            }
+            chunk_arrival_order.push_back(chunk_start);
+
+            // Advance contiguous_height using header_index have_data flags.
+            // store_chunk() already set have_data for each stored block.
+            // idx == height during IBD (headers added sequentially).
+            auto const& hdr = chain.headers();
+            while (hdr.has_status(static_cast<blockchain::header_index::index_t>(contiguous_height),
+                                  blockchain::header_status::have_data)) {
+                ++contiguous_height;
+            }
+        }
+
+        ++chunks_stored;
+        blocks_stored += chunk_count;
+
+        // Send chunk_validated to coordinator
+        if ( ! co_await try_send_with_retry(output, chunk_validated{
+            .start_height = chunk_start,
+            .block_count = chunk_count,
+            .result = store_error,
+            .source_peer = chunk_peer
+        })) {
+            spdlog::error("[block_storage] Output channel full after retries!");
+            break;
+        }
+
+        // Log progress periodically
+        if (chunks_stored % 100 == 0) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - task_start).count();
+            double rate = elapsed > 0 ? static_cast<double>(blocks_stored) / elapsed : 0;
+            auto current_rss = get_rss_mb();
+            spdlog::info("[block_storage] {} chunks ({} blocks) stored, {:.0f} blk/s, contiguous [{}..{}], max {}, last_store {}us, RSS: {:.0f} MB (+{:.0f})",
+                chunks_stored, blocks_stored, rate,
+                start_height, contiguous_height > 0 ? contiguous_height - 1 : 0, max_stored_height,
+                store_us, current_rss, current_rss - initial_rss);
+        }
+    }
+
+    // Update LMDB with contiguous height (no gaps guaranteed)
+    if (contiguous_height > start_height) {
+        auto const lmdb_height = contiguous_height - 1;
+        auto result = chain.set_last_block_height(lmdb_height);
+        if (result != database::result_code::success) {
+            spdlog::warn("[block_storage] Failed to update final LMDB height {}: {}",
+                lmdb_height, static_cast<int>(result));
+        }
+        spdlog::info("[block_storage] LMDB last_block_height set to {} (contiguous), max_stored was {}",
+            lmdb_height, max_stored_height);
+    }
+
+    // Fragmentation analysis: how ordered are the chunks on disk?
+    // Since allocation is serial, arrival order = disk order.
+    // We compare arrival order vs. ideal (sorted by height).
+    if (chunk_arrival_order.size() > 1) {
+        auto const n = chunk_arrival_order.size();
+
+        // Count consecutive pairs that are in ascending height order
+        uint64_t in_order = 0;
+        for (size_t i = 1; i < n; ++i) {
+            if (chunk_arrival_order[i] > chunk_arrival_order[i - 1]) {
+                ++in_order;
+            }
+        }
+        double order_pct = 100.0 * static_cast<double>(in_order) / (n - 1);
+
+        // Count "backwards seeks": how many times a sequential height scan
+        // would need to seek backwards in the file
+        auto sorted = chunk_arrival_order;
+        std::sort(sorted.begin(), sorted.end());
+
+        // Build rank: for each position in arrival order, what's its rank in sorted order?
+        // Number of inversions approximates the disorder
+        boost::unordered_flat_map<uint32_t, size_t> height_to_rank;
+        for (size_t i = 0; i < sorted.size(); ++i) {
+            height_to_rank[sorted[i]] = i;
+        }
+
+        uint64_t inversions = 0;
+        for (size_t i = 1; i < n; ++i) {
+            if (height_to_rank[chunk_arrival_order[i]] < height_to_rank[chunk_arrival_order[i - 1]]) {
+                ++inversions;
+            }
+        }
+
+        spdlog::info("[block_storage:fragmentation] {} chunks: {:.1f}% in-order on disk, {} inversions ({:.1f}% backward seeks needed for sequential read)",
+            n, order_pct, inversions, 100.0 * static_cast<double>(inversions) / (n - 1));
+    }
+
+    // Full header_index dump: height, hash, file, pos, status for every stored block
+    {
+        auto const& hdr = chain.headers();
+        auto const total = hdr.size();
+        uint32_t have_data_count = 0;
+        uint32_t missing_data_count = 0;
+        uint32_t first_gap = 0;
+        bool found_gap = false;
+
+        spdlog::info("[block_storage:header_index_dump] Dumping {} entries...", total);
+
+        for (uint32_t idx = 0; idx < total; ++idx) {
+            auto const file_num = hdr.get_file_number(idx);
+            auto const data_pos = hdr.get_data_pos(idx);
+            auto const status = hdr.get_status(idx);
+            auto const has_data = has_flag(status, blockchain::header_status::have_data);
+
+            if (has_data) {
+                ++have_data_count;
+            } else {
+                ++missing_data_count;
+                if (!found_gap && idx >= start_height) {
+                    first_gap = idx;
+                    found_gap = true;
+                }
+            }
+
+            // Print every block (height, hash_prefix, file, pos, status flags)
+            // Use debug level to avoid flooding — the full dump goes to log file
+            auto const hash = hdr.get_hash(idx);
+            spdlog::info("[header_index] h={} hash={:08x}… file={} pos={} status={:#04x}{}",
+                idx,
+                // First 4 bytes of hash as hex prefix
+                (uint32_t(hash[0]) << 24) | (uint32_t(hash[1]) << 16) |
+                (uint32_t(hash[2]) << 8) | uint32_t(hash[3]),
+                file_num, data_pos, uint32_t(status),
+                has_data ? " [DATA]" : "");
+        }
+
+        spdlog::info("[block_storage:header_index_dump] Summary: {} total, {} have_data, {} missing_data, contiguous [{}..{}]{}",
+            total, have_data_count, missing_data_count,
+            start_height, contiguous_height > 0 ? contiguous_height - 1 : 0,
+            found_gap ? fmt::format(", first_gap at height {}", first_gap) : "");
+    }
+
+    auto final_rss = get_rss_mb();
+    auto total_elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - task_start).count();
+    auto elapsed_min = total_elapsed / 60;
+    auto elapsed_sec = total_elapsed % 60;
+    spdlog::info("[block_storage] Task ended, stored {} chunks ({} blocks), contiguous [{}..{}], max {}, wall time {}m{}s, RSS: {:.0f} MB (delta: +{:.0f})",
+        chunks_stored, blocks_stored,
+        start_height, contiguous_height > 0 ? contiguous_height - 1 : 0,
+        max_stored_height, elapsed_min, elapsed_sec,
+        final_rss, final_rss - initial_rss);
 }
 
 } // namespace kth::node::sync

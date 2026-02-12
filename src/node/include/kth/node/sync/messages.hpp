@@ -215,6 +215,10 @@ using fast_validation_input = std::variant<stop_request, downloaded_chunk>;
 using fast_validation_input_channel = concurrent_channel<fast_validation_input>;
 using chunk_validated_channel = concurrent_channel<chunk_validated>;
 
+// Block storage pipeline (writes validated chunks to flat files)
+using block_storage_input = std::variant<stop_request, downloaded_chunk>;
+using block_storage_input_channel = concurrent_channel<block_storage_input>;
+
 // Control
 using stop_channel = concurrent_event_channel;
 

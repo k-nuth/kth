@@ -170,9 +170,15 @@ static
     block_validated_channel validated_blocks(executor, 100);
 
     // Fast validation pipeline (chunk-based, bypasses supervisor→bridge→validation)
-    // Capacity 32 (was 256): limits max buffered blocks to 32×16=512 for backpressure
-    fast_validation_input_channel fast_val_input(executor, 32);
+    // Capacity 256: storage task is slower than validation (serial disk I/O),
+    // so we need buffer to absorb the speed difference. 256×16=4096 blocks max buffered.
+    fast_validation_input_channel fast_val_input(executor, 256);
     chunk_validated_channel validated_chunks(executor, 32);
+
+    // Block storage pipeline (writes validated chunks to flat files)
+    // Capacity 128: buffer between fast parallel validation and serial disk writes
+    block_storage_input_channel block_storage_input(executor, 128);
+    chunk_validated_channel stored_chunks(executor, 32);
 
     // Control
     stop_channel stop_signal(executor, 1);
@@ -399,6 +405,10 @@ static
         fast_val_input.close();
         validated_chunks.cancel();
         validated_chunks.close();
+        block_storage_input.cancel();
+        block_storage_input.close();
+        stored_chunks.cancel();
+        stored_chunks.close();
         coordinator_events.cancel();
         coordinator_events.close();
 
@@ -601,6 +611,7 @@ static
     // END TEMPORARY CODE
     // =========================================================================
 
+#if 0  // UTXO build disabled — measuring download+validation+storage time only
     // Check if we need to build UTXO set on startup
     // This happens when fast sync completed in a previous session but UTXO wasn't built
     if (initial_block_height >= checkpoint_height) {
@@ -629,6 +640,7 @@ static
             spdlog::info("[sync_orchestrator] UTXO set already built to height {}", current_utxo_height);
         }
     }
+#endif
 
     all_tasks.spawn("block_validation_task", block_validation_task(
         chain,
@@ -640,14 +652,28 @@ static
 
     // -------------------------------------------------------------------------
     // 7b. Fast validation task (chunk-based, parallel merkle)
+    //     Forwards valid chunks to block_storage_task (with block data)
+    //     Sends invalid chunks directly to coordinator via validated_chunks
     // -------------------------------------------------------------------------
     all_tasks.spawn("fast_validation_task", fast_validation_task(
         chain,
         fast_val_input,
-        validated_chunks
+        validated_chunks,
+        &block_storage_input  // forward valid chunks to storage
     ));
 
-    // Bridge: validated_chunks -> coordinator_events
+    // -------------------------------------------------------------------------
+    // 7c. Block storage task (writes validated blocks to flat files)
+    //     Receives from fast_validation_task, stores sequentially, notifies coordinator
+    // -------------------------------------------------------------------------
+    all_tasks.spawn("block_storage_task", block_storage_task(
+        chain,
+        block_storage_input,
+        stored_chunks,
+        initial_block_height + 1
+    ));
+
+    // Bridge: validated_chunks -> coordinator_events (carries validation errors only)
     all_tasks.spawn("coordinator_chunks_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::debug("[coordinator:chunks_bridge] Started");
         while (true) {
@@ -663,6 +689,24 @@ static
             }
         }
         spdlog::info("[coordinator:chunks_bridge] Task ended");
+    });
+
+    // Bridge: stored_chunks -> coordinator_events (carries storage results: validated + stored)
+    all_tasks.spawn("coordinator_stored_bridge", [&]() -> ::asio::awaitable<void> {
+        spdlog::debug("[coordinator:stored_bridge] Started");
+        while (true) {
+            auto [ec, result] = co_await stored_chunks.async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                spdlog::debug("[coordinator:stored_bridge] Channel closed: {}", ec.message());
+                break;
+            }
+            if (!coordinator_events.try_send(std::error_code{}, result)) {
+                spdlog::warn("[coordinator:stored_bridge] Channel full, chunk_validated dropped");
+                break;
+            }
+        }
+        spdlog::info("[coordinator:stored_bridge] Task ended");
     });
 
     // -------------------------------------------------------------------------
@@ -1082,6 +1126,8 @@ static
                     if (blocks_synced_to >= checkpoint_height) {
                         spdlog::info("[sync_coordinator] *** FAST SYNC COMPLETE at checkpoint {} ***",
                             checkpoint_height);
+
+#if 0  // UTXO build disabled — measuring download+validation+storage time only
                         spdlog::info("[sync_coordinator] Starting UTXO set build...");
 
                         auto utxo_result = co_await blockchain::build_utxo_set(
@@ -1098,6 +1144,7 @@ static
                         }
 
                         spdlog::info("[sync_coordinator] UTXO set build complete, ready for slow sync");
+#endif
                     }
 
                     // Check if we've caught up to headers

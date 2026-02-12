@@ -127,6 +127,18 @@ flat_file_pos block_store::save_block_raw(data_chunk const& raw_block, uint32_t 
     return pos;
 }
 
+flat_file_pos block_store::allocate_block_space(uint32_t raw_block_size, uint32_t height, uint64_t timestamp) {
+    return find_block_pos(raw_block_size + block_header_size, height, timestamp);
+}
+
+flat_file_pos block_store::write_block_at(data_chunk const& raw_block, flat_file_pos header_pos) {
+    if (!write_block_to_disk(raw_block, header_pos)) {
+        return {};
+    }
+    // header_pos.pos was modified by write_block_to_disk to point to data start
+    return header_pos;
+}
+
 flat_file_pos block_store::write_undo(block_undo const& undo, int32_t file_num, hash_digest const& prev_hash) {
     std::println("[block_store::write_undo] thread_id: {}", std::this_thread::get_id());
 

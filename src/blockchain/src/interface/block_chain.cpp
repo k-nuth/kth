@@ -323,10 +323,88 @@ bool block_chain::stopped() const {
     co_return result;
 }
 
+::asio::awaitable<code> block_chain::store_chunk(
+    std::vector<std::shared_ptr<domain::chain::light_block const>> const& blocks,
+    uint32_t start_height
+) {
+    auto const n = blocks.size();
+    if (n == 0) co_return error::success;
+
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+
+    // Phase 1: Allocate positions for all N blocks (single post, serial, fast)
+    // allocate_block_space() must be called serially — guaranteed because
+    // block_storage_task is a single coroutine doing co_await store_chunk() one at a time.
+    auto positions = std::make_shared<std::vector<database::flat_file_pos>>(n);
+    auto alloc_ch = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
+
+    ::asio::post(priority_pool_.get_executor(), [this, &blocks, start_height, n, positions, alloc_ch]() {
+        for (size_t i = 0; i < n; ++i) {
+            auto const height = start_height + static_cast<uint32_t>(i);
+            auto const& block = blocks[i];
+            auto const raw_size = static_cast<uint32_t>(block->raw_data().size());
+
+            auto pos = block_store_->allocate_block_space(raw_size, height, block->header().timestamp());
+            if (pos.is_null()) {
+                spdlog::error("[blockchain] Failed to allocate space for block {}", height);
+                alloc_ch->try_send(std::error_code{}, error::operation_failed);
+                return;
+            }
+            (*positions)[i] = pos;
+        }
+        alloc_ch->try_send(std::error_code{}, error::success);
+    });
+
+    {
+        auto [ec, result] = co_await alloc_ch->async_receive(::asio::as_tuple(::asio::use_awaitable));
+        if (ec || result) co_return result ? result : error::operation_failed;
+    }
+
+    // Phase 2: Write all N blocks in parallel (N posts, each opens its own FILE*)
+    auto write_ch = std::make_shared<result_channel>(priority_pool_.get_executor(), n);
+
+    for (size_t i = 0; i < n; ++i) {
+        ::asio::post(priority_pool_.get_executor(), [this, &blocks, i, positions, write_ch]() {
+            auto data_pos = block_store_->write_block_at(blocks[i]->raw_data(), (*positions)[i]);
+            if (data_pos.is_null()) {
+                write_ch->try_send(std::error_code{}, error::operation_failed);
+                return;
+            }
+            // Store the data position (after header) for header_index
+            (*positions)[i] = data_pos;
+            write_ch->try_send(std::error_code{}, error::success);
+        });
+    }
+
+    // Wait for all writes to complete
+    code first_error;
+    for (size_t i = 0; i < n; ++i) {
+        auto [ec, result] = co_await write_ch->async_receive(::asio::as_tuple(::asio::use_awaitable));
+        if (ec && !first_error) first_error = error::operation_failed;
+        if (result && !first_error) first_error = result;
+    }
+    if (first_error) co_return first_error;
+
+    // Phase 3: Update header_index with data positions (no I/O, fast)
+    // Each block writes to its own index entry — safe without locks.
+    for (size_t i = 0; i < n; ++i) {
+        auto const& block = blocks[i];
+        auto const block_hash = block->header().hash();
+        auto const idx = header_index_.find(block_hash);
+        if (idx != header_index::null_index) {
+            auto const& data_pos = (*positions)[i];
+            header_index_.set_block_pos(idx, static_cast<int16_t>(data_pos.file), data_pos.pos);
+            header_index_.add_status(idx, header_status::have_data);
+        }
+    }
+
+    co_return error::success;
+}
+
 // Toggle between validation strategies:
 //   true  = 1 task per chunk (serial merkle on single pool thread)
 //   false = 1 task per block (parallel merkle across pool threads)
-static constexpr bool chunk_serial_validation = false;
+static constexpr bool chunk_serial_validation = true;
 
 ::asio::awaitable<code> block_chain::validate_chunk(
     std::vector<std::shared_ptr<domain::chain::light_block const>> const& blocks,
@@ -421,6 +499,49 @@ static constexpr bool chunk_serial_validation = false;
 
         co_return final_result;
     }
+}
+
+::asio::awaitable<code> block_chain::store_block(
+    std::shared_ptr<domain::chain::light_block const> const& block,
+    uint32_t height
+) {
+    // Same post+await pattern as validate_chunk() and organize_fast():
+    // Post disk I/O to priority_pool_ so the network executor stays free.
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+    auto channel = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
+
+    ::asio::post(priority_pool_.get_executor(), [this, block, height, channel]() {
+        // 1. Save block to flat files (sequential I/O)
+        auto pos = block_store_->save_block_raw(block->raw_data(), height, block->header().timestamp());
+        if (pos.is_null()) {
+            spdlog::error("[blockchain] Failed to save block {} to flat files", height);
+            channel->try_send(std::error_code{}, error::operation_failed);
+            return;
+        }
+
+        // 2. Update header_index with block file position
+        auto const block_hash = block->header().hash();
+        auto const idx = header_index_.find(block_hash);
+        if (idx != header_index::null_index) {
+            header_index_.set_block_pos(idx, static_cast<int16_t>(pos.file), pos.pos);
+            header_index_.add_status(idx, header_status::have_data);
+        }
+
+        // 3. Update last block height in LMDB (for compatibility / UTXO build)
+        auto result = database_.internal_db().set_last_block_height(height);
+        if (result != database::result_code::success) {
+            spdlog::warn("[blockchain] Failed to update last_height in LMDB for height {}: {}",
+                height, static_cast<int>(result));
+        }
+
+        channel->try_send(std::error_code{}, error::success);
+    });
+
+    auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (ec) {
+        co_return error::operation_failed;
+    }
+    co_return result;
 }
 
 ::asio::awaitable<code> block_chain::organize(transaction_const_ptr tx) {
@@ -529,6 +650,10 @@ std::expected<uint32_t, database::result_code> block_chain::get_utxo_built_heigh
 
 database::result_code block_chain::set_utxo_built_height(uint32_t height) {
     return database_.internal_db().set_utxo_built_height(height);
+}
+
+database::result_code block_chain::set_last_block_height(uint32_t height) {
+    return database_.internal_db().set_last_block_height(height);
 }
 
 // DEPRECATED: UTXO storage moved to UTXOZ
