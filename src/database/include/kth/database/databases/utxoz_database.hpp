@@ -5,14 +5,18 @@
 #ifndef KTH_DATABASE_UTXOZ_DATABASE_HPP_
 #define KTH_DATABASE_UTXOZ_DATABASE_HPP_
 
+#include <concepts>
 #include <expected>
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <span>
 
 #include <boost/unordered/unordered_flat_map.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
+
+#include <spdlog/spdlog.h>
 
 #include <utxoz/utxoz.hpp>
 
@@ -20,8 +24,22 @@
 #include <kth/database/databases/result_code.hpp>
 #include <kth/database/databases/utxo_entry.hpp>
 #include <kth/domain/chain/point.hpp>
+#include <kth/infrastructure/formats/base_16.hpp>
 
 namespace kth::database {
+
+// Concepts for UTXO delta maps (accept any hasher/allocator)
+template <typename T>
+concept utxo_insert_range = std::ranges::range<T> && requires(std::ranges::range_value_t<T> v) {
+    { v.first } -> std::convertible_to<domain::chain::point const&>;
+    { v.second } -> std::convertible_to<utxo_entry const&>;
+};
+
+template <typename T>
+concept utxo_delete_range = std::ranges::range<T> && requires(std::ranges::range_value_t<T> v) {
+    { v.first } -> std::convertible_to<domain::chain::point const&>;
+    { v.second } -> std::convertible_to<uint32_t>;
+};
 
 // =============================================================================
 // UTXO-Z Database Adapter
@@ -30,8 +48,7 @@ namespace kth::database {
 // Converts between Knuth types and UTXO-Z types.
 // =============================================================================
 
-class KD_API utxoz_database {
-public:
+struct KD_API utxoz_database {
     utxoz_database() = default;
     ~utxoz_database();
 
@@ -98,11 +115,61 @@ public:
     /// @param inserts UTXOs to add (point -> utxo_entry, entry contains height)
     /// @param deletes UTXOs to remove (point -> height for traceability)
     /// @return result_code::success on success
+    template <utxo_insert_range Inserts, utxo_delete_range Deletes>
     [[nodiscard]]
-    result_code apply_delta(
-        boost::unordered_flat_map<domain::chain::point, utxo_entry> const& inserts,
-        boost::unordered_flat_map<domain::chain::point, uint32_t> const& deletes
-    );
+    result_code apply_delta(Inserts const& inserts, Deletes const& deletes) {
+        if ( ! is_open()) {
+            return result_code::other;
+        }
+
+        for (auto const& [point, entry] : inserts) {
+            auto key = point_to_key(point);
+            auto value = entry_to_bytes(entry);
+            if ( ! db_->insert(key, value, entry.height())) {
+                spdlog::error("[utxoz_database] Failed to insert UTXO from block {} - already exists: {}:{}",
+                    entry.height(), encode_hash(point.hash()), point.index());
+                return result_code::duplicated_key;
+            }
+        }
+
+        for (auto const& [point, height] : deletes) {
+            auto key = point_to_key(point);
+            std::ignore = db_->erase(key, height);
+        }
+
+        return result_code::success;
+    }
+
+    /// Apply a batch of raw UTXO changes (zero-copy path).
+    /// Keys are raw_outpoint (36 bytes) — no conversion needed.
+    /// Inserts: range of {raw_outpoint, {data, height}}.
+    /// Deletes: range of {raw_outpoint, height}.
+    template <typename Inserts, typename Deletes>
+    [[nodiscard]]
+    result_code apply_delta_raw(Inserts const& inserts, Deletes const& deletes) {
+        if ( ! is_open()) {
+            return result_code::other;
+        }
+
+        for (auto const& [key, raw] : inserts) {
+            try {
+                if ( ! db_->insert(key, raw.data, raw.height)) {
+                    spdlog::error("[utxoz_database] Duplicate key at block {}, outpoint={}, value_size={}",
+                        raw.height, utxoz::outpoint_to_string(key), raw.data.size());
+                    return result_code::duplicated_key;
+                }
+            } catch (std::out_of_range const& e) {
+                spdlog::error("[utxoz_database] Value too large ({} bytes) at block {}, outpoint={} — skipping",
+                    raw.data.size(), raw.height, utxoz::outpoint_to_string(key));
+            }
+        }
+
+        for (auto const& [key, height] : deletes) {
+            std::ignore = db_->erase(key, height);
+        }
+
+        return result_code::success;
+    }
 
     /// Clear all UTXOs from the database
     /// @return result_code::success on success

@@ -230,6 +230,29 @@ bool block_chain::start(uint32_t disk_magic) {
         spdlog::info("[blockchain] Loaded {} headers into header_index in {}ms", loaded, elapsed_ms);
     }
 
+    // Restore block file positions in header_index from flat files
+    if (block_store_ && heights->block > 0) {
+        spdlog::info("[blockchain] Scanning flat files to restore block positions...");
+        auto const scan_start = std::chrono::steady_clock::now();
+
+        size_t restored = 0;
+        auto const scanned = block_store_->scan_block_positions(
+            [this, &restored](int32_t file_num, uint32_t data_pos, hash_digest const& hash) {
+                auto const idx = header_index_.find(hash);
+                if (idx != header_index::null_index) {
+                    header_index_.set_block_pos(idx, static_cast<int16_t>(file_num), data_pos);
+                    header_index_.add_status(idx, header_status::have_data);
+                    ++restored;
+                }
+            }
+        );
+
+        auto const scan_elapsed = std::chrono::steady_clock::now() - scan_start;
+        auto const scan_ms = std::chrono::duration_cast<std::chrono::milliseconds>(scan_elapsed).count();
+        spdlog::info("[blockchain] Scanned {} blocks, restored {} positions in {}ms",
+            scanned, restored, scan_ms);
+    }
+
     return true;
 }
 
@@ -634,14 +657,6 @@ void block_chain::prune_reorg_async() {
             database_.prune_reorg();
         });
     }
-}
-
-database::result_code block_chain::apply_utxo_delta(
-    boost::unordered_flat_map<domain::chain::point, database::utxo_entry> const& inserts,
-    boost::unordered_flat_map<domain::chain::point, uint32_t> const& deletes
-) {
-    // Use UTXO-Z high-performance database
-    return utxoz_db_.apply_delta(inserts, deletes);
 }
 
 std::expected<uint32_t, database::result_code> block_chain::get_utxo_built_height() const {

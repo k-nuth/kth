@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <vector>
 
 #include <kth/database/define.hpp>
@@ -132,6 +133,15 @@ struct KD_API block_store {
     [[nodiscard]]
     std::expected<block_undo, result_code>
     read_undo(flat_file_pos const& pos, hash_digest const& prev_hash) const;
+
+    /// Scan all block files and invoke callback for each block found.
+    /// Used on startup to rebuild in-memory block position index.
+    /// Callback receives (file_number, data_position, block_hash).
+    /// @return Number of blocks scanned.
+    using block_position_callback = std::function<void(int32_t, uint32_t, hash_digest const&)>;
+
+    [[nodiscard]]
+    size_t scan_block_positions(block_position_callback const& callback) const;
 
     // =========================================================================
     // Maintenance

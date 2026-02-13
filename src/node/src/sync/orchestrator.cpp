@@ -603,6 +603,11 @@ static
             spdlog::error("[sync_orchestrator] Failed to clear UTXO set!");
         }
 
+        auto utxo_height_before = chain.get_utxo_built_height();
+        spdlog::warn("###   utxo_built_height was: {}  — resetting to 0",
+            utxo_height_before.value_or(0));
+        std::ignore = chain.set_utxo_built_height(0);
+
         spdlog::warn("##############################################################");
         spdlog::warn("###   UTXO SET CLEARED - WILL REBUILD FROM SCRATCH         ###");
         spdlog::warn("##############################################################");
@@ -611,7 +616,6 @@ static
     // END TEMPORARY CODE
     // =========================================================================
 
-#if 0  // UTXO build disabled — measuring download+validation+storage time only
     // Check if we need to build UTXO set on startup
     // This happens when fast sync completed in a previous session but UTXO wasn't built
     if (initial_block_height >= checkpoint_height) {
@@ -640,7 +644,6 @@ static
             spdlog::info("[sync_orchestrator] UTXO set already built to height {}", current_utxo_height);
         }
     }
-#endif
 
     all_tasks.spawn("block_validation_task", block_validation_task(
         chain,
@@ -1127,7 +1130,6 @@ static
                         spdlog::info("[sync_coordinator] *** FAST SYNC COMPLETE at checkpoint {} ***",
                             checkpoint_height);
 
-#if 0  // UTXO build disabled — measuring download+validation+storage time only
                         spdlog::info("[sync_coordinator] Starting UTXO set build...");
 
                         auto utxo_result = co_await blockchain::build_utxo_set(
@@ -1144,7 +1146,6 @@ static
                         }
 
                         spdlog::info("[sync_coordinator] UTXO set build complete, ready for slow sync");
-#endif
                     }
 
                     // Check if we've caught up to headers

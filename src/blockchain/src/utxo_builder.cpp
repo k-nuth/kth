@@ -20,12 +20,229 @@
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 
+#include <utxoz/utils.hpp>
+
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/database/databases/utxoz_database.hpp>
 #include <kth/domain/chain/block.hpp>
+#include <kth/domain/machine/opcode.hpp>
 #include <kth/infrastructure/utility/reader.hpp>
 
 namespace kth::blockchain {
+
+// =============================================================================
+// Minimal raw block parser for UTXO indexing
+// =============================================================================
+
+expect<utxo_compact_block> parse_utxo_block(byte_span raw_block) {
+    byte_reader r(raw_block);
+
+    // Skip block header (80 bytes)
+    if (auto s = r.skip(80); !s) return std::unexpected(s.error());
+
+    auto const tx_count_exp = r.read_variable_little_endian();
+    if (!tx_count_exp) return std::unexpected(tx_count_exp.error());
+    auto const tx_count = *tx_count_exp;
+
+    utxo_compact_block result;
+
+    for (uint64_t tx_i = 0; tx_i < tx_count; ++tx_i) {
+        bool const is_coinbase = (tx_i == 0);
+        auto const tx_start = r.position();
+
+        // Skip version (4 bytes)
+        if (auto s = r.skip(4); !s) return std::unexpected(s.error());
+
+        // --- Inputs ---
+        auto const input_count_exp = r.read_variable_little_endian();
+        if (!input_count_exp) return std::unexpected(input_count_exp.error());
+
+        for (uint64_t in_i = 0; in_i < *input_count_exp; ++in_i) {
+            // Read prev_hash (32 bytes) + prev_index (4 bytes)
+            auto const prev_hash = r.read_array<32>();
+            if (!prev_hash) return std::unexpected(prev_hash.error());
+
+            auto const prev_index = r.read_little_endian<uint32_t>();
+            if (!prev_index) return std::unexpected(prev_index.error());
+
+            if (!is_coinbase) {
+                result.inputs.push_back({
+                    utxoz::make_outpoint(std::span<uint8_t const, 32>{prev_hash->data(), 32}, *prev_index)
+                });
+            }
+
+            // Skip input script
+            auto const script_len = r.read_variable_little_endian();
+            if (!script_len) return std::unexpected(script_len.error());
+            if (auto s = r.skip(static_cast<size_t>(*script_len)); !s) return std::unexpected(s.error());
+
+            // Skip sequence (4 bytes)
+            if (auto s = r.skip(4); !s) return std::unexpected(s.error());
+        }
+
+        // --- Outputs ---
+        auto const output_count_exp = r.read_variable_little_endian();
+        if (!output_count_exp) return std::unexpected(output_count_exp.error());
+
+        struct pending_output {
+            uint32_t original_index;
+            std::span<uint8_t const> raw;
+            bool coinbase;
+        };
+        std::vector<pending_output> tx_outputs;
+
+        for (uint64_t out_i = 0; out_i < *output_count_exp; ++out_i) {
+            auto const out_start = r.position();
+
+            // Skip value (8 bytes)
+            if (auto s = r.skip(8); !s) return std::unexpected(s.error());
+
+            // Read script length and remember where the script starts
+            auto const script_len = r.read_variable_little_endian();
+            if (!script_len) return std::unexpected(script_len.error());
+
+            auto const script_start = r.position();
+            if (auto s = r.skip(static_cast<size_t>(*script_len)); !s) return std::unexpected(s.error());
+
+            auto const out_end = r.position();
+
+            // Skip OP_RETURN outputs — provably unspendable, don't belong in the UTXO set
+            bool const is_op_return = *script_len > 0 &&
+                raw_block[script_start] == static_cast<uint8_t>(domain::machine::opcode::return_);
+            if (is_op_return) continue;
+
+            tx_outputs.push_back({
+                static_cast<uint32_t>(out_i),
+                raw_block.subspan(out_start, out_end - out_start),
+                is_coinbase
+            });
+        }
+
+        // Skip locktime (4 bytes)
+        if (auto s = r.skip(4); !s) return std::unexpected(s.error());
+
+        auto const tx_end = r.position();
+
+        // Compute txid = SHA256d of the raw tx bytes
+        auto const txid = bitcoin_hash(raw_block.subspan(tx_start, tx_end - tx_start));
+
+        // Build raw_outpoint keys using the original output index and add to result
+        for (auto const& out : tx_outputs) {
+            result.outputs.push_back({
+                utxoz::make_outpoint(std::span<uint8_t const, 32>{txid.data(), 32}, out.original_index),
+                out.raw,
+                out.coinbase
+            });
+        }
+    }
+
+    return result;
+}
+
+// =============================================================================
+// utxo_raw_value serialization
+// =============================================================================
+// Format: height(4) + mtp(4) + coinbase(1) + raw_output_bytes
+// =============================================================================
+
+namespace {
+
+inline constexpr size_t utxo_raw_prefix_size = sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint8_t); // height + mtp + coinbase
+
+[[nodiscard]]
+std::vector<uint8_t> serialize_utxo_raw_value(
+    std::span<uint8_t const> raw_output,
+    uint32_t height,
+    uint32_t median_time_past,
+    bool coinbase
+) {
+    size_t const total = utxo_raw_prefix_size + raw_output.size();
+    std::vector<uint8_t> result(total);
+    auto* p = result.data();
+
+    // height (4 bytes LE)
+    std::memcpy(p, &height, 4);
+    p += 4;
+
+    // median_time_past (4 bytes LE)
+    std::memcpy(p, &median_time_past, 4);
+    p += 4;
+
+    // coinbase (1 byte)
+    *p++ = coinbase ? uint8_t{1} : uint8_t{0};
+
+    // raw output bytes (value + varint + script)
+    std::memcpy(p, raw_output.data(), raw_output.size());
+
+    return result;
+}
+
+} // anonymous namespace
+
+// =============================================================================
+// utxo_raw_delta implementation
+// =============================================================================
+
+void utxo_raw_delta::merge(utxo_raw_delta&& other) {
+    for (auto& [point, raw] : other.inserts) {
+        inserts.emplace(point, std::move(raw));
+    }
+
+    for (auto const& [point, height] : other.deletes) {
+        auto it = inserts.find(point);
+        if (it != inserts.end()) {
+            // Internal spend — created and spent within same batch
+            inserts.erase(it);
+        } else {
+            deletes.emplace(point, height);
+        }
+    }
+}
+
+void utxo_raw_delta::clear() {
+    inserts.clear();
+    deletes.clear();
+}
+
+bool utxo_raw_delta::empty() const {
+    return inserts.empty() && deletes.empty();
+}
+
+// =============================================================================
+// Compact block processing (zero-copy path)
+// =============================================================================
+
+utxo_raw_delta process_compact_block_utxos(
+    utxo_compact_block const& block,
+    uint32_t height,
+    uint32_t median_time_past
+) {
+    utxo_raw_delta delta;
+
+    // 1. Process all outputs (inserts)
+    for (auto const& out : block.outputs) {
+        delta.inserts.emplace(
+            out.key,
+            utxo_raw_value{
+                serialize_utxo_raw_value(out.raw, height, median_time_past, out.coinbase),
+                height
+            }
+        );
+    }
+
+    // 2. Process all inputs (deletes)
+    for (auto const& in : block.inputs) {
+        auto it = delta.inserts.find(in.prev_key);
+        if (it != delta.inserts.end()) {
+            // Internal spend within this block
+            delta.inserts.erase(it);
+        } else {
+            delta.deletes.emplace(in.prev_key, height);
+        }
+    }
+
+    return delta;
+}
 
 // =============================================================================
 // utxo_delta implementation
@@ -398,54 +615,54 @@ database::result_code process_deferred_deletions(block_chain& chain) {
             auto t_fetch_end = clock::now();
             auto fetch_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_fetch_end - t_fetch_start).count();
 
-            // ===== TIMING: Deserialize blocks =====
-            auto t_deser_start = clock::now();
+            // ===== TIMING: Parse blocks (minimal, zero-copy) =====
+            auto t_parse_start = clock::now();
 
-            domain::chain::block::list blocks;
-            blocks.reserve(raw_result->size());
+            std::vector<utxo_compact_block> compact_blocks;
+            compact_blocks.reserve(raw_result->size());
             for (auto const& raw_data : *raw_result) {
-                byte_reader reader(raw_data);
-                auto block_res = domain::chain::block::from_data(reader);
-                if (!block_res) {
-                    spdlog::error("[utxo_builder] Failed to deserialize block in batch {}-{}", batch_start, batch_end);
+                auto parsed = parse_utxo_block(byte_span{raw_data.data(), raw_data.size()});
+                if (!parsed) {
+                    spdlog::error("[utxo_builder] Failed to parse block in batch {}-{}", batch_start, batch_end);
                     co_return database::result_code::other;
                 }
-                blocks.push_back(std::move(*block_res));
+                compact_blocks.push_back(std::move(*parsed));
             }
 
-            auto t_deser_end = clock::now();
-            auto deser_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_deser_end - t_deser_start).count();
+            auto t_parse_end = clock::now();
+            auto parse_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_parse_end - t_parse_start).count();
 
-            // Build context with MTP
-            std::vector<block_with_context> blocks_ctx;
-            blocks_ctx.reserve(blocks.size());
+            // ===== TIMING: Process batch (delta + serialization) =====
+            auto t_process_start = clock::now();
 
-            for (size_t i = 0; i < blocks.size(); ++i) {
+            // Old domain-object path (for reference / parallel_batch):
+            //   utxo_delta delta;
+            //   if (strategy == utxo_build_strategy::parallel_batch) {
+            //       delta = co_await process_blocks_parallel(pool, blocks_ctx);
+            //   } else {
+            //       delta = process_blocks_sequential(blocks_ctx);
+            //   }
+            // TODO: parallel_batch — post process_compact_block_utxos to thread pool,
+            //       then merge results in order (same pattern as process_blocks_parallel).
+            utxo_raw_delta delta;
+            for (size_t i = 0; i < compact_blocks.size(); ++i) {
                 uint32_t h = batch_start + static_cast<uint32_t>(i);
                 uint32_t mtp = calculate_mtp(timestamp_window);
 
-                blocks_ctx.push_back({
-                    .block = &blocks[i],
-                    .height = h,
-                    .median_time_past = mtp
-                });
+                auto block_delta = process_compact_block_utxos(compact_blocks[i], h, mtp);
+                if (i == 0) {
+                    delta = std::move(block_delta);
+                } else {
+                    delta.merge(std::move(block_delta));
+                }
 
-                // Update timestamp window
+                // Update timestamp window — read directly from raw block header (offset 68)
+                uint32_t block_timestamp;
+                std::memcpy(&block_timestamp, (*raw_result)[i].data() + 68, sizeof(block_timestamp));
                 if (timestamp_window.size() >= mtp_interval) {
                     timestamp_window.pop_front();
                 }
-                timestamp_window.push_back(blocks[i].header().timestamp());
-            }
-
-            // ===== TIMING: Process batch (delta calculation) =====
-            auto t_process_start = clock::now();
-
-            utxo_delta delta;
-            if (strategy == utxo_build_strategy::parallel_batch) {
-                delta = co_await process_blocks_parallel(pool, blocks_ctx);
-            } else {
-                // sequential_batch
-                delta = process_blocks_sequential(blocks_ctx);
+                timestamp_window.push_back(block_timestamp);
             }
 
             auto t_process_end = clock::now();
@@ -454,7 +671,7 @@ database::result_code process_deferred_deletions(block_chain& chain) {
             // ===== TIMING: Apply to UTXO-Z =====
             auto t_apply_start = clock::now();
 
-            auto result = chain.apply_utxo_delta(delta.inserts, delta.deletes);
+            auto result = chain.apply_utxo_delta_raw(delta.inserts, delta.deletes);
             if (result != database::result_code::success) {
                 spdlog::error("[utxo_builder] Failed to apply UTXO delta at batch starting {}", batch_start);
                 co_return result;
@@ -483,18 +700,18 @@ database::result_code process_deferred_deletions(block_chain& chain) {
                 spdlog::warn("[utxo_builder] Failed to save progress at height {}", batch_end);
             }
 
-            processed += blocks_ctx.size();
+            processed += compact_blocks.size();
             double pct = (100.0 * processed) / total_blocks;
-            auto total_ms = fetch_ms + deser_ms + process_ms + apply_ms + deferred_ms;
+            auto total_ms = fetch_ms + parse_ms + process_ms + apply_ms + deferred_ms;
             auto direct_del = delta.delete_count() - deferred_count;
 
             spdlog::info("[utxo_builder] {}/{} ({:.1f}%) | {}ms (f:{} s:{} p:{} a:{} d:{}) | {} ins, ({},{}) del",
                 processed, total_blocks, pct,
-                total_ms, fetch_ms, deser_ms, process_ms, apply_ms, deferred_ms,
+                total_ms, fetch_ms, parse_ms, process_ms, apply_ms, deferred_ms,
                 fmt_num(delta.insert_count()), fmt_num(direct_del), fmt_num(deferred_count));
             spdlog::debug("[utxo_builder] {}/{} ({:.1f}%) | {}ms (f:{} s:{} p:{} a:{} d:{}) | {} ins, ({},{}) del",
                 processed, total_blocks, pct,
-                total_ms, fetch_ms, deser_ms, process_ms, apply_ms, deferred_ms,
+                total_ms, fetch_ms, parse_ms, process_ms, apply_ms, deferred_ms,
                 delta.insert_count(), direct_del, deferred_count);
         }
     }

@@ -352,6 +352,55 @@ block_store::read_blocks_raw(std::vector<flat_file_pos> const& positions) const 
     return results;
 }
 
+size_t block_store::scan_block_positions(block_position_callback const& callback) const {
+    size_t count = 0;
+    constexpr size_t header_bytes = 80;  // Bitcoin block header size
+
+    for (int32_t file_num = 0; file_num <= last_block_file_; ++file_num) {
+        auto path = block_files_.file_name(flat_file_pos{file_num, 0});
+
+        FILE* file = std::fopen(path.c_str(), "rb");
+        if (!file) continue;
+
+        auto const file_size = file_info_[file_num].size;
+
+        while (true) {
+            auto const record_start = static_cast<uint32_t>(std::ftell(file));
+            if (record_start + block_header_size > file_size) break;
+
+            // Read record header: magic(4) + size(4)
+            std::array<uint8_t, 4> file_magic;
+            uint32_t block_size;
+
+            if (std::fread(file_magic.data(), 1, 4, file) != 4) break;
+            if (std::fread(&block_size, sizeof(block_size), 1, file) != 1) break;
+
+            if (file_magic != magic_) break;
+
+            auto const data_pos = static_cast<uint32_t>(std::ftell(file));
+
+            if (block_size < header_bytes) break;
+
+            // Read the 80-byte block header to compute its hash
+            std::array<uint8_t, 80> hdr;
+            if (std::fread(hdr.data(), 1, header_bytes, file) != header_bytes) break;
+
+            auto const hash = bitcoin_hash(byte_span{hdr.data(), hdr.size()});
+
+            callback(file_num, data_pos, hash);
+            ++count;
+
+            // Skip remaining block data
+            auto const remaining = block_size - header_bytes;
+            if (remaining > 0 && std::fseek(file, static_cast<long>(remaining), SEEK_CUR) != 0) break;
+        }
+
+        std::fclose(file);
+    }
+
+    return count;
+}
+
 std::expected<block_undo, result_code>
 block_store::read_undo(flat_file_pos const& pos, hash_digest const& prev_hash) const {
     if (pos.is_null()) {

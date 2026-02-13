@@ -148,11 +148,18 @@ struct KB_API block_chain {
     void prune_reorg_async();
 
     // Apply a batch of UTXO changes (for UTXO set building after fast IBD)
+    template <database::utxo_insert_range Inserts, database::utxo_delete_range Deletes>
     [[nodiscard]]
-    database::result_code apply_utxo_delta(
-        boost::unordered_flat_map<domain::chain::point, database::utxo_entry> const& inserts,
-        boost::unordered_flat_map<domain::chain::point, uint32_t> const& deletes
-    );
+    database::result_code apply_utxo_delta(Inserts const& inserts, Deletes const& deletes) {
+        return utxoz_db_.apply_delta(inserts, deletes);
+    }
+
+    // Apply a batch of raw UTXO changes (zero-copy path, no domain objects)
+    template <typename Inserts, typename Deletes>
+    [[nodiscard]]
+    database::result_code apply_utxo_delta_raw(Inserts const& inserts, Deletes const& deletes) {
+        return utxoz_db_.apply_delta_raw(inserts, deletes);
+    }
 
     // Set last block height in LMDB (for fast IBD storage progress tracking)
     [[nodiscard]]

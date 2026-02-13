@@ -94,36 +94,6 @@ result_code utxoz_database::erase(domain::chain::point const& point, uint32_t he
     return erased > 0 ? result_code::success : result_code::key_not_found;
 }
 
-result_code utxoz_database::apply_delta(
-    boost::unordered_flat_map<domain::chain::point, utxo_entry> const& inserts,
-    boost::unordered_flat_map<domain::chain::point, uint32_t> const& deletes
-) {
-    if ( ! is_open()) {
-        return result_code::other;
-    }
-
-    // Process inserts first (must exist before they can be spent)
-    for (auto const& [point, entry] : inserts) {
-        auto key = point_to_key(point);
-        auto value = entry_to_bytes(entry);
-        if ( ! db_->insert(key, value, entry.height())) {
-            spdlog::error("[utxoz_database] Failed to insert UTXO from block {} - already exists: {}:{}",
-                entry.height(), encode_hash(point.hash()), point.index());
-            return result_code::duplicated_key;
-        }
-    }
-
-    // Process deletes (UTXOs being spent)
-    // Note: erase() returns 0 when the delete is deferred (UTXO in old non-cached file)
-    // Actual errors are detected later in process_pending_deletions()
-    for (auto const& [point, height] : deletes) {
-        auto key = point_to_key(point);
-        std::ignore = db_->erase(key, height);
-    }
-
-    return result_code::success;
-}
-
 result_code utxoz_database::clear() {
     if ( ! is_open()) {
         return result_code::other;
