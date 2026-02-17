@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <expected>
+#include <filesystem>
 #include <span>
 #include <vector>
 
@@ -22,6 +23,7 @@
 #include <kth/blockchain/define.hpp>
 #include <kth/database/databases/internal_database.hpp>
 #include <kth/database/databases/utxo_entry.hpp>
+#include <kth/database/databases/utxoz_database.hpp>
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/point.hpp>
 #include <kth/infrastructure/math/hash.hpp>
@@ -108,6 +110,10 @@ struct KB_API utxo_raw_delta {
     boost::unordered_flat_map<key_t, utxo_raw_value, hasher_t> inserts;
     boost::unordered_flat_map<key_t, uint32_t, hasher_t> deletes;
 
+    // Bloom filter skip counters (accumulated across merge)
+    size_t bloom_skipped_inserts = 0;
+    size_t bloom_skipped_deletes = 0;
+
     void merge(utxo_raw_delta&& other);
     void clear();
 
@@ -123,11 +129,13 @@ struct KB_API utxo_raw_delta {
 
 // Process a compact block into a raw delta (zero-copy path).
 // Raw output bytes are serialized directly into UTXO-Z storage format.
+// When bloom is provided, outputs/inputs not in the filter are skipped.
 [[nodiscard]]
 KB_API utxo_raw_delta process_compact_block_utxos(
     utxo_compact_block const& block,
     uint32_t height,
-    uint32_t median_time_past
+    uint32_t median_time_past,
+    database::utxo_bloom_filter const* bloom = nullptr
 );
 
 // =============================================================================
@@ -245,6 +253,26 @@ KB_API ::asio::awaitable<database::result_code> build_utxo_set(
     uint32_t end_height,
     utxo_build_strategy strategy = utxo_build_strategy::parallel_batch
 );
+
+// =============================================================================
+// Bloom Filter Helpers (UTXO skip-insert optimization)
+// =============================================================================
+
+/// Build a bloom filter from the current UTXO set and save it to disk.
+/// File: {data_dir}/utxo_bloom_{checkpoint_height}.dat
+/// @return true on success
+[[nodiscard]]
+KB_API bool save_utxo_bloom(
+    block_chain& chain,
+    std::filesystem::path const& data_dir,
+    uint32_t checkpoint_height
+);
+
+/// Load the embedded bloom filter from the executable's .rodata section.
+/// The bloom data is compiled into the binary via .incbin (assembly).
+/// @return shared_ptr to filter, or nullptr on parse error
+[[nodiscard]]
+KB_API std::shared_ptr<database::utxo_bloom_filter const> load_utxo_bloom();
 
 } // namespace kth::blockchain
 

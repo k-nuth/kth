@@ -326,6 +326,10 @@ if (WITH_TOOLS)
 
 endif()
 
+# UTXO-Z fingerprint tool (always built — used for UTXO set verification)
+add_executable(utxoz-fingerprint
+        tools/utxoz_fingerprint/utxoz_fingerprint.cpp)
+target_link_libraries(utxoz-fingerprint ${PROJECT_NAME})
 
 # Install
 # ------------------------------------------------------------------------------

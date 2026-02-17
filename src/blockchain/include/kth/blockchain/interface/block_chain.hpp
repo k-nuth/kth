@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <ctime>
+#include <filesystem>
 #include <functional>
 #include <expected>
 #include <vector>
@@ -184,6 +185,23 @@ struct KB_API block_chain {
     std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>> utxo_process_pending_deletions();
 
     void utxo_compact();
+    void utxo_print_statistics();
+    void utxo_print_sizing_report();
+    void utxo_print_height_range_stats();
+
+    // UTXO-Z iteration (for building bloom filter after IBD)
+    template <typename F>
+    void utxo_for_each(F&& callback) const {
+        utxoz_db_.for_each_utxo(std::forward<F>(callback));
+    }
+
+    // UTXO-Z size (number of UTXOs in the set)
+    [[nodiscard]]
+    size_t utxo_size() const;
+
+    // Set/clear bloom filter for skip-insert optimization
+    void set_utxo_bloom(std::shared_ptr<database::utxo_bloom_filter const> bloom);
+    void clear_utxo_bloom();
 #endif
 
     // =========================================================================
@@ -226,6 +244,10 @@ struct KB_API block_chain {
     bool is_stale() const;
     settings const& chain_settings() const;
     executor_type executor() const;
+
+    /// Data directory (parent of internal_db_dir, contains utxoz/, blocks/, etc.)
+    [[nodiscard]]
+    std::filesystem::path data_dir() const;
 
     /// Access the header index (for headers-first sync).
     [[nodiscard]] header_index& headers() { return header_index_; }

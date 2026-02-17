@@ -64,6 +64,25 @@ endif()
 message(STATUS "Knuth: Header index capacity: ${KTH_HEADER_INDEX_CAPACITY}")
 add_definitions(-DKTH_HEADER_INDEX_CAPACITY=${KTH_HEADER_INDEX_CAPACITY})
 
+# Embedded UTXO bloom filter — .incbin via assembly
+set(UTXO_BLOOM_DAT_PATH "${CMAKE_SOURCE_DIR}/data/utxo_bloom.dat")
+set(KTH_HAS_EMBEDDED_BLOOM OFF)
+
+if(EXISTS "${UTXO_BLOOM_DAT_PATH}")
+    enable_language(ASM)
+    file(SIZE "${UTXO_BLOOM_DAT_PATH}" _bloom_file_size)
+    math(EXPR _bloom_file_size_mb "${_bloom_file_size} / 1048576")
+    message(STATUS "Knuth: UTXO bloom filter found: ${UTXO_BLOOM_DAT_PATH} (${_bloom_file_size_mb} MB)")
+
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/utxo_bloom_embed.S.in
+        ${CMAKE_CURRENT_BINARY_DIR}/utxo_bloom_embed.S
+        @ONLY
+    )
+    set(KTH_HAS_EMBEDDED_BLOOM ON)
+else()
+    message(WARNING "Knuth: UTXO bloom filter NOT found at ${UTXO_BLOOM_DAT_PATH} — IBD will run without bloom optimization (slower)")
+endif()
 
 if (NOT GLOBAL_BUILD)
   find_package(database REQUIRED)
@@ -152,6 +171,10 @@ set(kth_sources_just_legacy
   src/utxo_builder.cpp
 )
 
+if(KTH_HAS_EMBEDDED_BLOOM)
+    list(APPEND kth_sources_just_legacy ${CMAKE_CURRENT_BINARY_DIR}/utxo_bloom_embed.S)
+endif()
+
 if (NOT JUST_KTH_SOURCES)
   set(kth_sources
     ${kth_sources_just_legacy}
@@ -205,6 +228,10 @@ add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX CXX_STANDARD 23 CXX_STANDARD_REQUIRED TRUE)
 
+if(KTH_HAS_EMBEDDED_BLOOM)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE KTH_HAS_EMBEDDED_BLOOM)
+    message(STATUS "Knuth: Bloom filter will be embedded in the executable")
+endif()
 
 if (ENABLE_POSITION_INDEPENDENT_CODE)
     set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)

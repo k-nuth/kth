@@ -7,7 +7,9 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <deque>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -184,6 +186,9 @@ std::vector<uint8_t> serialize_utxo_raw_value(
 // =============================================================================
 
 void utxo_raw_delta::merge(utxo_raw_delta&& other) {
+    bloom_skipped_inserts += other.bloom_skipped_inserts;
+    bloom_skipped_deletes += other.bloom_skipped_deletes;
+
     for (auto& [point, raw] : other.inserts) {
         inserts.emplace(point, std::move(raw));
     }
@@ -202,6 +207,8 @@ void utxo_raw_delta::merge(utxo_raw_delta&& other) {
 void utxo_raw_delta::clear() {
     inserts.clear();
     deletes.clear();
+    bloom_skipped_inserts = 0;
+    bloom_skipped_deletes = 0;
 }
 
 bool utxo_raw_delta::empty() const {
@@ -215,12 +222,18 @@ bool utxo_raw_delta::empty() const {
 utxo_raw_delta process_compact_block_utxos(
     utxo_compact_block const& block,
     uint32_t height,
-    uint32_t median_time_past
+    uint32_t median_time_past,
+    database::utxo_bloom_filter const* bloom
 ) {
     utxo_raw_delta delta;
 
     // 1. Process all outputs (inserts)
     for (auto const& out : block.outputs) {
+        // Bloom skip: output not in final UTXO set → will be spent before checkpoint
+        if (bloom && ! bloom->may_contain(out.key)) {
+            ++delta.bloom_skipped_inserts;
+            continue;
+        }
         delta.inserts.emplace(
             out.key,
             utxo_raw_value{
@@ -232,6 +245,11 @@ utxo_raw_delta process_compact_block_utxos(
 
     // 2. Process all inputs (deletes)
     for (auto const& in : block.inputs) {
+        // Bloom skip: prevout not in final set → was never inserted
+        if (bloom && ! bloom->may_contain(in.prev_key)) {
+            ++delta.bloom_skipped_deletes;
+            continue;
+        }
         auto it = delta.inserts.find(in.prev_key);
         if (it != delta.inserts.end()) {
             // Internal spend within this block
@@ -502,6 +520,175 @@ database::result_code process_deferred_deletions(block_chain& chain) {
     return database::result_code::success;
 }
 
+// =============================================================================
+// Embedded Bloom Filter
+// =============================================================================
+// When KTH_HAS_EMBEDDED_BLOOM is defined, the bloom filter binary is embedded
+// into the executable via .incbin (asm). Data lives in .rodata — no file I/O.
+// When not defined, load_utxo_bloom() returns nullptr and IBD runs without
+// bloom optimization (slower but correct).
+// =============================================================================
+// File format (inside the embedded blob):
+//   magic        (4 bytes) = "KBLM"
+//   version      (4 bytes) = 1
+//   checkpoint_h (4 bytes) = checkpoint height
+//   capacity     (8 bytes) = bloom filter capacity (bits)
+//   array_size   (8 bytes) = bloom array byte count
+//   array_data   (array_size bytes)
+// =============================================================================
+
+#ifdef KTH_HAS_EMBEDDED_BLOOM
+extern "C" {
+    extern const uint8_t kth_utxo_bloom_data[];
+    extern const uint8_t kth_utxo_bloom_data_end[];
+}
+#endif
+
+namespace {
+
+constexpr std::array<char, 4> bloom_magic = {'K', 'B', 'L', 'M'};
+constexpr uint32_t bloom_version = 1;
+constexpr size_t bloom_header_size = 4 + 4 + 4 + 8 + 8;  // magic + version + height + capacity + array_size
+
+} // anonymous namespace
+
+bool save_utxo_bloom(
+    block_chain& chain,
+    std::filesystem::path const& data_dir,
+    uint32_t checkpoint_height
+) {
+    auto const t0 = std::chrono::steady_clock::now();
+
+    auto const utxo_count = chain.utxo_size();
+    if (utxo_count == 0) {
+        spdlog::warn("[bloom] No UTXOs to build bloom filter from");
+        return false;
+    }
+
+    spdlog::info("[bloom] Building bloom filter from {} UTXOs (target FPR 1%)...", utxo_count);
+
+    // Construct bloom filter with capacity = utxo_count and FPR = 0.01
+    auto bloom = std::make_shared<database::utxo_bloom_filter>(utxo_count, 0.01);
+
+    size_t inserted = 0;
+    chain.utxo_for_each([&](utxoz::raw_outpoint const& key) {
+        bloom->insert(key);
+        ++inserted;
+    });
+
+    auto const build_elapsed = std::chrono::steady_clock::now() - t0;
+    auto const build_ms = std::chrono::duration_cast<std::chrono::milliseconds>(build_elapsed).count();
+    spdlog::info("[bloom] Filter built: {} keys inserted, capacity={} bits, in {}ms",
+        inserted, bloom->capacity(), build_ms);
+
+    // Serialize to disk
+    auto const path = data_dir / fmt::format("utxo_bloom_{}.dat", checkpoint_height);
+    std::filesystem::create_directories(data_dir);
+
+    auto* fp = std::fopen(path.c_str(), "wb");
+    if ( ! fp) {
+        spdlog::error("[bloom] Failed to open {} for writing", path.string());
+        return false;
+    }
+
+    auto const arr = bloom->array();
+    uint64_t const capacity = bloom->capacity();
+    uint64_t const array_size = arr.size();
+
+    // Write header
+    std::fwrite(bloom_magic.data(), 1, bloom_magic.size(), fp);
+    std::fwrite(&bloom_version, sizeof(bloom_version), 1, fp);
+    std::fwrite(&checkpoint_height, sizeof(checkpoint_height), 1, fp);
+    std::fwrite(&capacity, sizeof(capacity), 1, fp);
+    std::fwrite(&array_size, sizeof(array_size), 1, fp);
+
+    // Write bloom array
+    std::fwrite(arr.data(), 1, array_size, fp);
+    std::fclose(fp);
+
+    auto const file_size = std::filesystem::file_size(path);
+    auto const total_elapsed = std::chrono::steady_clock::now() - t0;
+    auto const total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(total_elapsed).count();
+
+    spdlog::info("[bloom] Saved bloom filter to {} ({} MB, {} keys, {}ms)",
+        path.string(), file_size / (1024 * 1024), inserted, total_ms);
+
+    return true;
+}
+
+std::shared_ptr<database::utxo_bloom_filter const> load_utxo_bloom() {
+#ifndef KTH_HAS_EMBEDDED_BLOOM
+    spdlog::info("[bloom] No embedded bloom filter — IBD will run without bloom optimization");
+    return nullptr;
+#else
+    auto const t0 = std::chrono::steady_clock::now();
+
+    auto const data_size = static_cast<size_t>(kth_utxo_bloom_data_end - kth_utxo_bloom_data);
+    spdlog::info("[bloom] Embedded bloom data size: {} bytes", data_size);
+    if (data_size < bloom_header_size) {
+        spdlog::error("[bloom] Embedded bloom data too small: {} bytes", data_size);
+        return nullptr;
+    }
+
+    auto const* p = kth_utxo_bloom_data;
+
+    // Validate magic
+    std::array<char, 4> magic{};
+    std::memcpy(magic.data(), p, 4);
+    p += 4;
+    if (magic != bloom_magic) {
+        spdlog::error("[bloom] Invalid magic in embedded bloom data");
+        return nullptr;
+    }
+
+    // Validate version
+    uint32_t version = 0;
+    std::memcpy(&version, p, sizeof(version));
+    p += sizeof(version);
+    if (version != bloom_version) {
+        spdlog::error("[bloom] Unsupported embedded bloom version: {}", version);
+        return nullptr;
+    }
+
+    // Read checkpoint height (informational)
+    uint32_t stored_height = 0;
+    std::memcpy(&stored_height, p, sizeof(stored_height));
+    p += sizeof(stored_height);
+
+    // Read capacity and array size
+    uint64_t capacity = 0;
+    std::memcpy(&capacity, p, sizeof(capacity));
+    p += sizeof(capacity);
+
+    uint64_t array_size = 0;
+    std::memcpy(&array_size, p, sizeof(array_size));
+    p += sizeof(array_size);
+
+    if (bloom_header_size + array_size > data_size) {
+        spdlog::error("[bloom] Embedded array size {} exceeds data bounds", array_size);
+        return nullptr;
+    }
+
+    // Reconstruct filter and copy array data from .rodata into filter's storage
+    auto bloom = std::make_shared<database::utxo_bloom_filter>(capacity);
+
+    auto arr = bloom->array();
+    if (arr.size() != array_size) {
+        spdlog::error("[bloom] Array size mismatch: embedded={}, filter={}", array_size, arr.size());
+        return nullptr;
+    }
+
+    std::memcpy(arr.data(), p, array_size);
+
+    auto const elapsed = std::chrono::steady_clock::now() - t0;
+    auto const elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+    spdlog::info("[bloom] Loaded embedded bloom filter: capacity={} bits, {} MB, height={}, in {}ms",
+        capacity, array_size / (1024 * 1024), stored_height, elapsed_ms);
+
+    return bloom;
+#endif
+}
+
 ::asio::awaitable<database::result_code> build_utxo_set(
     block_chain& chain,
     ::asio::thread_pool& pool,
@@ -526,6 +713,10 @@ database::result_code process_deferred_deletions(block_chain& chain) {
 
     spdlog::info("[utxo_builder] Building UTXO set from height {} to {} (strategy: {})",
         actual_start, end_height, strategy_name(strategy));
+
+    // Load embedded bloom filter for skip-insert optimization
+    auto const bloom = load_utxo_bloom();
+    auto const* bloom_ptr = bloom.get();
 
     // Track last 11 timestamps for MTP calculation
     std::deque<uint32_t> timestamp_window;
@@ -649,7 +840,7 @@ database::result_code process_deferred_deletions(block_chain& chain) {
                 uint32_t h = batch_start + static_cast<uint32_t>(i);
                 uint32_t mtp = calculate_mtp(timestamp_window);
 
-                auto block_delta = process_compact_block_utxos(compact_blocks[i], h, mtp);
+                auto block_delta = process_compact_block_utxos(compact_blocks[i], h, mtp, bloom_ptr);
                 if (i == 0) {
                     delta = std::move(block_delta);
                 } else {
@@ -705,20 +896,40 @@ database::result_code process_deferred_deletions(block_chain& chain) {
             auto total_ms = fetch_ms + parse_ms + process_ms + apply_ms + deferred_ms;
             auto direct_del = delta.delete_count() - deferred_count;
 
-            spdlog::info("[utxo_builder] {}/{} ({:.1f}%) | {}ms (f:{} s:{} p:{} a:{} d:{}) | {} ins, ({},{}) del",
-                processed, total_blocks, pct,
-                total_ms, fetch_ms, parse_ms, process_ms, apply_ms, deferred_ms,
-                fmt_num(delta.insert_count()), fmt_num(direct_del), fmt_num(deferred_count));
-            spdlog::debug("[utxo_builder] {}/{} ({:.1f}%) | {}ms (f:{} s:{} p:{} a:{} d:{}) | {} ins, ({},{}) del",
-                processed, total_blocks, pct,
-                total_ms, fetch_ms, parse_ms, process_ms, apply_ms, deferred_ms,
-                delta.insert_count(), direct_del, deferred_count);
+            if (bloom_ptr) {
+                spdlog::info("[utxo_builder] {}/{} ({:.1f}%) | {}ms (f:{} s:{} p:{} a:{} d:{}) | {} ins, ({},{}) del | bloom skip: {} ins, {} del",
+                    processed, total_blocks, pct,
+                    total_ms, fetch_ms, parse_ms, process_ms, apply_ms, deferred_ms,
+                    fmt_num(delta.insert_count()), fmt_num(direct_del), fmt_num(deferred_count),
+                    fmt_num(delta.bloom_skipped_inserts), fmt_num(delta.bloom_skipped_deletes));
+            } else {
+                spdlog::info("[utxo_builder] {}/{} ({:.1f}%) | {}ms (f:{} s:{} p:{} a:{} d:{}) | {} ins, ({},{}) del",
+                    processed, total_blocks, pct,
+                    total_ms, fetch_ms, parse_ms, process_ms, apply_ms, deferred_ms,
+                    fmt_num(delta.insert_count()), fmt_num(direct_del), fmt_num(deferred_count));
+            }
         }
+    }
+
+    // Final deferred deletions flush before compaction
+    auto final_deferred = process_deferred_deletions(chain);
+    if (final_deferred != database::result_code::success) {
+        co_return final_deferred;
     }
 
     // Final compaction after all batches
     spdlog::info("[utxo_builder] Running final compaction...");
     chain.utxo_compact();
+
+    chain.utxo_print_statistics();
+    chain.utxo_print_sizing_report();
+    chain.utxo_print_height_range_stats();
+
+    // Build and save bloom filter for future IBD runs (only if we didn't load one)
+    // NOTE: commented out for verification — re-enable after confirming bloom correctness
+    // if ( ! bloom) {
+    //     save_utxo_bloom(chain, chain.data_dir(), end_height);
+    // }
 
     spdlog::info("[utxo_builder] UTXO set build complete: {} blocks processed", processed);
     co_return database::result_code::success;

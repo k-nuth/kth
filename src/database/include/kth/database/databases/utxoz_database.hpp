@@ -13,6 +13,7 @@
 #include <ranges>
 #include <span>
 
+#include <boost/bloom/filter.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
 
@@ -27,6 +28,10 @@
 #include <kth/infrastructure/formats/base_16.hpp>
 
 namespace kth::database {
+
+// Bloom filter type for UTXO skip-insert optimization.
+// K=7 hash functions, default subfilter/stride, uses std::hash<raw_outpoint>.
+using utxo_bloom_filter = boost::bloom::filter<utxoz::raw_outpoint, 7>;
 
 // Concepts for UTXO delta maps (accept any hasher/allocator)
 template <typename T>
@@ -152,6 +157,10 @@ struct KD_API utxoz_database {
         }
 
         for (auto const& [key, raw] : inserts) {
+            // Bloom filter skip moved to process_compact_block_utxos (earlier in pipeline)
+            // if (utxo_bloom_ && ! utxo_bloom_->may_contain(key)) {
+            //     continue;
+            // }
             try {
                 if ( ! db_->insert(key, raw.data, raw.height)) {
                     spdlog::error("[utxoz_database] Duplicate key at block {}, outpoint={}, value_size={}",
@@ -165,10 +174,34 @@ struct KD_API utxoz_database {
         }
 
         for (auto const& [key, height] : deletes) {
+            // Bloom filter skip moved to process_compact_block_utxos (earlier in pipeline)
+            // if (utxo_bloom_ && ! utxo_bloom_->may_contain(key)) {
+            //     continue;
+            // }
             std::ignore = db_->erase(key, height);
         }
 
         return result_code::success;
+    }
+
+    /// Iterate over all UTXO keys in the database.
+    /// @param callback Callable with signature void(utxoz::raw_outpoint const&)
+    template <typename F>
+    void for_each_utxo(F&& callback) const {
+        if (is_open()) {
+            db_->for_each_key(std::forward<F>(callback));
+        }
+    }
+
+    /// Set the bloom filter for skip-insert optimization during IBD.
+    /// When set, apply_delta_raw will skip inserts/deletes for keys not in the filter.
+    void set_utxo_bloom(std::shared_ptr<utxo_bloom_filter const> bloom) {
+        utxo_bloom_ = std::move(bloom);
+    }
+
+    /// Clear the bloom filter (disable skip-insert optimization).
+    void clear_utxo_bloom() {
+        utxo_bloom_.reset();
     }
 
     /// Clear all UTXOs from the database
@@ -195,6 +228,12 @@ struct KD_API utxoz_database {
     /// Print statistics to log
     void print_statistics();
 
+    /// Print sizing report to log
+    void print_sizing_report();
+
+    /// Print height range stats to log
+    void print_height_range_stats();
+
     // Convert utxoz::raw_outpoint back to domain::chain::point (for error reporting)
     [[nodiscard]]
     static domain::chain::point key_to_point(utxoz::raw_outpoint const& key);
@@ -214,6 +253,7 @@ private:
 
     std::unique_ptr<utxoz::db> db_;
     bool is_open_ = false;
+    std::shared_ptr<utxo_bloom_filter const> utxo_bloom_;  // optional bloom filter for skip-insert optimization
 };
 
 } // namespace kth::database

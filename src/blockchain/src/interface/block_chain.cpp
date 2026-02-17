@@ -688,6 +688,30 @@ void block_chain::utxo_compact() {
     utxoz_db_.compact();
 }
 
+void block_chain::utxo_print_statistics() {
+    utxoz_db_.print_statistics();
+}
+
+void block_chain::utxo_print_sizing_report() {
+    utxoz_db_.print_sizing_report();
+}
+
+void block_chain::utxo_print_height_range_stats() {
+    utxoz_db_.print_height_range_stats();
+}
+
+size_t block_chain::utxo_size() const {
+    return utxoz_db_.size();
+}
+
+void block_chain::set_utxo_bloom(std::shared_ptr<database::utxo_bloom_filter const> bloom) {
+    utxoz_db_.set_utxo_bloom(std::move(bloom));
+}
+
+void block_chain::clear_utxo_bloom() {
+    utxoz_db_.clear_utxo_bloom();
+}
+
 #endif // ! defined(KTH_DB_READONLY)
 
 // =============================================================================
@@ -778,6 +802,10 @@ settings const& block_chain::chain_settings() const {
 
 block_chain::executor_type block_chain::executor() const {
     return priority_pool_.get_executor();
+}
+
+std::filesystem::path block_chain::data_dir() const {
+    return database_.internal_db_dir.parent_path();
 }
 
 #if defined(KTH_WITH_MEMPOOL)
