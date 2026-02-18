@@ -65,10 +65,13 @@ message(STATUS "Knuth: Header index capacity: ${KTH_HEADER_INDEX_CAPACITY}")
 add_definitions(-DKTH_HEADER_INDEX_CAPACITY=${KTH_HEADER_INDEX_CAPACITY})
 
 # Embedded UTXO bloom filter — .incbin via assembly
+option(KTH_EMBED_UTXO_BLOOM "Embed UTXO bloom filter in the executable for faster IBD" ON)
 set(UTXO_BLOOM_DAT_PATH "${CMAKE_SOURCE_DIR}/data/utxo_bloom.dat")
 set(KTH_HAS_EMBEDDED_BLOOM OFF)
 
-if(EXISTS "${UTXO_BLOOM_DAT_PATH}")
+if(NOT KTH_EMBED_UTXO_BLOOM)
+    message(STATUS "Knuth: UTXO bloom filter embedding disabled by option")
+elseif(EXISTS "${UTXO_BLOOM_DAT_PATH}")
     enable_language(ASM)
     file(SIZE "${UTXO_BLOOM_DAT_PATH}" _bloom_file_size)
     math(EXPR _bloom_file_size_mb "${_bloom_file_size} / 1048576")
