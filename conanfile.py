@@ -167,7 +167,7 @@ class KthRecipe(KnuthConanFileV2):
         self.requires("fmt/12.0.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.16.0", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/0.9.32", transitive_headers=True, transitive_libs=True)
-        self.requires("utxoz/0.3.0", transitive_headers=True, transitive_libs=True)
+        self.requires("utxoz/0.4.0", transitive_headers=True, transitive_libs=True)
 
         # For the moment GMP and OpenSSL are only required for consensus builds, in the future it will be required for Knuth VM also.
         if self.options.consensus:
