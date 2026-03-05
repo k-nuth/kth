@@ -1,3 +1,19 @@
+# version 0.76.0
+
+You can install Knuth node version v0.76.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* style: prefer function-style casts over static_cast for simple types by @fpelliccioni in https://github.com/k-nuth/kth/pull/166
+* fix: resolve vexing parse warning in benchmarks by @fpelliccioni in https://github.com/k-nuth/kth/pull/170
+* fix: use portable shebangs in shell scripts by @fpelliccioni in https://github.com/k-nuth/kth/pull/171
+* fix: add diagnostic logging for secp256k1 gen_context by @fpelliccioni in https://github.com/k-nuth/kth/pull/172
+* feat: implement May 2026 network upgrade by @fpelliccioni in https://github.com/k-nuth/kth/pull/186
+* release: 0.76.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/187
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.75.0...v0.76.0
+
+
 # version 0.75.0
 
 You can install Knuth node version v0.75.0 [using these instructions](https://kth.cash/#download).
