@@ -174,6 +174,7 @@ if (${CURRENCY} STREQUAL "BCH")
     src/bch-rules/script/script.h
     src/bch-rules/script/script_flags.h
     src/bch-rules/script/script_error.h
+    src/bch-rules/script/script_error.cpp
     src/bch-rules/script/script_execution_context.cpp
     src/bch-rules/script/script_num_encoding.h
     src/bch-rules/script/script_num_encoding.cpp
@@ -186,6 +187,7 @@ if (${CURRENCY} STREQUAL "BCH")
     src/bch-rules/support/lockedpool.cpp
 
 
+    src/bch-rules/util/bitmanip.cpp
     src/bch-rules/util/strencodings.cpp
     src/bch-rules/util/strencodings.h
     src/bch-rules/util/string.cpp

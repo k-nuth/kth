@@ -1,5 +1,5 @@
 // Copyright (c) 2014-2016 The Bitcoin Core developers
-// Copyright (c) 2017-2021 The Bitcoin developers
+// Copyright (c) 2017-2025 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -11,6 +11,7 @@
 
 #include <compat/byteswap.h>
 
+#include <bit>
 #include <cstdint>
 
 #if defined(HAVE_ENDIAN_H)
@@ -65,6 +66,7 @@
 #endif // HAVE_CONFIG_H
 
 #if defined(WORDS_BIGENDIAN)
+static_assert(std::endian::native == std::endian::big, "Check that build system and compiler agree on endianness");
 
 #if HAVE_DECL_HTOBE16 == 0
 inline uint16_t htobe16(uint16_t host_16bits) {
@@ -139,6 +141,7 @@ inline uint64_t le64toh(uint64_t little_endian_64bits) {
 #endif // HAVE_DECL_LE64TOH
 
 #else // WORDS_BIGENDIAN
+static_assert(std::endian::native == std::endian::little, "Check that build system and compiler agree on endianness");
 
 #if HAVE_DECL_HTOBE16 == 0
 inline uint16_t htobe16(uint16_t host_16bits) {

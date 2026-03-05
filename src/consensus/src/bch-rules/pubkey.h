@@ -1,7 +1,7 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
 // Copyright (c) 2017 The Zcash developers
-// Copyright (c) 2017-2022 The Bitcoin developers
+// Copyright (c) 2017-2025 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -11,9 +11,8 @@
 #include <serialize.h>
 #include <uint256.h>
 
-#include <boost/range/adaptor/sliced.hpp>
-
 #include <stdexcept>
+#include <span>
 #include <vector>
 
 const unsigned int BIP32_EXTKEY_SIZE = 74;
@@ -157,27 +156,23 @@ public:
      * If this public key is not fully valid, the return value will be false.
      */
     bool VerifyECDSA(const uint256 &hash,
-                     const std::vector<uint8_t> &vchSig) const;
+                     const std::span<const uint8_t> &vchSig) const;
 
     /**
      * Verify a Schnorr signature (=64 bytes).
      * If this public key is not fully valid, the return value will be false.
      */
     bool VerifySchnorr(const uint256 &hash,
-                       const std::vector<uint8_t> &vchSig) const;
+                       const std::span<const uint8_t> &vchSig) const;
 
     /**
      * Check whether a DER-serialized ECDSA signature is normalized (lower-S).
      */
-    static bool
-    CheckLowS(const boost::sliced_range<const std::vector<uint8_t>> &vchSig);
-    static bool CheckLowS(const std::vector<uint8_t> &vchSig) {
-        return CheckLowS(vchSig | boost::adaptors::sliced(0, vchSig.size()));
-    }
+    static bool CheckLowS(const std::span<const uint8_t> &vchSig);
 
     //! Recover a public key from a compact ECDSA signature.
     bool RecoverCompact(const uint256 &hash,
-                        const std::vector<uint8_t> &vchSig);
+                        const std::span<const uint8_t> &vchSig);
 
     //! Turn this public key into an uncompressed public key.
     bool Decompress();

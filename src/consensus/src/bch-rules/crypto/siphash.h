@@ -1,4 +1,5 @@
 // Copyright (c) 2016-2018 The Bitcoin Core developers
+// Copyright (c) 2025 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -6,7 +7,9 @@
 
 #include <uint256.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <span>
 
 /** SipHash-2-4 */
 class CSipHasher {
@@ -26,7 +29,8 @@ public:
      */
     CSipHasher &Write(uint64_t data) noexcept;
     /** Hash arbitrary bytes. */
-    CSipHasher &Write(const uint8_t *data, size_t size) noexcept;
+    CSipHasher &Write(std::span<const std::byte> sp) noexcept;
+    CSipHasher &Write(const uint8_t *data, size_t size) noexcept { return Write(std::as_bytes(std::span{data, size})); }
     /** Compute the 64-bit SipHash-2-4 of the data written so far. The object
      * remains untouched. */
     uint64_t Finalize() const noexcept;

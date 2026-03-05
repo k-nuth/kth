@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2016 The Bitcoin Core developers
 // Copyright (c) 2017 The Zcash developers
-// Copyright (c) 2017-2019 The Bitcoin developers
+// Copyright (c) 2017-2025 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -172,7 +172,7 @@ static int ecdsa_signature_parse_der_lax(const secp256k1_context *ctx,
 }
 
 bool CPubKey::VerifyECDSA(const uint256 &hash,
-                          const std::vector<uint8_t> &vchSig) const {
+                          const std::span<const uint8_t> &vchSig) const {
     if (!IsValid()) {
         return false;
     }
@@ -192,12 +192,12 @@ bool CPubKey::VerifyECDSA(const uint256 &hash,
      * not historically been enforced in Bitcoin, so normalize them first.
      */
     secp256k1_ecdsa_signature_normalize(secp256k1_context_verify, &sig, &sig);
-    return secp256k1_ecdsa_verify(secp256k1_context_verify, &sig, hash.begin(),
+    return secp256k1_ecdsa_verify(secp256k1_context_verify, &sig, hash.data(),
                                   &pubkey);
 }
 
 bool CPubKey::VerifySchnorr(const uint256 &hash,
-                            const std::vector<uint8_t> &vchSig) const {
+                            const std::span<const uint8_t> &vchSig) const {
     if (!IsValid()) {
         return false;
     }
@@ -212,12 +212,12 @@ bool CPubKey::VerifySchnorr(const uint256 &hash,
         return false;
     }
 
-    return secp256k1_schnorr_verify(secp256k1_context_verify, &vchSig[0],
-                                    hash.begin(), &pubkey);
+    return secp256k1_schnorr_verify(secp256k1_context_verify, vchSig.data(),
+                                    hash.data(), &pubkey);
 }
 
 bool CPubKey::RecoverCompact(const uint256 &hash,
-                             const std::vector<uint8_t> &vchSig) {
+                             const std::span<const uint8_t> &vchSig) {
     if (vchSig.size() != COMPACT_SIGNATURE_SIZE) {
         return false;
     }
@@ -231,7 +231,7 @@ bool CPubKey::RecoverCompact(const uint256 &hash,
         return false;
     }
     if (!secp256k1_ecdsa_recover(secp256k1_context_verify, &pubkey, &sig,
-                                 hash.begin())) {
+                                 hash.data())) {
         return false;
     }
     uint8_t pub[PUBLIC_KEY_SIZE];
@@ -322,11 +322,9 @@ bool CExtPubKey::Derive(CExtPubKey &out, unsigned int _nChild) const {
     return pubkey.Derive(out.pubkey, out.chaincode, _nChild, chaincode);
 }
 
-bool CPubKey::CheckLowS(
-    const boost::sliced_range<const std::vector<uint8_t>> &vchSig) {
+bool CPubKey::CheckLowS(const std::span<const uint8_t> &vchSig) {
     secp256k1_ecdsa_signature sig;
-    if (!ecdsa_signature_parse_der_lax(secp256k1_context_verify, &sig,
-                                       &vchSig.front(), vchSig.size())) {
+    if (!ecdsa_signature_parse_der_lax(secp256k1_context_verify, &sig, vchSig.data(), vchSig.size())) {
         return false;
     }
     return (!secp256k1_ecdsa_signature_normalize(secp256k1_context_verify,

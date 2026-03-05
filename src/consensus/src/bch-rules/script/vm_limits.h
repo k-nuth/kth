@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin developers
+// Copyright (c) 2024-2025 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -18,7 +18,7 @@ static constexpr int MAX_PUBKEYS_PER_MULTISIG = 20;
 // Maximum script length in bytes
 static constexpr int MAX_SCRIPT_SIZE = 10000;
 
-// Maximum number of values on script interpreter stack
+// Maximum number of values on script interpreter stack + altstack + function table size
 static constexpr int MAX_STACK_SIZE = 1000;
 
 // Threshold for nLockTime: below this value it is interpreted as block number,
@@ -91,9 +91,7 @@ class ScriptLimits {
 
 public:
     ScriptLimits(bool standard, uint64_t scriptSigSize)
-        : opCostLimit{detail::GetInputOpCostLimit(scriptSigSize)},
-        hashItersLimit{detail::GetInputHashItersLimit(standard, scriptSigSize)
-        }
+        : opCostLimit{detail::GetInputOpCostLimit(scriptSigSize)}, hashItersLimit{detail::GetInputHashItersLimit(standard, scriptSigSize)}
     {}
 
     int64_t GetOpCostLimit() const { return opCostLimit; }
@@ -101,3 +99,11 @@ public:
 };
 
 } // namespace may2025
+
+// The below constants are used after activation of the May 2026 upgrade (Upgrade12)
+namespace may2026 {
+// Control stack depth limit (max cumulative depth of OP_IF, OP_EVAL, OP_BEGIN and friends)
+static constexpr unsigned int MAX_CONTROL_STACK_DEPTH = may2025::MAX_CONDITIONAL_STACK_DEPTH;
+// Max byte length for a function identifier
+static constexpr unsigned int MAX_FUNCTION_IDENTIFIER_SIZE = 7u;
+} // namespace may2026

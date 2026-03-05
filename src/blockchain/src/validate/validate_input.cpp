@@ -83,6 +83,10 @@ uint32_t validate_input::convert_flags(uint32_t forks) {
         // flags |= verify_flags_enable_vm_limits_standard;
     }
 
+    if (script::is_enabled(forks, domain::machine::rule_fork::bch_leibniz)) {
+        flags |= verify_flags_enable_may2026;
+    }
+
     // // We make sure this node will have replay protection during the next hard fork.
     // if (script::is_enabled(forks, domain::machine::rule_fork::bch_replay_protection)) {
     //     flags |= verify_flags_enable_replay_protection;
