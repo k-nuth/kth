@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
-// Copyright (c) 2017-2024 The Bitcoin developers
+// Copyright (c) 2017-2025 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,9 +8,8 @@
 
 #include <script/script_flags.h>
 #include <tinyformat.h>
+#include <util/overloaded.h>
 #include <util/strencodings.h>
-
-#include <algorithm>
 
 const char *GetOpName(opcodetype opcode) {
     switch (opcode) {
@@ -69,10 +68,10 @@ const char *GetOpName(opcodetype opcode) {
             return "OP_IF";
         case OP_NOTIF:
             return "OP_NOTIF";
-        case OP_VERIF:
-            return "OP_VERIF";
-        case OP_VERNOTIF:
-            return "OP_VERNOTIF";
+        case OP_BEGIN:
+            return "OP_BEGIN";
+        case OP_UNTIL:
+            return "OP_UNTIL";
         case OP_ELSE:
             return "OP_ELSE";
         case OP_ENDIF:
@@ -147,20 +146,26 @@ const char *GetOpName(opcodetype opcode) {
             return "OP_EQUAL";
         case OP_EQUALVERIFY:
             return "OP_EQUALVERIFY";
-        case OP_RESERVED1:
-            return "OP_RESERVED1";
-        case OP_RESERVED2:
-            return "OP_RESERVED2";
+        case OP_LSHIFTBIN:
+            return "OP_LSHIFTBIN";
+        case OP_RSHIFTBIN:
+            return "OP_RSHIFTBIN";
+
+        // functions
+        case OP_DEFINE:
+            return "OP_DEFINE";
+        case OP_INVOKE:
+            return "OP_INVOKE";
 
         // numeric
         case OP_1ADD:
             return "OP_1ADD";
         case OP_1SUB:
             return "OP_1SUB";
-        case OP_2MUL:
-            return "OP_2MUL";
-        case OP_2DIV:
-            return "OP_2DIV";
+        case OP_LSHIFTNUM:
+            return "OP_LSHIFTNUM";
+        case OP_RSHIFTNUM:
+            return "OP_RSHIFTNUM";
         case OP_NEGATE:
             return "OP_NEGATE";
         case OP_ABS:
@@ -179,10 +184,6 @@ const char *GetOpName(opcodetype opcode) {
             return "OP_DIV";
         case OP_MOD:
             return "OP_MOD";
-        case OP_LSHIFT:
-            return "OP_LSHIFT";
-        case OP_RSHIFT:
-            return "OP_RSHIFT";
         case OP_BOOLAND:
             return "OP_BOOLAND";
         case OP_BOOLOR:
@@ -408,8 +409,7 @@ bool CScript::IsCommitment(const std::vector<uint8_t> &data) const {
 
 // A witness program is any valid CScript that consists of a 1-byte push opcode
 // followed by a data push between 2 and 40 bytes.
-bool CScript::IsWitnessProgram(int &version,
-                               std::vector<uint8_t> &program) const {
+bool CScript::IsWitnessProgram(int *pversion, std::vector<uint8_t> *pprogram) const {
     if (this->size() < 4 || this->size() > 42) {
         return false;
     }
@@ -417,18 +417,15 @@ bool CScript::IsWitnessProgram(int &version,
         return false;
     }
     if (size_t((*this)[1] + 2) == this->size()) {
-        version = DecodeOP_N((opcodetype)(*this)[0]);
-        program = std::vector<uint8_t>(this->begin() + 2, this->end());
+        if (pversion) {
+            *pversion = DecodeOP_N(static_cast<opcodetype>((*this)[0]));
+        }
+        if (pprogram) {
+            *pprogram = std::vector<uint8_t>(this->begin() + 2, this->end());
+        }
         return true;
     }
     return false;
-}
-
-// Wrapper returning only the predicate
-bool CScript::IsWitnessProgram() const {
-    int version;
-    std::vector<uint8_t> program;
-    return IsWitnessProgram(version, program);
 }
 
 bool CScript::IsPushOnly(const_iterator pc) const {
@@ -453,9 +450,7 @@ bool CScript::IsPushOnly() const {
     return this->IsPushOnly(begin());
 }
 
-bool GetScriptOp(CScriptBase::const_iterator &pc,
-                 CScriptBase::const_iterator end, opcodetype &opcodeRet,
-                 std::vector<uint8_t> *pvchRet) {
+bool GetScriptOp(const uint8_t *&pc, const uint8_t *end, opcodetype &opcodeRet, std::vector<uint8_t> *pvchRet) {
     opcodeRet = INVALIDOPCODE;
     if (pvchRet) {
         pvchRet->clear();
@@ -519,4 +514,171 @@ bool CScript::HasValidOps(uint32_t scriptFlags) const {
         }
     }
     return true;
+}
+
+FastBigNum::FastBigNum(const std::vector<uint8_t> &vch, bool fRequireMinimal, size_t maxIntegerSize)
+    : FastBigNum(CScriptNum::fromIntUnchecked(0)) {
+    if (maxIntegerSize <= CScriptNum::MAXIMUM_ELEMENT_SIZE_64_BIT) {
+        var.emplace<CScriptNum>(vch, fRequireMinimal, maxIntegerSize); // may throw on bad encoding, INT64_MIN, etc
+    } else {
+        if (vch.size() <= CScriptNum::MAXIMUM_ELEMENT_SIZE_64_BIT) {
+            // Fast optimization: Use CScriptNum if the vector is <= 8 bytes (this may throw on bad encoding)
+            try {
+                var.emplace<CScriptNum>(vch, fRequireMinimal, CScriptNum::MAXIMUM_ELEMENT_SIZE_64_BIT);
+                return; // success!
+            } catch (const scriptnum_error &) { /* ignore, proceed to ScriptBigInt */}
+        }
+        var.emplace<ScriptBigInt>(vch, fRequireMinimal, maxIntegerSize); // may throw on bad encoding, etc
+    }
+}
+
+ScriptBigInt &FastBigNum::ensureScriptBigInt() {
+    return std::visit(util::Overloaded{
+        [&](CScriptNum &csn) -> ScriptBigInt & { return std::get<ScriptBigInt>(var = ScriptBigInt::fromIntUnchecked(csn.getint64())); },
+        [](ScriptBigInt &sbi) -> ScriptBigInt & { return sbi; }
+    }, var);
+}
+
+bool FastBigNum::doInPlaceSafeArithOp(const FastBigNum &o, CSN_Mem_Fn csnMemFn, SBI_Mem_Fn sbiMemFn, SBI_Mem_Fn_I64 sbiMemFnI64) {
+    if (var.index() == o.var.index()) {
+        // Apples-to-apples operation
+        return std::visit(util::Overloaded{
+            [&](CScriptNum &csn) {
+                const CScriptNum &ocsn = std::get<CScriptNum>(o.var);
+                if (auto optCsn = (csn.*csnMemFn)(ocsn)) {
+                    csn = std::move(*optCsn);
+                    return true;
+                }
+                // Doesn't fit, switch .var to use ScriptBigInt; `csn` invalidated here
+                ScriptBigInt &sbi = ensureScriptBigInt();
+                return (sbi.*sbiMemFn)(ocsn.getint64());
+            },
+            [&](ScriptBigInt &sbi) {
+                const ScriptBigInt &osbi = std::get<ScriptBigInt>(o.var);
+                return (sbi.*sbiMemFn)(osbi.getBigInt());
+            }
+        }, var);
+    } else {
+        // Types differ
+        return std::visit(util::Overloaded{
+            [&](CScriptNum &csn) {
+                // We are CScriptNum, `o` is ScriptBigInt
+                const ScriptBigInt &osbi = std::get<ScriptBigInt>(o.var);
+                // See if `o`'s value fits in a 64-bit int and use that if possible
+                if (auto optVal = osbi.getint64()) {
+                    if (auto optValCsn = CScriptNum::fromInt(*optVal)) {
+                        // It fits, so try the operation and check for success
+                        if (auto optResultCsn = (csn.*csnMemFn)(*optValCsn)) {
+                            csn = std::move(*optResultCsn);
+                            return true; // success!
+                        }
+                    }
+                }
+                // Above attempt to use `o` as 64-bit failed or overflowed, switch us to ScriptBigInt and try again
+                ScriptBigInt &sbi = ensureScriptBigInt(); // `csn` is invalidated here
+                return (sbi.*sbiMemFn)(osbi.getBigInt());
+            },
+            [&](ScriptBigInt &sbi) {
+                // We are ScriptBigInt, `o` is CScriptNum, proceed (apply op to i64 member func for speed)
+                const CScriptNum &ocsn = std::get<CScriptNum>(o.var);
+                return (sbi.*sbiMemFnI64)(ocsn.getint64());
+            }
+        }, var);
+    }
+}
+
+FastBigNum &FastBigNum::doInPlaceArithOp(const FastBigNum &o, CSN_Mem_Fn_2 csnMemFn, SBI_Mem_Fn_2 sbiMemFn, SBI_Mem_Fn_2_I64 sbiMemFnI64) {
+    if (var.index() == o.var.index()) {
+        // Apples-to-apples operation
+        std::visit(util::Overloaded{
+            [&](CScriptNum &csn) {
+                const CScriptNum &ocsn = std::get<CScriptNum>(o.var);
+                (csn.*csnMemFn)(ocsn);
+            },
+            [&](ScriptBigInt &sbi) {
+                const ScriptBigInt &osbi = std::get<ScriptBigInt>(o.var);
+                (sbi.*sbiMemFn)(osbi.getBigInt());
+            }
+        }, var);
+    } else {
+        // Types differ
+        std::visit(util::Overloaded{
+            [&](CScriptNum &csn) {
+                // We are CScriptNum, `o` is ScriptBigInt
+                const ScriptBigInt &osbi = std::get<ScriptBigInt>(o.var);
+                // See if `o`'s value fits in a 64-bit int and use that if possible
+                if (auto optVal = osbi.getint64()) {
+                    if (auto optValCsn = CScriptNum::fromInt(*optVal)) {
+                        (csn.*csnMemFn)(*optValCsn);
+                        return; // success!
+                    }
+                }
+                // Above attempt failed, `o` is beyond 64-bits, switch us to ScriptBigInt to do BigInt math
+                ScriptBigInt &sbi = ensureScriptBigInt(); // `csn` invalidated here
+                (sbi.*sbiMemFn)(osbi.getBigInt());
+            },
+            [&](ScriptBigInt &sbi) {
+                // We are ScriptBigInt, `o` is CScriptNum, proceed (apply op to i64 member func for speed)
+                const CScriptNum &ocsn = std::get<CScriptNum>(o.var);
+                (sbi.*sbiMemFnI64)(ocsn.getint64());
+            }
+        }, var);
+    }
+    return *this;
+}
+
+[[nodiscard]]
+bool FastBigNum::checkedLeftShift(unsigned bitcount) {
+    return std::visit(util::Overloaded{
+        [&](CScriptNum &csn){
+            const int64_t prevVal = csn.getint64();
+            if (csn.checkedLeftShift(bitcount)) {
+                return true; // success!
+            }
+            // otherwise we failed (out of range), convert us to a ScriptBigInt and try again
+            auto &sbi = var.emplace<ScriptBigInt>(ScriptBigInt::fromIntUnchecked(prevVal)); // csn invalidated
+            return sbi.checkedLeftShift(bitcount);
+        },
+        [bitcount](ScriptBigInt &sbi){
+            return sbi.checkedLeftShift(bitcount);
+        }
+    }, var);
+}
+
+std::strong_ordering FastBigNum::operator<=>(const FastBigNum &o) const {
+    if (var.index() == o.var.index()) {
+        // Apples-to-apples comparison
+        return std::visit(util::Overloaded{
+            [&o](const CScriptNum &csn) {
+                const CScriptNum &ocsn = std::get<CScriptNum>(o.var);
+                return csn.getint64() <=> ocsn.getint64();
+            },
+            [&o](const ScriptBigInt &sbi) {
+                const ScriptBigInt &osbi = std::get<ScriptBigInt>(o.var);
+                return sbi.getBigInt().compare(osbi.getBigInt()) <=> 0;
+            }
+        }, var);
+    } else {
+        // Types differ
+        return std::visit(util::Overloaded{
+            [&o](const CScriptNum &csn) {
+                // We are CScriptNum, `o` is ScriptBigInt
+                const ScriptBigInt &osbi = std::get<ScriptBigInt>(o.var);
+                // Note: we reversed the comparison
+                return 0 <=> osbi.getBigInt().compare(csn.getint64());
+            },
+            [&o](const ScriptBigInt &sbi) {
+                // We are ScriptBigInt, `o` is CScriptNum
+                const CScriptNum &ocsn = std::get<CScriptNum>(o.var);
+                return sbi.getBigInt().compare(ocsn.getint64()) <=> 0;
+            }
+        }, var);
+    }
+}
+
+bool FastBigNum::isZero() const {
+    return std::visit(util::Overloaded{
+        [](const CScriptNum &csn) { return csn == 0; },
+        [](const ScriptBigInt &sbi) { return sbi.getBigInt().sign() == 0; }
+    }, var);
 }

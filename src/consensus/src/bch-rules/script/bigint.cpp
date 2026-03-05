@@ -1,4 +1,4 @@
-// Copyright (c) 2024 The Bitcoin developers
+// Copyright (c) 2024-2025 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -6,6 +6,7 @@
 #include <script/script_num_encoding.h>
 
 #include <compat/endian.h>
+#include <compat/sanity.h>
 #include <random.h>
 #include <span.h>
 #include <tinyformat.h>
@@ -13,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
@@ -26,18 +28,10 @@
 #include <gmpxx.h>
 
 namespace {
-// TODO: Replace with std::in_range when C++20 is supported
 template <typename Target, typename Int>
 bool NumFits(Int x) {
     static_assert(std::is_integral_v<Int> && std::is_integral_v<Target> && std::is_signed_v<Int> == std::is_signed_v<Target>);
-    return x >= std::numeric_limits<Target>::min() && x <= std::numeric_limits<Target>::max();
-}
-
-// TODO: Replace with std::endian when C++20 is supported
-[[maybe_unused]]
-bool IsBigEndianHost() {
-    const uint32_t tst = 1u;
-    return *reinterpret_cast<const unsigned char *>(&tst) != 1u;
+    return std::in_range<Target>(x);
 }
 
 template <typename I>
@@ -52,12 +46,12 @@ template <typename UInt>
 std::enable_if_t<std::is_integral_v<UInt> && std::is_unsigned_v<UInt>, UInt>
 /* UInt */ SwapIfBigEndianHost(UInt ux, bool htole [[maybe_unused]]) {
     EnsureIntAtLeast64Bits<UInt>();
-    if constexpr (sizeof(UInt) == sizeof(uint64_t)) {
-        ux = htole ? htole64(ux) : le64toh(ux);
-    } else {
-        // runtime endian detect
-        if (IsBigEndianHost()) {
-            // native order is big endian; do reversal
+    if constexpr (std::endian::native == std::endian::big) {
+        // Native order is big endian; do reversal
+        if constexpr (sizeof(UInt) == sizeof(uint64_t)) {
+            ux = htole ? htole64(ux) : le64toh(ux);
+        } else {
+            // This branch is only taken on uint128_t
             auto *begin = reinterpret_cast<std::byte *>(&ux);
             auto *end = begin + sizeof(ux);
             std::reverse(begin, end);
@@ -426,7 +420,16 @@ void BigInt::unserialize(Span<const uint8_t> b) {
         return;
     }
 
+    TellGCC(!b.empty()); // needed to suppress false positive warnings on newer GCC triggered by below code block
+
     const bool neg = b.back() & 0x80u; // save sign bit
+    if (b.size() == 1) {
+        // fast-path for tiny single-byte ints
+        long val = static_cast<long>(b.back() & 0x7fu); // take value without sign bit
+        if (neg) val = -val; // apply sign, if any
+        p().base() = val;
+        return;
+    }
     std::vector<uint8_t> tmp;
     const size_t extraBytes = b.size() % ULSz ? ULSz - (b.size() % ULSz) : 0u;
     Span<const uint8_t> data; // may point to either `tmp` or `b`
@@ -532,6 +535,64 @@ BigInt &BigInt::operator/=(const BigInt &o) {
     return *this;
 }
 
+template <typename I>
+BigInt &BigInt::applyArithOp(const ArithOpType op, const I x) {
+    using enum ArithOpType;
+    // Check for early return if no-op, or if division by zero, throw
+    switch (op) {
+        case Add:
+        case Sub:
+            if (!x) return *this; // Add/Sub 0. Nothing to do. Bail early
+            break;
+        case Div:
+        case Mod:
+            if (!x) throw std::invalid_argument("Attempted division or modulo by 0");
+            [[fallthrough]];
+        case Mul:
+            // If we are 0, or if x is 1 and we are not doing mod then no-op; bail early
+            if (!m_p || !sign() || (op != Mod && x == I{1})) return *this;
+            // If multiplying by 0, or modding by 1, just set us to zero and bail early to save cycles
+            else if ((!x && op == Mul) || (x == I{1} && op == Mod)) {
+                m_p.reset(); // clearing m_p is logically equivalent to 0
+                return *this;
+            }
+            break;
+    }
+    using LongOrULong = std::conditional_t<std::is_signed_v<I>, long, unsigned long>;
+    if (NumFits<LongOrULong>(x)) {
+        // `x` fits inside (unsigned) long; this branch taken on most platforms (LP64)
+        mpz_class &mpz = p().base();
+        switch (op) {
+            case Add: mpz += static_cast<LongOrULong>(x); break;
+            case Sub: mpz -= static_cast<LongOrULong>(x); break;
+            case Div: mpz /= static_cast<LongOrULong>(x); break;
+            case Mul: mpz *= static_cast<LongOrULong>(x); break;
+            case Mod: mpz %= static_cast<LongOrULong>(x); break;
+        }
+    } else {
+        // `x` doesn't fit. Must cast to BigInt (slower). This branch may be taken on LLP64 (Windows).
+        switch (op) {
+            case Add: this->operator+=(BigInt(x)); break;
+            case Sub: this->operator-=(BigInt(x)); break;
+            case Div: this->operator/=(BigInt(x)); break;
+            case Mul: this->operator*=(BigInt(x)); break;
+            case Mod: this->operator%=(BigInt(x)); break;
+        }
+    }
+    return *this;
+}
+
+BigInt &BigInt::operator+=(long long x) { return applyArithOp(ArithOpType::Add, x); }
+BigInt &BigInt::operator-=(long long x) { return applyArithOp(ArithOpType::Sub, x); }
+BigInt &BigInt::operator*=(long long x) { return applyArithOp(ArithOpType::Mul, x); }
+BigInt &BigInt::operator/=(long long x) { return applyArithOp(ArithOpType::Div, x); }
+BigInt &BigInt::operator%=(long long x) { return applyArithOp(ArithOpType::Mod, x); }
+BigInt &BigInt::operator+=(unsigned long long x) { return applyArithOp(ArithOpType::Add, x); }
+BigInt &BigInt::operator-=(unsigned long long x) { return applyArithOp(ArithOpType::Sub, x); }
+BigInt &BigInt::operator*=(unsigned long long x) { return applyArithOp(ArithOpType::Mul, x); }
+BigInt &BigInt::operator/=(unsigned long long x) { return applyArithOp(ArithOpType::Div, x); }
+BigInt &BigInt::operator%=(unsigned long long x) { return applyArithOp(ArithOpType::Mod, x); }
+
 BigInt &BigInt::operator%=(const BigInt &o) {
     if (!o.m_p || o == 0) throw std::invalid_argument("Attempted modulo by 0 in BigInt::operator%=");
     // libgmpxx operator%= is the same as C++ normal modulus, so we just use that
@@ -566,12 +627,12 @@ BigInt &BigInt::operator^=(const BigInt &o) {
 BigInt &BigInt::operator++() { ++p().base(); return *this; }
 BigInt &BigInt::operator--() { --p().base(); return *this; }
 
-BigInt &BigInt::operator<<=(int x) {
+BigInt &BigInt::operator<<=(unsigned long x) {
     p().base() <<= x;
     return *this;
 }
 
-BigInt &BigInt::operator>>=(int x) {
+BigInt &BigInt::operator>>=(unsigned long x) {
     p().base() >>= x;
     return *this;
 }

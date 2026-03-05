@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
-// Copyright (c) 2017-2024 The Bitcoin developers
+// Copyright (c) 2017-2025 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -123,4 +123,7 @@ enum {
     SCRIPT_ENABLE_MAY2025 = (1U << 28),
     // Used only if SCRIPT_ENABLE_MAY2025 is set; Use "relay" costing rules: Hashing is costed 3x for standard txns.
     SCRIPT_VM_LIMITS_STANDARD = (1U << 29),
+
+    // Upgrade 12
+    SCRIPT_ENABLE_MAY2026 = (1U << 30),
 };

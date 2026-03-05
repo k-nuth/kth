@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
-// Copyright (c) 2017-2024 The Bitcoin developers
+// Copyright (c) 2017-2025 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -42,6 +42,7 @@ enum class ScriptError {
     INVALID_STACK_OPERATION,
     INVALID_ALTSTACK_OPERATION,
     UNBALANCED_CONDITIONAL,
+    UNBALANCED_CONTROL_FLOW,
 
     /* Divisor errors */
     DIV_BY_ZERO,
@@ -97,6 +98,17 @@ enum class ScriptError {
 
     /* Big Integers */
     INVALID_NUMBER_RANGE_BIG_INT,
+
+    /* Control stack depth */
+    CONTROL_STACK_DEPTH,
+
+    /* Function definition/invocation errors */
+    INVALID_FUNCTION_IDENTIFIER,
+    FUNCTION_OVERWRITE_DISALLOWED,
+    INVOKED_UNDEFINED_FUNCTION,
+
+    /* Bit Shift */
+    INVALID_BIT_SHIFT,
 
     ERROR_COUNT,
 };

@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
-// Copyright (c) 2017-2022 The Bitcoin developers
+// Copyright (c) 2017-2025 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,10 +8,6 @@
 
 #include <pubkey.h>
 #include <script/script_flags.h>
-
-#include <boost/range/adaptor/sliced.hpp>
-
-typedef boost::sliced_range<const valtype> slicedvaltype;
 
 /**
  * A canonical signature exists of: <30> <total len> <02> <len R> <R> <02> <len
@@ -24,7 +20,7 @@ typedef boost::sliced_range<const valtype> slicedvaltype;
  *
  * This function is consensus-critical since BIP66.
  */
-static bool IsValidDERSignatureEncoding(const slicedvaltype &sig) {
+static bool IsValidDERSignatureEncoding(const ByteView &sig) {
     // Format: 0x30 [total-length] 0x02 [R-length] [R] 0x02 [S-length] [S]
     // * total-length: 1-byte length descriptor of everything that follows,
     // excluding the sighash byte.
@@ -153,13 +149,11 @@ static bool IsValidDERSignatureEncoding(const slicedvaltype &sig) {
     return true;
 }
 
-static bool IsSchnorrSig(const slicedvaltype &sig) {
+static bool IsSchnorrSig(const ByteView &sig) {
     return sig.size() == 64;
 }
 
-static bool CheckRawECDSASignatureEncoding(const slicedvaltype &sig,
-                                           uint32_t flags,
-                                           ScriptError *serror) {
+static bool CheckRawECDSASignatureEncoding(const ByteView &sig, uint32_t flags, ScriptError *serror) {
     if (IsSchnorrSig(sig)) {
         // In an ECDSA-only context, 64-byte signatures are forbidden.
         return set_error(serror, ScriptError::SIG_BADLENGTH);
@@ -180,17 +174,14 @@ static bool CheckRawECDSASignatureEncoding(const slicedvaltype &sig,
     return true;
 }
 
-static bool CheckRawSchnorrSignatureEncoding(const slicedvaltype &sig,
-                                             uint32_t flags,
-                                             ScriptError *serror) {
+static bool CheckRawSchnorrSignatureEncoding(const ByteView &sig, uint32_t flags [[maybe_unused]], ScriptError *serror) {
     if (IsSchnorrSig(sig)) {
         return true;
     }
     return set_error(serror, ScriptError::SIG_NONSCHNORR);
 }
 
-static bool CheckRawSignatureEncoding(const slicedvaltype &sig, uint32_t flags,
-                                      ScriptError *serror) {
+static bool CheckRawSignatureEncoding(const ByteView &sig, uint32_t flags, ScriptError *serror) {
     if (IsSchnorrSig(sig)) {
         // In a generic-signature context, 64-byte signatures are interpreted
         // as Schnorr signatures (always correctly encoded).
@@ -199,19 +190,17 @@ static bool CheckRawSignatureEncoding(const slicedvaltype &sig, uint32_t flags,
     return CheckRawECDSASignatureEncoding(sig, flags, serror);
 }
 
-bool CheckDataSignatureEncoding(const valtype &vchSig, uint32_t flags,
-                                ScriptError *serror) {
+bool CheckDataSignatureEncoding(const ByteView &vchSig, uint32_t flags, ScriptError *serror) {
     // Empty signature. Not strictly DER encoded, but allowed to provide a
     // compact way to provide an invalid signature for use with CHECK(MULTI)SIG
     if (vchSig.size() == 0) {
         return true;
     }
 
-    return CheckRawSignatureEncoding(
-        vchSig | boost::adaptors::sliced(0, vchSig.size()), flags, serror);
+    return CheckRawSignatureEncoding(vchSig, flags, serror);
 }
 
-static bool CheckSighashEncoding(const valtype &vchSig, uint32_t flags, ScriptError *serror) {
+static bool CheckSighashEncoding(const ByteView &vchSig, uint32_t flags, ScriptError *serror) {
     if (flags & SCRIPT_VERIFY_STRICTENC) {
         const auto hashType = GetHashType(vchSig);
         if (!hashType.isDefined()) {
@@ -243,17 +232,14 @@ static bool CheckSighashEncoding(const valtype &vchSig, uint32_t flags, ScriptEr
 }
 
 template <typename F>
-static bool CheckTransactionSignatureEncodingImpl(const valtype &vchSig,
-                                                  uint32_t flags,
-                                                  ScriptError *serror, F fun) {
+static bool CheckTransactionSignatureEncodingImpl(const ByteView &vchSig, uint32_t flags, ScriptError *serror, F fun) {
     // Empty signature. Not strictly DER encoded, but allowed to provide a
     // compact way to provide an invalid signature for use with CHECK(MULTI)SIG
     if (vchSig.size() == 0) {
         return true;
     }
 
-    if (!fun(vchSig | boost::adaptors::sliced(0, vchSig.size() - 1), flags,
-             serror)) {
+    if (!fun(vchSig.first(vchSig.size() - 1), flags, serror)) {
         // serror is set
         return false;
     }
@@ -261,42 +247,31 @@ static bool CheckTransactionSignatureEncodingImpl(const valtype &vchSig,
     return CheckSighashEncoding(vchSig, flags, serror);
 }
 
-bool CheckTransactionSignatureEncoding(const valtype &vchSig, uint32_t flags,
-                                       ScriptError *serror) {
+bool CheckTransactionSignatureEncoding(const ByteView &vchSig, uint32_t flags, ScriptError *serror) {
     return CheckTransactionSignatureEncodingImpl(
         vchSig, flags, serror,
-        [](const slicedvaltype &templateSig, uint32_t templateFlags,
-           ScriptError *templateSerror) {
-            return CheckRawSignatureEncoding(templateSig, templateFlags,
-                                             templateSerror);
+        [](const ByteView &templateSig, uint32_t templateFlags, ScriptError *templateSerror) {
+            return CheckRawSignatureEncoding(templateSig, templateFlags, templateSerror);
         });
 }
 
-bool CheckTransactionECDSASignatureEncoding(const valtype &vchSig,
-                                            uint32_t flags,
-                                            ScriptError *serror) {
+bool CheckTransactionECDSASignatureEncoding(const ByteView &vchSig, uint32_t flags, ScriptError *serror) {
     return CheckTransactionSignatureEncodingImpl(
         vchSig, flags, serror,
-        [](const slicedvaltype &templateSig, uint32_t templateFlags,
-           ScriptError *templateSerror) {
-            return CheckRawECDSASignatureEncoding(templateSig, templateFlags,
-                                                  templateSerror);
+        [](const ByteView &templateSig, uint32_t templateFlags, ScriptError *templateSerror) {
+            return CheckRawECDSASignatureEncoding(templateSig, templateFlags, templateSerror);
         });
 }
 
-bool CheckTransactionSchnorrSignatureEncoding(const valtype &vchSig,
-                                              uint32_t flags,
-                                              ScriptError *serror) {
+bool CheckTransactionSchnorrSignatureEncoding(const ByteView &vchSig, uint32_t flags, ScriptError *serror) {
     return CheckTransactionSignatureEncodingImpl(
         vchSig, flags, serror,
-        [](const slicedvaltype &templateSig, uint32_t templateFlags,
-           ScriptError *templateSerror) {
-            return CheckRawSchnorrSignatureEncoding(templateSig, templateFlags,
-                                                    templateSerror);
+        [](const ByteView &templateSig, uint32_t templateFlags, ScriptError *templateSerror) {
+            return CheckRawSchnorrSignatureEncoding(templateSig, templateFlags, templateSerror);
         });
 }
 
-static bool IsCompressedOrUncompressedPubKey(const valtype &vchPubKey) {
+static bool IsCompressedOrUncompressedPubKey(const ByteView &vchPubKey) {
     switch (vchPubKey.size()) {
         case CPubKey::COMPRESSED_PUBLIC_KEY_SIZE:
             // Compressed public key: must start with 0x02 or 0x03.
@@ -312,10 +287,8 @@ static bool IsCompressedOrUncompressedPubKey(const valtype &vchPubKey) {
     }
 }
 
-bool CheckPubKeyEncoding(const valtype &vchPubKey, uint32_t flags,
-                         ScriptError *serror) {
-    if ((flags & SCRIPT_VERIFY_STRICTENC) &&
-        !IsCompressedOrUncompressedPubKey(vchPubKey)) {
+bool CheckPubKeyEncoding(const ByteView &vchPubKey, uint32_t flags, ScriptError *serror) {
+    if ((flags & SCRIPT_VERIFY_STRICTENC) && !IsCompressedOrUncompressedPubKey(vchPubKey)) {
         return set_error(serror, ScriptError::PUBKEYTYPE);
     }
     return true;

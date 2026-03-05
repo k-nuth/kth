@@ -311,6 +311,11 @@ typedef enum verify_flags_type {
      */
     , verify_flags_enable_vm_limits_standard = (1U << 29)
 
+    /**
+     * SCRIPT_ENABLE_MAY2026 (BCH).
+     */
+    , verify_flags_enable_may2026 = (1U << 30)
+
 #else
     // BTC only flags
 

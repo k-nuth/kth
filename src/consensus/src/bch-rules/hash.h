@@ -148,6 +148,11 @@ public:
 /** A writer stream (for serialization) that computes a double sha-256 hash. */
 using CHashWriter = GenericHashWriter<CHash256>;
 
+// Convenience alias for CHashWriter that just default constructs it in the idiomatic way.
+struct HashWriter : CHashWriter {
+    HashWriter() : CHashWriter(SER_GETHASH, PROTOCOL_VERSION) {}
+};
+
 /** A writer stream (for serialization) that computes a *single* sha-256 hash. */
 using Sha256SingleHashWriter = GenericHashWriter<CSHA256>;
 
