@@ -14,7 +14,7 @@
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/domain/machine/opcode.hpp>
-#include <kth/domain/machine/rule_fork.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 #include <kth/infrastructure/config/checkpoint.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 
@@ -128,7 +128,7 @@ struct KD_API chain_state {
 
     /// Checkpoints must be ordered by height with greatest at back.
     /// Forks and checkpoints must match those provided for map creation.
-    chain_state(data&& values, uint32_t forks, checkpoints const& checkpoints
+    chain_state(data&& values, script_flags_t flags, checkpoints const& checkpoints
                 , domain::config::network network
 #if defined(KTH_CURRENCY_BCH)
                 , assert_anchor_block_info_t const& assert_anchor_block_info
@@ -155,10 +155,10 @@ struct KD_API chain_state {
 
     /// Checkpoints must be ordered by height with greatest at back.
     static
-    map get_map(size_t height, checkpoints const& checkpoints, uint32_t forks, domain::config::network network);
+    map get_map(size_t height, checkpoints const& checkpoints, script_flags_t flags, domain::config::network network);
 
     static
-    uint32_t signal_version(uint32_t forks);
+    uint32_t signal_version(script_flags_t flags);
 
     /// Properties.
     [[nodiscard]]
@@ -171,7 +171,7 @@ struct KD_API chain_state {
     abla::state const& abla_state() const;
 
     [[nodiscard]]
-    uint32_t enabled_forks() const;
+    script_flags_t enabled_flags() const;
 
     [[nodiscard]]
     uint32_t minimum_version() const;
@@ -241,7 +241,7 @@ struct KD_API chain_state {
 
     /// Determine if the fork is set for this block.
     [[nodiscard]]
-    bool is_enabled(machine::rule_fork fork) const;
+    bool is_enabled(machine::script_flags fork) const;
 
     /// Determine if this block hash fails a checkpoint at this height.
     [[nodiscard]]
@@ -307,15 +307,15 @@ struct KD_API chain_state {
 
 protected:
     struct activations {
-        // The forks that are active at this height.
-        uint32_t forks;
+        // The flags that are active at this height.
+        script_flags_t flags;
 
         // The minimum block version required at this height.
         uint32_t minimum_version;
     };
 
     static
-    activations activation(data const& values, uint32_t forks
+    activations activation(data const& values, script_flags_t flags
             , domain::config::network network
 #if defined(KTH_CURRENCY_BCH)
             // , euclid_t euclid_activation_time
@@ -333,7 +333,7 @@ protected:
     );
 
     static
-    uint32_t work_required(data const& values, config::network network, uint32_t forks
+    uint32_t work_required(data const& values, config::network network, script_flags_t flags
 #if defined(KTH_CURRENCY_BCH)
                             // , euler_t euler_activation_time
                             // , gauss_t gauss_activation_time
@@ -350,32 +350,32 @@ protected:
 private:
 
     static
-    size_t bits_count(size_t height, uint32_t forks);
+    size_t bits_count(size_t height, script_flags_t flags);
 
     static
-    size_t version_count(size_t height, uint32_t forks, domain::config::network network);
+    size_t version_count(size_t height, script_flags_t flags, domain::config::network network);
 
     static
-    size_t timestamp_count(size_t height, uint32_t forks);
+    size_t timestamp_count(size_t height, script_flags_t flags);
 
     // TODO(kth): make function private again. Moved to public in the litecoin merge
     static
-    size_t retarget_height(size_t height, uint32_t forks);
+    size_t retarget_height(size_t height, script_flags_t flags);
 
     static
     size_t collision_height(size_t height, config::network network);
 
 #if ! defined(KTH_CURRENCY_BCH)
     static
-    size_t bip9_bit0_height(size_t height, uint32_t forks);
+    size_t bip9_bit0_height(size_t height, script_flags_t flags);
 
     static
-    size_t bip9_bit1_height(size_t height, uint32_t forks);
+    size_t bip9_bit1_height(size_t height, script_flags_t flags);
 #endif
 
 public:
     // static
-    // bool is_rule_enabled(size_t height, uint32_t forks, size_t mainnet_height, size_t testnet_height);
+    // bool is_rule_enabled(size_t height, uint64_t forks, size_t mainnet_height, size_t testnet_height);
     static
     bool is_rule_enabled(size_t height, config::network network, size_t mainnet_height, size_t testnet_height
 #if defined(KTH_CURRENCY_BCH)
@@ -494,8 +494,8 @@ private:
     //TODO(fernando): make it immutable
     assert_anchor_block_info_t assert_anchor_block_info_;
 
-    // Configured forks are saved for state transitions.
-    uint32_t const forks_;
+    // Configured flags are saved for state transitions.
+    script_flags_t const flags_;
 
     // Checkpoints do not affect the data that is collected or promoted.
     infrastructure::config::checkpoint::list const& checkpoints_;

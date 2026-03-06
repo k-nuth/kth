@@ -309,11 +309,18 @@ number& number::operator%=(number const& x) {
     return *this;
 }
 
+// Script number valid range check (BCHN: CScriptNum::validRange).
+// INT64_MIN is excluded because it cannot be represented in the script number
+// encoding without exceeding the 8-byte limit (it requires a 9th sign byte).
+inline
+bool valid_script_number_range(int64_t val) {
+    return val > std::numeric_limits<int64_t>::min();
+}
+
 inline
 bool number::safe_add(number const& x) {
     int64_t val;
-    bool const res = __builtin_add_overflow(value_, x.value_, &val);
-    if (res) {
+    if (__builtin_add_overflow(value_, x.value_, &val) || ! valid_script_number_range(val)) {
         return false;
     }
     value_ = val;
@@ -323,8 +330,7 @@ bool number::safe_add(number const& x) {
 inline
 bool number::safe_add(int64_t x) {
     int64_t val;
-    bool const res = __builtin_add_overflow(value_, x, &val);
-    if (res) {
+    if (__builtin_add_overflow(value_, x, &val) || ! valid_script_number_range(val)) {
         return false;
     }
     value_ = val;
@@ -334,8 +340,7 @@ bool number::safe_add(int64_t x) {
 inline
 bool number::safe_sub(number const& x) {
     int64_t val;
-    bool const res = __builtin_sub_overflow(value_, x.value_, &val);
-    if (res) {
+    if (__builtin_sub_overflow(value_, x.value_, &val) || ! valid_script_number_range(val)) {
         return false;
     }
     value_ = val;
@@ -345,8 +350,7 @@ bool number::safe_sub(number const& x) {
 inline
 bool number::safe_sub(int64_t x) {
     int64_t val;
-    bool const res = __builtin_sub_overflow(value_, x, &val);
-    if (res) {
+    if (__builtin_sub_overflow(value_, x, &val) || ! valid_script_number_range(val)) {
         return false;
     }
     value_ = val;
@@ -356,8 +360,7 @@ bool number::safe_sub(int64_t x) {
 inline
 bool number::safe_mul(number const& x) {
     int64_t val;
-    bool const res = __builtin_mul_overflow(value_, x.value_, &val);
-    if (res) {
+    if (__builtin_mul_overflow(value_, x.value_, &val) || ! valid_script_number_range(val)) {
         return false;
     }
     value_ = val;
@@ -367,8 +370,7 @@ bool number::safe_mul(number const& x) {
 inline
 bool number::safe_mul(int64_t x) {
     int64_t val;
-    bool const res = __builtin_mul_overflow(value_, x, &val);
-    if (res) {
+    if (__builtin_mul_overflow(value_, x, &val) || ! valid_script_number_range(val)) {
         return false;
     }
     value_ = val;
@@ -379,8 +381,7 @@ bool number::safe_mul(int64_t x) {
 inline
 std::expected<number, code> number::safe_add(number const& x, number const& y) {
     int64_t val;
-    bool const res = __builtin_add_overflow(x.value_, y.value_, &val);
-    if (res) {
+    if (__builtin_add_overflow(x.value_, y.value_, &val) || ! valid_script_number_range(val)) {
         return std::unexpected(error::overflow);
     }
     return number(val);
@@ -390,8 +391,7 @@ std::expected<number, code> number::safe_add(number const& x, number const& y) {
 inline
 std::expected<number, code> number::safe_sub(number const& x, number const& y) {
     int64_t val;
-    bool const res = __builtin_sub_overflow(x.value_, y.value_, &val);
-    if (res) {
+    if (__builtin_sub_overflow(x.value_, y.value_, &val) || ! valid_script_number_range(val)) {
         return std::unexpected(error::overflow);
     }
     return number(val);
@@ -400,8 +400,7 @@ std::expected<number, code> number::safe_sub(number const& x, number const& y) {
 inline
 std::expected<number, code> number::safe_mul(number const& x, number const& y) {
     int64_t val;
-    bool const res = __builtin_mul_overflow(x.value_, y.value_, &val);
-    if (res) {
+    if (__builtin_mul_overflow(x.value_, y.value_, &val) || ! valid_script_number_range(val)) {
         return std::unexpected(error::overflow);
     }
     return number(val);

@@ -72,44 +72,46 @@ settings::settings(domain::config::network net) {
     checkpoints = domain::config::default_checkpoints(net);
 }
 
-uint32_t settings::enabled_forks() const {
+domain::script_flags_t settings::enabled_flags() const {
     using namespace domain::machine;
+    using domain::script_flags_t;
+    using domain::to_flags;
 
-    uint32_t forks = rule_fork::no_rules;
-    forks |= (easy_blocks ? rule_fork::easy_blocks : 0);
-    forks |= (retarget    ? rule_fork::retarget    : 0);
-    forks |= (bip16       ? rule_fork::bip16_rule  : 0);
-    forks |= (bip30       ? rule_fork::bip30_rule  : 0);
-    forks |= (bip34       ? rule_fork::bip34_rule  : 0);
-    forks |= (bip66       ? rule_fork::bip66_rule  : 0);
-    forks |= (bip65       ? rule_fork::bip65_rule  : 0);
-    forks |= (bip90       ? rule_fork::bip90_rule  : 0);
-    forks |= (bip68       ? rule_fork::bip68_rule  : 0);
-    forks |= (bip112      ? rule_fork::bip112_rule : 0);
-    forks |= (bip113      ? rule_fork::bip113_rule : 0);
+    script_flags_t flags = script_flags::no_rules;
+    flags |= (easy_blocks ? script_flags::easy_blocks : 0);
+    flags |= (retarget    ? script_flags::retarget    : 0);
+    flags |= (bip16       ? script_flags::bip16_rule  : 0);
+    flags |= (bip30       ? script_flags::bip30_rule  : 0);
+    flags |= (bip34       ? script_flags::bip34_rule  : 0);
+    flags |= (bip66       ? script_flags::bip66_rule  : 0);
+    flags |= (bip65       ? script_flags::bip65_rule  : 0);
+    flags |= (bip90       ? script_flags::bip90_rule  : 0);
+    flags |= (bip68       ? script_flags::bip68_rule  : 0);
+    flags |= (bip112      ? script_flags::bip112_rule : 0);
+    flags |= (bip113      ? script_flags::bip113_rule : 0);
 
 #if defined(KTH_CURRENCY_BCH)
-    forks |= (bch_uahf        ? rule_fork::bch_uahf : 0);
-    forks |= (bch_daa_cw144   ? rule_fork::bch_daa_cw144 : 0);
-    forks |= (bch_pythagoras  ? rule_fork::bch_pythagoras : 0);
-    forks |= (bch_euclid      ? rule_fork::bch_euclid : 0);
-    forks |= (bch_pisano      ? rule_fork::bch_pisano : 0);
-    forks |= (bch_mersenne    ? rule_fork::bch_mersenne : 0);
-    forks |= (bch_fermat      ? rule_fork::bch_fermat : 0);
-    forks |= (bch_euler       ? rule_fork::bch_euler : 0);
-    forks |= (bch_gauss       ? rule_fork::bch_gauss : 0);
-    forks |= (bch_descartes   ? rule_fork::bch_descartes : 0);
-    forks |= (bch_lobachevski ? rule_fork::bch_lobachevski : 0);
-    forks |= (bch_galois      ? rule_fork::bch_galois : 0);
-    forks |= (bch_leibniz     ? rule_fork::bch_leibniz : 0);
-    // forks |= (bch_cantor     ? rule_fork::bch_cantor : 0);
-    // forks |= (bch_unnamed     ? rule_fork::bch_unnamed : 0);
+    flags |= (bch_uahf        ? to_flags(upgrade::bch_uahf)        : 0);
+    flags |= (bch_daa_cw144   ? to_flags(upgrade::bch_daa_cw144)   : 0);
+    flags |= (bch_pythagoras  ? to_flags(upgrade::bch_pythagoras)  : 0);
+    flags |= (bch_euclid      ? to_flags(upgrade::bch_euclid)      : 0);
+    flags |= (bch_pisano      ? to_flags(upgrade::bch_pisano)      : 0);
+    flags |= (bch_mersenne    ? to_flags(upgrade::bch_mersenne)    : 0);
+    flags |= (bch_fermat      ? to_flags(upgrade::bch_fermat)      : 0);
+    flags |= (bch_euler       ? to_flags(upgrade::bch_euler)       : 0);
+    flags |= (bch_gauss       ? to_flags(upgrade::bch_gauss)       : 0);
+    flags |= (bch_descartes   ? to_flags(upgrade::bch_descartes)   : 0);
+    flags |= (bch_lobachevski ? to_flags(upgrade::bch_lobachevski) : 0);
+    flags |= (bch_galois      ? to_flags(upgrade::bch_galois)      : 0);
+    // flags |= (bch_leibniz     ? to_flags(upgrade::bch_leibniz)     : 0);
+    // flags |= (bch_cantor     ? to_flags(upgrade::bch_cantor)     : 0);
+    // flags |= (bch_unnamed     ? to_flags(upgrade::bch_unnamed)     : 0);
 #else
-    forks |= (bip141 ? rule_fork::bip141_rule : 0);
-    forks |= (bip143 ? rule_fork::bip143_rule : 0);
-    forks |= (bip147 ? rule_fork::bip147_rule : 0);
+    flags |= (bip141 ? script_flags::bip141_rule : 0);
+    flags |= (bip143 ? script_flags::bip143_rule : 0);
+    flags |= (bip147 ? script_flags::bip147_rule : 0);
 #endif
-    return forks;
+    return flags;
 }
 
 } // namespace kth::blockchain

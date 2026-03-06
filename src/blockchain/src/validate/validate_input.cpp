@@ -16,88 +16,107 @@ namespace kth::blockchain {
 
 using namespace kd::chain;
 using namespace kd::machine;
+using kd::script_flags_t;
 
 #ifdef WITH_CONSENSUS
 
 using namespace kth::consensus;
 
 //TODO(legacy): map bc policy flags.
-uint32_t validate_input::convert_flags(uint32_t forks) {
+uint32_t validate_input::convert_flags(script_flags_t active_flags) {
     uint32_t flags = verify_flags_none;
 
-    if (script::is_enabled(forks, domain::machine::rule_fork::bip16_rule)) {
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bip16_rule)) {
         flags |= verify_flags_p2sh;
     }
 
-    if (script::is_enabled(forks, domain::machine::rule_fork::bip65_rule)) {
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bip65_rule)) {
         flags |= verify_flags_checklocktimeverify;
     }
 
-    if (script::is_enabled(forks, domain::machine::rule_fork::bip66_rule)) {
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bip66_rule)) {
         flags |= verify_flags_dersig;
     }
 
-    if (script::is_enabled(forks, domain::machine::rule_fork::bip112_rule)) {
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bip112_rule)) {
         flags |= verify_flags_checksequenceverify;
     }
 
 #if defined(KTH_CURRENCY_BCH)
 
-    if (script::is_enabled(forks, domain::machine::rule_fork::bch_uahf)) {
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_strictenc)) {
         flags |= verify_flags_strictenc;
+    }
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_sighash_forkid)) {
         flags |= verify_flags_enable_sighash_forkid;
     }
 
-    if (script::is_enabled(forks, domain::machine::rule_fork::bch_daa_cw144)) {
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_low_s)) {
         flags |= verify_flags_low_s;
+    }
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_nullfail)) {
         flags |= verify_flags_null_fail;
     }
 
-    if (script::is_enabled(forks, domain::machine::rule_fork::bch_euclid)) {
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_sigpushonly)) {
         flags |= verify_flags_sigpushonly;
+    }
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_cleanstack)) {
         flags |= verify_flags_cleanstack;
     }
 
-    if (script::is_enabled(forks, domain::machine::rule_fork::bch_mersenne)) {
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_schnorr_multisig)) {
         flags |= verify_flags_enable_schnorr_multisig;
+    }
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_minimaldata)) {
         flags |= verify_flags_minimaldata;
     }
-
-    if (script::is_enabled(forks, domain::machine::rule_fork::bch_fermat)) {
-        flags |= verify_flags_enforce_sigchecks;
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_minimalif)) {
+        flags |= verify_flags_minimal_if;
     }
 
-    if (script::is_enabled(forks, domain::machine::rule_fork::bch_gauss)) {
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_enforce_sigchecks)) {
+        flags |= verify_flags_enforce_sigchecks;
+    }
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_input_sigchecks)) {
+        flags |= verify_flags_input_sigchecks;
+    }
+
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_64bit_integers)) {
         flags |= verify_flags_64_bit_integers;
+    }
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_native_introspection)) {
         flags |= verify_flags_native_introspection;
     }
 
-    if (script::is_enabled(forks, domain::machine::rule_fork::bch_descartes)) {
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_p2sh_32)) {
         flags |= verify_flags_enable_p2sh_32;
+    }
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_tokens)) {
         flags |= verify_flags_enable_tokens;
     }
 
-    if (script::is_enabled(forks, domain::machine::rule_fork::bch_galois)) {
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_vm_limits)) {
         flags |= verify_flags_enable_may2025;
         // Note: this flag is used just for mempool
         // flags |= verify_flags_enable_vm_limits_standard;
     }
 
-    if (script::is_enabled(forks, domain::machine::rule_fork::bch_leibniz)) {
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bch_loops)) {
         flags |= verify_flags_enable_may2026;
     }
 
     // // We make sure this node will have replay protection during the next hard fork.
-    // if (script::is_enabled(forks, domain::machine::rule_fork::bch_replay_protection)) {
+    // if (script::is_enabled(active_flags, domain::machine::script_flags::bch_replay_protection)) {
     //     flags |= verify_flags_enable_replay_protection;
     // }
 
 #else
-    if (script::is_enabled(forks, domain::machine::rule_fork::bip141_rule)) {
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bip141_rule)) {
         flags |= verify_flags_witness;
     }
 
-    if (script::is_enabled(forks, domain::machine::rule_fork::bip147_rule)) {
+    if (script::is_enabled(active_flags, domain::machine::script_flags::bip147_rule)) {
         flags |= verify_flags_nulldummy;
     }
 #endif
@@ -221,7 +240,7 @@ coins_t create_context_data(transaction const& tx, bool should_create_context) {
     return coins;
 }
 
-std::pair<code, size_t> validate_input::verify_script(transaction const& tx, uint32_t input_index, uint32_t forks) {
+std::pair<code, size_t> validate_input::verify_script(transaction const& tx, uint32_t input_index, script_flags_t flags) {
     constexpr bool prefix = false;
 
     KTH_ASSERT(input_index < tx.inputs().size());
@@ -232,7 +251,8 @@ std::pair<code, size_t> validate_input::verify_script(transaction const& tx, uin
     auto const tx_data = tx.to_data(true);
 
     size_t sig_checks;
-    bool const should_create_context = script::is_enabled(forks, domain::machine::rule_fork::bch_gauss);
+    bool const should_create_context = script::is_enabled(flags, domain::machine::script_flags::bch_native_introspection)
+                                   || script::is_enabled(flags, domain::machine::script_flags::bch_tokens);
     auto const coins = create_context_data(tx, should_create_context);
     auto const unlock_script_data = tx.inputs()[input_index].script().to_data(prefix);
 
@@ -244,7 +264,7 @@ std::pair<code, size_t> validate_input::verify_script(transaction const& tx, uin
         unlock_script_data.data(),
         unlock_script_data.size(),
         input_index,
-        convert_flags(forks),
+        convert_flags(flags),
         sig_checks,
         amount,
         coins
@@ -257,8 +277,8 @@ std::pair<code, size_t> validate_input::verify_script(transaction const& tx, uin
 
 // #error Not supported, build using -o consensus=True
 
-std::pair<code, size_t> validate_input::verify_script(transaction const& tx, uint32_t input_index, uint32_t forks) {
-    return {script::verify(tx, input_index, forks), 0};
+std::pair<code, size_t> validate_input::verify_script(transaction const& tx, uint32_t input_index, script_flags_t flags) {
+    return {script::verify(tx, input_index, flags), 0};
 }
 
 #endif //WITH_CONSENSUS

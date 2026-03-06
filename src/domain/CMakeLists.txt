@@ -398,7 +398,7 @@ set(kth_headers
     include/kth/domain/machine/operation.hpp
     include/kth/domain/machine/interpreter.hpp
     include/kth/domain/machine/program.hpp
-    include/kth/domain/machine/rule_fork.hpp
+    include/kth/domain/machine/script_flags.hpp
     include/kth/domain/math/limits.hpp
     include/kth/domain/math/stealth.hpp
     include/kth/domain/utility/property_tree.hpp
@@ -536,7 +536,13 @@ endif()
 if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   enable_testing()
   find_package(Catch2 3 REQUIRED)
+
+  file(GLOB VM_AUTO_TEST_SOURCES test/chain/script_vm_auto_*.cpp)
+  file(GLOB VMB_AUTO_TEST_SOURCES test/chain/vmb_auto_*.cpp)
+
   add_executable(kth_domain_test
+        ${VM_AUTO_TEST_SOURCES}
+        ${VMB_AUTO_TEST_SOURCES}
         test/chain/block.cpp
         test/chain/compact.cpp
         test/chain/header.cpp
@@ -550,7 +556,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/satoshi_words.cpp
         test/chain/script.cpp
         test/chain/transaction.cpp
-
         test/main.cpp
 
         test/machine/opcode.cpp

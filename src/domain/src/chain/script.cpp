@@ -22,7 +22,7 @@
 #include <kth/domain/machine/program.hpp>
 // #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/domain/machine/opcode.hpp>
-#include <kth/domain/machine/rule_fork.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
@@ -178,12 +178,12 @@ bool script::is_valid_operations() const {
 // Serialization.
 //-----------------------------------------------------------------------------
 
-std::string script::to_string(uint32_t active_forks) const {
+std::string script::to_string(script_flags_t active_flags) const {
     auto first = true;
     std::ostringstream text;
 
     for (auto const& op : operations()) {
-        text << (first ? "" : " ") << op.to_string(active_forks);
+        text << (first ? "" : " ") << op.to_string(active_flags);
         first = false;
     }
 
@@ -421,7 +421,6 @@ script strip_code_seperators(script const& script_code) {
     return script(std::move(ops));
 }
 
-#if ! defined(KTH_CURRENCY_BCH)
 // private/static
 std::pair<hash_digest, size_t> script::generate_unversioned_signature_hash(transaction const& tx,
                                                         uint32_t input_index,
@@ -452,7 +451,6 @@ std::pair<hash_digest, size_t> script::generate_unversioned_signature_hash(trans
             return sign_all(tx, input_index, stripped, sighash_type);
     }
 }
-#endif // ! KTH_CURRENCY_BCH
 
 // Signing (version 0).
 //-----------------------------------------------------------------------------
@@ -537,7 +535,7 @@ std::pair<hash_digest, size_t> script::generate_signature_hash(
     , uint32_t input_index
     , script const& script_code
     , uint8_t sighash_type
-    , uint32_t active_forks
+    , script_flags_t active_flags
 #if ! defined(KTH_CURRENCY_BCH)
     , script_version version
 #endif // ! KTH_CURRENCY_BCH
@@ -545,14 +543,20 @@ std::pair<hash_digest, size_t> script::generate_signature_hash(
 ) {
 
 #if defined(KTH_CURRENCY_BCH)
-    return generate_version_0_signature_hash(tx, input_index, script_code, value, sighash_type, active_forks);
+    // Use BIP143-like sighash when FORKID bit is set and bch_uahf is active.
+    // Otherwise fall back to classic sighash (pre-fork transactions).
+    auto const has_forkid = (sighash_type & sighash_algorithm::forkid) != 0;
+    if (has_forkid && is_enabled(active_flags, domain::machine::script_flags::bch_sighash_forkid)) {
+        return generate_version_0_signature_hash(tx, input_index, script_code, value, sighash_type, active_flags);
+    }
+    return script::generate_unversioned_signature_hash(tx, input_index, script_code, sighash_type);
 #else
     // The way of serialization is changed (bip143).
     switch (version) {
         case script_version::unversioned:
             return generate_unversioned_signature_hash(tx, input_index, script_code, sighash_type);
         case script_version::zero:
-            return generate_version_0_signature_hash(tx, input_index, script_code, value, sighash_type, active_forks);
+            return generate_version_0_signature_hash(tx, input_index, script_code, value, sighash_type, active_flags);
         case script_version::reserved:
         default:
             KTH_ASSERT_MSG(false, "invalid script version");
@@ -569,7 +573,7 @@ std::pair<bool, size_t> script::check_signature(
     , script const& script_code
     , transaction const& tx
     , uint32_t input_index
-    , uint32_t active_forks
+    , script_flags_t active_flags
 #if ! defined(KTH_CURRENCY_BCH)
     , script_version version
 #endif // ! KTH_CURRENCY_BCH
@@ -584,7 +588,7 @@ std::pair<bool, size_t> script::check_signature(
                                                                 input_index,
                                                                 script_code,
                                                                 sighash_type,
-                                                                active_forks,
+                                                                active_flags,
 #if ! defined(KTH_CURRENCY_BCH)
                                                                 version,
 #endif // ! KTH_CURRENCY_BCH
@@ -601,7 +605,7 @@ std::expected<endorsement, std::error_code> script::create_endorsement(
     transaction const& tx,
     uint32_t input_index,
     uint8_t sighash_type,
-    uint32_t active_forks,
+    script_flags_t active_flags,
 #if ! defined(KTH_CURRENCY_BCH)
     script_version version /* = script_version::unversioned */,
 #endif // ! KTH_CURRENCY_BCH
@@ -614,7 +618,7 @@ std::expected<endorsement, std::error_code> script::create_endorsement(
         input_index,
         prevout_script,
         sighash_type,
-        active_forks,
+        active_flags,
 #if ! defined(KTH_CURRENCY_BCH)
         version,
 #endif // ! KTH_CURRENCY_BCH
@@ -984,18 +988,22 @@ script_pattern script::input_pattern() const {
     return script_pattern::non_standard;
 }
 
-bool script::is_pay_to_script_hash(uint32_t forks) const {
+bool script::is_pay_to_script_hash(script_flags_t flags) const {
     // This is used internally as an optimization over using script::pattern.
     // The first operations access must be method-based to guarantee the cache.
-    return is_enabled(forks, rule_fork::bip16_rule) &&
+    return is_enabled(flags, script_flags::bip16_rule) &&
            is_pay_script_hash_pattern(operations());
 }
 
-bool script::is_pay_to_script_hash_32(uint32_t forks) const {
+bool script::is_pay_to_script_hash_32(script_flags_t flags) const {
+#if defined(KTH_CURRENCY_BCH)
     // This is used internally as an optimization over using script::pattern.
     // The first operations access must be method-based to guarantee the cache.
-    return is_enabled(forks, rule_fork::bch_gauss) &&
+    return is_enabled(flags, script_flags::bch_p2sh_32) &&
            is_pay_script_hash_32_pattern(operations());
+#else
+    return false;
+#endif
 }
 
 // Count 1..16 multisig accurately for embedded (bip16) and witness (bip141).
@@ -1048,57 +1056,12 @@ bool script::is_unspendable() const {
 // Validation.
 //-----------------------------------------------------------------------------
 
-code script::verify(transaction const& tx, uint32_t input_index, uint32_t forks, script const& input_script, script const& prevout_script, uint64_t /*value*/) {
-    code ec;
-
-    // Evaluate input script.
-    program input(input_script, tx, input_index, forks);
-    if ((ec = input.evaluate())) {
-        return ec;
-    }
-
-    // Evaluate output script using stack result from input script.
-    program prevout(prevout_script, input);
-    if ((ec = prevout.evaluate())) {
-        return ec;
-    }
-
-    // This precludes bare witness programs of -0 (undocumented).
-    if ( ! prevout.stack_result(false)) {
-        return error::stack_false;
-    }
-
-    if (prevout_script.is_pay_to_script_hash(forks) || prevout_script.is_pay_to_script_hash_32(forks)) {
-        if ( ! is_relaxed_push(input_script.operations())) {
-            return error::invalid_script_embed;
-        }
-
-        // Embedded script must be at the top of the stack (bip16).
-        script embedded_script(input.pop(), false);
-
-        program embedded(embedded_script, std::move(input), true);
-        if ((ec = embedded.evaluate())) {
-            return ec;
-        }
-
-        // This precludes embedded witness programs of -0 (undocumented).
-        if ( ! embedded.stack_result(false)) {
-            return error::stack_false;
-        }
-    }
-
-    return error::success;
+code script::verify(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t value) {
+    return kth::domain::chain::verify(tx, input_index, flags, input_script, prevout_script, value);
 }
 
-code script::verify(transaction const& tx, uint32_t input, uint32_t forks) {
-    if (input >= tx.inputs().size()) {
-        return error::operation_failed;
-    }
-
-    auto const& in = tx.inputs()[input];
-    auto const& prevout = in.previous_output().validation.cache;
-
-    return verify(tx, input, forks, in.script(), prevout.script(), prevout.value());
+code script::verify(transaction const& tx, uint32_t input, script_flags_t flags) {
+    return kth::domain::chain::verify(tx, input, flags);
 }
 
 } // namespace kth::domain::chain

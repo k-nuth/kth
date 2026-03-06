@@ -36,15 +36,15 @@ KTH_EXPORT
 kth_program_t kth_vm_program_construct_from_script(kth_script_t script);
 
 /// Create an instance with empty stacks, value unused/max (input run).
-// program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, uint32_t forks);
+// program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, uint64_t forks);
 KTH_EXPORT
-kth_program_t kth_vm_program_construct_from_script_transaction(kth_script_t script, kth_transaction_t transaction, uint32_t input_index, uint32_t forks);
+kth_program_t kth_vm_program_construct_from_script_transaction(kth_script_t script, kth_transaction_t transaction, uint32_t input_index, uint64_t forks);
 
 
 /// Create an instance with initialized stack (witness run, v0 by default).
-// program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, uint32_t forks, data_stack&& stack, uint64_t value, script_version version = script_version::zero);
+// program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, uint64_t forks, data_stack&& stack, uint64_t value, script_version version = script_version::zero);
 // KTH_EXPORT
-// kth_program_t kth_vm_program_construct_from_script_transaction_stack(kth_script_t script, kth_transaction_t transaction, uint32_t input_index, uint32_t forks, kth_data_stack_t stack, uint64_t value, kth_script_version_t version);
+// kth_program_t kth_vm_program_construct_from_script_transaction_stack(kth_script_t script, kth_transaction_t transaction, uint32_t input_index, uint64_t forks, kth_data_stack_t stack, uint64_t value, kth_script_version_t version);
 
 
 /// Create using copied tx, input, forks, value, stack (prevout run).
@@ -68,8 +68,7 @@ KTH_EXPORT
 kth_bool_t kth_vm_program_is_valid(kth_program_t program);
 
 KTH_EXPORT
-uint32_t kth_vm_program_forks(kth_program_t program);
-
+uint64_t kth_vm_program_flags(kth_program_t program);
 
 KTH_EXPORT
 kth_size_t kth_vm_program_max_script_element_size(kth_program_t program);

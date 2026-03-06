@@ -17,3 +17,5 @@ src/domain/CMakeLists.txt
 banlist.dat
 hosts.cache
 other-nodes/
+src/domain/test/chain/script_vm_auto/
+src/domain/test/chain/script_vm_auto_summary.txt

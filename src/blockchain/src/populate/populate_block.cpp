@@ -108,7 +108,7 @@ void populate_block::populate_coinbase(branch::const_ptr branch, block_const_ptr
     // hard fork that destroys unspent outputs in case of hash collision.
     // The tx duplicate check must apply to coinbase txs, handled here.
     //*************************************************************************
-    if ( ! state->is_enabled(domain::machine::rule_fork::allow_collisions)) {
+    if ( ! state->is_enabled(domain::machine::script_flags::allow_collisions)) {
         populate_base::populate_duplicate(branch->height(), coinbase, true);
     }
 }
@@ -165,8 +165,6 @@ void populate_block::populate_transactions(branch::const_ptr branch, size_t buck
     size_t input_position = 0;
 
     auto const state = block->validation.state;
-    auto const forks = state->enabled_forks();
-    auto const collide = state->is_enabled(domain::machine::rule_fork::allow_collisions);
 
     // Must skip coinbase here as it is already accounted for.
     auto const first = bucket == 0 ? buckets : bucket;

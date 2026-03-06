@@ -370,6 +370,41 @@ typedef enum verify_flags_type {
     int64_t amount,
     std::vector<std::vector<uint8_t>> coins);
 
+#if defined(KTH_CURRENCY_BCH)
+
+/**
+ * Result of eval_script_with_metrics: all three VM-Limits metrics.
+ */
+struct script_eval_metrics {
+    int sig_checks = 0;
+    int64_t op_cost = 0;
+    int64_t hash_digest_iterations = 0;
+};
+
+/**
+ * Evaluate a script using BCHN's EvalScript with a DummySigChecker.
+ * Intended for testing VM-Limits metrics without a real transaction context.
+ *
+ * The DummySigChecker returns true for all signature checks except:
+ *   - null (empty) signatures always fail
+ *   - the magic "bad pubkey" {02, 0x00*31, 0x00} always fails
+ *
+ * @param[in]  script_data     The bytes of the script to evaluate.
+ * @param[in]  script_size     The byte length of the script.
+ * @param[in]  flags           Script verification flags.
+ * @param[in,out] stack        Initial stack on input, final stack on output.
+ * @param[out] metrics         Resulting VM-Limits metrics.
+ * @returns                    A script verification result code.
+ */
+KC_API verify_result_type eval_script_with_metrics(
+    unsigned char const* script_data,
+    size_t script_size,
+    unsigned int flags,
+    std::vector<std::vector<uint8_t>>& stack,
+    script_eval_metrics& metrics);
+
+#endif // KTH_CURRENCY_BCH
+
 } // namespace kth::consensus
 
 #endif

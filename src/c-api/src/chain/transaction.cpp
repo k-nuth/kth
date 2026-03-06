@@ -156,16 +156,16 @@ uint8_t const* kth_chain_transaction_to_data(kth_transaction_t transaction, kth_
     return kth::create_c_array(tx_data, *out_size);
 }
 
-// code verify(transaction const& tx, uint32_t input_index, uint32_t forks, script const& input_script, script const& prevout_script, uint64_t /*value*/);
-kth_error_code_t kth_chain_transaction_verify(kth_transaction_t transaction, uint32_t input_index, uint32_t forks, kth_script_t input_script, kth_script_t prevout_script, uint64_t value) {
+// code verify(transaction const& tx, uint32_t input_index, uint64_t forks, script const& input_script, script const& prevout_script, uint64_t /*value*/);
+kth_error_code_t kth_chain_transaction_verify(kth_transaction_t transaction, uint32_t input_index, uint64_t forks, kth_script_t input_script, kth_script_t prevout_script, uint64_t value) {
     auto const& tx_cpp = kth_chain_transaction_const_cpp(transaction);
     auto const& input_script_cpp = kth_chain_script_const_cpp(input_script);
     auto const& prevout_script_cpp = kth_chain_script_const_cpp(prevout_script);
     return kth::to_c_err(kth::domain::chain::script::verify(tx_cpp, input_index, forks, input_script_cpp, prevout_script_cpp, value));
 }
 
-// code verify(transaction const& tx, uint32_t input, uint32_t forks);
-kth_error_code_t kth_chain_transaction_verify_transaction(kth_transaction_t transaction, uint32_t input, uint32_t forks) {
+// code verify(transaction const& tx, uint32_t input, uint64_t forks);
+kth_error_code_t kth_chain_transaction_verify_transaction(kth_transaction_t transaction, uint32_t input, uint64_t forks) {
     auto const& tx_cpp = kth_chain_transaction_const_cpp(transaction);
     return kth::to_c_err(kth::domain::chain::script::verify(tx_cpp, input, forks));
 }

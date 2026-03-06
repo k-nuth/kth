@@ -34,7 +34,7 @@
 #include <kth/domain/machine/opcode.hpp>
 #include <kth/domain/machine/operation.hpp>
 #include <kth/domain/machine/program.hpp>
-#include <kth/domain/machine/rule_fork.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 
 #include <kth/domain/math/stealth.hpp>
 

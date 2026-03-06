@@ -101,9 +101,19 @@ void validate_transaction::handle_populated(code const& ec, transaction_const_pt
     }
 
     KTH_ASSERT(tx->validation.state);
+    auto const& state = *tx->validation.state;
 
     // Run contextual tx checks.
-    handler(tx->accept());
+    handler(tx->accept(
+        state.enabled_flags(),
+        state.height(),
+        state.median_time_past(),
+        state.is_lobachevski_enabled()
+            ? state.dynamic_max_block_sigops()
+            : static_max_block_sigops(state.network()),
+        state.is_under_checkpoint(),
+        true /*transaction_pool*/
+    ));
 }
 
 // Connect sequence.
@@ -138,7 +148,7 @@ void validate_transaction::connect_inputs(transaction_const_ptr tx, size_t bucke
     size_t tx_sigchecks = 0;
 #endif
 
-    auto const forks = tx->validation.state->enabled_forks();
+    auto const flags = tx->validation.state->enabled_flags();
     auto const& inputs = tx->inputs();
 
     for (auto input_index = bucket; input_index < inputs.size(); input_index = ceiling_add(input_index, buckets)) {
@@ -154,7 +164,7 @@ void validate_transaction::connect_inputs(transaction_const_ptr tx, size_t bucke
             return;
         }
 
-        auto res = validate_input::verify_script(*tx, input_index, forks);
+        auto res = validate_input::verify_script(*tx, input_index, flags);
         if (res.first != error::success) {
             handler(res.first);
             return;

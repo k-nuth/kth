@@ -12,9 +12,9 @@
 // ---------------------------------------------------------------------------
 extern "C" {
 
-char const* kth_chain_opcode_to_string(kth_opcode_t value, uint32_t active_forks) {
+char const* kth_chain_opcode_to_string(kth_opcode_t value, uint64_t active_flags) {
     auto code_c = kth::opcode_to_cpp(value);
-    auto str = kth::domain::machine::opcode_to_string(code_c, active_forks);
+    auto str = kth::domain::machine::opcode_to_string(code_c, active_flags);
     return kth::create_c_str(str);
 }
 

@@ -1,0 +1,9 @@
+{
+  "_documentation": {
+    "description": "Knuth overrides for VMB test cases",
+    "skip_tests": "Array of test idents (strings) or objects with ident+reason to skip",
+    "overrides": "Array of override objects (reserved for future use)"
+  },
+  "skip_tests": [],
+  "overrides": []
+}

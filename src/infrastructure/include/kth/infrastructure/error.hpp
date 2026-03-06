@@ -158,137 +158,19 @@ enum error_code_t {
     dirty_witness = 81,
     stack_false = 65,
 
-    // op eval
+    // Script evaluation categories
     op_disabled = 100,
     op_reserved,
-    op_push_size,
-    op_push_data,
-    op_if,
-    op_notif,
-    op_else,
-    op_endif,
-    op_verify_empty_stack,
-    op_verify_failed,
-
-    op_return,              // 110
-    op_to_alt_stack,
-    op_from_alt_stack,
-    op_drop2,
-    op_dup2,
-    op_dup3,
-    op_over2,
-    op_rot2,
-    op_swap2,
-    op_if_dup,          
-
-    op_drop,            // 120
-    op_dup,
-    op_nip,
-    op_over,
-    op_pick,
-    op_roll,
-    op_rot,
-    op_swap,
-    op_tuck,
-    op_cat,
-
-    op_split,           // 130
-    op_reverse_bytes,
-    op_num2bin,
-    op_num2bin_invalid_size,
-    op_num2bin_size_exceeded,
-    op_num2bin_impossible_encoding,
-    op_bin2num,
-    op_bin2num_invalid_number_range,
-    op_size,
-    op_and,
-
-    op_or,                  // 140
-    op_xor,
-    op_equal,
-    op_equal_verify_insufficient_stack,
-    op_equal_verify_failed,
-    op_add1,
-    op_sub1,
-    op_negate,
-    op_abs,
-    op_not,
-
-    op_nonzero,         // 150
-    op_add,
-    op_add_overflow,
-    op_sub,
-    op_sub_underflow,
-    op_mul,
-    op_mul_overflow,
-    op_div,
-    op_div_by_zero,
-    op_mod,
-
-    op_mod_by_zero,     // 160
-    op_bool_and,
-    op_bool_or,
-    op_num_equal,
-    op_num_equal_verify_insufficient_stack,
-    op_num_equal_verify_failed,
-    op_num_not_equal,
-    op_less_than,
-    op_greater_than,
-    op_less_than_or_equal,
-
-    op_greater_than_or_equal, // 170
-    op_min,
-    op_max,
-    op_within,
-    op_ripemd160,
-    op_sha1,
-    op_sha256,
-    op_hash160,
-    op_hash256,
-    op_code_seperator,
-
-    op_check_sig,                   // 180
-    op_check_sig_verify_failed,
-    op_check_data_sig,
-    op_check_data_sig_verify,
-    multisig_missing_key_count,
-    multisig_invalid_key_count,
-    multisig_missing_pubkeys,
-    multisig_missing_signature_count,
-    multisig_invalid_signature_count,
-    multisig_missing_endorsements,
-
-    multisig_empty_stack,      // 190
-    op_check_multisig,
+    op_return,
 
     // BIP65/BIP112 Script validation errors
     negative_locktime,
     unsatisfied_locktime,
 
-    // Native Introspection Opcodes
+    // Native Introspection
     context_not_present,
-    op_input_index,
-    op_active_bytecode,
-    op_tx_version,
-    op_tx_input_count,
-    op_tx_output_count,
-    op_tx_locktime,
-
-    op_utxo_value,                      
-    op_utxo_bytecode,                   // 200
-    op_outpoint_tx_hash,
-    op_outpoint_index,
-    op_input_bytecode,
-    op_input_sequence_number,
-    op_output_value,
-    op_output_bytecode,
-    op_utxo_token_category,
-    op_utxo_token_commitment,
-
-    op_utxo_token_amount,              
-    op_output_token_category,               // 210
-    op_output_token_commitment,
-    op_output_token_amount,
+    invalid_tx_input_index,
+    invalid_tx_output_index,
 
     // Database errors
     database_insert_failed,
@@ -300,7 +182,7 @@ enum error_code_t {
     // Blockchain validation errors
     reorganize_empty_blocks,              
     chain_state_invalid,                  
-    pool_state_failed,                      // 220
+    pool_state_failed,
     transaction_lookup_failed,            
     branch_work_failed,
     block_validation_state_failed,
@@ -325,8 +207,7 @@ enum error_code_t {
     sig_badlength,                      // Invalid signature length
     sig_nonschnorr,                     // Non-Schnorr signature in Schnorr context
     illegal_forkid,                     // Illegal fork ID usage            
-    must_use_forkid,                    // Must use fork ID but didn't          // 240
-    missing_forkid,                     // Missing required fork ID
+    must_use_forkid,                    // Must use fork ID but didn't (BCHN: MUST_USE_FORKID / MISSING_FORKID)
     // Added out of order (bip147).
     multisig_satoshi_bug,
 
@@ -348,8 +229,12 @@ enum error_code_t {
     out_of_range,
 
     // Chip VM limits
+    op_cost_limit,
     too_many_hash_iters,
     conditional_stack_depth,
+
+    // Transaction structure
+    invalid_tx_version,
 
     // Create transaction template
     insufficient_amount,
@@ -361,6 +246,23 @@ enum error_code_t {
 
     // Cash Tokens
     invalid_bitfield,
+    token_amount_negative,
+    token_fungible_only_amount_zero,
+    token_amount_bitfield_mismatch,
+    token_commitment_bitfield_mismatch,
+    token_fungible_with_commitment,
+    token_commitment_oversized,
+    token_coinbase_has_tokens,
+    token_unparseable_output,
+    token_unparseable_input,
+    token_input_created_pre_activation,
+    token_inputs_missing_or_spent,
+    token_duplicate_genesis,
+    token_invalid_category,
+    token_fungible_insufficient,
+    token_nft_ex_nihilo,
+    token_amount_overflow,
+    token_pre_activation_input,
 
     // Domain object serialization/deserialization
     read_past_end_of_buffer,
@@ -385,6 +287,18 @@ enum error_code_t {
     hash_not_found,
     empty_cache,
     utxo_not_found,
+
+    // Generic script error categories (used with op_result to pair with the failing opcode)
+    insufficient_main_stack,            // Stack has too few elements for the operation
+    invalid_operand_size,               // Number exceeds maximum size for arithmetic operation
+    insufficient_alt_stack,             // Alt stack empty when operation needs an element
+    unbalanced_conditional,             // IF/ELSE/ENDIF mismatch
+    division_by_zero,                   // DIV or MOD by zero
+    verify_failed,                      // VERIFY-type opcode check failed
+    impossible_encoding,                // NUM2BIN cannot encode in requested size
+    invalid_split_range,                // SPLIT position out of range
+    invalid_number_encoding,            // BIN2NUM result not minimally encoded
+    operand_size_mismatch,              // Bitwise operation operands differ in size
 
     // Last error code.
     last_error_code

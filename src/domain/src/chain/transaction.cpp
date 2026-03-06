@@ -17,7 +17,9 @@
 #include <utility>
 #include <vector>
 
+#include <boost/container_hash/hash.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
+#include <boost/unordered/unordered_flat_set.hpp>
 
 #include <kth/domain/chain/chain_state.hpp>
 #include <kth/domain/chain/input.hpp>
@@ -27,7 +29,7 @@
 #include <kth/domain/machine/opcode.hpp>
 #include <kth/domain/machine/operation.hpp>
 #include <kth/domain/machine/program.hpp>
-#include <kth/domain/machine/rule_fork.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/hash.hpp>
@@ -520,7 +522,7 @@ bool transaction::is_overspent() const {
 // Returns max_size_t in case of overflow.
 size_t transaction::signature_operations() const {
     auto const state = validation.state;
-    auto const bip16 = state ? state->is_enabled(kth::domain::machine::rule_fork::bip16_rule) : true;
+    auto const bip16 = state ? state->is_enabled(kth::domain::machine::script_flags::bip16_rule) : true;
     auto const bip141 = false;
     return transaction_basis::signature_operations(bip16, bip141);
 }
@@ -548,30 +550,34 @@ code transaction::connect_input(chain_state const& state, size_t input_index) co
         return error::missing_previous_output;
     }
 
-    auto const forks = state.enabled_forks();
+    auto const flags = state.enabled_flags();
     auto const index32 = uint32_t(input_index);
 
     // Verify the transaction input script against the previous output.
-    // return script::verify(*this, index32, forks);
-    return verify(*this, index32, forks);
+    // return script::verify(*this, index32, flags);
+    return verify(*this, index32, flags);
 }
 
 // Validation.
 //-----------------------------------------------------------------------------
 
-// These checks are self-contained; blockchain (and so version) independent.
-code transaction::check(size_t max_block_size, bool transaction_pool, bool retarget /* = true */) const {
+code transaction::check(size_t max_block_size, bool transaction_pool, bool retarget) const {
     return transaction_basis::check(total_output_value(), max_block_size, transaction_pool, retarget);
 }
 
-code transaction::accept(bool transaction_pool) const {
-    auto const state = validation.state;
-    return state ? accept(*state, transaction_pool) : error::operation_failed;
-}
-
-// These checks assume that prevout caching is completed on all tx.inputs.
-code transaction::accept(chain_state const& state, bool transaction_pool) const {
-    return transaction_basis::accept(state, is_overspent(), validation.duplicate, transaction_pool);
+code transaction::accept(
+    script_flags_t flags,
+    size_t height,
+    uint32_t median_time_past,
+    size_t max_sigops,
+    bool is_under_checkpoint,
+    bool transaction_pool
+) const {
+    return transaction_basis::accept(
+        flags, height, median_time_past, max_sigops,
+        is_overspent(), validation.duplicate,
+        is_under_checkpoint, transaction_pool
+    );
 }
 
 code transaction::connect() const {
@@ -591,12 +597,43 @@ code transaction::connect(chain_state const& state) const {
     return error::success;
 }
 
-code verify(transaction const& tx, uint32_t input_index, uint32_t forks, script const& input_script, script const& prevout_script, uint64_t /*value*/) {
+// A witness program is: version_byte (OP_0 or OP_1..OP_16) + push_byte + program_data.
+// Total script size must be min_witness_program_script..max_witness_program_script bytes.
+// This is used for segwit recovery: P2SH redeem scripts that look like witness
+// programs are exempt from the cleanstack rule (BCHN: IsWitnessProgram).
+bool is_witness_program(data_chunk const& bytes) {
+    using machine::opcode;
+    auto const size = bytes.size();
+    if (size < min_witness_program_script || size > max_witness_program_script) return false;
+
+    // Version byte: OP_0 (push_size_0) or OP_1..OP_16 (push_positive_1..push_positive_16)
+    auto const version = bytes[0];
+    if (version != static_cast<uint8_t>(opcode::push_size_0) &&
+        (version < static_cast<uint8_t>(opcode::push_positive_1) ||
+         version > static_cast<uint8_t>(opcode::push_positive_16))) {
+        return false;
+    }
+
+    // Push byte must cover exactly the remaining bytes
+    if (bytes[1] != size - witness_program_script_prefix) return false;
+
+    return true;
+}
+
+code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t value) {
     using machine::program;
     code ec;
 
+    // SIGPUSHONLY: scriptSig must contain only push operations.
+    // BCHN checks this before any evaluation.
+    if (script::is_enabled(flags, machine::script_flags::bch_sigpushonly)) {
+        if ( ! script::is_relaxed_push(input_script.operations())) {
+            return error::sig_pushonly;
+        }
+    }
+
     // Evaluate input script.
-    program input(input_script, tx, input_index, forks);
+    program input(input_script, tx, input_index, flags, value);
     if ((ec = input.evaluate())) {
         return ec;
     }
@@ -615,10 +652,29 @@ code verify(transaction const& tx, uint32_t input_index, uint32_t forks, script 
         return error::stack_false;
     }
 
-    if (prevout_script.is_pay_to_script_hash(forks) || 
-        prevout_script.is_pay_to_script_hash_32(forks)) {
+    bool const is_p2sh_20 = prevout_script.is_pay_to_script_hash(flags);
+    bool const is_p2sh_32 = prevout_script.is_pay_to_script_hash_32(flags);
+    bool const is_p2sh = is_p2sh_20 || is_p2sh_32;
+
+    // Track cumulative sig_checks across all evaluations.
+    // Metrics propagate through program constructors (matching BCHN's single metrics object).
+    uint32_t total_sig_checks = prevout.get_metrics().sig_checks();
+
+    if (is_p2sh) {
         if ( ! script::is_relaxed_push(input_script.operations())) {
-            return error::invalid_script_embed;
+            return error::sig_pushonly;
+        }
+
+        // Segwit recovery (BCHN): before P2SH evaluation, if the redeem script
+        // is a witness program, cleanstack is enabled, scriptSig had exactly one
+        // push, and this is P2SH (not P2SH_32), skip the entire P2SH evaluation.
+        // This allows recovery of coins accidentally sent to SegWit addresses on BCH.
+        if (is_p2sh_20 &&
+            script::is_enabled(flags, machine::script_flags::bch_cleanstack) &&
+            ! script::is_enabled(flags, machine::script_flags::bch_disallow_segwit_recovery) &&
+            input_script.operations().size() == 1 &&
+            is_witness_program(input.top())) {
+            return error::success;
         }
 
         // Embedded script must be at the top of the stack (bip16).
@@ -636,19 +692,40 @@ code verify(transaction const& tx, uint32_t input_index, uint32_t forks, script 
             // std::terminate();
             return error::stack_false;
         }
+
+        // Cleanstack: after P2SH execution, stack must have exactly one element.
+        if (script::is_enabled(flags, machine::script_flags::bch_cleanstack) && embedded.size() != 1) {
+            return error::cleanstack;
+        }
+
+        total_sig_checks = embedded.get_metrics().sig_checks();
+    }
+
+    // Cleanstack (non-P2SH): after execution, stack must have exactly one element.
+    if ( ! is_p2sh && script::is_enabled(flags, machine::script_flags::bch_cleanstack) && prevout.size() != 1) {
+        return error::cleanstack;
+    }
+
+    // INPUT_SIGCHECKS: density limit on signature checks per input.
+    // Formula from BCHN: scriptSig.size() >= sigChecks * 43 - 60
+    if (script::is_enabled(flags, machine::script_flags::bch_input_sigchecks)) {
+        auto const sig_size = int(input_script.serialized_size(false));
+        if (sig_size < int(total_sig_checks) * sigchecks_input_density_factor - sigchecks_input_density_offset) {
+            return error::invalid_script;
+        }
     }
 
     return error::success;
 }
 
-code verify(transaction const& tx, uint32_t input, uint32_t forks) {
+code verify(transaction const& tx, uint32_t input, script_flags_t flags) {
     if (input >= tx.inputs().size()) {
         return error::operation_failed;
     }
 
     auto const& in = tx.inputs()[input];
     auto const& prevout = in.previous_output().validation.cache;
-    return verify(tx, input, forks, in.script(), prevout.script(), prevout.value());
+    return verify(tx, input, flags, in.script(), prevout.script(), prevout.value());
 
 }
 

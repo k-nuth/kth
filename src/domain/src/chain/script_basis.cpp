@@ -21,7 +21,7 @@
 #include <kth/domain/machine/interpreter.hpp>
 #include <kth/domain/machine/opcode.hpp>
 #include <kth/domain/machine/program.hpp>
-#include <kth/domain/machine/rule_fork.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
@@ -222,12 +222,12 @@ void script_basis::to_data(data_sink& stream, bool prefix) const {
     to_data(sink_w, prefix);
 }
 
-std::string script_basis::to_string(uint32_t active_forks) const {
+std::string script_basis::to_string(script_flags_t active_flags) const {
     auto first = true;
     std::ostringstream text;
 
     for (auto const& op : operations(*this)) {
-        text << (first ? "" : " ") << op.to_string(active_forks);
+        text << (first ? "" : " ") << op.to_string(active_flags);
         first = false;
     }
 
@@ -301,7 +301,7 @@ std::pair<hash_digest, size_t> script_basis::generate_version_0_signature_hash(
     script_basis const& script_code,
     uint64_t value,
     uint8_t sighash_type,
-    uint32_t active_forks) {
+    script_flags_t active_flags) {
 
     // Unlike unversioned algorithm this does not allow an invalid input index.
     KTH_ASSERT(input_index < tx.inputs().size());
@@ -339,7 +339,7 @@ std::pair<hash_digest, size_t> script_basis::generate_version_0_signature_hash(
     sink_w.write_hash( ! any ? tx.inpoints_hash() : null_hash);
 
     // 3. Optional utxos hash (32-byte hash).
-    if (is_enabled(active_forks, domain::machine::rule_fork::bch_descartes) && utxos) {
+    if (is_enabled(active_flags, domain::machine::script_flags::bch_tokens) && utxos) {
         sink_w.write_hash(tx.utxos_hash());
     }
 
@@ -350,7 +350,7 @@ std::pair<hash_digest, size_t> script_basis::generate_version_0_signature_hash(
     input.previous_output().to_data(sink_w);
 
     // 6. Optional token data (variable size).
-    if (is_enabled(active_forks, domain::machine::rule_fork::bch_descartes) && prevout.token_data().has_value()) {
+    if (is_enabled(active_flags, domain::machine::script_flags::bch_tokens) && prevout.token_data().has_value()) {
         auto const& token_data = prevout.token_data().value();
         sink_w.write_byte(chain::encoding::PREFIX_BYTE);
         chain::token::encoding::to_data(sink_w, token_data);

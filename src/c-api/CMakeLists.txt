@@ -384,7 +384,7 @@ set(kth_headers
     include/kth/capi/chain/merkle_block.h
     include/kth/capi/chain/block.h
     include/kth/capi/chain/mempool_transaction.h
-    include/kth/capi/chain/rule_fork.h
+    include/kth/capi/chain/script_flags.h
     include/kth/capi/chain/script_version.h
     include/kth/capi/chain/script_pattern.h
     include/kth/capi/chain/get_headers.h

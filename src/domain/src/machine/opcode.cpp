@@ -24,7 +24,7 @@ if (norm == text) { out_code = opcode::code; return true; }
 #define RETURN_IF_OPCODE_OR_ALIAS(text, alias, code) \
 if (norm == text || norm == alias) { out_code = opcode::code; return true; }
 
-std::string opcode_to_string(opcode value, uint32_t active_forks) {
+std::string opcode_to_string(opcode value, script_flags_t active_flags) {
     static auto const push_zero = uint8_t(opcode::reserved_80);
 
     switch (value) {
@@ -143,9 +143,11 @@ std::string opcode_to_string(opcode value, uint32_t active_forks) {
         case opcode::notif:
             return "notif";
         case opcode::disabled_verif:
-            return "verif";             // deprecated, use hex
+            return is_enabled(active_flags, script_flags::bch_loops) ?
+                "begin" : "verif";
         case opcode::disabled_vernotif:
-            return "vernotif";          // deprecated, use hex
+            return is_enabled(active_flags, script_flags::bch_loops) ?
+                "until" : "vernotif";
         case opcode::else_:
             return "else";
         case opcode::endif:
@@ -215,17 +217,21 @@ std::string opcode_to_string(opcode value, uint32_t active_forks) {
         case opcode::equalverify:
             return "equalverify";
         case opcode::reserved_137:
-            return "reserved_137";      // deprecated, use hex
+            return is_enabled(active_flags, script_flags::bch_subroutines) ?
+                "define" : "reserved_137";
         case opcode::reserved_138:
-            return "reserved_138";      // deprecated, use hex
+            return is_enabled(active_flags, script_flags::bch_subroutines) ?
+                "invoke" : "reserved_138";
         case opcode::add1:
             return "1add";
         case opcode::sub1:
             return "1sub";
         case opcode::disabled_mul2:
-            return "2mul";
+            return is_enabled(active_flags, script_flags::bch_bitwise_ops) ?
+                "lshiftnum" : "2mul";
         case opcode::disabled_div2:
-            return "2div";
+            return is_enabled(active_flags, script_flags::bch_bitwise_ops) ?
+                "rshiftnum" : "2div";
         case opcode::negate:
             return "negate";
         case opcode::abs:
@@ -245,9 +251,11 @@ std::string opcode_to_string(opcode value, uint32_t active_forks) {
         case opcode::mod:
             return "mod";
         case opcode::disabled_lshift:
-            return "lshift";
+            return is_enabled(active_flags, script_flags::bch_bitwise_ops) ?
+                "lshiftbin" : "lshift";
         case opcode::disabled_rshift:
-            return "rshift";
+            return is_enabled(active_flags, script_flags::bch_bitwise_ops) ?
+                "rshiftbin" : "rshift";
         case opcode::booland:
             return "booland";
         case opcode::boolor:
@@ -295,12 +303,12 @@ std::string opcode_to_string(opcode value, uint32_t active_forks) {
         case opcode::nop1:
             return "nop1";
         case opcode::checklocktimeverify:
-            // return script::is_enabled(active_forks, rule_fork::bip65_rule) ?
-            return is_enabled(active_forks, rule_fork::bip65_rule) ?
+            // return script::is_enabled(active_flags, script_flags::bip65_rule) ?
+            return is_enabled(active_flags, script_flags::bip65_rule) ?
                 "checklocktimeverify" : "nop2";
         case opcode::checksequenceverify:
-            // return script::is_enabled(active_forks, rule_fork::bip112_rule) ?
-            return is_enabled(active_forks, rule_fork::bip112_rule) ?
+            // return script::is_enabled(active_flags, script_flags::bip112_rule) ?
+            return is_enabled(active_flags, script_flags::bip112_rule) ?
                 "checksequenceverify" : "nop3";
         case opcode::nop4:
             return "nop4";
@@ -529,8 +537,10 @@ bool opcode_from_string(opcode& out_code, std::string const& value) {       //NO
     RETURN_IF_OPCODE_OR_ALIAS("reserved_98", "ver", reserved_98);
     RETURN_IF_OPCODE("if", if_);
     RETURN_IF_OPCODE("notif", notif);
-    RETURN_IF_OPCODE_OR_ALIAS("disabled_verif", "verif", disabled_verif);
-    RETURN_IF_OPCODE_OR_ALIAS("disabled_vernotif", "vernotif", disabled_vernotif);
+    RETURN_IF_OPCODE_OR_ALIAS("disabled_verif", "verif", op_begin);
+    RETURN_IF_OPCODE("begin", op_begin);
+    RETURN_IF_OPCODE_OR_ALIAS("disabled_vernotif", "vernotif", op_until);
+    RETURN_IF_OPCODE("until", op_until);
     RETURN_IF_OPCODE("else", else_);
     RETURN_IF_OPCODE("endif", endif);
     RETURN_IF_OPCODE("verify", verify);
@@ -561,19 +571,23 @@ bool opcode_from_string(opcode& out_code, std::string const& value) {       //NO
     RETURN_IF_OPCODE("bin2num", bin2num);   // was called right before (disabled and re-enabled after pythagoras/monolith upgrade, May 2018)
     RETURN_IF_OPCODE("size", size);
 
-    RETURN_IF_OPCODE("invert", disabled_invert);
+    RETURN_IF_OPCODE("invert", op_invert);
     RETURN_IF_OPCODE("and", and_);          // disabled and re-enabled after pythagoras/monolith upgrade, May 2018
     RETURN_IF_OPCODE("or", or_);            // disabled and re-enabled after pythagoras/monolith upgrade, May 2018
     RETURN_IF_OPCODE("xor", xor_);          // disabled and re-enabled after pythagoras/monolith upgrade, May 2018
     RETURN_IF_OPCODE("equal", equal);
     RETURN_IF_OPCODE("equalverify", equalverify);
-    RETURN_IF_OPCODE_OR_ALIAS("reserved_137", "reserved1", reserved_137);
-    RETURN_IF_OPCODE_OR_ALIAS("reserved_138", "reserved2", reserved_138);
+    RETURN_IF_OPCODE_OR_ALIAS("reserved_137", "reserved1", op_define);
+    RETURN_IF_OPCODE("define", op_define);
+    RETURN_IF_OPCODE_OR_ALIAS("reserved_138", "reserved2", op_invoke);
+    RETURN_IF_OPCODE("invoke", op_invoke);
 
     RETURN_IF_OPCODE_OR_ALIAS("add1", "1add", add1);
     RETURN_IF_OPCODE_OR_ALIAS("sub1", "1sub", sub1);
-    RETURN_IF_OPCODE_OR_ALIAS("mul2", "2mul", disabled_mul2);
-    RETURN_IF_OPCODE_OR_ALIAS("div2", "2div", disabled_div2);
+    RETURN_IF_OPCODE_OR_ALIAS("mul2", "2mul", op_lshiftnum);
+    RETURN_IF_OPCODE("lshiftnum", op_lshiftnum);
+    RETURN_IF_OPCODE_OR_ALIAS("div2", "2div", op_rshiftnum);
+    RETURN_IF_OPCODE("rshiftnum", op_rshiftnum);
     RETURN_IF_OPCODE("negate", negate);
     RETURN_IF_OPCODE("abs", abs);
     RETURN_IF_OPCODE("not", not_);
@@ -584,8 +598,10 @@ bool opcode_from_string(opcode& out_code, std::string const& value) {       //NO
     RETURN_IF_OPCODE("mul", mul);
     RETURN_IF_OPCODE("div", div);
     RETURN_IF_OPCODE("mod", mod);
-    RETURN_IF_OPCODE("lshift", disabled_lshift);
-    RETURN_IF_OPCODE("rshift", disabled_rshift);
+    RETURN_IF_OPCODE("lshift", op_lshiftbin);
+    RETURN_IF_OPCODE("lshiftbin", op_lshiftbin);
+    RETURN_IF_OPCODE("rshift", op_rshiftbin);
+    RETURN_IF_OPCODE("rshiftbin", op_rshiftbin);
 
     RETURN_IF_OPCODE("booland", booland);
     RETURN_IF_OPCODE("boolor", boolor);

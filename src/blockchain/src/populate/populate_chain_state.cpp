@@ -35,7 +35,7 @@ populate_chain_state::populate_chain_state(fast_chain const& chain, settings con
 #if defined(KTH_CURRENCY_BCH)
       settings_(settings),
 #endif //KTH_CURRENCY_BCH
-      configured_forks_(settings.enabled_forks())
+      configured_forks_(settings.enabled_flags())
     , checkpoints_(infrastructure::config::checkpoint::sort(settings.checkpoints))
     , network_(network)
     , fast_chain_(chain)

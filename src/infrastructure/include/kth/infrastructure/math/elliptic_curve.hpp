@@ -150,10 +150,15 @@ bool is_endorsement(endorsement const& endorsement);
 
 /// Parse an endorsement into signature hash type and DER signature.
 KI_API bool parse_endorsement(uint8_t& sighash_type, der_signature& der_signature, endorsement&& endorsement);
+KI_API bool parse_endorsement(uint8_t& sighash_type, der_signature& der_signature, endorsement const& endorsement);
 
 /// Parse a DER encoded signature with optional strict DER enforcement.
 /// Treat an empty DER signature as invalid, in accordance with BIP66.
 KI_API bool parse_signature(ec_signature& out, der_signature const& der_signature, bool strict);
+
+/// Check if DER signature has low S value (BIP62/BCHN LOW_S check).
+/// Uses lax DER parsing to extract S, then checks if S > order/2.
+KI_API bool check_low_s(der_signature const& der_signature);
 
 /// Encode an EC signature as DER (strict).
 KI_API bool encode_signature(der_signature& out, ec_signature const& signature);
@@ -169,6 +174,9 @@ KI_API bool sign_ecdsa(ec_signature& out, ec_secret const& secret, hash_digest c
 
 /// Create a deterministic Schnorr signature using a private key.
 KI_API bool sign_schnorr(ec_signature& out, ec_secret const& secret, hash_digest const& hash);
+
+/// Verify a Schnorr signature using a potential point.
+KI_API bool verify_schnorr(byte_span point, hash_digest const& hash, byte_span signature);
 
 /// Verify an EC signature using a compressed point.
 KI_API bool verify_signature(ec_compressed const& point, hash_digest const& hash, ec_signature const& signature);

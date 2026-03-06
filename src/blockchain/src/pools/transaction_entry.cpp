@@ -15,6 +15,8 @@
 
 namespace kth::blockchain {
 
+using kth::domain::script_flags_t;
+
 // Space optimization since valid sigops and size are never close to 32 bits.
 inline
 uint32_t cap(size_t value) {
@@ -27,7 +29,7 @@ transaction_entry::transaction_entry(transaction_const_ptr tx)
     : size_(cap(tx->serialized_size(domain::message::version::level::canonical)))
     , sigops_(cap(tx->signature_operations()))
     , fees_(tx->fees())
-    , forks_(tx->validation.state->enabled_forks())
+    , flags_(tx->validation.state->enabled_flags())
     , hash_(tx->hash())
     , marked_(false)
 {}
@@ -37,7 +39,7 @@ transaction_entry::transaction_entry(hash_digest const& hash)
     : size_(0)
     , sigops_(0)
     , fees_(0)
-    , forks_(0)
+    , flags_(0)
     , hash_(hash)
     , marked_(false)
 {}
@@ -52,8 +54,8 @@ uint64_t transaction_entry::fees() const {
 }
 
 // Not valid if the entry is a search key.
-uint32_t transaction_entry::forks() const {
-    return forks_;
+script_flags_t transaction_entry::flags() const {
+    return flags_;
 }
 
 // Not valid if the entry is a search key.

@@ -39,7 +39,7 @@ struct KB_API transaction_entry {
 
     /// The forks used for sigop count and validation of inputs.
     /// If the forks for the next block differ this must be recomputed.
-    uint32_t forks() const;
+    domain::script_flags_t flags() const;
 
     /// The sigops for the purpose of block limit computation.
     /// This is computed based on the specified forks as pertains to BIP16.
@@ -80,7 +80,7 @@ struct KB_API transaction_entry {
 private:
     // These are non-const to allow for default copy construction.
     uint64_t fees_;
-    uint32_t forks_;
+    domain::script_flags_t flags_;
     uint32_t sigops_;
     uint32_t size_;
     hash_digest hash_;

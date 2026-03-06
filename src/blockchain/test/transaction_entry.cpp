@@ -65,7 +65,7 @@ TEST_CASE("transaction entry  construct1  default tx  expected values", "[transa
     transaction_entry const instance(make_tx());
     REQUIRE(instance.is_anchor());
     REQUIRE(instance.fees() == 0);
-    REQUIRE(instance.forks() == 0);
+    REQUIRE(instance.flags() == 0);
     REQUIRE(instance.sigops() == 0);
     REQUIRE(instance.size() == 10u);
     REQUIRE(instance.hash() == default_tx_hash);
@@ -80,7 +80,7 @@ TEST_CASE("transaction entry  construct1  default block hash  expected values", 
     transaction_entry const instance(make_tx()->hash());
     REQUIRE(instance.is_anchor());
     REQUIRE(instance.fees() == 0);
-    REQUIRE(instance.forks() == 0);
+    REQUIRE(instance.flags() == 0);
     REQUIRE(instance.sigops() == 0);
     REQUIRE(instance.size() == 0);
     REQUIRE(instance.hash() == default_tx_hash);

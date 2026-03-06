@@ -23,6 +23,7 @@ namespace kth::blockchain {
 
 using namespace kd::chain;
 using namespace kd::machine;
+using kd::script_flags_t;
 using namespace std::placeholders;
 
 #define NAME "validate_block"
@@ -149,10 +150,21 @@ void validate_block::handle_populated(code const& ec, block_const_ptr block, res
         return;
     }
 
-    auto const height = block->validation.state->height();
+    auto const& state = *block->validation.state;
+    auto const height = state.height();
+    auto const flags = state.enabled_flags();
+    auto const mtp = state.median_time_past();
+    auto const max_block_size_dyn = state.is_lobachevski_enabled()
+        ? state.dynamic_max_block_size()
+        : static_max_block_size(state.network());
+    auto const max_sigops = state.is_lobachevski_enabled()
+        ? state.dynamic_max_block_sigops()
+        : static_max_block_sigops(state.network());
+    auto const under_checkpoint = state.is_under_checkpoint();
 
     // Run contextual block non-tx checks (sets start time).
-    auto const error_code = block->accept(false);
+    auto const error_code = block->accept(
+        flags, height, mtp, max_block_size_dyn, max_sigops, under_checkpoint, false /*transactions*/);
 
     if (error_code) {
         handler(error_code);
@@ -160,23 +172,21 @@ void validate_block::handle_populated(code const& ec, block_const_ptr block, res
     }
 
     auto const sigops = std::make_shared<atomic_counter>(0);
-    auto const state = block->validation.state;
-    KTH_ASSERT(state);
 #if defined(KTH_CURRENCY_BCH)
     bool const bip141 = false;
 #else
-    auto const bip141 = state->is_enabled(domain::machine::rule_fork::bip141_rule);
+    auto const bip141 = state.is_enabled(domain::machine::script_flags::bip141_rule);
 #endif
 
     result_handler complete_handler = std::bind(&validate_block::handle_accepted, this, _1, block, sigops, bip141, handler);
 
-    if (state->is_under_checkpoint()) {
+    if (under_checkpoint) {
         complete_handler(error::success);
         return;
     }
 
     auto const count = block->transactions().size();
-    auto const bip16 = state->is_enabled(domain::machine::rule_fork::bip16_rule);
+    auto const bip16 = state.is_enabled(domain::machine::script_flags::bip16_rule);
     auto const buckets = std::min(priority_dispatch_.size(), count);
     KTH_ASSERT(buckets != 0);
 
@@ -198,6 +208,13 @@ void validate_block::accept_transactions(block_const_ptr block, size_t bucket, s
 
     code ec(error::success);
     auto const& state = *block->validation.state;
+    auto const flags = state.enabled_flags();
+    auto const height = state.height();
+    auto const mtp = state.median_time_past();
+    auto const max_sigops = state.is_lobachevski_enabled()
+        ? state.dynamic_max_block_sigops()
+        : static_max_block_sigops(state.network());
+    auto const under_checkpoint = state.is_under_checkpoint();
     auto const& txs = block->transactions();
     auto const count = txs.size();
 
@@ -205,8 +222,7 @@ void validate_block::accept_transactions(block_const_ptr block, size_t bucket, s
     for (auto tx = bucket; tx < count && !ec; tx = ceiling_add(tx, buckets)) {
         auto const& transaction = txs[tx];
         if ( ! transaction.validation.validated) {
-            // spdlog::info("[blockchain] Transaction {} has to be validated.", encode_hash(transaction.hash()));
-            ec = transaction.accept(state, false);
+            ec = transaction.accept(flags, height, mtp, max_sigops, under_checkpoint, false /*transaction_pool*/);
         } else {
             // spdlog::info("[blockchain] Transaction {} validation could be skiped.", encode_hash(transaction.hash()));
         }
@@ -281,7 +297,7 @@ void validate_block::connect(branch::const_ptr branch, result_handler handler) c
 void validate_block::connect_inputs(block_const_ptr block, size_t bucket, size_t buckets, result_handler handler) const {
     KTH_ASSERT(bucket < buckets);
     code ec(error::success);
-    auto const forks = block->validation.state->enabled_forks();
+    auto const flags = block->validation.state->enabled_flags();
     auto const& txs = block->transactions();
     size_t position = 0;
 
@@ -329,7 +345,7 @@ void validate_block::connect_inputs(block_const_ptr block, size_t bucket, size_t
             }
 
             size_t sigchecks;
-            std::tie(ec, sigchecks) = validate_input::verify_script(*tx, input_index, forks);
+            std::tie(ec, sigchecks) = validate_input::verify_script(*tx, input_index, flags);
             if (ec != error::success) {
                 break;
             }
@@ -346,7 +362,7 @@ void validate_block::connect_inputs(block_const_ptr block, size_t bucket, size_t
 
         if (ec) {
             auto const height = block->validation.state->height();
-            dump(ec, *tx, input_index, forks, height);
+            dump(ec, *tx, input_index, flags, height);
             break;
         }
     }
@@ -368,20 +384,20 @@ void validate_block::handle_connected(code const& ec, block_const_ptr block, res
 // Utility.
 //-----------------------------------------------------------------------------
 
-void validate_block::dump(code const& ec, transaction const& tx, uint32_t input_index, uint32_t forks, size_t height) {
+void validate_block::dump(code const& ec, transaction const& tx, uint32_t input_index, script_flags_t flags, size_t height) {
     auto const& prevout = tx.inputs()[input_index].previous_output();
     auto const script = prevout.validation.cache.script().to_data(false);
     auto const hash = encode_hash(prevout.hash());
     auto const tx_hash = encode_hash(tx.hash());
 
     spdlog::debug("[blockchain] Verify failed [{}] : {}\n"
-        " forks        : {}\n"
+        " flags        : {}\n"
         " outpoint     : {}:{}\n"
         " script       : {}\n"
         " value        : {}\n"
         " inpoint      : {}:{}\n"
         " transaction  : {}",
-        height, ec.message(), forks, hash, prevout.index(), encode_base16(script),
+        height, ec.message(), flags, hash, prevout.index(), encode_base16(script),
         prevout.validation.cache.value(), tx_hash, input_index, encode_base16(tx.to_data(true)));
 }
 

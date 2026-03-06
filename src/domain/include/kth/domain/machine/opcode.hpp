@@ -9,7 +9,7 @@
 #include <string>
 
 #include <kth/domain/define.hpp>
-#include <kth/domain/machine/rule_fork.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 
 #include <kth/domain/define.hpp>
 //#include <kth/infrastructure/define.hpp>
@@ -22,8 +22,8 @@ namespace kth::domain::machine {
 /// Determine if the fork is enabled in the active forks set.
 //TODO(fernando): duplicated in chain::script (domain)
 static
-bool is_enabled(uint32_t active_forks, rule_fork fork) {
-    return (fork & active_forks) != 0;
+bool is_enabled(script_flags_t active_flags, script_flags flag) {
+    return (flag & active_flags) != 0;
 }
 
 enum class opcode : uint8_t {
@@ -139,8 +139,10 @@ enum class opcode : uint8_t {
     reserved_98 = 0x62,       // 98 [ver]
     if_ = 0x63,               // 99 is_conditional
     notif = 0x64,             // 100 is_conditional
-    disabled_verif = 0x65,    // 101 is_disabled
-    disabled_vernotif = 0x66, // 102 is_disabled
+    op_begin = 0x65,          // 101 (was disabled_verif, May 2026: OP_BEGIN)
+    disabled_verif = 0x65,    // backward compat alias
+    op_until = 0x66,          // 102 (was disabled_vernotif, May 2026: OP_UNTIL)
+    disabled_vernotif = 0x66, // backward compat alias
     else_ = 0x67,             // 103 is_conditional
     endif = 0x68,             // 104 is_conditional
     verify = 0x69,            // 105
@@ -175,20 +177,25 @@ enum class opcode : uint8_t {
     size = 0x82,            // 130
 
 // bit logic
-    disabled_invert = 0x83, // 131, is_disabled
+    op_invert = 0x83,       // 131 (was disabled_invert, May 2026: OP_INVERT)
+    disabled_invert = 0x83, // backward compat alias
     and_ = 0x84,            // 132, disabled and re-enabled after pythagoras/monolith upgrade, May 2018
     or_ = 0x85,             // 133, disabled and re-enabled after pythagoras/monolith upgrade, May 2018
     xor_ = 0x86,            // 134, disabled and re-enabled after pythagoras/monolith upgrade, May 2018
     equal = 0x87,           // 135
     equalverify = 0x88,     // 136
-    reserved_137 = 0x89,    // 137 [reserved1]
-    reserved_138 = 0x8a,    // 138 [reserved2]
+    op_define = 0x89,       // 137 (was reserved_137/reserved1, May 2026: OP_DEFINE)
+    reserved_137 = 0x89,    // backward compat alias
+    op_invoke = 0x8a,       // 138 (was reserved_138/reserved2, May 2026: OP_INVOKE)
+    reserved_138 = 0x8a,    // backward compat alias
 
 // numeric
     add1 = 0x8b,            //  139
     sub1 = 0x8c,            // 140
-    disabled_mul2 = 0x8d,   // 141 is_disabled
-    disabled_div2 = 0x8e,   // 142 is_disabled
+    op_lshiftnum = 0x8d,    // 141 (was disabled_mul2/2mul, May 2026: OP_LSHIFTNUM)
+    disabled_mul2 = 0x8d,   // backward compat alias
+    op_rshiftnum = 0x8e,    // 142 (was disabled_div2/2div, May 2026: OP_RSHIFTNUM)
+    disabled_div2 = 0x8e,   // backward compat alias
     negate = 0x8f,          // 143
     abs = 0x90,             // 144
     not_ = 0x91,            // 145
@@ -199,8 +206,10 @@ enum class opcode : uint8_t {
     mul = 0x95,             // 149, disabled and re-enabled after gauss/upgrade8 upgrade, May 2022
     div = 0x96,             // 150, disabled and re-enabled after pythagoras/monolith upgrade, May 2018
     mod = 0x97,             // 151, disabled and re-enabled after pythagoras/monolith upgrade, May 2018
-    disabled_lshift = 0x98, // 152 is_disabled
-    disabled_rshift = 0x99, // 153 is_disabled
+    op_lshiftbin = 0x98,    // 152 (was disabled_lshift/lshift, May 2026: OP_LSHIFTBIN)
+    disabled_lshift = 0x98, // backward compat alias
+    op_rshiftbin = 0x99,    // 153 (was disabled_rshift/rshift, May 2026: OP_RSHIFTBIN)
+    disabled_rshift = 0x99, // backward compat alias
 
     booland = 0x9a,            // 154
     boolor = 0x9b,             // 155
@@ -336,7 +345,7 @@ enum class opcode : uint8_t {
 };
 
 /// Convert the opcode to a mnemonic string.
-KD_API std::string opcode_to_string(opcode value, uint32_t active_forks);
+KD_API std::string opcode_to_string(opcode value, script_flags_t active_flags);
 
 /// Convert a string to an opcode.
 KD_API bool opcode_from_string(opcode& out_code, std::string const& value);

@@ -34,15 +34,15 @@ kth_program_t kth_vm_program_construct_from_script(kth_script_t script) {
     return new kth::domain::machine::program(script_cpp);
 }
 
-// program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, uint32_t forks);
-kth_program_t kth_vm_program_construct_from_script_transaction(kth_script_t script, kth_transaction_t transaction, uint32_t input_index, uint32_t forks) {
+// program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, uint64_t forks);
+kth_program_t kth_vm_program_construct_from_script_transaction(kth_script_t script, kth_transaction_t transaction, uint32_t input_index, uint64_t forks) {
     auto const& script_cpp = kth_chain_script_const_cpp(script);
     auto const& transaction_cpp = kth_chain_transaction_const_cpp(transaction);
     return new kth::domain::machine::program(script_cpp, transaction_cpp, input_index, forks);
 }
 
-// program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, uint32_t forks, data_stack&& stack, uint64_t value, script_version version = script_version::zero);
-// kth_program_t kth_vm_program_construct_from_script_transaction_stack(kth_script_t script, kth_transaction_t transaction, uint32_t input_index, uint32_t forks, kth_data_stack_t stack, uint64_t value, kth_script_version_t version);
+// program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, uint64_t forks, data_stack&& stack, uint64_t value, script_version version = script_version::zero);
+// kth_program_t kth_vm_program_construct_from_script_transaction_stack(kth_script_t script, kth_transaction_t transaction, uint32_t input_index, uint64_t forks, kth_data_stack_t stack, uint64_t value, kth_script_version_t version);
 
 // program(chain::script const& script, program const& x);
 kth_program_t kth_vm_program_construct_from_script_program(kth_script_t script, kth_program_t program) {
@@ -71,9 +71,9 @@ kth_bool_t kth_vm_program_is_valid(kth_program_t program) {
     return kth::bool_to_int(kth_vm_program_const_cpp(program).is_valid());
 }
 
-uint32_t kth_vm_program_forks(kth_program_t program) {
+uint64_t kth_vm_program_flags(kth_program_t program) {
     // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth_vm_program_const_cpp(program).forks();
+    return kth_vm_program_const_cpp(program).flags();
 }
 
 kth_size_t kth_vm_program_max_script_element_size(kth_program_t program) {
@@ -189,16 +189,20 @@ uint8_t const* kth_vm_program_pop(kth_program_t program, kth_size_t* out_size) {
     return kth::create_c_array(data, *out_size);
 }
 
-//     bool pop(int32_t& out_value);
+//     std::expected<int32_t, error_code_t> pop_int32();
 kth_bool_t kth_vm_program_pop_int32_t(kth_program_t program, int32_t* out_value) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth::bool_to_int(kth_vm_program_cpp(program).pop(*out_value));
+    auto result = kth_vm_program_cpp(program).pop_int32();
+    if ( ! result) return kth::bool_to_int(false);
+    *out_value = *result;
+    return kth::bool_to_int(true);
 }
 
-//     bool pop(int64_t& out_value);
+//     std::expected<int64_t, error_code_t> pop_int64();
 kth_bool_t kth_vm_program_pop_int64_t(kth_program_t program, int64_t* out_value) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth::bool_to_int(kth_vm_program_cpp(program).pop(*out_value));
+    auto result = kth_vm_program_cpp(program).pop_int64();
+    if ( ! result) return kth::bool_to_int(false);
+    *out_value = *result;
+    return kth::bool_to_int(true);
 }
 
 //     bool pop(number& out_number, size_t maximum_size);

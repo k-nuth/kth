@@ -57,8 +57,8 @@ kth_size_t kth_chain_script_serialized_size(kth_script_t script, kth_bool_t pref
     return kth_chain_script_const_cpp(script).serialized_size(kth::int_to_bool(prefix));
 }
 
-char const* kth_chain_script_to_string(kth_script_t script, uint32_t active_forks) {
-    auto str = kth_chain_script_const_cpp(script).to_string(active_forks);
+char const* kth_chain_script_to_string(kth_script_t script, uint64_t active_flags) {
+    auto str = kth_chain_script_const_cpp(script).to_string(active_flags);
     return kth::create_c_str(str);
 }
 
@@ -102,9 +102,9 @@ uint8_t const* kth_chain_script_to_bytes(kth_script_t script, kth_size_t* out_si
     return kth::create_c_array(script_data, *out_size);
 }
 
-kth_bool_t kth_chain_script_is_enabled(uint32_t active_forks, kth_rule_fork_t fork) {
-    auto fork_cpp = kth::rule_fork_to_cpp(fork);
-    return kth::bool_to_int(kth::domain::chain::script::is_enabled(active_forks, fork_cpp));
+kth_bool_t kth_chain_script_is_enabled(uint64_t active_flags, kth_script_flags_t flag) {
+    auto flag_cpp = kth::script_flags_to_cpp(flag);
+    return kth::bool_to_int(kth::domain::chain::script::is_enabled(active_flags, flag_cpp));
 }
 
 kth_bool_t  kth_chain_script_is_push_only(kth_operation_list_t ops) {
@@ -304,7 +304,7 @@ kth_hash_t generate_signature_hash(
     uint32_t input_index,
     kth_script_t script_code,
     uint8_t sighash_type,
-    uint32_t active_forks,
+    uint64_t active_flags,
 #if ! defined(KTH_CURRENCY_BCH)
     kth_script_version_t version,
 #endif // ! KTH_CURRENCY_BCH
@@ -322,7 +322,7 @@ kth_hash_t generate_signature_hash(
         input_index,
         script_code_cpp,
         sighash_type,
-        active_forks,
+        active_flags,
 
 #if ! defined(KTH_CURRENCY_BCH)
         version_cpp,
@@ -342,7 +342,7 @@ kth_bool_t check_signature(
     kth_script_t script_code,
     kth_transaction_t tx,
     uint32_t input_index,
-    uint32_t active_forks,
+    uint64_t active_flags,
 #if ! defined(KTH_CURRENCY_BCH)
     kth_script_version_t version,
 #endif // ! KTH_CURRENCY_BCH
@@ -364,7 +364,7 @@ kth_bool_t check_signature(
         script_code_cpp,
         tx_cpp,
         input_index,
-        active_forks,
+        active_flags,
 #if ! defined(KTH_CURRENCY_BCH)
         version_cpp,
 #endif // ! KTH_CURRENCY_BCH
@@ -380,7 +380,7 @@ uint8_t const* kth_chain_script_create_endorsement(
     kth_transaction_t tx,
     uint32_t input_index,
     uint8_t sighash_type,
-    uint32_t active_forks,
+    uint64_t active_flags,
 #if ! defined(KTH_CURRENCY_BCH)
     kth_script_version_t version,
 #endif // ! KTH_CURRENCY_BCH
@@ -403,7 +403,7 @@ uint8_t const* kth_chain_script_create_endorsement(
         tx_cpp,
         input_index,
         sighash_type,
-        active_forks,
+        active_flags,
 #if ! defined(KTH_CURRENCY_BCH)
         version_cpp,
 #endif // ! KTH_CURRENCY_BCH
@@ -422,20 +422,20 @@ uint8_t const* kth_chain_script_create_endorsement(
 //-----------------------------------------------------------------------------
 
 // static
-// code verify(transaction const& tx, uint32_t input_index, uint32_t forks, script const& input_script, script const& prevout_script, uint64_t /*value*/);
+// code verify(transaction const& tx, uint32_t input_index, uint64_t forks, script const& input_script, script const& prevout_script, uint64_t /*value*/);
 
 // static
-// code verify(transaction const& tx, uint32_t input, uint32_t forks);
+// code verify(transaction const& tx, uint32_t input, uint64_t forks);
 
 
-kth_error_code_t kth_chain_script_verify(kth_transaction_t tx, uint32_t input_index, uint32_t forks, kth_script_t input_script, kth_script_t prevout_script, uint64_t value) {
+kth_error_code_t kth_chain_script_verify(kth_transaction_t tx, uint32_t input_index, uint64_t forks, kth_script_t input_script, kth_script_t prevout_script, uint64_t value) {
     auto const& tx_cpp = kth_chain_transaction_const_cpp(tx);
     auto const& input_script_cpp = kth_chain_script_const_cpp(input_script);
     auto const& prevout_script_cpp = kth_chain_script_const_cpp(prevout_script);
     return kth::to_c_err(kth::domain::chain::script::verify(tx_cpp, input_index, forks, input_script_cpp, prevout_script_cpp, value));
 }
 
-kth_error_code_t kth_chain_script_verify_transaction(kth_transaction_t tx, uint32_t input, uint32_t forks) {
+kth_error_code_t kth_chain_script_verify_transaction(kth_transaction_t tx, uint32_t input, uint64_t forks) {
     auto const& tx_cpp = kth_chain_transaction_const_cpp(tx);
     return kth::to_c_err(kth::domain::chain::script::verify(tx_cpp, input, forks));
 }

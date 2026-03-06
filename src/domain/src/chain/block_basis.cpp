@@ -25,7 +25,7 @@
 #include <kth/domain/constants.hpp>
 #include <kth/domain/deserialization.hpp>
 #include <kth/domain/machine/opcode.hpp>
-#include <kth/domain/machine/rule_fork.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/infrastructure/config/checkpoint.hpp>
 #include <kth/infrastructure/error.hpp>
@@ -441,11 +441,19 @@ code block_basis::check_transactions() const {
     return error::success;
 }
 
-code block_basis::accept_transactions(chain_state const& state) const {
+code block_basis::accept_transactions(
+    script_flags_t flags,
+    size_t height,
+    uint32_t median_time_past,
+    size_t max_sigops,
+    bool is_under_checkpoint
+) const {
     code ec;
     for (auto const& tx : transactions_) {
-        if ( ! tx.validation.validated && (ec = tx.accept(state, false))) {
-            return ec;
+        if ( ! tx.validation.validated) {
+            ec = tx.accept(flags, height, median_time_past, max_sigops,
+                           is_under_checkpoint, false /*transaction_pool*/);
+            if (ec) return ec;
         }
     }
     return error::success;
@@ -464,7 +472,7 @@ code block_basis::connect_transactions(chain_state const& state) const {
 // Validation.
 //-----------------------------------------------------------------------------
 
-// These checks are self-contained; blockchain (and so version) independent.
+// Structural validation — no context needed, no prevout cache needed.
 code block_basis::check(size_t serialized_size_false) const {
     code ec;
 
@@ -525,69 +533,68 @@ code block_basis::check(size_t serialized_size_false) const {
     return check_transactions();
 }
 
-// These checks assume that prevout caching is completed on all tx.inputs.
+// Contextual validation — prevout cache must be populated for transaction validation.
+code block_basis::accept(
+    script_flags_t flags,
+    size_t height,
+    uint32_t median_time_past,
+    size_t serialized_size,
+    size_t max_block_size_dynamic,
+    size_t max_sigops,
+    bool is_under_checkpoint,
+    bool transactions
+) const {
+    auto const is_enabled = [](script_flags_t active, auto flag) {
+        return script_basis::is_enabled(active, flag);
+    };
 
-
-code block_basis::accept(chain_state const& state, size_t serialized_size, bool transactions) const {
-    auto const bip16 = state.is_enabled(rule_fork::bip16_rule);
-    auto const bip34 = state.is_enabled(rule_fork::bip34_rule);
-    auto const bip113 = state.is_enabled(rule_fork::bip113_rule);
+    auto const bip16 = is_enabled(flags, script_flags::bip16_rule);
+    auto const bip34 = is_enabled(flags, script_flags::bip34_rule);
+    auto const bip113 = is_enabled(flags, script_flags::bip113_rule);
     auto const bip141 = false;  // No segwit
 
     code ec;
-    if ((ec = header_.accept(state))) {
-        return ec;
+    // TODO(fernando): header_.accept() needs the same refactor to not use chain_state
+    // if ((ec = header_.accept(...))) {
+    //     return ec;
+    // }
+
+    if (serialized_size > max_block_size_dynamic) {
+        return error::block_size_limit;
     }
 
-    if (state.is_lobachevski_enabled()) {
-        if (serialized_size > state.dynamic_max_block_size()) {
-            return error::block_size_limit;
-        }
-    } else if (state.is_pythagoras_enabled()) {
-        if (serialized_size > static_max_block_size(state.network())) {
-            return error::block_size_limit;
-        }
-    } else {
-        if (serialized_size > max_block_size::mainnet_old) {
-            return error::block_size_limit;
-        }
-    }
-
-    if (state.is_under_checkpoint()) {
+    if (is_under_checkpoint) {
         return error::success;
     }
 
-
-    //Note(kth): LTOR (Legacy Transaction ORdering) is a check just for Bitcoin (BTC)
-    //               and for BitcoinCash (BCH) before 2018-Nov-15.
-
-    if (state.is_euclid_enabled()) {
+#if defined(KTH_CURRENCY_BCH)
+    if (is_enabled(flags, script_flags::bch_cleanstack)) { // euclid+
         if ( ! is_canonical_ordered()) {
             return error::non_canonical_ordered;
         }
-    } else {
+    } else
+#endif
+    {
         if (is_forward_reference()) {
             return error::forward_reference;
         }
     }
 
-    if (bip34 && !is_valid_coinbase_script(state.height())) {
+    if (bip34 && ! is_valid_coinbase_script(height)) {
         return error::coinbase_height_mismatch;
     }
 
-    // TODO(legacy): relates height to total of tx.fee (pool cach).
-    if ( ! is_valid_coinbase_claim(state.height())) {
+    if ( ! is_valid_coinbase_claim(height)) {
         return error::coinbase_value_limit;
     }
 
-    // TODO(legacy): relates median time past to tx.locktime (pool cache min tx.time).
-    auto const block_time = bip113 ? state.median_time_past() : header_.timestamp();
-    if ( ! is_final(state.height(), block_time)) {
+    auto const block_time = bip113 ? median_time_past : header_.timestamp();
+    if ( ! is_final(height, block_time)) {
         return error::block_non_final;
     }
 
 #if defined(KTH_CURRENCY_BCH)
-    if ( ! state.is_fermat_enabled()) {
+    if ( ! is_enabled(flags, script_flags::bch_enforce_sigchecks)) { // pre-fermat
 #endif
         // TODO(legacy): determine if performance benefit is worth excluding sigops here.
         // TODO(legacy): relates block limit to total of tx.sigops (pool cache tx.sigops).
@@ -601,10 +608,10 @@ code block_basis::accept(chain_state const& state, size_t serialized_size, bool 
 #endif
 
     if (transactions) {
-        return accept_transactions(state);
+        return accept_transactions(flags, height, median_time_past, max_sigops, is_under_checkpoint);
     }
 
-    return ec;
+    return error::success;
 }
 
 code block_basis::connect(chain_state const& state) const {

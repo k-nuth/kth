@@ -201,9 +201,8 @@ opcode operation::minimal_opcode_from_data(data_chunk const& data) {
             return opcode::push_negative_1;
         }
 
-        if (value == number::positive_0) {
-            return opcode::push_size_0;
-        }
+        // Note: {0x00} is NOT equivalent to OP_0. OP_0 pushes {} (empty),
+        // not {0x00}. So push_size_1 is the minimal opcode for data {0x00}.
 
         if (value >= number::positive_1 && value <= number::positive_16) {
             return opcode_from_positive(value);
@@ -316,48 +315,34 @@ bool operation::is_reserved(opcode code) {
 // this was an unintended consequence of range testing enums.
 //*****************************************************************************
 inline
-bool operation::is_disabled(opcode code, uint32_t active_forks) {
-    // SCRIPT_64_BIT_INTEGERS = (1U << 24),
-    constexpr auto script_64_bit_integers = 1U << 24;   // the flag is repeated, it is in Consensus lib.
+bool operation::is_disabled(opcode code, script_flags_t active_flags) {
     switch (code) {
-        case opcode::disabled_invert:
-        case opcode::disabled_mul2:
-        case opcode::disabled_div2:
-        case opcode::disabled_lshift:
-        case opcode::disabled_rshift:
-        case opcode::disabled_verif:
-        case opcode::disabled_vernotif:
-            return true;
+        case opcode::op_begin:       // 0x65, was disabled_verif
+        case opcode::op_until:       // 0x66, was disabled_vernotif
+            return ! is_enabled(active_flags, script_flags::bch_loops);
+        case opcode::op_invert:      // 0x83, was disabled_invert
+        case opcode::op_lshiftnum:   // 0x8d, was disabled_mul2
+        case opcode::op_rshiftnum:   // 0x8e, was disabled_div2
+        case opcode::op_lshiftbin:   // 0x98, was disabled_lshift
+        case opcode::op_rshiftbin:   // 0x99, was disabled_rshift
+            return ! is_enabled(active_flags, script_flags::bch_bitwise_ops);
         case opcode::mul:
-            return ! is_enabled(active_forks, rule_fork::bch_gauss);
-        case opcode::div:
-        case opcode::mod:
-        case opcode::and_:
-        case opcode::or_:
-        case opcode::xor_:
-            return ! is_enabled(active_forks, rule_fork::bch_pythagoras);
+            return ! is_enabled(active_flags, script_flags::bch_64bit_integers);
+
+        // case opcode::div:
+        // case opcode::mod:
+        // case opcode::and_:
+        // case opcode::or_:
+        // case opcode::xor_:
+        //     return ! is_enabled(active_flags, script_flags::bch_pythagoras);
+
+        // div/mod/and/or/xor were reactivated in the 2018-May (pythagoras) upgrade.
+        // Previously gated by bch_reactivated_opcodes, but BCHN has no flag for these
+        // (they fall through to default:false in IsOpcodeDisabled), so we match that behavior.
         default:
             return false;
     }
 }
-
-// 2025 - Still disabled opcodes
-// static bool IsOpcodeDisabled(opcodetype opcode, uint32_t flags) {
-//     switch (opcode) {
-//         case OP_INVERT:
-//         case OP_2MUL:
-//         case OP_2DIV:
-//         case OP_LSHIFT:
-//         case OP_RSHIFT:
-//             // Disabled opcodes.
-//             return true;
-//         case OP_MUL:
-//             return (flags & SCRIPT_64_BIT_INTEGERS) == 0;
-//         default:
-//             break;
-//     }
-//     return false;
-// }
 
 //*****************************************************************************
 // CONSENSUS: in order to properly treat VERIF and VERNOTIF as disabled (see
@@ -370,6 +355,8 @@ bool operation::is_conditional(opcode code) {
         case opcode::notif:
         case opcode::else_:
         case opcode::endif:
+        case opcode::op_begin:   // May 2026: processed unconditionally (BCHN behavior)
+        case opcode::op_until:   // May 2026: processed unconditionally (BCHN behavior)
             return true;
         default:
             return false;
@@ -410,8 +397,20 @@ bool operation::is_positive() const {
 }
 
 inline
-bool operation::is_disabled(uint32_t active_forks) const {
-    return is_disabled(code_, active_forks);
+bool operation::is_disabled(script_flags_t active_flags) const {
+    return is_disabled(code_, active_flags);
+}
+
+inline
+kth::error::error_code_t operation::disabled_error() const {
+    switch (code_) {
+        // BEGIN/UNTIL return BAD_OPCODE (op_reserved), not DISABLED_OPCODE
+        case opcode::op_begin:
+        case opcode::op_until:
+            return error::op_reserved;
+        default:
+            return error::op_disabled;
+    }
 }
 
 inline

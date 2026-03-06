@@ -10,6 +10,7 @@
 #include <istream>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <type_traits>
 
 #include <expected>
@@ -19,7 +20,7 @@
 #include <kth/domain/define.hpp>
 
 #include <kth/domain/machine/operation.hpp>
-#include <kth/domain/machine/rule_fork.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/machine/script_pattern.hpp>
@@ -46,7 +47,7 @@ enum class endorsement_type {
 struct KD_API script : script_basis {
 public:
     using operation = machine::operation;
-    using rule_fork = machine::rule_fork;
+    using script_flags = machine::script_flags;
     using script_pattern = infrastructure::machine::script_pattern;
 #if ! defined(KTH_CURRENCY_BCH)
     using script_version = infrastructure::machine::script_version;
@@ -102,7 +103,7 @@ public:
     // Serialization.
     //-------------------------------------------------------------------------
 
-    std::string to_string(uint32_t active_forks) const;
+    std::string to_string(script_flags_t active_flags) const;
 
     // Iteration.
     //-------------------------------------------------------------------------
@@ -132,7 +133,7 @@ public:
                                         uint32_t input_index,
                                         script const& script_code,
                                         uint8_t sighash_type,
-                                        uint32_t active_forks,
+                                        script_flags_t active_flags,
 #if ! defined(KTH_CURRENCY_BCH)
                                         script_version version = script_version::unversioned,
 #endif // ! KTH_CURRENCY_BCH
@@ -145,7 +146,7 @@ public:
                             script const& script_code,
                             transaction const& tx,
                             uint32_t input_index,
-                            uint32_t active_forks,
+                            script_flags_t active_flags,
 #if ! defined(KTH_CURRENCY_BCH)
                             script_version version = script_version::unversioned,
 #endif // ! KTH_CURRENCY_BCH
@@ -161,7 +162,7 @@ public:
         transaction const& tx,
         uint32_t input_index,
         uint8_t sighash_type,
-        uint32_t active_forks,
+        script_flags_t active_flags,
 #if ! defined(KTH_CURRENCY_BCH)
         script_version version = script_version::unversioned,
 #endif // ! KTH_CURRENCY_BCH
@@ -182,11 +183,7 @@ public:
     // static
     // hash_digest to_sequences(transaction const& tx);
 
-    /// Determine if the fork is enabled in the active forks set.
-    static
-    bool is_enabled(uint32_t active_forks, rule_fork fork) {
-        return (fork & active_forks) != 0;
-    }
+    // is_enabled and are_enabled inherited from script_basis.
 
     /// Consensus patterns.
     static
@@ -280,19 +277,19 @@ public:
 
     void reset();
 
-    bool is_pay_to_script_hash(uint32_t forks) const;
+    bool is_pay_to_script_hash(script_flags_t flags) const;
 
-    bool is_pay_to_script_hash_32(uint32_t forks) const;
+    bool is_pay_to_script_hash_32(script_flags_t flags) const;
 
     // Validation.
     //-----------------------------------------------------------------------------
 
     //TODO: move to script_basis (?)
     static
-    code verify(transaction const& tx, uint32_t input_index, uint32_t forks, script const& input_script, script const& prevout_script, uint64_t /*value*/);
+    code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t /*value*/);
 
     static
-    code verify(transaction const& tx, uint32_t input, uint32_t forks);
+    code verify(transaction const& tx, uint32_t input, script_flags_t flags);
 
 private:
     static
@@ -301,10 +298,8 @@ private:
     static
     data_chunk operations_to_data(operation::list const& ops);
 
-#if ! defined(KTH_CURRENCY_BCH)
     static
     std::pair<hash_digest, size_t> generate_unversioned_signature_hash(transaction const& tx, uint32_t input_index, script const& script_code, uint8_t sighash_type);
-#endif // ! KTH_CURRENCY_BCH
 
     // These are protected by mutex.
     mutable bool cached_{false};

@@ -333,7 +333,7 @@ bool witness::extract_embedded_script(script& out_script, data_stack& out_stack,
 // static
 // The program script is either a prevout script or an emedded script.
 // It validates this witness, from which the witness script is derived.
-code witness::verify(transaction const& tx, uint32_t input_index, uint32_t forks, script const& program_script, uint64_t value) const {
+code witness::verify(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& program_script, uint64_t value) const {
     auto const version = program_script.version();
 
     switch (version) {
@@ -346,7 +346,7 @@ code witness::verify(transaction const& tx, uint32_t input_index, uint32_t forks
                 return error::invalid_witness;
             }
 
-            program witness(script, tx, input_index, forks, std::move(stack),
+            program witness(script, tx, input_index, flags, std::move(stack),
                             value, version);
 
             if ((ec = witness.evaluate())) {

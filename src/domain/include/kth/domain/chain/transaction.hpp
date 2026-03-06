@@ -23,7 +23,7 @@
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/domain/machine/opcode.hpp>
-#include <kth/domain/machine/rule_fork.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
@@ -155,11 +155,18 @@ public:
 
     bool is_overspent() const;
 
-    using transaction_basis::accept;
-
     code check(size_t max_block_size, bool transaction_pool, bool retarget = true) const;
-    code accept(bool transaction_pool = true) const;
-    code accept(chain_state const& state, bool transaction_pool = true) const;
+
+    /// Contextual validation — prevout cache must be populated.
+    code accept(
+        script_flags_t flags,
+        size_t height,
+        uint32_t median_time_past,
+        size_t max_sigops,
+        bool is_under_checkpoint,
+        bool transaction_pool
+    ) const;
+
     code connect() const;
     code connect(chain_state const& state) const;
     code connect_input(chain_state const& state, size_t input_index) const;
@@ -229,8 +236,8 @@ private:
 };
 
 
-code verify(transaction const& tx, uint32_t input_index, uint32_t forks, script const& input_script, script const& prevout_script, uint64_t /*value*/);
-code verify(transaction const& tx, uint32_t input, uint32_t forks);
+code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t /*value*/);
+code verify(transaction const& tx, uint32_t input, script_flags_t flags);
 
 } // namespace kth::domain::chain
 

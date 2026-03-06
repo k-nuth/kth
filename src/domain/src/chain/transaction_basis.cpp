@@ -22,7 +22,7 @@
 #include <kth/domain/constants.hpp>
 #include <kth/domain/machine/opcode.hpp>
 #include <kth/domain/machine/operation.hpp>
-#include <kth/domain/machine/rule_fork.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/hash.hpp>
@@ -34,6 +34,12 @@
 #include <kth/infrastructure/utility/ostream_writer.hpp>
 
 using namespace kth::infrastructure::machine;
+
+#if defined(KTH_CURRENCY_BCH)
+#include <boost/container_hash/hash.hpp>
+#include <boost/unordered/unordered_flat_map.hpp>
+#include <boost/unordered/unordered_flat_set.hpp>
+#endif
 
 namespace kth::domain::chain {
 
@@ -415,7 +421,7 @@ bool transaction_basis::is_mature(size_t height) const {
 // Validation.
 //-----------------------------------------------------------------------------
 
-// These checks are self-contained; blockchain (and so version) independent.
+// Structural validation — no context needed, no prevout cache needed.
 code transaction_basis::check(uint64_t total_output_value, size_t max_block_size, bool transaction_pool, bool retarget) const {
     if (inputs_.empty() || outputs_.empty()) {
         return error::empty_transaction;
@@ -425,8 +431,7 @@ code transaction_basis::check(uint64_t total_output_value, size_t max_block_size
         return error::previous_output_null;
     }
 
-    // if (total_output_value() > max_money(retarget)) {
-    if (total_output_value > max_money(retarget)) {
+    if (total_output_value > max_satoshi_supply) {
         return error::spend_overflow;
     }
 
@@ -458,49 +463,65 @@ code transaction_basis::check(uint64_t total_output_value, size_t max_block_size
     return error::success;
 }
 
-size_t transaction_basis::min_tx_size(chain_state const& state) const {
+size_t transaction_basis::min_tx_size(script_flags_t flags) const {
+    auto const is_enabled = [](script_flags_t active, auto flag) {
+        return script_basis::is_enabled(active, flag);
+    };
 #if defined(KTH_CURRENCY_BCH)
-    if (state.is_descartes_enabled()) {
-        return min_transaction_size_descartes;      // 2023-May-15
+    if (is_enabled(flags, kth::domain::machine::script_flags::bch_tokens)) {
+        return min_transaction_size_descartes;      // 2023-May-15 (descartes)
     }
-    if (state.is_euclid_enabled()) {
-        return min_transaction_size_old;            // 2018-Nov-15
+    if (is_enabled(flags, kth::domain::machine::script_flags::bch_cleanstack)) {
+        return min_transaction_size_euclid;         // 2018-Nov-15 (euclid)
     }
 #endif
     return 0;
 }
 
-// These checks assume that prevout caching is completed on all tx.inputs.
-code transaction_basis::accept(chain_state const& state, bool is_overspent, bool is_duplicated /*= false*/, bool transaction_pool /*= true*/) const {
-    auto const bip16 = state.is_enabled(kth::domain::machine::rule_fork::bip16_rule);
-    auto const bip30 = state.is_enabled(kth::domain::machine::rule_fork::bip30_rule);
-    auto const bip68 = state.is_enabled(kth::domain::machine::rule_fork::bip68_rule);
-    auto const network = state.network();
+// Contextual validation — prevout cache must be populated.
+// Does not depend on chain_state; receives individual parameters instead.
+code transaction_basis::accept(
+    script_flags_t flags,
+    size_t height,
+    uint32_t median_time_past,
+    size_t max_sigops,
+    bool is_overspent,
+    bool is_duplicated,
+    bool is_under_checkpoint,
+    bool transaction_pool
+) const {
+    auto const is_enabled = [](script_flags_t active, auto flag) {
+        return script_basis::is_enabled(active, flag);
+    };
+
+    auto const bip16 = is_enabled(flags, kth::domain::machine::script_flags::bip16_rule);
+    auto const bip30 = is_enabled(flags, kth::domain::machine::script_flags::bip30_rule);
+    auto const bip68 = is_enabled(flags, kth::domain::machine::script_flags::bip68_rule);
     auto const bip141 = false;  // No segwit
+    auto const revert_bip30 = is_enabled(flags, kth::domain::machine::script_flags::allow_collisions);
 
-    auto const revert_bip30 = state.is_enabled(kth::domain::machine::rule_fork::allow_collisions);
-
-    if (transaction_pool && state.is_under_checkpoint()) {
+    if (transaction_pool && is_under_checkpoint) {
         return error::premature_validation;
     }
 
 #if defined(KTH_CURRENCY_BCH)
-    if (serialized_size(true) < min_tx_size(state)) {
+    if (serialized_size(true) < min_tx_size(flags)) {
         return error::transaction_size_limit;
+    }
+
+    // CHIP 2021-01 Restrict Transaction Version (Upgrade9/Descartes, May 2023)
+    if (is_enabled(flags, kth::domain::machine::script_flags::bch_tokens)) {
+        if (version_ < 1 || version_ > 2) {
+            return error::invalid_tx_version;
+        }
     }
 #endif
 
-    if (transaction_pool && !is_final(state.height(), state.median_time_past())) {
+    if (transaction_pool && ! is_final(height, median_time_past)) {
         return error::transaction_non_final;
     }
 
-    //*************************************************************************
-    // CONSENSUS:
-    // A transaction hash that exists in the chain is not acceptable even if
-    // the original is spent in the new block. This is not necessary nor is it
-    // described by BIP30, but it is in the code referenced by BIP30.
-    //*************************************************************************
-    if (bip30 && !revert_bip30 && is_duplicated) {
+    if (bip30 && ! revert_bip30 && is_duplicated) {
         return error::unspent_duplicate;
     }
 
@@ -508,13 +529,19 @@ code transaction_basis::accept(chain_state const& state, bool is_overspent, bool
         return error::missing_previous_output;
     }
 
-    if (is_double_spend(transaction_pool)) {
-        return error::double_spend;
-        // This relates height to maturity of spent coinbase. Since reorg is the
-        // only way to decrease height and reorg invalidates, this is cache safe.
+    // Each input value must be in money range (BCHN: CheckTxInputs MoneyRange).
+    for (auto const& in : inputs_) {
+        auto const& cache = in.previous_output().validation.cache;
+        if (cache.is_valid() && cache.value() > max_satoshi_supply) {
+            return error::spend_overflow;
+        }
     }
 
-    if ( ! is_mature(state.height())) {
+    if (is_double_spend(transaction_pool)) {
+        return error::double_spend;
+    }
+
+    if ( ! is_mature(height)) {
         return error::coinbase_maturity;
     }
 
@@ -522,31 +549,29 @@ code transaction_basis::accept(chain_state const& state, bool is_overspent, bool
         return error::spend_exceeds_value;
     }
 
-    if (bip68 && is_locked(state.height(), state.median_time_past())) {
+    if (bip68 && is_locked(height, median_time_past)) {
         return error::sequence_locked;
-        // This recomputes sigops to include p2sh from prevouts if bip16 is true.
     }
 
 #if defined(KTH_CURRENCY_BCH)
-    if ( ! state.is_fermat_enabled()) {
+    if ( ! is_enabled(flags, kth::domain::machine::script_flags::bch_enforce_sigchecks)) {
 #endif
-        auto const max_sigops = state.is_lobachevski_enabled() ?
-            state.dynamic_max_block_sigops() :
-            static_max_block_sigops(network);
-
-
         if (transaction_pool && signature_operations(bip16, bip141) > max_sigops) {
             return error::transaction_embedded_sigop_limit;
-            // This causes second serialized_size(true, false) computation (uncached).
-            // TODO(legacy): reduce by header, txcount and smallest coinbase size for height.
         }
 #if defined(KTH_CURRENCY_BCH)
     }
 
-    if (state.is_descartes_enabled()) {
-        // CHIP 2021-01 Restrict Transaction Version. Enabled in 2023-May-15
+    if (is_enabled(flags, kth::domain::machine::script_flags::bch_tokens)) {
         if (version_ > transaction_version_max || version_ < transaction_version_min) {
             return error::transaction_version_out_of_range;
+        }
+    }
+
+    {
+        auto const ec = validate_tokens(flags);
+        if (ec != error::success) {
+            return ec;
         }
     }
 #endif
@@ -712,5 +737,231 @@ uint64_t fees(transaction_basis const& tx) {
 bool is_overspent(transaction_basis const& tx) {
     return ! tx.is_coinbase() && total_output_value(tx) > total_input_value(tx);
 }
+
+#if defined(KTH_CURRENCY_BCH)
+
+size_t max_token_commitment_length(script_flags_t flags) {
+    return script_basis::is_enabled(flags, machine::script_flags::bch_loops)
+        ? max_token_commitment_length_leibniz
+        : max_token_commitment_length_descartes;
+}
+
+code transaction_basis::validate_tokens(script_flags_t flags) const {
+    if ( ! script::is_enabled(flags, machine::script_flags::bch_tokens)) {
+        // Pre-activation sanity (BCHN: CheckPreActivationSanity):
+        // Inputs spending UTXOs with token data are unspendable before activation.
+        if ( ! is_coinbase()) {
+            for (auto const& in : inputs_) {
+                auto const& cache = in.previous_output().validation.cache;
+                if (cache.is_valid() && cache.token_data().has_value()) {
+                    return error::token_pre_activation_input;
+                }
+            }
+        }
+        return error::success;
+    }
+
+    // Post-activation: coinbase cannot have token outputs.
+    if (is_coinbase()) {
+        for (auto const& out : outputs_) {
+            if (out.token_data().has_value()) {
+                return error::token_coinbase_has_tokens;
+            }
+        }
+        return error::success;
+    }
+
+    // TxIds from inputs with prevout index == 0 that can become new categories (genesis candidates).
+    boost::unordered_flat_set<token_id_t> potential_genesis_ids;
+
+    // Tallies of fungible amounts seen in inputs and genesis outputs.
+    boost::unordered_flat_map<token_id_t, int64_t> input_amounts_by_category;
+    boost::unordered_flat_map<token_id_t, int64_t> genesis_amounts_by_category;
+
+    // NFT tracking.
+    boost::unordered_flat_set<token_id_t> input_minting_ids;
+    boost::unordered_flat_map<token_id_t, size_t> input_mutables;
+
+    // For immutable NFTs we track by (category, commitment) -> count.
+    struct nft_key {
+        token_id_t id;
+        commitment_t commitment;
+        bool operator==(nft_key const&) const = default;
+    };
+    struct nft_key_hash {
+        size_t operator()(nft_key const& k) const {
+            auto seed = boost::hash<token_id_t>{}(k.id);
+            boost::hash_combine(seed, boost::hash_range(k.commitment.begin(), k.commitment.end()));
+            return seed;
+        }
+    };
+    boost::unordered_flat_map<nft_key, size_t, nft_key_hash> input_immutables;
+
+    // Scan inputs, tally amounts and NFTs.
+    for (size_t i = 0; i < inputs_.size(); ++i) {
+        auto const& in = inputs_[i];
+        auto const& prevout = in.previous_output();
+
+        if (prevout.index() == 0) {
+            // Mark potential genesis inputs (inputs with prevout index == 0).
+            potential_genesis_ids.insert(prevout.hash());
+        }
+
+        // Get the UTXO for this input (prevout cache must be populated).
+        auto const& utxo = inputs_[i].previous_output().validation.cache;
+        if ( ! utxo.is_valid()) continue;
+        auto const& td_opt = utxo.token_data();
+
+        if ( ! td_opt.has_value()) {
+            continue;
+        }
+
+        auto const& td = td_opt.value();
+
+        // Check basic token data consensus rules.
+        {
+            int64_t const a = get_amount(td);
+            if (a < 0) return error::token_amount_negative;
+            if (a == 0 && is_fungible_only(td)) return error::token_fungible_only_amount_zero;
+            if (has_nft(td)) {
+                if (get_nft(td).commitment.size() > max_token_commitment_length(flags)) {
+                    return error::token_commitment_oversized;
+                }
+            }
+        }
+
+        auto const& id = td.id;
+        int64_t const amt = get_amount(td);
+
+        // Tally input amounts by category.
+        auto& cat_amount = input_amounts_by_category[id];
+        if (auto const r = kth::safe_add(cat_amount, amt); ! r) {
+            return error::token_amount_overflow;
+        } else {
+            cat_amount = *r;
+        }
+
+        // Remember NFTs.
+        if (has_nft(td)) {
+            if (is_immutable_nft(td)) {
+                ++input_immutables[nft_key{id, get_nft(td).commitment}];
+            } else if (is_mutable_nft(td)) {
+                ++input_mutables[id];
+            } else if (is_minting_nft(td)) {
+                input_minting_ids.insert(id);
+            }
+        }
+    }
+
+    // Scan outputs, handle spends and genesis tallies, and NFT ownership transfer.
+    for (auto const& out : outputs_) {
+        auto const& td_opt = out.token_data();
+        if ( ! td_opt.has_value()) {
+            continue;
+        }
+
+        auto const& td = td_opt.value();
+
+        // Check basic token data consensus rules.
+        {
+            int64_t const a = get_amount(td);
+            if (a < 0) return error::token_amount_negative;
+            if (a == 0 && is_fungible_only(td)) return error::token_fungible_only_amount_zero;
+            if (has_nft(td)) {
+                if (get_nft(td).commitment.size() > max_token_commitment_length(flags)) {
+                    return error::token_commitment_oversized;
+                }
+            }
+        }
+
+        auto const& id = td.id;
+        int64_t const amt = get_amount(td);
+
+        // Find the category and debit/credit the amount.
+        int64_t* tally = nullptr;
+        bool is_genesis = false;
+
+        if (auto it = input_amounts_by_category.find(id); it != input_amounts_by_category.end()) {
+            tally = &it->second;
+        }
+
+        if (potential_genesis_ids.contains(id)) {
+            if (tally != nullptr) {
+                // A genesis txid equals a previous token id -- this is not allowed.
+                return error::token_duplicate_genesis;
+            }
+            tally = &genesis_amounts_by_category[id];
+            is_genesis = true;
+        }
+
+        if (tally == nullptr) {
+            // Illegal spend, invalid category.
+            return error::token_invalid_category;
+        }
+
+        if (is_genesis) {
+            // For genesis, just sum the amounts to ensure no overflow.
+            if (auto const r = kth::safe_add(*tally, amt); ! r) {
+                return error::token_amount_overflow;
+            } else {
+                *tally = *r;
+            }
+        } else {
+            // For non-genesis, subtract and must not reach < 0.
+            if (auto const r = kth::safe_subtract(*tally, amt); ! r) {
+                return error::token_amount_overflow;
+            } else {
+                *tally = *r;
+            }
+        }
+
+        if (*tally < 0) {
+            // Spent more fungibles of this category than was put into the txn.
+            return error::token_fungible_insufficient;
+        }
+
+        // Handle NFT ownership transfer for non-genesis.
+        // Genesis can create any number of NFTs so nothing needs to be checked.
+        if (has_nft(td) && ! is_genesis) {
+            bool found = false;
+
+            // First search immutables (lowest capability) and spend those first,
+            // but only if the output token rank is also immutable.
+            if (is_immutable_nft(td)) {
+                auto const key = nft_key{id, get_nft(td).commitment};
+                if (auto it = input_immutables.find(key); it != input_immutables.end() && it->second > 0) {
+                    --it->second;
+                    found = true;
+                }
+            }
+
+            // Next, if not found, search mutables (spend those next),
+            // but only if the output is not a minting NFT.
+            if ( ! found && ! is_minting_nft(td)) {
+                if (auto it = input_mutables.find(id); it != input_mutables.end() && it->second > 0) {
+                    --it->second;
+                    found = true;
+                }
+            }
+
+            // Lastly, consult the minting id set (minting tokens can mint any number
+            // of new tokens with the same id of any rank).
+            if ( ! found) {
+                if (input_minting_ids.contains(id)) {
+                    found = true;
+                }
+            }
+
+            if ( ! found) {
+                // Cannot find this NFT -- illegal ex-nihilo NFT spend.
+                return error::token_nft_ex_nihilo;
+            }
+        }
+    }
+
+    return error::success;
+}
+
+#endif // KTH_CURRENCY_BCH
 
 } // namespace kth::domain::chain

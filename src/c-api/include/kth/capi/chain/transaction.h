@@ -105,13 +105,13 @@ kth_input_list_t kth_chain_transaction_inputs(kth_transaction_t transaction);
 KTH_EXPORT
 uint8_t const* kth_chain_transaction_to_data(kth_transaction_t transaction, kth_bool_t wire, kth_size_t* out_size);
 
-// code verify(transaction const& tx, uint32_t input_index, uint32_t forks, script const& input_script, script const& prevout_script, uint64_t /*value*/);
+// code verify(transaction const& tx, uint32_t input_index, uint64_t forks, script const& input_script, script const& prevout_script, uint64_t /*value*/);
 KTH_EXPORT
-kth_error_code_t kth_chain_transaction_verify(kth_transaction_t transaction, uint32_t input_index, uint32_t forks, kth_script_t input_script, kth_script_t prevout_script, uint64_t value);
+kth_error_code_t kth_chain_transaction_verify(kth_transaction_t transaction, uint32_t input_index, uint64_t forks, kth_script_t input_script, kth_script_t prevout_script, uint64_t value);
 
-// code verify(transaction const& tx, uint32_t input, uint32_t forks);
+// code verify(transaction const& tx, uint32_t input, uint64_t forks);
 KTH_EXPORT
-kth_error_code_t kth_chain_transaction_verify_transaction(kth_transaction_t transaction, uint32_t input, uint32_t forks);
+kth_error_code_t kth_chain_transaction_verify_transaction(kth_transaction_t transaction, uint32_t input, uint64_t forks);
 
 KTH_EXPORT
 kth_error_code_t kth_chain_transaction_create_template_with_change_ratios(
