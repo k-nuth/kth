@@ -145,6 +145,51 @@ else
     echo "📝 No lockfile changes detected"
 fi
 
+# Generate version.hpp via conan install + cmake configure (no build needed)
+echo "📦 Generating version.hpp for ${VERSION}..."
+BUILD_RELEASE_DIR="build-release-${VERSION}"
+rm -rf "${BUILD_RELEASE_DIR}"
+
+conan lock create conanfile.py --version "${VERSION}" --lockfile=conan.lock --lockfile-out="${BUILD_RELEASE_DIR}/conan.lock"
+conan install conanfile.py --version="${VERSION}" --lockfile="${BUILD_RELEASE_DIR}/conan.lock" -of "${BUILD_RELEASE_DIR}" --build=missing
+
+# Temporarily point CMakeUserPresets.json to the release build directory
+PRESETS_BAK=""
+if [ -f CMakeUserPresets.json ]; then
+    PRESETS_BAK=$(cat CMakeUserPresets.json)
+fi
+cat > CMakeUserPresets.json <<PRESETS_EOF
+{
+    "version": 4,
+    "vendor": { "conan": {} },
+    "include": [
+        "${BUILD_RELEASE_DIR}/build/Release/generators/CMakePresets.json"
+    ]
+}
+PRESETS_EOF
+
+cmake --preset conan-release \
+    -DGLOBAL_BUILD=ON \
+    -DCMAKE_BUILD_TYPE=Release
+
+# Restore CMakeUserPresets.json
+if [ -n "$PRESETS_BAK" ]; then
+    echo "$PRESETS_BAK" > CMakeUserPresets.json
+else
+    rm -f CMakeUserPresets.json
+fi
+
+# Note: ${BUILD_RELEASE_DIR} is left for inspection. Clean up in post-release.sh or manually.
+
+# Check if version.hpp was updated
+VERSION_HPP="src/domain/include/kth/domain/version.hpp"
+if git status --porcelain | grep -q "version.hpp"; then
+    echo "📝 version.hpp updated to ${VERSION}"
+    CHANGES_MADE=true
+else
+    echo "📝 version.hpp already has version ${VERSION}"
+fi
+
 # Commit everything in a single commit
 if [ "$CHANGES_MADE" = true ]; then
     echo "📝 Creating single commit with all changes..."
@@ -152,7 +197,8 @@ if [ "$CHANGES_MADE" = true ]; then
     git commit -m "release: prepare version ${VERSION}
 
 - Update README versions to ${VERSION}
-- Generate conan.lock and conan-wasm.lock for ${VERSION}"
+- Generate conan.lock and conan-wasm.lock for ${VERSION}
+- Update version.hpp to ${VERSION}"
 else
     echo "📝 No changes to commit"
 fi
