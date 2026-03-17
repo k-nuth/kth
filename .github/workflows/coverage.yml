@@ -1,0 +1,97 @@
+name: Code Coverage
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch: {}
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    container:
+      image: kthnode/gcc15-ubuntu24.04
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: 🔧 Setup Conan
+        uses: ./ci_utils/.github/actions/setup-conan
+
+      - name: 🔧 Setup kthbuild
+        uses: ./ci_utils/.github/actions/setup-kthbuild
+
+      - name: 🗄️ Setup ccache
+        run: |
+          apt-get update -qq && apt-get install -y -qq ccache > /dev/null 2>&1 || true
+          ccache --version || true
+
+      - name: 🗄️ Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: /github/home/.cache/ccache
+          key: ccache-coverage-${{ github.sha }}
+          restore-keys: ccache-coverage-
+
+      - name: 📦 Install dependencies
+        run: |
+          conan install conanfile.py --version 0.0.0 -of build --build=missing \
+            -pr:b linux-ci-cd -pr:h linux-ci-cd \
+            -o march_id=ZLm9Pjh -o tests=True
+
+      - name: 🔨 Build with coverage
+        run: |
+          export PATH="/usr/lib/ccache:$PATH"
+          ccache --zero-stats
+
+          cmake --preset conan-release \
+            -DCMAKE_VERBOSE_MAKEFILE=OFF \
+            -DGLOBAL_BUILD=ON \
+            -DENABLE_TEST=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS="--coverage -O0" \
+            -DCMAKE_CXX_FLAGS="--coverage -O0" \
+            -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+          cmake --build --preset conan-release -j$(nproc)
+          ccache --show-stats
+
+      - name: 🧪 Run tests
+        run: |
+          ctest --preset conan-release --output-on-failure -j$(nproc)
+
+      - name: 📊 Generate coverage report
+        if: always()
+        run: |
+          python3 -m pip install gcovr
+          mkdir -p coverage-report
+          gcovr --root . \
+            --filter 'src/domain/' \
+            --filter 'src/infrastructure/' \
+            --filter 'src/blockchain/' \
+            --exclude '.*test.*' \
+            --xml coverage.xml \
+            --html-details coverage-report/index.html \
+            --print-summary
+
+      - name: ☁️ Upload to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          disable_search: true
+
+      - name: 📎 Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage-report/
