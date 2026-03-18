@@ -165,7 +165,7 @@ struct KD_API chain_state {
     domain::config::network network() const;
 
     [[nodiscard]]
-    size_t height() const;
+    uint32_t height() const;
 
     [[nodiscard]]
     abla::state const& abla_state() const;

@@ -195,13 +195,13 @@ code data_base::insert(domain::chain::block const& block, size_t height) {
 #if ! defined(KTH_DB_READONLY)
 
 // This is designed for write exclusivity and read concurrency.
-code data_base::push(domain::chain::transaction const& tx, uint32_t forks) {
+code data_base::push(domain::chain::transaction const& tx, uint32_t height) {
     if (settings_.db_mode != db_mode_type::full) {
         return error::success;
     }
 
     //We insert only in transaction unconfirmed here
-    internal_db_->push_transaction_unconfirmed(tx, forks);
+    internal_db_->push_transaction_unconfirmed(tx, height);
     return error::success;  //TODO(fernando): store the transactions in a new mempool
 }
 

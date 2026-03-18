@@ -270,7 +270,7 @@ void block_chain::push(transaction_const_ptr tx, dispatcher&, result_handler han
     //last_transaction_.store(tx);
 
     // Transaction push is currently sequential so dispatch is not used.
-    handler(database_.push(*tx, chain_state()->enabled_forks()));
+    handler(database_.push(*tx, chain_state()->height()));
 }
 
 #endif // ! defined(KTH_DB_READONLY)

@@ -69,7 +69,7 @@ public:
 
     /// Add an unconfirmed tx to the store (without indexing).
     /// Returns unspent_duplicate if existing unspent hash duplicate exists.
-    code push(domain::chain::transaction const& tx, uint32_t forks);
+    code push(domain::chain::transaction const& tx, uint32_t height);
 
     /// Returns store_block_missing_parent if not linked.
     /// Returns store_block_invalid_height if height is not the current top + 1.
