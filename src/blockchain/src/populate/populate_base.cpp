@@ -33,16 +33,16 @@ void populate_base::populate_duplicate(size_t branch_height, const domain::chain
     tx.validation.duplicate = false;
 }
 
-void populate_base::populate_pooled(const domain::chain::transaction& tx, uint32_t forks) const {
-    size_t height;
+void populate_base::populate_pooled(const domain::chain::transaction& tx, uint32_t height) const {
+    size_t stored_height;
     size_t position;
 
-    if (fast_chain_.get_transaction_position(height, position, tx.hash(), false)
+    if (fast_chain_.get_transaction_position(stored_height, position, tx.hash(), false)
 
         && (position == position_max)) {
 
         tx.validation.pooled = true;
-        tx.validation.current = (height == forks);
+        tx.validation.current = (stored_height == height);
         return;
     }
 

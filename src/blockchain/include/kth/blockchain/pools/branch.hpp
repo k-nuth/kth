@@ -25,10 +25,10 @@ struct KB_API branch {
     using const_ptr = std::shared_ptr<const branch>;
 
     /// Establish a branch with the given parent height.
-    branch(size_t height = 0);
+    branch(uint32_t height = 0);
 
     /// Set the height of the parent of this branch (fork point).
-    void set_height(size_t height);
+    void set_height(uint32_t height);
 
     /// Push the block onto the branch, true if successfully chains to parent.
     bool push_front(block_const_ptr block);
@@ -37,7 +37,7 @@ struct KB_API branch {
     block_const_ptr top() const;
 
     /// The top block of the branch, if it exists.
-    size_t top_height() const;
+    uint32_t top_height() const;
 
     /////// Populate unspent duplicate state in the context of the branch.
     ////void populate_duplicate(const domain::chain::transaction& tx) const;
@@ -65,30 +65,30 @@ struct KB_API branch {
     hash_digest hash() const;
 
     /// The height of the parent of this branch (branch point).
-    size_t height() const;
+    uint32_t height() const;
 
     /// A checkpoint of the fork point, identical to { hash(), height() }.
     infrastructure::config::checkpoint fork_point() const;
 
     /// The bits of the block at the given height in the branch.
-    bool get_bits(uint32_t& out_bits, size_t height) const;
+    bool get_bits(uint32_t& out_bits, uint32_t height) const;
 
     /// The bits of the block at the given height in the branch.
-    bool get_version(uint32_t& out_version, size_t height) const;
+    bool get_version(uint32_t& out_version, uint32_t height) const;
 
     /// The bits of the block at the given height in the branch.
-    bool get_timestamp(uint32_t& out_timestamp, size_t height) const;
+    bool get_timestamp(uint32_t& out_timestamp, uint32_t height) const;
 
     /// The hash of the block at the given height if it exists in the branch.
-    bool get_block_hash(hash_digest& out_hash, size_t height) const;
+    bool get_block_hash(hash_digest& out_hash, uint32_t height) const;
 
 protected:
-    size_t index_of(size_t height) const;
-    size_t height_at(size_t index) const;
+    size_t index_of(uint32_t height) const;
+    uint32_t height_at(size_t index) const;
     uint32_t median_time_past_at(size_t index) const;
 
 private:
-    size_t height_;
+    uint32_t height_;
 
     /// The chain of blocks in the branch.
     block_const_ptr_list_ptr blocks_;

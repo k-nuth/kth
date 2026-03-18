@@ -53,12 +53,12 @@ local_utxo_set_t create_branch_utxo_set(branch::const_ptr const& branch) {
 
 
 // This will be eliminated once weak block headers are moved to the store.
-branch::branch(size_t height)
+branch::branch(uint32_t height)
     : height_(height)
     , blocks_(std::make_shared<block_const_ptr_list>())
 {}
 
-void branch::set_height(size_t height) {
+void branch::set_height(uint32_t height) {
     height_ = height;
 }
 
@@ -81,8 +81,8 @@ block_const_ptr branch::top() const {
     return empty() ? nullptr : blocks_->back();
 }
 
-size_t branch::top_height() const {
-    return height() + size();
+uint32_t branch::top_height() const {
+    return height() + static_cast<uint32_t>(size());
 }
 
 block_const_ptr_list_const_ptr branch::blocks() const {
@@ -97,7 +97,7 @@ size_t branch::size() const {
     return blocks_->size();
 }
 
-size_t branch::height() const {
+uint32_t branch::height() const {
     return height_;
 }
 
@@ -110,15 +110,15 @@ infrastructure::config::checkpoint branch::fork_point() const {
 }
 
 // private
-size_t branch::index_of(size_t height) const {
+size_t branch::index_of(uint32_t height) const {
     // The member height_ is the height of the fork point, not the first block.
-    return *safe_subtract(*safe_subtract(height, height_), size_t(1));
+    return *safe_subtract(size_t(*safe_subtract(height, height_)), size_t(1));
 }
 
 // private
-size_t branch::height_at(size_t index) const {
+uint32_t branch::height_at(size_t index) const {
     // The height of the blockchain branch point plus zero-based index.
-    return *safe_add(*safe_add(index, height_), size_t(1));
+    return *safe_add(*safe_add(uint32_t(index), height_), uint32_t(1));
 }
 
 // private
@@ -314,7 +314,7 @@ void branch::populate_prevout(output_point const& outpoint, std::vector<std::uno
 
 // TODO(legacy): absorb into the main chain for speed and code consolidation.
 // The bits of the block at the given height in the branch.
-bool branch::get_bits(uint32_t& out_bits, size_t height) const {
+bool branch::get_bits(uint32_t& out_bits, uint32_t height) const {
     if (height <= height_) {
         return false;
     }
@@ -330,7 +330,7 @@ bool branch::get_bits(uint32_t& out_bits, size_t height) const {
 
 // TODO(legacy): absorb into the main chain for speed and code consolidation.
 // The version of the block at the given height in the branch.
-bool branch::get_version(uint32_t& out_version, size_t height) const {
+bool branch::get_version(uint32_t& out_version, uint32_t height) const {
     if (height <= height_) {
         return false;
     }
@@ -347,7 +347,7 @@ bool branch::get_version(uint32_t& out_version, size_t height) const {
 
 // TODO(legacy): absorb into the main chain for speed and code consolidation.
 // The timestamp of the block at the given height in the branch.
-bool branch::get_timestamp(uint32_t& out_timestamp, size_t height) const {
+bool branch::get_timestamp(uint32_t& out_timestamp, uint32_t height) const {
     if (height <= height_) {
         return false;
     }
@@ -364,7 +364,7 @@ bool branch::get_timestamp(uint32_t& out_timestamp, size_t height) const {
 
 // TODO(legacy): convert to a direct block pool query when the branch goes away.
 // The hash of the block at the given height if it exists in the branch.
-bool branch::get_block_hash(hash_digest& out_hash, size_t height) const {
+bool branch::get_block_hash(hash_digest& out_hash, uint32_t height) const {
     if (height <= height_) {
         return false;
     }

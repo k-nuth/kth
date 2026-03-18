@@ -1363,7 +1363,7 @@ bool chain_state::is_valid() const {
 // Properties.
 //-----------------------------------------------------------------------------
 
-size_t chain_state::height() const {
+uint32_t chain_state::height() const {
     return data_.height;
 }
 

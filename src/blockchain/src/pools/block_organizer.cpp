@@ -488,7 +488,7 @@ bool block_organizer::set_branch_height(branch::ptr branch) {
         return false;
     }
 
-    branch->set_height(height);
+    branch->set_height(static_cast<uint32_t>(height));
     return true;
 }
 

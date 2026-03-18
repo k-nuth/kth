@@ -183,9 +183,8 @@ void populate_block::populate_transactions(branch::const_ptr branch, size_t buck
         // unless tx relay is disabled. In that case duplication is unlikely.
         //---------------------------------------------------------------------
 
-        //TODO(fernando): check again why this is not implemented?
         if (relay_transactions_) {
-            populate_base::populate_pooled(tx, forks);
+            populate_base::populate_pooled(tx, state->height());
         }
 
         //*********************************************************************
