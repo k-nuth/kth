@@ -1,3 +1,19 @@
+# version 0.77.0
+
+You can install Knuth node version v0.77.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* fix: generate version.hpp during release by @fpelliccioni in https://github.com/k-nuth/kth/pull/189
+* ci: add code coverage with Codecov by @fpelliccioni in https://github.com/k-nuth/kth/pull/191
+* fix: pass height instead of forks bitmask to populate_pooled by @fpelliccioni in https://github.com/k-nuth/kth/pull/192
+* feat: VM interpreter refactoring and BCHN script test integration by @fpelliccioni in https://github.com/k-nuth/kth/pull/188
+* fix: increase default db_max_size for block-indexed mode to 400 GiB by @fpelliccioni in https://github.com/k-nuth/kth/pull/195
+* release: 0.77.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/196
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.76.0...v0.77.0
+
+
 # version 0.76.0
 
 You can install Knuth node version v0.76.0 [using these instructions](https://kth.cash/#download).
