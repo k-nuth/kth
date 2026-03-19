@@ -95,13 +95,15 @@ set(kth_headers
   include/kth/network/banlist.hpp
   include/kth/network/define.hpp
   include/kth/network/net_permissions.hpp
+  include/kth/network/peer_record.hpp
+  include/kth/network/peer_database.hpp
   include/kth/network/peer_session.hpp
   include/kth/network/peer_manager.hpp
   include/kth/network/p2p_node.hpp
   include/kth/network/protocols_coro.hpp
   include/kth/network/settings.hpp
   include/kth/network.hpp
-  include/kth/network/hosts.hpp  # TODO: review - may need to modernize
+  include/kth/network/hosts.hpp  # Legacy - will be replaced by peer_database
 
   # Message handlers (one per message type)
   include/kth/network/handlers/ping.hpp
@@ -145,11 +147,12 @@ set(kth_sources
   src/banlist.cpp
   src/net_permissions.cpp
   src/p2p_node.cpp
+  src/peer_database.cpp
   src/peer_session.cpp
   src/peer_manager.cpp
   src/protocols_coro.cpp
   src/settings.cpp
-  src/hosts.cpp  # TODO: review - may need to modernize
+  src/hosts.cpp  # Legacy - will be replaced by peer_database
 
   # Message handlers (one per message type)
   src/handlers/ping.cpp
@@ -207,6 +210,10 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC domain::domain)
 
+# simdjson for JSON parsing in peer_database
+find_package(simdjson REQUIRED)
+target_link_libraries(${PROJECT_NAME} PUBLIC simdjson::simdjson)
+
 if (MINGW)
   target_link_libraries(${PROJECT_NAME} PUBLIC ws2_32 wsock32)
 endif()
@@ -224,6 +231,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # TODO: Migrate tests from test/p2p.cpp to test/p2p_node.cpp before deleting
     # test/p2p.cpp  # Legacy test - COMMENTED OUT
     test/p2p_node.cpp
+    test/peer_database.cpp
     test/peer_manager.cpp
     test/peer_session.cpp
     test/protocols_coro.cpp

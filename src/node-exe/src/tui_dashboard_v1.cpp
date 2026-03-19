@@ -153,7 +153,7 @@ Element tui_dashboard::render_sync_panel() {
                                  static_cast<float>(status_.headers_total);
         headers_progress = std::clamp(headers_progress, 0.0f, 1.0f);
 
-        auto headers_pct = static_cast<int>(headers_progress * 100);
+        auto headers_pct = int(headers_progress * 100);
         bool headers_done = status_.headers_synced >= status_.headers_total;
 
         content.push_back(hbox({
@@ -180,7 +180,7 @@ Element tui_dashboard::render_sync_panel() {
                                 static_cast<float>(status_.blocks_total);
         blocks_progress = std::clamp(blocks_progress, 0.0f, 1.0f);
 
-        auto blocks_pct = static_cast<int>(blocks_progress * 100);
+        auto blocks_pct = int(blocks_progress * 100);
         bool blocks_done = status_.blocks_synced >= status_.blocks_total;
 
         content.push_back(hbox({

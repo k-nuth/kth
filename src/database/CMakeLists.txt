@@ -56,6 +56,7 @@ if (NOT GLOBAL_BUILD)
 endif()
 
 find_package(lmdb 0.9.29 REQUIRED)
+find_package(utxoz REQUIRED)
 
 include(CheckCXXCompilerFlag)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/ci_utils/cmake)
@@ -115,9 +116,15 @@ set(kth_sources_just_kth
 
     src/databases/header_abla_entry.cpp
     src/databases/utxo_entry.cpp
+    src/databases/utxoz_database.cpp
     src/databases/history_entry.cpp
     src/databases/transaction_entry.cpp
     src/databases/transaction_unconfirmed_entry.cpp
+
+    # Flat file block storage
+    src/flat_file_seq.cpp
+    src/block_undo.cpp
+    src/block_store.cpp
 )
 
 
@@ -131,6 +138,10 @@ set(kth_headers
   include/kth/database/currency_config.hpp
   include/kth/database/define.hpp
   include/kth/database/data_base.hpp
+  include/kth/database/flat_file_pos.hpp
+  include/kth/database/flat_file_seq.hpp
+  include/kth/database/block_undo.hpp
+  include/kth/database/block_store.hpp
   include/kth/database/databases/block_database.ipp
   include/kth/database/databases/property_code.hpp
   include/kth/database/databases/internal_database.ipp
@@ -148,6 +159,7 @@ set(kth_headers
   include/kth/database/databases/transaction_unconfirmed_entry.hpp
   include/kth/database/databases/header_abla_entry.hpp
   include/kth/database/databases/utxo_entry.hpp
+  include/kth/database/databases/utxoz_database.hpp
   include/kth/database/databases/spend_database.ipp
   include/kth/database/databases/utxo_database.ipp
   include/kth/database/databases/header_database.ipp
@@ -177,6 +189,7 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC domain::domain)
 target_link_libraries(${PROJECT_NAME} PUBLIC lmdb::lmdb)
+target_link_libraries(${PROJECT_NAME} PUBLIC utxoz::utxoz)
 
 if (MINGW)
     target_link_libraries(${PROJECT_NAME} PUBLIC ws2_32 wsock32)
@@ -313,6 +326,10 @@ if (WITH_TOOLS)
 
 endif()
 
+# UTXO-Z fingerprint tool (always built — used for UTXO set verification)
+add_executable(utxoz-fingerprint
+        tools/utxoz_fingerprint/utxoz_fingerprint.cpp)
+target_link_libraries(utxoz-fingerprint ${PROJECT_NAME})
 
 # Install
 # ------------------------------------------------------------------------------

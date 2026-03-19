@@ -269,7 +269,7 @@ chain_state::ptr populate_chain_state::populate() const {
         spdlog::error("[blockchain] Failed to populate chain state, last height.");
         return {};
     }
-    auto const top = heights->first;  // header_height
+    auto const top = heights->header;
     auto const header_result = chain_.get_header_and_abla_state(top);
     if ( ! header_result) {
         spdlog::error("[blockchain] Failed to populate chain state, last header.");
@@ -279,7 +279,7 @@ chain_state::ptr populate_chain_state::populate() const {
 
     chain_state::data data;
     data.hash = null_hash;
-    data.height = *safe_add(top, size_t(1));
+    data.height = *safe_add(size_t(top), size_t(1));
 
     if (block_size == 0) {
         data.abla_state = abla::state(settings_.abla_config, static_max_block_size(network_));

@@ -146,7 +146,7 @@ populate_block::utxo_pool_t populate_block::get_reorg_subset_conditionally(size_
         return {};
     }
 
-    out_chain_top = heights->first;  // header_height
+    out_chain_top = heights->header;
 
     if (first_height > out_chain_top) {
         return {};

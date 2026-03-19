@@ -142,6 +142,16 @@ struct sync_stats {
     std::atomic<uint64_t> batch_network_ns{0};
     std::atomic<uint64_t> batch_process_ns{0};
 
+    // Block storage stats
+    std::atomic<uint64_t> allocate_calls{0};
+    std::atomic<uint64_t> allocate_time_ns{0};
+    std::atomic<uint64_t> allocate_bytes{0};
+    std::atomic<uint64_t> write_block_calls{0};
+    std::atomic<uint64_t> write_block_time_ns{0};
+    std::atomic<uint64_t> write_block_bytes{0};
+    std::atomic<uint64_t> file_open_calls{0};
+    std::atomic<uint64_t> file_open_time_ns{0};
+
     void reset() {
         validate_calls = 0;
         validate_time_ns = 0;
@@ -159,6 +169,14 @@ struct sync_stats {
         batch_locator_ns = 0;
         batch_network_ns = 0;
         batch_process_ns = 0;
+        allocate_calls = 0;
+        allocate_time_ns = 0;
+        allocate_bytes = 0;
+        write_block_calls = 0;
+        write_block_time_ns = 0;
+        write_block_bytes = 0;
+        file_open_calls = 0;
+        file_open_time_ns = 0;
     }
 };
 

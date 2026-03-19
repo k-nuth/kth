@@ -153,7 +153,7 @@ int main() {
     fmt::print("  kth vs Bitcoin Core\n");
     fmt::print("==============================================\n");
 
-    std::string impl = SHA256AutoDetect();
+    std::string impl = ::kth::SHA256AutoDetect();
     fmt::print("\nBitcoin Core implementation: {}\n", impl);
 
     benchmark_sha256_comparison();

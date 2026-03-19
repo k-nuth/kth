@@ -58,8 +58,10 @@
 #include <chrono>
 #include <expected>
 #include <string>
+#include <type_traits>
 
 #include <kth/domain.hpp>
+#include <kth/domain/chain/light_block.hpp>
 #include <kth/infrastructure.hpp>
 #include <kth/network/define.hpp>
 #include <kth/network/peer_session.hpp>
@@ -73,6 +75,15 @@
 namespace kth::network {
 
 using kth::awaitable_expected;
+
+// =============================================================================
+// Sync Mode
+// =============================================================================
+
+/// Sync mode determines which block representation is used during sync.
+/// fast: Uses light_block - parses only header + tx offsets, stores raw bytes
+/// slow: Uses domain::message::block - fully deserializes all transactions
+enum class sync_mode { fast, slow };
 
 // =============================================================================
 // Message Helpers
@@ -219,13 +230,30 @@ KN_API awaitable_expected<domain::message::address> request_addresses(
     peer_session& peer,
     std::chrono::seconds timeout);
 
-/// Send our addresses to a peer
+/// Send our addresses to a peer (legacy addr format)
 /// @param peer The peer session
 /// @param addresses Addresses to send
 [[nodiscard]]
 KN_API ::asio::awaitable<code> send_addresses(
     peer_session& peer,
     domain::message::address const& addresses);
+
+/// Send our addresses to a peer (BIP155 addrv2 format)
+/// @param peer The peer session
+/// @param addresses Addresses to send in addrv2 format
+[[nodiscard]]
+KN_API ::asio::awaitable<code> send_addrv2(
+    peer_session& peer,
+    domain::message::addrv2 const& addresses);
+
+/// Send addresses using the appropriate format based on peer capabilities
+/// Automatically chooses addrv2 if peer signaled support, otherwise addr
+/// @param peer The peer session
+/// @param addresses Addresses to send (will be converted to appropriate format)
+[[nodiscard]]
+KN_API ::asio::awaitable<code> send_addresses_auto(
+    peer_session& peer,
+    infrastructure::message::network_address::list const& addresses);
 
 // =============================================================================
 // Blockchain Protocol Handlers (Headers-First Sync)
@@ -287,33 +315,52 @@ KN_API ::asio::awaitable<code> request_blocks(
     peer_session& peer,
     hash_list const& block_hashes);
 
-/// Request a single block
-/// @param peer The peer session
-/// @param block_hash Hash of block to request
-/// @param timeout Maximum time to wait for block
-/// @return Block message or error
-[[nodiscard]]
-KN_API awaitable_expected<domain::message::block> request_block(
-    peer_session& peer,
-    hash_digest const& block_hash,
-    std::chrono::seconds timeout);
+// /// Request a single block
+// /// @param peer The peer session
+// /// @param block_hash Hash of block to request
+// /// @param timeout Maximum time to wait for block
+// /// @return Block message or error
+// [[nodiscard]]
+// KN_API awaitable_expected<domain::message::block> request_block(
+//     peer_session& peer,
+//     hash_digest const& block_hash,
+//     std::chrono::seconds timeout);
 
-/// Result of batch block request - block with its height
-struct block_with_height {
+/// Result of batch block request - block with its height and timing info
+/// Template parameter Mode selects between light_block (fast) and full block (slow)
+template<sync_mode Mode>
+struct block_result {
     uint32_t height;
-    domain::message::block block;
+    std::conditional_t<Mode == sync_mode::fast,
+        domain::chain::light_block,
+        domain::message::block> block;
+    uint32_t network_wait_us{0};   // Time waiting for network (microseconds)
+    uint32_t deserialize_us{0};    // Time deserializing block (microseconds)
+    uint64_t received_at_us{0};    // Timestamp when received from network (microseconds since epoch)
+};
+
+/// Legacy alias for slow mode (backwards compatibility)
+using block_with_height = block_result<sync_mode::slow>;
+
+/// Timing stats for a batch block request
+struct batch_timing_stats {
+    uint64_t total_network_wait_us{0};   // Total time waiting for blocks from network
+    uint64_t total_deserialize_us{0};    // Total time deserializing blocks
+    uint64_t send_request_us{0};         // Time to send getdata request
 };
 
 /// Request multiple blocks in a single getdata (batch mode)
 /// Sends ONE getdata with all hashes and receives blocks as they arrive.
 /// Much more efficient than requesting blocks one at a time.
+/// @tparam Mode sync_mode::fast uses light_block, sync_mode::slow uses full block
 /// @param peer The peer session
 /// @param blocks Vector of {height, hash} pairs to request
 /// @param timeout Maximum time to wait for ALL blocks
 /// @return Vector of received blocks with heights, or error
 /// @note Blocks may be received out of order; vector is sorted by height on return
+template<sync_mode Mode>
 [[nodiscard]]
-KN_API awaitable_expected<std::vector<block_with_height>> request_blocks_batch(
+awaitable_expected<std::vector<block_result<Mode>>> request_blocks_batch(
     peer_session& peer,
     std::vector<std::pair<uint32_t, hash_digest>> const& blocks,
     std::chrono::seconds timeout);
@@ -412,11 +459,11 @@ KN_API std::expected<domain::message::headers, code> parse_headers(
     raw_message const& raw,
     uint32_t version);
 
-/// Parse a block message from raw bytes
-[[nodiscard]]
-KN_API std::expected<domain::message::block, code> parse_block(
-    raw_message const& raw,
-    uint32_t version);
+// /// Parse a block message from raw bytes
+// [[nodiscard]]
+// KN_API std::expected<domain::message::block, code> parse_block(
+//     raw_message const& raw,
+//     uint32_t version);
 
 /// Parse a transaction message from raw bytes
 [[nodiscard]]

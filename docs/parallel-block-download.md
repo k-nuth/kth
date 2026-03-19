@@ -564,4 +564,24 @@ Validation:  [====1====][====2====][====3====][====4====]     (sequential)
 
 ## Discussion Notes
 
-(Add notes here as we discuss)
+### 2026-02-11: Block loss detected between bridge and validation (with merkle validation enabled)
+
+During sync with merkle validation (Stage 2), seeing intermittent "STUCK" warnings with block loss between bridge→validation:
+
+```
+[block_supervisor] Stats: 469377 blocks (76 blk/s, 70.4 MB/s), 29 peers downloading
+[block_sync:STUCK] Waiting for height 463777 for 10s! Pending: 5120 blocks [381649, 466304]. Chunk [463777-463792]: [463777:MISSING 463778:MISSING ...]
+[block_sync:STUCK] Pipeline counts: task_sent=469440 sup_recv=469440 sup_fwd=469440 brg_recv=469440 brg_fwd=469440 val_recv=469425
+[block_sync:STUCK] BLOCK LOSS DETECTED: task->sup=0 sup_recv->fwd=0 sup->brg=0 brg_recv->fwd=0 brg->val=15
+```
+
+Key observations:
+- 15 blocks lost between bridge forward (469440) and validation receive (469425)
+- All other pipeline stages show zero loss
+- This did NOT happen in download-only mode (validation was `#if 0`)
+- Likely cause: validation task is slower to consume from channel (busy doing merkle checks on priority_pool), and some channel interaction issue occurs
+
+**TODO**: Investigate the brg→val gap. Possible causes:
+- Channel backpressure / capacity issue between bridge and validation
+- Timing: validation coroutine suspended in `co_await organize_fast()` and misses a message?
+- Race between bridge `try_send` and validation `async_receive`

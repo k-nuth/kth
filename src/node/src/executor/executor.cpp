@@ -19,9 +19,13 @@
 #include <kth/node/parser.hpp>
 #include <kth/domain/version.hpp>
 
+#include <crypto/sha256.h>
+
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/signal_set.hpp>
+#include <asio/steady_timer.hpp>
+#include <asio/experimental/awaitable_operators.hpp>
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -34,6 +38,7 @@ using namespace boost::system;
 using namespace kd::chain;
 using namespace kd::config;
 using namespace kth::database;
+using namespace ::asio::experimental::awaitable_operators;
 
 #if ! defined(__EMSCRIPTEN__)
 using namespace kth::network;
@@ -80,7 +85,19 @@ void executor::start_io_thread() {
 
     // Start io_context in background thread
     io_thread_ = std::thread([this]() {
-        io_context_.run();
+        spdlog::info("[executor:io_thread] io_context_.run() starting (thread_id={})",
+            std::hash<std::thread::id>{}(std::this_thread::get_id()));
+        try {
+            io_context_.run();
+            // 2026-02-07: If we reach here without explicit stop(), something is wrong
+            spdlog::warn("[executor:io_thread] io_context_.run() RETURNED - state={}, stopped={}",
+                static_cast<int>(state_.load()), io_context_.stopped());
+        } catch (std::exception const& e) {
+            spdlog::error("[executor:io_thread] EXCEPTION in io_context_.run(): {}", e.what());
+        } catch (...) {
+            spdlog::error("[executor:io_thread] UNKNOWN EXCEPTION in io_context_.run()");
+        }
+        spdlog::warn("[executor:io_thread] Thread exiting!");
     });
 }
 
@@ -182,9 +199,33 @@ void executor::start_async(start_handler handler) {
 
         spdlog::info("[node] Node is started.");
 
-        // Run the node (starts P2P, sync, etc.)
+        // 2026-02-07: Diagnostic heartbeat to verify io_context is still processing
+        // This helps identify if the io_context stops processing timers
+        // Returns code to match node_->run() return type for && operator
+        auto heartbeat = [this]() -> ::asio::awaitable<code> {
+            auto executor = co_await ::asio::this_coro::executor;
+            ::asio::steady_timer timer(executor);
+            uint64_t heartbeat_count = 0;
+            while (state_.load() == state::running) {
+                timer.expires_after(std::chrono::seconds(10));
+                auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+                if (ec) {
+                    spdlog::debug("[executor:heartbeat] Timer cancelled: {}", ec.message());
+                    break;
+                }
+                ++heartbeat_count;
+                // 2026-02-07: Log more info to help diagnose io_context issues
+                spdlog::debug("[executor:heartbeat] io_context alive, beat #{}, io_stopped={}, state={}",
+                    heartbeat_count, io_context_.stopped(), static_cast<int>(state_.load()));
+            }
+            spdlog::debug("[executor:heartbeat] Exiting (state={})", static_cast<int>(state_.load()));
+            co_return error::success;
+        };
+
+        // Run the node (starts P2P, sync, etc.) AND the diagnostic heartbeat
         // This blocks until the node is stopped (via stop())
-        auto run_ec = co_await node_->run();
+        auto [run_ec, heartbeat_ec] = co_await (node_->run() && heartbeat());
+        (void)heartbeat_ec;  // Unused, just for diagnostics
         if (run_ec != error::success && run_ec != error::service_stopped) {
             spdlog::error("[node] Node run ended with error: {}.", run_ec.message());
         }
@@ -352,7 +393,7 @@ void executor::wait_for_stop_signal() {
     }
 
     auto signal_received = g_signal_received.load();
-    spdlog::info("[node] Stop signal detected (code: {}).", signal_received);
+    spdlog::info("[node] StopX signal detected (code: {}).", signal_received);
 
     // Restore previous handlers
     std::signal(SIGINT, prev_sigint);
@@ -530,6 +571,7 @@ void executor::initialize_output(std::string_view extra, db_mode_type db_mode) {
     spdlog::info("[node] Currency: {} - {}.", KTH_CURRENCY_SYMBOL_STR, KTH_CURRENCY_STR);
     spdlog::info("[node] Optimized for microarchitecture: {}.", KTH_MICROARCHITECTURE_STR);
     spdlog::info("[node] Built for CPU instructions/extensions: {}.", march_names());
+    spdlog::info("[node] SHA256 implementation: {}.", kth::SHA256AutoDetect());
     spdlog::info("[node] Database type: {}.", db_type_str);
 
 #ifndef NDEBUG

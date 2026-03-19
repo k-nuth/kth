@@ -79,7 +79,7 @@ inline constexpr int64_t GetHashIterOpCostFactor(bool standard) noexcept {
 // Returns the hash iteration count given a particular message length and whether the hasher was two-round or not.
 // See: https://github.com/bitjson/bch-vm-limits/tree/master?tab=readme-ov-file#digest-iteration-count
 inline constexpr int64_t CalcHashIters(uint32_t messageLength, bool isTwoRoundHashOp) noexcept {
-    return isTwoRoundHashOp + 1u + ((static_cast<uint64_t>(messageLength) + 8u) / detail::HASH_BLOCK_SIZE);
+    return isTwoRoundHashOp + 1u + ((uint64_t(messageLength) + 8u) / detail::HASH_BLOCK_SIZE);
 }
 
 /// Encapsulates the script VM execution limits for a particular script, as derived from the scriptSig size and whether

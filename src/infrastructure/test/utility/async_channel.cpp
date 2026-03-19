@@ -210,7 +210,7 @@ TEST_CASE("multi_channel multiple values", "[async_channel][multi]") {
 
 TEST_CASE("async_channel with strand serialization", "[async_channel][threadpool][strand]") {
     SECTION("multiple producers with strand serialization") {
-        threadpool pool(4);
+        threadpool pool("test", 4);
 
         // Create strand to serialize all channel access
         ::asio::strand<::asio::any_io_executor> strand(pool.get_executor());
@@ -279,7 +279,7 @@ TEST_CASE("async_channel with strand serialization", "[async_channel][threadpool
 
 TEST_CASE("concurrent_channel without strand", "[concurrent_channel][threadpool]") {
     SECTION("multiple producers from different threads - thread safe") {
-        threadpool pool(4);
+        threadpool pool("test", 4);
 
         // concurrent_channel is thread-safe, no strand needed
         concurrent_channel<int> channel(pool.get_executor(), 10);
@@ -334,7 +334,7 @@ TEST_CASE("concurrent_channel without strand", "[concurrent_channel][threadpool]
     }
 
     SECTION("high contention stress test") {
-        threadpool pool(8);
+        threadpool pool("test", 8);
         concurrent_channel<int> channel(pool.get_executor(), 100);
 
         constexpr int num_producers = 20;

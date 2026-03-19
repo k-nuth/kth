@@ -4,6 +4,8 @@
 
 #include <kth/blockchain/interface/block_chain.hpp>
 
+#include <kth/database/flat_file_pos.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
@@ -33,6 +35,8 @@
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/experimental/concurrent_channel.hpp>
+
+#include <utxoz/logging.hpp>
 
 namespace kth {
 
@@ -87,8 +91,7 @@ static auto const hour_seconds = 3600u;
 // CONSTRUCTION
 // =============================================================================
 
-block_chain::block_chain(threadpool& pool,
-                         blockchain::settings const& chain_settings,
+block_chain::block_chain(blockchain::settings const& chain_settings,
                          database::settings const& database_settings,
                          domain::config::network network,
                          bool relay_transactions)
@@ -98,7 +101,7 @@ block_chain::block_chain(threadpool& pool,
     , chain_state_populator_(*this, chain_settings, network)
     , database_(database_settings)
     , validation_mutex_(relay_transactions)
-    , priority_pool_(thread_ceiling(chain_settings.cores))
+    , priority_pool_("priority", std::min(size_t(8), thread_ceiling(chain_settings.cores)))
 #if defined(KTH_WITH_MEMPOOL)
     , mempool_(chain_settings.mempool_max_template_size, chain_settings.mempool_size_multiplier)
     , transaction_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings, mempool_)
@@ -119,13 +122,33 @@ block_chain::~block_chain() {
 // LIFECYCLE
 // =============================================================================
 
-bool block_chain::start() {
+bool block_chain::start(uint32_t disk_magic) {
     stopped_ = false;
 
     if ( ! database_.open()) {
         spdlog::error("[blockchain] Failed to open database.");
         return false;
     }
+
+    // Open UTXO-Z database (in a subdirectory of the main database)
+    utxoz::set_log_prefix("UTXO-Z");
+    auto utxoz_path = database_.internal_db_dir.parent_path() / "utxoz";
+    if ( ! utxoz_db_.open(utxoz_path)) {
+        spdlog::error("[blockchain] Failed to open UTXO-Z database at {}", utxoz_path.string());
+        return false;
+    }
+    spdlog::info("[blockchain] UTXO-Z database opened at {}", utxoz_path.string());
+
+    // Initialize flat file block storage
+    // Convert disk magic to little-endian bytes for file header
+    auto blocks_path = database_.internal_db_dir.parent_path() / "blocks";
+    auto magic = to_little_endian(disk_magic);
+    block_store_ = std::make_unique<database::block_store>(blocks_path, magic);
+    if ( ! block_store_->initialize()) {
+        spdlog::error("[blockchain] Failed to initialize block store at {}", blocks_path.string());
+        return false;
+    }
+    spdlog::info("[blockchain] Block store initialized at {}", blocks_path.string());
 
     pool_state_ = chain_state_populator_.populate();
     if ( ! pool_state_) {
@@ -151,10 +174,9 @@ bool block_chain::start() {
         return false;
     }
 
-    auto const [header_height, block_height] = *heights;
-    spdlog::info("[blockchain] Database state: header_height={}, block_height={}", header_height, block_height);
+    spdlog::info("[blockchain] Database state: header_height={}, block_height={}", heights->header, heights->block);
 
-    if (header_height == 0) {
+    if (heights->header == 0) {
         // Only genesis in DB - just add genesis to index
         auto const genesis = get_header(0);
         if (genesis) {
@@ -168,7 +190,7 @@ bool block_chain::start() {
         }
     } else {
         // Load all headers from DB into header_index
-        spdlog::info("[blockchain] Loading {} headers from database into header_index...", header_height + 1);
+        spdlog::info("[blockchain] Loading {} headers from database into header_index...", heights->header + 1);
 
         auto const load_start = std::chrono::steady_clock::now();
 
@@ -176,8 +198,8 @@ bool block_chain::start() {
         constexpr size_t batch_size = 10000;
         size_t loaded = 0;
 
-        for (size_t from = 0; from <= header_height; from += batch_size) {
-            auto const to = std::min(from + batch_size - 1, header_height);
+        for (size_t from = 0; from <= heights->header; from += batch_size) {
+            auto const to = std::min(from + batch_size - 1, size_t(heights->header));
             auto const headers_result = get_headers(from, to);
 
             if ( ! headers_result) {
@@ -199,13 +221,36 @@ bool block_chain::start() {
 
             // Log progress every 100k headers
             if (loaded % 100000 < batch_size && loaded > 0) {
-                spdlog::info("[blockchain] Loaded {}/{} headers into index...", loaded, header_height + 1);
+                spdlog::info("[blockchain] Loaded {}/{} headers into index...", loaded, heights->header + 1);
             }
         }
 
         auto const elapsed = std::chrono::steady_clock::now() - load_start;
         auto const elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
         spdlog::info("[blockchain] Loaded {} headers into header_index in {}ms", loaded, elapsed_ms);
+    }
+
+    // Restore block file positions in header_index from flat files
+    if (block_store_ && heights->block > 0) {
+        spdlog::info("[blockchain] Scanning flat files to restore block positions...");
+        auto const scan_start = std::chrono::steady_clock::now();
+
+        size_t restored = 0;
+        auto const scanned = block_store_->scan_block_positions(
+            [this, &restored](int32_t file_num, uint32_t data_pos, hash_digest const& hash) {
+                auto const idx = header_index_.find(hash);
+                if (idx != header_index::null_index) {
+                    header_index_.set_block_pos(idx, static_cast<int16_t>(file_num), data_pos);
+                    header_index_.add_status(idx, header_status::have_data);
+                    ++restored;
+                }
+            }
+        );
+
+        auto const scan_elapsed = std::chrono::steady_clock::now() - scan_start;
+        auto const scan_ms = std::chrono::duration_cast<std::chrono::milliseconds>(scan_elapsed).count();
+        spdlog::info("[blockchain] Scanned {} blocks, restored {} positions in {}ms",
+            scanned, restored, scan_ms);
     }
 
     return true;
@@ -225,6 +270,7 @@ bool block_chain::stop() {
 bool block_chain::close() {
     auto const result = stop();
     priority_pool_.join();
+    utxoz_db_.close();
     return result && database_.close();
 }
 
@@ -238,6 +284,287 @@ bool block_chain::stopped() const {
 
 ::asio::awaitable<code> block_chain::organize(block_const_ptr block, bool headers_pre_validated) {
     co_return co_await block_organizer_.organize(block, headers_pre_validated);
+}
+
+::asio::awaitable<code> block_chain::organize_fast(std::shared_ptr<domain::chain::light_block const> block, size_t height) {
+    // Fast IBD: merkle validation + (later) store block data to flat files.
+    //
+    // Threading model:
+    // - Work is posted to priority_pool_ (appears parallel)
+    // - But caller does co_await before proceeding (sequential from caller's perspective)
+    // - Since there's only ONE caller (block_validation_task), operations are effectively sequential
+    // - Therefore block_store_ and header_index_ don't need mutex protection for these operations
+    //
+    // Why post to pool instead of running inline?
+    // - Avoids blocking the main executor while doing I/O
+    // - Allows the coroutine to suspend without consuming a system thread
+    //
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+    auto channel = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
+
+    ::asio::post(priority_pool_.get_executor(), [this, block, height, channel]() {
+        // Validate merkle root (ensures transactions match header)
+        // This is the only validation needed since header was already validated
+        if ( ! block->is_valid_merkle_root()) {
+            spdlog::error("[blockchain] Merkle mismatch at height {}", height);
+            channel->try_send(std::error_code{}, error::merkle_mismatch);
+            return;
+        }
+
+#if 0  // Stage 3: disk storage (not yet enabled)
+        // Save block to flat files (sequential I/O)
+        auto pos = block_store_->save_block(*block, static_cast<uint32_t>(height));
+        if (pos.is_null()) {
+            spdlog::error("[blockchain] Failed to save block {} to flat files", height);
+            channel->try_send(std::error_code{}, error::operation_failed);
+            return;
+        }
+
+        // Update header_index with block file position
+        auto const block_hash = block->header().hash();
+        auto const idx = header_index_.find(block_hash);
+        if (idx != header_index::null_index) {
+            header_index_.set_block_pos(idx, static_cast<int16_t>(pos.file), pos.pos);
+            header_index_.add_status(idx, header_status::have_data);
+        }
+
+        // TODO(fernando): Remove this once we fully migrate away from LMDB for blocks
+        // Also update last block height property in LMDB (for compatibility)
+        auto result = database_.internal_db().set_last_block_height(static_cast<uint32_t>(height));
+        if (result != database::result_code::success) {
+            spdlog::warn("[blockchain] Failed to update last_height in LMDB: {}", static_cast<int>(result));
+        }
+#endif
+
+        channel->try_send(std::error_code{}, error::success);
+    });
+
+    auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (ec) {
+        co_return error::operation_failed;
+    }
+    co_return result;
+}
+
+::asio::awaitable<code> block_chain::store_chunk(
+    std::vector<std::shared_ptr<domain::chain::light_block const>> const& blocks,
+    uint32_t start_height
+) {
+    auto const n = blocks.size();
+    if (n == 0) co_return error::success;
+
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+
+    // Phase 1: Allocate positions for all N blocks (single post, serial, fast)
+    // allocate_block_space() must be called serially — guaranteed because
+    // block_storage_task is a single coroutine doing co_await store_chunk() one at a time.
+    auto positions = std::make_shared<std::vector<database::flat_file_pos>>(n);
+    auto alloc_ch = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
+
+    ::asio::post(priority_pool_.get_executor(), [this, &blocks, start_height, n, positions, alloc_ch]() {
+        for (size_t i = 0; i < n; ++i) {
+            auto const height = start_height + static_cast<uint32_t>(i);
+            auto const& block = blocks[i];
+            auto const raw_size = static_cast<uint32_t>(block->raw_data().size());
+
+            auto pos = block_store_->allocate_block_space(raw_size, height, block->header().timestamp());
+            if (pos.is_null()) {
+                spdlog::error("[blockchain] Failed to allocate space for block {}", height);
+                alloc_ch->try_send(std::error_code{}, error::operation_failed);
+                return;
+            }
+            (*positions)[i] = pos;
+        }
+        alloc_ch->try_send(std::error_code{}, error::success);
+    });
+
+    {
+        auto [ec, result] = co_await alloc_ch->async_receive(::asio::as_tuple(::asio::use_awaitable));
+        if (ec || result) co_return result ? result : error::operation_failed;
+    }
+
+    // Phase 2: Write all N blocks in parallel (N posts, each opens its own FILE*)
+    auto write_ch = std::make_shared<result_channel>(priority_pool_.get_executor(), n);
+
+    for (size_t i = 0; i < n; ++i) {
+        ::asio::post(priority_pool_.get_executor(), [this, &blocks, i, positions, write_ch]() {
+            auto data_pos = block_store_->write_block_at(blocks[i]->raw_data(), (*positions)[i]);
+            if (data_pos.is_null()) {
+                write_ch->try_send(std::error_code{}, error::operation_failed);
+                return;
+            }
+            // Store the data position (after header) for header_index
+            (*positions)[i] = data_pos;
+            write_ch->try_send(std::error_code{}, error::success);
+        });
+    }
+
+    // Wait for all writes to complete
+    code first_error;
+    for (size_t i = 0; i < n; ++i) {
+        auto [ec, result] = co_await write_ch->async_receive(::asio::as_tuple(::asio::use_awaitable));
+        if (ec && !first_error) first_error = error::operation_failed;
+        if (result && !first_error) first_error = result;
+    }
+    if (first_error) co_return first_error;
+
+    // Phase 3: Update header_index with data positions (no I/O, fast)
+    // Each block writes to its own index entry — safe without locks.
+    for (size_t i = 0; i < n; ++i) {
+        auto const& block = blocks[i];
+        auto const block_hash = block->header().hash();
+        auto const idx = header_index_.find(block_hash);
+        if (idx != header_index::null_index) {
+            auto const& data_pos = (*positions)[i];
+            header_index_.set_block_pos(idx, static_cast<int16_t>(data_pos.file), data_pos.pos);
+            header_index_.add_status(idx, header_status::have_data);
+        }
+    }
+
+    co_return error::success;
+}
+
+// Toggle between validation strategies:
+//   true  = 1 task per chunk (serial merkle on single pool thread)
+//   false = 1 task per block (parallel merkle across pool threads)
+static constexpr bool chunk_serial_validation = true;
+
+::asio::awaitable<code> block_chain::validate_chunk(
+    std::vector<std::shared_ptr<domain::chain::light_block const>> const& blocks,
+    uint32_t start_height
+) {
+    auto const n = blocks.size();
+    if (n == 0) co_return error::success;
+
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+    auto channel = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
+
+    auto const chunk_start_time = std::chrono::steady_clock::now();
+
+    if constexpr (chunk_serial_validation) {
+        // =====================================================================
+        // Variant A: 1 task per chunk — serial merkle on a single pool thread
+        // =====================================================================
+        ::asio::post(priority_pool_.get_executor(), [&blocks, start_height, n, channel]() {
+            auto const tid = std::hash<std::thread::id>{}(std::this_thread::get_id());
+            auto const t0 = std::chrono::steady_clock::now();
+
+            code first_error;
+            for (size_t i = 0; i < n; ++i) {
+                if ( ! blocks[i]->is_valid_merkle_root()) {
+                    spdlog::error("[validate_chunk:serial] Merkle MISMATCH height {} thread {}",
+                        start_height + i, tid);
+                    if ( ! first_error) {
+                        first_error = error::merkle_mismatch;
+                    }
+                }
+            }
+
+            auto const elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - t0).count();
+            spdlog::debug("[validate_chunk:serial] {} blocks at {} on thread {} in {}us ({:.1f}us/blk)",
+                n, start_height, tid, elapsed_us, static_cast<double>(elapsed_us) / n);
+
+            channel->try_send(std::error_code{}, first_error);
+        });
+
+        auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+        if (ec) {
+            co_return error::operation_failed;
+        }
+
+        auto const chunk_elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - chunk_start_time).count();
+        spdlog::debug("[validate_chunk:serial] chunk at {} wall time {}us", start_height, chunk_elapsed_us);
+
+        co_return result;
+    } else {
+        // =====================================================================
+        // Variant B: 1 task per block — parallel merkle across pool threads
+        // =====================================================================
+        auto parallel_channel = std::make_shared<result_channel>(priority_pool_.get_executor(), n);
+
+        for (size_t i = 0; i < n; ++i) {
+            ::asio::post(priority_pool_.get_executor(), [block = blocks[i], height = start_height + i, parallel_channel]() {
+                auto const t0 = std::chrono::steady_clock::now();
+                auto const tid = std::hash<std::thread::id>{}(std::this_thread::get_id());
+
+                bool valid = block->is_valid_merkle_root();
+
+                auto const elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - t0).count();
+
+                if ( ! valid) {
+                    spdlog::error("[validate_chunk:parallel] Merkle MISMATCH height {} thread {} ({}us)", height, tid, elapsed_us);
+                    parallel_channel->try_send(std::error_code{}, error::merkle_mismatch);
+                    return;
+                }
+                spdlog::trace("[validate_chunk:parallel] height {} thread {} ({}us)", height, tid, elapsed_us);
+                parallel_channel->try_send(std::error_code{}, error::success);
+            });
+        }
+
+        code final_result;
+        for (size_t i = 0; i < n; ++i) {
+            auto [ec, result] = co_await parallel_channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                co_return error::operation_failed;
+            }
+            if (result && !final_result) {
+                final_result = result;
+            }
+        }
+
+        auto const chunk_elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - chunk_start_time).count();
+        spdlog::debug("[validate_chunk:parallel] chunk at {} ({} blocks) wall time {}us ({:.1f}us/blk)",
+            start_height, n, chunk_elapsed_us, static_cast<double>(chunk_elapsed_us) / n);
+
+        co_return final_result;
+    }
+}
+
+::asio::awaitable<code> block_chain::store_block(
+    std::shared_ptr<domain::chain::light_block const> const& block,
+    uint32_t height
+) {
+    // Same post+await pattern as validate_chunk() and organize_fast():
+    // Post disk I/O to priority_pool_ so the network executor stays free.
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+    auto channel = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
+
+    ::asio::post(priority_pool_.get_executor(), [this, block, height, channel]() {
+        // 1. Save block to flat files (sequential I/O)
+        auto pos = block_store_->save_block_raw(block->raw_data(), height, block->header().timestamp());
+        if (pos.is_null()) {
+            spdlog::error("[blockchain] Failed to save block {} to flat files", height);
+            channel->try_send(std::error_code{}, error::operation_failed);
+            return;
+        }
+
+        // 2. Update header_index with block file position
+        auto const block_hash = block->header().hash();
+        auto const idx = header_index_.find(block_hash);
+        if (idx != header_index::null_index) {
+            header_index_.set_block_pos(idx, static_cast<int16_t>(pos.file), pos.pos);
+            header_index_.add_status(idx, header_status::have_data);
+        }
+
+        // 3. Update last block height in LMDB (for compatibility / UTXO build)
+        auto result = database_.internal_db().set_last_block_height(height);
+        if (result != database::result_code::success) {
+            spdlog::warn("[blockchain] Failed to update last_height in LMDB for height {}: {}",
+                height, static_cast<int>(result));
+        }
+
+        channel->try_send(std::error_code{}, error::success);
+    });
+
+    auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (ec) {
+        co_return error::operation_failed;
+    }
+    co_return result;
 }
 
 ::asio::awaitable<code> block_chain::organize(transaction_const_ptr tx) {
@@ -259,7 +586,7 @@ bool block_chain::stopped() const {
         co_return error::operation_failed;
     }
 
-    auto const next_height = heights->first + 1;  // header_height + 1
+    auto const next_height = heights->header + 1;
 
     // Store header in database with ABLA state = 0
     // The correct ABLA state will be set when the full block arrives via push_block
@@ -289,25 +616,12 @@ awaitable_expected<block_const_ptr_list_ptr> block_chain::reorganize(
     infrastructure::config::checkpoint const& fork_point,
     block_const_ptr_list_const_ptr incoming_blocks) {
 
-    if (incoming_blocks->empty()) {
-        co_return std::unexpected(error::reorganize_empty_blocks);
-    }
-
-    auto result = co_await database_.reorganize(priority_pool_.get_executor(), fork_point, incoming_blocks);
-
-    if ( ! result.has_value()) {
-        co_return std::unexpected(result.error());
-    }
-
-    auto const& top = incoming_blocks->back();
-    if ( ! top->validation.state) {
-        co_return std::unexpected(error::chain_state_invalid);
-    }
-
-    set_chain_state(top->validation.state);
-    last_block_.store(top);
-
-    co_return std::move(result.value());
+    // ==========================================================================
+    // DEPRECATED: Block storage moved to flat files (blk*.dat)
+    // ==========================================================================
+    (void)incoming_blocks;
+    (void)fork_point;
+    co_return std::unexpected(error::operation_failed);
 }
 
 ::asio::awaitable<code> block_chain::push(transaction_const_ptr tx) {
@@ -331,7 +645,10 @@ code block_chain::push_sync(transaction_const_ptr tx) {
 }
 
 bool block_chain::insert(block_const_ptr block, size_t height) {
-    return database_.insert(*block, height) == error::success;
+    // DEPRECATED: Block storage moved to flat files (blk*.dat)
+    (void)block;
+    (void)height;
+    return false;
 }
 
 void block_chain::prune_reorg_async() {
@@ -340,6 +657,59 @@ void block_chain::prune_reorg_async() {
             database_.prune_reorg();
         });
     }
+}
+
+std::expected<uint32_t, database::result_code> block_chain::get_utxo_built_height() const {
+    return database_.internal_db().get_utxo_built_height();
+}
+
+database::result_code block_chain::set_utxo_built_height(uint32_t height) {
+    return database_.internal_db().set_utxo_built_height(height);
+}
+
+database::result_code block_chain::set_last_block_height(uint32_t height) {
+    return database_.internal_db().set_last_block_height(height);
+}
+
+// DEPRECATED: UTXO storage moved to UTXOZ
+database::result_code block_chain::clear_utxo_set() {
+    return database::result_code::success;
+}
+
+size_t block_chain::utxo_deferred_deletions_size() const {
+    return utxoz_db_.deferred_deletions_size();
+}
+
+std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>> block_chain::utxo_process_pending_deletions() {
+    return utxoz_db_.process_pending_deletions();
+}
+
+void block_chain::utxo_compact() {
+    utxoz_db_.compact();
+}
+
+void block_chain::utxo_print_statistics() {
+    utxoz_db_.print_statistics();
+}
+
+void block_chain::utxo_print_sizing_report() {
+    utxoz_db_.print_sizing_report();
+}
+
+void block_chain::utxo_print_height_range_stats() {
+    utxoz_db_.print_height_range_stats();
+}
+
+size_t block_chain::utxo_size() const {
+    return utxoz_db_.size();
+}
+
+void block_chain::set_utxo_bloom(std::shared_ptr<database::utxo_bloom_filter const> bloom) {
+    utxoz_db_.set_utxo_bloom(std::move(bloom));
+}
+
+void block_chain::clear_utxo_bloom() {
+    utxoz_db_.clear_utxo_bloom();
 }
 
 #endif // ! defined(KTH_DB_READONLY)
@@ -414,7 +784,7 @@ bool block_chain::is_stale() const {
     if ( ! top) {
         auto const heights = get_last_heights();
         if (heights) {
-            auto const last_height = heights->second;  // block_height
+            auto const last_height = heights->block;
             auto const last_header = get_header(last_height);
             if (last_header) {
                 last_timestamp = last_header->timestamp();
@@ -432,6 +802,10 @@ settings const& block_chain::chain_settings() const {
 
 block_chain::executor_type block_chain::executor() const {
     return priority_pool_.get_executor();
+}
+
+std::filesystem::path block_chain::data_dir() const {
+    return database_.internal_db_dir.parent_path();
 }
 
 #if defined(KTH_WITH_MEMPOOL)
@@ -453,13 +827,8 @@ std::pair<std::vector<kth::mining::transaction_element>, uint64_t> block_chain::
 //     return true;
 // }
 
-std::expected<std::pair<size_t, size_t>, database::result_code> block_chain::get_last_heights() const {
-    auto result = database_.internal_db().get_last_heights();
-    if ( ! result) {
-        return std::unexpected(result.error());
-    }
-    auto const& [header_height, block_height] = *result;
-    return std::pair{size_t(header_height), size_t(block_height)};
+std::expected<heights_t, database::result_code> block_chain::get_last_heights() const {
+    return database_.internal_db().get_last_heights();
 }
 
 std::expected<domain::chain::header, database::result_code> block_chain::get_header(size_t height) const {
@@ -532,11 +901,10 @@ bool block_chain::block_exists(hash_digest const& block_hash) const {
         return false;
     }
 
-    auto const [header_height, block_height] = *heights;
     auto const this_block_height = header_result->second;
 
     // Block exists only if its height <= block_height
-    return this_block_height <= block_height;
+    return this_block_height <= heights->block;
 }
 
 std::expected<uint256_t, database::result_code> block_chain::get_branch_work(uint256_t const& maximum, size_t from_height) const {
@@ -546,7 +914,7 @@ std::expected<uint256_t, database::result_code> block_chain::get_branch_work(uin
     }
     // Use block_height (not header_height) for work comparison
     // With headers-first sync, we may have headers without full blocks
-    auto const top = heights->second;  // block_height
+    auto const top = heights->block;
 
     uint256_t out_work = 0;
     for (uint32_t height = from_height; height <= top && out_work < maximum; ++height) {
@@ -580,7 +948,8 @@ std::expected<block_chain::output_info, database::result_code> block_chain::get_
 std::expected<block_chain::output_info, database::result_code> block_chain::get_utxo(
     domain::chain::output_point const& outpoint, size_t branch_height) const {
 
-    auto entry = database_.internal_db().get_utxo(outpoint);
+    // Use UTXO-Z high-performance database
+    auto entry = utxoz_db_.find(outpoint, static_cast<uint32_t>(branch_height));
     if ( ! entry) {
         return std::unexpected(entry.error());
     }
@@ -625,6 +994,8 @@ std::expected<std::pair<size_t, size_t>, database::result_code> block_chain::get
 // FETCH OPERATIONS (Thread safe, coroutine-based)
 // =============================================================================
 
+// DEPRECATED: Block storage moved to flat files (blk*.dat)
+// These functions will return not_found until we implement reading from flat files
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(size_t height) const {
     if (stopped()) {
@@ -636,12 +1007,9 @@ block_chain::fetch_block(size_t height) const {
         co_return std::pair{cached, height};
     }
 
-    auto const block_result = database_.internal_db().get_block(height);
-    if ( ! block_result) {
-        co_return std::unexpected(error::not_found);
-    }
-
-    co_return std::pair{std::make_shared<const block>(*block_result), height};
+    // LMDB block storage removed - blocks now in flat files
+    (void)height;
+    co_return std::unexpected(error::not_found);
 }
 
 awaitable_expected<std::pair<block_const_ptr, size_t>>
@@ -655,12 +1023,52 @@ block_chain::fetch_block(hash_digest const& hash) const {
         co_return std::pair{cached, cached->validation.state->height()};
     }
 
-    auto const block_result = database_.internal_db().get_block(hash);
-    if ( ! block_result) {
-        co_return std::unexpected(error::not_found);
+    // LMDB block storage removed - blocks now in flat files
+    (void)hash;
+    co_return std::unexpected(error::not_found);
+}
+
+std::expected<domain::chain::block::list, database::result_code>
+block_chain::fetch_blocks(uint32_t from, uint32_t to) const {
+    // LMDB block storage removed - blocks now in flat files
+    (void)from;
+    (void)to;
+    return std::unexpected(database::result_code::other);
+}
+
+std::expected<std::vector<data_chunk>, database::result_code>
+block_chain::fetch_blocks_raw(uint32_t from, uint32_t to) const {
+    // Read blocks from flat files using positions stored in header_index
+    // NOTE: During IBD, blocks are stored sequentially, so index == height
+    std::vector<database::flat_file_pos> positions;
+    positions.reserve(to - from + 1);
+
+    for (uint32_t h = from; h <= to; ++h) {
+        // In IBD mode, the header index matches the height
+        auto const idx = static_cast<header_index::index_t>(h);
+
+        if (idx >= header_index_.size()) {
+            spdlog::error("[blockchain] fetch_blocks_raw: Height {} exceeds header_index size {}", h, header_index_.size());
+            return std::unexpected(database::result_code::key_not_found);
+        }
+
+        if (!header_index_.has_block_data(idx)) {
+            spdlog::error("[blockchain] fetch_blocks_raw: No block data for height {}", h);
+            return std::unexpected(database::result_code::key_not_found);
+        }
+
+        auto file_num = header_index_.get_file_number(idx);
+        auto data_pos = header_index_.get_data_pos(idx);
+        positions.emplace_back(file_num, data_pos);
     }
 
-    co_return std::pair{std::make_shared<const block>(block_result->first), block_result->second};
+    // Read all blocks from flat files
+    auto result = block_store_->read_blocks_raw(positions);
+    if (!result) {
+        return std::unexpected(database::result_code::other);
+    }
+
+    return std::move(*result);
 }
 
 awaitable_expected<std::pair<header_ptr, size_t>>
@@ -719,25 +1127,19 @@ block_chain::fetch_block_hash_timestamp(size_t height) const {
     co_return std::tuple{result->hash(), result->timestamp(), height};
 }
 
+// DEPRECATED: Block storage moved to flat files (blk*.dat)
 awaitable_expected<std::tuple<header_const_ptr, size_t, std::shared_ptr<hash_list>, uint64_t>>
 block_chain::fetch_block_header_txs_size(hash_digest const& hash) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
 
-    auto const block_result = database_.internal_db().get_block(hash);
-    if ( ! block_result) {
-        co_return std::unexpected(error::not_found);
-    }
-
-    auto const height = block_result->second;
-    auto const hdr = std::make_shared<const header>(block_result->first.header());
-    auto const tx_hashes = std::make_shared<hash_list>(block_result->first.to_hashes());
-
-    co_return std::tuple{hdr, height, tx_hashes, block_result->first.serialized_size()};
+    // LMDB block storage removed - blocks now in flat files
+    (void)hash;
+    co_return std::unexpected(error::not_found);
 }
 
-awaitable_expected<size_t>
+awaitable_expected<heights_t>
 block_chain::fetch_last_height() const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
@@ -748,42 +1150,31 @@ block_chain::fetch_last_height() const {
         co_return std::unexpected(error::not_found);
     }
 
-    co_return size_t(result->first);  // header_height
+    co_return *result;
 }
 
+// DEPRECATED: Block storage moved to flat files (blk*.dat)
 awaitable_expected<std::pair<merkle_block_ptr, size_t>>
 block_chain::fetch_merkle_block(size_t height) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
 
-    auto const block_result = database_.internal_db().get_block(height);
-    if ( ! block_result) {
-        co_return std::unexpected(error::not_found);
-    }
-
-    auto merkle = std::make_shared<merkle_block>(block_result->header(),
-        block_result->transactions().size(), block_result->to_hashes(), data_chunk{});
-
-    co_return std::pair{merkle, height};
+    // LMDB block storage removed - blocks now in flat files
+    (void)height;
+    co_return std::unexpected(error::not_found);
 }
 
+// DEPRECATED: Block storage moved to flat files (blk*.dat)
 awaitable_expected<std::pair<merkle_block_ptr, size_t>>
 block_chain::fetch_merkle_block(hash_digest const& hash) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
 
-    auto const block_result = database_.internal_db().get_block(hash);
-    if ( ! block_result) {
-        co_return std::unexpected(error::not_found);
-    }
-    auto const& [block, height] = *block_result;
-
-    auto merkle = std::make_shared<merkle_block>(block.header(),
-        block.transactions().size(), block.to_hashes(), data_chunk{});
-
-    co_return std::pair{merkle, height};
+    // LMDB block storage removed - blocks now in flat files
+    (void)hash;
+    co_return std::unexpected(error::not_found);
 }
 
 awaitable_expected<std::pair<compact_block_ptr, size_t>>
@@ -876,6 +1267,7 @@ block_chain::fetch_unconfirmed_transaction(hash_digest const& hash) const {
     co_return std::make_shared<const transaction>(result->transaction());
 }
 
+// Modified to use get_header instead of get_block (blocks now in flat files)
 awaitable_expected<inventory_ptr>
 block_chain::fetch_locator_block_hashes(get_blocks_const_ptr locator,
                                         hash_digest const& threshold,
@@ -886,7 +1278,7 @@ block_chain::fetch_locator_block_hashes(get_blocks_const_ptr locator,
 
     uint32_t start = 0;
     for (auto const& hash : locator->start_hashes()) {
-        auto const result = database_.internal_db().get_block(hash);
+        auto const result = database_.internal_db().get_header(hash);
         if (result) {
             start = result->second;
             break;
@@ -897,14 +1289,14 @@ block_chain::fetch_locator_block_hashes(get_blocks_const_ptr locator,
     auto end = *safe_add(begin, uint32_t(limit));
 
     if (locator->stop_hash() != null_hash) {
-        auto const result = database_.internal_db().get_block(locator->stop_hash());
+        auto const result = database_.internal_db().get_header(locator->stop_hash());
         if (result) {
             end = std::min(result->second, end);
         }
     }
 
     if (threshold != null_hash) {
-        auto const result = database_.internal_db().get_block(threshold);
+        auto const result = database_.internal_db().get_header(threshold);
         if (result) {
             begin = std::max(result->second, begin);
         }
@@ -914,13 +1306,13 @@ block_chain::fetch_locator_block_hashes(get_blocks_const_ptr locator,
     hashes->inventories().reserve(floor_subtract(end, begin));
 
     for (auto height = begin; height < end; ++height) {
-        auto const result = database_.internal_db().get_block(height);
+        auto const result = database_.internal_db().get_header(height);
         if ( ! result) {
             hashes->inventories().shrink_to_fit();
             break;
         }
         static auto const id = inventory::type_id::block;
-        hashes->inventories().emplace_back(id, result->header().hash());
+        hashes->inventories().emplace_back(id, result->hash());
     }
 
     co_return hashes;

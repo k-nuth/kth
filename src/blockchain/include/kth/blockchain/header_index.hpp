@@ -42,8 +42,11 @@ namespace kth::blockchain {
 //   timestamps:         4.7 MB
 //   bits:               4.7 MB
 //   nonces:             4.7 MB
+//   file_numbers:       2.4 MB (1,179,648 × 2 bytes)
+//   data_positions:     4.7 MB
+//   undo_positions:     4.7 MB
 //   ─────────────────────────────
-//   Total:            ~125 MB
+//   Total:            ~137 MB
 //
 // Thread safety:
 //   - Writers: CFM's bucket lock during insert_and_visit
@@ -100,6 +103,11 @@ struct header_entry {
     int32_t height{};
     uint64_t chain_work{};
     header_status status{};
+
+    // Block file location (flat file storage)
+    int16_t file_number{-1};    // File number (-1 = no data)
+    uint32_t data_pos{0};       // Position in blk*.dat
+    uint32_t undo_pos{0};       // Position in rev*.dat
 };
 
 /// Result of adding a header to the index
@@ -213,6 +221,42 @@ struct KB_API header_index {
     void set_chain_work(index_t idx, uint64_t work);
 
     // =========================================================================
+    // Block File Location (flat file storage)
+    // =========================================================================
+
+    /// Set block file position.
+    /// @param idx Header index.
+    /// @param file File number (blk*.dat).
+    /// @param pos Byte offset within file.
+    void set_block_pos(index_t idx, int16_t file, uint32_t pos);
+
+    /// Set undo file position.
+    /// @param idx Header index.
+    /// @param pos Byte offset within rev*.dat (same file number as block).
+    void set_undo_pos(index_t idx, uint32_t pos);
+
+    /// Get file number for block.
+    /// @return File number or -1 if no data.
+    [[nodiscard]]
+    int16_t get_file_number(index_t idx) const;
+
+    /// Get block data position.
+    [[nodiscard]]
+    uint32_t get_data_pos(index_t idx) const;
+
+    /// Get undo data position.
+    [[nodiscard]]
+    uint32_t get_undo_pos(index_t idx) const;
+
+    /// Check if block data is available.
+    [[nodiscard]]
+    bool has_block_data(index_t idx) const;
+
+    /// Check if undo data is available.
+    [[nodiscard]]
+    bool has_undo_data(index_t idx) const;
+
+    // =========================================================================
     // Traversal Primitives
     // =========================================================================
 
@@ -295,6 +339,11 @@ private:
     std::vector<uint32_t> timestamps_;
     std::vector<uint32_t> bits_;
     std::vector<uint32_t> nonces_;
+
+    // Block file location (flat file storage)
+    std::vector<int16_t> file_numbers_;    // -1 = no data
+    std::vector<uint32_t> data_positions_; // Position in blk*.dat
+    std::vector<uint32_t> undo_positions_; // Position in rev*.dat
 
     // Index counter
     std::atomic<index_t> next_idx_{0};

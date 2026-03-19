@@ -555,7 +555,7 @@ TEST_CASE("peer_manager concurrent add/remove", "[peer_manager][concurrent]") {
     for (int i = 0; i < num_operations; ++i) {
         ::asio::co_spawn(ctx, [&, i]() -> ::asio::awaitable<void> {
             auto peer = make_test_peer(ctx);
-            peer->set_nonce(static_cast<uint64_t>(i));
+            peer->set_nonce(uint64_t(i));
             co_await manager.add(peer);
 
             // Immediately remove half

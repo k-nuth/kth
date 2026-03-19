@@ -67,7 +67,7 @@ expect<output_basis> output_basis::from_data(byte_reader& reader, bool /*wire*/)
         return token_prefix_byte && *token_prefix_byte == chain::encoding::PREFIX_BYTE;
     }();
     if (has_token_data) {
-        reader.skip(1); // skip prefix byte
+        reader.unsafe_skip_byte(); // skip prefix byte (safe: peek_byte succeeded above)
         auto token = token::encoding::from_data(reader);
         if ( ! token) {
             return std::unexpected(token.error());
