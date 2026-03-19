@@ -19,6 +19,7 @@ option(DB_READONLY_MODE "Readonly DB mode enabled." OFF)
 option(JUST_KTH_SOURCES "Just Knuth source code to be linted." OFF)
 
 option(GLOBAL_BUILD "" ON)
+option(ENABLE_TSAN_TESTS "Build TSAN tests" ON)
 
 
 if (WITH_MEMPOOL)
@@ -55,14 +56,39 @@ endif()
 
 message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 
-# Block index capacity (number of blocks for static array allocation)
-# Default: 1,179,648 blocks (~2030, aligned to 2^16)
-if(NOT DEFINED KTH_BLOCK_INDEX_CAPACITY)
-  set(KTH_BLOCK_INDEX_CAPACITY 1179648)
+# Header index capacity (number of headers for static array allocation)
+# Default: 1,179,648 headers (~2030, aligned to 2^16)
+if(NOT DEFINED KTH_HEADER_INDEX_CAPACITY)
+  set(KTH_HEADER_INDEX_CAPACITY 1179648)
 endif()
-message(STATUS "Knuth: Block index capacity: ${KTH_BLOCK_INDEX_CAPACITY}")
-add_definitions(-DKTH_BLOCK_INDEX_CAPACITY=${KTH_BLOCK_INDEX_CAPACITY})
+message(STATUS "Knuth: Header index capacity: ${KTH_HEADER_INDEX_CAPACITY}")
+add_definitions(-DKTH_HEADER_INDEX_CAPACITY=${KTH_HEADER_INDEX_CAPACITY})
 
+# UTXO-Z compact storage mode (8-byte refs instead of full output data)
+option(KTH_UTXOZ_COMPACT_MODE "Use UTXO-Z compact storage mode" OFF)
+
+# Embedded UTXO bloom filter — .incbin via assembly
+option(KTH_EMBED_UTXO_BLOOM "Embed UTXO bloom filter in the executable for faster IBD" ON)
+set(UTXO_BLOOM_DAT_PATH "${CMAKE_SOURCE_DIR}/data/utxo_bloom.dat")
+set(KTH_HAS_EMBEDDED_BLOOM OFF)
+
+if(NOT KTH_EMBED_UTXO_BLOOM)
+    message(STATUS "Knuth: UTXO bloom filter embedding disabled by option")
+elseif(EXISTS "${UTXO_BLOOM_DAT_PATH}")
+    enable_language(ASM)
+    file(SIZE "${UTXO_BLOOM_DAT_PATH}" _bloom_file_size)
+    math(EXPR _bloom_file_size_mb "${_bloom_file_size} / 1048576")
+    message(STATUS "Knuth: UTXO bloom filter found: ${UTXO_BLOOM_DAT_PATH} (${_bloom_file_size_mb} MB)")
+
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/utxo_bloom_embed.S.in
+        ${CMAKE_CURRENT_BINARY_DIR}/utxo_bloom_embed.S
+        @ONLY
+    )
+    set(KTH_HAS_EMBEDDED_BLOOM ON)
+else()
+    message(WARNING "Knuth: UTXO bloom filter NOT found at ${UTXO_BLOOM_DAT_PATH} — IBD will run without bloom optimization (slower)")
+endif()
 
 if (NOT GLOBAL_BUILD)
   find_package(database REQUIRED)
@@ -133,6 +159,7 @@ set(kth_sources_just_legacy
   src/pools/block_organizer.cpp
   src/pools/block_pool.cpp
   src/pools/branch.cpp
+  src/pools/header_organizer.cpp
   src/pools/transaction_entry.cpp
   src/pools/transaction_organizer.cpp
   src/pools/transaction_pool.cpp
@@ -142,10 +169,16 @@ set(kth_sources_just_legacy
   src/populate/populate_chain_state.cpp
   src/populate/populate_transaction.cpp
   src/validate/validate_block.cpp
+  src/validate/validate_header.cpp
   src/validate/validate_input.cpp
   src/validate/validate_transaction.cpp
   src/settings.cpp
+  src/utxo_builder.cpp
 )
+
+if(KTH_HAS_EMBEDDED_BLOOM)
+    list(APPEND kth_sources_just_legacy ${CMAKE_CURRENT_BINARY_DIR}/utxo_bloom_embed.S)
+endif()
 
 if (NOT JUST_KTH_SOURCES)
   set(kth_sources
@@ -161,17 +194,17 @@ set(kth_sources
 set(kth_headers
   include/kth/blockchain.hpp
   include/kth/blockchain/interface
-  include/kth/blockchain/interface/fast_chain.hpp
   include/kth/blockchain/interface/block_chain.hpp
-  include/kth/blockchain/interface/safe_chain.hpp
   include/kth/blockchain/define.hpp
+  include/kth/blockchain/header_index.hpp
   include/kth/blockchain/populate/populate_transaction.hpp
   include/kth/blockchain/populate/populate_chain_state.hpp
   include/kth/blockchain/populate/populate_block.hpp
   include/kth/blockchain/populate/populate_base.hpp
+  include/kth/blockchain/validate/validate_block.hpp
+  include/kth/blockchain/validate/validate_header.hpp
   include/kth/blockchain/validate/validate_input.hpp
   include/kth/blockchain/validate/validate_transaction.hpp
-  include/kth/blockchain/validate/validate_block.hpp
   include/kth/blockchain/pools/block_entry.hpp
   include/kth/blockchain/pools/transaction_pool.hpp
   include/kth/blockchain/pools/transaction_entry.hpp
@@ -179,6 +212,7 @@ set(kth_headers
   include/kth/blockchain/pools/block_organizer.hpp
   include/kth/blockchain/pools/branch.hpp
   include/kth/blockchain/pools/block_pool.hpp
+  include/kth/blockchain/pools/header_organizer.hpp
   include/kth/blockchain/pools/transaction_organizer.hpp
   include/kth/blockchain/mining/prioritizer.hpp
   include/kth/blockchain/mining/transaction_element.1.hpp
@@ -196,6 +230,15 @@ add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX CXX_STANDARD 23 CXX_STANDARD_REQUIRED TRUE)
 
+if(KTH_HAS_EMBEDDED_BLOOM)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE KTH_HAS_EMBEDDED_BLOOM)
+    message(STATUS "Knuth: Bloom filter will be embedded in the executable")
+endif()
+
+if(KTH_UTXOZ_COMPACT_MODE)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_UTXOZ_COMPACT_MODE)
+    message(STATUS "Knuth: UTXO-Z compact storage mode enabled")
+endif()
 
 if (ENABLE_POSITION_INDEPENDENT_CODE)
     set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
@@ -229,63 +272,32 @@ _group_sources(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}")
 
 # Tests
 # ------------------------------------------------------------------------------
-# if (ENABLE_TEST)
-#     enable_testing()
-#     find_package(Catch2 3 REQUIRED)
-
-#     set(kth_blockchain_test_sources
-#         test/block_chain.cpp
-#         test/block_entry.cpp
-#         test/block_pool.cpp
-#         test/branch.cpp
-#         test/transaction_entry.cpp
-#         test/transaction_pool.cpp
-#         test/validate_block.cpp
-#         test/validate_transaction.cpp
-#         test/utxo.cpp
-#         test/main.cpp
-#     )
-
-#     if (WITH_MEMPOOL)
-#         set(kth_blockchain_test_sources
-#             ${kth_blockchain_test_sources}
-#             test/mempool_tests.cpp
-#         )
-#     endif()
-
-#     add_executable(kth_blockchain_test
-#         ${kth_blockchain_test_sources}
-#     )
-
-#     target_include_directories(kth_blockchain_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
-#     target_link_libraries(kth_blockchain_test PUBLIC ${PROJECT_NAME})
-#     target_link_libraries(kth_blockchain_test PRIVATE Catch2::Catch2WithMain)
-
-#     _group_sources(kth_blockchain_test "${CMAKE_CURRENT_LIST_DIR}/test")
-
-#     include(CTest)
-#     # Try to use Catch2 automatic test discovery
-#     find_package(Catch2 QUIET)
-#     if(Catch2_FOUND)
-#       include(Catch)
-#       catch_discover_tests(kth_blockchain_test)
-#     else()
-#       # Fallback to manual test registration
-#       add_test(NAME kth_blockchain_test COMMAND kth_blockchain_test)
-#     endif()
-# endif()
-
-# VM-Limits tests
-# Native VM tests always run; consensus comparison tests require WITH_CONSENSUS.
-# ------------------------------------------------------------------------------
 if (ENABLE_TEST)
     enable_testing()
     find_package(Catch2 3 REQUIRED)
 
     set(kth_blockchain_test_sources
-        test/vmlimits_tests.cpp
-        test/vmlimits_tests_generated.cpp
+        test/header_index.cpp
+        test/header_organizer.cpp
     )
+
+    # TODO(fernando): re-enable these tests when fixed
+    # test/block_chain.cpp
+    # test/block_entry.cpp
+    # test/block_pool.cpp
+    # test/branch.cpp
+    # test/transaction_entry.cpp
+    # test/transaction_pool.cpp
+    # test/validate_block.cpp
+    # test/validate_transaction.cpp
+    # test/utxo.cpp
+
+    if (WITH_MEMPOOL)
+        set(kth_blockchain_test_sources
+            ${kth_blockchain_test_sources}
+            test/mempool_tests.cpp
+        )
+    endif()
 
     add_executable(kth_blockchain_test
         ${kth_blockchain_test_sources}
@@ -295,16 +307,50 @@ if (ENABLE_TEST)
     target_link_libraries(kth_blockchain_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_blockchain_test PRIVATE Catch2::Catch2WithMain)
 
-    if (WITH_CONSENSUS)
-        target_compile_definitions(kth_blockchain_test PRIVATE -DWITH_CONSENSUS)
-        target_link_libraries(kth_blockchain_test PUBLIC consensus::consensus)
-    endif()
-
     _group_sources(kth_blockchain_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
     include(CTest)
+    # Try to use Catch2 automatic test discovery
+    find_package(Catch2 QUIET)
+    if(Catch2_FOUND)
+      include(Catch)
+      catch_discover_tests(kth_blockchain_test)
+    else()
+      # Fallback to manual test registration
+      add_test(NAME kth_blockchain_test COMMAND kth_blockchain_test)
+    endif()
+endif()
+
+# VM-Limits tests
+# Native VM tests always run; consensus comparison tests require WITH_CONSENSUS.
+# ------------------------------------------------------------------------------
+if (ENABLE_TEST)
+    enable_testing()
+    find_package(Catch2 3 REQUIRED)
+
+    set(kth_blockchain_vmlimits_test_sources
+        test/vmlimits_tests.cpp
+        test/vmlimits_tests_generated.cpp
+    )
+
+    add_executable(kth_blockchain_vmlimits_test
+        ${kth_blockchain_vmlimits_test_sources}
+    )
+
+    target_include_directories(kth_blockchain_vmlimits_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_blockchain_vmlimits_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_blockchain_vmlimits_test PRIVATE Catch2::Catch2WithMain)
+
+    if (WITH_CONSENSUS)
+        target_compile_definitions(kth_blockchain_vmlimits_test PRIVATE -DWITH_CONSENSUS)
+        target_link_libraries(kth_blockchain_vmlimits_test PUBLIC consensus::consensus)
+    endif()
+
+    _group_sources(kth_blockchain_vmlimits_test "${CMAKE_CURRENT_LIST_DIR}/test")
+
+    include(CTest)
     include(Catch)
-    catch_discover_tests(kth_blockchain_test)
+    catch_discover_tests(kth_blockchain_vmlimits_test)
 endif()
 
 # Tools
@@ -326,19 +372,21 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # ==========================================================================
   # 1. Thread-safety tests with TSan (debug, -O1)
   # ==========================================================================
-  add_executable(kth_blockchain_tsan_tests test/block_index_bench/benchmarks.cpp)
-  target_include_directories(kth_blockchain_tsan_tests PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test/block_index_bench>
-  )
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE nanobench::nanobench)
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE fmt::fmt-header-only)
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE Boost::boost)
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE ${PROJECT_NAME})
-  target_compile_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread -g -O1)
-  target_link_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread)
-  target_compile_definitions(kth_blockchain_tsan_tests PRIVATE TSAN_BUILD=1)
-  _group_sources(kth_blockchain_tsan_tests "${CMAKE_CURRENT_LIST_DIR}/test")
+  if (ENABLE_TSAN_TESTS)
+    add_executable(kth_blockchain_tsan_tests test/block_index_bench/benchmarks.cpp)
+    target_include_directories(kth_blockchain_tsan_tests PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test/block_index_bench>
+    )
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE nanobench::nanobench)
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE fmt::fmt-header-only)
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE Boost::boost)
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE ${PROJECT_NAME})
+    target_compile_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread -g -O1)
+    target_link_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread)
+    target_compile_definitions(kth_blockchain_tsan_tests PRIVATE TSAN_BUILD=1)
+    _group_sources(kth_blockchain_tsan_tests "${CMAKE_CURRENT_LIST_DIR}/test")
+  endif()
 
   # ==========================================================================
   # 2. Performance benchmarks (release, full optimization)

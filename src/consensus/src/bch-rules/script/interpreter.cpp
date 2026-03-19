@@ -2649,7 +2649,7 @@ bool TransactionSignatureChecker::CheckSequence(const CScriptNum &nSequence) con
 
     // Fail if the transaction's version number is not set high enough to
     // trigger BIP 68 rules.
-    if (static_cast<uint32_t>(txTo.nVersion()) < 2u) {
+    if (uint32_t(txTo.nVersion()) < 2u) {
         return false;
     }
 

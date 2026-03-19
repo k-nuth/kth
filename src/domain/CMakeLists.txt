@@ -28,7 +28,7 @@ if (KTH_WITH_QRENCODE)
   add_definitions(-DKTH_WITH_QRENCODE)
 endif()
 
-add_definitions(-DJEMALLOC)
+# JEMALLOC is now configured in the main CMakeLists.txt via conan
 
 
 if (JUST_KTH_SOURCES)
@@ -87,17 +87,11 @@ if (WITH_ICU)
 endif()
 
 find_package(tiny-aes-c REQUIRED)
-# # jemalloc
-# find_package(PkgConfig REQUIRED)
-# pkg_check_modules(JEMALLOC jemalloc)
 
-# message("-- Found jemalloc: JEMALLOC_INCLUDE_DIRS: ${JEMALLOC_INCLUDE_DIRS}")
-# message("-- Found jemalloc: JEMALLOC_LIBRARY_DIRS: ${JEMALLOC_LIBRARY_DIRS}")
-# message("-- Found jemalloc: JEMALLOC_CFLAGS_OTHER: ${JEMALLOC_CFLAGS_OTHER}")
-
-# include_directories(${JEMALLOC_INCLUDE_DIRS})
-# link_directories(${JEMALLOC_LIBRARY_DIRS})
-# add_definitions(${JEMALLOC_CFLAGS_OTHER})
+# jemalloc is now configured in the main CMakeLists.txt via conan
+if (KTH_WITH_JEMALLOC)
+  find_package(jemalloc REQUIRED)
+endif()
 
 
 
@@ -176,6 +170,7 @@ set(kth_sources_just_legacy
         src/chain/header.cpp
         src/chain/input_basis.cpp
         src/chain/input.cpp
+        src/chain/light_block.cpp
         src/chain/output_basis.cpp
         src/chain/output.cpp
         src/chain/output_point.cpp
@@ -241,7 +236,9 @@ set(kth_sources_just_legacy
         src/message/prefilled_transaction.cpp
         src/message/reject.cpp
         src/message/send_compact.cpp
+        src/message/send_addrv2.cpp
         src/message/send_headers.cpp
+        src/message/addrv2.cpp
         src/message/transaction.cpp
         src/message/verack.cpp
         src/message/version.cpp
@@ -327,7 +324,9 @@ set(kth_headers
     include/kth/domain/message/ping.hpp
     include/kth/domain/message/pong.hpp
     include/kth/domain/message/double_spend_proof.hpp
+    include/kth/domain/message/send_addrv2.hpp
     include/kth/domain/message/send_headers.hpp
+    include/kth/domain/message/addrv2.hpp
     include/kth/domain/message/transaction.hpp
     include/kth/domain/message/reject.hpp
     include/kth/domain/message/compact_block.hpp
@@ -352,6 +351,7 @@ set(kth_headers
     include/kth/domain/chain/block_basis.hpp
     include/kth/domain/chain/input_point.hpp
     include/kth/domain/chain/input_basis.hpp
+    include/kth/domain/chain/light_block.hpp
     include/kth/domain/chain/block.hpp
     include/kth/domain/chain/output.hpp
     include/kth/domain/chain/daa/aserti3_2d.hpp
@@ -466,7 +466,9 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC infrastructure::infrastructure)
 target_link_libraries(${PROJECT_NAME} PUBLIC tiny-aes-c::tiny-aes-c)
-target_link_libraries(${PROJECT_NAME} PUBLIC ${JEMALLOC_LIBRARIES})
+if(KTH_WITH_JEMALLOC)
+  target_link_libraries(${PROJECT_NAME} PUBLIC jemalloc::jemalloc)
+endif()
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(${PROJECT_NAME} PUBLIC Boost::thread)
@@ -547,6 +549,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/compact.cpp
         test/chain/header.cpp
         test/chain/input.cpp
+        test/chain/light_block.cpp
         test/chain/output.cpp
         test/chain/output_point.cpp
         test/chain/point.cpp
@@ -666,6 +669,25 @@ if (WITH_EXAMPLES)
   target_link_libraries(kth_domain_examples PUBLIC ${PROJECT_NAME})
 
   _group_sources(kth_domain_examples "${CMAKE_CURRENT_LIST_DIR}/examples")
+endif()
+
+# Standalone addrv2 parser comparison test (manual run)
+# Uses BCHN code directly for comparison
+# ------------------------------------------------------------------------------
+if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  add_executable(addrv2_bchn_comparison
+    test/message/addrv2_bchn_comparison.cpp
+    ${CMAKE_SOURCE_DIR}/bchn/src/netaddress.cpp
+    ${CMAKE_SOURCE_DIR}/bchn/src/crypto/sha256.cpp
+    ${CMAKE_SOURCE_DIR}/bchn/src/crypto/sha3.cpp
+    ${CMAKE_SOURCE_DIR}/bchn/src/crypto/siphash.cpp
+    ${CMAKE_SOURCE_DIR}/bchn/src/util/strencodings.cpp
+    ${CMAKE_SOURCE_DIR}/bchn/src/util/asmap.cpp
+  )
+  target_include_directories(addrv2_bchn_comparison PRIVATE
+    ${CMAKE_SOURCE_DIR}/bchn/src  # For BCHN includes
+  )
+  target_link_libraries(addrv2_bchn_comparison PUBLIC ${PROJECT_NAME})
 endif()
 
 # Install

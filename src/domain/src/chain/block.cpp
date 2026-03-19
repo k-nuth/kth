@@ -429,24 +429,10 @@ code block::check() const {
     return block_basis::check(serialized_size());
 }
 
-// Contextual validation — prevout cache must be populated for transaction validation.
-code block::accept(
-    script_flags_t flags,
-    size_t height,
-    uint32_t median_time_past,
-    size_t max_block_size_dynamic,
-    size_t max_sigops,
-    bool is_under_checkpoint,
-    bool transactions
-) const {
-    validation.start_accept = asio::steady_clock::now();
-    return block_basis::accept(flags, height, median_time_past, serialized_size(),
-        max_block_size_dynamic, max_sigops, is_under_checkpoint, transactions);
-}
-
-code block::connect() const {
-    auto const state = validation.state;
-    return state ? block_basis::connect(*state) : error::operation_failed;
+// Check block body only (skip header validation for headers-first sync).
+code block::check_body() const {
+    validation.start_check = asio::steady_clock::now();
+    return block_basis::check_body(serialized_size());
 }
 
 } // namespace kth::domain::chain

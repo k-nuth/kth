@@ -66,7 +66,7 @@ result_code internal_database_basis<Clock>::insert_input_history(domain::chain::
 
             //auto entry = get_transaction(prevout.hash(), max_uint32, true, db_txn);
 
-            if (entry.is_valid()) {
+            if (entry) {
 
                 //auto const& tx = entry.transaction();
 
@@ -80,7 +80,7 @@ result_code internal_database_basis<Clock>::insert_input_history(domain::chain::
 
                 uint64_t id = history_count;
 
-                auto const& out_output = entry.output();
+                auto const& out_output = entry->output();
                 for (auto const& address : out_output.addresses()) {
                     auto valuearr = history_entry::factory_to_data(id, inpoint, domain::chain::point_kind::spend, height, inpoint.index(), prevout.checksum());
                     auto res = insert_history_db(address, valuearr, db_txn);
@@ -89,8 +89,7 @@ result_code internal_database_basis<Clock>::insert_input_history(domain::chain::
                     }
                     ++id;
                 }
-            }
-            else {
+            } else {
                 spdlog::info("[database] Error finding UTXO for input history [insert_input_history]");
             }
     }
@@ -135,7 +134,7 @@ domain::chain::history_compact internal_database_basis<Clock>::history_entry_to_
 }
 
 template <typename Clock>
-domain::chain::history_compact::list internal_database_basis<Clock>::get_history(short_hash const& key, size_t limit, size_t from_height) const {
+std::expected<domain::chain::history_compact::list, result_code> internal_database_basis<Clock>::get_history(short_hash const& key, size_t limit, size_t from_height) const {
 
     domain::chain::history_compact::list result;
 
@@ -146,13 +145,13 @@ domain::chain::history_compact::list internal_database_basis<Clock>::get_history
     KTH_DB_txn* db_txn;
     auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (res != KTH_DB_SUCCESS) {
-        return result;
+        return std::unexpected(result_code::other);
     }
 
     KTH_DB_cursor* cursor;
     if (kth_db_cursor_open(db_txn, dbi_history_db_, &cursor) != KTH_DB_SUCCESS) {
         kth_db_txn_commit(db_txn);
-        return result;
+        return std::unexpected(result_code::other);
     }
 
     auto key_hash = kth_db_make_value(key.size(), const_cast<short_hash&>(key).data());
@@ -188,14 +187,14 @@ domain::chain::history_compact::list internal_database_basis<Clock>::get_history
     kth_db_cursor_close(cursor);
 
     if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
-        return result;
+        return std::unexpected(result_code::other);
     }
 
     return result;
 }
 
 template <typename Clock>
-std::vector<hash_digest> internal_database_basis<Clock>::get_history_txns(short_hash const& key, size_t limit, size_t from_height) const {
+std::expected<std::vector<hash_digest>, result_code> internal_database_basis<Clock>::get_history_txns(short_hash const& key, size_t limit, size_t from_height) const {
 
     std::set<hash_digest> temp;
     std::vector<hash_digest> result;
@@ -207,13 +206,13 @@ std::vector<hash_digest> internal_database_basis<Clock>::get_history_txns(short_
     KTH_DB_txn* db_txn;
     auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (res != KTH_DB_SUCCESS) {
-        return result;
+        return std::unexpected(result_code::other);
     }
 
     KTH_DB_cursor* cursor;
     if (kth_db_cursor_open(db_txn, dbi_history_db_, &cursor) != KTH_DB_SUCCESS) {
         kth_db_txn_commit(db_txn);
-        return result;
+        return std::unexpected(result_code::other);
     }
 
     auto key_hash = kth_db_make_value(key.size(), const_cast<short_hash&>(key).data());;
@@ -259,7 +258,7 @@ std::vector<hash_digest> internal_database_basis<Clock>::get_history_txns(short_
     kth_db_cursor_close(cursor);
 
     if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
-        return result;
+        return std::unexpected(result_code::other);
     }
 
     return result;

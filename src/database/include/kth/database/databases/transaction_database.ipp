@@ -11,18 +11,22 @@ namespace kth::database {
 
 //public
 template <typename Clock>
-transaction_entry internal_database_basis<Clock>::get_transaction(hash_digest const& hash, size_t fork_height) const {
+std::expected<transaction_entry, result_code> internal_database_basis<Clock>::get_transaction(hash_digest const& hash, size_t fork_height) const {
 
     KTH_DB_txn* db_txn;
     auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
     if (res != KTH_DB_SUCCESS) {
-        return transaction_entry{};
+        return std::unexpected(result_code::other);
     }
 
     auto entry = get_transaction(hash, fork_height, db_txn);
 
     if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
-        return transaction_entry{};
+        return std::unexpected(result_code::other);
+    }
+
+    if ( ! entry.is_valid()) {
+        return std::unexpected(result_code::key_not_found);
     }
 
     return entry;

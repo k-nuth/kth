@@ -20,6 +20,7 @@
 #include <kth/node/settings.hpp>
 
 #include <kth/infrastructure/config/directory.hpp>
+#include <kth/infrastructure/display_mode.hpp>
 
 namespace kth::domain::config {
 
@@ -50,6 +51,26 @@ void validate(boost::any& v, std::vector<std::string> const& values, network* ta
 
 } // namespace kth::domain::config
 
+namespace kth {
+
+void validate(boost::any& v, std::vector<std::string> const& values, display_mode* /*target_type*/, int) {
+    using namespace boost::program_options;
+
+    validators::check_first_occurrence(v);
+    auto const& s = validators::get_single_string(values);
+
+    if (s == "tui" || s == "TUI") {
+        v = boost::any(display_mode::tui);
+    } else if (s == "log" || s == "LOG") {
+        v = boost::any(display_mode::log);
+    } else if (s == "daemon" || s == "DAEMON") {
+        v = boost::any(display_mode::daemon);
+    } else {
+        throw validation_error(validation_error::invalid_option_value);
+    }
+}
+
+} // namespace kth
 
 // TODO: localize descriptions.
 namespace kth::node {
@@ -74,8 +95,9 @@ void parser::set_default_configuration() {
     // Logs will slow things if not rotated.
     configured.network.rotation_size = 10000000;
 
-    // With block-first sync the count should be low until complete.
-    configured.network.outbound_connections = 2;
+    // Headers-first sync allows parallel block downloads from multiple peers.
+    // 2026-02-02: Increased from 8 to 32 for better sync performance
+    configured.network.outbound_connections = 32;
 
     // A node allows 1000 host names by default.
     configured.network.host_pool_capacity = 1000;
@@ -136,6 +158,11 @@ options_metadata parser::load_options() {
         value<bool>(&configured.version)->
             default_value(false)->zero_tokens(),
         "Display version information."
+    )(
+        "display,d",
+        value<kth::display_mode>(&configured.node.display)->
+            default_value(kth::display_mode::log, "log"),
+        "Display mode (tui, log, daemon). Default: log."
     );
 
     return description;
@@ -563,6 +590,10 @@ options_metadata parser::load_settings() {
         "node.ds_proofs",
         value<bool>(&configured.node.ds_proofs_enabled),
         "Double-Spend Proofs, default to false."
+    )(
+        "node.display",
+        value<kth::display_mode>(&configured.node.display),
+        "Display mode (tui, log, daemon). Default: log."
     )
 
 #if defined(KTH_WITH_MEMPOOL)

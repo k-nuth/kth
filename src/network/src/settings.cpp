@@ -5,6 +5,7 @@
 #include <kth/network/settings.hpp>
 
 #include <kth/domain.hpp>
+#include <kth/network/net_permissions.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 
 namespace kth::network {
@@ -14,7 +15,7 @@ using namespace kd::message;
 
 // Common default values (no settings context).
 settings::settings()
-    : threads(0)
+    : threads(4)
     , protocol_maximum(version::level::maximum)
     , protocol_minimum(version::level::minimum)
     , services(version::service::node_network)
@@ -26,17 +27,19 @@ settings::settings()
     , relay_transactions(true)
     , validate_checksum(false)
     , inbound_connections(0)
-    , outbound_connections(8)
+    , outbound_connections(16)
     , manual_attempt_limit(0)
     , connect_batch_size(5)
     , connect_timeout_seconds(5)
     , channel_handshake_seconds(6000)
-    , channel_heartbeat_minutes(5)
+    , channel_heartbeat_minutes(2)  // BCHN: PING_INTERVAL = 2 minutes
     , channel_inactivity_minutes(10)
     , channel_expiration_minutes(60)
     , channel_germination_seconds(30)
     , host_pool_capacity(1000)
     , hosts_file("hosts.cache")
+    , banlist_file("banlist.dat")
+    , peers_file("peers.dat")
     , self(unspecified_network_address)
     // , bitcoin_cash(false)
 
@@ -77,6 +80,7 @@ settings::settings(domain::config::network context)
 
 #if defined(KTH_CURRENCY_BCH)
             identifier = netmagic::bch_mainnet;
+
             seeds.reserve(7);
             seeds.emplace_back("seed.flowee.cash", 8333);                     // Flowee
             seeds.emplace_back("btccash-seeder.bitcoinunlimited.info", 8333); // Bitcoin Unlimited
@@ -85,6 +89,9 @@ settings::settings(domain::config::network context)
             seeds.emplace_back("dnsseed.electroncash.de", 8333);              // Electroncash.de
             seeds.emplace_back("bchseed.c3-soft.com", 8333);                  // C3 Soft (NilacTheGrim)
             seeds.emplace_back("bch.bitjson.com", 8333);                      // Jason Dreyzehner
+
+            // // TODO(fernando): TEMPORARY - hardcoded peer for testing
+            // peers.emplace_back("194.14.247.36", 8333);
 #else
             identifier = netmagic::btc_mainnet;
             seeds.reserve(6);
@@ -194,6 +201,51 @@ duration settings::channel_expiration() const {
 
 duration settings::channel_germination() const {
     return seconds(channel_germination_seconds);
+}
+
+permission_flags settings::get_whitelist_permissions(
+    infrastructure::config::authority const& addr) const {
+
+    // Check whitelist entries for matching address
+    for (auto const& entry : whitelist) {
+        // TODO(kth): implement proper subnet matching
+        // For now, simple IP comparison
+        if (entry.subnet.ip() == addr.ip()) {
+            return entry.flags;
+        }
+    }
+
+    return permission_flags::none;
+}
+
+permission_flags settings::apply_legacy_whitelist_permissions(permission_flags flags) const {
+    // BCHN: NetPermissions::AddFlag in net_permissions.cpp
+    // This applies -whitelistforcerelay and -whitelistrelay legacy options
+    // to implicit permissions (permissions without explicit @permissions prefix)
+
+    if ( ! has_permission(flags, permission_flags::is_implicit)) {
+        // Explicit permissions - don't modify
+        return flags;
+    }
+
+    // Remove the implicit flag marker
+    clear_permission(flags, permission_flags::is_implicit);
+
+    // Apply legacy whitelist behavior
+    // BCHN: if (gArgs.GetBoolArg("-whitelistforcerelay", DEFAULT_WHITELISTFORCERELAY))
+    if (whitelist_force_relay) {
+        add_permission(flags, permission_flags::forcerelay);
+    }
+
+    // BCHN: if (gArgs.GetBoolArg("-whitelistrelay", DEFAULT_WHITELISTRELAY))
+    if (whitelist_relay) {
+        add_permission(flags, permission_flags::relay);
+    }
+
+    // BCHN also adds noban by default for implicit whitelist
+    add_permission(flags, permission_flags::noban);
+
+    return flags;
 }
 
 } // namespace kth::network

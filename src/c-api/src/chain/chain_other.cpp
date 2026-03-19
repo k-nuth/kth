@@ -13,17 +13,21 @@
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/message/merkle_block.hpp>
 #include <kth/domain/chain/transaction.hpp>
-#include <kth/blockchain/interface/safe_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 
 #include <kth/capi/chain/block_list.h>
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
 
+#include <asio/co_spawn.hpp>
+#include <asio/detached.hpp>
+#include <asio/use_awaitable.hpp>
+
 namespace {
 
 inline
-kth::blockchain::safe_chain& safe_chain(kth_chain_t chain) {
-    return *static_cast<kth::blockchain::safe_chain*>(chain);
+kth::blockchain::block_chain& safe_chain(kth_chain_t chain) {
+    return *static_cast<kth::blockchain::block_chain*>(chain);
 }
 
 inline
@@ -61,53 +65,118 @@ extern "C" {
 // Subscribers.
 //-------------------------------------------------------------------------
 
-void kth_chain_subscribe_blockchain(kth_node_t exec, kth_chain_t chain, void* ctx, kth_subscribe_blockchain_handler_t handler) {
-    safe_chain(chain).subscribe_blockchain([exec, chain, ctx, handler](std::error_code const& ec, size_t fork_height, kth::block_const_ptr_list_const_ptr incoming, kth::block_const_ptr_list_const_ptr replaced_blocks) {
+void kth_chain_subscribe_blockchain(kth_node_t exec, kth_chain_t chain, void* ctx, kth_subscribe_block_handler_t handler) {
+    auto& bc = safe_chain(chain);
+    auto channel = bc.subscribe_blockchain();
 
-        if (safe_chain(chain).is_stale()) { // TODO(fernando): Move somewhere else (there should be no logic here)
-            return 1;
-        }
+    if ( ! channel) {
+        // Broadcaster is stopped
+        handler(exec, chain, ctx, kth::to_c_err(kth::error::service_stopped), 0, nullptr, nullptr);
+        return;
+    }
 
-        kth_block_list_t incoming_cpp = nullptr;
-        if (incoming) {
-            incoming_cpp = kth_chain_block_list_construct_default();
-            for (auto&& x : *incoming) {
-                // auto new_block = new kth::domain::chain::block(*x);
-                // kth_chain_block_list_push_back(incoming_cpp, new_block);
-                kth_chain_block_list_push_back(incoming_cpp, cast_block(*x));
+    ::asio::co_spawn(bc.executor(), [exec, chain, ctx, handler, channel, &bc]() -> ::asio::awaitable<void> {
+        while (channel->is_open()) {
+            auto result = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+            auto& [ec, fork_height, incoming, replaced_blocks] = result;
+
+            if (ec) {
+                // Channel closed or error
+                handler(exec, chain, ctx, kth::to_c_err(kth::error::service_stopped), 0, nullptr, nullptr);
+                break;
+            }
+
+            if (bc.is_stale()) {
+                continue;
+            }
+
+            kth_block_list_t incoming_cpp = nullptr;
+            if (incoming) {
+                incoming_cpp = kth_chain_block_list_construct_default();
+                for (auto&& x : *incoming) {
+                    kth_chain_block_list_push_back(incoming_cpp, cast_block(*x));
+                }
+            }
+
+            kth_block_list_t replaced_blocks_cpp = nullptr;
+            if (replaced_blocks) {
+                replaced_blocks_cpp = kth_chain_block_list_construct_default();
+                for (auto&& x : *replaced_blocks) {
+                    kth_chain_block_list_push_back(replaced_blocks_cpp, cast_block(*x));
+                }
+            }
+
+            auto res = handler(exec, chain, ctx, kth::to_c_err(std::error_code{}), fork_height, incoming_cpp, replaced_blocks_cpp);
+            if (res == 0) {
+                // Unsubscribe requested
+                bc.unsubscribe_blockchain(channel);
+                break;
             }
         }
-
-        kth_block_list_t replaced_blocks_cpp = nullptr;
-        if (replaced_blocks) {
-            replaced_blocks_cpp = kth_chain_block_list_construct_default();
-            for (auto&& x : *replaced_blocks) {
-                // auto new_block = new kth::domain::chain::block(*x);
-                // kth_chain_block_list_push_back(replaced_blocks_cpp, new_block);
-                // kth_chain_block_list_push_back_const(replaced_blocks_cpp, x.get());
-                kth_chain_block_list_push_back(replaced_blocks_cpp, cast_block(*x));
-            }
-        }
-
-        auto res = handler(exec, chain, ctx, kth::to_c_err(ec), fork_height, incoming_cpp, replaced_blocks_cpp);
-        return res;
-    });
+    }, ::asio::detached);
 }
 
 void kth_chain_subscribe_transaction(kth_node_t exec, kth_chain_t chain, void* ctx, kth_subscribe_transaction_handler_t handler) {
-    safe_chain(chain).subscribe_transaction([exec, chain, ctx, handler](std::error_code const& ec, kth::transaction_const_ptr tx) {
-        return handler(exec, chain, ctx, kth::to_c_err(ec), kth::leak_if_success(tx, ec));
-    });
+    auto& bc = safe_chain(chain);
+    auto channel = bc.subscribe_transaction();
+
+    if ( ! channel) {
+        handler(exec, chain, ctx, kth::to_c_err(kth::error::service_stopped), nullptr);
+        return;
+    }
+
+    ::asio::co_spawn(bc.executor(), [exec, chain, ctx, handler, channel, &bc]() -> ::asio::awaitable<void> {
+        while (channel->is_open()) {
+            auto result = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+            auto& [ec, tx] = result;
+
+            if (ec) {
+                handler(exec, chain, ctx, kth::to_c_err(kth::error::service_stopped), nullptr);
+                break;
+            }
+
+            auto res = handler(exec, chain, ctx, kth::to_c_err(std::error_code{}), kth::leak(tx));
+            if (res == 0) {
+                bc.unsubscribe_transaction(channel);
+                break;
+            }
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_subscribe_ds_proof(kth_node_t exec, kth_chain_t chain, void* ctx, kth_subscribe_ds_proof_handler_t handler) {
-    safe_chain(chain).subscribe_ds_proof([exec, chain, ctx, handler](std::error_code const& ec, kth::double_spend_proof_const_ptr dsp) {
-        return handler(exec, chain, ctx, kth::to_c_err(ec), kth::leak_if_success(dsp, ec));
-    });
+    auto& bc = safe_chain(chain);
+    auto channel = bc.subscribe_ds_proof();
+
+    if ( ! channel) {
+        handler(exec, chain, ctx, kth::to_c_err(kth::error::service_stopped), nullptr);
+        return;
+    }
+
+    ::asio::co_spawn(bc.executor(), [exec, chain, ctx, handler, channel, &bc]() -> ::asio::awaitable<void> {
+        while (channel->is_open()) {
+            auto result = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+            auto& [ec, dsp] = result;
+
+            if (ec) {
+                handler(exec, chain, ctx, kth::to_c_err(kth::error::service_stopped), nullptr);
+                break;
+            }
+
+            auto res = handler(exec, chain, ctx, kth::to_c_err(std::error_code{}), kth::leak(dsp));
+            if (res == 0) {
+                bc.unsubscribe_ds_proof(channel);
+                break;
+            }
+        }
+    }, ::asio::detached);
 }
 
-void kth_chain_unsubscribe(kth_chain_t chain) {
-    safe_chain(chain).unsubscribe();
+// Note: kth_chain_unsubscribe is no longer needed with the new model
+// Each subscription manages its own lifecycle via the returned channel
+void kth_chain_unsubscribe(kth_chain_t /*chain*/) {
+    // No-op: subscriptions are now managed individually
+    // Callers should return 0 from their handler to unsubscribe
 }
 
 void kth_chain_transaction_validate_sequential(kth_chain_t chain, void* ctx, kth_transaction_t tx, kth_validate_tx_handler_t handler) {
@@ -116,25 +185,30 @@ void kth_chain_transaction_validate_sequential(kth_chain_t chain, void* ctx, kth
     auto tx_cpp = tx_shared(tx);
     tx_cpp->validation.simulate = true;
 
-    safe_chain(chain).organize(tx_cpp, [chain, ctx, handler](std::error_code const& ec) {
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, tx_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto ec = co_await bc.organize(tx_cpp);
         if (ec) {
             handler(chain, ctx, kth::to_c_err(ec), ec.message().c_str());
         } else {
             handler(chain, ctx, kth::to_c_err(ec), nullptr);
         }
-    });
+    }, ::asio::detached);
 }
 
 void kth_chain_transaction_validate(kth_chain_t chain, void* ctx, kth_transaction_t tx, kth_validate_tx_handler_t handler) {
     if (handler == nullptr) return;
 
-    safe_chain(chain).transaction_validate(tx_shared(tx), [chain, ctx, handler](std::error_code const& ec) {
+    auto& bc = safe_chain(chain);
+    auto tx_cpp = tx_shared(tx);
+    ::asio::co_spawn(bc.executor(), [&bc, tx_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto ec = co_await bc.transaction_validate(tx_cpp);
         if (ec) {
             handler(chain, ctx, kth::to_c_err(ec), ec.message().c_str());
         } else {
             handler(chain, ctx, kth::to_c_err(ec), nullptr);
         }
-    });
+    }, ::asio::detached);
 }
 
 // Properties.

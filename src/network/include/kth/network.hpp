@@ -13,30 +13,43 @@
  */
 
 #include <kth/domain.hpp>
-#include <kth/network/acceptor.hpp>
-#include <kth/network/channel.hpp>
-#include <kth/network/connector.hpp>
 #include <kth/network/define.hpp>
-#include <kth/network/hosts.hpp>
-#include <kth/network/message_subscriber.hpp>
-#include <kth/network/p2p.hpp>
-#include <kth/network/proxy.hpp>
 #include <kth/network/settings.hpp>
-#include <kth/network/protocols/protocol.hpp>
-#include <kth/network/protocols/protocol_address_31402.hpp>
-#include <kth/network/protocols/protocol_events.hpp>
-#include <kth/network/protocols/protocol_ping_31402.hpp>
-#include <kth/network/protocols/protocol_ping_60001.hpp>
-#include <kth/network/protocols/protocol_reject_70002.hpp>
-#include <kth/network/protocols/protocol_seed_31402.hpp>
-#include <kth/network/protocols/protocol_timer.hpp>
-#include <kth/network/protocols/protocol_version_31402.hpp>
-#include <kth/network/protocols/protocol_version_70002.hpp>
-#include <kth/network/sessions/session.hpp>
-#include <kth/network/sessions/session_batch.hpp>
-#include <kth/network/sessions/session_inbound.hpp>
-#include <kth/network/sessions/session_manual.hpp>
-#include <kth/network/sessions/session_outbound.hpp>
-#include <kth/network/sessions/session_seed.hpp>
+
+// Modern coroutine-based networking (keep these)
+#include <kth/network/peer_record.hpp>
+#include <kth/network/peer_database.hpp>
+#include <kth/network/peer_manager.hpp>
+#include <kth/network/peer_session.hpp>
+#include <kth/network/protocols_coro.hpp>
+#include <kth/network/p2p_node.hpp>
+
+// Legacy networking - COMMENTED OUT (coroutine migration cleanup)
+// These are replaced by p2p_node + peer_session + peer_manager + protocols_coro
+// #include <kth/network/acceptor.hpp>
+// #include <kth/network/channel.hpp>
+// #include <kth/network/connector.hpp>
+// #include <kth/network/hosts.hpp>              // Replaced by peer_database.hpp
+// #include <kth/network/message_subscriber.hpp>
+// #include <kth/network/p2p.hpp>
+// #include <kth/network/proxy.hpp>
+// Legacy protocols - COMMENTED OUT, replaced by protocols_coro.hpp
+// #include <kth/network/protocols/protocol.hpp>
+// #include <kth/network/protocols/protocol_address_31402.hpp>
+// #include <kth/network/protocols/protocol_events.hpp>
+// #include <kth/network/protocols/protocol_ping_31402.hpp>
+// #include <kth/network/protocols/protocol_ping_60001.hpp>
+// #include <kth/network/protocols/protocol_reject_70002.hpp>
+// #include <kth/network/protocols/protocol_seed_31402.hpp>
+// #include <kth/network/protocols/protocol_timer.hpp>
+// #include <kth/network/protocols/protocol_version_31402.hpp>
+// #include <kth/network/protocols/protocol_version_70002.hpp>
+// Legacy sessions - COMMENTED OUT, replaced by p2p_node + peer_session
+// #include <kth/network/sessions/session.hpp>
+// #include <kth/network/sessions/session_batch.hpp>
+// #include <kth/network/sessions/session_inbound.hpp>
+// #include <kth/network/sessions/session_manual.hpp>
+// #include <kth/network/sessions/session_outbound.hpp>
+// #include <kth/network/sessions/session_seed.hpp>
 
 #endif

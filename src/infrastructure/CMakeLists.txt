@@ -17,6 +17,7 @@ option(WITH_EXAMPLES "Compile with examples." OFF)
 option(WITH_ICU "Compile with International Components for Unicode." OFF)
 option(KTH_WITH_PNG "Compile with Libpng support." OFF)
 option(KTH_WITH_QRENCODE "Compile with QREncode." OFF)
+option(KTH_ASIO_STANDALONE "Use standalone Asio instead of Boost.Asio" ON)
 option(JUST_KTH_SOURCES "Just Knuth source code to be linted." OFF)
 
 
@@ -30,6 +31,11 @@ endif()
 
 if (KTH_WITH_QRENCODE)
   add_definitions(-DKTH_WITH_QRENCODE)
+endif()
+
+if (KTH_ASIO_STANDALONE)
+  add_definitions(-DKTH_ASIO_STANDALONE)
+  add_definitions(-DASIO_STANDALONE)
 endif()
 
 
@@ -78,6 +84,17 @@ endif()
 
 if (KTH_WITH_QRENCODE)
   find_package(libqrencode REQUIRED)
+endif()
+
+if (KTH_ASIO_STANDALONE)
+  find_package(asio REQUIRED)
+endif()
+
+# jemalloc support for memory tracking
+option(KTH_WITH_JEMALLOC "Use jemalloc for memory allocation" OFF)
+if (KTH_WITH_JEMALLOC)
+  find_package(jemalloc REQUIRED)
+  add_definitions(-DKTH_WITH_JEMALLOC)
 endif()
 
 include(CheckCXXCompilerFlag)
@@ -204,7 +221,6 @@ set(kth_sources_just_legacy
 
         src/utility/binary.cpp
         src/utility/conditional_lock.cpp
-        src/utility/dispatcher.cpp
         src/utility/flush_lock.cpp
         src/utility/interprocess_lock.cpp
         src/utility/monitor.cpp
@@ -213,7 +229,9 @@ set(kth_sources_just_legacy
         src/utility/scope_lock.cpp
 
         src/utility/sequential_lock.cpp
+        src/utility/stats.cpp
         src/utility/string.cpp
+        src/utility/system_memory.cpp
         src/utility/thread.cpp
 
         src/wallet/dictionary.cpp
@@ -235,14 +253,9 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/config/printer.cpp
 
     src/utility/deadline.cpp
-    src/utility/sequencer.cpp
     src/utility/socket.cpp
 
     src/utility/pseudo_random_broken_do_not_use.cpp
-
-    src/utility/threadpool.cpp
-
-    src/utility/work.cpp
   )
 endif()
 
@@ -281,6 +294,7 @@ endif()
 set(kth_sources ${kth_sources} ${kth_sources_just_knuth})
 
 set(kth_headers
+    include/kth/infrastructure/compiler_constraints.hpp
     include/kth/infrastructure/compat.h
     include/kth/infrastructure/compat.hpp
     include/kth/infrastructure/constants.hpp
@@ -334,9 +348,7 @@ set(kth_headers
     include/kth/infrastructure/impl/utility/data.ipp
     include/kth/infrastructure/impl/utility/ostream_writer.ipp
     include/kth/infrastructure/impl/utility/pending.ipp
-    include/kth/infrastructure/impl/utility/resubscriber.ipp
     include/kth/infrastructure/impl/utility/serializer.ipp
-    include/kth/infrastructure/impl/utility/subscriber.ipp
     include/kth/infrastructure/impl/utility/string.ipp
     include/kth/infrastructure/impl/utility/track.ipp
 
@@ -363,8 +375,6 @@ set(kth_headers
     include/kth/infrastructure/utility/data.hpp
     include/kth/infrastructure/utility/deadline.hpp
     include/kth/infrastructure/utility/decorator.hpp
-    include/kth/infrastructure/utility/delegates.hpp
-    include/kth/infrastructure/utility/dispatcher.hpp
     include/kth/infrastructure/utility/enable_shared_from_base.hpp
     include/kth/infrastructure/utility/endian.hpp
     include/kth/infrastructure/utility/exceptions.hpp
@@ -380,21 +390,21 @@ set(kth_headers
     include/kth/infrastructure/utility/pseudo_random_broken_do_not_use.hpp
 
     include/kth/infrastructure/utility/reader.hpp
-    include/kth/infrastructure/utility/resubscriber.hpp
+    include/kth/infrastructure/utility/salted_hashers.hpp
     include/kth/infrastructure/utility/scope_lock.hpp
-    include/kth/infrastructure/utility/sequencer.hpp
     include/kth/infrastructure/utility/sequential_lock.hpp
     include/kth/infrastructure/utility/serializer.hpp
     include/kth/infrastructure/utility/socket.hpp
     include/kth/infrastructure/utility/string.hpp
-    include/kth/infrastructure/utility/subscriber.hpp
-    include/kth/infrastructure/utility/synchronizer.hpp
+    include/kth/infrastructure/utility/system_memory.hpp
     include/kth/infrastructure/utility/thread.hpp
     include/kth/infrastructure/utility/threadpool.hpp
     include/kth/infrastructure/utility/timer.hpp
     include/kth/infrastructure/utility/track.hpp
-    include/kth/infrastructure/utility/work.hpp
     include/kth/infrastructure/utility/writer.hpp
+    include/kth/infrastructure/utility/async_channel.hpp
+    include/kth/infrastructure/utility/awaitable_helpers.hpp
+    include/kth/infrastructure/utility/coroutine_config.hpp
 
     include/kth/infrastructure/wallet/cashaddr.hpp
     include/kth/infrastructure/wallet/dictionary.hpp
@@ -405,6 +415,7 @@ set(kth_headers
     include/kth/infrastructure/wallet/uri.hpp
 
     include/kth/infrastructure.hpp
+
 )
 
 if (KTH_WITH_PNG)
@@ -609,6 +620,14 @@ if (KTH_WITH_QRENCODE)
   target_link_libraries(${PROJECT_NAME} PUBLIC libqrencode::libqrencode)
 endif()
 
+if (KTH_ASIO_STANDALONE)
+  target_link_libraries(${PROJECT_NAME} PUBLIC asio::asio)
+endif()
+
+if (KTH_WITH_JEMALLOC)
+  target_link_libraries(${PROJECT_NAME} PUBLIC jemalloc::jemalloc)
+endif()
+
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_THREAD_LIBS_INIT})
 
 if (MINGW)
@@ -666,6 +685,11 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/serializer.cpp
     test/utility/byte_reader.cpp
     test/utility/thread.cpp
+    test/utility/threadpool.cpp
+    test/utility/coroutine_smoke_test.cpp
+    test/utility/awaitable_helpers.cpp
+    test/utility/async_channel.cpp
+    test/task_group.cpp
 
     test/wallet/hd_private.cpp
     test/wallet/hd_public.cpp
