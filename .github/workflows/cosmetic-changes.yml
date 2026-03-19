@@ -24,7 +24,9 @@ jobs:
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v3
-        
+        with:
+          fetch-depth: 0
+
       - name: ✅ Validate cosmetic changes
         run: |
           echo "✅ Validating cosmetic changes only..."
