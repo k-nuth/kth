@@ -179,6 +179,47 @@ bool is_valid(token_data_opt const& x) {
     return x.has_value() ? is_valid(x.value()) : true;
 }
 
+// Token data accessors.
+// ---------------------------------------------------------------------------
+
+inline
+int64_t get_amount(token_data_t const& td) {
+    if (auto const* f = std::get_if<fungible>(&td.data)) return int64_t(f->amount);
+    if (auto const* b = std::get_if<both_kinds>(&td.data)) return int64_t(b->first.amount);
+    return 0;
+}
+
+inline
+bool has_nft(token_data_t const& td) {
+    return std::holds_alternative<non_fungible>(td.data)
+        || std::holds_alternative<both_kinds>(td.data);
+}
+
+inline
+non_fungible const& get_nft(token_data_t const& td) {
+    if (auto const* nf = std::get_if<non_fungible>(&td.data)) return *nf;
+    return std::get<both_kinds>(td.data).second;
+}
+
+inline
+bool is_fungible_only(token_data_t const& td) {
+    return std::holds_alternative<fungible>(td.data);
+}
+
+inline
+bool is_immutable_nft(token_data_t const& td) {
+    return has_nft(td) && get_nft(td).capability == capability_t::none;
+}
+
+inline
+bool is_mutable_nft(token_data_t const& td) {
+    return has_nft(td) && get_nft(td).capability == capability_t::mut;
+}
+
+inline
+bool is_minting_nft(token_data_t const& td) {
+    return has_nft(td) && get_nft(td).capability == capability_t::minting;
+}
 
 namespace token::encoding {
 

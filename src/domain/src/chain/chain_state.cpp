@@ -21,7 +21,7 @@
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/machine/opcode.hpp>
-#include <kth/domain/machine/rule_fork.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 
 #include <kth/infrastructure/config/checkpoint.hpp>
@@ -40,7 +40,7 @@ using namespace boost::adaptors;
 //-----------------------------------------------------------------------------
 
 // The allow_collisions hard fork is always activated (not configurable).
-chain_state::chain_state(data&& values, uint32_t forks, checkpoints const& checkpoints
+chain_state::chain_state(data&& values, script_flags_t flags, checkpoints const& checkpoints
     , domain::config::network network
 #if defined(KTH_CURRENCY_BCH)
     , assert_anchor_block_info_t const& assert_anchor_block_info
@@ -63,10 +63,10 @@ chain_state::chain_state(data&& values, uint32_t forks, checkpoints const& check
 #if defined(KTH_CURRENCY_BCH)
     , assert_anchor_block_info_(assert_anchor_block_info)
 #endif
-    , forks_(forks | rule_fork::allow_collisions)
+    , flags_(flags | script_flags::allow_collisions)
     , checkpoints_(checkpoints)
     , network_(network)
-    , active_(activation(data_, forks_, network_
+    , active_(activation(data_, flags_, network_
 #if defined(KTH_CURRENCY_BCH)
         // , euclid_activation_time
         // , pisano_activation_time
@@ -82,7 +82,7 @@ chain_state::chain_state(data&& values, uint32_t forks, checkpoints const& check
 #endif  //KTH_CURRENCY_BCH
         ))
     , median_time_past_(median_time_past(data_))
-    , work_required_(work_required(data_, network_, forks_
+    , work_required_(work_required(data_, network_, flags_
 #if defined(KTH_CURRENCY_BCH)
             // , euler_activation_time
             // , gauss_activation_time
@@ -114,8 +114,8 @@ chain_state::chain_state(data&& values, uint32_t forks, checkpoints const& check
 
 domain::config::network chain_state::network() const {
     // Retargeting and testnet are only activated via configuration.
-    // auto const testnet = script::is_enabled(forks, rule_fork::easy_blocks);
-    // auto const retarget = script::is_enabled(forks, rule_fork::retarget);
+    // auto const testnet = script::is_enabled(flags, script_flags::easy_blocks);
+    // auto const retarget = script::is_enabled(flags, script_flags::retarget);
     // auto const mainnet = retarget && !testnet;
     return network_;
 }
@@ -126,7 +126,7 @@ domain::config::network chain_state::network() const {
 
 // static
 std::shared_ptr<chain_state> chain_state::from_pool_ptr(chain_state const& pool, block const& block) {
-    return std::make_shared<chain_state>(to_block(pool, block), pool.forks_, pool.checkpoints_
+    return std::make_shared<chain_state>(to_block(pool, block), pool.flags_, pool.checkpoints_
         , pool.network_
 #if defined(KTH_CURRENCY_BCH)
         , pool.assert_anchor_block_info_
@@ -389,7 +389,7 @@ bool chain_state::is_cantor_enabled() const {
 //-----------------------------------------------------------------------------
 
 // static
-chain_state::activations chain_state::activation(data const& values, uint32_t forks
+chain_state::activations chain_state::activation(data const& values, script_flags_t flags
         , domain::config::network network
 #if defined(KTH_CURRENCY_BCH)
         // , euclid_t euclid_activation_time
@@ -408,7 +408,7 @@ chain_state::activations chain_state::activation(data const& values, uint32_t fo
     auto const height = values.height;
     auto const version = values.version.self;
     auto const& history = values.version.ordered;
-    auto const frozen = script::is_enabled(forks, rule_fork::bip90_rule);
+    auto const frozen = script::is_enabled(flags, script_flags::bip90_rule);
 
     //*************************************************************************
     // CONSENSUS: Though unspecified in bip34, the satoshi implementation
@@ -434,67 +434,67 @@ chain_state::activations chain_state::activation(data const& values, uint32_t fo
     auto const bip65_ice = bip65(height, frozen, network);
 
     // Initialize activation results with genesis values.
-    activations result{rule_fork::no_rules, first_version};
+    activations result{script_flags::no_rules, first_version};
 
     // retarget is only activated via configuration (hard fork).
-    result.forks |= (rule_fork::retarget & forks);
+    result.flags |= (script_flags::retarget & flags);
 
     // testnet is activated based on configuration alone (hard fork).
-    result.forks |= (rule_fork::easy_blocks & forks);
+    result.flags |= (script_flags::easy_blocks & flags);
 
     // bip90 is activated based on configuration alone (hard fork).
-    result.forks |= (rule_fork::bip90_rule & forks);
+    result.flags |= (script_flags::bip90_rule & flags);
 
     // bip16 is activated with a one-time test on mainnet/testnet (~55% rule).
     // There was one invalid p2sh tx mined after that time (code shipped late).
     if (values.timestamp.self >= bip16_activation_time &&
         ! is_bip16_exception({values.hash, height}, network)) {
-        result.forks |= (rule_fork::bip16_rule & forks);
+        result.flags |= (script_flags::bip16_rule & flags);
     }
 
     // bip30 is active for all but two mainnet blocks that violate the rule.
     // These two blocks each have a coinbase transaction that exctly duplicates
     // another that is not spent by the arrival of the corresponding duplicate.
     if ( ! is_bip30_exception({values.hash, height}, network)) {
-        result.forks |= (rule_fork::bip30_rule & forks);
+        result.flags |= (script_flags::bip30_rule & flags);
     }
 
 #if defined(KTH_CURRENCY_LTC)
     if (bip34_ice) {
-        result.forks |= (rule_fork::bip34_rule & forks);
+        result.flags |= (script_flags::bip34_rule & flags);
     }
 #else
     // bip34 is activated based on 75% of preceding 1000 mainnet blocks.
     if (bip34_ice || (is_active(count_2, network) && version >= bip34_version)) {
-        result.forks |= (rule_fork::bip34_rule & forks);
+        result.flags |= (script_flags::bip34_rule & flags);
     }
 #endif
 
     // bip66 is activated based on 75% of preceding 1000 mainnet blocks.
     if (bip66_ice || (is_active(count_3, network) && version >= bip66_version)) {
-        result.forks |= (rule_fork::bip66_rule & forks);
+        result.flags |= (script_flags::bip66_rule & flags);
     }
 
     // bip65 is activated based on 75% of preceding 1000 mainnet blocks.
     if (bip65_ice || (is_active(count_4, network) && version >= bip65_version)) {
-        result.forks |= (rule_fork::bip65_rule & forks);
+        result.flags |= (script_flags::bip65_rule & flags);
     }
 
     // allow_collisions is active above the bip34 checkpoint only.
     if (allow_collisions(values.allow_collisions_hash, network)) {
-        result.forks |= (rule_fork::allow_collisions & forks);
+        result.flags |= (script_flags::allow_collisions & flags);
     }
 
 #if ! defined(KTH_CURRENCY_BCH)
     // bip9_bit0 forks are enforced above the bip9_bit0 checkpoint.
     if (bip9_bit0_active(values.bip9_bit0_hash, network)) {
-        result.forks |= (rule_fork::bip9_bit0_group & forks);
+        result.flags |= (to_flags(upgrade::bip9_bit0_group) & flags);
     }
 
     // Activate the segwit rules only if not bch
     // bip9_bit1 forks are enforced above the bip9_bit1 checkpoint.
     if (bip9_bit1_active(values.bip9_bit1_hash, network)) {
-        result.forks |= (rule_fork::bip9_bit1_group & forks);
+        result.flags |= (to_flags(upgrade::bip9_bit1_group) & flags);
     }
 #endif
 
@@ -512,85 +512,85 @@ chain_state::activations chain_state::activation(data const& values, uint32_t fo
 #if defined(KTH_CURRENCY_BCH)
     if (is_csv_enabled(values.height, network)) {
         // flags |= SCRIPT_VERIFY_CHECKSEQUENCEVERIFY;
-        result.forks |= (rule_fork::bip112_rule & forks);
+        result.flags |= (script_flags::bip112_rule & flags);
     }
 
     if (is_uahf_enabled(values.height, network)) {
-        // result.forks |= (rule_fork::cash_verify_flags_script_enable_sighash_forkid & forks);
-        // result.forks |= (rule_fork::SCRIPT_VERIFY_STRICTENC & forks);
-        // result.forks |= (rule_fork::SCRIPT_ENABLE_SIGHASH_FORKID & forks);
-        result.forks |= (rule_fork::bch_uahf & forks);
+        // result.flags |= (script_flags::cash_verify_flags_script_enable_sighash_forkid & flags);
+        // result.flags |= (script_flags::SCRIPT_VERIFY_STRICTENC & flags);
+        // result.flags |= (script_flags::SCRIPT_ENABLE_SIGHASH_FORKID & flags);
+        result.flags |= (to_flags(upgrade::bch_uahf) & flags);
     }
 
     if (is_daa_cw144_enabled(values.height, network)) {
-        // result.forks |= (rule_fork::cash_low_s_rule & forks);
-        // result.forks |= (rule_fork::SCRIPT_VERIFY_LOW_S & forks);
-        // result.forks |= (rule_fork::SCRIPT_VERIFY_NULLFAIL & forks);
-        result.forks |= (rule_fork::bch_daa_cw144 & forks);
+        // result.flags |= (script_flags::cash_low_s_rule & flags);
+        // result.flags |= (script_flags::SCRIPT_VERIFY_LOW_S & flags);
+        // result.flags |= (script_flags::SCRIPT_VERIFY_NULLFAIL & flags);
+        result.flags |= (to_flags(upgrade::bch_daa_cw144) & flags);
     }
 
     if (is_pythagoras_enabled(values.height, network)) {
-        result.forks |= (rule_fork::bch_pythagoras & forks);
+        result.flags |= (to_flags(upgrade::bch_pythagoras) & flags);
     }
 
     if (is_euclid_enabled(values.height, network)) {
-        // result.forks |= (rule_fork::cash_checkdatasig & forks);
-        // result.forks |= (rule_fork::SCRIPT_VERIFY_CHECKDATASIG_SIGOPS & forks);
-        // result.forks |= (rule_fork::SCRIPT_VERIFY_SIGPUSHONLY & forks);
-        // result.forks |= (rule_fork::SCRIPT_VERIFY_CLEANSTACK & forks);
-        result.forks |= (rule_fork::bch_euclid & forks);
+        // result.flags |= (script_flags::cash_checkdatasig & flags);
+        // result.flags |= (script_flags::SCRIPT_VERIFY_CHECKDATASIG_SIGOPS & flags);
+        // result.flags |= (script_flags::SCRIPT_VERIFY_SIGPUSHONLY & flags);
+        // result.flags |= (script_flags::SCRIPT_VERIFY_CLEANSTACK & flags);
+        result.flags |= (to_flags(upgrade::bch_euclid) & flags);
     }
 
     if (is_pisano_enabled(values.height, network)) {
-        // result.forks |= (rule_fork::cash_checkdatasig & forks);
-        // result.forks |= (rule_fork::SCRIPT_VERIFY_CHECKDATASIG_SIGOPS & forks);
-        // result.forks |= (rule_fork::SCRIPT_VERIFY_SIGPUSHONLY & forks);
-        // result.forks |= (rule_fork::SCRIPT_VERIFY_CLEANSTACK & forks);
-        result.forks |= (rule_fork::bch_pisano & forks);
+        // result.flags |= (script_flags::cash_checkdatasig & flags);
+        // result.flags |= (script_flags::SCRIPT_VERIFY_CHECKDATASIG_SIGOPS & flags);
+        // result.flags |= (script_flags::SCRIPT_VERIFY_SIGPUSHONLY & flags);
+        // result.flags |= (script_flags::SCRIPT_VERIFY_CLEANSTACK & flags);
+        result.flags |= (to_flags(upgrade::bch_pisano) & flags);
     }
 
     if (is_mersenne_enabled(values.height, network)) {
-        // result.forks |= (rule_fork::SCRIPT_ENABLE_SCHNORR_MULTISIG & forks);
-        // result.forks |= (rule_fork::SCRIPT_VERIFY_MINIMALDATA & forks);
-        result.forks |= (rule_fork::bch_mersenne & forks);
+        // result.flags |= (script_flags::SCRIPT_ENABLE_SCHNORR_MULTISIG & flags);
+        // result.flags |= (script_flags::SCRIPT_VERIFY_MINIMALDATA & flags);
+        result.flags |= (to_flags(upgrade::bch_mersenne) & flags);
     }
 
     if (is_fermat_enabled(values.height, network)) {
     //     flags |= SCRIPT_ENABLE_OP_REVERSEBYTES;
     //     flags |= SCRIPT_REPORT_SIGCHECKS;
     //     flags |= SCRIPT_ZERO_SIGOPS;
-        result.forks |= (rule_fork::bch_fermat & forks);
+        result.flags |= (to_flags(upgrade::bch_fermat) & flags);
     }
 
     if (is_euler_enabled(values.height, network)) {
-        result.forks |= (rule_fork::bch_euler & forks);
+        result.flags |= (to_flags(upgrade::bch_euler) & flags);
     }
 
     if (is_gauss_enabled(values.height, network)) {
-        result.forks |= (rule_fork::bch_gauss & forks);
+        result.flags |= (to_flags(upgrade::bch_gauss) & flags);
     }
 
     if (is_descartes_enabled(values.height, network)) {
-        result.forks |= (rule_fork::bch_descartes & forks);
+        result.flags |= (to_flags(upgrade::bch_descartes) & flags);
     }
 
     if (is_lobachevski_enabled(values.height, network)) {
-        result.forks |= (rule_fork::bch_lobachevski & forks);
+        result.flags |= (to_flags(upgrade::bch_lobachevski) & flags);
     }
 
     if (is_galois_enabled(values.height, network)) {
-        result.forks |= (rule_fork::bch_galois & forks);
+        result.flags |= (to_flags(upgrade::bch_galois) & flags);
     }
 
     auto const mtp = median_time_past(values);
     if (is_mtp_activated(mtp, std::to_underlying(leibniz_activation_time))) {
         //Note(Fernando): Move this to the next fork rules
-        result.forks |= (rule_fork::bch_leibniz & forks);
+        result.flags |= (to_flags(upgrade::bch_leibniz) & flags);
     }
 
     if (is_mtp_activated(mtp, std::to_underlying(cantor_activation_time))) {
         //Note(Fernando): Move this to the next fork rules
-        result.forks |= (rule_fork::bch_cantor & forks);
+        result.flags |= (to_flags(upgrade::bch_cantor) & flags);
     }
 
     // Old rules with Replay Protection
@@ -598,17 +598,17 @@ chain_state::activations chain_state::activation(data const& values, uint32_t fo
     // if (is_mtp_activated(mtp, std::to_underlying(gauss_activation_time))) {
     //     //Note(Fernando): Move this to the next fork rules
     // //     flags |= SCRIPT_ENABLE_REPLAY_PROTECTION;
-    //     result.forks |= (rule_fork::bch_gauss & forks);
-    //     // result.forks |= (rule_fork::bch_replay_protection & forks);
+    //     result.flags |= (script_flags::bch_gauss & flags);
+    //     // result.flags |= (script_flags::bch_replay_protection & flags);
     // }
 #endif  //KTH_CURRENCY_BCH
 
     return result;
 }
 
-size_t chain_state::bits_count(size_t height, uint32_t forks) {
-    auto const testnet = script::is_enabled(forks, rule_fork::easy_blocks);
-    auto const retarget = script::is_enabled(forks, rule_fork::retarget);
+size_t chain_state::bits_count(size_t height, script_flags_t flags) {
+    auto const testnet = script::is_enabled(flags, script_flags::easy_blocks);
+    auto const retarget = script::is_enabled(flags, script_flags::retarget);
     auto const easy_work = testnet && retarget && !is_retarget_height(height);
 
 #if defined(KTH_CURRENCY_BCH)
@@ -619,16 +619,16 @@ size_t chain_state::bits_count(size_t height, uint32_t forks) {
 }
 
 // static
-size_t chain_state::version_count(size_t height, uint32_t forks, domain::config::network network) {
-    if (  script::is_enabled(forks, rule_fork::bip90_rule) ||
-        ! script::is_enabled(forks, rule_fork::bip34_activations)) {
+size_t chain_state::version_count(size_t height, script_flags_t flags, domain::config::network network) {
+    if (  script::is_enabled(flags, script_flags::bip90_rule) ||
+        ! script::is_enabled(flags, to_flags(upgrade::bip34_activations))) {
         return 0;
     }
 
     return std::min(height, version_sample_size(network));
 }
 
-size_t chain_state::timestamp_count(size_t height, uint32_t /*unused*/) {
+size_t chain_state::timestamp_count(size_t height, script_flags_t /*unused*/) {
 #if defined(KTH_CURRENCY_BCH)
     return std::min(height, chain_state_timestamp_count);  //TODO(kth): check what happens with Bitcoin Legacy...?
 #else
@@ -636,8 +636,8 @@ size_t chain_state::timestamp_count(size_t height, uint32_t /*unused*/) {
 #endif  //KTH_CURRENCY_BCH
 }
 
-size_t chain_state::retarget_height(size_t height, uint32_t forks) {
-    if ( ! script::is_enabled(forks, rule_fork::retarget)) {
+size_t chain_state::retarget_height(size_t height, script_flags_t flags) {
+    if ( ! script::is_enabled(flags, script_flags::retarget)) {
         return map::unrequested;
     }
 
@@ -663,9 +663,9 @@ size_t chain_state::collision_height(size_t height, config::network network) {
 }
 
 #if ! defined(KTH_CURRENCY_BCH)
-size_t chain_state::bip9_bit0_height(size_t height, uint32_t forks) {
-    auto const testnet = script::is_enabled(forks, rule_fork::easy_blocks);
-    auto const regtest = !script::is_enabled(forks, rule_fork::retarget);
+size_t chain_state::bip9_bit0_height(size_t height, script_flags_t flags) {
+    auto const testnet = script::is_enabled(flags, script_flags::easy_blocks);
+    auto const regtest = !script::is_enabled(flags, script_flags::retarget);
 
     auto const activation_height =
         testnet ? testnet_bip9_bit0_active_checkpoint.height() :
@@ -676,8 +676,8 @@ size_t chain_state::bip9_bit0_height(size_t height, uint32_t forks) {
     return height > activation_height ? activation_height : map::unrequested;
 }
 
-size_t chain_state::bip9_bit1_height(size_t height, uint32_t forks) {
-    auto const testnet = script::is_enabled(forks, rule_fork::easy_blocks);
+size_t chain_state::bip9_bit1_height(size_t height, script_flags_t flags) {
+    auto const testnet = script::is_enabled(flags, script_flags::easy_blocks);
     auto const activation_height = testnet ? testnet_bip9_bit1_active_checkpoint.height() :
                                              mainnet_bip9_bit1_active_checkpoint.height();
 
@@ -1031,7 +1031,7 @@ uint32_t chain_state::daa_cw144(data const& values) {
 //-----------------------------------------------------------------------------
 
 //static
-uint32_t chain_state::work_required(data const& values, config::network network, uint32_t forks
+uint32_t chain_state::work_required(data const& values, config::network network, script_flags_t flags
 #if defined(KTH_CURRENCY_BCH)
                                     // , euler_t euler_activation_time
                                     // , gauss_t gauss_activation_time
@@ -1050,7 +1050,7 @@ uint32_t chain_state::work_required(data const& values, config::network network,
     }
 
     // regtest bypasses all retargeting.
-    if ( ! script::is_enabled(forks, rule_fork::retarget)) {
+    if ( ! script::is_enabled(flags, script_flags::retarget)) {
         return bits_high(values);
     }
 
@@ -1070,7 +1070,7 @@ uint32_t chain_state::work_required(data const& values, config::network network,
         return work_required_retarget(values);
     }
 
-    if (script::is_enabled(forks, rule_fork::easy_blocks)) {
+    if (script::is_enabled(flags, script_flags::easy_blocks)) {
 #if defined(KTH_CURRENCY_BCH)
         return easy_work_required(values, daa_cw144_active, daa_asert_active, assert_anchor_block_info, asert_half_life);
 #else
@@ -1246,7 +1246,7 @@ size_t chain_state::retarget_distance(size_t height) {
 //-----------------------------------------------------------------------------
 
 // static
-chain_state::map chain_state::get_map(size_t height, checkpoints const& /*checkpoints*/, uint32_t forks, domain::config::network network) {
+chain_state::map chain_state::get_map(size_t height, checkpoints const& /*checkpoints*/, script_flags_t flags, domain::config::network network) {
     if (height == 0) {
         return {};
     }
@@ -1256,59 +1256,59 @@ chain_state::map chain_state::get_map(size_t height, checkpoints const& /*checkp
     // The height bound of the reverse (high to low) retarget search.
     map.bits_self = height;
     map.bits.high = height - 1;
-    map.bits.count = bits_count(height, forks);
+    map.bits.count = bits_count(height, flags);
 
     // The height bound of the median time past function.
     map.timestamp_self = height;
     map.timestamp.high = height - 1;
-    map.timestamp.count = timestamp_count(height, forks);
+    map.timestamp.count = timestamp_count(height, flags);
 
     // The height bound of the version sample for activations.
     map.version_self = height;
     map.version.high = height - 1;
-    map.version.count = version_count(height, forks, network);
+    map.version.count = version_count(height, flags, network);
 
     // The most recent past retarget height.
-    map.timestamp_retarget = retarget_height(height, forks);
+    map.timestamp_retarget = retarget_height(height, flags);
 
     // The checkpoint above which tx hash collisions are allowed to occur.
     map.allow_collisions_height = collision_height(height, network);
 
 #if ! defined(KTH_CURRENCY_BCH)
     // The checkpoint above which bip9_bit0 rules are enforced.
-    map.bip9_bit0_height = bip9_bit0_height(height, forks);
+    map.bip9_bit0_height = bip9_bit0_height(height, flags);
 
     // The checkpoint above which bip9_bit1 rules are enforced.
-    map.bip9_bit1_height = bip9_bit1_height(height, forks);
+    map.bip9_bit1_height = bip9_bit1_height(height, flags);
 #endif
 
     return map;
 }
 
 // static
-uint32_t chain_state::signal_version(uint32_t forks) {
-    if (script::is_enabled(forks, rule_fork::bip65_rule)) {
+uint32_t chain_state::signal_version(script_flags_t flags) {
+    if (script::is_enabled(flags, script_flags::bip65_rule)) {
         return bip65_version;
     }
 
-    if (script::is_enabled(forks, rule_fork::bip66_rule)) {
+    if (script::is_enabled(flags, script_flags::bip66_rule)) {
         return bip66_version;
     }
 
-    if (script::is_enabled(forks, rule_fork::bip34_rule)) {
+    if (script::is_enabled(flags, script_flags::bip34_rule)) {
         return bip34_version;
     }
 
 #if ! defined(KTH_CURRENCY_BCH)
     // TODO(legacy): these can be retired.
     // Signal bip9 bit0 if any of the group is configured.
-    if (script::is_enabled(forks, rule_fork::bip9_bit0_group)) {
+    if (script::is_enabled(flags, to_flags(upgrade::bip9_bit0_group))) {
         return bip9_version_base | bip9_version_bit0;
     }
 
     // TODO(legacy): these can be retired.
     // Signal bip9 bit1 if any of the group is configured.
-    if (script::is_enabled(forks, rule_fork::bip9_bit1_group)) {
+    if (script::is_enabled(flags, to_flags(upgrade::bip9_bit1_group))) {
         return bip9_version_base | bip9_version_bit1;
     }
 #endif
@@ -1319,7 +1319,7 @@ uint32_t chain_state::signal_version(uint32_t forks) {
 // static
 chain_state::data chain_state::to_block(chain_state const& pool, block const& block) {
     // // Alias configured forks.
-    // auto const forks = pool.forks_;
+    // auto const flags = pool.flags_;
 
     // Copy data from presumed same-height pool state.
     auto data = pool.data_;
@@ -1371,8 +1371,8 @@ abla::state const& chain_state::abla_state() const {
     return data_.abla_state;
 }
 
-uint32_t chain_state::enabled_forks() const {
-    return active_.forks;
+script_flags_t chain_state::enabled_flags() const {
+    return active_.flags;
 }
 
 uint32_t chain_state::minimum_version() const {
@@ -1466,8 +1466,8 @@ cantor_t chain_state::cantor_activation_time() const {
 // Forks.
 //-----------------------------------------------------------------------------
 
-bool chain_state::is_enabled(rule_fork fork) const {
-    return script::is_enabled(active_.forks, fork);
+bool chain_state::is_enabled(script_flags fork) const {
+    return script::is_enabled(active_.flags, fork);
 }
 
 bool chain_state::is_checkpoint_conflict(hash_digest const& hash) const {
@@ -1485,7 +1485,7 @@ bool chain_state::is_under_checkpoint() const {
 uint32_t chain_state::get_next_work_required(uint32_t time_now) {
     auto values = data_;
     values.timestamp.self = time_now;
-    return work_required(values, network(), enabled_forks()
+    return work_required(values, network(), enabled_flags()
 #if defined(KTH_CURRENCY_BCH)
                             // , euler_activation_time()
                             // , gauss_activation_time()

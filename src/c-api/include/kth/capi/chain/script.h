@@ -9,7 +9,7 @@
 
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
-#include <kth/capi/chain/rule_fork.h>
+#include <kth/capi/chain/script_flags.h>
 #include <kth/capi/chain/script_pattern.h>
 #include <kth/capi/chain/script_version.h>
 #include <kth/capi/wallet/primitives.h>
@@ -46,7 +46,7 @@ KTH_EXPORT
 kth_size_t kth_chain_script_serialized_size(kth_script_t script, kth_bool_t prefix);
 
 KTH_EXPORT
-char const* kth_chain_script_to_string(kth_script_t script, uint32_t active_forks);
+char const* kth_chain_script_to_string(kth_script_t script, uint64_t active_flags);
 
 KTH_EXPORT
 char const* kth_chain_script_type(kth_script_t script);
@@ -67,7 +67,7 @@ uint8_t const* kth_chain_script_to_bytes(kth_script_t script, kth_size_t* out_si
 
 /// Determine if the fork is enabled in the active forks set.
 KTH_EXPORT
-kth_bool_t kth_chain_script_is_enabled(uint32_t active_forks, kth_rule_fork_t fork);
+kth_bool_t kth_chain_script_is_enabled(uint64_t active_flags, kth_script_flags_t flag);
 
 /// Consensus patterns
 KTH_EXPORT
@@ -169,7 +169,7 @@ kth_hash_t generate_signature_hash(
     uint32_t input_index,
     kth_script_t script_code,
     uint8_t sighash_type,
-    uint32_t active_forks,
+    uint64_t active_flags,
 #if ! defined(KTH_CURRENCY_BCH)
     kth_script_version_t version,
 #endif // ! KTH_CURRENCY_BCH
@@ -186,7 +186,7 @@ kth_bool_t check_signature(
     kth_script_t script_code,
     kth_transaction_t tx,
     uint32_t input_index,
-    uint32_t active_forks,
+    uint64_t active_flags,
 #if ! defined(KTH_CURRENCY_BCH)
     kth_script_version_t version,
 #endif // ! KTH_CURRENCY_BCH
@@ -201,7 +201,7 @@ uint8_t const* kth_chain_script_create_endorsement(
     kth_transaction_t tx,
     uint32_t input_index,
     uint8_t sighash_type,
-    uint32_t active_forks,
+    uint64_t active_flags,
 #if ! defined(KTH_CURRENCY_BCH)
     kth_script_version_t version,
 #endif // ! KTH_CURRENCY_BCH
@@ -214,10 +214,10 @@ uint8_t const* kth_chain_script_create_endorsement(
 //-----------------------------------------------------------------------------
 
 KTH_EXPORT
-kth_error_code_t kth_chain_script_verify(kth_transaction_t tx, uint32_t input_index, uint32_t forks, kth_script_t input_script, kth_script_t prevout_script, uint64_t value);
+kth_error_code_t kth_chain_script_verify(kth_transaction_t tx, uint32_t input_index, uint64_t forks, kth_script_t input_script, kth_script_t prevout_script, uint64_t value);
 
 KTH_EXPORT
-kth_error_code_t kth_chain_script_verify_transaction(kth_transaction_t tx, uint32_t input, uint32_t forks);
+kth_error_code_t kth_chain_script_verify_transaction(kth_transaction_t tx, uint32_t input, uint64_t forks);
 
 
 #if defined(KTH_SEGWIT_ENABLED)

@@ -626,7 +626,7 @@ void protocol_block_in::handle_store_block(code const& ec, block_const_ptr messa
     // Show that diplayed forks may be missing activations due to checkpoints.
     auto const checked = state->is_under_checkpoint() ? "*" : "";
 
-    spdlog::debug("[node] Connected block [{}] at height [{}] from [{}] ({}{}, {}).", encoded, state->height(), authority(), state->enabled_forks(), checked, state->minimum_version());
+    spdlog::debug("[node] Connected block [{}] at height [{}] from [{}] ({}{}, {}).", encoded, state->height(), authority(), state->enabled_flags(), checked, state->minimum_version());
 
 
 #if defined(KTH_STATISTICS_ENABLED)

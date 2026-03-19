@@ -24,7 +24,7 @@
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/machine/opcode.hpp>
-#include <kth/domain/machine/rule_fork.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/infrastructure/config/checkpoint.hpp>
 #include <kth/infrastructure/error.hpp>
@@ -374,7 +374,7 @@ block::indexes block::locator_heights(size_t top) {
 // Returns max_size_t in case of overflow or unpopulated chain state.
 size_t block::signature_operations() const {
     auto const state = validation.state;
-    auto const bip16 = state ? state->is_enabled(rule_fork::bip16_rule) : true;
+    auto const bip16 = state ? state->is_enabled(script_flags::bip16_rule) : true;
     auto const bip141 = false;
 
     return block_basis::signature_operations(bip16, bip141);
@@ -429,15 +429,19 @@ code block::check() const {
     return block_basis::check(serialized_size());
 }
 
-code block::accept(bool transactions) const {
-    auto const state = validation.state;
-    return state ? accept(*state, transactions) : error::operation_failed;
-}
-
-// These checks assume that prevout caching is completed on all tx.inputs.
-code block::accept(chain_state const& state, bool transactions) const {
+// Contextual validation — prevout cache must be populated for transaction validation.
+code block::accept(
+    script_flags_t flags,
+    size_t height,
+    uint32_t median_time_past,
+    size_t max_block_size_dynamic,
+    size_t max_sigops,
+    bool is_under_checkpoint,
+    bool transactions
+) const {
     validation.start_accept = asio::steady_clock::now();
-    return block_basis::accept(state, serialized_size(), transactions);
+    return block_basis::accept(flags, height, median_time_past, serialized_size(),
+        max_block_size_dynamic, max_sigops, is_under_checkpoint, transactions);
 }
 
 code block::connect() const {

@@ -55,6 +55,11 @@ struct KD_API metrics {
         return script_limits && composite_op_cost(script_flags) > script_limits->op_cost_limit();
     }
 
+    // Non-standard (block validation) op_cost check for the native interpreter.
+    bool is_over_op_cost_limit() const {
+        return script_limits && composite_op_cost(false) > script_limits->op_cost_limit();
+    }
+
     bool is_over_hash_iters_limit() const {
         return script_limits && hash_digest_iterations() > script_limits->hash_iters_limit();
     }
@@ -67,6 +72,11 @@ struct KD_API metrics {
         script_limits.emplace(is_vm_limits_standard(script_flags), script_sig_size);
     }
 
+    // For the native interpreter (uses bool standard directly, not consensus flags).
+    void set_native_script_limits(bool standard, uint64_t script_sig_size) {
+        script_limits.emplace(standard, script_sig_size);
+    }
+
     script_limits_opt_t const& get_script_limits() const {
         return script_limits;
     }
@@ -74,11 +84,13 @@ struct KD_API metrics {
     // Returns the composite value that is: nOpCost + nHashDigestIterators * {192 or 64} + nSigChecks * 26,000
     // Consensus code uses a 64 for the hashing iter cost, standard/relay code uses the more restrictive cost of 192.
     uint64_t composite_op_cost(uint32_t script_flags) const {
-        uint64_t const factor = may2025::hash_iter_op_cost_factor(is_vm_limits_standard(script_flags));
-        return op_cost_ // base cost: encompasses ops + pushes, etc
-               // additional cost: add hash iterations * {192 or 64}
+        return composite_op_cost(is_vm_limits_standard(script_flags));
+    }
+
+    uint64_t composite_op_cost(bool standard) const {
+        uint64_t const factor = may2025::hash_iter_op_cost_factor(standard);
+        return op_cost_
                + hash_digest_iterations_ * factor
-               // additional cost: add sig checks * 26,000
                + uint64_t(sig_checks_) * ::kth::may2025::sig_check_cost_factor;
     }
 

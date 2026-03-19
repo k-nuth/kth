@@ -36,8 +36,8 @@ void kth_chain_operation_destruct(kth_operation_t operation) {
     delete &kth_chain_operation_cpp(operation);
 }
 
-char const* kth_chain_operation_to_string(kth_operation_t operation, uint32_t active_forks) {
-    return kth::create_c_str(kth_chain_operation_cpp(operation).to_string(active_forks));
+char const* kth_chain_operation_to_string(kth_operation_t operation, uint64_t active_flags) {
+    return kth::create_c_str(kth_chain_operation_cpp(operation).to_string(active_flags));
 }
 
 uint8_t const* kth_chain_operation_to_data(kth_operation_t operation, kth_size_t* out_size) {
@@ -100,8 +100,8 @@ kth_bool_t kth_chain_operation_is_positive(kth_operation_t operation) {
     return kth::bool_to_int(kth_chain_operation_cpp(operation).is_positive());
 }
 
-kth_bool_t kth_chain_operation_is_disabled(kth_operation_t operation, uint32_t active_forks) {
-    return kth::bool_to_int(kth_chain_operation_cpp(operation).is_disabled(active_forks));
+kth_bool_t kth_chain_operation_is_disabled(kth_operation_t operation, uint64_t active_flags) {
+    return kth::bool_to_int(kth_chain_operation_cpp(operation).is_disabled(active_flags));
 }
 
 kth_bool_t kth_chain_operation_is_conditional(kth_operation_t operation) {
@@ -186,9 +186,9 @@ kth_bool_t kth_chain_operation_opcode_is_reserved(kth_opcode_t code) {
     return kth::bool_to_int(kth::domain::machine::operation::is_reserved(code_c));
 }
 
-kth_bool_t kth_chain_operation_opcode_is_disabled(kth_opcode_t code, uint32_t active_forks) {
+kth_bool_t kth_chain_operation_opcode_is_disabled(kth_opcode_t code, uint64_t active_flags) {
     auto code_c = kth::opcode_to_cpp(code);
-    return kth::bool_to_int(kth::domain::machine::operation::is_disabled(code_c, active_forks));
+    return kth::bool_to_int(kth::domain::machine::operation::is_disabled(code_c, active_flags));
 }
 
 kth_bool_t kth_chain_operation_opcode_is_conditional(kth_opcode_t code) {

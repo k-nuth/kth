@@ -16,8 +16,22 @@
 
 namespace kth::domain::machine {
 
+struct op_result {
+    error::error_code_t error = error::success;
+    opcode op = opcode::reserved_80;  // the opcode that caused the error
+
+    constexpr op_result() = default;
+    constexpr op_result(error::error_code_t e) : error(e) {}
+    constexpr op_result(error::error_code_t e, opcode o) : error(e), op(o) {}
+
+    constexpr explicit operator bool() const { return error != error::success; }
+
+    constexpr bool operator==(error::error_code_t e) const { return error == e; }
+    constexpr bool operator!=(error::error_code_t e) const { return error != e; }
+};
+
 struct KD_API interpreter {
-    using result = error::error_code_t;
+    using result = op_result;
 
     // Operations (shared).
     //-----------------------------------------------------------------------------
@@ -137,6 +151,9 @@ struct KD_API interpreter {
     result op_size(program& program);
 
     static
+    result op_invert(program& program);
+
+    static
     result op_and(program& program);
 
     static
@@ -183,6 +200,12 @@ struct KD_API interpreter {
 
     static
     result op_mod(program& program);
+
+    static
+    result op_shiftnum(program& program, opcode code);
+
+    static
+    result op_shiftbin(program& program, opcode code);
 
     static
     result op_bool_and(program& program);
@@ -353,6 +376,10 @@ private:
     /// Helper function for common Native Introspection validations
     static
     result validate_native_introspection(program const& program);
+
+    /// Helper function for Token Introspection validations (requires bch_tokens)
+    static
+    result validate_token_introspection(program const& program);
 
     /// Helper function for post-processing Native Introspection push operations
     static

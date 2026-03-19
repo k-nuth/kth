@@ -214,13 +214,13 @@ std::string opcode_to_prefix(opcode code, data_chunk const& data) {
 }
 
 // The removal of spaces in v3 data is a compatability break with our v2.
-std::string operation::to_string(uint32_t active_forks) const {
+std::string operation::to_string(script_flags_t active_flags) const {
     if ( ! valid_) {
         return "<invalid>";
     }
 
     if (data_.empty()) {
-        return opcode_to_string(code_, active_forks);
+        return opcode_to_string(code_, active_flags);
     }
 
     // Data encoding uses single token with explicit size prefix as required.

@@ -42,6 +42,11 @@ constexpr size_t max_number_size_64_bits = 8;
 constexpr size_t max_check_locktime_verify_number_size = 5;
 constexpr size_t max_check_sequence_verify_number_size = 5;
 
+// INPUT_SIGCHECKS density limit (May 2020, Fermat upgrade).
+// scriptSig.size() must be >= sig_checks * sigchecks_input_density_factor - sigchecks_input_density_offset
+constexpr int sigchecks_input_density_factor = 43;
+constexpr int sigchecks_input_density_offset = 60;
+
 // The below constants are used after activation of the May 2025 upgrade (Targeted VM Limits CHIP)
 namespace may2025 {
 
@@ -54,6 +59,14 @@ namespace may2025 {
     // Each sigcheck done by an input adds this amount to the total op cost
     constexpr uint64_t sig_check_cost_factor = 26'000u;         // BCHN: SIG_CHECK_COST_FACTOR
 }
+
+// Witness program script: version_byte + push_byte + program_data (2..40 bytes).
+// Used for segwit recovery on BCH (exempt witness-program-like P2SH from cleanstack).
+constexpr size_t min_witness_program_data = 2;
+constexpr size_t max_witness_program_data = 40;
+constexpr size_t witness_program_script_prefix = 2;  // version_byte + push_byte
+constexpr size_t min_witness_program_script = min_witness_program_data + witness_program_script_prefix;
+constexpr size_t max_witness_program_script = max_witness_program_data + witness_program_script_prefix;
 
 // Policy.
 constexpr size_t max_null_data_size = 80;
@@ -141,9 +154,16 @@ constexpr size_t max_locator = 43;
 // Currency unit constants (uint64_t).
 //-----------------------------------------------------------------------------
 
-constexpr uint64_t satoshi_per_bitcoin = 100000000;
+consteval uint64_t operator""_million(unsigned long long value) {
+    return value * 1'000'000ULL;
+}
+
+constexpr uint64_t satoshi_per_bitcoin = 100_million;
 constexpr uint64_t initial_block_subsidy_bitcoin = 50;
 constexpr uint64_t recursive_money = 0x02540be3f5;
+
+// Maximum satoshi supply (21M coins). Used for transaction validation.
+constexpr uint64_t max_satoshi_supply = 21_million * satoshi_per_bitcoin;
 
 } // namespace kth
 

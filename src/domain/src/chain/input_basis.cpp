@@ -190,7 +190,7 @@ size_t input_basis::signature_operations(bool bip16, bool bip141) const {
 //     auto const& prevout_script = previous_output_.validation.cache.script();
 
 //     // There are no embedded sigops when the prevout script is not p2sh.
-//     if ( ! prevout_script.is_pay_to_script_hash(rule_fork::bip16_rule)) {
+//     if ( ! prevout_script.is_pay_to_script_hash(script_flags::bip16_rule)) {
 //         return false;
 //     }
 
@@ -212,8 +212,8 @@ expect<chain::script> input_basis::extract_embedded_script() const {
     auto const& prevout_script = previous_output_.validation.cache.script();
 
     // There are no embedded sigops when the prevout script is not p2sh or p2sh32.
-    if ( ! prevout_script.is_pay_to_script_hash(rule_fork::bip16_rule) &&
-         ! prevout_script.is_pay_to_script_hash_32(rule_fork::bch_gauss)) {
+    if ( ! prevout_script.is_pay_to_script_hash(script_flags::bip16_rule) &&
+         ! prevout_script.is_pay_to_script_hash_32(script_flags::bch_p2sh_32)) {
             return std::unexpected(error::invalid_script_type);
     }
 

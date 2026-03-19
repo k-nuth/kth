@@ -162,11 +162,27 @@ struct KD_API block_basis {
     [[nodiscard]]
     code check_transactions() const;
 
+    /// Contextual validation — requires flags, height, etc. Prevout cache must be populated.
     [[nodiscard]]
-    code accept(chain_state const& state, size_t serialized_size, bool transactions = true) const;
+    code accept(
+        script_flags_t flags,
+        size_t height,
+        uint32_t median_time_past,
+        size_t serialized_size,
+        size_t max_block_size_dynamic,
+        size_t max_sigops,
+        bool is_under_checkpoint,
+        bool transactions = true
+    ) const;
 
     [[nodiscard]]
-    code accept_transactions(chain_state const& state) const;
+    code accept_transactions(
+        script_flags_t flags,
+        size_t height,
+        uint32_t median_time_past,
+        size_t max_sigops,
+        bool is_under_checkpoint
+    ) const;
 
     [[nodiscard]]
     code connect(chain_state const& state) const;

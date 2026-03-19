@@ -423,22 +423,22 @@ TEST_CASE("operation  to string  push four size 0x112233  4 0x112233", "[operati
 
 TEST_CASE("operation  to string  nop2 no rules  nop2", "[operation]") {
     operation value(opcode::nop2);
-    REQUIRE(value.to_string(machine::rule_fork::no_rules) == "nop2");
+    REQUIRE(value.to_string(machine::script_flags::no_rules) == "nop2");
 }
 
 TEST_CASE("operation  to string  nop2 bip65 rule  checklocktimeverify", "[operation]") {
     operation value(opcode::nop2);
-    REQUIRE(value.to_string(machine::rule_fork::bip65_rule) == "checklocktimeverify");
+    REQUIRE(value.to_string(machine::script_flags::bip65_rule) == "checklocktimeverify");
 }
 
 TEST_CASE("operation  to string  nop3 no rules  nop3", "[operation]") {
     operation value(opcode::nop3);
-    REQUIRE(value.to_string(machine::rule_fork::no_rules) == "nop3");
+    REQUIRE(value.to_string(machine::script_flags::no_rules) == "nop3");
 }
 
 TEST_CASE("operation  to string  nop3 bip112 rule  checksequenceverify", "[operation]") {
     operation value(opcode::nop3);
-    REQUIRE(value.to_string(machine::rule_fork::bip112_rule) == "checksequenceverify");
+    REQUIRE(value.to_string(machine::script_flags::bip112_rule) == "checksequenceverify");
 }
 
 // from_string

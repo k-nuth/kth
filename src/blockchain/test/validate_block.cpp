@@ -9,6 +9,7 @@ using namespace kth;
 using namespace kd::chain;
 using namespace kth::blockchain;
 using namespace kd::machine;
+using kd::script_flags_t;
 
 // Start Test Suite: validate block tests
 
@@ -21,7 +22,7 @@ TEST_CASE("validate block native block 438513 tx valid", "[validate block tests]
     //// transaction  : 0100000001a06bf74cc36eac395188b06850c5a01d00b355065c589d14036e89e075d7518e000000009d483045022100ba555ac17a084e2a1b621c2171fa563bc4fb75cd5c0968153f44ba7203cb876f022036626f4579de16e3ad160df01f649ffb8dbf47b504ee56dc3ad7260af24ca0db0101004c50632102768e47607c52e581595711e27faffa7cb646b4f481fe269bd49691b2fbc12106ad6704355e2658b1756821028a5af8284a12848d69a25a0ac5cea20be905848eb645fd03d3b065df88a9117cacfeffffff0158920100000000001976a9149d86f66406d316d44d58cbf90d71179dd8162dd388ac355e2658
 
     static auto const index = 0u;
-    static auto const forks = 62u;
+    static auto const flags = 62u;
     static auto const encoded_script = "a914faa558780a5767f9e3be14992a578fc1cbcf483087";
     static auto const encoded_tx = "0100000001a06bf74cc36eac395188b06850c5a01d00b355065c589d14036e89e075d7518e000000009d483045022100ba555ac17a084e2a1b621c2171fa563bc4fb75cd5c0968153f44ba7203cb876f022036626f4579de16e3ad160df01f649ffb8dbf47b504ee56dc3ad7260af24ca0db0101004c50632102768e47607c52e581595711e27faffa7cb646b4f481fe269bd49691b2fbc12106ad6704355e2658b1756821028a5af8284a12848d69a25a0ac5cea20be905848eb645fd03d3b065df88a9117cacfeffffff0158920100000000001976a9149d86f66406d316d44d58cbf90d71179dd8162dd388ac355e2658";
 
@@ -42,7 +43,7 @@ TEST_CASE("validate block native block 438513 tx valid", "[validate block tests]
 
     REQUIRE(prevout.script().is_valid());
 
-    auto const result = validate_input::verify_script(tx, index, forks);
+    auto const result = validate_input::verify_script(tx, index, flags);
 
     REQUIRE(result.first == error::success);
 
@@ -62,12 +63,11 @@ TEST_CASE("validate block native block 520679 tx valid", "[validate block tests]
     static auto const encoded_tx = "01000000013cd8d60935ea68f2ef238d983174f81aa96766ac24e9cf4151e9008ac852e8da010000006a47304402206ccfd8739b2f98350d91ff7fec529f8bc085459b36cf26a22d95606737d4381002204429c60535745ef0b71c14bf0a9df565e8c87b934ee0b2766971cf5b15d085c04121020f123b05aadc865fd60d1513144f48f5d8de3403d3c3f00ce233d53329f10ccaffffffff0156998501000000001976a914bf4679910a2ba81b7f3f2ee03fc77847dc673b2288ac00000000";
 
     //This value after conversion its equal to the above code.
-    uint32_t native_forks = domain::machine::rule_fork::bip16_rule;
-    native_forks |= domain::machine::rule_fork::bip65_rule;
-    native_forks |= domain::machine::rule_fork::bip66_rule;
-    native_forks |= domain::machine::rule_fork::bip112_rule;
-    native_forks |= domain::machine::rule_fork::bch_uahf;
-    native_forks |= domain::machine::rule_fork::bch_daa_cw144;
+    script_flags_t native_flags = domain::machine::script_flags::bip16_rule;
+    native_flags |= domain::machine::script_flags::bip65_rule;
+    native_flags |= domain::machine::script_flags::bip66_rule;
+    native_flags |= domain::machine::script_flags::bip112_rule;
+    native_flags |= domain::machine::to_flags(domain::machine::upgrade::bch_daa_cw144);
 
     auto const decoded_tx = decode_base16(encoded_tx);
     REQUIRE(decoded_tx);
@@ -85,7 +85,7 @@ TEST_CASE("validate block native block 520679 tx valid", "[validate block tests]
     prevout.set_script(kd::create<script>(*decoded_script, false));
     REQUIRE(prevout.script().is_valid());
 
-    auto const result = validate_input::verify_script(tx, index, native_forks);
+    auto const result = validate_input::verify_script(tx, index, native_flags);
     REQUIRE(result.first == error::success);
 }
 
@@ -107,16 +107,11 @@ TEST_CASE("validate block 2018NOV block 520679 tx valid", "[validate block tests
 
 
     //This value after conversion its equal to the above code.
-    // static const uint32_t branches = 296831u;
-    uint32_t native_forks = domain::machine::rule_fork::bip16_rule;
-    native_forks |= domain::machine::rule_fork::bip65_rule;
-    native_forks |= domain::machine::rule_fork::bip66_rule;
-    native_forks |= domain::machine::rule_fork::bip112_rule;
-    native_forks |= domain::machine::rule_fork::bch_uahf;
-    native_forks |= domain::machine::rule_fork::bch_daa_cw144;
-    native_forks |= domain::machine::rule_fork::bch_euclid;
-    native_forks |= domain::machine::rule_fork::bch_pisano;
-    // native_forks |= domain::machine::rule_fork::cash_segwit_recovery;
+    script_flags_t native_flags = domain::machine::script_flags::bip16_rule;
+    native_flags |= domain::machine::script_flags::bip65_rule;
+    native_flags |= domain::machine::script_flags::bip66_rule;
+    native_flags |= domain::machine::script_flags::bip112_rule;
+    native_flags |= domain::machine::to_flags(domain::machine::upgrade::bch_pisano);
 
     auto const decoded_tx = decode_base16(encoded_tx);
     REQUIRE(decoded_tx);
@@ -134,7 +129,7 @@ TEST_CASE("validate block 2018NOV block 520679 tx valid", "[validate block tests
     prevout.set_script(kd::create<script>(*decoded_script, false));
     REQUIRE(prevout.script().is_valid());
 
-    auto const result = validate_input::verify_script(tx, index, native_forks);
+    auto const result = validate_input::verify_script(tx, index, native_flags);
     REQUIRE(result.first == error::success);
 }
 #endif

@@ -228,6 +228,10 @@ bool parse_endorsement(uint8_t& sighash_type, der_signature& der_signature, endo
     return true;
 }
 
+bool parse_endorsement(uint8_t& sighash_type, der_signature& der_sig, endorsement const& e) {
+    return parse_endorsement(sighash_type, der_sig, endorsement(e));
+}
+
 bool parse_signature(ec_signature& out, const der_signature& der_signature, bool strict) {
     if (der_signature.empty()) {
         return false;
@@ -250,6 +254,24 @@ bool parse_signature(ec_signature& out, const der_signature& der_signature, bool
     }
 
     return valid;
+}
+
+bool check_low_s(der_signature const& der_signature) {
+    if (der_signature.empty()) {
+        return false;
+    }
+
+    secp256k1_ecdsa_signature parsed;
+    auto const context = verification.context();
+
+    // Use lax parsing (matches BCHN's CPubKey::CheckLowS behavior).
+    if (ecdsa_signature_parse_der_lax(context, &parsed,
+        der_signature.data(), der_signature.size()) != 1) {
+        return false;
+    }
+
+    // normalize returns 1 if the signature was modified (S was high).
+    return secp256k1_ecdsa_signature_normalize(context, nullptr, &parsed) != 1;
 }
 
 bool encode_signature(der_signature& out, ec_signature const& signature) {
@@ -318,6 +340,21 @@ bool sign_schnorr(ec_signature& out, ec_secret const& secret, hash_digest const&
     }
 
     return true;
+}
+
+bool verify_schnorr(byte_span point, hash_digest const& hash, byte_span signature) {
+    if (signature.size() != schnorr_signature_size) {
+        return false;
+    }
+
+    secp256k1_pubkey pubkey;
+    auto const context = verification.context();
+
+    if (secp256k1_ec_pubkey_parse(context, &pubkey, point.data(), point.size()) != 1) {
+        return false;
+    }
+
+    return secp256k1_schnorr_verify(context, signature.data(), hash.data(), &pubkey) == 1;
 }
 
 bool verify_signature(ec_compressed const& point, hash_digest const& hash, ec_signature const& signature) {

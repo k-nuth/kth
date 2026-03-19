@@ -16,157 +16,157 @@ using namespace kth::domain::machine;
 
 // Use the traditional serializations for all codes (in this case 'zero' vs. 'push_0').
 TEST_CASE("opcode to string  zero any forks  zero", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::push_size_0, rule_fork::no_rules) == "zero");
-    REQUIRE(opcode_to_string(opcode::push_size_0, rule_fork::all_rules) == "zero");
+    REQUIRE(opcode_to_string(opcode::push_size_0, script_flags::no_rules) == "zero");
+    REQUIRE(opcode_to_string(opcode::push_size_0, script_flags::all_rules) == "zero");
 }
 
 // We formerly serialized all 1-75 as 'special'.
 TEST_CASE("opcode to string  push size 42 any forks  push 42", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::push_size_42, rule_fork::no_rules) == "push_42");
-    REQUIRE(opcode_to_string(opcode::push_size_42, rule_fork::all_rules) == "push_42");
+    REQUIRE(opcode_to_string(opcode::push_size_42, script_flags::no_rules) == "push_42");
+    REQUIRE(opcode_to_string(opcode::push_size_42, script_flags::all_rules) == "push_42");
 }
 
 // Use the traditional serializations for all codes (in this case 'pushdata1' vs. 'push_one').
 TEST_CASE("opcode to string  push one size any forks  pushdata1", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::push_one_size, rule_fork::no_rules) == "pushdata1");
-    REQUIRE(opcode_to_string(opcode::push_one_size, rule_fork::all_rules) == "pushdata1");
+    REQUIRE(opcode_to_string(opcode::push_one_size, script_flags::no_rules) == "pushdata1");
+    REQUIRE(opcode_to_string(opcode::push_one_size, script_flags::all_rules) == "pushdata1");
 }
 
 // Use the traditional serializations for all codes (in this case 'pushdata2' vs. 'push_two').
 TEST_CASE("opcode to string  push two size size any forks  pushdata2", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::push_two_size, rule_fork::no_rules) == "pushdata2");
-    REQUIRE(opcode_to_string(opcode::push_two_size, rule_fork::all_rules) == "pushdata2");
+    REQUIRE(opcode_to_string(opcode::push_two_size, script_flags::no_rules) == "pushdata2");
+    REQUIRE(opcode_to_string(opcode::push_two_size, script_flags::all_rules) == "pushdata2");
 }
 
 // Use the traditional serializations for all codes (in this case 'pushdata4' vs. 'push_four').
 TEST_CASE("opcode to string  push four size any forks  pushdata4", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::push_four_size, rule_fork::no_rules) == "pushdata4");
-    REQUIRE(opcode_to_string(opcode::push_four_size, rule_fork::all_rules) == "pushdata4");
+    REQUIRE(opcode_to_string(opcode::push_four_size, script_flags::no_rules) == "pushdata4");
+    REQUIRE(opcode_to_string(opcode::push_four_size, script_flags::all_rules) == "pushdata4");
 }
 
 // Use the traditional serializations for all codes (in this case 'reserved' vs. 0x50).
 TEST_CASE("opcode to string  reserved 80 any forks  reserved", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::reserved_80, rule_fork::no_rules) == "reserved");
-    REQUIRE(opcode_to_string(opcode::reserved_80, rule_fork::all_rules) == "reserved");
+    REQUIRE(opcode_to_string(opcode::reserved_80, script_flags::no_rules) == "reserved");
+    REQUIRE(opcode_to_string(opcode::reserved_80, script_flags::all_rules) == "reserved");
 }
 
 TEST_CASE("opcode to string  push positive 7 any forks  7", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::push_positive_7, rule_fork::no_rules) == "7");
-    REQUIRE(opcode_to_string(opcode::push_positive_7, rule_fork::all_rules) == "7");
+    REQUIRE(opcode_to_string(opcode::push_positive_7, script_flags::no_rules) == "7");
+    REQUIRE(opcode_to_string(opcode::push_positive_7, script_flags::all_rules) == "7");
 }
 
 // Use the traditional serializations for all codes (in this case 'ver' vs. '0x62').
 TEST_CASE("opcode to string  reserved 98 any forks  ver", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::reserved_98, rule_fork::no_rules) == "ver");
-    REQUIRE(opcode_to_string(opcode::reserved_98, rule_fork::all_rules) == "ver");
+    REQUIRE(opcode_to_string(opcode::reserved_98, script_flags::no_rules) == "ver");
+    REQUIRE(opcode_to_string(opcode::reserved_98, script_flags::all_rules) == "ver");
 }
 
 // Use the traditional serializations for all codes (in this case 'verif' vs. '0x65').
 TEST_CASE("opcode to string  disabled verif any forks  verif", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::disabled_verif, rule_fork::no_rules) == "verif");
-    REQUIRE(opcode_to_string(opcode::disabled_verif, rule_fork::all_rules) == "verif");
+    REQUIRE(opcode_to_string(opcode::op_begin, script_flags::no_rules) == "verif");
+    REQUIRE(opcode_to_string(opcode::op_begin, script_flags::all_rules) == "begin");
 }
 
 // Use the traditional serializations for all codes (in this case 'vernotif' vs. '0x66').
 TEST_CASE("opcode to string  disabled vernotif any forks  vernotif", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::disabled_vernotif, rule_fork::no_rules) == "vernotif");
-    REQUIRE(opcode_to_string(opcode::disabled_vernotif, rule_fork::all_rules) == "vernotif");
+    REQUIRE(opcode_to_string(opcode::op_until, script_flags::no_rules) == "vernotif");
+    REQUIRE(opcode_to_string(opcode::op_until, script_flags::all_rules) == "until");
 }
 
 // Use the traditional serializations for all codes (in this case '2drop' vs. 'drop2').
 TEST_CASE("opcode to string  drop2 any forks  2drop", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::drop2, rule_fork::no_rules) == "2drop");
-    REQUIRE(opcode_to_string(opcode::drop2, rule_fork::all_rules) == "2drop");
+    REQUIRE(opcode_to_string(opcode::drop2, script_flags::no_rules) == "2drop");
+    REQUIRE(opcode_to_string(opcode::drop2, script_flags::all_rules) == "2drop");
 }
 
 // Use the traditional serializations for all codes (in this case '2dup' vs. 'dup2').
 TEST_CASE("opcode to string  rdup2 any forks  2dup", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::dup2, rule_fork::no_rules) == "2dup");
-    REQUIRE(opcode_to_string(opcode::dup2, rule_fork::all_rules) == "2dup");
+    REQUIRE(opcode_to_string(opcode::dup2, script_flags::no_rules) == "2dup");
+    REQUIRE(opcode_to_string(opcode::dup2, script_flags::all_rules) == "2dup");
 }
 
 // Use the traditional serializations for all codes (in this case '3dup' vs. 'dup3').
 TEST_CASE("opcode to string  dup3 any forks  3dup", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::dup3, rule_fork::no_rules) == "3dup");
-    REQUIRE(opcode_to_string(opcode::dup3, rule_fork::all_rules) == "3dup");
+    REQUIRE(opcode_to_string(opcode::dup3, script_flags::no_rules) == "3dup");
+    REQUIRE(opcode_to_string(opcode::dup3, script_flags::all_rules) == "3dup");
 }
 
 // Use the traditional serializations for all codes (in this case '2over' vs. 'over2').
 TEST_CASE("opcode to string  over2 any forks  vernotif", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::over2, rule_fork::no_rules) == "2over");
-    REQUIRE(opcode_to_string(opcode::over2, rule_fork::all_rules) == "2over");
+    REQUIRE(opcode_to_string(opcode::over2, script_flags::no_rules) == "2over");
+    REQUIRE(opcode_to_string(opcode::over2, script_flags::all_rules) == "2over");
 }
 
 // Use the traditional serializations for all codes (in this case '2rot' vs. 'rot2').
 TEST_CASE("opcode to string  rot2 any forks  2rot", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::rot2, rule_fork::no_rules) == "2rot");
-    REQUIRE(opcode_to_string(opcode::rot2, rule_fork::all_rules) == "2rot");
+    REQUIRE(opcode_to_string(opcode::rot2, script_flags::no_rules) == "2rot");
+    REQUIRE(opcode_to_string(opcode::rot2, script_flags::all_rules) == "2rot");
 }
 
 // Use the traditional serializations for all codes (in this case '2swap' vs. 'swap2').
 TEST_CASE("opcode to string  swap2 any forks  2swap", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::swap2, rule_fork::no_rules) == "2swap");
-    REQUIRE(opcode_to_string(opcode::swap2, rule_fork::all_rules) == "2swap");
+    REQUIRE(opcode_to_string(opcode::swap2, script_flags::no_rules) == "2swap");
+    REQUIRE(opcode_to_string(opcode::swap2, script_flags::all_rules) == "2swap");
 }
 
 // Use the traditional serializations for all codes (in this case '1add' vs. 'add1').
 TEST_CASE("opcode to string  add1 any forks  2rot", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::add1, rule_fork::no_rules) == "1add");
-    REQUIRE(opcode_to_string(opcode::add1, rule_fork::all_rules) == "1add");
+    REQUIRE(opcode_to_string(opcode::add1, script_flags::no_rules) == "1add");
+    REQUIRE(opcode_to_string(opcode::add1, script_flags::all_rules) == "1add");
 }
 
 // Use the traditional serializations for all codes (in this case '1sub' vs. 'sub1').
 TEST_CASE("opcode to string  sub1 any forks  2swap", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::sub1, rule_fork::no_rules) == "1sub");
-    REQUIRE(opcode_to_string(opcode::sub1, rule_fork::all_rules) == "1sub");
+    REQUIRE(opcode_to_string(opcode::sub1, script_flags::no_rules) == "1sub");
+    REQUIRE(opcode_to_string(opcode::sub1, script_flags::all_rules) == "1sub");
 }
 
 // Ensure nop2 still serializes as 'nop2' without bip65 fork.
 TEST_CASE("opcode to string  nop2 or checklocktimeverify any fork except bip65  nop2", "[opcode]") {
     static_assert(opcode::checklocktimeverify == opcode::nop2, "nop2 drift");
-    REQUIRE(opcode_to_string(opcode::nop2, rule_fork::no_rules) == "nop2");
-    REQUIRE(opcode_to_string(opcode::nop2, rule_fork::bip16_rule) == "nop2");
-    REQUIRE(opcode_to_string(opcode::nop2, rule_fork::bip30_rule) == "nop2");
-    REQUIRE(opcode_to_string(opcode::nop2, rule_fork::bip34_rule) == "nop2");
-    REQUIRE(opcode_to_string(opcode::nop2, rule_fork::bip66_rule) == "nop2");
-    REQUIRE(opcode_to_string(opcode::nop2, rule_fork::bip112_rule) == "nop2");
+    REQUIRE(opcode_to_string(opcode::nop2, script_flags::no_rules) == "nop2");
+    REQUIRE(opcode_to_string(opcode::nop2, script_flags::bip16_rule) == "nop2");
+    REQUIRE(opcode_to_string(opcode::nop2, script_flags::bip30_rule) == "nop2");
+    REQUIRE(opcode_to_string(opcode::nop2, script_flags::bip34_rule) == "nop2");
+    REQUIRE(opcode_to_string(opcode::nop2, script_flags::bip66_rule) == "nop2");
+    REQUIRE(opcode_to_string(opcode::nop2, script_flags::bip112_rule) == "nop2");
 }
 
 // Ensure nop2 and checklocktimeverify serialize as 'checklocktimeverify' with bip65 fork.
 TEST_CASE("opcode to string  nop2 or checklocktimeverify bip65 fork  checklocktimeverify", "[opcode]") {
     static_assert(opcode::checklocktimeverify == opcode::nop2, "nop2 drift");
-    REQUIRE(opcode_to_string(opcode::nop2, rule_fork::bip65_rule) == "checklocktimeverify");
-    REQUIRE(opcode_to_string(opcode::nop2, rule_fork::all_rules) == "checklocktimeverify");
+    REQUIRE(opcode_to_string(opcode::nop2, script_flags::bip65_rule) == "checklocktimeverify");
+    REQUIRE(opcode_to_string(opcode::nop2, script_flags::all_rules) == "checklocktimeverify");
 }
 
 // Ensure nop3 still serializes as 'nop3' without bip112 fork.
 TEST_CASE("opcode to string  nop3 or checksequenceverify any fork except bip112  nop3", "[opcode]") {
     static_assert(opcode::checksequenceverify == opcode::nop3, "nop3 drift");
-    REQUIRE(opcode_to_string(opcode::nop3, rule_fork::no_rules) == "nop3");
-    REQUIRE(opcode_to_string(opcode::nop3, rule_fork::bip16_rule) == "nop3");
-    REQUIRE(opcode_to_string(opcode::nop3, rule_fork::bip30_rule) == "nop3");
-    REQUIRE(opcode_to_string(opcode::nop3, rule_fork::bip34_rule) == "nop3");
-    REQUIRE(opcode_to_string(opcode::nop3, rule_fork::bip66_rule) == "nop3");
-    REQUIRE(opcode_to_string(opcode::nop3, rule_fork::bip65_rule) == "nop3");
+    REQUIRE(opcode_to_string(opcode::nop3, script_flags::no_rules) == "nop3");
+    REQUIRE(opcode_to_string(opcode::nop3, script_flags::bip16_rule) == "nop3");
+    REQUIRE(opcode_to_string(opcode::nop3, script_flags::bip30_rule) == "nop3");
+    REQUIRE(opcode_to_string(opcode::nop3, script_flags::bip34_rule) == "nop3");
+    REQUIRE(opcode_to_string(opcode::nop3, script_flags::bip66_rule) == "nop3");
+    REQUIRE(opcode_to_string(opcode::nop3, script_flags::bip65_rule) == "nop3");
 }
 
 // Ensure nop3 and checksequenceverify serialize as 'checksequenceverify' with bip112 fork.
 TEST_CASE("opcode to string  nop3 or checksequenceverify bip112 fork  checksequenceverify", "[opcode]") {
     static_assert(opcode::checksequenceverify == opcode::nop3, "nop3 drift");
-    REQUIRE(opcode_to_string(opcode::nop3, rule_fork::bip112_rule) == "checksequenceverify");
-    REQUIRE(opcode_to_string(opcode::nop3, rule_fork::all_rules) == "checksequenceverify");
+    REQUIRE(opcode_to_string(opcode::nop3, script_flags::bip112_rule) == "checksequenceverify");
+    REQUIRE(opcode_to_string(opcode::nop3, script_flags::all_rules) == "checksequenceverify");
 }
 
 // All codes above 'nop10' serialize as hex.
 TEST_CASE("opcode to string  checkdatasig 186 any forks  0xba", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::checkdatasig, rule_fork::no_rules) == "checkdatasig");
-    REQUIRE(opcode_to_string(opcode::checkdatasig, rule_fork::all_rules) == "checkdatasig");
+    REQUIRE(opcode_to_string(opcode::checkdatasig, script_flags::no_rules) == "checkdatasig");
+    REQUIRE(opcode_to_string(opcode::checkdatasig, script_flags::all_rules) == "checkdatasig");
 }
 
 // All codes above 'nop10' serialize as hex.
 TEST_CASE("opcode to string  reserved 255 any forks  0xff", "[opcode]") {
-    REQUIRE(opcode_to_string(opcode::reserved_255, rule_fork::no_rules) == "0xff");
-    REQUIRE(opcode_to_string(opcode::reserved_255, rule_fork::all_rules) == "0xff");
+    REQUIRE(opcode_to_string(opcode::reserved_255, script_flags::no_rules) == "0xff");
+    REQUIRE(opcode_to_string(opcode::reserved_255, script_flags::all_rules) == "0xff");
 }
 
 // opcode_from_string

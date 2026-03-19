@@ -21,14 +21,14 @@ struct KB_API validate_input {
 
 #ifdef WITH_CONSENSUS
     static
-    uint32_t convert_flags(uint32_t native_forks);
+    uint32_t convert_flags(domain::script_flags_t native_forks);
 
     static
     code convert_result(consensus::verify_result_type result);
 #endif
 
     static
-    std::pair<code, size_t> verify_script(domain::chain::transaction const& tx, uint32_t input_index, uint32_t forks);
+    std::pair<code, size_t> verify_script(domain::chain::transaction const& tx, uint32_t input_index, domain::script_flags_t flags);
 };
 
 } // namespace kth::blockchain

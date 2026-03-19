@@ -144,8 +144,18 @@ public:
     size_t total_inputs(bool with_coinbase = true) const;
 
     code check() const;
-    code accept(bool transactions = true) const;
-    code accept(chain_state const& state, bool transactions = true) const;
+
+    /// Contextual validation — prevout cache must be populated.
+    code accept(
+        script_flags_t flags,
+        size_t height,
+        uint32_t median_time_past,
+        size_t max_block_size_dynamic,
+        size_t max_sigops,
+        bool is_under_checkpoint,
+        bool transactions = true
+    ) const;
+
     code connect() const;
 
     // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.

@@ -164,6 +164,28 @@ expected<I, code> safe_subtract(I left, I right) {
     return left - right;
 }
 
+template <std::signed_integral I>
+expected<I, code> safe_add(I left, I right) {
+    if (right > 0 && left > std::numeric_limits<I>::max() - right) {
+        return std::unexpected(error::overflow);
+    }
+    if (right < 0 && left < std::numeric_limits<I>::min() - right) {
+        return std::unexpected(error::underflow);
+    }
+    return left + right;
+}
+
+template <std::signed_integral I>
+expected<I, code> safe_subtract(I left, I right) {
+    if (right < 0 && left > std::numeric_limits<I>::max() + right) {
+        return std::unexpected(error::overflow);
+    }
+    if (right > 0 && left < std::numeric_limits<I>::min() + right) {
+        return std::unexpected(error::underflow);
+    }
+    return left - right;
+}
+
 template <std::signed_integral To, std::signed_integral From>
 expected<To, code> safe_signed(From signed_value) {
     static auto const signed_minimum = (std::numeric_limits<To>::min)();

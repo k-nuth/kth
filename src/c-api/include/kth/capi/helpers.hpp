@@ -21,7 +21,7 @@
 
 #include <kth/capi/chain/coin_selection_algorithm.h>
 #include <kth/capi/chain/opcode.h>
-#include <kth/capi/chain/rule_fork.h>
+#include <kth/capi/chain/script_flags.h>
 #include <kth/capi/chain/script_pattern.h>
 #include <kth/capi/chain/script_version.h>
 #include <kth/capi/chain/token_capability.h>
@@ -294,16 +294,16 @@ kth_opcode_t opcode_to_c(kth::domain::machine::opcode op) {
     return static_cast<kth_opcode_t>(op);
 }
 
-// Rule Fork -----------------------------------------------------------
+// Script Flags --------------------------------------------------------
 
 inline
-kth_rule_fork_t rule_fork_to_c(kth::domain::machine::rule_fork fork) {
-    return static_cast<kth_rule_fork_t>(fork);
+kth_script_flags_t script_flags_to_c(kth::domain::machine::script_flags flags) {
+    return static_cast<kth_script_flags_t>(flags);
 }
 
 inline
-kth::domain::machine::rule_fork rule_fork_to_cpp(kth_rule_fork_t fork) {
-    return static_cast<kth::domain::machine::rule_fork>(fork);
+kth::domain::machine::script_flags script_flags_to_cpp(kth_script_flags_t flags) {
+    return static_cast<kth::domain::machine::script_flags>(flags);
 }
 
 // Script Pattern -----------------------------------------------------

@@ -75,7 +75,7 @@ typedef enum {
 
 /// Convert the opcode to a mnemonic string.
 KTH_EXPORT
-char const* kth_chain_opcode_to_string(kth_opcode_t value, uint32_t active_forks);
+char const* kth_chain_opcode_to_string(kth_opcode_t value, uint64_t active_flags);
 
 /// Convert a string to an opcode.
 KTH_EXPORT

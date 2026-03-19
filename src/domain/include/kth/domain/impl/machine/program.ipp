@@ -46,25 +46,35 @@ bool program::is_valid() const {
 }
 
 inline
-uint32_t program::forks() const {
-    return forks_;
+script_flags_t program::flags() const {
+    return flags_;
 }
 
 inline
 size_t program::max_script_element_size() const {
-    auto const galois_enabled = chain::script::is_enabled(forks(), rule_fork::bch_galois);
-    return galois_enabled ? ::kth::may2025::max_push_data_size : max_push_data_size_legacy;
+    return is_chip_vm_limits_enabled() ? ::kth::may2025::max_push_data_size : max_push_data_size_legacy;
 }
 
 inline
 size_t program::max_integer_size_legacy() const {
-    auto const gauss_enabled = chain::script::is_enabled(forks(), rule_fork::bch_gauss);
-    return gauss_enabled ? max_number_size_64_bits : max_number_size_32_bits;
+    auto const integers_64_enabled = chain::script::is_enabled(flags(), script_flags::bch_64bit_integers);
+    return integers_64_enabled ? max_number_size_64_bits : max_number_size_32_bits;
+}
+
+inline
+size_t program::max_integer_size() const {
+    if (is_bigint_enabled()) return ::kth::may2025::max_push_data_size;
+    return max_integer_size_legacy();
 }
 
 inline
 bool program::is_chip_vm_limits_enabled() const {
-    return chain::script::is_enabled(forks(), rule_fork::bch_galois);
+    return chain::script::is_enabled(flags(), script_flags::bch_vm_limits);
+}
+
+inline
+bool program::is_bigint_enabled() const {
+    return chain::script::is_enabled(flags(), script_flags::bch_bigint);
 }
 
 inline
@@ -113,6 +123,26 @@ program::op_iterator program::end() const {
 }
 
 inline
+chain::script const& program::get_script() const {
+    return active_script_ ? *active_script_ : script_;
+}
+
+inline
+void program::set_active_script(chain::script const* s) {
+    active_script_ = s;
+    // Reset jump to beginning of new active script.
+    if (s) {
+        jump_ = s->begin();
+    }
+}
+
+inline
+void program::reset_active_script() {
+    active_script_ = nullptr;
+    jump_ = script_.begin();
+}
+
+inline
 size_t program::operation_count() const {
     return operation_count_;
 }
@@ -121,7 +151,7 @@ size_t program::operation_count() const {
 //-----------------------------------------------------------------------------
 
 inline
-bool operation_overflow(size_t count) {
+bool exceeds_op_count_limit(size_t count) {
     return count > max_counted_ops;
 }
 
@@ -132,7 +162,10 @@ bool program::increment_operation_count(operation const& op) {
         ++operation_count_;
     }
 
-    return !operation_overflow(operation_count_);
+    // May 2025 (VM limits): the legacy 201-op limit is replaced by op_cost.
+    if (is_chip_vm_limits_enabled()) return true;
+
+    return ! exceeds_op_count_limit(operation_count_);
 }
 
 inline
@@ -146,12 +179,17 @@ bool program::increment_operation_count(int32_t public_keys) {
 
     // Addition is safe due to script size validation.
     operation_count_ += public_keys;
-    return !operation_overflow(operation_count_);
+
+    // May 2025 (VM limits): the legacy 201-op limit is replaced by op_cost.
+    if (is_chip_vm_limits_enabled()) return true;
+
+    return ! exceeds_op_count_limit(operation_count_);
 }
 
 inline
 bool program::set_jump_register(operation const& op, int32_t offset) {
-    if (script_.empty()) {
+    auto const& active = get_script();
+    if (active.empty()) {
         return false;
     }
 
@@ -161,9 +199,9 @@ bool program::set_jump_register(operation const& op, int32_t offset) {
 
     // This is not efficient but is simplifying and subscript is rarely used.
     // Otherwise we must track the program counter through each evaluation.
-    jump_ = std::find_if(script_.begin(), script_.end(), finder);
+    jump_ = std::find_if(active.begin(), active.end(), finder);
 
-    if (jump_ == script_.end()) {
+    if (jump_ == active.end()) {
         return false;
     }
 
@@ -199,6 +237,12 @@ void program::push_copy(value_type const& item) {
 // Primary stack (pop).
 //-----------------------------------------------------------------------------
 
+inline
+void program::drop() {
+    KTH_ASSERT( ! empty());
+    primary_.pop_back();
+}
+
 // This must be guarded.
 inline
 data_chunk program::pop() {
@@ -209,79 +253,138 @@ data_chunk program::pop() {
 }
 
 inline
-bool program::pop(int32_t& out_value) {
-    number value;
-    if ( ! pop(value, max_integer_size_legacy())) {
-        return false;
+std::expected<int32_t, error::error_code_t> program::pop_int32() {
+    auto num = pop_number(max_integer_size_legacy());
+    if ( ! num) return std::unexpected(num.error());
+    return num->int32();
+}
+
+inline
+std::expected<int64_t, error::error_code_t> program::pop_int64() {
+    auto num = pop_number(max_integer_size_legacy());
+    if ( ! num) return std::unexpected(num.error());
+    return num->int64();
+}
+
+inline
+std::expected<number, error::error_code_t> program::pop_number(size_t maximum_size) {
+    if (empty()) {
+        return std::unexpected(error::insufficient_main_stack);
     }
-    out_value = value.int32();
-    return true;
-}
-
-inline
-bool program::pop(int64_t& out_value) {
-    number value;
-    if ( ! pop(value, max_integer_size_legacy())) {
-        return false;
+    auto data = pop();
+    // MINIMALNUM: numbers must be minimally encoded
+    if ((flags() & script_flags::bch_minimaldata) != 0
+        && ! number::is_minimally_encoded(data, maximum_size)) {
+        return std::unexpected(error::minimal_number);
     }
-    out_value = value.int64();
-    return true;
+    number result;
+    if ( ! result.set_data(data, maximum_size)) {
+        return std::unexpected(error::invalid_operand_size);
+    }
+    return result;
 }
 
 inline
-bool program::pop(number& out_number, size_t maximum_size) {
-    return !empty() && out_number.set_data(pop(), maximum_size);
-}
-
-inline
-bool program::pop_binary(number& first, number& second) {
+std::expected<std::pair<number, number>, error::error_code_t> program::pop_binary() {
     // The right hand side number is at the top of the stack.
-    return pop(first, max_integer_size_legacy()) && 
-           pop(second, max_integer_size_legacy());
+    auto first = pop_number(max_integer_size_legacy());
+    if ( ! first) return std::unexpected(first.error());
+    auto second = pop_number(max_integer_size_legacy());
+    if ( ! second) return std::unexpected(second.error());
+    return std::pair{std::move(*first), std::move(*second)};
 }
 
 inline
-bool program::pop_ternary(number& first, number& second, number& third) {
+std::expected<std::tuple<number, number, number>, error::error_code_t> program::pop_ternary() {
     // The upper bound is at stack top, lower bound next, value next.
-    return pop(first, max_integer_size_legacy()) && pop(second, max_integer_size_legacy()) && pop(third, max_integer_size_legacy());
+    auto first = pop_number(max_integer_size_legacy());
+    if ( ! first) return std::unexpected(first.error());
+    auto second = pop_number(max_integer_size_legacy());
+    if ( ! second) return std::unexpected(second.error());
+    auto third = pop_number(max_integer_size_legacy());
+    if ( ! third) return std::unexpected(third.error());
+    return std::tuple{std::move(*first), std::move(*second), std::move(*third)};
 }
 
-// Determines if popped value is valid post-pop stack index and returns index.
+// ── BigInt pop functions ──────────────────────────────────────────────────────
+
 inline
-bool program::pop_position(stack_iterator& out_position) {
-    int32_t signed_index;
-    if ( ! pop(signed_index)) {
-        return false;
+std::expected<big_number, error::error_code_t> program::pop_big_number(size_t maximum_size) {
+    if (empty()) {
+        return std::unexpected(error::insufficient_main_stack);
+    }
+    auto data = pop();
+    if ((flags() & script_flags::bch_minimaldata) != 0
+        && ! big_number::is_minimally_encoded(data, maximum_size)) {
+        return std::unexpected(error::minimal_number);
+    }
+    big_number result;
+    if ( ! result.set_data(data, maximum_size)) {
+        return std::unexpected(error::invalid_operand_size);
+    }
+    return result;
+}
+
+
+inline
+std::expected<std::pair<big_number, big_number>, error::error_code_t> program::pop_big_binary() {
+    auto first = pop_big_number(max_integer_size());
+    if ( ! first) return std::unexpected(first.error());
+    auto second = pop_big_number(max_integer_size());
+    if ( ! second) return std::unexpected(second.error());
+    return std::pair{std::move(*first), std::move(*second)};
+}
+
+inline
+std::expected<std::tuple<big_number, big_number, big_number>, error::error_code_t> program::pop_big_ternary() {
+    auto first = pop_big_number(max_integer_size());
+    if ( ! first) return std::unexpected(first.error());
+    auto second = pop_big_number(max_integer_size());
+    if ( ! second) return std::unexpected(second.error());
+    auto third = pop_big_number(max_integer_size());
+    if ( ! third) return std::unexpected(third.error());
+    return std::tuple{std::move(*first), std::move(*second), std::move(*third)};
+}
+
+// Determines if popped value is valid post-pop stack index and returns the index.
+inline
+std::expected<uint32_t, error::error_code_t> program::pop_index() {
+    auto const signed_index = pop_int32();
+    if ( ! signed_index) {
+        return std::unexpected(signed_index.error());
     }
 
-    // Ensure the index is within bounds.
-
-    if (signed_index < 0) {
-        return false;
+    if (*signed_index < 0 || uint32_t(*signed_index) >= size()) {
+        return std::unexpected(error::insufficient_main_stack);
     }
 
-    auto const index = uint32_t(signed_index);
+    return uint32_t(*signed_index);
+}
 
-    if (index >= size()) {
-        return false;
+// Determines if popped value is valid post-pop stack index and returns iterator.
+inline
+std::expected<program::stack_iterator, error::error_code_t> program::pop_position() {
+    auto const index = pop_index();
+    if ( ! index) {
+        return std::unexpected(index.error());
     }
-
-    out_position = position(index);
-    return true;
+    return position(*index);
 }
 
 // pop1/pop2/.../pop[count]
 inline
-bool program::pop(data_stack& section, size_t count) {
+std::expected<data_stack, error::error_code_t> program::pop(size_t count) {
     if (size() < count) {
-        return false;
+        return std::unexpected(error::insufficient_main_stack);
     }
 
+    data_stack section;
+    section.reserve(count);
     for (size_t i = 0; i < count; ++i) {
         section.push_back(pop());
     }
 
-    return true;
+    return section;
 }
 
 // Primary push/pop optimizations (active).
@@ -365,6 +468,11 @@ bool program::is_stack_overflow() const {
 }
 
 inline
+bool program::is_stack_overflow(size_t extra) const {
+    return size() + alternate_.size() + extra > max_stack_size;
+}
+
+inline
 bool program::if_(operation const& op) const {
     // Skip operation if failed and the operator is unconditional.
     return op.is_conditional() || succeeded();
@@ -394,10 +502,41 @@ data_chunk const& program::top() const {
 }
 
 inline
-bool program::top(number& out_number, size_t maximum_size) const {
-    return !empty() && out_number.set_data(item(0), maximum_size);
+std::expected<number, error::error_code_t> program::top_number(size_t maximum_size) const {
+    if (empty()) {
+        return std::unexpected(error::insufficient_main_stack);
+    }
+    auto const& data = top();
+    // MINIMALNUM: numbers must be minimally encoded
+    if ((flags() & script_flags::bch_minimaldata) != 0
+        && ! number::is_minimally_encoded(data, maximum_size)) {
+        return std::unexpected(error::minimal_number);
+    }
+    number result;
+    if ( ! result.set_data(data, maximum_size)) {
+        return std::unexpected(error::invalid_operand_size);
+    }
+    return result;
 }
 
+// Like pop_big_number but reads from the top of the stack without popping.
+// Used by ops that need to preserve the original value on failure (e.g. OP_1ADD).
+inline
+std::expected<big_number, error::error_code_t> program::top_big_number(size_t maximum_size) const {
+    if (empty()) {
+        return std::unexpected(error::insufficient_main_stack);
+    }
+    auto const& data = top();
+    if ((flags() & script_flags::bch_minimaldata) != 0
+        && ! big_number::is_minimally_encoded(data, maximum_size)) {
+        return std::unexpected(error::minimal_number);
+    }
+    big_number result;
+    if ( ! result.set_data(data, maximum_size)) {
+        return std::unexpected(error::invalid_operand_size);
+    }
+    return result;
+}
 
 inline
 program::stack_iterator program::position(size_t index) const {
@@ -512,11 +651,7 @@ bool program::succeeded() const {
     ////return std::all_of(condition_.begin(), condition_.end(), true);
 }
 
-//TODO: temp:
-inline
-chain::script const& program::get_script() const {
-    return script_;
-}
+
 
 } // namespace kth::domain::machine
 

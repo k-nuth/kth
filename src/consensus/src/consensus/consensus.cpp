@@ -290,4 +290,63 @@ verify_result_type verify_script(
     return script_error_to_verify_result(error);
 }
 
+#if defined(KTH_CURRENCY_BCH)
+
+namespace {
+
+// A special pubkey that causes signature checks to return false.
+static std::vector<uint8_t> const badpub_key = {
+    2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+
+// StandaloneSigChecker: real ECDSA/Schnorr verification for CHECKDATASIG
+// (uses BaseSignatureChecker::VerifySignature which calls secp256k1).
+// CheckSig remains dummy because CHECKSIG requires transaction context.
+struct StandaloneSigChecker : BaseSignatureChecker {
+    bool CheckSig(ByteView const& vchSigIn,
+                  std::vector<uint8_t> const& vchPubKey,
+                  ByteView const& scriptCode,
+                  uint32_t /*flags*/,
+                  size_t* pbytesHashed) const final {
+        if (pbytesHashed) *pbytesHashed = 0u;
+        if (vchSigIn.empty()) return false;
+        if (pbytesHashed) {
+            *pbytesHashed = vchSigIn.size() + vchPubKey.size() + scriptCode.size();
+        }
+        return vchPubKey != badpub_key;
+    }
+};
+
+static StandaloneSigChecker const standalone_sig_checker;
+
+} // anonymous namespace
+
+verify_result_type eval_script_with_metrics(
+    unsigned char const* script_data,
+    size_t script_size,
+    unsigned int flags,
+    std::vector<std::vector<uint8_t>>& stack,
+    script_eval_metrics& metrics_out) {
+
+    if (script_size > 0 && script_data == nullptr) {
+        throw std::invalid_argument("script_data");
+    }
+
+    unsigned int const script_flags = verify_flags_to_script_flags(flags);
+    CScript const script(script_data, script_data + script_size);
+
+    ScriptExecutionMetrics metrics;
+    ScriptError error;
+
+    EvalScript(stack, script, script_flags, standalone_sig_checker, metrics, &error);
+
+    metrics_out.sig_checks = metrics.GetSigChecks();
+    metrics_out.op_cost = metrics.GetBaseOpCost();
+    metrics_out.hash_digest_iterations = metrics.GetHashDigestIterations();
+    return script_error_to_verify_result(error);
+}
+
+#endif // KTH_CURRENCY_BCH
+
 } // namespace kth::consensus

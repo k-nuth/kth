@@ -60,7 +60,7 @@ private:
 #endif //KTH_CURRENCY_BCH
 
     // These are thread safe.
-    uint32_t const configured_forks_;
+    domain::script_flags_t const configured_forks_;
     infrastructure::config::checkpoint::list const checkpoints_;
     domain::config::network const network_;
 

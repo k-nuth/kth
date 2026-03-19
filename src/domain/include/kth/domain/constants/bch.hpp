@@ -39,11 +39,16 @@ constexpr size_t scalenet = max_block_size::scalenet / max_sigops_factor;
 constexpr size_t chipnet = max_block_size::chipnet / max_sigops_factor;
 } // namespace max_block_sigops
 
-constexpr size_t min_transaction_size_old = 100;        // bytes
-constexpr size_t min_transaction_size_descartes = 65;   // bytes
+constexpr size_t min_transaction_size_euclid = 100;     // in bytes, from 2018-Nov-15
+constexpr size_t min_transaction_size_descartes = 65;   // in bytes, from 2023-May-15
 
 constexpr uint32_t transaction_version_min = 1;
 constexpr uint32_t transaction_version_max = 2;
+
+// Maximum commitment lengths for NFT tokens (BCHN: token::MAX_CONSENSUS_COMMITMENT_LENGTH_*).
+constexpr size_t max_token_commitment_length_descartes = 40;   // 2023-May
+constexpr size_t max_token_commitment_length_leibniz = 128;    // 2026-May
+
 
 constexpr size_t max_tx_sigchecks = 3000;
 constexpr size_t block_maxbytes_maxsigchecks_ratio = 141;

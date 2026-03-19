@@ -20,7 +20,7 @@
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/domain/machine/opcode.hpp>
-#include <kth/domain/machine/rule_fork.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
@@ -246,14 +246,27 @@ struct KD_API transaction_basis {
     [[nodiscard]]
     bool is_locktime_conflict() const;
 
+    /// Structural validation — no context needed, no prevout cache needed.
+    /// Can be called immediately after deserialization for fast rejection.
     [[nodiscard]]
     code check(uint64_t total_output_value, size_t max_block_size, bool transaction_pool = true, bool retarget = true) const;
 
     [[nodiscard]]
-    size_t min_tx_size(chain_state const& state) const;
+    size_t min_tx_size(script_flags_t flags) const;
 
+    /// Contextual validation — requires flags, height, etc. Prevout cache must be populated.
+    /// Call after check() passes and prevout cache is filled.
     [[nodiscard]]
-    code accept(chain_state const& state, bool is_overspent, bool is_duplicated, bool transaction_pool = true) const;
+    code accept(
+        script_flags_t flags,
+        size_t height,
+        uint32_t median_time_past,
+        size_t max_sigops,
+        bool is_overspent,
+        bool is_duplicated,
+        bool is_under_checkpoint,
+        bool transaction_pool
+    ) const;
 
     [[nodiscard]]
     bool is_standard() const;
@@ -266,6 +279,11 @@ protected:
     bool all_inputs_final() const;
 
 private:
+#if defined(KTH_CURRENCY_BCH)
+    [[nodiscard]]
+    code validate_tokens(script_flags_t flags) const;
+#endif
+
     uint32_t version_{0};
     uint32_t locktime_{0};
     input::list inputs_;

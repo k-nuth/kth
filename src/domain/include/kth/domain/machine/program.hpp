@@ -6,7 +6,10 @@
 #define KTH_DOMAIN_MACHINE_PROGRAM_HPP
 
 #include <cstdint>
+#include <expected>
 #include <optional>
+#include <tuple>
+#include <utility>
 
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/chain/transaction.hpp>
@@ -16,6 +19,7 @@
 #include <kth/domain/machine/opcode.hpp>
 #include <kth/domain/machine/operation.hpp>
 #include <kth/domain/machine/script_execution_context.hpp>
+#include <kth/infrastructure/machine/big_number.hpp>
 #include <kth/infrastructure/machine/number.hpp>
 #include <kth/infrastructure/machine/script_version.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -29,6 +33,7 @@ using script_version = ::kth::infrastructure::machine::script_version;
 #endif // ! KTH_CURRENCY_BCH
 
 using number = ::kth::infrastructure::machine::number;
+using big_number = ::kth::infrastructure::machine::big_number;
 
 struct KD_API program {
     using value_type = data_stack::value_type;
@@ -47,15 +52,15 @@ struct KD_API program {
     /// This can run ops via run(op, program) or the script via run(program).
     program(chain::script const& script);
 
-    /// Create an instance with empty stacks, value unused/max (input run).
-    program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, uint32_t forks);
+    /// Create an instance with empty stacks (input run).
+    program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, script_flags_t flags, uint64_t value = max_uint64);
 
     /// Create an instance with initialized stack (witness run, v0 by default).
     program(
         chain::script const& script
         , chain::transaction const& transaction
         , uint32_t input_index
-        , uint32_t forks
+        , script_flags_t flags
         , data_stack&& stack
         , uint64_t value
 #if ! defined(KTH_CURRENCY_BCH)
@@ -63,13 +68,16 @@ struct KD_API program {
 #endif // ! KTH_CURRENCY_BCH
     );
 
-    /// Create using copied tx, input, forks, value, stack (prevout run).
+    /// Create using copied tx, input, flags, value, stack (prevout run).
     program(chain::script const& script, program const& x);
 
-    /// Create using copied tx, input, forks, value and moved stack (p2sh run).
+    /// Create using copied tx, input, flags, value and moved stack (p2sh run).
     program(chain::script const& script, program&& x, bool move);
 
+    [[nodiscard]]
     metrics& get_metrics();
+
+    [[nodiscard]]
     metrics const& get_metrics() const;
 
     /// Constant registers.
@@ -77,7 +85,7 @@ struct KD_API program {
     bool is_valid() const;
 
     [[nodiscard]]
-    uint32_t forks() const;
+    script_flags_t flags() const;
 
     [[nodiscard]]
     size_t max_script_element_size() const;
@@ -86,7 +94,13 @@ struct KD_API program {
     size_t max_integer_size_legacy() const;
 
     [[nodiscard]]
+    size_t max_integer_size() const;
+
+    [[nodiscard]]
     bool is_chip_vm_limits_enabled() const;
+
+    [[nodiscard]]
+    bool is_bigint_enabled() const;
 
     [[nodiscard]]
     uint32_t input_index() const;
@@ -116,14 +130,26 @@ struct KD_API program {
     [[nodiscard]]
     op_iterator end() const;
 
+    /// Active script override for OP_INVOKE (OP_ACTIVEBYTECODE support).
+    [[nodiscard]]
+    chain::script const& get_script() const;
+    void set_active_script(chain::script const* s);
+    void reset_active_script();
+
     [[nodiscard]]
     size_t operation_count() const;
 
     /// Instructions.
+    [[nodiscard]]
     code evaluate();
+    [[nodiscard]]
     code evaluate(operation const& op);
+    
+    [[nodiscard]]
     bool increment_operation_count(operation const& op);
+    [[nodiscard]]
     bool increment_operation_count(int32_t public_keys);
+    [[nodiscard]]
     bool set_jump_register(operation const& op, int32_t offset);
 
     // Primary stack.
@@ -134,15 +160,34 @@ struct KD_API program {
     void push_move(value_type&& item);
     void push_copy(value_type const& item);
 
+    // Like pop() but does not return the value, for when the value is not needed.
+    void drop();
+
     /// Primary pop.
+    [[nodiscard]]
     data_chunk pop();
-    bool pop(int32_t& out_value);
-    bool pop(int64_t& out_value);
-    bool pop(number& out_number, size_t maximum_size);
-    bool pop_binary(number& first, number& second);
-    bool pop_ternary(number& first, number& second, number& third);
-    bool pop_position(stack_iterator& out_position);
-    bool pop(data_stack& section, size_t count);
+    [[nodiscard]] 
+    std::expected<int32_t, error::error_code_t> pop_int32();
+    [[nodiscard]] 
+    std::expected<int64_t, error::error_code_t> pop_int64();
+    [[nodiscard]]
+    std::expected<number, error::error_code_t> pop_number(size_t maximum_size);
+    [[nodiscard]]
+    std::expected<std::pair<number, number>, error::error_code_t> pop_binary();
+    [[nodiscard]]
+    std::expected<std::tuple<number, number, number>, error::error_code_t> pop_ternary();
+
+    [[nodiscard]]
+    std::expected<big_number, error::error_code_t> pop_big_number(size_t maximum_size);
+    [[nodiscard]]
+    std::expected<std::pair<big_number, big_number>, error::error_code_t> pop_big_binary();
+    [[nodiscard]]
+    std::expected<std::tuple<big_number, big_number, big_number>, error::error_code_t> pop_big_ternary();    
+    [[nodiscard]] 
+    std::expected<uint32_t, error::error_code_t> pop_index();
+    std::expected<stack_iterator, error::error_code_t> pop_position();
+    [[nodiscard]] 
+    std::expected<data_stack, error::error_code_t> pop(size_t count);
 
     /// Primary push/pop optimizations (active).
     void duplicate(size_t index);
@@ -164,6 +209,7 @@ struct KD_API program {
 
     [[nodiscard]]
     bool is_stack_overflow() const;
+    bool is_stack_overflow(size_t extra) const;
 
     [[nodiscard]]
     bool if_(operation const& op) const;
@@ -171,16 +217,21 @@ struct KD_API program {
     [[nodiscard]]
     value_type const& item(size_t index) const;
 
-
+    [[nodiscard]]
     value_type& item(size_t index);
 
+    [[nodiscard]]    
     data_chunk const& top() const;
+    [[nodiscard]]
     data_chunk& top();
-    bool top(number& out_number, size_t maximum_size) const;
+    [[nodiscard]]
+    std::expected<number, error::error_code_t> top_number(size_t maximum_size) const;
+    [[nodiscard]]
+    std::expected<big_number, error::error_code_t> top_big_number(size_t maximum_size) const;
 
     [[nodiscard]]
     stack_iterator position(size_t index) const;
-
+    [[nodiscard]]
     stack_mutable_iterator position(size_t index);
 
     [[nodiscard]]
@@ -218,11 +269,6 @@ struct KD_API program {
     bool succeeded() const;
 
 
-// TODO: temp:
-    [[nodiscard]]
-    chain::script const& get_script() const;
-
-
 private:
     // A space-efficient dynamic bitset (specialized).
     using bool_stack = std::vector<bool>;
@@ -233,9 +279,10 @@ private:
     bool stack_to_bool(bool clean) const;
 
     chain::script const& script_;
+    chain::script const* active_script_{nullptr};  // override for OP_ACTIVEBYTECODE during INVOKE
     chain::transaction const& transaction_;
     uint32_t const input_index_{0};
-    uint32_t const forks_{0};
+    script_flags_t const flags_{0};
     uint64_t const value_{0};
 
 #if ! defined(KTH_CURRENCY_BCH)

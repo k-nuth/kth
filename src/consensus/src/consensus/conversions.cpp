@@ -93,6 +93,9 @@ unsigned int verify_flags_to_script_flags(unsigned int flags) {
     if ((flags & verify_flags_enable_may2025) != 0)
         script_flags |= SCRIPT_ENABLE_MAY2025;
 
+    if ((flags & verify_flags_enable_vm_limits_standard) != 0)
+        script_flags |= SCRIPT_VM_LIMITS_STANDARD;
+
     if ((flags & verify_flags_enable_may2026) != 0)
         script_flags |= SCRIPT_ENABLE_MAY2026;
 

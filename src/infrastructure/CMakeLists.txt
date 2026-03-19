@@ -66,6 +66,7 @@ endif()
 find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(ctre REQUIRED)
+find_package(GMP REQUIRED)
 
 if (WITH_ICU)
   find_package(ICU REQUIRED)
@@ -131,6 +132,7 @@ endif()
 
 set(kth_sources_just_legacy
         src/machine/number.cpp
+        src/machine/big_number.cpp
 
         src/config/authority.cpp
         src/config/base16.cpp
@@ -588,6 +590,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC fmt::fmt-header-only)
 target_link_libraries(${PROJECT_NAME} PUBLIC spdlog::spdlog_header_only)
 target_link_libraries(${PROJECT_NAME} PUBLIC secp256k1::secp256k1)
 target_link_libraries(${PROJECT_NAME} PUBLIC ctre::ctre)
+target_link_libraries(${PROJECT_NAME} PUBLIC gmp::gmp)
 
 # Link simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
@@ -642,6 +645,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/machine/number.cpp
 
     test/math/checksum.cpp
+
+    # IMPORTANT: Do not list big_number_gen_*.cpp files here.
+    # They are auto-generated and added via file(GLOB) below.
     test/math/elliptic_curve.cpp
     test/math/hash.cpp
     test/math/uint256.cpp
@@ -692,7 +698,11 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     )
   endif()
 
-  add_executable(kth_infrastructure_test ${kth_test_sources})
+  add_executable(kth_infrastructure_test
+    ${kth_test_sources}
+    test/machine/big_number_generated_tests.cpp
+    test/machine/big_number_openssl_tests.cpp
+  )
 
   target_include_directories(kth_infrastructure_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
 

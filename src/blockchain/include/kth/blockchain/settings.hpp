@@ -21,7 +21,7 @@ struct KB_API settings {
     settings(domain::config::network net);
 
     /// Fork flags combiner.
-    uint32_t enabled_forks() const;
+    domain::script_flags_t enabled_flags() const;
 
     /// Properties.
     uint32_t cores = 0;

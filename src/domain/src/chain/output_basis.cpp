@@ -59,13 +59,13 @@ expect<output_basis> output_basis::from_data(byte_reader& reader, bool /*wire*/)
     }
     auto script_size = *script_size_exp;
 
-    auto const token_prefix_byte = reader.peek_byte();
-    if ( ! token_prefix_byte) {
-        return std::unexpected(token_prefix_byte.error());
-    }
-
+    // Minimum token prefix: 0xef (1) + category_id (32) + bitfield (1) = 34 bytes.
+    static constexpr size_t min_token_prefix_size = 1 + 32 + 1;
     token_data_opt token_data = std::nullopt;
-    auto const has_token_data = *token_prefix_byte == chain::encoding::PREFIX_BYTE;
+    auto const has_token_data = script_size >= min_token_prefix_size && [&] {
+        auto const token_prefix_byte = reader.peek_byte();
+        return token_prefix_byte && *token_prefix_byte == chain::encoding::PREFIX_BYTE;
+    }();
     if (has_token_data) {
         reader.skip(1); // skip prefix byte
         auto token = token::encoding::from_data(reader);

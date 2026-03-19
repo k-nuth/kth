@@ -12,6 +12,8 @@
 
 #include <kth/domain/constants.hpp>
 #include <kth/domain/machine/opcode.hpp>
+#include <kth/domain/machine/script_flags.hpp>
+#include <kth/infrastructure/error.hpp>
 
 #include <kth/domain/define.hpp>
 //#include <kth/infrastructure/define.hpp>
@@ -95,7 +97,7 @@ struct KD_API operation {
     }
 
     [[nodiscard]]
-    std::string to_string(uint32_t active_forks) const;
+    std::string to_string(script_flags_t active_flags) const;
 
     // Properties (size, accessors, cache).
     //-------------------------------------------------------------------------
@@ -159,7 +161,7 @@ struct KD_API operation {
     bool is_reserved(opcode code);
 
     static
-    bool is_disabled(opcode code, uint32_t active_forks);
+    bool is_disabled(opcode code, script_flags_t active_flags);
 
     static
     bool is_conditional(opcode code);
@@ -181,7 +183,10 @@ struct KD_API operation {
     bool is_positive() const;
 
     [[nodiscard]]
-    bool is_disabled(uint32_t active_forks) const;
+    bool is_disabled(script_flags_t active_flags) const;
+
+    [[nodiscard]]
+    kth::error::error_code_t disabled_error() const;
 
     [[nodiscard]]
     bool is_conditional() const;

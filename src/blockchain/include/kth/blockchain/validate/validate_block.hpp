@@ -53,7 +53,7 @@ private:
     using atomic_counter_ptr = std::shared_ptr<atomic_counter>;
 
     static
-    void dump(code const& ec, const domain::chain::transaction& tx, uint32_t input_index, uint32_t forks, size_t height);
+    void dump(code const& ec, const domain::chain::transaction& tx, uint32_t input_index, domain::script_flags_t flags, size_t height);
 
     void check_block(block_const_ptr block, size_t bucket, size_t buckets, result_handler handler) const;
     void handle_checked(code const& ec, block_const_ptr block, result_handler handler) const;

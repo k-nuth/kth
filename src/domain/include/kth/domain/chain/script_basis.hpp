@@ -10,6 +10,7 @@
 #include <istream>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <type_traits>
 
 #include <kth/domain/constants.hpp>
@@ -17,7 +18,7 @@
 #include <kth/domain/deserialization.hpp>
 
 #include <kth/domain/machine/operation.hpp>
-#include <kth/domain/machine/rule_fork.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 #include <kth/domain/wallet/ec_public.hpp>
 
 #include <kth/infrastructure/error.hpp>
@@ -38,7 +39,7 @@ namespace kth::domain::chain {
 class transaction;
 struct KD_API script_basis {
     using operation = machine::operation;
-    using rule_fork = machine::rule_fork;
+    using script_flags = machine::script_flags;
     using script_pattern = infrastructure::machine::script_pattern;
 #if ! defined(KTH_CURRENCY_BCH)
     using script_version = infrastructure::machine::script_version;
@@ -92,7 +93,7 @@ struct KD_API script_basis {
     }
 
     [[nodiscard]]
-    std::string to_string(uint32_t active_forks) const;
+    std::string to_string(script_flags_t active_flags) const;
 
 
     // Properties (size, accessors, cache).
@@ -108,10 +109,19 @@ struct KD_API script_basis {
     // Utilities (static).
     //-------------------------------------------------------------------------
 
-    /// Determine if the fork is enabled in the active forks set.
-    static
-    bool is_enabled(uint32_t active_forks, rule_fork fork) {
-        return (fork & active_forks) != 0;
+    /// Determine if any of the given flag bits are enabled in the active flags set.
+    static constexpr
+    bool is_enabled(script_flags_t active_flags, script_flags_t fork) {
+        return (fork & active_flags) != 0;
+    }
+
+    /// Determine if multiple flags are enabled. Returns a tuple of bools
+    /// usable with structured bindings:
+    ///   auto const [a, b, c] = are_enabled(flags, fork_a, fork_b, fork_c);
+    template <typename... Forks>
+    static constexpr
+    auto are_enabled(script_flags_t active_flags, Forks... flags) {
+        return std::tuple{is_enabled(active_flags, flags)...};
     }
 
     /// Consensus patterns.
@@ -212,10 +222,10 @@ struct KD_API script_basis {
 
 
     [[nodiscard]]
-    bool is_pay_to_script_hash(uint32_t forks) const;
+    bool is_pay_to_script_hash(script_flags_t flags) const;
 
     [[nodiscard]]
-    bool is_pay_to_script_hash_32(uint32_t forks) const;
+    bool is_pay_to_script_hash_32(script_flags_t flags) const;
 
 // private:
     static
@@ -234,7 +244,7 @@ protected:
         script_basis const& script_code,
         uint64_t value,
         uint8_t sighash_type,
-        uint32_t active_forks
+        script_flags_t active_flags
     );
 
     data_chunk bytes_;

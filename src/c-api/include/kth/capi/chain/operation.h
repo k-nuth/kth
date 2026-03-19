@@ -32,7 +32,7 @@ KTH_EXPORT
 void kth_chain_operation_destruct(kth_operation_t operation);
 
 KTH_EXPORT
-char const* kth_chain_operation_to_string(kth_operation_t operation, uint32_t active_forks);
+char const* kth_chain_operation_to_string(kth_operation_t operation, uint64_t active_flags);
 
 KTH_EXPORT
 uint8_t const* kth_chain_operation_to_data(kth_operation_t operation, kth_size_t* out_size);
@@ -72,7 +72,7 @@ KTH_EXPORT
 kth_bool_t kth_chain_operation_is_positive(kth_operation_t operation);
 
 KTH_EXPORT
-kth_bool_t kth_chain_operation_is_disabled(kth_operation_t operation, uint32_t active_forks);
+kth_bool_t kth_chain_operation_is_disabled(kth_operation_t operation, uint64_t active_flags);
 
 KTH_EXPORT
 kth_bool_t kth_chain_operation_is_conditional(kth_operation_t operation);
@@ -131,7 +131,7 @@ KTH_EXPORT
 kth_bool_t kth_chain_operation_opcode_is_reserved(kth_opcode_t code);
 
 KTH_EXPORT
-kth_bool_t kth_chain_operation_opcode_is_disabled(kth_opcode_t code, uint32_t active_forks);
+kth_bool_t kth_chain_operation_opcode_is_disabled(kth_opcode_t code, uint64_t active_flags);
 
 KTH_EXPORT
 kth_bool_t kth_chain_operation_opcode_is_conditional(kth_opcode_t code);
