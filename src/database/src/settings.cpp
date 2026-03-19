@@ -12,7 +12,7 @@ using namespace std::filesystem;
 
 //TODO(fernando): look for good defaults
 constexpr auto db_size_pruned_mainnet  = 100 * (uint64_t(1) << 30); //100 GiB
-constexpr auto db_size_default_mainnet = 200 * (uint64_t(1) << 30); //200 GiB
+constexpr auto db_size_default_mainnet = 400 * (uint64_t(1) << 30); //400 GiB
 constexpr auto db_size_full_mainnet    = 600 * (uint64_t(1) << 30); //600 GiB
 
 constexpr auto db_size_pruned_testnet4  =  5 * (uint64_t(1) << 30); // 5 GiB
