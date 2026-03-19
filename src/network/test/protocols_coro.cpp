@@ -78,7 +78,7 @@ data_chunk build_message_proto(std::string const& command, data_chunk const& pay
     std::copy_n(command.begin(), std::min(command.size(), size_t{12}), cmd.begin());
     message.insert(message.end(), cmd.begin(), cmd.end());
 
-    auto const size_le = to_little_endian(static_cast<uint32_t>(payload.size()));
+    auto const size_le = to_little_endian(uint32_t(payload.size()));
     message.insert(message.end(), size_le.begin(), size_le.end());
 
     auto const hash = bitcoin_hash(payload);
@@ -140,7 +140,7 @@ TEST_CASE("wait_for_any_message receives message", "[protocols_coro]") {
     run_until_proto(ctx, [&]{ return done.load(); });
 
     peer->stop();
-    ctx.run_for(10ms);
+    kth::test::drain_context(ctx);
 
     REQUIRE(result.has_value());
     REQUIRE(result->heading.command() == "ping");
@@ -167,7 +167,7 @@ TEST_CASE("wait_for_any_message timeout", "[protocols_coro]") {
     run_until_proto(ctx, [&]{ return done.load(); }, 2000ms);
 
     peer->stop();
-    ctx.run_for(10ms);
+    kth::test::drain_context(ctx);
 
     REQUIRE(!result.has_value());
     REQUIRE(result.error() == error::channel_timeout);
@@ -212,7 +212,7 @@ TEST_CASE("perform_handshake success", "[protocols_coro]") {
     domain::message::version remote_version;
     remote_version.set_value(70015);
     remote_version.set_services(0);
-    remote_version.set_timestamp(static_cast<uint64_t>(zulu_time()));
+    remote_version.set_timestamp(uint64_t(zulu_time()));
     remote_version.set_nonce(99999);
     remote_version.set_user_agent("/RemotePeer:1.0/");
     remote_version.set_start_height(50000);
@@ -232,7 +232,7 @@ TEST_CASE("perform_handshake success", "[protocols_coro]") {
     run_until_proto(ctx, [&]{ return done.load(); }, 2000ms);
 
     peer->stop();
-    ctx.run_for(10ms);
+    kth::test::drain_context(ctx);
 
     REQUIRE(result.has_value());
     REQUIRE(result->peer_version != nullptr);
@@ -263,7 +263,7 @@ TEST_CASE("perform_handshake timeout", "[protocols_coro]") {
     run_until_proto(ctx, [&]{ return done.load(); }, 3000ms);
 
     peer->stop();
-    ctx.run_for(10ms);
+    kth::test::drain_context(ctx);
 
     REQUIRE(!result.has_value());
     REQUIRE(result.error() == error::channel_timeout);
@@ -299,7 +299,7 @@ TEST_CASE("perform_handshake rejects low version peer", "[protocols_coro]") {
     domain::message::version remote_version;
     remote_version.set_value(31402);  // Too low
     remote_version.set_services(0);
-    remote_version.set_timestamp(static_cast<uint64_t>(zulu_time()));
+    remote_version.set_timestamp(uint64_t(zulu_time()));
     remote_version.set_nonce(99999);
     remote_version.set_user_agent("/OldPeer:0.1/");
     remote_version.set_start_height(50000);
@@ -311,7 +311,7 @@ TEST_CASE("perform_handshake rejects low version peer", "[protocols_coro]") {
     run_until_proto(ctx, [&]{ return done.load(); }, 2000ms);
 
     peer->stop();
-    ctx.run_for(10ms);
+    kth::test::drain_context(ctx);
 
     REQUIRE(!result.has_value());
     REQUIRE(result.error() == error::channel_stopped);
@@ -361,7 +361,7 @@ TEST_CASE("run_ping_pong responds to ping", "[protocols_coro]") {
     run_until_proto(ctx, [&]{ return bytes_received.load() > 0; });
 
     peer->stop();
-    ctx.run_for(10ms);
+    kth::test::drain_context(ctx);
 
     REQUIRE(bytes_received > 0);
     REQUIRE(received_command == "pong");
@@ -401,7 +401,7 @@ TEST_CASE("run_ping_pong sends periodic pings", "[protocols_coro]") {
     run_until_proto(ctx, [&]{ return received_ping.load(); }, 3000ms);
 
     peer->stop();
-    ctx.run_for(10ms);
+    kth::test::drain_context(ctx);
 
     REQUIRE(received_ping);
 }

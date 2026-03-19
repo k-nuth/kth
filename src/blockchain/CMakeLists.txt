@@ -19,6 +19,7 @@ option(DB_READONLY_MODE "Readonly DB mode enabled." OFF)
 option(JUST_KTH_SOURCES "Just Knuth source code to be linted." OFF)
 
 option(GLOBAL_BUILD "" ON)
+option(ENABLE_TSAN_TESTS "Build TSAN tests" ON)
 
 
 if (WITH_MEMPOOL)
@@ -63,6 +64,28 @@ endif()
 message(STATUS "Knuth: Header index capacity: ${KTH_HEADER_INDEX_CAPACITY}")
 add_definitions(-DKTH_HEADER_INDEX_CAPACITY=${KTH_HEADER_INDEX_CAPACITY})
 
+# Embedded UTXO bloom filter — .incbin via assembly
+option(KTH_EMBED_UTXO_BLOOM "Embed UTXO bloom filter in the executable for faster IBD" ON)
+set(UTXO_BLOOM_DAT_PATH "${CMAKE_SOURCE_DIR}/data/utxo_bloom.dat")
+set(KTH_HAS_EMBEDDED_BLOOM OFF)
+
+if(NOT KTH_EMBED_UTXO_BLOOM)
+    message(STATUS "Knuth: UTXO bloom filter embedding disabled by option")
+elseif(EXISTS "${UTXO_BLOOM_DAT_PATH}")
+    enable_language(ASM)
+    file(SIZE "${UTXO_BLOOM_DAT_PATH}" _bloom_file_size)
+    math(EXPR _bloom_file_size_mb "${_bloom_file_size} / 1048576")
+    message(STATUS "Knuth: UTXO bloom filter found: ${UTXO_BLOOM_DAT_PATH} (${_bloom_file_size_mb} MB)")
+
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/utxo_bloom_embed.S.in
+        ${CMAKE_CURRENT_BINARY_DIR}/utxo_bloom_embed.S
+        @ONLY
+    )
+    set(KTH_HAS_EMBEDDED_BLOOM ON)
+else()
+    message(WARNING "Knuth: UTXO bloom filter NOT found at ${UTXO_BLOOM_DAT_PATH} — IBD will run without bloom optimization (slower)")
+endif()
 
 if (NOT GLOBAL_BUILD)
   find_package(database REQUIRED)
@@ -148,7 +171,12 @@ set(kth_sources_just_legacy
   src/validate/validate_input.cpp
   src/validate/validate_transaction.cpp
   src/settings.cpp
+  src/utxo_builder.cpp
 )
+
+if(KTH_HAS_EMBEDDED_BLOOM)
+    list(APPEND kth_sources_just_legacy ${CMAKE_CURRENT_BINARY_DIR}/utxo_bloom_embed.S)
+endif()
 
 if (NOT JUST_KTH_SOURCES)
   set(kth_sources
@@ -203,6 +231,10 @@ add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX CXX_STANDARD 23 CXX_STANDARD_REQUIRED TRUE)
 
+if(KTH_HAS_EMBEDDED_BLOOM)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE KTH_HAS_EMBEDDED_BLOOM)
+    message(STATUS "Knuth: Bloom filter will be embedded in the executable")
+endif()
 
 if (ENABLE_POSITION_INDEPENDENT_CODE)
     set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
@@ -242,6 +274,7 @@ if (ENABLE_TEST)
 
     set(kth_blockchain_test_sources
         test/header_index.cpp
+        test/header_organizer.cpp
     )
 
     # TODO(fernando): re-enable these tests when fixed
@@ -303,19 +336,21 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # ==========================================================================
   # 1. Thread-safety tests with TSan (debug, -O1)
   # ==========================================================================
-  add_executable(kth_blockchain_tsan_tests test/block_index_bench/benchmarks.cpp)
-  target_include_directories(kth_blockchain_tsan_tests PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test/block_index_bench>
-  )
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE nanobench::nanobench)
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE fmt::fmt-header-only)
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE Boost::boost)
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE ${PROJECT_NAME})
-  target_compile_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread -g -O1)
-  target_link_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread)
-  target_compile_definitions(kth_blockchain_tsan_tests PRIVATE TSAN_BUILD=1)
-  _group_sources(kth_blockchain_tsan_tests "${CMAKE_CURRENT_LIST_DIR}/test")
+  if (ENABLE_TSAN_TESTS)
+    add_executable(kth_blockchain_tsan_tests test/block_index_bench/benchmarks.cpp)
+    target_include_directories(kth_blockchain_tsan_tests PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test/block_index_bench>
+    )
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE nanobench::nanobench)
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE fmt::fmt-header-only)
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE Boost::boost)
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE ${PROJECT_NAME})
+    target_compile_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread -g -O1)
+    target_link_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread)
+    target_compile_definitions(kth_blockchain_tsan_tests PRIVATE TSAN_BUILD=1)
+    _group_sources(kth_blockchain_tsan_tests "${CMAKE_CURRENT_LIST_DIR}/test")
+  endif()
 
   # ==========================================================================
   # 2. Performance benchmarks (release, full optimization)

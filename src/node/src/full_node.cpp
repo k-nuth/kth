@@ -10,9 +10,9 @@
 #include <utility>
 
 #include <kth/blockchain.hpp>
+#include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
-#include <kth/node/sync_session.hpp>
 #include <kth/node/user_agent.hpp>
 
 #include <asio/co_spawn.hpp>
@@ -42,11 +42,9 @@ full_node::full_node(configuration const& configuration)
     , node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
     , network_type_(get_network(configuration.network.identifier, configuration.network.inbound_port == 48333))
-    , chain_thread_pool_(configuration.chain.cores)
     , network_settings_(configuration.network)
     , network_(network_settings_)
     , chain_(
-        chain_thread_pool_,
         configuration.chain,
         configuration.database,
         network_type_,
@@ -57,9 +55,7 @@ full_node::full_node(configuration const& configuration)
     , node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
     , network_type_(domain::config::network::mainnet)
-    , chain_thread_pool_(std::thread::hardware_concurrency())
     , chain_(
-        chain_thread_pool_,
         configuration.chain,
         configuration.database,
         network_type_
@@ -101,8 +97,8 @@ full_node::~full_node() {
     }
 #endif
 
-    // Start the blockchain
-    if (!chain_.start()) {
+    // Start the blockchain (pass disk magic for block file storage)
+    if (!chain_.start(get_disk_magic(network_type_))) {
         spdlog::error("[node] Failure starting blockchain.");
         co_return error::operation_failed;
     }
@@ -168,7 +164,7 @@ full_node::~full_node() {
 }
 
 ::asio::awaitable<void> full_node::run_blockchain_subscriber() {
-    spdlog::debug("[full_node] run_blockchain_subscriber() starting");
+    spdlog::info("[full_node] run_blockchain_subscriber() STARTING");
     auto blockchain_channel = subscribe_blockchain();
     if (!blockchain_channel) {
         spdlog::debug("[full_node] run_blockchain_subscriber() - no channel, exiting");
@@ -210,71 +206,42 @@ full_node::~full_node() {
             }
         }
     }
-    spdlog::debug("[full_node] run_blockchain_subscriber() exiting");
+    spdlog::info("[full_node] run_blockchain_subscriber() ENDED");
 }
 
 #if ! defined(__EMSCRIPTEN__)
 ::asio::awaitable<void> full_node::run_sync() {
-    spdlog::debug("[full_node] run_sync() starting");
-    auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor);
+    spdlog::info("[full_node] run_sync() STARTING - CSP sync system");
 
-    while (!stopped()) {
-        // Wait until we have at least one connected peer
-        while (!stopped() && network_.connection_count() == 0) {
-            timer.expires_after(std::chrono::milliseconds(100));
-            auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-            if (ec || stopped()) {
-                spdlog::debug("[full_node] run_sync() exiting");
-                co_return;
-            }
-        }
+    // Create the header organizer (single instance for the sync lifetime)
+    blockchain::header_organizer organizer(
+        chain_.headers(),
+        chain_.chain_settings(),
+        network_type_
+    );
 
-        if (stopped()) {
-            co_return;
-        }
-
-        spdlog::info("[node] Starting initial block sync...");
-        auto result = co_await sync_from_best_peer(chain_, network_, network_type_);
-
-        if (stopped()) {
-            co_return;
-        }
-
-        if (result.error) {
-            spdlog::warn("[node] Sync failed: {} (connected peers: {}), retrying...",
-                result.error.message(), network_.connection_count());
-            // Brief delay to allow maintain_outbound_connections to find new peers
-            timer.expires_after(std::chrono::milliseconds(500));
-            auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-            if (ec || stopped()) {
-                co_return;
-            }
-            continue;
-        }
-
-        // Check if we actually synced something
-        if (result.headers_received > 0 || result.blocks_received > 0) {
-            spdlog::info("[node] Sync progress: {} headers, {} blocks, height {}",
-                result.headers_received, result.blocks_received, result.final_height);
-            // Continue syncing - there might be more blocks
-            if (stopped()) {
-                co_return;
-            }
-            continue;
-        }
-
-        // No sync happened - no peers ahead of us
-        // Wait longer before checking again (allows new peers to connect)
-        spdlog::debug("[node] No peers ahead of us at height {}, waiting for new peers...",
-            result.final_height);
-        timer.expires_after(std::chrono::seconds(5));
-        auto [ec2] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-        if (ec2 || stopped()) {
-            break;  // Timer cancelled or stop requested
-        }
+    // Initialize the organizer
+    if (!organizer.start()) {
+        spdlog::error("[full_node] Failed to start header organizer");
+        co_return;
     }
-    spdlog::debug("[full_node] run_sync() exiting");
+
+    // Sync tip from chain's header index
+    organizer.sync_tip();
+
+    spdlog::info("[node] Starting CSP-based sync system...");
+
+    // Run the CSP sync orchestrator on the network thread pool.
+    // This ensures all sync coroutines (block download, header download, etc.)
+    // run on the network pool's 32 threads instead of the single io_thread.
+    co_await ::asio::co_spawn(
+        network_.thread_pool().get_executor(),
+        sync::sync_orchestrator(chain_, organizer, network_),
+        ::asio::use_awaitable
+    );
+
+    organizer.stop();
+    spdlog::info("[full_node] run_sync() ENDED");
 }
 #endif
 
@@ -349,7 +316,7 @@ kth::network::p2p_node& full_node::network() {
 // =============================================================================
 
 threadpool& full_node::chain_thread_pool() {
-    return chain_thread_pool_;
+    return chain_.thread_pool();
 }
 
 #if ! defined(__EMSCRIPTEN__)

@@ -38,6 +38,7 @@ enum class load_error {
 };
 
 using kth::path;
+using kth::operator""_hash;  // For checkpoint hash literals
 using boost::program_options::command_line_parser;
 using boost::program_options::reading_file;
 using std::error_code;
@@ -46,7 +47,6 @@ inline
 kth::infrastructure::config::checkpoint::list default_checkpoints(config::network network) {
     kth::infrastructure::config::checkpoint::list checkpoints;
 
-//TODO(fernando): Set Litecoin checkpoints
 #if defined(KTH_CURRENCY_BCH)
     if (network == domain::config::network::testnet) {
         checkpoints.reserve(38);

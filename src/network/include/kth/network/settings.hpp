@@ -44,6 +44,7 @@ struct KN_API settings {
     uint32_t host_pool_capacity;
     kth::path hosts_file;
     kth::path banlist_file;
+    kth::path peers_file;  // Unified peer database (replaces hosts_file + banlist_file)
     infrastructure::config::authority self;
     infrastructure::config::authority::list blacklist;
     infrastructure::config::endpoint::list peers;

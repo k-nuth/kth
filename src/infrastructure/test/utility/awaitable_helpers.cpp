@@ -147,7 +147,7 @@ std::error_code make_error_code(custom_error e) {
             }
         }
     } category;
-    return {static_cast<int>(e), category};
+    return {int(e), category};
 }
 
 awaitable<std::expected<std::string, custom_error>> expected_operation(bool succeed) {
@@ -199,8 +199,8 @@ TEST_CASE("with_timeout with expected return", "[awaitable_helpers][timeout][exp
 // =============================================================================
 
 TEST_CASE("post_to switches executor", "[awaitable_helpers][post_to]") {
-    threadpool pool1(2);
-    threadpool pool2(2);
+    threadpool pool1("test_pool1", 2);
+    threadpool pool2("test_pool2", 2);
 
     ::asio::io_context ctx;
 

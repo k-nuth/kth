@@ -12,15 +12,15 @@
 #include <string>
 #include <vector>
 
+#include <boost/unordered/concurrent_flat_map.hpp>
 #include <boost/unordered/concurrent_flat_set.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
 
-#include <kth/network/banlist.hpp>
 #include <kth/network/define.hpp>
-#include <kth/network/hosts.hpp>
+#include <kth/network/peer_database.hpp>
 #include <kth/network/peer_manager.hpp>
 #include <kth/network/peer_session.hpp>
 #include <kth/network/protocols_coro.hpp>
@@ -160,6 +160,15 @@ struct peer_event {
     std::shared_ptr<handshake_response_channel> response_channel;
 };
 
+/// Type of peer lifecycle event for sync layer notification
+enum class peer_event_type { connected, disconnected };
+
+/// Notification sent to sync layer when peer connects or disconnects
+struct peer_notification {
+    peer_session::ptr peer;
+    peer_event_type event;
+};
+
 // =============================================================================
 // P2P Node (main networking class)
 // =============================================================================
@@ -243,6 +252,11 @@ public:
     [[nodiscard]]
     std::vector<peer_session::ptr> get_peers() const;
 
+    /// Get the channel that receives peer lifecycle events (CSP pattern)
+    /// Use this to subscribe to peer connection/disconnection events.
+    [[nodiscard]]
+    concurrent_channel<peer_notification>& peer_events();
+
     /// Get the thread pool
     [[nodiscard]]
     threadpool& thread_pool();
@@ -254,25 +268,67 @@ public:
     [[nodiscard]]
     message_dispatcher& dispatcher();
 
-    // Banlist management
+    // Ban management
     // -------------------------------------------------------------------------
-
-    /// Get the banlist
-    [[nodiscard]]
-    banlist& bans();
-
-    [[nodiscard]]
-    banlist const& bans() const;
 
     /// Ban a peer (convenience method)
     void ban_peer(
         peer_session::ptr const& peer,
-        std::chrono::seconds duration = banlist::default_ban_duration,
+        std::chrono::seconds duration = std::chrono::hours{24},
         ban_reason reason = ban_reason::node_misbehaving);
 
     /// Check if an address is banned
     [[nodiscard]]
     bool is_banned(infrastructure::config::authority const& authority) const;
+
+    /// Check if a peer is slow based on download performance
+    /// @param authority The peer's address
+    /// @param threshold_ms Threshold in ms/block (default 500ms)
+    [[nodiscard]]
+    bool is_slow_peer(infrastructure::config::authority const& authority,
+                      double threshold_ms = 500.0) const;
+
+    /// Get peer's average download speed (ms per block), 0.0 if unknown
+    [[nodiscard]]
+    double get_peer_speed(infrastructure::config::authority const& authority) const;
+
+    // Peer database (unified peer storage with reputation and ban management)
+    // -------------------------------------------------------------------------
+
+    /// Get the peer database
+    [[nodiscard]]
+    peer_database& peer_db();
+
+    [[nodiscard]]
+    peer_database const& peer_db() const;
+
+    /// Report misbehavior from a peer, returns true if peer should be banned
+    /// @param peer The peer that misbehaved
+    /// @param score Misbehavior score to add (default thresholds: 10=minor, 50=major, 100=ban)
+    /// @param reason Human-readable reason for logging
+    /// @return true if peer exceeded ban threshold and was banned
+    bool report_misbehavior(
+        peer_session::ptr const& peer,
+        int score,
+        std::string_view reason = {});
+
+    /// Report misbehavior by authority
+    bool report_misbehavior(
+        infrastructure::config::authority const& authority,
+        int score,
+        std::string_view reason = {});
+
+    /// Record block download performance for a peer
+    void record_peer_performance(
+        peer_session::ptr const& peer,
+        uint32_t blocks,
+        uint32_t time_ms);
+
+    /// Record block download performance by authority
+    void record_peer_performance(
+        infrastructure::config::authority const& authority,
+        uint32_t blocks,
+        uint32_t time_ms);
 
 private:
     // Internal coroutines
@@ -296,12 +352,19 @@ private:
     settings const& settings_;
     threadpool pool_;
     peer_manager manager_;
-    hosts hosts_;
-    banlist banlist_;
+    peer_database peer_db_;  // Unified peer storage (hosts, bans, and reputation)
 
     // Track IPs currently being connected to (for deduplication)
     // Prevents multiple simultaneous connection attempts to the same IP
     boost::concurrent_flat_set<::asio::ip::address, salted_ip_hasher> pending_connections_;
+
+    // Track recently failed connection IPs with cooldown timestamp
+    // Prevents rapid reconnection to failing peers
+    boost::concurrent_flat_map<
+        ::asio::ip::address,
+        std::chrono::steady_clock::time_point,
+        salted_ip_hasher
+    > failed_connections_;
 
     // Acceptor for inbound connections
     std::unique_ptr<::asio::ip::tcp::acceptor> acceptor_;
@@ -309,6 +372,9 @@ private:
     std::atomic<bool> stopped_{true};
     std::atomic<bool> seeded_{false};
     std::atomic<bool> supervisor_ready_{false};  // Signals that peer_supervisor is ready
+    std::atomic<int> seed_task_counter_{0};  // For unique seed task names in logging
+    std::atomic<int> conn_task_counter_{0};  // For unique connection task names in logging
+    std::atomic<int> peer_task_counter_{0};  // For unique peer task names in logging
     kth::atomic<infrastructure::config::checkpoint> top_block_;
 
     // Message dispatcher for routing messages to handlers
@@ -320,6 +386,10 @@ private:
 
     // Signal to stop the peer_supervisor gracefully
     std::unique_ptr<concurrent_event_channel> stop_signal_;
+
+    // Channel for notifying sync layer of peer lifecycle events (CSP pattern)
+    // Peers are sent here on connection (after handshake) and disconnection
+    std::unique_ptr<concurrent_channel<peer_notification>> peer_notification_channel_;
 };
 
 } // namespace kth::network

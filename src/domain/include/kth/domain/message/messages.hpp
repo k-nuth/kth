@@ -35,8 +35,10 @@
 #include <kth/domain/message/ping.hpp>
 #include <kth/domain/message/pong.hpp>
 #include <kth/domain/message/reject.hpp>
+#include <kth/domain/message/send_addrv2.hpp>
 #include <kth/domain/message/send_compact.hpp>
 #include <kth/domain/message/send_headers.hpp>
+#include <kth/domain/message/addrv2.hpp>
 #include <kth/domain/message/transaction.hpp>
 #include <kth/domain/message/verack.hpp>
 #include <kth/domain/message/version.hpp>
@@ -127,8 +129,10 @@ DECLARE_MESSAGE_POINTER_TYPES(not_found);
 DECLARE_MESSAGE_POINTER_TYPES(ping);
 DECLARE_MESSAGE_POINTER_TYPES(pong);
 DECLARE_MESSAGE_POINTER_TYPES(reject);
+DECLARE_MESSAGE_POINTER_TYPES(send_addrv2);
 DECLARE_MESSAGE_POINTER_TYPES(send_compact);
 DECLARE_MESSAGE_POINTER_TYPES(send_headers);
+DECLARE_MESSAGE_POINTER_TYPES(addrv2);
 DECLARE_MESSAGE_POINTER_TYPES(transaction);
 DECLARE_MESSAGE_POINTER_TYPES(verack);
 DECLARE_MESSAGE_POINTER_TYPES(version);

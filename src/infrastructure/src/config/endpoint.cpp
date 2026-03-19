@@ -32,7 +32,9 @@ endpoint::endpoint()
 {}
 
 endpoint::endpoint(endpoint const& x)
-    : scheme_(x.scheme()), host_(x.host()), port_(x.port())
+    : scheme_(x.scheme())
+    , host_(x.host())
+    , port_(x.port())
 {}
 
 endpoint::endpoint(std::string_view value) {

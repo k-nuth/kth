@@ -193,7 +193,7 @@ result_code internal_database_basis<Clock>::push_headers_batch(domain::chain::he
     }
 
     // Update last_header_height property to the last height
-    auto const final_height = start_height + static_cast<uint32_t>(headers.size()) - 1;
+    auto const final_height = start_height + uint32_t(headers.size()) - 1;
     auto result = set_property_height(property_code::last_header_height, final_height, db_txn);
     if (result != result_code::success) {
         kth_db_txn_abort(db_txn);
