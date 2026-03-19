@@ -14,6 +14,7 @@
 #include <boost/bimap/set_of.hpp>
 #include <boost/bimap/unordered_set_of.hpp>
 #include <kth/blockchain.hpp>
+#include <kth/infrastructure/utility/enable_shared_from_base.hpp>
 #include <kth/node/define.hpp>
 #include <kth/node/utility/performance.hpp>
 
@@ -22,7 +23,7 @@ namespace kth::node {
 class reservations;
 
 // Class to manage hashes during sync, thread safe.
-struct KND_API reservation : enable_shared_from_base<reservation> {
+struct KND_API reservation : kth::enable_shared_from_base<reservation> {
 public:
     using ptr = std::shared_ptr<reservation>;
     using list = std::vector<reservation::ptr>;

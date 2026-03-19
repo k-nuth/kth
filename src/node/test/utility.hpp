@@ -42,7 +42,7 @@ private:
     clock::time_point now_;
 };
 
-class blockchain_fixture : public blockchain::fast_chain {
+class blockchain_fixture {
 public:
     blockchain_fixture(bool import_result=true, size_t gap_trigger=max_size_t,
         size_t gap_height=max_size_t);

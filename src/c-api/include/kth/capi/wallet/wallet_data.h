@@ -66,7 +66,11 @@ void kth_wallet_wallet_data_set_encrypted_seed_unsafe(kth_wallet_data_mut_t self
 
 /** @param[out] out Must point to a null `kth_wallet_data_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_wallet_data_destruct`. Untouched on error. */
 KTH_EXPORT
-kth_error_code_t kth_wallet_create(char const* password, char const* normalized_passphrase, KTH_OUT_OWNED kth_wallet_data_mut_t* out);
+kth_error_code_t kth_wallet_create(char const* password, char const* normalized_passphrase, kth_dictionary_const_t lexicon, KTH_OUT_OWNED kth_wallet_data_mut_t* out);
+
+/** @param[out] out Must point to a null `kth_wallet_data_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_wallet_data_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_create_simple(char const* password, char const* normalized_passphrase, KTH_OUT_OWNED kth_wallet_data_mut_t* out);
 
 #ifdef __cplusplus
 } // extern "C"

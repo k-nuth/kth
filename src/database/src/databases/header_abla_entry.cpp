@@ -27,6 +27,30 @@ void to_data_with_abla_state(std::ostream& stream, domain::chain::block const& b
     to_data_with_abla_state(sink, block);
 }
 
+data_chunk to_data_header_only(domain::chain::header const& header) {
+    data_chunk data;
+    auto const size = header.serialized_size(true) + 8 + 8 + 8;
+    data.reserve(size);
+    data_sink ostream(data);
+    ostream_writer sink(ostream);
+    to_data_header_only(sink, header);
+    ostream.flush();
+    KTH_ASSERT(data.size() == size);
+    return data;
+}
+
+data_chunk to_data_header_with_abla_state(domain::chain::header const& header, uint64_t block_size, uint64_t control_block_size, uint64_t elastic_buffer_size) {
+    data_chunk data;
+    auto const size = header.serialized_size(true) + 8 + 8 + 8;
+    data.reserve(size);
+    data_sink ostream(data);
+    ostream_writer sink(ostream);
+    to_data_header_with_abla_state(sink, header, block_size, control_block_size, elastic_buffer_size);
+    ostream.flush();
+    KTH_ASSERT(data.size() == size);
+    return data;
+}
+
 expect<header_with_abla_state_t> get_header_and_abla_state_from_data(byte_reader& reader) {
     auto header = domain::chain::header::from_data(reader, true);
     if ( ! header) {

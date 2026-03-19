@@ -123,7 +123,7 @@ int main() {
     fmt::print("==============================================\n\n");
 
     // Initialize Bitcoin Core SHA256 (autodetects CPU features)
-    std::string impl = SHA256AutoDetect();
+    std::string impl = ::kth::SHA256AutoDetect();
     fmt::print("Bitcoin Core SHA256 implementation: {}\n\n", impl);
 
     // First verify correctness

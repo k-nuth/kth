@@ -18,14 +18,12 @@
 
 #include <boost/range/adaptor/reversed.hpp>
 
-#include <kth/domain/chain/chain_state.hpp>
 #include <kth/domain/chain/compact.hpp>
 #include <kth/domain/chain/input_point.hpp>
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/deserialization.hpp>
 #include <kth/domain/machine/opcode.hpp>
-#include <kth/domain/machine/script_flags.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/infrastructure/config/checkpoint.hpp>
 #include <kth/infrastructure/error.hpp>
@@ -44,7 +42,6 @@
 
 namespace kth::domain::chain {
 
-using namespace kth::domain::machine;
 using namespace boost::adaptors;
 
 // Constructors.
@@ -441,34 +438,6 @@ code block_basis::check_transactions() const {
     return error::success;
 }
 
-code block_basis::accept_transactions(
-    script_flags_t flags,
-    size_t height,
-    uint32_t median_time_past,
-    size_t max_sigops,
-    bool is_under_checkpoint
-) const {
-    code ec;
-    for (auto const& tx : transactions_) {
-        if ( ! tx.validation.validated) {
-            ec = tx.accept(flags, height, median_time_past, max_sigops,
-                           is_under_checkpoint, false /*transaction_pool*/);
-            if (ec) return ec;
-        }
-    }
-    return error::success;
-}
-
-code block_basis::connect_transactions(chain_state const& state) const {
-    code ec;
-    for (auto const& tx : transactions_) {
-        if ( ! tx.validation.validated && (ec = tx.connect(state))) {
-            return ec;
-        }
-    }
-    return error::success;
-}
-
 // Validation.
 //-----------------------------------------------------------------------------
 
@@ -478,10 +447,14 @@ code block_basis::check(size_t serialized_size_false) const {
 
     if ((ec = header_.check())) {
         return ec;
-
-        // TODO(legacy): relates to total of tx.size(false) (pool cache). -> no witness size
     }
 
+    return check_body(serialized_size_false);
+}
+
+// Check block body only (skip header validation for headers-first sync).
+// Use this when headers have already been validated during header sync.
+code block_basis::check_body(size_t serialized_size_false) const {
     if (serialized_size_false > static_absolute_max_block_size()) {
         return error::block_size_limit;
     }
@@ -496,129 +469,25 @@ code block_basis::check(size_t serialized_size_false) const {
 
     if (is_extra_coinbases()) {
         return error::extra_coinbases;
-        // TODO(legacy): determinable from tx pool graph.
     }
 
 #if ! defined(KTH_CURRENCY_BCH) // BTC and LTC
-    //Note(kth): LTOR (Legacy Transaction ORdering) is a check just for Bitcoin (BTC)
-    //               and for BitcoinCash (BCH) before 2018-Nov-15.
+    // Note(kth): LTOR (Legacy Transaction ORdering) is a check just for Bitcoin (BTC)
+    //            and for BitcoinCash (BCH) before 2018-Nov-15.
     if (is_forward_reference()) {
         return error::forward_reference;
     }
 #endif
 
-
-    // This is subset of is_internal_double_spend if collisions cannot happen.
-    ////else if ( ! is_distinct_transaction_set())
-    ////    return error::internal_duplicate;
-
-    // TODO(legacy): determinable from tx pool graph.
     if (is_internal_double_spend()) {
         return error::block_internal_double_spend;
-        // TODO(legacy): relates height to tx.hash(false) (pool cache).
     }
 
     if ( ! is_valid_merkle_root()) {
         return error::merkle_mismatch;
-
-        // We cannot know if bip16 is enabled at this point so we disable it.
-        // This will not make a difference unless prevouts are populated, in which
-        // case they are ignored. This means that p2sh sigops are not counted here.
-        // This is a preliminary check, the final count must come from connect().
-        // Reenable once sigop caching is implemented, otherwise is deoptimization.
-        ////else if (signature_operations(false, false) > get_max_block_sigops())
-        ////    return error::block_legacy_sigop_limit;
     }
 
     return check_transactions();
-}
-
-// Contextual validation — prevout cache must be populated for transaction validation.
-code block_basis::accept(
-    script_flags_t flags,
-    size_t height,
-    uint32_t median_time_past,
-    size_t serialized_size,
-    size_t max_block_size_dynamic,
-    size_t max_sigops,
-    bool is_under_checkpoint,
-    bool transactions
-) const {
-    auto const is_enabled = [](script_flags_t active, auto flag) {
-        return script_basis::is_enabled(active, flag);
-    };
-
-    auto const bip16 = is_enabled(flags, script_flags::bip16_rule);
-    auto const bip34 = is_enabled(flags, script_flags::bip34_rule);
-    auto const bip113 = is_enabled(flags, script_flags::bip113_rule);
-    auto const bip141 = false;  // No segwit
-
-    code ec;
-    // TODO(fernando): header_.accept() needs the same refactor to not use chain_state
-    // if ((ec = header_.accept(...))) {
-    //     return ec;
-    // }
-
-    if (serialized_size > max_block_size_dynamic) {
-        return error::block_size_limit;
-    }
-
-    if (is_under_checkpoint) {
-        return error::success;
-    }
-
-#if defined(KTH_CURRENCY_BCH)
-    if (is_enabled(flags, script_flags::bch_cleanstack)) { // euclid+
-        if ( ! is_canonical_ordered()) {
-            return error::non_canonical_ordered;
-        }
-    } else
-#endif
-    {
-        if (is_forward_reference()) {
-            return error::forward_reference;
-        }
-    }
-
-    if (bip34 && ! is_valid_coinbase_script(height)) {
-        return error::coinbase_height_mismatch;
-    }
-
-    if ( ! is_valid_coinbase_claim(height)) {
-        return error::coinbase_value_limit;
-    }
-
-    auto const block_time = bip113 ? median_time_past : header_.timestamp();
-    if ( ! is_final(height, block_time)) {
-        return error::block_non_final;
-    }
-
-#if defined(KTH_CURRENCY_BCH)
-    if ( ! is_enabled(flags, script_flags::bch_enforce_sigchecks)) { // pre-fermat
-#endif
-        // TODO(legacy): determine if performance benefit is worth excluding sigops here.
-        // TODO(legacy): relates block limit to total of tx.sigops (pool cache tx.sigops).
-        // This recomputes sigops to include p2sh from prevouts.
-        size_t const allowed_sigops = get_allowed_sigops(serialized_size);
-        if (transactions && (signature_operations(bip16, bip141) > allowed_sigops)) {
-            return error::block_embedded_sigop_limit;
-        }
-#if defined(KTH_CURRENCY_BCH)
-    }
-#endif
-
-    if (transactions) {
-        return accept_transactions(flags, height, median_time_past, max_sigops, is_under_checkpoint);
-    }
-
-    return error::success;
-}
-
-code block_basis::connect(chain_state const& state) const {
-    if (state.is_under_checkpoint()) {
-        return error::success;
-    }
-    return connect_transactions(state);
 }
 
 // Non-member functions.

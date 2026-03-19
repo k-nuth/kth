@@ -10,7 +10,6 @@
 #include <kth/infrastructure/config/authority.hpp>
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/log/rotable_file.hpp>
-#include <kth/infrastructure/utility/threadpool.hpp>
 
 namespace kth::log {
 
