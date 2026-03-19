@@ -37,13 +37,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    utxoz::db database;
-    try {
-        database.configure(db_path.string());
-    } catch (std::exception const& e) {
-        std::fprintf(stderr, "Error: failed to open UTXO-Z database at: %s (%s)\n", argv[1], e.what());
+    auto result = utxoz::full_db::open(db_path.string());
+    if ( ! result) {
+        std::fprintf(stderr, "Error: failed to open UTXO-Z database at: %s\n", argv[1]);
         return 1;
     }
+    auto database = std::move(*result);
 
     std::printf("Opened UTXO-Z database: %s (%zu entries)\n", argv[1], database.size());
 

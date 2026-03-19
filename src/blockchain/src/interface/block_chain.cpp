@@ -653,7 +653,7 @@ awaitable_expected<block_const_ptr_list_ptr> block_chain::reorganize(
 }
 
 code block_chain::push_sync(transaction_const_ptr tx) {
-    return database_.push(*tx, chain_state()->enabled_forks());
+    return database_.push(*tx, chain_state()->height());
 }
 
 bool block_chain::insert(block_const_ptr block, size_t height) {

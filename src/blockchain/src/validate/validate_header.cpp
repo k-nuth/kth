@@ -21,7 +21,7 @@ using namespace kth::infrastructure::config;
 validate_header::validate_header(settings const& settings, domain::config::network network)
     : settings_(settings)
     , checkpoints_(settings.checkpoints_sorted)
-    , configured_forks_(settings.enabled_forks())
+    , configured_forks_(settings.enabled_flags())
     , network_(network)
     , retarget_(network != domain::config::network::regtest)
 {}

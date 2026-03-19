@@ -26,25 +26,23 @@ bool utxoz_database::open(std::filesystem::path const& path, bool remove_existin
         return true;
     }
 
-    try {
 #ifdef KTH_UTXOZ_COMPACT_MODE
-        db_ = std::make_unique<utxoz::compact_db>();
+    auto result = utxoz::compact_db::open(path.string(), remove_existing);
 #else
-        db_ = std::make_unique<utxoz::full_db>();
+    auto result = utxoz::full_db::open(path.string(), remove_existing);
 #endif
-        db_->configure(path.string(), remove_existing);
-        is_open_ = true;
-        spdlog::info("[utxoz_database] Opened database at {}", path.string());
-        return true;
-    } catch (std::exception const& e) {
-        spdlog::error("[utxoz_database] Failed to open database: {}", e.what());
-        db_.reset();
+    if ( ! result) {
+        spdlog::error("[utxoz_database] Failed to open database: {}", static_cast<int>(result.error()));
         return false;
     }
+    db_.emplace(std::move(*result));
+    is_open_ = true;
+    spdlog::info("[utxoz_database] Opened database at {}", path.string());
+    return true;
 }
 
 void utxoz_database::close() {
-    if (db_ && is_open_) {
+    if (db_.has_value() && is_open_) {
         db_->close();
         db_.reset();
         is_open_ = false;
@@ -53,7 +51,7 @@ void utxoz_database::close() {
 }
 
 bool utxoz_database::is_open() const {
-    return is_open_ && db_;
+    return is_open_ && db_.has_value();
 }
 
 size_t utxoz_database::size() const {
@@ -72,10 +70,11 @@ result_code utxoz_database::insert(domain::chain::point const& point, utxo_entry
     auto key = point_to_key(point);
     auto value = entry_to_bytes(entry);
 
-    if (db_->insert(key, value, entry.height())) {
-        return result_code::success;
+    auto result = db_->insert(key, value, entry.height());
+    if ( ! result) {
+        return result_code::other;
     }
-    return result_code::duplicated_key;
+    return *result ? result_code::success : result_code::duplicated_key;
 }
 #endif
 
@@ -130,7 +129,7 @@ size_t utxoz_database::deferred_deletions_size() const {
     return db_->deferred_deletions_size();
 }
 
-std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>> utxoz_database::process_pending_deletions() {
+std::pair<uint32_t, std::vector<utxoz::deferred_deletion_entry>> utxoz_database::process_pending_deletions() {
     if ( ! is_open()) {
         return {0, {}};
     }

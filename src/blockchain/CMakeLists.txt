@@ -331,29 +331,29 @@ if (ENABLE_TEST)
     enable_testing()
     find_package(Catch2 3 REQUIRED)
 
-    set(kth_blockchain_test_sources
+    set(kth_blockchain_vmlimits_test_sources
         test/vmlimits_tests.cpp
         test/vmlimits_tests_generated.cpp
     )
 
-    add_executable(kth_blockchain_test
-        ${kth_blockchain_test_sources}
+    add_executable(kth_blockchain_vmlimits_test
+        ${kth_blockchain_vmlimits_test_sources}
     )
 
-    target_include_directories(kth_blockchain_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
-    target_link_libraries(kth_blockchain_test PUBLIC ${PROJECT_NAME})
-    target_link_libraries(kth_blockchain_test PRIVATE Catch2::Catch2WithMain)
+    target_include_directories(kth_blockchain_vmlimits_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_blockchain_vmlimits_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_blockchain_vmlimits_test PRIVATE Catch2::Catch2WithMain)
 
     if (WITH_CONSENSUS)
-        target_compile_definitions(kth_blockchain_test PRIVATE -DWITH_CONSENSUS)
-        target_link_libraries(kth_blockchain_test PUBLIC consensus::consensus)
+        target_compile_definitions(kth_blockchain_vmlimits_test PRIVATE -DWITH_CONSENSUS)
+        target_link_libraries(kth_blockchain_vmlimits_test PUBLIC consensus::consensus)
     endif()
 
-    _group_sources(kth_blockchain_test "${CMAKE_CURRENT_LIST_DIR}/test")
+    _group_sources(kth_blockchain_vmlimits_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
     include(CTest)
     include(Catch)
-    catch_discover_tests(kth_blockchain_test)
+    catch_discover_tests(kth_blockchain_vmlimits_test)
 endif()
 
 # Tools

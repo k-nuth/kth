@@ -186,7 +186,7 @@ code validate_block::check_block_bucket(block_const_ptr block, size_t bucket, si
 #if defined(KTH_CURRENCY_BCH)
     bool const bip141 = false;
 #else
-    auto const bip141 = state.is_enabled(domain::machine::rule_fork::bip141_rule);
+    auto const bip141 = state.is_enabled(domain::machine::script_flags::bip141_rule);
 #endif
 
     if (state.is_under_checkpoint()) {
@@ -194,7 +194,7 @@ code validate_block::check_block_bucket(block_const_ptr block, size_t bucket, si
     }
 
     auto const count = block->transactions().size();
-    auto const bip16 = state.is_enabled(domain::machine::rule_fork::bip16_rule);
+    auto const bip16 = state.is_enabled(domain::machine::script_flags::bip16_rule);
     auto const buckets = std::min(threads_, count);
     KTH_ASSERT(buckets != 0);
 
@@ -251,6 +251,13 @@ code validate_block::accept_transactions_bucket(block_const_ptr block, size_t bu
 
     code ec(error::success);
     auto const& state = *block->validation.state;
+    auto const flags = state.enabled_flags();
+    auto const height = state.height();
+    auto const mtp = state.median_time_past();
+    auto const max_sigops = state.is_lobachevski_enabled()
+        ? state.dynamic_max_block_sigops()
+        : static_max_block_sigops(state.network());
+    auto const under_checkpoint = state.is_under_checkpoint();
     auto const& txs = block->transactions();
     auto const count = txs.size();
 
@@ -258,7 +265,7 @@ code validate_block::accept_transactions_bucket(block_const_ptr block, size_t bu
     for (auto tx = bucket; tx < count && !ec; tx = ceiling_add(tx, buckets)) {
         auto const& transaction = txs[tx];
         if ( ! transaction.validation.validated) {
-            ec = transaction.accept(state, false);
+            ec = transaction.accept(flags, height, mtp, max_sigops, under_checkpoint, false /*transaction_pool*/);
         }
         *sigops += transaction.signature_operations(bip16, bip141);
     }
@@ -432,9 +439,9 @@ code validate_block::accept_block_body(
     auto const& header = block.header();
     auto const block_size = block.serialized_size();
 
-    auto const bip16 = state.is_enabled(domain::machine::rule_fork::bip16_rule);
-    auto const bip34 = state.is_enabled(domain::machine::rule_fork::bip34_rule);
-    auto const bip113 = state.is_enabled(domain::machine::rule_fork::bip113_rule);
+    auto const bip16 = state.is_enabled(domain::machine::script_flags::bip16_rule);
+    auto const bip34 = state.is_enabled(domain::machine::script_flags::bip34_rule);
+    auto const bip113 = state.is_enabled(domain::machine::script_flags::bip113_rule);
     auto const bip141 = false;  // No segwit
 
     // Block size validation

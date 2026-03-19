@@ -142,10 +142,11 @@ struct KD_API utxoz_database {
         for (auto const& [point, entry] : inserts) {
             auto key = point_to_key(point);
             auto value = entry_to_bytes(entry);
-            if ( ! db_->insert(key, value, entry.height())) {
-                spdlog::error("[utxoz_database] Failed to insert UTXO from block {} - already exists: {}:{}",
+            auto ins = db_->insert(key, value, entry.height());
+            if ( ! ins || ! *ins) {
+                spdlog::error("[utxoz_database] Failed to insert UTXO from block {} - {}:{}",
                     entry.height(), encode_hash(point.hash()), point.index());
-                return result_code::duplicated_key;
+                return ins ? result_code::duplicated_key : result_code::other;
             }
         }
 
@@ -170,27 +171,24 @@ struct KD_API utxoz_database {
         }
 
         for (auto const& [key, raw] : inserts) {
-            try {
 #ifdef KTH_UTXOZ_COMPACT_MODE
-                // Compact mode: deserialize 8-byte compact_utxo_ref into typed fields
-                uint32_t file_number, tx_offset;
-                std::memcpy(&file_number, raw.data.data(), 4);
-                std::memcpy(&tx_offset, raw.data.data() + 4, 4);
-                if ( ! db_->insert(key, file_number, tx_offset, raw.height)) {
-                    spdlog::error("[utxoz_database] Duplicate key at block {}, outpoint={}",
-                        raw.height, utxoz::outpoint_to_string(key));
-                    return result_code::duplicated_key;
-                }
+            // Compact mode: deserialize 8-byte compact_utxo_ref into typed fields
+            uint32_t file_number, tx_offset;
+            std::memcpy(&file_number, raw.data.data(), 4);
+            std::memcpy(&tx_offset, raw.data.data() + 4, 4);
+            auto ins = db_->insert(key, file_number, tx_offset, raw.height);
 #else
-                if ( ! db_->insert(key, raw.data, raw.height)) {
-                    spdlog::error("[utxoz_database] Duplicate key at block {}, outpoint={}, value_size={}",
-                        raw.height, utxoz::outpoint_to_string(key), raw.data.size());
-                    return result_code::duplicated_key;
-                }
+            auto ins = db_->insert(key, raw.data, raw.height);
 #endif
-            } catch (std::out_of_range const& e) {
-                spdlog::error("[utxoz_database] Value too large ({} bytes) at block {}, outpoint={} — skipping",
-                    raw.data.size(), raw.height, utxoz::outpoint_to_string(key));
+            if ( ! ins) {
+                spdlog::error("[utxoz_database] Insert error at block {}, outpoint={}",
+                    raw.height, utxoz::outpoint_to_string(key));
+                return result_code::other;
+            }
+            if ( ! *ins) {
+                spdlog::error("[utxoz_database] Duplicate key at block {}, outpoint={}",
+                    raw.height, utxoz::outpoint_to_string(key));
+                return result_code::duplicated_key;
             }
         }
 
@@ -245,7 +243,7 @@ struct KD_API utxoz_database {
     /// Process pending deferred deletions
     /// @return pair of (successful deletions, failed entries with key and height)
     [[nodiscard]]
-    std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>> process_pending_deletions();
+    std::pair<uint32_t, std::vector<utxoz::deferred_deletion_entry>> process_pending_deletions();
 
     /// Compact the database
     void compact();
@@ -286,9 +284,9 @@ private:
 #endif
 
 #ifdef KTH_UTXOZ_COMPACT_MODE
-    std::unique_ptr<utxoz::compact_db> db_;
+    std::optional<utxoz::compact_db> db_;
 #else
-    std::unique_ptr<utxoz::full_db> db_;
+    std::optional<utxoz::full_db> db_;
 #endif
     bool is_open_ = false;
     std::shared_ptr<utxo_bloom_filter const> utxo_bloom_;  // optional bloom filter for skip-insert optimization
