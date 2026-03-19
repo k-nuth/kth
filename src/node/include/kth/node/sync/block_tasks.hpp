@@ -42,7 +42,8 @@ extern std::atomic<uint64_t> g_blocks_received_by_validation;
 ::asio::awaitable<void> block_download_supervisor(
     block_download_input_channel& input,
     block_download_channel& output,  // carries blocks + performance stats
-    blockchain::header_organizer& organizer  // read-only for hashes
+    blockchain::header_organizer& organizer,  // read-only for hashes
+    fast_validation_input_channel* fast_val = nullptr  // chunk-based fast validation (nullptr = old path)
 );
 
 // =============================================================================
@@ -61,7 +62,8 @@ extern std::atomic<uint64_t> g_blocks_received_by_validation;
     network::peer_session::ptr peer,
     std::shared_ptr<chunk_coordinator> coordinator,  // Lock-free chunk assignment (shared to keep alive)
     std::atomic<uint32_t>& active_peers,     // Atomic peer counter for metrics
-    block_download_task_output_channel& output  // Single output: blocks + task_ended
+    block_download_task_output_channel& output,  // Single output: blocks + task_ended
+    fast_validation_input_channel* fast_val = nullptr  // chunk-based fast validation (nullptr = old path)
 );
 
 // =============================================================================
@@ -84,6 +86,43 @@ extern std::atomic<uint64_t> g_blocks_received_by_validation;
     block_validated_channel& output,
     uint32_t start_height,
     uint32_t checkpoint_height  // Use fast mode up to this height
+);
+
+// =============================================================================
+// Fast Validation Task (chunk-based, parallel merkle)
+// =============================================================================
+//
+// Validates entire chunks of light_blocks in parallel.
+// - Input: single channel with variant (stop, downloaded_chunk)
+// - Output: chunk validation results to chunk_validated_channel
+// - Posts N merkle checks to priority_pool_ in parallel via chain.validate_chunk()
+// - Single channel message per chunk (instead of N individual messages)
+// - Designed for fast IBD under checkpoint
+//
+// =============================================================================
+
+::asio::awaitable<void> fast_validation_task(
+    blockchain::block_chain& chain,
+    fast_validation_input_channel& input,
+    chunk_validated_channel& output,
+    block_storage_input_channel* storage = nullptr  // if non-null, forward valid chunks here
+);
+
+// =============================================================================
+// Block Storage Task (writes validated blocks to flat files)
+// =============================================================================
+//
+// Receives validated chunks (with block data) from fast_validation_task,
+// buffers out-of-order chunks, and flushes them sequentially via
+// chain.store_block(). Sends chunk_validated to coordinator once stored.
+//
+// =============================================================================
+
+::asio::awaitable<void> block_storage_task(
+    blockchain::block_chain& chain,
+    block_storage_input_channel& input,
+    chunk_validated_channel& output,
+    uint32_t start_height
 );
 
 } // namespace kth::node::sync

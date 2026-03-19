@@ -47,22 +47,15 @@ struct chunk_coordinator_config {
     /// Blocks per chunk (matches Bitcoin protocol getdata limit)
     size_t chunk_size{16};
 
-    /// Slots per round = max_peers * multiplier
-
-    /// Higher = less frequent round resets, more parallelism
-    size_t slots_multiplier{100};
-    // size_t slots_multiplier{50};
-    
-    /// Maximum peers expected
-    size_t max_peers{8};
+    /// Number of slots. If 0, uses one slot per chunk.
+    size_t slots{0};
 
     /// Timeout before a slot is considered stalled (seconds)
-    uint32_t stall_timeout_secs{30};
+    uint32_t stall_timeout_secs{15};
 };
 
 /// Lock-free chunk coordinator for parallel block downloads
-class chunk_coordinator {
-public:
+struct chunk_coordinator {
     /// Slot states (lock-free via atomic)
     enum slot_state : uint8_t {
         FREE = 0,        // Available for assignment
@@ -149,7 +142,6 @@ private:
 
     // Configuration
     chunk_coordinator_config const config_;
-    size_t const slots_per_round_;
 
     // Header index for hash lookups
     blockchain::header_index const& index_;
@@ -158,13 +150,21 @@ private:
     uint32_t const start_height_;
     uint32_t const end_height_;
     uint32_t const total_chunks_;
+    size_t const num_slots_;
 
     // =========================================================================
     // Lock-free slot management (NO MUTEXES)
+    // When slots < total_chunks, slots are reused across rounds.
+    // Round R: slot[i] corresponds to chunk (R * num_slots_ + i).
+    // When slots == total_chunks (default), there is exactly 1 round.
     // =========================================================================
+    using slot_state_atomic = std::atomic<uint8_t>;
+    using slot_time_atomic = std::atomic<uint64_t>;
+    static constexpr size_t bytes_per_slot = sizeof(slot_state_atomic) + sizeof(slot_time_atomic);
+
     std::atomic<uint32_t> round_{0};
-    std::vector<std::atomic<uint8_t>> slots_;
-    std::vector<std::atomic<uint64_t>> slot_times_;  // timestamp when assigned
+    std::vector<slot_state_atomic> slots_;
+    std::vector<slot_time_atomic> slot_times_;
     std::atomic<bool> resetting_{false};  // guard for round advancement
 
     // Status

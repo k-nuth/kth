@@ -103,7 +103,26 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
 }
 
 peer_session::~peer_session() {
+    // First, ensure stopped flag is set and operations are canceled
     stop(error::channel_stopped);
+
+    // Now it's safe to close everything - run() has completed so no || operator
+    // is active, and no operations are pending.
+    boost_code ignore;
+    socket_.close(ignore);
+
+    // Cancel before close to ensure any pending async ops are woken up
+    outbound_.cancel();
+    inbound_.cancel();
+    headers_responses_.cancel();
+    block_responses_.cancel();
+    addr_responses_.cancel();
+
+    outbound_.close();
+    inbound_.close();
+    headers_responses_.close();
+    block_responses_.close();
+    addr_responses_.close();
 }
 
 // =============================================================================
@@ -121,13 +140,31 @@ peer_session::~peer_session() {
     stopped_ = false;
     spdlog::debug("[peer_session] run() - about to start loops for [{}]", authority());
 
+    // 2026-01-28: Fix for ASAN heap-use-after-free in cancellation_signal::emit()
+    //
+    // ROOT CAUSE: When using the || operator with a multi-threaded io_context,
+    // the parallel_group's internal cancellation mechanism has a race condition:
+    // 1. Awaitable A completes on thread 1
+    // 2. parallel_group_cancellation_handler::operator() tries to cancel awaitable B
+    // 3. Awaitable B might be completing simultaneously on thread 2
+    // 4. The cancellation_signal::emit() accesses memory being freed
+    //
+    // FIX: Bind all operations to the strand, so they are serialized. This ensures
+    // the || operator's internal bookkeeping runs on a single strand, preventing
+    // concurrent access to cancellation state.
+    //
+    // We use bind_executor to wrap each loop coroutine with the strand, ensuring
+    // all operations (including cancellation) run on the strand.
+
     try {
-        // Run all loops concurrently - when any completes/fails, all stop
+        // Run all loops concurrently on the strand - when any completes/fails, all stop
+        // Using co_spawn with use_awaitable ensures all operations run on the strand,
+        // which serializes the || operator's cancellation mechanism.
         co_await (
-            read_loop() ||
-            write_loop() ||
-            inactivity_timer() ||
-            expiration_timer()
+            ::asio::co_spawn(strand_, read_loop(), ::asio::use_awaitable) ||
+            ::asio::co_spawn(strand_, write_loop(), ::asio::use_awaitable) ||
+            ::asio::co_spawn(strand_, inactivity_timer(), ::asio::use_awaitable) ||
+            ::asio::co_spawn(strand_, expiration_timer(), ::asio::use_awaitable)
         );
     } catch (std::exception const& e) {
         spdlog::debug("[peer_session] Exception in run loop [{}]: {}", authority(), e.what());
@@ -139,26 +176,85 @@ peer_session::~peer_session() {
 }
 
 void peer_session::stop(code const& ec) {
+    // 2026-01-28: Fix for ASAN heap-use-after-free in cancellation_signal::emit()
+    //
+    // ROOT CAUSE: When stop() is called from a different thread while run() is
+    // executing the || operator (read_loop || write_loop || ...), closing channels
+    // directly causes a race condition:
+    // 1. Channel close triggers completion of pending async operations
+    // 2. The || operator tries to cancel other awaitables via cancellation_signal
+    // 3. But the cancellation handlers may reference already-freed memory
+    //
+    // FIX: Don't close channels in stop(). Only close the socket, which safely
+    // causes read_loop to exit with an error. The || operator will then cancel
+    // the other loops through its normal cancellation mechanism. Channels are
+    // closed in the destructor when refcount reaches 0 (no pending operations).
+
+    spdlog::debug("[peer_session] stop() checkpoint 1: entering, ec={}", ec.value());
+
     if (stopped_.exchange(true)) {
+        spdlog::debug("[peer_session] stop() checkpoint 1b: already stopped, returning");
         return;  // Already stopped
     }
 
-    spdlog::debug("[peer_session] Stopping session [{}]: {}", authority(), ec.message());
+    spdlog::debug("[peer_session] stop() checkpoint 2: got lock");
+    auto const auth_str = authority().to_string();
+    spdlog::debug("[peer_session] stop() checkpoint 3: got authority {}", auth_str);
+    auto const ec_msg = ec.message();
+    spdlog::debug("[peer_session] stop() checkpoint 4: got ec message {}", ec_msg);
+    spdlog::debug("[peer_session] Stopping session [{}]: {}", auth_str, ec_msg);
+    spdlog::debug("[peer_session] stop() checkpoint 5: canceling timers");
 
-    // Cancel timers (standalone Asio cancel() takes no args)
+    // Cancel timers first - this is safe from any thread
     inactivity_timer_.cancel();
+    spdlog::debug("[peer_session] stop() checkpoint 6: inactivity_timer canceled");
     expiration_timer_.cancel();
+    spdlog::debug("[peer_session] stop() checkpoint 7: expiration_timer canceled");
 
-    // Close channels
-    outbound_.close();
-    inbound_.close();
-    headers_responses_.close();
-    block_responses_.close();
-
-    // Shutdown socket
+    // Cancel pending socket operations - this causes read_loop to exit with an error.
+    // The || operator will then cancel write_loop and other awaitables.
+    // IMPORTANT: Use cancel() instead of close()! close() is not thread-safe when
+    // there are pending async operations - it can corrupt internal epoll_reactor state.
+    // The socket will be properly closed when peer_session is destroyed.
+    spdlog::debug("[peer_session] stop() checkpoint 8: canceling socket");
     boost_code ignore;
     socket_.shutdown(::asio::ip::tcp::socket::shutdown_both, ignore);
-    socket_.cancel();
+    spdlog::debug("[peer_session] stop() checkpoint 9: socket shutdown");
+    socket_.cancel(ignore);
+    spdlog::debug("[peer_session] stop() checkpoint 10: socket canceled");
+
+    // 2026-01-29: Close ALL channels to unblock any coroutines waiting on them.
+    //
+    // This fixes slow shutdown: when protocols (request_headers, request_blocks, etc.)
+    // are waiting on channels with long timeouts (30s for responses, 2min for ping timer),
+    // closing the channels makes async_receive()/async_send() return immediately with error.
+    //
+    // Previously this caused ASAN heap-use-after-free, but that was fixed by making
+    // run()'s || operator execute on the strand (co_spawn with strand_).
+    //
+    // 2026-02-02: CRITICAL FIX - call cancel() BEFORE close()!
+    // close() marks the channel as closed but may not immediately complete pending operations.
+    // cancel() explicitly "cancels all asynchronous operations waiting on the channel".
+    // Without this, run_peer_protocols() using || operator can hang indefinitely because
+    // the async_receive() doesn't complete when only close() is called.
+    //
+    // Channels:
+    // - inbound_: Used by run_peer_protocols() waiting for messages
+    // - outbound_: Used by write_loop() and send operations
+    // - headers_responses_, block_responses_, addr_responses_: Used by request protocols
+    spdlog::debug("[peer_session] stop() checkpoint 11: canceling all channel operations");
+    inbound_.cancel();
+    outbound_.cancel();
+    headers_responses_.cancel();
+    block_responses_.cancel();
+    addr_responses_.cancel();
+    spdlog::debug("[peer_session] stop() checkpoint 11b: closing all channels");
+    inbound_.close();
+    outbound_.close();
+    headers_responses_.close();
+    block_responses_.close();
+    addr_responses_.close();
+    spdlog::debug("[peer_session] stop() checkpoint 12: all channels closed, done");
 }
 
 bool peer_session::stopped() const {
@@ -381,6 +477,18 @@ int peer_session::misbehavior_score() const {
 }
 
 // =============================================================================
+// BIP155 (addrv2) support
+// =============================================================================
+
+bool peer_session::wants_addrv2() const {
+    return wants_addrv2_.load(std::memory_order_relaxed);
+}
+
+void peer_session::set_wants_addrv2(bool value) {
+    wants_addrv2_.store(value, std::memory_order_relaxed);
+}
+
+// =============================================================================
 // Internal Coroutines
 // =============================================================================
 
@@ -390,8 +498,20 @@ int peer_session::misbehavior_score() const {
         auto result = co_await read_message();
 
         if (!result) {
-            spdlog::debug("[peer_session] Read error [{}]: {}", authority(), result.error().message());
-            stop(result.error());
+            // 2026-01-28: Debug checkpoints for segfault during header sync.
+            // Symptom: crash during "Read error" logging, log truncated mid-IP address
+            // e.g., "[peer_session] Read error [3.228.193." then crash
+            spdlog::debug("[peer_session] read_loop checkpoint 1: read_message returned error");
+            auto const err = result.error();
+            spdlog::debug("[peer_session] read_loop checkpoint 2: got error code {}", err.value());
+            auto const auth_str = authority().to_string();
+            spdlog::debug("[peer_session] read_loop checkpoint 3: got authority {}", auth_str);
+            auto const err_msg = err.message();
+            spdlog::debug("[peer_session] read_loop checkpoint 4: got error message {}", err_msg);
+            spdlog::debug("[peer_session] Read error [{}]: {}", auth_str, err_msg);
+            spdlog::debug("[peer_session] read_loop checkpoint 5: logged error, calling stop()");
+            stop(err);
+            spdlog::debug("[peer_session] read_loop checkpoint 6: stop() returned, co_return");
             co_return;
         }
 
@@ -429,15 +549,20 @@ int peer_session::misbehavior_score() const {
             ::asio::buffer(data),
             ::asio::as_tuple(::asio::use_awaitable));
 
+        // Track bytes sent (before clearing data)
+        bytes_sent_.fetch_add(bytes_written, std::memory_order_relaxed);
+
+        // Explicitly release buffer memory before next iteration
+        // This prevents leaks when the coroutine is cancelled while waiting on async_receive
+        data.clear();
+        data.shrink_to_fit();
+
         if (write_ec) {
             spdlog::debug("[peer_session] Write error [{}]: {}",
                 authority(), write_ec.message());
             stop(error::boost_to_error_code(write_ec));
             co_return;
         }
-
-        // Track bytes sent
-        bytes_sent_.fetch_add(bytes_written, std::memory_order_relaxed);
 
         spdlog::trace("[peer_session] Sent {} bytes to [{}]", bytes_written, authority());
     }

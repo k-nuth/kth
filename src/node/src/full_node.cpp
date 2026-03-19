@@ -10,6 +10,7 @@
 #include <utility>
 
 #include <kth/blockchain.hpp>
+#include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
 #include <kth/node/user_agent.hpp>
@@ -41,11 +42,9 @@ full_node::full_node(configuration const& configuration)
     , node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
     , network_type_(get_network(configuration.network.identifier, configuration.network.inbound_port == 48333))
-    , chain_thread_pool_(configuration.chain.cores)
     , network_settings_(configuration.network)
     , network_(network_settings_)
     , chain_(
-        chain_thread_pool_,
         configuration.chain,
         configuration.database,
         network_type_,
@@ -56,9 +55,7 @@ full_node::full_node(configuration const& configuration)
     , node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
     , network_type_(domain::config::network::mainnet)
-    , chain_thread_pool_(std::thread::hardware_concurrency())
     , chain_(
-        chain_thread_pool_,
         configuration.chain,
         configuration.database,
         network_type_
@@ -100,8 +97,8 @@ full_node::~full_node() {
     }
 #endif
 
-    // Start the blockchain
-    if (!chain_.start()) {
+    // Start the blockchain (pass disk magic for block file storage)
+    if (!chain_.start(get_disk_magic(network_type_))) {
         spdlog::error("[node] Failure starting blockchain.");
         co_return error::operation_failed;
     }
@@ -167,7 +164,7 @@ full_node::~full_node() {
 }
 
 ::asio::awaitable<void> full_node::run_blockchain_subscriber() {
-    spdlog::debug("[full_node] run_blockchain_subscriber() starting");
+    spdlog::info("[full_node] run_blockchain_subscriber() STARTING");
     auto blockchain_channel = subscribe_blockchain();
     if (!blockchain_channel) {
         spdlog::debug("[full_node] run_blockchain_subscriber() - no channel, exiting");
@@ -209,12 +206,12 @@ full_node::~full_node() {
             }
         }
     }
-    spdlog::debug("[full_node] run_blockchain_subscriber() exiting");
+    spdlog::info("[full_node] run_blockchain_subscriber() ENDED");
 }
 
 #if ! defined(__EMSCRIPTEN__)
 ::asio::awaitable<void> full_node::run_sync() {
-    spdlog::debug("[full_node] run_sync() starting - CSP sync system");
+    spdlog::info("[full_node] run_sync() STARTING - CSP sync system");
 
     // Create the header organizer (single instance for the sync lifetime)
     blockchain::header_organizer organizer(
@@ -234,13 +231,17 @@ full_node::~full_node() {
 
     spdlog::info("[node] Starting CSP-based sync system...");
 
-    // Run the CSP sync orchestrator
-    // This will spawn all tasks (peer provider, header download/validation,
-    // block download/validation, coordinator) and wait until stopped
-    co_await sync::sync_orchestrator(chain_, organizer, network_);
+    // Run the CSP sync orchestrator on the network thread pool.
+    // This ensures all sync coroutines (block download, header download, etc.)
+    // run on the network pool's 32 threads instead of the single io_thread.
+    co_await ::asio::co_spawn(
+        network_.thread_pool().get_executor(),
+        sync::sync_orchestrator(chain_, organizer, network_),
+        ::asio::use_awaitable
+    );
 
     organizer.stop();
-    spdlog::debug("[full_node] run_sync() exiting");
+    spdlog::info("[full_node] run_sync() ENDED");
 }
 #endif
 
@@ -315,7 +316,7 @@ kth::network::p2p_node& full_node::network() {
 // =============================================================================
 
 threadpool& full_node::chain_thread_pool() {
-    return chain_thread_pool_;
+    return chain_.thread_pool();
 }
 
 #if ! defined(__EMSCRIPTEN__)

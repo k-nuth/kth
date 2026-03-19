@@ -43,6 +43,8 @@ code validate_header::accept(domain::chain::header const& header, size_t height,
                              hash_digest const& previous) const {
     // Validate chain continuity
     if (header.previous_block_hash() != previous) {
+        spdlog::warn("[validate_header] accept() Missing parent at height {}: header.prev_hash={}, expected={}",
+            height, encode_hash(header.previous_block_hash()), encode_hash(previous));
         return error::store_block_missing_parent;
     }
 
@@ -325,10 +327,13 @@ code validate_header::accept_full(domain::chain::header const& header,
         // parent_idx points to the parent header, so we need to check the parent's hash
         auto const parent_hash = index.get_hash(parent_idx);
         if (header.previous_block_hash() != parent_hash) {
+            spdlog::warn("[validate_header] Missing parent at height {}: header.prev_hash={}, expected parent_hash={}, parent_idx={}",
+                height, encode_hash(header.previous_block_hash()), encode_hash(parent_hash), parent_idx);
             return error::store_block_missing_parent;
         }
     } else if (height != 0) {
         // Non-genesis block without parent
+        spdlog::warn("[validate_header] Missing parent at height {}: no parent_idx but height != 0", height);
         return error::store_block_missing_parent;
     }
 

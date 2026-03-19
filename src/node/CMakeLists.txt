@@ -147,17 +147,10 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   set(kth_sources_just_legacy
     ${kth_sources_just_legacy}
     src/full_node.cpp
-    # src/sync_session.cpp  # TODO: remove if unused
     src/executor/executor.cpp
 
     src/utility/reservation.cpp
     src/utility/reservations.cpp
-
-    # Legacy coordinators (to be removed)
-    # src/block_download_coordinator.cpp
-    # src/parallel_sync.cpp
-    # src/block_download_coordinator_v2.cpp
-    # src/parallel_sync_v2.cpp
 
     # CSP-based sync system
     src/sync/chunk_coordinator.cpp
@@ -193,12 +186,7 @@ set(kth_headers
   include/kth/node/utility/reservations.hpp
   include/kth/node/settings.hpp
   include/kth/node/full_node.hpp
-  # include/kth/node/sync_session.hpp  # TODO: remove if unused
   include/kth/node/parser.hpp
-  # include/kth/node/block_download_coordinator.hpp
-  # include/kth/node/parallel_sync.hpp
-  # include/kth/node/block_download_coordinator_v2.hpp
-  # include/kth/node/parallel_sync_v2.hpp
 
   # CSP-based sync system
   include/kth/node/sync.hpp
@@ -253,6 +241,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
   add_executable(kth_node_test
           test/check_list.cpp
+          test/chunk_coordinator.cpp
           test/configuration.cpp
           test/header_list.cpp
           test/main.cpp
@@ -281,6 +270,10 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # Fallback to manual test registration
     add_test(NAME kth_node_test COMMAND kth_node_test)
   endif()
+
+  # Chunk coordinator simulation tool
+  add_executable(chunk_sim tools/chunk_sim.cpp)
+  target_link_libraries(chunk_sim PRIVATE ${PROJECT_NAME})
 endif()
 
 

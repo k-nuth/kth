@@ -45,6 +45,9 @@ network::settings make_test_settings_p2p() {
     settings.threads = 1;
     settings.connect_timeout_seconds = 5;
     settings.channel_handshake_seconds = 5;
+    // Use non-existent paths for tests to avoid loading/saving real data
+    settings.hosts_file = "/tmp/kth_test_hosts_nonexistent.dat";
+    settings.banlist_file = "/tmp/kth_test_banlist_nonexistent.dat";
     return settings;
 }
 

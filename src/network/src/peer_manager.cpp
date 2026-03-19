@@ -106,10 +106,13 @@ peer_manager::~peer_manager() {
 }
 
 ::asio::awaitable<void> peer_manager::remove_by_nonce(uint64_t nonce) {
-    // Note: With structured concurrency, remove() is called from peer tasks
-    // that are tracked by task_group. The peer_supervisor waits for all tasks
-    // to complete before shutdown finishes, so this operation is safe.
-    // We don't check stopped() because we want cleanup to proceed normally.
+    // During shutdown, skip the strand operation to avoid deadlock.
+    // The peer_supervisor is waiting on peer_tasks.join(), but peer_tasks are
+    // waiting on this strand operation. If we don't skip, we deadlock.
+    if (stopped()) {
+        spdlog::debug("[peer_manager] remove_by_nonce() skipping - stopped (nonce {})", nonce);
+        co_return;
+    }
 
     spdlog::debug("[peer_manager] remove_by_nonce() starting co_spawn on strand for nonce {}", nonce);
 

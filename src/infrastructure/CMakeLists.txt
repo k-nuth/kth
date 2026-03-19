@@ -700,6 +700,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/coroutine_smoke_test.cpp
     test/utility/awaitable_helpers.cpp
     test/utility/async_channel.cpp
+    test/task_group.cpp
 
     test/wallet/hd_private.cpp
     test/wallet/hd_public.cpp

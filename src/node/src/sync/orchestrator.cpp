@@ -5,6 +5,7 @@
 #include <kth/node/sync/orchestrator.hpp>
 
 #include <chrono>
+#include <thread>
 
 #include <boost/unordered/unordered_flat_set.hpp>
 #include <spdlog/spdlog.h>
@@ -130,7 +131,13 @@ static
 ) {
     auto executor = co_await ::asio::this_coro::executor;
 
-    spdlog::info("[sync_orchestrator] Starting CSP-based sync system");
+    // 2026-02-07: Log which executor is being used for debugging
+    spdlog::info("[sync_orchestrator] Starting CSP-based sync system (thread_id={})",
+        std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    spdlog::debug("[sync_orchestrator] this_coro::executor type: {}", typeid(executor).name());
+    spdlog::debug("[sync_orchestrator] Network threadpool executor type: {}",
+        typeid(network.thread_pool().get_executor()).name());
+    spdlog::debug("[sync_orchestrator] Network threadpool has {} threads", network.thread_pool().size());
 
     // =========================================================================
     // CHANNELS - The ONLY way tasks communicate
@@ -162,6 +169,17 @@ static
     block_validation_input_channel block_validation_input(executor, 1000);
     block_validated_channel validated_blocks(executor, 100);
 
+    // Fast validation pipeline (chunk-based, bypasses supervisor→bridge→validation)
+    // Capacity 256: storage task is slower than validation (serial disk I/O),
+    // so we need buffer to absorb the speed difference. 256×16=4096 blocks max buffered.
+    fast_validation_input_channel fast_val_input(executor, 256);
+    chunk_validated_channel validated_chunks(executor, 32);
+
+    // Block storage pipeline (writes validated chunks to flat files)
+    // Capacity 128: buffer between fast parallel validation and serial disk writes
+    block_storage_input_channel block_storage_input(executor, 128);
+    chunk_validated_channel stored_chunks(executor, 32);
+
     // Control
     stop_channel stop_signal(executor, 1);
 
@@ -172,7 +190,7 @@ static
     // TASKS - All independent, communicate only via channels
     // =========================================================================
 
-    task_group all_tasks(executor);
+    task_group all_tasks("orchestrator_tasks", executor);
 
     // -------------------------------------------------------------------------
     // 1. Peer provider - receives connected peers from network and distributes
@@ -180,9 +198,10 @@ static
     // Unified input channel for peer_provider (CSP pattern - single channel)
     peer_provider_input_channel peer_provider_input(executor, 100);
 
-    // Bridge task: forwards from network.connected_peers() to unified channel
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[peer_bridge] Started, forwarding peers to peer_provider");
+    // Bridge task: forwards from network.peer_events() to unified channel
+    // 2026-02-07: Use simple timer polling instead of || operator to avoid potential issues
+    all_tasks.spawn("peer_bridge", [&]() -> ::asio::awaitable<void> {
+        spdlog::info("[peer_bridge] Started, forwarding peer events to peer_provider");
         auto exec = co_await ::asio::this_coro::executor;
         ::asio::steady_timer check_timer(exec);
 
@@ -191,7 +210,7 @@ static
                 // Use timer to periodically check if network stopped
                 check_timer.expires_after(std::chrono::milliseconds(500));
                 auto event = co_await (
-                    network.connected_peers().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
+                    network.peer_events().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
                     check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
                 );
 
@@ -200,77 +219,88 @@ static
                     continue;
                 }
 
-                auto [ec, peer] = std::get<0>(event);
+                auto [ec, notification] = std::get<0>(event);
                 if (ec) {
                     spdlog::debug("[peer_bridge] Network channel closed: {}", ec.message());
                     break;
                 }
-                if (!peer_provider_input.try_send(std::error_code{}, new_peer{peer})) {
-                    spdlog::warn("[peer_bridge] Channel full, new_peer dropped for {}", peer->authority_with_agent());
+
+                // Demultiplex based on event type
+                if (notification.event == network::peer_event_type::connected) {
+                    if (!peer_provider_input.try_send(std::error_code{}, new_peer{notification.peer})) {
+                        spdlog::warn("[peer_bridge] Channel full, new_peer dropped for {}",
+                            notification.peer->authority_with_agent());
+                    }
+                } else {
+                    if (!peer_provider_input.try_send(std::error_code{}, peer_disconnected{notification.peer})) {
+                        spdlog::warn("[peer_bridge] Channel full, peer_disconnected dropped for {}",
+                            notification.peer->authority_with_agent());
+                    }
                 }
             }
         } catch (std::exception const& e) {
-            spdlog::error("[peer_bridge] Exception: {}", e.what());
+            spdlog::error("[peer_bridge] EXCEPTION: {}", e.what());
+        } catch (...) {
+            spdlog::error("[peer_bridge] UNKNOWN EXCEPTION");
         }
         // Cancel timer before exiting to ensure clean shutdown of || operator internals
         check_timer.cancel();
-        spdlog::debug("[peer_bridge] Ended");
+        spdlog::info("[peer_bridge] Task ended");
     });
 
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
+    // -------------------------------------------------------------------------
+    // peer_provider - Minimal peer distributor for sync tasks
+    //
+    // Responsibilities:
+    // - Receive peer connect/disconnect events from network
+    // - Broadcast peer list to header_download and block_download tasks
+    // - Report errors to network.report_misbehavior() (reputation system handles bans)
+    // - Record performance to network.record_peer_performance() (persistent storage)
+    // - Close channels on shutdown
+    //
+    // All reputation tracking, ban decisions, and eviction logic are handled by
+    // peer_database in the network layer.
+    // -------------------------------------------------------------------------
+    // 2026-02-07: Added comprehensive exception handling for debugging
+    all_tasks.spawn("peer_provider", [&]() -> ::asio::awaitable<void> {
         spdlog::info("[peer_provider] Task started, waiting for peers...");
 
-        // Maintain full list of connected peers - single source of truth
-        std::vector<network::peer_session::ptr> all_peers;
+        // Local peer list for broadcasting to sync tasks
+        std::vector<network::peer_session::ptr> peers;
 
-        // Peers that had issues during header sync (by nonce) - don't use for headers
-        boost::unordered_flat_set<uint64_t> header_bad_peers;
-
-        // Performance tracking per peer (by nonce)
-        struct peer_stats {
-            uint64_t total_blocks{0};
-            uint64_t total_time_ms{0};
-            uint32_t sample_count{0};
-
-            double avg_ms_per_block() const {
-                return total_blocks > 0 ? double(total_time_ms) / double(total_blocks) : 0.0;
-            }
-        };
-        boost::unordered_flat_map<uint64_t, peer_stats> peer_performance_stats;
-        constexpr uint32_t min_samples_for_eviction = 5;  // Need at least 5 chunks before evaluating
-        constexpr size_t max_peers = 8;
-
-        // Helper to clean stopped peers and send updated list
+        // Broadcast current peer list to download tasks
         auto broadcast_peers = [&]() {
-            // Remove stopped peers and clean their stats
-            std::erase_if(all_peers, [&](auto const& p) {
-                if (p->stopped()) {
-                    peer_performance_stats.erase(p->nonce());
-                    return true;
-                }
-                return false;
-            });
+            // Remove stopped peers
+            std::erase_if(peers, [](auto const& p) { return p->stopped(); });
 
-            // For headers: filter out bad peers
-            std::vector<network::peer_session::ptr> header_peers;
-            header_peers.reserve(all_peers.size());
-            for (auto const& p : all_peers) {
-                if (!header_bad_peers.contains(p->nonce())) {
-                    header_peers.push_back(p);
+            // Filter out slow peers for block download (threshold: 500ms/block, min 3 samples)
+            std::vector<network::peer_session::ptr> fast_peers;
+            fast_peers.reserve(peers.size());
+            size_t slow_count = 0;
+            for (auto const& p : peers) {
+                if (network.is_slow_peer(p->authority())) {
+                    ++slow_count;
+                    auto speed = network.get_peer_speed(p->authority());
+                    spdlog::debug("[peer_provider] Excluding slow peer {} ({:.1f}ms/block)",
+                        p->authority(), speed);
                 } else {
-                    spdlog::info("[peer_provider] Filtering peer {} (nonce={}) - in bad list",
-                        p->authority_with_agent(), p->nonce());
+                    fast_peers.push_back(p);
                 }
             }
 
-            spdlog::info("[peer_provider] Broadcasting {} peers to sync tasks (all={}, bad_list={})",
-                header_peers.size(), all_peers.size(), header_bad_peers.size());
+            if (slow_count > 0) {
+                spdlog::info("[peer_provider] Broadcasting {} peers ({} slow excluded) to sync tasks",
+                    fast_peers.size(), slow_count);
+            } else {
+                spdlog::info("[peer_provider] Broadcasting {} peers to sync tasks", peers.size());
+            }
 
-            // Send filtered list to headers, full list to blocks (via unified input channels)
-            if (!header_download_input.try_send(std::error_code{}, peers_updated{header_peers})) {
+            // Headers: send all peers (headers are small, slow is less of an issue)
+            if (!header_download_input.try_send(std::error_code{}, peers_updated{peers})) {
                 spdlog::warn("[peer_provider] Channel full, peers_updated dropped for header_download");
             }
-            if (!block_download_input.try_send(std::error_code{}, peers_updated{all_peers})) {
+            // Blocks: send only fast peers (slow peers degrade throughput significantly)
+            if (!block_download_input.try_send(std::error_code{}, peers_updated{fast_peers})) {
                 spdlog::warn("[peer_provider] Channel full, peers_updated dropped for block_download");
             }
         };
@@ -279,158 +309,121 @@ static
         ::asio::steady_timer check_timer(exec);
 
         try {
-            // Single channel, FIFO processing - check network.stopped() periodically
             while (!network.stopped()) {
-                // Use timer to periodically check if network stopped
                 check_timer.expires_after(std::chrono::milliseconds(500));
                 auto event = co_await (
                     peer_provider_input.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
                     check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
                 );
 
-                // Timer fired - just loop to check network.stopped()
-                if (event.index() == 1) {
-                    continue;
-                }
+                if (event.index() == 1) continue;  // Timer - check network.stopped()
 
                 auto [ec, msg] = std::get<0>(event);
                 if (ec) {
                     spdlog::debug("[peer_provider] Input channel closed: {}", ec.message());
                     break;
                 }
-                auto& event_msg = msg;
 
-                if (auto* np = std::get_if<new_peer>(&event_msg)) {
-                    // New peer from network
+                if (auto* np = std::get_if<new_peer>(&msg)) {
                     if (np->peer->stopped()) continue;
-
-                    spdlog::info("[peer_provider] New peer connected: {} (nonce={})",
+                    spdlog::info("[peer_provider] New peer: {} (nonce={})",
                         np->peer->authority_with_agent(), np->peer->nonce());
-                    all_peers.push_back(np->peer);
+                    peers.push_back(np->peer);
                     broadcast_peers();
-                } else if (auto* err = std::get_if<peer_error>(&event_msg)) {
-                    // Peer error report - decide action based on error type
-                    spdlog::info("[peer_provider] Peer {} (nonce={}) error: {}",
-                        err->peer->authority_with_agent(), err->peer->nonce(), err->error.message());
 
-                    // Always exclude from header sync
-                    header_bad_peers.insert(err->peer->nonce());
+                } else if (auto* dp = std::get_if<peer_disconnected>(&msg)) {
+                    spdlog::info("[peer_provider] Peer disconnected: {} (nonce={})",
+                        dp->peer->authority_with_agent(), dp->peer->nonce());
+                    std::erase_if(peers, [&](auto const& p) { return p->nonce() == dp->peer->nonce(); });
+                    broadcast_peers();
 
-                    if (is_bannable_error(err->error)) {
-                        // Invalid data = instant ban (1 year)
-                        spdlog::warn("[peer_provider] Banning peer {} for invalid data: {}",
-                            err->peer->authority_with_agent(), err->error.message());
+                } else if (auto* err = std::get_if<peer_error>(&msg)) {
+                    spdlog::info("[peer_provider] Peer error: {} - {}",
+                        err->peer->authority_with_agent(), err->error.message());
 
-                        // Remove from all_peers
-                        std::erase_if(all_peers, [&](auto const& p) {
-                            return p->nonce() == err->peer->nonce();
-                        });
+                    // Report to reputation system - it decides if peer should be banned
+                    int score = is_bannable_error(err->error) ? 100 : 10;
+                    bool banned = network.report_misbehavior(err->peer, score, err->error.message());
 
-                        err->peer->misbehave(network::peer_session::misbehavior_invalid_data);
-                        network.ban_peer(err->peer, std::chrono::hours{24 * 365}, network::ban_reason::node_misbehaving);
-                    } else {
-                        // Network error (timeout, etc.) = accumulate misbehavior score
-                        if (err->peer->misbehave(network::peer_session::misbehavior_timeout)) {
-                            spdlog::warn("[peer_provider] Peer {} reached misbehavior threshold, banning",
-                                err->peer->authority_with_agent());
-                            network.ban_peer(err->peer, std::chrono::hours{24}, network::ban_reason::node_misbehaving);
-                        }
+                    if (banned) {
+                        // Peer was banned - remove from local list
+                        std::erase_if(peers, [&](auto const& p) { return p->nonce() == err->peer->nonce(); });
+                        broadcast_peers();
                     }
 
-                    // Broadcast updated (filtered) list
-                    broadcast_peers();
-                } else if (auto* perf = std::get_if<peer_performance>(&event_msg)) {
-                    // Update performance stats for this peer (block downloads)
-                    auto& stats = peer_performance_stats[perf->peer_nonce];
-                    stats.total_blocks += perf->blocks_downloaded;
-                    stats.total_time_ms += perf->download_time_ms;
-                    stats.sample_count++;
-
-                    // Check if we should evict slow peer (only when at max capacity)
-                    if (all_peers.size() >= max_peers) {
-                        // Collect peers with enough samples
-                        std::vector<std::pair<uint64_t, double>> peer_avgs;
-                        for (auto const& [nonce, pstats] : peer_performance_stats) {
-                            if (pstats.sample_count >= min_samples_for_eviction) {
-                                peer_avgs.emplace_back(nonce, pstats.avg_ms_per_block());
-                            }
-                        }
-
-                        // Need at least 3 peers with samples to make a fair comparison
-                        if (peer_avgs.size() >= 3) {
-                            // Sort by avg time
-                            std::sort(peer_avgs.begin(), peer_avgs.end(),
-                                [](auto const& a, auto const& b) { return a.second < b.second; });
-
-                            // Calculate median
-                            double median_avg = peer_avgs[peer_avgs.size() / 2].second;
-
-                            // Get slowest
-                            auto const& slowest = peer_avgs.back();
-                            uint64_t slowest_nonce = slowest.first;
-                            double slowest_avg = slowest.second;
-
-                            // Only evict if slowest is significantly worse (2x slower than median)
-                            constexpr double eviction_threshold = 2.0;
-                            if (slowest_avg > median_avg * eviction_threshold) {
-                                // Find the peer and disconnect (not ban)
-                                for (auto it = all_peers.begin(); it != all_peers.end(); ++it) {
-                                    if ((*it)->nonce() == slowest_nonce) {
-                                        spdlog::info("[peer_provider] Evicting slow peer {} "
-                                            "(avg {:.1f}ms/block, median {:.1f}ms/block, {:.1f}x slower)",
-                                            (*it)->authority_with_agent(), slowest_avg, median_avg,
-                                            slowest_avg / median_avg);
-                                        (*it)->stop(error::channel_stopped);  // Graceful disconnect
-                                        peer_performance_stats.erase(slowest_nonce);
-                                        all_peers.erase(it);
-                                        broadcast_peers();
-                                        break;
-                                    }
-                                }
-                            }
+                } else if (auto* perf = std::get_if<peer_performance>(&msg)) {
+                    // Find peer by nonce and record to persistent storage
+                    bool found = false;
+                    for (auto const& p : peers) {
+                        if (p->nonce() == perf->peer_nonce) {
+                            network.record_peer_performance(p, perf->blocks_downloaded, perf->download_time_ms);
+                            auto speed = network.get_peer_speed(p->authority());
+                            spdlog::debug("[peer_provider] Perf recorded: {} blocks={}  time={}ms  avg={:.1f}ms/blk",
+                                p->authority(), perf->blocks_downloaded, perf->download_time_ms, speed);
+                            found = true;
+                            break;
                         }
                     }
-                } else if (auto* hperf = std::get_if<header_performance>(&event_msg)) {
-                    // Header download performance - log but don't use for eviction
-                    // Header sync is too fast to reliably measure peer quality
+                    if (!found) {
+                        spdlog::debug("[peer_provider] Perf for unknown nonce {}", perf->peer_nonce);
+                    }
+
+                } else if (auto* hperf = std::get_if<header_performance>(&msg)) {
+                    // Header performance - just log, not used for eviction
                     spdlog::debug("[peer_provider] Header perf: peer={}, headers={}, time={}ms",
                         hperf->peer_nonce, hperf->headers_downloaded, hperf->download_time_ms);
                 }
             }
         } catch (std::exception const& e) {
-            spdlog::error("[peer_provider] Exception: {}", e.what());
+            spdlog::error("[peer_provider] EXCEPTION: {}", e.what());
+        } catch (...) {
+            spdlog::error("[peer_provider] UNKNOWN EXCEPTION");
         }
 
-        // Cancel timer before any co_await to ensure clean shutdown of || operator internals
         check_timer.cancel();
 
-        // Network stopped - close channels FIRST to unblock any pending sends,
-        // then send stop signals. Closing channels will wake up blocked tasks immediately.
-        // NOTE: Only close channels that are NOT read with || operator + timer.
-        // Channels using || (stop_signal) must NOT be closed here to avoid SEGV.
-        spdlog::info("[peer_provider:shutdown] Closing all data channels...");
+        // Cancel and close all data channels to unblock pending operations
+        // Note: cancel() wakes up pending async ops, close() alone does NOT!
+        spdlog::info("[peer_provider:shutdown] Closing channels...");
+        header_download_input.cancel();
         header_download_input.close();
+        header_download_output.cancel();
         header_download_output.close();
+        header_validation_input.cancel();
         header_validation_input.close();
+        validated_headers.cancel();
         validated_headers.close();
+        block_download_input.cancel();
         block_download_input.close();
+        downloaded_blocks.cancel();
         downloaded_blocks.close();
+        block_validation_input.cancel();
         block_validation_input.close();
+        validated_blocks.cancel();
         validated_blocks.close();
+        fast_val_input.cancel();
+        fast_val_input.close();
+        validated_chunks.cancel();
+        validated_chunks.close();
+        block_storage_input.cancel();
+        block_storage_input.close();
+        stored_chunks.cancel();
+        stored_chunks.close();
+        coordinator_events.cancel();
         coordinator_events.close();
-        // NOTE: Do NOT close stop_signal - coordinator:stop_bridge uses || with timer
 
-        spdlog::info("[peer_provider:shutdown] All channels closed, task ending");
-        spdlog::debug("[peer_provider] Task ended");
+        spdlog::info("[peer_provider] Task ended");
     });
 
     // -------------------------------------------------------------------------
     // 2. Header download task (1 input, 1 output)
     //    Sequential header download with sticky peer selection
     // -------------------------------------------------------------------------
-    all_tasks.spawn(header_download_task(
+    auto const max_header_height = 0u;  // 0 = unlimited, download all headers from peers
+    all_tasks.spawn("header_download_task", header_download_task(
         header_download_input,
-        header_download_output
+        header_download_output,
+        max_header_height
     ));
 
     // -------------------------------------------------------------------------
@@ -439,7 +432,7 @@ static
     //    - peer_failure_report → header_validation_input
     //    - header_performance → peer_provider_input
     // -------------------------------------------------------------------------
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
+    all_tasks.spawn("header_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::debug("[header_bridge] Started, demultiplexing download output");
         try {
             while (true) {
@@ -472,14 +465,14 @@ static
         } catch (std::exception const& e) {
             spdlog::error("[header_bridge] Exception: {}", e.what());
         }
-        spdlog::debug("[header_bridge] Ended");
+        spdlog::info("[header_bridge] Task ended");
     });
 
     // -------------------------------------------------------------------------
     // 4. Header validation task (1 input, 1 output)
     // -------------------------------------------------------------------------
     uint32_t const initial_header_height = uint32_t(organizer.header_height());
-    all_tasks.spawn(header_validation_task(
+    all_tasks.spawn("header_validation_task", header_validation_task(
         organizer,
         header_validation_input,
         validated_headers
@@ -488,10 +481,11 @@ static
     // -------------------------------------------------------------------------
     // 5. Block download supervisor (1 input, 1 output)
     // -------------------------------------------------------------------------
-    all_tasks.spawn(block_download_supervisor(
+    all_tasks.spawn("block_download_supervisor", block_download_supervisor(
         block_download_input,
         downloaded_blocks,
-        organizer
+        organizer,
+        &fast_val_input  // chunk-based fast validation
     ));
 
     // -------------------------------------------------------------------------
@@ -499,38 +493,85 @@ static
     //    - downloaded_block → block_validation_input
     //    - peer_performance → peer_provider_input
     // -------------------------------------------------------------------------
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[block_bridge] Started, demultiplexing supervisor output");
+    // 2026-02-07: Note - with block validation disabled (#if 0 in block_tasks.cpp),
+    // this task will wait forever on downloaded_blocks.async_receive() because
+    // block_supervisor never sends to the output channel. This is expected behavior
+    // when benchmarking download speed only. The task will be unblocked when
+    // peer_provider closes the channel during shutdown.
+    all_tasks.spawn("block_bridge", [&]() -> ::asio::awaitable<void> {
+        spdlog::info("[block_bridge] Started, waiting for blocks from supervisor");
+        uint64_t blocks_forwarded = 0;
+
+        // Timing stats
+        uint64_t total_recv_wait_us = 0;
+        uint64_t total_send_wait_us = 0;
+        auto last_stats_time = std::chrono::steady_clock::now();
+
         try {
             while (true) {
+                // Measure time waiting to receive from supervisor
+                auto recv_start = std::chrono::steady_clock::now();
                 auto [ec, msg] = co_await downloaded_blocks.async_receive(
                     ::asio::as_tuple(::asio::use_awaitable));
+                auto recv_wait_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - recv_start).count();
+
                 if (ec) {
                     spdlog::debug("[block_bridge] Download channel closed: {}", ec.message());
                     break;
                 }
 
-                if (auto* block = std::get_if<downloaded_block>(&msg)) {
+                total_recv_wait_us += recv_wait_us;
+
+                if (auto* block = std::get_if<downloaded_light_block>(&msg)) {
                     // Track received for pipeline debugging
                     g_blocks_received_by_bridge.fetch_add(1, std::memory_order_relaxed);
 
-                    // Forward to validation
-                    if (!block_validation_input.try_send(std::error_code{}, std::move(*block))) {
-                        spdlog::warn("[block_bridge] Channel full, block {} dropped", block->height);
+                    // Log first few blocks and periodically
+                    if (blocks_forwarded < 10 || blocks_forwarded % 1000 == 0) {
+                        spdlog::info("[block_bridge] Received block {} from supervisor (total: {})",
+                            block->height, blocks_forwarded);
+                    }
+
+                    // Forward to validation with retry - measure send time
+                    auto send_start = std::chrono::steady_clock::now();
+                    bool sent = co_await try_send_with_retry(block_validation_input, std::move(*block), 20, std::chrono::milliseconds(10));
+                    auto send_wait_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::steady_clock::now() - send_start).count();
+
+                    if (!sent) {
+                        spdlog::error("[block_bridge] Validation channel full after retries! forwarded={}", blocks_forwarded);
                         break;
                     }
+
+                    total_send_wait_us += send_wait_us;
                     g_blocks_forwarded_by_bridge.fetch_add(1, std::memory_order_relaxed);
+                    ++blocks_forwarded;
+
+                    // Log timing stats every 10 seconds
+                    auto now = std::chrono::steady_clock::now();
+                    if (now - last_stats_time >= std::chrono::seconds(10)) {
+                        double avg_recv_ms = blocks_forwarded > 0
+                            ? static_cast<double>(total_recv_wait_us) / blocks_forwarded / 1000.0 : 0;
+                        double avg_send_ms = blocks_forwarded > 0
+                            ? static_cast<double>(total_send_wait_us) / blocks_forwarded / 1000.0 : 0;
+                        spdlog::info("[block_bridge] timing: recv_wait={:.2f}ms/blk send_wait={:.2f}ms/blk (n={})",
+                            avg_recv_ms, avg_send_ms, blocks_forwarded);
+                        last_stats_time = now;
+                    }
                 } else if (auto* perf = std::get_if<peer_performance>(&msg)) {
-                    // Forward performance stats to peer_provider
+                    // Forward performance stats to peer_provider (non-critical)
                     if (!peer_provider_input.try_send(std::error_code{}, *perf)) {
                         spdlog::debug("[block_bridge] Channel full, performance stats dropped");
                     }
                 }
             }
         } catch (std::exception const& e) {
-            spdlog::error("[block_bridge] Exception: {}", e.what());
+            spdlog::error("[block_bridge] EXCEPTION: {}", e.what());
+        } catch (...) {
+            spdlog::error("[block_bridge] UNKNOWN EXCEPTION");
         }
-        spdlog::debug("[block_bridge] Ended");
+        spdlog::info("[block_bridge] Task ended, forwarded {} blocks", blocks_forwarded);
     });
 
     // -------------------------------------------------------------------------
@@ -542,6 +583,7 @@ static
         : 0;
 
     // Get checkpoint height for fast IBD
+    // max_checkpoint_height comes from the checkpoint list in parser.hpp
     uint32_t const checkpoint_height = uint32_t(chain.chain_settings().max_checkpoint_height);
     spdlog::info("[sync_orchestrator] Fast IBD mode up to checkpoint height {}", checkpoint_height);
 
@@ -560,6 +602,11 @@ static
         if (clear_result != database::result_code::success) {
             spdlog::error("[sync_orchestrator] Failed to clear UTXO set!");
         }
+
+        auto utxo_height_before = chain.get_utxo_built_height();
+        spdlog::warn("###   utxo_built_height was: {}  — resetting to 0",
+            utxo_height_before.value_or(0));
+        std::ignore = chain.set_utxo_built_height(0);
 
         spdlog::warn("##############################################################");
         spdlog::warn("###   UTXO SET CLEARED - WILL REBUILD FROM SCRATCH         ###");
@@ -583,7 +630,8 @@ static
                 chain,
                 network.thread_pool().get(),
                 1,  // Start from block 1 (skip genesis)
-                checkpoint_height
+                checkpoint_height,
+                blockchain::utxo_build_strategy::sequential_batch
             );
 
             if (utxo_result != database::result_code::success) {
@@ -597,7 +645,7 @@ static
         }
     }
 
-    all_tasks.spawn(block_validation_task(
+    all_tasks.spawn("block_validation_task", block_validation_task(
         chain,
         block_validation_input,
         validated_blocks,
@@ -606,43 +654,137 @@ static
     ));
 
     // -------------------------------------------------------------------------
+    // 7b. Fast validation task (chunk-based, parallel merkle)
+    //     Forwards valid chunks to block_storage_task (with block data)
+    //     Sends invalid chunks directly to coordinator via validated_chunks
+    // -------------------------------------------------------------------------
+    all_tasks.spawn("fast_validation_task", fast_validation_task(
+        chain,
+        fast_val_input,
+        validated_chunks,
+        &block_storage_input  // forward valid chunks to storage
+    ));
+
+    // -------------------------------------------------------------------------
+    // 7c. Block storage task (writes validated blocks to flat files)
+    //     Receives from fast_validation_task, stores sequentially, notifies coordinator
+    // -------------------------------------------------------------------------
+    all_tasks.spawn("block_storage_task", block_storage_task(
+        chain,
+        block_storage_input,
+        stored_chunks,
+        initial_block_height + 1
+    ));
+
+    // Bridge: validated_chunks -> coordinator_events (carries validation errors only)
+    all_tasks.spawn("coordinator_chunks_bridge", [&]() -> ::asio::awaitable<void> {
+        spdlog::debug("[coordinator:chunks_bridge] Started");
+        while (true) {
+            auto [ec, result] = co_await validated_chunks.async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                spdlog::debug("[coordinator:chunks_bridge] Channel closed: {}", ec.message());
+                break;
+            }
+            if (!coordinator_events.try_send(std::error_code{}, result)) {
+                spdlog::warn("[coordinator:chunks_bridge] Channel full, chunk_validated dropped");
+                break;
+            }
+        }
+        spdlog::info("[coordinator:chunks_bridge] Task ended");
+    });
+
+    // Bridge: stored_chunks -> coordinator_events (carries storage results: validated + stored)
+    all_tasks.spawn("coordinator_stored_bridge", [&]() -> ::asio::awaitable<void> {
+        spdlog::debug("[coordinator:stored_bridge] Started");
+        while (true) {
+            auto [ec, result] = co_await stored_chunks.async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                spdlog::debug("[coordinator:stored_bridge] Channel closed: {}", ec.message());
+                break;
+            }
+            if (!coordinator_events.try_send(std::error_code{}, result)) {
+                spdlog::warn("[coordinator:stored_bridge] Channel full, chunk_validated dropped");
+                break;
+            }
+        }
+        spdlog::info("[coordinator:stored_bridge] Task ended");
+    });
+
+    // -------------------------------------------------------------------------
     // 8. Sync coordinator - orchestrates the sync flow
     // Uses unified event channel to avoid || operator between multiple channels
     // -------------------------------------------------------------------------
 
     // Bridge: stop_signal -> coordinator_events
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[coordinator:stop_bridge] Started");
+    // 2026-02-07: Simplified to only poll network.stopped() via timer.
+    // The || operator with stop_signal channel was suspected of causing the timer to
+    // stop firing mysteriously. Since stop_signal is never used (nobody sends to it),
+    // we remove it from the || expression and just poll network.stopped().
+    all_tasks.spawn("coordinator_stop_bridge", [&]() -> ::asio::awaitable<void> {
+        spdlog::info("[coordinator:stop_bridge] Started");
         auto exec = co_await ::asio::this_coro::executor;
         ::asio::steady_timer check_timer(exec);
 
-        // stop_signal is an event channel, we need to check it periodically
-        while (!network.stopped()) {
-            check_timer.expires_after(std::chrono::milliseconds(100));
-            auto event = co_await (
-                stop_signal.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-                check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-            );
+        spdlog::debug("[coordinator:stop_bridge] Entering while loop, network.stopped()={}", network.stopped());
+        uint64_t loop_count = 0;
 
-            if (event.index() == 0) {
-                // Stop signal received
-                auto [ec] = std::get<0>(event);
-                if (!ec) {
-                    if (!coordinator_events.try_send(std::error_code{}, stop_request{})) {
-                        spdlog::warn("[coordinator:stop_bridge] Channel full, stop_request dropped");
-                    }
+        // 2026-02-07: Set to 1 to log every iteration for debugging, 100 for normal operation
+        constexpr uint64_t log_every_n = 1;
+
+        try {
+            // Simple timer-based polling - no || operator with channels
+            while (!network.stopped()) {
+                ++loop_count;
+                if (loop_count % log_every_n == 0) {
+                    spdlog::debug("[coordinator:stop_bridge] iter={} Setting timer", loop_count);
                 }
-                break;
+
+                check_timer.expires_after(std::chrono::milliseconds(100));
+
+                if (loop_count % log_every_n == 0) {
+                    spdlog::debug("[coordinator:stop_bridge] iter={} Awaiting timer", loop_count);
+                }
+
+                auto [ec] = co_await check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+
+                if (loop_count % log_every_n == 0) {
+                    spdlog::debug("[coordinator:stop_bridge] iter={} Timer returned ec={}",
+                        loop_count, ec ? ec.message() : "ok");
+                }
+
+                if (ec) {
+                    spdlog::debug("[coordinator:stop_bridge] Timer cancelled: {}", ec.message());
+                    break;
+                }
+
+                if (loop_count % log_every_n == 0) {
+                    spdlog::debug("[coordinator:stop_bridge] iter={} Looping back", loop_count);
+                }
             }
-            // Timer fired - loop to check network.stopped()
+            // 2026-02-07: If we exit the while loop, log why
+            spdlog::info("[coordinator:stop_bridge] Exited while loop - network.stopped()={}", network.stopped());
+        } catch (std::exception const& e) {
+            spdlog::error("[coordinator:stop_bridge] EXCEPTION: {}", e.what());
+        } catch (...) {
+            spdlog::error("[coordinator:stop_bridge] UNKNOWN EXCEPTION");
         }
-        // Cancel timer before exiting to ensure clean shutdown of || operator internals
+
+        spdlog::info("[coordinator:stop_bridge] Exited while loop after {} iterations, network.stopped()={}",
+            loop_count, network.stopped());
+
+        // 2026-02-07: FIX - Always send stop_request when exiting
+        if (!coordinator_events.try_send(std::error_code{}, stop_request{})) {
+            spdlog::debug("[coordinator:stop_bridge] Channel full on exit, stop_request dropped (may be duplicate)");
+        }
+
         check_timer.cancel();
-        spdlog::debug("[coordinator:stop_bridge] Ended");
+        spdlog::info("[coordinator:stop_bridge] Task ended");
     });
 
     // Bridge: validated_headers -> coordinator_events
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
+    all_tasks.spawn("coordinator_headers_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::debug("[coordinator:headers_bridge] Started");
         while (true) {
             auto [ec, result] = co_await validated_headers.async_receive(
@@ -656,11 +798,11 @@ static
                 break;
             }
         }
-        spdlog::debug("[coordinator:headers_bridge] Ended");
+        spdlog::info("[coordinator:headers_bridge] Task ended");
     });
 
     // Bridge: validated_blocks -> coordinator_events
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
+    all_tasks.spawn("coordinator_blocks_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::debug("[coordinator:blocks_bridge] Started");
         while (true) {
             auto [ec, result] = co_await validated_blocks.async_receive(
@@ -674,11 +816,13 @@ static
                 break;
             }
         }
-        spdlog::debug("[coordinator:blocks_bridge] Ended");
+        spdlog::info("[coordinator:blocks_bridge] Task ended");
     });
 
-    all_tasks.spawn([&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[sync_coordinator] Task started");
+    // 2026-02-07: Added comprehensive exception handling for debugging
+    all_tasks.spawn("sync_coordinator", [&]() -> ::asio::awaitable<void> {
+        spdlog::info("[sync_coordinator] Task started");
+        try {
 
         uint32_t blocks_synced_to = initial_block_height;
         uint32_t headers_synced_to = initial_header_height;
@@ -687,6 +831,9 @@ static
         // For ETA calculation
         auto header_sync_start = std::chrono::steady_clock::now();
         uint32_t headers_at_start = headers_synced_to;
+
+        // Buffer for out-of-order chunk validation results (keyed by start_height)
+        boost::unordered_flat_map<uint32_t, chunk_validated> pending_chunks;
 
         spdlog::info("[sync_coordinator] Initial state: blocks={}, headers={}",
             blocks_synced_to, headers_synced_to);
@@ -752,8 +899,8 @@ static
                     auto retry_hash = organizer.index().get_hash(
                         static_cast<blockchain::header_index::index_t>(headers_synced_to));
 
-                    spdlog::info("[sync_coordinator] Retrying header sync from height {} with different peer",
-                        headers_synced_to);
+                    spdlog::info("[sync_coordinator] Retrying header sync from height {} with different peer, from_hash={}",
+                        headers_synced_to, encode_hash(retry_hash));
 
                     if (!header_download_input.try_send(std::error_code{}, header_request{
                         .from_height = headers_synced_to,
@@ -789,7 +936,32 @@ static
                         spdlog::warn("[sync_coordinator] Channel full, next batch header_request dropped");
                     }
                 } else if (result->count == 0 && !header_sync_complete) {
-                    // Tip reached - header sync complete (guard against duplicate events)
+                    // All peers returned 0 headers - check if we've reached checkpoint
+                    if (headers_synced_to < checkpoint_height) {
+                        // Not at checkpoint yet - we need more headers but all peers are behind
+                        // Wait a bit and retry (peers might sync more)
+                        spdlog::warn("[sync_coordinator] All peers at height {} but checkpoint is {} - waiting and retrying",
+                            headers_synced_to, checkpoint_height);
+
+                        ::asio::steady_timer timer(exec);
+                        timer.expires_after(std::chrono::seconds(10));
+                        auto [timer_ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+                        if (timer_ec || network.stopped()) break;
+
+                        // Retry header sync
+                        auto retry_hash = organizer.index().get_hash(
+                            static_cast<blockchain::header_index::index_t>(headers_synced_to));
+
+                        if (!header_download_input.try_send(std::error_code{}, header_request{
+                            .from_height = headers_synced_to,
+                            .from_hash = retry_hash
+                        })) {
+                            spdlog::warn("[sync_coordinator] Channel full, retry header_request dropped");
+                        }
+                        continue;
+                    }
+
+                    // At or past checkpoint - header sync complete
                     header_sync_complete = true;
 
                     auto const elapsed = std::chrono::steady_clock::now() - header_sync_start;
@@ -813,7 +985,9 @@ static
                         // Determine end height based on sync stage
                         uint32_t end_height;
                         if (blocks_synced_to < checkpoint_height) {
-                            // Fast sync stage: only download up to checkpoint
+                            // Fast sync stage: download up to checkpoint
+                            // NOTE: We should only reach here if headers_synced_to >= checkpoint_height
+                            // because header_sync should not complete until we have checkpoint headers
                             end_height = checkpoint_height;
                             spdlog::info("[sync_coordinator] Starting FAST block sync: {} to {} ({} blocks)",
                                 blocks_synced_to + 1, end_height,
@@ -874,7 +1048,8 @@ static
                             chain,
                             network.thread_pool().get(),
                             1,  // Start from block 1 (skip genesis)
-                            checkpoint_height
+                            checkpoint_height,
+                            blockchain::utxo_build_strategy::sequential_batch
                         );
 
                         if (utxo_result != database::result_code::success) {
@@ -887,11 +1062,26 @@ static
                         // from checkpoint+1 to headers_synced_to
                     }
 
-                    // Check if we've caught up to headers (slow sync complete)
+                    // Check if we've caught up to headers
                     if (blocks_synced_to >= headers_synced_to && header_sync_complete) {
-                        spdlog::info("[sync_coordinator] Block sync caught up to headers at {}",
-                            blocks_synced_to);
-                        // Could trigger new header sync here if needed
+                        // Whether before or after checkpoint, we need to keep looking for more headers
+                        // to stay in sync with the network tip
+                        spdlog::info("[sync_coordinator] Block sync caught up to headers at {} (checkpoint={}), restarting header sync",
+                            blocks_synced_to, checkpoint_height);
+
+                        header_sync_complete = false;
+                        header_sync_start = std::chrono::steady_clock::now();
+                        headers_at_start = headers_synced_to;
+
+                        auto next_hash = organizer.index().get_hash(
+                            static_cast<blockchain::header_index::index_t>(headers_synced_to));
+
+                        if (!header_download_input.try_send(std::error_code{}, header_request{
+                            .from_height = headers_synced_to,
+                            .from_hash = next_hash
+                        })) {
+                            spdlog::warn("[sync_coordinator] Channel full, restart header_request dropped");
+                        }
                     }
                 } else {
                     spdlog::error("[sync_coordinator] Block validation failed at {}: {}",
@@ -912,10 +1102,96 @@ static
                 }
                 continue;
             }
+
+            if (auto* result = std::get_if<chunk_validated>(&event)) {
+                if (!result->result) {
+                    // Buffer the chunk result (chunks may arrive out of order)
+                    pending_chunks[result->start_height] = *result;
+
+                    // Advance blocks_synced_to through consecutive completed chunks
+                    while (true) {
+                        auto it = pending_chunks.find(blocks_synced_to + 1);
+                        if (it == pending_chunks.end()) break;
+                        blocks_synced_to = it->second.start_height + it->second.block_count - 1;
+                        pending_chunks.erase(it);
+                    }
+
+                    // Log progress periodically (every 1000 blocks)
+                    static uint32_t last_logged_k = 0;
+                    uint32_t current_k = blocks_synced_to / 1000;
+                    if (current_k > last_logged_k) {
+                        last_logged_k = current_k;
+                        spdlog::info("[sync_coordinator:fast] {}/{} validated (pending_chunks: {})",
+                            blocks_synced_to, checkpoint_height, pending_chunks.size());
+                    }
+
+                    // Check if fast sync stage is complete
+                    if (blocks_synced_to >= checkpoint_height) {
+                        spdlog::info("[sync_coordinator] *** FAST SYNC COMPLETE at checkpoint {} ***",
+                            checkpoint_height);
+
+                        spdlog::info("[sync_coordinator] Starting UTXO set build...");
+
+                        auto utxo_result = co_await blockchain::build_utxo_set(
+                            chain,
+                            network.thread_pool().get(),
+                            1,  // Start from block 1 (skip genesis)
+                            checkpoint_height,
+                            blockchain::utxo_build_strategy::sequential_batch
+                        );
+
+                        if (utxo_result != database::result_code::success) {
+                            spdlog::error("[sync_coordinator] UTXO build failed!");
+                            break;
+                        }
+
+                        spdlog::info("[sync_coordinator] UTXO set build complete, ready for slow sync");
+                    }
+
+                    // Check if we've caught up to headers
+                    if (blocks_synced_to >= headers_synced_to && header_sync_complete) {
+                        spdlog::info("[sync_coordinator] Block sync caught up to headers at {} (checkpoint={}), restarting header sync",
+                            blocks_synced_to, checkpoint_height);
+
+                        header_sync_complete = false;
+                        header_sync_start = std::chrono::steady_clock::now();
+                        headers_at_start = headers_synced_to;
+
+                        auto next_hash = organizer.index().get_hash(
+                            static_cast<blockchain::header_index::index_t>(headers_synced_to));
+
+                        if (!header_download_input.try_send(std::error_code{}, header_request{
+                            .from_height = headers_synced_to,
+                            .from_hash = next_hash
+                        })) {
+                            spdlog::warn("[sync_coordinator] Channel full, restart header_request dropped");
+                        }
+                    }
+                } else {
+                    spdlog::error("[sync_coordinator] Chunk validation failed at height {}: {}",
+                        result->start_height, result->result.message());
+
+                    if (result->source_peer) {
+                        if (!peer_provider_input.try_send(std::error_code{}, peer_error{
+                            .peer = result->source_peer,
+                            .error = result->result
+                        })) {
+                            spdlog::warn("[sync_coordinator] Channel full, peer_error dropped");
+                        }
+                    }
+                    break;
+                }
+                continue;
+            }
         }
 
-        spdlog::debug("[sync_coordinator] Event loop ended, task completing...");
-        spdlog::debug("[sync_coordinator] Task ended");
+        spdlog::info("[sync_coordinator] Event loop ended, task completing...");
+        } catch (std::exception const& e) {
+            spdlog::error("[sync_coordinator] EXCEPTION: {}", e.what());
+        } catch (...) {
+            spdlog::error("[sync_coordinator] UNKNOWN EXCEPTION");
+        }
+        spdlog::info("[sync_coordinator] Task ended");
     });
 
     // Wait for all tasks

@@ -17,6 +17,8 @@
 #include <kth/network/settings.hpp>
 
 // Modern coroutine-based networking (keep these)
+#include <kth/network/peer_record.hpp>
+#include <kth/network/peer_database.hpp>
 #include <kth/network/peer_manager.hpp>
 #include <kth/network/peer_session.hpp>
 #include <kth/network/protocols_coro.hpp>
@@ -27,7 +29,7 @@
 // #include <kth/network/acceptor.hpp>
 // #include <kth/network/channel.hpp>
 // #include <kth/network/connector.hpp>
-#include <kth/network/hosts.hpp>                 // TODO: review - may need to keep or modernize
+// #include <kth/network/hosts.hpp>              // Replaced by peer_database.hpp
 // #include <kth/network/message_subscriber.hpp>
 // #include <kth/network/p2p.hpp>
 // #include <kth/network/proxy.hpp>

@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <ctime>
+#include <filesystem>
 #include <functional>
 #include <expected>
 #include <vector>
@@ -19,7 +20,10 @@
 #include <boost/unordered/unordered_flat_set.hpp>
 
 #include <kth/database.hpp>
+#include <kth/database/block_store.hpp>
+#include <kth/database/databases/utxoz_database.hpp>
 #include <kth/domain.hpp>
+#include <kth/domain/chain/light_block.hpp>
 
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/header_index.hpp>
@@ -54,8 +58,7 @@ struct KB_API block_chain {
     // CONSTRUCTION
     // =========================================================================
 
-    block_chain(threadpool& pool,
-                blockchain::settings const& chain_settings,
+    block_chain(blockchain::settings const& chain_settings,
                 database::settings const& database_settings,
                 domain::config::network network,
                 bool relay_transactions = true);
@@ -69,10 +72,17 @@ struct KB_API block_chain {
     block_chain& operator=(block_chain&&) = delete;
 
     // =========================================================================
+    // THREAD POOL
+    // =========================================================================
+
+    [[nodiscard]] threadpool& thread_pool() { return priority_pool_; }
+
+    // =========================================================================
     // LIFECYCLE
     // =========================================================================
 
-    [[nodiscard]] bool start();
+    /// @param disk_magic Magic bytes for block files (e.g., 0xd9b4bef9 for BCH mainnet)
+    [[nodiscard]] bool start(uint32_t disk_magic);
     [[nodiscard]] bool stop();
     [[nodiscard]] bool close();
     [[nodiscard]] bool stopped() const;
@@ -85,12 +95,31 @@ struct KB_API block_chain {
     [[nodiscard]]
     ::asio::awaitable<code> organize(block_const_ptr block, bool headers_pre_validated = false);
 
-    /// Fast IBD: store only block data without validation or UTXO updates.
-    /// For use under checkpoint where we trust the blocks.
-    /// @param block The block to store
-    /// @param height The height at which to store the block
+    /// Fast IBD: merkle validation (+ disk storage when enabled) for blocks under checkpoint.
+    /// Posts work to priority_pool_ so network pool stays free for downloads.
     [[nodiscard]]
-    ::asio::awaitable<code> organize_fast(block_const_ptr block, size_t height);
+    ::asio::awaitable<code> organize_fast(std::shared_ptr<domain::chain::light_block const> block, size_t height);
+
+    /// Fast IBD: parallel merkle validation for a chunk of light_blocks.
+    /// Posts N merkle checks to priority_pool_ in parallel, awaits all results.
+    [[nodiscard]]
+    ::asio::awaitable<code> validate_chunk(
+        std::vector<std::shared_ptr<domain::chain::light_block const>> const& blocks,
+        uint32_t start_height);
+
+    /// Fast IBD: store a validated light_block to flat files + update header_index + LMDB height.
+    /// Posts disk I/O to priority_pool_ so the network executor stays free.
+    [[nodiscard]]
+    ::asio::awaitable<code> store_block(
+        std::shared_ptr<domain::chain::light_block const> const& block,
+        uint32_t height);
+
+    /// Fast IBD: store an entire chunk of validated light_blocks in a single post to pool.
+    /// Eliminates per-block post+await round-trip overhead (1 round-trip instead of N).
+    [[nodiscard]]
+    ::asio::awaitable<code> store_chunk(
+        std::vector<std::shared_ptr<domain::chain::light_block const>> const& blocks,
+        uint32_t start_height);
 
     [[nodiscard]]
     ::asio::awaitable<code> organize(transaction_const_ptr tx);
@@ -120,11 +149,22 @@ struct KB_API block_chain {
     void prune_reorg_async();
 
     // Apply a batch of UTXO changes (for UTXO set building after fast IBD)
+    template <database::utxo_insert_range Inserts, database::utxo_delete_range Deletes>
     [[nodiscard]]
-    database::result_code apply_utxo_delta(
-        boost::unordered_flat_map<domain::chain::point, database::utxo_entry> const& inserts,
-        boost::unordered_flat_set<domain::chain::point> const& deletes
-    );
+    database::result_code apply_utxo_delta(Inserts const& inserts, Deletes const& deletes) {
+        return utxoz_db_.apply_delta(inserts, deletes);
+    }
+
+    // Apply a batch of raw UTXO changes (zero-copy path, no domain objects)
+    template <typename Inserts, typename Deletes>
+    [[nodiscard]]
+    database::result_code apply_utxo_delta_raw(Inserts const& inserts, Deletes const& deletes) {
+        return utxoz_db_.apply_delta_raw(inserts, deletes);
+    }
+
+    // Set last block height in LMDB (for fast IBD storage progress tracking)
+    [[nodiscard]]
+    database::result_code set_last_block_height(uint32_t height);
 
     // Get/set the last block height for which UTXO set was built
     [[nodiscard]]
@@ -136,6 +176,32 @@ struct KB_API block_chain {
     // TODO(fernando): TEMPORARY - REMOVE THIS METHOD AFTER TESTING UTXO BUILD
     [[nodiscard]]
     database::result_code clear_utxo_set();
+
+    // UTXO-Z maintenance operations
+    [[nodiscard]]
+    size_t utxo_deferred_deletions_size() const;
+
+    [[nodiscard]]
+    std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>> utxo_process_pending_deletions();
+
+    void utxo_compact();
+    void utxo_print_statistics();
+    void utxo_print_sizing_report();
+    void utxo_print_height_range_stats();
+
+    // UTXO-Z iteration (for building bloom filter after IBD)
+    template <typename F>
+    void utxo_for_each(F&& callback) const {
+        utxoz_db_.for_each_utxo(std::forward<F>(callback));
+    }
+
+    // UTXO-Z size (number of UTXOs in the set)
+    [[nodiscard]]
+    size_t utxo_size() const;
+
+    // Set/clear bloom filter for skip-insert optimization
+    void set_utxo_bloom(std::shared_ptr<database::utxo_bloom_filter const> bloom);
+    void clear_utxo_bloom();
 #endif
 
     // =========================================================================
@@ -178,6 +244,10 @@ struct KB_API block_chain {
     bool is_stale() const;
     settings const& chain_settings() const;
     executor_type executor() const;
+
+    /// Data directory (parent of internal_db_dir, contains utxoz/, blocks/, etc.)
+    [[nodiscard]]
+    std::filesystem::path data_dir() const;
 
     /// Access the header index (for headers-first sync).
     [[nodiscard]] header_index& headers() { return header_index_; }
@@ -234,6 +304,14 @@ struct KB_API block_chain {
 
     [[nodiscard]] awaitable_expected<std::pair<block_const_ptr, size_t>>
     fetch_block(hash_digest const& hash) const;
+
+    // Batch fetch: single LMDB transaction for multiple blocks (optimized for UTXO building)
+    [[nodiscard]] std::expected<domain::chain::block::list, database::result_code>
+    fetch_blocks(uint32_t from, uint32_t to) const;
+
+    // Raw batch fetch: returns serialized block data without deserialization
+    [[nodiscard]] std::expected<std::vector<data_chunk>, database::result_code>
+    fetch_blocks_raw(uint32_t from, uint32_t to) const;
 
     [[nodiscard]] awaitable_expected<std::pair<header_ptr, size_t>>
     fetch_block_header(size_t height) const;
@@ -394,6 +472,12 @@ private:
     transaction_organizer transaction_organizer_;
     block_organizer block_organizer_;
     header_index header_index_;
+
+    // Flat file block storage (for fast sequential I/O during IBD)
+    std::unique_ptr<database::block_store> block_store_;
+
+    // UTXO-Z high-performance UTXO database
+    database::utxoz_database utxoz_db_;
 };
 
 } // namespace kth::blockchain

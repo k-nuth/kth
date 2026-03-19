@@ -15,23 +15,23 @@ using namespace kth;
 
 TEST_CASE("threadpool construction", "[threadpool]") {
     SECTION("default construction uses hardware concurrency") {
-        threadpool pool;
+        threadpool pool("test_default");
         CHECK(pool.size() == std::thread::hardware_concurrency());
     }
 
     SECTION("explicit thread count") {
-        threadpool pool(4);
+        threadpool pool("test_explicit", 4);
         CHECK(pool.size() == 4);
     }
 
     SECTION("zero threads defaults to hardware concurrency") {
-        threadpool pool(0);
+        threadpool pool("test_zero", 0);
         CHECK(pool.size() == std::thread::hardware_concurrency());
     }
 }
 
 TEST_CASE("threadpool executor", "[threadpool]") {
-    threadpool pool(2);
+    threadpool pool("test", 2);
 
     SECTION("get_executor returns valid executor") {
         auto exec = pool.get_executor();
@@ -65,7 +65,7 @@ TEST_CASE("threadpool executor", "[threadpool]") {
 }
 
 TEST_CASE("threadpool work execution", "[threadpool]") {
-    threadpool pool(4);
+    threadpool pool("test", 4);
 
     SECTION("single task execution") {
         std::atomic<int> counter{0};
@@ -128,7 +128,7 @@ TEST_CASE("threadpool stop and join", "[threadpool]") {
     using namespace std::chrono_literals;
 
     SECTION("join without stop waits for all pending work") {
-        threadpool pool(2);
+        threadpool pool("test", 2);
         std::atomic<int> completed{0};
 
         // Post multiple tasks
@@ -146,7 +146,7 @@ TEST_CASE("threadpool stop and join", "[threadpool]") {
     }
 
     SECTION("stop cancels pending work that has not started") {
-        threadpool pool(1);  // Single thread to control execution order
+        threadpool pool("test", 1);  // Single thread to control execution order
         std::atomic<bool> first_started{false};
         std::atomic<bool> first_done{false};
         std::atomic<bool> second_done{false};
@@ -177,7 +177,7 @@ TEST_CASE("threadpool stop and join", "[threadpool]") {
     }
 
     SECTION("stop does not block - requires separate join") {
-        threadpool pool(2);
+        threadpool pool("test", 2);
         std::atomic<bool> work_running{false};
         std::atomic<bool> work_done{false};
 
@@ -204,7 +204,7 @@ TEST_CASE("threadpool stop and join", "[threadpool]") {
     }
 
     SECTION("join after stop waits for running work to complete") {
-        threadpool pool(2);
+        threadpool pool("test", 2);
         std::atomic<bool> work_started{false};
         std::atomic<bool> work_done{false};
 

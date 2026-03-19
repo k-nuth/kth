@@ -25,6 +25,7 @@ enum class ban_reason : uint8_t {
     node_misbehaving = 1,      // Misbehavior (invalid messages, etc.)
     manually_added = 2,        // Manually banned by user
     checkpoint_failed = 3,     // Sent headers failing checkpoint (wrong chain)
+    slow_peer = 4,             // Peer too slow for sync
 };
 
 // =============================================================================
@@ -147,9 +148,20 @@ constexpr std::string_view to_string(ban_reason reason) {
         case ban_reason::unknown: return "unknown";
         case ban_reason::node_misbehaving: return "misbehaving";
         case ban_reason::manually_added: return "manually added";
-        case ban_reason::checkpoint_failed: return "checkpoint failed (wrong chain)";
+        case ban_reason::checkpoint_failed: return "checkpoint failed";
+        case ban_reason::slow_peer: return "slow peer";
     }
     return "unknown";
+}
+
+/// Convert string to ban_reason
+[[nodiscard]]
+inline ban_reason ban_reason_from_string(std::string_view str) {
+    if (str == "misbehaving") return ban_reason::node_misbehaving;
+    if (str == "manually added") return ban_reason::manually_added;
+    if (str == "checkpoint failed") return ban_reason::checkpoint_failed;
+    if (str == "slow peer") return ban_reason::slow_peer;
+    return ban_reason::unknown;
 }
 
 } // namespace kth::network

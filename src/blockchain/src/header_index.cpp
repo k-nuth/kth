@@ -32,6 +32,11 @@ header_index::header_index(size_t capacity)
     bits_.resize(capacity_);
     nonces_.resize(capacity_);
 
+    // Block file location (initialized to "no data")
+    file_numbers_.resize(capacity_, -1);
+    data_positions_.resize(capacity_, 0);
+    undo_positions_.resize(capacity_, 0);
+
     // Reserve hash map capacity
     hash_to_idx_.reserve(capacity_);
 }
@@ -178,7 +183,10 @@ header_entry header_index::get_entry(index_t idx) const {
         skip_indices_[idx],
         heights_[idx],
         chain_works_[idx],
-        header_status(statuses_[idx])
+        header_status(statuses_[idx]),
+        file_numbers_[idx],
+        data_positions_[idx],
+        undo_positions_[idx]
     };
 }
 
@@ -219,6 +227,42 @@ bool header_index::has_status(index_t idx, header_status flags) const {
 
 void header_index::set_chain_work(index_t idx, uint64_t work) {
     chain_works_[idx] = work;
+}
+
+// =============================================================================
+// Block File Location
+// =============================================================================
+
+void header_index::set_block_pos(index_t idx, int16_t file, uint32_t pos) {
+    file_numbers_[idx] = file;
+    data_positions_[idx] = pos;
+}
+
+void header_index::set_undo_pos(index_t idx, uint32_t pos) {
+    undo_positions_[idx] = pos;
+}
+
+int16_t header_index::get_file_number(index_t idx) const {
+    return file_numbers_[idx];
+}
+
+uint32_t header_index::get_data_pos(index_t idx) const {
+    return data_positions_[idx];
+}
+
+uint32_t header_index::get_undo_pos(index_t idx) const {
+    return undo_positions_[idx];
+}
+
+bool header_index::has_block_data(index_t idx) const {
+    return file_numbers_[idx] >= 0;
+}
+
+bool header_index::has_undo_data(index_t idx) const {
+    // Undo data exists if file_number is valid and undo_pos is non-zero
+    // (position 0 is valid for block data but not for undo, since undo
+    // is written after the block is connected)
+    return file_numbers_[idx] >= 0 && undo_positions_[idx] > 0;
 }
 
 // =============================================================================
@@ -338,6 +382,9 @@ size_t header_index::memory_usage() const {
     total += capacity_ * sizeof(uint32_t);       // timestamps_
     total += capacity_ * sizeof(uint32_t);       // bits_
     total += capacity_ * sizeof(uint32_t);       // nonces_
+    total += capacity_ * sizeof(int16_t);        // file_numbers_
+    total += capacity_ * sizeof(uint32_t);       // data_positions_
+    total += capacity_ * sizeof(uint32_t);       // undo_positions_
 
     // Estimate hash map overhead (~1.5x for load factor + bucket overhead)
     total += count * (sizeof(hash_digest) + sizeof(index_t)) * 3 / 2;

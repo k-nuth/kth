@@ -68,22 +68,16 @@ public:
 
 #if ! defined(KTH_DB_READONLY)
 
-
-    /// Store a block in the database.
-    /// Returns store_block_duplicate if a block already exists at height.
-    code insert(domain::chain::block const& block, size_t height);
+    // ==========================================================================
+    // DEPRECATED: Block storage moved to flat files (blk*.dat)
+    // ==========================================================================
+    // code insert(domain::chain::block const& block, size_t height);
+    // code push(domain::chain::block const& block, size_t height);
+    // code push_block_fast(domain::chain::block const& block, size_t height);
 
     /// Add an unconfirmed tx to the store (without indexing).
     /// Returns unspent_duplicate if existing unspent hash duplicate exists.
     code push(domain::chain::transaction const& tx, uint32_t forks);
-
-    /// Returns store_block_missing_parent if not linked.
-    /// Returns store_block_invalid_height if height is not the current top + 1.
-    code push(domain::chain::block const& block, size_t height);
-
-    /// Fast IBD: store only block data without UTXO updates (for blocks under checkpoint).
-    /// Much faster than push() but requires a second pass to build UTXO set.
-    code push_block_fast(domain::chain::block const& block, size_t height);
 
     /// Push a header for headers-first sync (without full block data).
     /// Returns store_block_invalid_height if height is not the current top + 1.
@@ -101,16 +95,14 @@ public:
 
     //bool set_database_flags(bool fast);
 
-    // Coroutine writers.
-    // ------------------------------------------------------------------------
-
-    /// Invoke pop_above and then push_all.
-    /// Returns the outgoing blocks that were popped.
-    [[nodiscard]]
-    awaitable_expected<block_const_ptr_list_ptr> reorganize(
-        executor_type executor,
-        infrastructure::config::checkpoint const& fork_point,
-        block_const_ptr_list_const_ptr incoming_blocks);
+    // ==========================================================================
+    // DEPRECATED: Block storage moved to flat files (blk*.dat)
+    // ==========================================================================
+    // [[nodiscard]]
+    // awaitable_expected<block_const_ptr_list_ptr> reorganize(
+    //     executor_type executor,
+    //     infrastructure::config::checkpoint const& fork_point,
+    //     block_const_ptr_list_const_ptr incoming_blocks);
 #endif // ! defined(KTH_DB_READONLY)
 
 protected:
@@ -118,10 +110,11 @@ protected:
 
 #if ! defined(KTH_DB_READONLY)
 
-    // Push all blocks starting at first_height.
-    // Selects parallel or sequential based on settings_.parallel_block_push.
-    [[nodiscard]]
-    ::asio::awaitable<code> push_all(executor_type executor, block_const_ptr_list_const_ptr in_blocks, size_t first_height);
+    // ==========================================================================
+    // DEPRECATED: Block storage moved to flat files (blk*.dat)
+    // ==========================================================================
+    // [[nodiscard]]
+    // ::asio::awaitable<code> push_all(executor_type executor, block_const_ptr_list_const_ptr in_blocks, size_t first_height);
 
     // Pop the set of blocks above the given hash.
     // Returns the popped blocks or an error if the database is corrupt or the hash doesn't exist.
@@ -137,24 +130,25 @@ private:
     using outputs = domain::chain::output::list;
 
 #if ! defined(KTH_DB_READONLY)
-    code push_genesis(domain::chain::block const& block);
+    // ==========================================================================
+    // DEPRECATED: Block storage moved to flat files (blk*.dat)
+    // ==========================================================================
+    // code push_genesis(domain::chain::block const& block);
+    // bool pop(domain::chain::block& out_block);
 
     // Synchronous helpers.
     // ------------------------------------------------------------------------
-    bool pop(domain::chain::block& out_block);
     bool pop_inputs(inputs const& inputs, size_t height);
     bool pop_outputs(outputs const& outputs, size_t height);
 
-    // Push a single block to the database (synchronous, called from coroutine).
-    code do_push(block_const_ptr block, size_t height, uint32_t median_time_past);
-
-    // Push all blocks sequentially (one after another).
-    [[nodiscard]]
-    ::asio::awaitable<code> push_all_sequential(executor_type executor, block_const_ptr_list_const_ptr in_blocks, size_t first_height);
-
-    // Push all blocks in parallel (dispatch all, collect results).
-    [[nodiscard]]
-    ::asio::awaitable<code> push_all_parallel(executor_type executor, block_const_ptr_list_const_ptr in_blocks, size_t first_height);
+    // ==========================================================================
+    // DEPRECATED: Block storage moved to flat files (blk*.dat)
+    // ==========================================================================
+    // code do_push(block_const_ptr block, size_t height, uint32_t median_time_past);
+    // [[nodiscard]]
+    // ::asio::awaitable<code> push_all_sequential(executor_type executor, block_const_ptr_list_const_ptr in_blocks, size_t first_height);
+    // [[nodiscard]]
+    // ::asio::awaitable<code> push_all_parallel(executor_type executor, block_const_ptr_list_const_ptr in_blocks, size_t first_height);
 #endif // ! defined(KTH_DB_READONLY)
 
     code verify_insert(domain::chain::block const& block, size_t height);
