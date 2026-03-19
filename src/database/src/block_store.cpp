@@ -228,6 +228,107 @@ block_store::read_block_raw(flat_file_pos const& pos) const {
     return data;
 }
 
+std::expected<data_chunk, result_code>
+block_store::read_tx_raw(flat_file_pos const& pos) const {
+    if (pos.is_null()) {
+        return std::unexpected(result_code::key_not_found);
+    }
+
+    // Open file at the absolute offset (pos.pos is the tx start within the file)
+    FILE* file = block_files_.open(pos, true);
+    if (!file) {
+        spdlog::error("block_store::read_tx_raw: Failed to open file for {}", pos.to_string());
+        return std::unexpected(result_code::other);
+    }
+
+    // Record start position to compute total tx size later
+    long const tx_start = std::ftell(file);
+    if (tx_start < 0) {
+        std::fclose(file);
+        return std::unexpected(result_code::other);
+    }
+
+    // Helper: read a compact-size (varint) integer
+    auto read_varint = [&file]() -> std::expected<uint64_t, result_code> {
+        uint8_t first;
+        if (std::fread(&first, 1, 1, file) != 1)
+            return std::unexpected(result_code::other);
+        if (first < 0xFD) return uint64_t(first);
+        if (first == 0xFD) {
+            uint16_t v;
+            if (std::fread(&v, 2, 1, file) != 1) return std::unexpected(result_code::other);
+            return uint64_t(v);
+        }
+        if (first == 0xFE) {
+            uint32_t v;
+            if (std::fread(&v, 4, 1, file) != 1) return std::unexpected(result_code::other);
+            return uint64_t(v);
+        }
+        uint64_t v;
+        if (std::fread(&v, 8, 1, file) != 1) return std::unexpected(result_code::other);
+        return v;
+    };
+
+    // Helper: skip N bytes
+    auto skip = [&file](long n) -> bool {
+        return std::fseek(file, n, SEEK_CUR) == 0;
+    };
+
+    // Parse tx structure to determine its size:
+    // version (4) + vin_count + [inputs] + vout_count + [outputs] + locktime (4)
+
+    // 1. version (4 bytes)
+    if (!skip(4)) { std::fclose(file); return std::unexpected(result_code::other); }
+
+    // 2. vin_count
+    auto vin_count = read_varint();
+    if (!vin_count) { std::fclose(file); return std::unexpected(vin_count.error()); }
+
+    // 3. inputs: each = prev_hash(32) + prev_index(4) + script_len(varint) + script + sequence(4)
+    for (uint64_t i = 0; i < *vin_count; ++i) {
+        if (!skip(36)) { std::fclose(file); return std::unexpected(result_code::other); }  // prev_hash + prev_index
+        auto script_len = read_varint();
+        if (!script_len) { std::fclose(file); return std::unexpected(script_len.error()); }
+        if (!skip(static_cast<long>(*script_len) + 4)) { std::fclose(file); return std::unexpected(result_code::other); }  // script + sequence
+    }
+
+    // 4. vout_count
+    auto vout_count = read_varint();
+    if (!vout_count) { std::fclose(file); return std::unexpected(vout_count.error()); }
+
+    // 5. outputs: each = value(8) + script_len(varint) + script
+    for (uint64_t i = 0; i < *vout_count; ++i) {
+        if (!skip(8)) { std::fclose(file); return std::unexpected(result_code::other); }  // value
+        auto script_len = read_varint();
+        if (!script_len) { std::fclose(file); return std::unexpected(script_len.error()); }
+        if (!skip(static_cast<long>(*script_len))) { std::fclose(file); return std::unexpected(result_code::other); }  // script
+    }
+
+    // 6. locktime (4 bytes)
+    if (!skip(4)) { std::fclose(file); return std::unexpected(result_code::other); }
+
+    // Now we know the total tx size
+    long const tx_end = std::ftell(file);
+    if (tx_end < 0) { std::fclose(file); return std::unexpected(result_code::other); }
+
+    auto const tx_size = static_cast<size_t>(tx_end - tx_start);
+
+    // Seek back and read the whole tx
+    if (std::fseek(file, tx_start, SEEK_SET) != 0) {
+        std::fclose(file);
+        return std::unexpected(result_code::other);
+    }
+
+    data_chunk data(tx_size);
+    if (std::fread(data.data(), 1, tx_size, file) != tx_size) {
+        std::fclose(file);
+        return std::unexpected(result_code::other);
+    }
+
+    std::fclose(file);
+    return data;
+}
+
 std::expected<uint32_t, result_code>
 block_store::read_block_size(flat_file_pos const& pos) const {
     if (pos.is_null()) {

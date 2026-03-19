@@ -90,6 +90,7 @@ expect<utxo_compact_block> parse_utxo_block(byte_span raw_block) {
             uint32_t original_index;
             std::span<uint8_t const> raw;
             bool coinbase;
+            uint32_t tx_start;
         };
         std::vector<pending_output> tx_outputs;
 
@@ -116,7 +117,8 @@ expect<utxo_compact_block> parse_utxo_block(byte_span raw_block) {
             tx_outputs.push_back({
                 static_cast<uint32_t>(out_i),
                 raw_block.subspan(out_start, out_end - out_start),
-                is_coinbase
+                is_coinbase,
+                static_cast<uint32_t>(tx_start)
             });
         }
 
@@ -133,7 +135,8 @@ expect<utxo_compact_block> parse_utxo_block(byte_span raw_block) {
             result.outputs.push_back({
                 utxoz::make_outpoint(std::span<uint8_t const, 32>{txid.data(), 32}, out.original_index),
                 out.raw,
-                out.coinbase
+                out.coinbase,
+                out.tx_start
             });
         }
     }
@@ -223,6 +226,8 @@ utxo_raw_delta process_compact_block_utxos(
     utxo_compact_block const& block,
     uint32_t height,
     uint32_t median_time_past,
+    int16_t file_number,
+    uint32_t block_data_pos,
     database::utxo_bloom_filter const* bloom
 ) {
     utxo_raw_delta delta;
@@ -234,12 +239,22 @@ utxo_raw_delta process_compact_block_utxos(
             ++delta.bloom_skipped_inserts;
             continue;
         }
+
+#ifdef KTH_UTXOZ_COMPACT_MODE
+        // Compact: 8-byte ref = {file_number, data_pos + tx_start}
+        compact_utxo_ref ref{
+            static_cast<uint32_t>(file_number),
+            block_data_pos + out.tx_start
+        };
+        std::vector<uint8_t> value(8);
+        std::memcpy(value.data(), &ref, 8);
+#else
+        auto value = serialize_utxo_raw_value(out.raw, height, median_time_past, out.coinbase);
+#endif
+
         delta.inserts.emplace(
             out.key,
-            utxo_raw_value{
-                serialize_utxo_raw_value(out.raw, height, median_time_past, out.coinbase),
-                height
-            }
+            utxo_raw_value{std::move(value), height}
         );
     }
 
@@ -735,7 +750,9 @@ std::shared_ptr<database::utxo_bloom_filter const> load_utxo_bloom() {
 
     // ==========================================================================
     // Strategy: sequential_direct - process 1 block at a time, apply directly
+    // (Not available in compact mode — uses domain-object insert path)
     // ==========================================================================
+#ifndef KTH_UTXOZ_COMPACT_MODE
     if (strategy == utxo_build_strategy::sequential_direct) {
         for (uint32_t h = actual_start; h <= end_height; ++h) {
             auto block_result = co_await chain.fetch_block(h);
@@ -784,11 +801,12 @@ std::shared_ptr<database::utxo_bloom_filter const> load_utxo_bloom() {
                     processed, total_blocks, pct);
             }
         }
-    }
+    } else
+#endif
     // ==========================================================================
     // Strategy: parallel_batch or sequential_batch - process batch, then apply
     // ==========================================================================
-    else {
+    {
         using clock = std::chrono::steady_clock;
 
         for (uint32_t batch_start = actual_start; batch_start <= end_height; batch_start += batch_size) {
@@ -840,7 +858,12 @@ std::shared_ptr<database::utxo_bloom_filter const> load_utxo_bloom() {
                 uint32_t h = batch_start + static_cast<uint32_t>(i);
                 uint32_t mtp = calculate_mtp(timestamp_window);
 
-                auto block_delta = process_compact_block_utxos(compact_blocks[i], h, mtp, bloom_ptr);
+                // Get block position from header_index for compact mode
+                auto const idx = static_cast<header_index::index_t>(h);
+                auto const file_num = chain.headers().get_file_number(idx);
+                auto const data_pos = chain.headers().get_data_pos(idx);
+
+                auto block_delta = process_compact_block_utxos(compact_blocks[i], h, mtp, file_num, data_pos, bloom_ptr);
                 if (i == 0) {
                     delta = std::move(block_delta);
                 } else {

@@ -9,6 +9,11 @@
 
 #include <kth/infrastructure/utility/byte_reader.hpp>
 
+#ifdef KTH_UTXOZ_COMPACT_MODE
+#include <kth/database/block_store.hpp>
+#include <kth/database/header_index.hpp>
+#endif
+
 namespace kth::database {
 
 utxoz_database::~utxoz_database() {
@@ -22,7 +27,11 @@ bool utxoz_database::open(std::filesystem::path const& path, bool remove_existin
     }
 
     try {
-        db_ = std::make_unique<utxoz::db>();
+#ifdef KTH_UTXOZ_COMPACT_MODE
+        db_ = std::make_unique<utxoz::compact_db>();
+#else
+        db_ = std::make_unique<utxoz::full_db>();
+#endif
         db_->configure(path.string(), remove_existing);
         is_open_ = true;
         spdlog::info("[utxoz_database] Opened database at {}", path.string());
@@ -54,6 +63,7 @@ size_t utxoz_database::size() const {
     return db_->size();
 }
 
+#ifndef KTH_UTXOZ_COMPACT_MODE
 result_code utxoz_database::insert(domain::chain::point const& point, utxo_entry const& entry) {
     if ( ! is_open()) {
         return result_code::other;
@@ -67,6 +77,7 @@ result_code utxoz_database::insert(domain::chain::point const& point, utxo_entry
     }
     return result_code::duplicated_key;
 }
+#endif
 
 std::expected<utxo_entry, result_code> utxoz_database::find(domain::chain::point const& point, uint32_t height) const {
     if ( ! is_open()) {
@@ -74,13 +85,20 @@ std::expected<utxo_entry, result_code> utxoz_database::find(domain::chain::point
     }
 
     auto key = point_to_key(point);
-    auto result = db_->find(key, height);
 
+#ifdef KTH_UTXOZ_COMPACT_MODE
+    auto result = db_->find(key, height);
     if ( ! result) {
         return std::unexpected(result_code::key_not_found);
     }
-
-    return bytes_to_entry(*result);
+    return resolve_compact_ref(*result, point.index());
+#else
+    auto result = db_->find(key, height);
+    if ( ! result) {
+        return std::unexpected(result_code::key_not_found);
+    }
+    return bytes_to_entry(result->data);
+#endif
 }
 
 result_code utxoz_database::erase(domain::chain::point const& point, uint32_t height) {
@@ -142,6 +160,66 @@ void utxoz_database::print_height_range_stats() {
         db_->print_height_range_stats();
     }
 }
+
+#ifdef KTH_UTXOZ_COMPACT_MODE
+std::expected<utxo_entry, result_code> utxoz_database::resolve_compact_ref(
+    utxoz::compact_find_result const& ref,
+    uint32_t output_index) const
+{
+    if ( ! block_store_ || ! header_index_) {
+        spdlog::error("[utxoz_database] resolve_compact_ref: block_store or header_index not set");
+        return std::unexpected(result_code::other);
+    }
+
+    // Read raw transaction from flat file using typed fields from compact_find_result
+    flat_file_pos pos{static_cast<int32_t>(ref.file_number), ref.offset};
+    auto raw_tx = block_store_->read_tx_raw(pos);
+    if ( ! raw_tx) {
+        spdlog::error("[utxoz_database] resolve_compact_ref: failed to read tx at file={} offset={}",
+            ref.file_number, ref.offset);
+        return std::unexpected(result_code::other);
+    }
+
+    // Parse the transaction
+    byte_reader reader(*raw_tx);
+    auto tx = domain::chain::transaction::from_data(reader, true);  // wire=true
+    if ( ! tx) {
+        spdlog::error("[utxoz_database] resolve_compact_ref: failed to parse tx at file={} offset={}",
+            ref.file_number, ref.offset);
+        return std::unexpected(result_code::other);
+    }
+
+    if (output_index >= tx->outputs().size()) {
+        spdlog::error("[utxoz_database] resolve_compact_ref: output_index {} >= tx outputs size {}",
+            output_index, tx->outputs().size());
+        return std::unexpected(result_code::other);
+    }
+
+    // Determine coinbase: first input prevout is null (hash=0, index=max)
+    bool const is_coinbase = !tx->inputs().empty() &&
+        tx->inputs()[0].previous_output().hash() == null_hash &&
+        tx->inputs()[0].previous_output().index() == max_uint32;
+
+    // Calculate MTP from header_index
+    // MTP at height h = median of timestamps at heights [h-10, h]
+    uint32_t mtp = 0;
+    auto const block_height = ref.block_height;
+    if (block_height >= 11) {
+        std::array<uint32_t, 11> timestamps;
+        for (uint32_t i = 0; i < 11; ++i) {
+            auto const ancestor_idx = static_cast<header_index::index_t>(block_height - 10 + i);
+            timestamps[i] = header_index_->get_timestamp(ancestor_idx);
+        }
+        std::sort(timestamps.begin(), timestamps.end());
+        mtp = timestamps[5]; // median
+    } else {
+        auto const idx = static_cast<header_index::index_t>(block_height);
+        mtp = header_index_->get_timestamp(idx);
+    }
+
+    return utxo_entry{std::move(tx->outputs()[output_index]), block_height, mtp, is_coinbase};
+}
+#endif
 
 // =============================================================================
 // Private helper functions

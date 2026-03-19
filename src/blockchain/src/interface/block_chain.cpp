@@ -139,6 +139,11 @@ bool block_chain::start(uint32_t disk_magic) {
     }
     spdlog::info("[blockchain] UTXO-Z database opened at {}", utxoz_path.string());
 
+#ifdef KTH_UTXOZ_COMPACT_MODE
+    // Compact mode find resolution requires block_store and header_index.
+    // block_store_ is not yet initialized here — we wire it below after initialization.
+#endif
+
     // Initialize flat file block storage
     // Convert disk magic to little-endian bytes for file header
     auto blocks_path = database_.internal_db_dir.parent_path() / "blocks";
@@ -252,6 +257,13 @@ bool block_chain::start(uint32_t disk_magic) {
         spdlog::info("[blockchain] Scanned {} blocks, restored {} positions in {}ms",
             scanned, restored, scan_ms);
     }
+
+#ifdef KTH_UTXOZ_COMPACT_MODE
+    // Wire block_store and header_index to UTXO-Z for compact mode find resolution
+    utxoz_db_.set_block_store(block_store_.get());
+    utxoz_db_.set_header_index(&header_index_);
+    spdlog::info("[blockchain] UTXO-Z compact mode: block_store and header_index wired for find resolution");
+#endif
 
     return true;
 }

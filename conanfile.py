@@ -74,6 +74,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_jemalloc": [True, False],
         "with_stats": [True, False],
         "embed_utxo_bloom": [True, False],
+        "utxoz_compact": [True, False],
         "asio_standalone": [True, False],
 
         # secp256k1 options
@@ -124,6 +125,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_jemalloc": False,
         "with_stats": False,
         "embed_utxo_bloom": True,
+        "utxoz_compact": False,
         "asio_standalone": True,
 
         # secp256k1 options
@@ -281,6 +283,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_WITH_JEMALLOC"] = option_on_off(self.options.with_jemalloc)
         tc.variables["KTH_WITH_STATS"] = option_on_off(self.options.with_stats)
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
+        tc.variables["KTH_UTXOZ_COMPACT_MODE"] = option_on_off(self.options.utxoz_compact)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
 
         # Secp256k1 --------------------------------------------

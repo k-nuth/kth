@@ -2,13 +2,13 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <kth/blockchain/header_index.hpp>
+#include <kth/database/header_index.hpp>
 
 #include <cstring>
 
 #include <kth/infrastructure/utility/stats.hpp>
 
-namespace kth::blockchain {
+namespace kth::database {
 
 // =============================================================================
 // Construction
@@ -453,4 +453,4 @@ header_index::index_t header_index::get_ancestor_internal(index_t start_idx, int
     return idx;
 }
 
-} // namespace kth::blockchain
+} // namespace kth::database

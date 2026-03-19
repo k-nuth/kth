@@ -55,6 +55,8 @@ if (NOT GLOBAL_BUILD)
   find_package(domain REQUIRED)
 endif()
 
+option(KTH_UTXOZ_COMPACT_MODE "Use UTXO-Z compact storage mode" ON)
+
 find_package(lmdb 0.9.29 REQUIRED)
 find_package(utxoz REQUIRED)
 
@@ -125,6 +127,7 @@ set(kth_sources_just_kth
     src/flat_file_seq.cpp
     src/block_undo.cpp
     src/block_store.cpp
+    src/header_index.cpp
 )
 
 
@@ -190,6 +193,11 @@ endif()
 target_link_libraries(${PROJECT_NAME} PUBLIC domain::domain)
 target_link_libraries(${PROJECT_NAME} PUBLIC lmdb::lmdb)
 target_link_libraries(${PROJECT_NAME} PUBLIC utxoz::utxoz)
+
+if(KTH_UTXOZ_COMPACT_MODE)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_UTXOZ_COMPACT_MODE)
+    message(STATUS "Knuth: UTXO-Z compact storage mode enabled (database)")
+endif()
 
 if (MINGW)
     target_link_libraries(${PROJECT_NAME} PUBLIC ws2_32 wsock32)

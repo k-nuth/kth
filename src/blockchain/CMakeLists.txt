@@ -64,6 +64,9 @@ endif()
 message(STATUS "Knuth: Header index capacity: ${KTH_HEADER_INDEX_CAPACITY}")
 add_definitions(-DKTH_HEADER_INDEX_CAPACITY=${KTH_HEADER_INDEX_CAPACITY})
 
+# UTXO-Z compact storage mode (8-byte refs instead of full output data)
+option(KTH_UTXOZ_COMPACT_MODE "Use UTXO-Z compact storage mode" ON)
+
 # Embedded UTXO bloom filter — .incbin via assembly
 option(KTH_EMBED_UTXO_BLOOM "Embed UTXO bloom filter in the executable for faster IBD" ON)
 set(UTXO_BLOOM_DAT_PATH "${CMAKE_SOURCE_DIR}/data/utxo_bloom.dat")
@@ -152,7 +155,6 @@ endif()
 set(kth_sources_just_legacy
   src/interface/block_chain.cpp
   # src/interface/block_chain_old_db.cpp
-  src/header_index.cpp
   src/pools/block_entry.cpp
   src/pools/block_organizer.cpp
   src/pools/block_pool.cpp
@@ -234,6 +236,11 @@ set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX CXX_STANDAR
 if(KTH_HAS_EMBEDDED_BLOOM)
     target_compile_definitions(${PROJECT_NAME} PRIVATE KTH_HAS_EMBEDDED_BLOOM)
     message(STATUS "Knuth: Bloom filter will be embedded in the executable")
+endif()
+
+if(KTH_UTXOZ_COMPACT_MODE)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_UTXOZ_COMPACT_MODE)
+    message(STATUS "Knuth: UTXO-Z compact storage mode enabled")
 endif()
 
 if (ENABLE_POSITION_INDEPENDENT_CODE)

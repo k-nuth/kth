@@ -50,11 +50,20 @@ namespace kth::blockchain {
 // Inputs store only the outpoint being spent.
 // =============================================================================
 
+/// Compact UTXO reference: points to the transaction in blk*.dat flat files.
+/// In compact mode, this 8-byte value replaces the full serialized output data.
+struct compact_utxo_ref {
+    uint32_t file_number;   // blk*.dat file number
+    uint32_t tx_offset;     // absolute byte offset of the tx within that file
+};
+static_assert(sizeof(compact_utxo_ref) == 8);
+
 struct utxo_compact_block {
     struct output_entry {
         utxoz::raw_outpoint key;        // txid(32) + index(4) — UTXO-Z native key
         std::span<uint8_t const> raw;   // raw output bytes (value + script), points into source buffer
         bool coinbase;
+        uint32_t tx_start{0};           // offset of tx within the raw block (for compact mode)
     };
 
     struct input_entry {
@@ -130,11 +139,14 @@ struct KB_API utxo_raw_delta {
 // Process a compact block into a raw delta (zero-copy path).
 // Raw output bytes are serialized directly into UTXO-Z storage format.
 // When bloom is provided, outputs/inputs not in the filter are skipped.
+// In compact mode, file_number and block_data_pos are used to build compact refs.
 [[nodiscard]]
 KB_API utxo_raw_delta process_compact_block_utxos(
     utxo_compact_block const& block,
     uint32_t height,
     uint32_t median_time_past,
+    int16_t file_number,
+    uint32_t block_data_pos,
     database::utxo_bloom_filter const* bloom = nullptr
 );
 

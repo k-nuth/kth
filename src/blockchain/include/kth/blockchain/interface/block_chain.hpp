@@ -148,12 +148,14 @@ struct KB_API block_chain {
     [[nodiscard]] bool insert(block_const_ptr block, size_t height);
     void prune_reorg_async();
 
-    // Apply a batch of UTXO changes (for UTXO set building after fast IBD)
+#ifndef KTH_UTXOZ_COMPACT_MODE
+    // Apply a batch of UTXO changes (full mode only — compact mode uses apply_utxo_delta_raw)
     template <database::utxo_insert_range Inserts, database::utxo_delete_range Deletes>
     [[nodiscard]]
     database::result_code apply_utxo_delta(Inserts const& inserts, Deletes const& deletes) {
         return utxoz_db_.apply_delta(inserts, deletes);
     }
+#endif
 
     // Apply a batch of raw UTXO changes (zero-copy path, no domain objects)
     template <typename Inserts, typename Deletes>

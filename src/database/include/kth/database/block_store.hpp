@@ -111,6 +111,15 @@ struct KD_API block_store {
     std::expected<data_chunk, result_code>
     read_block_raw(flat_file_pos const& pos) const;
 
+    /// Read a raw transaction from a flat file at a known absolute offset.
+    /// Parses the tx incrementally (version, inputs, outputs, locktime) to
+    /// determine its total size, then returns the raw bytes.
+    /// @param pos Position of the transaction start (file number + byte offset).
+    /// @return Raw transaction bytes or error.
+    [[nodiscard]]
+    std::expected<data_chunk, result_code>
+    read_tx_raw(flat_file_pos const& pos) const;
+
     /// Read block size from disk.
     /// @param pos Position of the block.
     /// @return Block size or error.

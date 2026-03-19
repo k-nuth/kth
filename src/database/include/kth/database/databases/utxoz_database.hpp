@@ -27,7 +27,16 @@
 #include <kth/domain/chain/point.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 
+#ifdef KTH_UTXOZ_COMPACT_MODE
+#include <kth/database/flat_file_pos.hpp>
+#include <kth/database/header_index.hpp>
+#endif
+
 namespace kth::database {
+
+#ifdef KTH_UTXOZ_COMPACT_MODE
+struct block_store;
+#endif
 
 // Bloom filter type for UTXO skip-insert optimization.
 // K=7 hash functions, default subfilter/stride, uses std::hash<raw_outpoint>.
@@ -91,12 +100,14 @@ struct KD_API utxoz_database {
     [[nodiscard]]
     size_t size() const;
 
-    /// Insert a UTXO
+#ifndef KTH_UTXOZ_COMPACT_MODE
+    /// Insert a UTXO (full mode only — compact mode uses apply_delta_raw)
     /// @param point Output point (txid + index)
     /// @param entry UTXO entry data
     /// @return result_code::success on success
     [[nodiscard]]
     result_code insert(domain::chain::point const& point, utxo_entry const& entry);
+#endif
 
     /// Find a UTXO by output point
     /// @param point Output point to search for
@@ -116,7 +127,8 @@ struct KD_API utxoz_database {
     // Batch Operations (for UTXO set building)
     // =============================================================================
 
-    /// Apply a batch of UTXO changes
+#ifndef KTH_UTXOZ_COMPACT_MODE
+    /// Apply a batch of UTXO changes (full mode only — compact mode uses apply_delta_raw)
     /// @param inserts UTXOs to add (point -> utxo_entry, entry contains height)
     /// @param deletes UTXOs to remove (point -> height for traceability)
     /// @return result_code::success on success
@@ -144,6 +156,7 @@ struct KD_API utxoz_database {
 
         return result_code::success;
     }
+#endif
 
     /// Apply a batch of raw UTXO changes (zero-copy path).
     /// Keys are raw_outpoint (36 bytes) — no conversion needed.
@@ -157,16 +170,24 @@ struct KD_API utxoz_database {
         }
 
         for (auto const& [key, raw] : inserts) {
-            // Bloom filter skip moved to process_compact_block_utxos (earlier in pipeline)
-            // if (utxo_bloom_ && ! utxo_bloom_->may_contain(key)) {
-            //     continue;
-            // }
             try {
+#ifdef KTH_UTXOZ_COMPACT_MODE
+                // Compact mode: deserialize 8-byte compact_utxo_ref into typed fields
+                uint32_t file_number, tx_offset;
+                std::memcpy(&file_number, raw.data.data(), 4);
+                std::memcpy(&tx_offset, raw.data.data() + 4, 4);
+                if ( ! db_->insert(key, file_number, tx_offset, raw.height)) {
+                    spdlog::error("[utxoz_database] Duplicate key at block {}, outpoint={}",
+                        raw.height, utxoz::outpoint_to_string(key));
+                    return result_code::duplicated_key;
+                }
+#else
                 if ( ! db_->insert(key, raw.data, raw.height)) {
                     spdlog::error("[utxoz_database] Duplicate key at block {}, outpoint={}, value_size={}",
                         raw.height, utxoz::outpoint_to_string(key), raw.data.size());
                     return result_code::duplicated_key;
                 }
+#endif
             } catch (std::out_of_range const& e) {
                 spdlog::error("[utxoz_database] Value too large ({} bytes) at block {}, outpoint={} — skipping",
                     raw.data.size(), raw.height, utxoz::outpoint_to_string(key));
@@ -174,10 +195,6 @@ struct KD_API utxoz_database {
         }
 
         for (auto const& [key, height] : deletes) {
-            // Bloom filter skip moved to process_compact_block_utxos (earlier in pipeline)
-            // if (utxo_bloom_ && ! utxo_bloom_->may_contain(key)) {
-            //     continue;
-            // }
             std::ignore = db_->erase(key, height);
         }
 
@@ -203,6 +220,14 @@ struct KD_API utxoz_database {
     void clear_utxo_bloom() {
         utxo_bloom_.reset();
     }
+
+#ifdef KTH_UTXOZ_COMPACT_MODE
+    /// Set the block store for compact mode find resolution.
+    void set_block_store(block_store const* store) { block_store_ = store; }
+
+    /// Set the header index for compact mode find resolution (MTP calculation).
+    void set_header_index(header_index const* idx) { header_index_ = idx; }
+#endif
 
     /// Clear all UTXOs from the database
     /// @return result_code::success on success
@@ -251,9 +276,27 @@ private:
     [[nodiscard]]
     static std::expected<utxo_entry, result_code> bytes_to_entry(std::span<uint8_t const> bytes);
 
-    std::unique_ptr<utxoz::db> db_;
+    // Resolve a compact find result to a full utxo_entry.
+    // Used in compact mode find path.
+#ifdef KTH_UTXOZ_COMPACT_MODE
+    [[nodiscard]]
+    std::expected<utxo_entry, result_code> resolve_compact_ref(
+        utxoz::compact_find_result const& ref,
+        uint32_t output_index) const;
+#endif
+
+#ifdef KTH_UTXOZ_COMPACT_MODE
+    std::unique_ptr<utxoz::compact_db> db_;
+#else
+    std::unique_ptr<utxoz::full_db> db_;
+#endif
     bool is_open_ = false;
     std::shared_ptr<utxo_bloom_filter const> utxo_bloom_;  // optional bloom filter for skip-insert optimization
+
+#ifdef KTH_UTXOZ_COMPACT_MODE
+    block_store const* block_store_ = nullptr;
+    header_index const* header_index_ = nullptr;
+#endif
 };
 
 } // namespace kth::database
