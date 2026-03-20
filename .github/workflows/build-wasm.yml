@@ -18,6 +18,13 @@ env:
 
 jobs:
   setup:
+    # Skip for cosmetic branches (docs, style, chore, noci)
+    if: >-
+      github.event_name != 'pull_request' ||
+      (!startsWith(github.head_ref, 'docs/') &&
+       !startsWith(github.head_ref, 'style/') &&
+       !startsWith(github.head_ref, 'chore/') &&
+       !startsWith(github.head_ref, 'noci/'))
     runs-on: ubuntu-latest
     outputs:
       build-version: ${{ steps.version.outputs.build-version }}

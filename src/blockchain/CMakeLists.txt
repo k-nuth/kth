@@ -180,16 +180,13 @@ set(kth_headers
   include/kth/blockchain/pools/branch.hpp
   include/kth/blockchain/pools/block_pool.hpp
   include/kth/blockchain/pools/transaction_organizer.hpp
-  include/kth/blockchain/mining/mempool_v1_old.hpp
   include/kth/blockchain/mining/prioritizer.hpp
   include/kth/blockchain/mining/transaction_element.1.hpp
   include/kth/blockchain/mining/node_v2.hpp
   include/kth/blockchain/mining/transaction_element.hpp
-  include/kth/blockchain/mining/mempool_v1.hpp
   include/kth/blockchain/mining/mempool.hpp
   include/kth/blockchain/mining/common.hpp
   include/kth/blockchain/mining/partially_indexed.hpp
-  include/kth/blockchain/mining/node_v1.hpp
   include/kth/blockchain/mining/mempool_v2.hpp
   include/kth/blockchain/mining/partially_indexed_node.hpp
   include/kth/blockchain/settings.hpp
