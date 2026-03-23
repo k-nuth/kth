@@ -349,9 +349,7 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["secp256k1"].names["cmake_find_package"] = "secp256k1"
         self.cpp_info.components["secp256k1"].names["cmake_find_package_multi"] = "secp256k1"
         # secp256k1 requires GMP for big number operations
-        # if secp256k1_enable_bignum is enabled:
-        if self.options.secp256k1_enable_bignum:
-            self.cpp_info.components["secp256k1"].requires = ["gmp::gmp"]
+        self.cpp_info.components["secp256k1"].requires = ["gmp::gmp"]
 
         # Core infrastructure component
         self.cpp_info.components["infrastructure"].libs = ["infrastructure"]
