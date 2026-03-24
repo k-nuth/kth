@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Copyright (c) 2016-present Knuth Project developers.
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 set -x
 
 if [ -z "$1" ]; then
@@ -13,12 +17,18 @@ if [ -z "$TEST" ]; then
 fi
 echo "Building version: ${VERSION} with test: ${TEST}"
 
+ARCH=$(uname -m)
+MARCH_OPT=""
+if [ "$ARCH" = "x86_64" ]; then
+    MARCH_OPT='-o &:march_strategy=optimized'
+fi
+
 # rm -rf build
 # rm -rf conan.lock
 
-# conan lock create conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" --update
-# conan lock create conanfile.py --version "${VERSION}" -o "&:march_strategy=optimized" --lockfile=conan.lock --lockfile-out=build/conan.lock
-# conan install conanfile.py -o "&:march_strategy=optimized" --lockfile=build/conan.lock -of build --build=missing
+# conan lock create conanfile.py --version="${VERSION}" $MARCH_OPT --update
+# conan lock create conanfile.py --version "${VERSION}" $MARCH_OPT --lockfile=conan.lock --lockfile-out=build/conan.lock
+# conan install conanfile.py $MARCH_OPT --lockfile=build/conan.lock -of build --build=missing
 
 # Only configure if not already configured or if explicitly requested
 if [ ! -f "build/build/Release/CMakeCache.txt" ] || [ "$RECONFIGURE" = "1" ]; then
