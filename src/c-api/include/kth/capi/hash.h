@@ -20,6 +20,9 @@ KTH_EXPORT
 kth_hash_t kth_sha256_hash_reversed(uint8_t const* data, kth_size_t size);
 
 KTH_EXPORT
+kth_shorthash_t kth_ripemd160_hash(uint8_t const* data, kth_size_t size);
+
+KTH_EXPORT
 char* kth_sha256_hash_reversed_str(uint8_t const* data, kth_size_t size);
 
 KTH_EXPORT

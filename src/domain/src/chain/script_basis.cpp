@@ -577,6 +577,20 @@ operation::list script_basis::to_pay_public_key_hash_pattern_unlocking_placehold
     };
 }
 
+operation::list script_basis::to_pay_script_hash_pattern_unlocking_placeholder(size_t script_size, bool multisig) {
+    data_chunk placeholder_script(script_size, 0);
+    if (multisig) {
+        // OP_0 dummy required by CHECKMULTISIG (historic off-by-one bug in Bitcoin).
+        return operation::list {
+            operation(opcode::push_size_0),
+            operation(std::move(placeholder_script))
+        };
+    }
+    return operation::list {
+        operation(std::move(placeholder_script))
+    };
+}
+
 operation::list script_basis::to_pay_script_hash_pattern(short_hash const& hash) {
     return operation::list{
         {opcode::hash160},

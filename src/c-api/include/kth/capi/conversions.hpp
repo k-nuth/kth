@@ -63,6 +63,7 @@ KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP_CONST(chain, kth_operation_list_t, kth::doma
 
 KTH_LIST_DECLARE_CONVERTERS(chain, kth_block_list_t, kth::domain::chain::block, block_list)
 KTH_LIST_DECLARE_CONVERTERS(chain, kth_point_list_t, kth::domain::chain::point, point_list)
+KTH_LIST_DECLARE_CONVERTERS(chain, kth_outputpoint_list_t, kth::domain::chain::output_point, outputpoint_list)
 KTH_LIST_DECLARE_CONVERTERS(chain, kth_input_list_t, kth::domain::chain::input, input_list)
 KTH_LIST_DECLARE_CONVERTERS(chain, kth_output_list_t, kth::domain::chain::output, output_list)
 KTH_LIST_DECLARE_CONVERTERS(chain, kth_utxo_list_t, kth::domain::chain::utxo, utxo_list)

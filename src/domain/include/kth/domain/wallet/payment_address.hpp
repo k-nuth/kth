@@ -102,6 +102,9 @@ struct KD_API payment_address {
 #if defined(KTH_CURRENCY_BCH)
     [[nodiscard]]
     std::string encoded_cashaddr(bool token_aware) const;
+
+    [[nodiscard]]
+    std::string encoded_token() const;
 #endif  //KTH_CURRENCY_BCH
 
     /// Accessors.
