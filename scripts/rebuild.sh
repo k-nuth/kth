@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Copyright (c) 2016-present Knuth Project developers.
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 set -x
 
 if [ -z "$1" ]; then
@@ -13,12 +17,18 @@ if [ -z "$TEST" ]; then
 fi
 echo "Building version: ${VERSION} with test: ${TEST}"
 
+ARCH=$(uname -m)
+MARCH_OPT=""
+if [ "$ARCH" = "x86_64" ]; then
+    MARCH_OPT='-o &:march_strategy=optimized'
+fi
+
 rm -rf build
 rm -rf conan.lock
 
-conan lock create conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" -o "&:with_stats=True" --update || exit 1
-conan lock create conanfile.py --version "${VERSION}" -o "&:march_strategy=optimized" -o "&:with_stats=True" --lockfile=conan.lock --lockfile-out=build/conan.lock || exit 1
-conan install conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" -o "&:with_stats=True" --lockfile=build/conan.lock -of build --build=missing || exit 1
+conan lock create conanfile.py --version="${VERSION}" $MARCH_OPT --update || exit 1
+conan lock create conanfile.py --version "${VERSION}" $MARCH_OPT --lockfile=conan.lock --lockfile-out=build/conan.lock || exit 1
+conan install conanfile.py --version="${VERSION}" $MARCH_OPT --lockfile=build/conan.lock -of build --build=missing || exit 1
 
 cmake --preset conan-release \
          -DCMAKE_VERBOSE_MAKEFILE=ON \

@@ -1,5 +1,9 @@
-#!/bin/bash
-# Full rebuild with Release optimizations + debug symbols (RelWithDebInfo)
+#!/usr/bin/env bash
+# Copyright (c) 2016-present Knuth Project developers.
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+# Full rebuild with Release optimizations + debug symbols (RelWithDebInfo) - Linux
 set -x
 
 if [ -z "$1" ]; then
@@ -17,9 +21,9 @@ echo "Building version: ${VERSION} with test: ${TEST} (RelWithDebInfo)"
 rm -rf build
 rm -rf conan.lock
 
-conan lock create conanfile.py --version="${VERSION}" -o "&:with_stats=True" --update || exit 1
-conan lock create conanfile.py --version "${VERSION}" -o "&:with_stats=True" --lockfile=conan.lock --lockfile-out=build/conan.lock || exit 1
-conan install conanfile.py --version="${VERSION}" -o "&:with_stats=True" --lockfile=build/conan.lock -of build --build=missing -s build_type=RelWithDebInfo || exit 1
+conan lock create conanfile.py --version="${VERSION}" --update || exit 1
+conan lock create conanfile.py --version "${VERSION}" --lockfile=conan.lock --lockfile-out=build/conan.lock || exit 1
+conan install conanfile.py --version="${VERSION}" --lockfile=build/conan.lock -of build --build=missing -s build_type=RelWithDebInfo || exit 1
 
 cmake --preset conan-relwithdebinfo \
          -DCMAKE_VERBOSE_MAKEFILE=ON \
