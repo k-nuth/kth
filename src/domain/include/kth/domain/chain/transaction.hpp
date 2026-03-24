@@ -38,11 +38,8 @@
 #include <expected>
 
 #include <kth/domain/wallet/payment_address.hpp>
-#include <kth/domain/chain/coin_selection.hpp>
 
 namespace kth::domain::chain {
-
-using template_result = std::tuple<transaction, std::vector<uint32_t>, std::vector<wallet::payment_address>, std::vector<uint64_t>>;
 
 struct KD_API transaction : transaction_basis {
 public:
@@ -176,25 +173,6 @@ public:
     mutable validation validation{};
 
     bool is_standard() const;
-
-    static
-    std::expected<template_result, std::error_code> create_template(
-        std::vector<utxo> available_utxos,
-        uint64_t amount_to_send_hint,
-        wallet::payment_address const& destination_address,
-        std::vector<wallet::payment_address> const& change_addresses,
-        coin_selection_algorithm selection_algo
-    );
-
-    static
-    std::expected<template_result, std::error_code> create_template(
-        std::vector<utxo> available_utxos,
-        uint64_t amount_to_send_hint,
-        wallet::payment_address const& destination_address,
-        std::vector<wallet::payment_address> const& change_addresses,
-        std::vector<double> const& change_ratios,
-        coin_selection_algorithm selection_algo
-    );
 
 // protected:
     void reset();

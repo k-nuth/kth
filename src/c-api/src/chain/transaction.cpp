@@ -9,6 +9,7 @@
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
 #include <kth/capi/wallet/payment_address.h>
+#include <kth/domain/wallet/coin_selection.hpp>
 
 
 KTH_CONV_DEFINE(chain, kth_transaction_t, kth::domain::chain::transaction, transaction)
@@ -198,7 +199,7 @@ kth_error_code_t kth_chain_transaction_create_template_with_change_ratios(
     auto const& change_addresses_cpp = kth_wallet_payment_address_list_const_cpp(change_addresses);
     auto const& change_ratios_cpp = kth_core_double_list_const_cpp(change_ratios);
 
-    auto res = kth::domain::chain::transaction::create_template(
+    auto res = kth::domain::wallet::create_tx_template(
         available_utxos_cpp,
         amount_to_send,
         destination_address_cpp,
@@ -233,7 +234,7 @@ kth_error_code_t kth_chain_transaction_create_template(
     auto const& destination_address_cpp = kth_wallet_payment_address_const_cpp(destination_address);
     auto const& change_addresses_cpp = kth_wallet_payment_address_list_const_cpp(change_addresses);
 
-    auto res = kth::domain::chain::transaction::create_template(
+    auto res = kth::domain::wallet::create_tx_template(
         available_utxos_cpp,
         amount_to_send,
         destination_address_cpp,

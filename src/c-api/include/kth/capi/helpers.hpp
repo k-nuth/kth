@@ -20,6 +20,7 @@
 #include <kth/infrastructure/machine/script_version.hpp>
 
 #include <kth/capi/chain/coin_selection_algorithm.h>
+#include <kth/domain/wallet/coin_selection.hpp>
 #include <kth/capi/chain/opcode.h>
 #include <kth/capi/chain/script_flags.h>
 #include <kth/capi/chain/script_pattern.h>
@@ -334,12 +335,12 @@ kth_script_version_t script_version_to_c(kth::infrastructure::machine::script_ve
 // Coin Selection -----------------------------------------------------
 
 inline
-kth::domain::chain::coin_selection_algorithm coin_selection_algorithm_to_cpp(kth_coin_selection_algorithm_t algo) {
-    return static_cast<kth::domain::chain::coin_selection_algorithm>(algo);
+kth::domain::wallet::coin_selection_algorithm coin_selection_algorithm_to_cpp(kth_coin_selection_algorithm_t algo) {
+    return static_cast<kth::domain::wallet::coin_selection_algorithm>(algo);
 }
 
 inline
-kth_coin_selection_algorithm_t coin_selection_algorithm_to_c(kth::domain::chain::coin_selection_algorithm algo) {
+kth_coin_selection_algorithm_t coin_selection_algorithm_to_c(kth::domain::wallet::coin_selection_algorithm algo) {
     return static_cast<kth_coin_selection_algorithm_t>(algo);
 }
 
