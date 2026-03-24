@@ -1,5 +1,9 @@
-#!/bin/bash
-# Full rebuild with Release optimizations + debug symbols (RelWithDebInfo)
+#!/usr/bin/env bash
+# Copyright (c) 2016-present Knuth Project developers.
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+# Full rebuild with Release optimizations + debug symbols (RelWithDebInfo) - macOS
 set -x
 
 if [ -z "$1" ]; then

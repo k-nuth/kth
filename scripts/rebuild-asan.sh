@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Copyright (c) 2016-present Knuth Project developers.
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 # Full rebuild with AddressSanitizer enabled + debug symbols
 # Creates build in build_asan/ directory
 # Uses conan presets with RelWithDebInfo for better stack traces
@@ -20,6 +24,12 @@ echo "Building version: ${VERSION} with test: ${TEST}"
 
 BUILD_DIR="build_asan"
 
+ARCH=$(uname -m)
+MARCH_OPT=""
+if [ "$ARCH" = "x86_64" ]; then
+    MARCH_OPT='-o &:march_strategy=optimized'
+fi
+
 # Set sanitizer flags
 SANITIZER_FLAGS="-fsanitize=address -fno-omit-frame-pointer"
 export CXXFLAGS="${CXXFLAGS} ${SANITIZER_FLAGS}"
@@ -31,11 +41,11 @@ rm -rf "$BUILD_DIR"
 rm -rf conan.lock
 
 echo "Creating conan lock files..."
-conan lock create conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" -o "&:with_stats=True" -s build_type=RelWithDebInfo --update
-conan lock create conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" -o "&:with_stats=True" -s build_type=RelWithDebInfo --lockfile=conan.lock --lockfile-out="${BUILD_DIR}/conan.lock"
+conan lock create conanfile.py --version="${VERSION}" $MARCH_OPT -s build_type=RelWithDebInfo --update
+conan lock create conanfile.py --version="${VERSION}" $MARCH_OPT -s build_type=RelWithDebInfo --lockfile=conan.lock --lockfile-out="${BUILD_DIR}/conan.lock"
 
 echo "Installing conan dependencies with RelWithDebInfo..."
-conan install conanfile.py --version="${VERSION}" -o "&:march_strategy=optimized" -o "&:with_stats=True" -s build_type=RelWithDebInfo --lockfile="${BUILD_DIR}/conan.lock" -of "${BUILD_DIR}" --build=missing
+conan install conanfile.py --version="${VERSION}" $MARCH_OPT -s build_type=RelWithDebInfo --lockfile="${BUILD_DIR}/conan.lock" -of "${BUILD_DIR}" --build=missing
 
 echo "Configuring CMake with AddressSanitizer + debug symbols..."
 # Use conan preset for RelWithDebInfo, add ASAN flags
