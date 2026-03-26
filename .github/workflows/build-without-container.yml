@@ -113,6 +113,19 @@ jobs:
         with:
           new-version: ${{ inputs.build-version }}
 
+      - name: 🗄️ Setup ccache
+        if: ${{ inputs.upload != true }}
+        run: |
+          brew install ccache 2>/dev/null || true
+          ccache --version || true
+
+      - name: 🗄️ Restore ccache
+        if: ${{ inputs.upload != true }}
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ccache
+          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-
 
       - name: 🔨 Build
         working-directory: .
@@ -167,13 +180,24 @@ jobs:
             conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd
             conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b general-ci-cd -pr:h general-ci-cd -o tests=True
             
+            CCACHE_OPT=""
+            if command -v ccache &>/dev/null; then
+              ccache --zero-stats
+              CCACHE_OPT="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+            fi
+
             cmake --preset conan-release \
                  -DCMAKE_VERBOSE_MAKEFILE=ON \
                  -DGLOBAL_BUILD=ON \
                  -DENABLE_TEST=ON \
-                 -DCMAKE_BUILD_TYPE=Release
-                 
+                 -DCMAKE_BUILD_TYPE=Release \
+                 $CCACHE_OPT
+
             cmake --build --preset conan-release -j4
+
+            if command -v ccache &>/dev/null; then
+              ccache --show-stats
+            fi
           fi
 
       - name: 📊 Build summary
