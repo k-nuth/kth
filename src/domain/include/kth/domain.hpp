@@ -84,7 +84,7 @@
 #include <kth/domain/wallet/encrypted_keys.hpp>
 #include <kth/domain/wallet/message.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
-#include <kth/domain/wallet/select_outputs.hpp>
+#include <kth/domain/wallet/coin_selection.hpp>
 #include <kth/domain/wallet/stealth_address.hpp>
 #include <kth/domain/wallet/stealth_receiver.hpp>
 #include <kth/domain/wallet/stealth_sender.hpp>

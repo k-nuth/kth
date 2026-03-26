@@ -267,8 +267,7 @@ set(kth_sources_just_legacy
         src/wallet/parse_encrypted_keys/parse_encrypted_token.cpp
         src/wallet/parse_encrypted_keys/parse_encrypted_token.hpp
         src/wallet/payment_address.cpp
-        src/wallet/select_outputs.cpp
-        src/wallet/select_outputs.cpp
+        src/wallet/coin_selection.cpp
         src/wallet/stealth_address.cpp
         src/wallet/stealth_receiver.cpp
         src/wallet/stealth_sender.cpp
@@ -389,7 +388,7 @@ set(kth_headers
     include/kth/domain/wallet/ec_public.hpp
     include/kth/domain/wallet/ek_token.hpp
     include/kth/domain/wallet/payment_address.hpp
-    include/kth/domain/wallet/select_outputs.hpp
+    include/kth/domain/wallet/coin_selection.hpp
     include/kth/domain/wallet/uri_reader.hpp
     include/kth/domain/wallet/encrypted_keys.hpp
     include/kth/domain/wallet/wallet_manager.hpp
@@ -604,7 +603,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/wallet/encrypted_keys.cpp
         test/wallet/message.cpp
         test/wallet/payment_address.cpp
-        test/wallet/select_outputs.cpp
+        test/wallet/coin_selection.cpp
         test/wallet/stealth_address.cpp
         test/wallet/stealth_receiver.cpp
         test/wallet/stealth_sender.cpp

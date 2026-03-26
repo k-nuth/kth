@@ -5,20 +5,17 @@
 #include <kth/domain/chain/transaction.hpp>
 
 #include <algorithm>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <numeric>
 #include <optional>
-#include <random>
 #include <sstream>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <boost/container_hash/hash.hpp>
-#include <boost/unordered/unordered_flat_map.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
 
 #include <kth/domain/chain/chain_state.hpp>
@@ -40,8 +37,6 @@
 #include <kth/infrastructure/utility/limits.hpp>
 #include <kth/infrastructure/utility/ostream_writer.hpp>
 #include <expected>
-#include <kth/domain/wallet/payment_address.hpp>
-#include <kth/domain/chain/coin_selection.hpp>
 
 #define FMT_HEADER_ONLY 1
 #include <fmt/core.h>
@@ -729,270 +724,5 @@ code verify(transaction const& tx, uint32_t input, script_flags_t flags) {
 
 }
 
-
-constexpr uint64_t sats_per_byte = 1;
-constexpr uint64_t approx_input_size = 148;
-constexpr uint64_t approx_output_size = 34;
-constexpr uint64_t base_tx_size = 10;
-
-struct utxo_selection {
-    uint64_t total_selected_bch; // Total selected in BCH
-    size_t utxo_count;           // Total number of selected UTXOs
-    uint64_t estimated_size;     // Estimated size of the transaction
-    uint64_t amount_to_send;     // Amount to send (original hint)
-
-    // Fungibles: category => total accumulated amount
-    boost::unordered_flat_map<hash_digest, uint64_t> fungible_tokens;
-
-    // Non-fungible and Both tokens
-    std::vector<token_data_t> non_fungible_and_both_tokens;
-};
-
-template <typename Comp>
-    requires std::strict_weak_order<Comp, utxo, utxo>
-std::expected<utxo_selection, std::error_code> select_utxos_simple(
-    std::vector<utxo>& available_utxos,
-    uint64_t amount_to_send,
-    size_t output_count,
-    Comp cmp
-) {
-    std::sort(available_utxos.begin(), available_utxos.end(), cmp);
-
-    utxo_selection result{};
-    result.amount_to_send = amount_to_send;
-
-    for (auto const& u : available_utxos) {
-        result.total_selected_bch += u.amount();
-        ++result.utxo_count;
-
-        if (u.token_data().has_value()) {
-            auto const& token = u.token_data().value();
-
-            if (std::holds_alternative<fungible>(token.data)) {
-                result.fungible_tokens[token.id] += uint64_t(std::get<fungible>(token.data).amount);
-            } else {
-                result.non_fungible_and_both_tokens.emplace_back(token);
-            }
-        }
-
-        uint64_t const estimated_size = base_tx_size + (result.utxo_count * approx_input_size) + (output_count * approx_output_size);
-        uint64_t const estimated_fee = estimated_size * sats_per_byte;
-        uint64_t const total_needed = amount_to_send + estimated_fee;
-        if (result.total_selected_bch >= total_needed) {
-            result.estimated_size = estimated_size;
-            return result;
-        }
-    }
-    return std::unexpected(error::insufficient_amount);
-}
-
-std::expected<utxo_selection, std::error_code> select_utxos_all(
-    std::vector<utxo> const& available_utxos,
-    uint64_t amount_to_send,
-    size_t output_count
-) {
-    size_t const utxo_count = available_utxos.size();
-    uint64_t const estimated_size = base_tx_size + (utxo_count * approx_input_size) + (output_count * approx_output_size);
-
-    uint64_t const total_input = std::accumulate(available_utxos.begin(), available_utxos.end(),
-        uint64_t(0), [](uint64_t sum, utxo const& u) {
-            return sum + u.amount();
-        });
-
-    uint64_t const estimated_fee = estimated_size * sats_per_byte;
-    if (total_input <= estimated_fee) {
-        return std::unexpected(error::insufficient_amount);
-    }
-
-    amount_to_send = total_input - estimated_fee;
-
-    return utxo_selection {
-        total_input,
-        utxo_count,
-        estimated_size,
-        amount_to_send
-    };
-}
-
-std::vector<double> make_change_ratios(size_t change_count) {
-    std::vector<double> change_ratios(change_count, 0.0);
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<> dis(0, 1);
-    std::generate(change_ratios.begin(), change_ratios.end(), [&gen, &dis]() { return dis(gen); });
-    double const sum = std::accumulate(change_ratios.begin(), change_ratios.end(), 0.0);
-    std::transform(change_ratios.begin(), change_ratios.end(), change_ratios.begin(), [sum](double value) { return value / sum; });
-    return change_ratios;
-}
-
-std::expected<template_result, std::error_code> transaction::create_template(
-    std::vector<utxo> available_utxos,
-    uint64_t amount_to_send_hint,
-    wallet::payment_address const& destination_address,
-    std::vector<wallet::payment_address> const& change_addresses,
-    std::vector<double> const& change_ratios,
-    coin_selection_algorithm selection_algo
-) {
-    // Validations
-    if (available_utxos.empty()) {
-        return std::unexpected(error::empty_utxo_list);
-    }
-
-    if (change_addresses.empty()) {
-        return std::unexpected(error::invalid_change);
-    }
-
-    if (change_ratios.size() != change_addresses.size()) {
-        return std::unexpected(error::invalid_change);
-    }
-
-    if (std::accumulate(change_ratios.begin(), change_ratios.end(), 0.0) != 1.0) {
-        return std::unexpected(error::invalid_change);
-    }
-
-    bool const send_all = amount_to_send_hint == 0 ||
-        selection_algo == coin_selection_algorithm::send_all ||
-        selection_algo == coin_selection_algorithm::manual; // in manual mode, we asume that the user provided just the selected utxos
-
-    if (send_all && change_addresses.size() > 1) {
-        return std::unexpected(error::invalid_change);
-    }
-
-    boost::unordered_flat_map<chain::point, uint32_t> utxo_positions;
-    for (size_t i = 0; i < available_utxos.size(); ++i) {
-        utxo_positions[available_utxos[i].point()] = i;
-    }
-
-    size_t const output_count = change_addresses.size() + 1; // +1 for the destination address
-
-    auto const res =
-        send_all ? select_utxos_all(available_utxos, amount_to_send_hint, output_count) :
-                   selection_algo == coin_selection_algorithm::smallest_first ?
-                       select_utxos_simple(available_utxos, amount_to_send_hint, output_count, [](utxo const& a, utxo const& b) { return a.amount() < b.amount(); }) :
-                       select_utxos_simple(available_utxos, amount_to_send_hint, output_count, [](utxo const& a, utxo const& b) { return a.amount() > b.amount(); });
-
-    if ( ! res) {
-        return std::unexpected(res.error());
-    }
-
-    auto const [
-        total_input,
-        utxo_count,
-        estimated_size,
-        amount_to_send,
-        fungible_tokens,
-        non_fungible_and_both_tokens
-    ] = *res;
-
-
-    std::vector<uint32_t> selected_utxo_indices;
-    transaction::ins inputs;
-
-    for (size_t i = 0; i < utxo_count; ++i) {
-        auto const ops = script::to_pay_public_key_hash_pattern_unlocking_placeholder(71, 33);
-        script placeholder_script;
-        placeholder_script.from_operations(ops);
-
-        inputs.emplace_back(available_utxos[i].point(), std::move(placeholder_script), max_input_sequence);
-        auto const it = utxo_positions.find(available_utxos[i].point());
-        if (it != utxo_positions.end()) {
-            selected_utxo_indices.push_back(it->second);
-        }
-    }
-
-    std::vector<wallet::payment_address> output_addresses;
-    std::vector<uint64_t> output_amounts;
-
-    transaction::outs outputs;
-    auto dest_ops = script::to_pay_public_key_hash_pattern(destination_address.hash20());
-    chain::script dest_script;
-    dest_script.from_operations(dest_ops);
-    outputs.emplace_back(amount_to_send, std::move(dest_script), std::nullopt);
-
-    output_addresses.push_back(destination_address);
-    output_amounts.push_back(amount_to_send);
-
-    uint64_t const estimated_fee = estimated_size * sats_per_byte;
-
-    if ( ! send_all) {
-        uint64_t const total_change_amount = total_input - (amount_to_send + estimated_fee);
-        uint64_t accumulated_change = 0;
-
-        if (total_change_amount > 0) {
-            for (size_t i = 0; i < change_addresses.size(); ++i) {
-                auto change_ops = script::to_pay_public_key_hash_pattern(change_addresses[i].hash20());
-                chain::script change_script;
-                change_script.from_operations(change_ops);
-                uint64_t const change_amount = total_change_amount * change_ratios[i];
-                outputs.emplace_back(change_amount, std::move(change_script), std::nullopt);
-                output_addresses.push_back(change_addresses[i]);
-                output_amounts.push_back(change_amount);
-                accumulated_change += change_amount;
-            }
-        }
-        if (accumulated_change != total_change_amount) {
-            return std::unexpected(error::unknown);
-        }
-        uint64_t const total_output = total_change_amount + amount_to_send + estimated_fee;
-        if (total_input != total_output) {
-            return std::unexpected(error::unknown);
-        }
-        // postcondition validation
-    } else {
-        // postcondition validation
-        uint64_t const total_output = amount_to_send + estimated_fee;
-        if (total_input != total_output) {
-            return std::unexpected(error::unknown);
-        }
-    }
-
-    auto const& change_address = change_addresses[0];
-    for (auto const& token_pair : fungible_tokens) {
-
-        token_data_t token {
-            .id = token_pair.first,
-            .data = fungible {
-                .amount = amount_t{int64_t(token_pair.second)}
-            }
-        };
-
-        auto change_ops = script::to_pay_public_key_hash_pattern(change_address.hash20());
-        chain::script change_script;
-        change_script.from_operations(change_ops);
-        uint64_t const dust_bch_amount = 0;
-        outputs.emplace_back(dust_bch_amount, std::move(change_script), token);
-    }
-
-    for (auto const& token : non_fungible_and_both_tokens) {
-        auto change_ops = script::to_pay_public_key_hash_pattern(change_address.hash20());
-        chain::script change_script;
-        change_script.from_operations(change_ops);
-        uint64_t const dust_bch_amount = 0;
-        outputs.emplace_back(dust_bch_amount, std::move(change_script), token);
-    }
-
-    return std::make_tuple(
-        transaction(1, 0, std::move(inputs), std::move(outputs)),
-        std::move(selected_utxo_indices),
-        std::move(output_addresses),
-        std::move(output_amounts)
-    );
-}
-
-std::expected<template_result, std::error_code> transaction::create_template(
-    std::vector<utxo> available_utxos,
-    uint64_t amount_to_send_hint,
-    wallet::payment_address const& destination_address,
-    std::vector<wallet::payment_address> const& change_addresses,
-    coin_selection_algorithm selection_algo
-) {
-    return create_template(
-        available_utxos,
-        amount_to_send_hint,
-        destination_address,
-        change_addresses,
-        make_change_ratios(change_addresses.size()),
-        selection_algo);
-}
 
 } // namespace kth::domain::chain
