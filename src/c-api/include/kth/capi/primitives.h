@@ -85,6 +85,7 @@ typedef void* kth_utxo_t;
 typedef void const* kth_outputpoint_const_t;
 typedef void* kth_point_t;
 typedef void* kth_point_list_t;
+typedef void* kth_outputpoint_list_t;
 typedef void* kth_transaction_t;
 typedef void const* kth_transaction_const_t;
 typedef void* kth_transaction_list_t;

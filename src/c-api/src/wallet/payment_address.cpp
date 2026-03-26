@@ -71,6 +71,12 @@ char* kth_wallet_payment_address_encoded_cashaddr(kth_payment_address_t payment_
     std::string str = kth_wallet_payment_address_const_cpp(payment_address).encoded_cashaddr(token_aware);
     return kth::create_c_str(str);
 }
+
+//User is responsible for releasing return value memory
+char* kth_wallet_payment_address_encoded_token(kth_payment_address_t payment_address) {
+    std::string str = kth_wallet_payment_address_const_cpp(payment_address).encoded_token();
+    return kth::create_c_str(str);
+}
 #endif //KTH_CURRENCY_BCH
 
 kth_shorthash_t kth_wallet_payment_address_hash20(kth_payment_address_t payment_address) {

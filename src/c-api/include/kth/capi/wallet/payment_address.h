@@ -48,6 +48,9 @@ char* kth_wallet_payment_address_encoded_legacy(kth_payment_address_t payment_ad
 #if defined(KTH_CURRENCY_BCH)
 KTH_EXPORT
 char* kth_wallet_payment_address_encoded_cashaddr(kth_payment_address_t payment_address, kth_bool_t token_aware);
+
+KTH_EXPORT
+char* kth_wallet_payment_address_encoded_token(kth_payment_address_t payment_address);
 #endif //KTH_CURRENCY_BCH
 
 KTH_EXPORT

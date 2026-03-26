@@ -183,6 +183,9 @@ struct KD_API script_basis {
     operation::list to_pay_public_key_hash_pattern_unlocking_placeholder(size_t endorsement_size, size_t pubkey_size);
 
     static
+    operation::list to_pay_script_hash_pattern_unlocking_placeholder(size_t script_size, bool multisig);
+
+    static
     operation::list to_pay_script_hash_pattern(short_hash const& hash);
 
     static

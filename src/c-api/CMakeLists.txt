@@ -237,6 +237,7 @@ set(kth_sources
         src/chain/output_point.cpp
         src/chain/point.cpp
         src/chain/point_list.cpp
+        src/chain/outputpoint_list.cpp
         src/chain/mempool_transaction.cpp
 
         src/chain/token_data.cpp
@@ -378,6 +379,7 @@ set(kth_headers
     include/kth/capi/chain/history_compact.h
     include/kth/capi/chain/output.h
     include/kth/capi/chain/output_list.h
+    include/kth/capi/chain/outputpoint_list.h
     include/kth/capi/chain/get_blocks.h
     include/kth/capi/chain/double_spend_proof_spender.h
     include/kth/capi/chain/point.h

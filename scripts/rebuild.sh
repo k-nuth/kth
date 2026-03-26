@@ -30,11 +30,17 @@ conan lock create conanfile.py --version="${VERSION}" $MARCH_OPT --update || exi
 conan lock create conanfile.py --version "${VERSION}" $MARCH_OPT --lockfile=conan.lock --lockfile-out=build/conan.lock || exit 1
 conan install conanfile.py --version="${VERSION}" $MARCH_OPT --lockfile=build/conan.lock -of build --build=missing || exit 1
 
+CCACHE_OPT=""
+if command -v ccache &>/dev/null; then
+    CCACHE_OPT="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+fi
+
 cmake --preset conan-release \
          -DCMAKE_VERBOSE_MAKEFILE=ON \
          -DGLOBAL_BUILD=ON \
          -DENABLE_TEST=ON \
-         -DCMAKE_BUILD_TYPE=Release
+         -DCMAKE_BUILD_TYPE=Release \
+         $CCACHE_OPT
 
 if [ $? -ne 0 ]; then
     echo "CMake configuration failed"

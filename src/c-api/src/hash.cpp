@@ -56,6 +56,11 @@ kth_hash_t kth_sha256_hash_reversed(uint8_t const* data, kth_size_t size) {
     return kth::to_hash_t(hash);
 }
 
+kth_shorthash_t kth_ripemd160_hash(uint8_t const* data, kth_size_t size) {
+    auto hash = kth::ripemd160_hash({data, size});
+    return kth::to_shorthash_t(hash);
+}
+
 char* kth_sha256_hash_reversed_str(uint8_t const* data, kth_size_t size) {
     auto hash = kth_sha256_hash(data, size);
     return kth_hash_to_str(hash); // this function reverses the hash when encoding to string

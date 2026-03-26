@@ -849,6 +849,10 @@ operation::list script::to_pay_public_key_hash_pattern_unlocking_placeholder(siz
     return script_basis::to_pay_public_key_hash_pattern_unlocking_placeholder(endorsement_size, pubkey_size);
 }
 
+operation::list script::to_pay_script_hash_pattern_unlocking_placeholder(size_t script_size, bool multisig) {
+    return script_basis::to_pay_script_hash_pattern_unlocking_placeholder(script_size, multisig);
+}
+
 operation::list script::to_pay_script_hash_pattern(short_hash const& hash) {
     return operation::list{
         {opcode::hash160},

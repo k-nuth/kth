@@ -383,6 +383,10 @@ std::string payment_address::encoded_cashaddr(bool token_aware) const {
     return encode_cashaddr_(*this, token_aware);
 }
 
+std::string payment_address::encoded_token() const {
+    return encode_cashaddr_(*this, true);
+}
+
 #endif  //KTH_CURRENCY_BCH
 
 // Accessors.

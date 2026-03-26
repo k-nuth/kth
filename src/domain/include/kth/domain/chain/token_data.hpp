@@ -133,7 +133,7 @@ struct non_fungible {
 using both_kinds = std::pair<fungible, non_fungible>;
 
 struct token_data_t {
-    token_id_t id;
+    token_id_t id; // id or category
     std::variant<fungible, non_fungible, both_kinds> data;
 
     // friend constexpr

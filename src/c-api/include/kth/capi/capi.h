@@ -28,6 +28,7 @@
 #include <kth/capi/chain/output.h>
 #include <kth/capi/chain/output_list.h>
 #include <kth/capi/chain/output_point.h>
+#include <kth/capi/chain/outputpoint_list.h>
 #include <kth/capi/wallet/payment_address.h>
 #include <kth/capi/chain/point.h>
 #include <kth/capi/chain/point_list.h>
