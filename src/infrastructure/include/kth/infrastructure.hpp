@@ -12,6 +12,9 @@
  * Maintainers: Do not include this header internal to this library.
  */
 
+// Compiler constraints - must be first to fail early on incompatible compilers
+#include <kth/infrastructure/compiler_constraints.hpp>
+
 #include <kth/infrastructure/compat.h>
 #include <kth/infrastructure/compat.hpp>
 #include <kth/infrastructure/constants.hpp>
@@ -69,6 +72,7 @@
 
 #include <kth/infrastructure/utility/asio.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
+#include <kth/infrastructure/utility/coroutine_config.hpp>
 #include <kth/infrastructure/utility/atomic.hpp>
 #include <kth/infrastructure/utility/binary.hpp>
 #include <kth/infrastructure/utility/collection.hpp>
@@ -78,8 +82,6 @@
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/deadline.hpp>
 #include <kth/infrastructure/utility/decorator.hpp>
-
-#include <kth/infrastructure/utility/dispatcher.hpp>
 #include <kth/infrastructure/utility/enable_shared_from_base.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
 #include <kth/infrastructure/utility/exceptions.hpp>
@@ -95,25 +97,26 @@
 #endif
 
 #include <kth/infrastructure/utility/prioritized_mutex.hpp>
-
 #include <kth/infrastructure/utility/pseudo_random.hpp>
 #include <kth/infrastructure/utility/pseudo_random_broken_do_not_use.hpp>
-
 #include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/resubscriber.hpp>
+#include <kth/infrastructure/utility/salted_hashers.hpp>
 #include <kth/infrastructure/utility/scope_lock.hpp>
-#include <kth/infrastructure/utility/sequencer.hpp>
 #include <kth/infrastructure/utility/sequential_lock.hpp>
 #include <kth/infrastructure/utility/serializer.hpp>
 #include <kth/infrastructure/utility/socket.hpp>
 #include <kth/infrastructure/utility/string.hpp>
-
-#include <kth/infrastructure/utility/synchronizer.hpp>
+#include <kth/infrastructure/utility/system_memory.hpp>
+#if !defined(__EMSCRIPTEN__)
+#include <kth/infrastructure/utility/async_channel.hpp>
+#include <kth/infrastructure/utility/awaitable_helpers.hpp>
+#include <kth/infrastructure/utility/cpu_executor.hpp>
+#include <kth/infrastructure/utility/task_group.hpp>
+#endif
 #include <kth/infrastructure/utility/thread.hpp>
 #include <kth/infrastructure/utility/threadpool.hpp>
 #include <kth/infrastructure/utility/timer.hpp>
 #include <kth/infrastructure/utility/track.hpp>
-
 #include <kth/infrastructure/utility/writer.hpp>
 
 #include <kth/infrastructure/wallet/dictionary.hpp>
@@ -129,14 +132,20 @@
 #endif
 
 #if ! defined(__EMSCRIPTEN__)
-
 #include <kth/infrastructure/config/parameter.hpp>
 #include <kth/infrastructure/config/printer.hpp>
-
-#include <kth/infrastructure/utility/delegates.hpp>
 #include <kth/infrastructure/utility/pending.hpp>
-#include <kth/infrastructure/utility/subscriber.hpp>
-#include <kth/infrastructure/utility/work.hpp>
 #endif
+
+// =============================================================================
+// DEPRECATED - moved to deprecated/ folder (see doc/asio.md)
+// =============================================================================
+// #include <kth/infrastructure/utility/delegates.hpp>
+// #include <kth/infrastructure/utility/dispatcher.hpp>
+// #include <kth/infrastructure/utility/resubscriber.hpp>
+// #include <kth/infrastructure/utility/sequencer.hpp>
+// #include <kth/infrastructure/utility/subscriber.hpp>
+// #include <kth/infrastructure/utility/synchronizer.hpp>
+// #include <kth/infrastructure/utility/work.hpp>
 
 #endif /*KTH_INFRASTRUCTURE_INFRASTRUCTURE_HPP_*/

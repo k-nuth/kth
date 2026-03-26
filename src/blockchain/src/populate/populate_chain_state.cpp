@@ -12,7 +12,7 @@
 
 
 #include <kth/blockchain/define.hpp>
-#include <kth/blockchain/interface/fast_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/settings.hpp>
 
@@ -30,15 +30,15 @@ static constexpr uint32_t unspecified = max_uint32;
 // get_last_height
 // block: { hash, bits, version, timestamp }
 
-populate_chain_state::populate_chain_state(fast_chain const& chain, settings const& settings, domain::config::network network)
+populate_chain_state::populate_chain_state(block_chain const& chain, settings const& settings, domain::config::network network)
     :
 #if defined(KTH_CURRENCY_BCH)
       settings_(settings),
 #endif //KTH_CURRENCY_BCH
-      configured_forks_(settings.enabled_flags())
-    , checkpoints_(infrastructure::config::checkpoint::sort(settings.checkpoints))
+      configured_flags_(settings.enabled_flags())
+    , checkpoints_(settings.checkpoints_sorted)
     , network_(network)
-    , fast_chain_(chain)
+    , chain_(chain)
 {}
 
 inline
@@ -48,21 +48,53 @@ bool is_transaction_pool(branch::const_ptr branch) {
 
 bool populate_chain_state::get_bits(uint32_t& out_bits, size_t height, branch::const_ptr branch) const {
     // branch returns false only if the height is out of range.
-    return branch->get_bits(out_bits, height) || fast_chain_.get_bits(out_bits, height);
+    if (branch->get_bits(out_bits, height)) {
+        return true;
+    }
+    auto result = chain_.get_bits(height);
+    if ( ! result) {
+        return false;
+    }
+    out_bits = *result;
+    return true;
 }
 
 bool populate_chain_state::get_version(uint32_t& out_version, size_t height, branch::const_ptr branch) const {
     // branch returns false only if the height is out of range.
-    return branch->get_version(out_version, height) || fast_chain_.get_version(out_version, height);
+    if (branch->get_version(out_version, height)) {
+        return true;
+    }
+    auto result = chain_.get_version(height);
+    if ( ! result) {
+        return false;
+    }
+    out_version = *result;
+    return true;
 }
 
 bool populate_chain_state::get_timestamp(uint32_t& out_timestamp, size_t height, branch::const_ptr branch) const {
     // branch returns false only if the height is out of range.
-    return branch->get_timestamp(out_timestamp, height) || fast_chain_.get_timestamp(out_timestamp, height);
+    if (branch->get_timestamp(out_timestamp, height)) {
+        return true;
+    }
+    auto result = chain_.get_timestamp(height);
+    if ( ! result) {
+        return false;
+    }
+    out_timestamp = *result;
+    return true;
 }
 
 bool populate_chain_state::get_block_hash(hash_digest& out_hash, size_t height, branch::const_ptr branch) const {
-    return branch->get_block_hash(out_hash, height) || fast_chain_.get_block_hash(out_hash, height);
+    if (branch->get_block_hash(out_hash, height)) {
+        return true;
+    }
+    auto result = chain_.get_block_hash(height);
+    if ( ! result) {
+        return false;
+    }
+    out_hash = *result;
+    return true;
 }
 
 bool populate_chain_state::populate_bits(chain_state::data& data, chain_state::map const& map, branch::const_ptr branch) const {
@@ -97,7 +129,7 @@ bool populate_chain_state::populate_versions(chain_state::data& data, chain_stat
     }
 
     if (is_transaction_pool(branch)) {
-        data.version.self = chain_state::signal_version(configured_forks_);
+        data.version.self = chain_state::signal_version(configured_flags_);
         return true;
     }
 
@@ -179,7 +211,7 @@ bool populate_chain_state::populate_all(chain_state::data& data, branch::const_p
     unique_lock lock(mutex_);
 
     // Construct a map to inform chain state data population.
-    auto const map = chain_state::get_map(data.height, checkpoints_, configured_forks_, network_);
+    auto const map = chain_state::get_map(data.height, checkpoints_, configured_flags_, network_);
 
     return (
         populate_bits(data, map, branch)
@@ -232,25 +264,22 @@ chain_state::assert_anchor_block_info_t populate_chain_state::get_assert_anchor_
 #endif // defined(KTH_CURRENCY_BCH)
 
 chain_state::ptr populate_chain_state::populate() const {
-    size_t top;
-    if ( ! fast_chain_.get_last_height(top)) {
+    auto const heights = chain_.get_last_heights();
+    if ( ! heights) {
         spdlog::error("[blockchain] Failed to populate chain state, last height.");
         return {};
     }
-    auto opt = fast_chain_.get_header_and_abla_state(top);
-    if ( ! opt) {
+    auto const top = heights->header;
+    auto const header_result = chain_.get_header_and_abla_state(top);
+    if ( ! header_result) {
         spdlog::error("[blockchain] Failed to populate chain state, last header.");
         return {};
     }
-    auto [last_header, block_size, control_block_size, elastic_buffer_size] = *opt;
-    if ( ! last_header.is_valid()) {
-        spdlog::error("[blockchain] Failed to populate chain state, last header.");
-        return {};
-    }
+    auto const& [last_header, block_size, control_block_size, elastic_buffer_size] = *header_result;
 
     chain_state::data data;
     data.hash = null_hash;
-    data.height = *safe_add(top, size_t(1));
+    data.height = *safe_add(size_t(top), size_t(1));
 
     if (block_size == 0) {
         data.abla_state = abla::state(settings_.abla_config, static_max_block_size(network_));
@@ -274,7 +303,7 @@ chain_state::ptr populate_chain_state::populate() const {
 
     auto ret = std::make_shared<chain_state>(
         std::move(data)
-        , configured_forks_
+        , configured_flags_
         , checkpoints_
         , network_
 #if defined(KTH_CURRENCY_BCH)
@@ -338,7 +367,7 @@ chain_state::ptr populate_chain_state::populate(chain_state::ptr pool, branch::c
 
     return std::make_shared<chain_state>(
         std::move(data)
-        , configured_forks_
+        , configured_flags_
         , checkpoints_
         , network_
 #if defined(KTH_CURRENCY_BCH)

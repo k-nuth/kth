@@ -15,7 +15,7 @@ extern "C" {
 #endif
 
 KTH_EXPORT
-void kth_chain_subscribe_blockchain(kth_node_t exec, kth_chain_t chain, void* ctx, kth_subscribe_blockchain_handler_t handler);
+void kth_chain_subscribe_blockchain(kth_node_t exec, kth_chain_t chain, void* ctx, kth_subscribe_block_handler_t handler);
 
 KTH_EXPORT
 void kth_chain_subscribe_transaction(kth_node_t exec, kth_chain_t chain, void* ctx, kth_subscribe_transaction_handler_t handler);
@@ -94,6 +94,6 @@ kth_bool_t kth_chain_is_stale(kth_chain_t chain);
 // Subscribers.
 //-------------------------------------------------------------------------
 
-//virtual void subscribe_blockchain(reorganize_handler&& handler) = 0;
+//virtual void subscribe_blockchain(block_handler&& handler) = 0;
 //virtual void subscribe_transaction(transaction_handler&& handler) = 0;
 

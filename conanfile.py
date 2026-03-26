@@ -32,8 +32,8 @@ def _get_target_year(compile_year: int) -> int:
     return _BASE_PERIOD_YEAR + (periods_since_base + 1) * _PERIOD_LENGTH_YEARS
 
 
-def _calculate_block_capacity(compile_year: int) -> int:
-    """Calculate block capacity aligned to 2^16 for a given compilation year."""
+def _calculate_header_capacity(compile_year: int) -> int:
+    """Calculate header index capacity aligned to 2^16 for a given compilation year."""
     target_year = _get_target_year(compile_year)
     target_date = datetime(target_year, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
     seconds_since_genesis = (target_date - _GENESIS_TIMESTAMP).total_seconds()
@@ -71,6 +71,11 @@ class KthRecipe(KnuthConanFileV2):
         "with_icu": [True, False],
         "with_png": [True, False],
         "with_qrencode": [True, False],
+        "with_jemalloc": [True, False],
+        "with_stats": [True, False],
+        "embed_utxo_bloom": [True, False],
+        "utxoz_compact": [True, False],
+        "asio_standalone": [True, False],
 
         # secp256k1 options
         "secp256k1_enable_coverage": [True, False],
@@ -110,7 +115,19 @@ class KthRecipe(KnuthConanFileV2):
         "with_icu": False,
         "with_png": False,
         "with_qrencode": False,
-        
+        # WARNING: jemalloc causes crashes with LMDB (mdb_env_close/mdb_dbi_close segfaults).
+        # LMDB uses mmap extensively which conflicts with jemalloc's memory management.
+        # Potential solutions if jemalloc is needed:
+        #   1. Run with MALLOC_CONF="retain:true" (less aggressive munmap)
+        #   2. Use MDB_WRITEMAP flag in LMDB (writes directly to mmap, bypasses malloc)
+        #   3. Compile LMDB separately without jemalloc linkage
+        # For now, keep disabled until a proper solution is implemented.
+        "with_jemalloc": False,
+        "with_stats": False,
+        "embed_utxo_bloom": True,
+        "utxoz_compact": False,
+        "asio_standalone": True,
+
         # secp256k1 options
         "secp256k1_enable_coverage": False,
         "secp256k1_enable_branch_coverage": False,
@@ -131,7 +148,7 @@ class KthRecipe(KnuthConanFileV2):
     }
 
     # exports_sources = "src/*", "CMakeLists.txt", "ci_utils/cmake/*", "cmake/*", "knuthbuildinfo.cmake","include/*", "test/*", "console/*"
-    exports_sources = "src/*", "include/*", "CMakeLists.txt", "cmake/*", "ci_utils/cmake/*"
+    exports_sources = "src/*", "include/*", "data/*", "CMakeLists.txt", "cmake/*", "ci_utils/cmake/*"
 
 
     @property
@@ -152,14 +169,10 @@ class KthRecipe(KnuthConanFileV2):
         self.requires("fmt/12.0.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.16.0", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/0.9.32", transitive_headers=True, transitive_libs=True)
-        
+        self.requires("utxoz/0.6.0", transitive_headers=True, transitive_libs=True)
+
         # GMP is required for BigInt support in the native interpreter.
         self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
-
-        # # For the moment GMP and OpenSSL are only required for consensus builds, in the future it will be required for Knuth VM also.
-        # if self.options.consensus:
-        #     self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
-        #     self.requires("openssl/3.6.0", transitive_headers=True, transitive_libs=True)
 
         if self.options.consensus:
             self.requires("openssl/3.6.0", transitive_headers=True, transitive_libs=True)
@@ -167,9 +180,16 @@ class KthRecipe(KnuthConanFileV2):
         self.requires("ctre/3.10.0", transitive_headers=True, transitive_libs=True)
         self.requires("tiny-aes-c/1.0.0", transitive_headers=True, transitive_libs=True)
 
+        self.requires("ftxui/6.1.9", transitive_headers=True, transitive_libs=True)
+
         # simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)
         if self.settings.os != "Emscripten":
             self.requires("simdutf/7.1.0", transitive_headers=True, transitive_libs=True)
+
+        # simdjson for fast JSON parsing (not available for WebAssembly)
+        # TODO(2026-02-02): Check if simdjson adds WASM support in future versions
+        if self.settings.os != "Emscripten":
+            self.requires("simdjson/4.2.2", transitive_headers=True, transitive_libs=True)
 
         if self.options.with_png:
             self.requires("libpng/1.6.51", transitive_headers=True, transitive_libs=True)
@@ -177,8 +197,12 @@ class KthRecipe(KnuthConanFileV2):
         if self.options.with_qrencode:
             self.requires("libqrencode/4.1.1", transitive_headers=True, transitive_libs=True)
 
-        # if self.options.asio_standalone:
-        #     self.requires("asio/1.24.0", transitive_headers=True, transitive_libs=True)
+        if self.options.with_jemalloc:
+            # https://jasone.github.io/2025/06/12/jemalloc-postmortem/
+            self.requires("jemalloc/5.3.0", transitive_headers=True, transitive_libs=True)
+
+        if self.options.asio_standalone:
+            self.requires("asio/1.36.0", transitive_headers=True, transitive_libs=True)
 
 
     def build_requirements(self):
@@ -218,6 +242,8 @@ class KthRecipe(KnuthConanFileV2):
 
         self.options["spdlog/*"].header_only = True
 
+        self.options["utxoz/*"].log = "spdlog"
+
         self.options["*"].db_readonly = self.options.db_readonly
         self.output.info("Compiling with read-only DB: %s" % (self.options.db_readonly,))
 
@@ -254,6 +280,11 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["WITH_ICU"] = option_on_off(self.options.with_icu)
         tc.variables["KTH_WITH_PNG"] = option_on_off(self.options.with_png)
         tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
+        tc.variables["KTH_WITH_JEMALLOC"] = option_on_off(self.options.with_jemalloc)
+        tc.variables["KTH_WITH_STATS"] = option_on_off(self.options.with_stats)
+        tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
+        tc.variables["KTH_UTXOZ_COMPACT_MODE"] = option_on_off(self.options.utxoz_compact)
+        tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
 
         # Secp256k1 --------------------------------------------
         tc.variables["SECP256K1_ENABLE_COVERAGE"] = option_on_off(self.options.secp256k1_enable_coverage)
@@ -284,10 +315,10 @@ class KthRecipe(KnuthConanFileV2):
 
         tc.variables["CURRENCY"] = self.options.currency
 
-        # Block index capacity based on compilation year
-        block_capacity = _calculate_block_capacity(datetime.now().year)
-        tc.variables["KTH_BLOCK_INDEX_CAPACITY"] = block_capacity
-        self.output.info(f"Block index capacity: {block_capacity:,} blocks")
+        # Header index capacity based on compilation year
+        header_capacity = _calculate_header_capacity(datetime.now().year)
+        tc.variables["KTH_HEADER_INDEX_CAPACITY"] = header_capacity
+        self.output.info(f"Header index capacity: {header_capacity:,} headers")
 
         # Pass version to CMake for C++ code generation
         kth_version = str(self.version) if self.version else "0.0.0-dev"
@@ -360,8 +391,10 @@ class KthRecipe(KnuthConanFileV2):
             infrastructure_defines.append("KTH_WITH_PNG")
         if self.options.with_qrencode:
             infrastructure_defines.append("KTH_WITH_QRENCODE")
+        if self.options.with_jemalloc:
+            infrastructure_defines.append("KTH_WITH_JEMALLOC")
         self.cpp_info.components["infrastructure"].defines = infrastructure_defines
-        # Infrastructure core dependencies: secp256k1, boost, fmt, ctre, spdlog, simdutf (non-wasm)
+        # Infrastructure core dependencies: secp256k1, boost, fmt, ctre, spdlog
         self.cpp_info.components["infrastructure"].requires = [
             "secp256k1",
             "boost::boost",
@@ -369,7 +402,7 @@ class KthRecipe(KnuthConanFileV2):
             "ctre::ctre",
             "spdlog::spdlog"
         ]
-        # Add simdutf for SIMD-optimized base encoding (not available for WebAssembly)
+        # Add simdutf for SIMD-optimized operations (not available for WebAssembly)
         if self.settings.os != "Emscripten":
             self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
         # Add libpng and libqrencode when enabled
@@ -377,8 +410,14 @@ class KthRecipe(KnuthConanFileV2):
             self.cpp_info.components["infrastructure"].requires.append("libpng::libpng")
         if self.options.with_qrencode:
             self.cpp_info.components["infrastructure"].requires.append("libqrencode::libqrencode")
-        
-        
+        # Add asio when using standalone mode
+        if self.options.asio_standalone:
+            self.cpp_info.components["infrastructure"].requires.append("asio::asio")
+        # Add jemalloc when enabled
+        if self.options.with_jemalloc:
+            self.cpp_info.components["infrastructure"].requires.append("jemalloc::jemalloc")
+
+
         # Domain models and business logic
         self.cpp_info.components["domain"].libs = ["domain"]
         self.cpp_info.components["domain"].names["cmake_find_package"] = "domain"
@@ -429,8 +468,8 @@ class KthRecipe(KnuthConanFileV2):
             self.cpp_info.components["network"].names["cmake_find_package"] = "network"
             self.cpp_info.components["network"].names["cmake_find_package_multi"] = "network"
             self.cpp_info.components["network"].defines = [currency_define] + static_defines
-            # Network depends on domain
-            self.cpp_info.components["network"].requires = ["domain"]
+            # Network depends on domain and simdjson (for peer_database JSON parsing)
+            self.cpp_info.components["network"].requires = ["domain", "simdjson::simdjson"]
         
         # Node implementation
         self.cpp_info.components["node"].libs = ["node"]

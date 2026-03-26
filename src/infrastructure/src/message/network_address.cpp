@@ -29,6 +29,124 @@ bool network_address::is_valid() const {
         || (ip_ != null_address);
 }
 
+namespace {
+
+// Check if address is IPv4-mapped in IPv6 (::ffff:x.x.x.x)
+inline bool is_ipv4_mapped(ip_address const& ip) {
+    // IPv4-mapped IPv6: 00 00 00 00 00 00 00 00 00 00 FF FF xx xx xx xx
+    return ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0 &&
+           ip[4] == 0 && ip[5] == 0 && ip[6] == 0 && ip[7] == 0 &&
+           ip[8] == 0 && ip[9] == 0 && ip[10] == 0xff && ip[11] == 0xff;
+}
+
+// Get the IPv4 bytes from a mapped address (last 4 bytes)
+inline std::array<uint8_t, 4> get_ipv4_bytes(ip_address const& ip) {
+    return {ip[12], ip[13], ip[14], ip[15]};
+}
+
+// RFC1918: Private IPv4 (10.x.x.x, 172.16-31.x.x, 192.168.x.x)
+inline bool is_rfc1918(ip_address const& ip) {
+    if (!is_ipv4_mapped(ip)) return false;
+    auto const ipv4 = get_ipv4_bytes(ip);
+    return ipv4[0] == 10 ||
+           (ipv4[0] == 192 && ipv4[1] == 168) ||
+           (ipv4[0] == 172 && ipv4[1] >= 16 && ipv4[1] <= 31);
+}
+
+// RFC3927: Link-local IPv4 (169.254.x.x)
+inline bool is_rfc3927(ip_address const& ip) {
+    if (!is_ipv4_mapped(ip)) return false;
+    auto const ipv4 = get_ipv4_bytes(ip);
+    return ipv4[0] == 169 && ipv4[1] == 254;
+}
+
+// RFC5737: Documentation IPv4 (192.0.2.x, 198.51.100.x, 203.0.113.x)
+inline bool is_rfc5737(ip_address const& ip) {
+    if (!is_ipv4_mapped(ip)) return false;
+    auto const ipv4 = get_ipv4_bytes(ip);
+    return (ipv4[0] == 192 && ipv4[1] == 0 && ipv4[2] == 2) ||
+           (ipv4[0] == 198 && ipv4[1] == 51 && ipv4[2] == 100) ||
+           (ipv4[0] == 203 && ipv4[1] == 0 && ipv4[2] == 113);
+}
+
+// RFC6598: Carrier-grade NAT (100.64-127.x.x)
+inline bool is_rfc6598(ip_address const& ip) {
+    if (!is_ipv4_mapped(ip)) return false;
+    auto const ipv4 = get_ipv4_bytes(ip);
+    return ipv4[0] == 100 && ipv4[1] >= 64 && ipv4[1] <= 127;
+}
+
+// RFC2544: Benchmarking (198.18.x.x, 198.19.x.x)
+inline bool is_rfc2544(ip_address const& ip) {
+    if (!is_ipv4_mapped(ip)) return false;
+    auto const ipv4 = get_ipv4_bytes(ip);
+    return ipv4[0] == 198 && (ipv4[1] == 18 || ipv4[1] == 19);
+}
+
+// IPv4 loopback (127.x.x.x) or unspecified (0.x.x.x)
+inline bool is_ipv4_local(ip_address const& ip) {
+    if (!is_ipv4_mapped(ip)) return false;
+    auto const ipv4 = get_ipv4_bytes(ip);
+    return ipv4[0] == 127 || ipv4[0] == 0;
+}
+
+// RFC4862: IPv6 Link-local (FE80::/10)
+inline bool is_rfc4862(ip_address const& ip) {
+    // Pure IPv6 check (not IPv4-mapped)
+    if (is_ipv4_mapped(ip)) return false;
+    return ip[0] == 0xfe && (ip[1] & 0xc0) == 0x80;
+}
+
+// RFC4193: IPv6 Unique-local (FC00::/7)
+inline bool is_rfc4193(ip_address const& ip) {
+    if (is_ipv4_mapped(ip)) return false;
+    return (ip[0] & 0xfe) == 0xfc;
+}
+
+// RFC3849: IPv6 Documentation (2001:DB8::/32)
+inline bool is_rfc3849(ip_address const& ip) {
+    if (is_ipv4_mapped(ip)) return false;
+    return ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x0d && ip[3] == 0xb8;
+}
+
+// IPv6 loopback (::1)
+inline bool is_ipv6_loopback(ip_address const& ip) {
+    if (is_ipv4_mapped(ip)) return false;
+    return ip == ip_address{{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
+}
+
+// IPv6 unspecified (::)
+inline bool is_ipv6_unspecified(ip_address const& ip) {
+    return ip == null_address;
+}
+
+} // anonymous namespace
+
+bool network_address::is_routable() const {
+    if (!is_valid()) return false;
+    if (port_ == 0) return false;
+
+    // Check for non-routable addresses
+    // IPv4-mapped addresses
+    if (is_ipv4_mapped(ip_)) {
+        if (is_rfc1918(ip_)) return false;   // Private
+        if (is_rfc3927(ip_)) return false;   // Link-local
+        if (is_rfc5737(ip_)) return false;   // Documentation
+        if (is_rfc6598(ip_)) return false;   // Carrier-grade NAT
+        if (is_rfc2544(ip_)) return false;   // Benchmarking
+        if (is_ipv4_local(ip_)) return false; // Loopback/unspecified
+    } else {
+        // Pure IPv6
+        if (is_rfc4862(ip_)) return false;   // Link-local
+        if (is_rfc4193(ip_)) return false;   // Unique-local
+        if (is_rfc3849(ip_)) return false;   // Documentation
+        if (is_ipv6_loopback(ip_)) return false;
+        if (is_ipv6_unspecified(ip_)) return false;
+    }
+
+    return true;
+}
+
 void network_address::reset() {
     timestamp_ = 0;
     services_ = 0;

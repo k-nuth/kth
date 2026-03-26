@@ -19,14 +19,15 @@
 #endif
 
 #include <kth/blockchain/define.hpp>
+#include <kth/blockchain/header_index.hpp>
 #include <kth/blockchain/settings.hpp>
+#include <kth/blockchain/utxo_builder.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
-#include <kth/blockchain/interface/fast_chain.hpp>
-#include <kth/blockchain/interface/safe_chain.hpp>
 #include <kth/blockchain/pools/block_entry.hpp>
 #include <kth/blockchain/pools/block_organizer.hpp>
 #include <kth/blockchain/pools/block_pool.hpp>
 #include <kth/blockchain/pools/branch.hpp>
+#include <kth/blockchain/pools/header_organizer.hpp>
 #include <kth/blockchain/pools/transaction_entry.hpp>
 #include <kth/blockchain/pools/transaction_organizer.hpp>
 #include <kth/blockchain/pools/transaction_pool.hpp>
@@ -35,6 +36,7 @@
 #include <kth/blockchain/populate/populate_chain_state.hpp>
 #include <kth/blockchain/populate/populate_transaction.hpp>
 #include <kth/blockchain/validate/validate_block.hpp>
+#include <kth/blockchain/validate/validate_header.hpp>
 #include <kth/blockchain/validate/validate_input.hpp>
 #include <kth/blockchain/validate/validate_transaction.hpp>
 

@@ -31,34 +31,45 @@ struct KD_API version {
     using const_ptr = std::shared_ptr<const version>;
 
     enum level : uint32_t {
-        // compact blocks protocol FIX
-        bip152_fix = 70015,  //TODO(fernando): See how to name this, because there is no BIP for that...
+        // Feature negotiation before verack (BIP155 sendaddrv2 support)
+        // BCHN: FEATURE_NEGOTIATION_BEFORE_VERACK_VERSION
+        feature_negotiation = 70016,
 
-        // compact blocks protocol
+        // Not banning for invalid compact blocks
+        // BCHN: INVALID_CB_NO_BAN_VERSION
+        invalid_cb_no_ban = 70015,
+
+        // Short-id-based block download (compact blocks, BIP152)
+        // BCHN: SHORT_IDS_BLOCKS_VERSION
         bip152 = 70014,
 
-        // fee_filter
+        // Fee filter (BIP133)
+        // BCHN: FEEFILTER_VERSION
         bip133 = 70013,
 
-        // send_headers
+        // Send headers (BIP130)
+        // BCHN: SENDHEADERS_VERSION
         bip130 = 70012,
 
-        // node_bloom service bit
+        // Node bloom service bit (BIP111)
+        // BCHN: NO_BLOOM_VERSION
         bip111 = 70011,
 
-        // node_utxo service bit (draft)
+        // Node UTXO service bit (BIP64, draft only)
         bip64 = 70004,
 
-        // reject (satoshi node writes version.relay starting here)
+        // Reject message (BIP61, deprecated)
         bip61 = 70002,
 
-        // filters, merkle_block, not_found, version.relay
+        // Bloom filters, merkle_block, not_found, version.relay (BIP37)
         bip37 = 70001,
 
-        // memory_pool
+        // Memory pool (BIP35)
         bip35 = 60002,
 
-        // ping.nonce, pong
+        // Ping nonce, pong (BIP31) - first version with BIP31 support
+        // Note: BCHN defines BIP0031_VERSION = 60000 and uses `> 60000`
+        // We define bip31 = 60001 and use `>= bip31` (equivalent logic)
         bip31 = 60001,
 
         // Don't request blocks from nodes of versions 32000-32400.
@@ -67,7 +78,8 @@ struct KD_API version {
         // Don't request blocks from nodes of versions 32000-32400.
         no_blocks_start = 32000,
 
-    // This preceded the BIP system.
+        // Minimum version for headers-first sync
+        // BCHN: MIN_PEER_PROTO_VERSION
 #if defined(KTH_CURRENCY_LTC)
         headers = 70002,
 #else
@@ -77,36 +89,73 @@ struct KD_API version {
         // We require at least this of peers, address.time fields.
         minimum = 31402,
 
+        // Initial protocol version before negotiation
+        // BCHN: INIT_PROTO_VERSION
+        initial = 209,
+
         // We support at most this internally (bound to settings default).
-        maximum = bip152_fix,
+        // BCHN: PROTOCOL_VERSION
+        maximum = feature_negotiation,
 
         // Used to generate canonical size required by consensus checks.
         canonical = 0
     };
 
     enum service : uint64_t {
-        // The node exposes no services.
+        // Nothing
         none = 0,
 
-        // The node is capable of serving the block chain (full node).
+        // NODE_NETWORK means that the node is capable of serving the complete block
+        // chain. It is currently set by all non-pruned nodes, and is unset by SPV
+        // clients or other light clients.
         node_network = (1U << 0),
 
-        // Requires version.value >= level::bip64 (BIP64 is draft only).
-        // The node is capable of responding to the getutxo protocol request.
-        node_utxo = (1U << 1),
+        // NODE_GETUTXO means the node is capable of responding to the getutxo
+        // protocol request. See BIP64 for details on how this is implemented.
+        node_getutxo = (1U << 1),
 
-        // Requires version.value >= level::bip111
-
-        // The node is capable and willing to handle bloom-filtered connections.
+        // NODE_BLOOM means the node is capable and willing to handle bloom-filtered
+        // connections. Nodes used to support this by default, without advertising
+        // this bit, but no longer do as of protocol version 70011 (= NO_BLOOM_VERSION)
         node_bloom = (1U << 2),
 
-        // // Independent of network protocol level.
-        // // The node is capable of responding to witness inventory requests.
-        // node_witness = (1U << 3),
+        // Bit 3 is reserved (was NODE_WITNESS in BTC)
 
 #if defined(KTH_CURRENCY_BCH)
-        node_network_cash = (1U << 5)  //TODO(kth): check what happens with node_network (or node_network_cash)
-#endif                                //KTH_CURRENCY_BCH
+        // NODE_XTHIN means the node supports Xtreme Thinblocks. If this is turned
+        // off then the node will not service nor make xthin requests.
+        node_xthin = (1U << 4),
+
+        // NODE_BITCOIN_CASH means the node supports Bitcoin Cash and the
+        // associated consensus rule changes.
+        // This service bit is intended to be used prior until some time after the
+        // UAHF activation when the Bitcoin Cash network has adequately separated.
+        // TODO: remove (free up) the NODE_BITCOIN_CASH service bit once no longer needed.
+        node_bitcoin_cash = (1U << 5),
+
+        // NODE_GRAPHENE means the node supports Graphene blocks.
+        // If this is turned off then the node will not service graphene requests
+        // nor make graphene requests.
+        node_graphene = (1U << 6),
+
+        // NODE_CF means that the node supports BIP 157/158 style
+        // compact filters on block data.
+        node_compact_filters = (1U << 8),
+#endif  // KTH_CURRENCY_BCH
+
+        // NODE_NETWORK_LIMITED means the same as NODE_NETWORK with the limitation
+        // of only serving the last 288 (2 day) blocks.
+        // See BIP159 for details on how this is implemented.
+        node_network_limited = (1U << 10),
+
+#if defined(KTH_CURRENCY_BCH)
+        // NODE_EXTVERSION indicates if node is using extversion.
+        node_extversion = (1U << 11),
+#endif  // KTH_CURRENCY_BCH
+
+        // The last non-experimental service bit, helper for looping over the flags.
+        // Bits 24-31 are reserved for temporary experiments.
+        node_last_non_experimental = (1U << 23)
     };
 
     version() = default;

@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-#include <boost/functional/hash_fwd.hpp>
+#include <boost/container_hash/hash.hpp>
 #include <boost/multiprecision/cpp_int.hpp>
 
 #include <kth/infrastructure/compat.hpp>
@@ -116,22 +116,6 @@ struct hash<kth::byte_span> {
     }
 };
 } // namespace std
-
-namespace boost {
-template <size_t Size>
-struct hash<kth::byte_array<Size>> {
-    size_t operator()(const kth::byte_array<Size>& hash) const {
-        return boost::hash_range(hash.begin(), hash.end());
-    }
-};
-
-template <>
-struct hash<kth::byte_span> {
-    size_t operator()(kth::byte_span bytes) const {
-        return boost::hash_range(bytes.begin(), bytes.end());
-    }
-};
-} // namespace boost
 
 #include <kth/infrastructure/impl/math/hash.ipp>
 
