@@ -425,8 +425,12 @@ hash_digest const tx_hash_3 = {{
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
 
 // A dummy payment address for test outputs.
-// Using a zero hash20 — just needs to be valid for template creation.
-payment_address const test_address{"bitcoincash:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq5dc09yc9"};
+// Using a function with local static to avoid static initialization order issues
+// (payment_address constructor parses cashaddr, which may depend on other statics).
+payment_address const& test_address() {
+    static payment_address const addr{"bitcoincash:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq5dc09yc9"};
+    return addr;
+}
 
 } // anonymous namespace
 
@@ -438,7 +442,7 @@ TEST_CASE("create_token_split_tx_template separates token from excess bch", "[co
     std::vector<utxo> available = { dirty_utxo };
     output_point::list outpoints = { output_point{tx_hash_1, 0} };
 
-    auto result = create_token_split_tx_template(outpoints, available, test_address);
+    auto result = create_token_split_tx_template(outpoints, available, test_address());
     REQUIRE(result.has_value());
 
     auto const& [tx, addresses, amounts] = *result;
@@ -469,7 +473,7 @@ TEST_CASE("create_token_split_tx_template creates one output per token category"
         output_point{tx_hash_2, 0}
     };
 
-    auto result = create_token_split_tx_template(outpoints, available, test_address);
+    auto result = create_token_split_tx_template(outpoints, available, test_address());
     REQUIRE(result.has_value());
 
     auto const& [tx, addresses, amounts] = *result;
@@ -498,7 +502,7 @@ TEST_CASE("create_token_split_tx_template consolidates same-category tokens", "[
         output_point{tx_hash_2, 0}
     };
 
-    auto result = create_token_split_tx_template(outpoints, available, test_address);
+    auto result = create_token_split_tx_template(outpoints, available, test_address());
     REQUIRE(result.has_value());
 
     auto const& [tx, addresses, amounts] = *result;
@@ -524,7 +528,7 @@ TEST_CASE("create_token_split_tx_template fails on empty outpoints", "[coin_sele
     std::vector<utxo> available = { make_bch_utxo(10000) };
     output_point::list outpoints;
 
-    auto result = create_token_split_tx_template(outpoints, available, test_address);
+    auto result = create_token_split_tx_template(outpoints, available, test_address());
     REQUIRE_FALSE(result.has_value());
     REQUIRE(result.error() == error::empty_utxo_list);
 }
@@ -536,7 +540,7 @@ TEST_CASE("create_token_split_tx_template fails when outpoint is not found", "[c
     // Request an outpoint that doesn't exist
     output_point::list outpoints = { output_point{tx_hash_2, 0} };
 
-    auto result = create_token_split_tx_template(outpoints, available, test_address);
+    auto result = create_token_split_tx_template(outpoints, available, test_address());
     REQUIRE_FALSE(result.has_value());
     REQUIRE(result.error() == error::utxo_not_found);
 }
@@ -549,7 +553,7 @@ TEST_CASE("create_token_split_tx_template rejects nft utxos", "[coin_selection]"
     std::vector<utxo> available = { utxo1 };
     output_point::list outpoints = { output_point{tx_hash_1, 0} };
 
-    auto result = create_token_split_tx_template(outpoints, available, test_address);
+    auto result = create_token_split_tx_template(outpoints, available, test_address());
     REQUIRE_FALSE(result.has_value());
     REQUIRE(result.error() == error::operation_failed);  // NFTs not supported
 }
@@ -562,7 +566,7 @@ TEST_CASE("create_token_split_tx_template fails when bch cannot cover dust plus 
     std::vector<utxo> available = { utxo1 };
     output_point::list outpoints = { output_point{tx_hash_1, 0} };
 
-    auto result = create_token_split_tx_template(outpoints, available, test_address);
+    auto result = create_token_split_tx_template(outpoints, available, test_address());
     REQUIRE_FALSE(result.has_value());
     REQUIRE(result.error() == error::insufficient_fee);  // 100 sats < 800 dust + fee
 }
@@ -574,7 +578,7 @@ TEST_CASE("create_token_split_tx_template handles bch-only utxo with single outp
     std::vector<utxo> available = { utxo1 };
     output_point::list outpoints = { output_point{tx_hash_1, 0} };
 
-    auto result = create_token_split_tx_template(outpoints, available, test_address);
+    auto result = create_token_split_tx_template(outpoints, available, test_address());
     REQUIRE(result.has_value());
 
     auto const& [tx, addresses, amounts] = *result;
@@ -597,7 +601,7 @@ TEST_CASE("create_token_split_tx_template does not overcharge fee when bch outpu
     std::vector<utxo> available = { utxo1 };
     output_point::list outpoints = { output_point{tx_hash_1, 0} };
 
-    auto result = create_token_split_tx_template(outpoints, available, test_address);
+    auto result = create_token_split_tx_template(outpoints, available, test_address());
     REQUIRE(result.has_value());
     auto const& [tx, addresses, amounts] = *result;
     // Only the token output, no BCH change (all BCH goes to dust + fee)
@@ -614,7 +618,7 @@ TEST_CASE("create_token_split_tx_template fails when bch-only input exactly cove
     std::vector<utxo> available = { utxo1 };
     output_point::list outpoints = { output_point{tx_hash_1, 0} };
 
-    auto result = create_token_split_tx_template(outpoints, available, test_address);
+    auto result = create_token_split_tx_template(outpoints, available, test_address());
     REQUIRE_FALSE(result.has_value());
     REQUIRE(result.error() == error::operation_failed);
 }
@@ -631,7 +635,7 @@ TEST_CASE("create_token_split_tx_template absorbs sub-dust bch remainder as fee"
     std::vector<utxo> available = { utxo1 };
     output_point::list outpoints = { output_point{tx_hash_1, 0} };
 
-    auto result = create_token_split_tx_template(outpoints, available, test_address);
+    auto result = create_token_split_tx_template(outpoints, available, test_address());
     REQUIRE(result.has_value());
     auto const& [tx, addresses, amounts] = *result;
     // Only the token output, sub-dust remainder absorbed as fee
@@ -647,7 +651,7 @@ TEST_CASE("create_token_split_tx_template creates bch output when remainder is a
     std::vector<utxo> available = { utxo1 };
     output_point::list outpoints = { output_point{tx_hash_1, 0} };
 
-    auto result = create_token_split_tx_template(outpoints, available, test_address);
+    auto result = create_token_split_tx_template(outpoints, available, test_address());
     REQUIRE(result.has_value());
     auto const& [tx, addresses, amounts] = *result;
     // Token output + BCH output
@@ -978,11 +982,11 @@ TEST_CASE("create_tx_template fails with multiple change addresses due to trunca
         make_bch_utxo(12000),
     };
 
-    std::vector<payment_address> change_addrs = {test_address, test_address, test_address};
+    std::vector<payment_address> change_addrs = {test_address(), test_address(), test_address()};
     std::vector<double> ratios = {1.0/3.0, 1.0/3.0, 1.0/3.0};
 
     auto result = create_tx_template(
-        utxos, 10000, test_address, change_addrs, ratios,
+        utxos, 10000, test_address(), change_addrs, ratios,
         coin_selection_algorithm::largest_first);
 
     // With the fix, truncation remainder goes to the last change output.
@@ -1017,11 +1021,11 @@ TEST_CASE("create_tx_template send_all overestimates fee by counting phantom cha
         make_bch_utxo(10000),
     };
 
-    std::vector<payment_address> change_addrs = {test_address};
+    std::vector<payment_address> change_addrs = {test_address()};
     std::vector<double> ratios = {1.0};
 
     auto result = create_tx_template(
-        utxos, 0, test_address, change_addrs, ratios,
+        utxos, 0, test_address(), change_addrs, ratios,
         coin_selection_algorithm::send_all);
 
     REQUIRE(result.has_value());
@@ -1135,11 +1139,11 @@ TEST_CASE("create_tx_template rejects change ratios summing above 1.0", "[coin_s
         make_bch_utxo(100000),
     };
 
-    std::vector<payment_address> change_addrs = {test_address, test_address, test_address};
+    std::vector<payment_address> change_addrs = {test_address(), test_address(), test_address()};
     std::vector<double> ratios = {0.6, 0.6, 0.6};  // sum = 1.8
 
     auto result = create_tx_template(
-        utxos, 10000, test_address, change_addrs, ratios,
+        utxos, 10000, test_address(), change_addrs, ratios,
         coin_selection_algorithm::largest_first);
 
     REQUIRE_FALSE(result.has_value());
@@ -1151,11 +1155,11 @@ TEST_CASE("create_tx_template rejects change ratios summing below 1.0", "[coin_s
         make_bch_utxo(100000),
     };
 
-    std::vector<payment_address> change_addrs = {test_address, test_address};
+    std::vector<payment_address> change_addrs = {test_address(), test_address()};
     std::vector<double> ratios = {0.2, 0.3};  // sum = 0.5
 
     auto result = create_tx_template(
-        utxos, 10000, test_address, change_addrs, ratios,
+        utxos, 10000, test_address(), change_addrs, ratios,
         coin_selection_algorithm::largest_first);
 
     REQUIRE_FALSE(result.has_value());
@@ -1176,7 +1180,7 @@ TEST_CASE("create_token_split_tx_template rejects duplicate outpoints", "[coin_s
         output_point{tx_hash_1, 0},  // duplicate
     };
 
-    auto result = create_token_split_tx_template(outpoints, available, test_address);
+    auto result = create_token_split_tx_template(outpoints, available, test_address());
     REQUIRE_FALSE(result.has_value());
     REQUIRE(result.error() == error::operation_failed);
 }
@@ -1186,11 +1190,11 @@ TEST_CASE("create_tx_template rejects negative change ratios", "[coin_selection]
         make_bch_utxo(100000),
     };
 
-    std::vector<payment_address> change_addrs = {test_address, test_address};
+    std::vector<payment_address> change_addrs = {test_address(), test_address()};
     std::vector<double> ratios = {1.2, -0.2};  // sum = 1.0 but contains negative
 
     auto result = create_tx_template(
-        utxos, 10000, test_address, change_addrs, ratios,
+        utxos, 10000, test_address(), change_addrs, ratios,
         coin_selection_algorithm::largest_first);
 
     REQUIRE_FALSE(result.has_value());
@@ -1202,11 +1206,11 @@ TEST_CASE("create_tx_template rejects NaN change ratio", "[coin_selection]") {
         make_bch_utxo(100000),
     };
 
-    std::vector<payment_address> change_addrs = {test_address};
+    std::vector<payment_address> change_addrs = {test_address()};
     std::vector<double> ratios = {std::numeric_limits<double>::quiet_NaN()};
 
     auto result = create_tx_template(
-        utxos, 10000, test_address, change_addrs, ratios,
+        utxos, 10000, test_address(), change_addrs, ratios,
         coin_selection_algorithm::largest_first);
 
     REQUIRE_FALSE(result.has_value());
@@ -1218,11 +1222,11 @@ TEST_CASE("create_tx_template rejects infinity change ratio", "[coin_selection]"
         make_bch_utxo(100000),
     };
 
-    std::vector<payment_address> change_addrs = {test_address};
+    std::vector<payment_address> change_addrs = {test_address()};
     std::vector<double> ratios = {std::numeric_limits<double>::infinity()};
 
     auto result = create_tx_template(
-        utxos, 10000, test_address, change_addrs, ratios,
+        utxos, 10000, test_address(), change_addrs, ratios,
         coin_selection_algorithm::largest_first);
 
     REQUIRE_FALSE(result.has_value());
@@ -1239,11 +1243,11 @@ TEST_CASE("create_tx_template manual mode sends requested amount with change", "
         make_bch_utxo(50000),
     };
 
-    std::vector<payment_address> change_addrs = {test_address};
+    std::vector<payment_address> change_addrs = {test_address()};
     std::vector<double> ratios = {1.0};
 
     auto result = create_tx_template(
-        utxos, 5000, test_address, change_addrs, ratios,
+        utxos, 5000, test_address(), change_addrs, ratios,
         coin_selection_algorithm::manual);
 
     REQUIRE(result.has_value());
@@ -1264,11 +1268,11 @@ TEST_CASE("create_tx_template rejects sub-dust destination amount", "[coin_selec
         make_bch_utxo(10000),
     };
 
-    std::vector<payment_address> change_addrs = {test_address};
+    std::vector<payment_address> change_addrs = {test_address()};
     std::vector<double> ratios = {1.0};
 
     auto result = create_tx_template(
-        utxos, 100, test_address, change_addrs, ratios,
+        utxos, 100, test_address(), change_addrs, ratios,
         coin_selection_algorithm::largest_first);
 
     REQUIRE_FALSE(result.has_value());
@@ -1284,11 +1288,11 @@ TEST_CASE("create_tx_template absorbs sub-dust change as fee", "[coin_selection]
         make_bch_utxo(1770),
     };
 
-    std::vector<payment_address> change_addrs = {test_address};
+    std::vector<payment_address> change_addrs = {test_address()};
     std::vector<double> ratios = {1.0};
 
     auto result = create_tx_template(
-        utxos, 1000, test_address, change_addrs, ratios,
+        utxos, 1000, test_address(), change_addrs, ratios,
         coin_selection_algorithm::largest_first);
 
     REQUIRE(result.has_value());
@@ -1306,11 +1310,11 @@ TEST_CASE("create_tx_template keeps change when above dust", "[coin_selection]")
         make_bch_utxo(1800),
     };
 
-    std::vector<payment_address> change_addrs = {test_address};
+    std::vector<payment_address> change_addrs = {test_address()};
     std::vector<double> ratios = {1.0};
 
     auto result = create_tx_template(
-        utxos, 1000, test_address, change_addrs, ratios,
+        utxos, 1000, test_address(), change_addrs, ratios,
         coin_selection_algorithm::largest_first);
 
     REQUIRE(result.has_value());
@@ -1327,11 +1331,11 @@ TEST_CASE("create_tx_template send_all rejects when effective amount is sub-dust
         make_bch_utxo(700),
     };
 
-    std::vector<payment_address> change_addrs = {test_address};
+    std::vector<payment_address> change_addrs = {test_address()};
     std::vector<double> ratios = {1.0};
 
     auto result = create_tx_template(
-        utxos, 0, test_address, change_addrs, ratios,
+        utxos, 0, test_address(), change_addrs, ratios,
         coin_selection_algorithm::send_all);
 
     REQUIRE_FALSE(result.has_value());
