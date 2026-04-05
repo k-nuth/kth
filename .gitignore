@@ -25,3 +25,4 @@ peers.dat
 build_asan/
 Testing/
 utxo-z/
+blockchain-old/

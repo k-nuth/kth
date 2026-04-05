@@ -26,7 +26,6 @@
 #include <kth/infrastructure/log/udp_client_sink.hpp>
 #include <kth/infrastructure/unicode/ofstream.hpp>
 #include <kth/infrastructure/utility/asio.hpp>
-#include <kth/infrastructure/utility/threadpool.hpp>
 
 namespace kth::log {
 

@@ -1,0 +1,37 @@
+reviews:
+  path_filters:
+    # === Incremental review strategy ===
+    # Start with infrastructure only. After review, expand to next module.
+    # Order: infrastructure -> domain -> database -> network -> blockchain -> node
+
+    # Include only infrastructure
+    - "src/infrastructure/**"
+
+    # Exclude everything else
+    - "!src/domain/**"
+    - "!src/database/**"
+    - "!src/network/**"
+    - "!src/blockchain/**"
+    - "!src/node/**"
+    - "!src/node-exe/**"
+    - "!src/c-api/**"
+    - "!src/consensus/**"
+    - "!src/secp256k1/**"
+
+    # Always exclude
+    - "!data/**"
+    - "!**/*.dat"
+    - "!**/*.png"
+    - "!**/*.pdf"
+    - "!scripts/**"
+    - "!**/CMakeLists.txt"
+    - "!**/conanfile.py"
+    - "!conan.lock"
+    - "!.gitignore"
+    - "!.github/**"
+    - "!**/test/**"
+    - "!**/tools/**"
+    - "!**/*.ipp"
+    - "!**/*.S.in"
+    - "!tui_screenshot.png"
+    - "!doc/**"

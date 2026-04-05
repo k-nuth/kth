@@ -4,7 +4,7 @@
 
 #include <kth/capi/chain/mempool_transaction_list.h>
 
-#include <kth/blockchain/interface/safe_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/capi/conversions.hpp>
 
 

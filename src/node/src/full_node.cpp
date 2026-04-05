@@ -6,265 +6,363 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
-#include <print>
+#include <thread>
 #include <utility>
+
 #include <kth/blockchain.hpp>
+#include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
+#include <kth/node/user_agent.hpp>
 
-#if ! defined(__EMSCRIPTEN__)
-#include <kth/node/sessions/session_block_sync.hpp>
-#include <kth/node/sessions/session_header_sync.hpp>
-#include <kth/node/sessions/session_inbound.hpp>
-#include <kth/node/sessions/session_manual.hpp>
-#include <kth/node/sessions/session_outbound.hpp>
-#endif
-
-#if defined(KTH_STATISTICS_ENABLED)
-#include <tabulate/table.hpp>
-
-tabulate::Row& last(tabulate::Table& table) {
-    auto const l = table.end();
-    auto f = table.begin();
-    auto p = f;
-    ++f;
-
-    while (f != l) {
-        p = f;
-        ++f;
-    }
-    return *p;
-}
-#endif
+#include <asio/co_spawn.hpp>
+#include <asio/detached.hpp>
+#include <asio/steady_timer.hpp>
+#include <asio/use_awaitable.hpp>
+#include <asio/experimental/awaitable_operators.hpp>
 
 namespace kth::node {
 
 using namespace kth::blockchain;
 using namespace kth::domain::chain;
 using namespace kth::domain::config;
+using namespace ::asio::experimental::awaitable_operators;
 
 #if ! defined(__EMSCRIPTEN__)
 using namespace kth::network;
 #endif
 
-using namespace std::placeholders;
+// =============================================================================
+// Construction
+// =============================================================================
 
 full_node::full_node(configuration const& configuration)
 #if ! defined(__EMSCRIPTEN__)
     : multi_crypto_setter(configuration.network)
-    , p2p(configuration.network)
+    , node_settings_(configuration.node)
+    , chain_settings_(configuration.chain)
+    , network_type_(get_network(configuration.network.identifier, configuration.network.inbound_port == 48333))
+    , network_settings_(configuration.network)
+    , network_(network_settings_)
+    , chain_(
+        configuration.chain,
+        configuration.database,
+        network_type_,
+        configuration.network.relay_transactions
+    )
 #else
     : multi_crypto_setter()
-#endif
-
-#if ! defined(__EMSCRIPTEN__)
-    , chain_(
-        thread_pool()
-        , configuration.chain
-        , configuration.database
-        , get_network(configuration.network.identifier, configuration.network.inbound_port == 48333)
-        , configuration.network.relay_transactions
-    )
-#else
-    , chain_(
-        thread_pool()
-        , configuration.chain
-        , configuration.database
-        , domain::config::network::mainnet
-    )
-#endif
-
-#if ! defined(__EMSCRIPTEN__)
-    , protocol_maximum_(configuration.network.protocol_maximum)
-#endif
-    , chain_settings_(configuration.chain)
     , node_settings_(configuration.node)
-
-#if defined(__EMSCRIPTEN__)
-    , threadpool_("")
+    , chain_settings_(configuration.chain)
+    , network_type_(domain::config::network::mainnet)
+    , chain_(
+        configuration.chain,
+        configuration.database,
+        network_type_
+    )
 #endif
-{}
+{
+#if ! defined(__EMSCRIPTEN__)
+    spdlog::debug("[full_node] configuration.network.threads = {}", configuration.network.threads);
+    spdlog::debug("[full_node] network_settings_.threads = {}", network_settings_.threads);
+
+    // Set user agent after initialization (network_ holds reference to network_settings_)
+    std::vector<std::string> features;
+#if defined(KTH_CURRENCY_BCH)
+    features.push_back(format_eb(configuration.chain.default_consensus_block_size));
+#endif
+    network_settings_.user_agent = get_user_agent(features);
+#endif
+}
 
 full_node::~full_node() {
-    full_node::close();
+    spdlog::debug("[full_node] destructor starting");
+    // Only stop/join if not already stopped
+    if (!stopped()) {
+        spdlog::debug("[full_node] destructor - not stopped, calling stop/join");
+        stop();
+        join();
+    }
+    spdlog::debug("[full_node] destructor - about to destroy members");
 }
 
-// Start.
-// ----------------------------------------------------------------------------
+// =============================================================================
+// Lifecycle
+// =============================================================================
 
-void full_node::start(result_handler handler) {
-    if ( ! stopped()) {
-        handler(error::operation_failed);
-        return;
+::asio::awaitable<code> full_node::start() {
+#if ! defined(__EMSCRIPTEN__)
+    if (!stopped()) {
+        co_return error::operation_failed;
+    }
+#endif
+
+    // Start the blockchain (pass disk magic for block file storage)
+    if (!chain_.start(get_disk_magic(network_type_))) {
+        spdlog::error("[node] Failure starting blockchain.");
+        co_return error::operation_failed;
     }
 
-    if ( ! chain_.start()) {
-        spdlog::error("[node] Failure starting blockchain [full_node::start()].");
-        handler(error::operation_failed);
-        return;
+#if ! defined(__EMSCRIPTEN__)
+    // Start the P2P network
+    auto ec = co_await network_.start();
+    if (ec != error::success) {
+        spdlog::error("[node] Failure starting network: {}", ec.message());
+        (void)chain_.stop();
+        co_return ec;
     }
+#endif
 
-    // This is invoked on the same thread.
-    // Stopped is true and no network threads until after this call.
-    p2p::start(handler);
+    spdlog::info("[node] Node started successfully.");
+    co_return error::success;
 }
 
-void full_node::start_chain(result_handler handler) {
-    if ( ! stopped()) {
-        handler(error::operation_failed);
-        return;
-    }
-
-    if ( ! chain_.start()) {
-        spdlog::error("[node] Failure starting blockchain [full_node::start_chain()].");
-        handler(error::operation_failed);
-        return;
-    }
-
-    std::thread t1([this, handler] {
-        p2p::start_fake(handler);
-    });
-    t1.detach();
-}
-
-// Run sequence.
-// ----------------------------------------------------------------------------
-
-void full_node::run(result_handler handler) {
+::asio::awaitable<code> full_node::run() {
+#if ! defined(__EMSCRIPTEN__)
     if (stopped()) {
-        handler(error::service_stopped);
-        return;
+        co_return error::service_stopped;
+    }
+#endif
+
+    // Get current chain heights
+    auto const heights = chain_.get_last_heights();
+    if ( ! heights) {
+        spdlog::error("[node] The blockchain is corrupt.");
+        co_return error::operation_failed;
+    }
+    auto const [header_height, block_height] = *heights;
+
+    auto const top_hash = chain_.get_block_hash(block_height);
+    if ( ! top_hash) {
+        spdlog::error("[node] The blockchain is corrupt.");
+        co_return error::operation_failed;
     }
 
-    // Skip sync sessions.
-    handle_running(error::success, handler);
-    return;
+#if ! defined(__EMSCRIPTEN__)
+    network_.set_top_block({*top_hash, block_height});
+#endif
 
-    // TODO: make this safe by requiring sync if gaps found.
-    ////// By setting no download connections checkpoints can be used without sync.
-    ////// This also allows the maximum protocol version to be set below headers.
-    ////if (settings_.sync_peers == 0)
-    ////{
-    ////    // This will spawn a new thread before returning.
-    ////    handle_running(error::success, handler);
-    ////    return;
-    ////}
+    spdlog::info("[node] Node start heights: header-sync ({}), block-sync ({}).", header_height, block_height);
 
-    ////// The instance is retained by the stop handler (i.e. until shutdown).
-    ////auto const header_sync = attach_header_sync_session();
+#if ! defined(__EMSCRIPTEN__)
+    // Run all background tasks in parallel using structured concurrency.
+    // This blocks until ALL tasks complete (i.e., until stop() is called).
+    // No detached coroutines - everything is properly awaited.
+    spdlog::debug("[full_node] Starting parallel tasks with && operator");
+    co_await (
+        run_blockchain_subscriber() &&
+        network_.run() &&
+        run_sync()
+    );
+    spdlog::debug("[full_node] All parallel tasks completed");
+#else
+    // WASM: only blockchain subscriber (no network)
+    co_await run_blockchain_subscriber();
+#endif
 
-    ////// This is invoked on a new thread.
-    ////header_sync->start(
-    ////    std::bind(&full_node::handle_headers_synchronized,
-    ////        this, _1, handler));
+    co_return error::success;
 }
 
-void full_node::run_chain(result_handler handler) {
-    if (stopped()) {
-        handler(error::service_stopped);
-        return;
+::asio::awaitable<void> full_node::run_blockchain_subscriber() {
+    spdlog::info("[full_node] run_blockchain_subscriber() STARTING");
+    auto blockchain_channel = subscribe_blockchain();
+    if (!blockchain_channel) {
+        spdlog::debug("[full_node] run_blockchain_subscriber() - no channel, exiting");
+        co_return;
     }
+    spdlog::debug("[full_node] run_blockchain_subscriber() - channel obtained, entering loop");
 
-    // Skip sync sessions.
-    handle_running_chain(error::success, handler);
-    return;
+    auto executor = co_await ::asio::this_coro::executor;
+    ::asio::steady_timer timer(executor);
+
+    while (!stopped()) {
+        // Non-blocking try_receive
+        size_t fork_height{};
+        block_const_ptr_list_const_ptr incoming{};
+        block_const_ptr_list_const_ptr outgoing{};
+
+        bool received = blockchain_channel->try_receive([&](std::error_code ec, size_t fh, auto in, auto out) {
+            if (!ec) {
+                fork_height = fh;
+                incoming = std::move(in);
+                outgoing = std::move(out);
+            }
+        });
+
+        if (received) {
+            if (!handle_reorganized(error::success, fork_height, incoming, outgoing)) {
+                unsubscribe_blockchain(blockchain_channel);
+                break;
+            }
+        } else if (!blockchain_channel->is_open()) {
+            // Channel closed
+            break;
+        } else {
+            // No data, sleep briefly
+            timer.expires_after(std::chrono::milliseconds(100));
+            auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                break;  // Timer cancelled
+            }
+        }
+    }
+    spdlog::info("[full_node] run_blockchain_subscriber() ENDED");
 }
 
-void full_node::handle_headers_synchronized(code const& ec, result_handler handler) {
-    ////if (stopped())
-    ////{
-    ////    handler(error::service_stopped);
-    ////    return;
-    ////}
+#if ! defined(__EMSCRIPTEN__)
+::asio::awaitable<void> full_node::run_sync() {
+    spdlog::info("[full_node] run_sync() STARTING - CSP sync system");
 
-    ////if (ec)
-    ////{
-    ////    spdlog::error("[node]
-    ////] Failure synchronizing headers: {}", ec.message());
-    ////    handler(ec);
-    ////    return;
-    ////}
+    // Create the header organizer (single instance for the sync lifetime)
+    blockchain::header_organizer organizer(
+        chain_.headers(),
+        chain_.chain_settings(),
+        network_type_
+    );
 
-    ////// The instance is retained by the stop handler (i.e. until shutdown).
-    ////auto const block_sync = attach_block_sync_session();
+    // Initialize the organizer
+    if (!organizer.start()) {
+        spdlog::error("[full_node] Failed to start header organizer");
+        co_return;
+    }
 
-    ////// This is invoked on a new thread.
-    ////block_sync->start(
-    ////    std::bind(&full_node::handle_running,
-    ////        this, _1, handler));
+    // Sync tip from chain's header index
+    organizer.sync_tip();
+
+    spdlog::info("[node] Starting CSP-based sync system...");
+
+    // Run the CSP sync orchestrator on the network thread pool.
+    // This ensures all sync coroutines (block download, header download, etc.)
+    // run on the network pool's 32 threads instead of the single io_thread.
+    co_await ::asio::co_spawn(
+        network_.thread_pool().get_executor(),
+        sync::sync_orchestrator(chain_, organizer, network_),
+        ::asio::use_awaitable
+    );
+
+    organizer.stop();
+    spdlog::info("[full_node] run_sync() ENDED");
+}
+#endif
+
+void full_node::stop() {
+#if ! defined(__EMSCRIPTEN__)
+    // IMPORTANT: Only stop the network here, NOT the chain!
+    // The chain must remain operational until run() completes because
+    // run_sync() may still be inside chain.organize() when this is called.
+    // chain_.stop() is called in join() after run() has fully exited.
+    network_.stop();
+#endif
 }
 
-void full_node::handle_running(code const& ec, result_handler handler) {
-    if (stopped()) {
-        handler(error::service_stopped);
-        return;
+void full_node::join() {
+#if ! defined(__EMSCRIPTEN__)
+    network_.join();
+#endif
+
+    // Now that run() has exited (all coroutines done), it's safe to stop the chain.
+    // This must happen AFTER run() completes to avoid crashes in chain.organize().
+    if (!chain_.stop()) {
+        spdlog::error("[node] Failed to stop blockchain.");
     }
 
-    if (ec) {
-        spdlog::error("[node] Failure synchronizing blocks: {}", ec.message());
-        handler(ec);
-        return;
+    if (!chain_.close()) {
+        spdlog::error("[node] Failed to close blockchain.");
     }
-
-    size_t top_height;
-    hash_digest top_hash;
-
-    if ( ! chain_.get_last_height(top_height) ||
-         ! chain_.get_block_hash(top_hash, top_height)) {
-             spdlog::error("[node] The blockchain is corrupt.");
-        handler(error::operation_failed);
-        return;
-    }
-
-    set_top_block({ std::move(top_hash), top_height });
-
-    spdlog::info("[node] Node start height is ({}).", top_height);
-
-    subscribe_blockchain(
-        std::bind(&full_node::handle_reorganized, this, _1, _2, _3, _4));
-
-    // This is invoked on a new thread.
-    // This is the end of the derived run startup sequence.
-    p2p::run(handler);
 }
 
-void full_node::handle_running_chain(code const& ec, result_handler handler) {
-    if (stopped()) {
-        handler(error::service_stopped);
-        return;
-    }
-
-    if (ec) {
-        spdlog::error("[node] Failure synchronizing blocks: {}", ec.message());
-        handler(ec);
-        return;
-    }
-
-    size_t top_height;
-    hash_digest top_hash;
-
-    if ( ! chain_.get_last_height(top_height) ||
-         ! chain_.get_block_hash(top_hash, top_height)) {
-             spdlog::error("[node] The blockchain is corrupt.");
-        handler(error::operation_failed);
-        return;
-    }
-
-    set_top_block({ std::move(top_hash), top_height });
-
-    spdlog::info("[node] Node start height is ({}).", top_height);
-
-    subscribe_blockchain(
-        std::bind(&full_node::handle_reorganized, this, _1, _2, _3, _4));
-
-    // This is invoked on a new thread.
-    // This is the end of the derived run startup sequence.
-    handler(error::success);
+bool full_node::stopped() const {
+#if ! defined(__EMSCRIPTEN__)
+    return network_.stopped();
+#else
+    return true;  // In WASM, there's no network, always "stopped" from network perspective
+#endif
 }
 
-// A typical reorganization consists of one incoming and zero outgoing blocks.
-bool full_node::handle_reorganized(code ec, size_t fork_height, block_const_ptr_list_const_ptr incoming, block_const_ptr_list_const_ptr outgoing) {
+// =============================================================================
+// Properties
+// =============================================================================
+
+node::settings const& full_node::node_settings() const {
+    return node_settings_;
+}
+
+blockchain::settings const& full_node::chain_settings() const {
+    return chain_settings_;
+}
+
+#if ! defined(__EMSCRIPTEN__)
+kth::network::settings const& full_node::network_settings() const {
+    return network_.network_settings();
+}
+#endif
+
+block_chain& full_node::chain() {
+    return chain_;
+}
+
+block_chain& full_node::chain_kth() {
+    return chain_;
+}
+
+#if ! defined(__EMSCRIPTEN__)
+kth::network::p2p_node& full_node::network() {
+    return network_;
+}
+#endif
+
+// =============================================================================
+// Thread Pools
+// =============================================================================
+
+threadpool& full_node::chain_thread_pool() {
+    return chain_.thread_pool();
+}
+
+#if ! defined(__EMSCRIPTEN__)
+threadpool& full_node::network_thread_pool() {
+    return network_.thread_pool();
+}
+#endif
+
+// =============================================================================
+// Subscriptions
+// =============================================================================
+
+full_node::block_channel_ptr full_node::subscribe_blockchain() {
+    return chain().subscribe_blockchain();
+}
+
+full_node::transaction_channel_ptr full_node::subscribe_transaction() {
+    return chain().subscribe_transaction();
+}
+
+full_node::ds_proof_channel_ptr full_node::subscribe_ds_proof() {
+    return chain().subscribe_ds_proof();
+}
+
+void full_node::unsubscribe_blockchain(block_channel_ptr const& channel) {
+    chain().unsubscribe_blockchain(channel);
+}
+
+void full_node::unsubscribe_transaction(transaction_channel_ptr const& channel) {
+    chain().unsubscribe_transaction(channel);
+}
+
+void full_node::unsubscribe_ds_proof(ds_proof_channel_ptr const& channel) {
+    chain().unsubscribe_ds_proof(channel);
+}
+
+// =============================================================================
+// Internal Handlers
+// =============================================================================
+
+bool full_node::handle_reorganized(
+    code ec,
+    size_t fork_height,
+    block_const_ptr_list_const_ptr incoming,
+    block_const_ptr_list_const_ptr outgoing)
+{
     if (stopped() || ec == error::service_stopped) {
         return false;
     }
@@ -275,129 +373,30 @@ bool full_node::handle_reorganized(code ec, size_t fork_height, block_const_ptr_
         return false;
     }
 
-    // Nothing to do here.
-    if ( ! incoming || incoming->empty()) {
+    // Nothing to do here
+    if (!incoming || incoming->empty()) {
         return true;
     }
 
-    for (auto const block: *outgoing) {
-        spdlog::debug("[node] Reorganization moved block to orphan pool [{}]", encode_hash(block->header().hash()));
+    for (auto const& block : *outgoing) {
+        spdlog::debug("[node] Reorganization moved block to orphan pool [{}]",
+            encode_hash(block->header().hash()));
     }
 
     auto const height = *safe_add(fork_height, incoming->size());
 
-    set_top_block({ incoming->back()->hash(), height });
+#if ! defined(__EMSCRIPTEN__)
+    network_.set_top_block({incoming->back()->hash(), height});
+#endif
+
     return true;
 }
 
-// Specializations.
-// ----------------------------------------------------------------------------
-// Create derived sessions and override these to inject from derived node.
-
-#if ! defined(__EMSCRIPTEN__)
-// Must not connect until running, otherwise imports may conflict with sync.
-// But we establish the session in network so caller doesn't need to run.
-kth::network::session_manual::ptr full_node::attach_manual_session() {
-    return attach<node::session_manual>(chain_);
-}
-
-kth::network::session_inbound::ptr full_node::attach_inbound_session() {
-    return attach<node::session_inbound>(chain_);
-}
-
-kth::network::session_outbound::ptr full_node::attach_outbound_session() {
-    return attach<node::session_outbound>(chain_);
-}
-
-session_header_sync::ptr full_node::attach_header_sync_session() {
-    return attach<session_header_sync>(hashes_, chain_, chain_.chain_settings().checkpoints);
-}
-
-session_block_sync::ptr full_node::attach_block_sync_session() {
-    return attach<session_block_sync>(hashes_, chain_, node_settings_);
-}
-#endif
-
-// Shutdown
-// ----------------------------------------------------------------------------
-
-bool full_node::stop() {
-    // Suspend new work last so we can use work to clear subscribers.
-    auto const p2p_stop = p2p::stop();
-    auto const chain_stop = chain_.stop();
-
-    if ( ! p2p_stop) {
-        spdlog::error("[node] Failed to stop network.");
-    }
-
-    if ( ! chain_stop) {
-        spdlog::error("[node] Failed to stop blockchain.");
-    }
-
-    return p2p_stop && chain_stop;
-}
-
-// This must be called from the thread that constructed this class (see join).
-bool full_node::close() {
-    // Invoke own stop to signal work suspension.
-    if ( ! full_node::stop()) {
-        return false;
-    }
-
-    auto const p2p_close = p2p::close();
-    auto const chain_close = chain_.close();
-
-    if ( ! p2p_close) {
-        spdlog::error("[node] Failed to close network.");
-    }
-
-    if ( ! chain_close) {
-        spdlog::error("[node] Failed to close blockchain.");
-    }
-
-    return p2p_close && chain_close;
-}
-
-// Properties.
-// ----------------------------------------------------------------------------
-
-node::settings const& full_node::node_settings() const {
-    return node_settings_;
-}
-
-blockchain::settings const& full_node::chain_settings() const {
-    return chain_settings_;
-}
-
-safe_chain& full_node::chain() {
-    return chain_;
-}
-
-//TODO: remove this function and use safe_chain in the rpc lib
-block_chain& full_node::chain_kth() {
-    return chain_;
-}
-
-// Subscriptions.
-// ----------------------------------------------------------------------------
-
-void full_node::subscribe_blockchain(reorganize_handler&& handler) {
-    chain().subscribe_blockchain(std::move(handler));
-}
-
-void full_node::subscribe_transaction(transaction_handler&& handler) {
-    chain().subscribe_transaction(std::move(handler));
-}
-
-void full_node::subscribe_ds_proof(ds_proof_handler&& handler) {
-    chain().subscribe_ds_proof(std::move(handler));
-}
-
-// Init node utils.
-// ------------------------------------------------------------------------
+// =============================================================================
+// Utilities
+// =============================================================================
 
 domain::chain::block full_node::get_genesis_block(domain::config::network network) {
-
     switch (network) {
         case domain::config::network::testnet:
             return domain::chain::block::genesis_testnet();
@@ -416,236 +415,5 @@ domain::chain::block full_node::get_genesis_block(domain::config::network networ
             return domain::chain::block::genesis_mainnet();
     }
 }
-
-#if defined(KTH_STATISTICS_ENABLED)
-#if defined(_WIN32)
-
-void screen_clear() {
-    COORD topLeft  = { 0, 0 };
-    HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
-    CONSOLE_SCREEN_BUFFER_INFO screen;
-    DWORD written;
-
-    GetConsoleScreenBufferInfo(console, &screen);
-    FillConsoleOutputCharacterA(
-        console, ' ', screen.dwSize.X * screen.dwSize.Y, topLeft, &written
-    );
-    FillConsoleOutputAttribute(
-        console, FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_BLUE,
-        screen.dwSize.X * screen.dwSize.Y, topLeft, &written
-    );
-    SetConsoleCursorPosition(console, topLeft);
-}
-
-
-#else
-
-// void screen_clear() {
-//     // CSI[2J clears screen, CSI[H moves the cursor to top-left corner
-//     std::print("\x1B[2J\x1B[H");
-// }
-
-#include <cstdio>
-void screen_clear() {
-    printf("\033c");
-}
-#endif
-
-
-//TODO(fernando): could be outside the class
-void full_node::print_stat_item_sum(tabulate::Table& stats, size_t from, size_t to,
-                        double accum_transactions, double accum_inputs, double accum_outputs, double accum_wait_total,
-                        double accum_validation_total, double accum_validation_per_input, double accum_deserialization_per_input,
-                        double accum_check_per_input, double accum_population_per_input, double accum_accept_per_input,
-                        double accum_connect_per_input, double accum_deposit_per_input) const {
-    stats.add_row({
-        fmt::format("{}-{}", from, to)
-        , "Sum"
-        , fmt::format("{:.0f}", accum_transactions)
-        , fmt::format("{:.0f}", accum_inputs)
-        , fmt::format("{:.0f}", accum_outputs)
-        , fmt::format("{:.0f}", accum_wait_total)
-        , fmt::format("{:.0f}", accum_validation_total)
-        , fmt::format("{:.0f}", accum_validation_per_input)
-        , fmt::format("{:.0f}", accum_deserialization_per_input)
-        , fmt::format("{:.0f}", accum_check_per_input)
-        , fmt::format("{:.0f}", accum_population_per_input)
-        , fmt::format("{:.0f}", accum_accept_per_input)
-        , fmt::format("{:.0f}", accum_connect_per_input)
-        , fmt::format("{:.0f}", accum_deposit_per_input)});
-
-    // last(stats)
-    //     .format()
-    //     .hide_border_top();
-}
-
-// +---------------+--------+----------------+----------------+--------------+--------------+--------------+--------------+--------------+--------------+------------+------------+-------------+----------------+
-// |     Blocks    |        |       Txs      |       Ins      |     Outs     |   Wait(ms)   |    Val(ms)   |  Val/In(us)  | Deser/In(us) | Check/In(us) | Pop/In(us) | Acc/In(us) | Conn/In(us) |   Dep/In(us)   |
-// | 250000-259999 | Sum    | 2908680.000000 | 6443324.000000 | 10000.000000 | 18894.000000 | 32935.000000 | 57795.000000 | 43758.000000 | 12590.000000 | 315.000000 | 108.000000 |  101.000000 | 1315664.000000 |
-// | 250000-259999 | Mean   |     290.868000 |     644.332400 |     1.000000 |     1.889400 |     3.293500 |     5.779500 |     4.375800 |     1.259000 |   0.031500 |   0.010800 |    0.010100 |     131.566400 |
-// | 250000-259999 | Median |     241.962427 |     544.131233 |     1.000000 |     1.572434 |     2.994203 |     5.000129 |     4.000001 |     0.999999 |   0.000000 |   0.000000 |    0.000000 |     103.086477 |
-// | 250000-259999 | StDev  |     226.992902 |     492.214726 |     0.000000 |     1.409953 |     2.527765 |     6.666403 |     5.388514 |     1.746031 |   0.385127 |   0.148612 |    0.140712 |     440.845418 |
-// +---------------+--------+----------------+----------------+--------------+--------------+--------------+--------------+--------------+--------------+------------+------------+-------------+----------------+
-
-// Knuth node
-// Version
-// DB Mode
-// Options
-
-// Synchronizing chain: xxxxx of xxxxx (xx%)
-
-// Peers
-
-// Stats
-
-
-//TODO(fernando): could be outside the class
-void full_node::print_stat_item(tabulate::Table& stats, size_t from, size_t to, std::string const& cat,
-                        double accum_transactions, double accum_inputs, double accum_outputs, double accum_wait_total,
-                        double accum_validation_total, double accum_validation_per_input, double accum_deserialization_per_input,
-                        double accum_check_per_input, double accum_population_per_input, double accum_accept_per_input,
-                        double accum_connect_per_input, double accum_deposit_per_input) const {
-    stats.add_row({
-        fmt::format("{}-{}", from, to)
-        , cat
-        , fmt::format("{:.2f}", accum_transactions)
-        , fmt::format("{:.2f}", accum_inputs)
-        , fmt::format("{:.2f}", accum_outputs)
-        , fmt::format("{:f}", accum_wait_total)
-        , fmt::format("{:f}", accum_validation_total)
-        , fmt::format("{:f}", accum_validation_per_input)
-        , fmt::format("{:f}", accum_deserialization_per_input)
-        , fmt::format("{:f}", accum_check_per_input)
-        , fmt::format("{:f}", accum_population_per_input)
-        , fmt::format("{:f}", accum_accept_per_input)
-        , fmt::format("{:f}", accum_connect_per_input)
-        , fmt::format("{:f}", accum_deposit_per_input)});
-
-    last(stats)
-        .format()
-        .hide_border_top();
-}
-
-void full_node::print_statistics(size_t height) const {
-    using boost::accumulators::mean;
-    using boost::accumulators::median;
-    using boost::accumulators::sum;
-
-    auto from1 = (height / accum_blocks_1_) * accum_blocks_1_;
-    // auto from2 = (height / accum_blocks_2_) * accum_blocks_2_;
-
-    tabulate::Table stats;
-    stats.add_row({"Blocks"
-        ,""
-        , "Txs", "Ins", "Outs"
-        , "Wait(ms)"
-        , "Val(ms)"
-        , "Val/In(us)"
-        , "Deser/In(us)"
-        , "Check/In(us)"
-        , "Pop/In(us)"
-        , "Acc/In(us)"
-        , "Conn/In(us)"
-        , "Dep/In(us)"});
-
-
-    // auto formatted = fmt::format("Sum [{}-{}] {:f} txs {:f} ins "
-    //     "{:f} wms {:f} vms {:f} vus {:f} rus {:f} cus {:f} pus "
-    //     "{:f} aus {:f} sus {:f} dus {:f}",
-    //     from1, height,
-    //     boost::accumulators::sum(stats_current1_accum_transactions_),
-    //     boost::accumulators::sum(stats_current1_accum_inputs_),
-    //     boost::accumulators::sum(stats_current1_accum_wait_total_ms_),
-    //     boost::accumulators::sum(stats_current1_accum_validation_total_ms_),
-    //     boost::accumulators::sum(stats_current1_accum_validation_per_input_us_),
-    //     boost::accumulators::sum(stats_current1_accum_deserialization_per_input_us_),
-    //     boost::accumulators::sum(stats_current1_accum_check_per_input_us_),
-    //     boost::accumulators::sum(stats_current1_accum_population_per_input_us_),
-    //     boost::accumulators::sum(stats_current1_accum_accept_per_input_us_),
-    //     boost::accumulators::sum(stats_current1_accum_connect_per_input_us_),
-    //     boost::accumulators::sum(stats_current1_accum_deposit_per_input_us_),
-    //     boost::accumulators::sum(stats_current1_accum_cache_efficiency_));
-
-    // spdlog::info("[blockchain] ************************************************************************************************************************");
-    // spdlog::info("[blockchain] Stats:");
-    // spdlog::info("[blockchain] {}", formatted);
-
-    print_stat_item_sum(stats, from1, height,
-        sum(stats_current1_accum_transactions_),
-        sum(stats_current1_accum_inputs_),
-        sum(stats_current1_accum_outputs_),
-        sum(stats_current1_accum_wait_total_ms_),
-        sum(stats_current1_accum_validation_total_ms_),
-        sum(stats_current1_accum_validation_per_input_us_),
-        sum(stats_current1_accum_deserialization_per_input_us_),
-        sum(stats_current1_accum_check_per_input_us_),
-        sum(stats_current1_accum_population_per_input_us_),
-        sum(stats_current1_accum_accept_per_input_us_),
-        sum(stats_current1_accum_connect_per_input_us_),
-        sum(stats_current1_accum_deposit_per_input_us_));
-
-    print_stat_item(stats, from1, height, "Mean",
-        mean(stats_current1_accum_transactions_),
-        mean(stats_current1_accum_inputs_),
-        mean(stats_current1_accum_outputs_),
-        mean(stats_current1_accum_wait_total_ms_),
-        mean(stats_current1_accum_validation_total_ms_),
-        mean(stats_current1_accum_validation_per_input_us_),
-        mean(stats_current1_accum_deserialization_per_input_us_),
-        mean(stats_current1_accum_check_per_input_us_),
-        mean(stats_current1_accum_population_per_input_us_),
-        mean(stats_current1_accum_accept_per_input_us_),
-        mean(stats_current1_accum_connect_per_input_us_),
-        mean(stats_current1_accum_deposit_per_input_us_));
-
-    print_stat_item(stats, from1, height, "Median",
-        median(stats_current1_accum_transactions_),
-        median(stats_current1_accum_inputs_),
-        median(stats_current1_accum_outputs_),
-        median(stats_current1_accum_wait_total_ms_),
-        median(stats_current1_accum_validation_total_ms_),
-        median(stats_current1_accum_validation_per_input_us_),
-        median(stats_current1_accum_deserialization_per_input_us_),
-        median(stats_current1_accum_check_per_input_us_),
-        median(stats_current1_accum_population_per_input_us_),
-        median(stats_current1_accum_accept_per_input_us_),
-        median(stats_current1_accum_connect_per_input_us_),
-        median(stats_current1_accum_deposit_per_input_us_));
-
-    stdev_sample stdev;
-    print_stat_item(stats, from1, height, "StDev",
-        stdev(stats_current1_accum_transactions_),
-        stdev(stats_current1_accum_inputs_),
-        stdev(stats_current1_accum_outputs_),
-        stdev(stats_current1_accum_wait_total_ms_),
-        stdev(stats_current1_accum_validation_total_ms_),
-        stdev(stats_current1_accum_validation_per_input_us_),
-        stdev(stats_current1_accum_deserialization_per_input_us_),
-        stdev(stats_current1_accum_check_per_input_us_),
-        stdev(stats_current1_accum_population_per_input_us_),
-        stdev(stats_current1_accum_accept_per_input_us_),
-        stdev(stats_current1_accum_connect_per_input_us_),
-        stdev(stats_current1_accum_deposit_per_input_us_));
-
-
-    for (size_t i = 2; i < 14; ++i) {
-        stats.column(i).format().font_align(tabulate::FontAlign::right);
-    }
-
-    for (size_t i = 0; i < 14; ++i) {
-        stats[0][i].format()
-            .font_color(tabulate::Color::yellow)
-            .font_align(tabulate::FontAlign::center)
-            .font_style({tabulate::FontStyle::bold});
-    }
-
-    screen_clear();
-    std::print("{}\n\n", stats.str());
-
-    // spdlog::info("[blockchain] ************************************************************************************************************************");
-}
-
-#endif
-
 
 } // namespace kth::node

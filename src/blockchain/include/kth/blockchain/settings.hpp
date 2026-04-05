@@ -32,6 +32,11 @@ struct KB_API settings {
     uint32_t notify_limit_hours = 24;
     uint32_t reorganization_limit = 256;
     infrastructure::config::checkpoint::list checkpoints;
+    // Derived fields — populated by settings(network) constructor.
+    // If using settings() default and setting checkpoints manually,
+    // call sort_checkpoints() to sync these.
+    infrastructure::config::checkpoint::list checkpoints_sorted;  // Pre-sorted by height
+    size_t max_checkpoint_height = 0;                             // Pre-computed max
     bool fix_checkpoints = true;
     bool allow_collisions = true;
     bool easy_blocks = false;

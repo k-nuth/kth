@@ -7,27 +7,29 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 
 #include <kth/blockchain/define.hpp>
-#include <kth/blockchain/interface/safe_chain.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/domain.hpp>
 
+#include <kth/infrastructure/handlers.hpp>
+
+#include <asio/awaitable.hpp>
+
 namespace kth::blockchain {
+
+using kth::awaitable_expected;
 
 /// TODO: this class is not implemented or utilized.
 struct KB_API transaction_pool {
-    using inventory_fetch_handler = safe_chain::inventory_fetch_handler;
-    using merkle_block_fetch_handler = safe_chain::merkle_block_fetch_handler;
-
     transaction_pool(settings const& settings);
 
-    void fetch_template(merkle_block_fetch_handler) const;
-    void fetch_mempool(size_t maximum, inventory_fetch_handler) const;
+    [[nodiscard]]
+    awaitable_expected<std::pair<merkle_block_ptr, size_t>> fetch_template() const;
 
-////private:
-////    bool const reject_conflicts_;
-////    const uint64_t minimum_fee_;
+    [[nodiscard]]
+    awaitable_expected<inventory_ptr> fetch_mempool(size_t maximum) const;
 };
 
 } // namespace kth::blockchain

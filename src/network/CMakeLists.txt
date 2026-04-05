@@ -90,60 +90,105 @@ if (ENABLE_SHARED)
 endif()
 
 
+# Modern coroutine-based headers (KEEP)
 set(kth_headers
-  include/kth/network/acceptor.hpp
+  include/kth/network/banlist.hpp
   include/kth/network/define.hpp
-  include/kth/network/proxy.hpp
-  include/kth/network/channel.hpp
-  include/kth/network/hosts.hpp
-  include/kth/network/p2p.hpp
-  include/kth/network/sessions/session_outbound.hpp
-  include/kth/network/sessions/session_seed.hpp
-  include/kth/network/sessions/session_inbound.hpp
-  include/kth/network/sessions/session_manual.hpp
-  include/kth/network/sessions/session_batch.hpp
-  include/kth/network/sessions/session.hpp
-  include/kth/network/connector.hpp
-  include/kth/network/message_subscriber.hpp
-  include/kth/network/protocols/protocol_version_70002.hpp
-  include/kth/network/protocols/protocol_seed_31402.hpp
-  include/kth/network/protocols/protocol_timer.hpp
-  include/kth/network/protocols/protocol_version_31402.hpp
-  include/kth/network/protocols/protocol_address_31402.hpp
-  include/kth/network/protocols/protocol_ping_31402.hpp
-  include/kth/network/protocols/protocol_events.hpp
-  include/kth/network/protocols/protocol.hpp
-  include/kth/network/protocols/protocol_ping_60001.hpp
-  include/kth/network/protocols/protocol_reject_70002.hpp
+  include/kth/network/net_permissions.hpp
+  include/kth/network/peer_record.hpp
+  include/kth/network/peer_database.hpp
+  include/kth/network/peer_session.hpp
+  include/kth/network/peer_manager.hpp
+  include/kth/network/p2p_node.hpp
+  include/kth/network/protocols_coro.hpp
   include/kth/network/settings.hpp
   include/kth/network.hpp
+  include/kth/network/hosts.hpp  # Legacy - will be replaced by peer_database
+
+  # Message handlers (one per message type)
+  include/kth/network/handlers/ping.hpp
+  include/kth/network/handlers/pong.hpp
+
+  # =========================================================================
+  # LEGACY FILES - MOVED TO deprecated/ FOLDER
+  # These files have been moved to src/network/deprecated/ and marked
+  # with DEPRECATED headers. They are kept for reference during migration.
+  # See doc/asio.md for migration details.
+  # =========================================================================
+  # Legacy core headers - MOVED TO deprecated/
+  # deprecated/acceptor.hpp
+  # deprecated/channel.hpp
+  # deprecated/connector.hpp
+  # deprecated/message_subscriber.hpp
+  # deprecated/p2p.hpp
+  # deprecated/proxy.hpp
+  # Legacy sessions - MOVED TO deprecated/sessions/
+  # deprecated/sessions/session.hpp
+  # deprecated/sessions/session_batch.hpp
+  # deprecated/sessions/session_inbound.hpp
+  # deprecated/sessions/session_manual.hpp
+  # deprecated/sessions/session_outbound.hpp
+  # deprecated/sessions/session_seed.hpp
+  # Legacy protocols - MOVED TO deprecated/protocols/
+  # deprecated/protocols/protocol.hpp
+  # deprecated/protocols/protocol_events.hpp
+  # deprecated/protocols/protocol_timer.hpp
+  # deprecated/protocols/protocol_address_31402.hpp
+  # deprecated/protocols/protocol_ping_31402.hpp
+  # deprecated/protocols/protocol_ping_60001.hpp
+  # deprecated/protocols/protocol_reject_70002.hpp
+  # deprecated/protocols/protocol_seed_31402.hpp
+  # deprecated/protocols/protocol_version_31402.hpp
+  # deprecated/protocols/protocol_version_70002.hpp
 )
 
+# Modern coroutine-based sources (KEEP)
 set(kth_sources
-  src/protocols/protocol.cpp
-  src/protocols/protocol_address_31402.cpp
-  src/protocols/protocol_events.cpp
-  src/protocols/protocol_ping_31402.cpp
-  src/protocols/protocol_ping_60001.cpp
-  src/protocols/protocol_reject_70002.cpp
-  src/protocols/protocol_seed_31402.cpp
-  src/protocols/protocol_timer.cpp
-  src/protocols/protocol_version_31402.cpp
-  src/protocols/protocol_version_70002.cpp
-  src/sessions/session.cpp
-  src/sessions/session_batch.cpp
-  src/sessions/session_inbound.cpp
-  src/sessions/session_manual.cpp
-  src/sessions/session_outbound.cpp
-  src/sessions/session_seed.cpp
-  src/acceptor.cpp
-  src/channel.cpp
-  src/connector.cpp
-  src/hosts.cpp
-  src/message_subscriber.cpp
-  src/p2p.cpp
-  src/proxy.cpp
+  src/banlist.cpp
+  src/net_permissions.cpp
+  src/p2p_node.cpp
+  src/peer_database.cpp
+  src/peer_session.cpp
+  src/peer_manager.cpp
+  src/protocols_coro.cpp
   src/settings.cpp
+  src/hosts.cpp  # Legacy - will be replaced by peer_database
+
+  # Message handlers (one per message type)
+  src/handlers/ping.cpp
+  src/handlers/pong.cpp
+
+  # =========================================================================
+  # LEGACY FILES - MOVED TO deprecated/ FOLDER
+  # These files have been moved to src/network/deprecated/ and marked
+  # with DEPRECATED headers. They are kept for reference during migration.
+  # See doc/asio.md for migration details.
+  # =========================================================================
+  # Legacy core - MOVED TO deprecated/
+  # deprecated/acceptor.cpp
+  # deprecated/channel.cpp
+  # deprecated/connector.cpp
+  # deprecated/message_subscriber.cpp
+  # deprecated/p2p.cpp
+  # deprecated/proxy.cpp
+  # Legacy sessions - MOVED TO deprecated/sessions/
+  # deprecated/sessions/session.cpp
+  # deprecated/sessions/session_batch.cpp
+  # deprecated/sessions/session_inbound.cpp
+  # deprecated/sessions/session_manual.cpp
+  # deprecated/sessions/session_outbound.cpp
+  # deprecated/sessions/session_seed.cpp
+  # Legacy protocols - MOVED TO deprecated/protocols/
+  # deprecated/protocols/protocol.cpp
+  # deprecated/protocols/protocol_events.cpp
+  # deprecated/protocols/protocol_timer.cpp
+  # deprecated/protocols/protocol_address_31402.cpp
+  # deprecated/protocols/protocol_ping_31402.cpp
+  # deprecated/protocols/protocol_ping_60001.cpp
+  # deprecated/protocols/protocol_reject_70002.cpp
+  # deprecated/protocols/protocol_seed_31402.cpp
+  # deprecated/protocols/protocol_version_31402.cpp
+  # deprecated/protocols/protocol_version_70002.cpp
 )
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
@@ -165,6 +210,10 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC domain::domain)
 
+# simdjson for JSON parsing in peer_database
+find_package(simdjson REQUIRED)
+target_link_libraries(${PROJECT_NAME} PUBLIC simdjson::simdjson)
+
 if (MINGW)
   target_link_libraries(${PROJECT_NAME} PUBLIC ws2_32 wsock32)
 endif()
@@ -174,33 +223,39 @@ _group_sources(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}")
 # Tests
 # ------------------------------------------------------------------------------
 # Skip tests for WebAssembly (Catch2 incompatible with shared-memory/threads)
-# TODO(fernando): Temporarily disabled for release 0.74.0 - tests take too long in CI
-# if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-#   enable_testing()
-#   find_package(Catch2 3 REQUIRED)
+if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  enable_testing()
+  find_package(Catch2 3 REQUIRED)
 
-#   add_executable(kth_network_test
-#     test/p2p.cpp
-#   )
+  add_executable(kth_network_test
+    # TODO: Migrate tests from test/p2p.cpp to test/p2p_node.cpp before deleting
+    # test/p2p.cpp  # Legacy test - COMMENTED OUT
+    test/p2p_node.cpp
+    test/peer_database.cpp
+    test/peer_manager.cpp
+    test/peer_session.cpp
+    test/protocols_coro.cpp
+  )
 
-#   target_include_directories(kth_network_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+  target_include_directories(kth_network_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
 
-#   target_link_libraries(kth_network_test PUBLIC ${PROJECT_NAME})
-#   target_link_libraries(kth_network_test PRIVATE Catch2::Catch2WithMain)
+  target_link_libraries(kth_network_test PUBLIC ${PROJECT_NAME})
+  target_link_libraries(kth_network_test PRIVATE Catch2::Catch2WithMain)
 
-#   _group_sources(kth_network_test "${CMAKE_CURRENT_LIST_DIR}/test")
+  _group_sources(kth_network_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
-#   include(CTest)
-#   # Try to use Catch2 automatic test discovery
-#   find_package(Catch2 QUIET)
-#   if(Catch2_FOUND)
-#     include(Catch)
-#     catch_discover_tests(kth_network_test)
-#   else()
-#     # Fallback to manual test registration
-#     add_test(NAME kth_network_test COMMAND kth_network_test)
-#   endif()
-# endif()
+  include(CTest)
+  # Try to use Catch2 automatic test discovery
+  find_package(Catch2 QUIET)
+  if(Catch2_FOUND)
+    include(Catch)
+    # Exclude [integration] tests - they require real TCP connections
+    catch_discover_tests(kth_network_test TEST_SPEC "~[integration]")
+  else()
+    # Fallback to manual test registration (excludes integration tests)
+    add_test(NAME kth_network_test COMMAND kth_network_test "~[integration]")
+  endif()
+endif()
 
 
 # Install
