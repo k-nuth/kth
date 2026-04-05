@@ -130,7 +130,7 @@ rm -rf conan.lock
 rm -rf conan-wasm.lock
 
 echo "🔒 Creating conan-wasm.lock for version ${VERSION}..."
-conan lock create conanfile.py --version="${VERSION}" --update -pr ems2
+conan lock create conanfile.py --version="${VERSION}" --update -pr ems5
 mv conan.lock conan-wasm.lock
 
 echo "🔒 Creating conan.lock for version ${VERSION}..."
