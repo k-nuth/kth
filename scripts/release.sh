@@ -32,7 +32,7 @@ echo "Building version: ${VERSION}"
 
 # Verify GitHub CLI authentication
 echo "🔐 Verifying GitHub CLI authentication..."
-if ! gh auth status >/dev/null 2>&1; then
+if ! gh auth status -h github.com 2>&1 | grep -q "Logged in to github.com"; then
     echo "❌ Not authenticated with GitHub CLI. Run: gh auth login"
     exit 1
 fi
@@ -130,7 +130,7 @@ rm -rf conan.lock
 rm -rf conan-wasm.lock
 
 echo "🔒 Creating conan-wasm.lock for version ${VERSION}..."
-conan lock create conanfile.py --version="${VERSION}" --update -pr ems2
+conan lock create conanfile.py --version="${VERSION}" --update -pr ems5
 mv conan.lock conan-wasm.lock
 
 echo "🔒 Creating conan.lock for version ${VERSION}..."
