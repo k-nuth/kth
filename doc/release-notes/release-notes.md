@@ -1,3 +1,22 @@
+# version 0.78.0
+
+You can install Knuth node version v0.78.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* chore: remove deprecated/backup files and add build scripts by @fpelliccioni in https://github.com/k-nuth/kth/pull/197
+* fix: always assign gmp to secp256k1 component requires by @fpelliccioni in https://github.com/k-nuth/kth/pull/199
+* fix: skip march_strategy on non-x86_64 architectures by @fpelliccioni in https://github.com/k-nuth/kth/pull/202
+* feat: add coin_selection module with token-aware UTXO selection by @fpelliccioni in https://github.com/k-nuth/kth/pull/201
+* fix: avoid static initialization of payment_address in tests by @fpelliccioni in https://github.com/k-nuth/kth/pull/211
+* feat: add wallet utilities and C-API improvements by @fpelliccioni in https://github.com/k-nuth/kth/pull/200
+* ci: add ccache to build workflows by @fpelliccioni in https://github.com/k-nuth/kth/pull/212
+* feat: upgrade Emscripten toolchain from emsdk 3.1.73 to 5.0.3 by @fpelliccioni in https://github.com/k-nuth/kth/pull/213
+* release: 0.78.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/214
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.77.0...v0.78.0
+
+
 # version 0.77.0
 
 You can install Knuth node version v0.77.0 [using these instructions](https://kth.cash/#download).
