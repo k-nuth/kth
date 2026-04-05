@@ -32,7 +32,7 @@ echo "Building version: ${VERSION}"
 
 # Verify GitHub CLI authentication
 echo "🔐 Verifying GitHub CLI authentication..."
-if ! gh auth status >/dev/null 2>&1; then
+if ! gh auth status -h github.com 2>&1 | grep -q "Logged in to github.com"; then
     echo "❌ Not authenticated with GitHub CLI. Run: gh auth login"
     exit 1
 fi
