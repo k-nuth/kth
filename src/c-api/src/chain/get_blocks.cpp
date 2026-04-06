@@ -9,7 +9,12 @@
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
 
-KTH_CONV_DEFINE(chain, kth_get_blocks_t, kth::domain::message::get_blocks, get_blocks)
+kth::domain::message::get_blocks const& kth_chain_get_blocks_const_cpp(kth_get_blocks_t o) {
+    return *static_cast<kth::domain::message::get_blocks const*>(o);
+}
+kth::domain::message::get_blocks& kth_chain_get_blocks_cpp(kth_get_blocks_t o) {
+    return *static_cast<kth::domain::message::get_blocks*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {

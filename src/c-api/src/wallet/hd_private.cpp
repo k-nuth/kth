@@ -11,7 +11,12 @@
 
 #include <kth/infrastructure/wallet/hd_private.hpp>
 
-KTH_CONV_DEFINE(wallet, kth_hd_private_t, kth::infrastructure::wallet::hd_private, hd_private)
+kth::infrastructure::wallet::hd_private const& kth_wallet_hd_private_const_cpp(kth_hd_private_t o) {
+    return *static_cast<kth::infrastructure::wallet::hd_private const*>(o);
+}
+kth::infrastructure::wallet::hd_private& kth_wallet_hd_private_cpp(kth_hd_private_t o) {
+    return *static_cast<kth::infrastructure::wallet::hd_private*>(o);
+}
 
 extern "C" {
 

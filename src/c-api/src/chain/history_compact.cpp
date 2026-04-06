@@ -5,9 +5,16 @@
 #include <kth/domain/chain/history.hpp>
 
 #include <kth/capi/chain/history_compact.h>
-#include <kth/capi/type_conversions.h>
 
-KTH_CONV_DEFINE(chain, kth_history_compact_t, kth::domain::chain::history_compact, history_compact)
+kth::domain::chain::history_compact const& kth_chain_history_compact_const_cpp(kth_history_compact_t o) {
+    return *static_cast<kth::domain::chain::history_compact const*>(o);
+}
+kth::domain::chain::history_compact const& kth_chain_history_compact_const_cpp(kth_history_compact_const_t o) {
+    return *static_cast<kth::domain::chain::history_compact const*>(o);
+}
+kth::domain::chain::history_compact& kth_chain_history_compact_cpp(kth_history_compact_t o) {
+    return *static_cast<kth::domain::chain::history_compact*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {

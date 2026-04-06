@@ -94,12 +94,12 @@ public:
     //-------------------------------------------------------------------------
 
     using block_basis::to_data;
-    data_chunk to_data() const;
+    data_chunk to_data(bool wire = true) const;
 
     // Properties (size, accessors, cache).
     //-------------------------------------------------------------------------
 
-    size_t serialized_size() const;
+    size_t serialized_size(bool wire = true) const;
 
     // void set_header(chain::header const& value);
     void set_transactions(transaction::list const& value);

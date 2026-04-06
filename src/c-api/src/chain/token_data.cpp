@@ -11,7 +11,15 @@
 
 #include <utility>
 
-KTH_CONV_DEFINE(chain, kth_token_data_t, kth::domain::chain::token_data_t, token_data)
+kth::domain::chain::token_data_t const& kth_chain_token_data_const_cpp(kth_token_data_t o) {
+    return *static_cast<kth::domain::chain::token_data_t const*>(o);
+}
+kth::domain::chain::token_data_t& kth_chain_token_data_cpp(kth_token_data_t o) {
+    return *static_cast<kth::domain::chain::token_data_t*>(o);
+}
+kth::domain::chain::token_data_t const& kth_chain_token_data_const_cpp(kth_token_data_const_t o) {
+    return *static_cast<kth::domain::chain::token_data_t const*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {
@@ -81,8 +89,10 @@ kth_size_t kth_chain_token_data_serialized_size(kth_token_data_t token_data) {
 }
 
 uint8_t const* kth_chain_token_data_to_data(kth_token_data_t token_data, kth_size_t* out_size) {
+    KTH_PRECONDITION(out_size != nullptr);
     auto token_data_data = kth::domain::chain::token::encoding::to_data(kth_chain_token_data_const_cpp(token_data));
-    return kth::create_c_array(token_data_data, *out_size);
+    *out_size = token_data_data.size();
+    return kth::create_c_array(token_data_data);
 }
 
 kth_token_kind_t kth_chain_token_data_kind(kth_token_data_t token_data) {
@@ -138,15 +148,18 @@ kth_token_capability_t kth_chain_token_data_non_fungible_capability(kth_token_da
 }
 
 uint8_t const* kth_chain_token_data_non_fungible_commitment(kth_token_data_t token_data, kth_size_t* out_size) {
+    KTH_PRECONDITION(out_size != nullptr);
     auto const& token_data_cpp = kth_chain_token_data_const_cpp(token_data);
     if (std::holds_alternative<kth::domain::chain::non_fungible>(token_data_cpp.data)) {
         auto const& non_fungible_cpp = std::get<kth::domain::chain::non_fungible>(token_data_cpp.data);
-        return kth::create_c_array(non_fungible_cpp.commitment, *out_size);
+        *out_size = non_fungible_cpp.commitment.size();
+        return kth::create_c_array(non_fungible_cpp.commitment);
     }
     if (std::holds_alternative<kth::domain::chain::both_kinds>(token_data_cpp.data)) {
         auto const& both_kinds_cpp = std::get<kth::domain::chain::both_kinds>(token_data_cpp.data);
         auto const& non_fungible_cpp = both_kinds_cpp.second;
-        return kth::create_c_array(non_fungible_cpp.commitment, *out_size);
+        *out_size = non_fungible_cpp.commitment.size();
+        return kth::create_c_array(non_fungible_cpp.commitment);
     }
 
     *out_size = 0;

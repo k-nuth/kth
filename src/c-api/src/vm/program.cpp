@@ -5,15 +5,18 @@
 #include <kth/capi/vm/program.h>
 
 #include <kth/capi/helpers.hpp>
-// #include <kth/capi/type_conversions.h>
 
 #include <kth/domain/machine/program.hpp>
 
 #include <kth/capi/conversions.hpp>
 
 // KTH_CONV_DEFINE(vm, kth_program_t, kth::domain::machine::program, program)
-KTH_CONV_DEFINE_JUST_CONST(vm, kth_program_const_t, kth::domain::machine::program, program)
-KTH_CONV_DEFINE_JUST_MUTABLE(vm, kth_program_t, kth::domain::machine::program, program)
+kth::domain::machine::program const& kth_vm_program_const_cpp(kth_program_const_t o) {
+    return *static_cast<kth::domain::machine::program const*>(o);
+}
+kth::domain::machine::program& kth_vm_program_cpp(kth_program_t o) {
+    return *static_cast<kth::domain::machine::program*>(o);
+}
 // ---------------------------------------------------------------------------
 extern "C" {
 
@@ -185,8 +188,10 @@ void kth_vm_program_push(kth_program_t program, kth_bool_t value) {
 
 
 uint8_t const* kth_vm_program_pop(kth_program_t program, kth_size_t* out_size) {
+    KTH_PRECONDITION(out_size != nullptr);
     auto data = kth_vm_program_cpp(program).pop();
-    return kth::create_c_array(data, *out_size);
+    *out_size = data.size();
+    return kth::create_c_array(data);
 }
 
 //     std::expected<int32_t, error_code_t> pop_int32();
@@ -284,8 +289,10 @@ kth_bool_t kth_vm_program_if(kth_program_t program, kth_operation_t op) {
 //     return kth_vm_program_const_cpp(program).item(index);
 // }
 uint8_t const* kth_vm_program_item(kth_program_t program, kth_size_t index, kth_size_t* out_size) {
+    KTH_PRECONDITION(out_size != nullptr);
     auto data = kth_vm_program_const_cpp(program).item(index);
-    return kth::create_c_array(data, *out_size);
+    *out_size = data.size();
+    return kth::create_c_array(data);
 }
 
 //     value_type& item(size_t index);
@@ -294,8 +301,10 @@ uint8_t const* kth_vm_program_item(kth_program_t program, kth_size_t index, kth_
 
 //     data_chunk& top();
 uint8_t const* kth_vm_program_top(kth_program_t program, kth_size_t* out_size) {
+    KTH_PRECONDITION(out_size != nullptr);
     auto data = kth_vm_program_const_cpp(program).top();
-    return kth::create_c_array(data, *out_size);
+    *out_size = data.size();
+    return kth::create_c_array(data);
 }
 
 //     bool top(number& out_number, size_t maximum_size) const;

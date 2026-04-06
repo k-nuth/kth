@@ -1,68 +1,79 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 
 #include <kth/capi/chain/output_point.h>
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
 
-KTH_CONV_DEFINE(chain, kth_outputpoint_t, kth::domain::chain::output_point, output_point)
+// Conversion functions
+kth::domain::chain::output_point& kth_chain_output_point_cpp(kth_output_point_mut_t o) {
+    return *static_cast<kth::domain::chain::output_point*>(o);
+}
+kth::domain::chain::output_point const& kth_chain_output_point_const_cpp(kth_output_point_const_t o) {
+    return *static_cast<kth::domain::chain::output_point const*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {
 
-kth_outputpoint_t kth_chain_output_point_construct() {
-    // return std::make_unique<kth::domain::chain::output_point>().release();
-    return new kth::domain::chain::output_point;
+kth_output_point_mut_t kth_chain_output_point_construct_default() {
+    return new kth::domain::chain::output_point();
 }
 
-
-kth_outputpoint_t kth_chain_output_point_construct_from_hash_index(kth_hash_t const* hash, uint32_t index) {
-    auto hash_cpp = kth::to_array(hash->hash);
-    auto ret = new kth::domain::chain::output_point(hash_cpp, index);
-    return ret;
+kth_output_point_mut_t kth_chain_output_point_construct(uint8_t const* hash, uint32_t index) {
+    return new kth::domain::chain::output_point(kth::hash_to_cpp(hash), index);
 }
 
-void kth_chain_output_point_destruct(kth_outputpoint_t op) {
-    delete &kth_chain_output_point_cpp(op);
+void kth_chain_output_point_destruct(kth_output_point_mut_t output_point) {
+    if (output_point == nullptr) return;
+    delete &kth_chain_output_point_cpp(output_point);
 }
 
-//kth_hash_t kth_chain_output_point_get_hash(kth_outputpoint_t op) {
-//    auto const& hash_cpp = kth_chain_output_point_const_cpp(op).hash();
-//    return hash_cpp.data();
-//}
+kth_bool_t kth_chain_output_point_is_mature(kth_output_point_const_t output_point, kth_size_t height) {
+    return kth::bool_to_int(kth_chain_output_point_const_cpp(output_point).is_mature(height));
+}
 
-kth_hash_t kth_chain_output_point_get_hash(kth_outputpoint_t op) {
-    auto const& hash_cpp = kth_chain_output_point_const_cpp(op).hash();
+kth_hash_t kth_chain_output_point_hash(kth_output_point_const_t output_point) {
+    auto hash_cpp = kth_chain_output_point_const_cpp(output_point).hash();
     return kth::to_hash_t(hash_cpp);
 }
 
-void kth_chain_output_point_get_hash_out(kth_outputpoint_t op, kth_hash_t* out_hash) {
-    auto const& hash_cpp = kth_chain_output_point_const_cpp(op).hash();
-    kth::copy_c_hash(hash_cpp, out_hash);
+void kth_chain_output_point_set_hash(kth_output_point_mut_t output_point, uint8_t const* hash) {
+    kth_chain_output_point_cpp(output_point).set_hash(kth::hash_to_cpp(hash));
 }
 
-uint32_t kth_chain_output_point_get_index(kth_outputpoint_t op) {
-    return kth_chain_output_point_const_cpp(op).index();
+uint32_t kth_chain_output_point_index(kth_output_point_const_t output_point) {
+    return kth_chain_output_point_const_cpp(output_point).index();
 }
 
-kth_output_t kth_chain_output_point_get_cached_output(kth_outputpoint_t op) {
-    auto& output = kth_chain_output_point_const_cpp(op).validation.cache;
-    return &output;
+void kth_chain_output_point_set_index(kth_output_point_mut_t output_point, uint32_t value) {
+    kth_chain_output_point_cpp(output_point).set_index(value);
 }
 
-void kth_chain_output_point_set_hash(kth_outputpoint_t op, kth_hash_t const* hash) {
-    auto hash_cpp = kth::to_array(hash->hash);
-    kth_chain_output_point_cpp(op).set_hash(hash_cpp);
+kth_bool_t kth_chain_output_point_is_null(kth_output_point_const_t output_point) {
+    return kth::bool_to_int(kth_chain_output_point_const_cpp(output_point).is_null());
 }
 
-void kth_chain_output_point_set_index(kth_outputpoint_t op, uint32_t index) {
-    kth_chain_output_point_cpp(op).set_index(index);
+kth_bool_t kth_chain_output_point_is_valid(kth_output_point_const_t output_point) {
+    return kth::bool_to_int(kth_chain_output_point_const_cpp(output_point).is_valid());
 }
 
-void kth_chain_output_point_set_cached_output(kth_outputpoint_t op, kth_output_t output) {
-    kth_chain_output_point_cpp(op).validation.cache = kth_chain_output_const_cpp(output);
+uint64_t kth_chain_output_point_checksum(kth_output_point_const_t output_point) {
+    return kth_chain_output_point_const_cpp(output_point).checksum();
+}
+
+uint8_t const* kth_chain_output_point_to_data(kth_output_point_const_t output_point, kth_bool_t wire, kth_size_t* out_size) {
+    KTH_PRECONDITION(out_size != nullptr);
+    auto data = kth_chain_output_point_const_cpp(output_point).to_data(kth::int_to_bool(wire));
+    *out_size = data.size();
+    return kth::create_c_array(data);
+}
+
+kth_size_t kth_chain_output_point_serialized_size(kth_output_point_const_t output_point, kth_bool_t wire) {
+    return kth_chain_output_point_const_cpp(output_point).serialized_size(kth::int_to_bool(wire));
 }
 
 } // extern "C"

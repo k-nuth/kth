@@ -1,18 +1,67 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+
 #include <kth/capi/chain/mempool_transaction_list.h>
 
-#include <kth/blockchain/interface/safe_chain.hpp>
+#include <vector>
+
 #include <kth/capi/conversions.hpp>
+#include <kth/capi/helpers.hpp>
 
+// Global converters (used by other generated code)
+std::vector<kth::blockchain::mempool_transaction_summary> const& kth_chain_mempool_transaction_list_const_cpp(kth_mempool_transaction_list_const_t l) {
+    return *static_cast<std::vector<kth::blockchain::mempool_transaction_summary> const*>(l);
+}
 
-KTH_LIST_DEFINE_CONVERTERS(chain, kth_mempool_transaction_list_t, kth::blockchain::mempool_transaction_summary, mempool_transaction_list)
-KTH_LIST_DEFINE_CONSTRUCT_FROM_CPP(chain, kth_mempool_transaction_list_t, kth::blockchain::mempool_transaction_summary, mempool_transaction_list)
+std::vector<kth::blockchain::mempool_transaction_summary>& kth_chain_mempool_transaction_list_cpp(kth_mempool_transaction_list_mut_t l) {
+    return *static_cast<std::vector<kth::blockchain::mempool_transaction_summary>*>(l);
+}
 
+// Construct from C++ (returns opaque pointer to existing vector)
+kth_mempool_transaction_list_mut_t kth_chain_mempool_transaction_list_construct_from_cpp(std::vector<kth::blockchain::mempool_transaction_summary>& l) {
+    return &l;
+}
+
+void const* kth_chain_mempool_transaction_list_construct_from_cpp(std::vector<kth::blockchain::mempool_transaction_summary> const& l) {
+    return &l;
+}
+
+// ---------------------------------------------------------------------------
 extern "C" {
 
-KTH_LIST_DEFINE(chain, kth_mempool_transaction_list_t, kth_mempool_transaction_t, mempool_transaction_list, kth::blockchain::mempool_transaction_summary, kth_chain_mempool_transaction_const_cpp)
+kth_mempool_transaction_list_mut_t kth_chain_mempool_transaction_list_construct_default() {
+    return new std::vector<kth::blockchain::mempool_transaction_summary>();
+}
+
+void kth_chain_mempool_transaction_list_push_back(kth_mempool_transaction_list_mut_t list, kth_mempool_transaction_const_t elem) {
+    kth_chain_mempool_transaction_list_cpp(list).push_back(kth_chain_mempool_transaction_const_cpp(elem));
+}
+
+void kth_chain_mempool_transaction_list_destruct(kth_mempool_transaction_list_mut_t list) {
+    if (list == nullptr) return;
+    delete &kth_chain_mempool_transaction_list_cpp(list);
+}
+
+kth_size_t kth_chain_mempool_transaction_list_count(kth_mempool_transaction_list_const_t list) {
+    return kth_chain_mempool_transaction_list_const_cpp(list).size();
+}
+
+kth_mempool_transaction_const_t kth_chain_mempool_transaction_list_nth(kth_mempool_transaction_list_const_t list, kth_size_t index) {
+    KTH_PRECONDITION(index < kth_chain_mempool_transaction_list_const_cpp(list).size());
+    return &kth_chain_mempool_transaction_list_const_cpp(list)[index];
+}
+
+void kth_chain_mempool_transaction_list_assign_at(kth_mempool_transaction_list_mut_t list, kth_size_t index, kth_mempool_transaction_const_t elem) {
+    KTH_PRECONDITION(index < kth_chain_mempool_transaction_list_cpp(list).size());
+    kth_chain_mempool_transaction_list_cpp(list)[index] = kth_chain_mempool_transaction_const_cpp(elem);
+}
+
+void kth_chain_mempool_transaction_list_erase(kth_mempool_transaction_list_mut_t list, kth_size_t index) {
+    KTH_PRECONDITION(index < kth_chain_mempool_transaction_list_cpp(list).size());
+    auto& v = kth_chain_mempool_transaction_list_cpp(list);
+    v.erase(std::next(v.begin(), index));
+}
 
 } // extern "C"

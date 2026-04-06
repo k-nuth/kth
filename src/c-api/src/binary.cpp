@@ -7,9 +7,13 @@
 #include <kth/infrastructure/utility/binary.hpp>
 
 #include <kth/capi/helpers.hpp>
-#include <kth/capi/type_conversions.h>
 
-KTH_CONV_DEFINE(core, kth_binary_t, kth::binary, binary)
+kth::binary const& kth_core_binary_const_cpp(kth_binary_t o) {
+    return *static_cast<kth::binary const*>(o);
+}
+kth::binary& kth_core_binary_cpp(kth_binary_t o) {
+    return *static_cast<kth::binary*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {

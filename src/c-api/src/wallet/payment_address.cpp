@@ -5,14 +5,18 @@
 #include <kth/capi/wallet/payment_address.h>
 
 #include <kth/capi/helpers.hpp>
-#include <kth/capi/type_conversions.h>
 
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
 
 #include <kth/capi/conversions.hpp>
 
-KTH_CONV_DEFINE(wallet, kth_payment_address_t, kth::domain::wallet::payment_address, payment_address)
+kth::domain::wallet::payment_address const& kth_wallet_payment_address_const_cpp(kth_payment_address_t o) {
+    return *static_cast<kth::domain::wallet::payment_address const*>(o);
+}
+kth::domain::wallet::payment_address& kth_wallet_payment_address_cpp(kth_payment_address_t o) {
+    return *static_cast<kth::domain::wallet::payment_address*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {

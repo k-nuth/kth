@@ -15,7 +15,7 @@ extern "C" {
 #endif
 
 KTH_EXPORT
-kth_outputpoint_const_t kth_chain_double_spend_proof_out_point(kth_double_spend_proof_t dsp);
+kth_output_point_const_t kth_chain_double_spend_proof_out_point(kth_double_spend_proof_t dsp);
 
 KTH_EXPORT
 kth_double_spend_proof_spender_const_t kth_chain_double_spend_proof_spender1(kth_double_spend_proof_t dsp);

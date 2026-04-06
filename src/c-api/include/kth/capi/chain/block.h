@@ -1,6 +1,7 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 
 #ifndef KTH_CAPI_CHAIN_BLOCK_H_
 #define KTH_CAPI_CHAIN_BLOCK_H_
@@ -9,95 +10,168 @@
 
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
+#include <kth/capi/chain/script_flags.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 KTH_EXPORT
-kth_block_t kth_chain_block_construct_default(void);
+kth_block_mut_t kth_chain_block_construct_default(void);
 
 KTH_EXPORT
-kth_block_t kth_chain_block_construct(kth_header_t header, kth_transaction_list_t transactions);
+kth_block_mut_t kth_chain_block_construct(kth_header_const_t header, kth_transaction_list_const_t transactions);
 
 KTH_EXPORT
-kth_block_t kth_chain_block_factory_from_data(uint8_t* data, kth_size_t n);
+void kth_chain_block_destruct(kth_block_mut_t block);
 
 KTH_EXPORT
-void kth_chain_block_destruct(kth_block_t block);
+kth_block_mut_t kth_chain_block_copy(kth_block_const_t other);
 
 KTH_EXPORT
-kth_bool_t kth_chain_block_is_valid(kth_block_t block);
+kth_bool_t kth_chain_block_equal(kth_block_const_t a, kth_block_const_t b);
 
 KTH_EXPORT
-kth_header_t kth_chain_block_header(kth_block_t block);
+kth_bool_t kth_chain_block_is_valid(kth_block_const_t block);
 
 KTH_EXPORT
-kth_hash_t kth_chain_block_hash(kth_block_t block);
+kth_hash_list_mut_t kth_chain_block_to_hashes(kth_block_const_t block);
 
 KTH_EXPORT
-void kth_chain_block_hash_out(kth_block_t block, kth_hash_t* out_hash);
+kth_header_const_t kth_chain_block_header(kth_block_const_t block);
 
 KTH_EXPORT
-char const* kth_chain_block_proof_str(kth_block_t block);
+void kth_chain_block_set_header(kth_block_mut_t block, kth_header_const_t value);
 
 KTH_EXPORT
-kth_transaction_list_t kth_chain_block_transactions(kth_block_t block);
+kth_transaction_list_const_t kth_chain_block_transactions(kth_block_const_t block);
 
 KTH_EXPORT
-kth_size_t kth_chain_block_serialized_size(kth_block_t block);
+kth_hash_t kth_chain_block_hash(kth_block_const_t block);
+
+KTH_EXPORT
+void kth_chain_block_hash_out(kth_block_const_t block, kth_hash_t* out_hash);
 
 /*static*/
 KTH_EXPORT
 uint64_t kth_chain_block_subsidy(kth_size_t height);
 
 KTH_EXPORT
-uint64_t kth_chain_block_fees(kth_block_t block);
+uint64_t kth_chain_block_fees(kth_block_const_t block);
 
 KTH_EXPORT
-uint64_t kth_chain_block_claim(kth_block_t block);
+uint64_t kth_chain_block_claim(kth_block_const_t block);
 
 KTH_EXPORT
-uint64_t kth_chain_block_reward(kth_block_t block, kth_size_t height);
+uint64_t kth_chain_block_reward(kth_block_const_t block, kth_size_t height);
 
 KTH_EXPORT
-kth_hash_t kth_chain_block_generate_merkle_root(kth_block_t block);
+char const* kth_chain_block_proof_str(kth_block_const_t block);
 
 KTH_EXPORT
-void kth_chain_block_generate_merkle_root_out(kth_block_t block, kth_hash_t* out_merkle);
+kth_hash_t kth_chain_block_generate_merkle_root(kth_block_const_t block);
 
 KTH_EXPORT
-kth_size_t kth_chain_block_signature_operations(kth_block_t block);
+void kth_chain_block_generate_merkle_root_out(kth_block_const_t block, kth_hash_t* out_merkle);
 
 KTH_EXPORT
-kth_size_t kth_chain_block_signature_operations_bip16_active(kth_block_t block, kth_bool_t bip16_active);
+kth_bool_t kth_chain_block_is_extra_coinbases(kth_block_const_t block);
 
 KTH_EXPORT
-kth_size_t kth_chain_block_total_inputs(kth_block_t block, kth_bool_t with_coinbase); //with_coinbase = true
+kth_bool_t kth_chain_block_is_final(kth_block_const_t block, kth_size_t height, uint32_t block_time);
 
 KTH_EXPORT
-kth_bool_t kth_chain_block_is_extra_coinbases(kth_block_t block);
+kth_bool_t kth_chain_block_is_distinct_transaction_set(kth_block_const_t block);
 
 KTH_EXPORT
-kth_bool_t kth_chain_block_is_final(kth_block_t block, kth_size_t height, uint32_t kth_block_time);
+kth_bool_t kth_chain_block_is_valid_coinbase_claim(kth_block_const_t block, kth_size_t height);
 
 KTH_EXPORT
-kth_bool_t kth_chain_block_is_distinct_transaction_set(kth_block_t block);
+kth_bool_t kth_chain_block_is_valid_coinbase_script(kth_block_const_t block, kth_size_t height);
 
 KTH_EXPORT
-kth_bool_t kth_chain_block_is_valid_coinbase_claim(kth_block_t block, kth_size_t height);
+kth_bool_t kth_chain_block_is_forward_reference(kth_block_const_t block);
 
 KTH_EXPORT
-kth_bool_t kth_chain_block_is_valid_coinbase_script(kth_block_t block, kth_size_t height);
+kth_bool_t kth_chain_block_is_canonical_ordered(kth_block_const_t block);
 
 KTH_EXPORT
-kth_bool_t kth_chain_block_is_internal_double_spend(kth_block_t block);
+kth_bool_t kth_chain_block_is_internal_double_spend(kth_block_const_t block);
 
 KTH_EXPORT
-kth_bool_t kth_chain_block_is_valid_merkle_root(kth_block_t block);
+kth_bool_t kth_chain_block_is_valid_merkle_root(kth_block_const_t block);
 
 KTH_EXPORT
-uint8_t const* kth_chain_block_to_data(kth_block_t block, kth_bool_t wire, kth_size_t* out_size);
+kth_error_code_t kth_chain_block_check_transactions(kth_block_const_t block);
+
+KTH_EXPORT
+kth_error_code_t kth_chain_block_accept_transactions(kth_block_const_t block, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint);
+
+KTH_EXPORT
+kth_error_code_t kth_chain_block_connect_transactions(kth_block_const_t block, kth_chain_state_const_t state);
+
+KTH_EXPORT
+void kth_chain_block_reset(kth_block_mut_t block);
+
+KTH_EXPORT
+kth_size_t kth_chain_block_non_coinbase_input_count(kth_block_const_t block);
+
+KTH_EXPORT
+kth_error_code_t kth_chain_block_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, kth_block_mut_t* out_result);
+
+KTH_EXPORT
+uint8_t const* kth_chain_block_to_data(kth_block_const_t block, kth_bool_t wire, kth_size_t* out_size);
+
+KTH_EXPORT
+kth_size_t kth_chain_block_serialized_size(kth_block_const_t block, kth_bool_t wire);
+
+KTH_EXPORT
+void kth_chain_block_set_transactions(kth_block_mut_t block, kth_transaction_list_const_t value);
+
+KTH_EXPORT
+kth_block_mut_t kth_chain_block_genesis_mainnet(void);
+
+KTH_EXPORT
+kth_block_mut_t kth_chain_block_genesis_testnet(void);
+
+KTH_EXPORT
+kth_block_mut_t kth_chain_block_genesis_regtest(void);
+
+#if defined(KTH_CURRENCY_BCH)
+KTH_EXPORT
+kth_block_mut_t kth_chain_block_genesis_testnet4(void);
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+KTH_EXPORT
+kth_block_mut_t kth_chain_block_genesis_scalenet(void);
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+KTH_EXPORT
+kth_block_mut_t kth_chain_block_genesis_chipnet(void);
+#endif
+
+KTH_EXPORT
+kth_size_t kth_chain_block_locator_size(kth_size_t top);
+
+KTH_EXPORT
+kth_block_indexes_mut_t kth_chain_block_locator_heights(kth_size_t top);
+
+KTH_EXPORT
+kth_size_t kth_chain_block_signature_operations(kth_block_const_t block);
+
+KTH_EXPORT
+kth_size_t kth_chain_block_total_inputs(kth_block_const_t block, kth_bool_t with_coinbase);
+
+KTH_EXPORT
+kth_error_code_t kth_chain_block_check(kth_block_const_t block);
+
+KTH_EXPORT
+kth_error_code_t kth_chain_block_accept(kth_block_const_t block, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_block_size_dynamic, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transactions);
+
+KTH_EXPORT
+kth_error_code_t kth_chain_block_connect(kth_block_const_t block);
 
 #ifdef __cplusplus
 } // extern "C"

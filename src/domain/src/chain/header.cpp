@@ -123,7 +123,6 @@ hash_digest header::litecoin_proof_of_work_hash() const {
 }
 #endif  //KTH_CURRENCY_LTC
 
-inline
 hash_digest header::hash_pow() const {
 #if defined(KTH_CURRENCY_LTC)
     return litecoin_proof_of_work_hash();

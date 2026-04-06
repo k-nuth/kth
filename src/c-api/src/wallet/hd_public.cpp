@@ -9,7 +9,12 @@
 
 #include <kth/capi/wallet/conversions.hpp>
 
-KTH_CONV_DEFINE(wallet, kth_hd_public_t, kth::infrastructure::wallet::hd_public, hd_public)
+kth::infrastructure::wallet::hd_public const& kth_wallet_hd_public_const_cpp(kth_hd_public_t o) {
+    return *static_cast<kth::infrastructure::wallet::hd_public const*>(o);
+}
+kth::infrastructure::wallet::hd_public& kth_wallet_hd_public_cpp(kth_hd_public_t o) {
+    return *static_cast<kth::infrastructure::wallet::hd_public*>(o);
+}
 
 extern "C" {
 

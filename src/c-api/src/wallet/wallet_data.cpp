@@ -7,12 +7,16 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
-#include <kth/capi/type_conversions.h>
 
 #include <kth/capi/wallet/conversions.hpp>
 
 
-KTH_CONV_DEFINE(wallet, kth_wallet_data_t, kth::domain::wallet::wallet_data, wallet_data)
+kth::domain::wallet::wallet_data const& kth_wallet_wallet_data_const_cpp(kth_wallet_data_t o) {
+    return *static_cast<kth::domain::wallet::wallet_data const*>(o);
+}
+kth::domain::wallet::wallet_data& kth_wallet_wallet_data_cpp(kth_wallet_data_t o) {
+    return *static_cast<kth::domain::wallet::wallet_data*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {

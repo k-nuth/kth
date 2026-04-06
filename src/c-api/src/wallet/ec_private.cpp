@@ -6,11 +6,15 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
-#include <kth/capi/type_conversions.h>
 
 #include <kth/capi/wallet/conversions.hpp>
 
-KTH_CONV_DEFINE(wallet, kth_ec_private_t, kth::domain::wallet::ec_private, ec_private)
+kth::domain::wallet::ec_private const& kth_wallet_ec_private_const_cpp(kth_ec_private_t o) {
+    return *static_cast<kth::domain::wallet::ec_private const*>(o);
+}
+kth::domain::wallet::ec_private& kth_wallet_ec_private_cpp(kth_ec_private_t o) {
+    return *static_cast<kth::domain::wallet::ec_private*>(o);
+}
 
 extern "C" {
 

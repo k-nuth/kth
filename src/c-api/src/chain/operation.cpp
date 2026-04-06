@@ -8,7 +8,15 @@
 #include <kth/capi/helpers.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 
-KTH_CONV_DEFINE(chain, kth_operation_t, kth::domain::machine::operation, operation)
+kth::domain::machine::operation const& kth_chain_operation_const_cpp(kth_operation_t o) {
+    return *static_cast<kth::domain::machine::operation const*>(o);
+}
+kth::domain::machine::operation const& kth_chain_operation_const_cpp(kth_operation_const_t o) {
+    return *static_cast<kth::domain::machine::operation const*>(o);
+}
+kth::domain::machine::operation& kth_chain_operation_cpp(kth_operation_t o) {
+    return *static_cast<kth::domain::machine::operation*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {
@@ -41,8 +49,10 @@ char const* kth_chain_operation_to_string(kth_operation_t operation, uint64_t ac
 }
 
 uint8_t const* kth_chain_operation_to_data(kth_operation_t operation, kth_size_t* out_size) {
+    KTH_PRECONDITION(out_size != nullptr);
     auto operation_data = kth_chain_operation_cpp(operation).to_data();
-    return kth::create_c_array(operation_data, *out_size);
+    *out_size = operation_data.size();
+    return kth::create_c_array(operation_data);
 }
 
 kth_bool_t kth_chain_operation_from_data_mutable(kth_operation_t operation, uint8_t const* data, kth_size_t n) {
@@ -76,8 +86,10 @@ kth_opcode_t kth_chain_operation_code(kth_operation_t operation) {
 }
 
 uint8_t const* kth_chain_operation_data(kth_operation_t operation, kth_size_t* out_size) {
+    KTH_PRECONDITION(out_size != nullptr);
     auto data = kth_chain_operation_cpp(operation).data();
-    return kth::create_c_array(data, *out_size);
+    *out_size = data.size();
+    return kth::create_c_array(data);
 }
 
 // ******************************************

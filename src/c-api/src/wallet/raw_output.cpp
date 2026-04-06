@@ -8,9 +8,13 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
-#include <kth/capi/type_conversions.h>
 
-KTH_CONV_DEFINE(wallet, kth_raw_output_t, kth::domain::wallet::raw_output, raw_output)
+kth::domain::wallet::raw_output const& kth_wallet_raw_output_const_cpp(kth_raw_output_t o) {
+    return *static_cast<kth::domain::wallet::raw_output const*>(o);
+}
+kth::domain::wallet::raw_output& kth_wallet_raw_output_cpp(kth_raw_output_t o) {
+    return *static_cast<kth::domain::wallet::raw_output*>(o);
+}
 
 // C++ class declaration
 // using raw_output = std::pair<payment_address, uint64_t>;

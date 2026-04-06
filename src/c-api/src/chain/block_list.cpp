@@ -1,18 +1,67 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+
 #include <kth/capi/chain/block_list.h>
 
-#include <kth/capi/chain/block.h>
+#include <vector>
+
 #include <kth/capi/conversions.hpp>
+#include <kth/capi/helpers.hpp>
 
+// Global converters (used by other generated code)
+std::vector<kth::domain::chain::block> const& kth_chain_block_list_const_cpp(kth_block_list_const_t l) {
+    return *static_cast<std::vector<kth::domain::chain::block> const*>(l);
+}
 
-KTH_LIST_DEFINE_CONVERTERS(chain, kth_block_list_t, kth::domain::chain::block, block_list)
-KTH_LIST_DEFINE_CONSTRUCT_FROM_CPP(chain, kth_block_list_t, kth::domain::chain::block, block_list)
+std::vector<kth::domain::chain::block>& kth_chain_block_list_cpp(kth_block_list_mut_t l) {
+    return *static_cast<std::vector<kth::domain::chain::block>*>(l);
+}
 
+// Construct from C++ (returns opaque pointer to existing vector)
+kth_block_list_mut_t kth_chain_block_list_construct_from_cpp(std::vector<kth::domain::chain::block>& l) {
+    return &l;
+}
+
+void const* kth_chain_block_list_construct_from_cpp(std::vector<kth::domain::chain::block> const& l) {
+    return &l;
+}
+
+// ---------------------------------------------------------------------------
 extern "C" {
 
-KTH_LIST_DEFINE(chain, kth_block_list_t, kth_block_t, block_list, kth::domain::chain::block, kth_chain_block_const_cpp)
+kth_block_list_mut_t kth_chain_block_list_construct_default() {
+    return new std::vector<kth::domain::chain::block>();
+}
+
+void kth_chain_block_list_push_back(kth_block_list_mut_t list, kth_block_const_t elem) {
+    kth_chain_block_list_cpp(list).push_back(kth_chain_block_const_cpp(elem));
+}
+
+void kth_chain_block_list_destruct(kth_block_list_mut_t list) {
+    if (list == nullptr) return;
+    delete &kth_chain_block_list_cpp(list);
+}
+
+kth_size_t kth_chain_block_list_count(kth_block_list_const_t list) {
+    return kth_chain_block_list_const_cpp(list).size();
+}
+
+kth_block_const_t kth_chain_block_list_nth(kth_block_list_const_t list, kth_size_t index) {
+    KTH_PRECONDITION(index < kth_chain_block_list_const_cpp(list).size());
+    return &kth_chain_block_list_const_cpp(list)[index];
+}
+
+void kth_chain_block_list_assign_at(kth_block_list_mut_t list, kth_size_t index, kth_block_const_t elem) {
+    KTH_PRECONDITION(index < kth_chain_block_list_cpp(list).size());
+    kth_chain_block_list_cpp(list)[index] = kth_chain_block_const_cpp(elem);
+}
+
+void kth_chain_block_list_erase(kth_block_list_mut_t list, kth_size_t index) {
+    KTH_PRECONDITION(index < kth_chain_block_list_cpp(list).size());
+    auto& v = kth_chain_block_list_cpp(list);
+    v.erase(std::next(v.begin(), index));
+}
 
 } // extern "C"

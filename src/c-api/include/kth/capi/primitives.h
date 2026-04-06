@@ -6,8 +6,11 @@
 #define KTH_CAPI_PRIMITIVES_H_
 
 #include <stdint.h>
+#include <stdlib.h>
 
 #include <kth/capi/error.h>
+
+#define KTH_PRECONDITION(expr) do { if (!(expr)) { abort(); } } while(0)
 #include <kth/capi/visibility.h>
 
 #ifdef __cplusplus
@@ -54,43 +57,120 @@ typedef void* kth_p2p_t;
 //} kth_outputpoint_t;
 
 
-// TODO(fernando): check if we can encapsulate the pointer into a struct to make them more "type safe"
-typedef void* kth_block_t;
-typedef void* kth_block_indexes_t;
-typedef void* kth_block_list_t;
+// Migrated types (const/mut)
+typedef void* kth_block_mut_t;
+typedef void const* kth_block_const_t;
+typedef void* kth_block_indexes_mut_t;
+typedef void const* kth_block_indexes_const_t;
+typedef void* kth_chain_state_mut_t;
+typedef void const* kth_chain_state_const_t;
+typedef void* kth_indexes_mut_t;
+typedef void const* kth_indexes_const_t;
+typedef void* kth_header_mut_t;
+typedef void const* kth_header_const_t;
+typedef void* kth_input_mut_t;
+typedef void const* kth_input_const_t;
+typedef void* kth_input_list_mut_t;
+typedef void const* kth_input_list_const_t;
+typedef void* kth_script_mut_t;
+typedef void const* kth_script_const_t;
+typedef void* kth_output_mut_t;
+typedef void const* kth_output_const_t;
+typedef void* kth_output_list_mut_t;
+typedef void const* kth_output_list_const_t;
+typedef void* kth_output_point_mut_t;
+typedef void const* kth_output_point_const_t;
+typedef void* kth_utxo_mut_t;
+typedef void const* kth_utxo_const_t;
+typedef void* kth_point_mut_t;
+typedef void const* kth_point_const_t;
+typedef void* kth_point_list_mut_t;
+typedef void const* kth_point_list_const_t;
+typedef void* kth_transaction_mut_t;
+typedef void const* kth_transaction_const_t;
+typedef void* kth_transaction_list_mut_t;
+typedef void const* kth_transaction_list_const_t;
+typedef void* kth_hash_list_mut_t;
+typedef void const* kth_hash_list_const_t;
+typedef void* kth_operation_list_mut_t;
+typedef void const* kth_operation_list_const_t;
+typedef void* kth_operation_mut_t;
+typedef void const* kth_operation_const_t;
+typedef void* kth_token_data_mut_t;
+typedef void const* kth_token_data_const_t;
+
+// Legacy aliases (equal to _mut_t, for non-migrated code)
+typedef kth_block_mut_t kth_block_t;
+typedef kth_header_mut_t kth_header_t;
+typedef kth_input_mut_t kth_input_t;
+typedef kth_input_list_mut_t kth_input_list_t;
+typedef kth_output_mut_t kth_output_t;
+typedef kth_output_list_mut_t kth_output_list_t;
+typedef kth_output_point_mut_t kth_outputpoint_t;
+typedef kth_output_point_mut_t kth_output_point_t;
+typedef kth_script_mut_t kth_script_t;
+typedef kth_transaction_mut_t kth_transaction_t;
+typedef kth_transaction_list_mut_t kth_transaction_list_t;
+typedef kth_point_mut_t kth_point_t;
+typedef kth_point_list_mut_t kth_point_list_t;
+typedef kth_utxo_mut_t kth_utxo_t;
+typedef kth_hash_list_mut_t kth_hash_list_t;
+typedef kth_operation_mut_t kth_operation_t;
+typedef kth_operation_list_mut_t kth_operation_list_t;
+typedef kth_token_data_mut_t kth_token_data_t;
+
+typedef void* kth_block_list_mut_t;
+typedef void const* kth_block_list_const_t;
+
+typedef void* kth_output_point_list_mut_t;
+typedef void const* kth_output_point_list_const_t;
+typedef void* kth_utxo_list_mut_t;
+typedef void const* kth_utxo_list_const_t;
+typedef void* kth_history_compact_list_mut_t;
+typedef void const* kth_history_compact_list_const_t;
+typedef void* kth_mempool_transaction_list_mut_t;
+typedef void const* kth_mempool_transaction_list_const_t;
+typedef void* kth_stealth_compact_list_mut_t;
+typedef void const* kth_stealth_compact_list_const_t;
+typedef void* kth_double_list_mut_t;
+typedef void const* kth_double_list_const_t;
+typedef void* kth_u32_list_mut_t;
+typedef void const* kth_u32_list_const_t;
+typedef void* kth_u64_list_mut_t;
+typedef void const* kth_u64_list_const_t;
+typedef void* kth_string_list_mut_t;
+typedef void const* kth_string_list_const_t;
+typedef void* kth_hash_list_legacy_t;   // for hash_list.h extern "C" functions
+
+// Legacy aliases (equal to _mut_t)
+typedef kth_block_list_mut_t kth_block_list_t;
+typedef kth_block_indexes_mut_t kth_block_indexes_t;
+typedef kth_output_point_list_mut_t kth_outputpoint_list_t;
+typedef kth_utxo_list_mut_t kth_utxo_list_t;
+typedef kth_history_compact_list_mut_t kth_history_compact_list_t;
+typedef kth_mempool_transaction_list_mut_t kth_mempool_transaction_list_t;
+typedef kth_stealth_compact_list_mut_t kth_stealth_compact_list_t;
+typedef kth_double_list_mut_t kth_double_list_t;
+typedef kth_u32_list_mut_t kth_u32_list_t;
+typedef kth_u64_list_mut_t kth_u64_list_t;
+typedef kth_string_list_mut_t kth_string_list_t;
+
+// Not yet migrated (still using void* without const qualifier)
 typedef void* kth_compact_block_t;
 typedef void* kth_double_spend_proof_t;
 typedef void* kth_double_spend_proof_spender_t;
 typedef void const* kth_double_spend_proof_spender_const_t;
-typedef void* kth_header_t;
 typedef void* kth_history_compact_t;
-typedef void* kth_history_compact_list_t;
-typedef void* kth_input_t;
-typedef void* kth_input_list_t;
-typedef void* kth_utxo_list_t;
-typedef void* kth_inputpoint_t;
-typedef void* kth_merkleblock_t;
-typedef void* kth_script_t;
-typedef void* kth_token_data_t;
-typedef void const* kth_token_data_const_t;
-
-typedef void* kth_operation_list_t;
-typedef void const* kth_operation_list_const_t;
-typedef void* kth_operation_t;
-
-typedef void* kth_output_list_t;
-typedef void* kth_output_t;
-typedef void* kth_outputpoint_t;
-typedef void* kth_utxo_t;
-typedef void const* kth_outputpoint_const_t;
-typedef void* kth_point_t;
-typedef void* kth_point_list_t;
-typedef void* kth_outputpoint_list_t;
-typedef void* kth_transaction_t;
-typedef void const* kth_transaction_const_t;
-typedef void* kth_transaction_list_t;
+typedef void* kth_history_compact_mut_t;
+typedef void const* kth_history_compact_const_t;
+typedef void* kth_input_point_t;
+typedef void* kth_merkle_block_t;
 typedef void* kth_mempool_transaction_t;
-typedef void* kth_mempool_transaction_list_t;
+typedef void* kth_mempool_transaction_mut_t;
+typedef void const* kth_mempool_transaction_const_t;
+typedef void* kth_stealth_compact_t;
+typedef void* kth_stealth_compact_mut_t;
+typedef void const* kth_stealth_compact_const_t;
 typedef void* kth_get_blocks_t;
 typedef void* kth_get_blocks_ptr_t;
 typedef void* kth_get_headers_t;
@@ -99,15 +179,8 @@ typedef void* kth_payment_address_t;
 typedef void* kth_payment_address_list_t;
 typedef void const* kth_payment_address_list_const_t;
 typedef void* kth_binary_t;
-typedef void* kth_stealth_compact_t;
-typedef void* kth_stealth_compact_list_t;
-typedef void* kth_hash_list_t;
 typedef void* kth_raw_output_t;
 typedef void* kth_raw_output_list_t;
-typedef void* kth_string_list_t;
-typedef void* kth_double_list_t;
-typedef void* kth_u32_list_t;
-typedef void* kth_u64_list_t;
 
 typedef void* kth_wallet_data_t;
 
@@ -188,25 +261,25 @@ typedef enum {
 // Callback signatures ------------------------------------------------
 typedef void (*kth_run_handler_t)(kth_node_t, void*, kth_error_code_t);
 typedef void (*kth_stealth_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_stealth_compact_list_t);
-typedef void (*kth_block_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_block_t, kth_size_t);
-typedef void (*kth_block_header_txs_size_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_header_t, kth_size_t, kth_hash_list_t, uint64_t);
+typedef void (*kth_block_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_block_mut_t, kth_size_t);
+typedef void (*kth_block_header_txs_size_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_header_mut_t, kth_size_t, kth_hash_list_mut_t, uint64_t);
 typedef void (*kth_blockhash_timestamp_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_hash_t, uint32_t, kth_size_t);
 typedef void (*kth_block_height_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_size_t);
-typedef void (*kth_block_header_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_header_t, kth_size_t);
+typedef void (*kth_block_header_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_header_mut_t, kth_size_t);
 typedef void (*kth_compact_block_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_compact_block_t, kth_size_t);
 typedef void (*kth_history_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_history_compact_list_t);
 typedef void (*kth_last_height_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_size_t);
-typedef void (*kth_merkleblock_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_merkleblock_t, kth_size_t);
-typedef void (*kth_output_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_output_t output);
-typedef void (*kth_spend_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_inputpoint_t);
-typedef void (*kth_transaction_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_transaction_t, kth_size_t, kth_size_t);
+typedef void (*kth_merkleblock_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_merkle_block_t, kth_size_t);
+typedef void (*kth_output_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_output_mut_t);
+typedef void (*kth_spend_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_input_point_t);
+typedef void (*kth_transaction_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_transaction_mut_t, kth_size_t, kth_size_t);
 typedef void (*kth_transaction_index_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_size_t, kth_size_t);
 typedef void (*kth_validate_tx_handler_t)(kth_chain_t, void*, kth_error_code_t, char const*);
 typedef void (*kth_block_locator_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_get_headers_ptr_t);
 typedef void (*kth_result_handler_t)(kth_chain_t, void*, kth_error_code_t);
-typedef void (*kth_transactions_by_address_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_hash_list_t);
+typedef void (*kth_transactions_by_address_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_hash_list_mut_t);
 typedef kth_bool_t (*kth_subscribe_blockchain_handler_t)(kth_node_t, kth_chain_t, void*, kth_error_code_t, kth_size_t, kth_block_list_t, kth_block_list_t);
-typedef kth_bool_t (*kth_subscribe_transaction_handler_t)(kth_node_t, kth_chain_t, void*, kth_error_code_t, kth_transaction_t);
+typedef kth_bool_t (*kth_subscribe_transaction_handler_t)(kth_node_t, kth_chain_t, void*, kth_error_code_t, kth_transaction_mut_t);
 typedef kth_bool_t (*kth_subscribe_ds_proof_handler_t)(kth_node_t, kth_chain_t, void*, kth_error_code_t, kth_double_spend_proof_t);
 
 #ifdef __cplusplus

@@ -10,7 +10,12 @@
 #include <kth/domain/message/get_headers.hpp>
 
 
-KTH_CONV_DEFINE(chain, kth_get_headers_t, kth::domain::message::get_headers, get_headers)
+kth::domain::message::get_headers const& kth_chain_get_headers_const_cpp(kth_get_headers_t o) {
+    return *static_cast<kth::domain::message::get_headers const*>(o);
+}
+kth::domain::message::get_headers& kth_chain_get_headers_cpp(kth_get_headers_t o) {
+    return *static_cast<kth::domain::message::get_headers*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {

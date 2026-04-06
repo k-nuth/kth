@@ -7,14 +7,18 @@
 #include <kth/capi/chain/double_spend_proof.h>
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
-#include <kth/capi/type_conversions.h>
 
-KTH_CONV_DEFINE(chain, kth_double_spend_proof_t, kth::domain::message::double_spend_proof, double_spend_proof)
+kth::domain::message::double_spend_proof const& kth_chain_double_spend_proof_const_cpp(kth_double_spend_proof_t o) {
+    return *static_cast<kth::domain::message::double_spend_proof const*>(o);
+}
+kth::domain::message::double_spend_proof& kth_chain_double_spend_proof_cpp(kth_double_spend_proof_t o) {
+    return *static_cast<kth::domain::message::double_spend_proof*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {
 
-kth_outputpoint_const_t kth_chain_double_spend_proof_out_point(kth_double_spend_proof_t dsp) {
+kth_output_point_const_t kth_chain_double_spend_proof_out_point(kth_double_spend_proof_t dsp) {
     return &kth_chain_double_spend_proof_cpp(dsp).out_point();
 }
 

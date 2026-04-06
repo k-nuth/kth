@@ -214,6 +214,7 @@ set(kth_sources
         src/chain/block_indexes.cpp
         src/chain/block_list.cpp
 
+        src/chain/chain_state.cpp
         src/chain/chain_async.cpp
         src/chain/chain_other.cpp
         src/chain/chain_sync.cpp
@@ -237,7 +238,7 @@ set(kth_sources
         src/chain/output_point.cpp
         src/chain/point.cpp
         src/chain/point_list.cpp
-        src/chain/outputpoint_list.cpp
+        src/chain/output_point_list.cpp
         src/chain/mempool_transaction.cpp
 
         src/chain/token_data.cpp
@@ -317,7 +318,6 @@ set(kth_headers
 
   include/kth/capi/primitives.h
   include/kth/capi/hash_list.h
-  include/kth/capi/type_conversions.h
   include/kth/capi/error.h
   include/kth/capi/hash.h
   include/kth/capi/version.h
@@ -357,7 +357,6 @@ set(kth_headers
   set(kth_headers
     ${kth_headers}
 
-    include/kth/capi/list_creator.h
     include/kth/capi/chain/block_list.h
     include/kth/capi/chain/mempool_transaction_list.h
     include/kth/capi/chain/compact_block.h
@@ -379,7 +378,7 @@ set(kth_headers
     include/kth/capi/chain/history_compact.h
     include/kth/capi/chain/output.h
     include/kth/capi/chain/output_list.h
-    include/kth/capi/chain/outputpoint_list.h
+    include/kth/capi/chain/output_point_list.h
     include/kth/capi/chain/get_blocks.h
     include/kth/capi/chain/double_spend_proof_spender.h
     include/kth/capi/chain/point.h
@@ -495,9 +494,16 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     enable_testing()
     find_package(Catch2 3 REQUIRED)
 
-    # add_executable(queries
-    #   test/dummy.cpp)
-    # target_link_libraries(queries PUBLIC ${PROJECT_NAME})
+    add_executable(kth_capi_test
+        test/chain/block.cpp
+    )
+
+    target_link_libraries(kth_capi_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_capi_test PRIVATE Catch2::Catch2WithMain)
+
+    include(CTest)
+    include(Catch)
+    catch_discover_tests(kth_capi_test)
 endif()
 
 

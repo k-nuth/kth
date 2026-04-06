@@ -6,11 +6,15 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
-#include <kth/capi/type_conversions.h>
 
 #include <kth/capi/wallet/conversions.hpp>
 
-KTH_CONV_DEFINE(wallet, kth_ec_public_t, kth::domain::wallet::ec_public, ec_public)
+kth::domain::wallet::ec_public const& kth_wallet_ec_public_const_cpp(kth_ec_public_t o) {
+    return *static_cast<kth::domain::wallet::ec_public const*>(o);
+}
+kth::domain::wallet::ec_public& kth_wallet_ec_public_cpp(kth_ec_public_t o) {
+    return *static_cast<kth::domain::wallet::ec_public*>(o);
+}
 
 extern "C" {
 
@@ -72,13 +76,15 @@ kth_bool_t kth_wallet_ec_public_compressed(kth_ec_public_t obj) {
 
 //Note: It is the responsability of the user to release/destruct the array
 uint8_t const* kth_wallet_ec_public_to_data(kth_ec_public_t obj, kth_size_t* out_size) {
+    KTH_PRECONDITION(out_size != nullptr);
     kth::data_chunk data;
     bool const success = kth_wallet_ec_public_const_cpp(obj).to_data(data);
     if ( ! success) {
         *out_size = 0;
         return nullptr;
     }
-    return kth::create_c_array(data, *out_size);
+    *out_size = data.size();
+    return kth::create_c_array(data);
 }
 
 kth_bool_t kth_wallet_ec_public_to_uncompressed(kth_ec_public_t obj, kth_ec_uncompressed_t* out_data) {

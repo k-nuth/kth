@@ -9,9 +9,32 @@
 #include <kth/capi/visibility.h>
 #include <kth/capi/wallet/primitives.h>
 
+#include <string.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+static inline
+kth_bool_t kth_hash_equal(kth_hash_t a, kth_hash_t b) {
+    return memcmp(a.hash, b.hash, KTH_BITCOIN_HASH_SIZE) == 0;
+}
+
+static inline
+kth_bool_t kth_hash_is_null(kth_hash_t h) {
+    kth_hash_t const null_h = {{0}};
+    return memcmp(h.hash, null_h.hash, KTH_BITCOIN_HASH_SIZE) == 0;
+}
+
+static inline
+kth_bool_t kth_shorthash_equal(kth_shorthash_t a, kth_shorthash_t b) {
+    return memcmp(a.hash, b.hash, KTH_BITCOIN_SHORT_HASH_SIZE) == 0;
+}
+
+static inline
+kth_bool_t kth_longhash_equal(kth_longhash_t a, kth_longhash_t b) {
+    return memcmp(a.hash, b.hash, KTH_BITCOIN_LONG_HASH_SIZE) == 0;
+}
 
 KTH_EXPORT
 kth_hash_t kth_sha256_hash(uint8_t const* data, kth_size_t size);

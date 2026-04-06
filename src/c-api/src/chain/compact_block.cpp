@@ -6,14 +6,18 @@
 
 #include <kth/capi/chain/compact_block.h>
 #include <kth/capi/helpers.hpp>
-#include <kth/capi/type_conversions.h>
 
-KTH_CONV_DEFINE(chain, kth_compact_block_t, kth::domain::message::compact_block, compact_block)
+kth::domain::message::compact_block const& kth_chain_compact_block_const_cpp(kth_compact_block_t o) {
+    return *static_cast<kth::domain::message::compact_block const*>(o);
+}
+kth::domain::message::compact_block& kth_chain_compact_block_cpp(kth_compact_block_t o) {
+    return *static_cast<kth::domain::message::compact_block*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {
 
-kth_header_t kth_chain_compact_block_header(kth_compact_block_t block) {
+kth_header_mut_t kth_chain_compact_block_header(kth_compact_block_t block) {
     return &kth_chain_compact_block_cpp(block).header();
 }
 
@@ -29,7 +33,7 @@ kth_size_t kth_chain_compact_block_transaction_count(kth_compact_block_t block) 
     return kth_chain_compact_block_const_cpp(block).transactions().size();
 }
 
- kth_transaction_t kth_chain_compact_block_transaction_nth(kth_compact_block_t block, kth_size_t n) {
+ kth_transaction_mut_t kth_chain_compact_block_transaction_nth(kth_compact_block_t block, kth_size_t n) {
     //precondition: n >=0 && n < transactions().size()
 
     auto* blk = &kth_chain_compact_block_cpp(block);

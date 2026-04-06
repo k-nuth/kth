@@ -172,7 +172,7 @@ public:
     // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
     mutable validation validation{};
 
-    bool is_standard() const;
+    using transaction_basis::is_standard;
 
 // protected:
     void reset();

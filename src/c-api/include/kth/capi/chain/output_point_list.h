@@ -1,0 +1,43 @@
+// Copyright (c) 2016-present Knuth Project developers.
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+
+#ifndef KTH_CAPI_CHAIN_OUTPUT_POINT_LIST_H_
+#define KTH_CAPI_CHAIN_OUTPUT_POINT_LIST_H_
+
+#include <stdint.h>
+
+#include <kth/capi/primitives.h>
+#include <kth/capi/visibility.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+KTH_EXPORT
+kth_output_point_list_mut_t kth_chain_output_point_list_construct_default(void);
+
+KTH_EXPORT
+void kth_chain_output_point_list_push_back(kth_output_point_list_mut_t list, kth_output_point_const_t elem);
+
+KTH_EXPORT
+void kth_chain_output_point_list_destruct(kth_output_point_list_mut_t list);
+
+KTH_EXPORT
+kth_size_t kth_chain_output_point_list_count(kth_output_point_list_const_t list);
+
+KTH_EXPORT
+kth_output_point_const_t kth_chain_output_point_list_nth(kth_output_point_list_const_t list, kth_size_t index);
+
+KTH_EXPORT
+void kth_chain_output_point_list_assign_at(kth_output_point_list_mut_t list, kth_size_t index, kth_output_point_const_t elem);
+
+KTH_EXPORT
+void kth_chain_output_point_list_erase(kth_output_point_list_mut_t list, kth_size_t index);
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
+
+#endif /* KTH_CAPI_CHAIN_OUTPUT_POINT_LIST_H_ */

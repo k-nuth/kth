@@ -17,7 +17,7 @@ extern "C" {
 // TODO(fernando): check how to map compact_block::short_ids()
 
 KTH_EXPORT
-kth_header_t kth_chain_compact_block_header(kth_compact_block_t block);
+kth_header_mut_t kth_chain_compact_block_header(kth_compact_block_t block);
 
 KTH_EXPORT
 kth_bool_t kth_chain_compact_block_is_valid(kth_compact_block_t block);
@@ -29,7 +29,7 @@ KTH_EXPORT
 kth_size_t kth_chain_compact_block_transaction_count(kth_compact_block_t block);
 
 KTH_EXPORT
-kth_transaction_t kth_chain_compact_block_transaction_nth(kth_compact_block_t block, kth_size_t n);
+kth_transaction_mut_t kth_chain_compact_block_transaction_nth(kth_compact_block_t block, kth_size_t n);
 
 KTH_EXPORT
 uint64_t kth_chain_compact_block_nonce(kth_compact_block_t block);

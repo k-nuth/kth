@@ -7,7 +7,6 @@
 
 #include <stdint.h>
 
-#include <kth/capi/list_creator.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
 #include <kth/capi/wallet/primitives.h>

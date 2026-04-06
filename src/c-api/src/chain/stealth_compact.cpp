@@ -7,10 +7,17 @@
 #include <kth/domain/chain/stealth.hpp>
 
 #include <kth/capi/helpers.hpp>
-#include <kth/capi/type_conversions.h>
 
 
-KTH_CONV_DEFINE(chain, kth_stealth_compact_t, kth::domain::chain::stealth_compact, stealth_compact)
+kth::domain::chain::stealth_compact const& kth_chain_stealth_compact_const_cpp(kth_stealth_compact_t o) {
+    return *static_cast<kth::domain::chain::stealth_compact const*>(o);
+}
+kth::domain::chain::stealth_compact const& kth_chain_stealth_compact_const_cpp(kth_stealth_compact_const_t o) {
+    return *static_cast<kth::domain::chain::stealth_compact const*>(o);
+}
+kth::domain::chain::stealth_compact& kth_chain_stealth_compact_cpp(kth_stealth_compact_t o) {
+    return *static_cast<kth::domain::chain::stealth_compact*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {

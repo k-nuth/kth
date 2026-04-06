@@ -223,7 +223,7 @@ expect<block> block::from_data(byte_reader& reader, bool wire) {
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk block::to_data() const {
+data_chunk block::to_data(bool /*wire*/) const {
     return block_basis::to_data(serialized_size());
 }
 
@@ -231,7 +231,7 @@ data_chunk block::to_data() const {
 //-----------------------------------------------------------------------------
 
 // Full block serialization is always canonical encoding.
-size_t block::serialized_size() const {
+size_t block::serialized_size(bool /*wire*/) const {
     size_t value;
 
 #if ! defined(__EMSCRIPTEN__)

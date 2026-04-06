@@ -243,6 +243,13 @@ uint8_t* create_c_array(kth::data_chunk const& arr, N& out_size) {
 }
 
 inline
+uint8_t* create_c_array(kth::data_chunk const& arr) {
+    auto* ret = mnew<uint8_t>(arr.size());
+    std::copy_n(arr.begin(), arr.size(), ret);
+    return ret;
+}
+
+inline
 kth_error_code_t to_c_err(std::error_code const& ec) {
     return static_cast<kth_error_code_t>(ec.value());
 }

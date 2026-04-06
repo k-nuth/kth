@@ -9,9 +9,16 @@
 #include <kth/blockchain/interface/safe_chain.hpp>
 
 #include <kth/capi/helpers.hpp>
-#include <kth/capi/type_conversions.h>
 
-KTH_CONV_DEFINE(chain, kth_mempool_transaction_t, kth::blockchain::mempool_transaction_summary, mempool_transaction)
+kth::blockchain::mempool_transaction_summary const& kth_chain_mempool_transaction_const_cpp(kth_mempool_transaction_t o) {
+    return *static_cast<kth::blockchain::mempool_transaction_summary const*>(o);
+}
+kth::blockchain::mempool_transaction_summary const& kth_chain_mempool_transaction_const_cpp(kth_mempool_transaction_const_t o) {
+    return *static_cast<kth::blockchain::mempool_transaction_summary const*>(o);
+}
+kth::blockchain::mempool_transaction_summary& kth_chain_mempool_transaction_cpp(kth_mempool_transaction_t o) {
+    return *static_cast<kth::blockchain::mempool_transaction_summary*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {

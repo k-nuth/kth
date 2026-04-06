@@ -7,9 +7,10 @@
 #include <kth/capi/chain/double_spend_proof_spender.h>
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
-#include <kth/capi/type_conversions.h>
 
-KTH_CONV_DEFINE_JUST_CONST(chain, kth_double_spend_proof_spender_const_t, kth::domain::message::double_spend_proof::spender, double_spend_proof_spender)
+kth::domain::message::double_spend_proof::spender const& kth_chain_double_spend_proof_spender_const_cpp(kth_double_spend_proof_spender_const_t o) {
+    return *static_cast<kth::domain::message::double_spend_proof::spender const*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {
@@ -59,8 +60,10 @@ void kth_chain_double_spend_proof_spender_outputs_hash_out(kth_double_spend_proo
 
 
 uint8_t const* kth_chain_double_spend_proof_spender_push_data(kth_double_spend_proof_spender_const_t spender, kth_size_t* out_size) {
+    KTH_PRECONDITION(out_size != nullptr);
     auto const& data = kth_chain_double_spend_proof_spender_const_cpp(spender).push_data;
-    return kth::create_c_array(data, *out_size);
+    *out_size = data.size();
+    return kth::create_c_array(data);
 }
 
 kth_bool_t kth_chain_double_spend_proof_spender_is_valid(kth_double_spend_proof_spender_const_t spender) {
