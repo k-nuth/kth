@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,23 +14,100 @@
 extern "C" {
 #endif
 
+// Constructors
+
+/** @return Owned `kth_point_mut_t`. Caller must release with `kth_chain_point_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_point_mut_t kth_chain_point_construct_default(void);
+
+/** @param[out] out Must point to a null `kth_point_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_point_destruct`. Untouched on error. */
 KTH_EXPORT
-kth_hash_t kth_chain_point_get_hash(kth_point_t point);
+kth_error_code_t kth_chain_point_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_point_mut_t* out);
+
+/** @return Owned `kth_point_mut_t`. Caller must release with `kth_chain_point_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_point_mut_t kth_chain_point_construct(uint8_t const* hash, uint32_t index);
+
+
+// Static factories
+
+/** @return Owned `kth_point_mut_t`. Caller must release with `kth_chain_point_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_point_mut_t kth_chain_point_null(void);
+
+
+// Destructor
 
 KTH_EXPORT
-void kth_chain_point_get_hash_out(kth_point_t point, kth_hash_t* out_hash);
+void kth_chain_point_destruct(kth_point_mut_t self);
+
+
+// Copy
+
+/** @return Owned `kth_point_mut_t`. Caller must release with `kth_chain_point_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_point_mut_t kth_chain_point_copy(kth_point_const_t self);
+
+
+// Equality
 
 KTH_EXPORT
-kth_bool_t kth_chain_point_is_valid(kth_point_t point);
+kth_bool_t kth_chain_point_equals(kth_point_const_t self, kth_point_const_t other);
+
+
+// Serialization
+
+/** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
+KTH_EXPORT KTH_OWNED
+uint8_t* kth_chain_point_to_data(kth_point_const_t self, kth_bool_t wire, kth_size_t* out_size);
 
 KTH_EXPORT
-uint32_t kth_chain_point_get_index(kth_point_t point);
+kth_size_t kth_chain_point_serialized_size(kth_point_const_t self, kth_bool_t wire);
+
+
+// Getters
 
 KTH_EXPORT
-uint64_t kth_chain_point_get_checksum(kth_point_t point);
+kth_hash_t kth_chain_point_hash(kth_point_const_t self);
+
+KTH_EXPORT
+uint32_t kth_chain_point_index(kth_point_const_t self);
+
+KTH_EXPORT
+uint64_t kth_chain_point_checksum(kth_point_const_t self);
+
+
+// Setters
+
+KTH_EXPORT
+void kth_chain_point_set_hash(kth_point_mut_t self, uint8_t const* value);
+
+KTH_EXPORT
+void kth_chain_point_set_index(kth_point_mut_t self, uint32_t value);
+
+
+// Predicates
+
+KTH_EXPORT
+kth_bool_t kth_chain_point_is_valid(kth_point_const_t self);
+
+KTH_EXPORT
+kth_bool_t kth_chain_point_is_null(kth_point_const_t self);
+
+
+// Operations
+
+KTH_EXPORT
+void kth_chain_point_reset(kth_point_mut_t self);
+
+
+// Static utilities
+
+KTH_EXPORT
+kth_size_t kth_chain_point_satoshi_fixed_size(void);
 
 #ifdef __cplusplus
 } // extern "C"
 #endif
 
-#endif /* KTH_CAPI_CHAIN_POINT_H_ */
+#endif // KTH_CAPI_CHAIN_POINT_H_
