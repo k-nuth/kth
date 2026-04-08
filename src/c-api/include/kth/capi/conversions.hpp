@@ -29,7 +29,19 @@
 // #endif
 
 KTH_CONV_DECLARE(chain, kth_block_t, kth::domain::chain::block, block)
-KTH_CONV_DECLARE(chain, kth_header_t, kth::domain::chain::header, header)
+// header conversion functions take const/mut handle types directly. Defined
+// in src/chain/header.cpp.
+kth::domain::chain::header const& kth_chain_header_const_cpp(kth_header_const_t o);
+kth::domain::chain::header&       kth_chain_header_mut_cpp(kth_header_mut_t o);
+
+// chain_state is not yet a first-class C-API type but header::accept needs it,
+// so we expose lightweight inline conversions over the opaque handle.
+inline kth::domain::chain::chain_state const& kth_chain_chain_state_const_cpp(kth_chain_state_const_t o) {
+    return *static_cast<kth::domain::chain::chain_state const*>(o);
+}
+inline kth::domain::chain::chain_state& kth_chain_chain_state_mut_cpp(kth_chain_state_mut_t o) {
+    return *static_cast<kth::domain::chain::chain_state*>(o);
+}
 KTH_CONV_DECLARE(chain, kth_input_t, kth::domain::chain::input, input)
 KTH_CONV_DECLARE(chain, kth_output_t, kth::domain::chain::output, output)
 KTH_CONV_DECLARE(chain, kth_outputpoint_t, kth::domain::chain::output_point, output_point)

@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -7,126 +7,209 @@
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/domain/chain/header.hpp>
 
-KTH_CONV_DEFINE(chain, kth_header_t, kth::domain::chain::header, header)
+// Conversion functions
+kth::domain::chain::header& kth_chain_header_mut_cpp(kth_header_mut_t o) {
+    return *static_cast<kth::domain::chain::header*>(o);
+}
+kth::domain::chain::header const& kth_chain_header_const_cpp(kth_header_const_t o) {
+    return *static_cast<kth::domain::chain::header const*>(o);
+}
 
+// ---------------------------------------------------------------------------
 extern "C" {
 
-kth_header_t kth_chain_header_factory_from_data(uint8_t* data, kth_size_t n) {
-    kth::data_chunk data_cpp(data, std::next(data, n));
-    kth::byte_reader reader(data_cpp);
-    auto res = kth::domain::chain::header::from_data(reader);
-    if ( ! res) {
-        return kth::move_or_copy_and_leak(kth::domain::chain::header{});
-    }
-    return kth::move_or_copy_and_leak(std::move(*res));
-}
+// Constructors
 
-kth_size_t kth_chain_header_satoshi_fixed_size() {
-    return kth::domain::chain::header::satoshi_fixed_size();
-}
-
-//Note: It is the responsability of the user to release/destruct the array
-uint8_t const* kth_chain_header_to_data(kth_header_t header, kth_size_t* out_size) {
-    auto const& header_cpp = kth_chain_header_const_cpp(header);
-    auto data = header_cpp.to_data();
-    return kth::create_c_array(data, *out_size);
-}
-
-void kth_chain_header_reset(kth_header_t header) {
-    return kth_chain_header_cpp(header).reset();
-}
-
-kth_size_t kth_chain_header_serialized_size(kth_header_t header) {
-    return kth_chain_header_const_cpp(header).serialized_size();
-}
-
-kth_header_t kth_chain_header_construct_default() {
+kth_header_mut_t kth_chain_header_construct_default(void) {
     return new kth::domain::chain::header();
 }
 
-kth_header_t kth_chain_header_construct(uint32_t version, uint8_t* previous_block_hash, uint8_t* merkle, uint32_t timestamp, uint32_t bits, uint32_t nonce) {
-    //precondition: [previous_block_hash, 32) is a valid range
-    //              && [merkle, 32) is a valid range
+kth_error_code_t kth_chain_header_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_header_mut_t* out) {
+    KTH_PRECONDITION(data != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    auto data_cpp = kth::byte_reader(kth::byte_span(data, n));
+    auto wire_cpp = kth::int_to_bool(wire);
+    auto result = kth::domain::chain::header::from_data(data_cpp, wire_cpp);
+    if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
+    *out = new kth::domain::chain::header(std::move(*result));
+    return kth_ec_success;
+}
 
+kth_header_mut_t kth_chain_header_construct(uint32_t version, uint8_t const* previous_block_hash, uint8_t const* merkle, uint32_t timestamp, uint32_t bits, uint32_t nonce) {
+    KTH_PRECONDITION(previous_block_hash != nullptr);
+    KTH_PRECONDITION(merkle != nullptr);
     auto previous_block_hash_cpp = kth::hash_to_cpp(previous_block_hash);
     auto merkle_cpp = kth::hash_to_cpp(merkle);
     return new kth::domain::chain::header(version, previous_block_hash_cpp, merkle_cpp, timestamp, bits, nonce);
 }
 
-void kth_chain_header_destruct(kth_header_t header) {
-    delete &kth_chain_header_cpp(header);
+
+// Destructor
+
+void kth_chain_header_destruct(kth_header_mut_t self) {
+    if (self == nullptr) return;
+    delete &kth_chain_header_mut_cpp(self);
 }
 
-kth_bool_t kth_chain_header_is_valid(kth_header_t header) {
-    return kth::bool_to_int(kth_chain_header_const_cpp(header).is_valid());
+
+// Copy
+
+kth_header_mut_t kth_chain_header_copy(kth_header_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return new kth::domain::chain::header(kth_chain_header_const_cpp(self));
 }
 
-uint32_t kth_chain_header_version(kth_header_t header) {
-    return kth_chain_header_const_cpp(header).version();
+
+// Equality
+
+kth_bool_t kth_chain_header_equals(kth_header_const_t self, kth_header_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::bool_to_int(kth_chain_header_const_cpp(self) == kth_chain_header_const_cpp(other));
 }
 
-void kth_chain_header_set_version(kth_header_t header, uint32_t version) {
-    return kth_chain_header_cpp(header).set_version(version);
+
+// Serialization
+
+uint8_t* kth_chain_header_to_data(kth_header_const_t self, kth_bool_t wire, kth_size_t* out_size) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out_size != nullptr);
+    auto wire_cpp = kth::int_to_bool(wire);
+    auto data = kth_chain_header_const_cpp(self).to_data(wire_cpp);
+    return kth::create_c_array(data, *out_size);
 }
 
-uint32_t kth_chain_header_timestamp(kth_header_t header) {
-    return kth_chain_header_const_cpp(header).timestamp();
+kth_size_t kth_chain_header_serialized_size(kth_header_const_t self, kth_bool_t wire) {
+    KTH_PRECONDITION(self != nullptr);
+    auto wire_cpp = kth::int_to_bool(wire);
+    return kth_chain_header_const_cpp(self).serialized_size(wire_cpp);
 }
 
-void kth_chain_header_set_timestamp(kth_header_t header, uint32_t timestamp) {
-    return kth_chain_header_cpp(header).set_timestamp(timestamp);
+
+// Getters
+
+kth_hash_t kth_chain_header_hash_pow(kth_header_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    auto value_cpp = kth_chain_header_const_cpp(self).hash_pow();
+    return kth::to_hash_t(value_cpp);
 }
 
-uint32_t kth_chain_header_bits(kth_header_t header) {
-    return kth_chain_header_const_cpp(header).bits();
+uint32_t kth_chain_header_version(kth_header_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth_chain_header_const_cpp(self).version();
 }
 
-char const* kth_chain_header_proof_str(kth_header_t header) {
-    std::string proof_str = kth_chain_header_const_cpp(header).proof().str();
-    return kth::create_c_str(proof_str);
+kth_hash_t kth_chain_header_previous_block_hash(kth_header_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    auto value_cpp = kth_chain_header_const_cpp(self).previous_block_hash();
+    return kth::to_hash_t(value_cpp);
 }
 
-void kth_chain_header_set_bits(kth_header_t header, uint32_t bits) {
-    return kth_chain_header_cpp(header).set_bits(bits);
+kth_hash_t kth_chain_header_merkle(kth_header_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    auto value_cpp = kth_chain_header_const_cpp(self).merkle();
+    return kth::to_hash_t(value_cpp);
 }
 
-uint32_t kth_chain_header_nonce(kth_header_t header) {
-    return kth_chain_header_const_cpp(header).nonce();
+uint32_t kth_chain_header_timestamp(kth_header_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth_chain_header_const_cpp(self).timestamp();
 }
 
-void kth_chain_header_set_nonce(kth_header_t header, uint32_t nonce) {
-    return kth_chain_header_cpp(header).set_nonce(nonce);
+uint32_t kth_chain_header_bits(kth_header_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth_chain_header_const_cpp(self).bits();
 }
 
-kth_hash_t kth_chain_header_previous_block_hash(kth_header_t header) {
-    auto const& hash_cpp = kth_chain_header_const_cpp(header).previous_block_hash();
-    return kth::to_hash_t(hash_cpp);
+uint32_t kth_chain_header_nonce(kth_header_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth_chain_header_const_cpp(self).nonce();
 }
 
-void kth_chain_header_previous_block_hash_out(kth_header_t header, kth_hash_t* out_previous_block_hash) {
-    auto const& previous_block_hash_cpp = kth_chain_header_const_cpp(header).previous_block_hash();
-    kth::copy_c_hash(previous_block_hash_cpp, out_previous_block_hash);
+
+// Setters
+
+void kth_chain_header_set_version(kth_header_mut_t self, uint32_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    kth_chain_header_mut_cpp(self).set_version(value);
 }
 
-kth_hash_t kth_chain_header_merkle(kth_header_t header) {
-    auto const& hash_cpp = kth_chain_header_const_cpp(header).merkle();
-    return kth::to_hash_t(hash_cpp);
+void kth_chain_header_set_previous_block_hash(kth_header_mut_t self, uint8_t const* value) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(value != nullptr);
+    auto value_cpp = kth::hash_to_cpp(value);
+    kth_chain_header_mut_cpp(self).set_previous_block_hash(value_cpp);
 }
 
-void kth_chain_header_merkle_out(kth_header_t header, kth_hash_t* out_merkle) {
-    auto const& merkle_hash_cpp = kth_chain_header_const_cpp(header).merkle();
-    kth::copy_c_hash(merkle_hash_cpp, out_merkle);
+void kth_chain_header_set_merkle(kth_header_mut_t self, uint8_t const* value) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(value != nullptr);
+    auto value_cpp = kth::hash_to_cpp(value);
+    kth_chain_header_mut_cpp(self).set_merkle(value_cpp);
 }
 
-kth_hash_t kth_chain_header_hash(kth_header_t header) {
-    auto const& hash_cpp = kth_chain_header_const_cpp(header).hash();
-    return kth::to_hash_t(hash_cpp);
+void kth_chain_header_set_timestamp(kth_header_mut_t self, uint32_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    kth_chain_header_mut_cpp(self).set_timestamp(value);
 }
 
-void kth_chain_header_hash_out(kth_header_t header, kth_hash_t* out_hash) {
-    auto const& hash_cpp = kth_chain_header_const_cpp(header).hash();
-    kth::copy_c_hash(hash_cpp, out_hash);
+void kth_chain_header_set_bits(kth_header_mut_t self, uint32_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    kth_chain_header_mut_cpp(self).set_bits(value);
+}
+
+void kth_chain_header_set_nonce(kth_header_mut_t self, uint32_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    kth_chain_header_mut_cpp(self).set_nonce(value);
+}
+
+
+// Predicates
+
+kth_bool_t kth_chain_header_is_valid_proof_of_work(kth_header_const_t self, kth_bool_t retarget) {
+    KTH_PRECONDITION(self != nullptr);
+    auto retarget_cpp = kth::int_to_bool(retarget);
+    return kth::bool_to_int(kth_chain_header_const_cpp(self).is_valid_proof_of_work(retarget_cpp));
+}
+
+kth_bool_t kth_chain_header_is_valid(kth_header_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth_chain_header_const_cpp(self).is_valid());
+}
+
+kth_bool_t kth_chain_header_is_valid_timestamp(kth_header_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth_chain_header_const_cpp(self).is_valid_timestamp());
+}
+
+
+// Operations
+
+kth_error_code_t kth_chain_header_check(kth_header_const_t self, kth_bool_t retarget) {
+    KTH_PRECONDITION(self != nullptr);
+    auto retarget_cpp = kth::int_to_bool(retarget);
+    return static_cast<kth_error_code_t>((kth_chain_header_const_cpp(self).check(retarget_cpp)).value());
+}
+
+kth_error_code_t kth_chain_header_accept(kth_header_const_t self, kth_chain_state_const_t state) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(state != nullptr);
+    auto const& state_cpp = kth_chain_chain_state_const_cpp(state);
+    return static_cast<kth_error_code_t>((kth_chain_header_const_cpp(self).accept(state_cpp)).value());
+}
+
+void kth_chain_header_reset(kth_header_mut_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    kth_chain_header_mut_cpp(self).reset();
+}
+
+
+// Static utilities
+
+kth_size_t kth_chain_header_satoshi_fixed_size(void) {
+    return kth::domain::chain::header::satoshi_fixed_size();
 }
 
 } // extern "C"
