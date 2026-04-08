@@ -29,6 +29,7 @@ kth_header_mut_t kth_chain_header_construct_default(void) {
 kth_error_code_t kth_chain_header_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_header_mut_t* out) {
     KTH_PRECONDITION(data != nullptr);
     KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto data_cpp = kth::byte_reader(kth::byte_span(data, n));
     auto wire_cpp = kth::int_to_bool(wire);
     auto result = kth::domain::chain::header::from_data(data_cpp, wire_cpp);

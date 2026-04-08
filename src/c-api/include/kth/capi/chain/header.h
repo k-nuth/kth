@@ -20,7 +20,7 @@ extern "C" {
 KTH_EXPORT KTH_OWNED
 kth_header_mut_t kth_chain_header_construct_default(void);
 
-/** @param[out] out On success, owned `kth_header_mut_t`. Caller must release with `kth_chain_header_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_header_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_header_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_chain_header_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_header_mut_t* out);
 

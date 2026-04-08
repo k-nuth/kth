@@ -48,7 +48,10 @@ KTH_CONV_DECLARE(chain, kth_outputpoint_t, kth::domain::chain::output_point, out
 KTH_CONV_DECLARE(chain, kth_script_t, kth::domain::chain::script, script)
 KTH_CONV_DECLARE(chain, kth_transaction_t, kth::domain::chain::transaction, transaction)
 // KTH_CONV_DECLARE(chain, kth_transaction_t, kth::domain::chain::transaction, transaction)
-KTH_CONV_DECLARE(chain, kth_point_t, kth::domain::chain::point, point)
+// point conversion functions take const/mut handle types directly. Defined
+// in src/chain/point.cpp.
+kth::domain::chain::point const& kth_chain_point_const_cpp(kth_point_const_t o);
+kth::domain::chain::point&       kth_chain_point_mut_cpp(kth_point_mut_t o);
 KTH_CONV_DECLARE(chain, kth_utxo_t, kth::domain::chain::utxo, utxo)
 KTH_CONV_DECLARE(chain, kth_token_data_t, kth::domain::chain::token_data_t, token_data)
 

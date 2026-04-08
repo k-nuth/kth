@@ -498,6 +498,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
     add_executable(kth_capi_test
         test/chain/header.cpp
+        test/chain/point.cpp
     )
 
     target_link_libraries(kth_capi_test PUBLIC ${PROJECT_NAME})
