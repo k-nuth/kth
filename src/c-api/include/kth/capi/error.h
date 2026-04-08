@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-typedef enum error_code {
+typedef enum kth_error_code {
 
     // general codes
     kth_ec_success = 0,

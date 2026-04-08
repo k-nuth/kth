@@ -204,6 +204,7 @@ set(kth_sources
 # if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   set(kth_sources
     ${kth_sources}
+        src/primitives.cpp
         src/hash.cpp
         src/hash_list.cpp
         src/binary.cpp
@@ -495,9 +496,16 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     enable_testing()
     find_package(Catch2 3 REQUIRED)
 
-    # add_executable(queries
-    #   test/dummy.cpp)
-    # target_link_libraries(queries PUBLIC ${PROJECT_NAME})
+    add_executable(kth_capi_test
+        test/chain/header.cpp
+    )
+
+    target_link_libraries(kth_capi_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_capi_test PRIVATE Catch2::Catch2WithMain)
+
+    include(CTest)
+    include(Catch)
+    catch_discover_tests(kth_capi_test)
 endif()
 
 

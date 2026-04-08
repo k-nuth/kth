@@ -6,13 +6,50 @@
 #define KTH_CAPI_PRIMITIVES_H_
 
 #include <stdint.h>
+#include <stdlib.h>
 
 #include <kth/capi/error.h>
 #include <kth/capi/visibility.h>
 
+#define KTH_PRECONDITION(expr) do { if (!(expr)) { abort(); } } while(0)
+
+// Marks a function whose return value (or one of its out-parameters) transfers
+// ownership to the caller. The caller is then responsible for releasing the
+// returned object via the matching destructor (`kth_<group>_<obj>_destruct`
+// for handles, `kth_core_destruct_array` for raw byte buffers,
+// `kth_core_destruct_string` for C strings).
+//
+// On compilers that support it, this also raises a warning when the result of
+// such a call is silently discarded, which would otherwise leak memory.
+#if defined(__GNUC__) || defined(__clang__)
+#define KTH_OWNED __attribute__((warn_unused_result))
+#else
+#define KTH_OWNED
+#endif
+
+// Parameter-level companion to KTH_OWNED. Marks an out-parameter that, on
+// successful completion, is filled with an object the caller now owns and
+// must release with the matching destructor. The marker is purely informative
+// at the C level (it expands to nothing) but is visible at the declaration
+// site and is greppable for non-C language backends.
+#define KTH_OUT_OWNED
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// Releases an owned byte buffer returned by a C-API function (e.g. the
+// payload of `kth_chain_*_to_data`). Internally a thin wrapper around
+// free(); kept as a dedicated entry point so the API does not commit to a
+// specific allocator and so language backends can wire it through their
+// SafeHandle / Drop equivalents.
+KTH_EXPORT
+void kth_core_destruct_array(uint8_t* arr);
+
+// Releases an owned C string returned by a C-API function. Same rationale
+// as kth_core_destruct_array.
+KTH_EXPORT
+void kth_core_destruct_string(char* str);
 
 #define KTH_BITCOIN_SHORT_HASH_SIZE 20
 #define KTH_BITCOIN_HASH_SIZE 32
@@ -63,6 +100,10 @@ typedef void* kth_double_spend_proof_t;
 typedef void* kth_double_spend_proof_spender_t;
 typedef void const* kth_double_spend_proof_spender_const_t;
 typedef void* kth_header_t;
+typedef void* kth_header_mut_t;
+typedef void const* kth_header_const_t;
+typedef void* kth_chain_state_mut_t;
+typedef void const* kth_chain_state_const_t;
 typedef void* kth_history_compact_t;
 typedef void* kth_history_compact_list_t;
 typedef void* kth_input_t;
