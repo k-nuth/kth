@@ -122,6 +122,8 @@ typedef void* kth_operation_t;
 typedef void* kth_output_list_t;
 typedef void* kth_output_t;
 typedef void* kth_outputpoint_t;
+typedef void* kth_output_point_mut_t;
+typedef void const* kth_output_point_const_t;
 typedef void* kth_utxo_t;
 typedef void const* kth_outputpoint_const_t;
 typedef void* kth_point_t;
