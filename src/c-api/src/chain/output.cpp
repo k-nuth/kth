@@ -1,158 +1,173 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/capi/chain/output.h>
 
-#include <kth/capi/chain/script.h>
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/domain/chain/output.hpp>
 
-KTH_CONV_DEFINE(chain, kth_output_t, kth::domain::chain::output, output)
+// Conversion functions
+kth::domain::chain::output& kth_chain_output_mut_cpp(kth_output_mut_t o) {
+    return *static_cast<kth::domain::chain::output*>(o);
+}
+kth::domain::chain::output const& kth_chain_output_const_cpp(kth_output_const_t o) {
+    return *static_cast<kth::domain::chain::output const*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {
 
-kth_output_t kth_chain_output_construct_default() {
+// Constructors
+
+kth_output_mut_t kth_chain_output_construct_default(void) {
     return new kth::domain::chain::output();
 }
 
-//kth_output_t kth_chain_output_construct(uint64_t value, kth_script_t script, kth_token_data_t token_data) {
-kth_output_t kth_chain_output_construct(uint64_t value, kth_script_t script) {
-    // return new kth::domain::chain::output(value, kth_chain_script_const_cpp(script), kth_chain_token_data_const_cpp(token_data));
-    return new kth::domain::chain::output(value, kth_chain_script_const_cpp(script), std::nullopt);
+kth_error_code_t kth_chain_output_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_output_mut_t* out) {
+    KTH_PRECONDITION(data != nullptr || n == 0);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto data_cpp = kth::byte_reader(kth::byte_span(data, n));
+    auto wire_cpp = kth::int_to_bool(wire);
+    auto result = kth::domain::chain::output::from_data(data_cpp, wire_cpp);
+    if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
+    *out = new kth::domain::chain::output(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_output_t kth_chain_output_construct_with_token_fungible(uint64_t value, kth_script_t script, kth_hash_t const* token_category, int64_t token_amount) {
-    using kth::domain::chain::amount_t;
-
-    auto token_category_cpp = kth::to_array(token_category->hash);
-
-    kth::domain::chain::token_data_t token_data = {
-        token_category_cpp,
-        kth::domain::chain::fungible{amount_t{token_amount}}
-    };
-
-    return new kth::domain::chain::output(
-        value,
-        kth_chain_script_const_cpp(script),
-        std::move(token_data)
-    );
+kth_output_mut_t kth_chain_output_construct(uint64_t value, kth_script_const_t script, kth_token_data_const_t token_data) {
+    KTH_PRECONDITION(script != nullptr);
+    auto const& script_cpp = kth_chain_script_const_cpp(script);
+    auto token_data_cpp = (token_data == nullptr ? std::nullopt : std::optional<kth::domain::chain::token_data_t>(kth_chain_token_data_const_cpp(token_data)));
+    return new kth::domain::chain::output(value, script_cpp, token_data_cpp);
 }
 
-kth_output_t kth_chain_output_construct_with_token_non_fungible(uint64_t value, kth_script_t script, kth_hash_t const* token_category, kth_token_capability_t capability, uint8_t* commitment_data, kth_size_t commitment_n) {
-    auto token_category_cpp = kth::to_array(token_category->hash);
-    auto capability_cpp = kth::token_capability_to_cpp(capability);
-    kth::data_chunk commitment_cpp(commitment_data, std::next(commitment_data, commitment_n));
 
-    kth::domain::chain::token_data_t token_data = {
-        token_category_cpp,
-        kth::domain::chain::non_fungible{capability_cpp, std::move(commitment_cpp)}
-    };
+// Destructor
 
-    return new kth::domain::chain::output(
-        value,
-        kth_chain_script_const_cpp(script),
-        std::move(token_data)
-    );
+void kth_chain_output_destruct(kth_output_mut_t self) {
+    if (self == nullptr) return;
+    delete &kth_chain_output_mut_cpp(self);
 }
 
-kth_output_t kth_chain_output_construct_with_token_both(uint64_t value, kth_script_t script, kth_hash_t const* token_category, int64_t token_amount, kth_token_capability_t capability, uint8_t* commitment_data, kth_size_t commitment_n) {
-    using kth::domain::chain::amount_t;
 
-    auto token_category_cpp = kth::to_array(token_category->hash);
-    auto capability_cpp = kth::token_capability_to_cpp(capability);
-    kth::data_chunk commitment_cpp(commitment_data, std::next(commitment_data, commitment_n));
+// Copy
 
-    kth::domain::chain::token_data_t token_data = {
-        token_category_cpp,
-        kth::domain::chain::both_kinds{
-            kth::domain::chain::fungible{
-                amount_t{token_amount}
-            },
-            kth::domain::chain::non_fungible{
-                capability_cpp,
-                std::move(commitment_cpp)
-            }
-        }
-    };
-
-    return new kth::domain::chain::output(
-        value,
-        kth_chain_script_const_cpp(script),
-        std::move(token_data)
-    );
+kth_output_mut_t kth_chain_output_copy(kth_output_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return new kth::domain::chain::output(kth_chain_output_const_cpp(self));
 }
 
-kth_output_t kth_chain_output_construct_with_token_data(uint64_t value, kth_script_t script, kth_token_data_t token_data) {
-    return new kth::domain::chain::output(
-        value,
-        kth_chain_script_const_cpp(script),
-        kth_chain_token_data_const_cpp(token_data)
-    );
+
+// Equality
+
+kth_bool_t kth_chain_output_equals(kth_output_const_t self, kth_output_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::bool_to_int(kth_chain_output_const_cpp(self) == kth_chain_output_const_cpp(other));
 }
 
-void kth_chain_output_destruct(kth_output_t output) {
-    delete &kth_chain_output_cpp(output);
+
+// Serialization
+
+uint8_t* kth_chain_output_to_data(kth_output_const_t self, kth_bool_t wire, kth_size_t* out_size) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out_size != nullptr);
+    auto wire_cpp = kth::int_to_bool(wire);
+    auto data = kth_chain_output_const_cpp(self).to_data(wire_cpp);
+    return kth::create_c_array(data, *out_size);
 }
 
-kth_output_t kth_chain_output_factory_from_data(uint8_t* data, kth_size_t n) {
-    kth::data_chunk data_cpp(data, std::next(data, n));
-    kth::byte_reader reader(data_cpp);
-    auto res = kth::domain::chain::output::from_data(reader);
-    if ( ! res) {
-        return kth::move_or_copy_and_leak(kth::domain::chain::output{});
-    }
-    return kth::move_or_copy_and_leak(std::move(*res));
+kth_size_t kth_chain_output_serialized_size(kth_output_const_t self, kth_bool_t wire) {
+    KTH_PRECONDITION(self != nullptr);
+    auto wire_cpp = kth::int_to_bool(wire);
+    return kth_chain_output_const_cpp(self).serialized_size(wire_cpp);
 }
 
-kth_bool_t kth_chain_output_is_valid(kth_output_t output) {
-    return kth::bool_to_int(kth_chain_output_const_cpp(output).is_valid());
+
+// Getters
+
+uint64_t kth_chain_output_value(kth_output_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth_chain_output_const_cpp(self).value();
 }
 
-kth_size_t kth_chain_output_serialized_size(kth_output_t output, kth_bool_t wire /* = true */) {
-    return kth_chain_output_const_cpp(output).serialized_size(kth::int_to_bool(wire));
+kth_script_const_t kth_chain_output_script(kth_output_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return &(kth_chain_output_const_cpp(self).script());
 }
 
-uint64_t kth_chain_output_value(kth_output_t output) {
-    return kth_chain_output_const_cpp(output).value();
+kth_token_data_const_t kth_chain_output_token_data(kth_output_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const& opt = kth_chain_output_const_cpp(self).token_data();
+    return opt.has_value() ? &(*opt) : nullptr;
 }
 
-kth_size_t kth_chain_output_signature_operations(kth_output_t output) {
-#if defined(KTH_CURRENCY_BCH)
-    kth_bool_t bip141_active = 0;
-#else
-    kth_bool_t bip141_active = 1;
-#endif
-    return kth_chain_output_const_cpp(output).signature_operations(kth::int_to_bool(bip141_active));
+
+// Setters
+
+void kth_chain_output_set_script(kth_output_mut_t self, kth_script_const_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(value != nullptr);
+    auto const& value_cpp = kth_chain_script_const_cpp(value);
+    kth_chain_output_mut_cpp(self).set_script(value_cpp);
 }
 
-kth_script_t kth_chain_output_script(kth_output_t output) {
-    return &(kth_chain_output_cpp(output).script());
+void kth_chain_output_set_value(kth_output_mut_t self, uint64_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    kth_chain_output_mut_cpp(self).set_value(value);
 }
 
-kth_payment_address_t kth_chain_output_payment_address(kth_output_t output, kth_bool_t use_testnet_rules) {
-    auto payment_address = kth_chain_output_cpp(output).address(kth::int_to_bool(use_testnet_rules));
-    return new kth::domain::wallet::payment_address(payment_address);
+void kth_chain_output_set_token_data(kth_output_mut_t self, kth_token_data_const_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    auto value_cpp = (value == nullptr ? std::nullopt : std::optional<kth::domain::chain::token_data_t>(kth_chain_token_data_const_cpp(value)));
+    kth_chain_output_mut_cpp(self).set_token_data(value_cpp);
 }
 
-uint8_t const* kth_chain_output_to_data(kth_output_t output, kth_bool_t wire, kth_size_t* out_size) {
-    auto output_data = kth_chain_output_const_cpp(output).to_data(kth::int_to_bool(wire));
-    return kth::create_c_array(output_data, *out_size);
+
+// Predicates
+
+kth_bool_t kth_chain_output_is_valid(kth_output_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth_chain_output_const_cpp(self).is_valid());
 }
 
-// Cash Tokens ---------------------------------------------------------------
-
-kth_bool_t kth_chain_output_has_token_data(kth_output_t output) {
-    return kth::bool_to_int(kth_chain_output_const_cpp(output).token_data().has_value());
+kth_bool_t kth_chain_output_is_dust(kth_output_const_t self, uint64_t minimum_output_value) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth_chain_output_const_cpp(self).is_dust(minimum_output_value));
 }
 
-kth_token_data_t kth_chain_output_token_data(kth_output_t output) {
-    if ( ! kth_chain_output_cpp(output).token_data().has_value()) {
-        return nullptr;
-    }
-    return &kth_chain_output_cpp(output).token_data().value();
+
+// Operations
+
+kth_payment_address_mut_t kth_chain_output_address_simple(kth_output_const_t self, kth_bool_t testnet) {
+    KTH_PRECONDITION(self != nullptr);
+    auto testnet_cpp = kth::int_to_bool(testnet);
+    return new kth::domain::wallet::payment_address(kth_chain_output_const_cpp(self).address(testnet_cpp));
+}
+
+kth_payment_address_mut_t kth_chain_output_address(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version) {
+    KTH_PRECONDITION(self != nullptr);
+    return new kth::domain::wallet::payment_address(kth_chain_output_const_cpp(self).address(p2kh_version, p2sh_version));
+}
+
+kth_payment_address_list_mut_t kth_chain_output_addresses(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version) {
+    KTH_PRECONDITION(self != nullptr);
+    return new std::vector<kth::domain::wallet::payment_address>(kth_chain_output_const_cpp(self).addresses(p2kh_version, p2sh_version));
+}
+
+kth_size_t kth_chain_output_signature_operations(kth_output_const_t self, kth_bool_t bip141) {
+    KTH_PRECONDITION(self != nullptr);
+    auto bip141_cpp = kth::int_to_bool(bip141);
+    return kth_chain_output_const_cpp(self).signature_operations(bip141_cpp);
+}
+
+void kth_chain_output_reset(kth_output_mut_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    kth_chain_output_mut_cpp(self).reset();
 }
 
 } // extern "C"

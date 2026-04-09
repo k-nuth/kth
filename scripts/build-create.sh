@@ -9,16 +9,20 @@ VERSION="$1"
 
 echo "Building version: ${VERSION}"
 
-rm -rf build
+# Use a workspace separate from build.sh's `build/` so the two scripts can
+# run side-by-side without trampling each other's intermediate files.
+WORKDIR="build-create"
+
+rm -rf "${WORKDIR}"
 rm -rf conan.lock
 
 conan lock create conanfile.py --version="${VERSION}" --update
 
-conan lock create conanfile.py --version="${VERSION}" --lockfile=conan.lock --lockfile-out=build/conan.lock
-conan create conanfile.py --version "${VERSION}" --lockfile=build/conan.lock --build=missing -o tests=False
+conan lock create conanfile.py --version="${VERSION}" --lockfile=conan.lock --lockfile-out="${WORKDIR}/conan.lock"
+conan create conanfile.py --version "${VERSION}" --lockfile="${WORKDIR}/conan.lock" --build=missing -o tests=False
 
 # Run tests after create
 echo "Running tests..."
-conan test test_package kth/${VERSION} 
+conan test test_package "kth/${VERSION}"
 
 
