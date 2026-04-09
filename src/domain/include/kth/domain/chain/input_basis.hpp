@@ -115,7 +115,6 @@ struct KD_API input_basis {
     [[nodiscard]]
     size_t signature_operations(bool bip16, bool bip141) const;
 
-    bool extract_reserved_hash(hash_digest& out) const;
     expect<chain::script> extract_embedded_script() const;
 
 // protected:

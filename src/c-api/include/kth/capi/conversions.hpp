@@ -104,6 +104,10 @@ kth_chain_data_stack_mut_cpp(kth_data_stack_mut_t s) {
     return *static_cast<std::vector<std::vector<uint8_t>>*>(s);
 }
 KTH_CONV_DECLARE(chain, kth_input_t, kth::domain::chain::input, input)
+// input conversion functions take const/mut handle types directly. Defined
+// in src/chain/input.cpp.
+kth::domain::chain::input const& kth_chain_input_const_cpp(kth_input_const_t o);
+kth::domain::chain::input&       kth_chain_input_mut_cpp(kth_input_mut_t o);
 // output conversion functions take const/mut handle types directly. Defined
 // in src/chain/output.cpp.
 kth::domain::chain::output const& kth_chain_output_const_cpp(kth_output_const_t o);
