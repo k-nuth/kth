@@ -107,6 +107,8 @@ typedef void const* kth_chain_state_const_t;
 typedef void* kth_history_compact_t;
 typedef void* kth_history_compact_list_t;
 typedef void* kth_input_t;
+typedef void* kth_input_mut_t;
+typedef void const* kth_input_const_t;
 typedef void* kth_input_list_t;
 typedef void* kth_utxo_list_t;
 typedef void* kth_inputpoint_t;
