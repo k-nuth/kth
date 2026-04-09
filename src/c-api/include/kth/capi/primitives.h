@@ -115,6 +115,7 @@ typedef void* kth_script_t;
 typedef void* kth_script_mut_t;
 typedef void const* kth_script_const_t;
 typedef void* kth_token_data_t;
+typedef void* kth_token_data_mut_t;
 typedef void const* kth_token_data_const_t;
 
 typedef void* kth_operation_list_t;
@@ -126,6 +127,8 @@ typedef void const* kth_operation_const_t;
 
 typedef void* kth_output_list_t;
 typedef void* kth_output_t;
+typedef void* kth_output_mut_t;
+typedef void const* kth_output_const_t;
 typedef void* kth_outputpoint_t;
 typedef void* kth_output_point_mut_t;
 typedef void const* kth_output_point_const_t;
@@ -147,7 +150,10 @@ typedef void* kth_get_blocks_ptr_t;
 typedef void* kth_get_headers_t;
 typedef void* kth_get_headers_ptr_t;
 typedef void* kth_payment_address_t;
+typedef void* kth_payment_address_mut_t;
+typedef void const* kth_payment_address_const_t;
 typedef void* kth_payment_address_list_t;
+typedef void* kth_payment_address_list_mut_t;
 typedef void const* kth_payment_address_list_const_t;
 typedef void* kth_binary_t;
 typedef void* kth_stealth_compact_t;
