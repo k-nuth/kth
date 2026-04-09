@@ -214,8 +214,10 @@ public:
     static
     bool is_pay_script_hash_32_pattern(operation::list const& ops);
 
+#if defined(KTH_SEGWIT_ENABLED)
     static
     bool is_pay_witness_script_hash_pattern(operation::list const& ops);
+#endif // KTH_SEGWIT_ENABLED
 
     /// Common input patterns (skh is also consensus).
     static
@@ -264,7 +266,9 @@ public:
     //-------------------------------------------------------------------------
 
     /// Common pattern detection.
+#if defined(KTH_SEGWIT_ENABLED)
     data_chunk witness_program() const;
+#endif // KTH_SEGWIT_ENABLED
 
 #if ! defined(KTH_CURRENCY_BCH)
     script_version version() const;

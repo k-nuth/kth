@@ -112,12 +112,17 @@ typedef void* kth_utxo_list_t;
 typedef void* kth_inputpoint_t;
 typedef void* kth_merkleblock_t;
 typedef void* kth_script_t;
+typedef void* kth_script_mut_t;
+typedef void const* kth_script_const_t;
 typedef void* kth_token_data_t;
 typedef void const* kth_token_data_const_t;
 
 typedef void* kth_operation_list_t;
+typedef void* kth_operation_list_mut_t;
 typedef void const* kth_operation_list_const_t;
 typedef void* kth_operation_t;
+typedef void* kth_operation_mut_t;
+typedef void const* kth_operation_const_t;
 
 typedef void* kth_output_list_t;
 typedef void* kth_output_t;
@@ -132,6 +137,7 @@ typedef void const* kth_point_const_t;
 typedef void* kth_point_list_t;
 typedef void* kth_outputpoint_list_t;
 typedef void* kth_transaction_t;
+typedef void* kth_transaction_mut_t;
 typedef void const* kth_transaction_const_t;
 typedef void* kth_transaction_list_t;
 typedef void* kth_mempool_transaction_t;
@@ -157,6 +163,14 @@ typedef void* kth_u64_list_t;
 typedef void* kth_wallet_data_t;
 
 typedef void* kth_ec_compressed_list_t;
+typedef void* kth_ec_compressed_list_mut_t;
+typedef void const* kth_ec_compressed_list_const_t;
+
+// Vector of byte buffers — used by Bitcoin script's runtime stack and by
+// `to_pay_multisig_pattern` for the signature variant. The owning C-API
+// type is opaque; element accessors are not exposed yet.
+typedef void* kth_data_stack_mut_t;
+typedef void const* kth_data_stack_const_t;
 
 
 // VM

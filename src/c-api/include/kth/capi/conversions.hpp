@@ -42,13 +42,64 @@ inline kth::domain::chain::chain_state const& kth_chain_chain_state_const_cpp(kt
 inline kth::domain::chain::chain_state& kth_chain_chain_state_mut_cpp(kth_chain_state_mut_t o) {
     return *static_cast<kth::domain::chain::chain_state*>(o);
 }
+
+// The following types are not migrated to const/mut yet (their existing
+// converters via KTH_CONV_DECLARE / KTH_LIST_DECLARE_CONVERTERS take the
+// legacy `_t = void*` form). The migrated C-API uses the matching
+// `_const_t` / `_mut_t` aliases for read-only and mutable handles, so we
+// add inline overloads here that bridge the two until each type migrates.
+
+inline std::vector<kth::domain::machine::operation> const&
+kth_chain_operation_list_const_cpp(kth_operation_list_const_t l) {
+    return *static_cast<std::vector<kth::domain::machine::operation> const*>(l);
+}
+inline std::vector<kth::domain::machine::operation>&
+kth_chain_operation_list_mut_cpp(kth_operation_list_mut_t l) {
+    return *static_cast<std::vector<kth::domain::machine::operation>*>(l);
+}
+
+inline kth::domain::chain::transaction const&
+kth_chain_transaction_const_cpp(kth_transaction_const_t o) {
+    return *static_cast<kth::domain::chain::transaction const*>(o);
+}
+inline kth::domain::chain::transaction&
+kth_chain_transaction_mut_cpp(kth_transaction_mut_t o) {
+    return *static_cast<kth::domain::chain::transaction*>(o);
+}
+
+// std::vector<std::array<uint8_t, 33>> matches the existing
+// `ec_compressed_cpp_t` alias used by the legacy converters further down.
+// We spell it out here to keep the const/mut shim self-contained.
+inline std::vector<std::array<uint8_t, 33>> const&
+kth_wallet_ec_compressed_list_const_cpp(kth_ec_compressed_list_const_t l) {
+    return *static_cast<std::vector<std::array<uint8_t, 33>> const*>(l);
+}
+inline std::vector<std::array<uint8_t, 33>>&
+kth_wallet_ec_compressed_list_mut_cpp(kth_ec_compressed_list_mut_t l) {
+    return *static_cast<std::vector<std::array<uint8_t, 33>>*>(l);
+}
+
+// data_stack — vector of variable-length byte buffers (the script runtime
+// stack). Exposed only as an opaque handle for now; ownership and element
+// access live on the user side until we wire a proper data_stack module.
+inline std::vector<std::vector<uint8_t>> const&
+kth_chain_data_stack_const_cpp(kth_data_stack_const_t s) {
+    return *static_cast<std::vector<std::vector<uint8_t>> const*>(s);
+}
+inline std::vector<std::vector<uint8_t>>&
+kth_chain_data_stack_mut_cpp(kth_data_stack_mut_t s) {
+    return *static_cast<std::vector<std::vector<uint8_t>>*>(s);
+}
 KTH_CONV_DECLARE(chain, kth_input_t, kth::domain::chain::input, input)
 KTH_CONV_DECLARE(chain, kth_output_t, kth::domain::chain::output, output)
 // output_point conversion functions take const/mut handle types directly.
 // Defined in src/chain/output_point.cpp.
 kth::domain::chain::output_point const& kth_chain_output_point_const_cpp(kth_output_point_const_t o);
 kth::domain::chain::output_point&       kth_chain_output_point_mut_cpp(kth_output_point_mut_t o);
-KTH_CONV_DECLARE(chain, kth_script_t, kth::domain::chain::script, script)
+// script conversion functions take const/mut handle types directly. Defined
+// in src/chain/script.cpp.
+kth::domain::chain::script const& kth_chain_script_const_cpp(kth_script_const_t o);
+kth::domain::chain::script&       kth_chain_script_mut_cpp(kth_script_mut_t o);
 KTH_CONV_DECLARE(chain, kth_transaction_t, kth::domain::chain::transaction, transaction)
 // KTH_CONV_DECLARE(chain, kth_transaction_t, kth::domain::chain::transaction, transaction)
 // point conversion functions take const/mut handle types directly. Defined

@@ -75,6 +75,58 @@ TEST_CASE("C-API OutputPoint - construct from point preserves fields", "[C-API O
 }
 
 // ---------------------------------------------------------------------------
+// from_data / to_data round-trip
+// ---------------------------------------------------------------------------
+
+TEST_CASE("C-API OutputPoint - from_data insufficient bytes fails", "[C-API OutputPoint]") {
+    uint8_t data[10];
+    memset(data, 0, sizeof(data));
+    kth_output_point_mut_t out = NULL;
+    kth_error_code_t ec = kth_chain_output_point_construct_from_data(data, 10, 1, &out);
+    REQUIRE(ec != kth_ec_success);
+    REQUIRE(out == NULL);
+}
+
+TEST_CASE("C-API OutputPoint - to_data / from_data roundtrip", "[C-API OutputPoint]") {
+    kth_output_point_mut_t expected =
+        kth_chain_output_point_construct_from_hash_index(kHash, 53213u);
+
+    kth_size_t size = 0;
+    uint8_t* raw = kth_chain_output_point_to_data(expected, 1, &size);
+    REQUIRE(size == 36u);
+    REQUIRE(raw != NULL);
+
+    // The factory we just exposed wraps point::from_data through the
+    // output_point(point const&) conversion ctor, so the resulting handle
+    // is genuinely an output_point and the round-trip preserves the wire
+    // bytes (the layout matches because output_point has no extra wire
+    // members on top of point).
+    kth_output_point_mut_t parsed = NULL;
+    kth_error_code_t ec = kth_chain_output_point_construct_from_data(raw, size, 1, &parsed);
+    REQUIRE(ec == kth_ec_success);
+    REQUIRE(parsed != NULL);
+
+    REQUIRE(kth_chain_output_point_is_valid(parsed) != 0);
+    REQUIRE(kth_chain_output_point_index(parsed) == 53213u);
+    REQUIRE(kth_hash_equal(kth_chain_output_point_hash(parsed), make_hash(kHash)) != 0);
+
+    kth_core_destruct_array(raw);
+    kth_chain_output_point_destruct(parsed);
+    kth_chain_output_point_destruct(expected);
+}
+
+TEST_CASE("C-API OutputPoint - construct_from_data NULL data with zero size returns error",
+          "[C-API OutputPoint]") {
+    // (NULL, 0) is a valid empty input — no abort. The parser will fail
+    // because zero bytes are insufficient, but it must do so gracefully.
+    kth_output_point_mut_t out = NULL;
+    kth_error_code_t ec =
+        kth_chain_output_point_construct_from_data(NULL, 0, 1, &out);
+    REQUIRE(ec != kth_ec_success);
+    REQUIRE(out == NULL);
+}
+
+// ---------------------------------------------------------------------------
 // Serialization
 // ---------------------------------------------------------------------------
 
@@ -182,6 +234,21 @@ TEST_CASE("C-API OutputPoint - satoshi_fixed_size is 36", "[C-API OutputPoint]")
 // ---------------------------------------------------------------------------
 // Preconditions (death tests via fork)
 // ---------------------------------------------------------------------------
+
+TEST_CASE("C-API OutputPoint - construct_from_data null data with non-zero size aborts",
+          "[C-API OutputPoint][precondition]") {
+    KTH_EXPECT_ABORT({
+        kth_output_point_mut_t out = NULL;
+        kth_chain_output_point_construct_from_data(NULL, 1, 1, &out);
+    });
+}
+
+TEST_CASE("C-API OutputPoint - construct_from_data null out aborts",
+          "[C-API OutputPoint][precondition]") {
+    uint8_t data[10];
+    memset(data, 0, sizeof(data));
+    KTH_EXPECT_ABORT(kth_chain_output_point_construct_from_data(data, 10, 1, NULL));
+}
 
 TEST_CASE("C-API OutputPoint - construct null hash aborts",
           "[C-API OutputPoint][precondition]") {
