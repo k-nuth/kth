@@ -248,12 +248,23 @@ TEST_CASE("C-API Header - satoshi_fixed_size is 80", "[C-API Header]") {
 // Preconditions (death tests via fork)
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Header - construct_from_data null data aborts",
+TEST_CASE("C-API Header - construct_from_data null data with non-zero size aborts",
           "[C-API Header][precondition]") {
     KTH_EXPECT_ABORT({
         kth_header_mut_t out = NULL;
-        kth_chain_header_construct_from_data(NULL, 0, 1, &out);
+        kth_chain_header_construct_from_data(NULL, 1, 1, &out);
     });
+}
+
+TEST_CASE("C-API Header - construct_from_data NULL data with zero size returns error",
+          "[C-API Header]") {
+    // (NULL, 0) is a valid empty input; the function should not abort. The
+    // header parser will fail because zero bytes are insufficient, but it
+    // must do so gracefully via an error code.
+    kth_header_mut_t out = NULL;
+    kth_error_code_t ec = kth_chain_header_construct_from_data(NULL, 0, 1, &out);
+    REQUIRE(ec != kth_ec_success);
+    REQUIRE(out == NULL);
 }
 
 TEST_CASE("C-API Header - construct null previous_block_hash aborts",

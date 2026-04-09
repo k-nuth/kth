@@ -5,12 +5,13 @@
 #ifndef KTH_INFRASTUCTURE_MACHINE_SCRIPT_PATTERN_HPP
 #define KTH_INFRASTUCTURE_MACHINE_SCRIPT_PATTERN_HPP
 
+#include <string_view>
+
 namespace kth::infrastructure::machine {
 
 /// Script patterms.
 /// Comments from: bitcoin.org/en/developer-guide#signature-hash-types
-enum class script_pattern
-{
+enum class script_pattern {
     /// Null Data
     /// Pubkey Script: OP_RETURN <0 to 80 bytes of data> (formerly 40 bytes)
     /// Null data scripts cannot be spent, so there's no signature script.
@@ -61,6 +62,33 @@ enum class script_pattern
     /// transactions with uncommon scripts may not be forwarded by peers.
     non_standard
 };
+
+/// String representation of a script_pattern enumerator. Used by the C-API
+/// (and any other consumer that needs a stable textual name) so the
+/// enum-to-string mapping lives next to the enum definition itself instead
+/// of being duplicated in wrappers.
+///
+/// TODO(C++26 reflection): replace the hand-written switch with a generic
+/// enum_to_string<E> built on top of P2996 reflection (`std::meta::*`),
+/// applied uniformly to every enum in the codebase.
+constexpr
+std::string_view to_string(script_pattern p) {
+    switch (p) {
+        case script_pattern::null_data:             return "null_data";
+        case script_pattern::pay_multisig:          return "pay_multisig";
+        case script_pattern::pay_public_key:        return "pay_public_key";
+        case script_pattern::pay_public_key_hash:   return "pay_public_key_hash";
+        case script_pattern::pay_script_hash:       return "pay_script_hash";
+        case script_pattern::pay_script_hash_32:    return "pay_script_hash_32";
+        case script_pattern::sign_multisig:         return "sign_multisig";
+        case script_pattern::sign_public_key:       return "sign_public_key";
+        case script_pattern::sign_public_key_hash:  return "sign_public_key_hash";
+        case script_pattern::sign_script_hash:      return "sign_script_hash";
+        case script_pattern::witness_reservation:   return "witness_reservation";
+        case script_pattern::non_standard:          return "non_standard";
+    }
+    return "non_standard";
+}
 
 } // namespace kth::infrastructure::machine
 

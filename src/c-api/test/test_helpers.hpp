@@ -43,6 +43,14 @@
     if (_pid == 0) {                                                 \
         /* child: silence stderr to avoid abort() messages */        \
         freopen("/dev/null", "w", stderr);                           \
+        /* Catch2 installs its own SIGABRT handler in the test       \
+         * driver. When our child inherits it, the handler           \
+         * intercepts the abort(), prints a FAILED line into the     \
+         * shared stdout, and exits the child normally — so the      \
+         * parent then sees WIFSIGNALED == false and the death       \
+         * test misfires. Reset SIGABRT to the default handler so    \
+         * abort() actually terminates the child via the signal. */  \
+        signal(SIGABRT, SIG_DFL);                                    \
         KTH_TEST_PUSH_NO_UNUSED_RESULT                               \
         stmt;                                                        \
         KTH_TEST_POP_DIAG                                            \

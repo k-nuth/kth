@@ -184,12 +184,22 @@ TEST_CASE("C-API Point - null factory returns is_null", "[C-API Point]") {
 // Preconditions (death tests via fork)
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Point - construct_from_data null data aborts",
+TEST_CASE("C-API Point - construct_from_data null data with non-zero size aborts",
           "[C-API Point][precondition]") {
     KTH_EXPECT_ABORT({
         kth_point_mut_t out = NULL;
-        kth_chain_point_construct_from_data(NULL, 0, 1, &out);
+        kth_chain_point_construct_from_data(NULL, 1, 1, &out);
     });
+}
+
+TEST_CASE("C-API Point - construct_from_data NULL data with zero size returns error",
+          "[C-API Point]") {
+    // (NULL, 0) is a valid empty input; the function must not abort and
+    // should report the parse failure via an error code.
+    kth_point_mut_t out = NULL;
+    kth_error_code_t ec = kth_chain_point_construct_from_data(NULL, 0, 1, &out);
+    REQUIRE(ec != kth_ec_success);
+    REQUIRE(out == NULL);
 }
 
 TEST_CASE("C-API Point - construct_from_data null out aborts",

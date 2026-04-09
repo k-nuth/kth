@@ -500,6 +500,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/header.cpp
         test/chain/point.cpp
         test/chain/output_point.cpp
+        test/chain/script.cpp
     )
 
     target_link_libraries(kth_capi_test PUBLIC ${PROJECT_NAME})
