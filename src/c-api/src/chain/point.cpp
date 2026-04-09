@@ -38,7 +38,12 @@ kth_error_code_t kth_chain_point_construct_from_data(uint8_t const* data, kth_si
     return kth_ec_success;
 }
 
-kth_point_mut_t kth_chain_point_construct(uint8_t const* hash, uint32_t index) {
+kth_point_mut_t kth_chain_point_construct(kth_hash_t hash, uint32_t index) {
+    auto hash_cpp = kth::hash_to_cpp(hash.hash);
+    return new kth::domain::chain::point(hash_cpp, index);
+}
+
+kth_point_mut_t kth_chain_point_construct_unsafe(uint8_t const* hash, uint32_t index) {
     KTH_PRECONDITION(hash != nullptr);
     auto hash_cpp = kth::hash_to_cpp(hash);
     return new kth::domain::chain::point(hash_cpp, index);
@@ -115,7 +120,13 @@ uint64_t kth_chain_point_checksum(kth_point_const_t self) {
 
 // Setters
 
-void kth_chain_point_set_hash(kth_point_mut_t self, uint8_t const* value) {
+void kth_chain_point_set_hash(kth_point_mut_t self, kth_hash_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    auto value_cpp = kth::hash_to_cpp(value.hash);
+    kth_chain_point_mut_cpp(self).set_hash(value_cpp);
+}
+
+void kth_chain_point_set_hash_unsafe(kth_point_mut_t self, uint8_t const* value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
     auto value_cpp = kth::hash_to_cpp(value);

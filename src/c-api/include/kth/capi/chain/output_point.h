@@ -26,7 +26,14 @@ kth_error_code_t kth_chain_output_point_construct_from_data(uint8_t const* data,
 
 /** @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`. */
 KTH_EXPORT KTH_OWNED
-kth_output_point_mut_t kth_chain_output_point_construct_from_hash_index(uint8_t const* hash, uint32_t index);
+kth_output_point_mut_t kth_chain_output_point_construct_from_hash_index(kth_hash_t hash, uint32_t index);
+
+/**
+ * @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`.
+ * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ */
+KTH_EXPORT KTH_OWNED
+kth_output_point_mut_t kth_chain_output_point_construct_from_hash_index_unsafe(uint8_t const* hash, uint32_t index);
 
 /** @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`. */
 KTH_EXPORT KTH_OWNED
@@ -77,7 +84,11 @@ uint64_t kth_chain_output_point_checksum(kth_output_point_const_t self);
 // Setters
 
 KTH_EXPORT
-void kth_chain_output_point_set_hash(kth_output_point_mut_t self, uint8_t const* value);
+void kth_chain_output_point_set_hash(kth_output_point_mut_t self, kth_hash_t value);
+
+/** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value. */
+KTH_EXPORT
+void kth_chain_output_point_set_hash_unsafe(kth_output_point_mut_t self, uint8_t const* value);
 
 KTH_EXPORT
 void kth_chain_output_point_set_index(kth_output_point_mut_t self, uint32_t value);

@@ -63,9 +63,11 @@ kth_size_t kth_chain_output_serialized_size(kth_output_const_t self, kth_bool_t 
 KTH_EXPORT
 uint64_t kth_chain_output_value(kth_output_const_t self);
 
+/** @return Borrowed `kth_script_const_t` view into `self`. Do not destruct; the parent object retains ownership. */
 KTH_EXPORT
 kth_script_const_t kth_chain_output_script(kth_output_const_t self);
 
+/** @return Borrowed `kth_token_data_const_t` view into `self`. Do not destruct; the parent object retains ownership. */
 KTH_EXPORT
 kth_token_data_const_t kth_chain_output_token_data(kth_output_const_t self);
 

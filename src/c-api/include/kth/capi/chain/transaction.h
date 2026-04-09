@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,138 +9,214 @@
 
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
-#include <kth/capi/chain/coin_selection_algorithm.h>
+#include <kth/capi/chain/script_flags.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+// Constructors
+
+/** @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_transaction_mut_t kth_chain_transaction_construct_default(void);
+
+/** @param[out] out Must point to a null `kth_transaction_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_transaction_destruct`. Untouched on error. */
 KTH_EXPORT
-kth_transaction_t kth_chain_transaction_factory_from_data(uint8_t* data, kth_size_t n);
+kth_error_code_t kth_chain_transaction_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_transaction_mut_t* out);
 
-KTH_EXPORT
-kth_transaction_t kth_chain_transaction_construct_default(void);
+/** @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_transaction_mut_t kth_chain_transaction_construct_from_version_locktime_inputs_outputs(uint32_t version, uint32_t locktime, kth_input_list_const_t inputs, kth_output_list_const_t outputs);
 
-KTH_EXPORT
-kth_transaction_t kth_chain_transaction_construct(uint32_t version, uint32_t locktime, kth_input_list_t inputs, kth_output_list_t outputs);
+/** @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash(kth_transaction_const_t x, kth_hash_t hash);
 
-KTH_EXPORT
-void kth_chain_transaction_destruct(kth_transaction_t transaction);
+/**
+ * @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`.
+ * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ */
+KTH_EXPORT KTH_OWNED
+kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash_unsafe(kth_transaction_const_t x, uint8_t const* hash);
 
-KTH_EXPORT
-kth_bool_t kth_chain_transaction_is_valid(kth_transaction_t transaction);
 
-KTH_EXPORT
-uint32_t kth_chain_transaction_version(kth_transaction_t transaction);
-
-KTH_EXPORT
-void kth_chain_transaction_set_version(kth_transaction_t transaction, uint32_t version);
-
-KTH_EXPORT
-kth_hash_t kth_chain_transaction_hash(kth_transaction_t transaction);
-
-KTH_EXPORT
-void kth_chain_transaction_hash_out(kth_transaction_t transaction, kth_hash_t* out_hash);
-
-// KTH_EXPORT
-// kth_hash_t kth_chain_transaction_hash_sighash_type(kth_transaction_t transaction, uint32_t sighash_type);
-
-// KTH_EXPORT
-// void kth_chain_transaction_hash_sighash_type_out(kth_transaction_t transaction, uint32_t sighash_type, kth_hash_t* out_hash);
+// Destructor
 
 KTH_EXPORT
-uint32_t kth_chain_transaction_locktime(kth_transaction_t transaction);
+void kth_chain_transaction_destruct(kth_transaction_mut_t self);
+
+
+// Copy
+
+/** @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_transaction_mut_t kth_chain_transaction_copy(kth_transaction_const_t self);
+
+
+// Equality
 
 KTH_EXPORT
-kth_size_t kth_chain_transaction_serialized_size(kth_transaction_t transaction, kth_bool_t wire); //wire = true
+kth_bool_t kth_chain_transaction_equals(kth_transaction_const_t self, kth_transaction_const_t other);
+
+
+// Serialization
+
+/** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
+KTH_EXPORT KTH_OWNED
+uint8_t* kth_chain_transaction_to_data(kth_transaction_const_t self, kth_bool_t wire, kth_size_t* out_size);
 
 KTH_EXPORT
-uint64_t kth_chain_transaction_fees(kth_transaction_t transaction);
+kth_size_t kth_chain_transaction_serialized_size(kth_transaction_const_t self, kth_bool_t wire);
+
+
+// Getters
 
 KTH_EXPORT
-kth_size_t kth_chain_transaction_signature_operations(kth_transaction_t transaction);
+kth_hash_t kth_chain_transaction_outputs_hash(kth_transaction_const_t self);
 
 KTH_EXPORT
-kth_size_t kth_chain_transaction_signature_operations_bip16_active(kth_transaction_t transaction, kth_bool_t bip16_active);
+kth_hash_t kth_chain_transaction_inpoints_hash(kth_transaction_const_t self);
 
 KTH_EXPORT
-uint64_t kth_chain_transaction_total_input_value(kth_transaction_t transaction);
+kth_hash_t kth_chain_transaction_sequences_hash(kth_transaction_const_t self);
 
 KTH_EXPORT
-uint64_t kth_chain_transaction_total_output_value(kth_transaction_t transaction);
+kth_hash_t kth_chain_transaction_utxos_hash(kth_transaction_const_t self);
 
 KTH_EXPORT
-kth_bool_t kth_chain_transaction_is_coinbase(kth_transaction_t transaction);
+kth_hash_t kth_chain_transaction_hash(kth_transaction_const_t self);
 
 KTH_EXPORT
-kth_bool_t kth_chain_transaction_is_null_non_coinbase(kth_transaction_t transaction);
+uint64_t kth_chain_transaction_fees(kth_transaction_const_t self);
 
 KTH_EXPORT
-kth_bool_t kth_chain_transaction_is_oversized_coinbase(kth_transaction_t transaction);
+uint64_t kth_chain_transaction_total_input_value(kth_transaction_const_t self);
 
 KTH_EXPORT
-kth_bool_t kth_chain_transaction_is_mature(kth_transaction_t transaction, kth_size_t target_height);
+uint64_t kth_chain_transaction_total_output_value(kth_transaction_const_t self);
 
 KTH_EXPORT
-kth_bool_t kth_chain_transaction_is_overspent(kth_transaction_t transaction);
+kth_size_t kth_chain_transaction_signature_operations_simple(kth_transaction_const_t self);
 
 KTH_EXPORT
-kth_bool_t kth_chain_transaction_is_double_spend(kth_transaction_t transaction, kth_bool_t include_unconfirmed);
+kth_error_code_t kth_chain_transaction_connect_simple(kth_transaction_const_t self);
 
 KTH_EXPORT
-kth_bool_t kth_chain_transaction_is_missing_previous_outputs(kth_transaction_t transaction);
+uint32_t kth_chain_transaction_version(kth_transaction_const_t self);
 
 KTH_EXPORT
-kth_bool_t kth_chain_transaction_is_final(kth_transaction_t transaction, kth_size_t block_height, uint32_t kth_block_time);
+uint32_t kth_chain_transaction_locktime(kth_transaction_const_t self);
+
+/** @return Borrowed `kth_input_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. */
+KTH_EXPORT
+kth_input_list_const_t kth_chain_transaction_inputs(kth_transaction_const_t self);
+
+/** @return Borrowed `kth_output_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. */
+KTH_EXPORT
+kth_output_list_const_t kth_chain_transaction_outputs(kth_transaction_const_t self);
+
+/** @return Owned `kth_point_list_mut_t`. Caller must release with `kth_chain_point_list_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_point_list_mut_t kth_chain_transaction_previous_outputs(kth_transaction_const_t self);
+
+/** @return Owned `kth_point_list_mut_t`. Caller must release with `kth_chain_point_list_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_point_list_mut_t kth_chain_transaction_missing_previous_outputs(kth_transaction_const_t self);
+
+/** @return Owned `kth_hash_list_mut_t`. Caller must release with `kth_core_hash_list_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_hash_list_mut_t kth_chain_transaction_missing_previous_transactions(kth_transaction_const_t self);
+
+
+// Setters
 
 KTH_EXPORT
-kth_bool_t kth_chain_transaction_is_locktime_conflict(kth_transaction_t transaction);
+void kth_chain_transaction_set_version(kth_transaction_mut_t self, uint32_t value);
 
 KTH_EXPORT
-kth_output_list_t kth_chain_transaction_outputs(kth_transaction_t transaction);
+void kth_chain_transaction_set_locktime(kth_transaction_mut_t self, uint32_t value);
 
 KTH_EXPORT
-kth_input_list_t kth_chain_transaction_inputs(kth_transaction_t transaction);
+void kth_chain_transaction_set_inputs(kth_transaction_mut_t self, kth_input_list_const_t value);
 
 KTH_EXPORT
-uint8_t const* kth_chain_transaction_to_data(kth_transaction_t transaction, kth_bool_t wire, kth_size_t* out_size);
+void kth_chain_transaction_set_outputs(kth_transaction_mut_t self, kth_output_list_const_t value);
 
-// code verify(transaction const& tx, uint32_t input_index, uint64_t forks, script const& input_script, script const& prevout_script, uint64_t /*value*/);
-KTH_EXPORT
-kth_error_code_t kth_chain_transaction_verify(kth_transaction_t transaction, uint32_t input_index, uint64_t forks, kth_script_t input_script, kth_script_t prevout_script, uint64_t value);
 
-// code verify(transaction const& tx, uint32_t input, uint64_t forks);
-KTH_EXPORT
-kth_error_code_t kth_chain_transaction_verify_transaction(kth_transaction_t transaction, uint32_t input, uint64_t forks);
+// Predicates
 
 KTH_EXPORT
-kth_error_code_t kth_chain_transaction_create_template_with_change_ratios(
-    kth_utxo_list_t available_utxos,
-    uint64_t amount_to_send,
-    kth_payment_address_t destination_address,
-    kth_payment_address_list_t change_addresses,
-    kth_double_list_t change_ratios,
-    kth_coin_selection_algorithm_t selection_algo,
-    kth_transaction_t* out_transaction,
-    kth_u32_list_t* out_selected_utxo_indices,
-    kth_payment_address_list_t* out_addresses,
-    kth_u64_list_t* out_amounts);
+kth_bool_t kth_chain_transaction_is_overspent(kth_transaction_const_t self);
 
 KTH_EXPORT
-kth_error_code_t kth_chain_transaction_create_template(
-    kth_utxo_list_t available_utxos,
-    uint64_t amount_to_send,
-    kth_payment_address_t destination_address,
-    kth_payment_address_list_t change_addresses,
-    kth_coin_selection_algorithm_t selection_algo,
-    kth_transaction_t* out_transaction,
-    kth_u32_list_t* out_selected_utxo_indices,
-    kth_payment_address_list_t* out_addresses,
-    kth_u64_list_t* out_amounts);
+kth_bool_t kth_chain_transaction_is_valid(kth_transaction_const_t self);
 
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_is_coinbase(kth_transaction_const_t self);
+
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_is_null_non_coinbase(kth_transaction_const_t self);
+
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_is_oversized_coinbase(kth_transaction_const_t self);
+
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_is_mature(kth_transaction_const_t self, kth_size_t height);
+
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_is_internal_double_spend(kth_transaction_const_t self);
+
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_is_double_spend(kth_transaction_const_t self, kth_bool_t include_unconfirmed);
+
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_is_dusty(kth_transaction_const_t self, uint64_t minimum_output_value);
+
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_is_missing_previous_outputs(kth_transaction_const_t self);
+
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_is_final(kth_transaction_const_t self, kth_size_t block_height, uint32_t block_time);
+
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_is_locked(kth_transaction_const_t self, kth_size_t block_height, uint32_t median_time_past);
+
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_is_locktime_conflict(kth_transaction_const_t self);
+
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_is_standard(kth_transaction_const_t self);
+
+
+// Operations
+
+KTH_EXPORT
+void kth_chain_transaction_recompute_hash(kth_transaction_mut_t self);
+
+KTH_EXPORT
+kth_error_code_t kth_chain_transaction_check(kth_transaction_const_t self, kth_size_t max_block_size, kth_bool_t transaction_pool, kth_bool_t retarget);
+
+KTH_EXPORT
+kth_error_code_t kth_chain_transaction_accept(kth_transaction_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transaction_pool);
+
+KTH_EXPORT
+kth_error_code_t kth_chain_transaction_connect(kth_transaction_const_t self, kth_chain_state_const_t state);
+
+KTH_EXPORT
+kth_error_code_t kth_chain_transaction_connect_input(kth_transaction_const_t self, kth_chain_state_const_t state, kth_size_t input_index);
+
+KTH_EXPORT
+void kth_chain_transaction_reset(kth_transaction_mut_t self);
+
+KTH_EXPORT
+kth_size_t kth_chain_transaction_signature_operations(kth_transaction_const_t self, kth_bool_t bip16, kth_bool_t bip141);
+
+KTH_EXPORT
+kth_size_t kth_chain_transaction_min_tx_size(kth_transaction_const_t self, kth_script_flags_t flags);
 
 #ifdef __cplusplus
 } // extern "C"
 #endif
 
-#endif /* KTH_CAPI_CHAIN_TRANSACTION_H_ */
+#endif // KTH_CAPI_CHAIN_TRANSACTION_H_

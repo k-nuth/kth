@@ -26,7 +26,14 @@ kth_error_code_t kth_chain_point_construct_from_data(uint8_t const* data, kth_si
 
 /** @return Owned `kth_point_mut_t`. Caller must release with `kth_chain_point_destruct`. */
 KTH_EXPORT KTH_OWNED
-kth_point_mut_t kth_chain_point_construct(uint8_t const* hash, uint32_t index);
+kth_point_mut_t kth_chain_point_construct(kth_hash_t hash, uint32_t index);
+
+/**
+ * @return Owned `kth_point_mut_t`. Caller must release with `kth_chain_point_destruct`.
+ * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ */
+KTH_EXPORT KTH_OWNED
+kth_point_mut_t kth_chain_point_construct_unsafe(uint8_t const* hash, uint32_t index);
 
 
 // Static factories
@@ -80,7 +87,11 @@ uint64_t kth_chain_point_checksum(kth_point_const_t self);
 // Setters
 
 KTH_EXPORT
-void kth_chain_point_set_hash(kth_point_mut_t self, uint8_t const* value);
+void kth_chain_point_set_hash(kth_point_mut_t self, kth_hash_t value);
+
+/** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value. */
+KTH_EXPORT
+void kth_chain_point_set_hash_unsafe(kth_point_mut_t self, uint8_t const* value);
 
 KTH_EXPORT
 void kth_chain_point_set_index(kth_point_mut_t self, uint32_t value);

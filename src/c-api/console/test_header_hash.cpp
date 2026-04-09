@@ -87,7 +87,7 @@ int main(int argc, char* argv[]) {
     auto* data1 = kth_chain_header_to_data(header, 0, &datasize1);
     print_hex(data1, datasize1);
 
-    kth_header_t new_header = kth_chain_header_construct(version, previous_block_hash.hash, merkle.hash, timestamp, bits, nonce);
+    kth_header_t new_header = kth_chain_header_construct(version, previous_block_hash, merkle, timestamp, bits, nonce);
     kth_chain_header_destruct(header);
     kth_hash_t new_hash = kth_chain_header_hash(new_header);
     print_hex(new_hash.hash, 32);
