@@ -512,7 +512,8 @@ int main(int /*argc*/, char* /*argv*/[]) {
         return 0;
     }
 
-    kth_transaction_t tx = kth_chain_transaction_factory_from_data(1,chunk->data(),chunk->size());
+    kth_transaction_mut_t tx = NULL;
+    kth_chain_transaction_construct_from_data(chunk->data(), chunk->size(), 1, &tx);
 
 
     auto ret = kth_chain_organize_transaction_sync(chain,tx);

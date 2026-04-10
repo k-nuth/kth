@@ -29,26 +29,22 @@ static uint32_t const kTimestamp = 531234u;
 static uint32_t const kBits      = 6523454u;
 static uint32_t const kNonce     = 68644u;
 
-// 32-byte hashes used throughout the suite, written here as raw byte arrays
-// so the tests do not depend on any C++ helper.
-static uint8_t const kPrevHash[32] = {
+// 32-byte hashes used throughout the suite. Using `kth_hash_t` directly
+// (instead of raw `uint8_t[32]`) lets the tests exercise the safe,
+// type-checked variants of the C-API: the struct encodes the byte count
+// at the type level so the C compiler rejects short buffers.
+static kth_hash_t const kPrevHash = {{
     0x6f, 0xe2, 0x8c, 0x0a, 0xb6, 0xf1, 0xb3, 0x72,
     0xc1, 0xa6, 0xa2, 0x46, 0xae, 0x63, 0xf7, 0x4f,
     0x93, 0x1e, 0x83, 0x65, 0xe1, 0x5a, 0x08, 0x9c,
     0x68, 0xd6, 0x19, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-static uint8_t const kMerkle[32] = {
+}};
+static kth_hash_t const kMerkle = {{
     0x3b, 0xa3, 0xed, 0xfd, 0x7a, 0x7b, 0x12, 0xb2,
     0x7a, 0xc7, 0x2c, 0x3e, 0x67, 0x76, 0x8f, 0x61,
     0x7f, 0xc8, 0x1b, 0xc3, 0x88, 0x8a, 0x51, 0x32,
     0x3a, 0x9f, 0xb8, 0xaa, 0x4b, 0x1e, 0x5e, 0x4a
-};
-
-static kth_hash_t make_hash(uint8_t const* bytes) {
-    kth_hash_t h;
-    memcpy(h.hash, bytes, KTH_BITCOIN_HASH_SIZE);
-    return h;
-}
+}};
 
 // ---------------------------------------------------------------------------
 // Constructors
@@ -71,10 +67,10 @@ TEST_CASE("C-API Header - field constructor preserves all fields", "[C-API Heade
     REQUIRE(kth_chain_header_nonce(header)     == kNonce);
 
     kth_hash_t prev = kth_chain_header_previous_block_hash(header);
-    REQUIRE(kth_hash_equal(prev, make_hash(kPrevHash)) != 0);
+    REQUIRE(kth_hash_equal(prev, kPrevHash) != 0);
 
     kth_hash_t merkle = kth_chain_header_merkle(header);
-    REQUIRE(kth_hash_equal(merkle, make_hash(kMerkle)) != 0);
+    REQUIRE(kth_hash_equal(merkle, kMerkle) != 0);
 
     kth_chain_header_destruct(header);
 }
@@ -132,7 +128,7 @@ TEST_CASE("C-API Header - previous_block_hash setter roundtrip", "[C-API Header]
 
     kth_chain_header_set_previous_block_hash(header, kPrevHash);
     REQUIRE(kth_hash_equal(kth_chain_header_previous_block_hash(header),
-                           make_hash(kPrevHash)) != 0);
+                           kPrevHash) != 0);
 
     kth_chain_header_destruct(header);
 }
@@ -143,7 +139,7 @@ TEST_CASE("C-API Header - merkle setter roundtrip", "[C-API Header]") {
 
     kth_chain_header_set_merkle(header, kMerkle);
     REQUIRE(kth_hash_equal(kth_chain_header_merkle(header),
-                           make_hash(kMerkle)) != 0);
+                           kMerkle) != 0);
 
     kth_chain_header_destruct(header);
 }
@@ -267,18 +263,22 @@ TEST_CASE("C-API Header - construct_from_data NULL data with zero size returns e
     REQUIRE(out == NULL);
 }
 
-TEST_CASE("C-API Header - construct null previous_block_hash aborts",
+// The safe `kth_chain_header_construct` takes `kth_hash_t` by value, so
+// passing NULL is a compile error rather than a runtime abort. The
+// corresponding precondition still exists on the `_unsafe` companion,
+// where the C type system can no longer enforce the buffer length.
+TEST_CASE("C-API Header - construct_unsafe null previous_block_hash aborts",
           "[C-API Header][precondition]") {
     KTH_EXPECT_ABORT(
-        kth_chain_header_construct(kVersion, NULL, kMerkle,
-                                   kTimestamp, kBits, kNonce));
+        kth_chain_header_construct_unsafe(kVersion, NULL, kMerkle.hash,
+                                          kTimestamp, kBits, kNonce));
 }
 
-TEST_CASE("C-API Header - construct null merkle aborts",
+TEST_CASE("C-API Header - construct_unsafe null merkle aborts",
           "[C-API Header][precondition]") {
     KTH_EXPECT_ABORT(
-        kth_chain_header_construct(kVersion, kPrevHash, NULL,
-                                   kTimestamp, kBits, kNonce));
+        kth_chain_header_construct_unsafe(kVersion, kPrevHash.hash, NULL,
+                                          kTimestamp, kBits, kNonce));
 }
 
 TEST_CASE("C-API Header - to_data null out_size aborts",
@@ -288,16 +288,16 @@ TEST_CASE("C-API Header - to_data null out_size aborts",
     kth_chain_header_destruct(header);
 }
 
-TEST_CASE("C-API Header - set_previous_block_hash null aborts",
+TEST_CASE("C-API Header - set_previous_block_hash_unsafe null aborts",
           "[C-API Header][precondition]") {
     kth_header_mut_t header = kth_chain_header_construct_default();
-    KTH_EXPECT_ABORT(kth_chain_header_set_previous_block_hash(header, NULL));
+    KTH_EXPECT_ABORT(kth_chain_header_set_previous_block_hash_unsafe(header, NULL));
     kth_chain_header_destruct(header);
 }
 
-TEST_CASE("C-API Header - set_merkle null aborts",
+TEST_CASE("C-API Header - set_merkle_unsafe null aborts",
           "[C-API Header][precondition]") {
     kth_header_mut_t header = kth_chain_header_construct_default();
-    KTH_EXPECT_ABORT(kth_chain_header_set_merkle(header, NULL));
+    KTH_EXPECT_ABORT(kth_chain_header_set_merkle_unsafe(header, NULL));
     kth_chain_header_destruct(header);
 }

@@ -58,14 +58,10 @@ kth_chain_operation_list_mut_cpp(kth_operation_list_mut_t l) {
     return *static_cast<std::vector<kth::domain::machine::operation>*>(l);
 }
 
-inline kth::domain::chain::transaction const&
-kth_chain_transaction_const_cpp(kth_transaction_const_t o) {
-    return *static_cast<kth::domain::chain::transaction const*>(o);
-}
-inline kth::domain::chain::transaction&
-kth_chain_transaction_mut_cpp(kth_transaction_mut_t o) {
-    return *static_cast<kth::domain::chain::transaction*>(o);
-}
+// transaction conversion functions take const/mut handle types directly.
+// Defined in src/chain/transaction.cpp.
+kth::domain::chain::transaction const& kth_chain_transaction_const_cpp(kth_transaction_const_t o);
+kth::domain::chain::transaction&       kth_chain_transaction_mut_cpp(kth_transaction_mut_t o);
 
 // std::vector<std::array<uint8_t, 33>> matches the existing
 // `ec_compressed_cpp_t` alias used by the legacy converters further down.
@@ -103,11 +99,37 @@ inline std::vector<std::vector<uint8_t>>&
 kth_chain_data_stack_mut_cpp(kth_data_stack_mut_t s) {
     return *static_cast<std::vector<std::vector<uint8_t>>*>(s);
 }
-KTH_CONV_DECLARE(chain, kth_input_t, kth::domain::chain::input, input)
+// Legacy `KTH_CONV_DECLARE(chain, kth_input_t, ...)` removed: the const/mut
+// converters below (defined out-of-line in src/chain/input.cpp) cover both
+// modern `kth_input_const_t` callers and legacy `kth_input_t` callers via
+// the implicit `void* → void const*` qualification conversion. The macro
+// expansion in src/chain/input_list.cpp depends on this fallthrough.
 // input conversion functions take const/mut handle types directly. Defined
 // in src/chain/input.cpp.
 kth::domain::chain::input const& kth_chain_input_const_cpp(kth_input_const_t o);
 kth::domain::chain::input&       kth_chain_input_mut_cpp(kth_input_mut_t o);
+
+// input_list / output_list — overloads of the legacy `*_list_const_cpp`
+// converters that accept the new const/mut handle aliases used by the
+// migrated chain/transaction binding. The legacy void* converter declared
+// further below by KTH_LIST_DECLARE_CONVERTERS keeps working for callers
+// that haven't migrated yet.
+inline std::vector<kth::domain::chain::input> const&
+kth_chain_input_list_const_cpp(kth_input_list_const_t l) {
+    return *static_cast<std::vector<kth::domain::chain::input> const*>(l);
+}
+inline std::vector<kth::domain::chain::input>&
+kth_chain_input_list_mut_cpp(kth_input_list_mut_t l) {
+    return *static_cast<std::vector<kth::domain::chain::input>*>(l);
+}
+inline std::vector<kth::domain::chain::output> const&
+kth_chain_output_list_const_cpp(kth_output_list_const_t l) {
+    return *static_cast<std::vector<kth::domain::chain::output> const*>(l);
+}
+inline std::vector<kth::domain::chain::output>&
+kth_chain_output_list_mut_cpp(kth_output_list_mut_t l) {
+    return *static_cast<std::vector<kth::domain::chain::output>*>(l);
+}
 // output conversion functions take const/mut handle types directly. Defined
 // in src/chain/output.cpp.
 kth::domain::chain::output const& kth_chain_output_const_cpp(kth_output_const_t o);
@@ -120,8 +142,10 @@ kth::domain::chain::output_point&       kth_chain_output_point_mut_cpp(kth_outpu
 // in src/chain/script.cpp.
 kth::domain::chain::script const& kth_chain_script_const_cpp(kth_script_const_t o);
 kth::domain::chain::script&       kth_chain_script_mut_cpp(kth_script_mut_t o);
-KTH_CONV_DECLARE(chain, kth_transaction_t, kth::domain::chain::transaction, transaction)
-// KTH_CONV_DECLARE(chain, kth_transaction_t, kth::domain::chain::transaction, transaction)
+// Legacy `KTH_CONV_DECLARE(chain, kth_transaction_t, ...)` removed: the
+// const/mut converters above (defined out-of-line in src/chain/transaction.cpp)
+// cover both modern `kth_transaction_const_t` callers and legacy `kth_transaction_t`
+// callers via the implicit `void* → void const*` qualification conversion.
 // point conversion functions take const/mut handle types directly. Defined
 // in src/chain/point.cpp.
 kth::domain::chain::point const& kth_chain_point_const_cpp(kth_point_const_t o);

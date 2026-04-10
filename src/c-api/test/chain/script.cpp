@@ -35,19 +35,19 @@ static uint8_t const kOpReturnPrefixed[2] = { 0x01, 0x6a };
 static uint8_t const kOpReturnRaw[1]      = { 0x6a };
 
 // 20-byte short hash (used for pay_script_hash patterns).
-static uint8_t const kShortHash[20] = {
+static kth_shorthash_t const kShortHash = {{
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
     0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
     0x10, 0x11, 0x12, 0x13
-};
+}};
 
 // 32-byte hash (used for pay_script_hash_32 patterns).
-static uint8_t const kHash32[32] = {
+static kth_hash_t const kHash32 = {{
     0x6f, 0xe2, 0x8c, 0x0a, 0xb6, 0xf1, 0xb3, 0x72,
     0xc1, 0xa6, 0xa2, 0x46, 0xae, 0x63, 0xf7, 0x4f,
     0x93, 0x1e, 0x83, 0x65, 0xe1, 0x5a, 0x08, 0x9c,
     0x68, 0xd6, 0x19, 0x00, 0x00, 0x00, 0x00, 0x00
-};
+}};
 
 // ---------------------------------------------------------------------------
 // Constructors / lifecycle
@@ -280,7 +280,10 @@ TEST_CASE("C-API Script - equals null self aborts",
     kth_chain_script_destruct(other);
 }
 
-TEST_CASE("C-API Script - to_pay_script_hash_pattern null hash aborts",
+// Safe `kth_chain_script_to_pay_script_hash_pattern` takes the short
+// hash by value: passing NULL is a compile error. The runtime
+// precondition still applies on the `_unsafe` companion.
+TEST_CASE("C-API Script - to_pay_script_hash_pattern_unsafe null hash aborts",
           "[C-API Script][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_script_to_pay_script_hash_pattern(NULL));
+    KTH_EXPECT_ABORT(kth_chain_script_to_pay_script_hash_pattern_unsafe(NULL));
 }
