@@ -110,7 +110,7 @@ TEST_CASE("C-API Block - transactions returns borrowed view",
     kth_transaction_list_const_t txs = kth_chain_block_transactions(blk);
     REQUIRE(txs != NULL);
     // Genesis block has exactly 1 transaction.
-    REQUIRE(kth_chain_transaction_list_count((kth_transaction_list_t)txs) == 1u);
+    REQUIRE(kth_chain_transaction_list_count(txs) == 1u);
     kth_chain_block_destruct(blk);
 }
 

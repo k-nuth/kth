@@ -16,6 +16,7 @@
 #include <kth/capi/chain/operation_list.h>
 #include <kth/capi/chain/script.h>
 #include <kth/capi/chain/script_pattern.h>
+#include <kth/capi/chain/transaction.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/primitives.h>
 
@@ -286,4 +287,26 @@ TEST_CASE("C-API Script - equals null self aborts",
 TEST_CASE("C-API Script - to_pay_script_hash_pattern_unsafe null hash aborts",
           "[C-API Script][precondition]") {
     KTH_EXPECT_ABORT(kth_chain_script_to_pay_script_hash_pattern_unsafe(NULL));
+}
+
+// ---------------------------------------------------------------------------
+// Regression: null public_key with zero size must not UB
+// ---------------------------------------------------------------------------
+
+TEST_CASE("C-API Script - check_signature with null public_key and zero size",
+          "[C-API Script][regression]") {
+    kth_transaction_mut_t tx = kth_chain_transaction_construct_default();
+    kth_script_mut_t script = kth_chain_script_construct_default();
+    kth_longhash_t sig;
+    memset(sig.hash, 0, sizeof(sig.hash));
+    kth_size_t out_size = 0;
+
+    // public_key=NULL, public_key_n=0 is valid per the precondition.
+    // Must not crash (data_chunk(nullptr, nullptr+0) is UB).
+    kth_bool_t result = kth_chain_script_check_signature(
+        sig, 0, NULL, 0, script, tx, 0, 0, 0, &out_size);
+    (void)result;
+
+    kth_chain_script_destruct(script);
+    kth_chain_transaction_destruct(tx);
 }

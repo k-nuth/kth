@@ -30,10 +30,10 @@ void kth_chain_unsubscribe(kth_chain_t chain);
 //-------------------------------------------------------------------------
 
 KTH_EXPORT
-void kth_chain_transaction_validate(kth_chain_t chain, void* ctx, kth_transaction_t tx, kth_validate_tx_handler_t handler);
+void kth_chain_transaction_validate(kth_chain_t chain, void* ctx, kth_transaction_mut_t tx, kth_validate_tx_handler_t handler);
 
 KTH_EXPORT
-void kth_chain_transaction_validate_sequential(kth_chain_t chain, void* ctx, kth_transaction_t tx, kth_validate_tx_handler_t handler);
+void kth_chain_transaction_validate_sequential(kth_chain_t chain, void* ctx, kth_transaction_mut_t tx, kth_validate_tx_handler_t handler);
 
 
 // Queries.

@@ -111,8 +111,8 @@ uint64_t kth_chain_utxo_get_amount(kth_utxo_t utxo) {
     return kth_chain_utxo_const_cpp(utxo).amount();
 }
 
-kth_output_t kth_chain_utxo_get_cached_output(kth_utxo_t utxo) {
-    auto& output = kth_chain_utxo_const_cpp(utxo).point().validation.cache;
+kth_output_const_t kth_chain_utxo_get_cached_output(kth_utxo_t utxo) {
+    auto const& output = kth_chain_utxo_const_cpp(utxo).point().validation.cache;
     return &output;
 }
 
@@ -217,7 +217,7 @@ void kth_chain_utxo_set_amount(kth_utxo_t utxo, uint64_t amount) {
     kth_chain_utxo_cpp(utxo).set_amount(amount);
 }
 
-void kth_chain_utxo_set_cached_output(kth_utxo_t utxo, kth_output_t output) {
+void kth_chain_utxo_set_cached_output(kth_utxo_t utxo, kth_output_const_t output) {
     kth_chain_utxo_cpp(utxo).point().validation.cache = kth_chain_output_const_cpp(output);
 }
 

@@ -27,7 +27,7 @@ kth::blockchain::safe_chain& safe_chain(kth_chain_t chain) {
 }
 
 inline
-kth::domain::message::transaction::const_ptr tx_shared(kth_transaction_t tx) {
+kth::domain::message::transaction::const_ptr tx_shared(kth_transaction_const_t tx) {
     auto const& tx_ref = *static_cast<kth::domain::chain::transaction const*>(tx);
     auto* tx_new = new kth::domain::message::transaction(tx_ref);
     return kth::domain::message::transaction::const_ptr(tx_new);
@@ -41,15 +41,15 @@ kth::domain::message::transaction::const_ptr tx_shared(kth_transaction_t tx) {
 // }
 
 inline
-kth::domain::message::block::const_ptr block_shared(kth_block_t block) {
+kth::domain::message::block::const_ptr block_shared(kth_block_const_t block) {
     auto const& block_ref = *static_cast<kth::domain::chain::block const*>(block);
     auto* block_new = new kth::domain::message::block(block_ref);
     return kth::domain::message::block::const_ptr(block_new);
 }
 
 inline
-kth_block_t cast_block(kth::domain::chain::block const& x) {
-    return const_cast<kth::domain::chain::block*>(&x);
+kth_block_const_t cast_block(kth::domain::chain::block const& x) {
+    return &x;
 }
 
 } /* end of anonymous namespace */
@@ -68,7 +68,7 @@ void kth_chain_subscribe_blockchain(kth_node_t exec, kth_chain_t chain, void* ct
             return 1;
         }
 
-        kth_block_list_t incoming_cpp = nullptr;
+        kth_block_list_mut_t incoming_cpp = nullptr;
         if (incoming) {
             incoming_cpp = kth_chain_block_list_construct_default();
             for (auto&& x : *incoming) {
@@ -78,7 +78,7 @@ void kth_chain_subscribe_blockchain(kth_node_t exec, kth_chain_t chain, void* ct
             }
         }
 
-        kth_block_list_t replaced_blocks_cpp = nullptr;
+        kth_block_list_mut_t replaced_blocks_cpp = nullptr;
         if (replaced_blocks) {
             replaced_blocks_cpp = kth_chain_block_list_construct_default();
             for (auto&& x : *replaced_blocks) {
@@ -110,7 +110,7 @@ void kth_chain_unsubscribe(kth_chain_t chain) {
     safe_chain(chain).unsubscribe();
 }
 
-void kth_chain_transaction_validate_sequential(kth_chain_t chain, void* ctx, kth_transaction_t tx, kth_validate_tx_handler_t handler) {
+void kth_chain_transaction_validate_sequential(kth_chain_t chain, void* ctx, kth_transaction_mut_t tx, kth_validate_tx_handler_t handler) {
     if (handler == nullptr) return;
 
     auto tx_cpp = tx_shared(tx);
@@ -125,7 +125,7 @@ void kth_chain_transaction_validate_sequential(kth_chain_t chain, void* ctx, kth
     });
 }
 
-void kth_chain_transaction_validate(kth_chain_t chain, void* ctx, kth_transaction_t tx, kth_validate_tx_handler_t handler) {
+void kth_chain_transaction_validate(kth_chain_t chain, void* ctx, kth_transaction_mut_t tx, kth_validate_tx_handler_t handler) {
     if (handler == nullptr) return;
 
     safe_chain(chain).transaction_validate(tx_shared(tx), [chain, ctx, handler](std::error_code const& ec) {

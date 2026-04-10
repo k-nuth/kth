@@ -18,7 +18,7 @@ KTH_EXPORT
 void kth_wallet_wallet_data_destruct(kth_wallet_data_t wallet_data);
 
 KTH_EXPORT
-kth_string_list_t kth_wallet_wallet_data_mnemonics(kth_wallet_data_t wallet_data);
+kth_string_list_mut_t kth_wallet_wallet_data_mnemonics(kth_wallet_data_t wallet_data);
 
 KTH_EXPORT
 kth_hd_public_t kth_wallet_wallet_data_xpub(kth_wallet_data_t wallet_data);

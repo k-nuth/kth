@@ -36,12 +36,12 @@ kth_payment_address_t kth_wallet_payment_address_construct_from_point(kth_ec_pub
     return new kth::domain::wallet::payment_address(point_cpp, version);
 }
 
-kth_payment_address_t kth_wallet_payment_address_construct_from_script(kth_script_t script, uint8_t version) {
+kth_payment_address_t kth_wallet_payment_address_construct_from_script(kth_script_const_t script, uint8_t version) {
     auto script_cpp = kth_chain_script_const_cpp(script);
     return new kth::domain::wallet::payment_address(script_cpp, version);
 }
 
-kth_payment_address_t kth_wallet_payment_address_from_pay_public_key_hash_script(kth_script_t script, uint8_t version) {
+kth_payment_address_t kth_wallet_payment_address_from_pay_public_key_hash_script(kth_script_const_t script, uint8_t version) {
     auto script_cpp = kth_chain_script_const_cpp(script);
     auto pa = kth::domain::wallet::payment_address::from_pay_public_key_hash_script(script_cpp, version);
     return kth::move_or_copy_and_leak(std::move(pa));
@@ -107,19 +107,19 @@ kth_bool_t kth_wallet_payment_address_is_valid(kth_payment_address_t payment_add
     return kth::bool_to_int(bool(kth_wallet_payment_address_const_cpp(payment_address)));
 }
 
-kth_payment_address_list_const_t kth_wallet_payment_address_extract(kth_script_t script, uint8_t p2kh_version, uint8_t p2sh_version) {
+kth_payment_address_list_const_t kth_wallet_payment_address_extract(kth_script_const_t script, uint8_t p2kh_version, uint8_t p2sh_version) {
     auto const& script_cpp = kth_chain_script_const_cpp(script);
     auto addrs = kth::domain::wallet::payment_address::extract(script_cpp, p2kh_version, p2sh_version);
     return kth::move_or_copy_and_leak(std::move(addrs));
 }
 
-kth_payment_address_list_const_t kth_wallet_payment_address_extract_input(kth_script_t script, uint8_t p2kh_version, uint8_t p2sh_version) {
+kth_payment_address_list_const_t kth_wallet_payment_address_extract_input(kth_script_const_t script, uint8_t p2kh_version, uint8_t p2sh_version) {
     auto const& script_cpp = kth_chain_script_const_cpp(script);
     auto addrs = kth::domain::wallet::payment_address::extract_input(script_cpp, p2kh_version, p2sh_version);
     return kth::move_or_copy_and_leak(std::move(addrs));
 }
 
-kth_payment_address_list_const_t kth_wallet_payment_address_extract_output(kth_script_t script, uint8_t p2kh_version, uint8_t p2sh_version) {
+kth_payment_address_list_const_t kth_wallet_payment_address_extract_output(kth_script_const_t script, uint8_t p2kh_version, uint8_t p2sh_version) {
     auto const& script_cpp = kth_chain_script_const_cpp(script);
     auto addrs = kth::domain::wallet::payment_address::extract_output(script_cpp, p2kh_version, p2sh_version);
     return kth::move_or_copy_and_leak(std::move(addrs));

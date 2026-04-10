@@ -35,7 +35,7 @@ void kth_chain_merkle_block_hash_nth_out(kth_merkleblock_t block, kth_size_t n, 
     kth::copy_c_hash(hash_n, out_hash);
 }
 
-kth_header_t kth_chain_merkle_block_header(kth_merkleblock_t block) {
+kth_header_mut_t kth_chain_merkle_block_header(kth_merkleblock_t block) {
     return &kth_chain_merkle_block_cpp(block).header();
 }
 

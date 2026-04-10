@@ -28,7 +28,7 @@ kth::blockchain::safe_chain& safe_chain(kth_chain_t chain) {
 }
 
 inline
-kth::domain::message::transaction::const_ptr tx_shared(kth_transaction_t tx) {
+kth::domain::message::transaction::const_ptr tx_shared(kth_transaction_const_t tx) {
     auto const& tx_ref = *static_cast<kth::domain::chain::transaction const*>(tx);
     auto* tx_new = new kth::domain::message::transaction(tx_ref);
     return kth::domain::message::transaction::const_ptr(tx_new);
@@ -42,7 +42,7 @@ kth::domain::message::transaction::const_ptr tx_shared(kth_transaction_t tx) {
 // }
 
 inline
-kth::domain::message::block::const_ptr block_shared(kth_block_t block) {
+kth::domain::message::block::const_ptr block_shared(kth_block_const_t block) {
     auto const& block_ref = *static_cast<kth::domain::chain::block const*>(block);
     auto* block_new = new kth::domain::message::block(block_ref);
     return kth::domain::message::block::const_ptr(block_new);
@@ -84,7 +84,7 @@ kth_error_code_t kth_chain_sync_block_height(kth_chain_t chain, kth_hash_t hash,
     return res;
 }
 
-kth_error_code_t kth_chain_sync_block_header_by_height(kth_chain_t chain, kth_size_t height, kth_header_t* out_header, kth_size_t* out_height) {
+kth_error_code_t kth_chain_sync_block_header_by_height(kth_chain_t chain, kth_size_t height, kth_header_mut_t* out_header, kth_size_t* out_height) {
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
@@ -99,7 +99,7 @@ kth_error_code_t kth_chain_sync_block_header_by_height(kth_chain_t chain, kth_si
     return res;
 }
 
-kth_error_code_t kth_chain_sync_block_header_by_hash(kth_chain_t chain, kth_hash_t hash, kth_header_t* out_header, kth_size_t* out_height) {
+kth_error_code_t kth_chain_sync_block_header_by_hash(kth_chain_t chain, kth_hash_t hash, kth_header_mut_t* out_header, kth_size_t* out_height) {
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
@@ -116,7 +116,7 @@ kth_error_code_t kth_chain_sync_block_header_by_hash(kth_chain_t chain, kth_hash
     return res;
 }
 
-kth_error_code_t kth_chain_sync_block_by_height(kth_chain_t chain, kth_size_t height, kth_block_t* out_block, kth_size_t* out_height) {
+kth_error_code_t kth_chain_sync_block_by_height(kth_chain_t chain, kth_size_t height, kth_block_mut_t* out_block, kth_size_t* out_height) {
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
@@ -136,7 +136,7 @@ kth_error_code_t kth_chain_sync_block_by_height(kth_chain_t chain, kth_size_t he
     return res;
 }
 
-kth_error_code_t kth_chain_sync_block_by_hash(kth_chain_t chain, kth_hash_t hash, kth_block_t* out_block, kth_size_t* out_height) {
+kth_error_code_t kth_chain_sync_block_by_hash(kth_chain_t chain, kth_hash_t hash, kth_block_mut_t* out_block, kth_size_t* out_height) {
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
@@ -158,7 +158,7 @@ kth_error_code_t kth_chain_sync_block_by_hash(kth_chain_t chain, kth_hash_t hash
     return res;
 }
 
-kth_error_code_t kth_chain_sync_block_header_byhash_txs_size(kth_chain_t chain, kth_hash_t hash, kth_header_t* out_header, uint64_t* out_block_height, kth_hash_list_t* out_tx_hashes, uint64_t* out_serialized_size) {
+kth_error_code_t kth_chain_sync_block_header_byhash_txs_size(kth_chain_t chain, kth_hash_t hash, kth_header_mut_t* out_header, uint64_t* out_block_height, kth_hash_list_mut_t* out_tx_hashes, uint64_t* out_serialized_size) {
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
@@ -274,7 +274,7 @@ kth_error_code_t kth_chain_sync_block_hash(kth_chain_t chain, kth_size_t height,
     return kth_ec_success;
 }
 
-kth_error_code_t kth_chain_sync_transaction(kth_chain_t chain, kth_hash_t hash, int require_confirmed, kth_transaction_t* out_transaction, kth_size_t* out_height, kth_size_t* out_index) {
+kth_error_code_t kth_chain_sync_transaction(kth_chain_t chain, kth_hash_t hash, int require_confirmed, kth_transaction_mut_t* out_transaction, kth_size_t* out_height, kth_size_t* out_index) {
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
@@ -309,11 +309,11 @@ kth_error_code_t kth_chain_sync_transaction_position(kth_chain_t chain, kth_hash
     return res;
 }
 
-kth_error_code_t kth_chain_sync_spend(kth_chain_t chain, kth_outputpoint_t op, kth_inputpoint_t* out_input_point) {
+kth_error_code_t kth_chain_sync_spend(kth_chain_t chain, kth_output_point_const_t op, kth_inputpoint_t* out_input_point) {
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
-    auto* outpoint_cpp = static_cast<kth::domain::chain::output_point*>(op);
+    auto const* outpoint_cpp = static_cast<kth::domain::chain::output_point const*>(op);
 
     safe_chain(chain).fetch_spend(*outpoint_cpp, [&](std::error_code const& ec, kth::domain::chain::input_point input_point) {
         *out_input_point = kth::leak_if_success(input_point, ec);
@@ -339,7 +339,7 @@ kth_error_code_t kth_chain_sync_history(kth_chain_t chain, kth_payment_address_t
     return res;
 }
 
-kth_error_code_t kth_chain_sync_confirmed_transactions(kth_chain_t chain, kth_payment_address_t address, uint64_t max, uint64_t start_height, kth_hash_list_t* out_tx_hashes) {
+kth_error_code_t kth_chain_sync_confirmed_transactions(kth_chain_t chain, kth_payment_address_t address, uint64_t max, uint64_t start_height, kth_hash_list_mut_t* out_tx_hashes) {
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
@@ -383,7 +383,7 @@ kth_mempool_transaction_list_t kth_chain_sync_mempool_transactions(kth_chain_t c
     return static_cast<kth_mempool_transaction_list_t>(ret_txs);
 }
 
-kth_transaction_list_t kth_chain_sync_mempool_transactions_from_wallets(kth_chain_t chain, kth_payment_address_list_t addresses, kth_bool_t use_testnet_rules) {
+kth_transaction_list_mut_t kth_chain_sync_mempool_transactions_from_wallets(kth_chain_t chain, kth_payment_address_list_t addresses, kth_bool_t use_testnet_rules) {
     auto const& addresses_cpp = *static_cast<std::vector<kth::domain::wallet::payment_address> const*>(addresses);
     auto txs = safe_chain(chain).get_mempool_transactions_from_wallets(addresses_cpp, kth::int_to_bool(use_testnet_rules));
     return kth::move_or_copy_and_leak(std::move(txs));
@@ -392,7 +392,7 @@ kth_transaction_list_t kth_chain_sync_mempool_transactions_from_wallets(kth_chai
 // Organizers.
 //-------------------------------------------------------------------------
 
-int kth_chain_sync_organize_block(kth_chain_t chain, kth_block_t block) {
+int kth_chain_sync_organize_block(kth_chain_t chain, kth_block_mut_t block) {
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
@@ -405,7 +405,7 @@ int kth_chain_sync_organize_block(kth_chain_t chain, kth_block_t block) {
     return res;
 }
 
-int kth_chain_sync_organize_transaction(kth_chain_t chain, kth_transaction_t transaction) {
+int kth_chain_sync_organize_transaction(kth_chain_t chain, kth_transaction_mut_t transaction) {
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 

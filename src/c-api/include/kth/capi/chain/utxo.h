@@ -49,7 +49,7 @@ KTH_EXPORT
 uint64_t kth_chain_utxo_get_amount(kth_utxo_t utxo);
 
 KTH_EXPORT
-kth_output_t kth_chain_utxo_get_cached_output(kth_utxo_t utxo);
+kth_output_const_t kth_chain_utxo_get_cached_output(kth_utxo_t utxo);
 
 KTH_EXPORT
 kth_bool_t kth_chain_utxo_has_token_data(kth_utxo_t utxo);
@@ -83,7 +83,7 @@ KTH_EXPORT
 void kth_chain_utxo_set_amount(kth_utxo_t utxo, uint64_t amount);
 
 KTH_EXPORT
-void kth_chain_utxo_set_cached_output(kth_utxo_t utxo, kth_output_t output);
+void kth_chain_utxo_set_cached_output(kth_utxo_t utxo, kth_output_const_t output);
 
 KTH_EXPORT
 void kth_chain_utxo_set_token_data(kth_utxo_t utxo, kth_token_data_t token_data);

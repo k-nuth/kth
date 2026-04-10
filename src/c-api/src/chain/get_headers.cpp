@@ -19,7 +19,7 @@ kth_get_headers_t kth_chain_get_headers_construct_default() {
     return new kth::domain::message::get_headers();
 }
 
-kth_get_headers_t kth_chain_get_headers_construct(kth_hash_list_t start, kth_hash_t stop) {
+kth_get_headers_t kth_chain_get_headers_construct(kth_hash_list_const_t start, kth_hash_t stop) {
     auto const& start_cpp = kth_core_hash_list_const_cpp(start);
     auto stop_cpp = kth::to_array(stop.hash);
 
@@ -30,12 +30,12 @@ void kth_chain_get_headers_destruct(kth_get_headers_t get_b) {
     delete &kth_chain_get_headers_cpp(get_b);
 }
 
-kth_hash_list_t kth_chain_get_headers_start_hashes(kth_get_headers_t get_b) {
+kth_hash_list_mut_t kth_chain_get_headers_start_hashes(kth_get_headers_t get_b) {
     auto& list = kth_chain_get_headers_cpp(get_b).start_hashes();
     return kth_core_hash_list_construct_from_cpp(list);
 }
 
-void kth_chain_get_headers_set_start_hashes(kth_get_headers_t get_b, kth_hash_list_t value) {
+void kth_chain_get_headers_set_start_hashes(kth_get_headers_t get_b, kth_hash_list_const_t value) {
     auto const& value_cpp = kth_core_hash_list_const_cpp(value);
     kth_chain_get_headers_cpp(get_b).set_start_hashes(value_cpp);
 }
