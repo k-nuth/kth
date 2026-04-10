@@ -93,8 +93,14 @@ typedef void* kth_p2p_t;
 
 // TODO(fernando): check if we can encapsulate the pointer into a struct to make them more "type safe"
 typedef void* kth_block_t;
+typedef void* kth_block_mut_t;
+typedef void const* kth_block_const_t;
 typedef void* kth_block_indexes_t;
+typedef void* kth_block_indexes_mut_t;
+typedef void const* kth_block_indexes_const_t;
 typedef void* kth_block_list_t;
+typedef void* kth_block_list_mut_t;
+typedef void const* kth_block_list_const_t;
 typedef void* kth_compact_block_t;
 typedef void* kth_double_spend_proof_t;
 typedef void* kth_double_spend_proof_spender_t;
@@ -151,6 +157,8 @@ typedef void* kth_transaction_t;
 typedef void* kth_transaction_mut_t;
 typedef void const* kth_transaction_const_t;
 typedef void* kth_transaction_list_t;
+typedef void* kth_transaction_list_mut_t;
+typedef void const* kth_transaction_list_const_t;
 typedef void* kth_mempool_transaction_t;
 typedef void* kth_mempool_transaction_list_t;
 typedef void* kth_get_blocks_t;
