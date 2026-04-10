@@ -238,7 +238,7 @@ set(kth_sources
         src/chain/output_point.cpp
         src/chain/point.cpp
         src/chain/point_list.cpp
-        src/chain/outputpoint_list.cpp
+        src/chain/output_point_list.cpp
         src/chain/mempool_transaction.cpp
 
         src/chain/token_data.cpp
@@ -380,7 +380,7 @@ set(kth_headers
     include/kth/capi/chain/history_compact.h
     include/kth/capi/chain/output.h
     include/kth/capi/chain/output_list.h
-    include/kth/capi/chain/outputpoint_list.h
+    include/kth/capi/chain/output_point_list.h
     include/kth/capi/chain/get_blocks.h
     include/kth/capi/chain/double_spend_proof_spender.h
     include/kth/capi/chain/point.h
@@ -504,6 +504,13 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/output.cpp
         test/chain/input.cpp
         test/chain/transaction.cpp
+        test/chain/block.cpp
+        test/chain/block_list.cpp
+        test/chain/input_list.cpp
+        test/chain/output_list.cpp
+        test/chain/transaction_list.cpp
+        test/chain/point_list.cpp
+        test/chain/output_point_list.cpp
     )
 
     target_link_libraries(kth_capi_test PUBLIC ${PROJECT_NAME})

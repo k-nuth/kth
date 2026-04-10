@@ -163,7 +163,8 @@ kth_bool_t kth_chain_input_is_final(kth_input_const_t self) {
 
 kth_bool_t kth_chain_input_is_locked(kth_input_const_t self, kth_size_t block_height, uint32_t median_time_past) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_input_const_cpp(self).is_locked(block_height, median_time_past));
+    auto block_height_cpp = static_cast<size_t>(block_height);
+    return kth::bool_to_int(kth_chain_input_const_cpp(self).is_locked(block_height_cpp, median_time_past));
 }
 
 
