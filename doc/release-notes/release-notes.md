@@ -1,3 +1,25 @@
+# version 0.79.0
+
+You can install Knuth node version v0.79.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* refactor(c-api): unify and harden chain/header bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/216
+* refactor(c-api): unify and harden chain/point bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/217
+* refactor(c-api): unify and harden chain/output_point bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/218
+* refactor(c-api): unify and harden chain/script bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/219
+* refactor(c-api): unify and harden chain/output bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/220
+* refactor(c-api): unify and harden chain/input bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/221
+* refactor(c-api): unify and harden chain/transaction bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/222
+* refactor(c-api): unify and harden chain/block bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/223
+* refactor(c-api): regenerate chain list bindings from generator by @fpelliccioni in https://github.com/k-nuth/kth/pull/224
+* refactor(c-api): generate value-type lists and remove legacy typedefs by @fpelliccioni in https://github.com/k-nuth/kth/pull/225
+* chore: cleanup for 0.79.0 release by @fpelliccioni in https://github.com/k-nuth/kth/pull/226
+* release: 0.79.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/227
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.78.0...v0.79.0
+
+
 # version 0.78.0
 
 You can install Knuth node version v0.78.0 [using these instructions](https://kth.cash/#download).
