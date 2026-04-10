@@ -15,16 +15,16 @@ extern "C" {
 #endif
 
 KTH_EXPORT
-kth_longhash_t kth_wallet_mnemonics_to_seed(kth_string_list_t mnemonics);
+kth_longhash_t kth_wallet_mnemonics_to_seed(kth_string_list_const_t mnemonics);
 
 KTH_EXPORT
-void kth_wallet_mnemonics_to_seed_out(kth_string_list_t mnemonics, kth_longhash_t* out_hash);
+void kth_wallet_mnemonics_to_seed_out(kth_string_list_const_t mnemonics, kth_longhash_t* out_hash);
 
 KTH_EXPORT
-kth_longhash_t kth_wallet_mnemonics_to_seed_normalized_passphrase(kth_string_list_t mnemonics, char const* normalized_passphrase);
+kth_longhash_t kth_wallet_mnemonics_to_seed_normalized_passphrase(kth_string_list_const_t mnemonics, char const* normalized_passphrase);
 
 KTH_EXPORT
-void kth_wallet_mnemonics_to_seed_normalized_passphrase_out(kth_string_list_t mnemonics, char const* normalized_passphrase, kth_longhash_t* out_hash);
+void kth_wallet_mnemonics_to_seed_normalized_passphrase_out(kth_string_list_const_t mnemonics, char const* normalized_passphrase, kth_longhash_t* out_hash);
 
 KTH_EXPORT
 kth_hd_private_t kth_wallet_hd_new(kth_longhash_t seed, uint32_t version /* = 76066276*/);
@@ -43,7 +43,7 @@ kth_payment_address_t kth_wallet_ec_to_address(kth_ec_public_t point, uint32_t v
 
 
 // KTH_EXPORT
-// kth_longhash_t kth_wallet_mnemonics_to_seed(kth_string_list_t mnemonics);
+// kth_longhash_t kth_wallet_mnemonics_to_seed(kth_string_list_const_t mnemonics);
 
 // KTH_EXPORT
 // kth_ec_secret_t kth_wallet_ec_new(uint8_t* seed, kth_size_t n);

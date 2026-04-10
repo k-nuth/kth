@@ -177,12 +177,21 @@ KTH_CONV_DECLARE(chain, kth_stealth_compact_t, kth::domain::chain::stealth_compa
 KTH_CONV_DECLARE(chain, kth_operation_t, kth::domain::machine::operation, operation)
 
 KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP(chain, kth_utxo_list_t, kth::domain::chain::utxo, utxo_list)
-KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP(core, kth_hash_list_t, kth::hash_digest, hash_list)
+// hash_list — inline converters and construct_from_cpp.
+inline std::vector<kth::hash_digest> const&
+kth_core_hash_list_const_cpp(kth_hash_list_const_t l) {
+    return *static_cast<std::vector<kth::hash_digest> const*>(l);
+}
+inline std::vector<kth::hash_digest>&
+kth_core_hash_list_mut_cpp(kth_hash_list_mut_t l) {
+    return *static_cast<std::vector<kth::hash_digest>*>(l);
+}
+inline kth_hash_list_mut_t kth_core_hash_list_construct_from_cpp(std::vector<kth::hash_digest>& l) {
+    return &l;
+}
 KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP_CONST(chain, kth_operation_list_t, kth::domain::machine::operation, operation_list)
 
 KTH_LIST_DECLARE_CONVERTERS(chain, kth_utxo_list_t, kth::domain::chain::utxo, utxo_list)
-KTH_LIST_DECLARE_CONVERTERS(core, kth_hash_list_t, kth::hash_digest, hash_list)
-KTH_LIST_DECLARE_CONVERTERS(chain, kth_block_indexes_t, kth_size_t, block_indexes)
 
 KTH_LIST_DECLARE_CONVERTERS(chain, kth_operation_list_t, kth::domain::machine::operation, operation_list)
 
@@ -202,11 +211,10 @@ KTH_LIST_DECLARE_CONVERTERS(wallet, kth_payment_address_list_t, kth::domain::wal
 // Core.
 // ------------------------------------------------------------------------------------
 
-KTH_LIST_DECLARE_CONVERTERS(core, kth_double_list_t, double, double_list)
-KTH_LIST_DECLARE_CONVERTERS(core, kth_u32_list_t, uint32_t, u32_list)
-KTH_LIST_DECLARE_CONVERTERS(core, kth_u64_list_t, uint64_t, u64_list)
-KTH_LIST_DECLARE_CONVERTERS(core, kth_string_list_t, std::string, string_list)
-KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP(core, kth_string_list_t, std::string, string_list)
+// string_list — inline construct_from_cpp for wallet_data.cpp callers.
+inline kth_string_list_mut_t kth_core_string_list_construct_from_cpp(std::vector<std::string>& l) {
+    return &l;
+}
 
 
 // VM.

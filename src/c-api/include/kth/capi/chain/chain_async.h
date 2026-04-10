@@ -65,7 +65,7 @@ void kth_chain_async_transaction_position(kth_chain_t chain, void* ctx, kth_hash
 
 
 KTH_EXPORT
-void kth_chain_async_spend(kth_chain_t chain, void* ctx, kth_outputpoint_t op, kth_spend_fetch_handler_t handler);
+void kth_chain_async_spend(kth_chain_t chain, void* ctx, kth_output_point_const_t op, kth_spend_fetch_handler_t handler);
 
 KTH_EXPORT
 void kth_chain_async_history(kth_chain_t chain, void* ctx, kth_payment_address_t address, kth_size_t limit, kth_size_t from_height, kth_history_fetch_handler_t handler);
@@ -80,10 +80,10 @@ void kth_chain_async_confirmed_transactions(kth_chain_t chain, void* ctx, kth_pa
 //-------------------------------------------------------------------------
 
 KTH_EXPORT
-void kth_chain_async_organize_block(kth_chain_t chain, void* ctx, kth_block_t block, kth_result_handler_t handler);
+void kth_chain_async_organize_block(kth_chain_t chain, void* ctx, kth_block_mut_t block, kth_result_handler_t handler);
 
 KTH_EXPORT
-void kth_chain_async_organize_transaction(kth_chain_t chain, void* ctx, kth_transaction_t transaction, kth_result_handler_t handler);
+void kth_chain_async_organize_transaction(kth_chain_t chain, void* ctx, kth_transaction_mut_t transaction, kth_result_handler_t handler);
 
 #ifdef __cplusplus
 } // extern "C"

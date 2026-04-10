@@ -16,7 +16,7 @@ kth_point_kind_t kth_chain_history_compact_get_point_kind(kth_history_compact_t 
     return static_cast<kth_point_kind_t>(kth_chain_history_compact_const_cpp(history).kind);
 }
 
-kth_point_t kth_chain_history_compact_get_point(kth_history_compact_t history) {
+kth_point_mut_t kth_chain_history_compact_get_point(kth_history_compact_t history) {
     return &kth_chain_history_compact_cpp(history).point;
 }
 

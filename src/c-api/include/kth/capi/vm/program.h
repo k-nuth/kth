@@ -33,12 +33,12 @@ kth_program_t kth_vm_program_construct_default(void);
 /// This is useful for script utilities but not with input validation.
 /// This can run ops via run(op, program) or the script via run(program).
 KTH_EXPORT
-kth_program_t kth_vm_program_construct_from_script(kth_script_t script);
+kth_program_t kth_vm_program_construct_from_script(kth_script_const_t script);
 
 /// Create an instance with empty stacks, value unused/max (input run).
 // program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, uint64_t forks);
 KTH_EXPORT
-kth_program_t kth_vm_program_construct_from_script_transaction(kth_script_t script, kth_transaction_t transaction, uint32_t input_index, uint64_t forks);
+kth_program_t kth_vm_program_construct_from_script_transaction(kth_script_const_t script, kth_transaction_const_t transaction, uint32_t input_index, uint64_t forks);
 
 
 /// Create an instance with initialized stack (witness run, v0 by default).
@@ -50,13 +50,13 @@ kth_program_t kth_vm_program_construct_from_script_transaction(kth_script_t scri
 /// Create using copied tx, input, forks, value, stack (prevout run).
 // program(chain::script const& script, const program& x);
 KTH_EXPORT
-kth_program_t kth_vm_program_construct_from_script_program(kth_script_t script, kth_program_t program);
+kth_program_t kth_vm_program_construct_from_script_program(kth_script_const_t script, kth_program_t program);
 
 
 /// Create using copied tx, input, forks, value and moved stack (p2sh run).
 // program(chain::script const& script, program&& x, bool move);
 KTH_EXPORT
-kth_program_t kth_vm_program_construct_from_script_program_move(kth_script_t script, kth_program_t program, kth_bool_t move);
+kth_program_t kth_vm_program_construct_from_script_program_move(kth_script_const_t script, kth_program_t program, kth_bool_t move);
 
 KTH_EXPORT
 kth_metrics_t kth_vm_program_get_metrics(kth_program_t program);

@@ -60,8 +60,8 @@ static kth_script_mut_t make_script(void) {
 
 // Build a single-input/single-output input_list and output_list pair.
 // The caller takes ownership and must free with the matching destruct.
-static kth_input_list_t make_inputs(void) {
-    kth_input_list_t list = kth_chain_input_list_construct_default();
+static kth_input_list_mut_t make_inputs(void) {
+    kth_input_list_mut_t list = kth_chain_input_list_construct_default();
     REQUIRE(list != NULL);
 
     kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kPrevHash, 0);
@@ -78,8 +78,8 @@ static kth_input_list_t make_inputs(void) {
     return list;
 }
 
-static kth_output_list_t make_outputs(void) {
-    kth_output_list_t list = kth_chain_output_list_construct_default();
+static kth_output_list_mut_t make_outputs(void) {
+    kth_output_list_mut_t list = kth_chain_output_list_construct_default();
     REQUIRE(list != NULL);
 
     kth_script_mut_t script = make_script();
@@ -95,8 +95,8 @@ static kth_output_list_t make_outputs(void) {
 
 // Build a complete one-in/one-out transaction. Caller frees with destruct.
 static kth_transaction_mut_t make_tx(void) {
-    kth_input_list_t ins = make_inputs();
-    kth_output_list_t outs = make_outputs();
+    kth_input_list_mut_t ins = make_inputs();
+    kth_output_list_mut_t outs = make_outputs();
     kth_transaction_mut_t tx = kth_chain_transaction_construct_from_version_locktime_inputs_outputs(
         kVersion, kLocktime, ins, outs);
     REQUIRE(tx != NULL);
@@ -192,26 +192,26 @@ TEST_CASE("C-API Transaction - locktime setter roundtrip",
 TEST_CASE("C-API Transaction - inputs setter roundtrip",
           "[C-API Transaction]") {
     kth_transaction_mut_t tx = kth_chain_transaction_construct_default();
-    kth_input_list_t ins = make_inputs();
+    kth_input_list_mut_t ins = make_inputs();
     kth_chain_transaction_set_inputs(tx, ins);
     // Destroy the source list first to prove the setter deep-copied.
     // An aliasing setter would leave a dangling view after this point.
     kth_chain_input_list_destruct(ins);
     kth_input_list_const_t view = kth_chain_transaction_inputs(tx);
     REQUIRE(view != NULL);
-    REQUIRE(kth_chain_input_list_count((kth_input_list_t)view) == 1u);
+    REQUIRE(kth_chain_input_list_count(view) == 1u);
     kth_chain_transaction_destruct(tx);
 }
 
 TEST_CASE("C-API Transaction - outputs setter roundtrip",
           "[C-API Transaction]") {
     kth_transaction_mut_t tx = kth_chain_transaction_construct_default();
-    kth_output_list_t outs = make_outputs();
+    kth_output_list_mut_t outs = make_outputs();
     kth_chain_transaction_set_outputs(tx, outs);
     kth_chain_output_list_destruct(outs);
     kth_output_list_const_t view = kth_chain_transaction_outputs(tx);
     REQUIRE(view != NULL);
-    REQUIRE(kth_chain_output_list_count((kth_output_list_t)view) == 1u);
+    REQUIRE(kth_chain_output_list_count(view) == 1u);
     kth_chain_transaction_destruct(tx);
 }
 
@@ -322,7 +322,7 @@ TEST_CASE("C-API Transaction - copy null self aborts",
 
 TEST_CASE("C-API Transaction - construct null inputs aborts",
           "[C-API Transaction][precondition]") {
-    kth_output_list_t outs = make_outputs();
+    kth_output_list_mut_t outs = make_outputs();
     KTH_EXPECT_ABORT(
         kth_chain_transaction_construct_from_version_locktime_inputs_outputs(
             kVersion, kLocktime, NULL, outs));
@@ -331,7 +331,7 @@ TEST_CASE("C-API Transaction - construct null inputs aborts",
 
 TEST_CASE("C-API Transaction - construct null outputs aborts",
           "[C-API Transaction][precondition]") {
-    kth_input_list_t ins = make_inputs();
+    kth_input_list_mut_t ins = make_inputs();
     KTH_EXPECT_ABORT(
         kth_chain_transaction_construct_from_version_locktime_inputs_outputs(
             kVersion, kLocktime, ins, NULL));

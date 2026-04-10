@@ -22,7 +22,7 @@ void kth_wallet_wallet_data_destruct(kth_wallet_data_t wallet_data) {
     delete &kth_wallet_wallet_data_cpp(wallet_data);
 }
 
-kth_string_list_t kth_wallet_wallet_data_mnemonics(kth_wallet_data_t wallet_data) {
+kth_string_list_mut_t kth_wallet_wallet_data_mnemonics(kth_wallet_data_t wallet_data) {
     auto& mnemonics_cpp = kth_wallet_wallet_data_cpp(wallet_data).mnemonics;
     return kth_core_string_list_construct_from_cpp(mnemonics_cpp);
 }

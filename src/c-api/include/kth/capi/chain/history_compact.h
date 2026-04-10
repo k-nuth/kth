@@ -18,7 +18,7 @@ KTH_EXPORT
 kth_point_kind_t kth_chain_history_compact_get_point_kind(kth_history_compact_t history);
 
 KTH_EXPORT
-kth_point_t kth_chain_history_compact_get_point(kth_history_compact_t history);
+kth_point_mut_t kth_chain_history_compact_get_point(kth_history_compact_t history);
 
 KTH_EXPORT
 uint32_t kth_chain_history_compact_get_height(kth_history_compact_t history);

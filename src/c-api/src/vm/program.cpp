@@ -29,13 +29,13 @@ kth_program_t kth_vm_program_construct_default() {
     return new kth::domain::machine::program();
 }
 
-kth_program_t kth_vm_program_construct_from_script(kth_script_t script) {
+kth_program_t kth_vm_program_construct_from_script(kth_script_const_t script) {
     auto const& script_cpp = kth_chain_script_const_cpp(script);
     return new kth::domain::machine::program(script_cpp);
 }
 
 // program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, uint64_t forks);
-kth_program_t kth_vm_program_construct_from_script_transaction(kth_script_t script, kth_transaction_t transaction, uint32_t input_index, uint64_t forks) {
+kth_program_t kth_vm_program_construct_from_script_transaction(kth_script_const_t script, kth_transaction_const_t transaction, uint32_t input_index, uint64_t forks) {
     auto const& script_cpp = kth_chain_script_const_cpp(script);
     auto const& transaction_cpp = kth_chain_transaction_const_cpp(transaction);
     return new kth::domain::machine::program(script_cpp, transaction_cpp, input_index, forks);
@@ -45,7 +45,7 @@ kth_program_t kth_vm_program_construct_from_script_transaction(kth_script_t scri
 // kth_program_t kth_vm_program_construct_from_script_transaction_stack(kth_script_t script, kth_transaction_t transaction, uint32_t input_index, uint64_t forks, kth_data_stack_t stack, uint64_t value, kth_script_version_t version);
 
 // program(chain::script const& script, program const& x);
-kth_program_t kth_vm_program_construct_from_script_program(kth_script_t script, kth_program_t program) {
+kth_program_t kth_vm_program_construct_from_script_program(kth_script_const_t script, kth_program_t program) {
     auto const& script_cpp = kth_chain_script_const_cpp(script);
     auto const& program_cpp = kth_vm_program_const_cpp(program);
     return new kth::domain::machine::program(script_cpp, kth_vm_program_const_cpp(program));

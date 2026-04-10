@@ -14,7 +14,7 @@ KTH_CONV_DEFINE(chain, kth_double_spend_proof_t, kth::domain::message::double_sp
 // ---------------------------------------------------------------------------
 extern "C" {
 
-kth_outputpoint_const_t kth_chain_double_spend_proof_out_point(kth_double_spend_proof_t dsp) {
+kth_output_point_const_t kth_chain_double_spend_proof_out_point(kth_double_spend_proof_t dsp) {
     return &kth_chain_double_spend_proof_cpp(dsp).out_point();
 }
 

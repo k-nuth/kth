@@ -265,7 +265,7 @@ KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_chain_script_to_pay_multisig_pattern_data_stack(uint8_t signatures, kth_data_stack_const_t points);
 
 KTH_EXPORT
-kth_error_code_t kth_chain_script_verify(kth_transaction_const_t tx, uint32_t input_index, kth_script_flags_t flags, kth_script_const_t input_script, kth_script_const_t prevout_script, uint64_t arg1);
+kth_error_code_t kth_chain_script_verify(kth_transaction_const_t tx, uint32_t input_index, kth_script_flags_t flags, kth_script_const_t input_script, kth_script_const_t prevout_script, uint64_t arg5);
 
 KTH_EXPORT
 kth_error_code_t kth_chain_script_verify_simple(kth_transaction_const_t tx, uint32_t input, kth_script_flags_t flags);

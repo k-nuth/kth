@@ -27,7 +27,7 @@ kth::blockchain::safe_chain& safe_chain(kth_chain_t chain) {
 }
 
 inline
-kth::domain::message::transaction::const_ptr tx_shared(kth_transaction_t tx) {
+kth::domain::message::transaction::const_ptr tx_shared(kth_transaction_const_t tx) {
     auto const& tx_ref = *static_cast<kth::domain::chain::transaction const*>(tx);
     auto* tx_new = new kth::domain::message::transaction(tx_ref);
     return kth::domain::message::transaction::const_ptr(tx_new);
@@ -41,7 +41,7 @@ kth::domain::message::transaction::const_ptr tx_shared(kth_transaction_t tx) {
 // }
 
 inline
-kth::domain::message::block::const_ptr block_shared(kth_block_t block) {
+kth::domain::message::block::const_ptr block_shared(kth_block_const_t block) {
     auto const& block_ref = *static_cast<kth::domain::chain::block const*>(block);
     auto* block_new = new kth::domain::message::block(block_ref);
     return kth::domain::message::block::const_ptr(block_new);
@@ -153,8 +153,8 @@ void kth_chain_async_transaction_position(kth_chain_t chain, void* ctx, kth_hash
     });
 }
 
-void kth_chain_async_spend(kth_chain_t chain, void* ctx, kth_outputpoint_t op, kth_spend_fetch_handler_t handler) {
-    auto* outpoint_cpp = static_cast<kth::domain::chain::output_point*>(op);
+void kth_chain_async_spend(kth_chain_t chain, void* ctx, kth_output_point_const_t op, kth_spend_fetch_handler_t handler) {
+    auto const* outpoint_cpp = static_cast<kth::domain::chain::output_point const*>(op);
 
     safe_chain(chain).fetch_spend(*outpoint_cpp, [chain, ctx, handler](std::error_code const& ec, kth::domain::chain::input_point input_point) {
         handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(input_point, ec));
@@ -185,13 +185,13 @@ void kth_chain_async_confirmed_transactions(kth_chain_t chain, void* ctx, kth_pa
 // Organizers.
 //-------------------------------------------------------------------------
 
-void kth_chain_async_organize_block(kth_chain_t chain, void* ctx, kth_block_t block, kth_result_handler_t handler) {
+void kth_chain_async_organize_block(kth_chain_t chain, void* ctx, kth_block_mut_t block, kth_result_handler_t handler) {
     safe_chain(chain).organize(block_shared(block), [chain, ctx, handler](std::error_code const& ec) {
         handler(chain, ctx, kth::to_c_err(ec));
     });
 }
 
-void kth_chain_async_organize_transaction(kth_chain_t chain, void* ctx, kth_transaction_t transaction, kth_result_handler_t handler) {
+void kth_chain_async_organize_transaction(kth_chain_t chain, void* ctx, kth_transaction_mut_t transaction, kth_result_handler_t handler) {
     safe_chain(chain).organize(tx_shared(transaction), [chain, ctx, handler](std::error_code const& ec) {
         handler(chain, ctx, kth::to_c_err(ec));
     });

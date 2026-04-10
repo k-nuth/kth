@@ -18,16 +18,16 @@ KTH_EXPORT
 kth_get_headers_t kth_chain_get_headers_construct_default(void);
 
 KTH_EXPORT
-kth_get_headers_t kth_chain_get_headers_construct(kth_hash_list_t start, kth_hash_t stop);
+kth_get_headers_t kth_chain_get_headers_construct(kth_hash_list_const_t start, kth_hash_t stop);
 
 KTH_EXPORT
 void kth_chain_get_headers_destruct(kth_get_headers_t get_b);
 
 KTH_EXPORT
-kth_hash_list_t kth_chain_get_headers_start_hashes(kth_get_headers_t get_b);
+kth_hash_list_mut_t kth_chain_get_headers_start_hashes(kth_get_headers_t get_b);
 
 KTH_EXPORT
-void kth_chain_get_headers_set_start_hashes(kth_get_headers_t get_b, kth_hash_list_t value);
+void kth_chain_get_headers_set_start_hashes(kth_get_headers_t get_b, kth_hash_list_const_t value);
 
 KTH_EXPORT
 kth_hash_t kth_chain_get_headers_stop_hash(kth_get_headers_t get_b);
