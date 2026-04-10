@@ -28,7 +28,11 @@
 #include <kth/blockchain/interface/safe_chain.hpp>
 // #endif
 
-KTH_CONV_DECLARE(chain, kth_block_t, kth::domain::chain::block, block)
+// block conversion functions take const/mut handle types directly. Defined
+// in src/chain/block.cpp.
+kth::domain::chain::block const& kth_chain_block_const_cpp(kth_block_const_t o);
+kth::domain::chain::block&       kth_chain_block_mut_cpp(kth_block_mut_t o);
+
 // header conversion functions take const/mut handle types directly. Defined
 // in src/chain/header.cpp.
 kth::domain::chain::header const& kth_chain_header_const_cpp(kth_header_const_t o);
@@ -130,6 +134,14 @@ inline std::vector<kth::domain::chain::output>&
 kth_chain_output_list_mut_cpp(kth_output_list_mut_t l) {
     return *static_cast<std::vector<kth::domain::chain::output>*>(l);
 }
+inline std::vector<kth::domain::chain::transaction> const&
+kth_chain_transaction_list_const_cpp(kth_transaction_list_const_t l) {
+    return *static_cast<std::vector<kth::domain::chain::transaction> const*>(l);
+}
+inline std::vector<kth::domain::chain::transaction>&
+kth_chain_transaction_list_mut_cpp(kth_transaction_list_mut_t l) {
+    return *static_cast<std::vector<kth::domain::chain::transaction>*>(l);
+}
 // output conversion functions take const/mut handle types directly. Defined
 // in src/chain/output.cpp.
 kth::domain::chain::output const& kth_chain_output_const_cpp(kth_output_const_t o);
@@ -174,7 +186,6 @@ KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP(chain, kth_transaction_list_t, kth::domain::
 KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP(core, kth_hash_list_t, kth::hash_digest, hash_list)
 KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP_CONST(chain, kth_operation_list_t, kth::domain::machine::operation, operation_list)
 
-KTH_LIST_DECLARE_CONVERTERS(chain, kth_block_list_t, kth::domain::chain::block, block_list)
 KTH_LIST_DECLARE_CONVERTERS(chain, kth_point_list_t, kth::domain::chain::point, point_list)
 KTH_LIST_DECLARE_CONVERTERS(chain, kth_outputpoint_list_t, kth::domain::chain::output_point, outputpoint_list)
 KTH_LIST_DECLARE_CONVERTERS(chain, kth_input_list_t, kth::domain::chain::input, input_list)

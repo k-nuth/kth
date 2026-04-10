@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -6,13 +6,51 @@
 
 #include <kth/capi/chain/block.h>
 #include <kth/capi/conversions.hpp>
+#include <kth/capi/helpers.hpp>
 
-
-KTH_LIST_DEFINE_CONVERTERS(chain, kth_block_list_t, kth::domain::chain::block, block_list)
-KTH_LIST_DEFINE_CONSTRUCT_FROM_CPP(chain, kth_block_list_t, kth::domain::chain::block, block_list)
-
+// ---------------------------------------------------------------------------
 extern "C" {
 
-KTH_LIST_DEFINE(chain, kth_block_list_t, kth_block_t, block_list, kth::domain::chain::block, kth_chain_block_const_cpp)
+kth_block_list_mut_t kth_chain_block_list_construct_default(void) {
+    return new std::vector<kth::domain::chain::block>();
+}
+
+void kth_chain_block_list_push_back(kth_block_list_mut_t list, kth_block_const_t elem) {
+    KTH_PRECONDITION(list != nullptr);
+    KTH_PRECONDITION(elem != nullptr);
+    static_cast<std::vector<kth::domain::chain::block>*>(list)->push_back(kth_chain_block_const_cpp(elem));
+}
+
+void kth_chain_block_list_destruct(kth_block_list_mut_t list) {
+    if (list == nullptr) return;
+    delete static_cast<std::vector<kth::domain::chain::block>*>(list);
+}
+
+kth_size_t kth_chain_block_list_count(kth_block_list_const_t list) {
+    KTH_PRECONDITION(list != nullptr);
+    return static_cast<std::vector<kth::domain::chain::block> const*>(list)->size();
+}
+
+kth_block_const_t kth_chain_block_list_nth(kth_block_list_const_t list, kth_size_t index) {
+    KTH_PRECONDITION(list != nullptr);
+    auto const& vec = *static_cast<std::vector<kth::domain::chain::block> const*>(list);
+    KTH_PRECONDITION(index < vec.size());
+    return &vec[index];
+}
+
+void kth_chain_block_list_assign_at(kth_block_list_mut_t list, kth_size_t index, kth_block_const_t elem) {
+    KTH_PRECONDITION(list != nullptr);
+    KTH_PRECONDITION(elem != nullptr);
+    auto& vec = *static_cast<std::vector<kth::domain::chain::block>*>(list);
+    KTH_PRECONDITION(index < vec.size());
+    vec[index] = kth_chain_block_const_cpp(elem);
+}
+
+void kth_chain_block_list_erase(kth_block_list_mut_t list, kth_size_t index) {
+    KTH_PRECONDITION(list != nullptr);
+    auto& vec = *static_cast<std::vector<kth::domain::chain::block>*>(list);
+    KTH_PRECONDITION(index < vec.size());
+    vec.erase(vec.begin() + index);
+}
 
 } // extern "C"
