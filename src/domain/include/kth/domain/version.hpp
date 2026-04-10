@@ -15,7 +15,7 @@
 namespace kth {
 
 // Version string from build system (conan -> cmake -> C++)
-inline constexpr std::string_view version = "0.80.0";
+inline constexpr std::string_view version = "0.79.0";
 
 // Currency identifier
 #if defined(KTH_CURRENCY_BCH)
