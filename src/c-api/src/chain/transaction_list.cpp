@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -6,22 +6,51 @@
 
 #include <kth/capi/chain/transaction.h>
 #include <kth/capi/conversions.hpp>
+#include <kth/capi/helpers.hpp>
 
-KTH_LIST_DEFINE_CONVERTERS(chain, kth_transaction_list_t, kth::domain::chain::transaction, transaction_list)
-KTH_LIST_DEFINE_CONSTRUCT_FROM_CPP(chain, kth_transaction_list_t, kth::domain::chain::transaction, transaction_list)
-
+// ---------------------------------------------------------------------------
 extern "C" {
 
-KTH_LIST_DEFINE(chain, kth_transaction_list_t, kth_transaction_t, transaction_list, kth::domain::chain::transaction, kth_chain_transaction_const_cpp)
+kth_transaction_list_mut_t kth_chain_transaction_list_construct_default(void) {
+    return new std::vector<kth::domain::chain::transaction>();
+}
+
+void kth_chain_transaction_list_push_back(kth_transaction_list_mut_t list, kth_transaction_const_t elem) {
+    KTH_PRECONDITION(list != nullptr);
+    KTH_PRECONDITION(elem != nullptr);
+    static_cast<std::vector<kth::domain::chain::transaction>*>(list)->push_back(kth_chain_transaction_const_cpp(elem));
+}
+
+void kth_chain_transaction_list_destruct(kth_transaction_list_mut_t list) {
+    if (list == nullptr) return;
+    delete static_cast<std::vector<kth::domain::chain::transaction>*>(list);
+}
+
+kth_size_t kth_chain_transaction_list_count(kth_transaction_list_const_t list) {
+    KTH_PRECONDITION(list != nullptr);
+    return static_cast<std::vector<kth::domain::chain::transaction> const*>(list)->size();
+}
+
+kth_transaction_const_t kth_chain_transaction_list_nth(kth_transaction_list_const_t list, kth_size_t index) {
+    KTH_PRECONDITION(list != nullptr);
+    auto const& vec = *static_cast<std::vector<kth::domain::chain::transaction> const*>(list);
+    KTH_PRECONDITION(index < vec.size());
+    return &vec[index];
+}
+
+void kth_chain_transaction_list_assign_at(kth_transaction_list_mut_t list, kth_size_t index, kth_transaction_const_t elem) {
+    KTH_PRECONDITION(list != nullptr);
+    KTH_PRECONDITION(elem != nullptr);
+    auto& vec = *static_cast<std::vector<kth::domain::chain::transaction>*>(list);
+    KTH_PRECONDITION(index < vec.size());
+    vec[index] = kth_chain_transaction_const_cpp(elem);
+}
+
+void kth_chain_transaction_list_erase(kth_transaction_list_mut_t list, kth_size_t index) {
+    KTH_PRECONDITION(list != nullptr);
+    auto& vec = *static_cast<std::vector<kth::domain::chain::transaction>*>(list);
+    KTH_PRECONDITION(index < vec.size());
+    vec.erase(vec.begin() + index);
+}
 
 } // extern "C"
-
-
-// KTH_LIST_DEFINE_CONVERTERS(chain, kth_transaction_list_t, kth::domain::chain::transaction, transaction_list)
-// KTH_LIST_DEFINE_CONSTRUCT_FROM_CPP(chain, kth_transaction_list_t, kth::domain::chain::transaction, transaction_list)
-
-// extern "C" {
-
-// KTH_LIST_DEFINE(chain, kth_transaction_list_t, kth_transaction_t, transaction_list, kth::domain::chain::transaction, kth_chain_transaction_const_cpp)
-
-// } // extern "C"

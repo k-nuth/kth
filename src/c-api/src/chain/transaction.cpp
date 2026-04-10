@@ -253,7 +253,8 @@ kth_bool_t kth_chain_transaction_is_oversized_coinbase(kth_transaction_const_t s
 
 kth_bool_t kth_chain_transaction_is_mature(kth_transaction_const_t self, kth_size_t height) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_transaction_const_cpp(self).is_mature(height));
+    auto height_cpp = static_cast<size_t>(height);
+    return kth::bool_to_int(kth_chain_transaction_const_cpp(self).is_mature(height_cpp));
 }
 
 kth_bool_t kth_chain_transaction_is_internal_double_spend(kth_transaction_const_t self) {
@@ -279,12 +280,14 @@ kth_bool_t kth_chain_transaction_is_missing_previous_outputs(kth_transaction_con
 
 kth_bool_t kth_chain_transaction_is_final(kth_transaction_const_t self, kth_size_t block_height, uint32_t block_time) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_transaction_const_cpp(self).is_final(block_height, block_time));
+    auto block_height_cpp = static_cast<size_t>(block_height);
+    return kth::bool_to_int(kth_chain_transaction_const_cpp(self).is_final(block_height_cpp, block_time));
 }
 
 kth_bool_t kth_chain_transaction_is_locked(kth_transaction_const_t self, kth_size_t block_height, uint32_t median_time_past) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_transaction_const_cpp(self).is_locked(block_height, median_time_past));
+    auto block_height_cpp = static_cast<size_t>(block_height);
+    return kth::bool_to_int(kth_chain_transaction_const_cpp(self).is_locked(block_height_cpp, median_time_past));
 }
 
 kth_bool_t kth_chain_transaction_is_locktime_conflict(kth_transaction_const_t self) {
@@ -307,16 +310,19 @@ void kth_chain_transaction_recompute_hash(kth_transaction_mut_t self) {
 
 kth_error_code_t kth_chain_transaction_check(kth_transaction_const_t self, kth_size_t max_block_size, kth_bool_t transaction_pool, kth_bool_t retarget) {
     KTH_PRECONDITION(self != nullptr);
+    auto max_block_size_cpp = static_cast<size_t>(max_block_size);
     auto transaction_pool_cpp = kth::int_to_bool(transaction_pool);
     auto retarget_cpp = kth::int_to_bool(retarget);
-    return static_cast<kth_error_code_t>((kth_chain_transaction_const_cpp(self).check(max_block_size, transaction_pool_cpp, retarget_cpp)).value());
+    return static_cast<kth_error_code_t>((kth_chain_transaction_const_cpp(self).check(max_block_size_cpp, transaction_pool_cpp, retarget_cpp)).value());
 }
 
 kth_error_code_t kth_chain_transaction_accept(kth_transaction_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transaction_pool) {
     KTH_PRECONDITION(self != nullptr);
+    auto height_cpp = static_cast<size_t>(height);
+    auto max_sigops_cpp = static_cast<size_t>(max_sigops);
     auto is_under_checkpoint_cpp = kth::int_to_bool(is_under_checkpoint);
     auto transaction_pool_cpp = kth::int_to_bool(transaction_pool);
-    return static_cast<kth_error_code_t>((kth_chain_transaction_const_cpp(self).accept(flags, height, median_time_past, max_sigops, is_under_checkpoint_cpp, transaction_pool_cpp)).value());
+    return static_cast<kth_error_code_t>((kth_chain_transaction_const_cpp(self).accept(flags, height_cpp, median_time_past, max_sigops_cpp, is_under_checkpoint_cpp, transaction_pool_cpp)).value());
 }
 
 kth_error_code_t kth_chain_transaction_connect(kth_transaction_const_t self, kth_chain_state_const_t state) {
@@ -330,7 +336,8 @@ kth_error_code_t kth_chain_transaction_connect_input(kth_transaction_const_t sel
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(state != nullptr);
     auto const& state_cpp = kth_chain_chain_state_const_cpp(state);
-    return static_cast<kth_error_code_t>((kth_chain_transaction_const_cpp(self).connect_input(state_cpp, input_index)).value());
+    auto input_index_cpp = static_cast<size_t>(input_index);
+    return static_cast<kth_error_code_t>((kth_chain_transaction_const_cpp(self).connect_input(state_cpp, input_index_cpp)).value());
 }
 
 void kth_chain_transaction_reset(kth_transaction_mut_t self) {

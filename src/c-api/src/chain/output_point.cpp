@@ -142,7 +142,8 @@ void kth_chain_output_point_set_index(kth_output_point_mut_t self, uint32_t valu
 
 kth_bool_t kth_chain_output_point_is_mature(kth_output_point_const_t self, kth_size_t height) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_output_point_const_cpp(self).is_mature(height));
+    auto height_cpp = static_cast<size_t>(height);
+    return kth::bool_to_int(kth_chain_output_point_const_cpp(self).is_mature(height_cpp));
 }
 
 kth_bool_t kth_chain_output_point_is_valid(kth_output_point_const_t self) {
