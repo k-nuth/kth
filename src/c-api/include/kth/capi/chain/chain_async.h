@@ -42,10 +42,10 @@ void kth_chain_async_block_header_by_hash_txs_size(kth_chain_t chain, void* ctx,
 
 // Merkle Block ---------------------------------------------------------------------
 KTH_EXPORT
-void kth_chain_async_merkle_block_by_height(kth_chain_t chain, void* ctx, kth_size_t height, kth_merkleblock_fetch_handler_t handler);
+void kth_chain_async_merkle_block_by_height(kth_chain_t chain, void* ctx, kth_size_t height, kth_merkle_block_fetch_handler_t handler);
 
 KTH_EXPORT
-void kth_chain_async_merkle_block_by_hash(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_merkleblock_fetch_handler_t handler);
+void kth_chain_async_merkle_block_by_hash(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_merkle_block_fetch_handler_t handler);
 
 // Compact Block ---------------------------------------------------------------------
 KTH_EXPORT

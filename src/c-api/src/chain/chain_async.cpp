@@ -100,13 +100,13 @@ void kth_chain_async_block_header_by_hash_txs_size(kth_chain_t chain, void* ctx,
     });
 }
 
-void kth_chain_async_merkle_block_by_height(kth_chain_t chain, void* ctx, kth_size_t height, kth_merkleblock_fetch_handler_t handler) {
+void kth_chain_async_merkle_block_by_height(kth_chain_t chain, void* ctx, kth_size_t height, kth_merkle_block_fetch_handler_t handler) {
     safe_chain(chain).fetch_merkle_block(height, [chain, ctx, handler](std::error_code const& ec, kth::domain::message::merkle_block::const_ptr block, size_t h) {
         handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(block, ec), h);
     });
 }
 
-void kth_chain_async_merkle_block_by_hash(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_merkleblock_fetch_handler_t handler) {
+void kth_chain_async_merkle_block_by_hash(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_merkle_block_fetch_handler_t handler) {
     auto hash_cpp = kth::to_array(hash.hash);
     safe_chain(chain).fetch_merkle_block(hash_cpp, [chain, ctx, handler](std::error_code const& ec, kth::domain::message::merkle_block::const_ptr block, size_t h) {
         handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(block, ec), h);

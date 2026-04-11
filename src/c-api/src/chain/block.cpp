@@ -319,9 +319,10 @@ kth_size_t kth_chain_block_locator_size(kth_size_t top) {
     return kth::domain::chain::block::locator_size(top_cpp);
 }
 
-kth_block_indexes_mut_t kth_chain_block_locator_heights(kth_size_t top) {
+kth_u64_list_mut_t kth_chain_block_locator_heights(kth_size_t top) {
     auto const top_cpp = static_cast<size_t>(top);
-    return new std::vector<size_t>(kth::domain::chain::block::locator_heights(top_cpp));
+    auto const cpp_result = kth::domain::chain::block::locator_heights(top_cpp);
+    return new std::vector<uint64_t>(cpp_result.begin(), cpp_result.end());
 }
 
 uint64_t kth_chain_block_subsidy(kth_size_t height, kth_bool_t retarget) {

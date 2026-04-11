@@ -1,52 +1,158 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/capi/chain/compact_block.h>
+
+#include <kth/capi/conversions.hpp>
+#include <kth/capi/helpers.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/message/compact_block.hpp>
 
-#include <kth/capi/chain/compact_block.h>
-#include <kth/capi/helpers.hpp>
-#include <kth/capi/type_conversions.h>
-
-KTH_CONV_DEFINE(chain, kth_compact_block_t, kth::domain::message::compact_block, compact_block)
+// Conversion functions
+kth::domain::message::compact_block& kth_chain_compact_block_mut_cpp(kth_compact_block_mut_t o) {
+    return *static_cast<kth::domain::message::compact_block*>(o);
+}
+kth::domain::message::compact_block const& kth_chain_compact_block_const_cpp(kth_compact_block_const_t o) {
+    return *static_cast<kth::domain::message::compact_block const*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {
 
-kth_header_mut_t kth_chain_compact_block_header(kth_compact_block_t block) {
-    return &kth_chain_compact_block_cpp(block).header();
+// Constructors
+
+kth_compact_block_mut_t kth_chain_compact_block_construct_default(void) {
+    return new kth::domain::message::compact_block();
 }
 
-kth_bool_t kth_chain_compact_block_is_valid(kth_compact_block_t block) {
-    return kth::bool_to_int(kth_chain_compact_block_const_cpp(block).is_valid());
+kth_error_code_t kth_chain_compact_block_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_compact_block_mut_t* out) {
+    KTH_PRECONDITION(data != nullptr || n == 0);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto data_cpp = kth::byte_reader(kth::byte_span(data, static_cast<size_t>(n)));
+    auto result = kth::domain::message::compact_block::from_data(data_cpp, version);
+    if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
+    *out = new kth::domain::message::compact_block(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_size_t kth_chain_compact_block_serialized_size(kth_compact_block_t block, uint32_t version) {
-    return kth_chain_compact_block_const_cpp(block).serialized_size(version);
+kth_compact_block_mut_t kth_chain_compact_block_construct(kth_header_const_t header, uint64_t nonce, kth_u64_list_const_t short_ids, kth_prefilled_transaction_list_const_t transactions) {
+    KTH_PRECONDITION(header != nullptr);
+    KTH_PRECONDITION(short_ids != nullptr);
+    KTH_PRECONDITION(transactions != nullptr);
+    auto const& header_cpp = kth_chain_header_const_cpp(header);
+    auto const& short_ids_cpp = kth_core_u64_list_const_cpp(short_ids);
+    auto const& transactions_cpp = kth_chain_prefilled_transaction_list_const_cpp(transactions);
+    return new kth::domain::message::compact_block(header_cpp, nonce, short_ids_cpp, transactions_cpp);
 }
 
-kth_size_t kth_chain_compact_block_transaction_count(kth_compact_block_t block) {
-    return kth_chain_compact_block_const_cpp(block).transactions().size();
+
+// Destructor
+
+void kth_chain_compact_block_destruct(kth_compact_block_mut_t self) {
+    if (self == nullptr) return;
+    delete &kth_chain_compact_block_mut_cpp(self);
 }
 
- kth_transaction_mut_t kth_chain_compact_block_transaction_nth(kth_compact_block_t block, kth_size_t n) {
-    //precondition: n >=0 && n < transactions().size()
 
-    auto* blk = &kth_chain_compact_block_cpp(block);
-    auto& tx_n = blk->transactions()[n];
-    return &tx_n;
+// Copy
+
+kth_compact_block_mut_t kth_chain_compact_block_copy(kth_compact_block_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return new kth::domain::message::compact_block(kth_chain_compact_block_const_cpp(self));
 }
 
-uint64_t kth_chain_compact_block_nonce(kth_compact_block_t block) {
-    return kth_chain_compact_block_const_cpp(block).nonce();
+
+// Equality
+
+kth_bool_t kth_chain_compact_block_equals(kth_compact_block_const_t self, kth_compact_block_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::bool_to_int(kth_chain_compact_block_const_cpp(self) == kth_chain_compact_block_const_cpp(other));
 }
 
-void kth_chain_compact_block_destruct(kth_compact_block_t block) {
-    delete &kth_chain_compact_block_cpp(block);
+
+// Serialization
+
+uint8_t* kth_chain_compact_block_to_data(kth_compact_block_const_t self, uint32_t version, kth_size_t* out_size) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out_size != nullptr);
+    auto const data = kth_chain_compact_block_const_cpp(self).to_data(version);
+    return kth::create_c_array(data, *out_size);
 }
 
-void kth_chain_compact_block_reset(kth_compact_block_t block) {
-    kth_chain_compact_block_cpp(block).reset();
+kth_size_t kth_chain_compact_block_serialized_size(kth_compact_block_const_t self, uint32_t version) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth_chain_compact_block_const_cpp(self).serialized_size(version);
+}
+
+
+// Getters
+
+kth_header_const_t kth_chain_compact_block_header(kth_compact_block_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return &(kth_chain_compact_block_const_cpp(self).header());
+}
+
+uint64_t kth_chain_compact_block_nonce(kth_compact_block_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth_chain_compact_block_const_cpp(self).nonce();
+}
+
+kth_u64_list_const_t kth_chain_compact_block_short_ids(kth_compact_block_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return &(kth_chain_compact_block_const_cpp(self).short_ids());
+}
+
+kth_prefilled_transaction_list_const_t kth_chain_compact_block_transactions(kth_compact_block_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return &(kth_chain_compact_block_const_cpp(self).transactions());
+}
+
+
+// Setters
+
+void kth_chain_compact_block_set_header(kth_compact_block_mut_t self, kth_header_const_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(value != nullptr);
+    auto const& value_cpp = kth_chain_header_const_cpp(value);
+    kth_chain_compact_block_mut_cpp(self).set_header(value_cpp);
+}
+
+void kth_chain_compact_block_set_nonce(kth_compact_block_mut_t self, uint64_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    kth_chain_compact_block_mut_cpp(self).set_nonce(value);
+}
+
+void kth_chain_compact_block_set_short_ids(kth_compact_block_mut_t self, kth_u64_list_const_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(value != nullptr);
+    auto const& value_cpp = kth_core_u64_list_const_cpp(value);
+    kth_chain_compact_block_mut_cpp(self).set_short_ids(value_cpp);
+}
+
+void kth_chain_compact_block_set_transactions(kth_compact_block_mut_t self, kth_prefilled_transaction_list_const_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(value != nullptr);
+    auto const& value_cpp = kth_chain_prefilled_transaction_list_const_cpp(value);
+    kth_chain_compact_block_mut_cpp(self).set_transactions(value_cpp);
+}
+
+
+// Predicates
+
+kth_bool_t kth_chain_compact_block_is_valid(kth_compact_block_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth_chain_compact_block_const_cpp(self).is_valid());
+}
+
+
+// Operations
+
+void kth_chain_compact_block_reset(kth_compact_block_mut_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    kth_chain_compact_block_mut_cpp(self).reset();
 }
 
 } // extern "C"

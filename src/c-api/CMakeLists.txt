@@ -212,7 +212,6 @@ set(kth_sources
         src/platform.cpp
 
         src/chain/block.cpp
-        src/chain/block_indexes.cpp
         src/chain/block_list.cpp
 
         src/chain/chain_async.cpp
@@ -240,6 +239,8 @@ set(kth_sources
         src/chain/point_list.cpp
         src/chain/output_point_list.cpp
         src/chain/mempool_transaction.cpp
+        src/chain/prefilled_transaction.cpp
+        src/chain/prefilled_transaction_list.cpp
 
         src/chain/token_data.cpp
 
@@ -366,7 +367,6 @@ set(kth_headers
     include/kth/capi/chain/token_kind.h
     include/kth/capi/chain/token_data.h
     include/kth/capi/chain/input.h
-    include/kth/capi/chain/block_indexes.h
     include/kth/capi/chain/chain.h
     include/kth/capi/chain/chain_sync.h
     include/kth/capi/chain/chain_other.h
@@ -387,6 +387,8 @@ set(kth_headers
     include/kth/capi/chain/merkle_block.h
     include/kth/capi/chain/block.h
     include/kth/capi/chain/mempool_transaction.h
+    include/kth/capi/chain/prefilled_transaction.h
+    include/kth/capi/chain/prefilled_transaction_list.h
     include/kth/capi/chain/script_flags.h
     include/kth/capi/chain/script_version.h
     include/kth/capi/chain/script_pattern.h
@@ -506,8 +508,11 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/input.cpp
         test/chain/transaction.cpp
         test/chain/block.cpp
+        test/chain/compact_block.cpp
         test/chain/get_blocks.cpp
         test/chain/get_headers.cpp
+        test/chain/merkle_block.cpp
+        test/chain/prefilled_transaction.cpp
         test/chain/block_list.cpp
         test/chain/input_list.cpp
         test/chain/output_list.cpp
