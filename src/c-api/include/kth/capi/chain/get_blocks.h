@@ -24,12 +24,16 @@ kth_get_blocks_mut_t kth_chain_get_blocks_construct_default(void);
 KTH_EXPORT
 kth_error_code_t kth_chain_get_blocks_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_get_blocks_mut_t* out);
 
-/** @return Owned `kth_get_blocks_mut_t`. Caller must release with `kth_chain_get_blocks_destruct`. */
+/**
+ * @return Owned `kth_get_blocks_mut_t`. Caller must release with `kth_chain_get_blocks_destruct`.
+ * @param start Borrowed input. Copied by value into the resulting object; ownership of `start` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
 kth_get_blocks_mut_t kth_chain_get_blocks_construct(kth_hash_list_const_t start, kth_hash_t stop);
 
 /**
  * @return Owned `kth_get_blocks_mut_t`. Caller must release with `kth_chain_get_blocks_destruct`.
+ * @param start Borrowed input. Copied by value into the resulting object; ownership of `start` stays with the caller.
  * @warning `stop` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
  */
 KTH_EXPORT KTH_OWNED
@@ -38,6 +42,7 @@ kth_get_blocks_mut_t kth_chain_get_blocks_construct_unsafe(kth_hash_list_const_t
 
 // Destructor
 
+/** No-op if `self` is null. */
 KTH_EXPORT
 void kth_chain_get_blocks_destruct(kth_get_blocks_mut_t self);
 
@@ -67,7 +72,7 @@ kth_size_t kth_chain_get_blocks_serialized_size(kth_get_blocks_const_t self, uin
 
 // Getters
 
-/** @return Borrowed `kth_hash_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. */
+/** @return Borrowed `kth_hash_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_hash_list_const_t kth_chain_get_blocks_start_hashes(kth_get_blocks_const_t self);
 
@@ -77,6 +82,7 @@ kth_hash_t kth_chain_get_blocks_stop_hash(kth_get_blocks_const_t self);
 
 // Setters
 
+/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
 void kth_chain_get_blocks_set_start_hashes(kth_get_blocks_mut_t self, kth_hash_list_const_t value);
 

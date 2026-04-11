@@ -21,6 +21,7 @@ kth_transaction_list_mut_t kth_chain_transaction_list_construct_default(void);
 KTH_EXPORT
 void kth_chain_transaction_list_push_back(kth_transaction_list_mut_t list, kth_transaction_const_t elem);
 
+/** No-op if `list` is null. */
 KTH_EXPORT
 void kth_chain_transaction_list_destruct(kth_transaction_list_mut_t list);
 

@@ -21,6 +21,7 @@ kth_u64_list_mut_t kth_core_u64_list_construct_default(void);
 KTH_EXPORT
 void kth_core_u64_list_push_back(kth_u64_list_mut_t list, uint64_t elem);
 
+/** No-op if `list` is null. */
 KTH_EXPORT
 void kth_core_u64_list_destruct(kth_u64_list_mut_t list);
 

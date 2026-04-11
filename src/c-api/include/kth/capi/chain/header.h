@@ -39,6 +39,7 @@ kth_header_mut_t kth_chain_header_construct_unsafe(uint32_t version, uint8_t con
 
 // Destructor
 
+/** No-op if `self` is null. */
 KTH_EXPORT
 void kth_chain_header_destruct(kth_header_mut_t self);
 

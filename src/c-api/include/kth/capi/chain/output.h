@@ -24,13 +24,18 @@ kth_output_mut_t kth_chain_output_construct_default(void);
 KTH_EXPORT
 kth_error_code_t kth_chain_output_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_output_mut_t* out);
 
-/** @return Owned `kth_output_mut_t`. Caller must release with `kth_chain_output_destruct`. */
+/**
+ * @return Owned `kth_output_mut_t`. Caller must release with `kth_chain_output_destruct`.
+ * @param script Borrowed input. Copied by value into the resulting object; ownership of `script` stays with the caller.
+ * @param token_data Borrowed input. Copied by value into the resulting object; ownership of `token_data` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
 kth_output_mut_t kth_chain_output_construct(uint64_t value, kth_script_const_t script, kth_token_data_const_t token_data);
 
 
 // Destructor
 
+/** No-op if `self` is null. */
 KTH_EXPORT
 void kth_chain_output_destruct(kth_output_mut_t self);
 
@@ -63,23 +68,25 @@ kth_size_t kth_chain_output_serialized_size(kth_output_const_t self, kth_bool_t 
 KTH_EXPORT
 uint64_t kth_chain_output_value(kth_output_const_t self);
 
-/** @return Borrowed `kth_script_const_t` view into `self`. Do not destruct; the parent object retains ownership. */
+/** @return Borrowed `kth_script_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_script_const_t kth_chain_output_script(kth_output_const_t self);
 
-/** @return Borrowed `kth_token_data_const_t` view into `self`. Do not destruct; the parent object retains ownership. */
+/** @return Borrowed `kth_token_data_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_token_data_const_t kth_chain_output_token_data(kth_output_const_t self);
 
 
 // Setters
 
+/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
 void kth_chain_output_set_script(kth_output_mut_t self, kth_script_const_t value);
 
 KTH_EXPORT
 void kth_chain_output_set_value(kth_output_mut_t self, uint64_t value);
 
+/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
 void kth_chain_output_set_token_data(kth_output_mut_t self, kth_token_data_const_t value);
 

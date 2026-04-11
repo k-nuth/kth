@@ -30,11 +30,12 @@ kth_binary_mut_t kth_core_binary_construct_from_size_number(kth_size_t size, uin
 
 /** @return Owned `kth_binary_mut_t`. Caller must release with `kth_core_binary_destruct`. */
 KTH_EXPORT KTH_OWNED
-kth_binary_mut_t kth_core_binary_construct_from_size_blocks(kth_size_t size, uint8_t const* blocks, kth_size_t blocks_n);
+kth_binary_mut_t kth_core_binary_construct_from_size_blocks(kth_size_t size, uint8_t const* blocks, kth_size_t n);
 
 
 // Destructor
 
+/** No-op if `self` is null. */
 KTH_EXPORT
 void kth_core_binary_destruct(kth_binary_mut_t self);
 
@@ -72,7 +73,7 @@ KTH_EXPORT
 kth_bool_t kth_core_binary_is_base2(char const* text);
 
 KTH_EXPORT
-kth_bool_t kth_core_binary_is_prefix_of_span(kth_binary_const_t self, uint8_t const* field, kth_size_t field_n);
+kth_bool_t kth_core_binary_is_prefix_of_span(kth_binary_const_t self, uint8_t const* field, kth_size_t n);
 
 KTH_EXPORT
 kth_bool_t kth_core_binary_is_prefix_of_uint32(kth_binary_const_t self, uint32_t field);

@@ -21,6 +21,7 @@ kth_block_list_mut_t kth_chain_block_list_construct_default(void);
 KTH_EXPORT
 void kth_chain_block_list_push_back(kth_block_list_mut_t list, kth_block_const_t elem);
 
+/** No-op if `list` is null. */
 KTH_EXPORT
 void kth_chain_block_list_destruct(kth_block_list_mut_t list);
 
