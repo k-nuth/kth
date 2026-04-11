@@ -12,6 +12,8 @@
 #include <kth/capi/type_conversions.h>
 #include <kth/capi/wallet/primitives.h>
 
+#include <kth/infrastructure/utility/binary.hpp>
+
 #include <kth/domain/chain/input.hpp>
 #include <kth/domain/chain/output.hpp>
 #include <kth/domain/chain/output_point.hpp>
@@ -32,6 +34,10 @@
 // in src/chain/block.cpp.
 kth::domain::chain::block const& kth_chain_block_const_cpp(kth_block_const_t o);
 kth::domain::chain::block&       kth_chain_block_mut_cpp(kth_block_mut_t o);
+
+// binary conversion functions. Defined in src/binary.cpp.
+kth::binary const& kth_core_binary_const_cpp(kth_binary_const_t o);
+kth::binary&       kth_core_binary_mut_cpp(kth_binary_mut_t o);
 
 // header conversion functions take const/mut handle types directly. Defined
 // in src/chain/header.cpp.

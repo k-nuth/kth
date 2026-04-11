@@ -16,10 +16,6 @@
 
 namespace kth {
 
-constexpr binary::size_type binary::blocks_size(size_type bit_size) noexcept {
-    return bit_size == 0 ? 0 : (bit_size - 1) / bits_per_block + 1;
-}
-
 bool binary::is_base2(std::string_view text) noexcept {
     for (auto const character: text) {
         if (character != '0' && character != '1') {

@@ -30,8 +30,8 @@ kth_error_code_t kth_chain_output_construct_from_data(uint8_t const* data, kth_s
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto data_cpp = kth::byte_reader(kth::byte_span(data, n));
-    auto wire_cpp = kth::int_to_bool(wire);
+    auto data_cpp = kth::byte_reader(kth::byte_span(data, static_cast<size_t>(n)));
+    auto const wire_cpp = kth::int_to_bool(wire);
     auto result = kth::domain::chain::output::from_data(data_cpp, wire_cpp);
     if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
     *out = new kth::domain::chain::output(std::move(*result));
@@ -41,7 +41,7 @@ kth_error_code_t kth_chain_output_construct_from_data(uint8_t const* data, kth_s
 kth_output_mut_t kth_chain_output_construct(uint64_t value, kth_script_const_t script, kth_token_data_const_t token_data) {
     KTH_PRECONDITION(script != nullptr);
     auto const& script_cpp = kth_chain_script_const_cpp(script);
-    auto token_data_cpp = (token_data == nullptr ? std::nullopt : std::optional<kth::domain::chain::token_data_t>(kth_chain_token_data_const_cpp(token_data)));
+    auto const token_data_cpp = (token_data == nullptr ? std::nullopt : std::optional<kth::domain::chain::token_data_t>(kth_chain_token_data_const_cpp(token_data)));
     return new kth::domain::chain::output(value, script_cpp, token_data_cpp);
 }
 
@@ -76,14 +76,14 @@ kth_bool_t kth_chain_output_equals(kth_output_const_t self, kth_output_const_t o
 uint8_t* kth_chain_output_to_data(kth_output_const_t self, kth_bool_t wire, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto wire_cpp = kth::int_to_bool(wire);
-    auto data = kth_chain_output_const_cpp(self).to_data(wire_cpp);
+    auto const wire_cpp = kth::int_to_bool(wire);
+    auto const data = kth_chain_output_const_cpp(self).to_data(wire_cpp);
     return kth::create_c_array(data, *out_size);
 }
 
 kth_size_t kth_chain_output_serialized_size(kth_output_const_t self, kth_bool_t wire) {
     KTH_PRECONDITION(self != nullptr);
-    auto wire_cpp = kth::int_to_bool(wire);
+    auto const wire_cpp = kth::int_to_bool(wire);
     return kth_chain_output_const_cpp(self).serialized_size(wire_cpp);
 }
 
@@ -123,7 +123,7 @@ void kth_chain_output_set_value(kth_output_mut_t self, uint64_t value) {
 
 void kth_chain_output_set_token_data(kth_output_mut_t self, kth_token_data_const_t value) {
     KTH_PRECONDITION(self != nullptr);
-    auto value_cpp = (value == nullptr ? std::nullopt : std::optional<kth::domain::chain::token_data_t>(kth_chain_token_data_const_cpp(value)));
+    auto const value_cpp = (value == nullptr ? std::nullopt : std::optional<kth::domain::chain::token_data_t>(kth_chain_token_data_const_cpp(value)));
     kth_chain_output_mut_cpp(self).set_token_data(value_cpp);
 }
 
@@ -145,7 +145,7 @@ kth_bool_t kth_chain_output_is_dust(kth_output_const_t self, uint64_t minimum_ou
 
 kth_payment_address_mut_t kth_chain_output_address_simple(kth_output_const_t self, kth_bool_t testnet) {
     KTH_PRECONDITION(self != nullptr);
-    auto testnet_cpp = kth::int_to_bool(testnet);
+    auto const testnet_cpp = kth::int_to_bool(testnet);
     return new kth::domain::wallet::payment_address(kth_chain_output_const_cpp(self).address(testnet_cpp));
 }
 
@@ -161,7 +161,7 @@ kth_payment_address_list_mut_t kth_chain_output_addresses(kth_output_const_t sel
 
 kth_size_t kth_chain_output_signature_operations(kth_output_const_t self, kth_bool_t bip141) {
     KTH_PRECONDITION(self != nullptr);
-    auto bip141_cpp = kth::int_to_bool(bip141);
+    auto const bip141_cpp = kth::int_to_bool(bip141);
     return kth_chain_output_const_cpp(self).signature_operations(bip141_cpp);
 }
 

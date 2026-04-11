@@ -289,6 +289,24 @@ TEST_CASE("C-API Script - to_pay_script_hash_pattern_unsafe null hash aborts",
     KTH_EXPECT_ABORT(kth_chain_script_to_pay_script_hash_pattern_unsafe(NULL));
 }
 
+TEST_CASE("C-API Script - at() on empty script aborts",
+          "[C-API Script][precondition]") {
+    kth_script_mut_t script = kth_chain_script_construct_default();
+    KTH_EXPECT_ABORT(kth_chain_script_at(script, 0));
+    kth_chain_script_destruct(script);
+}
+
+TEST_CASE("C-API Script - at() out of bounds aborts",
+          "[C-API Script][precondition]") {
+    // Reuse the file-level OP_RETURN fixture: 1 operation at index 0.
+    kth_script_mut_t script = NULL;
+    kth_error_code_t ec = kth_chain_script_construct_from_data(
+        kOpReturnPrefixed, sizeof(kOpReturnPrefixed), 1, &script);
+    REQUIRE(ec == kth_ec_success);
+    KTH_EXPECT_ABORT(kth_chain_script_at(script, 1));
+    kth_chain_script_destruct(script);
+}
+
 // ---------------------------------------------------------------------------
 // Regression: null public_key with zero size must not UB
 // ---------------------------------------------------------------------------

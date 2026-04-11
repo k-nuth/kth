@@ -25,6 +25,12 @@ fi
 
 rm -rf build
 rm -rf conan.lock
+# Conan regenerates CMakeUserPresets.json on every `conan install`, but it
+# appends to the existing include list rather than replacing it. Stale
+# entries from older build trees (e.g. `build-release-0.79.0/...`) cause
+# "Duplicate preset: conan-release" errors. Nuke it so conan writes a
+# fresh one.
+rm -f CMakeUserPresets.json
 
 conan lock create conanfile.py --version="${VERSION}" $MARCH_OPT --update || exit 1
 conan lock create conanfile.py --version "${VERSION}" $MARCH_OPT --lockfile=conan.lock --lockfile-out=build/conan.lock || exit 1

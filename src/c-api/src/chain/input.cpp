@@ -30,8 +30,8 @@ kth_error_code_t kth_chain_input_construct_from_data(uint8_t const* data, kth_si
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto data_cpp = kth::byte_reader(kth::byte_span(data, n));
-    auto wire_cpp = kth::int_to_bool(wire);
+    auto data_cpp = kth::byte_reader(kth::byte_span(data, static_cast<size_t>(n)));
+    auto const wire_cpp = kth::int_to_bool(wire);
     auto result = kth::domain::chain::input::from_data(data_cpp, wire_cpp);
     if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
     *out = new kth::domain::chain::input(std::move(*result));
@@ -77,14 +77,14 @@ kth_bool_t kth_chain_input_equals(kth_input_const_t self, kth_input_const_t othe
 uint8_t* kth_chain_input_to_data(kth_input_const_t self, kth_bool_t wire, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto wire_cpp = kth::int_to_bool(wire);
-    auto data = kth_chain_input_const_cpp(self).to_data(wire_cpp);
+    auto const wire_cpp = kth::int_to_bool(wire);
+    auto const data = kth_chain_input_const_cpp(self).to_data(wire_cpp);
     return kth::create_c_array(data, *out_size);
 }
 
 kth_size_t kth_chain_input_serialized_size(kth_input_const_t self, kth_bool_t wire) {
     KTH_PRECONDITION(self != nullptr);
-    auto wire_cpp = kth::int_to_bool(wire);
+    auto const wire_cpp = kth::int_to_bool(wire);
     return kth_chain_input_const_cpp(self).serialized_size(wire_cpp);
 }
 
@@ -163,7 +163,7 @@ kth_bool_t kth_chain_input_is_final(kth_input_const_t self) {
 
 kth_bool_t kth_chain_input_is_locked(kth_input_const_t self, kth_size_t block_height, uint32_t median_time_past) {
     KTH_PRECONDITION(self != nullptr);
-    auto block_height_cpp = static_cast<size_t>(block_height);
+    auto const block_height_cpp = static_cast<size_t>(block_height);
     return kth::bool_to_int(kth_chain_input_const_cpp(self).is_locked(block_height_cpp, median_time_past));
 }
 
@@ -177,8 +177,8 @@ void kth_chain_input_reset(kth_input_mut_t self) {
 
 kth_size_t kth_chain_input_signature_operations(kth_input_const_t self, kth_bool_t bip16, kth_bool_t bip141) {
     KTH_PRECONDITION(self != nullptr);
-    auto bip16_cpp = kth::int_to_bool(bip16);
-    auto bip141_cpp = kth::int_to_bool(bip141);
+    auto const bip16_cpp = kth::int_to_bool(bip16);
+    auto const bip141_cpp = kth::int_to_bool(bip141);
     return kth_chain_input_const_cpp(self).signature_operations(bip16_cpp, bip141_cpp);
 }
 
