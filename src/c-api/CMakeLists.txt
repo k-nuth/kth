@@ -507,6 +507,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/transaction.cpp
         test/chain/block.cpp
         test/chain/get_blocks.cpp
+        test/chain/get_headers.cpp
         test/chain/block_list.cpp
         test/chain/input_list.cpp
         test/chain/output_list.cpp
