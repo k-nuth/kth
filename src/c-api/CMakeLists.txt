@@ -183,9 +183,6 @@ set(kth_sources
 
   src/wallet/payment_address.cpp
   src/wallet/payment_address_list.cpp
-  src/wallet/raw_output.cpp
-  src/wallet/raw_output_list.cpp
-  src/wallet/transaction_functions.cpp
   src/wallet/wallet.cpp
   src/wallet/ec_compressed_list.cpp
   src/wallet/wallet_data.cpp
@@ -265,9 +262,6 @@ set(kth_sources
 
         src/wallet/payment_address.cpp
         src/wallet/payment_address_list.cpp
-        src/wallet/raw_output.cpp
-        src/wallet/raw_output_list.cpp
-        src/wallet/transaction_functions.cpp
         src/wallet/wallet.cpp
         src/wallet/ec_compressed_list.cpp
         # src/config/network_settings.cpp
@@ -306,13 +300,10 @@ set(kth_headers
 
   include/kth/capi/vm/program.h
 
-  include/kth/capi/wallet/raw_output_list.h
-  include/kth/capi/wallet/transaction_functions.h
   include/kth/capi/wallet/ec_public.h
   include/kth/capi/wallet/payment_address.h
   include/kth/capi/wallet/payment_address_list.h
   include/kth/capi/wallet/wallet.h
-  include/kth/capi/wallet/raw_output.h
   include/kth/capi/wallet/ec_compressed_list.h
   include/kth/capi/wallet/wallet_data.h
   include/kth/capi/wallet/wallet_manager.h

@@ -28,7 +28,6 @@
 #include <kth/domain/message/merkle_block.hpp>
 #include <kth/domain/message/prefilled_transaction.hpp>
 // #include <kth/domain/wallet/ec_public.hpp>
-#include <kth/domain/wallet/transaction_functions.hpp>
 #include <kth/domain/wallet/wallet_manager.hpp>
 
 // #ifndef __EMSCRIPTEN__
@@ -252,13 +251,10 @@ KTH_LIST_DECLARE_CONVERTERS(chain, kth_operation_list_t, kth::domain::machine::o
 
 // Wallet.
 // ------------------------------------------------------------------------------------
-KTH_CONV_DECLARE(wallet, kth_raw_output_t, kth::domain::wallet::raw_output, raw_output)
 KTH_CONV_DECLARE(wallet, kth_payment_address_t, kth::domain::wallet::payment_address, payment_address)
 KTH_CONV_DECLARE(wallet, kth_ec_private_t, kth::domain::wallet::ec_private, ec_private)
 KTH_CONV_DECLARE(wallet, kth_ec_public_t, kth::domain::wallet::ec_public, ec_public)
 KTH_CONV_DECLARE(wallet, kth_wallet_data_t, kth::domain::wallet::wallet_data, wallet_data)
-
-KTH_LIST_DECLARE_CONVERTERS(wallet, kth_raw_output_list_t, kth::domain::wallet::raw_output, raw_output_list)
 
 KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP_BOTH(wallet, kth_payment_address_list_t, kth::domain::wallet::payment_address, payment_address_list)
 KTH_LIST_DECLARE_CONVERTERS(wallet, kth_payment_address_list_t, kth::domain::wallet::payment_address, payment_address_list)

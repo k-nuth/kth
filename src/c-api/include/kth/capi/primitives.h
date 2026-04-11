@@ -167,8 +167,6 @@ typedef void* kth_stealth_compact_t;
 typedef void* kth_stealth_compact_list_t;
 typedef void* kth_hash_list_mut_t;
 typedef void const* kth_hash_list_const_t;
-typedef void* kth_raw_output_t;
-typedef void* kth_raw_output_list_t;
 typedef void* kth_string_list_mut_t;
 typedef void const* kth_string_list_const_t;
 typedef void* kth_double_list_mut_t;
