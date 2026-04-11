@@ -203,9 +203,9 @@ void kth_chain_block_reset(kth_block_mut_t self);
 KTH_EXPORT
 kth_size_t kth_chain_block_locator_size(kth_size_t top);
 
-/** @return Owned `kth_block_indexes_mut_t`. Caller must release with `kth_chain_block_indexes_destruct`. */
+/** @return Owned `kth_u64_list_mut_t`. Caller must release with `kth_core_u64_list_destruct`. */
 KTH_EXPORT KTH_OWNED
-kth_block_indexes_mut_t kth_chain_block_locator_heights(kth_size_t top);
+kth_u64_list_mut_t kth_chain_block_locator_heights(kth_size_t top);
 
 KTH_EXPORT
 uint64_t kth_chain_block_subsidy(kth_size_t height, kth_bool_t retarget);

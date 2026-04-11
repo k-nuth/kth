@@ -22,8 +22,11 @@
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/chain/transaction.hpp>
+#include <kth/domain/message/compact_block.hpp>
 #include <kth/domain/message/get_blocks.hpp>
 #include <kth/domain/message/get_headers.hpp>
+#include <kth/domain/message/merkle_block.hpp>
+#include <kth/domain/message/prefilled_transaction.hpp>
 // #include <kth/domain/wallet/ec_public.hpp>
 #include <kth/domain/wallet/transaction_functions.hpp>
 #include <kth/domain/wallet/wallet_manager.hpp>
@@ -48,6 +51,29 @@ kth::domain::message::get_blocks&       kth_chain_get_blocks_mut_cpp(kth_get_blo
 // get_headers conversion functions. Defined in src/chain/get_headers.cpp.
 kth::domain::message::get_headers const& kth_chain_get_headers_const_cpp(kth_get_headers_const_t o);
 kth::domain::message::get_headers&       kth_chain_get_headers_mut_cpp(kth_get_headers_mut_t o);
+
+// merkle_block conversion functions. Defined in src/chain/merkle_block.cpp.
+kth::domain::message::merkle_block const& kth_chain_merkle_block_const_cpp(kth_merkle_block_const_t o);
+kth::domain::message::merkle_block&       kth_chain_merkle_block_mut_cpp(kth_merkle_block_mut_t o);
+
+// prefilled_transaction conversion functions. Defined in src/chain/prefilled_transaction.cpp.
+kth::domain::message::prefilled_transaction const& kth_chain_prefilled_transaction_const_cpp(kth_prefilled_transaction_const_t o);
+kth::domain::message::prefilled_transaction&       kth_chain_prefilled_transaction_mut_cpp(kth_prefilled_transaction_mut_t o);
+
+// prefilled_transaction_list — inline view over the opaque handle, same
+// pattern as input_list / output_list above.
+inline std::vector<kth::domain::message::prefilled_transaction> const&
+kth_chain_prefilled_transaction_list_const_cpp(kth_prefilled_transaction_list_const_t l) {
+    return *static_cast<std::vector<kth::domain::message::prefilled_transaction> const*>(l);
+}
+inline std::vector<kth::domain::message::prefilled_transaction>&
+kth_chain_prefilled_transaction_list_mut_cpp(kth_prefilled_transaction_list_mut_t l) {
+    return *static_cast<std::vector<kth::domain::message::prefilled_transaction>*>(l);
+}
+
+// compact_block conversion functions. Defined in src/chain/compact_block.cpp.
+kth::domain::message::compact_block const& kth_chain_compact_block_const_cpp(kth_compact_block_const_t o);
+kth::domain::message::compact_block&       kth_chain_compact_block_mut_cpp(kth_compact_block_mut_t o);
 
 // header conversion functions take const/mut handle types directly. Defined
 // in src/chain/header.cpp.
@@ -204,6 +230,19 @@ kth_core_hash_list_mut_cpp(kth_hash_list_mut_t l) {
 }
 inline kth_hash_list_mut_t kth_core_hash_list_construct_from_cpp(std::vector<kth::hash_digest>& l) {
     return &l;
+}
+// u64_list — inline converters. Covers vector<uint64_t>, vector<size_t>,
+// vector<unsigned long> because those canonicalize to the same underlying
+// integer type on 64-bit platforms. Used by
+// `kth::domain::message::compact_block::short_ids` and by
+// `kth_chain_block_locator_heights`.
+inline std::vector<uint64_t> const&
+kth_core_u64_list_const_cpp(kth_u64_list_const_t l) {
+    return *static_cast<std::vector<uint64_t> const*>(l);
+}
+inline std::vector<uint64_t>&
+kth_core_u64_list_mut_cpp(kth_u64_list_mut_t l) {
+    return *static_cast<std::vector<uint64_t>*>(l);
 }
 KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP_CONST(chain, kth_operation_list_t, kth::domain::machine::operation, operation_list)
 

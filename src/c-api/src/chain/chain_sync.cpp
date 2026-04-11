@@ -177,7 +177,7 @@ kth_error_code_t kth_chain_sync_block_header_byhash_txs_size(kth_chain_t chain, 
     return res;
 }
 
-kth_error_code_t kth_chain_sync_merkle_block_by_height(kth_chain_t chain, kth_size_t height, kth_merkleblock_t* out_block, kth_size_t* out_height) {
+kth_error_code_t kth_chain_sync_merkle_block_by_height(kth_chain_t chain, kth_size_t height, kth_merkle_block_mut_t* out_block, kth_size_t* out_height) {
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
@@ -192,7 +192,7 @@ kth_error_code_t kth_chain_sync_merkle_block_by_height(kth_chain_t chain, kth_si
     return res;
 }
 
-kth_error_code_t kth_chain_sync_merkle_block_by_hash(kth_chain_t chain, kth_hash_t hash, kth_merkleblock_t* out_block, kth_size_t* out_height) {
+kth_error_code_t kth_chain_sync_merkle_block_by_hash(kth_chain_t chain, kth_hash_t hash, kth_merkle_block_mut_t* out_block, kth_size_t* out_height) {
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
@@ -209,7 +209,7 @@ kth_error_code_t kth_chain_sync_merkle_block_by_hash(kth_chain_t chain, kth_hash
     return res;
 }
 
-kth_error_code_t kth_chain_sync_compact_block_by_height(kth_chain_t chain, kth_size_t height, kth_compact_block_t* out_block, kth_size_t* out_height) {
+kth_error_code_t kth_chain_sync_compact_block_by_height(kth_chain_t chain, kth_size_t height, kth_compact_block_mut_t* out_block, kth_size_t* out_height) {
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
@@ -224,7 +224,7 @@ kth_error_code_t kth_chain_sync_compact_block_by_height(kth_chain_t chain, kth_s
     return res;
 }
 
-kth_error_code_t kth_chain_sync_compact_block_by_hash(kth_chain_t chain, kth_hash_t hash, kth_compact_block_t* out_block, kth_size_t* out_height) {
+kth_error_code_t kth_chain_sync_compact_block_by_hash(kth_chain_t chain, kth_hash_t hash, kth_compact_block_mut_t* out_block, kth_size_t* out_height) {
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 

@@ -46,17 +46,17 @@ kth_error_code_t kth_chain_sync_block_hash(kth_chain_t chain, kth_size_t height,
 
 // Merkle Block ---------------------------------------------------------------------
 KTH_EXPORT
-kth_error_code_t kth_chain_sync_merkle_block_by_height(kth_chain_t chain, kth_size_t height, kth_merkleblock_t* out_block, kth_size_t* out_height);
+kth_error_code_t kth_chain_sync_merkle_block_by_height(kth_chain_t chain, kth_size_t height, kth_merkle_block_mut_t* out_block, kth_size_t* out_height);
 
 KTH_EXPORT
-kth_error_code_t kth_chain_sync_merkle_block_by_hash(kth_chain_t chain, kth_hash_t hash, kth_merkleblock_t* out_block, kth_size_t* out_height);
+kth_error_code_t kth_chain_sync_merkle_block_by_hash(kth_chain_t chain, kth_hash_t hash, kth_merkle_block_mut_t* out_block, kth_size_t* out_height);
 
 // Compact Block ---------------------------------------------------------------------
 KTH_EXPORT
-kth_error_code_t kth_chain_sync_compact_block_by_height(kth_chain_t chain, kth_size_t height, kth_compact_block_t* out_block, kth_size_t* out_height);
+kth_error_code_t kth_chain_sync_compact_block_by_height(kth_chain_t chain, kth_size_t height, kth_compact_block_mut_t* out_block, kth_size_t* out_height);
 
 KTH_EXPORT
-kth_error_code_t kth_chain_sync_compact_block_by_hash(kth_chain_t chain, kth_hash_t hash, kth_compact_block_t* out_block, kth_size_t* out_height);
+kth_error_code_t kth_chain_sync_compact_block_by_hash(kth_chain_t chain, kth_hash_t hash, kth_compact_block_mut_t* out_block, kth_size_t* out_height);
 
 // Transaction ---------------------------------------------------------------------
 KTH_EXPORT
