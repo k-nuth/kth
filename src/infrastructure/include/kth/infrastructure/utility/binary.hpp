@@ -24,7 +24,9 @@ struct KI_API binary {
     constexpr size_type bits_per_block = byte_bits;
 
     [[nodiscard]] static constexpr
-    size_type blocks_size(size_type bit_size) noexcept;
+    size_type blocks_size(size_type bit_size) noexcept {
+        return bit_size == 0 ? 0 : (bit_size - 1) / bits_per_block + 1;
+    }
 
     [[nodiscard]] static
     bool is_base2(std::string_view text) noexcept;

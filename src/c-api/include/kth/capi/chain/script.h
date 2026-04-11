@@ -177,6 +177,10 @@ char* kth_chain_script_to_string(kth_script_const_t self, kth_script_flags_t act
 KTH_EXPORT
 void kth_chain_script_clear(kth_script_mut_t self);
 
+/** @return Borrowed `kth_operation_const_t` view into `self`. Do not destruct; the parent object retains ownership. */
+KTH_EXPORT
+kth_operation_const_t kth_chain_script_at(kth_script_const_t self, kth_size_t index);
+
 KTH_EXPORT
 kth_size_t kth_chain_script_sigops(kth_script_const_t self, kth_bool_t accurate);
 

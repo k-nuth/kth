@@ -30,8 +30,8 @@ kth_error_code_t kth_chain_block_construct_from_data(uint8_t const* data, kth_si
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto data_cpp = kth::byte_reader(kth::byte_span(data, n));
-    auto wire_cpp = kth::int_to_bool(wire);
+    auto data_cpp = kth::byte_reader(kth::byte_span(data, static_cast<size_t>(n)));
+    auto const wire_cpp = kth::int_to_bool(wire);
     auto result = kth::domain::chain::block::from_data(data_cpp, wire_cpp);
     if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
     *out = new kth::domain::chain::block(std::move(*result));
@@ -104,7 +104,7 @@ kth_bool_t kth_chain_block_equals(kth_block_const_t self, kth_block_const_t othe
 uint8_t* kth_chain_block_to_data_simple(kth_block_const_t self, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto data = kth_chain_block_const_cpp(self).to_data();
+    auto const data = kth_chain_block_const_cpp(self).to_data();
     return kth::create_c_array(data, *out_size);
 }
 
@@ -116,8 +116,8 @@ kth_size_t kth_chain_block_serialized_size(kth_block_const_t self) {
 uint8_t* kth_chain_block_to_data(kth_block_const_t self, kth_size_t serialized_size, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto serialized_size_cpp = static_cast<size_t>(serialized_size);
-    auto data = kth_chain_block_const_cpp(self).to_data(serialized_size_cpp);
+    auto const serialized_size_cpp = static_cast<size_t>(serialized_size);
+    auto const data = kth_chain_block_const_cpp(self).to_data(serialized_size_cpp);
     return kth::create_c_array(data, *out_size);
 }
 
@@ -156,7 +156,7 @@ kth_transaction_list_const_t kth_chain_block_transactions(kth_block_const_t self
 
 kth_hash_t kth_chain_block_hash(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto value_cpp = kth_chain_block_const_cpp(self).hash();
+    auto const value_cpp = kth_chain_block_const_cpp(self).hash();
     return kth::to_hash_t(value_cpp);
 }
 
@@ -172,7 +172,7 @@ uint64_t kth_chain_block_claim(kth_block_const_t self) {
 
 kth_hash_t kth_chain_block_generate_merkle_root(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto value_cpp = kth_chain_block_const_cpp(self).generate_merkle_root();
+    auto const value_cpp = kth_chain_block_const_cpp(self).generate_merkle_root();
     return kth::to_hash_t(value_cpp);
 }
 
@@ -218,7 +218,7 @@ kth_bool_t kth_chain_block_is_extra_coinbases(kth_block_const_t self) {
 
 kth_bool_t kth_chain_block_is_final(kth_block_const_t self, kth_size_t height, uint32_t block_time) {
     KTH_PRECONDITION(self != nullptr);
-    auto height_cpp = static_cast<size_t>(height);
+    auto const height_cpp = static_cast<size_t>(height);
     return kth::bool_to_int(kth_chain_block_const_cpp(self).is_final(height_cpp, block_time));
 }
 
@@ -229,13 +229,13 @@ kth_bool_t kth_chain_block_is_distinct_transaction_set(kth_block_const_t self) {
 
 kth_bool_t kth_chain_block_is_valid_coinbase_claim(kth_block_const_t self, kth_size_t height) {
     KTH_PRECONDITION(self != nullptr);
-    auto height_cpp = static_cast<size_t>(height);
+    auto const height_cpp = static_cast<size_t>(height);
     return kth::bool_to_int(kth_chain_block_const_cpp(self).is_valid_coinbase_claim(height_cpp));
 }
 
 kth_bool_t kth_chain_block_is_valid_coinbase_script(kth_block_const_t self, kth_size_t height) {
     KTH_PRECONDITION(self != nullptr);
-    auto height_cpp = static_cast<size_t>(height);
+    auto const height_cpp = static_cast<size_t>(height);
     return kth::bool_to_int(kth_chain_block_const_cpp(self).is_valid_coinbase_script(height_cpp));
 }
 
@@ -264,38 +264,38 @@ kth_bool_t kth_chain_block_is_valid_merkle_root(kth_block_const_t self) {
 
 kth_size_t kth_chain_block_total_inputs(kth_block_const_t self, kth_bool_t with_coinbase) {
     KTH_PRECONDITION(self != nullptr);
-    auto with_coinbase_cpp = kth::int_to_bool(with_coinbase);
+    auto const with_coinbase_cpp = kth::int_to_bool(with_coinbase);
     return kth_chain_block_const_cpp(self).total_inputs(with_coinbase_cpp);
 }
 
 kth_error_code_t kth_chain_block_accept(kth_block_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_block_size_dynamic, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transactions) {
     KTH_PRECONDITION(self != nullptr);
-    auto height_cpp = static_cast<size_t>(height);
-    auto max_block_size_dynamic_cpp = static_cast<size_t>(max_block_size_dynamic);
-    auto max_sigops_cpp = static_cast<size_t>(max_sigops);
-    auto is_under_checkpoint_cpp = kth::int_to_bool(is_under_checkpoint);
-    auto transactions_cpp = kth::int_to_bool(transactions);
+    auto const height_cpp = static_cast<size_t>(height);
+    auto const max_block_size_dynamic_cpp = static_cast<size_t>(max_block_size_dynamic);
+    auto const max_sigops_cpp = static_cast<size_t>(max_sigops);
+    auto const is_under_checkpoint_cpp = kth::int_to_bool(is_under_checkpoint);
+    auto const transactions_cpp = kth::int_to_bool(transactions);
     return static_cast<kth_error_code_t>((kth_chain_block_const_cpp(self).accept(flags, height_cpp, median_time_past, max_block_size_dynamic_cpp, max_sigops_cpp, is_under_checkpoint_cpp, transactions_cpp)).value());
 }
 
 uint64_t kth_chain_block_reward(kth_block_const_t self, kth_size_t height) {
     KTH_PRECONDITION(self != nullptr);
-    auto height_cpp = static_cast<size_t>(height);
+    auto const height_cpp = static_cast<size_t>(height);
     return kth_chain_block_const_cpp(self).reward(height_cpp);
 }
 
 kth_size_t kth_chain_block_signature_operations(kth_block_const_t self, kth_bool_t bip16, kth_bool_t bip141) {
     KTH_PRECONDITION(self != nullptr);
-    auto bip16_cpp = kth::int_to_bool(bip16);
-    auto bip141_cpp = kth::int_to_bool(bip141);
+    auto const bip16_cpp = kth::int_to_bool(bip16);
+    auto const bip141_cpp = kth::int_to_bool(bip141);
     return kth_chain_block_const_cpp(self).signature_operations(bip16_cpp, bip141_cpp);
 }
 
 kth_error_code_t kth_chain_block_accept_transactions(kth_block_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint) {
     KTH_PRECONDITION(self != nullptr);
-    auto height_cpp = static_cast<size_t>(height);
-    auto max_sigops_cpp = static_cast<size_t>(max_sigops);
-    auto is_under_checkpoint_cpp = kth::int_to_bool(is_under_checkpoint);
+    auto const height_cpp = static_cast<size_t>(height);
+    auto const max_sigops_cpp = static_cast<size_t>(max_sigops);
+    auto const is_under_checkpoint_cpp = kth::int_to_bool(is_under_checkpoint);
     return static_cast<kth_error_code_t>((kth_chain_block_const_cpp(self).accept_transactions(flags, height_cpp, median_time_past, max_sigops_cpp, is_under_checkpoint_cpp)).value());
 }
 
@@ -315,18 +315,18 @@ void kth_chain_block_reset(kth_block_mut_t self) {
 // Static utilities
 
 kth_size_t kth_chain_block_locator_size(kth_size_t top) {
-    auto top_cpp = static_cast<size_t>(top);
+    auto const top_cpp = static_cast<size_t>(top);
     return kth::domain::chain::block::locator_size(top_cpp);
 }
 
 kth_block_indexes_mut_t kth_chain_block_locator_heights(kth_size_t top) {
-    auto top_cpp = static_cast<size_t>(top);
+    auto const top_cpp = static_cast<size_t>(top);
     return new std::vector<size_t>(kth::domain::chain::block::locator_heights(top_cpp));
 }
 
 uint64_t kth_chain_block_subsidy(kth_size_t height, kth_bool_t retarget) {
-    auto height_cpp = static_cast<size_t>(height);
-    auto retarget_cpp = kth::int_to_bool(retarget);
+    auto const height_cpp = static_cast<size_t>(height);
+    auto const retarget_cpp = kth::int_to_bool(retarget);
     return kth::domain::chain::block::subsidy(height_cpp, retarget_cpp);
 }
 
