@@ -1,70 +1,148 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <kth/capi/chain/header.h>
+#include <kth/capi/chain/get_headers.h>
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
-
+#include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/message/get_headers.hpp>
 
-
-KTH_CONV_DEFINE(chain, kth_get_headers_t, kth::domain::message::get_headers, get_headers)
+// Conversion functions
+kth::domain::message::get_headers& kth_chain_get_headers_mut_cpp(kth_get_headers_mut_t o) {
+    return *static_cast<kth::domain::message::get_headers*>(o);
+}
+kth::domain::message::get_headers const& kth_chain_get_headers_const_cpp(kth_get_headers_const_t o) {
+    return *static_cast<kth::domain::message::get_headers const*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {
 
-kth_get_headers_t kth_chain_get_headers_construct_default() {
+// Constructors
+
+kth_get_headers_mut_t kth_chain_get_headers_construct_default(void) {
     return new kth::domain::message::get_headers();
 }
 
-kth_get_headers_t kth_chain_get_headers_construct(kth_hash_list_const_t start, kth_hash_t stop) {
-    auto const& start_cpp = kth_core_hash_list_const_cpp(start);
-    auto stop_cpp = kth::to_array(stop.hash);
+kth_error_code_t kth_chain_get_headers_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_get_headers_mut_t* out) {
+    KTH_PRECONDITION(data != nullptr || n == 0);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto data_cpp = kth::byte_reader(kth::byte_span(data, static_cast<size_t>(n)));
+    auto result = kth::domain::message::get_headers::from_data(data_cpp, version);
+    if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
+    *out = new kth::domain::message::get_headers(std::move(*result));
+    return kth_ec_success;
+}
 
+kth_get_headers_mut_t kth_chain_get_headers_construct(kth_hash_list_const_t start, kth_hash_t stop) {
+    KTH_PRECONDITION(start != nullptr);
+    auto const& start_cpp = kth_core_hash_list_const_cpp(start);
+    auto const stop_cpp = kth::hash_to_cpp(stop.hash);
     return new kth::domain::message::get_headers(start_cpp, stop_cpp);
 }
 
-void kth_chain_get_headers_destruct(kth_get_headers_t get_b) {
-    delete &kth_chain_get_headers_cpp(get_b);
+kth_get_headers_mut_t kth_chain_get_headers_construct_unsafe(kth_hash_list_const_t start, uint8_t const* stop) {
+    KTH_PRECONDITION(start != nullptr);
+    KTH_PRECONDITION(stop != nullptr);
+    auto const& start_cpp = kth_core_hash_list_const_cpp(start);
+    auto const stop_cpp = kth::hash_to_cpp(stop);
+    return new kth::domain::message::get_headers(start_cpp, stop_cpp);
 }
 
-kth_hash_list_mut_t kth_chain_get_headers_start_hashes(kth_get_headers_t get_b) {
-    auto& list = kth_chain_get_headers_cpp(get_b).start_hashes();
-    return kth_core_hash_list_construct_from_cpp(list);
+
+// Destructor
+
+void kth_chain_get_headers_destruct(kth_get_headers_mut_t self) {
+    if (self == nullptr) return;
+    delete &kth_chain_get_headers_mut_cpp(self);
 }
 
-void kth_chain_get_headers_set_start_hashes(kth_get_headers_t get_b, kth_hash_list_const_t value) {
+
+// Copy
+
+kth_get_headers_mut_t kth_chain_get_headers_copy(kth_get_headers_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return new kth::domain::message::get_headers(kth_chain_get_headers_const_cpp(self));
+}
+
+
+// Equality
+
+kth_bool_t kth_chain_get_headers_equals(kth_get_headers_const_t self, kth_get_headers_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::bool_to_int(kth_chain_get_headers_const_cpp(self) == kth_chain_get_headers_const_cpp(other));
+}
+
+
+// Serialization
+
+uint8_t* kth_chain_get_headers_to_data(kth_get_headers_const_t self, uint32_t version, kth_size_t* out_size) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out_size != nullptr);
+    auto const data = kth_chain_get_headers_const_cpp(self).to_data(version);
+    return kth::create_c_array(data, *out_size);
+}
+
+kth_size_t kth_chain_get_headers_serialized_size(kth_get_headers_const_t self, uint32_t version) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth_chain_get_headers_const_cpp(self).serialized_size(version);
+}
+
+
+// Getters
+
+kth_hash_list_const_t kth_chain_get_headers_start_hashes(kth_get_headers_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return &(kth_chain_get_headers_const_cpp(self).start_hashes());
+}
+
+kth_hash_t kth_chain_get_headers_stop_hash(kth_get_headers_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const value_cpp = kth_chain_get_headers_const_cpp(self).stop_hash();
+    return kth::to_hash_t(value_cpp);
+}
+
+
+// Setters
+
+void kth_chain_get_headers_set_start_hashes(kth_get_headers_mut_t self, kth_hash_list_const_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(value != nullptr);
     auto const& value_cpp = kth_core_hash_list_const_cpp(value);
-    kth_chain_get_headers_cpp(get_b).set_start_hashes(value_cpp);
+    kth_chain_get_headers_mut_cpp(self).set_start_hashes(value_cpp);
 }
 
-kth_hash_t kth_chain_get_headers_stop_hash(kth_get_headers_t get_b) {
-    auto& stop = kth_chain_get_headers_cpp(get_b).stop_hash();
-    return kth::to_hash_t(stop);
+void kth_chain_get_headers_set_stop_hash(kth_get_headers_mut_t self, kth_hash_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const value_cpp = kth::hash_to_cpp(value.hash);
+    kth_chain_get_headers_mut_cpp(self).set_stop_hash(value_cpp);
 }
 
-void kth_chain_get_headers_stop_hash_out(kth_get_headers_t get_b, kth_hash_t* out_stop_hash) {
-    auto& stop = kth_chain_get_headers_cpp(get_b).stop_hash();
-    kth::copy_c_hash(stop, out_stop_hash);
+void kth_chain_get_headers_set_stop_hash_unsafe(kth_get_headers_mut_t self, uint8_t const* value) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(value != nullptr);
+    auto const value_cpp = kth::hash_to_cpp(value);
+    kth_chain_get_headers_mut_cpp(self).set_stop_hash(value_cpp);
 }
 
-void kth_chain_get_headers_set_stop_hash(kth_get_headers_t get_b, kth_hash_t value) {
-    auto value_cpp = kth::to_array(value.hash);
-    kth_chain_get_headers_cpp(get_b).set_stop_hash(value_cpp);
+
+// Predicates
+
+kth_bool_t kth_chain_get_headers_is_valid(kth_get_headers_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth_chain_get_headers_const_cpp(self).is_valid());
 }
 
-kth_bool_t kth_chain_get_headers_is_valid(kth_get_headers_t get_b) {
-    return kth::bool_to_int(kth_chain_get_headers_cpp(get_b).is_valid());
-}
 
-void kth_chain_get_headers_reset(kth_get_headers_t get_b) {
-    kth_chain_get_headers_cpp(get_b).reset();
-}
+// Operations
 
-kth_size_t kth_chain_get_headers_serialized_size(kth_get_headers_t get_b, uint32_t version) {
-    return kth_chain_get_headers_cpp(get_b).serialized_size(version);
+void kth_chain_get_headers_reset(kth_get_headers_mut_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    kth_chain_get_headers_mut_cpp(self).reset();
 }
 
 } // extern "C"
