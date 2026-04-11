@@ -54,7 +54,7 @@ struct KD_API get_blocks {
     void set_stop_hash(hash_digest const& value);
 
     static
-    expect<get_blocks> from_data(byte_reader& reader, uint32_t /*version*/);
+    expect<get_blocks> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
     data_chunk to_data(uint32_t version) const;

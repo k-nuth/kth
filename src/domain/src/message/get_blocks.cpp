@@ -57,7 +57,7 @@ void get_blocks::reset() {
 //-----------------------------------------------------------------------------
 
 // static
-expect<get_blocks> get_blocks::from_data(byte_reader& reader, uint32_t /*version*/) {
+expect<get_blocks> get_blocks::from_data(byte_reader& reader, [[maybe_unused]] uint32_t version) {
     // Discard protocol version because it is stupid.
     auto const skipped_version = reader.skip(4);
     if ( ! skipped_version) {

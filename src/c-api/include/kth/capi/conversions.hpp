@@ -22,6 +22,7 @@
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/chain/transaction.hpp>
+#include <kth/domain/message/get_blocks.hpp>
 // #include <kth/domain/wallet/ec_public.hpp>
 #include <kth/domain/wallet/transaction_functions.hpp>
 #include <kth/domain/wallet/wallet_manager.hpp>
@@ -38,6 +39,10 @@ kth::domain::chain::block&       kth_chain_block_mut_cpp(kth_block_mut_t o);
 // binary conversion functions. Defined in src/binary.cpp.
 kth::binary const& kth_core_binary_const_cpp(kth_binary_const_t o);
 kth::binary&       kth_core_binary_mut_cpp(kth_binary_mut_t o);
+
+// get_blocks conversion functions. Defined in src/chain/get_blocks.cpp.
+kth::domain::message::get_blocks const& kth_chain_get_blocks_const_cpp(kth_get_blocks_const_t o);
+kth::domain::message::get_blocks&       kth_chain_get_blocks_mut_cpp(kth_get_blocks_mut_t o);
 
 // header conversion functions take const/mut handle types directly. Defined
 // in src/chain/header.cpp.
