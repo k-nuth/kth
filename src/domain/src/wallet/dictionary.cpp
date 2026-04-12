@@ -2,9 +2,9 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <kth/infrastructure/wallet/dictionary.hpp>
+#include <kth/domain/wallet/dictionary.hpp>
 
-namespace kth::infrastructure::wallet {
+namespace kth::domain::wallet {
 namespace language {
 
 const dictionary en =
@@ -20564,4 +20564,4 @@ const dictionary_list all
 };
 
 } // namespace language
-} // namespace kth::infrastructure::wallet
+} // namespace kth::domain::wallet

@@ -3,8 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 // Cashaddr is an address format inspired by bech32.
-#ifndef KTH_INFRASTUCTURE_WALLET_CASHADDR_HPP_
-#define KTH_INFRASTUCTURE_WALLET_CASHADDR_HPP_
+#ifndef KTH_DOMAIN_WALLET_CASHADDR_HPP_
+#define KTH_DOMAIN_WALLET_CASHADDR_HPP_
 
 #include <cstdint>
 #include <string>
@@ -13,19 +13,19 @@
 
 #include <kth/infrastructure/utility/data.hpp>
 
-namespace kth::infrastructure::wallet::cashaddr {
+namespace kth::domain::wallet::cashaddr {
 
 std::string encode(std::string_view prefix, data_chunk const& payload);
 std::pair<std::string, data_chunk> decode(std::string const& str, std::string const& default_prefix);
 
-} // namespace kth::infrastructure::wallet::cashaddr
+} // namespace kth::domain::wallet::cashaddr
 
-#endif /* KTH_INFRASTUCTURE_WALLET_CASHADDR_HPP_ */
+#endif /* KTH_DOMAIN_WALLET_CASHADDR_HPP_ */
 
 
 // Unit Tests ----------------------------------------------------
 #ifdef DOCTEST_LIBRARY_INCLUDED
-using namespace kth::infrastructure::wallet;
+using namespace kth::domain::wallet;
 using namespace std;
 
 static

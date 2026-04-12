@@ -9,43 +9,43 @@
 
 #include <kth/capi/wallet/conversions.hpp>
 
-#include <kth/infrastructure/wallet/hd_private.hpp>
+#include <kth/domain/wallet/hd_private.hpp>
 
-KTH_CONV_DEFINE(wallet, kth_hd_private_t, kth::infrastructure::wallet::hd_private, hd_private)
+KTH_CONV_DEFINE(wallet, kth_hd_private_t, kth::domain::wallet::hd_private, hd_private)
 
 extern "C" {
 
 kth_hd_private_t kth_wallet_hd_private_construct_default() {
-    return new kth::infrastructure::wallet::hd_private();
+    return new kth::domain::wallet::hd_private();
 }
 
 kth_hd_private_t kth_wallet_hd_private_construct_key(kth_hd_key_t const* private_key) {
-    return new kth::infrastructure::wallet::hd_private(detail::from_hd_key_t(*private_key));
+    return new kth::domain::wallet::hd_private(detail::from_hd_key_t(*private_key));
 }
 
 kth_hd_private_t kth_wallet_hd_private_construct_key_prefix(kth_hd_key_t const* private_key, uint32_t prefix) {
-    return new kth::infrastructure::wallet::hd_private(detail::from_hd_key_t(*private_key), prefix);
+    return new kth::domain::wallet::hd_private(detail::from_hd_key_t(*private_key), prefix);
 }
 
 kth_hd_private_t kth_wallet_hd_private_construct_key_prefixes(kth_hd_key_t const* private_key, uint64_t prefixes) {
-    return new kth::infrastructure::wallet::hd_private(detail::from_hd_key_t(*private_key), prefixes);
+    return new kth::domain::wallet::hd_private(detail::from_hd_key_t(*private_key), prefixes);
 }
 
 kth_hd_private_t kth_wallet_hd_private_construct_seed(uint8_t const* seed, kth_size_t size, uint64_t prefixes) {
     kth::data_chunk const seed_chunk(seed, seed + size);
-    return new kth::infrastructure::wallet::hd_private(seed_chunk, prefixes);
+    return new kth::domain::wallet::hd_private(seed_chunk, prefixes);
 }
 
 kth_hd_private_t kth_wallet_hd_private_construct_string(char const* encoded) {
-    return new kth::infrastructure::wallet::hd_private(std::string(encoded));
+    return new kth::domain::wallet::hd_private(std::string(encoded));
 }
 
 kth_hd_private_t kth_wallet_hd_private_construct_string_prefix(char const* encoded, uint32_t prefix) {
-    return new kth::infrastructure::wallet::hd_private(std::string(encoded), prefix);
+    return new kth::domain::wallet::hd_private(std::string(encoded), prefix);
 }
 
 kth_hd_private_t kth_wallet_hd_private_construct_string_prefixes(char const* encoded, uint64_t prefixes) {
-    return new kth::infrastructure::wallet::hd_private(std::string(encoded), prefixes);
+    return new kth::domain::wallet::hd_private(std::string(encoded), prefixes);
 }
 
 void kth_wallet_hd_private_destruct(kth_hd_private_t hd_private) {

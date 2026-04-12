@@ -12,9 +12,9 @@
 #include <kth/domain/wallet/payment_address.hpp>
 
 
-#include <kth/infrastructure/wallet/cashaddr.hpp>
+#include <kth/domain/wallet/cashaddr.hpp>
 
-using namespace kth::infrastructure::wallet;
+using namespace kth::domain::wallet;
 using kth::data_chunk;
 
 template <unsigned int frombits, unsigned int tobits, bool pad, typename O, typename I>

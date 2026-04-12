@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <kth/infrastructure/wallet/cashaddr.hpp>
+#include <kth/domain/wallet/cashaddr.hpp>
 
 using data_chunk = kth::data_chunk;
 
@@ -198,7 +198,7 @@ data_chunk create_checksum(std::string_view prefix, data_chunk const& payload) {
 
 } // namespace
 
-namespace kth::infrastructure::wallet::cashaddr {
+namespace kth::domain::wallet::cashaddr {
 
 /**
  * Encode a cashaddr string.
@@ -299,4 +299,4 @@ std::pair<std::string, data_chunk> decode(std::string const& str, std::string co
     return {std::move(prefix), data_chunk(values.begin(), values.end() - 8)};
 }
 
-} // namespace kth::infrastructure::wallet::cashaddr
+} // namespace kth::domain::wallet::cashaddr

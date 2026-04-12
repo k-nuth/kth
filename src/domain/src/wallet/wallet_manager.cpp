@@ -5,15 +5,15 @@
 #include <kth/domain/wallet/wallet_manager.hpp>
 
 #include <kth/infrastructure/utility/random.hpp>
-#include <kth/infrastructure/wallet/dictionary.hpp>
-#include <kth/infrastructure/wallet/mnemonic.hpp>
+#include <kth/domain/wallet/dictionary.hpp>
+#include <kth/domain/wallet/mnemonic.hpp>
 
 #include <expected>
 
 
 #include <kth/infrastructure/formats/base_16.hpp>
-#include <kth/infrastructure/wallet/hd_public.hpp>
-#include <kth/infrastructure/wallet/hd_private.hpp>
+#include <kth/domain/wallet/hd_public.hpp>
+#include <kth/domain/wallet/hd_private.hpp>
 
 
 namespace kth::domain::wallet {
@@ -42,14 +42,14 @@ std::expected<wallet_data, std::error_code>
 create_wallet(
     std::string const& password,
     std::string const& normalized_passphrase,
-    kth::infrastructure::wallet::dictionary const& lexicon /* =kth::infrastructure::wallet::language::en */) {
+    kth::domain::wallet::dictionary const& lexicon /* =kth::domain::wallet::language::en */) {
 
-    using kth::infrastructure::wallet::create_mnemonic;
-    using kth::infrastructure::wallet::decode_mnemonic;
-    using kth::infrastructure::wallet::decode_mnemonic_normalized_passphrase;
-    using kth::infrastructure::wallet::hd_first_hardened_key;
-    using kth::infrastructure::wallet::hd_private;
-    using kth::infrastructure::wallet::hd_public;
+    using kth::domain::wallet::create_mnemonic;
+    using kth::domain::wallet::decode_mnemonic;
+    using kth::domain::wallet::decode_mnemonic_normalized_passphrase;
+    using kth::domain::wallet::hd_first_hardened_key;
+    using kth::domain::wallet::hd_private;
+    using kth::domain::wallet::hd_public;
 
     data_chunk entropy(32); // 256 bits entropy
     pseudo_random_fill(entropy);

@@ -2,19 +2,18 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef KTH_INFRASTUCTURE_WALLET_HD_PUBLIC_KEY_HPP
-#define KTH_INFRASTUCTURE_WALLET_HD_PUBLIC_KEY_HPP
+#ifndef KTH_DOMAIN_WALLET_HD_PUBLIC_KEY_HPP
+#define KTH_DOMAIN_WALLET_HD_PUBLIC_KEY_HPP
 
 #include <cstdint>
 #include <iostream>
 #include <string>
 
-#include <kth/infrastructure/define.hpp>
+#include <kth/domain/define.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-// #include <kth/infrastructure/wallet/ec_public.hpp>
 
-namespace kth::infrastructure::wallet {
+namespace kth::domain::wallet {
 
 /// A constant used in key derivation.
 static constexpr uint32_t hd_first_hardened_key = 1 << 31;
@@ -28,7 +27,7 @@ static constexpr size_t hd_key_size = 82;
 using hd_key = byte_array<hd_key_size>;
 
 /// Key derivation information used in the serialization format.
-struct KI_API hd_lineage {
+struct KD_API hd_lineage {
     uint64_t prefixes;
     uint8_t depth;
     uint32_t parent_fingerprint;
@@ -41,7 +40,7 @@ struct KI_API hd_lineage {
 class hd_private;
 
 /// An extended public key, as defined by BIP 32.
-struct KI_API hd_public {
+struct KD_API hd_public {
     static constexpr uint32_t mainnet = 76067358;
     static constexpr uint32_t testnet = 70617039;
 
@@ -127,6 +126,6 @@ private:
     hd_public(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage);
 };
 
-} // namespace kth::infrastructure::wallet
+} // namespace kth::domain::wallet
 
 #endif

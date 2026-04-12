@@ -2,24 +2,22 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <kth/infrastructure/wallet/mnemonic.hpp>
-
-#include "../math/external/pkcs5_pbkdf2.h"
+#include <kth/domain/wallet/mnemonic.hpp>
 
 #include <algorithm>
 #include <cstdint>
 
 #include <boost/locale.hpp>
 
-#include <kth/infrastructure/define.hpp>
+#include <kth/domain/define.hpp>
 #include <kth/infrastructure/unicode/unicode.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 #include <kth/infrastructure/utility/binary.hpp>
 #include <kth/infrastructure/utility/collection.hpp>
 #include <kth/infrastructure/utility/string.hpp>
-#include <kth/infrastructure/wallet/dictionary.hpp>
+#include <kth/domain/wallet/dictionary.hpp>
 
-namespace kth::infrastructure::wallet {
+namespace kth::domain::wallet {
 
 // BIP-39 private constants.
 static constexpr size_t bits_per_word = 11;
@@ -141,4 +139,4 @@ long_hash decode_mnemonic(word_list const& mnemonic, std::string const& passphra
 
 #endif
 
-} // namespace kth::infrastructure::wallet
+} // namespace kth::domain::wallet

@@ -6,7 +6,7 @@
 
 #include <test_helpers.hpp>
 
-#include <kth/infrastructure/wallet/hd_private.hpp>
+#include <kth/domain/wallet/hd_private.hpp>
 
 using namespace kth;
 using namespace kd;

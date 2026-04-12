@@ -4,12 +4,11 @@
 
 // #include <kth/domain/wallet/transaction_functions.hpp>
 #include <test_helpers.hpp>
-#include <kth/infrastructure/wallet/hd_private.hpp>
+#include <kth/domain/wallet/hd_private.hpp>
 
 using namespace kth;
 using namespace kd;
 using namespace kth::domain::wallet;
-using namespace kth::infrastructure::wallet;
 
 // Start Test Suite: transaction functions tests
 

@@ -116,12 +116,7 @@
 
 #include <kth/infrastructure/utility/writer.hpp>
 
-#include <kth/infrastructure/wallet/dictionary.hpp>
-#include <kth/infrastructure/wallet/hd_private.hpp>
-#include <kth/infrastructure/wallet/hd_public.hpp>
 // #include <kth/infrastructure/wallet/message.hpp>
-#include <kth/infrastructure/wallet/mini_keys.hpp>
-#include <kth/infrastructure/wallet/mnemonic.hpp>
 #include <kth/infrastructure/wallet/uri.hpp>
 
 #ifdef KTH_WITH_QRENCODE

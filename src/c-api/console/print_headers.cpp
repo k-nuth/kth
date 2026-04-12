@@ -32,7 +32,7 @@
 #include <kth/domain/message/transaction.hpp>
 
 #include <kth/infrastructure/utility/binary.hpp>
-#include <kth/infrastructure/wallet/hd_private.hpp>
+#include <kth/domain/wallet/hd_private.hpp>
 
 
  void wait_until_block(kth_chain_t chain, size_t desired_height) {

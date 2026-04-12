@@ -15,9 +15,9 @@
 #include <kth/domain/define.hpp>
 
 #include <kth/infrastructure/utility/random.hpp>
-#include <kth/infrastructure/wallet/dictionary.hpp>
-#include <kth/infrastructure/wallet/hd_public.hpp>
-#include <kth/infrastructure/wallet/mnemonic.hpp>
+#include <kth/domain/wallet/dictionary.hpp>
+#include <kth/domain/wallet/hd_public.hpp>
+#include <kth/domain/wallet/mnemonic.hpp>
 
 #include <expected>
 
@@ -57,7 +57,7 @@ static_assert(encrypted_seed_size == 64, "encrypted_seed_size must be equal to 6
 
 struct wallet_data {
     std::vector<std::string> mnemonics;
-    kth::infrastructure::wallet::hd_public xpub;
+    kth::domain::wallet::hd_public xpub;
     encrypted_seed_t encrypted_seed;
 };
 
@@ -65,7 +65,7 @@ std::expected<wallet_data, std::error_code>
 create_wallet(
     std::string const& password,
     std::string const& normalized_passphrase,
-    kth::infrastructure::wallet::dictionary const& lexicon=kth::infrastructure::wallet::language::en);
+    kth::domain::wallet::dictionary const& lexicon=kth::domain::wallet::language::en);
 
 std::expected<long_hash, std::error_code>
 decrypt_seed(

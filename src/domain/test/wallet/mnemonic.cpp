@@ -5,10 +5,12 @@
 #include "mnemonic.hpp"
 
 #include <test_helpers.hpp>
-#include <kth/infrastructure.hpp>
+#include <kth/domain/wallet/hd_private.hpp>
+#include <kth/domain/wallet/hd_public.hpp>
+#include <kth/domain/wallet/mnemonic.hpp>
 
 using namespace kth;
-using namespace kth::infrastructure::wallet;
+using namespace kth::domain::wallet;
 
 // Start Test Suite: mnemonic tests
 

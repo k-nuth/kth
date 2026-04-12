@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef KTH_INFRASTUCTURE_WALLET_DICTIONARY_HPP_
-#define KTH_INFRASTUCTURE_WALLET_DICTIONARY_HPP_
+#ifndef KTH_DOMAIN_WALLET_DICTIONARY_HPP_
+#define KTH_DOMAIN_WALLET_DICTIONARY_HPP_
 
 #include <array>
 #include <cstddef>
@@ -11,7 +11,7 @@
 
 #include <kth/infrastructure/compat.hpp>
 
-namespace kth::infrastructure::wallet {
+namespace kth::domain::wallet {
 
 /**
  * A valid mnemonic dictionary has exactly this many words.
@@ -48,6 +48,6 @@ namespace language {
     extern const dictionary_list all;
 }
 
-} // namespace kth::infrastructure::wallet
+} // namespace kth::domain::wallet
 
-#endif // KTH_INFRASTUCTURE_WALLET_DICTIONARY_HPP_
+#endif // KTH_DOMAIN_WALLET_DICTIONARY_HPP_

@@ -2,21 +2,21 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef KTH_INFRASTUCTURE_WALLET_HD_PRIVATE_KEY_HPP
-#define KTH_INFRASTUCTURE_WALLET_HD_PRIVATE_KEY_HPP
+#ifndef KTH_DOMAIN_WALLET_HD_PRIVATE_KEY_HPP
+#define KTH_DOMAIN_WALLET_HD_PRIVATE_KEY_HPP
 
 #include <cstdint>
 #include <iostream>
 #include <string>
 
-#include <kth/infrastructure/define.hpp>
+#include <kth/domain/define.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-// #include <kth/infrastructure/wallet/ec_private.hpp>
-// #include <kth/infrastructure/wallet/ec_public.hpp>
-#include <kth/infrastructure/wallet/hd_public.hpp>
+// #include <kth/domain/wallet/ec_private.hpp>
+// #include <kth/domain/wallet/ec_public.hpp>
+#include <kth/domain/wallet/hd_public.hpp>
 
-namespace kth::infrastructure::wallet {
+namespace kth::domain::wallet {
 
 constexpr
 uint64_t to_prefixes(uint32_t private_prefix, uint32_t public_prefix) {
@@ -24,7 +24,7 @@ uint64_t to_prefixes(uint32_t private_prefix, uint32_t public_prefix) {
 }
 
 /// An extended private key, as defined by BIP 32.
-struct KI_API hd_private : hd_public {
+struct KD_API hd_private : hd_public {
 public:
     static constexpr uint64_t mainnet = to_prefixes(76066276, hd_public::mainnet);
     static constexpr uint64_t testnet = to_prefixes(70615956, hd_public::testnet);
@@ -102,6 +102,6 @@ private:
     ec_secret secret_ {null_hash};
 };
 
-} // namespace kth::infrastructure::wallet
+} // namespace kth::domain::wallet
 
 #endif
