@@ -270,12 +270,10 @@ TEST_CASE("payment_address cashAddr mainnet from string", "[payment_address]") {
 }
 
 TEST_CASE("payment_address cashAddr testnet from string", "[payment_address]") {
-    set_cashaddr_prefix("bchtest");
-    payment_address const address("bchtest:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvleatp707");
+    payment_address const address("bchtest:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvleatp707", domain::config::network::testnet);
     REQUIRE(address.valid());
     REQUIRE(address.encoded_cashaddr(false) == "bchtest:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvleatp707");
     REQUIRE(address.encoded_legacy() == "mmjF9M1saNs7vjCGaSDaDHvFAtTgUNtfrJ");
-    set_cashaddr_prefix("bitcoincash");
 }
 
 TEST_CASE("payment_address token address from string", "[payment_address]") {

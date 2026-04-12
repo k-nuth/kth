@@ -52,10 +52,7 @@ using namespace std::placeholders;
 
 full_node::full_node(configuration const& configuration)
 #if ! defined(__EMSCRIPTEN__)
-    : multi_crypto_setter(configuration.network)
-    , p2p(configuration.network)
-#else
-    : multi_crypto_setter()
+    : p2p(configuration.network)
 #endif
 
 #if ! defined(__EMSCRIPTEN__)

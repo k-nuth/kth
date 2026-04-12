@@ -89,35 +89,6 @@ using accum_t = boost::accumulators::accumulator_set<double,
 
 #endif
 
-struct multi_crypto_setter {
-    multi_crypto_setter() {
-        set_cashaddr_prefix("bitcoincash");
-    }
-
-#if ! defined(__EMSCRIPTEN__)
-    multi_crypto_setter(network::settings const& net_settings) {
-#if defined(KTH_CURRENCY_BCH)
-        switch (net_settings.identifier) {
-            case netmagic::bch_mainnet:
-                set_cashaddr_prefix("bitcoincash");
-                break;
-            case netmagic::bch_testnet:
-            case netmagic::bch_testnet4:
-            case netmagic::bch_scalenet:
-            // case netmagic::bch_chipnet:  // same net magic as bch_testnet4
-                set_cashaddr_prefix("bchtest");
-                break;
-            case netmagic::bch_regtest:
-                set_cashaddr_prefix("bchreg");
-                break;
-            default:
-                set_cashaddr_prefix("");
-        }
-#endif
-    }
-#endif
-};
-
 #if ! defined(__EMSCRIPTEN__)
 #define OVERRIDE_COND override
 #else
@@ -127,9 +98,8 @@ struct multi_crypto_setter {
 
 /// A full node on the Bitcoin P2P network.
 class KND_API full_node
-    : public multi_crypto_setter
 #if ! defined(__EMSCRIPTEN__)
-    , public network::p2p
+    : public network::p2p
 #endif
 {
 public:
