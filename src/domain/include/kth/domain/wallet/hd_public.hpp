@@ -10,6 +10,7 @@
 #include <string>
 
 #include <kth/domain/define.hpp>
+#include <kth/domain/wallet/hd_lineage.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
@@ -25,17 +26,6 @@ using hd_chain_code = byte_array<hd_chain_code_size>;
 /// A decoded hd public or private key.
 static constexpr size_t hd_key_size = 82;
 using hd_key = byte_array<hd_key_size>;
-
-/// Key derivation information used in the serialization format.
-struct KD_API hd_lineage {
-    uint64_t prefixes;
-    uint8_t depth;
-    uint32_t parent_fingerprint;
-    uint32_t child_number;
-
-    bool operator==(hd_lineage const& x) const;
-    bool operator!=(hd_lineage const& x) const;
-};
 
 class hd_private;
 

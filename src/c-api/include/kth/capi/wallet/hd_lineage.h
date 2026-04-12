@@ -1,9 +1,11 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef KTH_CAPI_WALLET_HD_LINEAGE_H_
 #define KTH_CAPI_WALLET_HD_LINEAGE_H_
+
+#include <stdint.h>
 
 typedef struct kth_hd_lineage {
     uint64_t prefixes;
@@ -12,4 +14,4 @@ typedef struct kth_hd_lineage {
     uint32_t child_number;
 } kth_hd_lineage_t;
 
-#endif //KTH_CAPI_WALLET_HD_LINEAGE_H_
+#endif // KTH_CAPI_WALLET_HD_LINEAGE_H_

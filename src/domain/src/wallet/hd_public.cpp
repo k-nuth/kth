@@ -22,7 +22,6 @@
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
-// #include <kth/domain/wallet/ec_public.hpp>
 #include <kth/domain/wallet/hd_private.hpp>
 
 namespace kth::domain::wallet {
@@ -269,15 +268,5 @@ std::ostream& operator<<(std::ostream& out, hd_public const& of) {
 
 // hd_lineage
 // ----------------------------------------------------------------------------
-
-bool hd_lineage::operator == (hd_lineage const& x) const {
-    return prefixes == x.prefixes && depth == x.depth &&
-        parent_fingerprint == x.parent_fingerprint &&
-        child_number == x.child_number;
-}
-
-bool hd_lineage::operator!=(hd_lineage const& x) const {
-    return !(*this == x);
-}
 
 } // namespace kth::domain::wallet
