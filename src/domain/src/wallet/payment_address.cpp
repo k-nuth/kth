@@ -55,12 +55,12 @@ payment_address::payment_address(chain::script const& script, uint8_t version)
     : payment_address(payment_address{from_script(script, version)})
 {}
 
-payment_address::payment_address(short_hash const& hash, uint8_t version)
+payment_address::payment_address(short_hash const& short_hash, uint8_t version)
     : valid_(true)
     , version_(version)
-    , hash_size_(hash.size())
+    , hash_size_(short_hash.size())
 {
-    std::copy_n(hash.begin(), hash.size(), hash_data_.begin());
+    std::copy_n(short_hash.begin(), short_hash.size(), hash_data_.begin());
 }
 
 payment_address::payment_address(hash_digest const& hash, uint8_t version)

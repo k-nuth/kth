@@ -79,7 +79,7 @@ struct KD_API payment_address {
     payment_address(std::string const& address, config::network net);
 
     explicit
-    payment_address(short_hash const& hash, uint8_t version = mainnet_p2kh);
+    payment_address(short_hash const& short_hash, uint8_t version = mainnet_p2kh);
 
     explicit
     payment_address(hash_digest const& hash, uint8_t version = mainnet_p2kh);

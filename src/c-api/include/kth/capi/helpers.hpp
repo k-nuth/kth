@@ -11,6 +11,7 @@
 #include <type_traits>
 #include <utility>
 
+#include <kth/capi/wallet/primitives.h>
 #include <kth/domain/config/network.hpp>
 #include <kth/domain/machine/opcode.hpp>
 #include <kth/domain/wallet/wallet_manager.hpp>
@@ -191,6 +192,20 @@ kth::long_hash long_hash_to_cpp(uint8_t const* x) {
     return ret;
 }
 
+inline
+kth_payment_t to_payment_t(kth::domain::wallet::payment const& x) {
+    kth_payment_t ret;
+    std::copy_n(x.begin(), x.size(), ret.hash);
+    return ret;
+}
+
+inline
+kth::domain::wallet::payment payment_to_cpp(uint8_t const* x) {
+    kth::domain::wallet::payment ret;
+    std::copy_n(x, ret.size(), std::begin(ret));
+    return ret;
+}
+
 template <typename T>
 inline
 T* mnew(std::size_t n = 1) {
@@ -229,8 +244,10 @@ CharT* allocate_and_copy_c_str(CharT const* str) {
 template <typename StrT>
 inline
 auto* create_c_str(StrT const& str) {
-    auto* c_str = mnew<typename StrT::value_type>(str.size() + 1);
-    std::copy_n(str.c_str(), str.size() + 1, c_str);
+    using CharT = typename StrT::value_type;
+    auto* c_str = mnew<CharT>(str.size() + 1);
+    std::copy_n(str.data(), str.size(), c_str);
+    c_str[str.size()] = CharT{};  // null-terminate (works for string_view too)
     return c_str;
 }
 
