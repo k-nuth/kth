@@ -90,21 +90,6 @@ inline kth::domain::chain::chain_state& kth_chain_chain_state_mut_cpp(kth_chain_
     return *static_cast<kth::domain::chain::chain_state*>(o);
 }
 
-// The following types are not migrated to const/mut yet (their existing
-// converters via KTH_CONV_DECLARE / KTH_LIST_DECLARE_CONVERTERS take the
-// legacy `_t = void*` form). The migrated C-API uses the matching
-// `_const_t` / `_mut_t` aliases for read-only and mutable handles, so we
-// add inline overloads here that bridge the two until each type migrates.
-
-inline std::vector<kth::domain::machine::operation> const&
-kth_chain_operation_list_const_cpp(kth_operation_list_const_t l) {
-    return *static_cast<std::vector<kth::domain::machine::operation> const*>(l);
-}
-inline std::vector<kth::domain::machine::operation>&
-kth_chain_operation_list_mut_cpp(kth_operation_list_mut_t l) {
-    return *static_cast<std::vector<kth::domain::machine::operation>*>(l);
-}
-
 // transaction conversion functions take const/mut handle types directly.
 // Defined in src/chain/transaction.cpp.
 kth::domain::chain::transaction const& kth_chain_transaction_const_cpp(kth_transaction_const_t o);
@@ -217,7 +202,6 @@ KTH_CONV_DECLARE(chain, kth_history_compact_t, kth::domain::chain::history_compa
 // #endif
 
 KTH_CONV_DECLARE(chain, kth_stealth_compact_t, kth::domain::chain::stealth_compact, stealth_compact)
-KTH_CONV_DECLARE(chain, kth_operation_t, kth::domain::machine::operation, operation)
 
 KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP(chain, kth_utxo_list_t, kth::domain::chain::utxo, utxo_list)
 // hash_list — inline converters and construct_from_cpp.
@@ -245,39 +229,32 @@ inline std::vector<uint64_t>&
 kth_core_u64_list_mut_cpp(kth_u64_list_mut_t l) {
     return *static_cast<std::vector<uint64_t>*>(l);
 }
-KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP_CONST(chain, kth_operation_list_t, kth::domain::machine::operation, operation_list)
-
 KTH_LIST_DECLARE_CONVERTERS(chain, kth_utxo_list_t, kth::domain::chain::utxo, utxo_list)
 
-KTH_LIST_DECLARE_CONVERTERS(chain, kth_operation_list_t, kth::domain::machine::operation, operation_list)
+// operation conversion functions. Defined in src/chain/operation.cpp.
+kth::domain::machine::operation const& kth_chain_operation_const_cpp(kth_operation_const_t o);
+kth::domain::machine::operation&       kth_chain_operation_mut_cpp(kth_operation_mut_t o);
+
+// operation_list — inline converters (replaces macro-based KTH_LIST_DECLARE_CONVERTERS).
+inline std::vector<kth::domain::machine::operation> const&
+kth_chain_operation_list_const_cpp(kth_operation_list_const_t l) {
+    return *static_cast<std::vector<kth::domain::machine::operation> const*>(l);
+}
+inline std::vector<kth::domain::machine::operation>&
+kth_chain_operation_list_mut_cpp(kth_operation_list_mut_t l) {
+    return *static_cast<std::vector<kth::domain::machine::operation>*>(l);
+}
 
 // Wallet.
 // ------------------------------------------------------------------------------------
 
-// ec_private — partial registration (not fully migrated yet). The legacy
-// KTH_CONV_DECLARE produces the void*-based overloads; the inline
-// converters here add the const_t/mut_t overloads so generated code that
-// takes kth_ec_private_const_t can resolve correctly.
-KTH_CONV_DECLARE(wallet, kth_ec_private_t, kth::domain::wallet::ec_private, ec_private)
-inline kth::domain::wallet::ec_private const&
-kth_wallet_ec_private_const_cpp(kth_ec_private_const_t o) {
-    return *static_cast<kth::domain::wallet::ec_private const*>(o);
-}
-inline kth::domain::wallet::ec_private&
-kth_wallet_ec_private_mut_cpp(kth_ec_private_mut_t o) {
-    return *static_cast<kth::domain::wallet::ec_private*>(o);
-}
+// ec_private conversion functions. Defined in src/wallet/ec_private.cpp.
+kth::domain::wallet::ec_private const& kth_wallet_ec_private_const_cpp(kth_ec_private_const_t o);
+kth::domain::wallet::ec_private&       kth_wallet_ec_private_mut_cpp(kth_ec_private_mut_t o);
 
-// ec_public — same partial registration pattern.
-KTH_CONV_DECLARE(wallet, kth_ec_public_t, kth::domain::wallet::ec_public, ec_public)
-inline kth::domain::wallet::ec_public const&
-kth_wallet_ec_public_const_cpp(kth_ec_public_const_t o) {
-    return *static_cast<kth::domain::wallet::ec_public const*>(o);
-}
-inline kth::domain::wallet::ec_public&
-kth_wallet_ec_public_mut_cpp(kth_ec_public_mut_t o) {
-    return *static_cast<kth::domain::wallet::ec_public*>(o);
-}
+// ec_public conversion functions. Defined in src/wallet/ec_public.cpp.
+kth::domain::wallet::ec_public const& kth_wallet_ec_public_const_cpp(kth_ec_public_const_t o);
+kth::domain::wallet::ec_public&       kth_wallet_ec_public_mut_cpp(kth_ec_public_mut_t o);
 
 // payment_address conversion functions. Defined in src/wallet/payment_address.cpp.
 kth::domain::wallet::payment_address const& kth_wallet_payment_address_const_cpp(kth_payment_address_const_t o);

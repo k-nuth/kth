@@ -206,6 +206,57 @@ kth::domain::wallet::payment payment_to_cpp(uint8_t const* x) {
     return ret;
 }
 
+// Generic helpers for value_struct ↔ C++ array conversions.
+// Covers ec_compressed (33), ec_uncompressed (65), wif_compressed (38),
+// wif_uncompressed (37), and any future fixed-size byte arrays.
+template<size_t N>
+inline
+std::array<uint8_t, N> to_array_cpp(uint8_t const* x) {
+    std::array<uint8_t, N> ret;
+    std::copy_n(x, N, ret.begin());
+    return ret;
+}
+
+// ec_compressed (33 bytes)
+inline kth_ec_compressed_t to_ec_compressed_t(kth::ec_compressed const& x) {
+    kth_ec_compressed_t ret;
+    std::copy_n(x.begin(), x.size(), ret.data);
+    return ret;
+}
+inline kth::ec_compressed ec_compressed_to_cpp(uint8_t const* x) {
+    return to_array_cpp<kth::ec_compressed_size>(x);
+}
+
+// ec_uncompressed (65 bytes)
+inline kth_ec_uncompressed_t to_ec_uncompressed_t(kth::ec_uncompressed const& x) {
+    kth_ec_uncompressed_t ret;
+    std::copy_n(x.begin(), x.size(), ret.data);
+    return ret;
+}
+inline kth::ec_uncompressed ec_uncompressed_to_cpp(uint8_t const* x) {
+    return to_array_cpp<kth::ec_uncompressed_size>(x);
+}
+
+// wif_compressed (38 bytes)
+inline kth_wif_compressed_t to_wif_compressed_t(kth::domain::wallet::wif_compressed const& x) {
+    kth_wif_compressed_t ret;
+    std::copy_n(x.begin(), x.size(), ret.data);
+    return ret;
+}
+inline kth::domain::wallet::wif_compressed wif_compressed_to_cpp(uint8_t const* x) {
+    return to_array_cpp<kth::domain::wallet::wif_compressed_size>(x);
+}
+
+// wif_uncompressed (37 bytes)
+inline kth_wif_uncompressed_t to_wif_uncompressed_t(kth::domain::wallet::wif_uncompressed const& x) {
+    kth_wif_uncompressed_t ret;
+    std::copy_n(x.begin(), x.size(), ret.data);
+    return ret;
+}
+inline kth::domain::wallet::wif_uncompressed wif_uncompressed_to_cpp(uint8_t const* x) {
+    return to_array_cpp<kth::domain::wallet::wif_uncompressed_size>(x);
+}
+
 template <typename T>
 inline
 T* mnew(std::size_t n = 1) {

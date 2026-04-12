@@ -47,10 +47,10 @@ struct KD_API ec_public {
     ec_public(std::string const& base16);
 
     explicit
-    ec_public(ec_compressed const& point, bool compress = true);
+    ec_public(ec_compressed const& compressed_point, bool compress = true);
 
     explicit
-    ec_public(ec_uncompressed const& point, bool compress = false);
+    ec_public(ec_uncompressed const& uncompressed_point, bool compress = false);
 
     ec_public(ec_public const& x) = default;
     ec_public& operator=(ec_public const& x) = default;

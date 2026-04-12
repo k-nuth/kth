@@ -39,12 +39,12 @@ ec_private::ec_private(std::string const& wif, uint8_t version)
     : ec_private(from_string(wif, version))
 {}
 
-ec_private::ec_private(wif_compressed const& wif, uint8_t version)
-    : ec_private(from_compressed(wif, version))
+ec_private::ec_private(wif_compressed const& wif_compressed, uint8_t version)
+    : ec_private(from_compressed(wif_compressed, version))
 {}
 
-ec_private::ec_private(wif_uncompressed const& wif, uint8_t version)
-    : ec_private(from_uncompressed(wif, version))
+ec_private::ec_private(wif_uncompressed const& wif_uncompressed, uint8_t version)
+    : ec_private(from_uncompressed(wif_uncompressed, version))
 {}
 
 ec_private::ec_private(ec_secret const& secret, uint16_t version, bool compress)
