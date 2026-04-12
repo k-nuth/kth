@@ -27,7 +27,9 @@
 #include <kth/domain/message/get_headers.hpp>
 #include <kth/domain/message/merkle_block.hpp>
 #include <kth/domain/message/prefilled_transaction.hpp>
-// #include <kth/domain/wallet/ec_public.hpp>
+#include <kth/domain/wallet/ec_private.hpp>
+#include <kth/domain/wallet/ec_public.hpp>
+#include <kth/domain/wallet/payment_address.hpp>
 #include <kth/domain/wallet/wallet_manager.hpp>
 
 // #ifndef __EMSCRIPTEN__
@@ -251,13 +253,48 @@ KTH_LIST_DECLARE_CONVERTERS(chain, kth_operation_list_t, kth::domain::machine::o
 
 // Wallet.
 // ------------------------------------------------------------------------------------
-KTH_CONV_DECLARE(wallet, kth_payment_address_t, kth::domain::wallet::payment_address, payment_address)
+
+// ec_private — partial registration (not fully migrated yet). The legacy
+// KTH_CONV_DECLARE produces the void*-based overloads; the inline
+// converters here add the const_t/mut_t overloads so generated code that
+// takes kth_ec_private_const_t can resolve correctly.
 KTH_CONV_DECLARE(wallet, kth_ec_private_t, kth::domain::wallet::ec_private, ec_private)
+inline kth::domain::wallet::ec_private const&
+kth_wallet_ec_private_const_cpp(kth_ec_private_const_t o) {
+    return *static_cast<kth::domain::wallet::ec_private const*>(o);
+}
+inline kth::domain::wallet::ec_private&
+kth_wallet_ec_private_mut_cpp(kth_ec_private_mut_t o) {
+    return *static_cast<kth::domain::wallet::ec_private*>(o);
+}
+
+// ec_public — same partial registration pattern.
 KTH_CONV_DECLARE(wallet, kth_ec_public_t, kth::domain::wallet::ec_public, ec_public)
+inline kth::domain::wallet::ec_public const&
+kth_wallet_ec_public_const_cpp(kth_ec_public_const_t o) {
+    return *static_cast<kth::domain::wallet::ec_public const*>(o);
+}
+inline kth::domain::wallet::ec_public&
+kth_wallet_ec_public_mut_cpp(kth_ec_public_mut_t o) {
+    return *static_cast<kth::domain::wallet::ec_public*>(o);
+}
+
+// payment_address conversion functions. Defined in src/wallet/payment_address.cpp.
+kth::domain::wallet::payment_address const& kth_wallet_payment_address_const_cpp(kth_payment_address_const_t o);
+kth::domain::wallet::payment_address&       kth_wallet_payment_address_mut_cpp(kth_payment_address_mut_t o);
+
 KTH_CONV_DECLARE(wallet, kth_wallet_data_t, kth::domain::wallet::wallet_data, wallet_data)
 
-KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP_BOTH(wallet, kth_payment_address_list_t, kth::domain::wallet::payment_address, payment_address_list)
-KTH_LIST_DECLARE_CONVERTERS(wallet, kth_payment_address_list_t, kth::domain::wallet::payment_address, payment_address_list)
+// payment_address_list — inline converters for the generated list binding.
+inline std::vector<kth::domain::wallet::payment_address> const&
+kth_wallet_payment_address_list_const_cpp(kth_payment_address_list_const_t l) {
+    return *static_cast<std::vector<kth::domain::wallet::payment_address> const*>(l);
+}
+inline std::vector<kth::domain::wallet::payment_address>&
+kth_wallet_payment_address_list_mut_cpp(kth_payment_address_list_mut_t l) {
+    return *static_cast<std::vector<kth::domain::wallet::payment_address>*>(l);
+}
+
 
 // Core.
 // ------------------------------------------------------------------------------------

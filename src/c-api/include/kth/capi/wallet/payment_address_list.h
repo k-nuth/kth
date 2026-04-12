@@ -1,11 +1,12 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef KTH_CAPI_WALLET_PAYMENT_ADDRESS_LIST_H_
 #define KTH_CAPI_WALLET_PAYMENT_ADDRESS_LIST_H_
 
-#include <kth/capi/list_creator.h>
+#include <stdint.h>
+
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
 
@@ -13,7 +14,29 @@
 extern "C" {
 #endif
 
-KTH_LIST_DECLARE(wallet, kth_payment_address_list_t, kth_payment_address_t, payment_address_list)
+/** @return Owned `kth_payment_address_list_mut_t`. Caller must release with `kth_wallet_payment_address_list_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_payment_address_list_mut_t kth_wallet_payment_address_list_construct_default(void);
+
+KTH_EXPORT
+void kth_wallet_payment_address_list_push_back(kth_payment_address_list_mut_t list, kth_payment_address_const_t elem);
+
+/** No-op if `list` is null. */
+KTH_EXPORT
+void kth_wallet_payment_address_list_destruct(kth_payment_address_list_mut_t list);
+
+KTH_EXPORT
+kth_size_t kth_wallet_payment_address_list_count(kth_payment_address_list_const_t list);
+
+/** @return Borrowed `kth_payment_address_const_t` view into the list. Do not destruct; the list retains ownership. Invalidated by any mutation of the list. */
+KTH_EXPORT
+kth_payment_address_const_t kth_wallet_payment_address_list_nth(kth_payment_address_list_const_t list, kth_size_t index);
+
+KTH_EXPORT
+void kth_wallet_payment_address_list_assign_at(kth_payment_address_list_mut_t list, kth_size_t index, kth_payment_address_const_t elem);
+
+KTH_EXPORT
+void kth_wallet_payment_address_list_erase(kth_payment_address_list_mut_t list, kth_size_t index);
 
 #ifdef __cplusplus
 } // extern "C"

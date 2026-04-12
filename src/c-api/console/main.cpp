@@ -85,12 +85,15 @@ int main(int /*argc*/, char* /*argv*/[]) {
     // std::signal(SIGTERM, handle_stop);
 
 
-    auto pa = kth_wallet_payment_address_construct_from_string("1KcSdYdo4LJj2n5iHt5Hn3WEJQ6wWyPU3n");
-    auto valid = kth_wallet_payment_address_is_valid(pa);
-    auto address_str = kth_wallet_payment_address_encoded(pa);
+    auto pa = kth_wallet_payment_address_construct_from_address("1KcSdYdo4LJj2n5iHt5Hn3WEJQ6wWyPU3n");
+    auto valid = kth_wallet_payment_address_valid(pa);
+    auto address_str = kth_wallet_payment_address_encoded_legacy(pa);
     auto cash_address_str = kth_wallet_payment_address_encoded_cashaddr(pa, false);
     std::println("{}", address_str);
     std::println("{}", cash_address_str);
+    kth_core_destruct_string(address_str);
+    kth_core_destruct_string(cash_address_str);
+    kth_wallet_payment_address_destruct(pa);
 
 
 

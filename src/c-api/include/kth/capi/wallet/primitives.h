@@ -57,9 +57,18 @@ typedef struct {
     uint8_t data[KTH_EC_SIGNATURE_SIZE];
 } kth_ec_signature_t;
 
+#define KTH_BITCOIN_PAYMENT_SIZE 25
+typedef struct kth_payment_t {
+    uint8_t hash[KTH_BITCOIN_PAYMENT_SIZE];
+} kth_payment_t;
+
 
 typedef void* kth_ec_private_t;
+typedef void* kth_ec_private_mut_t;
+typedef void const* kth_ec_private_const_t;
 typedef void* kth_ec_public_t;
+typedef void* kth_ec_public_mut_t;
+typedef void const* kth_ec_public_const_t;
 typedef void* kth_hd_private_t;
 typedef void* kth_hd_public_t;
 
