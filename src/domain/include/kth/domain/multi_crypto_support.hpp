@@ -44,11 +44,6 @@ enum class currency {
 config::currency get_currency();
 domain::config::network get_network(uint32_t identifier, bool is_chipnet);
 
-#if defined(KTH_CURRENCY_BCH)
-std::string cashaddr_prefix();
-void set_cashaddr_prefix(std::string const& x);
-#endif  //KTH_CURRENCY_BCH
-
 } // namespace kth
 
 #endif // KTH_DOMAIN_MULTI_CRYPTO_SUPPORT_HPP

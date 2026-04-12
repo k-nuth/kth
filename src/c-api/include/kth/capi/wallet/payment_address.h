@@ -37,11 +37,6 @@ kth_payment_address_t kth_wallet_payment_address_from_pay_public_key_hash_script
 KTH_EXPORT
 void kth_wallet_payment_address_destruct(kth_payment_address_t payment_address);
 
-#if defined(KTH_CURRENCY_BCH)
-KTH_EXPORT
-void kth_wallet_payment_address_set_cashaddr_prefix(char const* prefix);
-#endif //KTH_CURRENCY_BCH
-
 KTH_EXPORT
 char* kth_wallet_payment_address_encoded_legacy(kth_payment_address_t payment_address);
 

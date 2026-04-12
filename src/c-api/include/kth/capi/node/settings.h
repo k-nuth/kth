@@ -22,9 +22,6 @@ KTH_EXPORT
 kth_network_t kth_node_settings_get_network(kth_node_t exec);
 #endif
 
-KTH_EXPORT
-char const* kth_node_settings_cashaddr_prefix();
-
 #ifdef __cplusplus
 } // extern "C"
 #endif

@@ -12,12 +12,6 @@
 namespace kth {
 
 namespace {
-
-#if defined(KTH_CURRENCY_BCH)
-// static   //Note(kth): static is redundant in a anonymous namespace
-std::string cashaddr_prefix_ = "bitcoincash";
-#endif  // KTH_CURRENCY_BCH
-
 } // namespace
 
 config::currency get_currency() {
@@ -71,14 +65,5 @@ domain::config::network get_network(uint32_t identifier, bool is_chipnet) {
 #endif
 }
 
-#if defined(KTH_CURRENCY_BCH)
-std::string cashaddr_prefix() {
-    return cashaddr_prefix_;
-}
-
-void set_cashaddr_prefix(std::string const& x) {
-    cashaddr_prefix_ = x;
-}
-#endif  //KTH_CURRENCY_BCH
 
 } // namespace kth

@@ -12,7 +12,6 @@
 
 #include <boost/program_options.hpp>
 
-#include <kth/domain/multi_crypto_support.hpp>
 #include <kth/domain/wallet/ec_private.hpp>
 #include <kth/domain/wallet/ec_public.hpp>
 #include <kth/infrastructure/formats/base_58.hpp>
@@ -38,6 +37,10 @@ payment_address::payment_address(payment const& decoded)
 
 payment_address::payment_address(std::string const& address)
     : payment_address(payment_address{from_string(address)})
+{}
+
+payment_address::payment_address(std::string const& address, config::network net)
+    : payment_address(payment_address{from_string(address, net)})
 {}
 
 payment_address::payment_address(ec_private const& secret)
@@ -130,16 +133,25 @@ enum cash_addr_type : uint8_t {
     TOKEN_SCRIPT_TYPE = 3, // Token-Aware P2SH
 };
 
-// CashAddrContent DecodeCashAddrContent(std::string const& address) {
-payment_address payment_address::from_string_cashaddr(std::string const& address) {
-    // In order to avoid using the wrong network address, the from_string method
-    // only accepts the cashaddr_prefix set on the multi_crypto_support file
+std::optional<config::network> payment_address::detect_cashaddr_network(std::string const& address) {
+    auto const colon = address.find(':');
+    if (colon == std::string::npos) return std::nullopt;
+    auto prefix = address.substr(0, colon);
+    // CashAddr spec allows all-uppercase addresses (e.g. BITCOINCASH:QP...).
+    // Normalize to lowercase before comparing against the known prefixes.
+    std::transform(prefix.begin(), prefix.end(), prefix.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    if (prefix == cashaddr_prefix_mainnet) return config::network::mainnet;
+    if (prefix == cashaddr_prefix_testnet) return config::network::testnet;
+    if (prefix == cashaddr_prefix_regtest) return config::network::regtest;
+    return std::nullopt;
+}
 
-    // TODO(kth): validate the network on RPC/Interface calls and make payment_address independent of the network
+payment_address payment_address::from_string_cashaddr(std::string const& address, config::network net) {
+    auto const expected_prefix = cashaddr_prefix_for(net);
+    auto const [prefix, payload] = cashaddr::decode(address, std::string(expected_prefix));
 
-    auto const [prefix, payload] = cashaddr::decode(address, cashaddr_prefix());
-
-    if (prefix != cashaddr_prefix()) {
+    if (prefix != expected_prefix) {
         return {};
     }
 
@@ -224,14 +236,25 @@ payment_address payment_address::from_string(std::string const& address) {
     payment decoded;
     if ( ! decode_base58(decoded, address) || ! is_address(decoded)) {
 #if defined(KTH_CURRENCY_BCH)
-        // If the address is not a valid base58 encoded address, try cashaddr.
-        // This will return an empty payment_address if the address is not a valid cashaddr.
-        return from_string_cashaddr(address);
+        auto const net = detect_cashaddr_network(address);
+        if ( ! net) return {};
+        return from_string_cashaddr(address, *net);
 #else
         return {};
 #endif  //KTH_CURRENCY_BCH
     }
+    return payment_address{decoded};
+}
 
+payment_address payment_address::from_string(std::string const& address, config::network net) {
+    payment decoded;
+    if ( ! decode_base58(decoded, address) || ! is_address(decoded)) {
+#if defined(KTH_CURRENCY_BCH)
+        return from_string_cashaddr(address, net);
+#else
+        return {};
+#endif  //KTH_CURRENCY_BCH
+    }
     return payment_address{decoded};
 }
 

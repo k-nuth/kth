@@ -9,10 +9,14 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include <string_view>
+
 #include <kth/domain/chain/script.hpp>
+#include <kth/domain/config/network.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/domain/wallet/ec_private.hpp>
 #include <kth/domain/wallet/ec_public.hpp>
@@ -45,6 +49,16 @@ struct KD_API payment_address {
 #if defined(KTH_CURRENCY_BCH)
     static constexpr std::string_view cashaddr_prefix_mainnet = "bitcoincash";
     static constexpr std::string_view cashaddr_prefix_testnet = "bchtest";
+    static constexpr std::string_view cashaddr_prefix_regtest = "bchreg";
+
+    static constexpr
+    std::string_view cashaddr_prefix_for(config::network net) noexcept {
+        switch (net) {
+            case config::network::mainnet:  return cashaddr_prefix_mainnet;
+            case config::network::regtest:  return cashaddr_prefix_regtest;
+            default:                        return cashaddr_prefix_testnet;
+        }
+    }
 #endif
 
     using list = std::vector<payment_address>;
@@ -61,6 +75,8 @@ struct KD_API payment_address {
 
     explicit
     payment_address(std::string const& address);
+
+    payment_address(std::string const& address, config::network net);
 
     explicit
     payment_address(short_hash const& hash, uint8_t version = mainnet_p2kh);
@@ -143,9 +159,15 @@ private:
     static
     payment_address from_string(std::string const& address);
 
+    static
+    payment_address from_string(std::string const& address, config::network net);
+
 #if defined(KTH_CURRENCY_BCH)
     static
-    payment_address from_string_cashaddr(std::string const& address);
+    payment_address from_string_cashaddr(std::string const& address, config::network net);
+
+    static
+    std::optional<config::network> detect_cashaddr_network(std::string const& address);
 #endif  //KTH_CURRENCY_BCH
 
     static

@@ -38,13 +38,5 @@ kth_network_t kth_node_settings_get_network(kth_node_t exec) {
 }
 #endif
 
-char const* kth_node_settings_cashaddr_prefix() {
-#if defined(KTH_CURRENCY_BCH)
-    auto str = kth::cashaddr_prefix();
-#else
-    std::string str; //Note: to avoid checking compilation-time feature at other languages
-#endif
-    return kth::create_c_str(str);
-}
 
 } // extern "C"

@@ -7,7 +7,6 @@
 #include <kth/capi/helpers.hpp>
 #include <kth/capi/type_conversions.h>
 
-#include <kth/domain/multi_crypto_support.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
 
 #include <kth/capi/conversions.hpp>
@@ -51,13 +50,6 @@ kth_payment_address_t kth_wallet_payment_address_from_pay_public_key_hash_script
 void kth_wallet_payment_address_destruct(kth_payment_address_t payment_address) {
     delete &kth_wallet_payment_address_cpp(payment_address);
 }
-
-#if defined(KTH_CURRENCY_BCH)
-void kth_wallet_payment_address_set_cashaddr_prefix(char const* prefix) {
-    std::string prefix_cpp(prefix);
-    kth::set_cashaddr_prefix(prefix_cpp);
-}
-#endif //KTH_CURRENCY_BCH
 
 //User is responsible for releasing return value memory
 char* kth_wallet_payment_address_encoded_legacy(kth_payment_address_t payment_address) {
