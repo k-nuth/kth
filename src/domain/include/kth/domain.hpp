@@ -76,13 +76,18 @@
 #include <kth/domain/message/xversion.hpp>
 
 #include <kth/domain/wallet/bitcoin_uri.hpp>
+#include <kth/domain/wallet/cashaddr.hpp>
+#include <kth/domain/wallet/dictionary.hpp>
 #include <kth/domain/wallet/ec_private.hpp>
 #include <kth/domain/wallet/ec_public.hpp>
 #include <kth/domain/wallet/ek_private.hpp>
 #include <kth/domain/wallet/ek_public.hpp>
 #include <kth/domain/wallet/ek_token.hpp>
 #include <kth/domain/wallet/encrypted_keys.hpp>
+#include <kth/domain/wallet/hd_private.hpp>
+#include <kth/domain/wallet/hd_public.hpp>
 #include <kth/domain/wallet/message.hpp>
+#include <kth/domain/wallet/mnemonic.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
 #include <kth/domain/wallet/coin_selection.hpp>
 #include <kth/domain/wallet/stealth_address.hpp>

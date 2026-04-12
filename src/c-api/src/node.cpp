@@ -16,7 +16,7 @@
 #include <kth/capi/version.h>
 
 #include <kth/node/executor/executor.hpp>
-#include <kth/infrastructure/wallet/mnemonic.hpp>  //Warning, put it after boost headers
+#include <kth/domain/wallet/mnemonic.hpp>  //Warning, put it after boost headers
 
 std::string version() {
     return "Node C lib v" KTH_CAPI_VERSION;

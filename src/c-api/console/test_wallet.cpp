@@ -31,7 +31,8 @@
 #include <kth/domain/message/transaction.hpp>
 
 #include <kth/infrastructure/utility/binary.hpp>
-#include <kth/infrastructure/wallet/hd_private.hpp>
+#include <kth/domain/wallet/hd_private.hpp>
+#include <kth/domain/wallet/hd_public.hpp>
 
 void print_hex(uint8_t const* data, size_t n) {
     while (n != 0) {
@@ -50,8 +51,8 @@ kth::long_hash longhash_to_cpp(uint8_t const* x) {
 }
 
 int main(int argc, char* argv[]) {
-    using kth::infrastructure::wallet::hd_private;
-    using kth::infrastructure::wallet::hd_first_hardened_key;
+    using kth::domain::wallet::hd_private;
+    using kth::domain::wallet::hd_first_hardened_key;
 
    // car slab tail dirt wife custom front shield diet pear skull vapor gorilla token yard
    // https://iancoleman.io/bip39/

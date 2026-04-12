@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <kth/infrastructure/wallet/hd_private.hpp>
+#include <kth/domain/wallet/hd_private.hpp>
 
 #include <cstdint>
 #include <iostream>
@@ -14,7 +14,7 @@
 #endif
 
 #include <kth/infrastructure/constants.hpp>
-#include <kth/infrastructure/define.hpp>
+#include <kth/domain/define.hpp>
 #include <kth/infrastructure/formats/base_58.hpp>
 #include <kth/infrastructure/math/checksum.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
@@ -25,10 +25,10 @@
 #include <kth/infrastructure/utility/endian.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
 #include <kth/infrastructure/utility/serializer.hpp>
-// #include <kth/infrastructure/wallet/ec_private.hpp>
-// #include <kth/infrastructure/wallet/ec_public.hpp>
+// #include <kth/domain/wallet/ec_private.hpp>
+// #include <kth/domain/wallet/ec_public.hpp>
 
-namespace kth::infrastructure::wallet {
+namespace kth::domain::wallet {
 
 hd_private::hd_private(data_chunk const& seed, uint64_t prefixes)
     : hd_private(from_seed(seed, prefixes))
@@ -300,4 +300,4 @@ void swap(hd_private& left, hd_private& right) {
     swap(left.secret_, right.secret_);
 }
 
-} // namespace kth::infrastructure::wallet
+} // namespace kth::domain::wallet

@@ -216,11 +216,6 @@ set(kth_sources_just_legacy
         src/utility/string.cpp
         src/utility/thread.cpp
 
-        src/wallet/dictionary.cpp
-        src/wallet/hd_private.cpp
-        src/wallet/hd_public.cpp
-        src/wallet/mini_keys.cpp
-        src/wallet/mnemonic.cpp
 
         src/wallet/uri.cpp
 
@@ -269,7 +264,6 @@ endif()
 set(kth_sources_just_knuth
     # src/math/external/scrypt.cpp
     # src/math/external/scrypt-sse2.cpp
-    src/wallet/cashaddr.cpp
 )
 
 if (NOT JUST_KTH_SOURCES)
@@ -396,12 +390,6 @@ set(kth_headers
     include/kth/infrastructure/utility/work.hpp
     include/kth/infrastructure/utility/writer.hpp
 
-    include/kth/infrastructure/wallet/cashaddr.hpp
-    include/kth/infrastructure/wallet/dictionary.hpp
-    include/kth/infrastructure/wallet/hd_private.hpp
-    include/kth/infrastructure/wallet/hd_public.hpp
-    include/kth/infrastructure/wallet/mini_keys.hpp
-    include/kth/infrastructure/wallet/mnemonic.hpp
     include/kth/infrastructure/wallet/uri.hpp
 
     include/kth/infrastructure.hpp
@@ -667,9 +655,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/byte_reader.cpp
     test/utility/thread.cpp
 
-    test/wallet/hd_private.cpp
-    test/wallet/hd_public.cpp
-    test/wallet/mnemonic.cpp
     test/wallet/uri.cpp
 
     # test/utility/pseudo_random.cpp

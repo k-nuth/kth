@@ -9,28 +9,28 @@
 
 #include <kth/capi/wallet/conversions.hpp>
 
-KTH_CONV_DEFINE(wallet, kth_hd_public_t, kth::infrastructure::wallet::hd_public, hd_public)
+KTH_CONV_DEFINE(wallet, kth_hd_public_t, kth::domain::wallet::hd_public, hd_public)
 
 extern "C" {
 
 kth_hd_public_t kth_wallet_hd_public_construct_default() {
-    return new kth::infrastructure::wallet::hd_public();
+    return new kth::domain::wallet::hd_public();
 }
 
 kth_hd_public_t kth_wallet_hd_public_construct_string(char const* encoded) {
-    return new kth::infrastructure::wallet::hd_public(std::string(encoded));
+    return new kth::domain::wallet::hd_public(std::string(encoded));
 }
 
 kth_hd_public_t kth_wallet_hd_public_construct_string_prefix(char const* encoded, uint32_t prefix) {
-    return new kth::infrastructure::wallet::hd_public(std::string(encoded), prefix);
+    return new kth::domain::wallet::hd_public(std::string(encoded), prefix);
 }
 
 kth_hd_public_t kth_wallet_hd_public_construct_key(kth_hd_key_t const* public_key) {
-    return new kth::infrastructure::wallet::hd_public(detail::from_hd_key_t(*public_key));
+    return new kth::domain::wallet::hd_public(detail::from_hd_key_t(*public_key));
 }
 
 kth_hd_public_t kth_wallet_hd_public_construct_key_prefix(kth_hd_key_t const* public_key, uint32_t prefix) {
-    return new kth::infrastructure::wallet::hd_public(detail::from_hd_key_t(*public_key), prefix);
+    return new kth::domain::wallet::hd_public(detail::from_hd_key_t(*public_key), prefix);
 }
 
 void kth_wallet_hd_public_destruct(kth_hd_public_t hd_public) {

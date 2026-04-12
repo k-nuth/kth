@@ -20,13 +20,13 @@
 #include <kth/infrastructure/math/hash.hpp>
 
 #if defined(KTH_CURRENCY_BCH)
-#include <kth/infrastructure/wallet/cashaddr.hpp>
+#include <kth/domain/wallet/cashaddr.hpp>
 #endif  //KTH_CURRENCY_BCH
 
 using namespace kth::infrastructure::machine;
 
 #if defined(KTH_CURRENCY_BCH)
-using namespace kth::infrastructure::wallet;
+using namespace kth::domain::wallet;
 #endif  //KTH_CURRENCY_BCH
 
 namespace kth::domain::wallet {

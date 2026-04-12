@@ -249,6 +249,8 @@ set(kth_sources_just_legacy
         src/message/xversion.cpp
 
         src/wallet/bitcoin_uri.cpp
+        src/wallet/cashaddr.cpp
+        src/wallet/dictionary.cpp
         src/wallet/ec_private.cpp
         src/wallet/ec_public.cpp
         src/wallet/ek_private.cpp
@@ -271,6 +273,9 @@ set(kth_sources_just_legacy
         src/wallet/stealth_address.cpp
         src/wallet/stealth_receiver.cpp
         src/wallet/stealth_sender.cpp
+        src/wallet/hd_private.cpp
+        src/wallet/hd_public.cpp
+        src/wallet/mnemonic.cpp
         src/wallet/wallet_manager.cpp
 )
 
@@ -379,6 +384,8 @@ set(kth_headers
     include/kth/domain/wallet/stealth_address.hpp
     # include/kth/domain/wallet/transaction_functions.hpp
     include/kth/domain/wallet/bitcoin_uri.hpp
+    include/kth/domain/wallet/cashaddr.hpp
+    include/kth/domain/wallet/dictionary.hpp
     include/kth/domain/wallet/ec_private.hpp
     include/kth/domain/wallet/stealth_receiver.hpp
     include/kth/domain/wallet/stealth_sender.hpp
@@ -391,6 +398,9 @@ set(kth_headers
     include/kth/domain/wallet/coin_selection.hpp
     include/kth/domain/wallet/uri_reader.hpp
     include/kth/domain/wallet/encrypted_keys.hpp
+    include/kth/domain/wallet/hd_private.hpp
+    include/kth/domain/wallet/hd_public.hpp
+    include/kth/domain/wallet/mnemonic.hpp
     include/kth/domain/wallet/wallet_manager.hpp
 
     include/kth/domain/machine/opcode.hpp
@@ -433,6 +443,7 @@ endif(ENABLE_POSITION_INDEPENDENT_CODE)
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
+
 
 if (NOT ENABLE_SHARED)
     target_compile_definitions(${PROJECT_NAME} PUBLIC -DKD_STATIC)
@@ -599,6 +610,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
         test/wallet/bitcoin_uri.cpp
         test/wallet/ec_private.cpp
+        test/wallet/hd_private.cpp
+        test/wallet/hd_public.cpp
+        test/wallet/mnemonic.cpp
         test/wallet/ec_public.cpp
         test/wallet/encrypted_keys.cpp
         test/wallet/message.cpp

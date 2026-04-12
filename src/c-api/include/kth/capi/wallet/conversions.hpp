@@ -12,7 +12,7 @@
 #include <kth/capi/wallet/primitives.h>
 #include <kth/capi/wallet/hd_lineage.h>
 
-#include <kth/infrastructure/wallet/hd_public.hpp>
+#include <kth/domain/wallet/hd_public.hpp>
 #include <kth/domain/wallet/ec_private.hpp>
 
 namespace detail {
@@ -68,7 +68,7 @@ kth_wif_compressed_t to_wif_compressed_t(kth::domain::wallet::wif_compressed con
 }
 
 inline
-kth_hd_lineage_t to_hd_lineage_t(kth::infrastructure::wallet::hd_lineage const& lineage_cpp) {
+kth_hd_lineage_t to_hd_lineage_t(kth::domain::wallet::hd_lineage const& lineage_cpp) {
     kth_hd_lineage_t lineage_c;
     lineage_c.prefixes = lineage_cpp.prefixes;
     lineage_c.depth = lineage_cpp.depth;
@@ -140,8 +140,8 @@ kth::domain::wallet::wif_compressed from_wif_compressed_t(kth_wif_compressed_t c
 }
 
 inline
-kth::infrastructure::wallet::hd_lineage from_hd_lineage_t(kth_hd_lineage_t const& lineage_c) {
-    kth::infrastructure::wallet::hd_lineage lineage_cpp;
+kth::domain::wallet::hd_lineage from_hd_lineage_t(kth_hd_lineage_t const& lineage_c) {
+    kth::domain::wallet::hd_lineage lineage_cpp;
     lineage_cpp.prefixes = lineage_c.prefixes;
     lineage_cpp.depth = lineage_c.depth;
     lineage_cpp.parent_fingerprint = lineage_c.parent_fingerprint;

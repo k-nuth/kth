@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <kth/infrastructure/wallet/hd_public.hpp>
+#include <kth/domain/wallet/hd_public.hpp>
 
 #include <cstdint>
 #include <iostream>
@@ -13,7 +13,7 @@
 #endif
 
 #include <kth/infrastructure/constants.hpp>
-#include <kth/infrastructure/define.hpp>
+#include <kth/domain/define.hpp>
 #include <kth/infrastructure/formats/base_58.hpp>
 #include <kth/infrastructure/math/checksum.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
@@ -22,10 +22,10 @@
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
-// #include <kth/infrastructure/wallet/ec_public.hpp>
-#include <kth/infrastructure/wallet/hd_private.hpp>
+// #include <kth/domain/wallet/ec_public.hpp>
+#include <kth/domain/wallet/hd_private.hpp>
 
-namespace kth::infrastructure::wallet {
+namespace kth::domain::wallet {
 
 // const uint32_t hd_public::mainnet = 76067358;
 // const uint32_t hd_public::testnet = 70617039;
@@ -280,4 +280,4 @@ bool hd_lineage::operator!=(hd_lineage const& x) const {
     return !(*this == x);
 }
 
-} // namespace kth::infrastructure::wallet
+} // namespace kth::domain::wallet
