@@ -37,7 +37,7 @@ kth_error_code_t kth_vm_interpreter_run(kth_program_t program) {
 
 kth_error_code_t kth_vm_interpreter_run_operation(kth_operation_t operation, kth_program_t program) {
     auto const result = kth::domain::machine::interpreter::run(
-        kth_chain_operation_cpp(operation),
+        kth_chain_operation_const_cpp(operation),
         kth_vm_program_cpp(program)
     );
     return kth::to_c_err(result);

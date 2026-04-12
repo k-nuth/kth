@@ -39,12 +39,12 @@ ec_public::ec_public(std::string const& base16)
     : ec_public(from_string(base16)) {
 }
 
-ec_public::ec_public(ec_uncompressed const& point, bool compress)
-    : ec_public(from_point(point, compress)) {
+ec_public::ec_public(ec_uncompressed const& uncompressed_point, bool compress)
+    : ec_public(from_point(uncompressed_point, compress)) {
 }
 
-ec_public::ec_public(ec_compressed const& point, bool compress)
-    : valid_(true), compress_(compress), point_(point) {
+ec_public::ec_public(ec_compressed const& compressed_point, bool compress)
+    : valid_(true), compress_(compress), point_(compressed_point) {
 }
 
 // Validators.
