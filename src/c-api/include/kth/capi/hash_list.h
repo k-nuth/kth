@@ -21,6 +21,7 @@ kth_hash_list_mut_t kth_core_hash_list_construct_default(void);
 KTH_EXPORT
 void kth_core_hash_list_push_back(kth_hash_list_mut_t list, kth_hash_t elem);
 
+/** No-op if `list` is null. */
 KTH_EXPORT
 void kth_core_hash_list_destruct(kth_hash_list_mut_t list);
 

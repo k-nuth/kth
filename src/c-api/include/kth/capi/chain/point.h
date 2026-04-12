@@ -45,6 +45,7 @@ kth_point_mut_t kth_chain_point_null(void);
 
 // Destructor
 
+/** No-op if `self` is null. */
 KTH_EXPORT
 void kth_chain_point_destruct(kth_point_mut_t self);
 

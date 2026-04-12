@@ -21,6 +21,7 @@ kth_double_list_mut_t kth_core_double_list_construct_default(void);
 KTH_EXPORT
 void kth_core_double_list_push_back(kth_double_list_mut_t list, double elem);
 
+/** No-op if `list` is null. */
 KTH_EXPORT
 void kth_core_double_list_destruct(kth_double_list_mut_t list);
 

@@ -44,9 +44,9 @@ kth_script_mut_t kth_chain_script_construct_from_operations(kth_operation_list_c
     return new kth::domain::chain::script(ops_cpp);
 }
 
-kth_script_mut_t kth_chain_script_construct_from_encoded_prefix(uint8_t const* encoded, kth_size_t encoded_n, kth_bool_t prefix) {
-    KTH_PRECONDITION(encoded != nullptr || encoded_n == 0);
-    auto const encoded_cpp = encoded_n != 0 ? kth::data_chunk(encoded, encoded + encoded_n) : kth::data_chunk{};
+kth_script_mut_t kth_chain_script_construct_from_encoded_prefix(uint8_t const* encoded, kth_size_t n, kth_bool_t prefix) {
+    KTH_PRECONDITION(encoded != nullptr || n == 0);
+    auto const encoded_cpp = n != 0 ? kth::data_chunk(encoded, encoded + n) : kth::data_chunk{};
     auto const prefix_cpp = kth::int_to_bool(prefix);
     return new kth::domain::chain::script(encoded_cpp, prefix_cpp);
 }
@@ -333,13 +333,13 @@ kth_hash_t kth_chain_script_generate_signature_hash(kth_transaction_const_t tx, 
     return kth::to_hash_t(pair_cpp.first);
 }
 
-kth_bool_t kth_chain_script_check_signature(kth_longhash_t signature, uint8_t sighash_type, uint8_t const* public_key, kth_size_t public_key_n, kth_script_const_t script_code, kth_transaction_const_t tx, uint32_t input_index, kth_script_flags_t active_flags, uint64_t value, kth_size_t* out_size) {
-    KTH_PRECONDITION(public_key != nullptr || public_key_n == 0);
+kth_bool_t kth_chain_script_check_signature(kth_longhash_t signature, uint8_t sighash_type, uint8_t const* public_key, kth_size_t n, kth_script_const_t script_code, kth_transaction_const_t tx, uint32_t input_index, kth_script_flags_t active_flags, uint64_t value, kth_size_t* out_size) {
+    KTH_PRECONDITION(public_key != nullptr || n == 0);
     KTH_PRECONDITION(script_code != nullptr);
     KTH_PRECONDITION(tx != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
     auto const signature_cpp = kth::long_hash_to_cpp(signature.hash);
-    auto const public_key_cpp = public_key_n != 0 ? kth::data_chunk(public_key, public_key + public_key_n) : kth::data_chunk{};
+    auto const public_key_cpp = n != 0 ? kth::data_chunk(public_key, public_key + n) : kth::data_chunk{};
     auto const& script_code_cpp = kth_chain_script_const_cpp(script_code);
     auto const& tx_cpp = kth_chain_transaction_const_cpp(tx);
     auto const pair_cpp = kth::domain::chain::script::check_signature(signature_cpp, sighash_type, public_key_cpp, script_code_cpp, tx_cpp, input_index, active_flags, value);
@@ -347,14 +347,14 @@ kth_bool_t kth_chain_script_check_signature(kth_longhash_t signature, uint8_t si
     return kth::bool_to_int(pair_cpp.first);
 }
 
-kth_bool_t kth_chain_script_check_signature_unsafe(uint8_t const* signature, uint8_t sighash_type, uint8_t const* public_key, kth_size_t public_key_n, kth_script_const_t script_code, kth_transaction_const_t tx, uint32_t input_index, kth_script_flags_t active_flags, uint64_t value, kth_size_t* out_size) {
+kth_bool_t kth_chain_script_check_signature_unsafe(uint8_t const* signature, uint8_t sighash_type, uint8_t const* public_key, kth_size_t n, kth_script_const_t script_code, kth_transaction_const_t tx, uint32_t input_index, kth_script_flags_t active_flags, uint64_t value, kth_size_t* out_size) {
     KTH_PRECONDITION(signature != nullptr);
-    KTH_PRECONDITION(public_key != nullptr || public_key_n == 0);
+    KTH_PRECONDITION(public_key != nullptr || n == 0);
     KTH_PRECONDITION(script_code != nullptr);
     KTH_PRECONDITION(tx != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
     auto const signature_cpp = kth::long_hash_to_cpp(signature);
-    auto const public_key_cpp = public_key_n != 0 ? kth::data_chunk(public_key, public_key + public_key_n) : kth::data_chunk{};
+    auto const public_key_cpp = n != 0 ? kth::data_chunk(public_key, public_key + n) : kth::data_chunk{};
     auto const& script_code_cpp = kth_chain_script_const_cpp(script_code);
     auto const& tx_cpp = kth_chain_transaction_const_cpp(tx);
     auto const pair_cpp = kth::domain::chain::script::check_signature(signature_cpp, sighash_type, public_key_cpp, script_code_cpp, tx_cpp, input_index, active_flags, value);
@@ -395,15 +395,15 @@ kth_error_code_t kth_chain_script_create_endorsement_unsafe(uint8_t const* secre
     return kth_ec_success;
 }
 
-kth_operation_list_mut_t kth_chain_script_to_null_data_pattern(uint8_t const* data, kth_size_t data_n) {
-    KTH_PRECONDITION(data != nullptr || data_n == 0);
-    auto const data_cpp = kth::byte_span(data, static_cast<size_t>(data_n));
+kth_operation_list_mut_t kth_chain_script_to_null_data_pattern(uint8_t const* data, kth_size_t n) {
+    KTH_PRECONDITION(data != nullptr || n == 0);
+    auto const data_cpp = kth::byte_span(data, static_cast<size_t>(n));
     return new std::vector<kth::domain::machine::operation>(kth::domain::chain::script::to_null_data_pattern(data_cpp));
 }
 
-kth_operation_list_mut_t kth_chain_script_to_pay_public_key_pattern(uint8_t const* point, kth_size_t point_n) {
-    KTH_PRECONDITION(point != nullptr || point_n == 0);
-    auto const point_cpp = kth::byte_span(point, static_cast<size_t>(point_n));
+kth_operation_list_mut_t kth_chain_script_to_pay_public_key_pattern(uint8_t const* point, kth_size_t n) {
+    KTH_PRECONDITION(point != nullptr || n == 0);
+    auto const point_cpp = kth::byte_span(point, static_cast<size_t>(n));
     return new std::vector<kth::domain::machine::operation>(kth::domain::chain::script::to_pay_public_key_pattern(point_cpp));
 }
 

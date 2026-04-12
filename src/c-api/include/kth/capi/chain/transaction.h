@@ -25,16 +25,24 @@ kth_transaction_mut_t kth_chain_transaction_construct_default(void);
 KTH_EXPORT
 kth_error_code_t kth_chain_transaction_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_transaction_mut_t* out);
 
-/** @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`. */
+/**
+ * @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`.
+ * @param inputs Borrowed input. Copied by value into the resulting object; ownership of `inputs` stays with the caller.
+ * @param outputs Borrowed input. Copied by value into the resulting object; ownership of `outputs` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
 kth_transaction_mut_t kth_chain_transaction_construct_from_version_locktime_inputs_outputs(uint32_t version, uint32_t locktime, kth_input_list_const_t inputs, kth_output_list_const_t outputs);
 
-/** @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`. */
+/**
+ * @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`.
+ * @param x Borrowed input. Copied by value into the resulting object; ownership of `x` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
 kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash(kth_transaction_const_t x, kth_hash_t hash);
 
 /**
  * @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`.
+ * @param x Borrowed input. Copied by value into the resulting object; ownership of `x` stays with the caller.
  * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
  */
 KTH_EXPORT KTH_OWNED
@@ -43,6 +51,7 @@ kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash_unsa
 
 // Destructor
 
+/** No-op if `self` is null. */
 KTH_EXPORT
 void kth_chain_transaction_destruct(kth_transaction_mut_t self);
 
@@ -108,11 +117,11 @@ uint32_t kth_chain_transaction_version(kth_transaction_const_t self);
 KTH_EXPORT
 uint32_t kth_chain_transaction_locktime(kth_transaction_const_t self);
 
-/** @return Borrowed `kth_input_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. */
+/** @return Borrowed `kth_input_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_input_list_const_t kth_chain_transaction_inputs(kth_transaction_const_t self);
 
-/** @return Borrowed `kth_output_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. */
+/** @return Borrowed `kth_output_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_output_list_const_t kth_chain_transaction_outputs(kth_transaction_const_t self);
 
@@ -137,9 +146,11 @@ void kth_chain_transaction_set_version(kth_transaction_mut_t self, uint32_t valu
 KTH_EXPORT
 void kth_chain_transaction_set_locktime(kth_transaction_mut_t self, uint32_t value);
 
+/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
 void kth_chain_transaction_set_inputs(kth_transaction_mut_t self, kth_input_list_const_t value);
 
+/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
 void kth_chain_transaction_set_outputs(kth_transaction_mut_t self, kth_output_list_const_t value);
 

@@ -21,6 +21,7 @@ kth_string_list_mut_t kth_core_string_list_construct_default(void);
 KTH_EXPORT
 void kth_core_string_list_push_back(kth_string_list_mut_t list, char const* elem);
 
+/** No-op if `list` is null. */
 KTH_EXPORT
 void kth_core_string_list_destruct(kth_string_list_mut_t list);
 

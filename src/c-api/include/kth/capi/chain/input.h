@@ -24,13 +24,18 @@ kth_input_mut_t kth_chain_input_construct_default(void);
 KTH_EXPORT
 kth_error_code_t kth_chain_input_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_input_mut_t* out);
 
-/** @return Owned `kth_input_mut_t`. Caller must release with `kth_chain_input_destruct`. */
+/**
+ * @return Owned `kth_input_mut_t`. Caller must release with `kth_chain_input_destruct`.
+ * @param previous_output Borrowed input. Copied by value into the resulting object; ownership of `previous_output` stays with the caller.
+ * @param script Borrowed input. Copied by value into the resulting object; ownership of `script` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
 kth_input_mut_t kth_chain_input_construct(kth_output_point_const_t previous_output, kth_script_const_t script, uint32_t sequence);
 
 
 // Destructor
 
+/** No-op if `self` is null. */
 KTH_EXPORT
 void kth_chain_input_destruct(kth_input_mut_t self);
 
@@ -68,11 +73,11 @@ kth_payment_address_mut_t kth_chain_input_address(kth_input_const_t self);
 KTH_EXPORT KTH_OWNED
 kth_payment_address_list_mut_t kth_chain_input_addresses(kth_input_const_t self);
 
-/** @return Borrowed `kth_output_point_const_t` view into `self`. Do not destruct; the parent object retains ownership. */
+/** @return Borrowed `kth_output_point_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_output_point_const_t kth_chain_input_previous_output(kth_input_const_t self);
 
-/** @return Borrowed `kth_script_const_t` view into `self`. Do not destruct; the parent object retains ownership. */
+/** @return Borrowed `kth_script_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_script_const_t kth_chain_input_script(kth_input_const_t self);
 
@@ -86,9 +91,11 @@ kth_error_code_t kth_chain_input_extract_embedded_script(kth_input_const_t self,
 
 // Setters
 
+/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
 void kth_chain_input_set_script(kth_input_mut_t self, kth_script_const_t value);
 
+/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
 void kth_chain_input_set_previous_output(kth_input_mut_t self, kth_output_point_const_t value);
 

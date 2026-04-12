@@ -25,7 +25,11 @@ kth_block_mut_t kth_chain_block_construct_default(void);
 KTH_EXPORT
 kth_error_code_t kth_chain_block_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_block_mut_t* out);
 
-/** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
+/**
+ * @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`.
+ * @param header Borrowed input. Copied by value into the resulting object; ownership of `header` stays with the caller.
+ * @param transactions Borrowed input. Copied by value into the resulting object; ownership of `transactions` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
 kth_block_mut_t kth_chain_block_construct(kth_header_const_t header, kth_transaction_list_const_t transactions);
 
@@ -59,6 +63,7 @@ kth_block_mut_t kth_chain_block_genesis_chipnet(void);
 
 // Destructor
 
+/** No-op if `self` is null. */
 KTH_EXPORT
 void kth_chain_block_destruct(kth_block_mut_t self);
 
@@ -105,11 +110,11 @@ kth_error_code_t kth_chain_block_connect(kth_block_const_t self);
 KTH_EXPORT KTH_OWNED
 kth_hash_list_mut_t kth_chain_block_to_hashes(kth_block_const_t self);
 
-/** @return Borrowed `kth_header_const_t` view into `self`. Do not destruct; the parent object retains ownership. */
+/** @return Borrowed `kth_header_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_header_const_t kth_chain_block_header(kth_block_const_t self);
 
-/** @return Borrowed `kth_transaction_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. */
+/** @return Borrowed `kth_transaction_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_transaction_list_const_t kth_chain_block_transactions(kth_block_const_t self);
 
@@ -134,9 +139,11 @@ kth_size_t kth_chain_block_non_coinbase_input_count(kth_block_const_t self);
 
 // Setters
 
+/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
 void kth_chain_block_set_transactions(kth_block_mut_t self, kth_transaction_list_const_t value);
 
+/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
 void kth_chain_block_set_header(kth_block_mut_t self, kth_header_const_t value);
 

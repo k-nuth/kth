@@ -35,13 +35,17 @@ kth_output_point_mut_t kth_chain_output_point_construct_from_hash_index(kth_hash
 KTH_EXPORT KTH_OWNED
 kth_output_point_mut_t kth_chain_output_point_construct_from_hash_index_unsafe(uint8_t const* hash, uint32_t index);
 
-/** @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`. */
+/**
+ * @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`.
+ * @param x Borrowed input. Copied by value into the resulting object; ownership of `x` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
 kth_output_point_mut_t kth_chain_output_point_construct_from_point(kth_point_const_t x);
 
 
 // Destructor
 
+/** No-op if `self` is null. */
 KTH_EXPORT
 void kth_chain_output_point_destruct(kth_output_point_mut_t self);
 

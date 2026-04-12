@@ -38,10 +38,10 @@ kth_binary_mut_t kth_core_binary_construct_from_size_number(kth_size_t size, uin
     return new kth::binary(size_cpp, number);
 }
 
-kth_binary_mut_t kth_core_binary_construct_from_size_blocks(kth_size_t size, uint8_t const* blocks, kth_size_t blocks_n) {
-    KTH_PRECONDITION(blocks != nullptr || blocks_n == 0);
+kth_binary_mut_t kth_core_binary_construct_from_size_blocks(kth_size_t size, uint8_t const* blocks, kth_size_t n) {
+    KTH_PRECONDITION(blocks != nullptr || n == 0);
     auto const size_cpp = static_cast<size_t>(size);
-    auto const blocks_cpp = kth::byte_span(blocks, static_cast<size_t>(blocks_n));
+    auto const blocks_cpp = kth::byte_span(blocks, static_cast<size_t>(n));
     return new kth::binary(size_cpp, blocks_cpp);
 }
 
@@ -100,10 +100,10 @@ kth_bool_t kth_core_binary_is_base2(char const* text) {
     return kth::bool_to_int(kth::binary::is_base2(text_cpp));
 }
 
-kth_bool_t kth_core_binary_is_prefix_of_span(kth_binary_const_t self, uint8_t const* field, kth_size_t field_n) {
+kth_bool_t kth_core_binary_is_prefix_of_span(kth_binary_const_t self, uint8_t const* field, kth_size_t n) {
     KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(field != nullptr || field_n == 0);
-    auto const field_cpp = kth::byte_span(field, static_cast<size_t>(field_n));
+    KTH_PRECONDITION(field != nullptr || n == 0);
+    auto const field_cpp = kth::byte_span(field, static_cast<size_t>(n));
     return kth::bool_to_int(kth_core_binary_const_cpp(self).is_prefix_of(field_cpp));
 }
 
