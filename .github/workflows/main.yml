@@ -15,7 +15,7 @@ on:
   workflow_dispatch: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   NAME: kth-mono
@@ -75,7 +75,7 @@ jobs:
       - name: 🔐 Check permissions
         id: check
         continue-on-error: true
-        uses: prince-chrismc/check-actor-permissions-action@v2
+        uses: prince-chrismc/check-actor-permissions-action@v3
         with:
           permission: write
 
@@ -93,7 +93,7 @@ jobs:
       build-version: ${{ steps.version.outputs.build-version }}
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: true
           fetch-depth: 0 # Required due to the way Git works, without it this action won't be able to find any or the correct tags
@@ -158,7 +158,7 @@ jobs:
   #     # name: docker.pkg.github.com/${{ github.repository }}/alpine-image
   #     name: docker.pkg.github.com/k-nuth/kth/alpine-image
   #   steps:
-  #     - uses: actions/checkout@v3
+  #     - uses: actions/checkout@v4
   #       with:
   #         submodules: true
   #     - id: version
@@ -198,7 +198,7 @@ jobs:
           echo "Head ref: ${{ github.head_ref }}"
           echo "Base ref: ${{ github.base_ref }}"
       - name: 📥 Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: true
       - name: 🧮 Generate Job Matrix
