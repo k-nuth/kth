@@ -198,11 +198,13 @@ KTH_CONV_DECLARE(chain, kth_token_data_t, kth::domain::chain::token_data_t, toke
 KTH_CONV_DECLARE(chain, kth_mempool_transaction_t, kth::blockchain::mempool_transaction_summary, mempool_transaction)
 // #endif
 
-// #ifndef __EMSCRIPTEN__
-KTH_CONV_DECLARE(chain, kth_history_compact_t, kth::domain::chain::history_compact, history_compact)
-// #endif
+// history_compact conversion functions. Defined in src/chain/history_compact.cpp.
+kth::domain::chain::history_compact const& kth_chain_history_compact_const_cpp(kth_history_compact_const_t o);
+kth::domain::chain::history_compact&       kth_chain_history_compact_mut_cpp(kth_history_compact_mut_t o);
 
-KTH_CONV_DECLARE(chain, kth_stealth_compact_t, kth::domain::chain::stealth_compact, stealth_compact)
+// stealth_compact conversion functions. Defined in src/chain/stealth_compact.cpp.
+kth::domain::chain::stealth_compact const& kth_chain_stealth_compact_const_cpp(kth_stealth_compact_const_t o);
+kth::domain::chain::stealth_compact&       kth_chain_stealth_compact_mut_cpp(kth_stealth_compact_mut_t o);
 
 KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP(chain, kth_utxo_list_t, kth::domain::chain::utxo, utxo_list)
 // hash_list — inline converters and construct_from_cpp.

@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,23 +14,54 @@
 extern "C" {
 #endif
 
+// Destructor
+
+/** No-op if `self` is null. */
 KTH_EXPORT
-kth_hash_t kth_chain_stealth_compact_get_ephemeral_public_key_hash(kth_stealth_compact_t stealth);
+void kth_chain_stealth_compact_destruct(kth_stealth_compact_mut_t self);
+
+
+// Copy
+
+/** @return Owned `kth_stealth_compact_mut_t`. Caller must release with `kth_chain_stealth_compact_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_stealth_compact_mut_t kth_chain_stealth_compact_copy(kth_stealth_compact_const_t self);
+
+
+// Getters
 
 KTH_EXPORT
-void kth_chain_stealth_compact_get_ephemeral_public_key_hash_out(kth_stealth_compact_t stealth, kth_hash_t* out_epk_hash);
+kth_hash_t kth_chain_stealth_compact_ephemeral_public_key_hash(kth_stealth_compact_const_t self);
 
 KTH_EXPORT
-kth_hash_t kth_chain_stealth_compact_get_transaction_hash(kth_stealth_compact_t stealth);
+kth_shorthash_t kth_chain_stealth_compact_public_key_hash(kth_stealth_compact_const_t self);
 
 KTH_EXPORT
-void kth_chain_stealth_compact_get_transaction_hash_out(kth_stealth_compact_t stealth, kth_hash_t* out_tx_hash);
+kth_hash_t kth_chain_stealth_compact_transaction_hash(kth_stealth_compact_const_t self);
+
+
+// Setters
 
 KTH_EXPORT
-kth_shorthash_t kth_chain_stealth_compact_get_public_key_hash(kth_stealth_compact_t stealth);
+void kth_chain_stealth_compact_set_ephemeral_public_key_hash(kth_stealth_compact_mut_t self, kth_hash_t value);
+
+/** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value. */
+KTH_EXPORT
+void kth_chain_stealth_compact_set_ephemeral_public_key_hash_unsafe(kth_stealth_compact_mut_t self, uint8_t const* value);
 
 KTH_EXPORT
-void kth_chain_stealth_compact_get_public_key_hash_out(kth_stealth_compact_t stealth, kth_shorthash_t* out_pk_hash);
+void kth_chain_stealth_compact_set_public_key_hash(kth_stealth_compact_mut_t self, kth_shorthash_t value);
+
+/** @warning `value` MUST point to a buffer of at least 20 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value. */
+KTH_EXPORT
+void kth_chain_stealth_compact_set_public_key_hash_unsafe(kth_stealth_compact_mut_t self, uint8_t const* value);
+
+KTH_EXPORT
+void kth_chain_stealth_compact_set_transaction_hash(kth_stealth_compact_mut_t self, kth_hash_t value);
+
+/** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value. */
+KTH_EXPORT
+void kth_chain_stealth_compact_set_transaction_hash_unsafe(kth_stealth_compact_mut_t self, uint8_t const* value);
 
 #ifdef __cplusplus
 } // extern "C"

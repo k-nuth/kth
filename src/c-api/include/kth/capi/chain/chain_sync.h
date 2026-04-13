@@ -72,7 +72,7 @@ kth_error_code_t kth_chain_sync_spend(kth_chain_t chain, kth_output_point_const_
 
 // History ---------------------------------------------------------------------
 KTH_EXPORT
-kth_error_code_t kth_chain_sync_history(kth_chain_t chain, kth_payment_address_t address, kth_size_t limit, kth_size_t from_height, kth_history_compact_list_t* out_history);
+kth_error_code_t kth_chain_sync_history(kth_chain_t chain, kth_payment_address_t address, kth_size_t limit, kth_size_t from_height, kth_history_compact_list_mut_t* out_history);
 
 KTH_EXPORT
 kth_error_code_t kth_chain_sync_confirmed_transactions(kth_chain_t chain, kth_payment_address_t address, uint64_t max, uint64_t start_height, kth_hash_list_mut_t* out_tx_hashes);
