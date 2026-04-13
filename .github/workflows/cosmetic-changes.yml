@@ -12,6 +12,9 @@ on:
       - 'doc/**'
       - '.github/workflows/cosmetic-changes.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   cosmetic-check:
     # Solo ejecutar para branches con prefijos cosméticos

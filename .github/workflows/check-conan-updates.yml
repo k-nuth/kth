@@ -11,6 +11,9 @@ on:
       - 'scripts/check_conan_updates.py'
       - '.github/workflows/check-conan-updates.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check-updates:
     runs-on: ubuntu-latest
