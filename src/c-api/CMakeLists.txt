@@ -510,6 +510,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/transaction_list.cpp
         test/chain/point_list.cpp
         test/chain/output_point_list.cpp
+        test/wallet/hd_public.cpp
+        test/wallet/hd_private.cpp
     )
 
     target_link_libraries(kth_capi_test PUBLIC ${PROJECT_NAME})

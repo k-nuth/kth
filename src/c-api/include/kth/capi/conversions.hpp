@@ -28,6 +28,7 @@
 #include <kth/domain/message/merkle_block.hpp>
 #include <kth/domain/message/prefilled_transaction.hpp>
 #include <kth/domain/wallet/ec_private.hpp>
+#include <kth/domain/wallet/hd_private.hpp>
 #include <kth/domain/wallet/ec_public.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
 #include <kth/domain/wallet/wallet_manager.hpp>
@@ -255,6 +256,14 @@ kth::domain::wallet::ec_private&       kth_wallet_ec_private_mut_cpp(kth_ec_priv
 // ec_public conversion functions. Defined in src/wallet/ec_public.cpp.
 kth::domain::wallet::ec_public const& kth_wallet_ec_public_const_cpp(kth_ec_public_const_t o);
 kth::domain::wallet::ec_public&       kth_wallet_ec_public_mut_cpp(kth_ec_public_mut_t o);
+
+// hd_public conversion functions. Defined in src/wallet/hd_public.cpp.
+kth::domain::wallet::hd_public const& kth_wallet_hd_public_const_cpp(kth_hd_public_const_t o);
+kth::domain::wallet::hd_public&       kth_wallet_hd_public_mut_cpp(kth_hd_public_mut_t o);
+
+// hd_private conversion functions. Defined in src/wallet/hd_private.cpp.
+kth::domain::wallet::hd_private const& kth_wallet_hd_private_const_cpp(kth_hd_private_const_t o);
+kth::domain::wallet::hd_private&       kth_wallet_hd_private_mut_cpp(kth_hd_private_mut_t o);
 
 // payment_address conversion functions. Defined in src/wallet/payment_address.cpp.
 kth::domain::wallet::payment_address const& kth_wallet_payment_address_const_cpp(kth_payment_address_const_t o);

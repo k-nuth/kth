@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstring>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -14,6 +15,7 @@
 #include <kth/capi/wallet/primitives.h>
 #include <kth/domain/config/network.hpp>
 #include <kth/domain/machine/opcode.hpp>
+#include <kth/domain/wallet/hd_public.hpp>
 #include <kth/domain/wallet/wallet_manager.hpp>
 
 #include <kth/infrastructure/math/hash.hpp>
@@ -206,6 +208,44 @@ kth::domain::wallet::payment payment_to_cpp(uint8_t const* x) {
     return ret;
 }
 
+// Generic helper for C-compatible POD struct conversions.
+// Uses memcpy (standard-compliant, zero overhead — compilers optimize
+// Validity check for owned opaque handles returned by constructors and
+// factory methods. If T is convertible to bool (has operator bool),
+// checks it and returns false when the object is invalid. Otherwise
+// always returns true (assume valid).
+template<typename T>
+inline bool check_valid(T* obj) {
+    if constexpr (std::is_constructible_v<bool, T const&>) {
+        return static_cast<bool>(static_cast<T const&>(*obj));
+    } else {
+        return true;
+    }
+}
+
+// small struct memcpy to register moves). static_assert guards that the
+// source and destination structs have the same size.
+// Works both directions: C→C++ and C++→C.
+template<typename To, typename From>
+inline To struct_cast(From const& src) {
+    static_assert(sizeof(To) == sizeof(From),
+                  "C and C++ struct sizes must match for memcpy conversion");
+    static_assert(std::is_trivially_copyable_v<To> && std::is_trivially_copyable_v<From>,
+                  "both types must be trivially copyable for memcpy conversion");
+    static_assert(std::is_standard_layout_v<To> && std::is_standard_layout_v<From>,
+                  "both types must be standard layout for layout-compatible conversion");
+    To dst;
+    std::memcpy(&dst, &src, sizeof(dst));
+    return dst;
+}
+
+// Convenience aliases for readability in generated code.
+template<typename CType, typename CppType>
+inline CType to_c_struct(CppType const& cpp) { return struct_cast<CType>(cpp); }
+
+template<typename CppType, typename CType>
+inline CppType from_c_struct(CType const& c) { return struct_cast<CppType>(c); }
+
 // Generic helpers for value_struct ↔ C++ array conversions.
 // Covers ec_compressed (33), ec_uncompressed (65), wif_compressed (38),
 // wif_uncompressed (37), and any future fixed-size byte arrays.
@@ -255,6 +295,16 @@ inline kth_wif_uncompressed_t to_wif_uncompressed_t(kth::domain::wallet::wif_unc
 }
 inline kth::domain::wallet::wif_uncompressed wif_uncompressed_to_cpp(uint8_t const* x) {
     return to_array_cpp<kth::domain::wallet::wif_uncompressed_size>(x);
+}
+
+// hd_key (82 bytes)
+inline kth_hd_key_t to_hd_key_t(kth::domain::wallet::hd_key const& x) {
+    kth_hd_key_t ret;
+    std::copy_n(x.begin(), x.size(), ret.data);
+    return ret;
+}
+inline kth::domain::wallet::hd_key hd_key_to_cpp(uint8_t const* x) {
+    return to_array_cpp<kth::domain::wallet::hd_key_size>(x);
 }
 
 template <typename T>
