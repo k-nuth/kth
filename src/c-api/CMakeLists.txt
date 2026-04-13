@@ -510,6 +510,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/transaction_list.cpp
         test/chain/point_list.cpp
         test/chain/output_point_list.cpp
+        test/chain/stealth_compact.cpp
+        test/chain/history_compact.cpp
         test/wallet/hd_public.cpp
         test/wallet/hd_private.cpp
     )

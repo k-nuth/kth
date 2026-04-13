@@ -1,19 +1,56 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <kth/domain/chain/stealth.hpp>
-
 #include <kth/capi/chain/stealth_compact_list.h>
+
+#include <kth/capi/chain/stealth_compact.h>
 #include <kth/capi/conversions.hpp>
-#include <kth/capi/list_creator.h>
+#include <kth/capi/helpers.hpp>
 
-
-KTH_LIST_DEFINE_CONVERTERS(chain, kth_stealth_compact_list_t, kth::domain::chain::stealth_compact, stealth_compact_list)
-
+// ---------------------------------------------------------------------------
 extern "C" {
 
-KTH_LIST_DEFINE(chain, kth_stealth_compact_list_t, kth_stealth_compact_t, stealth_compact_list, kth::domain::chain::stealth_compact, kth_chain_stealth_compact_cpp)
+kth_stealth_compact_list_mut_t kth_chain_stealth_compact_list_construct_default(void) {
+    return new std::vector<kth::domain::chain::stealth_compact>();
+}
+
+void kth_chain_stealth_compact_list_push_back(kth_stealth_compact_list_mut_t list, kth_stealth_compact_const_t elem) {
+    KTH_PRECONDITION(list != nullptr);
+    KTH_PRECONDITION(elem != nullptr);
+    static_cast<std::vector<kth::domain::chain::stealth_compact>*>(list)->push_back(kth_chain_stealth_compact_const_cpp(elem));
+}
+
+void kth_chain_stealth_compact_list_destruct(kth_stealth_compact_list_mut_t list) {
+    if (list == nullptr) return;
+    delete static_cast<std::vector<kth::domain::chain::stealth_compact>*>(list);
+}
+
+kth_size_t kth_chain_stealth_compact_list_count(kth_stealth_compact_list_const_t list) {
+    KTH_PRECONDITION(list != nullptr);
+    return static_cast<std::vector<kth::domain::chain::stealth_compact> const*>(list)->size();
+}
+
+kth_stealth_compact_const_t kth_chain_stealth_compact_list_nth(kth_stealth_compact_list_const_t list, kth_size_t index) {
+    KTH_PRECONDITION(list != nullptr);
+    auto const& vec = *static_cast<std::vector<kth::domain::chain::stealth_compact> const*>(list);
+    KTH_PRECONDITION(index < vec.size());
+    return &vec[index];
+}
+
+void kth_chain_stealth_compact_list_assign_at(kth_stealth_compact_list_mut_t list, kth_size_t index, kth_stealth_compact_const_t elem) {
+    KTH_PRECONDITION(list != nullptr);
+    KTH_PRECONDITION(elem != nullptr);
+    auto& vec = *static_cast<std::vector<kth::domain::chain::stealth_compact>*>(list);
+    KTH_PRECONDITION(index < vec.size());
+    vec[index] = kth_chain_stealth_compact_const_cpp(elem);
+}
+
+void kth_chain_stealth_compact_list_erase(kth_stealth_compact_list_mut_t list, kth_size_t index) {
+    KTH_PRECONDITION(list != nullptr);
+    auto& vec = *static_cast<std::vector<kth::domain::chain::stealth_compact>*>(list);
+    KTH_PRECONDITION(index < vec.size());
+    vec.erase(vec.begin() + index);
+}
 
 } // extern "C"
-

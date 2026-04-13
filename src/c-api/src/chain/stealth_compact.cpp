@@ -1,57 +1,100 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/capi/chain/stealth_compact.h>
 
+#include <kth/capi/conversions.hpp>
+#include <kth/capi/helpers.hpp>
 #include <kth/domain/chain/stealth.hpp>
 
-#include <kth/capi/helpers.hpp>
-#include <kth/capi/type_conversions.h>
-
-
-KTH_CONV_DEFINE(chain, kth_stealth_compact_t, kth::domain::chain::stealth_compact, stealth_compact)
+// Conversion functions
+kth::domain::chain::stealth_compact& kth_chain_stealth_compact_mut_cpp(kth_stealth_compact_mut_t o) {
+    return *static_cast<kth::domain::chain::stealth_compact*>(o);
+}
+kth::domain::chain::stealth_compact const& kth_chain_stealth_compact_const_cpp(kth_stealth_compact_const_t o) {
+    return *static_cast<kth::domain::chain::stealth_compact const*>(o);
+}
 
 // ---------------------------------------------------------------------------
 extern "C" {
 
-kth_hash_t kth_chain_stealth_compact_get_ephemeral_public_key_hash(kth_stealth_compact_t stealth) {
-    auto const& hash_cpp = kth_chain_stealth_compact_cpp(stealth).ephemeral_public_key_hash;
-    return kth::to_hash_t(hash_cpp);
+// Destructor
+
+void kth_chain_stealth_compact_destruct(kth_stealth_compact_mut_t self) {
+    if (self == nullptr) return;
+    delete &kth_chain_stealth_compact_mut_cpp(self);
 }
 
-void kth_chain_stealth_compact_get_ephemeral_public_key_hash_out(kth_stealth_compact_t stealth, kth_hash_t* out_epk_hash) {
-    auto const& hash_cpp = kth_chain_stealth_compact_cpp(stealth).ephemeral_public_key_hash;
-    kth::copy_c_hash(hash_cpp, out_epk_hash);
+
+// Copy
+
+kth_stealth_compact_mut_t kth_chain_stealth_compact_copy(kth_stealth_compact_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return new kth::domain::chain::stealth_compact(kth_chain_stealth_compact_const_cpp(self));
 }
 
-kth_hash_t kth_chain_stealth_compact_get_transaction_hash(kth_stealth_compact_t stealth) {
-    auto const& hash_cpp = kth_chain_stealth_compact_cpp(stealth).transaction_hash;
-    return kth::to_hash_t(hash_cpp);
+
+// Getters
+
+kth_hash_t kth_chain_stealth_compact_ephemeral_public_key_hash(kth_stealth_compact_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const value_cpp = kth_chain_stealth_compact_const_cpp(self).ephemeral_public_key_hash;
+    return kth::to_hash_t(value_cpp);
 }
 
-void kth_chain_stealth_compact_get_transaction_hash_out(kth_stealth_compact_t stealth, kth_hash_t* out_tx_hash) {
-    auto const& hash_cpp = kth_chain_stealth_compact_cpp(stealth).transaction_hash;
-    kth::copy_c_hash(hash_cpp, out_tx_hash);
+kth_shorthash_t kth_chain_stealth_compact_public_key_hash(kth_stealth_compact_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const value_cpp = kth_chain_stealth_compact_const_cpp(self).public_key_hash;
+    return kth::to_shorthash_t(value_cpp);
 }
 
-kth_shorthash_t kth_chain_stealth_compact_get_public_key_hash(kth_stealth_compact_t stealth) {
-    auto const& hash_cpp = kth_chain_stealth_compact_cpp(stealth).public_key_hash;
-    return kth::to_shorthash_t(hash_cpp);
+kth_hash_t kth_chain_stealth_compact_transaction_hash(kth_stealth_compact_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const value_cpp = kth_chain_stealth_compact_const_cpp(self).transaction_hash;
+    return kth::to_hash_t(value_cpp);
 }
 
-void kth_chain_stealth_compact_get_public_key_hash_out(kth_stealth_compact_t stealth, kth_shorthash_t* out_pk_hash) {
-    auto const& hash_cpp = kth_chain_stealth_compact_cpp(stealth).public_key_hash;
-    kth::copy_c_hash(hash_cpp, out_pk_hash);
+
+// Setters
+
+void kth_chain_stealth_compact_set_ephemeral_public_key_hash(kth_stealth_compact_mut_t self, kth_hash_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const value_cpp = kth::hash_to_cpp(value.hash);
+    kth_chain_stealth_compact_mut_cpp(self).ephemeral_public_key_hash = value_cpp;
 }
 
-/*
-    typedef std::vector<stealth_compact> list;
+void kth_chain_stealth_compact_set_ephemeral_public_key_hash_unsafe(kth_stealth_compact_mut_t self, uint8_t const* value) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(value != nullptr);
+    auto const value_cpp = kth::hash_to_cpp(value);
+    kth_chain_stealth_compact_mut_cpp(self).ephemeral_public_key_hash = value_cpp;
+}
 
-    hash_digest ephemeral_public_key_hash;
-    short_hash public_key_hash;
-    hash_digest transaction_hash;
-*/
+void kth_chain_stealth_compact_set_public_key_hash(kth_stealth_compact_mut_t self, kth_shorthash_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const value_cpp = kth::short_hash_to_cpp(value.hash);
+    kth_chain_stealth_compact_mut_cpp(self).public_key_hash = value_cpp;
+}
 
+void kth_chain_stealth_compact_set_public_key_hash_unsafe(kth_stealth_compact_mut_t self, uint8_t const* value) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(value != nullptr);
+    auto const value_cpp = kth::short_hash_to_cpp(value);
+    kth_chain_stealth_compact_mut_cpp(self).public_key_hash = value_cpp;
+}
+
+void kth_chain_stealth_compact_set_transaction_hash(kth_stealth_compact_mut_t self, kth_hash_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const value_cpp = kth::hash_to_cpp(value.hash);
+    kth_chain_stealth_compact_mut_cpp(self).transaction_hash = value_cpp;
+}
+
+void kth_chain_stealth_compact_set_transaction_hash_unsafe(kth_stealth_compact_mut_t self, uint8_t const* value) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(value != nullptr);
+    auto const value_cpp = kth::hash_to_cpp(value);
+    kth_chain_stealth_compact_mut_cpp(self).transaction_hash = value_cpp;
+}
 
 } // extern "C"
