@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <utility>
+
 #include <kth/capi/chain/operation.h>
 
 #include <kth/capi/conversions.hpp>
@@ -41,12 +43,16 @@ kth_operation_mut_t kth_chain_operation_construct_from_uncoded_minimal(uint8_t c
     KTH_PRECONDITION(uncoded != nullptr || n == 0);
     auto const uncoded_cpp = n != 0 ? kth::data_chunk(uncoded, uncoded + n) : kth::data_chunk{};
     auto const minimal_cpp = kth::int_to_bool(minimal);
-    return new kth::domain::machine::operation(uncoded_cpp, minimal_cpp);
+    auto* obj = new kth::domain::machine::operation(uncoded_cpp, minimal_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_operation_mut_t kth_chain_operation_construct_from_code(kth_opcode_t code) {
     auto const code_cpp = static_cast<kth::domain::machine::opcode>(code);
-    return new kth::domain::machine::operation(code_cpp);
+    auto* obj = new kth::domain::machine::operation(code_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 

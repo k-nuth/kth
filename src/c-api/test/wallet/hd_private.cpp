@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include <kth/capi/wallet/hd_private.h>
+#include <kth/capi/wallet/hd_public.h>
 #include <kth/capi/primitives.h>
 
 #include "../test_helpers.hpp"

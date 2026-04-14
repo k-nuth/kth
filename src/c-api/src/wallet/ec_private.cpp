@@ -28,42 +28,56 @@ kth_ec_private_mut_t kth_wallet_ec_private_construct_default(void) {
 kth_ec_private_mut_t kth_wallet_ec_private_construct_from_wif_version(char const* wif, uint8_t version) {
     KTH_PRECONDITION(wif != nullptr);
     auto const wif_cpp = std::string(wif);
-    return new kth::domain::wallet::ec_private(wif_cpp, version);
+    auto* obj = new kth::domain::wallet::ec_private(wif_cpp, version);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_ec_private_mut_t kth_wallet_ec_private_construct_from_wif_compressed_version(kth_wif_compressed_t wif_compressed, uint8_t version) {
     auto const wif_compressed_cpp = kth::wif_compressed_to_cpp(wif_compressed.data);
-    return new kth::domain::wallet::ec_private(wif_compressed_cpp, version);
+    auto* obj = new kth::domain::wallet::ec_private(wif_compressed_cpp, version);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_ec_private_mut_t kth_wallet_ec_private_construct_from_wif_compressed_version_unsafe(uint8_t const* wif_compressed, uint8_t version) {
     KTH_PRECONDITION(wif_compressed != nullptr);
     auto const wif_compressed_cpp = kth::wif_compressed_to_cpp(wif_compressed);
-    return new kth::domain::wallet::ec_private(wif_compressed_cpp, version);
+    auto* obj = new kth::domain::wallet::ec_private(wif_compressed_cpp, version);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_ec_private_mut_t kth_wallet_ec_private_construct_from_wif_uncompressed_version(kth_wif_uncompressed_t wif_uncompressed, uint8_t version) {
     auto const wif_uncompressed_cpp = kth::wif_uncompressed_to_cpp(wif_uncompressed.data);
-    return new kth::domain::wallet::ec_private(wif_uncompressed_cpp, version);
+    auto* obj = new kth::domain::wallet::ec_private(wif_uncompressed_cpp, version);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_ec_private_mut_t kth_wallet_ec_private_construct_from_wif_uncompressed_version_unsafe(uint8_t const* wif_uncompressed, uint8_t version) {
     KTH_PRECONDITION(wif_uncompressed != nullptr);
     auto const wif_uncompressed_cpp = kth::wif_uncompressed_to_cpp(wif_uncompressed);
-    return new kth::domain::wallet::ec_private(wif_uncompressed_cpp, version);
+    auto* obj = new kth::domain::wallet::ec_private(wif_uncompressed_cpp, version);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_ec_private_mut_t kth_wallet_ec_private_construct_from_secret_version_compress(kth_hash_t secret, uint16_t version, kth_bool_t compress) {
     auto const secret_cpp = kth::hash_to_cpp(secret.hash);
     auto const compress_cpp = kth::int_to_bool(compress);
-    return new kth::domain::wallet::ec_private(secret_cpp, version, compress_cpp);
+    auto* obj = new kth::domain::wallet::ec_private(secret_cpp, version, compress_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_ec_private_mut_t kth_wallet_ec_private_construct_from_secret_version_compress_unsafe(uint8_t const* secret, uint16_t version, kth_bool_t compress) {
     KTH_PRECONDITION(secret != nullptr);
     auto const secret_cpp = kth::hash_to_cpp(secret);
     auto const compress_cpp = kth::int_to_bool(compress);
-    return new kth::domain::wallet::ec_private(secret_cpp, version, compress_cpp);
+    auto* obj = new kth::domain::wallet::ec_private(secret_cpp, version, compress_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 
@@ -93,6 +107,11 @@ kth_bool_t kth_wallet_ec_private_equals(kth_ec_private_const_t self, kth_ec_priv
 
 
 // Getters
+
+kth_bool_t kth_wallet_ec_private_valid(kth_ec_private_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth_wallet_ec_private_const_cpp(self).operator bool());
+}
 
 char* kth_wallet_ec_private_encoded(kth_ec_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
@@ -128,12 +147,16 @@ kth_bool_t kth_wallet_ec_private_compressed(kth_ec_private_const_t self) {
 
 kth_ec_public_mut_t kth_wallet_ec_private_to_public(kth_ec_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return new kth::domain::wallet::ec_public(kth_wallet_ec_private_const_cpp(self).to_public());
+    auto* obj = new kth::domain::wallet::ec_public(kth_wallet_ec_private_const_cpp(self).to_public());
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_payment_address_mut_t kth_wallet_ec_private_to_payment_address(kth_ec_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return new kth::domain::wallet::payment_address(kth_wallet_ec_private_const_cpp(self).to_payment_address());
+    auto* obj = new kth::domain::wallet::payment_address(kth_wallet_ec_private_const_cpp(self).to_payment_address());
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 

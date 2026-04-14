@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <utility>
+
 #include <kth/capi/chain/output_point.h>
 
 #include <kth/capi/conversions.hpp>
@@ -40,19 +42,25 @@ kth_error_code_t kth_chain_output_point_construct_from_data(uint8_t const* data,
 
 kth_output_point_mut_t kth_chain_output_point_construct_from_hash_index(kth_hash_t hash, uint32_t index) {
     auto const hash_cpp = kth::hash_to_cpp(hash.hash);
-    return new kth::domain::chain::output_point(hash_cpp, index);
+    auto* obj = new kth::domain::chain::output_point(hash_cpp, index);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_output_point_mut_t kth_chain_output_point_construct_from_hash_index_unsafe(uint8_t const* hash, uint32_t index) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::hash_to_cpp(hash);
-    return new kth::domain::chain::output_point(hash_cpp, index);
+    auto* obj = new kth::domain::chain::output_point(hash_cpp, index);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_output_point_mut_t kth_chain_output_point_construct_from_point(kth_point_const_t x) {
     KTH_PRECONDITION(x != nullptr);
     auto const& x_cpp = kth_chain_point_const_cpp(x);
-    return new kth::domain::chain::output_point(x_cpp);
+    auto* obj = new kth::domain::chain::output_point(x_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 

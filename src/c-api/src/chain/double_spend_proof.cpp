@@ -83,7 +83,7 @@ uint8_t* kth_chain_double_spend_proof_to_data(kth_double_spend_proof_const_t sel
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
     auto const version_cpp = static_cast<size_t>(version);
-    auto const& data = kth_chain_double_spend_proof_const_cpp(self).to_data(version_cpp);
+    auto const data = kth_chain_double_spend_proof_const_cpp(self).to_data(version_cpp);
     return kth::create_c_array(data, *out_size);
 }
 

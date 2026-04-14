@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <utility>
+
 #include <kth/capi/chain/header.h>
 
 #include <kth/capi/conversions.hpp>
@@ -41,7 +43,9 @@ kth_error_code_t kth_chain_header_construct_from_data(uint8_t const* data, kth_s
 kth_header_mut_t kth_chain_header_construct(uint32_t version, kth_hash_t previous_block_hash, kth_hash_t merkle, uint32_t timestamp, uint32_t bits, uint32_t nonce) {
     auto const previous_block_hash_cpp = kth::hash_to_cpp(previous_block_hash.hash);
     auto const merkle_cpp = kth::hash_to_cpp(merkle.hash);
-    return new kth::domain::chain::header(version, previous_block_hash_cpp, merkle_cpp, timestamp, bits, nonce);
+    auto* obj = new kth::domain::chain::header(version, previous_block_hash_cpp, merkle_cpp, timestamp, bits, nonce);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_header_mut_t kth_chain_header_construct_unsafe(uint32_t version, uint8_t const* previous_block_hash, uint8_t const* merkle, uint32_t timestamp, uint32_t bits, uint32_t nonce) {
@@ -49,7 +53,9 @@ kth_header_mut_t kth_chain_header_construct_unsafe(uint32_t version, uint8_t con
     KTH_PRECONDITION(merkle != nullptr);
     auto const previous_block_hash_cpp = kth::hash_to_cpp(previous_block_hash);
     auto const merkle_cpp = kth::hash_to_cpp(merkle);
-    return new kth::domain::chain::header(version, previous_block_hash_cpp, merkle_cpp, timestamp, bits, nonce);
+    auto* obj = new kth::domain::chain::header(version, previous_block_hash_cpp, merkle_cpp, timestamp, bits, nonce);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 

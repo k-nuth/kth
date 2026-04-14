@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <utility>
+
 #include <kth/capi/chain/transaction.h>
 
 #include <kth/capi/conversions.hpp>
@@ -43,14 +45,18 @@ kth_transaction_mut_t kth_chain_transaction_construct_from_version_locktime_inpu
     KTH_PRECONDITION(outputs != nullptr);
     auto const& inputs_cpp = kth_chain_input_list_const_cpp(inputs);
     auto const& outputs_cpp = kth_chain_output_list_const_cpp(outputs);
-    return new kth::domain::chain::transaction(version, locktime, inputs_cpp, outputs_cpp);
+    auto* obj = new kth::domain::chain::transaction(version, locktime, inputs_cpp, outputs_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash(kth_transaction_const_t x, kth_hash_t hash) {
     KTH_PRECONDITION(x != nullptr);
     auto const& x_cpp = kth_chain_transaction_const_cpp(x);
     auto const hash_cpp = kth::hash_to_cpp(hash.hash);
-    return new kth::domain::chain::transaction(x_cpp, hash_cpp);
+    auto* obj = new kth::domain::chain::transaction(x_cpp, hash_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash_unsafe(kth_transaction_const_t x, uint8_t const* hash) {
@@ -58,7 +64,9 @@ kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash_unsa
     KTH_PRECONDITION(hash != nullptr);
     auto const& x_cpp = kth_chain_transaction_const_cpp(x);
     auto const hash_cpp = kth::hash_to_cpp(hash);
-    return new kth::domain::chain::transaction(x_cpp, hash_cpp);
+    auto* obj = new kth::domain::chain::transaction(x_cpp, hash_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 

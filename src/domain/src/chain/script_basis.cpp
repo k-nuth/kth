@@ -555,15 +555,14 @@ operation::list script_basis::to_pay_public_key_hash_pattern(short_hash const& h
 }
 
 operation::list script_basis::to_pay_public_key_hash_pattern_unlocking(endorsement const& end, wallet::ec_public const& pubkey) {
-    // data_chunk endorsement(endorsement_size, 0);
-    data_chunk pubkey_data;
-    if ( ! pubkey.to_data(pubkey_data)) {
+    auto pubkey_data = pubkey.to_data();
+    if ( ! pubkey_data) {
         return operation::list {};
     }
     return operation::list {
         operation(opcode::push_size_0),
         operation(end),
-        operation(pubkey_data)
+        operation(std::move(*pubkey_data))
     };
 }
 

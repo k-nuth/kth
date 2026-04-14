@@ -11,6 +11,7 @@
 #include <kth/capi/visibility.h>
 #include <kth/capi/chain/script_flags.h>
 #include <kth/capi/chain/script_pattern.h>
+#include <kth/capi/wallet/primitives.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,13 +28,13 @@ KTH_EXPORT
 kth_error_code_t kth_chain_script_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_script_mut_t* out);
 
 /**
- * @return Owned `kth_script_mut_t`. Caller must release with `kth_chain_script_destruct`.
+ * @return Owned `kth_script_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_script_destruct`.
  * @param ops Borrowed input. Copied by value into the resulting object; ownership of `ops` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
 kth_script_mut_t kth_chain_script_construct_from_operations(kth_operation_list_const_t ops);
 
-/** @return Owned `kth_script_mut_t`. Caller must release with `kth_chain_script_destruct`. */
+/** @return Owned `kth_script_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_script_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_script_mut_t kth_chain_script_construct_from_encoded_prefix(uint8_t const* encoded, kth_size_t n, kth_bool_t prefix);
 
@@ -88,7 +89,7 @@ kth_operation_const_t kth_chain_script_back(kth_script_const_t self);
 KTH_EXPORT
 kth_operation_list_const_t kth_chain_script_operations(kth_script_const_t self);
 
-/** @return Owned `kth_operation_mut_t`. Caller must release with `kth_chain_operation_destruct`. */
+/** @return Owned `kth_operation_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_operation_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_mut_t kth_chain_script_first_operation(kth_script_const_t self);
 
@@ -236,6 +237,10 @@ kth_operation_list_mut_t kth_chain_script_to_pay_public_key_hash_pattern_unsafe(
 
 /** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
 KTH_EXPORT KTH_OWNED
+kth_operation_list_mut_t kth_chain_script_to_pay_public_key_hash_pattern_unlocking(uint8_t const* end, kth_size_t n, kth_ec_public_const_t pubkey);
+
+/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_chain_script_to_pay_public_key_hash_pattern_unlocking_placeholder(kth_size_t endorsement_size, kth_size_t pubkey_size);
 
 /** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
@@ -273,7 +278,7 @@ KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_chain_script_to_pay_multisig_pattern_data_stack(uint8_t signatures, kth_data_stack_const_t points);
 
 KTH_EXPORT
-kth_error_code_t kth_chain_script_verify(kth_transaction_const_t tx, uint32_t input_index, kth_script_flags_t flags, kth_script_const_t input_script, kth_script_const_t prevout_script, uint64_t arg5);
+kth_error_code_t kth_chain_script_verify(kth_transaction_const_t tx, uint32_t input_index, kth_script_flags_t flags, kth_script_const_t input_script, kth_script_const_t prevout_script, uint64_t value);
 
 KTH_EXPORT
 kth_error_code_t kth_chain_script_verify_simple(kth_transaction_const_t tx, uint32_t input, kth_script_flags_t flags);

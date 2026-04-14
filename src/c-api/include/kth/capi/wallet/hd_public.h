@@ -18,7 +18,7 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_hd_public_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_public_destruct`. */
+/** @return Owned `kth_hd_public_mut_t`. Caller must release with `kth_wallet_hd_public_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_hd_public_mut_t kth_wallet_hd_public_construct_default(void);
 
@@ -62,7 +62,7 @@ void kth_wallet_hd_public_destruct(kth_hd_public_mut_t self);
 
 // Copy
 
-/** @return Owned `kth_hd_public_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_public_destruct`. */
+/** @return Owned `kth_hd_public_mut_t`. Caller must release with `kth_wallet_hd_public_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_hd_public_mut_t kth_wallet_hd_public_copy(kth_hd_public_const_t self);
 
@@ -75,6 +75,7 @@ kth_bool_t kth_wallet_hd_public_equals(kth_hd_public_const_t self, kth_hd_public
 
 // Getters
 
+/** @return Non-zero if `self` is in a valid state, zero otherwise. */
 KTH_EXPORT
 kth_bool_t kth_wallet_hd_public_valid(kth_hd_public_const_t self);
 

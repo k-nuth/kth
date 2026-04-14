@@ -6,8 +6,10 @@
 #define KTH_DOMAIN_WALLET_EC_PUBLIC_HPP
 
 #include <cstdint>
+#include <expected>
 #include <iostream>
 #include <string>
+#include <system_error>
 
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
@@ -76,20 +78,13 @@ struct KD_API ec_public {
     ec_compressed const& point() const;
 
     [[nodiscard]]
-    uint16_t version() const;
-
-    [[nodiscard]]
-    uint8_t payment_version() const;
-
-    [[nodiscard]]
-    uint8_t wif_version() const;
-
-    [[nodiscard]]
     bool compressed() const;
 
     /// Methods.
-    bool to_data(data_chunk& out) const;
-    bool to_uncompressed(ec_uncompressed& out) const;
+    [[nodiscard]]
+    std::expected<data_chunk, std::error_code> to_data() const;
+    [[nodiscard]]
+    std::expected<ec_uncompressed, std::error_code> to_uncompressed() const;
 
     [[nodiscard]]
     payment_address to_payment_address(uint8_t version = mainnet_p2kh) const;
@@ -116,7 +111,6 @@ private:
     /// These should be const, apart from the need to implement assignment.
     bool valid_{false};
     bool compress_{true};
-    uint8_t version_;
     ec_compressed point_ = null_compressed_point;
 };
 
