@@ -11,7 +11,6 @@
 #include <kth/capi/visibility.h>
 #include <kth/capi/wallet/primitives.h>
 #include <kth/capi/wallet/hd_lineage.h>
-#include <kth/capi/wallet/hd_public.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,7 +18,7 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_hd_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_private_destruct`. */
+/** @return Owned `kth_hd_private_mut_t`. Caller must release with `kth_wallet_hd_private_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_hd_private_mut_t kth_wallet_hd_private_construct_default(void);
 
@@ -82,7 +81,7 @@ void kth_wallet_hd_private_destruct(kth_hd_private_mut_t self);
 
 // Copy
 
-/** @return Owned `kth_hd_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_private_destruct`. */
+/** @return Owned `kth_hd_private_mut_t`. Caller must release with `kth_wallet_hd_private_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_hd_private_mut_t kth_wallet_hd_private_copy(kth_hd_private_const_t self);
 
@@ -109,6 +108,7 @@ kth_hd_key_t kth_wallet_hd_private_to_hd_key(kth_hd_private_const_t self);
 KTH_EXPORT KTH_OWNED
 kth_hd_public_mut_t kth_wallet_hd_private_to_public(kth_hd_private_const_t self);
 
+/** @return Non-zero if `self` is in a valid state, zero otherwise. */
 KTH_EXPORT
 kth_bool_t kth_wallet_hd_private_valid(kth_hd_private_const_t self);
 

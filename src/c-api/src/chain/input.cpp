@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <utility>
+
 #include <kth/capi/chain/input.h>
 
 #include <kth/capi/conversions.hpp>
@@ -43,7 +45,9 @@ kth_input_mut_t kth_chain_input_construct(kth_output_point_const_t previous_outp
     KTH_PRECONDITION(script != nullptr);
     auto const& previous_output_cpp = kth_chain_output_point_const_cpp(previous_output);
     auto const& script_cpp = kth_chain_script_const_cpp(script);
-    return new kth::domain::chain::input(previous_output_cpp, script_cpp, sequence);
+    auto* obj = new kth::domain::chain::input(previous_output_cpp, script_cpp, sequence);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 
@@ -93,7 +97,9 @@ kth_size_t kth_chain_input_serialized_size(kth_input_const_t self, kth_bool_t wi
 
 kth_payment_address_mut_t kth_chain_input_address(kth_input_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return new kth::domain::wallet::payment_address(kth_chain_input_const_cpp(self).address());
+    auto* obj = new kth::domain::wallet::payment_address(kth_chain_input_const_cpp(self).address());
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_payment_address_list_mut_t kth_chain_input_addresses(kth_input_const_t self) {

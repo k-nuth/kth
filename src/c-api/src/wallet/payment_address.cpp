@@ -27,66 +27,88 @@ kth_payment_address_mut_t kth_wallet_payment_address_construct_default(void) {
 
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_decoded(kth_payment_t decoded) {
     auto const decoded_cpp = kth::payment_to_cpp(decoded.hash);
-    return new kth::domain::wallet::payment_address(decoded_cpp);
+    auto* obj = new kth::domain::wallet::payment_address(decoded_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_decoded_unsafe(uint8_t const* decoded) {
     KTH_PRECONDITION(decoded != nullptr);
     auto const decoded_cpp = kth::payment_to_cpp(decoded);
-    return new kth::domain::wallet::payment_address(decoded_cpp);
+    auto* obj = new kth::domain::wallet::payment_address(decoded_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_ec_private(kth_ec_private_const_t secret) {
     KTH_PRECONDITION(secret != nullptr);
     auto const& secret_cpp = kth_wallet_ec_private_const_cpp(secret);
-    return new kth::domain::wallet::payment_address(secret_cpp);
+    auto* obj = new kth::domain::wallet::payment_address(secret_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_address(char const* address) {
     KTH_PRECONDITION(address != nullptr);
     auto const address_cpp = std::string(address);
-    return new kth::domain::wallet::payment_address(address_cpp);
+    auto* obj = new kth::domain::wallet::payment_address(address_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_address_net(char const* address, kth_network_t net) {
     KTH_PRECONDITION(address != nullptr);
     auto const address_cpp = std::string(address);
     auto const net_cpp = static_cast<kth::domain::config::network>(net);
-    return new kth::domain::wallet::payment_address(address_cpp, net_cpp);
+    auto* obj = new kth::domain::wallet::payment_address(address_cpp, net_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_short_hash_version(kth_shorthash_t short_hash, uint8_t version) {
     auto const short_hash_cpp = kth::short_hash_to_cpp(short_hash.hash);
-    return new kth::domain::wallet::payment_address(short_hash_cpp, version);
+    auto* obj = new kth::domain::wallet::payment_address(short_hash_cpp, version);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_short_hash_version_unsafe(uint8_t const* short_hash, uint8_t version) {
     KTH_PRECONDITION(short_hash != nullptr);
     auto const short_hash_cpp = kth::short_hash_to_cpp(short_hash);
-    return new kth::domain::wallet::payment_address(short_hash_cpp, version);
+    auto* obj = new kth::domain::wallet::payment_address(short_hash_cpp, version);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_hash_version(kth_hash_t hash, uint8_t version) {
     auto const hash_cpp = kth::hash_to_cpp(hash.hash);
-    return new kth::domain::wallet::payment_address(hash_cpp, version);
+    auto* obj = new kth::domain::wallet::payment_address(hash_cpp, version);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_hash_version_unsafe(uint8_t const* hash, uint8_t version) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::hash_to_cpp(hash);
-    return new kth::domain::wallet::payment_address(hash_cpp, version);
+    auto* obj = new kth::domain::wallet::payment_address(hash_cpp, version);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_ec_public_version(kth_ec_public_const_t point, uint8_t version) {
     KTH_PRECONDITION(point != nullptr);
     auto const& point_cpp = kth_wallet_ec_public_const_cpp(point);
-    return new kth::domain::wallet::payment_address(point_cpp, version);
+    auto* obj = new kth::domain::wallet::payment_address(point_cpp, version);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_script_version(kth_script_const_t script, uint8_t version) {
     KTH_PRECONDITION(script != nullptr);
     auto const& script_cpp = kth_chain_script_const_cpp(script);
-    return new kth::domain::wallet::payment_address(script_cpp, version);
+    auto* obj = new kth::domain::wallet::payment_address(script_cpp, version);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 
@@ -95,7 +117,9 @@ kth_payment_address_mut_t kth_wallet_payment_address_construct_from_script_versi
 kth_payment_address_mut_t kth_wallet_payment_address_from_pay_public_key_hash_script(kth_script_const_t script, uint8_t version) {
     KTH_PRECONDITION(script != nullptr);
     auto const& script_cpp = kth_chain_script_const_cpp(script);
-    return new kth::domain::wallet::payment_address(kth::domain::wallet::payment_address::from_pay_public_key_hash_script(script_cpp, version));
+    auto* obj = new kth::domain::wallet::payment_address(kth::domain::wallet::payment_address::from_pay_public_key_hash_script(script_cpp, version));
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 
@@ -128,7 +152,7 @@ kth_bool_t kth_wallet_payment_address_equals(kth_payment_address_const_t self, k
 
 kth_bool_t kth_wallet_payment_address_valid(kth_payment_address_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_wallet_payment_address_const_cpp(self).valid());
+    return kth::bool_to_int(kth_wallet_payment_address_const_cpp(self).operator bool());
 }
 
 char* kth_wallet_payment_address_encoded_legacy(kth_payment_address_const_t self) {

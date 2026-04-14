@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <utility>
+
 #include <kth/capi/chain/get_headers.h>
 
 #include <kth/capi/conversions.hpp>
@@ -41,7 +43,9 @@ kth_get_headers_mut_t kth_chain_get_headers_construct(kth_hash_list_const_t star
     KTH_PRECONDITION(start != nullptr);
     auto const& start_cpp = kth_core_hash_list_const_cpp(start);
     auto const stop_cpp = kth::hash_to_cpp(stop.hash);
-    return new kth::domain::message::get_headers(start_cpp, stop_cpp);
+    auto* obj = new kth::domain::message::get_headers(start_cpp, stop_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_get_headers_mut_t kth_chain_get_headers_construct_unsafe(kth_hash_list_const_t start, uint8_t const* stop) {
@@ -49,7 +53,9 @@ kth_get_headers_mut_t kth_chain_get_headers_construct_unsafe(kth_hash_list_const
     KTH_PRECONDITION(stop != nullptr);
     auto const& start_cpp = kth_core_hash_list_const_cpp(start);
     auto const stop_cpp = kth::hash_to_cpp(stop);
-    return new kth::domain::message::get_headers(start_cpp, stop_cpp);
+    auto* obj = new kth::domain::message::get_headers(start_cpp, stop_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 

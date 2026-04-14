@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <utility>
+
 #include <kth/capi/chain/compact_block.h>
 
 #include <kth/capi/conversions.hpp>
@@ -44,7 +46,9 @@ kth_compact_block_mut_t kth_chain_compact_block_construct(kth_header_const_t hea
     auto const& header_cpp = kth_chain_header_const_cpp(header);
     auto const& short_ids_cpp = kth_core_u64_list_const_cpp(short_ids);
     auto const& transactions_cpp = kth_chain_prefilled_transaction_list_const_cpp(transactions);
-    return new kth::domain::message::compact_block(header_cpp, nonce, short_ids_cpp, transactions_cpp);
+    auto* obj = new kth::domain::message::compact_block(header_cpp, nonce, short_ids_cpp, transactions_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 

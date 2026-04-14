@@ -280,12 +280,12 @@ payment_address payment_address::from_public(ec_public const& point, uint8_t ver
         return payment_address{};
     }
 
-    data_chunk data;
-    if ( ! point.to_data(data)) {
+    auto const data = point.to_data();
+    if ( ! data) {
         return payment_address{};
     }
 
-    return payment_address{bitcoin_short_hash(data), version};
+    return payment_address{bitcoin_short_hash(*data), version};
 }
 
 payment_address payment_address::from_script(chain::script const& script, uint8_t version) {

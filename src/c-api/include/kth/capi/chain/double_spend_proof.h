@@ -16,7 +16,7 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_double_spend_proof_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_double_spend_proof_destruct`. */
+/** @return Owned `kth_double_spend_proof_mut_t`. Caller must release with `kth_chain_double_spend_proof_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_double_spend_proof_mut_t kth_chain_double_spend_proof_construct_default(void);
 

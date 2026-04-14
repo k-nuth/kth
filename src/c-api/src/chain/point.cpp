@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <utility>
+
 #include <kth/capi/chain/point.h>
 
 #include <kth/capi/conversions.hpp>
@@ -40,20 +42,25 @@ kth_error_code_t kth_chain_point_construct_from_data(uint8_t const* data, kth_si
 
 kth_point_mut_t kth_chain_point_construct(kth_hash_t hash, uint32_t index) {
     auto const hash_cpp = kth::hash_to_cpp(hash.hash);
-    return new kth::domain::chain::point(hash_cpp, index);
+    auto* obj = new kth::domain::chain::point(hash_cpp, index);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_point_mut_t kth_chain_point_construct_unsafe(uint8_t const* hash, uint32_t index) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::hash_to_cpp(hash);
-    return new kth::domain::chain::point(hash_cpp, index);
+    auto* obj = new kth::domain::chain::point(hash_cpp, index);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 
 // Static factories
 
 kth_point_mut_t kth_chain_point_null(void) {
-    return new kth::domain::chain::point(kth::domain::chain::point::null());
+    auto* obj = new kth::domain::chain::point(kth::domain::chain::point::null());
+    return obj;
 }
 
 

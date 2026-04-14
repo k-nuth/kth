@@ -11,6 +11,7 @@
 
 #include <kth/domain/wallet/ec_private.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/math/hash.hpp>
@@ -116,10 +117,10 @@ std::string ec_public::encoded() const {
     }
 
     // If the point is valid it should always decompress, but if not, is null.
-    ec_uncompressed uncompressed(null_uncompressed_point);
-    to_uncompressed(uncompressed);
-    return encode_base16(uncompressed);
+    auto const uncompressed = to_uncompressed();
+    return encode_base16(uncompressed ? *uncompressed : null_uncompressed_point);
 }
+
 
 // Accessors.
 // ----------------------------------------------------------------------------
@@ -135,33 +136,32 @@ bool ec_public::compressed() const {
 // Methods.
 // ----------------------------------------------------------------------------
 
-bool ec_public::to_data(data_chunk& out) const {
+std::expected<data_chunk, std::error_code> ec_public::to_data() const {
     if ( ! valid_) {
-        return false;
+        return std::unexpected(error::pubkey_type);
     }
 
     if (compressed()) {
-        out.resize(ec_compressed_size);
-        std::copy_n(point_.begin(), ec_compressed_size, out.begin());
-        return true;
+        return data_chunk(point_.begin(), point_.begin() + ec_compressed_size);
     }
 
-    ec_uncompressed uncompressed;
-    if (to_uncompressed(uncompressed)) {
-        out.resize(ec_uncompressed_size);
-        std::copy_n(uncompressed.begin(), ec_uncompressed_size, out.begin());
-        return true;
+    auto const uncompressed = to_uncompressed();
+    if ( ! uncompressed) {
+        return std::unexpected(uncompressed.error());
     }
-
-    return false;
+    return data_chunk(uncompressed->begin(), uncompressed->end());
 }
 
-bool ec_public::to_uncompressed(ec_uncompressed& out) const {
+std::expected<ec_uncompressed, std::error_code> ec_public::to_uncompressed() const {
     if ( ! valid_) {
-        return false;
+        return std::unexpected(error::pubkey_type);
     }
 
-    return kth::decompress(out, to_array<ec_compressed_size>(point_));
+    ec_uncompressed out;
+    if ( ! kth::decompress(out, to_array<ec_compressed_size>(point_))) {
+        return std::unexpected(error::pubkey_type);
+    }
+    return out;
 }
 
 payment_address ec_public::to_payment_address(uint8_t version) const {
@@ -173,7 +173,7 @@ payment_address ec_public::to_payment_address(uint8_t version) const {
 
 bool ec_public::operator==(ec_public const& x) const {
     return valid_ == x.valid_ && compress_ == x.compress_ &&
-           version_ == x.version_ && point_ == x.point_;
+           point_ == x.point_;
 }
 
 bool ec_public::operator!=(ec_public const& x) const {

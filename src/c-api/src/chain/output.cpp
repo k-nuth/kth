@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <utility>
+
 #include <kth/capi/chain/output.h>
 
 #include <kth/capi/conversions.hpp>
@@ -42,7 +44,9 @@ kth_output_mut_t kth_chain_output_construct(uint64_t value, kth_script_const_t s
     KTH_PRECONDITION(script != nullptr);
     auto const& script_cpp = kth_chain_script_const_cpp(script);
     auto const token_data_cpp = (token_data == nullptr ? std::nullopt : std::optional<kth::domain::chain::token_data_t>(kth_chain_token_data_const_cpp(token_data)));
-    return new kth::domain::chain::output(value, script_cpp, token_data_cpp);
+    auto* obj = new kth::domain::chain::output(value, script_cpp, token_data_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 
@@ -146,12 +150,16 @@ kth_bool_t kth_chain_output_is_dust(kth_output_const_t self, uint64_t minimum_ou
 kth_payment_address_mut_t kth_chain_output_address_simple(kth_output_const_t self, kth_bool_t testnet) {
     KTH_PRECONDITION(self != nullptr);
     auto const testnet_cpp = kth::int_to_bool(testnet);
-    return new kth::domain::wallet::payment_address(kth_chain_output_const_cpp(self).address(testnet_cpp));
+    auto* obj = new kth::domain::wallet::payment_address(kth_chain_output_const_cpp(self).address(testnet_cpp));
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_payment_address_mut_t kth_chain_output_address(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version) {
     KTH_PRECONDITION(self != nullptr);
-    return new kth::domain::wallet::payment_address(kth_chain_output_const_cpp(self).address(p2kh_version, p2sh_version));
+    auto* obj = new kth::domain::wallet::payment_address(kth_chain_output_const_cpp(self).address(p2kh_version, p2sh_version));
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_payment_address_list_mut_t kth_chain_output_addresses(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version) {

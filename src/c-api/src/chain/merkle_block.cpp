@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <utility>
+
 #include <kth/capi/chain/merkle_block.h>
 
 #include <kth/capi/conversions.hpp>
@@ -45,13 +47,17 @@ kth_merkle_block_mut_t kth_chain_merkle_block_construct_from_header_total_transa
     auto const total_transactions_cpp = static_cast<size_t>(total_transactions);
     auto const& hashes_cpp = kth_core_hash_list_const_cpp(hashes);
     auto const flags_cpp = n != 0 ? kth::data_chunk(flags, flags + n) : kth::data_chunk{};
-    return new kth::domain::message::merkle_block(header_cpp, total_transactions_cpp, hashes_cpp, flags_cpp);
+    auto* obj = new kth::domain::message::merkle_block(header_cpp, total_transactions_cpp, hashes_cpp, flags_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_merkle_block_mut_t kth_chain_merkle_block_construct_from_block(kth_block_const_t block) {
     KTH_PRECONDITION(block != nullptr);
     auto const& block_cpp = kth_chain_block_const_cpp(block);
-    return new kth::domain::message::merkle_block(block_cpp);
+    auto* obj = new kth::domain::message::merkle_block(block_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 

@@ -25,7 +25,7 @@ KTH_EXPORT
 kth_error_code_t kth_chain_output_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_output_mut_t* out);
 
 /**
- * @return Owned `kth_output_mut_t`. Caller must release with `kth_chain_output_destruct`.
+ * @return Owned `kth_output_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_output_destruct`.
  * @param script Borrowed input. Copied by value into the resulting object; ownership of `script` stays with the caller.
  * @param token_data Borrowed input. Copied by value into the resulting object; ownership of `token_data` stays with the caller.
  */
@@ -102,11 +102,11 @@ kth_bool_t kth_chain_output_is_dust(kth_output_const_t self, uint64_t minimum_ou
 
 // Operations
 
-/** @return Owned `kth_payment_address_mut_t`. Caller must release with `kth_wallet_payment_address_destruct`. */
+/** @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_payment_address_mut_t kth_chain_output_address_simple(kth_output_const_t self, kth_bool_t testnet);
 
-/** @return Owned `kth_payment_address_mut_t`. Caller must release with `kth_wallet_payment_address_destruct`. */
+/** @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_payment_address_mut_t kth_chain_output_address(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version);
 

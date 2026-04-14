@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <utility>
+
 #include <kth/capi/chain/block.h>
 
 #include <kth/capi/conversions.hpp>
@@ -43,34 +45,48 @@ kth_block_mut_t kth_chain_block_construct(kth_header_const_t header, kth_transac
     KTH_PRECONDITION(transactions != nullptr);
     auto const& header_cpp = kth_chain_header_const_cpp(header);
     auto const& transactions_cpp = kth_chain_transaction_list_const_cpp(transactions);
-    return new kth::domain::chain::block(header_cpp, transactions_cpp);
+    auto* obj = new kth::domain::chain::block(header_cpp, transactions_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 
 // Static factories
 
 kth_block_mut_t kth_chain_block_genesis_mainnet(void) {
-    return new kth::domain::chain::block(kth::domain::chain::block::genesis_mainnet());
+    auto* obj = new kth::domain::chain::block(kth::domain::chain::block::genesis_mainnet());
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_block_mut_t kth_chain_block_genesis_testnet(void) {
-    return new kth::domain::chain::block(kth::domain::chain::block::genesis_testnet());
+    auto* obj = new kth::domain::chain::block(kth::domain::chain::block::genesis_testnet());
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_block_mut_t kth_chain_block_genesis_regtest(void) {
-    return new kth::domain::chain::block(kth::domain::chain::block::genesis_regtest());
+    auto* obj = new kth::domain::chain::block(kth::domain::chain::block::genesis_regtest());
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_block_mut_t kth_chain_block_genesis_testnet4(void) {
-    return new kth::domain::chain::block(kth::domain::chain::block::genesis_testnet4());
+    auto* obj = new kth::domain::chain::block(kth::domain::chain::block::genesis_testnet4());
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_block_mut_t kth_chain_block_genesis_scalenet(void) {
-    return new kth::domain::chain::block(kth::domain::chain::block::genesis_scalenet());
+    auto* obj = new kth::domain::chain::block(kth::domain::chain::block::genesis_scalenet());
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 kth_block_mut_t kth_chain_block_genesis_chipnet(void) {
-    return new kth::domain::chain::block(kth::domain::chain::block::genesis_chipnet());
+    auto* obj = new kth::domain::chain::block(kth::domain::chain::block::genesis_chipnet());
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 

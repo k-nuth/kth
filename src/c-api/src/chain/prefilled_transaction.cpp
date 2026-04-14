@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <utility>
+
 #include <kth/capi/chain/prefilled_transaction.h>
 
 #include <kth/capi/conversions.hpp>
@@ -40,7 +42,9 @@ kth_error_code_t kth_chain_prefilled_transaction_construct_from_data(uint8_t con
 kth_prefilled_transaction_mut_t kth_chain_prefilled_transaction_construct(uint64_t index, kth_transaction_const_t tx) {
     KTH_PRECONDITION(tx != nullptr);
     auto const& tx_cpp = kth_chain_transaction_const_cpp(tx);
-    return new kth::domain::message::prefilled_transaction(index, tx_cpp);
+    auto* obj = new kth::domain::message::prefilled_transaction(index, tx_cpp);
+    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
+    return obj;
 }
 
 

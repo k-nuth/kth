@@ -20,15 +20,15 @@ extern "C" {
 KTH_EXPORT KTH_OWNED
 kth_binary_mut_t kth_core_binary_construct_default(void);
 
-/** @return Owned `kth_binary_mut_t`. Caller must release with `kth_core_binary_destruct`. */
+/** @return Owned `kth_binary_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_core_binary_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_binary_mut_t kth_core_binary_construct_from_bit_string(char const* bit_string);
 
-/** @return Owned `kth_binary_mut_t`. Caller must release with `kth_core_binary_destruct`. */
+/** @return Owned `kth_binary_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_core_binary_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_binary_mut_t kth_core_binary_construct_from_size_number(kth_size_t size, uint32_t number);
 
-/** @return Owned `kth_binary_mut_t`. Caller must release with `kth_core_binary_destruct`. */
+/** @return Owned `kth_binary_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_core_binary_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_binary_mut_t kth_core_binary_construct_from_size_blocks(kth_size_t size, uint8_t const* blocks, kth_size_t n);
 
@@ -102,7 +102,7 @@ void kth_core_binary_shift_left(kth_binary_mut_t self, kth_size_t distance);
 KTH_EXPORT
 void kth_core_binary_shift_right(kth_binary_mut_t self, kth_size_t distance);
 
-/** @return Owned `kth_binary_mut_t`. Caller must release with `kth_core_binary_destruct`. */
+/** @return Owned `kth_binary_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_core_binary_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_binary_mut_t kth_core_binary_substring(kth_binary_const_t self, kth_size_t start, kth_size_t length);
 
