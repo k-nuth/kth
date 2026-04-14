@@ -30,25 +30,19 @@ kth_binary_mut_t kth_core_binary_construct_default(void) {
 kth_binary_mut_t kth_core_binary_construct_from_bit_string(char const* bit_string) {
     KTH_PRECONDITION(bit_string != nullptr);
     auto const bit_string_cpp = std::string_view(bit_string);
-    auto* obj = new kth::binary(bit_string_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::binary(bit_string_cpp));
 }
 
 kth_binary_mut_t kth_core_binary_construct_from_size_number(kth_size_t size, uint32_t number) {
     auto const size_cpp = static_cast<size_t>(size);
-    auto* obj = new kth::binary(size_cpp, number);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::binary(size_cpp, number));
 }
 
 kth_binary_mut_t kth_core_binary_construct_from_size_blocks(kth_size_t size, uint8_t const* blocks, kth_size_t n) {
     KTH_PRECONDITION(blocks != nullptr || n == 0);
     auto const size_cpp = static_cast<size_t>(size);
     auto const blocks_cpp = kth::byte_span(blocks, static_cast<size_t>(n));
-    auto* obj = new kth::binary(size_cpp, blocks_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::binary(size_cpp, blocks_cpp));
 }
 
 
@@ -171,9 +165,7 @@ kth_binary_mut_t kth_core_binary_substring(kth_binary_const_t self, kth_size_t s
     KTH_PRECONDITION(self != nullptr);
     auto const start_cpp = static_cast<size_t>(start);
     auto const length_cpp = static_cast<size_t>(length);
-    auto* obj = new kth::binary(kth_core_binary_const_cpp(self).substring(start_cpp, length_cpp));
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth_core_binary_const_cpp(self).substring(start_cpp, length_cpp));
 }
 
 kth_bool_t kth_core_binary_less(kth_binary_const_t self, kth_binary_const_t x) {

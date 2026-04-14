@@ -36,7 +36,7 @@ kth_error_code_t kth_chain_output_construct_from_data(uint8_t const* data, kth_s
     auto const wire_cpp = kth::int_to_bool(wire);
     auto result = kth::domain::chain::output::from_data(data_cpp, wire_cpp);
     if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
-    *out = new kth::domain::chain::output(std::move(*result));
+    *out = kth::make_leaked(std::move(*result));
     return kth_ec_success;
 }
 
@@ -44,9 +44,7 @@ kth_output_mut_t kth_chain_output_construct(uint64_t value, kth_script_const_t s
     KTH_PRECONDITION(script != nullptr);
     auto const& script_cpp = kth_chain_script_const_cpp(script);
     auto const token_data_cpp = (token_data == nullptr ? std::nullopt : std::optional<kth::domain::chain::token_data_t>(kth_chain_token_data_const_cpp(token_data)));
-    auto* obj = new kth::domain::chain::output(value, script_cpp, token_data_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::chain::output(value, script_cpp, token_data_cpp));
 }
 
 
@@ -150,16 +148,12 @@ kth_bool_t kth_chain_output_is_dust(kth_output_const_t self, uint64_t minimum_ou
 kth_payment_address_mut_t kth_chain_output_address_simple(kth_output_const_t self, kth_bool_t testnet) {
     KTH_PRECONDITION(self != nullptr);
     auto const testnet_cpp = kth::int_to_bool(testnet);
-    auto* obj = new kth::domain::wallet::payment_address(kth_chain_output_const_cpp(self).address(testnet_cpp));
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth_chain_output_const_cpp(self).address(testnet_cpp));
 }
 
 kth_payment_address_mut_t kth_chain_output_address(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version) {
     KTH_PRECONDITION(self != nullptr);
-    auto* obj = new kth::domain::wallet::payment_address(kth_chain_output_const_cpp(self).address(p2kh_version, p2sh_version));
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth_chain_output_const_cpp(self).address(p2kh_version, p2sh_version));
 }
 
 kth_payment_address_list_mut_t kth_chain_output_addresses(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version) {

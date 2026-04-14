@@ -35,7 +35,7 @@ kth_error_code_t kth_chain_operation_construct_from_data(uint8_t const* data, kt
     auto data_cpp = kth::byte_reader(kth::byte_span(data, static_cast<size_t>(n)));
     auto result = kth::domain::machine::operation::from_data(data_cpp);
     if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
-    *out = new kth::domain::machine::operation(std::move(*result));
+    *out = kth::make_leaked(std::move(*result));
     return kth_ec_success;
 }
 
@@ -43,16 +43,12 @@ kth_operation_mut_t kth_chain_operation_construct_from_uncoded_minimal(uint8_t c
     KTH_PRECONDITION(uncoded != nullptr || n == 0);
     auto const uncoded_cpp = n != 0 ? kth::data_chunk(uncoded, uncoded + n) : kth::data_chunk{};
     auto const minimal_cpp = kth::int_to_bool(minimal);
-    auto* obj = new kth::domain::machine::operation(uncoded_cpp, minimal_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::machine::operation(uncoded_cpp, minimal_cpp));
 }
 
 kth_operation_mut_t kth_chain_operation_construct_from_code(kth_opcode_t code) {
     auto const code_cpp = static_cast<kth::domain::machine::opcode>(code);
-    auto* obj = new kth::domain::machine::operation(code_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::machine::operation(code_cpp));
 }
 
 

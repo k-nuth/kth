@@ -29,7 +29,7 @@ kth_string_list_mut_t kth_wallet_wallet_data_mnemonics(kth_wallet_data_t wallet_
 
 kth_hd_public_t kth_wallet_wallet_data_xpub(kth_wallet_data_t wallet_data) {
     auto const& xpub_cpp = kth_wallet_wallet_data_cpp(wallet_data).xpub;
-    return kth::move_or_copy_and_leak(std::move(xpub_cpp));
+    return kth::make_leaked(std::move(xpub_cpp));
 }
 
 kth_encrypted_seed_t kth_wallet_wallet_data_encrypted_seed(kth_wallet_data_t wallet_data) {

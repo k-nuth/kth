@@ -71,7 +71,7 @@ kth_bool_t kth_vm_interpreter_debug_steps_available(kth_program_const_t program,
 kth_error_code_t kth_vm_interpreter_debug_step(kth_program_const_t program, kth_size_t step, kth_size_t* out_step, kth_program_t* out_program) {
     auto const [err, new_step, new_program_cpp] = kth::domain::machine::interpreter::debug_step(kth_vm_program_const_cpp(program), step);
     *out_step = new_step;
-    *out_program = kth::move_or_copy_and_leak(std::move(new_program_cpp));
+    *out_program = kth::make_leaked(std::move(new_program_cpp));
     // printf("kth_vm_interpreter_debug_step() - out_step:     %p\n", out_step);
     // printf("kth_vm_interpreter_debug_step() - out_program:  %p\n", out_program);
     // printf("kth_vm_interpreter_debug_step() - *out_program: %p\n", *out_program);

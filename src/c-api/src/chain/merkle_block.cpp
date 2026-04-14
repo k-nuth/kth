@@ -35,7 +35,7 @@ kth_error_code_t kth_chain_merkle_block_construct_from_data(uint8_t const* data,
     auto data_cpp = kth::byte_reader(kth::byte_span(data, static_cast<size_t>(n)));
     auto result = kth::domain::message::merkle_block::from_data(data_cpp, version);
     if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
-    *out = new kth::domain::message::merkle_block(std::move(*result));
+    *out = kth::make_leaked(std::move(*result));
     return kth_ec_success;
 }
 
@@ -47,17 +47,13 @@ kth_merkle_block_mut_t kth_chain_merkle_block_construct_from_header_total_transa
     auto const total_transactions_cpp = static_cast<size_t>(total_transactions);
     auto const& hashes_cpp = kth_core_hash_list_const_cpp(hashes);
     auto const flags_cpp = n != 0 ? kth::data_chunk(flags, flags + n) : kth::data_chunk{};
-    auto* obj = new kth::domain::message::merkle_block(header_cpp, total_transactions_cpp, hashes_cpp, flags_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::message::merkle_block(header_cpp, total_transactions_cpp, hashes_cpp, flags_cpp));
 }
 
 kth_merkle_block_mut_t kth_chain_merkle_block_construct_from_block(kth_block_const_t block) {
     KTH_PRECONDITION(block != nullptr);
     auto const& block_cpp = kth_chain_block_const_cpp(block);
-    auto* obj = new kth::domain::message::merkle_block(block_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::message::merkle_block(block_cpp));
 }
 
 

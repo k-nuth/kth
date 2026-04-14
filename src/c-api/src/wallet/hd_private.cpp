@@ -28,78 +28,58 @@ kth_hd_private_mut_t kth_wallet_hd_private_construct_default(void) {
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_seed_prefixes(uint8_t const* seed, kth_size_t n, uint64_t prefixes) {
     KTH_PRECONDITION(seed != nullptr || n == 0);
     auto const seed_cpp = n != 0 ? kth::data_chunk(seed, seed + n) : kth::data_chunk{};
-    auto* obj = new kth::domain::wallet::hd_private(seed_cpp, prefixes);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::wallet::hd_private(seed_cpp, prefixes));
 }
 
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key(kth_hd_key_t private_key) {
     auto const private_key_cpp = kth::hd_key_to_cpp(private_key.data);
-    auto* obj = new kth::domain::wallet::hd_private(private_key_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::wallet::hd_private(private_key_cpp));
 }
 
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_unsafe(uint8_t const* private_key) {
     KTH_PRECONDITION(private_key != nullptr);
     auto const private_key_cpp = kth::hd_key_to_cpp(private_key);
-    auto* obj = new kth::domain::wallet::hd_private(private_key_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::wallet::hd_private(private_key_cpp));
 }
 
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefixes(kth_hd_key_t private_key, uint64_t prefixes) {
     auto const private_key_cpp = kth::hd_key_to_cpp(private_key.data);
-    auto* obj = new kth::domain::wallet::hd_private(private_key_cpp, prefixes);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::wallet::hd_private(private_key_cpp, prefixes));
 }
 
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefixes_unsafe(uint8_t const* private_key, uint64_t prefixes) {
     KTH_PRECONDITION(private_key != nullptr);
     auto const private_key_cpp = kth::hd_key_to_cpp(private_key);
-    auto* obj = new kth::domain::wallet::hd_private(private_key_cpp, prefixes);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::wallet::hd_private(private_key_cpp, prefixes));
 }
 
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefix(kth_hd_key_t private_key, uint32_t prefix) {
     auto const private_key_cpp = kth::hd_key_to_cpp(private_key.data);
-    auto* obj = new kth::domain::wallet::hd_private(private_key_cpp, prefix);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::wallet::hd_private(private_key_cpp, prefix));
 }
 
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefix_unsafe(uint8_t const* private_key, uint32_t prefix) {
     KTH_PRECONDITION(private_key != nullptr);
     auto const private_key_cpp = kth::hd_key_to_cpp(private_key);
-    auto* obj = new kth::domain::wallet::hd_private(private_key_cpp, prefix);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::wallet::hd_private(private_key_cpp, prefix));
 }
 
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_encoded(char const* encoded) {
     KTH_PRECONDITION(encoded != nullptr);
     auto const encoded_cpp = std::string(encoded);
-    auto* obj = new kth::domain::wallet::hd_private(encoded_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::wallet::hd_private(encoded_cpp));
 }
 
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_encoded_prefixes(char const* encoded, uint64_t prefixes) {
     KTH_PRECONDITION(encoded != nullptr);
     auto const encoded_cpp = std::string(encoded);
-    auto* obj = new kth::domain::wallet::hd_private(encoded_cpp, prefixes);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::wallet::hd_private(encoded_cpp, prefixes));
 }
 
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_encoded_prefix(char const* encoded, uint32_t prefix) {
     KTH_PRECONDITION(encoded != nullptr);
     auto const encoded_cpp = std::string(encoded);
-    auto* obj = new kth::domain::wallet::hd_private(encoded_cpp, prefix);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::wallet::hd_private(encoded_cpp, prefix));
 }
 
 
@@ -150,9 +130,7 @@ kth_hd_key_t kth_wallet_hd_private_to_hd_key(kth_hd_private_const_t self) {
 
 kth_hd_public_mut_t kth_wallet_hd_private_to_public(kth_hd_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto* obj = new kth::domain::wallet::hd_public(kth_wallet_hd_private_const_cpp(self).to_public());
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth_wallet_hd_private_const_cpp(self).to_public());
 }
 
 kth_bool_t kth_wallet_hd_private_valid(kth_hd_private_const_t self) {
@@ -190,16 +168,12 @@ kth_bool_t kth_wallet_hd_private_less(kth_hd_private_const_t self, kth_hd_privat
 
 kth_hd_private_mut_t kth_wallet_hd_private_derive_private(kth_hd_private_const_t self, uint32_t index) {
     KTH_PRECONDITION(self != nullptr);
-    auto* obj = new kth::domain::wallet::hd_private(kth_wallet_hd_private_const_cpp(self).derive_private(index));
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth_wallet_hd_private_const_cpp(self).derive_private(index));
 }
 
 kth_hd_public_mut_t kth_wallet_hd_private_derive_public(kth_hd_private_const_t self, uint32_t index) {
     KTH_PRECONDITION(self != nullptr);
-    auto* obj = new kth::domain::wallet::hd_public(kth_wallet_hd_private_const_cpp(self).derive_public(index));
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth_wallet_hd_private_const_cpp(self).derive_public(index));
 }
 
 

@@ -36,7 +36,7 @@ kth_error_code_t kth_chain_transaction_construct_from_data(uint8_t const* data, 
     auto const wire_cpp = kth::int_to_bool(wire);
     auto result = kth::domain::chain::transaction::from_data(data_cpp, wire_cpp);
     if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
-    *out = new kth::domain::chain::transaction(std::move(*result));
+    *out = kth::make_leaked(std::move(*result));
     return kth_ec_success;
 }
 
@@ -45,18 +45,14 @@ kth_transaction_mut_t kth_chain_transaction_construct_from_version_locktime_inpu
     KTH_PRECONDITION(outputs != nullptr);
     auto const& inputs_cpp = kth_chain_input_list_const_cpp(inputs);
     auto const& outputs_cpp = kth_chain_output_list_const_cpp(outputs);
-    auto* obj = new kth::domain::chain::transaction(version, locktime, inputs_cpp, outputs_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::chain::transaction(version, locktime, inputs_cpp, outputs_cpp));
 }
 
 kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash(kth_transaction_const_t x, kth_hash_t hash) {
     KTH_PRECONDITION(x != nullptr);
     auto const& x_cpp = kth_chain_transaction_const_cpp(x);
     auto const hash_cpp = kth::hash_to_cpp(hash.hash);
-    auto* obj = new kth::domain::chain::transaction(x_cpp, hash_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::chain::transaction(x_cpp, hash_cpp));
 }
 
 kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash_unsafe(kth_transaction_const_t x, uint8_t const* hash) {
@@ -64,9 +60,7 @@ kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash_unsa
     KTH_PRECONDITION(hash != nullptr);
     auto const& x_cpp = kth_chain_transaction_const_cpp(x);
     auto const hash_cpp = kth::hash_to_cpp(hash);
-    auto* obj = new kth::domain::chain::transaction(x_cpp, hash_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::chain::transaction(x_cpp, hash_cpp));
 }
 
 
