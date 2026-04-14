@@ -98,8 +98,9 @@ typedef void* kth_block_list_mut_t;
 typedef void const* kth_block_list_const_t;
 typedef void* kth_compact_block_mut_t;
 typedef void const* kth_compact_block_const_t;
-typedef void* kth_double_spend_proof_t;
-typedef void* kth_double_spend_proof_spender_t;
+typedef void* kth_double_spend_proof_mut_t;
+typedef void const* kth_double_spend_proof_const_t;
+typedef void* kth_double_spend_proof_spender_mut_t;
 typedef void const* kth_double_spend_proof_spender_const_t;
 typedef void* kth_header_mut_t;
 typedef void const* kth_header_const_t;
@@ -286,7 +287,7 @@ typedef void (*kth_result_handler_t)(kth_chain_t, void*, kth_error_code_t);
 typedef void (*kth_transactions_by_address_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_hash_list_mut_t);
 typedef kth_bool_t (*kth_subscribe_blockchain_handler_t)(kth_node_t, kth_chain_t, void*, kth_error_code_t, kth_size_t, kth_block_list_mut_t, kth_block_list_mut_t);
 typedef kth_bool_t (*kth_subscribe_transaction_handler_t)(kth_node_t, kth_chain_t, void*, kth_error_code_t, kth_transaction_mut_t);
-typedef kth_bool_t (*kth_subscribe_ds_proof_handler_t)(kth_node_t, kth_chain_t, void*, kth_error_code_t, kth_double_spend_proof_t);
+typedef kth_bool_t (*kth_subscribe_ds_proof_handler_t)(kth_node_t, kth_chain_t, void*, kth_error_code_t, kth_double_spend_proof_mut_t);
 
 #ifdef __cplusplus
 } // extern "C"

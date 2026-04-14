@@ -25,6 +25,7 @@
 #include <kth/domain/message/compact_block.hpp>
 #include <kth/domain/message/get_blocks.hpp>
 #include <kth/domain/message/get_headers.hpp>
+#include <kth/domain/message/double_spend_proof.hpp>
 #include <kth/domain/message/merkle_block.hpp>
 #include <kth/domain/message/prefilled_transaction.hpp>
 #include <kth/domain/wallet/ec_private.hpp>
@@ -205,6 +206,14 @@ kth::domain::chain::history_compact&       kth_chain_history_compact_mut_cpp(kth
 // stealth_compact conversion functions. Defined in src/chain/stealth_compact.cpp.
 kth::domain::chain::stealth_compact const& kth_chain_stealth_compact_const_cpp(kth_stealth_compact_const_t o);
 kth::domain::chain::stealth_compact&       kth_chain_stealth_compact_mut_cpp(kth_stealth_compact_mut_t o);
+
+// double_spend_proof conversion functions. Defined in src/chain/double_spend_proof.cpp.
+kth::domain::message::double_spend_proof const& kth_chain_double_spend_proof_const_cpp(kth_double_spend_proof_const_t o);
+kth::domain::message::double_spend_proof&       kth_chain_double_spend_proof_mut_cpp(kth_double_spend_proof_mut_t o);
+
+// double_spend_proof::spender conversion functions. Defined in src/chain/double_spend_proof_spender.cpp.
+kth::domain::message::double_spend_proof::spender const& kth_chain_double_spend_proof_spender_const_cpp(kth_double_spend_proof_spender_const_t o);
+kth::domain::message::double_spend_proof::spender&       kth_chain_double_spend_proof_spender_mut_cpp(kth_double_spend_proof_spender_mut_t o);
 
 KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP(chain, kth_utxo_list_t, kth::domain::chain::utxo, utxo_list)
 // hash_list — inline converters and construct_from_cpp.

@@ -580,6 +580,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/message/block.cpp
         test/message/block_transactions.cpp
         test/message/compact_block.cpp
+        test/message/double_spend_proof.cpp
         test/message/fee_filter.cpp
         test/message/filter_add.cpp
         test/message/filter_clear.cpp
