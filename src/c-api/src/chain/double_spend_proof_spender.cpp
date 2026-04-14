@@ -31,7 +31,7 @@ kth_error_code_t kth_chain_double_spend_proof_spender_construct_from_data(uint8_
     auto data_cpp = kth::byte_reader(kth::byte_span(data, static_cast<size_t>(n)));
     auto result = kth::domain::message::double_spend_proof::spender::from_data(data_cpp, version);
     if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
-    *out = new kth::domain::message::double_spend_proof::spender(std::move(*result));
+    *out = kth::make_leaked(std::move(*result));
     return kth_ec_success;
 }
 

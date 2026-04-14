@@ -35,7 +35,7 @@ kth_error_code_t kth_chain_get_blocks_construct_from_data(uint8_t const* data, k
     auto data_cpp = kth::byte_reader(kth::byte_span(data, static_cast<size_t>(n)));
     auto result = kth::domain::message::get_blocks::from_data(data_cpp, version);
     if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
-    *out = new kth::domain::message::get_blocks(std::move(*result));
+    *out = kth::make_leaked(std::move(*result));
     return kth_ec_success;
 }
 
@@ -43,9 +43,7 @@ kth_get_blocks_mut_t kth_chain_get_blocks_construct(kth_hash_list_const_t start,
     KTH_PRECONDITION(start != nullptr);
     auto const& start_cpp = kth_core_hash_list_const_cpp(start);
     auto const stop_cpp = kth::hash_to_cpp(stop.hash);
-    auto* obj = new kth::domain::message::get_blocks(start_cpp, stop_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::message::get_blocks(start_cpp, stop_cpp));
 }
 
 kth_get_blocks_mut_t kth_chain_get_blocks_construct_unsafe(kth_hash_list_const_t start, uint8_t const* stop) {
@@ -53,9 +51,7 @@ kth_get_blocks_mut_t kth_chain_get_blocks_construct_unsafe(kth_hash_list_const_t
     KTH_PRECONDITION(stop != nullptr);
     auto const& start_cpp = kth_core_hash_list_const_cpp(start);
     auto const stop_cpp = kth::hash_to_cpp(stop);
-    auto* obj = new kth::domain::message::get_blocks(start_cpp, stop_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::message::get_blocks(start_cpp, stop_cpp));
 }
 
 

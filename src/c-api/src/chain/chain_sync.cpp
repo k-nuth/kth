@@ -386,7 +386,7 @@ kth_mempool_transaction_list_t kth_chain_sync_mempool_transactions(kth_chain_t c
 kth_transaction_list_mut_t kth_chain_sync_mempool_transactions_from_wallets(kth_chain_t chain, kth_payment_address_list_t addresses, kth_bool_t use_testnet_rules) {
     auto const& addresses_cpp = *static_cast<std::vector<kth::domain::wallet::payment_address> const*>(addresses);
     auto txs = safe_chain(chain).get_mempool_transactions_from_wallets(addresses_cpp, kth::int_to_bool(use_testnet_rules));
-    return kth::move_or_copy_and_leak(std::move(txs));
+    return kth::make_leaked(std::move(txs));
 }
 
 // Organizers.

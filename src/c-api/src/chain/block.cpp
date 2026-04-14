@@ -36,7 +36,7 @@ kth_error_code_t kth_chain_block_construct_from_data(uint8_t const* data, kth_si
     auto const wire_cpp = kth::int_to_bool(wire);
     auto result = kth::domain::chain::block::from_data(data_cpp, wire_cpp);
     if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
-    *out = new kth::domain::chain::block(std::move(*result));
+    *out = kth::make_leaked(std::move(*result));
     return kth_ec_success;
 }
 
@@ -45,48 +45,34 @@ kth_block_mut_t kth_chain_block_construct(kth_header_const_t header, kth_transac
     KTH_PRECONDITION(transactions != nullptr);
     auto const& header_cpp = kth_chain_header_const_cpp(header);
     auto const& transactions_cpp = kth_chain_transaction_list_const_cpp(transactions);
-    auto* obj = new kth::domain::chain::block(header_cpp, transactions_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::chain::block(header_cpp, transactions_cpp));
 }
 
 
 // Static factories
 
 kth_block_mut_t kth_chain_block_genesis_mainnet(void) {
-    auto* obj = new kth::domain::chain::block(kth::domain::chain::block::genesis_mainnet());
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::chain::block::genesis_mainnet());
 }
 
 kth_block_mut_t kth_chain_block_genesis_testnet(void) {
-    auto* obj = new kth::domain::chain::block(kth::domain::chain::block::genesis_testnet());
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::chain::block::genesis_testnet());
 }
 
 kth_block_mut_t kth_chain_block_genesis_regtest(void) {
-    auto* obj = new kth::domain::chain::block(kth::domain::chain::block::genesis_regtest());
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::chain::block::genesis_regtest());
 }
 
 kth_block_mut_t kth_chain_block_genesis_testnet4(void) {
-    auto* obj = new kth::domain::chain::block(kth::domain::chain::block::genesis_testnet4());
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::chain::block::genesis_testnet4());
 }
 
 kth_block_mut_t kth_chain_block_genesis_scalenet(void) {
-    auto* obj = new kth::domain::chain::block(kth::domain::chain::block::genesis_scalenet());
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::chain::block::genesis_scalenet());
 }
 
 kth_block_mut_t kth_chain_block_genesis_chipnet(void) {
-    auto* obj = new kth::domain::chain::block(kth::domain::chain::block::genesis_chipnet());
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::chain::block::genesis_chipnet());
 }
 
 

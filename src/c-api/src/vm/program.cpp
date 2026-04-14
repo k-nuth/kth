@@ -318,7 +318,7 @@ uint8_t const* kth_vm_program_top(kth_program_t program, kth_size_t* out_size) {
 kth_operation_list_t kth_vm_program_subscript(kth_program_t program) {
     // auto program_cpp = kth_vm_program_const_cpp(program);
     auto ops = kth_vm_program_const_cpp(program).subscript();
-    return kth::move_or_copy_and_leak(std::move(ops));
+    return kth::make_leaked(std::move(ops));
 }
 
 //     size_t size() const;

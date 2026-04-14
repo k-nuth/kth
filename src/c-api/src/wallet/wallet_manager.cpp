@@ -26,7 +26,7 @@ kth_error_code_t kth_wallet_create_wallet(
         return kth::to_c_err(res.error());
     }
 
-    *out_wallet_data = kth::move_or_copy_and_leak(std::move(res.value()));
+    *out_wallet_data = kth::make_leaked(std::move(res.value()));
     return kth_ec_success;
 }
 

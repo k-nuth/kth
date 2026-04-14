@@ -36,31 +36,26 @@ kth_error_code_t kth_chain_point_construct_from_data(uint8_t const* data, kth_si
     auto const wire_cpp = kth::int_to_bool(wire);
     auto result = kth::domain::chain::point::from_data(data_cpp, wire_cpp);
     if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
-    *out = new kth::domain::chain::point(std::move(*result));
+    *out = kth::make_leaked(std::move(*result));
     return kth_ec_success;
 }
 
 kth_point_mut_t kth_chain_point_construct(kth_hash_t hash, uint32_t index) {
     auto const hash_cpp = kth::hash_to_cpp(hash.hash);
-    auto* obj = new kth::domain::chain::point(hash_cpp, index);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::chain::point(hash_cpp, index));
 }
 
 kth_point_mut_t kth_chain_point_construct_unsafe(uint8_t const* hash, uint32_t index) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::hash_to_cpp(hash);
-    auto* obj = new kth::domain::chain::point(hash_cpp, index);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::chain::point(hash_cpp, index));
 }
 
 
 // Static factories
 
 kth_point_mut_t kth_chain_point_null(void) {
-    auto* obj = new kth::domain::chain::point(kth::domain::chain::point::null());
-    return obj;
+    return kth::make_leaked(kth::domain::chain::point::null());
 }
 
 

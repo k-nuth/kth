@@ -379,8 +379,29 @@ void copy_c_hash(HashCpp const& in, HashC* out) {
     std::copy_n(in.begin(), in.size(), static_cast<uint8_t*>(out->hash));
 }
 
+// Promote a value to the heap and surrender ownership to the caller —
+// i.e. "leak" it, which from the C-API perspective is exactly the
+// transfer the consumer is expected to release later via the matching
+// `kth_*_destruct` function. Forwards into `new T(...)`, so an rvalue
+// is moved and an lvalue is copied. The `_leak` suffix is intentional:
+// it documents the ownership transfer at every call site (instead of
+// hiding it behind a generic factory name), making leaks greppable.
 template <typename T>
-std::decay_t<T>* move_or_copy_and_leak(T&& x) {
+std::decay_t<T>* make_leaked(T&& x) {
+    return new std::decay_t<T>(std::forward<T>(x));
+}
+
+// Same as `make_leaked`, but gates the leak on `check_valid(&x)`.
+// The validity of the heap copy mirrors the source's validity (the
+// constructor doesn't change `operator bool`), so we test `x` BEFORE
+// allocating — invalid input returns `nullptr` without ever touching
+// the heap. Matches the documented "or NULL on failure" contract that
+// generated factories advertise. Sentinel factories whose return is
+// intentionally `operator bool == false` (e.g. `point::null()`)
+// should opt out and use `make_leaked` instead.
+template <typename T>
+std::decay_t<T>* make_leaked_if_valid(T&& x) {
+    if ( ! check_valid(&x)) return nullptr;
     return new std::decay_t<T>(std::forward<T>(x));
 }
 

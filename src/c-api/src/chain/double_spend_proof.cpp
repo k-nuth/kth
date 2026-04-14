@@ -35,7 +35,7 @@ kth_error_code_t kth_chain_double_spend_proof_construct_from_data(uint8_t const*
     auto data_cpp = kth::byte_reader(kth::byte_span(data, static_cast<size_t>(n)));
     auto result = kth::domain::message::double_spend_proof::from_data(data_cpp, version);
     if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
-    *out = new kth::domain::message::double_spend_proof(std::move(*result));
+    *out = kth::make_leaked(std::move(*result));
     return kth_ec_success;
 }
 
@@ -46,9 +46,7 @@ kth_double_spend_proof_mut_t kth_chain_double_spend_proof_construct(kth_output_p
     auto const& out_point_cpp = kth_chain_output_point_const_cpp(out_point);
     auto const& spender1_cpp = kth_chain_double_spend_proof_spender_const_cpp(spender1);
     auto const& spender2_cpp = kth_chain_double_spend_proof_spender_const_cpp(spender2);
-    auto* obj = new kth::domain::message::double_spend_proof(out_point_cpp, spender1_cpp, spender2_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::message::double_spend_proof(out_point_cpp, spender1_cpp, spender2_cpp));
 }
 
 

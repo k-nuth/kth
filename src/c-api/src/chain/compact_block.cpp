@@ -35,7 +35,7 @@ kth_error_code_t kth_chain_compact_block_construct_from_data(uint8_t const* data
     auto data_cpp = kth::byte_reader(kth::byte_span(data, static_cast<size_t>(n)));
     auto result = kth::domain::message::compact_block::from_data(data_cpp, version);
     if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
-    *out = new kth::domain::message::compact_block(std::move(*result));
+    *out = kth::make_leaked(std::move(*result));
     return kth_ec_success;
 }
 
@@ -46,9 +46,7 @@ kth_compact_block_mut_t kth_chain_compact_block_construct(kth_header_const_t hea
     auto const& header_cpp = kth_chain_header_const_cpp(header);
     auto const& short_ids_cpp = kth_core_u64_list_const_cpp(short_ids);
     auto const& transactions_cpp = kth_chain_prefilled_transaction_list_const_cpp(transactions);
-    auto* obj = new kth::domain::message::compact_block(header_cpp, nonce, short_ids_cpp, transactions_cpp);
-    if ( ! kth::check_valid(obj)) { delete obj; return nullptr; }
-    return obj;
+    return kth::make_leaked_if_valid(kth::domain::message::compact_block(header_cpp, nonce, short_ids_cpp, transactions_cpp));
 }
 
 
