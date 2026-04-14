@@ -19,6 +19,7 @@
 #include <kth/capi/chain/transaction.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/primitives.h>
+#include <kth/capi/wallet/ec_public.h>
 
 #include "../test_helpers.hpp"
 
@@ -193,6 +194,125 @@ TEST_CASE("C-API Script - to_pay_script_hash_32_pattern returns operation list",
     REQUIRE(kth_chain_script_is_valid(script) != 0);
     REQUIRE(kth_chain_script_empty(script) == 0);
     kth_chain_script_destruct(script);
+    kth_chain_operation_list_destruct(ops);
+}
+
+// ---------------------------------------------------------------------------
+// Empty-as-failure list factories: return NULL when the C++ layer
+// signals an invalid input via an empty result vector.
+// ---------------------------------------------------------------------------
+
+// A valid 33-byte compressed secp256k1 public key (BIP32 test vector 1
+// master public key), usable to exercise the success path of the
+// pay_public_key factories.
+static uint8_t const kValidCompressedPoint[33] = {
+    0x03, 0x39, 0xa3, 0x60, 0x13, 0x30, 0x15, 0x97,
+    0xda, 0xef, 0x41, 0xfb, 0xe5, 0x93, 0xa0, 0x2c,
+    0xc5, 0x13, 0xd0, 0xb5, 0x55, 0x27, 0xec, 0x2d,
+    0xf1, 0x05, 0x0e, 0x2e, 0x8f, 0xf4, 0x9c, 0x85,
+    0xc2
+};
+
+TEST_CASE("C-API Script - to_null_data_pattern valid data returns list",
+          "[C-API Script]") {
+    uint8_t const data[4] = { 0x01, 0x02, 0x03, 0x04 };
+    kth_operation_list_mut_t ops =
+        kth_chain_script_to_null_data_pattern(data, sizeof(data));
+    REQUIRE(ops != NULL);
+    kth_chain_operation_list_destruct(ops);
+}
+
+TEST_CASE("C-API Script - to_null_data_pattern oversized data returns NULL",
+          "[C-API Script]") {
+    // The max_null_data_size limit is 80 bytes; one byte over triggers
+    // the empty-list failure signal in the C++ layer.
+    uint8_t data[81];
+    memset(data, 0x42, sizeof(data));
+    kth_operation_list_mut_t ops =
+        kth_chain_script_to_null_data_pattern(data, sizeof(data));
+    REQUIRE(ops == NULL);
+}
+
+TEST_CASE("C-API Script - to_pay_public_key_pattern valid point returns list",
+          "[C-API Script]") {
+    kth_operation_list_mut_t ops =
+        kth_chain_script_to_pay_public_key_pattern(
+            kValidCompressedPoint, sizeof(kValidCompressedPoint));
+    REQUIRE(ops != NULL);
+    kth_chain_operation_list_destruct(ops);
+}
+
+TEST_CASE("C-API Script - to_pay_public_key_pattern malformed point returns NULL",
+          "[C-API Script]") {
+    // A 33-byte blob with an invalid prefix (0x00) fails the
+    // is_public_key check, so the C++ factory yields an empty list.
+    uint8_t malformed[33];
+    memset(malformed, 0x00, sizeof(malformed));
+    kth_operation_list_mut_t ops =
+        kth_chain_script_to_pay_public_key_pattern(malformed, sizeof(malformed));
+    REQUIRE(ops == NULL);
+}
+
+TEST_CASE("C-API Script - to_pay_public_key_pattern wrong-size point returns NULL",
+          "[C-API Script]") {
+    // Neither 33 (compressed) nor 65 (uncompressed) bytes — fails the
+    // size check inside is_public_key.
+    uint8_t too_short[10];
+    memset(too_short, 0x03, sizeof(too_short));
+    kth_operation_list_mut_t ops =
+        kth_chain_script_to_pay_public_key_pattern(too_short, sizeof(too_short));
+    REQUIRE(ops == NULL);
+}
+
+TEST_CASE("C-API Script - to_pay_public_key_hash_pattern_unlocking valid pubkey returns list",
+          "[C-API Script]") {
+    kth_ec_public_mut_t pub =
+        kth_wallet_ec_public_construct_from_decoded(
+            kValidCompressedPoint, sizeof(kValidCompressedPoint));
+    REQUIRE(pub != NULL);
+
+    // A 71-byte DER-like endorsement blob; content is not validated at
+    // this layer, we just need something non-empty to push.
+    uint8_t endorsement[71];
+    memset(endorsement, 0x30, sizeof(endorsement));
+
+    kth_operation_list_mut_t ops =
+        kth_chain_script_to_pay_public_key_hash_pattern_unlocking(
+            endorsement, sizeof(endorsement), pub);
+    REQUIRE(ops != NULL);
+
+    kth_chain_operation_list_destruct(ops);
+    kth_wallet_ec_public_destruct(pub);
+}
+
+TEST_CASE("C-API Script - to_pay_public_key_hash_pattern_unlocking invalid pubkey returns NULL",
+          "[C-API Script]") {
+    // Default-constructed ec_public has valid_ == false, so its
+    // to_data() returns an error and the C++ factory yields an empty
+    // unlocking list that we turn into NULL.
+    kth_ec_public_mut_t pub = kth_wallet_ec_public_construct_default();
+    REQUIRE(pub != NULL);
+    REQUIRE(kth_wallet_ec_public_valid(pub) == 0);
+
+    uint8_t endorsement[71];
+    memset(endorsement, 0x30, sizeof(endorsement));
+
+    kth_operation_list_mut_t ops =
+        kth_chain_script_to_pay_public_key_hash_pattern_unlocking(
+            endorsement, sizeof(endorsement), pub);
+    REQUIRE(ops == NULL);
+
+    kth_wallet_ec_public_destruct(pub);
+}
+
+TEST_CASE("C-API Script - to_pay_public_key_hash_pattern always returns a list",
+          "[C-API Script]") {
+    // Control case: sibling pattern that is NOT opt-in to the
+    // empty-as-failure convention. Any 20-byte hash produces a valid
+    // 5-op list, so the factory never returns NULL.
+    kth_operation_list_mut_t ops =
+        kth_chain_script_to_pay_public_key_hash_pattern(kShortHash);
+    REQUIRE(ops != NULL);
     kth_chain_operation_list_destruct(ops);
 }
 

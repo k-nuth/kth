@@ -216,11 +216,11 @@ kth_error_code_t kth_chain_script_create_endorsement(kth_hash_t secret, kth_scri
 KTH_EXPORT
 kth_error_code_t kth_chain_script_create_endorsement_unsafe(uint8_t const* secret, kth_script_const_t prevout_script, kth_transaction_const_t tx, uint32_t input_index, uint8_t sighash_type, kth_script_flags_t active_flags, uint64_t value, kth_endorsement_type_t type, KTH_OUT_OWNED uint8_t** out, kth_size_t* out_size);
 
-/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+/** @return Owned `kth_operation_list_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_operation_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_chain_script_to_null_data_pattern(uint8_t const* data, kth_size_t n);
 
-/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+/** @return Owned `kth_operation_list_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_operation_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_chain_script_to_pay_public_key_pattern(uint8_t const* point, kth_size_t n);
 
@@ -235,7 +235,7 @@ kth_operation_list_mut_t kth_chain_script_to_pay_public_key_hash_pattern(kth_sho
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_chain_script_to_pay_public_key_hash_pattern_unsafe(uint8_t const* hash);
 
-/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+/** @return Owned `kth_operation_list_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_operation_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_chain_script_to_pay_public_key_hash_pattern_unlocking(uint8_t const* end, kth_size_t n, kth_ec_public_const_t pubkey);
 

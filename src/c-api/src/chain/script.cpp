@@ -400,13 +400,17 @@ kth_error_code_t kth_chain_script_create_endorsement_unsafe(uint8_t const* secre
 kth_operation_list_mut_t kth_chain_script_to_null_data_pattern(uint8_t const* data, kth_size_t n) {
     KTH_PRECONDITION(data != nullptr || n == 0);
     auto const data_cpp = kth::byte_span(data, static_cast<size_t>(n));
-    return new std::vector<kth::domain::machine::operation>(kth::domain::chain::script::to_null_data_pattern(data_cpp));
+    auto cpp_result = kth::domain::chain::script::to_null_data_pattern(data_cpp);
+    if (cpp_result.empty()) return nullptr;
+    return new std::vector<kth::domain::machine::operation>(std::move(cpp_result));
 }
 
 kth_operation_list_mut_t kth_chain_script_to_pay_public_key_pattern(uint8_t const* point, kth_size_t n) {
     KTH_PRECONDITION(point != nullptr || n == 0);
     auto const point_cpp = kth::byte_span(point, static_cast<size_t>(n));
-    return new std::vector<kth::domain::machine::operation>(kth::domain::chain::script::to_pay_public_key_pattern(point_cpp));
+    auto cpp_result = kth::domain::chain::script::to_pay_public_key_pattern(point_cpp);
+    if (cpp_result.empty()) return nullptr;
+    return new std::vector<kth::domain::machine::operation>(std::move(cpp_result));
 }
 
 kth_operation_list_mut_t kth_chain_script_to_pay_public_key_hash_pattern(kth_shorthash_t hash) {
@@ -425,7 +429,9 @@ kth_operation_list_mut_t kth_chain_script_to_pay_public_key_hash_pattern_unlocki
     KTH_PRECONDITION(pubkey != nullptr);
     auto const end_cpp = n != 0 ? kth::data_chunk(end, end + n) : kth::data_chunk{};
     auto const& pubkey_cpp = kth_wallet_ec_public_const_cpp(pubkey);
-    return new std::vector<kth::domain::machine::operation>(kth::domain::chain::script::to_pay_public_key_hash_pattern_unlocking(end_cpp, pubkey_cpp));
+    auto cpp_result = kth::domain::chain::script::to_pay_public_key_hash_pattern_unlocking(end_cpp, pubkey_cpp);
+    if (cpp_result.empty()) return nullptr;
+    return new std::vector<kth::domain::machine::operation>(std::move(cpp_result));
 }
 
 kth_operation_list_mut_t kth_chain_script_to_pay_public_key_hash_pattern_unlocking_placeholder(kth_size_t endorsement_size, kth_size_t pubkey_size) {
