@@ -181,7 +181,8 @@ typedef void const* kth_u32_list_const_t;
 typedef void* kth_u64_list_mut_t;
 typedef void const* kth_u64_list_const_t;
 
-typedef void* kth_wallet_data_t;
+typedef void* kth_wallet_data_mut_t;
+typedef void const* kth_wallet_data_const_t;
 
 typedef void* kth_ec_compressed_list_t;
 typedef void* kth_ec_compressed_list_mut_t;

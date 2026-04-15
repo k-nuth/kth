@@ -105,8 +105,7 @@ kth_size_t kth_chain_point_serialized_size(kth_point_const_t self, kth_bool_t wi
 
 kth_hash_t kth_chain_point_hash(kth_point_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_point_const_cpp(self).hash();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_point_const_cpp(self).hash());
 }
 
 uint32_t kth_chain_point_index(kth_point_const_t self) {

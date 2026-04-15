@@ -20,43 +20,43 @@ extern "C" {
 
 /** @param[out] out Must point to a null `kth_token_data_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_token_data_destruct`. Untouched on error. */
 KTH_EXPORT
-kth_error_code_t kth_chain_token_data_construct_from_data(uint8_t const* data, kth_size_t n, KTH_OUT_OWNED kth_token_data_mut_t* out);
+kth_error_code_t kth_chain_token_construct_from_data(uint8_t const* data, kth_size_t n, KTH_OUT_OWNED kth_token_data_mut_t* out);
 
 
 // Static factories
 
 /** @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`. */
 KTH_EXPORT KTH_OWNED
-kth_token_data_mut_t kth_chain_token_data_make_fungible(kth_hash_t id, uint64_t amount);
+kth_token_data_mut_t kth_chain_token_make_fungible(kth_hash_t id, uint64_t amount);
 
 /**
  * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
  * @warning `id` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
  */
 KTH_EXPORT KTH_OWNED
-kth_token_data_mut_t kth_chain_token_data_make_fungible_unsafe(uint8_t const* id, uint64_t amount);
+kth_token_data_mut_t kth_chain_token_make_fungible_unsafe(uint8_t const* id, uint64_t amount);
 
 /** @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`. */
 KTH_EXPORT KTH_OWNED
-kth_token_data_mut_t kth_chain_token_data_make_non_fungible(kth_hash_t id, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
+kth_token_data_mut_t kth_chain_token_make_non_fungible(kth_hash_t id, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
 
 /**
  * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
  * @warning `id` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
  */
 KTH_EXPORT KTH_OWNED
-kth_token_data_mut_t kth_chain_token_data_make_non_fungible_unsafe(uint8_t const* id, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
+kth_token_data_mut_t kth_chain_token_make_non_fungible_unsafe(uint8_t const* id, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
 
 /** @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`. */
 KTH_EXPORT KTH_OWNED
-kth_token_data_mut_t kth_chain_token_data_make_both(kth_hash_t id, uint64_t amount, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
+kth_token_data_mut_t kth_chain_token_make_both(kth_hash_t id, uint64_t amount, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
 
 /**
  * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
  * @warning `id` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
  */
 KTH_EXPORT KTH_OWNED
-kth_token_data_mut_t kth_chain_token_data_make_both_unsafe(uint8_t const* id, uint64_t amount, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
+kth_token_data_mut_t kth_chain_token_make_both_unsafe(uint8_t const* id, uint64_t amount, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
 
 
 // Destructor
@@ -98,7 +98,7 @@ KTH_EXPORT
 kth_token_kind_t kth_chain_token_data_get_kind(kth_token_data_const_t self);
 
 KTH_EXPORT
-uint64_t kth_chain_token_data_get_amount(kth_token_data_const_t self);
+int64_t kth_chain_token_data_get_amount(kth_token_data_const_t self);
 
 KTH_EXPORT
 kth_token_capability_t kth_chain_token_data_get_nft_capability(kth_token_data_const_t self);

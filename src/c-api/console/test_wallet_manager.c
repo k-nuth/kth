@@ -40,16 +40,19 @@ void print_hex(uint8_t const* data, size_t n) {
 }
 
 int main(int argc, char* argv[]) {
-    kth_wallet_data_t wallet_data;
-    kth_error_code_t code = kth_wallet_create_wallet(
+    kth_wallet_data_mut_t wallet_data = NULL;
+    kth_error_code_t code = kth_wallet_create(
         "12345678",
         "",
         &wallet_data);
 
     printf("code: %d\n", code);
+    if (code != kth_ec_success) {
+        return 1;
+    }
     // printf("wallet_data: %s\n", kth_wallet_wallet_data_encoded(wallet_data));
 
-    kth_string_list_t mnemonics = kth_wallet_wallet_data_mnemonics(wallet_data);
+    kth_string_list_const_t mnemonics = kth_wallet_wallet_data_mnemonics(wallet_data);
 
     kth_size_t count = kth_core_string_list_count(mnemonics);
     printf("count: %d\n", count);

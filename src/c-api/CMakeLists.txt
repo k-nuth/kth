@@ -516,6 +516,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/token_data.cpp
         test/wallet/hd_public.cpp
         test/wallet/hd_private.cpp
+        test/wallet/wallet_data.cpp
     )
 
     target_link_libraries(kth_capi_test PUBLIC ${PROJECT_NAME})

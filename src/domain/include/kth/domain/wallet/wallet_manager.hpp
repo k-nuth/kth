@@ -62,10 +62,16 @@ struct wallet_data {
 };
 
 std::expected<wallet_data, std::error_code>
-create_wallet(
+create(
     std::string const& password,
     std::string const& normalized_passphrase,
-    kth::domain::wallet::dictionary const& lexicon=kth::domain::wallet::language::en);
+    kth::domain::wallet::dictionary const& lexicon);
+
+inline
+std::expected<wallet_data, std::error_code>
+create(std::string const& password, std::string const& normalized_passphrase) {
+    return create(password, normalized_passphrase, kth::domain::wallet::language::en);
+}
 
 std::expected<long_hash, std::error_code>
 decrypt_seed(

@@ -307,6 +307,11 @@ inline kth::domain::wallet::hd_key hd_key_to_cpp(uint8_t const* x) {
     return to_array_cpp<kth::domain::wallet::hd_key_size>(x);
 }
 
+// encrypted_seed (96 bytes)
+inline kth::domain::wallet::encrypted_seed_t encrypted_seed_to_cpp(uint8_t const* x) {
+    return to_array_cpp<std::tuple_size_v<kth::domain::wallet::encrypted_seed_t>>(x);
+}
+
 template <typename T>
 inline
 T* mnew(std::size_t n = 1) {

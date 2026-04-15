@@ -110,32 +110,27 @@ kth_size_t kth_chain_transaction_serialized_size(kth_transaction_const_t self, k
 
 kth_hash_t kth_chain_transaction_outputs_hash(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_transaction_const_cpp(self).outputs_hash();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_transaction_const_cpp(self).outputs_hash());
 }
 
 kth_hash_t kth_chain_transaction_inpoints_hash(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_transaction_const_cpp(self).inpoints_hash();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_transaction_const_cpp(self).inpoints_hash());
 }
 
 kth_hash_t kth_chain_transaction_sequences_hash(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_transaction_const_cpp(self).sequences_hash();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_transaction_const_cpp(self).sequences_hash());
 }
 
 kth_hash_t kth_chain_transaction_utxos_hash(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_transaction_const_cpp(self).utxos_hash();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_transaction_const_cpp(self).utxos_hash());
 }
 
 kth_hash_t kth_chain_transaction_hash(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_transaction_const_cpp(self).hash();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_transaction_const_cpp(self).hash());
 }
 
 uint64_t kth_chain_transaction_fees(kth_transaction_const_t self) {

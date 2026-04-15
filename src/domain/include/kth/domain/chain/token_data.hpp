@@ -127,12 +127,10 @@ using token_data_opt = std::optional<token_data_t>;
 
 // Factories.
 // ---------------------------------------------------------------------------
-// Free-function constructors for each variant arm. The generator
-// picks them up via the extra_namespaces scan and emits matching
-// `kth_chain_token_data_make_*` entry points in the C API. Taking
-// `uint64_t` instead of `amount_t` in the C++ signature keeps the
-// generated C bindings working with plain integral types without
-// the binding layer needing to know about the strong enum.
+// Free-function constructors for each variant arm. Taking `uint64_t`
+// instead of `amount_t` in the C++ signature keeps the C bindings
+// working with plain integral types without the binding layer
+// needing to know about the strong enum.
 
 inline
 token_data_t make_fungible(token_id_t id, uint64_t amount) {
@@ -220,17 +218,18 @@ token_data_t::operator bool() const {
 // ---------------------------------------------------------------------------
 
 // Returns the fungible amount carried by the token, or `0` when the
-// token has no fungible payload (i.e. it is a pure NFT). The
-// consensus code in `transaction_basis.cpp` calls this on every
-// token-bearing input/output and tallies the results by category, so
-// returning `0` for the "no fungible" case lets the math work
-// without per-token branching. Per the CashTokens spec a valid
-// fungible amount is strictly positive, so `0` unambiguously means
-// "no fungible payload" and never collides with a legitimate value.
+// token has no fungible payload (i.e. it is a pure NFT). The return
+// type is `int64_t` on purpose: `amount_t` stores the raw VLQ as
+// `uint64_t` for wire-format parity, but the CashTokens CHIP caps
+// valid amounts at `INT64_MAX`, so any observer value is guaranteed
+// to fit. The signed return also matches Bitcoin Core's `CAmount`
+// convention and keeps the consensus-code `if (a < 0) reject` guard
+// safe: an out-of-range `uint64_t` wraps to a negative `int64_t`
+// here and trips the check without callers needing to pre-validate.
 inline
-uint64_t get_amount(token_data_t const& td) {
-    if (auto const* f = std::get_if<fungible>(&td.data)) return uint64_t(f->amount);
-    if (auto const* b = std::get_if<both_kinds>(&td.data)) return uint64_t(b->fungible_part.amount);
+int64_t get_amount(token_data_t const& td) {
+    if (auto const* f = std::get_if<fungible>(&td.data)) return int64_t(f->amount);
+    if (auto const* b = std::get_if<both_kinds>(&td.data)) return int64_t(b->fungible_part.amount);
     return 0;
 }
 

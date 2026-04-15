@@ -158,8 +158,7 @@ kth_transaction_list_const_t kth_chain_block_transactions(kth_block_const_t self
 
 kth_hash_t kth_chain_block_hash(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_block_const_cpp(self).hash();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_block_const_cpp(self).hash());
 }
 
 uint64_t kth_chain_block_fees(kth_block_const_t self) {
@@ -174,8 +173,7 @@ uint64_t kth_chain_block_claim(kth_block_const_t self) {
 
 kth_hash_t kth_chain_block_generate_merkle_root(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_block_const_cpp(self).generate_merkle_root();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_block_const_cpp(self).generate_merkle_root());
 }
 
 kth_error_code_t kth_chain_block_check_transactions(kth_block_const_t self) {

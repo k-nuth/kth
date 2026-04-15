@@ -24,7 +24,7 @@ extern "C" {
 
 // Constructors
 
-kth_error_code_t kth_chain_token_data_construct_from_data(uint8_t const* data, kth_size_t n, KTH_OUT_OWNED kth_token_data_mut_t* out) {
+kth_error_code_t kth_chain_token_construct_from_data(uint8_t const* data, kth_size_t n, KTH_OUT_OWNED kth_token_data_mut_t* out) {
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
@@ -38,18 +38,18 @@ kth_error_code_t kth_chain_token_data_construct_from_data(uint8_t const* data, k
 
 // Static factories
 
-kth_token_data_mut_t kth_chain_token_data_make_fungible(kth_hash_t id, uint64_t amount) {
+kth_token_data_mut_t kth_chain_token_make_fungible(kth_hash_t id, uint64_t amount) {
     auto const id_cpp = kth::hash_to_cpp(id.hash);
     return kth::make_leaked_if_valid(kth::domain::chain::make_fungible(id_cpp, amount));
 }
 
-kth_token_data_mut_t kth_chain_token_data_make_fungible_unsafe(uint8_t const* id, uint64_t amount) {
+kth_token_data_mut_t kth_chain_token_make_fungible_unsafe(uint8_t const* id, uint64_t amount) {
     KTH_PRECONDITION(id != nullptr);
     auto const id_cpp = kth::hash_to_cpp(id);
     return kth::make_leaked_if_valid(kth::domain::chain::make_fungible(id_cpp, amount));
 }
 
-kth_token_data_mut_t kth_chain_token_data_make_non_fungible(kth_hash_t id, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n) {
+kth_token_data_mut_t kth_chain_token_make_non_fungible(kth_hash_t id, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n) {
     KTH_PRECONDITION(commitment != nullptr || n == 0);
     auto const id_cpp = kth::hash_to_cpp(id.hash);
     auto const capability_cpp = static_cast<kth::domain::chain::capability_t>(capability);
@@ -57,7 +57,7 @@ kth_token_data_mut_t kth_chain_token_data_make_non_fungible(kth_hash_t id, kth_t
     return kth::make_leaked_if_valid(kth::domain::chain::make_non_fungible(id_cpp, capability_cpp, commitment_cpp));
 }
 
-kth_token_data_mut_t kth_chain_token_data_make_non_fungible_unsafe(uint8_t const* id, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n) {
+kth_token_data_mut_t kth_chain_token_make_non_fungible_unsafe(uint8_t const* id, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n) {
     KTH_PRECONDITION(id != nullptr);
     KTH_PRECONDITION(commitment != nullptr || n == 0);
     auto const id_cpp = kth::hash_to_cpp(id);
@@ -66,7 +66,7 @@ kth_token_data_mut_t kth_chain_token_data_make_non_fungible_unsafe(uint8_t const
     return kth::make_leaked_if_valid(kth::domain::chain::make_non_fungible(id_cpp, capability_cpp, commitment_cpp));
 }
 
-kth_token_data_mut_t kth_chain_token_data_make_both(kth_hash_t id, uint64_t amount, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n) {
+kth_token_data_mut_t kth_chain_token_make_both(kth_hash_t id, uint64_t amount, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n) {
     KTH_PRECONDITION(commitment != nullptr || n == 0);
     auto const id_cpp = kth::hash_to_cpp(id.hash);
     auto const capability_cpp = static_cast<kth::domain::chain::capability_t>(capability);
@@ -74,7 +74,7 @@ kth_token_data_mut_t kth_chain_token_data_make_both(kth_hash_t id, uint64_t amou
     return kth::make_leaked_if_valid(kth::domain::chain::make_both(id_cpp, amount, capability_cpp, commitment_cpp));
 }
 
-kth_token_data_mut_t kth_chain_token_data_make_both_unsafe(uint8_t const* id, uint64_t amount, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n) {
+kth_token_data_mut_t kth_chain_token_make_both_unsafe(uint8_t const* id, uint64_t amount, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n) {
     KTH_PRECONDITION(id != nullptr);
     KTH_PRECONDITION(commitment != nullptr || n == 0);
     auto const id_cpp = kth::hash_to_cpp(id);
@@ -128,8 +128,7 @@ uint8_t* kth_chain_token_data_to_data(kth_token_data_const_t self, kth_size_t* o
 
 kth_hash_t kth_chain_token_data_id(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_token_data_const_cpp(self).id;
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_token_data_const_cpp(self).id);
 }
 
 kth_token_kind_t kth_chain_token_data_get_kind(kth_token_data_const_t self) {
@@ -137,7 +136,7 @@ kth_token_kind_t kth_chain_token_data_get_kind(kth_token_data_const_t self) {
     return static_cast<kth_token_kind_t>(kth::domain::chain::get_kind(kth_chain_token_data_const_cpp(self)));
 }
 
-uint64_t kth_chain_token_data_get_amount(kth_token_data_const_t self) {
+int64_t kth_chain_token_data_get_amount(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::domain::chain::get_amount(kth_chain_token_data_const_cpp(self));
 }

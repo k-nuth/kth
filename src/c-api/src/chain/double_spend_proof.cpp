@@ -111,8 +111,7 @@ kth_double_spend_proof_spender_const_t kth_chain_double_spend_proof_spender2(kth
 
 kth_hash_t kth_chain_double_spend_proof_hash(kth_double_spend_proof_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_double_spend_proof_const_cpp(self).hash();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_double_spend_proof_const_cpp(self).hash());
 }
 
 

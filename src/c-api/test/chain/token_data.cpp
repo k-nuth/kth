@@ -57,13 +57,13 @@ TEST_CASE("C-API TokenData - destruct null is safe", "[C-API TokenData]") {
 
 TEST_CASE("C-API TokenData - make_fungible builds a valid handle",
           "[C-API TokenData]") {
-    kth_token_data_mut_t td = kth_chain_token_data_make_fungible(kCategoryA, 1234u);
+    kth_token_data_mut_t td = kth_chain_token_make_fungible(kCategoryA, 1234u);
     REQUIRE(td != NULL);
     REQUIRE(kth_chain_token_data_is_valid(td) != 0);
     REQUIRE(kth_chain_token_data_get_kind(td) == kth_token_kind_fungible_only);
     REQUIRE(kth_chain_token_data_is_fungible_only(td) != 0);
     REQUIRE(kth_chain_token_data_has_nft(td) == 0);
-    REQUIRE(kth_chain_token_data_get_amount(td) == 1234u);
+    REQUIRE(kth_chain_token_data_get_amount(td) == 1234);
     REQUIRE(kth_hash_equal(kth_chain_token_data_id(td), kCategoryA) != 0);
 
     kth_chain_token_data_destruct(td);
@@ -71,8 +71,8 @@ TEST_CASE("C-API TokenData - make_fungible builds a valid handle",
 
 TEST_CASE("C-API TokenData - make_fungible_unsafe builds the same handle",
           "[C-API TokenData]") {
-    kth_token_data_mut_t safe = kth_chain_token_data_make_fungible(kCategoryA, 7u);
-    kth_token_data_mut_t unsafe = kth_chain_token_data_make_fungible_unsafe(kCategoryA.hash, 7u);
+    kth_token_data_mut_t safe = kth_chain_token_make_fungible(kCategoryA, 7u);
+    kth_token_data_mut_t unsafe = kth_chain_token_make_fungible_unsafe(kCategoryA.hash, 7u);
 
     REQUIRE(safe != NULL);
     REQUIRE(unsafe != NULL);
@@ -88,7 +88,7 @@ TEST_CASE("C-API TokenData - make_fungible_unsafe builds the same handle",
 
 TEST_CASE("C-API TokenData - make_non_fungible mutable carries commitment and capability",
           "[C-API TokenData]") {
-    kth_token_data_mut_t td = kth_chain_token_data_make_non_fungible(
+    kth_token_data_mut_t td = kth_chain_token_make_non_fungible(
         kCategoryA, kth_token_capability_mut, kCommitment, sizeof(kCommitment));
     REQUIRE(td != NULL);
 
@@ -113,7 +113,7 @@ TEST_CASE("C-API TokenData - make_non_fungible mutable carries commitment and ca
 
 TEST_CASE("C-API TokenData - make_non_fungible immutable",
           "[C-API TokenData]") {
-    kth_token_data_mut_t td = kth_chain_token_data_make_non_fungible(
+    kth_token_data_mut_t td = kth_chain_token_make_non_fungible(
         kCategoryA, kth_token_capability_none, kCommitment, sizeof(kCommitment));
     REQUIRE(td != NULL);
     REQUIRE(kth_chain_token_data_is_immutable_nft(td) != 0);
@@ -124,7 +124,7 @@ TEST_CASE("C-API TokenData - make_non_fungible immutable",
 
 TEST_CASE("C-API TokenData - make_non_fungible minting",
           "[C-API TokenData]") {
-    kth_token_data_mut_t td = kth_chain_token_data_make_non_fungible(
+    kth_token_data_mut_t td = kth_chain_token_make_non_fungible(
         kCategoryA, kth_token_capability_minting, kCommitment, sizeof(kCommitment));
     REQUIRE(td != NULL);
     REQUIRE(kth_chain_token_data_is_minting_nft(td) != 0);
@@ -133,7 +133,7 @@ TEST_CASE("C-API TokenData - make_non_fungible minting",
 
 TEST_CASE("C-API TokenData - make_non_fungible with empty commitment",
           "[C-API TokenData]") {
-    kth_token_data_mut_t td = kth_chain_token_data_make_non_fungible(
+    kth_token_data_mut_t td = kth_chain_token_make_non_fungible(
         kCategoryA, kth_token_capability_none, NULL, 0);
     REQUIRE(td != NULL);
 
@@ -153,7 +153,7 @@ TEST_CASE("C-API TokenData - make_non_fungible with empty commitment",
 
 TEST_CASE("C-API TokenData - make_both carries amount, capability, commitment",
           "[C-API TokenData]") {
-    kth_token_data_mut_t td = kth_chain_token_data_make_both(
+    kth_token_data_mut_t td = kth_chain_token_make_both(
         kCategoryA, 9999u, kth_token_capability_mut, kCommitment, sizeof(kCommitment));
     REQUIRE(td != NULL);
 
@@ -163,7 +163,7 @@ TEST_CASE("C-API TokenData - make_both carries amount, capability, commitment",
     REQUIRE(kth_chain_token_data_is_fungible_only(td) == 0);
     REQUIRE(kth_chain_token_data_is_mutable_nft(td) != 0);
 
-    REQUIRE(kth_chain_token_data_get_amount(td) == 9999u);
+    REQUIRE(kth_chain_token_data_get_amount(td) == 9999);
     REQUIRE(kth_chain_token_data_get_nft_capability(td) == kth_token_capability_mut);
 
     kth_size_t commitment_size = 0;
@@ -184,7 +184,7 @@ TEST_CASE("C-API TokenData - make_fungible rejects amount 0",
     // Per the CashTokens spec a valid fungible amount is strictly
     // positive. The binding layer's `check_valid` gate sits on top of
     // `operator bool` (which delegates to is_valid), so 0 yields NULL.
-    kth_token_data_mut_t td = kth_chain_token_data_make_fungible(kCategoryA, 0u);
+    kth_token_data_mut_t td = kth_chain_token_make_fungible(kCategoryA, 0u);
     REQUIRE(td == NULL);
 }
 
@@ -192,14 +192,14 @@ TEST_CASE("C-API TokenData - make_fungible rejects amounts above INT64_MAX",
           "[C-API TokenData]") {
     // The CHIP caps amounts at INT64_MAX. UINT64_MAX (all ones) is
     // provably outside the spec range and must be rejected.
-    kth_token_data_mut_t td = kth_chain_token_data_make_fungible(
+    kth_token_data_mut_t td = kth_chain_token_make_fungible(
         kCategoryA, (uint64_t)0xFFFFFFFFFFFFFFFFULL);
     REQUIRE(td == NULL);
 }
 
 TEST_CASE("C-API TokenData - make_both rejects amount 0",
           "[C-API TokenData]") {
-    kth_token_data_mut_t td = kth_chain_token_data_make_both(
+    kth_token_data_mut_t td = kth_chain_token_make_both(
         kCategoryA, 0u, kth_token_capability_mut, kCommitment, sizeof(kCommitment));
     REQUIRE(td == NULL);
 }
@@ -214,16 +214,16 @@ TEST_CASE("C-API TokenData - get_amount returns 0 for pure NFT",
     // positive, so `0` unambiguously signals "no fungible payload".
     // The consensus code in transaction_basis depends on this — see
     // the comment on `get_amount` in token_data.hpp.
-    kth_token_data_mut_t td = kth_chain_token_data_make_non_fungible(
+    kth_token_data_mut_t td = kth_chain_token_make_non_fungible(
         kCategoryA, kth_token_capability_none, kCommitment, sizeof(kCommitment));
     REQUIRE(td != NULL);
-    REQUIRE(kth_chain_token_data_get_amount(td) == 0u);
+    REQUIRE(kth_chain_token_data_get_amount(td) == 0);
     kth_chain_token_data_destruct(td);
 }
 
 TEST_CASE("C-API TokenData - get_nft_capability is `none` for pure fungible",
           "[C-API TokenData]") {
-    kth_token_data_mut_t td = kth_chain_token_data_make_fungible(kCategoryA, 1u);
+    kth_token_data_mut_t td = kth_chain_token_make_fungible(kCategoryA, 1u);
     REQUIRE(td != NULL);
     REQUIRE(kth_chain_token_data_get_nft_capability(td) == kth_token_capability_none);
     kth_chain_token_data_destruct(td);
@@ -234,7 +234,7 @@ TEST_CASE("C-API TokenData - get_nft_capability is `none` for pure fungible",
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API TokenData - copy preserves equality", "[C-API TokenData]") {
-    kth_token_data_mut_t original = kth_chain_token_data_make_both(
+    kth_token_data_mut_t original = kth_chain_token_make_both(
         kCategoryA, 42u, kth_token_capability_mut, kCommitment, sizeof(kCommitment));
     REQUIRE(original != NULL);
 
@@ -248,8 +248,8 @@ TEST_CASE("C-API TokenData - copy preserves equality", "[C-API TokenData]") {
 
 TEST_CASE("C-API TokenData - different categories compare unequal",
           "[C-API TokenData]") {
-    kth_token_data_mut_t a = kth_chain_token_data_make_fungible(kCategoryA, 1u);
-    kth_token_data_mut_t b = kth_chain_token_data_make_fungible(kCategoryB, 1u);
+    kth_token_data_mut_t a = kth_chain_token_make_fungible(kCategoryA, 1u);
+    kth_token_data_mut_t b = kth_chain_token_make_fungible(kCategoryB, 1u);
 
     REQUIRE(kth_chain_token_data_equals(a, b) == 0);
 
@@ -259,8 +259,8 @@ TEST_CASE("C-API TokenData - different categories compare unequal",
 
 TEST_CASE("C-API TokenData - different amounts compare unequal",
           "[C-API TokenData]") {
-    kth_token_data_mut_t a = kth_chain_token_data_make_fungible(kCategoryA, 1u);
-    kth_token_data_mut_t b = kth_chain_token_data_make_fungible(kCategoryA, 2u);
+    kth_token_data_mut_t a = kth_chain_token_make_fungible(kCategoryA, 1u);
+    kth_token_data_mut_t b = kth_chain_token_make_fungible(kCategoryA, 2u);
 
     REQUIRE(kth_chain_token_data_equals(a, b) == 0);
 
@@ -274,7 +274,7 @@ TEST_CASE("C-API TokenData - different amounts compare unequal",
 
 TEST_CASE("C-API TokenData - to_data / from_data roundtrip (fungible)",
           "[C-API TokenData]") {
-    kth_token_data_mut_t original = kth_chain_token_data_make_fungible(kCategoryA, 7777u);
+    kth_token_data_mut_t original = kth_chain_token_make_fungible(kCategoryA, 7777u);
     REQUIRE(original != NULL);
 
     kth_size_t size = 0;
@@ -283,7 +283,7 @@ TEST_CASE("C-API TokenData - to_data / from_data roundtrip (fungible)",
     REQUIRE(size == kth_chain_token_data_serialized_size(original));
 
     kth_token_data_mut_t parsed = NULL;
-    kth_error_code_t ec = kth_chain_token_data_construct_from_data(raw, size, &parsed);
+    kth_error_code_t ec = kth_chain_token_construct_from_data(raw, size, &parsed);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(parsed != NULL);
     REQUIRE(kth_chain_token_data_equals(original, parsed) != 0);
@@ -295,7 +295,7 @@ TEST_CASE("C-API TokenData - to_data / from_data roundtrip (fungible)",
 
 TEST_CASE("C-API TokenData - to_data / from_data roundtrip (both)",
           "[C-API TokenData]") {
-    kth_token_data_mut_t original = kth_chain_token_data_make_both(
+    kth_token_data_mut_t original = kth_chain_token_make_both(
         kCategoryA, 12345u, kth_token_capability_mut, kCommitment, sizeof(kCommitment));
     REQUIRE(original != NULL);
 
@@ -304,7 +304,7 @@ TEST_CASE("C-API TokenData - to_data / from_data roundtrip (both)",
     REQUIRE(raw != NULL);
 
     kth_token_data_mut_t parsed = NULL;
-    kth_error_code_t ec = kth_chain_token_data_construct_from_data(raw, size, &parsed);
+    kth_error_code_t ec = kth_chain_token_construct_from_data(raw, size, &parsed);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(parsed != NULL);
     REQUIRE(kth_chain_token_data_equals(original, parsed) != 0);
@@ -319,7 +319,7 @@ TEST_CASE("C-API TokenData - from_data with truncated input fails",
     uint8_t const truncated[5] = {0x00, 0x00, 0x00, 0x00, 0x00};
     kth_token_data_mut_t parsed = NULL;
     kth_error_code_t ec =
-        kth_chain_token_data_construct_from_data(truncated, sizeof(truncated), &parsed);
+        kth_chain_token_construct_from_data(truncated, sizeof(truncated), &parsed);
     REQUIRE(ec != kth_ec_success);
     REQUIRE(parsed == NULL);
 }
@@ -329,7 +329,7 @@ TEST_CASE("C-API TokenData - from_data with truncated input fails",
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API TokenData - set_id replaces category", "[C-API TokenData]") {
-    kth_token_data_mut_t td = kth_chain_token_data_make_fungible(kCategoryA, 1u);
+    kth_token_data_mut_t td = kth_chain_token_make_fungible(kCategoryA, 1u);
     REQUIRE(td != NULL);
 
     kth_chain_token_data_set_id(td, kCategoryB);
@@ -355,25 +355,25 @@ TEST_CASE("C-API TokenData - get_kind null aborts",
 TEST_CASE("C-API TokenData - construct_from_data null out aborts",
           "[C-API TokenData][precondition]") {
     KTH_EXPECT_ABORT(
-        kth_chain_token_data_construct_from_data(NULL, 0, NULL));
+        kth_chain_token_construct_from_data(NULL, 0, NULL));
 }
 
 TEST_CASE("C-API TokenData - construct_from_data non-null *out aborts",
           "[C-API TokenData][precondition]") {
-    kth_token_data_mut_t already = kth_chain_token_data_make_fungible(kCategoryA, 1u);
+    kth_token_data_mut_t already = kth_chain_token_make_fungible(kCategoryA, 1u);
     KTH_EXPECT_ABORT(
-        kth_chain_token_data_construct_from_data(NULL, 0, &already));
+        kth_chain_token_construct_from_data(NULL, 0, &already));
     kth_chain_token_data_destruct(already);
 }
 
 TEST_CASE("C-API TokenData - to_data null out_size aborts",
           "[C-API TokenData][precondition]") {
-    kth_token_data_mut_t td = kth_chain_token_data_make_fungible(kCategoryA, 1u);
+    kth_token_data_mut_t td = kth_chain_token_make_fungible(kCategoryA, 1u);
     KTH_EXPECT_ABORT(kth_chain_token_data_to_data(td, NULL));
     kth_chain_token_data_destruct(td);
 }
 
 TEST_CASE("C-API TokenData - make_fungible_unsafe null id aborts",
           "[C-API TokenData][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_token_data_make_fungible_unsafe(NULL, 1u));
+    KTH_EXPECT_ABORT(kth_chain_token_make_fungible_unsafe(NULL, 1u));
 }

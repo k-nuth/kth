@@ -101,8 +101,7 @@ kth_size_t kth_chain_header_serialized_size(kth_header_const_t self, kth_bool_t 
 
 kth_hash_t kth_chain_header_hash_pow(kth_header_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_header_const_cpp(self).hash_pow();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_header_const_cpp(self).hash_pow());
 }
 
 uint32_t kth_chain_header_version(kth_header_const_t self) {
@@ -112,14 +111,12 @@ uint32_t kth_chain_header_version(kth_header_const_t self) {
 
 kth_hash_t kth_chain_header_previous_block_hash(kth_header_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_header_const_cpp(self).previous_block_hash();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_header_const_cpp(self).previous_block_hash());
 }
 
 kth_hash_t kth_chain_header_merkle(kth_header_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_header_const_cpp(self).merkle();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_header_const_cpp(self).merkle());
 }
 
 uint32_t kth_chain_header_timestamp(kth_header_const_t self) {

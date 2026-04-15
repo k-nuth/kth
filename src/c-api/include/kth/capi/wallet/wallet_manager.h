@@ -15,12 +15,6 @@ extern "C" {
 #endif
 
 KTH_EXPORT
-kth_error_code_t kth_wallet_create_wallet(
-    char const* password,
-    char const* normalized_passphrase,
-    kth_wallet_data_t* out_wallet_data);
-
-KTH_EXPORT
 kth_error_code_t kth_wallet_decrypt_seed(
     char const* password,
     kth_encrypted_seed_t const* encrypted_seed,

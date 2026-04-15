@@ -100,26 +100,22 @@ char* kth_wallet_hd_public_encoded(kth_hd_public_const_t self) {
 
 kth_hash_t kth_wallet_hd_public_chain_code(kth_hd_public_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_wallet_hd_public_const_cpp(self).chain_code();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_wallet_hd_public_const_cpp(self).chain_code());
 }
 
 kth_hd_lineage_t kth_wallet_hd_public_lineage(kth_hd_public_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_wallet_hd_public_const_cpp(self).lineage();
-    return kth::to_c_struct<kth_hd_lineage_t>(value_cpp);
+    return kth::to_c_struct<kth_hd_lineage_t>(kth_wallet_hd_public_const_cpp(self).lineage());
 }
 
 kth_ec_compressed_t kth_wallet_hd_public_point(kth_hd_public_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_wallet_hd_public_const_cpp(self).point();
-    return kth::to_ec_compressed_t(value_cpp);
+    return kth::to_ec_compressed_t(kth_wallet_hd_public_const_cpp(self).point());
 }
 
 kth_hd_key_t kth_wallet_hd_public_to_hd_key(kth_hd_public_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_wallet_hd_public_const_cpp(self).to_hd_key();
-    return kth::to_hd_key_t(value_cpp);
+    return kth::to_hd_key_t(kth_wallet_hd_public_const_cpp(self).to_hd_key());
 }
 
 

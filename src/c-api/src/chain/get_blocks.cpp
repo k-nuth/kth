@@ -104,8 +104,7 @@ kth_hash_list_const_t kth_chain_get_blocks_start_hashes(kth_get_blocks_const_t s
 
 kth_hash_t kth_chain_get_blocks_stop_hash(kth_get_blocks_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_get_blocks_const_cpp(self).stop_hash();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_get_blocks_const_cpp(self).stop_hash());
 }
 
 
