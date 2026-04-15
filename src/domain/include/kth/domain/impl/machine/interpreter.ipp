@@ -3018,74 +3018,32 @@ namespace detail {
 
 inline
 data_chunk get_token_category(chain::token_data_t const& token) {
+    auto const cap = chain::get_nft_capability(token);
+    bool const push_cap_byte = chain::has_nft(token)
+        && (cap == chain::capability_t::mut
+         || cap == chain::capability_t::minting);
     data_chunk vch;
-    auto const& tok_id = token.id;
-    bool push_cap_byte = false;
-    std::visit([&push_cap_byte](auto&& arg) {
-        using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, chain::non_fungible>) {
-            push_cap_byte = (arg.capability == chain::capability_t::mut ||
-                             arg.capability == chain::capability_t::minting);
-        } else if constexpr (std::is_same_v<T, chain::both_kinds>) {
-            push_cap_byte = (arg.second.capability == chain::capability_t::mut ||
-                             arg.second.capability == chain::capability_t::minting);
-        }
-    }, token.data);
-
-    vch.reserve(tok_id.size() + (push_cap_byte ? 1 : 0));
-    vch.insert(vch.end(), tok_id.begin(), tok_id.end());
+    vch.reserve(token.id.size() + (push_cap_byte ? 1 : 0));
+    vch.insert(vch.end(), token.id.begin(), token.id.end());
     if (push_cap_byte) {
-        uint8_t cap = 0;
-        std::visit([&cap](auto&& arg) {
-            using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<T, chain::non_fungible>) {
-                cap = static_cast<uint8_t>(arg.capability);
-            } else if constexpr (std::is_same_v<T, chain::both_kinds>) {
-                cap = static_cast<uint8_t>(arg.second.capability);
-            }
-        }, token.data);
-        vch.push_back(cap);
+        vch.push_back(static_cast<uint8_t>(cap));
     }
     return vch;
 }
 
 inline
 data_chunk get_token_commitment(chain::token_data_t const& token) {
-    data_chunk result;
-    std::visit([&result](auto&& arg) {
-        using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, chain::non_fungible>) {
-            result.assign(arg.commitment.begin(), arg.commitment.end());
-        } else if constexpr (std::is_same_v<T, chain::both_kinds>) {
-            result.assign(arg.second.commitment.begin(), arg.second.commitment.end());
-        }
-        // fungible: no commitment, result stays empty
-    }, token.data);
-    return result;
+    return chain::get_nft_commitment(token);
 }
 
 inline
 bool has_nft(chain::token_data_t const& token) {
-    return std::visit([](auto&& arg) {
-        using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, chain::non_fungible> || std::is_same_v<T, chain::both_kinds>) {
-            return true;
-        }
-        return false;
-    }, token.data);
+    return chain::has_nft(token);
 }
 
 inline
 int64_t get_token_amount(chain::token_data_t const& token) {
-    return std::visit([](auto&& arg) -> int64_t {
-        using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, chain::fungible>) {
-            return int64_t(arg.amount);
-        } else if constexpr (std::is_same_v<T, chain::both_kinds>) {
-            return int64_t(arg.first.amount);
-        }
-        return 0; // non_fungible only: no amount
-    }, token.data);
+    return int64_t(chain::get_amount(token));
 }
 
 } // namespace detail

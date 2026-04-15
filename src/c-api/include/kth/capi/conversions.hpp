@@ -109,18 +109,12 @@ kth_wallet_ec_compressed_list_mut_cpp(kth_ec_compressed_list_mut_t l) {
     return *static_cast<std::vector<std::array<uint8_t, 33>>*>(l);
 }
 
-// token_data is not migrated to const/mut yet. The legacy
-// KTH_CONV_DECLARE(chain, kth_token_data_t, ...) declares the converter
-// taking a non-const void*; the migrated chain/output API needs the const
-// view, so we add an inline shim here.
-inline kth::domain::chain::token_data_t const&
-kth_chain_token_data_const_cpp(kth_token_data_const_t o) {
-    return *static_cast<kth::domain::chain::token_data_t const*>(o);
-}
-inline kth::domain::chain::token_data_t&
-kth_chain_token_data_mut_cpp(kth_token_data_mut_t o) {
-    return *static_cast<kth::domain::chain::token_data_t*>(o);
-}
+// token_data: conversion functions live in src/chain/token_data.cpp.
+kth::domain::chain::token_data_t const&
+kth_chain_token_data_const_cpp(kth_token_data_const_t o);
+
+kth::domain::chain::token_data_t&
+kth_chain_token_data_mut_cpp(kth_token_data_mut_t o);
 
 // data_stack — vector of variable-length byte buffers (the script runtime
 // stack). Exposed only as an opaque handle for now; ownership and element
@@ -193,7 +187,6 @@ kth::domain::chain::script&       kth_chain_script_mut_cpp(kth_script_mut_t o);
 kth::domain::chain::point const& kth_chain_point_const_cpp(kth_point_const_t o);
 kth::domain::chain::point&       kth_chain_point_mut_cpp(kth_point_mut_t o);
 KTH_CONV_DECLARE(chain, kth_utxo_t, kth::domain::chain::utxo, utxo)
-KTH_CONV_DECLARE(chain, kth_token_data_t, kth::domain::chain::token_data_t, token_data)
 
 // #ifndef __EMSCRIPTEN__
 KTH_CONV_DECLARE(chain, kth_mempool_transaction_t, kth::blockchain::mempool_transaction_summary, mempool_transaction)

@@ -89,13 +89,13 @@ KTH_EXPORT
 void kth_chain_utxo_set_token_data(kth_utxo_t utxo, kth_token_data_t token_data);
 
 KTH_EXPORT
-void kth_chain_utxo_set_fungible_token_data(kth_utxo_t utxo, kth_hash_t const* token_category, int64_t token_amount);
+void kth_chain_utxo_set_fungible_token_data(kth_utxo_t utxo, kth_hash_t const* token_category, uint64_t token_amount);
 
 KTH_EXPORT
 void kth_chain_utxo_set_token_category(kth_utxo_t utxo, kth_hash_t const* token_category);
 
 KTH_EXPORT
-void kth_chain_utxo_set_token_amount(kth_utxo_t utxo, int64_t token_amount);
+void kth_chain_utxo_set_token_amount(kth_utxo_t utxo, uint64_t token_amount);
 
 #ifdef __cplusplus
 } // extern "C"

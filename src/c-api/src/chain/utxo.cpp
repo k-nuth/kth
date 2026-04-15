@@ -24,13 +24,20 @@ kth_utxo_t kth_chain_utxo_construct_from_hash_index_amount(kth_hash_t const* has
 }
 
 kth_utxo_t kth_chain_utxo_construct_from_hash_index_amount_fungible(kth_hash_t const* hash, uint32_t index, uint64_t amount, kth_hash_t const* token_category, uint64_t token_amount) {
+    // CashTokens caps token amounts at INT64_MAX — accepting values
+    // above that lets callers build prefixes that later narrow
+    // incorrectly when consensus code reads them back as int64_t.
+    // This check will move into the generator when utxo migrates;
+    // until then it lives here alongside the other hand-written
+    // entry points.
+    KTH_PRECONDITION(token_amount <= (uint64_t)INT64_MAX);
     auto hash_cpp = kth::to_array(hash->hash);
     auto token_category_cpp = kth::to_array(token_category->hash);
 
     kth::domain::chain::token_data_t token_data {
         .id = token_category_cpp,
         .data = kth::domain::chain::fungible {
-            .amount = kth::domain::chain::amount_t{int64_t(token_amount)}
+            .amount = kth::domain::chain::amount_t{token_amount}
         }
     };
     auto ret = new kth::domain::chain::utxo(
@@ -59,6 +66,7 @@ kth_utxo_t kth_chain_utxo_construct_from_hash_index_amount_non_fungible(kth_hash
 }
 
 kth_utxo_t kth_chain_utxo_construct_from_hash_index_amount_both(kth_hash_t const* hash, uint32_t index, uint64_t amount, kth_hash_t const* token_category, uint64_t token_amount, kth_token_capability_t capability, uint8_t* commitment_data, kth_size_t commitment_n) {
+    KTH_PRECONDITION(token_amount <= (uint64_t)INT64_MAX);
     auto hash_cpp = kth::to_array(hash->hash);
     auto token_category_cpp = kth::to_array(token_category->hash);
     auto capability_cpp = kth::token_capability_to_cpp(capability);
@@ -69,7 +77,7 @@ kth_utxo_t kth_chain_utxo_construct_from_hash_index_amount_both(kth_hash_t const
         token_category_cpp,
         kth::domain::chain::both_kinds{
             kth::domain::chain::fungible{
-                kth::domain::chain::amount_t{int64_t(token_amount)}
+                kth::domain::chain::amount_t{token_amount}
             },
             kth::domain::chain::non_fungible{
                 capability_cpp,
@@ -158,7 +166,7 @@ uint64_t kth_chain_utxo_get_token_amount(kth_utxo_t utxo) {
         return uint64_t(std::get<kth::domain::chain::fungible>(token_data->data).amount);
     }
     if (std::holds_alternative<kth::domain::chain::both_kinds>(token_data->data)) {
-        return uint64_t(std::get<kth::domain::chain::both_kinds>(token_data->data).first.amount);
+        return uint64_t(std::get<kth::domain::chain::both_kinds>(token_data->data).fungible_part.amount);
     }
     return kth::max_uint64;
 }
@@ -175,7 +183,7 @@ kth_token_capability_t kth_chain_utxo_get_token_capability(kth_utxo_t utxo) {
     }
     if (std::holds_alternative<kth::domain::chain::both_kinds>(token_data.data)) {
         auto const& both_kinds_cpp = std::get<kth::domain::chain::both_kinds>(token_data.data);
-        auto const& non_fungible_cpp = both_kinds_cpp.second;
+        auto const& non_fungible_cpp = both_kinds_cpp.non_fungible_part;
         return kth::token_capability_to_c(non_fungible_cpp.capability);
     }
     return kth_token_capability_none; // TODO: this is not a good way to signal an error
@@ -194,7 +202,7 @@ uint8_t const* kth_chain_utxo_get_token_commitment(kth_utxo_t utxo, kth_size_t* 
     }
     if (std::holds_alternative<kth::domain::chain::both_kinds>(token_data.data)) {
         auto const& both_kinds_cpp = std::get<kth::domain::chain::both_kinds>(token_data.data);
-        auto const& non_fungible_cpp = both_kinds_cpp.second;
+        auto const& non_fungible_cpp = both_kinds_cpp.non_fungible_part;
         return kth::create_c_array(non_fungible_cpp.commitment, *out_size);
     }
 
@@ -226,13 +234,14 @@ void kth_chain_utxo_set_token_data(kth_utxo_t utxo, kth_token_data_t token_data)
     kth_chain_utxo_cpp(utxo).set_token_data(token_data_cpp);
 }
 
-void kth_chain_utxo_set_fungible_token_data(kth_utxo_t utxo, kth_hash_t const* token_category, int64_t token_amount) {
+void kth_chain_utxo_set_fungible_token_data(kth_utxo_t utxo, kth_hash_t const* token_category, uint64_t token_amount) {
+    KTH_PRECONDITION(token_amount <= (uint64_t)INT64_MAX);
     auto token_category_cpp = kth::to_array(token_category->hash);
 
     kth::domain::chain::token_data_t token_data {
         .id = token_category_cpp,
         .data = kth::domain::chain::fungible {
-            .amount = kth::domain::chain::amount_t{int64_t(token_amount)}
+            .amount = kth::domain::chain::amount_t{token_amount}
         }
     };
     kth_chain_utxo_cpp(utxo).set_token_data(token_data);
@@ -251,19 +260,20 @@ void kth_chain_utxo_set_token_category(kth_utxo_t utxo, kth_hash_t const* token_
     }
 }
 
-void kth_chain_utxo_set_token_amount(kth_utxo_t utxo, int64_t token_amount) {
+void kth_chain_utxo_set_token_amount(kth_utxo_t utxo, uint64_t token_amount) {
+    KTH_PRECONDITION(token_amount <= (uint64_t)INT64_MAX);
     auto& utxo_cpp = kth_chain_utxo_cpp(utxo);
     if (utxo_cpp.token_data()) {
         if (std::holds_alternative<kth::domain::chain::fungible>(utxo_cpp.token_data()->data)) {
-            std::get<kth::domain::chain::fungible>(utxo_cpp.token_data()->data).amount = kth::domain::chain::amount_t{int64_t(token_amount)};
+            std::get<kth::domain::chain::fungible>(utxo_cpp.token_data()->data).amount = kth::domain::chain::amount_t{token_amount};
         } else if (std::holds_alternative<kth::domain::chain::both_kinds>(utxo_cpp.token_data()->data)) {
-            std::get<kth::domain::chain::both_kinds>(utxo_cpp.token_data()->data).first.amount = kth::domain::chain::amount_t{int64_t(token_amount)};
+            std::get<kth::domain::chain::both_kinds>(utxo_cpp.token_data()->data).fungible_part.amount = kth::domain::chain::amount_t{token_amount};
         }
     } else {
         kth::domain::chain::token_data_t token_data {
             .id = kth::null_hash,
             .data = kth::domain::chain::fungible {
-                .amount = kth::domain::chain::amount_t{int64_t(token_amount)}
+                .amount = kth::domain::chain::amount_t{token_amount}
             }
         };
         utxo_cpp.set_token_data(token_data);
