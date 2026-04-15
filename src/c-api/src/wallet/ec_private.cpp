@@ -107,8 +107,7 @@ char* kth_wallet_ec_private_encoded(kth_ec_private_const_t self) {
 
 kth_hash_t kth_wallet_ec_private_secret(kth_ec_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_wallet_ec_private_const_cpp(self).secret();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_wallet_ec_private_const_cpp(self).secret());
 }
 
 uint16_t kth_wallet_ec_private_version(kth_ec_private_const_t self) {

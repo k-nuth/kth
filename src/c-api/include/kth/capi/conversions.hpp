@@ -273,7 +273,9 @@ kth::domain::wallet::hd_private&       kth_wallet_hd_private_mut_cpp(kth_hd_priv
 kth::domain::wallet::payment_address const& kth_wallet_payment_address_const_cpp(kth_payment_address_const_t o);
 kth::domain::wallet::payment_address&       kth_wallet_payment_address_mut_cpp(kth_payment_address_mut_t o);
 
-KTH_CONV_DECLARE(wallet, kth_wallet_data_t, kth::domain::wallet::wallet_data, wallet_data)
+// wallet_data conversion functions. Defined in src/wallet/wallet_data.cpp.
+kth::domain::wallet::wallet_data const& kth_wallet_wallet_data_const_cpp(kth_wallet_data_const_t o);
+kth::domain::wallet::wallet_data&       kth_wallet_wallet_data_mut_cpp(kth_wallet_data_mut_t o);
 
 // payment_address_list — inline converters for the generated list binding.
 inline std::vector<kth::domain::wallet::payment_address> const&
@@ -289,9 +291,8 @@ kth_wallet_payment_address_list_mut_cpp(kth_payment_address_list_mut_t l) {
 // Core.
 // ------------------------------------------------------------------------------------
 
-// string_list — inline construct_from_cpp for wallet_data.cpp callers.
-inline kth_string_list_mut_t kth_core_string_list_construct_from_cpp(std::vector<std::string>& l) {
-    return &l;
+inline std::vector<std::string> const& kth_core_string_list_const_cpp(kth_string_list_const_t l) {
+    return *static_cast<std::vector<std::string> const*>(l);
 }
 
 

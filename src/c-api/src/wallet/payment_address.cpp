@@ -158,20 +158,17 @@ uint8_t const* kth_wallet_payment_address_hash_span(kth_payment_address_const_t 
 
 kth_shorthash_t kth_wallet_payment_address_hash20(kth_payment_address_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_wallet_payment_address_const_cpp(self).hash20();
-    return kth::to_shorthash_t(value_cpp);
+    return kth::to_shorthash_t(kth_wallet_payment_address_const_cpp(self).hash20());
 }
 
 kth_hash_t kth_wallet_payment_address_hash32(kth_payment_address_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_wallet_payment_address_const_cpp(self).hash32();
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_wallet_payment_address_const_cpp(self).hash32());
 }
 
 kth_payment_t kth_wallet_payment_address_to_payment(kth_payment_address_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_wallet_payment_address_const_cpp(self).to_payment();
-    return kth::to_payment_t(value_cpp);
+    return kth::to_payment_t(kth_wallet_payment_address_const_cpp(self).to_payment());
 }
 
 

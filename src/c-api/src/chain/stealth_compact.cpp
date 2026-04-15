@@ -39,20 +39,17 @@ kth_stealth_compact_mut_t kth_chain_stealth_compact_copy(kth_stealth_compact_con
 
 kth_hash_t kth_chain_stealth_compact_ephemeral_public_key_hash(kth_stealth_compact_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_stealth_compact_const_cpp(self).ephemeral_public_key_hash;
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_stealth_compact_const_cpp(self).ephemeral_public_key_hash);
 }
 
 kth_shorthash_t kth_chain_stealth_compact_public_key_hash(kth_stealth_compact_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_stealth_compact_const_cpp(self).public_key_hash;
-    return kth::to_shorthash_t(value_cpp);
+    return kth::to_shorthash_t(kth_chain_stealth_compact_const_cpp(self).public_key_hash);
 }
 
 kth_hash_t kth_chain_stealth_compact_transaction_hash(kth_stealth_compact_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_stealth_compact_const_cpp(self).transaction_hash;
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_stealth_compact_const_cpp(self).transaction_hash);
 }
 
 

@@ -39,10 +39,10 @@ void clear_hd(T& hd) {
 }
 
 std::expected<wallet_data, std::error_code>
-create_wallet(
+create(
     std::string const& password,
     std::string const& normalized_passphrase,
-    kth::domain::wallet::dictionary const& lexicon /* =kth::domain::wallet::language::en */) {
+    kth::domain::wallet::dictionary const& lexicon) {
 
     using kth::domain::wallet::create_mnemonic;
     using kth::domain::wallet::decode_mnemonic;

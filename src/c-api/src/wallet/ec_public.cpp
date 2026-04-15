@@ -126,8 +126,7 @@ char* kth_wallet_ec_public_encoded(kth_ec_public_const_t self) {
 
 kth_ec_compressed_t kth_wallet_ec_public_point(kth_ec_public_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_wallet_ec_public_const_cpp(self).point();
-    return kth::to_ec_compressed_t(value_cpp);
+    return kth::to_ec_compressed_t(kth_wallet_ec_public_const_cpp(self).point());
 }
 
 kth_bool_t kth_wallet_ec_public_compressed(kth_ec_public_const_t self) {

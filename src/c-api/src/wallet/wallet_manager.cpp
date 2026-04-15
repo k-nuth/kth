@@ -11,25 +11,6 @@
 // ---------------------------------------------------------------------------
 extern "C" {
 
-kth_error_code_t kth_wallet_create_wallet(
-    char const* password,
-    char const* normalized_passphrase,
-    kth_wallet_data_t* out_wallet_data) {
-
-    auto res = kth::domain::wallet::create_wallet(
-        std::string(password),
-        std::string(normalized_passphrase)
-        // lexicon
-    );
-
-    if ( ! res) {
-        return kth::to_c_err(res.error());
-    }
-
-    *out_wallet_data = kth::make_leaked(std::move(res.value()));
-    return kth_ec_success;
-}
-
 kth_error_code_t kth_wallet_decrypt_seed(
     char const* password,
     kth_encrypted_seed_t const* encrypted_seed,

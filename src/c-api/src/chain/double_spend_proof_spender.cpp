@@ -88,20 +88,17 @@ uint32_t kth_chain_double_spend_proof_spender_locktime(kth_double_spend_proof_sp
 
 kth_hash_t kth_chain_double_spend_proof_spender_prev_outs_hash(kth_double_spend_proof_spender_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_double_spend_proof_spender_const_cpp(self).prev_outs_hash;
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_double_spend_proof_spender_const_cpp(self).prev_outs_hash);
 }
 
 kth_hash_t kth_chain_double_spend_proof_spender_sequence_hash(kth_double_spend_proof_spender_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_double_spend_proof_spender_const_cpp(self).sequence_hash;
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_double_spend_proof_spender_const_cpp(self).sequence_hash);
 }
 
 kth_hash_t kth_chain_double_spend_proof_spender_outputs_hash(kth_double_spend_proof_spender_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth_chain_double_spend_proof_spender_const_cpp(self).outputs_hash;
-    return kth::to_hash_t(value_cpp);
+    return kth::to_hash_t(kth_chain_double_spend_proof_spender_const_cpp(self).outputs_hash);
 }
 
 uint8_t* kth_chain_double_spend_proof_spender_push_data(kth_double_spend_proof_spender_const_t self, kth_size_t* out_size) {
