@@ -385,8 +385,8 @@ TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - 
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{1});
     REQUIRE(nft.commitment.size() == 0);
     REQUIRE(nft.capability == chain::capability_t::none); // immutable
@@ -411,8 +411,8 @@ TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - 
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{253});
     REQUIRE(nft.commitment.size() == 0);
     REQUIRE(nft.capability == chain::capability_t::none); // immutable
@@ -437,8 +437,8 @@ TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - 
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{9223372036854775807});
     REQUIRE(nft.commitment.size() == 0);
     REQUIRE(nft.capability == chain::capability_t::none); // immutable
@@ -488,8 +488,8 @@ TEST_CASE("output deserialization with both - immutable NFT 1-byte commitment - 
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{252});
     REQUIRE(nft.commitment.size() == 1);
     REQUIRE(encode_base16(nft.commitment) == "cc");
@@ -515,8 +515,8 @@ TEST_CASE("output deserialization with both - immutable NFT 2-byte commitment - 
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{253});
     REQUIRE(nft.commitment.size() == 2);
     REQUIRE(encode_base16(nft.commitment) == "cccc");
@@ -542,8 +542,8 @@ TEST_CASE("output deserialization with both - immutable NFT 10-byte commitment -
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{65535});
     REQUIRE(nft.commitment.size() == 10);
     REQUIRE(encode_base16(nft.commitment) == "cccccccccccccccccccc");
@@ -569,8 +569,8 @@ TEST_CASE("output deserialization with both - immutable NFT 40-byte commitment -
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{65536});
     REQUIRE(nft.commitment.size() == 40);
     REQUIRE(encode_base16(nft.commitment) == "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
@@ -620,8 +620,8 @@ TEST_CASE("output deserialization with both - mutable NFT 0-byte commitment - FT
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{4294967295});
     REQUIRE(nft.commitment.size() == 0);
     REQUIRE(nft.capability == chain::capability_t::mut); // mutable
@@ -671,8 +671,8 @@ TEST_CASE("output deserialization with both - mutable NFT 1-byte commitment - FT
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{4294967296});
     REQUIRE(nft.commitment.size() == 1);
     REQUIRE(encode_base16(nft.commitment) == "cc");
@@ -698,8 +698,8 @@ TEST_CASE("output deserialization with both - mutable NFT 2-byte commitment - FT
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{9223372036854775807});
     REQUIRE(nft.commitment.size() == 2);
     REQUIRE(encode_base16(nft.commitment) == "cccc");
@@ -725,8 +725,8 @@ TEST_CASE("output deserialization with both - mutable NFT 10-byte commitment - F
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{1});
     REQUIRE(nft.commitment.size() == 10);
     REQUIRE(encode_base16(nft.commitment) == "cccccccccccccccccccc");
@@ -752,8 +752,8 @@ TEST_CASE("output deserialization with both - mutable NFT 40-byte commitment - F
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{252});
     REQUIRE(nft.commitment.size() == 40);
     REQUIRE(encode_base16(nft.commitment) == "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
@@ -803,8 +803,8 @@ TEST_CASE("output deserialization with both - minting NFT 0-byte commitment - FT
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{253});
     REQUIRE(nft.commitment.size() == 0);
     REQUIRE(nft.capability == chain::capability_t::minting); // minting
@@ -854,8 +854,8 @@ TEST_CASE("output deserialization with both - minting NFT 1-byte commitment - FT
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{65535});
     REQUIRE(nft.commitment.size() == 1);
     REQUIRE(encode_base16(nft.commitment) == "cc");
@@ -881,8 +881,8 @@ TEST_CASE("output deserialization with both - minting NFT 2-byte commitment - FT
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{65536});
     REQUIRE(nft.commitment.size() == 2);
     REQUIRE(encode_base16(nft.commitment) == "cccc");
@@ -908,8 +908,8 @@ TEST_CASE("output deserialization with both - minting NFT 10-byte commitment - F
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{4294967297});
     REQUIRE(nft.commitment.size() == 10);
     REQUIRE(encode_base16(nft.commitment) == "cccccccccccccccccccc");
@@ -935,8 +935,8 @@ TEST_CASE("output deserialization with both - minting NFT 40-byte commitment - F
     REQUIRE(instance.token_data().has_value());
     REQUIRE(encode_base16(instance.token_data().value().id) == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     REQUIRE(std::holds_alternative<chain::both_kinds>(instance.token_data().value().data));
-    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).first;
-    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).second;
+    auto const& ft = std::get<chain::both_kinds>(instance.token_data().value().data).fungible_part;
+    auto const& nft = std::get<chain::both_kinds>(instance.token_data().value().data).non_fungible_part;
     REQUIRE(ft.amount == chain::amount_t{9223372036854775807});
     REQUIRE(nft.commitment.size() == 40);
     REQUIRE(encode_base16(nft.commitment) == "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");

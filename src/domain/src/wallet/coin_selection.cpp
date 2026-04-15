@@ -70,7 +70,7 @@ void track_nft_from_both_kinds(utxo const& u, coin_selection_result& result) {
     auto const& token = u.token_data().value();
     if (std::holds_alternative<both_kinds>(token.data)) {
         auto const& bk = std::get<both_kinds>(token.data);
-        result.collateral_nfts.emplace_back(token_data_t{token.id, bk.second});
+        result.collateral_nfts.emplace_back(token_data_t{token.id, bk.non_fungible_part});
     }
 }
 
@@ -90,9 +90,9 @@ void track_collateral(utxo const& u, hash_digest const& target_category,
     } else if (std::holds_alternative<both_kinds>(token.data)) {
         auto const& bk = std::get<both_kinds>(token.data);
         if (token.id != target_category) {
-            result.collateral_fts[token.id] += uint64_t(bk.first.amount);
+            result.collateral_fts[token.id] += uint64_t(bk.fungible_part.amount);
         }
-        result.collateral_nfts.emplace_back(token_data_t{token.id, bk.second});
+        result.collateral_nfts.emplace_back(token_data_t{token.id, bk.non_fungible_part});
     } else {
         // pure non_fungible
         result.collateral_nfts.emplace_back(token);

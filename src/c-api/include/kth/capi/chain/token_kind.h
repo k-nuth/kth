@@ -14,11 +14,13 @@
 extern "C" {
 #endif
 
+// Discriminator for the three variants of the CashTokens payload.
+// Mirrors `kth::domain::chain::kind` in the C++ layer so both sides
+// share the same integral values.
 typedef enum {
-    kth_token_kind_none = 0x00,
-    kth_token_kind_fungible = 0x01,
-    kth_token_kind_non_fungible = 0x02,
-    kth_token_kind_both = 0x03,
+    kth_token_kind_fungible_only = 0,
+    kth_token_kind_non_fungible_only = 1,
+    kth_token_kind_both = 2,
 } kth_token_kind_t;
 
 #ifdef __cplusplus

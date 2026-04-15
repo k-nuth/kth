@@ -4,62 +4,10 @@
 
 #pragma once
 
+// The `to_data` entry points that used to live here moved into
+// `token_data.hpp` so the C-API binding generator — which parses a
+// single header per class — can pick them up. This header stays as
+// a compatibility shim; external callers can keep including it and
+// will transparently get the same overloads.
+
 #include <kth/domain/chain/token_data.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
-namespace kth::domain::chain::token::encoding {
-
-inline
-data_chunk to_data(fungible const& x) {
-    data_chunk data;
-    auto const size = serialized_size(x);
-    data.reserve(size);
-    data_sink ostream(data);
-    ostream_writer sink_w(ostream);
-    to_data(sink_w, x);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-inline
-data_chunk to_data(non_fungible const& x) {
-    data_chunk data;
-    auto const size = serialized_size(x);
-    data.reserve(size);
-    data_sink ostream(data);
-    ostream_writer sink_w(ostream);
-    to_data(sink_w, x);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-inline
-data_chunk to_data(both_kinds const& x) {
-    data_chunk data;
-    auto const size = serialized_size(x);
-    data.reserve(size);
-    data_sink ostream(data);
-    ostream_writer sink_w(ostream);
-    to_data(sink_w, x);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-inline
-data_chunk to_data(token_data_t const& x) {
-    data_chunk data;
-    auto const size = serialized_size(x);
-    data.reserve(size);
-    data_sink ostream(data);
-    ostream_writer sink_w(ostream);
-    to_data(sink_w, x);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-} // namespace kth::domain::chain::encoding
-
