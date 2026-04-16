@@ -514,6 +514,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/history_compact.cpp
         test/chain/double_spend_proof.cpp
         test/chain/token_data.cpp
+        test/chain/utxo.cpp
         test/wallet/hd_public.cpp
         test/wallet/hd_private.cpp
         test/wallet/wallet_data.cpp

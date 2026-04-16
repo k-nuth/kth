@@ -186,7 +186,10 @@ kth::domain::chain::script&       kth_chain_script_mut_cpp(kth_script_mut_t o);
 // in src/chain/point.cpp.
 kth::domain::chain::point const& kth_chain_point_const_cpp(kth_point_const_t o);
 kth::domain::chain::point&       kth_chain_point_mut_cpp(kth_point_mut_t o);
-KTH_CONV_DECLARE(chain, kth_utxo_t, kth::domain::chain::utxo, utxo)
+// utxo conversion functions take const/mut handle types directly. Defined
+// in src/chain/utxo.cpp.
+kth::domain::chain::utxo const& kth_chain_utxo_const_cpp(kth_utxo_const_t o);
+kth::domain::chain::utxo&       kth_chain_utxo_mut_cpp(kth_utxo_mut_t o);
 
 // #ifndef __EMSCRIPTEN__
 KTH_CONV_DECLARE(chain, kth_mempool_transaction_t, kth::blockchain::mempool_transaction_summary, mempool_transaction)
@@ -208,7 +211,6 @@ kth::domain::message::double_spend_proof&       kth_chain_double_spend_proof_mut
 kth::domain::message::double_spend_proof::spender const& kth_chain_double_spend_proof_spender_const_cpp(kth_double_spend_proof_spender_const_t o);
 kth::domain::message::double_spend_proof::spender&       kth_chain_double_spend_proof_spender_mut_cpp(kth_double_spend_proof_spender_mut_t o);
 
-KTH_LIST_DECLARE_CONSTRUCT_FROM_CPP(chain, kth_utxo_list_t, kth::domain::chain::utxo, utxo_list)
 // hash_list — inline converters and construct_from_cpp.
 inline std::vector<kth::hash_digest> const&
 kth_core_hash_list_const_cpp(kth_hash_list_const_t l) {
@@ -234,7 +236,6 @@ inline std::vector<uint64_t>&
 kth_core_u64_list_mut_cpp(kth_u64_list_mut_t l) {
     return *static_cast<std::vector<uint64_t>*>(l);
 }
-KTH_LIST_DECLARE_CONVERTERS(chain, kth_utxo_list_t, kth::domain::chain::utxo, utxo_list)
 
 // operation conversion functions. Defined in src/chain/operation.cpp.
 kth::domain::machine::operation const& kth_chain_operation_const_cpp(kth_operation_const_t o);
