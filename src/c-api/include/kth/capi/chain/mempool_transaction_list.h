@@ -7,7 +7,6 @@
 
 #include <stdint.h>
 
-#include <kth/capi/list_creator.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
 
@@ -15,7 +14,20 @@
 extern "C" {
 #endif
 
-KTH_LIST_DECLARE(chain, kth_mempool_transaction_list_t, kth_mempool_transaction_t, mempool_transaction_list)
+KTH_EXPORT
+kth_mempool_transaction_list_t kth_chain_mempool_transaction_list_construct_default(void);
+
+KTH_EXPORT
+void kth_chain_mempool_transaction_list_push_back(kth_mempool_transaction_list_t l, kth_mempool_transaction_t e);
+
+KTH_EXPORT
+void kth_chain_mempool_transaction_list_destruct(kth_mempool_transaction_list_t l);
+
+KTH_EXPORT
+kth_size_t kth_chain_mempool_transaction_list_count(kth_mempool_transaction_list_t l);
+
+KTH_EXPORT
+kth_mempool_transaction_t kth_chain_mempool_transaction_list_nth(kth_mempool_transaction_list_t l, kth_size_t n);
 
 #ifdef __cplusplus
 } // extern "C"

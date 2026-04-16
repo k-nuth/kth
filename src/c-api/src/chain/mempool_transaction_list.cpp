@@ -6,13 +6,36 @@
 
 #include <kth/blockchain/interface/safe_chain.hpp>
 #include <kth/capi/conversions.hpp>
-
-
-KTH_LIST_DEFINE_CONVERTERS(chain, kth_mempool_transaction_list_t, kth::blockchain::mempool_transaction_summary, mempool_transaction_list)
-KTH_LIST_DEFINE_CONSTRUCT_FROM_CPP(chain, kth_mempool_transaction_list_t, kth::blockchain::mempool_transaction_summary, mempool_transaction_list)
+#include <kth/capi/helpers.hpp>
 
 extern "C" {
 
-KTH_LIST_DEFINE(chain, kth_mempool_transaction_list_t, kth_mempool_transaction_t, mempool_transaction_list, kth::blockchain::mempool_transaction_summary, kth_chain_mempool_transaction_const_cpp)
+kth_mempool_transaction_list_t kth_chain_mempool_transaction_list_construct_default(void) {
+    return new std::vector<kth::blockchain::mempool_transaction_summary>();
+}
+
+void kth_chain_mempool_transaction_list_push_back(kth_mempool_transaction_list_t l, kth_mempool_transaction_t e) {
+    KTH_PRECONDITION(l != nullptr);
+    KTH_PRECONDITION(e != nullptr);
+    kth::cpp_ref<std::vector<kth::blockchain::mempool_transaction_summary>>(l).push_back(
+        kth::cpp_ref<kth::blockchain::mempool_transaction_summary>(e));
+}
+
+void kth_chain_mempool_transaction_list_destruct(kth_mempool_transaction_list_t l) {
+    if (l == nullptr) return;
+    delete &kth::cpp_ref<std::vector<kth::blockchain::mempool_transaction_summary>>(l);
+}
+
+kth_size_t kth_chain_mempool_transaction_list_count(kth_mempool_transaction_list_t l) {
+    KTH_PRECONDITION(l != nullptr);
+    return kth::cpp_ref<std::vector<kth::blockchain::mempool_transaction_summary>>(l).size();
+}
+
+kth_mempool_transaction_t kth_chain_mempool_transaction_list_nth(kth_mempool_transaction_list_t l, kth_size_t n) {
+    KTH_PRECONDITION(l != nullptr);
+    auto& vec = kth::cpp_ref<std::vector<kth::blockchain::mempool_transaction_summary>>(l);
+    KTH_PRECONDITION(n < vec.size());
+    return &vec[n];
+}
 
 } // extern "C"

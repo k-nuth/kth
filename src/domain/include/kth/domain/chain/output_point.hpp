@@ -19,6 +19,8 @@ namespace kth::domain::chain {
 
 struct KD_API output_point : point {
 public:
+    using list = std::vector<output_point>;
+
     // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
     struct validation_type {
         /// An output is spent if a valid transaction has a valid claim on it.

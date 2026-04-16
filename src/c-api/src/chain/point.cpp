@@ -11,14 +11,6 @@
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/chain/point.hpp>
 
-// Conversion functions
-kth::domain::chain::point& kth_chain_point_mut_cpp(kth_point_mut_t o) {
-    return *static_cast<kth::domain::chain::point*>(o);
-}
-kth::domain::chain::point const& kth_chain_point_const_cpp(kth_point_const_t o) {
-    return *static_cast<kth::domain::chain::point const*>(o);
-}
-
 // ---------------------------------------------------------------------------
 extern "C" {
 
@@ -42,13 +34,13 @@ kth_error_code_t kth_chain_point_construct_from_data(uint8_t const* data, kth_si
 
 kth_point_mut_t kth_chain_point_construct(kth_hash_t hash, uint32_t index) {
     auto const hash_cpp = kth::hash_to_cpp(hash.hash);
-    return kth::make_leaked_if_valid(kth::domain::chain::point(hash_cpp, index));
+    return kth::make_leaked<kth::domain::chain::point>(hash_cpp, index);
 }
 
 kth_point_mut_t kth_chain_point_construct_unsafe(uint8_t const* hash, uint32_t index) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::hash_to_cpp(hash);
-    return kth::make_leaked_if_valid(kth::domain::chain::point(hash_cpp, index));
+    return kth::make_leaked<kth::domain::chain::point>(hash_cpp, index);
 }
 
 
@@ -63,7 +55,7 @@ kth_point_mut_t kth_chain_point_null(void) {
 
 void kth_chain_point_destruct(kth_point_mut_t self) {
     if (self == nullptr) return;
-    delete &kth_chain_point_mut_cpp(self);
+    delete &kth::cpp_ref<kth::domain::chain::point>(self);
 }
 
 
@@ -71,7 +63,7 @@ void kth_chain_point_destruct(kth_point_mut_t self) {
 
 kth_point_mut_t kth_chain_point_copy(kth_point_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return new kth::domain::chain::point(kth_chain_point_const_cpp(self));
+    return new kth::domain::chain::point(kth::cpp_ref<kth::domain::chain::point>(self));
 }
 
 
@@ -80,7 +72,7 @@ kth_point_mut_t kth_chain_point_copy(kth_point_const_t self) {
 kth_bool_t kth_chain_point_equals(kth_point_const_t self, kth_point_const_t other) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
-    return kth::bool_to_int(kth_chain_point_const_cpp(self) == kth_chain_point_const_cpp(other));
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::point>(self) == kth::cpp_ref<kth::domain::chain::point>(other));
 }
 
 
@@ -90,14 +82,14 @@ uint8_t* kth_chain_point_to_data(kth_point_const_t self, kth_bool_t wire, kth_si
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
     auto const wire_cpp = kth::int_to_bool(wire);
-    auto const data = kth_chain_point_const_cpp(self).to_data(wire_cpp);
+    auto const data = kth::cpp_ref<kth::domain::chain::point>(self).to_data(wire_cpp);
     return kth::create_c_array(data, *out_size);
 }
 
 kth_size_t kth_chain_point_serialized_size(kth_point_const_t self, kth_bool_t wire) {
     KTH_PRECONDITION(self != nullptr);
     auto const wire_cpp = kth::int_to_bool(wire);
-    return kth_chain_point_const_cpp(self).serialized_size(wire_cpp);
+    return kth::cpp_ref<kth::domain::chain::point>(self).serialized_size(wire_cpp);
 }
 
 
@@ -105,17 +97,17 @@ kth_size_t kth_chain_point_serialized_size(kth_point_const_t self, kth_bool_t wi
 
 kth_hash_t kth_chain_point_hash(kth_point_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_hash_t(kth_chain_point_const_cpp(self).hash());
+    return kth::to_hash_t(kth::cpp_ref<kth::domain::chain::point>(self).hash());
 }
 
 uint32_t kth_chain_point_index(kth_point_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth_chain_point_const_cpp(self).index();
+    return kth::cpp_ref<kth::domain::chain::point>(self).index();
 }
 
 uint64_t kth_chain_point_checksum(kth_point_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth_chain_point_const_cpp(self).checksum();
+    return kth::cpp_ref<kth::domain::chain::point>(self).checksum();
 }
 
 
@@ -124,19 +116,19 @@ uint64_t kth_chain_point_checksum(kth_point_const_t self) {
 void kth_chain_point_set_hash(kth_point_mut_t self, kth_hash_t value) {
     KTH_PRECONDITION(self != nullptr);
     auto const value_cpp = kth::hash_to_cpp(value.hash);
-    kth_chain_point_mut_cpp(self).set_hash(value_cpp);
+    kth::cpp_ref<kth::domain::chain::point>(self).set_hash(value_cpp);
 }
 
 void kth_chain_point_set_hash_unsafe(kth_point_mut_t self, uint8_t const* value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
     auto const value_cpp = kth::hash_to_cpp(value);
-    kth_chain_point_mut_cpp(self).set_hash(value_cpp);
+    kth::cpp_ref<kth::domain::chain::point>(self).set_hash(value_cpp);
 }
 
 void kth_chain_point_set_index(kth_point_mut_t self, uint32_t value) {
     KTH_PRECONDITION(self != nullptr);
-    kth_chain_point_mut_cpp(self).set_index(value);
+    kth::cpp_ref<kth::domain::chain::point>(self).set_index(value);
 }
 
 
@@ -144,12 +136,12 @@ void kth_chain_point_set_index(kth_point_mut_t self, uint32_t value) {
 
 kth_bool_t kth_chain_point_is_valid(kth_point_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_point_const_cpp(self).is_valid());
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::point>(self).is_valid());
 }
 
 kth_bool_t kth_chain_point_is_null(kth_point_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_point_const_cpp(self).is_null());
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::point>(self).is_null());
 }
 
 
@@ -157,7 +149,7 @@ kth_bool_t kth_chain_point_is_null(kth_point_const_t self) {
 
 void kth_chain_point_reset(kth_point_mut_t self) {
     KTH_PRECONDITION(self != nullptr);
-    kth_chain_point_mut_cpp(self).reset();
+    kth::cpp_ref<kth::domain::chain::point>(self).reset();
 }
 
 

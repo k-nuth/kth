@@ -329,7 +329,7 @@ kth_error_code_t kth_chain_sync_history(kth_chain_t chain, kth_payment_address_t
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
-    safe_chain(chain).fetch_history(kth_wallet_payment_address_const_cpp(address).hash20(), limit, from_height, [&](std::error_code const& ec, kth::domain::chain::history_compact::list history) {
+    safe_chain(chain).fetch_history(kth::cpp_ref<kth::domain::wallet::payment_address>(address).hash20(), limit, from_height, [&](std::error_code const& ec, kth::domain::chain::history_compact::list history) {
         *out_history = kth::leak_if_success(history, ec);
         res = kth::to_c_err(ec);
         latch.count_down();
@@ -343,7 +343,7 @@ kth_error_code_t kth_chain_sync_confirmed_transactions(kth_chain_t chain, kth_pa
     std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
     kth_error_code_t res;
 
-    safe_chain(chain).fetch_confirmed_transactions(kth_wallet_payment_address_const_cpp(address).hash20(), max, start_height, [&](std::error_code const& ec, std::vector<kth::hash_digest> const& txs) {
+    safe_chain(chain).fetch_confirmed_transactions(kth::cpp_ref<kth::domain::wallet::payment_address>(address).hash20(), max, start_height, [&](std::error_code const& ec, std::vector<kth::hash_digest> const& txs) {
         *out_tx_hashes = kth::leak_if_success(txs, ec);
         res = kth::to_c_err(ec);
         latch.count_down();
@@ -373,7 +373,7 @@ kth_error_code_t kth_chain_sync_confirmed_transactions(kth_chain_t chain, kth_pa
 // ------------------------------------------------------------------
 
 kth_mempool_transaction_list_t kth_chain_sync_mempool_transactions(kth_chain_t chain, kth_payment_address_t address, kth_bool_t use_testnet_rules) {
-    auto const& address_cpp = kth_wallet_payment_address_const_cpp(address);
+    auto const& address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(address);
     if (address_cpp) {
         auto txs = safe_chain(chain).get_mempool_transactions(address_cpp.encoded_cashaddr(false), kth::int_to_bool(use_testnet_rules));
         auto ret_txs = kth::leak(txs);

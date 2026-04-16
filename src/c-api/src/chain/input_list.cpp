@@ -12,28 +12,29 @@
 extern "C" {
 
 kth_input_list_mut_t kth_chain_input_list_construct_default(void) {
-    return new std::vector<kth::domain::chain::input>();
+    return new kth::domain::chain::input::list();
 }
 
 void kth_chain_input_list_push_back(kth_input_list_mut_t list, kth_input_const_t elem) {
     KTH_PRECONDITION(list != nullptr);
     KTH_PRECONDITION(elem != nullptr);
-    static_cast<std::vector<kth::domain::chain::input>*>(list)->push_back(kth_chain_input_const_cpp(elem));
+    kth::domain::chain::input tmp = kth::cpp_ref<kth::domain::chain::input>(elem);
+    kth::cpp_ref<kth::domain::chain::input::list>(list).push_back(std::move(tmp));
 }
 
 void kth_chain_input_list_destruct(kth_input_list_mut_t list) {
     if (list == nullptr) return;
-    delete static_cast<std::vector<kth::domain::chain::input>*>(list);
+    delete &kth::cpp_ref<kth::domain::chain::input::list>(list);
 }
 
 kth_size_t kth_chain_input_list_count(kth_input_list_const_t list) {
     KTH_PRECONDITION(list != nullptr);
-    return static_cast<std::vector<kth::domain::chain::input> const*>(list)->size();
+    return kth::cpp_ref<kth::domain::chain::input::list>(list).size();
 }
 
 kth_input_const_t kth_chain_input_list_nth(kth_input_list_const_t list, kth_size_t index) {
     KTH_PRECONDITION(list != nullptr);
-    auto const& vec = *static_cast<std::vector<kth::domain::chain::input> const*>(list);
+    auto const& vec = kth::cpp_ref<kth::domain::chain::input::list>(list);
     KTH_PRECONDITION(index < vec.size());
     return &vec[index];
 }
@@ -41,14 +42,14 @@ kth_input_const_t kth_chain_input_list_nth(kth_input_list_const_t list, kth_size
 void kth_chain_input_list_assign_at(kth_input_list_mut_t list, kth_size_t index, kth_input_const_t elem) {
     KTH_PRECONDITION(list != nullptr);
     KTH_PRECONDITION(elem != nullptr);
-    auto& vec = *static_cast<std::vector<kth::domain::chain::input>*>(list);
+    auto& vec = kth::cpp_ref<kth::domain::chain::input::list>(list);
     KTH_PRECONDITION(index < vec.size());
-    vec[index] = kth_chain_input_const_cpp(elem);
+    vec[index] = kth::cpp_ref<kth::domain::chain::input>(elem);
 }
 
 void kth_chain_input_list_erase(kth_input_list_mut_t list, kth_size_t index) {
     KTH_PRECONDITION(list != nullptr);
-    auto& vec = *static_cast<std::vector<kth::domain::chain::input>*>(list);
+    auto& vec = kth::cpp_ref<kth::domain::chain::input::list>(list);
     KTH_PRECONDITION(index < vec.size());
     vec.erase(vec.begin() + index);
 }

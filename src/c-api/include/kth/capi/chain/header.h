@@ -24,12 +24,12 @@ kth_header_mut_t kth_chain_header_construct_default(void);
 KTH_EXPORT
 kth_error_code_t kth_chain_header_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_header_mut_t* out);
 
-/** @return Owned `kth_header_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_header_destruct`. */
+/** @return Owned `kth_header_mut_t`. Caller must release with `kth_chain_header_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_header_mut_t kth_chain_header_construct(uint32_t version, kth_hash_t previous_block_hash, kth_hash_t merkle, uint32_t timestamp, uint32_t bits, uint32_t nonce);
 
 /**
- * @return Owned `kth_header_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_header_destruct`.
+ * @return Owned `kth_header_mut_t`. Caller must release with `kth_chain_header_destruct`.
  * @warning `previous_block_hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
  * @warning `merkle` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
  */

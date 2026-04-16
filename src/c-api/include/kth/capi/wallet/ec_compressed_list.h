@@ -7,7 +7,6 @@
 
 #include <stdint.h>
 
-#include <kth/capi/list_creator.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
 #include <kth/capi/wallet/primitives.h>
@@ -15,8 +14,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-// KTH_LIST_DECLARE(wallet, kth_ec_compressed_list_t, kth_ec_compressed_t, ec_compressed_list)
 
 KTH_EXPORT
 kth_ec_compressed_list_t kth_wallet_ec_compressed_list_construct_default();

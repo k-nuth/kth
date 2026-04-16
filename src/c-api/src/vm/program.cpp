@@ -5,20 +5,14 @@
 #include <kth/capi/vm/program.h>
 
 #include <kth/capi/helpers.hpp>
-// #include <kth/capi/type_conversions.h>
-
-#include <kth/domain/machine/program.hpp>
-
 #include <kth/capi/conversions.hpp>
 
-// KTH_CONV_DEFINE(vm, kth_program_t, kth::domain::machine::program, program)
-KTH_CONV_DEFINE_JUST_CONST(vm, kth_program_const_t, kth::domain::machine::program, program)
-KTH_CONV_DEFINE_JUST_MUTABLE(vm, kth_program_t, kth::domain::machine::program, program)
+#include <kth/domain/machine/program.hpp>
 // ---------------------------------------------------------------------------
 extern "C" {
 
 void kth_vm_program_destruct(kth_program_t program) {
-    delete &kth_vm_program_cpp(program);
+    delete &kth::cpp_ref<kth::domain::machine::program>(program);
 }
 
 // kth_payment_address_t kth_wallet_payment_address_construct_from_string(char const* address) {
@@ -30,14 +24,14 @@ kth_program_t kth_vm_program_construct_default() {
 }
 
 kth_program_t kth_vm_program_construct_from_script(kth_script_const_t script) {
-    auto const& script_cpp = kth_chain_script_const_cpp(script);
+    auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
     return new kth::domain::machine::program(script_cpp);
 }
 
 // program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, uint64_t forks);
 kth_program_t kth_vm_program_construct_from_script_transaction(kth_script_const_t script, kth_transaction_const_t transaction, uint32_t input_index, uint64_t forks) {
-    auto const& script_cpp = kth_chain_script_const_cpp(script);
-    auto const& transaction_cpp = kth_chain_transaction_const_cpp(transaction);
+    auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
+    auto const& transaction_cpp = kth::cpp_ref<kth::domain::chain::transaction>(transaction);
     return new kth::domain::machine::program(script_cpp, transaction_cpp, input_index, forks);
 }
 
@@ -46,72 +40,72 @@ kth_program_t kth_vm_program_construct_from_script_transaction(kth_script_const_
 
 // program(chain::script const& script, program const& x);
 kth_program_t kth_vm_program_construct_from_script_program(kth_script_const_t script, kth_program_t program) {
-    auto const& script_cpp = kth_chain_script_const_cpp(script);
-    auto const& program_cpp = kth_vm_program_const_cpp(program);
-    return new kth::domain::machine::program(script_cpp, kth_vm_program_const_cpp(program));
+    auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
+    auto const& program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return new kth::domain::machine::program(script_cpp, kth::cpp_ref<kth::domain::machine::program>(program));
 }
 
 // // program(chain::script const& script, program&& x, bool move);
 // kth_program_t kth_vm_program_construct_from_script_program_move(kth_script_t script, kth_program_t program, kth_bool_t move) {
-//     auto const& script_cpp = kth_chain_script_const_cpp(script);
-//     auto const& program_cpp = kth_vm_program_const_cpp(program);
+//     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
+//     auto const& program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
 //     return new kth::domain::machine::program(script_cpp, std::move(), kth::int_to_bool(move));
 // }
 
 kth_metrics_t kth_vm_program_get_metrics(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth::ref_to_c(kth_vm_program_cpp(program).get_metrics());
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::ref_to_c(kth::cpp_ref<kth::domain::machine::program>(program).get_metrics());
 }
 
 // KTH_EXPORT
 // kth_metrics_t kth_vm_program_get_metrics_const(kth_program_t program);
 
 kth_bool_t kth_vm_program_is_valid(kth_program_t program) {
-    // auto const& program_cpp = kth_vm_program_const_cpp(program);
-    return kth::bool_to_int(kth_vm_program_const_cpp(program).is_valid());
+    // auto const& program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::machine::program>(program).is_valid());
 }
 
 uint64_t kth_vm_program_flags(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth_vm_program_const_cpp(program).flags();
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::cpp_ref<kth::domain::machine::program>(program).flags();
 }
 
 kth_size_t kth_vm_program_max_script_element_size(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth_vm_program_const_cpp(program).max_script_element_size();
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::cpp_ref<kth::domain::machine::program>(program).max_script_element_size();
 }
 
 kth_size_t kth_vm_program_max_integer_size_legacy(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth_vm_program_const_cpp(program).max_integer_size_legacy();
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::cpp_ref<kth::domain::machine::program>(program).max_integer_size_legacy();
 }
 
 kth_bool_t kth_vm_program_is_chip_vm_limits_enabled(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth::bool_to_int(kth_vm_program_const_cpp(program).is_chip_vm_limits_enabled());
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::machine::program>(program).is_chip_vm_limits_enabled());
 }
 
 uint32_t kth_vm_program_input_index(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth_vm_program_const_cpp(program).input_index();
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::cpp_ref<kth::domain::machine::program>(program).input_index();
 }
 
 uint64_t kth_vm_program_value(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth_vm_program_const_cpp(program).value();
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::cpp_ref<kth::domain::machine::program>(program).value();
 }
 
 // TODO:
 // kth_script_version_t kth_vm_program_version(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-//     return kth_vm_program_const_cpp(program).version();
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+//     return kth::cpp_ref<kth::domain::machine::program>(program).version();
 // }
 
 
 kth_transaction_const_t kth_vm_program_transaction(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    // return kth::ref_to_c(kth_vm_program_const_cpp(program).transaction());
-    return &kth_vm_program_const_cpp(program).transaction();
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    // return kth::ref_to_c(kth::cpp_ref<kth::domain::machine::program>(program).transaction());
+    return &kth::cpp_ref<kth::domain::machine::program>(program).transaction();
 }
 
 
@@ -136,62 +130,62 @@ kth_transaction_const_t kth_vm_program_transaction(kth_program_t program) {
 // kth_operation_t kth_vm_program_end(kth_program_t program);
 
 kth_size_t kth_vm_program_operation_count(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth_vm_program_const_cpp(program).operation_count();
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::cpp_ref<kth::domain::machine::program>(program).operation_count();
 }
 
 kth_error_code_t kth_vm_program_evaluate(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth::to_c_err(kth_vm_program_cpp(program).evaluate());
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::to_c_err(kth::cpp_ref<kth::domain::machine::program>(program).evaluate());
 }
 
 kth_error_code_t kth_vm_program_evaluate_operation(kth_program_t program, kth_operation_t op) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    auto op_cpp = kth_chain_operation_const_cpp(op);
-    return kth::to_c_err(kth_vm_program_cpp(program).evaluate(op_cpp));
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    auto op_cpp = kth::cpp_ref<kth::domain::machine::operation>(op);
+    return kth::to_c_err(kth::cpp_ref<kth::domain::machine::program>(program).evaluate(op_cpp));
 }
 
 kth_bool_t kth_vm_program_increment_operation_count(kth_program_t program, kth_operation_t op) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    auto op_cpp = kth_chain_operation_const_cpp(op);
-    return kth::bool_to_int(kth_vm_program_cpp(program).increment_operation_count(op_cpp));
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    auto op_cpp = kth::cpp_ref<kth::domain::machine::operation>(op);
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::machine::program>(program).increment_operation_count(op_cpp));
 }
 
 kth_bool_t kth_vm_program_increment_operation_count_public_keys(kth_program_t program, int32_t public_keys) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth::bool_to_int(kth_vm_program_cpp(program).increment_operation_count(public_keys));
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::machine::program>(program).increment_operation_count(public_keys));
 }
 
 kth_bool_t kth_vm_program_set_jump_register(kth_program_t program, kth_operation_t op, int32_t offset) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    auto op_cpp = kth_chain_operation_const_cpp(op);
-    return kth::bool_to_int(kth_vm_program_cpp(program).set_jump_register(op_cpp, offset));
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    auto op_cpp = kth::cpp_ref<kth::domain::machine::operation>(op);
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::machine::program>(program).set_jump_register(op_cpp, offset));
 }
 
 void kth_vm_program_push(kth_program_t program, kth_bool_t value) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    kth_vm_program_cpp(program).push(kth::int_to_bool(value));
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    kth::cpp_ref<kth::domain::machine::program>(program).push(kth::int_to_bool(value));
 }
 
 // void kth_vm_program_push_move(kth_program_t program, kth_value_type_t item) {
-//     auto program_cpp = kth_vm_program_const_cpp(program);
-//     kth_vm_program_const_cpp(program).push_move(item);
+//     auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+//     kth::cpp_ref<kth::domain::machine::program>(program).push_move(item);
 // }
 
 // void kth_vm_program_push_copy(kth_program_t program, kth_value_type_t item) {
-//     auto program_cpp = kth_vm_program_const_cpp(program);
-//     kth_vm_program_const_cpp(program).push_copy(item);
+//     auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+//     kth::cpp_ref<kth::domain::machine::program>(program).push_copy(item);
 // }
 
 
 uint8_t const* kth_vm_program_pop(kth_program_t program, kth_size_t* out_size) {
-    auto data = kth_vm_program_cpp(program).pop();
+    auto data = kth::cpp_ref<kth::domain::machine::program>(program).pop();
     return kth::create_c_array(data, *out_size);
 }
 
 //     std::expected<int32_t, error_code_t> pop_int32();
 kth_bool_t kth_vm_program_pop_int32_t(kth_program_t program, int32_t* out_value) {
-    auto result = kth_vm_program_cpp(program).pop_int32();
+    auto result = kth::cpp_ref<kth::domain::machine::program>(program).pop_int32();
     if ( ! result) return kth::bool_to_int(false);
     *out_value = *result;
     return kth::bool_to_int(true);
@@ -199,7 +193,7 @@ kth_bool_t kth_vm_program_pop_int32_t(kth_program_t program, int32_t* out_value)
 
 //     std::expected<int64_t, error_code_t> pop_int64();
 kth_bool_t kth_vm_program_pop_int64_t(kth_program_t program, int64_t* out_value) {
-    auto result = kth_vm_program_cpp(program).pop_int64();
+    auto result = kth::cpp_ref<kth::domain::machine::program>(program).pop_int64();
     if ( ! result) return kth::bool_to_int(false);
     *out_value = *result;
     return kth::bool_to_int(true);
@@ -227,14 +221,14 @@ kth_bool_t kth_vm_program_pop_int64_t(kth_program_t program, int64_t* out_value)
 
 //     void duplicate(size_t index);
 void kth_vm_program_duplicate(kth_program_t program, kth_size_t index) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    kth_vm_program_cpp(program).duplicate(index);
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    kth::cpp_ref<kth::domain::machine::program>(program).duplicate(index);
 }
 
 //     void swap(size_t index_left, size_t index_right);
 void kth_vm_program_swap(kth_program_t program, kth_size_t index_left, kth_size_t index_right) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    kth_vm_program_cpp(program).swap(index_left, index_right);
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    kth::cpp_ref<kth::domain::machine::program>(program).swap(index_left, index_right);
 }
 
 //     void erase(stack_iterator const& position);
@@ -249,42 +243,42 @@ void kth_vm_program_swap(kth_program_t program, kth_size_t index_left, kth_size_
 
 //     bool empty() const;
 kth_bool_t kth_vm_program_empty(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth::bool_to_int(kth_vm_program_const_cpp(program).empty());
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::machine::program>(program).empty());
 }
 
 //     bool stack_true(bool clean) const;
 kth_bool_t kth_vm_program_stack_true(kth_program_t program, kth_bool_t clean) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth::bool_to_int(kth_vm_program_const_cpp(program).stack_true(kth::int_to_bool(clean)));
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::machine::program>(program).stack_true(kth::int_to_bool(clean)));
 }
 
 //     bool stack_result(bool clean) const;
 kth_bool_t kth_vm_program_stack_result(kth_program_t program, kth_bool_t clean) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth::bool_to_int(kth_vm_program_const_cpp(program).stack_result(kth::int_to_bool(clean)));
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::machine::program>(program).stack_result(kth::int_to_bool(clean)));
 }
 
 //     bool is_stack_overflow() const;
 kth_bool_t kth_vm_program_is_stack_overflow(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth::bool_to_int(kth_vm_program_const_cpp(program).is_stack_overflow());
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::machine::program>(program).is_stack_overflow());
 }
 
 //     bool if_(operation const& op) const;
 kth_bool_t kth_vm_program_if(kth_program_t program, kth_operation_t op) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    auto op_cpp = kth_chain_operation_const_cpp(op);
-    return kth::bool_to_int(kth_vm_program_const_cpp(program).if_(op_cpp));
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    auto op_cpp = kth::cpp_ref<kth::domain::machine::operation>(op);
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::machine::program>(program).if_(op_cpp));
 }
 
 //     value_type const& item(size_t index) const;
 // kth_value_type_t kth_vm_program_item(kth_program_t program, kth_size_t index) {
-//     auto program_cpp = kth_vm_program_const_cpp(program);
-//     return kth_vm_program_const_cpp(program).item(index);
+//     auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+//     return kth::cpp_ref<kth::domain::machine::program>(program).item(index);
 // }
 uint8_t const* kth_vm_program_item(kth_program_t program, kth_size_t index, kth_size_t* out_size) {
-    auto data = kth_vm_program_const_cpp(program).item(index);
+    auto data = kth::cpp_ref<kth::domain::machine::program>(program).item(index);
     return kth::create_c_array(data, *out_size);
 }
 
@@ -294,7 +288,7 @@ uint8_t const* kth_vm_program_item(kth_program_t program, kth_size_t index, kth_
 
 //     data_chunk& top();
 uint8_t const* kth_vm_program_top(kth_program_t program, kth_size_t* out_size) {
-    auto data = kth_vm_program_const_cpp(program).top();
+    auto data = kth::cpp_ref<kth::domain::machine::program>(program).top();
     return kth::create_c_array(data, *out_size);
 }
 
@@ -316,21 +310,21 @@ uint8_t const* kth_vm_program_top(kth_program_t program, kth_size_t* out_size) {
 
 //     operation::list subscript() const;
 kth_operation_list_t kth_vm_program_subscript(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    auto ops = kth_vm_program_const_cpp(program).subscript();
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    auto ops = kth::cpp_ref<kth::domain::machine::program>(program).subscript();
     return kth::make_leaked(std::move(ops));
 }
 
 //     size_t size() const;
 kth_size_t kth_vm_program_size(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth_vm_program_const_cpp(program).size();
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::cpp_ref<kth::domain::machine::program>(program).size();
 }
 
 //     bool empty_alternate() const;
 kth_bool_t kth_vm_program_empty_alternate(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth::bool_to_int(kth_vm_program_const_cpp(program).empty_alternate());
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::machine::program>(program).empty_alternate());
 }
 
 //     void push_alternate(value_type&& value);
@@ -346,38 +340,38 @@ kth_bool_t kth_vm_program_empty_alternate(kth_program_t program) {
 
 //     void open(bool value);
 void kth_vm_program_open(kth_program_t program, kth_bool_t value) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    kth_vm_program_cpp(program).open(kth::int_to_bool(value));
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    kth::cpp_ref<kth::domain::machine::program>(program).open(kth::int_to_bool(value));
 }
 
 //     void negate();
 void kth_vm_program_negate(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    kth_vm_program_cpp(program).negate();
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    kth::cpp_ref<kth::domain::machine::program>(program).negate();
 }
 
 //     void close();
 void kth_vm_program_close(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    kth_vm_program_cpp(program).close();
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    kth::cpp_ref<kth::domain::machine::program>(program).close();
 }
 
 //     bool closed() const;
 kth_bool_t kth_vm_program_closed(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth::bool_to_int(kth_vm_program_const_cpp(program).closed());
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::machine::program>(program).closed());
 }
 
 //     bool succeeded() const;
 kth_bool_t kth_vm_program_succeeded(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth::bool_to_int(kth_vm_program_const_cpp(program).succeeded());
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::machine::program>(program).succeeded());
 }
 
 //     size_t conditional_stack_size() const;
 kth_size_t kth_vm_program_conditional_stack_size(kth_program_t program) {
-    // auto program_cpp = kth_vm_program_const_cpp(program);
-    return kth_vm_program_const_cpp(program).conditional_stack_size();
+    // auto program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::cpp_ref<kth::domain::machine::program>(program).conditional_stack_size();
 }
 
 
@@ -389,12 +383,12 @@ kth_size_t kth_vm_program_conditional_stack_size(kth_program_t program) {
 // }
 
 // kth_payment_address_t kth_wallet_payment_address_construct_from_point(kth_ec_public_t point, uint8_t version) {
-//     auto const point_cpp = kth_wallet_ec_public_const_cpp(point);
+//     auto const point_cpp = kth::cpp_ref<kth::domain::wallet::ec_public>(point);
 //     return new kth::domain::wallet::payment_address(point_cpp, version);
 // }
 
 // kth_payment_address_t kth_wallet_payment_address_construct_from_script(kth_script_t script, uint8_t version) {
-//     auto const& script_cpp = kth_chain_script_const_cpp(script);
+//     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
 //     return new kth::domain::wallet::payment_address(script_cpp, version);
 // }
 
@@ -411,50 +405,50 @@ kth_size_t kth_vm_program_conditional_stack_size(kth_program_t program) {
 
 // //User is responsible for releasing return value memory
 // char* kth_wallet_payment_address_encoded_legacy(kth_payment_address_t payment_address) {
-//     std::string str = kth_wallet_payment_address_const_cpp(payment_address).encoded_legacy();
+//     std::string str = kth::cpp_ref<kth::domain::wallet::payment_address>(payment_address).encoded_legacy();
 //     return kth::create_c_str(str);
 // }
 
 // #if defined(KTH_CURRENCY_BCH)
 // //User is responsible for releasing return value memory
 // char* kth_wallet_payment_address_encoded_cashaddr(kth_payment_address_t payment_address, kth_bool_t token_aware) {
-//     std::string str = kth_wallet_payment_address_const_cpp(payment_address).encoded_cashaddr(token_aware);
+//     std::string str = kth::cpp_ref<kth::domain::wallet::payment_address>(payment_address).encoded_cashaddr(token_aware);
 //     return kth::create_c_str(str);
 // }
 // #endif //KTH_CURRENCY_BCH
 
 // kth_shorthash_t kth_wallet_payment_address_hash20(kth_payment_address_t payment_address) {
-//     auto hash_cpp = kth_wallet_payment_address_const_cpp(payment_address).hash20();
+//     auto hash_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(payment_address).hash20();
 //     return kth::to_shorthash_t(hash_cpp);
 // }
 
 // kth_hash_t kth_wallet_payment_address_hash32(kth_payment_address_t payment_address) {
-//     auto hash_cpp = kth_wallet_payment_address_const_cpp(payment_address).hash32();
+//     auto hash_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(payment_address).hash32();
 //     return kth::to_hash_t(hash_cpp);
 // }
 
 // uint8_t kth_wallet_payment_address_version(kth_payment_address_t payment_address) {
-//     return kth_wallet_payment_address_const_cpp(payment_address).version();
+//     return kth::cpp_ref<kth::domain::wallet::payment_address>(payment_address).version();
 // }
 
 // kth_bool_t kth_wallet_payment_address_is_valid(kth_payment_address_t payment_address) {
-//     return kth::bool_to_int(bool(kth_wallet_payment_address_const_cpp(payment_address)));
+//     return kth::bool_to_int(bool(kth::cpp_ref<kth::domain::wallet::payment_address>(payment_address)));
 // }
 
 // // payment_address_list_t kth_wallet_payment_address_extract(chain::script_t const* script, uint8_t p2kh_version, uint8_t p2sh_version) {
-// //     kth::chain::script kth_script = kth_chain_script_const_cpp(script);
+// //     kth::chain::script kth_script = kth::cpp_ref<kth::domain::chain::script>(script);
 // //     auto list = kth::domain::wallet::payment_address::extract(kth_script, p2kh_version, p2sh_version);
 // //     return kth_wallet_payment_address_list_to_capi(new std::vector<kth::domain::wallet::payment_address>(list));
 // // }
 
 // // payment_address_list_t kth_wallet_payment_address_extract_input(chain::script_t const* script, uint8_t p2kh_version, uint8_t p2sh_version) {
-// //     kth::chain::script kth_script = kth_chain_script_const_cpp(script);
+// //     kth::chain::script kth_script = kth::cpp_ref<kth::domain::chain::script>(script);
 // //     auto list = kth::domain::wallet::payment_address::extract_input(kth_script, p2kh_version, p2sh_version);
 // //     return kth_wallet_payment_address_list_to_capi(new std::vector<kth::domain::wallet::payment_address>(list));
 // // }
 
 // // payment_address_list_t kth_wallet_payment_address_extract_output(chain::script_t const* script, uint8_t p2kh_version, uint8_t p2sh_version) {
-// //     kth::chain::script kth_script = kth_chain_script_const_cpp(script);
+// //     kth::chain::script kth_script = kth::cpp_ref<kth::domain::chain::script>(script);
 // //     auto list = kth::domain::wallet::payment_address::extract_output(kth_script, p2kh_version, p2sh_version);
 // //     return kth_wallet_payment_address_list_to_capi(new std::vector<kth::domain::wallet::payment_address>(list));
 // // }

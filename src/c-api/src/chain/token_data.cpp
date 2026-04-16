@@ -11,14 +11,6 @@
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/chain/token_data.hpp>
 
-// Conversion functions
-kth::domain::chain::token_data_t& kth_chain_token_data_mut_cpp(kth_token_data_mut_t o) {
-    return *static_cast<kth::domain::chain::token_data_t*>(o);
-}
-kth::domain::chain::token_data_t const& kth_chain_token_data_const_cpp(kth_token_data_const_t o) {
-    return *static_cast<kth::domain::chain::token_data_t const*>(o);
-}
-
 // ---------------------------------------------------------------------------
 extern "C" {
 
@@ -88,7 +80,7 @@ kth_token_data_mut_t kth_chain_token_make_both_unsafe(uint8_t const* id, uint64_
 
 void kth_chain_token_data_destruct(kth_token_data_mut_t self) {
     if (self == nullptr) return;
-    delete &kth_chain_token_data_mut_cpp(self);
+    delete &kth::cpp_ref<kth::domain::chain::token_data_t>(self);
 }
 
 
@@ -96,7 +88,7 @@ void kth_chain_token_data_destruct(kth_token_data_mut_t self) {
 
 kth_token_data_mut_t kth_chain_token_data_copy(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return new kth::domain::chain::token_data_t(kth_chain_token_data_const_cpp(self));
+    return new kth::domain::chain::token_data_t(kth::cpp_ref<kth::domain::chain::token_data_t>(self));
 }
 
 
@@ -105,7 +97,7 @@ kth_token_data_mut_t kth_chain_token_data_copy(kth_token_data_const_t self) {
 kth_bool_t kth_chain_token_data_equals(kth_token_data_const_t self, kth_token_data_const_t other) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
-    return kth::bool_to_int(kth_chain_token_data_const_cpp(self) == kth_chain_token_data_const_cpp(other));
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::token_data_t>(self) == kth::cpp_ref<kth::domain::chain::token_data_t>(other));
 }
 
 
@@ -113,13 +105,13 @@ kth_bool_t kth_chain_token_data_equals(kth_token_data_const_t self, kth_token_da
 
 kth_size_t kth_chain_token_data_serialized_size(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::domain::chain::token::encoding::serialized_size(kth_chain_token_data_const_cpp(self));
+    return kth::domain::chain::token::encoding::serialized_size(kth::cpp_ref<kth::domain::chain::token_data_t>(self));
 }
 
 uint8_t* kth_chain_token_data_to_data(kth_token_data_const_t self, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto const data = kth::domain::chain::token::encoding::to_data(kth_chain_token_data_const_cpp(self));
+    auto const data = kth::domain::chain::token::encoding::to_data(kth::cpp_ref<kth::domain::chain::token_data_t>(self));
     return kth::create_c_array(data, *out_size);
 }
 
@@ -128,34 +120,34 @@ uint8_t* kth_chain_token_data_to_data(kth_token_data_const_t self, kth_size_t* o
 
 kth_hash_t kth_chain_token_data_id(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_hash_t(kth_chain_token_data_const_cpp(self).id);
+    return kth::to_hash_t(kth::cpp_ref<kth::domain::chain::token_data_t>(self).id);
 }
 
 kth_token_kind_t kth_chain_token_data_get_kind(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return static_cast<kth_token_kind_t>(kth::domain::chain::get_kind(kth_chain_token_data_const_cpp(self)));
+    return static_cast<kth_token_kind_t>(kth::domain::chain::get_kind(kth::cpp_ref<kth::domain::chain::token_data_t>(self)));
 }
 
 int64_t kth_chain_token_data_get_amount(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::domain::chain::get_amount(kth_chain_token_data_const_cpp(self));
+    return kth::domain::chain::get_amount(kth::cpp_ref<kth::domain::chain::token_data_t>(self));
 }
 
 kth_token_capability_t kth_chain_token_data_get_nft_capability(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return static_cast<kth_token_capability_t>(kth::domain::chain::get_nft_capability(kth_chain_token_data_const_cpp(self)));
+    return static_cast<kth_token_capability_t>(kth::domain::chain::get_nft_capability(kth::cpp_ref<kth::domain::chain::token_data_t>(self)));
 }
 
 uint8_t* kth_chain_token_data_get_nft_commitment(kth_token_data_const_t self, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto const data = kth::domain::chain::get_nft_commitment(kth_chain_token_data_const_cpp(self));
+    auto const data = kth::domain::chain::get_nft_commitment(kth::cpp_ref<kth::domain::chain::token_data_t>(self));
     return kth::create_c_array(data, *out_size);
 }
 
 uint8_t kth_chain_token_data_bitfield(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::domain::chain::token::encoding::bitfield(kth_chain_token_data_const_cpp(self));
+    return kth::domain::chain::token::encoding::bitfield(kth::cpp_ref<kth::domain::chain::token_data_t>(self));
 }
 
 
@@ -164,14 +156,14 @@ uint8_t kth_chain_token_data_bitfield(kth_token_data_const_t self) {
 void kth_chain_token_data_set_id(kth_token_data_mut_t self, kth_hash_t value) {
     KTH_PRECONDITION(self != nullptr);
     auto const value_cpp = kth::hash_to_cpp(value.hash);
-    kth_chain_token_data_mut_cpp(self).id = value_cpp;
+    kth::cpp_ref<kth::domain::chain::token_data_t>(self).id = value_cpp;
 }
 
 void kth_chain_token_data_set_id_unsafe(kth_token_data_mut_t self, uint8_t const* value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
     auto const value_cpp = kth::hash_to_cpp(value);
-    kth_chain_token_data_mut_cpp(self).id = value_cpp;
+    kth::cpp_ref<kth::domain::chain::token_data_t>(self).id = value_cpp;
 }
 
 
@@ -179,32 +171,32 @@ void kth_chain_token_data_set_id_unsafe(kth_token_data_mut_t self, uint8_t const
 
 kth_bool_t kth_chain_token_data_is_valid(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::domain::chain::is_valid(kth_chain_token_data_const_cpp(self)));
+    return kth::bool_to_int(kth::domain::chain::is_valid(kth::cpp_ref<kth::domain::chain::token_data_t>(self)));
 }
 
 kth_bool_t kth_chain_token_data_has_nft(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::domain::chain::has_nft(kth_chain_token_data_const_cpp(self)));
+    return kth::bool_to_int(kth::domain::chain::has_nft(kth::cpp_ref<kth::domain::chain::token_data_t>(self)));
 }
 
 kth_bool_t kth_chain_token_data_is_fungible_only(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::domain::chain::is_fungible_only(kth_chain_token_data_const_cpp(self)));
+    return kth::bool_to_int(kth::domain::chain::is_fungible_only(kth::cpp_ref<kth::domain::chain::token_data_t>(self)));
 }
 
 kth_bool_t kth_chain_token_data_is_immutable_nft(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::domain::chain::is_immutable_nft(kth_chain_token_data_const_cpp(self)));
+    return kth::bool_to_int(kth::domain::chain::is_immutable_nft(kth::cpp_ref<kth::domain::chain::token_data_t>(self)));
 }
 
 kth_bool_t kth_chain_token_data_is_mutable_nft(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::domain::chain::is_mutable_nft(kth_chain_token_data_const_cpp(self)));
+    return kth::bool_to_int(kth::domain::chain::is_mutable_nft(kth::cpp_ref<kth::domain::chain::token_data_t>(self)));
 }
 
 kth_bool_t kth_chain_token_data_is_minting_nft(kth_token_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::domain::chain::is_minting_nft(kth_chain_token_data_const_cpp(self)));
+    return kth::bool_to_int(kth::domain::chain::is_minting_nft(kth::cpp_ref<kth::domain::chain::token_data_t>(self)));
 }
 
 } // extern "C"

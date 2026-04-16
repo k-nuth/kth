@@ -11,14 +11,6 @@
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/message/prefilled_transaction.hpp>
 
-// Conversion functions
-kth::domain::message::prefilled_transaction& kth_chain_prefilled_transaction_mut_cpp(kth_prefilled_transaction_mut_t o) {
-    return *static_cast<kth::domain::message::prefilled_transaction*>(o);
-}
-kth::domain::message::prefilled_transaction const& kth_chain_prefilled_transaction_const_cpp(kth_prefilled_transaction_const_t o) {
-    return *static_cast<kth::domain::message::prefilled_transaction const*>(o);
-}
-
 // ---------------------------------------------------------------------------
 extern "C" {
 
@@ -41,8 +33,8 @@ kth_error_code_t kth_chain_prefilled_transaction_construct_from_data(uint8_t con
 
 kth_prefilled_transaction_mut_t kth_chain_prefilled_transaction_construct(uint64_t index, kth_transaction_const_t tx) {
     KTH_PRECONDITION(tx != nullptr);
-    auto const& tx_cpp = kth_chain_transaction_const_cpp(tx);
-    return kth::make_leaked_if_valid(kth::domain::message::prefilled_transaction(index, tx_cpp));
+    auto const& tx_cpp = kth::cpp_ref<kth::domain::chain::transaction>(tx);
+    return kth::make_leaked<kth::domain::message::prefilled_transaction>(index, tx_cpp);
 }
 
 
@@ -50,7 +42,7 @@ kth_prefilled_transaction_mut_t kth_chain_prefilled_transaction_construct(uint64
 
 void kth_chain_prefilled_transaction_destruct(kth_prefilled_transaction_mut_t self) {
     if (self == nullptr) return;
-    delete &kth_chain_prefilled_transaction_mut_cpp(self);
+    delete &kth::cpp_ref<kth::domain::message::prefilled_transaction>(self);
 }
 
 
@@ -58,7 +50,7 @@ void kth_chain_prefilled_transaction_destruct(kth_prefilled_transaction_mut_t se
 
 kth_prefilled_transaction_mut_t kth_chain_prefilled_transaction_copy(kth_prefilled_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return new kth::domain::message::prefilled_transaction(kth_chain_prefilled_transaction_const_cpp(self));
+    return new kth::domain::message::prefilled_transaction(kth::cpp_ref<kth::domain::message::prefilled_transaction>(self));
 }
 
 
@@ -67,7 +59,7 @@ kth_prefilled_transaction_mut_t kth_chain_prefilled_transaction_copy(kth_prefill
 kth_bool_t kth_chain_prefilled_transaction_equals(kth_prefilled_transaction_const_t self, kth_prefilled_transaction_const_t other) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
-    return kth::bool_to_int(kth_chain_prefilled_transaction_const_cpp(self) == kth_chain_prefilled_transaction_const_cpp(other));
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::message::prefilled_transaction>(self) == kth::cpp_ref<kth::domain::message::prefilled_transaction>(other));
 }
 
 
@@ -76,13 +68,13 @@ kth_bool_t kth_chain_prefilled_transaction_equals(kth_prefilled_transaction_cons
 uint8_t* kth_chain_prefilled_transaction_to_data(kth_prefilled_transaction_const_t self, uint32_t version, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto const data = kth_chain_prefilled_transaction_const_cpp(self).to_data(version);
+    auto const data = kth::cpp_ref<kth::domain::message::prefilled_transaction>(self).to_data(version);
     return kth::create_c_array(data, *out_size);
 }
 
 kth_size_t kth_chain_prefilled_transaction_serialized_size(kth_prefilled_transaction_const_t self, uint32_t version) {
     KTH_PRECONDITION(self != nullptr);
-    return kth_chain_prefilled_transaction_const_cpp(self).serialized_size(version);
+    return kth::cpp_ref<kth::domain::message::prefilled_transaction>(self).serialized_size(version);
 }
 
 
@@ -90,12 +82,12 @@ kth_size_t kth_chain_prefilled_transaction_serialized_size(kth_prefilled_transac
 
 uint64_t kth_chain_prefilled_transaction_index(kth_prefilled_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth_chain_prefilled_transaction_const_cpp(self).index();
+    return kth::cpp_ref<kth::domain::message::prefilled_transaction>(self).index();
 }
 
 kth_transaction_const_t kth_chain_prefilled_transaction_transaction(kth_prefilled_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return &(kth_chain_prefilled_transaction_const_cpp(self).transaction());
+    return &(kth::cpp_ref<kth::domain::message::prefilled_transaction>(self).transaction());
 }
 
 
@@ -103,14 +95,14 @@ kth_transaction_const_t kth_chain_prefilled_transaction_transaction(kth_prefille
 
 void kth_chain_prefilled_transaction_set_index(kth_prefilled_transaction_mut_t self, uint64_t value) {
     KTH_PRECONDITION(self != nullptr);
-    kth_chain_prefilled_transaction_mut_cpp(self).set_index(value);
+    kth::cpp_ref<kth::domain::message::prefilled_transaction>(self).set_index(value);
 }
 
 void kth_chain_prefilled_transaction_set_transaction(kth_prefilled_transaction_mut_t self, kth_transaction_const_t tx) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(tx != nullptr);
-    auto const& tx_cpp = kth_chain_transaction_const_cpp(tx);
-    kth_chain_prefilled_transaction_mut_cpp(self).set_transaction(tx_cpp);
+    auto const& tx_cpp = kth::cpp_ref<kth::domain::chain::transaction>(tx);
+    kth::cpp_ref<kth::domain::message::prefilled_transaction>(self).set_transaction(tx_cpp);
 }
 
 
@@ -118,7 +110,7 @@ void kth_chain_prefilled_transaction_set_transaction(kth_prefilled_transaction_m
 
 kth_bool_t kth_chain_prefilled_transaction_is_valid(kth_prefilled_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_prefilled_transaction_const_cpp(self).is_valid());
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::message::prefilled_transaction>(self).is_valid());
 }
 
 
@@ -126,7 +118,7 @@ kth_bool_t kth_chain_prefilled_transaction_is_valid(kth_prefilled_transaction_co
 
 void kth_chain_prefilled_transaction_reset(kth_prefilled_transaction_mut_t self) {
     KTH_PRECONDITION(self != nullptr);
-    kth_chain_prefilled_transaction_mut_cpp(self).reset();
+    kth::cpp_ref<kth::domain::message::prefilled_transaction>(self).reset();
 }
 
 } // extern "C"

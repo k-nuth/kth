@@ -310,7 +310,6 @@ set(kth_headers
 
   include/kth/capi/primitives.h
   include/kth/capi/hash_list.h
-  include/kth/capi/type_conversions.h
   include/kth/capi/error.h
   include/kth/capi/hash.h
   include/kth/capi/version.h
@@ -350,7 +349,6 @@ set(kth_headers
   set(kth_headers
     ${kth_headers}
 
-    include/kth/capi/list_creator.h
     include/kth/capi/chain/block_list.h
     include/kth/capi/chain/mempool_transaction_list.h
     include/kth/capi/chain/compact_block.h

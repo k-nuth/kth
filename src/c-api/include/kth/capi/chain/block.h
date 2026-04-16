@@ -26,7 +26,7 @@ KTH_EXPORT
 kth_error_code_t kth_chain_block_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_block_mut_t* out);
 
 /**
- * @return Owned `kth_block_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_block_destruct`.
+ * @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`.
  * @param header Borrowed input. Copied by value into the resulting object; ownership of `header` stays with the caller.
  * @param transactions Borrowed input. Copied by value into the resulting object; ownership of `transactions` stays with the caller.
  */

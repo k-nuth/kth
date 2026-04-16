@@ -25,7 +25,7 @@ KTH_EXPORT
 kth_error_code_t kth_chain_input_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_input_mut_t* out);
 
 /**
- * @return Owned `kth_input_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_input_destruct`.
+ * @return Owned `kth_input_mut_t`. Caller must release with `kth_chain_input_destruct`.
  * @param previous_output Borrowed input. Copied by value into the resulting object; ownership of `previous_output` stays with the caller.
  * @param script Borrowed input. Copied by value into the resulting object; ownership of `script` stays with the caller.
  */

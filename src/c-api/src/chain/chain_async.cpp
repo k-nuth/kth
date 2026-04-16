@@ -162,13 +162,13 @@ void kth_chain_async_spend(kth_chain_t chain, void* ctx, kth_output_point_const_
 }
 
 void kth_chain_async_history(kth_chain_t chain, void* ctx, kth_payment_address_t address, kth_size_t limit, kth_size_t from_height, kth_history_fetch_handler_t handler) {
-    safe_chain(chain).fetch_history(kth_wallet_payment_address_const_cpp(address).hash20(), limit, from_height, [chain, ctx, handler](std::error_code const& ec, kth::domain::chain::history_compact::list history) {
+    safe_chain(chain).fetch_history(kth::cpp_ref<kth::domain::wallet::payment_address>(address).hash20(), limit, from_height, [chain, ctx, handler](std::error_code const& ec, kth::domain::chain::history_compact::list history) {
         handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(history, ec));
     });
 }
 
 void kth_chain_async_confirmed_transactions(kth_chain_t chain, void* ctx, kth_payment_address_t address, uint64_t max, uint64_t start_height, kth_transactions_by_address_fetch_handler_t handler) {
-    safe_chain(chain).fetch_confirmed_transactions(kth_wallet_payment_address_const_cpp(address).hash20(), max, start_height, [chain, ctx, handler](std::error_code const& ec, std::vector<kth::hash_digest> const& txs) {
+    safe_chain(chain).fetch_confirmed_transactions(kth::cpp_ref<kth::domain::wallet::payment_address>(address).hash20(), max, start_height, [chain, ctx, handler](std::error_code const& ec, std::vector<kth::hash_digest> const& txs) {
         handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(txs, ec));
     });
 }
