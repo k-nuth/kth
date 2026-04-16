@@ -25,12 +25,12 @@ extern "C" {
     // code run(operation const& op, program& program);
 
 
-kth_error_code_t kth_vm_interpreter_run(kth_program_t program) {
+kth_error_code_t kth_vm_interpreter_run(kth_program_mut_t program) {
     auto const result = kth::domain::machine::interpreter::run(kth::cpp_ref<kth::domain::machine::program>(program));
     return kth::to_c_err(result);
 }
 
-kth_error_code_t kth_vm_interpreter_run_operation(kth_operation_t operation, kth_program_t program) {
+kth_error_code_t kth_vm_interpreter_run_operation(kth_operation_t operation, kth_program_mut_t program) {
     auto const result = kth::domain::machine::interpreter::run(
         kth::cpp_ref<kth::domain::machine::operation>(operation),
         kth::cpp_ref<kth::domain::machine::program>(program)
@@ -63,7 +63,7 @@ kth_bool_t kth_vm_interpreter_debug_steps_available(kth_program_const_t program,
     return kth::domain::machine::interpreter::debug_steps_available(kth::cpp_ref<kth::domain::machine::program>(program), step);
 }
 
-kth_error_code_t kth_vm_interpreter_debug_step(kth_program_const_t program, kth_size_t step, kth_size_t* out_step, kth_program_t* out_program) {
+kth_error_code_t kth_vm_interpreter_debug_step(kth_program_const_t program, kth_size_t step, kth_size_t* out_step, kth_program_mut_t* out_program) {
     auto const [err, new_step, new_program_cpp] = kth::domain::machine::interpreter::debug_step(kth::cpp_ref<kth::domain::machine::program>(program), step);
     *out_step = new_step;
     *out_program = kth::make_leaked(std::move(new_program_cpp));

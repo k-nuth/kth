@@ -24,10 +24,10 @@ extern "C" {
 
 
 KTH_EXPORT
-kth_error_code_t kth_vm_interpreter_run(kth_program_t program);
+kth_error_code_t kth_vm_interpreter_run(kth_program_mut_t program);
 
 KTH_EXPORT
-kth_error_code_t kth_vm_interpreter_run_operation(kth_operation_t operation, kth_program_t program);
+kth_error_code_t kth_vm_interpreter_run_operation(kth_operation_t operation, kth_program_mut_t program);
 
 
 // Debug step by step
@@ -51,7 +51,7 @@ KTH_EXPORT
 kth_bool_t kth_vm_interpreter_debug_steps_available(kth_program_const_t program, kth_size_t step);
 
 KTH_EXPORT
-kth_error_code_t kth_vm_interpreter_debug_step(kth_program_const_t program, kth_size_t step, kth_size_t* out_step, kth_program_t* out_program);
+kth_error_code_t kth_vm_interpreter_debug_step(kth_program_const_t program, kth_size_t step, kth_size_t* out_step, kth_program_mut_t* out_program);
 
 KTH_EXPORT
 kth_error_code_t kth_vm_interpreter_debug_end(kth_program_const_t program);

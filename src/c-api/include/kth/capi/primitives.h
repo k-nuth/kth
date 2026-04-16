@@ -198,9 +198,9 @@ typedef void const* kth_data_stack_const_t;
 
 
 // VM
-typedef void* kth_metrics_t;
-typedef void* kth_program_t;
-
+typedef void* kth_metrics_mut_t;
+typedef void const* kth_metrics_const_t;
+typedef void* kth_program_mut_t;
 typedef void const* kth_program_const_t;
 
 

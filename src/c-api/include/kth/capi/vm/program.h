@@ -1,306 +1,247 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef KTH_CAPI_VM_PROGRAM_H_
 #define KTH_CAPI_VM_PROGRAM_H_
 
+#include <stdint.h>
+
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
+#include <kth/capi/chain/script_flags.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// class KD_API program {
-// public:
-//     using value_type = data_stack::value_type;
-//     using op_iterator = operation::iterator;
-//     using stack_iterator = data_stack::const_iterator;
-//     using stack_mutable_iterator = data_stack::iterator;
+// Constructors
 
+/** @return Owned `kth_program_mut_t`. Caller must release with `kth_vm_program_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_program_mut_t kth_vm_program_construct_default(void);
+
+/**
+ * @return Owned `kth_program_mut_t`. Caller must release with `kth_vm_program_destruct`.
+ * @param script Borrowed input. Copied by value into the resulting object; ownership of `script` stays with the caller.
+ */
+KTH_EXPORT KTH_OWNED
+kth_program_mut_t kth_vm_program_construct_from_script(kth_script_const_t script);
+
+/**
+ * @return Owned `kth_program_mut_t`. Caller must release with `kth_vm_program_destruct`.
+ * @param script Borrowed input. Copied by value into the resulting object; ownership of `script` stays with the caller.
+ * @param transaction Borrowed input. Copied by value into the resulting object; ownership of `transaction` stays with the caller.
+ */
+KTH_EXPORT KTH_OWNED
+kth_program_mut_t kth_vm_program_construct_from_script_transaction_input_index_flags_value(kth_script_const_t script, kth_transaction_const_t transaction, uint32_t input_index, kth_script_flags_t flags, uint64_t value);
+
+/**
+ * @return Owned `kth_program_mut_t`. Caller must release with `kth_vm_program_destruct`.
+ * @param script Borrowed input. Copied by value into the resulting object; ownership of `script` stays with the caller.
+ * @param transaction Borrowed input. Copied by value into the resulting object; ownership of `transaction` stays with the caller.
+ * @param stack Borrowed input. Copied by value into the resulting object; ownership of `stack` stays with the caller.
+ */
+KTH_EXPORT KTH_OWNED
+kth_program_mut_t kth_vm_program_construct_from_script_transaction_input_index_flags_stack_value(kth_script_const_t script, kth_transaction_const_t transaction, uint32_t input_index, kth_script_flags_t flags, kth_data_stack_const_t stack, uint64_t value);
+
+/**
+ * @return Owned `kth_program_mut_t`. Caller must release with `kth_vm_program_destruct`.
+ * @param script Borrowed input. Copied by value into the resulting object; ownership of `script` stays with the caller.
+ * @param x Borrowed input. Copied by value into the resulting object; ownership of `x` stays with the caller.
+ */
+KTH_EXPORT KTH_OWNED
+kth_program_mut_t kth_vm_program_construct_from_script_program(kth_script_const_t script, kth_program_const_t x);
+
+/**
+ * @return Owned `kth_program_mut_t`. Caller must release with `kth_vm_program_destruct`.
+ * @param script Borrowed input. Copied by value into the resulting object; ownership of `script` stays with the caller.
+ * @param x Borrowed input. Copied by value into the resulting object; ownership of `x` stays with the caller.
+ */
+KTH_EXPORT KTH_OWNED
+kth_program_mut_t kth_vm_program_construct_from_script_program_move(kth_script_const_t script, kth_program_const_t x, kth_bool_t move);
+
+
+// Destructor
+
+/** No-op if `self` is null. */
+KTH_EXPORT
+void kth_vm_program_destruct(kth_program_mut_t self);
+
+
+// Copy
+
+/** @return Owned `kth_program_mut_t`. Caller must release with `kth_vm_program_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_program_mut_t kth_vm_program_copy(kth_program_const_t self);
+
+
+// Getters
+
+/** @return Borrowed `kth_metrics_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
+KTH_EXPORT
+kth_metrics_const_t kth_vm_program_get_metrics(kth_program_const_t self);
 
 KTH_EXPORT
-void kth_vm_program_destruct(kth_program_t program);
-
-/// Create an instance that does not expect to verify signatures.
-/// This is useful for script utilities but not with input validation.
-/// This can only run individual operations via run(op, program).
-KTH_EXPORT
-kth_program_t kth_vm_program_construct_default(void);
-
-/// Create an instance that does not expect to verify signatures.
-/// This is useful for script utilities but not with input validation.
-/// This can run ops via run(op, program) or the script via run(program).
-KTH_EXPORT
-kth_program_t kth_vm_program_construct_from_script(kth_script_const_t script);
-
-/// Create an instance with empty stacks, value unused/max (input run).
-// program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, uint64_t forks);
-KTH_EXPORT
-kth_program_t kth_vm_program_construct_from_script_transaction(kth_script_const_t script, kth_transaction_const_t transaction, uint32_t input_index, uint64_t forks);
-
-
-/// Create an instance with initialized stack (witness run, v0 by default).
-// program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, uint64_t forks, data_stack&& stack, uint64_t value, script_version version = script_version::zero);
-// KTH_EXPORT
-// kth_program_t kth_vm_program_construct_from_script_transaction_stack(kth_script_t script, kth_transaction_t transaction, uint32_t input_index, uint64_t forks, kth_data_stack_t stack, uint64_t value, kth_script_version_t version);
-
-
-/// Create using copied tx, input, forks, value, stack (prevout run).
-// program(chain::script const& script, const program& x);
-KTH_EXPORT
-kth_program_t kth_vm_program_construct_from_script_program(kth_script_const_t script, kth_program_t program);
-
-
-/// Create using copied tx, input, forks, value and moved stack (p2sh run).
-// program(chain::script const& script, program&& x, bool move);
-KTH_EXPORT
-kth_program_t kth_vm_program_construct_from_script_program_move(kth_script_const_t script, kth_program_t program, kth_bool_t move);
+kth_script_flags_t kth_vm_program_flags(kth_program_const_t self);
 
 KTH_EXPORT
-kth_metrics_t kth_vm_program_get_metrics(kth_program_t program);
-
-// KTH_EXPORT
-// kth_metrics_t kth_vm_program_get_metrics_const(kth_program_t program);
+kth_size_t kth_vm_program_max_script_element_size(kth_program_const_t self);
 
 KTH_EXPORT
-kth_bool_t kth_vm_program_is_valid(kth_program_t program);
+kth_size_t kth_vm_program_max_integer_size_legacy(kth_program_const_t self);
 
 KTH_EXPORT
-uint64_t kth_vm_program_flags(kth_program_t program);
+kth_size_t kth_vm_program_max_integer_size(kth_program_const_t self);
 
 KTH_EXPORT
-kth_size_t kth_vm_program_max_script_element_size(kth_program_t program);
+uint32_t kth_vm_program_input_index(kth_program_const_t self);
 
 KTH_EXPORT
-kth_size_t kth_vm_program_max_integer_size_legacy(kth_program_t program);
+uint64_t kth_vm_program_value(kth_program_const_t self);
+
+/** @return Borrowed `kth_transaction_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
+KTH_EXPORT
+kth_transaction_const_t kth_vm_program_transaction(kth_program_const_t self);
+
+/** @return Borrowed `kth_script_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
+KTH_EXPORT
+kth_script_const_t kth_vm_program_get_script(kth_program_const_t self);
 
 KTH_EXPORT
-kth_bool_t kth_vm_program_is_chip_vm_limits_enabled(kth_program_t program);
+kth_size_t kth_vm_program_operation_count(kth_program_const_t self);
 
 KTH_EXPORT
-uint32_t kth_vm_program_input_index(kth_program_t program);
+kth_bool_t kth_vm_program_empty(kth_program_const_t self);
+
+/** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
+KTH_EXPORT KTH_OWNED
+uint8_t* kth_vm_program_top(kth_program_const_t self, kth_size_t* out_size);
+
+/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_operation_list_mut_t kth_vm_program_subscript(kth_program_const_t self);
 
 KTH_EXPORT
-uint64_t kth_vm_program_value(kth_program_t program);
-
-// KTH_EXPORT
-// kth_script_version_t kth_vm_program_version(kth_program_t program);
+kth_size_t kth_vm_program_size(kth_program_const_t self);
 
 KTH_EXPORT
-kth_transaction_const_t kth_vm_program_transaction(kth_program_t program);
-
-
-//     /// Program registers.
-//     [[nodiscard]]
-//     op_iterator begin() const;
-
-//     [[nodiscard]]
-//     op_iterator jump() const;
-
-//     [[nodiscard]]
-//     op_iterator end() const;
-
-
-// KTH_EXPORT
-// kth_operation_t kth_vm_program_begin(kth_program_t program);
-
-// KTH_EXPORT
-// kth_operation_t kth_vm_program_jump(kth_program_t program);
-
-// KTH_EXPORT
-// kth_operation_t kth_vm_program_end(kth_program_t program);
+kth_size_t kth_vm_program_conditional_stack_size(kth_program_const_t self);
 
 KTH_EXPORT
-kth_size_t kth_vm_program_operation_count(kth_program_t program);
-
-/// Instructions.
-KTH_EXPORT
-kth_error_code_t kth_vm_program_evaluate(kth_program_t program);
+kth_bool_t kth_vm_program_empty_alternate(kth_program_const_t self);
 
 KTH_EXPORT
-kth_error_code_t kth_vm_program_evaluate_operation(kth_program_t program, kth_operation_t op);
+kth_bool_t kth_vm_program_closed(kth_program_const_t self);
 
 KTH_EXPORT
-kth_bool_t kth_vm_program_increment_operation_count(kth_program_t program, kth_operation_t op);
+kth_bool_t kth_vm_program_succeeded(kth_program_const_t self);
+
+
+// Setters
+
+/** @param op Borrowed input. Copied by value into the resulting object; ownership of `op` stays with the caller. */
+KTH_EXPORT
+kth_bool_t kth_vm_program_set_jump_register(kth_program_mut_t self, kth_operation_const_t op, int32_t offset);
+
+
+// Predicates
 
 KTH_EXPORT
-kth_bool_t kth_vm_program_increment_operation_count_public_keys(kth_program_t program, int32_t public_keys);
+kth_bool_t kth_vm_program_is_valid(kth_program_const_t self);
 
 KTH_EXPORT
-kth_bool_t kth_vm_program_set_jump_register(kth_program_t program, kth_operation_t op, int32_t offset);
+kth_bool_t kth_vm_program_is_chip_vm_limits_enabled(kth_program_const_t self);
 
-
-// Primary stack.
-//-------------------------------------------------------------------------
-
-/// Primary push.
 KTH_EXPORT
-void kth_vm_program_push(kth_program_t program, kth_bool_t value);
+kth_bool_t kth_vm_program_is_bigint_enabled(kth_program_const_t self);
 
-// KTH_EXPORT
-// void kth_vm_program_push_move(kth_program_t program, kth_value_type_t item);
-
-// KTH_EXPORT
-// void kth_vm_program_push_copy(kth_program_t program, kth_value_type_t item);
-
-/// Primary pop.
-
-//     data_chunk pop();
 KTH_EXPORT
-uint8_t const* kth_vm_program_pop(kth_program_t program, kth_size_t* out_size);
+kth_bool_t kth_vm_program_is_stack_overflow_simple(kth_program_const_t self);
 
-//     bool pop(int32_t& out_value);
 KTH_EXPORT
-kth_bool_t kth_vm_program_pop_int32_t(kth_program_t program, int32_t* out_value);
+kth_bool_t kth_vm_program_is_stack_overflow(kth_program_const_t self, kth_size_t extra);
 
-//     bool pop(int64_t& out_value);
+
+// Operations
+
 KTH_EXPORT
-kth_bool_t kth_vm_program_pop_int64_t(kth_program_t program, int64_t* out_value);
+void kth_vm_program_reset_active_script(kth_program_mut_t self);
 
-//     bool pop(number& out_number, size_t maximum_size);
-// KTH_EXPORT
-// kth_bool_t kth_vm_program_pop_number(kth_program_t program, kth_number_t out_number, kth_size_t maximum_size);
-
-//     bool pop_binary(number& first, number& second);
-// KTH_EXPORT
-// kth_bool_t kth_vm_program_pop_binary(kth_program_t program, kth_number_t out_first, kth_number_t out_second);
-
-//     bool pop_ternary(number& first, number& second, number& third);
-// KTH_EXPORT
-// kth_bool_t kth_vm_program_pop_ternary(kth_program_t program, kth_number_t out_first, kth_number_t out_second, kth_number_t out_third);
-
-//     bool pop_position(stack_iterator& out_position);
-// KTH_EXPORT
-// kth_bool_t kth_vm_program_pop_position(kth_program_t program, kth_stack_iterator_t out_position);
-
-//     bool pop(data_stack& section, size_t count);
-// KTH_EXPORT
-// kth_bool_t kth_vm_program_pop_data_stack(kth_program_t program, kth_data_stack_t out_section, kth_size_t count);
-
-/// Primary push/pop optimizations (active).
-//     void duplicate(size_t index);
 KTH_EXPORT
-void kth_vm_program_duplicate(kth_program_t program, kth_size_t index);
+kth_error_code_t kth_vm_program_evaluate_simple(kth_program_mut_t self);
 
-//     void swap(size_t index_left, size_t index_right);
 KTH_EXPORT
-void kth_vm_program_swap(kth_program_t program, kth_size_t index_left, kth_size_t index_right);
+kth_error_code_t kth_vm_program_evaluate(kth_program_mut_t self, kth_operation_const_t op);
 
-//     void erase(stack_iterator const& position);
-// KTH_EXPORT
-// void kth_vm_program_erase(kth_program_t program, kth_stack_iterator_t position);
-
-//     void erase(stack_iterator const& first, stack_iterator const& last);
-// KTH_EXPORT
-// void kth_vm_program_erase_range(kth_program_t program, kth_stack_iterator_t first, kth_stack_iterator_t last);
-
-/// Primary push/pop optimizations (passive).
-
-//     bool empty() const;
 KTH_EXPORT
-kth_bool_t kth_vm_program_empty(kth_program_t program);
+kth_bool_t kth_vm_program_increment_operation_count_operation(kth_program_mut_t self, kth_operation_const_t op);
 
-//     bool stack_true(bool clean) const;
 KTH_EXPORT
-kth_bool_t kth_vm_program_stack_true(kth_program_t program, kth_bool_t clean);
+kth_bool_t kth_vm_program_increment_operation_count_int32(kth_program_mut_t self, int32_t public_keys);
 
-//     bool stack_result(bool clean) const;
 KTH_EXPORT
-kth_bool_t kth_vm_program_stack_result(kth_program_t program, kth_bool_t clean);
+void kth_vm_program_push(kth_program_mut_t self, kth_bool_t value);
 
-//     bool is_stack_overflow() const;
 KTH_EXPORT
-kth_bool_t kth_vm_program_is_stack_overflow(kth_program_t program);
+void kth_vm_program_push_move(kth_program_mut_t self, uint8_t const* item, kth_size_t n);
 
-//     bool if_(operation const& op) const;
 KTH_EXPORT
-kth_bool_t kth_vm_program_if(kth_program_t program, kth_operation_t op);
+void kth_vm_program_push_copy(kth_program_mut_t self, uint8_t const* item, kth_size_t n);
 
-//     value_type const& item(size_t index) const;
 KTH_EXPORT
-uint8_t const* kth_vm_program_item(kth_program_t program, kth_size_t index, kth_size_t* out_size);
+void kth_vm_program_drop(kth_program_mut_t self);
 
-//     value_type& item(size_t index);
-// KTH_EXPORT
-// kth_value_type_t kth_vm_program_item_mutable(kth_program_t program, kth_size_t index);
+/** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
+KTH_EXPORT KTH_OWNED
+uint8_t* kth_vm_program_pop(kth_program_mut_t self, kth_size_t* out_size);
 
-//     data_chunk& top();
 KTH_EXPORT
-uint8_t const* kth_vm_program_top(kth_program_t program, kth_size_t* out_size);
+kth_error_code_t kth_vm_program_pop_int32(kth_program_mut_t self, int32_t* out);
 
-//     bool top(number& out_number, size_t maximum_size) const;
-// KTH_EXPORT
-// kth_bool_t kth_vm_program_top_number(kth_program_t program, kth_number_t out_number, kth_size_t maximum_size);
-
-//     stack_iterator position(size_t index) const;
-// KTH_EXPORT
-// kth_stack_iterator_t kth_vm_program_position(kth_program_t program, kth_size_t index);
-
-//     stack_mutable_iterator position(size_t index);
-// KTH_EXPORT
-// kth_stack_mutable_iterator_t kth_vm_program_position_mutable(kth_program_t program, kth_size_t index);
-
-//     size_t index(stack_iterator const& position) const;
-// KTH_EXPORT
-// kth_size_t kth_vm_program_index(kth_program_t program, kth_stack_iterator_t position);
-
-//     operation::list subscript() const;
 KTH_EXPORT
-kth_operation_list_t kth_vm_program_subscript(kth_program_t program);
+kth_error_code_t kth_vm_program_pop_int64(kth_program_mut_t self, int64_t* out);
 
-//     size_t size() const;
 KTH_EXPORT
-kth_size_t kth_vm_program_size(kth_program_t program);
+kth_error_code_t kth_vm_program_pop_index(kth_program_mut_t self, uint32_t* out);
 
-
-// Alternate stack.
-
-//     bool empty_alternate() const;
 KTH_EXPORT
-kth_bool_t kth_vm_program_empty_alternate(kth_program_t program);
+void kth_vm_program_duplicate(kth_program_mut_t self, kth_size_t index);
 
-//     void push_alternate(value_type&& value);
-// KTH_EXPORT
-// void kth_vm_program_push_alternate(kth_program_t program, kth_value_type_t value);
-
-//     value_type pop_alternate();
-// KTH_EXPORT
-// kth_value_type_t kth_vm_program_pop_alternate(kth_program_t program);
-
-// Conditional stack.
-//-------------------------------------------------------------------------
-
-//     void open(bool value);
 KTH_EXPORT
-void kth_vm_program_open(kth_program_t program, kth_bool_t value);
+void kth_vm_program_swap(kth_program_mut_t self, kth_size_t index_left, kth_size_t index_right);
 
-//     void negate();
 KTH_EXPORT
-void kth_vm_program_negate(kth_program_t program);
+kth_bool_t kth_vm_program_stack_true(kth_program_const_t self, kth_bool_t clean);
 
-//     void close();
 KTH_EXPORT
-void kth_vm_program_close(kth_program_t program);
+kth_bool_t kth_vm_program_stack_result(kth_program_const_t self, kth_bool_t clean);
 
-//     bool closed() const;
 KTH_EXPORT
-kth_bool_t kth_vm_program_closed(kth_program_t program);
+kth_bool_t kth_vm_program_if_(kth_program_const_t self, kth_operation_const_t op);
 
-//     bool succeeded() const;
+/** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
+KTH_EXPORT KTH_OWNED
+uint8_t* kth_vm_program_item(kth_program_const_t self, kth_size_t index, kth_size_t* out_size);
+
 KTH_EXPORT
-kth_bool_t kth_vm_program_succeeded(kth_program_t program);
+void kth_vm_program_push_alternate(kth_program_mut_t self, uint8_t const* value, kth_size_t n);
 
-//     size_t conditional_stack_size() const;
+/** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
+KTH_EXPORT KTH_OWNED
+uint8_t* kth_vm_program_pop_alternate(kth_program_mut_t self, kth_size_t* out_size);
+
 KTH_EXPORT
-kth_size_t kth_vm_program_conditional_stack_size(kth_program_t program);
+void kth_vm_program_open(kth_program_mut_t self, kth_bool_t value);
 
+KTH_EXPORT
+void kth_vm_program_negate(kth_program_mut_t self);
 
+KTH_EXPORT
+void kth_vm_program_close(kth_program_mut_t self);
 
 #ifdef __cplusplus
 } // extern "C"
 #endif
 
-
-#endif /* KTH_CAPI_VM_PROGRAM_H_ */
+#endif // KTH_CAPI_VM_PROGRAM_H_
