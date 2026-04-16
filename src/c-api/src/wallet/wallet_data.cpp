@@ -10,14 +10,6 @@
 #include <kth/capi/helpers.hpp>
 #include <kth/domain/wallet/wallet_manager.hpp>
 
-// Conversion functions
-kth::domain::wallet::wallet_data& kth_wallet_wallet_data_mut_cpp(kth_wallet_data_mut_t o) {
-    return *static_cast<kth::domain::wallet::wallet_data*>(o);
-}
-kth::domain::wallet::wallet_data const& kth_wallet_wallet_data_const_cpp(kth_wallet_data_const_t o) {
-    return *static_cast<kth::domain::wallet::wallet_data const*>(o);
-}
-
 // ---------------------------------------------------------------------------
 extern "C" {
 
@@ -25,7 +17,7 @@ extern "C" {
 
 void kth_wallet_wallet_data_destruct(kth_wallet_data_mut_t self) {
     if (self == nullptr) return;
-    delete &kth_wallet_wallet_data_mut_cpp(self);
+    delete &kth::cpp_ref<kth::domain::wallet::wallet_data>(self);
 }
 
 
@@ -33,7 +25,7 @@ void kth_wallet_wallet_data_destruct(kth_wallet_data_mut_t self) {
 
 kth_wallet_data_mut_t kth_wallet_wallet_data_copy(kth_wallet_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return new kth::domain::wallet::wallet_data(kth_wallet_wallet_data_const_cpp(self));
+    return new kth::domain::wallet::wallet_data(kth::cpp_ref<kth::domain::wallet::wallet_data>(self));
 }
 
 
@@ -41,17 +33,17 @@ kth_wallet_data_mut_t kth_wallet_wallet_data_copy(kth_wallet_data_const_t self) 
 
 kth_string_list_const_t kth_wallet_wallet_data_mnemonics(kth_wallet_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return &(kth_wallet_wallet_data_const_cpp(self).mnemonics);
+    return &(kth::cpp_ref<kth::domain::wallet::wallet_data>(self).mnemonics);
 }
 
 kth_hd_public_const_t kth_wallet_wallet_data_xpub(kth_wallet_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return &(kth_wallet_wallet_data_const_cpp(self).xpub);
+    return &(kth::cpp_ref<kth::domain::wallet::wallet_data>(self).xpub);
 }
 
 kth_encrypted_seed_t kth_wallet_wallet_data_encrypted_seed(kth_wallet_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_encrypted_seed_t(kth_wallet_wallet_data_const_cpp(self).encrypted_seed);
+    return kth::to_encrypted_seed_t(kth::cpp_ref<kth::domain::wallet::wallet_data>(self).encrypted_seed);
 }
 
 
@@ -60,28 +52,28 @@ kth_encrypted_seed_t kth_wallet_wallet_data_encrypted_seed(kth_wallet_data_const
 void kth_wallet_wallet_data_set_mnemonics(kth_wallet_data_mut_t self, kth_string_list_const_t value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth_core_string_list_const_cpp(value);
-    kth_wallet_wallet_data_mut_cpp(self).mnemonics = value_cpp;
+    auto const& value_cpp = kth::cpp_ref<std::vector<std::string>>(value);
+    kth::cpp_ref<kth::domain::wallet::wallet_data>(self).mnemonics = value_cpp;
 }
 
 void kth_wallet_wallet_data_set_xpub(kth_wallet_data_mut_t self, kth_hd_public_const_t value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth_wallet_hd_public_const_cpp(value);
-    kth_wallet_wallet_data_mut_cpp(self).xpub = value_cpp;
+    auto const& value_cpp = kth::cpp_ref<kth::domain::wallet::hd_public>(value);
+    kth::cpp_ref<kth::domain::wallet::wallet_data>(self).xpub = value_cpp;
 }
 
 void kth_wallet_wallet_data_set_encrypted_seed(kth_wallet_data_mut_t self, kth_encrypted_seed_t value) {
     KTH_PRECONDITION(self != nullptr);
     auto const value_cpp = kth::encrypted_seed_to_cpp(value.hash);
-    kth_wallet_wallet_data_mut_cpp(self).encrypted_seed = value_cpp;
+    kth::cpp_ref<kth::domain::wallet::wallet_data>(self).encrypted_seed = value_cpp;
 }
 
 void kth_wallet_wallet_data_set_encrypted_seed_unsafe(kth_wallet_data_mut_t self, uint8_t const* value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
     auto const value_cpp = kth::encrypted_seed_to_cpp(value);
-    kth_wallet_wallet_data_mut_cpp(self).encrypted_seed = value_cpp;
+    kth::cpp_ref<kth::domain::wallet::wallet_data>(self).encrypted_seed = value_cpp;
 }
 
 

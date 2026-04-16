@@ -11,14 +11,6 @@
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/chain/block.hpp>
 
-// Conversion functions
-kth::domain::chain::block& kth_chain_block_mut_cpp(kth_block_mut_t o) {
-    return *static_cast<kth::domain::chain::block*>(o);
-}
-kth::domain::chain::block const& kth_chain_block_const_cpp(kth_block_const_t o) {
-    return *static_cast<kth::domain::chain::block const*>(o);
-}
-
 // ---------------------------------------------------------------------------
 extern "C" {
 
@@ -43,9 +35,9 @@ kth_error_code_t kth_chain_block_construct_from_data(uint8_t const* data, kth_si
 kth_block_mut_t kth_chain_block_construct(kth_header_const_t header, kth_transaction_list_const_t transactions) {
     KTH_PRECONDITION(header != nullptr);
     KTH_PRECONDITION(transactions != nullptr);
-    auto const& header_cpp = kth_chain_header_const_cpp(header);
-    auto const& transactions_cpp = kth_chain_transaction_list_const_cpp(transactions);
-    return kth::make_leaked_if_valid(kth::domain::chain::block(header_cpp, transactions_cpp));
+    auto const& header_cpp = kth::cpp_ref<kth::domain::chain::header>(header);
+    auto const& transactions_cpp = kth::cpp_ref<kth::domain::chain::transaction::list>(transactions);
+    return kth::make_leaked<kth::domain::chain::block>(header_cpp, transactions_cpp);
 }
 
 
@@ -80,7 +72,7 @@ kth_block_mut_t kth_chain_block_genesis_chipnet(void) {
 
 void kth_chain_block_destruct(kth_block_mut_t self) {
     if (self == nullptr) return;
-    delete &kth_chain_block_mut_cpp(self);
+    delete &kth::cpp_ref<kth::domain::chain::block>(self);
 }
 
 
@@ -88,7 +80,7 @@ void kth_chain_block_destruct(kth_block_mut_t self) {
 
 kth_block_mut_t kth_chain_block_copy(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return new kth::domain::chain::block(kth_chain_block_const_cpp(self));
+    return new kth::domain::chain::block(kth::cpp_ref<kth::domain::chain::block>(self));
 }
 
 
@@ -97,7 +89,7 @@ kth_block_mut_t kth_chain_block_copy(kth_block_const_t self) {
 kth_bool_t kth_chain_block_equals(kth_block_const_t self, kth_block_const_t other) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
-    return kth::bool_to_int(kth_chain_block_const_cpp(self) == kth_chain_block_const_cpp(other));
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::block>(self) == kth::cpp_ref<kth::domain::chain::block>(other));
 }
 
 
@@ -106,20 +98,20 @@ kth_bool_t kth_chain_block_equals(kth_block_const_t self, kth_block_const_t othe
 uint8_t* kth_chain_block_to_data_simple(kth_block_const_t self, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto const data = kth_chain_block_const_cpp(self).to_data();
+    auto const data = kth::cpp_ref<kth::domain::chain::block>(self).to_data();
     return kth::create_c_array(data, *out_size);
 }
 
 kth_size_t kth_chain_block_serialized_size(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth_chain_block_const_cpp(self).serialized_size();
+    return kth::cpp_ref<kth::domain::chain::block>(self).serialized_size();
 }
 
 uint8_t* kth_chain_block_to_data(kth_block_const_t self, kth_size_t serialized_size, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
     auto const serialized_size_cpp = static_cast<size_t>(serialized_size);
-    auto const data = kth_chain_block_const_cpp(self).to_data(serialized_size_cpp);
+    auto const data = kth::cpp_ref<kth::domain::chain::block>(self).to_data(serialized_size_cpp);
     return kth::create_c_array(data, *out_size);
 }
 
@@ -128,62 +120,62 @@ uint8_t* kth_chain_block_to_data(kth_block_const_t self, kth_size_t serialized_s
 
 kth_size_t kth_chain_block_signature_operations_simple(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth_chain_block_const_cpp(self).signature_operations();
+    return kth::cpp_ref<kth::domain::chain::block>(self).signature_operations();
 }
 
 kth_error_code_t kth_chain_block_check(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return static_cast<kth_error_code_t>((kth_chain_block_const_cpp(self).check()).value());
+    return static_cast<kth_error_code_t>((kth::cpp_ref<kth::domain::chain::block>(self).check()).value());
 }
 
 kth_error_code_t kth_chain_block_connect(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return static_cast<kth_error_code_t>((kth_chain_block_const_cpp(self).connect()).value());
+    return static_cast<kth_error_code_t>((kth::cpp_ref<kth::domain::chain::block>(self).connect()).value());
 }
 
 kth_hash_list_mut_t kth_chain_block_to_hashes(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return new std::vector<std::array<unsigned char, 32>>(kth_chain_block_const_cpp(self).to_hashes());
+    return new std::vector<std::array<unsigned char, 32>>(kth::cpp_ref<kth::domain::chain::block>(self).to_hashes());
 }
 
 kth_header_const_t kth_chain_block_header(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return &(kth_chain_block_const_cpp(self).header());
+    return &(kth::cpp_ref<kth::domain::chain::block>(self).header());
 }
 
 kth_transaction_list_const_t kth_chain_block_transactions(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return &(kth_chain_block_const_cpp(self).transactions());
+    return &(kth::cpp_ref<kth::domain::chain::block>(self).transactions());
 }
 
 kth_hash_t kth_chain_block_hash(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_hash_t(kth_chain_block_const_cpp(self).hash());
+    return kth::to_hash_t(kth::cpp_ref<kth::domain::chain::block>(self).hash());
 }
 
 uint64_t kth_chain_block_fees(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth_chain_block_const_cpp(self).fees();
+    return kth::cpp_ref<kth::domain::chain::block>(self).fees();
 }
 
 uint64_t kth_chain_block_claim(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth_chain_block_const_cpp(self).claim();
+    return kth::cpp_ref<kth::domain::chain::block>(self).claim();
 }
 
 kth_hash_t kth_chain_block_generate_merkle_root(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_hash_t(kth_chain_block_const_cpp(self).generate_merkle_root());
+    return kth::to_hash_t(kth::cpp_ref<kth::domain::chain::block>(self).generate_merkle_root());
 }
 
 kth_error_code_t kth_chain_block_check_transactions(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return static_cast<kth_error_code_t>((kth_chain_block_const_cpp(self).check_transactions()).value());
+    return static_cast<kth_error_code_t>((kth::cpp_ref<kth::domain::chain::block>(self).check_transactions()).value());
 }
 
 kth_size_t kth_chain_block_non_coinbase_input_count(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth_chain_block_const_cpp(self).non_coinbase_input_count();
+    return kth::cpp_ref<kth::domain::chain::block>(self).non_coinbase_input_count();
 }
 
 
@@ -192,15 +184,15 @@ kth_size_t kth_chain_block_non_coinbase_input_count(kth_block_const_t self) {
 void kth_chain_block_set_transactions(kth_block_mut_t self, kth_transaction_list_const_t value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth_chain_transaction_list_const_cpp(value);
-    kth_chain_block_mut_cpp(self).set_transactions(value_cpp);
+    auto const& value_cpp = kth::cpp_ref<kth::domain::chain::transaction::list>(value);
+    kth::cpp_ref<kth::domain::chain::block>(self).set_transactions(value_cpp);
 }
 
 void kth_chain_block_set_header(kth_block_mut_t self, kth_header_const_t value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth_chain_header_const_cpp(value);
-    kth_chain_block_mut_cpp(self).set_header(value_cpp);
+    auto const& value_cpp = kth::cpp_ref<kth::domain::chain::header>(value);
+    kth::cpp_ref<kth::domain::chain::block>(self).set_header(value_cpp);
 }
 
 
@@ -208,55 +200,55 @@ void kth_chain_block_set_header(kth_block_mut_t self, kth_header_const_t value) 
 
 kth_bool_t kth_chain_block_is_valid(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_block_const_cpp(self).is_valid());
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::block>(self).is_valid());
 }
 
 kth_bool_t kth_chain_block_is_extra_coinbases(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_block_const_cpp(self).is_extra_coinbases());
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::block>(self).is_extra_coinbases());
 }
 
 kth_bool_t kth_chain_block_is_final(kth_block_const_t self, kth_size_t height, uint32_t block_time) {
     KTH_PRECONDITION(self != nullptr);
     auto const height_cpp = static_cast<size_t>(height);
-    return kth::bool_to_int(kth_chain_block_const_cpp(self).is_final(height_cpp, block_time));
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::block>(self).is_final(height_cpp, block_time));
 }
 
 kth_bool_t kth_chain_block_is_distinct_transaction_set(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_block_const_cpp(self).is_distinct_transaction_set());
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::block>(self).is_distinct_transaction_set());
 }
 
 kth_bool_t kth_chain_block_is_valid_coinbase_claim(kth_block_const_t self, kth_size_t height) {
     KTH_PRECONDITION(self != nullptr);
     auto const height_cpp = static_cast<size_t>(height);
-    return kth::bool_to_int(kth_chain_block_const_cpp(self).is_valid_coinbase_claim(height_cpp));
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::block>(self).is_valid_coinbase_claim(height_cpp));
 }
 
 kth_bool_t kth_chain_block_is_valid_coinbase_script(kth_block_const_t self, kth_size_t height) {
     KTH_PRECONDITION(self != nullptr);
     auto const height_cpp = static_cast<size_t>(height);
-    return kth::bool_to_int(kth_chain_block_const_cpp(self).is_valid_coinbase_script(height_cpp));
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::block>(self).is_valid_coinbase_script(height_cpp));
 }
 
 kth_bool_t kth_chain_block_is_forward_reference(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_block_const_cpp(self).is_forward_reference());
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::block>(self).is_forward_reference());
 }
 
 kth_bool_t kth_chain_block_is_canonical_ordered(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_block_const_cpp(self).is_canonical_ordered());
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::block>(self).is_canonical_ordered());
 }
 
 kth_bool_t kth_chain_block_is_internal_double_spend(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_block_const_cpp(self).is_internal_double_spend());
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::block>(self).is_internal_double_spend());
 }
 
 kth_bool_t kth_chain_block_is_valid_merkle_root(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_block_const_cpp(self).is_valid_merkle_root());
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::block>(self).is_valid_merkle_root());
 }
 
 
@@ -265,7 +257,7 @@ kth_bool_t kth_chain_block_is_valid_merkle_root(kth_block_const_t self) {
 kth_size_t kth_chain_block_total_inputs(kth_block_const_t self, kth_bool_t with_coinbase) {
     KTH_PRECONDITION(self != nullptr);
     auto const with_coinbase_cpp = kth::int_to_bool(with_coinbase);
-    return kth_chain_block_const_cpp(self).total_inputs(with_coinbase_cpp);
+    return kth::cpp_ref<kth::domain::chain::block>(self).total_inputs(with_coinbase_cpp);
 }
 
 kth_error_code_t kth_chain_block_accept(kth_block_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_block_size_dynamic, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transactions) {
@@ -275,20 +267,20 @@ kth_error_code_t kth_chain_block_accept(kth_block_const_t self, kth_script_flags
     auto const max_sigops_cpp = static_cast<size_t>(max_sigops);
     auto const is_under_checkpoint_cpp = kth::int_to_bool(is_under_checkpoint);
     auto const transactions_cpp = kth::int_to_bool(transactions);
-    return static_cast<kth_error_code_t>((kth_chain_block_const_cpp(self).accept(flags, height_cpp, median_time_past, max_block_size_dynamic_cpp, max_sigops_cpp, is_under_checkpoint_cpp, transactions_cpp)).value());
+    return static_cast<kth_error_code_t>((kth::cpp_ref<kth::domain::chain::block>(self).accept(flags, height_cpp, median_time_past, max_block_size_dynamic_cpp, max_sigops_cpp, is_under_checkpoint_cpp, transactions_cpp)).value());
 }
 
 uint64_t kth_chain_block_reward(kth_block_const_t self, kth_size_t height) {
     KTH_PRECONDITION(self != nullptr);
     auto const height_cpp = static_cast<size_t>(height);
-    return kth_chain_block_const_cpp(self).reward(height_cpp);
+    return kth::cpp_ref<kth::domain::chain::block>(self).reward(height_cpp);
 }
 
 kth_size_t kth_chain_block_signature_operations(kth_block_const_t self, kth_bool_t bip16, kth_bool_t bip141) {
     KTH_PRECONDITION(self != nullptr);
     auto const bip16_cpp = kth::int_to_bool(bip16);
     auto const bip141_cpp = kth::int_to_bool(bip141);
-    return kth_chain_block_const_cpp(self).signature_operations(bip16_cpp, bip141_cpp);
+    return kth::cpp_ref<kth::domain::chain::block>(self).signature_operations(bip16_cpp, bip141_cpp);
 }
 
 kth_error_code_t kth_chain_block_accept_transactions(kth_block_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint) {
@@ -296,19 +288,19 @@ kth_error_code_t kth_chain_block_accept_transactions(kth_block_const_t self, kth
     auto const height_cpp = static_cast<size_t>(height);
     auto const max_sigops_cpp = static_cast<size_t>(max_sigops);
     auto const is_under_checkpoint_cpp = kth::int_to_bool(is_under_checkpoint);
-    return static_cast<kth_error_code_t>((kth_chain_block_const_cpp(self).accept_transactions(flags, height_cpp, median_time_past, max_sigops_cpp, is_under_checkpoint_cpp)).value());
+    return static_cast<kth_error_code_t>((kth::cpp_ref<kth::domain::chain::block>(self).accept_transactions(flags, height_cpp, median_time_past, max_sigops_cpp, is_under_checkpoint_cpp)).value());
 }
 
 kth_error_code_t kth_chain_block_connect_transactions(kth_block_const_t self, kth_chain_state_const_t state) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(state != nullptr);
-    auto const& state_cpp = kth_chain_chain_state_const_cpp(state);
-    return static_cast<kth_error_code_t>((kth_chain_block_const_cpp(self).connect_transactions(state_cpp)).value());
+    auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
+    return static_cast<kth_error_code_t>((kth::cpp_ref<kth::domain::chain::block>(self).connect_transactions(state_cpp)).value());
 }
 
 void kth_chain_block_reset(kth_block_mut_t self) {
     KTH_PRECONDITION(self != nullptr);
-    kth_chain_block_mut_cpp(self).reset();
+    kth::cpp_ref<kth::domain::chain::block>(self).reset();
 }
 
 

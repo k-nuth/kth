@@ -11,14 +11,6 @@
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/message/compact_block.hpp>
 
-// Conversion functions
-kth::domain::message::compact_block& kth_chain_compact_block_mut_cpp(kth_compact_block_mut_t o) {
-    return *static_cast<kth::domain::message::compact_block*>(o);
-}
-kth::domain::message::compact_block const& kth_chain_compact_block_const_cpp(kth_compact_block_const_t o) {
-    return *static_cast<kth::domain::message::compact_block const*>(o);
-}
-
 // ---------------------------------------------------------------------------
 extern "C" {
 
@@ -43,10 +35,10 @@ kth_compact_block_mut_t kth_chain_compact_block_construct(kth_header_const_t hea
     KTH_PRECONDITION(header != nullptr);
     KTH_PRECONDITION(short_ids != nullptr);
     KTH_PRECONDITION(transactions != nullptr);
-    auto const& header_cpp = kth_chain_header_const_cpp(header);
-    auto const& short_ids_cpp = kth_core_u64_list_const_cpp(short_ids);
-    auto const& transactions_cpp = kth_chain_prefilled_transaction_list_const_cpp(transactions);
-    return kth::make_leaked_if_valid(kth::domain::message::compact_block(header_cpp, nonce, short_ids_cpp, transactions_cpp));
+    auto const& header_cpp = kth::cpp_ref<kth::domain::chain::header>(header);
+    auto const& short_ids_cpp = kth::cpp_ref<std::vector<uint64_t>>(short_ids);
+    auto const& transactions_cpp = kth::cpp_ref<kth::domain::message::prefilled_transaction::list>(transactions);
+    return kth::make_leaked<kth::domain::message::compact_block>(header_cpp, nonce, short_ids_cpp, transactions_cpp);
 }
 
 
@@ -54,7 +46,7 @@ kth_compact_block_mut_t kth_chain_compact_block_construct(kth_header_const_t hea
 
 void kth_chain_compact_block_destruct(kth_compact_block_mut_t self) {
     if (self == nullptr) return;
-    delete &kth_chain_compact_block_mut_cpp(self);
+    delete &kth::cpp_ref<kth::domain::message::compact_block>(self);
 }
 
 
@@ -62,7 +54,7 @@ void kth_chain_compact_block_destruct(kth_compact_block_mut_t self) {
 
 kth_compact_block_mut_t kth_chain_compact_block_copy(kth_compact_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return new kth::domain::message::compact_block(kth_chain_compact_block_const_cpp(self));
+    return new kth::domain::message::compact_block(kth::cpp_ref<kth::domain::message::compact_block>(self));
 }
 
 
@@ -71,7 +63,7 @@ kth_compact_block_mut_t kth_chain_compact_block_copy(kth_compact_block_const_t s
 kth_bool_t kth_chain_compact_block_equals(kth_compact_block_const_t self, kth_compact_block_const_t other) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
-    return kth::bool_to_int(kth_chain_compact_block_const_cpp(self) == kth_chain_compact_block_const_cpp(other));
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::message::compact_block>(self) == kth::cpp_ref<kth::domain::message::compact_block>(other));
 }
 
 
@@ -80,13 +72,13 @@ kth_bool_t kth_chain_compact_block_equals(kth_compact_block_const_t self, kth_co
 uint8_t* kth_chain_compact_block_to_data(kth_compact_block_const_t self, uint32_t version, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto const data = kth_chain_compact_block_const_cpp(self).to_data(version);
+    auto const data = kth::cpp_ref<kth::domain::message::compact_block>(self).to_data(version);
     return kth::create_c_array(data, *out_size);
 }
 
 kth_size_t kth_chain_compact_block_serialized_size(kth_compact_block_const_t self, uint32_t version) {
     KTH_PRECONDITION(self != nullptr);
-    return kth_chain_compact_block_const_cpp(self).serialized_size(version);
+    return kth::cpp_ref<kth::domain::message::compact_block>(self).serialized_size(version);
 }
 
 
@@ -94,22 +86,22 @@ kth_size_t kth_chain_compact_block_serialized_size(kth_compact_block_const_t sel
 
 kth_header_const_t kth_chain_compact_block_header(kth_compact_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return &(kth_chain_compact_block_const_cpp(self).header());
+    return &(kth::cpp_ref<kth::domain::message::compact_block>(self).header());
 }
 
 uint64_t kth_chain_compact_block_nonce(kth_compact_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth_chain_compact_block_const_cpp(self).nonce();
+    return kth::cpp_ref<kth::domain::message::compact_block>(self).nonce();
 }
 
 kth_u64_list_const_t kth_chain_compact_block_short_ids(kth_compact_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return &(kth_chain_compact_block_const_cpp(self).short_ids());
+    return &(kth::cpp_ref<kth::domain::message::compact_block>(self).short_ids());
 }
 
 kth_prefilled_transaction_list_const_t kth_chain_compact_block_transactions(kth_compact_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return &(kth_chain_compact_block_const_cpp(self).transactions());
+    return &(kth::cpp_ref<kth::domain::message::compact_block>(self).transactions());
 }
 
 
@@ -118,27 +110,27 @@ kth_prefilled_transaction_list_const_t kth_chain_compact_block_transactions(kth_
 void kth_chain_compact_block_set_header(kth_compact_block_mut_t self, kth_header_const_t value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth_chain_header_const_cpp(value);
-    kth_chain_compact_block_mut_cpp(self).set_header(value_cpp);
+    auto const& value_cpp = kth::cpp_ref<kth::domain::chain::header>(value);
+    kth::cpp_ref<kth::domain::message::compact_block>(self).set_header(value_cpp);
 }
 
 void kth_chain_compact_block_set_nonce(kth_compact_block_mut_t self, uint64_t value) {
     KTH_PRECONDITION(self != nullptr);
-    kth_chain_compact_block_mut_cpp(self).set_nonce(value);
+    kth::cpp_ref<kth::domain::message::compact_block>(self).set_nonce(value);
 }
 
 void kth_chain_compact_block_set_short_ids(kth_compact_block_mut_t self, kth_u64_list_const_t value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth_core_u64_list_const_cpp(value);
-    kth_chain_compact_block_mut_cpp(self).set_short_ids(value_cpp);
+    auto const& value_cpp = kth::cpp_ref<std::vector<uint64_t>>(value);
+    kth::cpp_ref<kth::domain::message::compact_block>(self).set_short_ids(value_cpp);
 }
 
 void kth_chain_compact_block_set_transactions(kth_compact_block_mut_t self, kth_prefilled_transaction_list_const_t value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth_chain_prefilled_transaction_list_const_cpp(value);
-    kth_chain_compact_block_mut_cpp(self).set_transactions(value_cpp);
+    auto const& value_cpp = kth::cpp_ref<kth::domain::message::prefilled_transaction::list>(value);
+    kth::cpp_ref<kth::domain::message::compact_block>(self).set_transactions(value_cpp);
 }
 
 
@@ -146,7 +138,7 @@ void kth_chain_compact_block_set_transactions(kth_compact_block_mut_t self, kth_
 
 kth_bool_t kth_chain_compact_block_is_valid(kth_compact_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_chain_compact_block_const_cpp(self).is_valid());
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::message::compact_block>(self).is_valid());
 }
 
 
@@ -154,7 +146,7 @@ kth_bool_t kth_chain_compact_block_is_valid(kth_compact_block_const_t self) {
 
 void kth_chain_compact_block_reset(kth_compact_block_mut_t self) {
     KTH_PRECONDITION(self != nullptr);
-    kth_chain_compact_block_mut_cpp(self).reset();
+    kth::cpp_ref<kth::domain::message::compact_block>(self).reset();
 }
 
 } // extern "C"

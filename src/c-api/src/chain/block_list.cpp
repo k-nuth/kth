@@ -12,28 +12,29 @@
 extern "C" {
 
 kth_block_list_mut_t kth_chain_block_list_construct_default(void) {
-    return new std::vector<kth::domain::chain::block>();
+    return new kth::domain::chain::block::list();
 }
 
 void kth_chain_block_list_push_back(kth_block_list_mut_t list, kth_block_const_t elem) {
     KTH_PRECONDITION(list != nullptr);
     KTH_PRECONDITION(elem != nullptr);
-    static_cast<std::vector<kth::domain::chain::block>*>(list)->push_back(kth_chain_block_const_cpp(elem));
+    kth::domain::chain::block tmp = kth::cpp_ref<kth::domain::chain::block>(elem);
+    kth::cpp_ref<kth::domain::chain::block::list>(list).push_back(std::move(tmp));
 }
 
 void kth_chain_block_list_destruct(kth_block_list_mut_t list) {
     if (list == nullptr) return;
-    delete static_cast<std::vector<kth::domain::chain::block>*>(list);
+    delete &kth::cpp_ref<kth::domain::chain::block::list>(list);
 }
 
 kth_size_t kth_chain_block_list_count(kth_block_list_const_t list) {
     KTH_PRECONDITION(list != nullptr);
-    return static_cast<std::vector<kth::domain::chain::block> const*>(list)->size();
+    return kth::cpp_ref<kth::domain::chain::block::list>(list).size();
 }
 
 kth_block_const_t kth_chain_block_list_nth(kth_block_list_const_t list, kth_size_t index) {
     KTH_PRECONDITION(list != nullptr);
-    auto const& vec = *static_cast<std::vector<kth::domain::chain::block> const*>(list);
+    auto const& vec = kth::cpp_ref<kth::domain::chain::block::list>(list);
     KTH_PRECONDITION(index < vec.size());
     return &vec[index];
 }
@@ -41,14 +42,14 @@ kth_block_const_t kth_chain_block_list_nth(kth_block_list_const_t list, kth_size
 void kth_chain_block_list_assign_at(kth_block_list_mut_t list, kth_size_t index, kth_block_const_t elem) {
     KTH_PRECONDITION(list != nullptr);
     KTH_PRECONDITION(elem != nullptr);
-    auto& vec = *static_cast<std::vector<kth::domain::chain::block>*>(list);
+    auto& vec = kth::cpp_ref<kth::domain::chain::block::list>(list);
     KTH_PRECONDITION(index < vec.size());
-    vec[index] = kth_chain_block_const_cpp(elem);
+    vec[index] = kth::cpp_ref<kth::domain::chain::block>(elem);
 }
 
 void kth_chain_block_list_erase(kth_block_list_mut_t list, kth_size_t index) {
     KTH_PRECONDITION(list != nullptr);
-    auto& vec = *static_cast<std::vector<kth::domain::chain::block>*>(list);
+    auto& vec = kth::cpp_ref<kth::domain::chain::block::list>(list);
     KTH_PRECONDITION(index < vec.size());
     vec.erase(vec.begin() + index);
 }

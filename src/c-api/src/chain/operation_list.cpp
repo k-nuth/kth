@@ -12,28 +12,29 @@
 extern "C" {
 
 kth_operation_list_mut_t kth_chain_operation_list_construct_default(void) {
-    return new std::vector<kth::domain::machine::operation>();
+    return new kth::domain::machine::operation::list();
 }
 
 void kth_chain_operation_list_push_back(kth_operation_list_mut_t list, kth_operation_const_t elem) {
     KTH_PRECONDITION(list != nullptr);
     KTH_PRECONDITION(elem != nullptr);
-    static_cast<std::vector<kth::domain::machine::operation>*>(list)->push_back(kth_chain_operation_const_cpp(elem));
+    kth::domain::machine::operation tmp = kth::cpp_ref<kth::domain::machine::operation>(elem);
+    kth::cpp_ref<kth::domain::machine::operation::list>(list).push_back(std::move(tmp));
 }
 
 void kth_chain_operation_list_destruct(kth_operation_list_mut_t list) {
     if (list == nullptr) return;
-    delete static_cast<std::vector<kth::domain::machine::operation>*>(list);
+    delete &kth::cpp_ref<kth::domain::machine::operation::list>(list);
 }
 
 kth_size_t kth_chain_operation_list_count(kth_operation_list_const_t list) {
     KTH_PRECONDITION(list != nullptr);
-    return static_cast<std::vector<kth::domain::machine::operation> const*>(list)->size();
+    return kth::cpp_ref<kth::domain::machine::operation::list>(list).size();
 }
 
 kth_operation_const_t kth_chain_operation_list_nth(kth_operation_list_const_t list, kth_size_t index) {
     KTH_PRECONDITION(list != nullptr);
-    auto const& vec = *static_cast<std::vector<kth::domain::machine::operation> const*>(list);
+    auto const& vec = kth::cpp_ref<kth::domain::machine::operation::list>(list);
     KTH_PRECONDITION(index < vec.size());
     return &vec[index];
 }
@@ -41,14 +42,14 @@ kth_operation_const_t kth_chain_operation_list_nth(kth_operation_list_const_t li
 void kth_chain_operation_list_assign_at(kth_operation_list_mut_t list, kth_size_t index, kth_operation_const_t elem) {
     KTH_PRECONDITION(list != nullptr);
     KTH_PRECONDITION(elem != nullptr);
-    auto& vec = *static_cast<std::vector<kth::domain::machine::operation>*>(list);
+    auto& vec = kth::cpp_ref<kth::domain::machine::operation::list>(list);
     KTH_PRECONDITION(index < vec.size());
-    vec[index] = kth_chain_operation_const_cpp(elem);
+    vec[index] = kth::cpp_ref<kth::domain::machine::operation>(elem);
 }
 
 void kth_chain_operation_list_erase(kth_operation_list_mut_t list, kth_size_t index) {
     KTH_PRECONDITION(list != nullptr);
-    auto& vec = *static_cast<std::vector<kth::domain::machine::operation>*>(list);
+    auto& vec = kth::cpp_ref<kth::domain::machine::operation::list>(list);
     KTH_PRECONDITION(index < vec.size());
     vec.erase(vec.begin() + index);
 }

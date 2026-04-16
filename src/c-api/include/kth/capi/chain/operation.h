@@ -26,11 +26,11 @@ kth_operation_mut_t kth_chain_operation_construct_default(void);
 KTH_EXPORT
 kth_error_code_t kth_chain_operation_construct_from_data(uint8_t const* data, kth_size_t n, KTH_OUT_OWNED kth_operation_mut_t* out);
 
-/** @return Owned `kth_operation_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_operation_destruct`. */
+/** @return Owned `kth_operation_mut_t`. Caller must release with `kth_chain_operation_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_mut_t kth_chain_operation_construct_from_uncoded_minimal(uint8_t const* uncoded, kth_size_t n, kth_bool_t minimal);
 
-/** @return Owned `kth_operation_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_operation_destruct`. */
+/** @return Owned `kth_operation_mut_t`. Caller must release with `kth_chain_operation_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_mut_t kth_chain_operation_construct_from_code(kth_opcode_t code);
 

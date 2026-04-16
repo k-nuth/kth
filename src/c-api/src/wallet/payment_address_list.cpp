@@ -12,28 +12,29 @@
 extern "C" {
 
 kth_payment_address_list_mut_t kth_wallet_payment_address_list_construct_default(void) {
-    return new std::vector<kth::domain::wallet::payment_address>();
+    return new kth::domain::wallet::payment_address::list();
 }
 
 void kth_wallet_payment_address_list_push_back(kth_payment_address_list_mut_t list, kth_payment_address_const_t elem) {
     KTH_PRECONDITION(list != nullptr);
     KTH_PRECONDITION(elem != nullptr);
-    static_cast<std::vector<kth::domain::wallet::payment_address>*>(list)->push_back(kth_wallet_payment_address_const_cpp(elem));
+    kth::domain::wallet::payment_address tmp = kth::cpp_ref<kth::domain::wallet::payment_address>(elem);
+    kth::cpp_ref<kth::domain::wallet::payment_address::list>(list).push_back(std::move(tmp));
 }
 
 void kth_wallet_payment_address_list_destruct(kth_payment_address_list_mut_t list) {
     if (list == nullptr) return;
-    delete static_cast<std::vector<kth::domain::wallet::payment_address>*>(list);
+    delete &kth::cpp_ref<kth::domain::wallet::payment_address::list>(list);
 }
 
 kth_size_t kth_wallet_payment_address_list_count(kth_payment_address_list_const_t list) {
     KTH_PRECONDITION(list != nullptr);
-    return static_cast<std::vector<kth::domain::wallet::payment_address> const*>(list)->size();
+    return kth::cpp_ref<kth::domain::wallet::payment_address::list>(list).size();
 }
 
 kth_payment_address_const_t kth_wallet_payment_address_list_nth(kth_payment_address_list_const_t list, kth_size_t index) {
     KTH_PRECONDITION(list != nullptr);
-    auto const& vec = *static_cast<std::vector<kth::domain::wallet::payment_address> const*>(list);
+    auto const& vec = kth::cpp_ref<kth::domain::wallet::payment_address::list>(list);
     KTH_PRECONDITION(index < vec.size());
     return &vec[index];
 }
@@ -41,14 +42,14 @@ kth_payment_address_const_t kth_wallet_payment_address_list_nth(kth_payment_addr
 void kth_wallet_payment_address_list_assign_at(kth_payment_address_list_mut_t list, kth_size_t index, kth_payment_address_const_t elem) {
     KTH_PRECONDITION(list != nullptr);
     KTH_PRECONDITION(elem != nullptr);
-    auto& vec = *static_cast<std::vector<kth::domain::wallet::payment_address>*>(list);
+    auto& vec = kth::cpp_ref<kth::domain::wallet::payment_address::list>(list);
     KTH_PRECONDITION(index < vec.size());
-    vec[index] = kth_wallet_payment_address_const_cpp(elem);
+    vec[index] = kth::cpp_ref<kth::domain::wallet::payment_address>(elem);
 }
 
 void kth_wallet_payment_address_list_erase(kth_payment_address_list_mut_t list, kth_size_t index) {
     KTH_PRECONDITION(list != nullptr);
-    auto& vec = *static_cast<std::vector<kth::domain::wallet::payment_address>*>(list);
+    auto& vec = kth::cpp_ref<kth::domain::wallet::payment_address::list>(list);
     KTH_PRECONDITION(index < vec.size());
     vec.erase(vec.begin() + index);
 }

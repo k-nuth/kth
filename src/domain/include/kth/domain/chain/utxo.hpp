@@ -8,6 +8,7 @@
 #include <compare>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 #include <kth/domain/chain/output_point.hpp>
 #include <kth/domain/chain/token_data.hpp>
@@ -16,6 +17,8 @@
 namespace kth::domain::chain {
 
 struct KD_API utxo {
+    using list = std::vector<utxo>;
+
     utxo() = default;
 
     utxo(output_point const& point, uint64_t amount,

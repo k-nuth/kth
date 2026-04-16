@@ -8,14 +8,6 @@
 #include <kth/capi/helpers.hpp>
 #include <kth/domain/wallet/hd_private.hpp>
 
-// Conversion functions
-kth::domain::wallet::hd_private& kth_wallet_hd_private_mut_cpp(kth_hd_private_mut_t o) {
-    return *static_cast<kth::domain::wallet::hd_private*>(o);
-}
-kth::domain::wallet::hd_private const& kth_wallet_hd_private_const_cpp(kth_hd_private_const_t o) {
-    return *static_cast<kth::domain::wallet::hd_private const*>(o);
-}
-
 // ---------------------------------------------------------------------------
 extern "C" {
 
@@ -87,7 +79,7 @@ kth_hd_private_mut_t kth_wallet_hd_private_construct_from_encoded_prefix(char co
 
 void kth_wallet_hd_private_destruct(kth_hd_private_mut_t self) {
     if (self == nullptr) return;
-    delete &kth_wallet_hd_private_mut_cpp(self);
+    delete &kth::cpp_ref<kth::domain::wallet::hd_private>(self);
 }
 
 
@@ -95,7 +87,7 @@ void kth_wallet_hd_private_destruct(kth_hd_private_mut_t self) {
 
 kth_hd_private_mut_t kth_wallet_hd_private_copy(kth_hd_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return new kth::domain::wallet::hd_private(kth_wallet_hd_private_const_cpp(self));
+    return new kth::domain::wallet::hd_private(kth::cpp_ref<kth::domain::wallet::hd_private>(self));
 }
 
 
@@ -104,7 +96,7 @@ kth_hd_private_mut_t kth_wallet_hd_private_copy(kth_hd_private_const_t self) {
 kth_bool_t kth_wallet_hd_private_equals(kth_hd_private_const_t self, kth_hd_private_const_t other) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
-    return kth::bool_to_int(kth_wallet_hd_private_const_cpp(self) == kth_wallet_hd_private_const_cpp(other));
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::wallet::hd_private>(self) == kth::cpp_ref<kth::domain::wallet::hd_private>(other));
 }
 
 
@@ -112,43 +104,43 @@ kth_bool_t kth_wallet_hd_private_equals(kth_hd_private_const_t self, kth_hd_priv
 
 char* kth_wallet_hd_private_encoded(kth_hd_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const s = kth_wallet_hd_private_const_cpp(self).encoded();
+    auto const s = kth::cpp_ref<kth::domain::wallet::hd_private>(self).encoded();
     return kth::create_c_str(s);
 }
 
 kth_hash_t kth_wallet_hd_private_secret(kth_hd_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_hash_t(kth_wallet_hd_private_const_cpp(self).secret());
+    return kth::to_hash_t(kth::cpp_ref<kth::domain::wallet::hd_private>(self).secret());
 }
 
 kth_hd_key_t kth_wallet_hd_private_to_hd_key(kth_hd_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_hd_key_t(kth_wallet_hd_private_const_cpp(self).to_hd_key());
+    return kth::to_hd_key_t(kth::cpp_ref<kth::domain::wallet::hd_private>(self).to_hd_key());
 }
 
 kth_hd_public_mut_t kth_wallet_hd_private_to_public(kth_hd_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::make_leaked_if_valid(kth_wallet_hd_private_const_cpp(self).to_public());
+    return kth::make_leaked_if_valid(kth::cpp_ref<kth::domain::wallet::hd_private>(self).to_public());
 }
 
 kth_bool_t kth_wallet_hd_private_valid(kth_hd_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth_wallet_hd_private_const_cpp(self).operator const bool());
+    return kth::bool_to_int(static_cast<bool>(kth::cpp_ref<kth::domain::wallet::hd_private>(self)));
 }
 
 kth_hash_t kth_wallet_hd_private_chain_code(kth_hd_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_hash_t(kth_wallet_hd_private_const_cpp(self).chain_code());
+    return kth::to_hash_t(kth::cpp_ref<kth::domain::wallet::hd_private>(self).chain_code());
 }
 
 kth_hd_lineage_t kth_wallet_hd_private_lineage(kth_hd_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_c_struct<kth_hd_lineage_t>(kth_wallet_hd_private_const_cpp(self).lineage());
+    return kth::to_c_struct<kth_hd_lineage_t>(kth::cpp_ref<kth::domain::wallet::hd_private>(self).lineage());
 }
 
 kth_ec_compressed_t kth_wallet_hd_private_point(kth_hd_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_ec_compressed_t(kth_wallet_hd_private_const_cpp(self).point());
+    return kth::to_ec_compressed_t(kth::cpp_ref<kth::domain::wallet::hd_private>(self).point());
 }
 
 
@@ -157,18 +149,18 @@ kth_ec_compressed_t kth_wallet_hd_private_point(kth_hd_private_const_t self) {
 kth_bool_t kth_wallet_hd_private_less(kth_hd_private_const_t self, kth_hd_private_const_t x) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(x != nullptr);
-    auto const& x_cpp = kth_wallet_hd_private_const_cpp(x);
-    return kth::bool_to_int(kth_wallet_hd_private_const_cpp(self).operator<(x_cpp));
+    auto const& x_cpp = kth::cpp_ref<kth::domain::wallet::hd_private>(x);
+    return kth::bool_to_int(kth::cpp_ref<kth::domain::wallet::hd_private>(self).operator<(x_cpp));
 }
 
 kth_hd_private_mut_t kth_wallet_hd_private_derive_private(kth_hd_private_const_t self, uint32_t index) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::make_leaked_if_valid(kth_wallet_hd_private_const_cpp(self).derive_private(index));
+    return kth::make_leaked_if_valid(kth::cpp_ref<kth::domain::wallet::hd_private>(self).derive_private(index));
 }
 
 kth_hd_public_mut_t kth_wallet_hd_private_derive_public(kth_hd_private_const_t self, uint32_t index) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::make_leaked_if_valid(kth_wallet_hd_private_const_cpp(self).derive_public(index));
+    return kth::make_leaked_if_valid(kth::cpp_ref<kth::domain::wallet::hd_private>(self).derive_public(index));
 }
 
 

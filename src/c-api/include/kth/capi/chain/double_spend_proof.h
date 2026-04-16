@@ -25,7 +25,7 @@ KTH_EXPORT
 kth_error_code_t kth_chain_double_spend_proof_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_double_spend_proof_mut_t* out);
 
 /**
- * @return Owned `kth_double_spend_proof_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_double_spend_proof_destruct`.
+ * @return Owned `kth_double_spend_proof_mut_t`. Caller must release with `kth_chain_double_spend_proof_destruct`.
  * @param out_point Borrowed input. Copied by value into the resulting object; ownership of `out_point` stays with the caller.
  * @param spender1 Borrowed input. Copied by value into the resulting object; ownership of `spender1` stays with the caller.
  * @param spender2 Borrowed input. Copied by value into the resulting object; ownership of `spender2` stays with the caller.
