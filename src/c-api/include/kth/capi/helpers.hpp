@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -223,6 +224,21 @@ inline bool check_valid(T* obj) {
     }
 }
 
+// Short alias for the `*static_cast<T*>(handle)` pattern used everywhere
+// an opaque C handle is crossed back into a C++ reference. The const
+// overload kicks in automatically when the handle is a `void const*`.
+template<typename T> inline T&       cpp_ref(void* h)       { return *static_cast<T*>(h); }
+template<typename T> inline T const& cpp_ref(void const* h) { return *static_cast<T const*>(h); }
+
+// Companion for `std::optional<T>` parameters: NULL on the C side is
+// `std::nullopt`, any non-null handle is wrapped into an engaged
+// optional carrying a value copy. Keeps the optional-param call site
+// a single expression instead of the inline ternary spellout.
+template<typename T>
+inline std::optional<T> optional_cpp_ref(void const* h) {
+    return h == nullptr ? std::nullopt : std::optional<T>(cpp_ref<T>(h));
+}
+
 // small struct memcpy to register moves). static_assert guards that the
 // source and destination structs have the same size.
 // Works both directions: C→C++ and C++→C.
@@ -394,6 +410,19 @@ void copy_c_hash(HashCpp const& in, HashC* out) {
 template <typename T>
 std::decay_t<T>* make_leaked(T&& x) {
     return new std::decay_t<T>(std::forward<T>(x));
+}
+
+// In-place variant: constructs `T` from the forwarded argument pack
+// instead of copy/moving an already-built object. `T` must be given
+// explicitly. For single-argument calls the deducing overload above
+// is more specialised and wins overload resolution, so it handles
+// the copy/move case; this overload kicks in for 0 or 2+ arguments,
+// and also for 1-argument calls where the match against the deducing
+// overload fails (e.g. an `explicit` constructor blocks the implicit
+// conversion that overload would need).
+template <typename T, typename... Args>
+T* make_leaked(Args&&... args) {
+    return new T(std::forward<Args>(args)...);
 }
 
 // Same as `make_leaked`, but gates the leak on `check_valid(&x)`.
