@@ -10,39 +10,44 @@
 #include <kth/capi/helpers.hpp>
 #include <kth/infrastructure/utility/binary.hpp>
 
+// File-local alias so `kth::cpp_ref<T>(...)` and friends don't
+// spell out the full qualified C++ name at every call site.
+namespace {
+using cpp_t = kth::binary;
+} // namespace
+
 // ---------------------------------------------------------------------------
 extern "C" {
 
 // Constructors
 
 kth_binary_mut_t kth_core_binary_construct_default(void) {
-    return new kth::binary();
+    return kth::leak<cpp_t>();
 }
 
 kth_binary_mut_t kth_core_binary_construct_from_bit_string(char const* bit_string) {
     KTH_PRECONDITION(bit_string != nullptr);
     auto const bit_string_cpp = std::string_view(bit_string);
-    return kth::make_leaked<kth::binary>(bit_string_cpp);
+    return kth::leak<cpp_t>(bit_string_cpp);
 }
 
 kth_binary_mut_t kth_core_binary_construct_from_size_number(kth_size_t size, uint32_t number) {
-    auto const size_cpp = static_cast<size_t>(size);
-    return kth::make_leaked<kth::binary>(size_cpp, number);
+    auto const size_cpp = kth::sz(size);
+    return kth::leak<cpp_t>(size_cpp, number);
 }
 
 kth_binary_mut_t kth_core_binary_construct_from_size_blocks(kth_size_t size, uint8_t const* blocks, kth_size_t n) {
     KTH_PRECONDITION(blocks != nullptr || n == 0);
-    auto const size_cpp = static_cast<size_t>(size);
-    auto const blocks_cpp = kth::byte_span(blocks, static_cast<size_t>(n));
-    return kth::make_leaked<kth::binary>(size_cpp, blocks_cpp);
+    auto const size_cpp = kth::sz(size);
+    auto const blocks_cpp = kth::byte_span(blocks, kth::sz(n));
+    return kth::leak<cpp_t>(size_cpp, blocks_cpp);
 }
 
 
 // Destructor
 
 void kth_core_binary_destruct(kth_binary_mut_t self) {
-    if (self == nullptr) return;
-    delete &kth::cpp_ref<kth::binary>(self);
+    kth::del<cpp_t>(self);
 }
 
 
@@ -50,7 +55,7 @@ void kth_core_binary_destruct(kth_binary_mut_t self) {
 
 kth_binary_mut_t kth_core_binary_copy(kth_binary_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return new kth::binary(kth::cpp_ref<kth::binary>(self));
+    return kth::clone<cpp_t>(self);
 }
 
 
@@ -59,7 +64,7 @@ kth_binary_mut_t kth_core_binary_copy(kth_binary_const_t self) {
 kth_bool_t kth_core_binary_equals(kth_binary_const_t self, kth_binary_const_t other) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<kth::binary>(self) == kth::cpp_ref<kth::binary>(other));
+    return kth::eq<cpp_t>(self, other);
 }
 
 
@@ -68,19 +73,19 @@ kth_bool_t kth_core_binary_equals(kth_binary_const_t self, kth_binary_const_t ot
 uint8_t* kth_core_binary_blocks(kth_binary_const_t self, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto const data = kth::cpp_ref<kth::binary>(self).blocks();
+    auto const& data = kth::cpp_ref<cpp_t>(self).blocks();
     return kth::create_c_array(data, *out_size);
 }
 
 char* kth_core_binary_encoded(kth_binary_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const s = kth::cpp_ref<kth::binary>(self).encoded();
+    auto const s = kth::cpp_ref<cpp_t>(self).encoded();
     return kth::create_c_str(s);
 }
 
 kth_size_t kth_core_binary_size(kth_binary_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::cpp_ref<kth::binary>(self).size();
+    return kth::cpp_ref<cpp_t>(self).size();
 }
 
 
@@ -89,26 +94,26 @@ kth_size_t kth_core_binary_size(kth_binary_const_t self) {
 kth_bool_t kth_core_binary_is_base2(char const* text) {
     KTH_PRECONDITION(text != nullptr);
     auto const text_cpp = std::string_view(text);
-    return kth::bool_to_int(kth::binary::is_base2(text_cpp));
+    return kth::bool_to_int(cpp_t::is_base2(text_cpp));
 }
 
 kth_bool_t kth_core_binary_is_prefix_of_span(kth_binary_const_t self, uint8_t const* field, kth_size_t n) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(field != nullptr || n == 0);
-    auto const field_cpp = kth::byte_span(field, static_cast<size_t>(n));
-    return kth::bool_to_int(kth::cpp_ref<kth::binary>(self).is_prefix_of(field_cpp));
+    auto const field_cpp = kth::byte_span(field, kth::sz(n));
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_prefix_of(field_cpp));
 }
 
 kth_bool_t kth_core_binary_is_prefix_of_uint32(kth_binary_const_t self, uint32_t field) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<kth::binary>(self).is_prefix_of(field));
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_prefix_of(field));
 }
 
 kth_bool_t kth_core_binary_is_prefix_of_binary(kth_binary_const_t self, kth_binary_const_t field) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(field != nullptr);
-    auto const& field_cpp = kth::cpp_ref<kth::binary>(field);
-    return kth::bool_to_int(kth::cpp_ref<kth::binary>(self).is_prefix_of(field_cpp));
+    auto const& field_cpp = kth::cpp_ref<cpp_t>(field);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_prefix_of(field_cpp));
 }
 
 
@@ -116,63 +121,62 @@ kth_bool_t kth_core_binary_is_prefix_of_binary(kth_binary_const_t self, kth_bina
 
 void kth_core_binary_resize(kth_binary_mut_t self, kth_size_t size) {
     KTH_PRECONDITION(self != nullptr);
-    auto const size_cpp = static_cast<size_t>(size);
-    kth::cpp_ref<kth::binary>(self).resize(size_cpp);
+    auto const size_cpp = kth::sz(size);
+    kth::cpp_ref<cpp_t>(self).resize(size_cpp);
 }
 
 kth_bool_t kth_core_binary_at(kth_binary_const_t self, kth_size_t index) {
     KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(index < kth::cpp_ref<kth::binary>(self).size());
-    auto const index_cpp = static_cast<size_t>(index);
-    return kth::bool_to_int(kth::cpp_ref<kth::binary>(self).operator[](index_cpp));
+    KTH_PRECONDITION(index < kth::cpp_ref<cpp_t>(self).size());
+    auto const index_cpp = kth::sz(index);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).operator[](index_cpp));
 }
 
 void kth_core_binary_append(kth_binary_mut_t self, kth_binary_const_t post) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(post != nullptr);
-    auto const& post_cpp = kth::cpp_ref<kth::binary>(post);
-    kth::cpp_ref<kth::binary>(self).append(post_cpp);
+    auto const& post_cpp = kth::cpp_ref<cpp_t>(post);
+    kth::cpp_ref<cpp_t>(self).append(post_cpp);
 }
 
 void kth_core_binary_prepend(kth_binary_mut_t self, kth_binary_const_t prior) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(prior != nullptr);
-    auto const& prior_cpp = kth::cpp_ref<kth::binary>(prior);
-    kth::cpp_ref<kth::binary>(self).prepend(prior_cpp);
+    auto const& prior_cpp = kth::cpp_ref<cpp_t>(prior);
+    kth::cpp_ref<cpp_t>(self).prepend(prior_cpp);
 }
 
 void kth_core_binary_shift_left(kth_binary_mut_t self, kth_size_t distance) {
     KTH_PRECONDITION(self != nullptr);
-    auto const distance_cpp = static_cast<size_t>(distance);
-    kth::cpp_ref<kth::binary>(self).shift_left(distance_cpp);
+    auto const distance_cpp = kth::sz(distance);
+    kth::cpp_ref<cpp_t>(self).shift_left(distance_cpp);
 }
 
 void kth_core_binary_shift_right(kth_binary_mut_t self, kth_size_t distance) {
     KTH_PRECONDITION(self != nullptr);
-    auto const distance_cpp = static_cast<size_t>(distance);
-    kth::cpp_ref<kth::binary>(self).shift_right(distance_cpp);
+    auto const distance_cpp = kth::sz(distance);
+    kth::cpp_ref<cpp_t>(self).shift_right(distance_cpp);
 }
 
 kth_binary_mut_t kth_core_binary_substring(kth_binary_const_t self, kth_size_t start, kth_size_t length) {
     KTH_PRECONDITION(self != nullptr);
-    auto const start_cpp = static_cast<size_t>(start);
-    auto const length_cpp = static_cast<size_t>(length);
-    return kth::make_leaked_if_valid(kth::cpp_ref<kth::binary>(self).substring(start_cpp, length_cpp));
+    auto const start_cpp = kth::sz(start);
+    auto const length_cpp = kth::sz(length);
+    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).substring(start_cpp, length_cpp));
 }
 
 kth_bool_t kth_core_binary_less(kth_binary_const_t self, kth_binary_const_t x) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(x != nullptr);
-    auto const& x_cpp = kth::cpp_ref<kth::binary>(x);
-    return kth::bool_to_int(kth::cpp_ref<kth::binary>(self).operator<(x_cpp));
+    return kth::lt<cpp_t>(self, x);
 }
 
 
 // Static utilities
 
 kth_size_t kth_core_binary_blocks_size(kth_size_t bit_size) {
-    auto const bit_size_cpp = static_cast<size_t>(bit_size);
-    return kth::binary::blocks_size(bit_size_cpp);
+    auto const bit_size_cpp = kth::sz(bit_size);
+    return cpp_t::blocks_size(bit_size_cpp);
 }
 
 } // extern "C"

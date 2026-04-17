@@ -99,12 +99,12 @@ kth_ec_public_t kth_wallet_ec_to_public(kth_ec_secret_t secret, kth_bool_t uncom
 
     kth::ec_compressed point;
     kth::secret_to_public(point, secret_cpp);
-    return new kth::domain::wallet::ec_public(point, !uncompressed_cpp);
+    return kth::leak<kth::domain::wallet::ec_public>(point, !uncompressed_cpp);
 }
 
 kth_payment_address_t kth_wallet_ec_to_address(kth_ec_public_t point, uint32_t version) {
     kth::domain::wallet::ec_public const& point_cpp = *static_cast<kth::domain::wallet::ec_public const*>(point);
-    return new kth::domain::wallet::payment_address(point_cpp, version);
+    return kth::leak<kth::domain::wallet::payment_address>(point_cpp, version);
 }
 
 } // extern "C"

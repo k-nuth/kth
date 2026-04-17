@@ -64,9 +64,9 @@ kth_bool_t kth_vm_interpreter_debug_steps_available(kth_program_const_t program,
 }
 
 kth_error_code_t kth_vm_interpreter_debug_step(kth_program_const_t program, kth_size_t step, kth_size_t* out_step, kth_program_mut_t* out_program) {
-    auto const [err, new_step, new_program_cpp] = kth::domain::machine::interpreter::debug_step(kth::cpp_ref<kth::domain::machine::program>(program), step);
+    auto [err, new_step, new_program_cpp] = kth::domain::machine::interpreter::debug_step(kth::cpp_ref<kth::domain::machine::program>(program), step);
     *out_step = new_step;
-    *out_program = kth::make_leaked(std::move(new_program_cpp));
+    *out_program = kth::leak(std::move(new_program_cpp));
     // printf("kth_vm_interpreter_debug_step() - out_step:     %p\n", out_step);
     // printf("kth_vm_interpreter_debug_step() - out_program:  %p\n", out_program);
     // printf("kth_vm_interpreter_debug_step() - *out_program: %p\n", *out_program);

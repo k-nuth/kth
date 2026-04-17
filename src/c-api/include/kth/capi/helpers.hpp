@@ -12,8 +12,12 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <kth/capi/wallet/primitives.h>
+#include <kth/domain/chain/history.hpp>
+#include <kth/domain/chain/script.hpp>
+#include <kth/domain/chain/token_data.hpp>
 #include <kth/domain/config/network.hpp>
 #include <kth/domain/machine/opcode.hpp>
 #include <kth/domain/wallet/hd_public.hpp>
@@ -172,6 +176,26 @@ kth_encrypted_seed_t to_encrypted_seed_t(kth::domain::wallet::encrypted_seed_t c
 //     0, 0, 0, 0, 0, 0, 0, 0,
 //     0, 0, 0, 0, 0, 0, 0, 0,
 //     0, 0, 0, 0, 0, 0, 0, 0}};
+
+// Cast a C-side integral to a C++ strongly-typed enum.
+// Generic form used by the generator at param-forwarding sites;
+// shorter than spelling out `static_cast<E>(x)` and self-documenting.
+template <typename E, typename T>
+inline constexpr E ecast(T x) {
+    return static_cast<E>(x);
+}
+
+// Per-enum named shortcuts for enums that don't already have a
+// dedicated `<name>_to_cpp` / `<name>_to_c` helper further down in
+// this file. For enums that do, the generator routes through those
+// existing helpers (`opcode_to_cpp`, `network_to_cpp` — which carries
+// a safe switch fallback, etc.) and never lands here.
+inline constexpr kth::domain::chain::point_kind point_kind_to_cpp(kth_point_kind_t x) {
+    return ecast<kth::domain::chain::point_kind>(x);
+}
+inline constexpr kth_point_kind_t point_kind_to_c(kth::domain::chain::point_kind x) {
+    return ecast<kth_point_kind_t>(x);
+}
 
 inline
 kth::hash_digest hash_to_cpp(uint8_t const* x) {
@@ -393,6 +417,16 @@ kth_error_code_t to_c_err(std::error_code const& ec) {
     return static_cast<kth_error_code_t>(ec.value());
 }
 
+// Fallback for bare enum error arms (e.g. `kth::error::error_code_t`)
+// used by `std::expected<T, EnumT>`. The non-template overload above
+// wins for `std::error_code`; this template catches every other shape
+// that is convertible to `kth_error_code_t`.
+template <typename E>
+inline
+kth_error_code_t to_c_err(E const& e) {
+    return static_cast<kth_error_code_t>(e);
+}
+
 template <typename HashCpp, typename HashC>
 inline
 void copy_c_hash(HashCpp const& in, HashC* out) {
@@ -400,15 +434,42 @@ void copy_c_hash(HashCpp const& in, HashC* out) {
     std::copy_n(in.begin(), in.size(), static_cast<uint8_t*>(out->hash));
 }
 
+inline
+int bool_to_int(bool x) {
+    return x;
+}
+
+inline
+bool int_to_bool(int x) {
+    return x;
+}
+
+// Concept used by `leak(T&&)` to step aside when the argument is a
+// `std::shared_ptr`. In that case the caller wants the pointed-to
+// object heap-copied (see the `leak(std::shared_ptr<T> const&)`
+// overload later in this file), not the shared_ptr itself.
+namespace detail {
+template <typename>                    constexpr bool is_shared_ptr = false;
+template <typename T> constexpr bool is_shared_ptr<std::shared_ptr<T>> = true;
+} // namespace detail
+
+template <typename T>
+concept not_shared_ptr = ! detail::is_shared_ptr<std::remove_cvref_t<T>>;
+
 // Promote a value to the heap and surrender ownership to the caller —
 // i.e. "leak" it, which from the C-API perspective is exactly the
 // transfer the consumer is expected to release later via the matching
 // `kth_*_destruct` function. Forwards into `new T(...)`, so an rvalue
-// is moved and an lvalue is copied. The `_leak` suffix is intentional:
-// it documents the ownership transfer at every call site (instead of
+// is moved and an lvalue is copied. The name is intentional: it
+// documents the ownership transfer at every call site (instead of
 // hiding it behind a generic factory name), making leaks greppable.
-template <typename T>
-std::decay_t<T>* make_leaked(T&& x) {
+//
+// The `not_shared_ptr` constraint keeps this forwarding-reference
+// overload out of the picture for `std::shared_ptr` arguments — those
+// flow to the dedicated overload below that unwraps the shared_ptr
+// and leaks the pointed-to object.
+template <not_shared_ptr T>
+std::decay_t<T>* leak(T&& x) {
     return new std::decay_t<T>(std::forward<T>(x));
 }
 
@@ -421,43 +482,82 @@ std::decay_t<T>* make_leaked(T&& x) {
 // overload fails (e.g. an `explicit` constructor blocks the implicit
 // conversion that overload would need).
 template <typename T, typename... Args>
-T* make_leaked(Args&&... args) {
+T* leak(Args&&... args) {
     return new T(std::forward<Args>(args)...);
 }
 
 // Copy an opaque handle: deref it back into `T const&` via `cpp_ref`
-// and heap-allocate a fresh copy via `make_leaked`. Collapses the
-// generated copy-ctor body to a one-liner.
+// and heap-allocate a fresh copy via `leak`. Collapses the generated
+// copy-ctor body to a one-liner.
 template <typename T>
 inline T* clone(void const* h) {
-    return make_leaked<T>(cpp_ref<T>(h));
+    return leak<T>(cpp_ref<T>(h));
 }
 
-// Same as `make_leaked`, but gates the leak on `check_valid(&x)`.
-// The validity of the heap copy mirrors the source's validity (the
+// Convenience: `leak` for a `std::vector<T>` heap allocation.
+// Saves spelling out the inner `std::vector<...>` at the call site.
+// Forwards every argument straight into the vector constructor, so
+// `leak_list<T>()`, `leak_list<T>(n)`, `leak_list<T>(n, value)`,
+// `leak_list<T>({a, b, c})` and `leak_list<T>(begin, end)` all work.
+template <typename T, typename... Args>
+std::vector<T>* leak_list(Args&&... args) {
+    return new std::vector<T>(std::forward<Args>(args)...);
+}
+
+// Inverse of `leak` / `leak_list`: hands an opaque C handle back to
+// `delete`. Null-safe, so generated destructors can call this
+// unconditionally without a separate guard — passing `nullptr` is a
+// no-op. `del_list<T>(h)` is the matching shortcut for vector handles.
+template <typename T>
+inline void del(void* h) {
+    if (h == nullptr) return;
+    delete &cpp_ref<T>(h);
+}
+template <typename T>
+inline void del_list(void* h) {
+    if (h == nullptr) return;
+    delete &cpp_ref<std::vector<T>>(h);
+}
+
+// Equality through two opaque handles of the same type. Saves the
+// double `cpp_ref<T>(...)` spelling and the outer `bool_to_int` wrap
+// at every `_equals` call site.
+template <typename T>
+inline kth_bool_t eq(void const* a, void const* b) {
+    return bool_to_int(cpp_ref<T>(a) == cpp_ref<T>(b));
+}
+
+// Strict-less-than through two opaque handles of the same type.
+// Counterpart to `eq` for `_less` bindings generated from `operator<`.
+template <typename T>
+inline kth_bool_t lt(void const* a, void const* b) {
+    return bool_to_int(cpp_ref<T>(a) < cpp_ref<T>(b));
+}
+
+// `cpp_ref<std::vector<T>>(h)` shorthand. Same overload resolution
+// trick as `cpp_ref`: the const handle picks the const reference.
+template <typename T> inline std::vector<T>&       list_ref(void* h)       { return cpp_ref<std::vector<T>>(h); }
+template <typename T> inline std::vector<T> const& list_ref(void const* h) { return cpp_ref<std::vector<T>>(h); }
+
+// Shorthand for `static_cast<size_t>(x)` when crossing the FFI
+// boundary (where sizes come in as `kth_size_t` / signed integers).
+template <typename T>
+inline std::size_t sz(T x) { return static_cast<std::size_t>(x); }
+
+// Same as `leak`, but gates the leak on `check_valid(&x)`. The
+// validity of the heap copy mirrors the source's validity (the
 // constructor doesn't change `operator bool`), so we test `x` BEFORE
 // allocating — invalid input returns `nullptr` without ever touching
 // the heap. Matches the documented "or NULL on failure" contract that
 // generated factories advertise. Sentinel factories whose return is
 // intentionally `operator bool == false` (e.g. `point::null()`)
-// should opt out and use `make_leaked` instead.
+// should opt out and use `leak` instead.
 template <typename T>
-std::decay_t<T>* make_leaked_if_valid(T&& x) {
+std::decay_t<T>* leak_if_valid(T&& x) {
     if ( ! check_valid(&x)) return nullptr;
     return new std::decay_t<T>(std::forward<T>(x));
 }
 
-inline
-int bool_to_int(bool x) {
-    // return int(x);
-    return x;
-}
-
-inline
-bool int_to_bool(int x) {
-    // return x != 0;
-    return x;
-}
 
 inline
 bool witness(int x = 1) {
@@ -622,47 +722,46 @@ template <typename T>
 inline
 std::remove_const_t<T>* leak_if_success(std::shared_ptr<T> const& ptr, std::error_code ec) {
     if (ec != kth::error::success) return nullptr;
-    using RealT = std::remove_const_t<T>;
-    auto leaked = new RealT(*ptr);
-    return leaked;
+    return new std::remove_const_t<T>(*ptr);
 }
 
+// Rvalue overload: caller has signalled they are done with `ptr`
+// (e.g. passed `std::move(...)`), so we can move the pointed-to value
+// into the heap copy instead of copying it. If `ptr` still shared
+// ownership at the call site, the caller has violated the move
+// contract — same rule as `std::move` anywhere else.
 template <typename T>
 inline
-T* leak_if_success(T const& ptr, std::error_code ec) {
+std::remove_const_t<T>* leak_if_success(std::shared_ptr<T>&& ptr, std::error_code ec) {
     if (ec != kth::error::success) return nullptr;
-    auto leaked = new T(ptr);
-    return leaked;
+    return new std::remove_const_t<T>(std::move(*ptr));
 }
 
+// Non-shared_ptr overload: forwarding-reference so rvalues move and
+// lvalues copy, without spelling out two bodies. The `not_shared_ptr`
+// constraint keeps this out of the picture when the caller hands over
+// a shared_ptr (see the two overloads above).
+template <not_shared_ptr T>
+inline
+std::decay_t<T>* leak_if_success(T&& val, std::error_code ec) {
+    if (ec != kth::error::success) return nullptr;
+    return new std::decay_t<T>(std::forward<T>(val));
+}
 
 template <typename T>
 inline
 std::remove_const_t<T>* leak(std::shared_ptr<T> const& ptr) {
     if (! ptr) return nullptr;
-    using RealT = std::remove_const_t<T>;
-    auto leaked = new RealT(*ptr);
-    return leaked;
+    return new std::remove_const_t<T>(*ptr);
 }
 
+// Rvalue overload: same move-from-`*ptr` rationale as the
+// `leak_if_success` rvalue variant above.
 template <typename T>
 inline
-T* leak(T const& ptr) {
-    auto leaked = new T(ptr);
-    return leaked;
-}
-
-template <typename T>
-inline
-std::remove_const_t<T>* leak_if(std::shared_ptr<T> const& ptr, bool leak = true) {
+std::remove_const_t<T>* leak(std::shared_ptr<T>&& ptr) {
     if (! ptr) return nullptr;
-
-    if (leak) {
-        using RealT = std::remove_const_t<T>;
-        auto leaked = new RealT(*ptr);
-        return leaked;
-    }
-    return *ptr;
+    return new std::remove_const_t<T>(std::move(*ptr));
 }
 
 template <typename T>
