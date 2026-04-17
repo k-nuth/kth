@@ -425,6 +425,14 @@ T* make_leaked(Args&&... args) {
     return new T(std::forward<Args>(args)...);
 }
 
+// Copy an opaque handle: deref it back into `T const&` via `cpp_ref`
+// and heap-allocate a fresh copy via `make_leaked`. Collapses the
+// generated copy-ctor body to a one-liner.
+template <typename T>
+inline T* clone(void const* h) {
+    return make_leaked<T>(cpp_ref<T>(h));
+}
+
 // Same as `make_leaked`, but gates the leak on `check_valid(&x)`.
 // The validity of the heap copy mirrors the source's validity (the
 // constructor doesn't change `operator bool`), so we test `x` BEFORE
