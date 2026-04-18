@@ -327,6 +327,22 @@ typedef enum {
     kth_opcode_reserved_255 = 0xff,   // 255
 } kth_opcode_t;
 
+/// Convert the opcode to a mnemonic string.
+KTH_EXPORT
+char const* kth_chain_opcode_to_string(kth_opcode_t value, uint64_t active_flags);
+
+/// Convert a string to an opcode.
+KTH_EXPORT
+kth_bool_t kth_chain_opcode_from_string(kth_opcode_t* out_code, char const* value);
+
+/// Convert any opcode to a string hexadecimal representation.
+KTH_EXPORT
+char const* kth_chain_opcode_to_hexadecimal(kth_opcode_t code);
+
+// Convert any hexadecimal byte to an opcode.
+KTH_EXPORT
+kth_bool_t kth_chain_opcode_from_hexadecimal(kth_opcode_t* out_code, char const* value);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

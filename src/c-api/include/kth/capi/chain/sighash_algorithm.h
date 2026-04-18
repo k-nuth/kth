@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+// This file is auto-generated. Do not edit manually.
+
 #ifndef KTH_CAPI_CHAIN_SIGHASH_ALGORITHM_H_
 #define KTH_CAPI_CHAIN_SIGHASH_ALGORITHM_H_
 
@@ -33,6 +35,7 @@ typedef enum {
     /// in the signature. The sequence numbers of other inputs are not
     /// included in the signature, and can be updated.
     kth_sighash_algorithm_single = 0x03,
+
 
 
 #if defined(KTH_CURRENCY_BCH)
@@ -68,26 +71,8 @@ typedef enum {
     kth_sighash_algorithm_anyone_can_pay_single = kth_sighash_algorithm_single | kth_sighash_algorithm_anyone_can_pay,
 
     /// Used to mask unused bits in the signature hash byte.
-    kth_sighash_algorithm_mask = 0x1f
-
+    kth_sighash_algorithm_mask = 0x1f,
 } kth_sighash_algorithm_t;
-
-
-/// Convert the opcode to a mnemonic string.
-KTH_EXPORT
-char const* kth_chain_opcode_to_string(kth_opcode_t value, uint64_t active_flags);
-
-/// Convert a string to an opcode.
-KTH_EXPORT
-kth_bool_t kth_chain_opcode_from_string(kth_opcode_t* out_code, char const* value);
-
-/// Convert any opcode to a string hexadecimal representation.
-KTH_EXPORT
-char const* kth_chain_opcode_to_hexadecimal(kth_opcode_t code);
-
-// Convert any hexadecimal byte to an opcode.
-KTH_EXPORT
-kth_bool_t kth_chain_opcode_from_hexadecimal(kth_opcode_t* out_code, char const* value);
 
 #ifdef __cplusplus
 } // extern "C"
