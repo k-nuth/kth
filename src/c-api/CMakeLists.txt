@@ -488,6 +488,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     find_package(Catch2 3 REQUIRED)
 
     add_executable(kth_capi_test
+        test/helpers.cpp
         test/binary.cpp
         test/chain/header.cpp
         test/chain/point.cpp

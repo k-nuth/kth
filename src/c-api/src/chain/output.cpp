@@ -11,24 +11,30 @@
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/chain/output.hpp>
 
+// File-local alias so `kth::cpp_ref<T>(...)` and friends don't
+// spell out the full qualified C++ name at every call site.
+namespace {
+using cpp_t = kth::domain::chain::output;
+} // namespace
+
 // ---------------------------------------------------------------------------
 extern "C" {
 
 // Constructors
 
 kth_output_mut_t kth_chain_output_construct_default(void) {
-    return new kth::domain::chain::output();
+    return kth::leak<cpp_t>();
 }
 
 kth_error_code_t kth_chain_output_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_output_mut_t* out) {
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto data_cpp = kth::byte_reader(kth::byte_span(data, static_cast<size_t>(n)));
+    auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
     auto const wire_cpp = kth::int_to_bool(wire);
-    auto result = kth::domain::chain::output::from_data(data_cpp, wire_cpp);
-    if ( ! result) return static_cast<kth_error_code_t>(result.error().value());
-    *out = kth::make_leaked(std::move(*result));
+    auto result = cpp_t::from_data(data_cpp, wire_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
     return kth_ec_success;
 }
 
@@ -36,15 +42,14 @@ kth_output_mut_t kth_chain_output_construct(uint64_t value, kth_script_const_t s
     KTH_PRECONDITION(script != nullptr);
     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
     auto const token_data_cpp = kth::optional_cpp_ref<kth::domain::chain::token_data_t>(token_data);
-    return kth::make_leaked<kth::domain::chain::output>(value, script_cpp, token_data_cpp);
+    return kth::leak<cpp_t>(value, script_cpp, token_data_cpp);
 }
 
 
 // Destructor
 
 void kth_chain_output_destruct(kth_output_mut_t self) {
-    if (self == nullptr) return;
-    delete &kth::cpp_ref<kth::domain::chain::output>(self);
+    kth::del<cpp_t>(self);
 }
 
 
@@ -52,7 +57,7 @@ void kth_chain_output_destruct(kth_output_mut_t self) {
 
 kth_output_mut_t kth_chain_output_copy(kth_output_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return new kth::domain::chain::output(kth::cpp_ref<kth::domain::chain::output>(self));
+    return kth::clone<cpp_t>(self);
 }
 
 
@@ -61,7 +66,7 @@ kth_output_mut_t kth_chain_output_copy(kth_output_const_t self) {
 kth_bool_t kth_chain_output_equals(kth_output_const_t self, kth_output_const_t other) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::output>(self) == kth::cpp_ref<kth::domain::chain::output>(other));
+    return kth::eq<cpp_t>(self, other);
 }
 
 
@@ -71,14 +76,14 @@ uint8_t* kth_chain_output_to_data(kth_output_const_t self, kth_bool_t wire, kth_
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
     auto const wire_cpp = kth::int_to_bool(wire);
-    auto const data = kth::cpp_ref<kth::domain::chain::output>(self).to_data(wire_cpp);
+    auto const data = kth::cpp_ref<cpp_t>(self).to_data(wire_cpp);
     return kth::create_c_array(data, *out_size);
 }
 
 kth_size_t kth_chain_output_serialized_size(kth_output_const_t self, kth_bool_t wire) {
     KTH_PRECONDITION(self != nullptr);
     auto const wire_cpp = kth::int_to_bool(wire);
-    return kth::cpp_ref<kth::domain::chain::output>(self).serialized_size(wire_cpp);
+    return kth::cpp_ref<cpp_t>(self).serialized_size(wire_cpp);
 }
 
 
@@ -86,17 +91,17 @@ kth_size_t kth_chain_output_serialized_size(kth_output_const_t self, kth_bool_t 
 
 uint64_t kth_chain_output_value(kth_output_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::cpp_ref<kth::domain::chain::output>(self).value();
+    return kth::cpp_ref<cpp_t>(self).value();
 }
 
 kth_script_const_t kth_chain_output_script(kth_output_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return &(kth::cpp_ref<kth::domain::chain::output>(self).script());
+    return &(kth::cpp_ref<cpp_t>(self).script());
 }
 
 kth_token_data_const_t kth_chain_output_token_data(kth_output_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const& opt = kth::cpp_ref<kth::domain::chain::output>(self).token_data();
+    auto const& opt = kth::cpp_ref<cpp_t>(self).token_data();
     return opt.has_value() ? &(*opt) : nullptr;
 }
 
@@ -107,18 +112,18 @@ void kth_chain_output_set_script(kth_output_mut_t self, kth_script_const_t value
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
     auto const& value_cpp = kth::cpp_ref<kth::domain::chain::script>(value);
-    kth::cpp_ref<kth::domain::chain::output>(self).set_script(value_cpp);
+    kth::cpp_ref<cpp_t>(self).set_script(value_cpp);
 }
 
 void kth_chain_output_set_value(kth_output_mut_t self, uint64_t value) {
     KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<kth::domain::chain::output>(self).set_value(value);
+    kth::cpp_ref<cpp_t>(self).set_value(value);
 }
 
 void kth_chain_output_set_token_data(kth_output_mut_t self, kth_token_data_const_t value) {
     KTH_PRECONDITION(self != nullptr);
     auto const value_cpp = kth::optional_cpp_ref<kth::domain::chain::token_data_t>(value);
-    kth::cpp_ref<kth::domain::chain::output>(self).set_token_data(value_cpp);
+    kth::cpp_ref<cpp_t>(self).set_token_data(value_cpp);
 }
 
 
@@ -126,12 +131,12 @@ void kth_chain_output_set_token_data(kth_output_mut_t self, kth_token_data_const
 
 kth_bool_t kth_chain_output_is_valid(kth_output_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::output>(self).is_valid());
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid());
 }
 
 kth_bool_t kth_chain_output_is_dust(kth_output_const_t self, uint64_t minimum_output_value) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<kth::domain::chain::output>(self).is_dust(minimum_output_value));
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_dust(minimum_output_value));
 }
 
 
@@ -140,28 +145,28 @@ kth_bool_t kth_chain_output_is_dust(kth_output_const_t self, uint64_t minimum_ou
 kth_payment_address_mut_t kth_chain_output_address_simple(kth_output_const_t self, kth_bool_t testnet) {
     KTH_PRECONDITION(self != nullptr);
     auto const testnet_cpp = kth::int_to_bool(testnet);
-    return kth::make_leaked_if_valid(kth::cpp_ref<kth::domain::chain::output>(self).address(testnet_cpp));
+    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).address(testnet_cpp));
 }
 
 kth_payment_address_mut_t kth_chain_output_address(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::make_leaked_if_valid(kth::cpp_ref<kth::domain::chain::output>(self).address(p2kh_version, p2sh_version));
+    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).address(p2kh_version, p2sh_version));
 }
 
 kth_payment_address_list_mut_t kth_chain_output_addresses(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version) {
     KTH_PRECONDITION(self != nullptr);
-    return new std::vector<kth::domain::wallet::payment_address>(kth::cpp_ref<kth::domain::chain::output>(self).addresses(p2kh_version, p2sh_version));
+    return kth::leak_list<kth::domain::wallet::payment_address>(kth::cpp_ref<cpp_t>(self).addresses(p2kh_version, p2sh_version));
 }
 
 kth_size_t kth_chain_output_signature_operations(kth_output_const_t self, kth_bool_t bip141) {
     KTH_PRECONDITION(self != nullptr);
     auto const bip141_cpp = kth::int_to_bool(bip141);
-    return kth::cpp_ref<kth::domain::chain::output>(self).signature_operations(bip141_cpp);
+    return kth::cpp_ref<cpp_t>(self).signature_operations(bip141_cpp);
 }
 
 void kth_chain_output_reset(kth_output_mut_t self) {
     KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<kth::domain::chain::output>(self).reset();
+    kth::cpp_ref<cpp_t>(self).reset();
 }
 
 } // extern "C"

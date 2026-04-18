@@ -11,7 +11,7 @@
 extern "C" {
 
 kth_mempool_transaction_list_t kth_chain_mempool_transaction_list_construct_default(void) {
-    return new std::vector<kth::blockchain::mempool_transaction_summary>();
+    return kth::leak_list<kth::blockchain::mempool_transaction_summary>();
 }
 
 void kth_chain_mempool_transaction_list_push_back(kth_mempool_transaction_list_t l, kth_mempool_transaction_t e) {
