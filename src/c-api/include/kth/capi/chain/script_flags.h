@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2025 Knuth Project developers.
+// Copyright (c) 2016-present Knuth Project developers.
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,9 +8,6 @@
 #define KTH_CAPI_CHAIN_SCRIPT_FLAGS_H_
 
 #include <stdint.h>
-
-#include <kth/capi/primitives.h>
-#include <kth/capi/visibility.h>
 
 #ifdef __cplusplus
 extern "C" {
