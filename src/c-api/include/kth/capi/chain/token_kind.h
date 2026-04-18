@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+// This file is auto-generated. Do not edit manually.
+
 #ifndef KTH_CAPI_CHAIN_TOKEN_KIND_H_
 #define KTH_CAPI_CHAIN_TOKEN_KIND_H_
 
@@ -27,4 +29,4 @@ typedef enum {
 } // extern "C"
 #endif
 
-#endif // KTH_CAPI_CHAIN_TOKEN_KIND_H_
+#endif /* KTH_CAPI_CHAIN_TOKEN_KIND_H_ */

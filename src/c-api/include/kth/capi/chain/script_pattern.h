@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+// This file is auto-generated. Do not edit manually.
+
 #ifndef KTH_CAPI_CHAIN_SCRIPT_PATTERN_H_
 #define KTH_CAPI_CHAIN_SCRIPT_PATTERN_H_
 
@@ -63,10 +65,8 @@ typedef enum {
     /// The script may be valid but does not conform to the common templates.
     /// Such scripts are always accepted if they are mined into blocks, but
     /// transactions with uncommon scripts may not be forwarded by peers.
-    kth_script_pattern_non_standard
-
+    kth_script_pattern_non_standard,
 } kth_script_pattern_t;
-
 
 #ifdef __cplusplus
 } // extern "C"
