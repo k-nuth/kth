@@ -42,27 +42,27 @@ void program::reserve_stacks() {
 //-----------------------------------------------------------------------------
 
 program::program()
-    : script_(default_script_),
-      transaction_(default_tx_),
-      jump_(script_.begin())
+    : script_(&default_script_),
+      transaction_(&default_tx_),
+      jump_(default_script_.begin())
 {
     reserve_stacks();
 }
 
 program::program(script const& script)
-    : script_(script),
-      transaction_(default_tx_),
-      jump_(script_.begin()) {
+    : script_(&script),
+      transaction_(&default_tx_),
+      jump_(script.begin()) {
     reserve_stacks();
 }
 
 program::program(script const& script, chain::transaction const& transaction, uint32_t input_index, script_flags_t flags, uint64_t value)
-    : script_(script),
-      transaction_(transaction),
+    : script_(&script),
+      transaction_(&transaction),
       input_index_(input_index),
       flags_(flags),
       value_(value),
-      jump_(script_.begin()),
+      jump_(script.begin()),
       context_(script_execution_context(input_index, transaction)) {
     reserve_stacks();
 }
@@ -79,15 +79,15 @@ program::program(
   , script_version version
 #endif // ! KTH_CURRENCY_BCH
 )
-    : script_(script),
-      transaction_(transaction),
+    : script_(&script),
+      transaction_(&transaction),
       input_index_(input_index),
       flags_(flags),
       value_(value),
 #if ! defined(KTH_CURRENCY_BCH)
       version_(version),
 #endif // ! KTH_CURRENCY_BCH
-      jump_(script_.begin()),
+      jump_(script.begin()),
       primary_(std::move(stack)),
       context_(script_execution_context(input_index, transaction)) {
     reserve_stacks();
@@ -96,7 +96,7 @@ program::program(
 // Condition, alternate, jump and operation_count are not copied.
 // Metrics are propagated so sig_checks accumulate across evaluations (matching BCHN).
 program::program(script const& script, program const& x)
-    : script_(script),
+    : script_(&script),
       transaction_(x.transaction_),
       input_index_(x.input_index_),
       flags_(x.flags_),
@@ -104,7 +104,7 @@ program::program(script const& script, program const& x)
 #if ! defined(KTH_CURRENCY_BCH)
       version_(x.version_),
 #endif // ! KTH_CURRENCY_BCH
-      jump_(script_.begin()),
+      jump_(script.begin()),
       primary_(x.primary_),
       metrics_(x.metrics_),
       context_(x.context_) {
@@ -114,7 +114,7 @@ program::program(script const& script, program const& x)
 // Condition, alternate, jump and operation_count are not moved.
 // Metrics are propagated so sig_checks accumulate across evaluations (matching BCHN).
 program::program(script const& script, program&& x, bool /*unused*/)
-    : script_(script),
+    : script_(&script),
       transaction_(x.transaction_),
       input_index_(x.input_index_),
       flags_(x.flags_),
@@ -122,7 +122,7 @@ program::program(script const& script, program&& x, bool /*unused*/)
 #if ! defined(KTH_CURRENCY_BCH)
       version_(x.version_),
 #endif // ! KTH_CURRENCY_BCH
-      jump_(script_.begin()),
+      jump_(script.begin()),
       primary_(std::move(x.primary_)),
       metrics_(x.metrics_),
       context_(std::move(x.context_)) {
@@ -132,11 +132,11 @@ program::program(script const& script, program&& x, bool /*unused*/)
 // Instructions.
 //-----------------------------------------------------------------------------
 
-code program::evaluate() {
+op_result program::evaluate() {
     return interpreter::run(*this);
 }
 
-code program::evaluate(operation const& op) {
+op_result program::evaluate(operation const& op) {
     return interpreter::run(op, *this);
 }
 

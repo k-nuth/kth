@@ -79,7 +79,7 @@ eval_result eval_native(data_stack initial_stack, script const& scr, script_flag
     }
 
     return {
-        ec,
+        ec.error,  // bridge op_result → code via error_code_t
         static_cast<int>(m.sig_checks()),
         static_cast<int64_t>(m.hash_digest_iterations()),
         static_cast<int64_t>(m.op_cost()),

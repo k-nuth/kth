@@ -120,9 +120,9 @@ bool should_find_and_delete(data_chunk const& endorsement, script_flags_t flags)
 // All other errors are fatal and must be propagated as script errors.
 inline
 bool is_signature_result(op_result const& r) {
-    return r == error::success
-        || r == error::incorrect_signature
-        || r == error::invalid_signature_encoding;
+    return bool(r)
+        || r.error == error::incorrect_signature
+        || r.error == error::invalid_signature_encoding;
 }
 
 static constexpr
@@ -138,12 +138,12 @@ interpreter::result interpreter::op_nop(opcode /*unused*/) {
 
 inline
 interpreter::result interpreter::op_disabled(opcode code) {
-    return error::op_disabled;
+    return {error::op_disabled, code};
 }
 
 inline
-interpreter::result interpreter::op_reserved(opcode /*unused*/) {
-    return error::op_reserved;
+interpreter::result interpreter::op_reserved(opcode code) {
+    return {error::op_reserved, code};
 }
 
 inline
@@ -156,7 +156,7 @@ interpreter::result interpreter::op_push_number(program& program, uint8_t value)
 inline
 interpreter::result interpreter::op_push_size(program& program, operation const& op) {
     if (op.data().size() > op_75) {
-        return error::invalid_push_data_size;
+        return {error::invalid_push_data_size, op.code()};
     }
 
     program.push_copy(op.data());
@@ -167,9 +167,9 @@ interpreter::result interpreter::op_push_size(program& program, operation const&
 
 // TODO: std::move the data chunk to the program
 inline
-interpreter::result interpreter::op_push_data(program& program, data_chunk const& data, uint32_t size_limit) {
+interpreter::result interpreter::op_push_data(program& program, opcode code, data_chunk const& data, uint32_t size_limit) {
     if (data.size() > size_limit) {
-        return error::invalid_push_data_size;
+        return {error::invalid_push_data_size, code};
     }
 
     program.push_copy(data);
@@ -267,7 +267,7 @@ interpreter::result interpreter::op_verify(program& program) {
 
 inline
 interpreter::result interpreter::op_return(program& /*unused*/) {
-    return error::op_return;
+    return {error::op_return, opcode::return_};
 }
 
 inline
@@ -557,7 +557,7 @@ interpreter::result interpreter::op_cat(program& program) {
     auto& but_last = program.top();
 
     if (but_last.size() + last.size() > program.max_script_element_size()) {
-        return error::invalid_push_data_size;
+        return {error::invalid_push_data_size, opcode::cat};
     }
 
     but_last.insert(but_last.end(), last.begin(), last.end());
@@ -836,11 +836,11 @@ interpreter::result interpreter::op_invert(program& program) {
     // Bitwise invert all bytes (non-numeric operand and result).
     // (x1 -- ~x1)
     if (program.empty()) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::op_invert};
     }
     auto& data = program.top();
     if (data.size() > program.max_script_element_size()) {
-        return error::invalid_push_data_size;
+        return {error::invalid_push_data_size, opcode::op_invert};
     }
     for (auto& ch : data) {
         ch = ~ch;
@@ -855,10 +855,10 @@ interpreter::result interpreter::op_shiftnum(program& program, opcode code) {
     // LSHIFTNUM: out = num * 2^nbits
     // RSHIFTNUM: out = num / 2^nbits (rounded towards negative infinity)
     if ( ! program.is_bigint_enabled()) {
-        return error::op_disabled;
+        return {error::op_disabled, code};
     }
     if (program.size() < 2) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, code};
     }
     auto nbits_exp = program.pop_big_number(program.max_integer_size());
     if ( ! nbits_exp) return {nbits_exp.error(), code};
@@ -895,7 +895,7 @@ inline
 interpreter::result interpreter::op_shiftbin(program& program, opcode code) {
     // Binary left/right shift of a byte blob: (in nbits -- out)
     if (program.size() < 2) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, code};
     }
     auto nbits_exp = program.is_bigint_enabled()
         ? program.pop_big_number(program.max_integer_size())
@@ -1582,7 +1582,9 @@ interpreter::result interpreter::op_hash256(program& program) {
 
 inline
 interpreter::result interpreter::op_codeseparator(program& program, operation const& op) {
-    return program.set_jump_register(op, +1) ? error::success : error::invalid_script;
+    return program.set_jump_register(op, +1)
+        ? interpreter::result{}
+        : interpreter::result{error::invalid_script, opcode::codeseparator};
 }
 
 // Helper function to validate public key encoding
@@ -1603,15 +1605,15 @@ bool is_compressed_or_uncompressed_pubkey(data_chunk const& public_key) {
 
 // Helper function to check public key encoding according to STRICTENC rules
 inline
-interpreter::result check_pubkey_encoding(data_chunk const& public_key, program const& program) {
+interpreter::result check_pubkey_encoding(data_chunk const& public_key, program const& program, opcode op_code) {
     // Check if STRICTENC is enabled
     auto const strictenc_enabled = chain::script::is_enabled(program.flags(), script_flags::bch_strictenc);
     auto const is_valid_pubkey = is_compressed_or_uncompressed_pubkey(public_key);
 
     if (strictenc_enabled && !is_valid_pubkey) {
-        return error::pubkey_type;  // PUBKEYTYPE equivalent
+        return {error::pubkey_type, op_code};  // PUBKEYTYPE equivalent
     }
-    return error::success;
+    return {};
 }
 
 // Pure DER format validation matching BCHN's IsValidSignatureEncoding.
@@ -1705,12 +1707,12 @@ bool is_valid_signature_encoding(data_chunk const& sig, bool has_sighash_byte) {
 // Check transaction signature encoding (DER, low-S, hashtype, forkid).
 // Mirrors BCHN's CheckTransactionSignatureEncoding.
 inline
-interpreter::result check_transaction_signature_encoding(data_chunk const& endorsement, program const& program) {
+interpreter::result check_transaction_signature_encoding(data_chunk const& endorsement, program const& program, opcode op_code) {
     using namespace kth::infrastructure::machine;
 
     // Empty signature is always allowed (compact way to provide invalid sig).
     if (endorsement.empty()) {
-        return error::success;
+        return {};
     }
 
     auto const flags = program.flags();
@@ -1726,7 +1728,7 @@ interpreter::result check_transaction_signature_encoding(data_chunk const& endor
         // DER format validation (BCHN: IsValidSignatureEncoding).
         // Triggered by DERSIG, LOW_S, or STRICTENC flags.
         if ((dersig || low_s || strictenc) && !is_valid_signature_encoding(endorsement, true)) {
-            return error::invalid_signature_lax_encoding;
+            return {error::invalid_signature_lax_encoding, op_code};
         }
 
         // LOW_S check (BCHN: CPubKey::CheckLowS).
@@ -1734,7 +1736,7 @@ interpreter::result check_transaction_signature_encoding(data_chunk const& endor
             // Extract DER signature (without sighash byte) for low-S check.
             der_signature der_sig(endorsement.begin(), endorsement.end() - 1);
             if ( ! check_low_s(der_sig)) {
-                return error::sig_high_s;
+                return {error::sig_high_s, op_code};
             }
         }
     }
@@ -1751,15 +1753,15 @@ interpreter::result check_transaction_signature_encoding(data_chunk const& endor
 
         // Check base sighash type is defined (all=1, none=2, single=3)
         if (base_type < sighash_algorithm::all || base_type > sighash_algorithm::single) {
-            return error::sig_hashtype;
+            return {error::sig_hashtype, op_code};
         }
 
         // Forkid enforcement
         if ( ! forkid_enabled && has_forkid) {
-            return error::illegal_forkid;
+            return {error::illegal_forkid, op_code};
         }
         if (forkid_enabled && ! has_forkid) {
-            return error::must_use_forkid;
+            return {error::must_use_forkid, op_code};
         }
 
         // UTXOS validation (BCHN: CheckSighashEncoding, post-isDefined block)
@@ -1767,21 +1769,21 @@ interpreter::result check_transaction_signature_encoding(data_chunk const& endor
         if (has_utxos) {
             auto const tokens_enabled = chain::script::is_enabled(flags, script_flags::bch_tokens);
             if ( ! tokens_enabled || ! has_forkid || ! forkid_enabled || has_anyone_can_pay) {
-                return error::sig_hashtype;
+                return {error::sig_hashtype, op_code};
             }
         }
     }
 
-    return error::success;
+    return {};
 }
 
 // Check data signature encoding (DER, low-S) for OP_CHECKDATASIG.
 // Mirrors BCHN's CheckDataSignatureEncoding.
 inline
-interpreter::result check_data_signature_encoding(data_chunk const& sig, program const& program) {
+interpreter::result check_data_signature_encoding(data_chunk const& sig, program const& program, opcode op_code) {
     // Empty signature is always allowed.
     if (sig.empty()) {
-        return error::success;
+        return {};
     }
 
     auto const flags = program.flags();
@@ -1790,18 +1792,18 @@ interpreter::result check_data_signature_encoding(data_chunk const& sig, program
 
     // DER format validation (no sighash byte for data signatures).
     if ((dersig || low_s || strictenc) && !is_valid_signature_encoding(sig, false)) {
-        return error::invalid_signature_lax_encoding;
+        return {error::invalid_signature_lax_encoding, op_code};
     }
 
     // LOW_S check.
     if (low_s) {
         der_signature der_sig(sig.begin(), sig.end());
         if ( ! check_low_s(der_sig)) {
-            return error::sig_high_s;
+            return {error::sig_high_s, op_code};
         }
     }
 
-    return error::success;
+    return {};
 }
 
 inline
@@ -1815,14 +1817,14 @@ std::pair<interpreter::result, size_t> op_check_sig_common(program& program, opc
 
     // Check signature encoding (DER, hashtype, forkid, low-S) before any verification.
     // BCHN: CheckTransactionSignatureEncoding
-    auto const sig_enc_result = check_transaction_signature_encoding(endorsement, program);
-    if (sig_enc_result != error::success) {
+    auto const sig_enc_result = check_transaction_signature_encoding(endorsement, program, op_code);
+    if ( ! sig_enc_result) {
         return {sig_enc_result, 0};
     }
 
     // Validate public key encoding (STRICTENC).
-    auto const pubkey_result = check_pubkey_encoding(public_key, program);
-    if (pubkey_result != error::success) {
+    auto const pubkey_result = check_pubkey_encoding(public_key, program, op_code);
+    if ( ! pubkey_result) {
         return {pubkey_result, 0};
     }
 
@@ -1834,14 +1836,14 @@ std::pair<interpreter::result, size_t> op_check_sig_common(program& program, opc
 
     // Empty signature: not an encoding error, just a failed verification.
     if (endorsement.empty()) {
-        return {error::incorrect_signature, 0};
+        return {{error::incorrect_signature, op_code}, 0};
     }
 
     // Parse endorsement (sighash byte + signature).
     uint8_t sighash;
     der_signature distinguished;
     if ( ! parse_endorsement(sighash, distinguished, std::move(endorsement))) {
-        return {error::invalid_signature_encoding, 0};
+        return {{error::invalid_signature_encoding, op_code}, 0};
     }
 
     bool const is_schnorr_sig = (distinguished.size() == schnorr_signature_size);
@@ -1868,18 +1870,18 @@ std::pair<interpreter::result, size_t> op_check_sig_common(program& program, opc
 
         if ( ! verified) {
             if (chain::script::is_enabled(program.flags(), script_flags::bch_nullfail)) {
-                return {error::sig_nullfail, size};
+                return {{error::sig_nullfail, op_code}, size};
             }
-            return {error::incorrect_signature, size};
+            return {{error::incorrect_signature, op_code}, size};
         }
-        return {error::success, size};
+        return {{}, size};
     }
 
     // ECDSA verification path
     ec_signature signature;
     auto const strict = chain::script::is_enabled(program.flags(), script_flags::bip66_rule | script_flags::bch_strictenc);
     if ( ! parse_signature(signature, distinguished, strict)) {
-        return {strict ? error::invalid_signature_lax_encoding : error::invalid_signature_encoding, 0};
+        return {{strict ? error::invalid_signature_lax_encoding : error::invalid_signature_encoding, op_code}, 0};
     }
 
 #if ! defined(KTH_CURRENCY_BCH)
@@ -1910,11 +1912,11 @@ std::pair<interpreter::result, size_t> op_check_sig_common(program& program, opc
 
     if ( ! res) {
         if (chain::script::is_enabled(program.flags(), script_flags::bch_nullfail)) {
-            return {error::sig_nullfail, size};
+            return {{error::sig_nullfail, op_code}, size};
         }
-        return {error::incorrect_signature, size};
+        return {{error::incorrect_signature, op_code}, size};
     }
-    return {error::success, size};
+    return {{}, size};
 }
 
 inline
@@ -1925,11 +1927,11 @@ interpreter::result interpreter::op_check_sig(program& program) {
         return res;
     }
 
-    program.push(res == error::success);
+    program.push(bool(res));
     // TallyPushOp: account for the pushed bool.
     // sig_checks and hash_iterations are already tallied inside op_check_sig_common.
     program.get_metrics().add_op_cost(program.top().size());
-    return error::success;
+    return {};
 }
 
 inline
@@ -1946,12 +1948,12 @@ interpreter::result interpreter::op_check_sig_verify(program& program) {
     // sig_checks and hash_iterations are already tallied inside op_check_sig_common.
     program.get_metrics().add_op_cost(1);
 
-    if (res != error::success) {
+    if ( ! res) {
         // CHECKSIGVERIFY failure: BCHN returns SCRIPT_ERR_CHECKSIGVERIFY.
         return {error::invalid_script, opcode::checksigverify};
     }
 
-    return error::success;
+    return {};
 }
 
 inline
@@ -1969,15 +1971,15 @@ std::pair<interpreter::result, size_t> op_check_data_common(program& program, op
     // Validate signature encoding (DER format + low-S) — BCHN: CheckDataSignatureEncoding.
     // Schnorr signatures (64 bytes) skip DER/low-S checks.
     if ( ! sig.empty() && sig.size() != schnorr_signature_size) {
-        auto const sig_enc_result = check_data_signature_encoding(sig, program);
-        if (sig_enc_result != error::success) {
+        auto const sig_enc_result = check_data_signature_encoding(sig, program, op_code);
+        if ( ! sig_enc_result) {
             return {sig_enc_result, 0};
         }
     }
 
     // Validate public key encoding
-    auto const pubkey_result = check_pubkey_encoding(public_key, program);
-    if (pubkey_result != error::success) {
+    auto const pubkey_result = check_pubkey_encoding(public_key, program, op_code);
+    if ( ! pubkey_result) {
         return {pubkey_result, 0};
     }
 
@@ -2014,14 +2016,14 @@ std::pair<interpreter::result, size_t> op_check_data_common(program& program, op
 
         // NULLFAIL: non-empty signature that fails verification must error
         if ( ! success && chain::script::is_enabled(program.flags(), script_flags::bch_nullfail)) {
-            return {error::sig_nullfail, message_size};
+            return {{error::sig_nullfail, op_code}, message_size};
         }
     }
 
     if (success) {
-        return {error::success, message_size};
+        return {{}, message_size};
     }
-    return {error::incorrect_signature, message_size};
+    return {{error::incorrect_signature, op_code}, message_size};
 }
 
 inline
@@ -2032,13 +2034,13 @@ interpreter::result interpreter::op_check_data_sig(program& program) {
         return res;
     }
 
-    bool const success = (res == error::success);
+    bool const success = bool(res);
     program.push(success);
 
     // TallyPushOp: account for the pushed bool.
     // sig_checks and hash_iterations are already tallied inside op_check_data_common.
     program.get_metrics().add_op_cost(program.top().size());
-    return error::success;
+    return {};
 }
 
 inline
@@ -2053,59 +2055,62 @@ interpreter::result interpreter::op_check_data_sig_verify(program& program) {
     // sig_checks and hash_iterations are already tallied inside op_check_data_common.
     program.get_metrics().add_op_cost(1);
 
-    if (res != error::success) {
+    if ( ! res) {
         return {error::invalid_script, opcode::checkdatasigverify};
     }
 
-    return error::success;
+    return {};
 }
 
 inline
-interpreter::result op_check_multisig_internal(program& program) {
+interpreter::result op_check_multisig_internal(program& program, opcode op_code) {
+    // `op_code` is either `opcode::checkmultisig` or
+    // `opcode::checkmultisigverify` — threaded from the caller so
+    // error attribution reflects the actual opcode being executed.
     // Combine Knuth structure with BCHN behavior
     
     // Step 1: Pop key_count (Knuth style)
     auto const key_count_exp = program.pop_int32();
     if ( ! key_count_exp) {
-        return {key_count_exp.error(), opcode::checkmultisig};
+        return {key_count_exp.error(), op_code};
     }
     auto const key_count = *key_count_exp;
 
     if (key_count < 0 || key_count > 20) { // MAX_PUBKEYS_PER_MULTISIG
-        return {error::invalid_operand_size, opcode::checkmultisig};
+        return {error::invalid_operand_size, op_code};
     }
 
     // Account for operation count (pre-May 2025 behavior)
     if ( ! program.increment_operation_count(key_count)) {
-        return {error::invalid_operation_count, opcode::checkmultisig};
+        return {error::invalid_operation_count, op_code};
     }
 
     // Step 2: Pop public keys (Knuth style)
     auto public_keys = program.pop(key_count);
     if ( ! public_keys) {
-        return {public_keys.error(), opcode::checkmultisig};
+        return {public_keys.error(), op_code};
     }
 
     // Step 3: Pop signature_count (Knuth style)
     auto const sig_count_exp = program.pop_int32();
     if ( ! sig_count_exp) {
-        return {sig_count_exp.error(), opcode::checkmultisig};
+        return {sig_count_exp.error(), op_code};
     }
     auto const signature_count = *sig_count_exp;
 
     if (signature_count < 0 || signature_count > key_count) {
-        return {error::invalid_operand_size, opcode::checkmultisig};
+        return {error::invalid_operand_size, op_code};
     }
 
     // Step 4: Pop signatures (Knuth style)
     auto endorsements = program.pop(signature_count);
     if ( ! endorsements) {
-        return {endorsements.error(), opcode::checkmultisig};
+        return {endorsements.error(), op_code};
     }
 
     // Step 5: Handle Satoshi bug (Knuth style)
     if (program.empty()) {
-        return {error::insufficient_main_stack, opcode::checkmultisig};
+        return {error::insufficient_main_stack, op_code};
     }
 
     //*************************************************************************
@@ -2119,7 +2124,7 @@ interpreter::result op_check_multisig_internal(program& program) {
     if ( ! program.pop().empty()
         && chain::script::is_enabled(program.flags(), script_flags::bip147_rule)
     ) {
-        return error::multisig_satoshi_bug;
+        return {error::multisig_satoshi_bug, op_code};
     }
 #endif
 
@@ -2133,7 +2138,7 @@ interpreter::result op_check_multisig_internal(program& program) {
         // Decode dummy as a little-endian bitfield
         auto const bitfield_size = (static_cast<size_t>(key_count) + 7) / 8;
         if (dummy.size() != bitfield_size) {
-            return error::invalid_script;  // BITFIELD_SIZE
+            return {error::invalid_script, op_code};  // BITFIELD_SIZE
         }
 
         uint32_t check_bits = 0;
@@ -2144,12 +2149,12 @@ interpreter::result op_check_multisig_internal(program& program) {
         // Verify no bits set beyond key_count
         uint32_t const mask = (uint64_t(1) << key_count) - 1;
         if ((check_bits & mask) != check_bits) {
-            return error::invalid_script;  // BIT_RANGE
+            return {error::invalid_script, op_code};  // BIT_RANGE
         }
 
         // The bitfield must set exactly sig_count bits
         if (std::popcount(check_bits) != signature_count) {
-            return error::invalid_script;  // INVALID_BIT_COUNT
+            return {error::invalid_script, op_code};  // INVALID_BIT_COUNT
         }
 
         chain::script const script_code(program.subscript());
@@ -2165,7 +2170,7 @@ interpreter::result op_check_multisig_internal(program& program) {
         for (int isig = 0; isig < signature_count; ++isig, ++ikey) {
             // Sanity check
             if ((check_bits >> ikey) == 0) {
-                return error::invalid_script;  // BIT_RANGE (unreachable)
+                return {error::invalid_script, op_code};  // BIT_RANGE (unreachable)
             }
 
             // Find the next key indicated by the bitfield
@@ -2174,27 +2179,27 @@ interpreter::result op_check_multisig_internal(program& program) {
             }
 
             if (ikey >= key_count) {
-                return error::invalid_script;  // PUBKEY_COUNT (unreachable)
+                return {error::invalid_script, op_code};  // PUBKEY_COUNT (unreachable)
             }
 
             auto const& endorsement = bottom_sig(isig);
             auto const& pub_key = bottom_key(ikey);
 
             // Check signature encoding (sighash, forkid) — BCHN: CheckTransactionSignatureEncoding
-            auto const sig_enc_result = check_transaction_signature_encoding(endorsement, program);
-            if (sig_enc_result != error::success) {
+            auto const sig_enc_result = check_transaction_signature_encoding(endorsement, program, op_code);
+            if ( ! sig_enc_result) {
                 return sig_enc_result;
             }
 
             // Check Schnorr signature encoding
             if (endorsement.empty()) {
                 // Empty sig in Schnorr multisig means bitfield should have been null
-                return error::sig_nullfail;
+                return {error::sig_nullfail, op_code};
             }
 
             // Validate pubkey encoding
-            auto const pubkey_result = check_pubkey_encoding(pub_key, program);
-            if (pubkey_result != error::success) {
+            auto const pubkey_result = check_pubkey_encoding(pub_key, program, op_code);
+            if ( ! pubkey_result) {
                 return pubkey_result;
             }
 
@@ -2202,12 +2207,12 @@ interpreter::result op_check_multisig_internal(program& program) {
             uint8_t sighash;
             der_signature distinguished;
             if ( ! parse_endorsement(sighash, distinguished, endorsement)) {
-                return error::invalid_signature_encoding;
+                return {error::invalid_signature_encoding, op_code};
             }
 
             // Must be Schnorr (64 bytes after removing sighash byte)
             if (distinguished.size() != schnorr_signature_size) {
-                return error::sig_nonschnorr;
+                return {error::sig_nonschnorr, op_code};
             }
 
             // Verify Schnorr signature
@@ -2223,7 +2228,7 @@ interpreter::result op_check_multisig_internal(program& program) {
                     byte_span{pub_key.data(), pub_key.size()},
                     sighash_digest,
                     byte_span{distinguished.data(), distinguished.size()})) {
-                return error::sig_nullfail;
+                return {error::sig_nullfail, op_code};
             }
 
             // BCHN: TallySigChecks(1) per Schnorr signature verified
@@ -2233,16 +2238,16 @@ interpreter::result op_check_multisig_internal(program& program) {
 
         // Verify all bits consumed
         if ((check_bits >> ikey) != 0) {
-            return error::invalid_script;  // INVALID_BIT_COUNT (unreachable)
+            return {error::invalid_script, op_code};  // INVALID_BIT_COUNT (unreachable)
         }
 
-        return error::success;
+        return {};
     }
 #endif // KTH_CURRENCY_BCH
 
     // Early return for zero signatures (no verification needed).
     if (signature_count == 0) {
-        return error::success;
+        return {};
     }
 
     // --- LEGACY MULTISIG PATH (ECDSA) ---
@@ -2272,28 +2277,28 @@ interpreter::result op_check_multisig_internal(program& program) {
         bool is_empty_signature = endorsement.empty();
 
         // Check signature encoding (sighash, forkid) — BCHN: CheckTransactionSignatureEncoding
-        auto const sig_enc_result = check_transaction_signature_encoding(endorsement, program);
-        if (sig_enc_result != error::success) {
+        auto const sig_enc_result = check_transaction_signature_encoding(endorsement, program, op_code);
+        if ( ! sig_enc_result) {
             return sig_enc_result;
         }
 
         // In ECDSA-only context (legacy multisig), reject Schnorr-length signatures (64+1 sighash byte = 65)
         if ( ! is_empty_signature && endorsement.size() == schnorr_signature_size + 1) {
-            return error::sig_badlength;
+            return {error::sig_badlength, op_code};
         }
 
         if (!is_empty_signature && ! parse_endorsement(sighash, distinguished, endorsement)) {
-            return error::invalid_signature_encoding;
+            return {error::invalid_signature_encoding, op_code};
         }
 
         if (!is_empty_signature) {
             if ( ! parse_signature(signature, distinguished, strict)) {
-                return strict ? error::invalid_signature_lax_encoding : error::invalid_signature_encoding;
+                return {strict ? error::invalid_signature_lax_encoding : error::invalid_signature_encoding, op_code};
             }
         }
 
-        auto const pubkey_result = check_pubkey_encoding(*public_key, program);
-        if (pubkey_result != error::success) {
+        auto const pubkey_result = check_pubkey_encoding(*public_key, program, op_code);
+        if ( ! pubkey_result) {
             return pubkey_result;
         }
 
@@ -2338,7 +2343,7 @@ interpreter::result op_check_multisig_internal(program& program) {
     if ( ! success && chain::script::is_enabled(program.flags(), script_flags::bch_nullfail)) {
         for (auto const& endorsement : *endorsements) {
             if ( ! endorsement.empty()) {
-                return error::sig_nullfail;
+                return {error::sig_nullfail, op_code};
             }
         }
     }
@@ -2359,20 +2364,24 @@ interpreter::result op_check_multisig_internal(program& program) {
     }
 #endif
 
-    return success ? error::success : error::incorrect_signature;
+    return success ? interpreter::result{} : interpreter::result{error::incorrect_signature, op_code};
 }
 
+// Shared body between `op_check_multisig` and
+// `op_check_multisig_verify`. Threads the caller's opcode through
+// to `op_check_multisig_internal` so every failure path attributes
+// the correct user-facing opcode (checkmultisig vs
+// checkmultisigverify) instead of the implementation-detail default.
 inline
-interpreter::result interpreter::op_check_multisig(program& program) {
-
-    auto const res = op_check_multisig_internal(program);
+interpreter::result op_check_multisig_impl(program& program, opcode op_code) {
+    auto const res = op_check_multisig_internal(program, op_code);
 
     if ( ! is_signature_result(res)) {
         return res;
     }
 
     // Push the result (true for success, false for failure) onto the stack
-    auto const success = (res == error::success);
+    auto const success = bool(res);
     program.push(success);
 
     program.get_metrics().add_op_cost(program.top().size());
@@ -2380,18 +2389,30 @@ interpreter::result interpreter::op_check_multisig(program& program) {
     // sig_checks are tallied inside op_check_multisig_internal
     // (Schnorr: 1 per sig, ECDSA: nKeysCount if any sig is non-null)
 
-    return error::success;
+    return {};
+}
+
+inline
+interpreter::result interpreter::op_check_multisig(program& program) {
+    return op_check_multisig_impl(program, opcode::checkmultisig);
 }
 
 inline
 interpreter::result interpreter::op_check_multisig_verify(program& program) {
-        // First run the multisig operation
-    auto const res = op_check_multisig(program);
-    if (res != error::success) {
+    // Intentional asymmetry with `op_check_checksig_verify` /
+    // `op_check_datasig_verify`: those fuse the SIG/SIGVERIFY body
+    // (short-circuiting on the verify failure path with their own
+    // error), but multisig here reuses `op_check_multisig_impl` to
+    // push the bool and tally op-cost/sig-checks, then layers
+    // OP_VERIFY semantics on top. Reusing `_impl` keeps multisig's
+    // complex metrics bookkeeping (Schnorr vs. ECDSA, per-key
+    // sig-checks, Satoshi-bug dummy handling) in one place.
+    auto const res = op_check_multisig_impl(program, opcode::checkmultisigverify);
+    if ( ! res) {
         return res;
     }
-    
-    // Then verify the result (like OP_VERIFY)
+
+    // OP_VERIFY semantics on the pushed result.
     if (program.empty()) {
         return {error::insufficient_main_stack, opcode::checkmultisigverify};
     }
@@ -2403,7 +2424,7 @@ interpreter::result interpreter::op_check_multisig_verify(program& program) {
     }
 
     program.drop();
-    return error::success;
+    return {};
 }
 
 inline
@@ -2418,19 +2439,19 @@ interpreter::result interpreter::op_check_locktime_verify(program& program) {
     auto const input_index = program.input_index();
 
     if (input_index >= tx.inputs().size()) {
-        return error::invalid_script;
+        return {error::invalid_script, opcode::checklocktimeverify};
     }
 
     // MINIMALNUM: check minimal encoding of stack top (before parsing as number)
     if ( ! program.empty() && chain::script::is_enabled(program.flags(), script_flags::bch_minimaldata)) {
         if ( ! number::is_minimally_encoded(program.top(), max_check_locktime_verify_number_size)) {
-            return error::minimal_number;
+            return {error::minimal_number, opcode::checklocktimeverify};
         }
     }
 
     // BIP65: the tx sequence is 0xffffffff.
     if (tx.inputs()[input_index].is_final()) {
-        return error::unsatisfied_locktime;
+        return {error::unsatisfied_locktime, opcode::checklocktimeverify};
     }
 
     // BIP65: the stack is empty.
@@ -2438,13 +2459,16 @@ interpreter::result interpreter::op_check_locktime_verify(program& program) {
 
     auto const stack_exp = program.top_number(max_check_locktime_verify_number_size);
     if ( ! stack_exp) {
-        return error::invalid_script;
+        // Propagate the actual parse failure (insufficient_main_stack,
+        // minimal_number, or invalid_operand_size) instead of masking
+        // everything as `invalid_script`.
+        return {stack_exp.error(), opcode::checklocktimeverify};
     }
     auto const& stack = *stack_exp;
 
     // BIP65: the top stack item is negative.
     if (stack < 0) {
-        return error::negative_locktime;
+        return {error::negative_locktime, opcode::checklocktimeverify};
     }
 
     // The top stack item is positive, so cast is safe.
@@ -2452,13 +2476,13 @@ interpreter::result interpreter::op_check_locktime_verify(program& program) {
 
     // BIP65: the stack locktime type differs from that of tx.
     if ((locktime < locktime_threshold) != (tx.locktime() < locktime_threshold)) {
-        return error::unsatisfied_locktime;
+        return {error::unsatisfied_locktime, opcode::checklocktimeverify};
     }
 
     // BIP65: the stack locktime is greater than the tx locktime.
-    return (locktime > tx.locktime()) ? 
-        error::unsatisfied_locktime : 
-        error::success;
+    return (locktime > tx.locktime())
+        ? interpreter::result{error::unsatisfied_locktime, opcode::checklocktimeverify}
+        : interpreter::result{};
 }
 
 inline
@@ -2472,13 +2496,13 @@ interpreter::result interpreter::op_check_sequence_verify(program& program) {
     auto const input_index = program.input_index();
 
     if (input_index >= tx.inputs().size()) {
-        return error::invalid_script;
+        return {error::invalid_script, opcode::checksequenceverify};
     }
 
     // MINIMALNUM: check minimal encoding of stack top (before parsing as number)
     if ( ! program.empty() && chain::script::is_enabled(program.flags(), script_flags::bch_minimaldata)) {
         if ( ! number::is_minimally_encoded(program.top(), max_check_sequence_verify_number_size)) {
-            return error::minimal_number;
+            return {error::minimal_number, opcode::checksequenceverify};
         }
     }
 
@@ -2486,13 +2510,16 @@ interpreter::result interpreter::op_check_sequence_verify(program& program) {
     // BIP112: extend the (signed) script number range to 5 bytes.
     auto const stack_exp = program.top_number(max_check_sequence_verify_number_size);
     if ( ! stack_exp) {
-        return error::insufficient_main_stack;  // BCHN: INVALID_STACK_OPERATION
+        // Propagate the actual parse failure (insufficient_main_stack,
+        // minimal_number, or invalid_operand_size) instead of pinning
+        // everything to `insufficient_main_stack`.
+        return {stack_exp.error(), opcode::checksequenceverify};
     }
     auto const& stack = *stack_exp;
 
     // BIP112: the top stack item is negative.
     if (stack < 0) {
-        return error::negative_locktime;
+        return {error::negative_locktime, opcode::checksequenceverify};
     }
 
     // The top stack item is positive, so cast is safe.
@@ -2505,59 +2532,59 @@ interpreter::result interpreter::op_check_sequence_verify(program& program) {
 
     // BIP112: the stack sequence is enabled and tx version less than 2.
     if (tx.version() < relative_locktime_min_version) {
-        return error::unsatisfied_locktime;
+        return {error::unsatisfied_locktime, opcode::checksequenceverify};
     }
 
     auto const tx_sequence = tx.inputs()[input_index].sequence();
 
     // BIP112: the transaction sequence is disabled.
     if ((tx_sequence & relative_locktime_disabled) != 0) {
-        return error::unsatisfied_locktime;
+        return {error::unsatisfied_locktime, opcode::checksequenceverify};
     }
 
     // BIP112: the stack sequence type differs from that of tx input.
     if ((sequence & relative_locktime_time_locked) !=
         (tx_sequence & relative_locktime_time_locked)) {
-        return error::unsatisfied_locktime;
+        return {error::unsatisfied_locktime, opcode::checksequenceverify};
     }
 
     // BIP112: the masked stack sequence is greater than the tx sequence.
     return (sequence & relative_locktime_mask) >
                    (tx_sequence & relative_locktime_mask)
-               ? error::unsatisfied_locktime
-               : error::success;
+               ? interpreter::result{error::unsatisfied_locktime, opcode::checksequenceverify}
+               : interpreter::result{};
 }
 
 // Native Introspection helper functions
 //-----------------------------------------------------------------------------
 
 inline
-interpreter::result interpreter::validate_native_introspection(program const& program) {
+interpreter::result interpreter::validate_native_introspection(program const& program, opcode op_code) {
     // Check if native introspection is enabled
     if ( ! chain::script::is_enabled(program.flags(), script_flags::bch_native_introspection)) {
-        return error::op_reserved;
+        return {error::op_reserved, op_code};
     }
 
     // Check if context is available
     auto const& context = program.context();
     if ( ! context) {
-        return error::context_not_present;
+        return {error::context_not_present, op_code};
     }
 
-    return error::success;
+    return {};
 }
 
 inline
-interpreter::result interpreter::validate_token_introspection(program const& program) {
-    auto const res = validate_native_introspection(program);
-    if (res != error::success) {
+interpreter::result interpreter::validate_token_introspection(program const& program, opcode op_code) {
+    auto const res = validate_native_introspection(program, op_code);
+    if ( ! res) {
         return res;
     }
     // Token introspection opcodes require bch_tokens (Descartes/2023).
     if ( ! chain::script::is_enabled(program.flags(), script_flags::bch_tokens)) {
-        return error::op_reserved;
+        return {error::op_reserved, op_code};
     }
-    return error::success;
+    return {};
 }
 
 inline
@@ -2568,202 +2595,202 @@ void interpreter::post_process_introspection_push(program& program, data_chunk c
 
 inline
 interpreter::result interpreter::op_input_index(program& program) {
-    auto const validation_result = validate_native_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_native_introspection(program, opcode::input_index);
+    if ( ! validation_result) {
         return validation_result;
     }
-    
+
     auto const& context = program.context();
     auto const input_index = int64_t(context->input_index());
     auto const bn_exp = number::from_int(input_index);
     if ( ! bn_exp) {
-        return error::overflow;
+        return {error::overflow, opcode::input_index};
     }
-    
+
     auto const& data = bn_exp->data();
     program.push_copy(data);
     post_process_introspection_push(program, data);
 
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_active_bytecode(program& program) {
-    auto const validation_result = validate_native_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_native_introspection(program, opcode::active_bytecode);
+    if ( ! validation_result) {
         return validation_result;
     }
-    
+
     // Subset of active script starting at the most recent code separator (if any)
     // or the entire script if no code separators are present.
     auto const& active = program.get_script();
     auto const begin_code_hash = program.jump();
     auto const script_end = active.end();
-    
+
     // Calculate the size of the active bytecode
     auto const script_size = size_t(script_end - begin_code_hash);
-    
+
     // Check maximum script element size constraint
     auto const max_script_element_size = program.max_script_element_size();
     if (script_size > max_script_element_size) {
-        return error::invalid_push_data_size;
+        return {error::invalid_push_data_size, opcode::active_bytecode};
     }
-    
+
     // Convert the script portion to data_chunk
     data_chunk active_bytecode;
     active_bytecode.reserve(script_size);
-    
+
     for (auto it = begin_code_hash; it != script_end; ++it) {
         auto const op_data = it->to_data();
         active_bytecode.insert(active_bytecode.end(), op_data.begin(), op_data.end());
     }
-    
+
     program.push_copy(active_bytecode);
     post_process_introspection_push(program, active_bytecode);
-    
-    return error::success;
+
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_tx_version(program& program) {
-    auto const validation_result = validate_native_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_native_introspection(program, opcode::tx_version);
+    if ( ! validation_result) {
         return validation_result;
     }
-    
+
     auto const& context = program.context();
     auto const tx_version = int64_t(context->tx_version());
     auto const bn_exp = number::from_int(tx_version);
     if ( ! bn_exp) {
-        return error::overflow;
+        return {error::overflow, opcode::tx_version};
     }
-    
+
     auto const& data = bn_exp->data();
     program.push_copy(data);
     post_process_introspection_push(program, data);
 
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_tx_input_count(program& program) {
-    auto const validation_result = validate_native_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_native_introspection(program, opcode::tx_input_count);
+    if ( ! validation_result) {
         return validation_result;
     }
-    
+
     auto const& context = program.context();
     auto const input_count = int64_t(context->input_count());
     auto const bn_exp = number::from_int(input_count);
     if ( ! bn_exp) {
-        return error::overflow;
+        return {error::overflow, opcode::tx_input_count};
     }
-    
+
     auto const& data = bn_exp->data();
     program.push_copy(data);
     post_process_introspection_push(program, data);
 
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_tx_output_count(program& program) {
-    auto const validation_result = validate_native_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_native_introspection(program, opcode::tx_output_count);
+    if ( ! validation_result) {
         return validation_result;
     }
-    
+
     auto const& context = program.context();
     auto const output_count = int64_t(context->output_count());
     auto const bn_exp = number::from_int(output_count);
     if ( ! bn_exp) {
-        return error::overflow;
+        return {error::overflow, opcode::tx_output_count};
     }
-    
+
     auto const& data = bn_exp->data();
     program.push_copy(data);
     post_process_introspection_push(program, data);
 
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_tx_locktime(program& program) {
-    auto const validation_result = validate_native_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_native_introspection(program, opcode::tx_locktime);
+    if ( ! validation_result) {
         return validation_result;
     }
-    
+
     auto const& context = program.context();
     auto const locktime = int64_t(context->tx_locktime());
     auto const bn_exp = number::from_int(locktime);
     if ( ! bn_exp) {
-        return error::overflow;
+        return {error::overflow, opcode::tx_locktime};
     }
-    
+
     auto const& data = bn_exp->data();
     program.push_copy(data);
     post_process_introspection_push(program, data);
 
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_utxo_value(program& program) {
-    auto const validation_result = validate_native_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_native_introspection(program, opcode::utxo_value);
+    if ( ! validation_result) {
         return validation_result;
     }
 
     if (program.size() < 1) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::utxo_value};
     }
 
     auto const index_exp = program.pop_number(program.max_integer_size_legacy());
     if ( ! index_exp) {
-        return index_exp.error();
+        return {index_exp.error(), opcode::utxo_value};
     }
     auto const index = index_exp->int64();
 
     auto const& context = program.context();
     auto const& tx = context->transaction();
     if (index < 0 || uint64_t(index) >= tx.inputs().size()) {
-        return error::invalid_tx_input_index;
+        return {error::invalid_tx_input_index, opcode::utxo_value};
     }
 
     auto const& prevout_cache = tx.inputs()[index].previous_output().validation.cache;
     auto const bn_exp = number::from_int(int64_t(prevout_cache.value()));
     if ( ! bn_exp) {
-        return error::overflow;
+        return {error::overflow, opcode::utxo_value};
     }
 
     auto const& data = bn_exp->data();
     program.push_copy(data);
     post_process_introspection_push(program, data);
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_utxo_bytecode(program& program) {
-    auto const validation_result = validate_native_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_native_introspection(program, opcode::utxo_bytecode);
+    if ( ! validation_result) {
         return validation_result;
     }
 
     if (program.size() < 1) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::utxo_bytecode};
     }
 
     auto const index_exp = program.pop_number(program.max_integer_size_legacy());
     if ( ! index_exp) {
-        return index_exp.error();
+        return {index_exp.error(), opcode::utxo_bytecode};
     }
     auto const index = index_exp->int64();
 
     auto const& context = program.context();
     auto const& tx = context->transaction();
     if (index < 0 || uint64_t(index) >= tx.inputs().size()) {
-        return error::invalid_tx_input_index;
+        return {error::invalid_tx_input_index, opcode::utxo_bytecode};
     }
 
     auto const& prevout_cache = tx.inputs()[index].previous_output().validation.cache;
@@ -2783,203 +2810,203 @@ interpreter::result interpreter::op_utxo_bytecode(program& program) {
     }
 
     if (bytecode.size() > program.max_script_element_size()) {
-        return error::invalid_push_data_size;
+        return {error::invalid_push_data_size, opcode::utxo_bytecode};
     }
 
     program.push_move(std::move(bytecode));
     post_process_introspection_push(program, program.top());
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_outpoint_tx_hash(program& program) {
-    auto const validation_result = validate_native_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_native_introspection(program, opcode::outpoint_tx_hash);
+    if ( ! validation_result) {
         return validation_result;
     }
 
     if (program.size() < 1) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::outpoint_tx_hash};
     }
 
     auto const index_exp = program.pop_number(program.max_integer_size_legacy());
     if ( ! index_exp) {
-        return index_exp.error();
+        return {index_exp.error(), opcode::outpoint_tx_hash};
     }
     auto const index = index_exp->int64();
 
     auto const& context = program.context();
     auto const& tx = context->transaction();
     if (index < 0 || uint64_t(index) >= tx.inputs().size()) {
-        return error::invalid_tx_input_index;
+        return {error::invalid_tx_input_index, opcode::outpoint_tx_hash};
     }
 
     auto const& hash = tx.inputs()[index].previous_output().hash();
     auto data = to_chunk(hash);
     program.push_move(std::move(data));
     post_process_introspection_push(program, program.top());
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_outpoint_index(program& program) {
-    auto const validation_result = validate_native_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_native_introspection(program, opcode::outpoint_index);
+    if ( ! validation_result) {
         return validation_result;
     }
 
     if (program.size() < 1) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::outpoint_index};
     }
 
     auto const index_exp = program.pop_number(program.max_integer_size_legacy());
     if ( ! index_exp) {
-        return index_exp.error();
+        return {index_exp.error(), opcode::outpoint_index};
     }
     auto const index = index_exp->int64();
 
     auto const& context = program.context();
     auto const& tx = context->transaction();
     if (index < 0 || uint64_t(index) >= tx.inputs().size()) {
-        return error::invalid_tx_input_index;
+        return {error::invalid_tx_input_index, opcode::outpoint_index};
     }
 
     auto const outpoint_idx = int64_t(tx.inputs()[index].previous_output().index());
     auto const bn_exp = number::from_int(outpoint_idx);
     if ( ! bn_exp) {
-        return error::overflow;
+        return {error::overflow, opcode::outpoint_index};
     }
 
     auto const& data = bn_exp->data();
     program.push_copy(data);
     post_process_introspection_push(program, data);
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_input_bytecode(program& program) {
-    auto const validation_result = validate_native_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_native_introspection(program, opcode::input_bytecode);
+    if ( ! validation_result) {
         return validation_result;
     }
 
     if (program.size() < 1) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::input_bytecode};
     }
 
     auto const index_exp = program.pop_number(program.max_integer_size_legacy());
     if ( ! index_exp) {
-        return index_exp.error();
+        return {index_exp.error(), opcode::input_bytecode};
     }
     auto const index = index_exp->int64();
 
     auto const& context = program.context();
     auto const& tx = context->transaction();
     if (index < 0 || uint64_t(index) >= tx.inputs().size()) {
-        return error::invalid_tx_input_index;
+        return {error::invalid_tx_input_index, opcode::input_bytecode};
     }
 
     auto const& script_bytes = tx.inputs()[index].script().bytes();
     if (script_bytes.size() > program.max_script_element_size()) {
-        return error::invalid_push_data_size;
+        return {error::invalid_push_data_size, opcode::input_bytecode};
     }
 
     program.push_copy(script_bytes);
     post_process_introspection_push(program, script_bytes);
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_input_sequence_number(program& program) {
-    auto const validation_result = validate_native_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_native_introspection(program, opcode::input_sequence_number);
+    if ( ! validation_result) {
         return validation_result;
     }
 
     if (program.size() < 1) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::input_sequence_number};
     }
 
     auto const index_exp = program.pop_number(program.max_integer_size_legacy());
     if ( ! index_exp) {
-        return index_exp.error();
+        return {index_exp.error(), opcode::input_sequence_number};
     }
     auto const index = index_exp->int64();
 
     auto const& context = program.context();
     auto const& tx = context->transaction();
     if (index < 0 || uint64_t(index) >= tx.inputs().size()) {
-        return error::invalid_tx_input_index;
+        return {error::invalid_tx_input_index, opcode::input_sequence_number};
     }
 
     auto const seq = int64_t(tx.inputs()[index].sequence());
     auto const bn_exp = number::from_int(seq);
     if ( ! bn_exp) {
-        return error::overflow;
+        return {error::overflow, opcode::input_sequence_number};
     }
 
     auto const& data = bn_exp->data();
     program.push_copy(data);
     post_process_introspection_push(program, data);
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_output_value(program& program) {
-    auto const validation_result = validate_native_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_native_introspection(program, opcode::output_value);
+    if ( ! validation_result) {
         return validation_result;
     }
 
     if (program.size() < 1) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::output_value};
     }
 
     auto const index_exp = program.pop_number(program.max_integer_size_legacy());
     if ( ! index_exp) {
-        return index_exp.error();
+        return {index_exp.error(), opcode::output_value};
     }
     auto const index = index_exp->int64();
 
     auto const& context = program.context();
     auto const& tx = context->transaction();
     if (index < 0 || uint64_t(index) >= tx.outputs().size()) {
-        return error::invalid_tx_output_index;
+        return {error::invalid_tx_output_index, opcode::output_value};
     }
 
     auto const value = int64_t(tx.outputs()[index].value());
     auto const bn_exp = number::from_int(value);
     if ( ! bn_exp) {
-        return error::overflow;
+        return {error::overflow, opcode::output_value};
     }
 
     auto const& data = bn_exp->data();
     program.push_copy(data);
     post_process_introspection_push(program, data);
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_output_bytecode(program& program) {
-    auto const validation_result = validate_native_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_native_introspection(program, opcode::output_bytecode);
+    if ( ! validation_result) {
         return validation_result;
     }
 
     if (program.size() < 1) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::output_bytecode};
     }
 
     auto const index_exp = program.pop_number(program.max_integer_size_legacy());
     if ( ! index_exp) {
-        return index_exp.error();
+        return {index_exp.error(), opcode::output_bytecode};
     }
     auto const index = index_exp->int64();
 
     auto const& context = program.context();
     auto const& tx = context->transaction();
     if (index < 0 || uint64_t(index) >= tx.outputs().size()) {
-        return error::invalid_tx_output_index;
+        return {error::invalid_tx_output_index, opcode::output_bytecode};
     }
 
     auto const& out = tx.outputs()[index];
@@ -3005,12 +3032,12 @@ interpreter::result interpreter::op_output_bytecode(program& program) {
     }
 
     if (bytecode.size() > program.max_script_element_size()) {
-        return error::invalid_push_data_size;
+        return {error::invalid_push_data_size, opcode::output_bytecode};
     }
 
     program.push_move(std::move(bytecode));
     post_process_introspection_push(program, program.top());
-    return error::success;
+    return {};
 }
 
 // Token introspection helpers
@@ -3050,25 +3077,25 @@ int64_t get_token_amount(chain::token_data_t const& token) {
 
 inline
 interpreter::result interpreter::op_utxo_token_category(program& program) {
-    auto const validation_result = validate_token_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_token_introspection(program, opcode::utxo_token_category);
+    if ( ! validation_result) {
         return validation_result;
     }
 
     if (program.size() < 1) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::utxo_token_category};
     }
 
     auto const index_exp = program.pop_number(program.max_integer_size_legacy());
     if ( ! index_exp) {
-        return index_exp.error();
+        return {index_exp.error(), opcode::utxo_token_category};
     }
     auto const index = index_exp->int64();
 
     auto const& context = program.context();
     auto const& tx = context->transaction();
     if (index < 0 || uint64_t(index) >= tx.inputs().size()) {
-        return error::invalid_tx_input_index;
+        return {error::invalid_tx_input_index, opcode::utxo_token_category};
     }
 
     auto const& prevout_cache = tx.inputs()[index].previous_output().validation.cache;
@@ -3081,35 +3108,35 @@ interpreter::result interpreter::op_utxo_token_category(program& program) {
     } else {
         auto data = detail::get_token_category(*token_opt);
         if (data.size() > program.max_script_element_size()) {
-            return error::invalid_push_data_size;
+            return {error::invalid_push_data_size, opcode::utxo_token_category};
         }
         program.push_move(std::move(data));
         post_process_introspection_push(program, program.top());
     }
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_utxo_token_commitment(program& program) {
-    auto const validation_result = validate_token_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_token_introspection(program, opcode::utxo_token_commitment);
+    if ( ! validation_result) {
         return validation_result;
     }
 
     if (program.size() < 1) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::utxo_token_commitment};
     }
 
     auto const index_exp = program.pop_number(program.max_integer_size_legacy());
     if ( ! index_exp) {
-        return index_exp.error();
+        return {index_exp.error(), opcode::utxo_token_commitment};
     }
     auto const index = index_exp->int64();
 
     auto const& context = program.context();
     auto const& tx = context->transaction();
     if (index < 0 || uint64_t(index) >= tx.inputs().size()) {
-        return error::invalid_tx_input_index;
+        return {error::invalid_tx_input_index, opcode::utxo_token_commitment};
     }
 
     auto const& prevout_cache = tx.inputs()[index].previous_output().validation.cache;
@@ -3122,35 +3149,35 @@ interpreter::result interpreter::op_utxo_token_commitment(program& program) {
     } else {
         auto data = detail::get_token_commitment(*token_opt);
         if (data.size() > program.max_script_element_size()) {
-            return error::invalid_push_data_size;
+            return {error::invalid_push_data_size, opcode::utxo_token_commitment};
         }
         program.push_move(std::move(data));
         post_process_introspection_push(program, program.top());
     }
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_utxo_token_amount(program& program) {
-    auto const validation_result = validate_token_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_token_introspection(program, opcode::utxo_token_amount);
+    if ( ! validation_result) {
         return validation_result;
     }
 
     if (program.size() < 1) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::utxo_token_amount};
     }
 
     auto const index_exp = program.pop_number(program.max_integer_size_legacy());
     if ( ! index_exp) {
-        return index_exp.error();
+        return {index_exp.error(), opcode::utxo_token_amount};
     }
     auto const index = index_exp->int64();
 
     auto const& context = program.context();
     auto const& tx = context->transaction();
     if (index < 0 || uint64_t(index) >= tx.inputs().size()) {
-        return error::invalid_tx_input_index;
+        return {error::invalid_tx_input_index, opcode::utxo_token_amount};
     }
 
     auto const& prevout_cache = tx.inputs()[index].previous_output().validation.cache;
@@ -3164,36 +3191,36 @@ interpreter::result interpreter::op_utxo_token_amount(program& program) {
         auto const amount = detail::get_token_amount(*token_opt);
         auto const bn_exp = number::from_int(amount);
         if ( ! bn_exp) {
-            return error::overflow;
+            return {error::overflow, opcode::utxo_token_amount};
         }
         auto const& data = bn_exp->data();
         program.push_copy(data);
         post_process_introspection_push(program, data);
     }
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_output_token_category(program& program) {
-    auto const validation_result = validate_token_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_token_introspection(program, opcode::output_token_category);
+    if ( ! validation_result) {
         return validation_result;
     }
 
     if (program.size() < 1) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::output_token_category};
     }
 
     auto const index_exp = program.pop_number(program.max_integer_size_legacy());
     if ( ! index_exp) {
-        return index_exp.error();
+        return {index_exp.error(), opcode::output_token_category};
     }
     auto const index = index_exp->int64();
 
     auto const& context = program.context();
     auto const& tx = context->transaction();
     if (index < 0 || uint64_t(index) >= tx.outputs().size()) {
-        return error::invalid_tx_output_index;
+        return {error::invalid_tx_output_index, opcode::output_token_category};
     }
 
     auto const& token_opt = tx.outputs()[index].token_data();
@@ -3204,35 +3231,35 @@ interpreter::result interpreter::op_output_token_category(program& program) {
     } else {
         auto data = detail::get_token_category(*token_opt);
         if (data.size() > program.max_script_element_size()) {
-            return error::invalid_push_data_size;
+            return {error::invalid_push_data_size, opcode::output_token_category};
         }
         program.push_move(std::move(data));
         post_process_introspection_push(program, program.top());
     }
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_output_token_commitment(program& program) {
-    auto const validation_result = validate_token_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_token_introspection(program, opcode::output_token_commitment);
+    if ( ! validation_result) {
         return validation_result;
     }
 
     if (program.size() < 1) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::output_token_commitment};
     }
 
     auto const index_exp = program.pop_number(program.max_integer_size_legacy());
     if ( ! index_exp) {
-        return index_exp.error();
+        return {index_exp.error(), opcode::output_token_commitment};
     }
     auto const index = index_exp->int64();
 
     auto const& context = program.context();
     auto const& tx = context->transaction();
     if (index < 0 || uint64_t(index) >= tx.outputs().size()) {
-        return error::invalid_tx_output_index;
+        return {error::invalid_tx_output_index, opcode::output_token_commitment};
     }
 
     auto const& token_opt = tx.outputs()[index].token_data();
@@ -3243,35 +3270,35 @@ interpreter::result interpreter::op_output_token_commitment(program& program) {
     } else {
         auto data = detail::get_token_commitment(*token_opt);
         if (data.size() > program.max_script_element_size()) {
-            return error::invalid_push_data_size;
+            return {error::invalid_push_data_size, opcode::output_token_commitment};
         }
         program.push_move(std::move(data));
         post_process_introspection_push(program, program.top());
     }
-    return error::success;
+    return {};
 }
 
 inline
 interpreter::result interpreter::op_output_token_amount(program& program) {
-    auto const validation_result = validate_token_introspection(program);
-    if (validation_result != error::success) {
+    auto const validation_result = validate_token_introspection(program, opcode::output_token_amount);
+    if ( ! validation_result) {
         return validation_result;
     }
 
     if (program.size() < 1) {
-        return error::insufficient_main_stack;
+        return {error::insufficient_main_stack, opcode::output_token_amount};
     }
 
     auto const index_exp = program.pop_number(program.max_integer_size_legacy());
     if ( ! index_exp) {
-        return index_exp.error();
+        return {index_exp.error(), opcode::output_token_amount};
     }
     auto const index = index_exp->int64();
 
     auto const& context = program.context();
     auto const& tx = context->transaction();
     if (index < 0 || uint64_t(index) >= tx.outputs().size()) {
-        return error::invalid_tx_output_index;
+        return {error::invalid_tx_output_index, opcode::output_token_amount};
     }
 
     auto const& token_opt = tx.outputs()[index].token_data();
@@ -3283,13 +3310,13 @@ interpreter::result interpreter::op_output_token_amount(program& program) {
         auto const amount = detail::get_token_amount(*token_opt);
         auto const bn_exp = number::from_int(amount);
         if ( ! bn_exp) {
-            return error::overflow;
+            return {error::overflow, opcode::output_token_amount};
         }
         auto const& data = bn_exp->data();
         program.push_copy(data);
         post_process_introspection_push(program, data);
     }
-    return error::success;
+    return {};
 }
 
 
@@ -3382,11 +3409,11 @@ interpreter::result interpreter::run_op(operation const& op, program& program) {
             return op_push_size(program, op);
 
         case opcode::push_one_size:
-            return op_push_data(program, op.data(), max_uint8);
+            return op_push_data(program, code, op.data(), max_uint8);
         case opcode::push_two_size:
-            return op_push_data(program, op.data(), max_uint16);
+            return op_push_data(program, code, op.data(), max_uint16);
         case opcode::push_four_size:
-            return op_push_data(program, op.data(), max_uint32);
+            return op_push_data(program, code, op.data(), max_uint32);
 
         case opcode::reserved_80:
             return op_reserved(code);
