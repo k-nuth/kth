@@ -109,6 +109,52 @@ eval_result eval_native(data_stack initial_stack, script const& scr, script_flag
     };
 }
 
+// Parallel driver that runs the same program through the debug API
+// (`debug_begin` + `debug_run`) instead of `interpreter::run`. Every
+// `check_*` helper compares its output against `eval_native`'s so
+// that any future `run()` ↔ `debug_run()` divergence — ec, final
+// stack, sig_checks, hash_iters, op_cost — becomes a direct test
+// failure instead of a latent regression. The two bugs pinned by
+// hand-written tests in PR #271 (`OP_CODESEPARATOR` address-identity
+// and `OP_INVOKE` inner-opcode attribution) both slipped through
+// until they were hunted by code review; this parity harness keeps
+// the contract enforced across every generated case.
+eval_result eval_native_debug(data_stack initial_stack, script const& scr, script_flags_t flags) {
+    static chain::transaction const dummy_tx;
+    program prog(scr, dummy_tx, 0, flags, std::move(initial_stack), max_uint64);
+    auto snap = interpreter::debug_run(
+        interpreter::debug_begin(std::move(prog)));
+    // `run(program&)` ends with a `program.closed()` structural
+    // check — the debug API exposes that post-loop verdict through
+    // `debug_finalize`. Without it, the debug path returns `ok` for a
+    // script that ends mid-IF, while `run` correctly reports
+    // `invalid_stack_scope`. Equate both through `final_ec`.
+    auto const final_ec = interpreter::debug_finalize(snap);
+    auto& m = snap.prog.get_metrics();
+
+    int64_t const std_cost = m.op_cost()
+        + m.hash_digest_iterations() * machine::may2025::hash_iter_op_cost_factor(true)
+        + int64_t(m.sig_checks()) * ::kth::may2025::sig_check_cost_factor;
+    int64_t const nonstd_cost = m.op_cost()
+        + m.hash_digest_iterations() * machine::may2025::hash_iter_op_cost_factor(false)
+        + int64_t(m.sig_checks()) * ::kth::may2025::sig_check_cost_factor;
+
+    data_stack result_stack;
+    for (size_t i = snap.prog.size(); i > 0; --i) {
+        result_stack.push_back(snap.prog.item(i - 1));
+    }
+
+    return {
+        final_ec.error,  // bridge op_result → code via error_code_t
+        static_cast<int>(m.sig_checks()),
+        static_cast<int64_t>(m.hash_digest_iterations()),
+        static_cast<int64_t>(m.op_cost()),
+        std_cost,
+        nonstd_cost,
+        std::move(result_stack),
+    };
+}
+
 // ─── BCHN consensus interpreter ──────────────────────────────────────────────
 
 #ifdef WITH_CONSENSUS
@@ -197,6 +243,17 @@ void check_eval(data_stack const& initial, script const& scr, script_flags_t fla
     CHECK(n_std == expected_op_cost_std);
     CHECK(n_nonstd == expected_op_cost_nonstd);
 
+    // --- kth debug-path parity ---
+    // Every case run through `interpreter::run` is mirrored through
+    // `debug_begin` + `debug_run`; any divergence (ec, final stack,
+    // sig_checks, hash_iters, op_cost) fails the test.
+    auto [d_ec, d_sc, d_hi, d_oc, d_std, d_nonstd, d_stack] = eval_native_debug(initial, scr, flags);
+    CHECK(d_ec == ec);
+    CHECK(d_sc == n_sc);
+    CHECK(d_hi == n_hi);
+    CHECK(d_oc == n_oc);
+    CHECK(d_stack == n_stack);
+
 #ifdef WITH_CONSENSUS
     // --- BCHN consensus (standard) ---
     auto const flags_std = script_flags_to_verify_flags(flags, true);
@@ -250,6 +307,14 @@ void check_eval_fail(data_stack const& initial, script const& scr, script_flags_
     CHECK(n_hi == expected_hash_iters);
     CHECK(n_std == expected_op_cost_std);
     CHECK(n_nonstd == expected_op_cost_nonstd);
+
+    // --- kth debug-path parity (see check_eval) ---
+    auto [d_ec, d_sc, d_hi, d_oc, d_std, d_nonstd, d_stack] = eval_native_debug(initial, scr, flags);
+    CHECK(d_ec == ec);
+    CHECK(d_sc == n_sc);
+    CHECK(d_hi == n_hi);
+    CHECK(d_oc == n_oc);
+    CHECK(d_stack == n_stack);
 
 #ifdef WITH_CONSENSUS
     // --- BCHN consensus (standard) ---
@@ -351,6 +416,46 @@ eval_result eval_native_ctx(data_stack initial_stack, script const& scr, script_
     };
 }
 
+// Debug-path companion to `eval_native_ctx`. See `eval_native_debug`
+// for why we keep a parallel driver — same rationale, with tx
+// context.
+eval_result eval_native_ctx_debug(data_stack initial_stack, script const& scr, script_flags_t flags,
+                                  tx_context const& ctx) {
+    auto const utxo_value = ctx.tx.inputs()[ctx.input_index].previous_output().validation.cache.value();
+    program prog(scr, ctx.tx, ctx.input_index, flags, std::move(initial_stack), utxo_value);
+    auto snap = interpreter::debug_run(
+        interpreter::debug_begin(std::move(prog)));
+    // `run(program&)` ends with a `program.closed()` structural
+    // check — the debug API exposes that post-loop verdict through
+    // `debug_finalize`. Without it, the debug path returns `ok` for a
+    // script that ends mid-IF, while `run` correctly reports
+    // `invalid_stack_scope`. Equate both through `final_ec`.
+    auto const final_ec = interpreter::debug_finalize(snap);
+    auto& m = snap.prog.get_metrics();
+
+    int64_t const std_cost = m.op_cost()
+        + m.hash_digest_iterations() * machine::may2025::hash_iter_op_cost_factor(true)
+        + int64_t(m.sig_checks()) * ::kth::may2025::sig_check_cost_factor;
+    int64_t const nonstd_cost = m.op_cost()
+        + m.hash_digest_iterations() * machine::may2025::hash_iter_op_cost_factor(false)
+        + int64_t(m.sig_checks()) * ::kth::may2025::sig_check_cost_factor;
+
+    data_stack result_stack;
+    for (size_t i = snap.prog.size(); i > 0; --i) {
+        result_stack.push_back(snap.prog.item(i - 1));
+    }
+
+    return {
+        final_ec.error,  // bridge op_result → code via error_code_t
+        static_cast<int>(m.sig_checks()),
+        static_cast<int64_t>(m.hash_digest_iterations()),
+        static_cast<int64_t>(m.op_cost()),
+        std_cost,
+        nonstd_cost,
+        std::move(result_stack),
+    };
+}
+
 // Check evaluation with transaction context (for introspection opcode tests).
 void check_eval_ctx(data_stack const& initial, script const& scr, script_flags_t flags,
                     tx_context const& ctx,
@@ -374,6 +479,14 @@ void check_eval_ctx(data_stack const& initial, script const& scr, script_flags_t
     CHECK(n_hi == expected_hash_iters);
     CHECK(n_std == expected_op_cost_std);
     CHECK(n_nonstd == expected_op_cost_nonstd);
+
+    // --- kth debug-path parity with context (see check_eval) ---
+    auto [d_ec, d_sc, d_hi, d_oc, d_std, d_nonstd, d_stack] = eval_native_ctx_debug(initial, scr, flags, ctx);
+    CHECK(d_ec == ec);
+    CHECK(d_sc == n_sc);
+    CHECK(d_hi == n_hi);
+    CHECK(d_oc == n_oc);
+    CHECK(d_stack == n_stack);
 }
 
 } // namespace
