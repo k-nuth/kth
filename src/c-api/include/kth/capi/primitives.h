@@ -8,7 +8,13 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include <kth/capi/chain/endorsement_type.h>
+#include <kth/capi/chain/point_kind.h>
+#include <kth/capi/config/currency.h>
+#include <kth/capi/config/db_mode.h>
+#include <kth/capi/config/network.h>
 #include <kth/capi/error.h>
+#include <kth/capi/node/start_modules.h>
 #include <kth/capi/visibility.h>
 
 #define KTH_PRECONDITION(expr) do { if (!(expr)) { abort(); } } while(0)
@@ -78,8 +84,6 @@ typedef wchar_t kth_char_t;
 #else
 typedef char kth_char_t;
 #endif
-
-typedef enum point_kind {output = 0, spend = 1} kth_point_kind_t;
 
 typedef void* kth_node_t;
 typedef void* kth_chain_t;
@@ -222,50 +226,6 @@ typedef struct kth_encrypted_seed_t {
     uint8_t hash[KTH_BITCOIN_ENCRYPTED_SEED_SIZE];
 } kth_encrypted_seed_t;
 
-
-
-// Currencies --------------------------------------------------------
-
-typedef enum {
-    kth_currency_bitcoin,
-    kth_currency_bitcoin_cash,
-    kth_currency_litecoin
-} kth_currency_t;
-
-// Network -----------------------------------------------------------
-typedef enum {
-      kth_network_mainnet
-    , kth_network_testnet
-    , kth_network_regtest
-#if defined(KTH_CURRENCY_BCH)
-    , kth_network_testnet4
-    , kth_network_scalenet
-    , kth_network_chipnet
-#endif
-} kth_network_t;
-
-// Start Modules -----------------------------------------------------
-typedef enum {
-      kth_start_modules_all
-    , kth_start_modules_just_chain
-    , kth_start_modules_just_p2p
-} kth_start_modules_t;
-
-
-// DB Modes -----------------------------------------------------------
-
-typedef enum {
-    kth_db_mode_pruned = 0,
-    kth_db_mode_normal = 1,
-    kth_db_mode_full_indexed = 2
-} kth_db_mode_t;
-
-
-// Endorsement type ----------------------------------------------------
-typedef enum {
-    kth_endorsement_type_ecdsa = 0,
-    kth_endorsement_type_schnorr = 1
-} kth_endorsement_type_t;
 
 
 // Callback signatures ------------------------------------------------
