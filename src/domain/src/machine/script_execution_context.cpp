@@ -7,7 +7,7 @@
 namespace kth::domain::machine {
 
 script_execution_context::script_execution_context(uint32_t input_index, chain::transaction const& transaction)
-    : input_index_(input_index), transaction_(transaction) {
+    : input_index_(input_index), transaction_(&transaction) {
 }
 
 uint32_t script_execution_context::input_index() const {
@@ -15,23 +15,23 @@ uint32_t script_execution_context::input_index() const {
 }
 
 chain::transaction const& script_execution_context::transaction() const {
-    return transaction_;
+    return *transaction_;
 }
 
 uint32_t script_execution_context::input_count() const {
-    return uint32_t(transaction_.inputs().size());
+    return uint32_t(transaction_->inputs().size());
 }
 
 uint32_t script_execution_context::output_count() const {
-    return uint32_t(transaction_.outputs().size());
+    return uint32_t(transaction_->outputs().size());
 }
 
 uint32_t script_execution_context::tx_version() const {
-    return transaction_.version();
+    return transaction_->version();
 }
 
 uint32_t script_execution_context::tx_locktime() const {
-    return transaction_.locktime();
+    return transaction_->locktime();
 }
 
 } // namespace kth::domain::machine

@@ -22,6 +22,7 @@
 #include <kth/domain/chain/input.hpp>
 #include <kth/domain/chain/output.hpp>
 #include <kth/domain/chain/script.hpp>
+#include <kth/domain/machine/interpreter.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/machine/opcode.hpp>
 #include <kth/domain/machine/operation.hpp>
@@ -629,13 +630,13 @@ code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, s
 
     // Evaluate input script.
     program input(input_script, tx, input_index, flags, value);
-    if ((ec = input.evaluate())) {
+    if ((ec = input.evaluate().error)) {
         return ec;
     }
 
     // Evaluate output script using stack result from input script.
     program prevout(prevout_script, input);
-    if ((ec = prevout.evaluate())) {
+    if ((ec = prevout.evaluate().error)) {
         return ec;
     }
 
@@ -676,7 +677,7 @@ code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, s
         script embedded_script(input.pop(), false);
 
         program embedded(embedded_script, std::move(input), true);
-        if ((ec = embedded.evaluate())) {
+        if ((ec = embedded.evaluate().error)) {
             return ec;
         }
 

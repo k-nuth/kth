@@ -568,8 +568,12 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/transaction.cpp
         test/main.cpp
 
+        test/machine/interpreter.cpp
+        test/machine/interpreter_function_table_stack_budget.cpp
+        test/machine/interpreter_nested_invoke.cpp
         test/machine/opcode.cpp
         test/machine/operation.cpp
+        test/machine/program.cpp
 
         test/math/limits.cpp
         test/math/stealth.cpp

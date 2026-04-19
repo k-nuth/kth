@@ -26,6 +26,10 @@
 
 namespace kth::domain::machine {
 
+// Forward decl — full definition lives in `interpreter.hpp`, which
+// itself includes this header; importing it back here would cycle.
+struct op_result;
+
 using operation = ::kth::domain::machine::operation;        //TODO(fernando): why this?
 
 #if ! defined(KTH_CURRENCY_BCH)
@@ -47,15 +51,30 @@ struct KD_API program {
     /// This can only run individual operations via run(op, program).
     program();
 
+    // LIFETIME CONTRACT for every `program` constructor below:
+    //   `program` stores *pointers*, not copies, to its `script` and
+    //   `transaction` arguments (see `script_` and `transaction_`
+    //   below). Both referents MUST outlive every `program` built
+    //   from them — including any `debug_snapshot` that holds a
+    //   program by value. Passing temporaries is undefined behaviour;
+    //   prefer named locals or static storage. Rvalue overloads are
+    //   intentionally NOT `= delete`-d because legitimate callers
+    //   pass `std::move(prev_program)` (lvalue moved into the new
+    //   program), and C++ cannot distinguish that from a pure
+    //   temporary at the signature level.
+
     /// Create an instance that does not expect to verify signatures.
     /// This is useful for script utilities but not with input validation.
     /// This can run ops via run(op, program) or the script via run(program).
+    /// \pre `script` outlives the returned program.
     program(chain::script const& script);
 
     /// Create an instance with empty stacks (input run).
+    /// \pre `script` and `transaction` outlive the returned program.
     program(chain::script const& script, chain::transaction const& transaction, uint32_t input_index, script_flags_t flags, uint64_t value = max_uint64);
 
     /// Create an instance with initialized stack (witness run, v0 by default).
+    /// \pre `script` and `transaction` outlive the returned program.
     program(
         chain::script const& script
         , chain::transaction const& transaction
@@ -69,9 +88,16 @@ struct KD_API program {
     );
 
     /// Create using copied tx, input, flags, value, stack (prevout run).
+    /// \pre `script` outlives the returned program; `x`'s script and
+    /// transaction referents must also outlive this new instance (their
+    /// addresses are copied over).
     program(chain::script const& script, program const& x);
 
     /// Create using copied tx, input, flags, value and moved stack (p2sh run).
+    /// \pre `script` outlives the returned program. `x` must be an
+    /// lvalue whose script/transaction referents outlive this new
+    /// instance — `program(script, std::move(named_lvalue), true)` is
+    /// the intended shape, NOT `program(script, make_program(), true)`.
     program(chain::script const& script, program&& x, bool move);
 
     [[nodiscard]]
@@ -140,10 +166,15 @@ struct KD_API program {
     size_t operation_count() const;
 
     /// Instructions.
+    /// Returns the rich `op_result` so callers can see which opcode
+    /// failed. The conversion to `kth::code` for legacy call sites is
+    /// intentionally `explicit` (see `op_result::operator code()`);
+    /// bridge at the call site with direct-init — `code ec{prog.evaluate()};`
+    /// — or read the `.error` member directly to preserve polarity.
     [[nodiscard]]
-    code evaluate();
+    op_result evaluate();
     [[nodiscard]]
-    code evaluate(operation const& op);
+    op_result evaluate(operation const& op);
     
     [[nodiscard]]
     bool increment_operation_count(operation const& op);
@@ -278,12 +309,31 @@ private:
     [[nodiscard]]
     bool stack_to_bool(bool clean) const;
 
-    chain::script const& script_;
-    chain::script const* active_script_{nullptr};  // override for OP_ACTIVEBYTECODE during INVOKE
-    chain::transaction const& transaction_;
-    uint32_t const input_index_{0};
-    script_flags_t const flags_{0};
-    uint64_t const value_{0};
+    // Pointers (not references) so that `program` itself is
+    // move-assignable — debug tooling holds snapshots by value and
+    // the batch-step loops in interpreter.cpp rebind them. The
+    // pointed-to script and transaction are still logically immutable;
+    // the indirection is purely a storage choice.
+    chain::script const* script_{nullptr};
+    chain::transaction const* transaction_{nullptr};
+    uint32_t input_index_{0};
+    script_flags_t flags_{0};
+    uint64_t value_{0};
+
+    // Per-frame state pushed on OP_INVOKE, popped on return. Each
+    // entry stores the overriding `script` and the frame's own
+    // OP_CODESEPARATOR marker (`jump`). Empty stack means "outermost
+    // frame — use `script_` / `jump_`". A previous revision stored
+    // only a single-slot `active_script_` pointer; returning from a
+    // nested OP_INVOKE then always fell back to the outermost script
+    // and lost the caller function's active bytecode — a consensus
+    // split once BCH 2026-May (subroutines) activates. BCHN's
+    // `EvalStack` uses the same per-frame model.
+    struct active_frame {
+        chain::script const* script;
+        op_iterator jump;
+    };
+    std::vector<active_frame> active_frames_;
 
 #if ! defined(KTH_CURRENCY_BCH)
     script_version version_{script_version::unversioned};

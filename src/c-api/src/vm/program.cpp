@@ -223,14 +223,14 @@ void kth_vm_program_reset_active_script(kth_program_mut_t self) {
 
 kth_error_code_t kth_vm_program_evaluate_simple(kth_program_mut_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).evaluate());
+    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).evaluate().error);
 }
 
 kth_error_code_t kth_vm_program_evaluate(kth_program_mut_t self, kth_operation_const_t op) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(op != nullptr);
     auto const& op_cpp = kth::cpp_ref<kth::domain::machine::operation>(op);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).evaluate(op_cpp));
+    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).evaluate(op_cpp).error);
 }
 
 kth_bool_t kth_vm_program_increment_operation_count_operation(kth_program_mut_t self, kth_operation_const_t op) {

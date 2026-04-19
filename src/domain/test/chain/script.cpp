@@ -1023,9 +1023,18 @@ static data_chunk make_endorsement(uint8_t sighash_byte) {
 
 // Build a program with the given flags.
 // check_transaction_signature_encoding only reads program.flags().
+//
+// `program` stores pointers (not copies) to the script and
+// transaction it was constructed from, so both MUST outlive the
+// returned program. Previously these were function-local which
+// left the caller holding dangling pointers as soon as the helper
+// returned — a latent bug that worked only because the stale memory
+// happened to not be reused before `program.flags()` was read.
+// Static storage gives them process-long lifetime, matching the
+// `program` API contract.
 static program make_program_with_flags(script_flags_t flags) {
-    chain::script empty_script;
-    chain::transaction empty_tx;
+    static chain::script const empty_script;
+    static chain::transaction const empty_tx;
     return program(empty_script, empty_tx, 0, flags, 0);
 }
 
@@ -1090,8 +1099,8 @@ static void check_sighash_encoding_with_flags(script_flags_t flags) {
     for (auto valid_sh : valid_sighashes) {
         uint8_t sighash_byte = valid_sh | (has_forkid ? sighash_algorithm::forkid : 0);
         auto endorsement = make_endorsement(sighash_byte);
-        auto result = check_transaction_signature_encoding(endorsement, prog);
-        CHECK(result == error::success);
+        auto result = check_transaction_signature_encoding(endorsement, prog, opcode::checksig);
+        CHECK(result.error == error::success);
     }
 
     // --- Undefined sighash types ---
@@ -1114,11 +1123,11 @@ static void check_sighash_encoding_with_flags(script_flags_t flags) {
 
         for (auto undef_sh : undef_sighashes) {
             auto endorsement = make_endorsement(undef_sh);
-            auto result = check_transaction_signature_encoding(endorsement, prog);
+            auto result = check_transaction_signature_encoding(endorsement, prog, opcode::checksig);
             if (has_strictenc) {
-                CHECK(result == error::sig_hashtype);
+                CHECK(result.error == error::sig_hashtype);
             } else {
-                CHECK(result == error::success);
+                CHECK(result.error == error::success);
             }
         }
     }
@@ -1128,11 +1137,11 @@ static void check_sighash_encoding_with_flags(script_flags_t flags) {
         // Use the WRONG fork flag (inverted)
         uint8_t sighash_byte = valid_sh | (has_forkid ? 0 : sighash_algorithm::forkid);
         auto endorsement = make_endorsement(sighash_byte);
-        auto result = check_transaction_signature_encoding(endorsement, prog);
+        auto result = check_transaction_signature_encoding(endorsement, prog, opcode::checksig);
         if (has_strictenc) {
-            CHECK(result == (has_forkid ? error::must_use_forkid : error::illegal_forkid));
+            CHECK(result.error == (has_forkid ? error::must_use_forkid : error::illegal_forkid));
         } else {
-            CHECK(result == error::success);
+            CHECK(result.error == error::success);
         }
     }
 }

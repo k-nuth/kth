@@ -42,7 +42,7 @@ metrics const& program::get_metrics() const {
 inline
 bool program::is_valid() const {
     // Invalid operations indicates a failure deserializing individual ops.
-    return script_.is_valid_operations() && !script_.is_unspendable();
+    return script_->is_valid_operations() && !script_->is_unspendable();
 }
 
 inline
@@ -96,7 +96,7 @@ script_version program::version() const {
 
 inline
 chain::transaction const& program::transaction() const {
-    return transaction_;
+    return *transaction_;
 }
 
 inline
@@ -109,37 +109,48 @@ std::optional<script_execution_context> const& program::context() const {
 
 inline
 program::op_iterator program::begin() const {
-    return script_.begin();
+    return active_frames_.empty()
+        ? script_->begin()
+        : active_frames_.back().script->begin();
 }
 
 inline
 program::op_iterator program::jump() const {
-    return jump_;
+    return active_frames_.empty() ? jump_ : active_frames_.back().jump;
 }
 
 inline
 program::op_iterator program::end() const {
-    return script_.end();
+    return active_frames_.empty()
+        ? script_->end()
+        : active_frames_.back().script->end();
 }
 
 inline
 chain::script const& program::get_script() const {
-    return active_script_ ? *active_script_ : script_;
+    return active_frames_.empty() ? *script_ : *active_frames_.back().script;
 }
 
 inline
 void program::set_active_script(chain::script const* s) {
-    active_script_ = s;
-    // Reset jump to beginning of new active script.
-    if (s) {
-        jump_ = s->begin();
+    // Semantically "push an active-script frame". OP_INVOKE calls
+    // this with a non-null `s`; the only null-arg caller is legacy
+    // test / hand-written code that wants to drop the override, so
+    // treat that as a pop.
+    if (s == nullptr) {
+        reset_active_script();
+        return;
     }
+    active_frames_.push_back({s, s->begin()});
 }
 
 inline
 void program::reset_active_script() {
-    active_script_ = nullptr;
-    jump_ = script_.begin();
+    // Pop the most recent frame. No-op on the outermost frame, so
+    // double-pops can't corrupt the state.
+    if ( ! active_frames_.empty()) {
+        active_frames_.pop_back();
+    }
 }
 
 inline
@@ -199,9 +210,9 @@ bool program::set_jump_register(operation const& op, int32_t offset) {
 
     // This is not efficient but is simplifying and subscript is rarely used.
     // Otherwise we must track the program counter through each evaluation.
-    jump_ = std::find_if(active.begin(), active.end(), finder);
+    auto found = std::find_if(active.begin(), active.end(), finder);
 
-    if (jump_ == active.end()) {
+    if (found == active.end()) {
         return false;
     }
 
@@ -209,7 +220,13 @@ bool program::set_jump_register(operation const& op, int32_t offset) {
     // Even if the opcode is last in the sequnce the increment is valid (end).
     KTH_ASSERT_MSG(offset == 1, "unguarded jump offset");
 
-    jump_ += offset;
+    // Write through to the active frame if we're inside an OP_INVOKE,
+    // otherwise to the outermost state.
+    if (active_frames_.empty()) {
+        jump_ = found + offset;
+    } else {
+        active_frames_.back().jump = found + offset;
+    }
     return true;
 }
 

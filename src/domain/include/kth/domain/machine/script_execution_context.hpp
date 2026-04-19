@@ -38,8 +38,11 @@ struct KD_API script_execution_context {
     uint32_t tx_locktime() const;
 
 private:
+    // Pointer (not reference) so the struct stays move-assignable;
+    // kept in `program`'s `std::optional<script_execution_context>`
+    // which exercises that requirement during debug snapshot handling.
     uint32_t input_index_;
-    chain::transaction const& transaction_;
+    chain::transaction const* transaction_;
 };
 
 } // namespace kth::domain::machine
