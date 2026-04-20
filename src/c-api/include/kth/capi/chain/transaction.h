@@ -197,7 +197,10 @@ KTH_EXPORT
 kth_bool_t kth_chain_transaction_is_locktime_conflict(kth_transaction_const_t self);
 
 KTH_EXPORT
-kth_bool_t kth_chain_transaction_is_standard(kth_transaction_const_t self);
+kth_bool_t kth_chain_transaction_is_standard_simple(kth_transaction_const_t self);
+
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_is_standard(kth_transaction_const_t self, kth_script_flags_t flags);
 
 
 // Operations

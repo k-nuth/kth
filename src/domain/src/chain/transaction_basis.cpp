@@ -592,6 +592,24 @@ bool transaction_basis::is_standard() const {
     });
 }
 
+bool transaction_basis::is_standard(script_flags_t flags) const {
+    // P2S is asymmetric: the catch-all only applies to output scripts
+    // (locking bytecode, scriptPubKey). Input scripts keep their
+    // classical `input_pattern()` classification — a short non-matching
+    // scriptSig must still be rejected as `non_standard`, it cannot ride
+    // the P2S bound into standardness. Mirrors BCHN's `Solver()` being
+    // called with flags only for the scriptPubKey side.
+    for (auto const& in : inputs()) {
+        if (in.script().input_pattern() == script_pattern::non_standard) {
+            return false;
+        }
+    }
+
+    return std::all_of(begin(outputs()), end(outputs()), [flags](auto const& out){
+        return out.script().output_pattern(flags) != script_pattern::non_standard;
+    });
+}
+
 hash_digest hash(transaction_basis const& tx) {
     return bitcoin_hash(tx.to_data(true));
 }

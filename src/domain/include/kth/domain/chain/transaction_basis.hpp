@@ -271,6 +271,16 @@ struct KD_API transaction_basis {
     [[nodiscard]]
     bool is_standard() const;
 
+    /// Flag-aware counterpart of `is_standard()`. Outputs are classified
+    /// through `script::output_pattern(flags)` (so `bch_p2s` can promote a
+    /// sub-201-byte non-matching scriptPubKey to `pay_to_script`, BCH
+    /// 2026-May leibniz); inputs keep the classical `input_pattern()`
+    /// classification — the P2S catch-all is intentionally asymmetric and
+    /// applies to locking bytecode only, matching BCHN's `Solver()` being
+    /// passed flags only on the scriptPubKey side.
+    [[nodiscard]]
+    bool is_standard(script_flags_t flags) const;
+
 // protected:
     void reset();
 

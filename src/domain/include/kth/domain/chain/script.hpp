@@ -276,6 +276,12 @@ public:
 
     script_pattern pattern() const;
     script_pattern output_pattern() const;
+    /// Flag-aware output-pattern classifier. Identical to `output_pattern()`
+    /// except when `flags & bch_p2s` is active: any scriptPubKey that
+    /// doesn't match one of the known templates and whose serialised size
+    /// fits within `max_p2s_script_size` returns `pay_to_script` instead of
+    /// `non_standard`. Mirrors BCHN's `Solver(scriptPubKey, ..., flags)`.
+    script_pattern output_pattern(script_flags_t flags) const;
     script_pattern input_pattern() const;
 
     /// Consensus computations.
