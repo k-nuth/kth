@@ -181,38 +181,6 @@ kth_bool_t kth_chain_is_stale(kth_chain_t chain) {
 
 
 
-// ------------------------------------------------------------------
-//virtual void fetch_block_locator(chain::block::indexes const& heights, block_locator_fetch_handler handler) const = 0;
-
-//void kth_chain_fetch_block_locator(kth_chain_t chain, void* ctx, kth_block_indexes_t heights, kth_block_locator_fetch_handler_t handler) {
-//    auto const& heights_cpp = kth_chain_block_indexes_const_cpp(heights);
-//
-//    safe_chain(chain).fetch_block_locator(heights_cpp, [chain, ctx, handler](std::error_code const& ec, kth::get_headers_ptr headers) {
-//        //TODO: check if the pointer is set, before dereferencing
-//        auto* new_headers = new kth::domain::chain::get_headers(*headers);
-//        handler(chain, ctx, kth::to_c_err(ec), new_headers);
-//    });
-//}
-//
-
-//kth_error_code_t kth_chain_get_block_locator(kth_chain_t chain, kth_block_indexes_t heights, kth_get_headers_ptr_t* out_headers) {
-//    std::latch latch(1); //Note: workaround to fix an error on some versions of Boost.Threads
-//    kth_error_code_t res;
-//
-//    auto const& heights_cpp = kth_chain_block_indexes_const_cpp(heights);
-//
-//    safe_chain(chain).fetch_block_locator(heights_cpp, [&](std::error_code const& ec, kth::get_headers_ptr headers) {
-//        //TODO: check if the pointer is set, before dereferencing
-//        *out_headers = new kth::domain::chain::get_headers(*headers);
-//        res = kth::to_c_err(ec);
-//        latch.count_down();
-//    });
-//
-//    latch.wait();
-//    return res;
-//}
-
-
 
 // ------------------------------------------------------------------
 //virtual void fetch_locator_block_hashes(get_blocks_const_ptr locator, hash_digest const& threshold, size_t limit, inventory_fetch_handler handler) const = 0;
