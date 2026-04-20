@@ -7,6 +7,7 @@
 #ifndef KTH_CAPI_CHAIN_OPCODE_H_
 #define KTH_CAPI_CHAIN_OPCODE_H_
 
+#include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
 
 #ifdef __cplusplus

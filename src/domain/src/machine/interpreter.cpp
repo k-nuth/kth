@@ -171,6 +171,20 @@ op_result handle_op_invoke(program& prog, operation const& op,
     return {};
 }
 
+// OP_CODESEPARATOR anchors the active-bytecode-hash marker at the
+// op right after `current_idx`. Special-cased out of the uniform
+// `interpreter::run(op, prog)` dispatch because the marker needs the
+// op's script position — `run_op` tallies the base 100 op_cost for
+// every executable op it dispatches, so bypassing it means we must
+// tally the same cost manually here.
+op_result handle_op_codeseparator(program& prog, size_t current_idx) {
+    prog.get_metrics().add_op_cost(::kth::may2025::opcode_cost);
+    if ( ! prog.mark_code_separator(current_idx)) {
+        return {error::invalid_script, opcode::codeseparator};
+    }
+    return {};
+}
+
 // Non-special-form dispatch: minimaldata check, IF/ELSE/ENDIF
 // structural tracking, actual op dispatch via `interpreter::run(op)`,
 // and the post-op stack overflow check.
@@ -267,6 +281,7 @@ op_result run_script(
     auto const sz = ops.size();
 
     while (idx < sz) {
+        size_t const current_idx = idx;
         auto const& op = ops[idx];
         ++idx;
 
@@ -291,6 +306,10 @@ op_result run_script(
                                                   invoke_depth,
                                                   outer_loop_depth + loop_stack.size());
                 ! res) {
+                return res;
+            }
+        } else if (op.code() == opcode::codeseparator && prog.if_(op)) {
+            if (auto const res = handle_op_codeseparator(prog, current_idx); ! res) {
                 return res;
             }
         } else if (prog.if_(op)) {
@@ -395,13 +414,8 @@ op_result step_one(debug_snapshot& s) {
         return {error::invalid_operation_count, std::nullopt};
     }
 
-    // Must be a reference, not a copy: `op_codeseparator` ->
-    // `program::set_jump_register` locates the current op via address
-    // identity against the script's operation list, so a copy here
-    // would always miss the lookup and surface a spurious
-    // `error::invalid_script` — diverging from `run_script`, which
-    // binds the iterator by reference (line 38).
     auto const& op = ops[s.step];
+    size_t const current_idx = s.step;
     // Normal progression; OP_UNTIL may override with a backward jump.
     size_t next_step = s.step + 1;
 
@@ -426,6 +440,10 @@ op_result step_one(debug_snapshot& s) {
                                               s.invoke_depth,
                                               s.outer_loop_depth + s.loop_stack.size());
             ! res) {
+            return res;
+        }
+    } else if (op.code() == opcode::codeseparator && s.prog.if_(op)) {
+        if (auto const res = handle_op_codeseparator(s.prog, current_idx); ! res) {
             return res;
         }
     } else if (s.prog.if_(op)) {

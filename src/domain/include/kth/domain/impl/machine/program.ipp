@@ -198,34 +198,29 @@ bool program::increment_operation_count(int32_t public_keys) {
 }
 
 inline
-bool program::set_jump_register(operation const& op, int32_t offset) {
+bool program::mark_code_separator(size_t pc) {
     auto const& active = get_script();
-    if (active.empty()) {
+    auto const size = active.size();
+    // Script must be non-empty and `pc` must point at a real op
+    // (since we anchor the marker at `pc + 1`, pc == size-1 is the
+    // last valid position — target would be `end()`, which the
+    // active-bytecode-hash loop handles as "no more ops after
+    // the separator"). Replaces a prior O(N) address-identity
+    // search over the operation list, which broke silently whenever
+    // a caller passed a copy of the op instead of a reference (see
+    // the CODESEPARATOR debug-parity bug fixed in #271). The
+    // explicit `pc` argument also removes the two-call footgun of
+    // the earlier `set_pc` + `mark_code_separator` pair — callers
+    // can no longer forget to refresh the PC.
+    if (pc >= size) {
         return false;
     }
+    auto const target = active.begin() + static_cast<ptrdiff_t>(pc + 1);
 
-    auto const finder = [&op](operation const& operation) {
-        return &operation == &op;
-    };
-
-    // This is not efficient but is simplifying and subscript is rarely used.
-    // Otherwise we must track the program counter through each evaluation.
-    auto found = std::find_if(active.begin(), active.end(), finder);
-
-    if (found == active.end()) {
-        return false;
-    }
-
-    // This does not require guard because op_codeseparator can only increment.
-    // Even if the opcode is last in the sequnce the increment is valid (end).
-    KTH_ASSERT_MSG(offset == 1, "unguarded jump offset");
-
-    // Write through to the active frame if we're inside an OP_INVOKE,
-    // otherwise to the outermost state.
     if (active_frames_.empty()) {
-        jump_ = found + offset;
+        jump_ = target;
     } else {
-        active_frames_.back().jump = found + offset;
+        active_frames_.back().jump = target;
     }
     return true;
 }
