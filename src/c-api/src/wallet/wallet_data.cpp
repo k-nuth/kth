@@ -36,9 +36,10 @@ kth_wallet_data_mut_t kth_wallet_wallet_data_copy(kth_wallet_data_const_t self) 
 
 // Getters
 
-kth_string_list_const_t kth_wallet_wallet_data_mnemonics(kth_wallet_data_const_t self) {
+kth_string_list_mut_t kth_wallet_wallet_data_mnemonics(kth_wallet_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return &(kth::cpp_ref<cpp_t>(self).mnemonics);
+    auto const cpp_result = kth::cpp_ref<cpp_t>(self).mnemonics;
+    return kth::leak_list<std::string>(cpp_result.begin(), cpp_result.end());
 }
 
 kth_hd_public_const_t kth_wallet_wallet_data_xpub(kth_wallet_data_const_t self) {

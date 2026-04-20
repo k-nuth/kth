@@ -36,27 +36,27 @@ kth_block_mut_t kth_chain_block_construct(kth_header_const_t header, kth_transac
 
 // Static factories
 
-/** @return Owned `kth_block_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_block_destruct`. */
+/** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_block_mut_t kth_chain_block_genesis_mainnet(void);
 
-/** @return Owned `kth_block_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_block_destruct`. */
+/** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_block_mut_t kth_chain_block_genesis_testnet(void);
 
-/** @return Owned `kth_block_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_block_destruct`. */
+/** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_block_mut_t kth_chain_block_genesis_regtest(void);
 
-/** @return Owned `kth_block_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_block_destruct`. */
+/** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_block_mut_t kth_chain_block_genesis_testnet4(void);
 
-/** @return Owned `kth_block_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_block_destruct`. */
+/** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_block_mut_t kth_chain_block_genesis_scalenet(void);
 
-/** @return Owned `kth_block_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_block_destruct`. */
+/** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_block_mut_t kth_chain_block_genesis_chipnet(void);
 

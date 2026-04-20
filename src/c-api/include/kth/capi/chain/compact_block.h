@@ -73,9 +73,9 @@ kth_header_const_t kth_chain_compact_block_header(kth_compact_block_const_t self
 KTH_EXPORT
 uint64_t kth_chain_compact_block_nonce(kth_compact_block_const_t self);
 
-/** @return Borrowed `kth_u64_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
-KTH_EXPORT
-kth_u64_list_const_t kth_chain_compact_block_short_ids(kth_compact_block_const_t self);
+/** @return Owned `kth_u64_list_mut_t`. Caller must release with `kth_core_u64_list_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_u64_list_mut_t kth_chain_compact_block_short_ids(kth_compact_block_const_t self);
 
 /** @return Borrowed `kth_prefilled_transaction_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT

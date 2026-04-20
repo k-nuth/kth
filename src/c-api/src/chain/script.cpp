@@ -124,7 +124,7 @@ kth_operation_list_const_t kth_chain_script_operations(kth_script_const_t self) 
 
 kth_operation_mut_t kth_chain_script_first_operation(kth_script_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).first_operation());
+    return kth::leak(kth::cpp_ref<cpp_t>(self).first_operation());
 }
 
 kth_script_pattern_t kth_chain_script_pattern(kth_script_const_t self) {
@@ -132,7 +132,7 @@ kth_script_pattern_t kth_chain_script_pattern(kth_script_const_t self) {
     return kth::script_pattern_to_c(kth::cpp_ref<cpp_t>(self).pattern());
 }
 
-kth_script_pattern_t kth_chain_script_output_pattern(kth_script_const_t self) {
+kth_script_pattern_t kth_chain_script_output_pattern_simple(kth_script_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::script_pattern_to_c(kth::cpp_ref<cpp_t>(self).output_pattern());
 }
@@ -293,6 +293,11 @@ kth_operation_const_t kth_chain_script_at(kth_script_const_t self, kth_size_t in
     KTH_PRECONDITION(index < kth::cpp_ref<cpp_t>(self).size());
     auto const index_cpp = kth::sz(index);
     return &(kth::cpp_ref<cpp_t>(self).operator[](index_cpp));
+}
+
+kth_script_pattern_t kth_chain_script_output_pattern(kth_script_const_t self, kth_script_flags_t flags) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::script_pattern_to_c(kth::cpp_ref<cpp_t>(self).output_pattern(flags));
 }
 
 kth_size_t kth_chain_script_sigops(kth_script_const_t self, kth_bool_t accurate) {
