@@ -163,6 +163,7 @@ set(kth_sources
   src/double_list.cpp
   src/u32_list.cpp
   src/u64_list.cpp
+  src/bool_list.cpp
 
 
   src/chain/opcode.cpp
@@ -192,6 +193,9 @@ set(kth_sources
 
   src/node/settings.cpp
 
+  src/vm/debug_snapshot.cpp
+  src/vm/debug_snapshot_list.cpp
+  src/vm/function_table.cpp
   src/vm/interpreter.cpp
   src/vm/program.cpp
 
@@ -519,6 +523,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/wallet/wallet_data.cpp
         test/vm/program.cpp
         test/vm/interpreter.cpp
+        test/vm/function_table.cpp
     )
 
     target_link_libraries(kth_capi_test PUBLIC ${PROJECT_NAME})

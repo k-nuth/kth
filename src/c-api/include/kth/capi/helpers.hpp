@@ -406,9 +406,18 @@ std::basic_string<CharT> create_cpp_str(CharT const* str) {
 template <typename N>
 inline
 uint8_t* create_c_array(kth::data_chunk const& arr, N& out_size) {
-    auto* ret = mnew<uint8_t>(arr.size());
-    out_size = arr.size();
-    std::copy_n(arr.begin(), arr.size(), ret);
+    // Allocate at least 1 byte so the returned pointer is non-NULL
+    // even when `arr.size() == 0`. `malloc(0)` is implementation-
+    // defined: some platforms return NULL, which would make
+    // present-but-empty buffers indistinguishable from an absent-key
+    // signal at call sites that use NULL to mean "not found" (e.g.
+    // map `at()` accessors). The caller still reads only
+    // `out_size == arr.size()` bytes; `kth_core_destruct_array` frees
+    // the buffer regardless of size.
+    auto const n = arr.size();
+    auto* ret = mnew<uint8_t>(n != 0 ? n : 1);
+    out_size = n;
+    std::copy_n(arr.begin(), n, ret);
     return ret;
 }
 
