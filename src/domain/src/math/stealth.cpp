@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/constants.hpp>
-#include <kth/infrastructure/machine/script_pattern.hpp>
+#include <kth/domain/machine/script_pattern.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/binary.hpp>

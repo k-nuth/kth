@@ -18,7 +18,7 @@
 #include <kth/domain/define.hpp>
 //#include <kth/infrastructure/define.hpp>
 
-#include <kth/infrastructure/machine/script_pattern.hpp>
+#include <kth/domain/machine/script_pattern.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>

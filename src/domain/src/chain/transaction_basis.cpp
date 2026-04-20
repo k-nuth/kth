@@ -34,6 +34,7 @@
 #include <kth/infrastructure/utility/ostream_writer.hpp>
 
 using namespace kth::infrastructure::machine;
+using namespace kth::domain::machine;
 
 #if defined(KTH_CURRENCY_BCH)
 #include <boost/container_hash/hash.hpp>

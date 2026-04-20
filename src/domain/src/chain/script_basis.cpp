@@ -25,7 +25,7 @@
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
-#include <kth/infrastructure/machine/script_pattern.hpp>
+#include <kth/domain/machine/script_pattern.hpp>
 #include <kth/infrastructure/machine/script_version.hpp>
 #include <kth/infrastructure/machine/sighash_algorithm.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>

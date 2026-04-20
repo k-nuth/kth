@@ -20,27 +20,27 @@ typedef enum {
     /// Pay to Multisig [BIP11]
     /// Pubkey script: <m> <A pubkey>[B pubkey][C pubkey...] <n> OP_CHECKMULTISIG
     /// Signature script: OP_0 <A sig>[B sig][C sig...]
-    kth_script_pattern_pay_multisig,
+    kth_script_pattern_pay_to_multisig,
 
     /// Pay to Public Key (obsolete)
-    kth_script_pattern_pay_public_key,
+    kth_script_pattern_pay_to_public_key,
 
     /// Pay to Public Key Hash [P2PKH]
     /// Pubkey script: OP_DUP OP_HASH160 <PubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
     /// Signature script: <sig> <pubkey>
-    kth_script_pattern_pay_public_key_hash,
+    kth_script_pattern_pay_to_public_key_hash,
 
     /// Pay to Script Hash [P2SH/BIP16]
     /// The redeem script may be any pay type, but only multisig makes sense.
     /// Pubkey script: OP_HASH160 <Hash160(redeemScript)> OP_EQUAL
     /// Signature script: <sig>[sig][sig...] <redeemScript>
-    kth_script_pattern_pay_script_hash,
+    kth_script_pattern_pay_to_script_hash,
 
     /// Pay to Script Hash 32
     /// The redeem script may be any pay type, but only multisig makes sense.
     /// Pubkey script: OP_HASH256 <Hash256(redeemScript)> OP_EQUAL
     /// Signature script: <sig>[sig][sig...] <redeemScript>
-    kth_script_pattern_pay_script_hash_32,
+    kth_script_pattern_pay_to_script_hash_32,
 
     /// Sign Multisig script [BIP11]
     kth_script_pattern_sign_multisig,
