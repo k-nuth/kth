@@ -127,6 +127,96 @@ struct debug_snapshot {
 struct KD_API interpreter {
     using result = op_result;
 
+    /// Run program script end-to-end. On failure, `op_result::op`
+    /// names the opcode that raised the error (when one is
+    /// attributable — end-of-script structural errors leave it empty).
+    static
+    op_result run(program& program);
+
+    /// Run a single operation outside of the script driver. Prefer
+    /// `run(program&)` for a full script — this overload is for tests
+    /// and the C-API step-one-op path.
+    static
+    op_result run(operation const& op, program& program);
+
+
+// Debug step by step
+// ----------------------------------------------------------------------------
+//
+// All debug primitives take `debug_snapshot` by value so each call
+// naturally produces a new snapshot; the caller keeps prior
+// snapshots to rewind. `snapshot.step` is the program counter;
+// `snapshot.prog.size()` / `snapshot.prog.get_metrics()` and the
+// other `program` observers expose the live execution state.
+
+    /// Open a debug session. Validates the program and returns an
+    /// initial snapshot at step 0.
+    static
+    debug_snapshot debug_begin(program prog);
+
+    /// Execute one op, return the new snapshot. Caller keeps the
+    /// prior snapshot if they want to rewind.
+    static
+    debug_snapshot debug_step(debug_snapshot snapshot);
+
+    /// Execute up to `n` steps (or until done / error).
+    static
+    debug_snapshot debug_step_n(debug_snapshot snapshot, size_t n);
+
+    /// Step until the predicate returns `true` on the post-step
+    /// snapshot (or until done / error). Covers the usual debugger
+    /// breakpoints: by PC, by opcode, on error, on stack-depth
+    /// threshold, etc.
+    static
+    debug_snapshot debug_step_until(
+        debug_snapshot snapshot,
+        std::function<bool(debug_snapshot const&)> const& predicate);
+
+    /// Run to completion without stopping.
+    static
+    debug_snapshot debug_run(debug_snapshot snapshot);
+
+    /// Run to completion and return the full trace: the initial
+    /// snapshot at index 0, followed by one post-step snapshot per
+    /// op executed. For an N-op script the result has N + 1
+    /// entries. Use to record a trace for rewind / display /
+    /// analysis. Expensive for long scripts; prefer `debug_run`
+    /// when you only need the final state.
+    static
+    std::vector<debug_snapshot> debug_run_traced(debug_snapshot start);
+
+    /// Validate the "script closed" post-condition and return the
+    /// final result. Returns the earlier error if the snapshot
+    /// already recorded one.
+    static
+    op_result debug_finalize(debug_snapshot const& snapshot);
+
+
+private:
+    // All `op_*` helpers below are the dispatch targets of `run_op`
+    // (the internal per-opcode switch). They are kept `static` to
+    // match the free-function convention the interpreter was built
+    // around, but they are NOT part of the public C++/C-API surface
+    // — external callers should drive full scripts through `run(...)`
+    // or the debug API. The `private:` section hides them from the
+    // C-API generator so it doesn't produce bindings for 100+
+    // internal helpers.
+
+    static
+    result run_op(operation const& op, program& program);
+
+    /// Helper function for common Native Introspection validations
+    static
+    result validate_native_introspection(program const& program, opcode op_code);
+
+    /// Helper function for Token Introspection validations (requires bch_tokens)
+    static
+    result validate_token_introspection(program const& program, opcode op_code);
+
+    /// Helper function for post-processing Native Introspection push operations
+    static
+    void post_process_introspection_push(program& program, data_chunk const& data);
+
     // Operations (shared).
     //-----------------------------------------------------------------------------
 
@@ -439,83 +529,6 @@ struct KD_API interpreter {
     static
     result op_output_token_amount(program& program);
 
-    /// Run program script end-to-end. On failure, `op_result::op`
-    /// names the opcode that raised the error (when one is
-    /// attributable — end-of-script structural errors leave it empty).
-    static
-    op_result run(program& program);
-
-    /// Run a single operation outside of the script driver. Prefer
-    /// `run(program&)` for a full script — this overload is for tests
-    /// and the C-API step-one-op path.
-    static
-    op_result run(operation const& op, program& program);
-
-
-// Debug step by step
-// ----------------------------------------------------------------------------
-//
-// All debug primitives take `debug_snapshot` by value so each call
-// naturally produces a new snapshot; the caller keeps prior
-// snapshots to rewind. `snapshot.step` is the program counter;
-// `snapshot.prog.size()` / `snapshot.prog.get_metrics()` and the
-// other `program` observers expose the live execution state.
-
-    /// Open a debug session. Validates the program and returns an
-    /// initial snapshot at step 0.
-    static
-    debug_snapshot debug_begin(program prog);
-
-    /// Execute one op, return the new snapshot. Caller keeps the
-    /// prior snapshot if they want to rewind.
-    static
-    debug_snapshot debug_step(debug_snapshot snapshot);
-
-    /// Execute up to `n` steps (or until done / error).
-    static
-    debug_snapshot debug_step_n(debug_snapshot snapshot, size_t n);
-
-    /// Step until the predicate returns `true` on the post-step
-    /// snapshot (or until done / error). Covers the usual debugger
-    /// breakpoints: by PC, by opcode, on error, on stack-depth
-    /// threshold, etc.
-    static
-    debug_snapshot debug_step_until(
-        debug_snapshot snapshot,
-        std::function<bool(debug_snapshot const&)> const& predicate);
-
-    /// Run to completion without stopping.
-    static
-    debug_snapshot debug_run(debug_snapshot snapshot);
-
-    /// Run to completion and return every post-step snapshot,
-    /// including the initial one. Use to record a full trace for
-    /// rewind / display / analysis. Expensive for long scripts;
-    /// prefer `debug_run` when you only need the final state.
-    static
-    std::vector<debug_snapshot> debug_run_traced(debug_snapshot start);
-
-    /// Validate the "script closed" post-condition and return the
-    /// final result. Returns the earlier error if the snapshot
-    /// already recorded one.
-    static
-    op_result debug_finalize(debug_snapshot const& snapshot);
-
-private:
-    static
-    result run_op(operation const& op, program& program);
-
-    /// Helper function for common Native Introspection validations
-    static
-    result validate_native_introspection(program const& program, opcode op_code);
-
-    /// Helper function for Token Introspection validations (requires bch_tokens)
-    static
-    result validate_token_introspection(program const& program, opcode op_code);
-
-    /// Helper function for post-processing Native Introspection push operations
-    static
-    void post_process_introspection_push(program& program, data_chunk const& data);
 };
 
 } // namespace kth::domain::machine

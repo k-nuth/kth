@@ -186,6 +186,8 @@ typedef void* kth_u32_list_mut_t;
 typedef void const* kth_u32_list_const_t;
 typedef void* kth_u64_list_mut_t;
 typedef void const* kth_u64_list_const_t;
+typedef void* kth_bool_list_mut_t;
+typedef void const* kth_bool_list_const_t;
 
 typedef void* kth_wallet_data_mut_t;
 typedef void const* kth_wallet_data_const_t;
@@ -206,6 +208,26 @@ typedef void* kth_metrics_mut_t;
 typedef void const* kth_metrics_const_t;
 typedef void* kth_program_mut_t;
 typedef void const* kth_program_const_t;
+typedef void* kth_debug_snapshot_mut_t;
+typedef void const* kth_debug_snapshot_const_t;
+typedef void* kth_debug_snapshot_list_mut_t;
+typedef void const* kth_debug_snapshot_list_const_t;
+typedef void* kth_function_table_mut_t;
+typedef void const* kth_function_table_const_t;
+
+// `interpreter::debug_step_until` predicate: fires on each post-step
+// snapshot. Return non-zero to stop stepping, zero to continue. The
+// snapshot handle is borrowed (do not destruct); `user_data` is the
+// pointer the caller passed alongside the predicate.
+//
+// MUST NOT throw (when compiled as C++): the C++ runtime does not
+// propagate exceptions across the `extern "C"` boundary, and an
+// exception thrown by this callback would unwind through
+// `interpreter::debug_step_until` — undefined behaviour. Convert
+// exceptional conditions in the predicate body into a "stop" signal
+// (return non-zero, stash the diagnostic in `user_data`) instead.
+typedef kth_bool_t (*kth_debug_step_predicate_t)(
+    kth_debug_snapshot_const_t snapshot, void* user_data);
 
 
 // helper functions

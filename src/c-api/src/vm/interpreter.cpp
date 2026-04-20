@@ -4,58 +4,78 @@
 
 #include <kth/capi/vm/interpreter.h>
 
-#include <kth/capi/helpers.hpp>
 #include <kth/capi/conversions.hpp>
+#include <kth/capi/helpers.hpp>
+#include <kth/domain/machine/interpreter.hpp>
 
-#include <kth/domain/machine/program.hpp>
+// File-local alias so `kth::cpp_ref<T>(...)` and friends don't
+// spell out the full qualified C++ name at every call site.
+namespace {
+using cpp_t = kth::domain::machine::interpreter;
+} // namespace
 
 // ---------------------------------------------------------------------------
 extern "C" {
 
-kth_error_code_t kth_vm_interpreter_run(kth_program_mut_t program) {
-    auto const result = kth::domain::machine::interpreter::run(
-        kth::cpp_ref<kth::domain::machine::program>(program));
-    return kth::to_c_err(result.error);
+// Static utilities
+
+kth_error_code_t kth_vm_interpreter_run_simple(kth_program_mut_t program) {
+    KTH_PRECONDITION(program != nullptr);
+    auto& program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::to_c_err(cpp_t::run(program_cpp).error);
 }
 
-kth_error_code_t kth_vm_interpreter_run_operation(kth_operation_t operation, kth_program_mut_t program) {
-    auto const result = kth::domain::machine::interpreter::run(
-        kth::cpp_ref<kth::domain::machine::operation>(operation),
-        kth::cpp_ref<kth::domain::machine::program>(program)
-    );
-    return kth::to_c_err(result.error);
+kth_error_code_t kth_vm_interpreter_run(kth_operation_const_t op, kth_program_mut_t program) {
+    KTH_PRECONDITION(op != nullptr);
+    KTH_PRECONDITION(program != nullptr);
+    auto const& op_cpp = kth::cpp_ref<kth::domain::machine::operation>(op);
+    auto& program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+    return kth::to_c_err(cpp_t::run(op_cpp, program_cpp).error);
 }
 
-
-// Debug-session bindings: the underlying C++ API was reshaped around
-// a value `debug_snapshot` that carries the program + last result +
-// done flag. The handle-based shims below stay in place just to keep
-// this translation unit compiling; they will be replaced with the
-// real opaque-handle bindings in a follow-up.
-
-kth_error_code_t kth_vm_interpreter_debug_start(kth_program_const_t program, kth_size_t* out_step) {
-    (void)program;
-    if (out_step != nullptr) *out_step = 0;
-    return kth::to_c_err(kth::error::not_implemented);
+kth_debug_snapshot_mut_t kth_vm_interpreter_debug_begin(kth_program_const_t prog) {
+    KTH_PRECONDITION(prog != nullptr);
+    auto const& prog_cpp = kth::cpp_ref<kth::domain::machine::program>(prog);
+    return kth::leak(cpp_t::debug_begin(prog_cpp));
 }
 
-kth_bool_t kth_vm_interpreter_debug_steps_available(kth_program_const_t program, kth_size_t step) {
-    (void)program;
-    (void)step;
-    return 0;
+kth_debug_snapshot_mut_t kth_vm_interpreter_debug_step(kth_debug_snapshot_const_t snapshot) {
+    KTH_PRECONDITION(snapshot != nullptr);
+    auto const& snapshot_cpp = kth::cpp_ref<kth::domain::machine::debug_snapshot>(snapshot);
+    return kth::leak(cpp_t::debug_step(snapshot_cpp));
 }
 
-kth_error_code_t kth_vm_interpreter_debug_step(kth_program_const_t program, kth_size_t step, kth_size_t* out_step, kth_program_mut_t* out_program) {
-    (void)program;
-    (void)step;
-    if (out_step != nullptr) *out_step = 0;
-    if (out_program != nullptr) *out_program = nullptr;
-    return kth::to_c_err(kth::error::not_implemented);
+kth_debug_snapshot_mut_t kth_vm_interpreter_debug_step_n(kth_debug_snapshot_const_t snapshot, kth_size_t n) {
+    KTH_PRECONDITION(snapshot != nullptr);
+    auto const& snapshot_cpp = kth::cpp_ref<kth::domain::machine::debug_snapshot>(snapshot);
+    auto const n_cpp = kth::sz(n);
+    return kth::leak(cpp_t::debug_step_n(snapshot_cpp, n_cpp));
 }
 
-kth_error_code_t kth_vm_interpreter_debug_end(kth_program_const_t program) {
-    (void)program;
-    return kth::to_c_err(kth::error::not_implemented);
+kth_debug_snapshot_mut_t kth_vm_interpreter_debug_step_until(kth_debug_snapshot_const_t snapshot, kth_debug_step_predicate_t predicate, void* predicate_user_data) {
+    KTH_PRECONDITION(snapshot != nullptr);
+    KTH_PRECONDITION(predicate != nullptr);
+    auto const& snapshot_cpp = kth::cpp_ref<kth::domain::machine::debug_snapshot>(snapshot);
+    auto const predicate_cpp = [predicate, predicate_user_data](kth::domain::machine::debug_snapshot const& snap) -> bool { return predicate(&snap, predicate_user_data) != 0; };
+    return kth::leak(cpp_t::debug_step_until(snapshot_cpp, predicate_cpp));
+}
+
+kth_debug_snapshot_mut_t kth_vm_interpreter_debug_run(kth_debug_snapshot_const_t snapshot) {
+    KTH_PRECONDITION(snapshot != nullptr);
+    auto const& snapshot_cpp = kth::cpp_ref<kth::domain::machine::debug_snapshot>(snapshot);
+    return kth::leak(cpp_t::debug_run(snapshot_cpp));
+}
+
+kth_debug_snapshot_list_mut_t kth_vm_interpreter_debug_run_traced(kth_debug_snapshot_const_t start) {
+    KTH_PRECONDITION(start != nullptr);
+    auto const& start_cpp = kth::cpp_ref<kth::domain::machine::debug_snapshot>(start);
+    return kth::leak_list<kth::domain::machine::debug_snapshot>(cpp_t::debug_run_traced(start_cpp));
+}
+
+kth_error_code_t kth_vm_interpreter_debug_finalize(kth_debug_snapshot_const_t snapshot) {
+    KTH_PRECONDITION(snapshot != nullptr);
+    auto const& snapshot_cpp = kth::cpp_ref<kth::domain::machine::debug_snapshot>(snapshot);
+    return kth::to_c_err(cpp_t::debug_finalize(snapshot_cpp).error);
 }
 
 } // extern "C"
