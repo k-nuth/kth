@@ -235,6 +235,23 @@ TEST_CASE("run(op, program) reports the opcode on failure",
     REQUIRE(*result.op == opcode::verify);
 }
 
+TEST_CASE("run(op, program) rejects OP_CODESEPARATOR standalone",
+          "[interpreter][run][codeseparator]") {
+    // OP_CODESEPARATOR needs the op's index in the active script to
+    // anchor the active-bytecode-hash marker. The single-op driver
+    // doesn't have that context (it runs an op against an arbitrary
+    // program, with no script position), so it must refuse rather
+    // than fabricating a position. The full-script / debug paths
+    // special-case codeseparator in their per-op loops and call
+    // `program::mark_code_separator(current_idx)` directly.
+    program prog;
+    auto const result = interpreter::run(operation(opcode::codeseparator), prog);
+    REQUIRE_FALSE(bool(result));
+    REQUIRE(result.error == error::not_implemented);
+    REQUIRE(result.op.has_value());
+    REQUIRE(*result.op == opcode::codeseparator);
+}
+
 // ---------------------------------------------------------------------------
 // Error propagation through debug_step
 // ---------------------------------------------------------------------------
@@ -273,17 +290,15 @@ TEST_CASE("debug_run stops on error and preserves the error snapshot",
 // run / debug parity regressions
 // ---------------------------------------------------------------------------
 
-// `OP_CODESEPARATOR` updates the "active" jump register by doing an
-// address-identity search over the script's operation list
-// (see `program::set_jump_register`: `&operation == &op`). In
-// `run_script` the loop binds the current op as a reference
-// (`auto const& op = *it;`), which matches by address. A prior
-// revision of `step_one` bound it by value (`auto const op = ops[s.step];`),
-// which always failed the identity check and bubbled
-// `error::invalid_script, opcode::codeseparator` up through the
-// debug path — even though `run()` on the same script succeeded.
-//
-// This test pins both paths.
+// `OP_CODESEPARATOR` updates the "active" jump register via the PC
+// that the interpreter loop publishes before each op dispatch (see
+// `program::mark_code_separator(pc)`). An earlier
+// revision did an address-identity search over the script's operation
+// list, which silently broke whenever a caller happened to pass a
+// copy of the op instead of a reference (`step_one` had exactly that
+// bug — `run()` succeeded but `debug_run()` reported
+// `error::invalid_script, opcode::codeseparator`). This test pins
+// both paths against regression across the whole mechanism.
 TEST_CASE("OP_CODESEPARATOR succeeds through run() and debug_run() alike",
           "[interpreter][debug][parity]") {
     auto scr = script_of({
@@ -305,6 +320,39 @@ TEST_CASE("OP_CODESEPARATOR succeeds through run() and debug_run() alike",
         REQUIRE(snap.done);
         REQUIRE(bool(snap.last));
     }
+}
+
+// Pin `active_frame::pc` (the per-frame mirror of the outermost PC
+// introduced by the PC-based mark_code_separator refactor). OP_INVOKE a
+// function whose body is `OP_CODESEPARATOR OP_ACTIVEBYTECODE`: the
+// CODESEPARATOR must anchor jump at the callee frame's post-separator
+// position, and the subsequent OP_ACTIVEBYTECODE read must see only
+// the bytes after it — i.e. a single `0xc1`. Regresses to the wrong
+// script if the frame-local PC isn't updated correctly.
+TEST_CASE("OP_CODESEPARATOR inside OP_INVOKE anchors per-frame PC",
+          "[interpreter][invoke][codeseparator]") {
+    auto const body = data_chunk{
+        static_cast<uint8_t>(opcode::codeseparator),
+        static_cast<uint8_t>(opcode::active_bytecode),
+    };
+    auto scr = script_of({
+        operation(body),
+        operation(opcode::push_size_0),
+        operation(opcode::op_define),
+        operation(opcode::push_size_0),
+        operation(opcode::op_invoke),
+    });
+    auto const flags = script_flags::bch_subroutines
+                     | script_flags::bch_native_introspection;
+
+    program prog(scr, dummy_tx(), 0, flags, 0);
+    auto const result = interpreter::run(prog);
+    REQUIRE(bool(result));
+    // Top of stack is the active bytecode as seen AFTER OP_CODESEPARATOR
+    // in the callee's body — just the OP_ACTIVEBYTECODE byte itself.
+    REQUIRE(prog.top() == data_chunk{
+        static_cast<uint8_t>(opcode::active_bytecode)
+    });
 }
 
 // On nested `OP_INVOKE` failure, `run_script` propagates the inner

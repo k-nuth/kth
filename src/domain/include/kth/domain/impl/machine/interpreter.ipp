@@ -1580,11 +1580,19 @@ interpreter::result interpreter::op_hash256(program& program) {
     return {};
 }
 
+// `op_codeseparator` is intentionally NOT dispatched through
+// `interpreter::run(op, program)` anymore — `mark_code_separator`
+// needs the op's index in the active script (taken as an argument,
+// not recovered from state), and `run(op, program)` has no way to
+// supply it. The per-op loops in `interpreter.cpp` call
+// `program.mark_code_separator(idx)` directly for OP_CODESEPARATOR;
+// callers that hand a codeseparator op to `run(op, program)` get
+// the dispatch switch's default case (`error::op_not_implemented`),
+// which is the honest answer — codeseparator has no standalone
+// semantics outside a scripted run.
 inline
-interpreter::result interpreter::op_codeseparator(program& program, operation const& op) {
-    return program.set_jump_register(op, +1)
-        ? interpreter::result{}
-        : interpreter::result{error::invalid_script, opcode::codeseparator};
+interpreter::result interpreter::op_codeseparator(program& /*program*/, operation const& /*op*/) {
+    return {error::not_implemented, opcode::codeseparator};
 }
 
 // Helper function to validate public key encoding

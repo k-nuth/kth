@@ -175,16 +175,6 @@ kth_bool_t kth_vm_program_succeeded(kth_program_const_t self) {
 }
 
 
-// Setters
-
-kth_bool_t kth_vm_program_set_jump_register(kth_program_mut_t self, kth_operation_const_t op, int32_t offset) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(op != nullptr);
-    auto const& op_cpp = kth::cpp_ref<kth::domain::machine::operation>(op);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).set_jump_register(op_cpp, offset));
-}
-
-
 // Predicates
 
 kth_bool_t kth_vm_program_is_valid(kth_program_const_t self) {
@@ -243,6 +233,12 @@ kth_bool_t kth_vm_program_increment_operation_count_operation(kth_program_mut_t 
 kth_bool_t kth_vm_program_increment_operation_count_int32(kth_program_mut_t self, int32_t public_keys) {
     KTH_PRECONDITION(self != nullptr);
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).increment_operation_count(public_keys));
+}
+
+kth_bool_t kth_vm_program_mark_code_separator(kth_program_mut_t self, kth_size_t pc) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const pc_cpp = kth::sz(pc);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).mark_code_separator(pc_cpp));
 }
 
 void kth_vm_program_push(kth_program_mut_t self, kth_bool_t value) {

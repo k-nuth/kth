@@ -180,8 +180,16 @@ struct KD_API program {
     bool increment_operation_count(operation const& op);
     [[nodiscard]]
     bool increment_operation_count(int32_t public_keys);
+    /// Anchor the active-bytecode-hash marker at the op immediately
+    /// after `pc` (the zero-based index of the `OP_CODESEPARATOR` in
+    /// the active script — the only opcode in Bitcoin script that
+    /// touches this marker). Taking `pc` as an explicit argument
+    /// avoids hidden program-level state that callers would otherwise
+    /// have to publish separately before each dispatch. Returns
+    /// `false` if the active script is empty or `pc` is out-of-range
+    /// (guards the C-API surface against UB from a mis-sized index).
     [[nodiscard]]
-    bool set_jump_register(operation const& op, int32_t offset);
+    bool mark_code_separator(size_t pc);
 
     // Primary stack.
     //-------------------------------------------------------------------------

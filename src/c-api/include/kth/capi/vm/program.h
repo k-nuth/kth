@@ -138,13 +138,6 @@ KTH_EXPORT
 kth_bool_t kth_vm_program_succeeded(kth_program_const_t self);
 
 
-// Setters
-
-/** @param op Borrowed input. Copied by value into the resulting object; ownership of `op` stays with the caller. */
-KTH_EXPORT
-kth_bool_t kth_vm_program_set_jump_register(kth_program_mut_t self, kth_operation_const_t op, int32_t offset);
-
-
 // Predicates
 
 KTH_EXPORT
@@ -179,6 +172,9 @@ kth_bool_t kth_vm_program_increment_operation_count_operation(kth_program_mut_t 
 
 KTH_EXPORT
 kth_bool_t kth_vm_program_increment_operation_count_int32(kth_program_mut_t self, int32_t public_keys);
+
+KTH_EXPORT
+kth_bool_t kth_vm_program_mark_code_separator(kth_program_mut_t self, kth_size_t pc);
 
 KTH_EXPORT
 void kth_vm_program_push(kth_program_mut_t self, kth_bool_t value);
