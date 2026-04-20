@@ -959,6 +959,20 @@ script_pattern script::output_pattern() const {
     return script_pattern::non_standard;
 }
 
+script_pattern script::output_pattern(script_flags_t flags) const {
+    auto const base = output_pattern();
+    if (base != script_pattern::non_standard) {
+        return base;
+    }
+    // BCH 2026-May leibniz: anything that hasn't matched above and fits
+    // within the P2S size bound counts as pay-to-script.
+    if (script::is_enabled(flags, script_flags::bch_p2s) &&
+        serialized_size(false) <= max_p2s_script_size) {
+        return script_pattern::pay_to_script;
+    }
+    return script_pattern::non_standard;
+}
+
 // A sign_public_key_hash result always implies sign_script_hash as well.
 // The bip34 coinbase pattern is not tested here, must test independently.
 script_pattern script::input_pattern() const {

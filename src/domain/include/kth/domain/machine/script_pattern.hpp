@@ -42,6 +42,14 @@ enum class script_pattern {
     /// Signature script: <sig>[sig][sig...] <redeemScript>
     pay_to_script_hash_32,
 
+    /// Pay to Script [BCH 2026-May leibniz]
+    /// Catch-all standard template: any scriptPubKey that doesn't match
+    /// one of the templates above and whose raw byte size fits within
+    /// `max_p2s_script_size` (201 bytes). Only recognised when the
+    /// `bch_p2s` flag is active; before activation these scripts are
+    /// classified as `non_standard`.
+    pay_to_script,
+
     /// Sign Multisig script [BIP11]
     sign_multisig,
 
@@ -80,6 +88,7 @@ std::string_view to_string(script_pattern p) {
         case script_pattern::pay_to_public_key_hash:    return "pay_to_public_key_hash";
         case script_pattern::pay_to_script_hash:        return "pay_to_script_hash";
         case script_pattern::pay_to_script_hash_32:     return "pay_to_script_hash_32";
+        case script_pattern::pay_to_script:             return "pay_to_script";
         case script_pattern::sign_multisig:             return "sign_multisig";
         case script_pattern::sign_public_key:           return "sign_public_key";
         case script_pattern::sign_public_key_hash:      return "sign_public_key_hash";

@@ -71,6 +71,11 @@ constexpr size_t max_witness_program_script = max_witness_program_data + witness
 // Policy.
 constexpr size_t max_null_data_size = 80;
 
+// Pay-to-Script (P2S): 2026-May leibniz activates a catch-all standard
+// template for any non-matching scriptPubKey whose raw byte size fits
+// within this bound. Mirrors BCHN's `MAX_P2S_SCRIPT_SIZE`.
+constexpr size_t max_p2s_script_size = 201;
+
 // Various validation constants.
 //-----------------------------------------------------------------------------
 

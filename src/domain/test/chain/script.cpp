@@ -442,6 +442,147 @@ TEST_CASE("script pattern - 17 of 17 multisig - non standard", "[script]") {
     REQUIRE(instance.pattern() == domain::machine::script_pattern::non_standard);
 }
 
+// ─── Pay-to-Script (P2S) — BCH 2026-May leibniz ──────────────────────────────
+
+TEST_CASE("script pattern - P2S - bch_p2s inactive keeps short bare scripts non_standard",
+          "[script]") {
+    // A bare OP_1 script is not P2PK / P2PKH / P2SH / P2SH32 / multisig /
+    // null-data, and is 1 byte. Before bch_p2s activates it's non_standard.
+    script instance;
+    REQUIRE(instance.from_string("1"));
+    REQUIRE(instance.is_valid());
+    REQUIRE(instance.output_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.output_pattern(script_flags::no_rules) == domain::machine::script_pattern::non_standard);
+}
+
+TEST_CASE("script pattern - P2S - bch_p2s active + size <= 201 reports pay_to_script",
+          "[script]") {
+    script instance;
+    REQUIRE(instance.from_string("1"));
+    REQUIRE(instance.is_valid());
+    REQUIRE(instance.serialized_size(false) <= max_p2s_script_size);
+    REQUIRE(instance.output_pattern(script_flags::bch_p2s) == domain::machine::script_pattern::pay_to_script);
+}
+
+TEST_CASE("script pattern - P2S - bch_p2s active at the 201-byte boundary is standard",
+          "[script]") {
+    // Mirrors BCHN `script_standard_Solver_success`, "TX_SCRIPT (at 201 limit)":
+    // a non-matching script whose serialised size equals `max_p2s_script_size`
+    // is still promoted to `pay_to_script`. Exactly 201 bytes, produced by 201
+    // OP_NOP ops (0x61 one byte each).
+    std::string boundary;
+    boundary.reserve(201 * 4);
+    for (int i = 0; i < 201; ++i) {
+        if (i != 0) boundary += ' ';
+        boundary += "nop";
+    }
+    script instance;
+    REQUIRE(instance.from_string(boundary));
+    REQUIRE(instance.is_valid());
+    REQUIRE(instance.serialized_size(false) == max_p2s_script_size);
+    REQUIRE(instance.output_pattern(script_flags::bch_p2s) == domain::machine::script_pattern::pay_to_script);
+}
+
+TEST_CASE("script pattern - P2S - bch_p2s active but size > 201 stays non_standard",
+          "[script]") {
+    // Build a 202-byte bare script (no recognised template): 202 one-byte
+    // OP_NOP pushes. OP_NOP is opcode 0x61, one byte each.
+    std::string big;
+    big.reserve(202 * 4);
+    for (int i = 0; i < 202; ++i) {
+        if (i != 0) big += ' ';
+        big += "nop";
+    }
+    script instance;
+    REQUIRE(instance.from_string(big));
+    REQUIRE(instance.is_valid());
+    REQUIRE(instance.serialized_size(false) > max_p2s_script_size);
+    REQUIRE(instance.output_pattern(script_flags::bch_p2s) == domain::machine::script_pattern::non_standard);
+}
+
+TEST_CASE("script pattern - P2S - witness-like scriptPubKey promotes to pay_to_script",
+          "[script]") {
+    // Mirrors BCHN's `TX_WITNESS_V0_KEYHASH` vector: `OP_0 <20-byte>` is not
+    // a recognised template on BCH (BCH doesn't do witness), so before P2S
+    // it was `non_standard`; with `bch_p2s` active it falls into the
+    // catch-all and gets classified as `pay_to_script`.
+    script instance;
+    REQUIRE(instance.from_string("0 [0000000000000000000000000000000000000000]"));
+    REQUIRE(instance.is_valid());
+    REQUIRE(instance.output_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.output_pattern(script_flags::bch_p2s) == domain::machine::script_pattern::pay_to_script);
+}
+
+TEST_CASE("script pattern - P2S - mutated P2PKH (wrong hash size) falls into pay_to_script",
+          "[script]") {
+    // Mirrors BCHN's `script_standard_Solver_failure`, "TX_PUBKEYHASH with
+    // incorrectly sized key hash": P2PKH requires exactly 20 bytes, so a
+    // 21-byte payload is non_standard pre-P2S and `pay_to_script` after.
+    // 33-byte pubkey substituted into a P2PKH template exercises the same
+    // mutation-path BCHN covers.
+    script instance;
+    REQUIRE(instance.from_string(
+        "dup hash160 "
+        "[0200000000000000000000000000000000000000000000000000000000000000aa] "
+        "equalverify checksig"));
+    REQUIRE(instance.is_valid());
+    REQUIRE(instance.output_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.output_pattern(script_flags::bch_p2s) == domain::machine::script_pattern::pay_to_script);
+}
+
+TEST_CASE("script pattern - P2S - known templates take precedence over P2S classification",
+          "[script]") {
+    // A null_data scriptPubKey is still classified as null_data, not P2S,
+    // even with bch_p2s active.
+    script instance;
+    REQUIRE(instance.from_string("return [deadbeef]"));
+    REQUIRE(instance.is_valid());
+    REQUIRE(instance.output_pattern(script_flags::bch_p2s) == domain::machine::script_pattern::null_data);
+}
+
+TEST_CASE("script pattern - P2S - catch-all applies to output scripts only",
+          "[script]") {
+    // BCHN's P2S standardness relaxation is asymmetric: only scriptPubKey
+    // sides benefit from the "sub-201 bytes → standard" catch-all. Input
+    // scripts keep their classical `input_pattern()` classification, so a
+    // short non-matching scriptSig stays `non_standard` and a tx carrying
+    // it is still rejected by `is_standard(flags)`. This is the regression
+    // guard for the initial wiring, which applied P2S symmetrically via
+    // a `pattern(flags)` overload and let short garbage scriptSigs ride
+    // the P2S bound into standardness.
+    script instance;
+    REQUIRE(instance.from_string("1"));
+    REQUIRE(instance.is_valid());
+    // Output-side: P2S promotes it to `pay_to_script`.
+    REQUIRE(instance.output_pattern(script_flags::bch_p2s) == domain::machine::script_pattern::pay_to_script);
+    // Input-side: classical classification, no P2S promotion.
+    REQUIRE(instance.input_pattern() == domain::machine::script_pattern::non_standard);
+
+    // Transaction-level guard: a tx with a bare `1` as scriptSig and a
+    // valid P2S scriptPubKey must still be rejected — the input-side
+    // non_standard short-circuits `is_standard(flags)` even though the
+    // output side is a legitimate `pay_to_script`.
+    script input_script;
+    REQUIRE(input_script.from_string("1"));
+    script output_script;
+    REQUIRE(output_script.from_string("1"));
+    transaction tx{
+        1u,
+        0u,
+        input::list{
+            input{
+                output_point{null_hash, no_previous_output},
+                std::move(input_script),
+                0xffffffff
+            }
+        },
+        output::list{
+            output{0u, std::move(output_script), std::nullopt}
+        }
+    };
+    REQUIRE_FALSE(tx.is_standard(script_flags::bch_p2s));
+}
+
 // Data-driven tests.
 //------------------------------------------------------------------------------
 

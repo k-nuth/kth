@@ -552,9 +552,13 @@ payment_address::list payment_address::extract_output(chain::script const& scrip
             };
         }
 
-        // Bare multisig and null data do not associate a payment address.
+        // Bare multisig, null data and pay-to-script (BCH 2026-May leibniz)
+        // do not associate a payment address. BCHN's `TX_SCRIPT` branch in
+        // `ExtractDestination` returns false for the same reason: a raw
+        // scriptPubKey has no hash / key to derive an address from.
         case script_pattern::pay_to_multisig:
         case script_pattern::null_data:
+        case script_pattern::pay_to_script:
         case script_pattern::non_standard:
         default: {
             return {};

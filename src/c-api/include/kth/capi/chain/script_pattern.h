@@ -42,6 +42,14 @@ typedef enum {
     /// Signature script: <sig>[sig][sig...] <redeemScript>
     kth_script_pattern_pay_to_script_hash_32,
 
+    /// Pay to Script [BCH 2026-May leibniz]
+    /// Catch-all standard template: any scriptPubKey that doesn't match
+    /// one of the templates above and whose raw byte size fits within
+    /// `max_p2s_script_size` (201 bytes). Only recognised when the
+    /// `bch_p2s` flag is active; before activation these scripts are
+    /// classified as `non_standard`.
+    kth_script_pattern_pay_to_script,
+
     /// Sign Multisig script [BIP11]
     kth_script_pattern_sign_multisig,
 

@@ -289,9 +289,14 @@ kth_bool_t kth_chain_transaction_is_locktime_conflict(kth_transaction_const_t se
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_locktime_conflict());
 }
 
-kth_bool_t kth_chain_transaction_is_standard(kth_transaction_const_t self) {
+kth_bool_t kth_chain_transaction_is_standard_simple(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_standard());
+}
+
+kth_bool_t kth_chain_transaction_is_standard(kth_transaction_const_t self, kth_script_flags_t flags) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_standard(flags));
 }
 
 
