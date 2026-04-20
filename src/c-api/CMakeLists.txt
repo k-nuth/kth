@@ -313,6 +313,8 @@ set(kth_headers
   include/kth/capi/wallet/wallet_manager.h
 
   include/kth/capi/primitives.h
+  include/kth/capi/handles.h
+  include/kth/capi/callbacks.h
   include/kth/capi/hash_list.h
   include/kth/capi/error.h
   include/kth/capi/hash.h
