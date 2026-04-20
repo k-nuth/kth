@@ -347,7 +347,7 @@ TEST_CASE("C-API Script - bare OP_RETURN is non_standard",
     kth_script_mut_t script = NULL;
     REQUIRE(kth_chain_script_construct_from_data(
         kOpReturnPrefixed, sizeof(kOpReturnPrefixed), 1, &script) == kth_ec_success);
-    kth_script_pattern_t p = kth_chain_script_output_pattern(script);
+    kth_script_pattern_t p = kth_chain_script_output_pattern_simple(script);
     REQUIRE(p == kth_script_pattern_non_standard);
     kth_chain_script_destruct(script);
 }
