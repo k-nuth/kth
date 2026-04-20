@@ -50,27 +50,27 @@ kth_block_mut_t kth_chain_block_construct(kth_header_const_t header, kth_transac
 // Static factories
 
 kth_block_mut_t kth_chain_block_genesis_mainnet(void) {
-    return kth::leak_if_valid(cpp_t::genesis_mainnet());
+    return kth::leak(cpp_t::genesis_mainnet());
 }
 
 kth_block_mut_t kth_chain_block_genesis_testnet(void) {
-    return kth::leak_if_valid(cpp_t::genesis_testnet());
+    return kth::leak(cpp_t::genesis_testnet());
 }
 
 kth_block_mut_t kth_chain_block_genesis_regtest(void) {
-    return kth::leak_if_valid(cpp_t::genesis_regtest());
+    return kth::leak(cpp_t::genesis_regtest());
 }
 
 kth_block_mut_t kth_chain_block_genesis_testnet4(void) {
-    return kth::leak_if_valid(cpp_t::genesis_testnet4());
+    return kth::leak(cpp_t::genesis_testnet4());
 }
 
 kth_block_mut_t kth_chain_block_genesis_scalenet(void) {
-    return kth::leak_if_valid(cpp_t::genesis_scalenet());
+    return kth::leak(cpp_t::genesis_scalenet());
 }
 
 kth_block_mut_t kth_chain_block_genesis_chipnet(void) {
-    return kth::leak_if_valid(cpp_t::genesis_chipnet());
+    return kth::leak(cpp_t::genesis_chipnet());
 }
 
 

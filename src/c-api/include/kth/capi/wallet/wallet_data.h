@@ -31,9 +31,9 @@ kth_wallet_data_mut_t kth_wallet_wallet_data_copy(kth_wallet_data_const_t self);
 
 // Getters
 
-/** @return Borrowed `kth_string_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
-KTH_EXPORT
-kth_string_list_const_t kth_wallet_wallet_data_mnemonics(kth_wallet_data_const_t self);
+/** @return Owned `kth_string_list_mut_t`. Caller must release with `kth_core_string_list_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_string_list_mut_t kth_wallet_wallet_data_mnemonics(kth_wallet_data_const_t self);
 
 /** @return Borrowed `kth_hd_public_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT

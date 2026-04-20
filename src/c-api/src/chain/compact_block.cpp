@@ -99,9 +99,10 @@ uint64_t kth_chain_compact_block_nonce(kth_compact_block_const_t self) {
     return kth::cpp_ref<cpp_t>(self).nonce();
 }
 
-kth_u64_list_const_t kth_chain_compact_block_short_ids(kth_compact_block_const_t self) {
+kth_u64_list_mut_t kth_chain_compact_block_short_ids(kth_compact_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return &(kth::cpp_ref<cpp_t>(self).short_ids());
+    auto const cpp_result = kth::cpp_ref<cpp_t>(self).short_ids();
+    return kth::leak_list<uint64_t>(cpp_result.begin(), cpp_result.end());
 }
 
 kth_prefilled_transaction_list_const_t kth_chain_compact_block_transactions(kth_compact_block_const_t self) {

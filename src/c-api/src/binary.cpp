@@ -162,7 +162,7 @@ kth_binary_mut_t kth_core_binary_substring(kth_binary_const_t self, kth_size_t s
     KTH_PRECONDITION(self != nullptr);
     auto const start_cpp = kth::sz(start);
     auto const length_cpp = kth::sz(length);
-    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).substring(start_cpp, length_cpp));
+    return kth::leak(kth::cpp_ref<cpp_t>(self).substring(start_cpp, length_cpp));
 }
 
 kth_bool_t kth_core_binary_less(kth_binary_const_t self, kth_binary_const_t x) {

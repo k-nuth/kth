@@ -89,7 +89,7 @@ kth_operation_const_t kth_chain_script_back(kth_script_const_t self);
 KTH_EXPORT
 kth_operation_list_const_t kth_chain_script_operations(kth_script_const_t self);
 
-/** @return Owned `kth_operation_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_operation_destruct`. */
+/** @return Owned `kth_operation_mut_t`. Caller must release with `kth_chain_operation_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_mut_t kth_chain_script_first_operation(kth_script_const_t self);
 
@@ -97,7 +97,7 @@ KTH_EXPORT
 kth_script_pattern_t kth_chain_script_pattern(kth_script_const_t self);
 
 KTH_EXPORT
-kth_script_pattern_t kth_chain_script_output_pattern(kth_script_const_t self);
+kth_script_pattern_t kth_chain_script_output_pattern_simple(kth_script_const_t self);
 
 KTH_EXPORT
 kth_script_pattern_t kth_chain_script_input_pattern(kth_script_const_t self);
@@ -185,6 +185,9 @@ void kth_chain_script_clear(kth_script_mut_t self);
 /** @return Borrowed `kth_operation_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_operation_const_t kth_chain_script_at(kth_script_const_t self, kth_size_t index);
+
+KTH_EXPORT
+kth_script_pattern_t kth_chain_script_output_pattern(kth_script_const_t self, kth_script_flags_t flags);
 
 KTH_EXPORT
 kth_size_t kth_chain_script_sigops(kth_script_const_t self, kth_bool_t accurate);
