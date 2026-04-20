@@ -408,6 +408,7 @@ set(kth_headers
     include/kth/domain/machine/interpreter.hpp
     include/kth/domain/machine/program.hpp
     include/kth/domain/machine/script_flags.hpp
+    include/kth/domain/machine/script_pattern.hpp
     include/kth/domain/math/limits.hpp
     include/kth/domain/math/stealth.hpp
     include/kth/domain/utility/property_tree.hpp

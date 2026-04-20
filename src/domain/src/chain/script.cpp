@@ -26,7 +26,7 @@
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
-#include <kth/infrastructure/machine/script_pattern.hpp>
+#include <kth/domain/machine/script_pattern.hpp>
 #include <kth/infrastructure/machine/script_version.hpp>
 #include <kth/infrastructure/machine/sighash_algorithm.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
@@ -933,15 +933,15 @@ script_pattern script::pattern() const {
 script_pattern script::output_pattern() const {
     // The first operations access must be method-based to guarantee the cache.
     if (is_pay_public_key_hash_pattern(operations())) {
-        return script_pattern::pay_public_key_hash;
+        return script_pattern::pay_to_public_key_hash;
     }
 
     if (is_pay_script_hash_pattern(operations_)) {
-        return script_pattern::pay_script_hash;
+        return script_pattern::pay_to_script_hash;
     }
 
     if (is_pay_script_hash_32_pattern(operations_)) {
-        return script_pattern::pay_script_hash_32;
+        return script_pattern::pay_to_script_hash_32;
     }
 
     if (is_null_data_pattern(operations_)) {
@@ -949,11 +949,11 @@ script_pattern script::output_pattern() const {
     }
 
     if (is_pay_public_key_pattern(operations_)) {
-        return script_pattern::pay_public_key;
+        return script_pattern::pay_to_public_key;
     }
 
     if (is_pay_multisig_pattern(operations_)) {
-        return script_pattern::pay_multisig;
+        return script_pattern::pay_to_multisig;
     }
 
     return script_pattern::non_standard;

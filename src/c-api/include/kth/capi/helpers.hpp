@@ -607,13 +607,13 @@ kth::domain::machine::script_flags script_flags_to_cpp(kth_script_flags_t flags)
 // Script Pattern -----------------------------------------------------
 
 inline
-kth_script_pattern_t script_pattern_to_c(kth::infrastructure::machine::script_pattern pattern) {
+kth_script_pattern_t script_pattern_to_c(kth::domain::machine::script_pattern pattern) {
     return static_cast<kth_script_pattern_t>(pattern);
 }
 
 inline
-kth::infrastructure::machine::script_pattern script_pattern_to_cpp(kth_script_pattern_t pattern) {
-    return static_cast<kth::infrastructure::machine::script_pattern>(pattern);
+kth::domain::machine::script_pattern script_pattern_to_cpp(kth_script_pattern_t pattern) {
+    return static_cast<kth::domain::machine::script_pattern>(pattern);
 }
 
 // Script Version -----------------------------------------------------

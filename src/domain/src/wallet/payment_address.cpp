@@ -24,6 +24,7 @@
 #endif  //KTH_CURRENCY_BCH
 
 using namespace kth::infrastructure::machine;
+using namespace kth::domain::machine;
 
 #if defined(KTH_CURRENCY_BCH)
 using namespace kth::domain::wallet;
@@ -529,30 +530,30 @@ payment_address::list payment_address::extract_output(chain::script const& scrip
     auto const pattern = script.output_pattern();
 
     switch (pattern) {
-        case script_pattern::pay_public_key_hash: {
+        case script_pattern::pay_to_public_key_hash: {
             return {
                 payment_address{to_array<short_hash_size>(script[2].data()), p2kh_version}
             };
         }
-        case script_pattern::pay_script_hash: {
+        case script_pattern::pay_to_script_hash: {
             return {
                 payment_address{to_array<short_hash_size>(script[1].data()), p2sh_version}
             };
         }
-        case script_pattern::pay_script_hash_32: {
+        case script_pattern::pay_to_script_hash_32: {
             return {
                 payment_address{to_array<hash_size>(script[1].data()), p2sh_version}
             };
         }
-        case script_pattern::pay_public_key: {
+        case script_pattern::pay_to_public_key: {
             return {
-                // pay_public_key is not p2kh but we conflate for tracking.
+                // pay_to_public_key is not p2kh but we conflate for tracking.
                 payment_address{ec_public{script[0].data()}, p2kh_version}
             };
         }
 
         // Bare multisig and null data do not associate a payment address.
-        case script_pattern::pay_multisig:
+        case script_pattern::pay_to_multisig:
         case script_pattern::null_data:
         case script_pattern::non_standard:
         default: {

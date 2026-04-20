@@ -23,7 +23,7 @@
 #include <kth/domain/machine/script_flags.hpp>
 
 #include <kth/infrastructure/error.hpp>
-#include <kth/infrastructure/machine/script_pattern.hpp>
+#include <kth/domain/machine/script_pattern.hpp>
 #include <kth/infrastructure/machine/script_version.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/utility/container_sink.hpp>
@@ -48,7 +48,7 @@ struct KD_API script : script_basis {
 public:
     using operation = machine::operation;
     using script_flags = machine::script_flags;
-    using script_pattern = infrastructure::machine::script_pattern;
+    using script_pattern = domain::machine::script_pattern;
 #if ! defined(KTH_CURRENCY_BCH)
     using script_version = infrastructure::machine::script_version;
 #endif // ! KTH_CURRENCY_BCH

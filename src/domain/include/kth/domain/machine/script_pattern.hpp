@@ -2,14 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef KTH_INFRASTUCTURE_MACHINE_SCRIPT_PATTERN_HPP
-#define KTH_INFRASTUCTURE_MACHINE_SCRIPT_PATTERN_HPP
+#ifndef KTH_DOMAIN_MACHINE_SCRIPT_PATTERN_HPP
+#define KTH_DOMAIN_MACHINE_SCRIPT_PATTERN_HPP
 
 #include <string_view>
 
-namespace kth::infrastructure::machine {
+namespace kth::domain::machine {
 
-/// Script patterms.
+/// Script patterns.
 /// Comments from: bitcoin.org/en/developer-guide#signature-hash-types
 enum class script_pattern {
     /// Null Data
@@ -20,27 +20,27 @@ enum class script_pattern {
     /// Pay to Multisig [BIP11]
     /// Pubkey script: <m> <A pubkey>[B pubkey][C pubkey...] <n> OP_CHECKMULTISIG
     /// Signature script: OP_0 <A sig>[B sig][C sig...]
-    pay_multisig,
+    pay_to_multisig,
 
     /// Pay to Public Key (obsolete)
-    pay_public_key,
+    pay_to_public_key,
 
     /// Pay to Public Key Hash [P2PKH]
     /// Pubkey script: OP_DUP OP_HASH160 <PubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
     /// Signature script: <sig> <pubkey>
-    pay_public_key_hash,
+    pay_to_public_key_hash,
 
     /// Pay to Script Hash [P2SH/BIP16]
     /// The redeem script may be any pay type, but only multisig makes sense.
     /// Pubkey script: OP_HASH160 <Hash160(redeemScript)> OP_EQUAL
     /// Signature script: <sig>[sig][sig...] <redeemScript>
-    pay_script_hash,
+    pay_to_script_hash,
 
     /// Pay to Script Hash 32
     /// The redeem script may be any pay type, but only multisig makes sense.
     /// Pubkey script: OP_HASH256 <Hash256(redeemScript)> OP_EQUAL
     /// Signature script: <sig>[sig][sig...] <redeemScript>
-    pay_script_hash_32,
+    pay_to_script_hash_32,
 
     /// Sign Multisig script [BIP11]
     sign_multisig,
@@ -74,22 +74,22 @@ enum class script_pattern {
 constexpr
 std::string_view to_string(script_pattern p) {
     switch (p) {
-        case script_pattern::null_data:             return "null_data";
-        case script_pattern::pay_multisig:          return "pay_multisig";
-        case script_pattern::pay_public_key:        return "pay_public_key";
-        case script_pattern::pay_public_key_hash:   return "pay_public_key_hash";
-        case script_pattern::pay_script_hash:       return "pay_script_hash";
-        case script_pattern::pay_script_hash_32:    return "pay_script_hash_32";
-        case script_pattern::sign_multisig:         return "sign_multisig";
-        case script_pattern::sign_public_key:       return "sign_public_key";
-        case script_pattern::sign_public_key_hash:  return "sign_public_key_hash";
-        case script_pattern::sign_script_hash:      return "sign_script_hash";
-        case script_pattern::witness_reservation:   return "witness_reservation";
-        case script_pattern::non_standard:          return "non_standard";
+        case script_pattern::null_data:                 return "null_data";
+        case script_pattern::pay_to_multisig:           return "pay_to_multisig";
+        case script_pattern::pay_to_public_key:         return "pay_to_public_key";
+        case script_pattern::pay_to_public_key_hash:    return "pay_to_public_key_hash";
+        case script_pattern::pay_to_script_hash:        return "pay_to_script_hash";
+        case script_pattern::pay_to_script_hash_32:     return "pay_to_script_hash_32";
+        case script_pattern::sign_multisig:             return "sign_multisig";
+        case script_pattern::sign_public_key:           return "sign_public_key";
+        case script_pattern::sign_public_key_hash:      return "sign_public_key_hash";
+        case script_pattern::sign_script_hash:          return "sign_script_hash";
+        case script_pattern::witness_reservation:       return "witness_reservation";
+        case script_pattern::non_standard:              return "non_standard";
     }
     return "non_standard";
 }
 
-} // namespace kth::infrastructure::machine
+} // namespace kth::domain::machine
 
 #endif

@@ -285,7 +285,6 @@ set(kth_headers
     include/kth/infrastructure/path.hpp
 
     include/kth/infrastructure/machine/number.hpp
-    include/kth/infrastructure/machine/script_pattern.hpp
     include/kth/infrastructure/machine/sighash_algorithm.hpp
     include/kth/infrastructure/machine/script_version.hpp
 

@@ -20,7 +20,7 @@
 #include <kth/domain/machine/program.hpp>
 // #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/error.hpp>
-#include <kth/infrastructure/machine/script_pattern.hpp>
+#include <kth/domain/machine/script_pattern.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 #include <kth/infrastructure/utility/collection.hpp>

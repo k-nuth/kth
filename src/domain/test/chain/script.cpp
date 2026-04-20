@@ -244,7 +244,7 @@ TEST_CASE("script from data to data roundtrips", "[script]") {
     REQUIRE(script.serialized_size(true) == 26u);
     REQUIRE(script.sigops(false) == 1u);
     REQUIRE(script.sigops(true) == 1u);
-    REQUIRE(script.pattern() == script_pattern::pay_public_key_hash);
+    REQUIRE(script.pattern() == script_pattern::pay_to_public_key_hash);
 
     auto const roundtrip = script.to_data(false);
     REQUIRE(roundtrip == normal_output_script);
@@ -345,101 +345,101 @@ TEST_CASE("script pattern - null data return only - non standard", "[script]") {
     script instance;
     instance.from_string(SCRIPT_RETURN);
     REQUIRE(instance.is_valid());
-    REQUIRE(instance.output_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.input_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.pattern() == infrastructure::machine::script_pattern::non_standard);
+    REQUIRE(instance.output_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.input_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.pattern() == domain::machine::script_pattern::non_standard);
 }
 
 TEST_CASE("script pattern - null data empty - null data", "[script]") {
     script instance;
     instance.from_string(SCRIPT_RETURN_EMPTY);
     REQUIRE(instance.is_valid());
-    REQUIRE(instance.output_pattern() == infrastructure::machine::script_pattern::null_data);
-    REQUIRE(instance.input_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.pattern() == infrastructure::machine::script_pattern::null_data);
+    REQUIRE(instance.output_pattern() == domain::machine::script_pattern::null_data);
+    REQUIRE(instance.input_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.pattern() == domain::machine::script_pattern::null_data);
 }
 
 TEST_CASE("script pattern - null data 80 bytes - null data", "[script]") {
     script instance;
     instance.from_string(SCRIPT_RETURN_80);
     REQUIRE(instance.is_valid());
-    REQUIRE(instance.output_pattern() == infrastructure::machine::script_pattern::null_data);
-    REQUIRE(instance.input_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.pattern() == infrastructure::machine::script_pattern::null_data);
+    REQUIRE(instance.output_pattern() == domain::machine::script_pattern::null_data);
+    REQUIRE(instance.input_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.pattern() == domain::machine::script_pattern::null_data);
 }
 
 TEST_CASE("script pattern - null data 81 bytes - non standard", "[script]") {
     script instance;
     instance.from_string(SCRIPT_RETURN_81);
     REQUIRE(instance.is_valid());
-    REQUIRE(instance.output_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.input_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.pattern() == infrastructure::machine::script_pattern::non_standard);
+    REQUIRE(instance.output_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.input_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.pattern() == domain::machine::script_pattern::non_standard);
 }
 
-// pay_multisig
+// pay_to_multisig
 
 TEST_CASE("script pattern - 0 of 3 multisig - non standard", "[script]") {
     script instance;
     instance.from_string(SCRIPT_0_OF_3_MULTISIG);
     REQUIRE(instance.is_valid());
-    REQUIRE(instance.output_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.input_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.pattern() == infrastructure::machine::script_pattern::non_standard);
+    REQUIRE(instance.output_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.input_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.pattern() == domain::machine::script_pattern::non_standard);
 }
 
 TEST_CASE("script pattern - 1 of 3 multisig - pay multisig", "[script]") {
     script instance;
     instance.from_string(SCRIPT_1_OF_3_MULTISIG);
     REQUIRE(instance.is_valid());
-    REQUIRE(instance.output_pattern() == infrastructure::machine::script_pattern::pay_multisig);
-    REQUIRE(instance.input_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.pattern() == infrastructure::machine::script_pattern::pay_multisig);
+    REQUIRE(instance.output_pattern() == domain::machine::script_pattern::pay_to_multisig);
+    REQUIRE(instance.input_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.pattern() == domain::machine::script_pattern::pay_to_multisig);
 }
 
 TEST_CASE("script pattern - 2 of 3 multisig - pay multisig", "[script]") {
     script instance;
     instance.from_string(SCRIPT_2_OF_3_MULTISIG);
     REQUIRE(instance.is_valid());
-    REQUIRE(instance.output_pattern() == infrastructure::machine::script_pattern::pay_multisig);
-    REQUIRE(instance.input_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.pattern() == infrastructure::machine::script_pattern::pay_multisig);
+    REQUIRE(instance.output_pattern() == domain::machine::script_pattern::pay_to_multisig);
+    REQUIRE(instance.input_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.pattern() == domain::machine::script_pattern::pay_to_multisig);
 }
 
 TEST_CASE("script pattern - 3 of 3 multisig - pay multisig", "[script]") {
     script instance;
     instance.from_string(SCRIPT_3_OF_3_MULTISIG);
     REQUIRE(instance.is_valid());
-    REQUIRE(instance.output_pattern() == infrastructure::machine::script_pattern::pay_multisig);
-    REQUIRE(instance.input_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.pattern() == infrastructure::machine::script_pattern::pay_multisig);
+    REQUIRE(instance.output_pattern() == domain::machine::script_pattern::pay_to_multisig);
+    REQUIRE(instance.input_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.pattern() == domain::machine::script_pattern::pay_to_multisig);
 }
 
 TEST_CASE("script pattern - 4 of 3 multisig - non standard", "[script]") {
     script instance;
     instance.from_string(SCRIPT_4_OF_3_MULTISIG);
     REQUIRE(instance.is_valid());
-    REQUIRE(instance.output_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.input_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.pattern() == infrastructure::machine::script_pattern::non_standard);
+    REQUIRE(instance.output_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.input_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.pattern() == domain::machine::script_pattern::non_standard);
 }
 
 TEST_CASE("script pattern - 16 of 16 multisig - pay multisig", "[script]") {
     script instance;
     instance.from_string(SCRIPT_16_OF_16_MULTISIG);
     REQUIRE(instance.is_valid());
-    REQUIRE(instance.output_pattern() == infrastructure::machine::script_pattern::pay_multisig);
-    REQUIRE(instance.input_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.pattern() == infrastructure::machine::script_pattern::pay_multisig);
+    REQUIRE(instance.output_pattern() == domain::machine::script_pattern::pay_to_multisig);
+    REQUIRE(instance.input_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.pattern() == domain::machine::script_pattern::pay_to_multisig);
 }
 
 TEST_CASE("script pattern - 17 of 17 multisig - non standard", "[script]") {
     script instance;
     instance.from_string(SCRIPT_17_OF_17_MULTISIG);
     REQUIRE(instance.is_valid());
-    REQUIRE(instance.output_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.input_pattern() == infrastructure::machine::script_pattern::non_standard);
-    REQUIRE(instance.pattern() == infrastructure::machine::script_pattern::non_standard);
+    REQUIRE(instance.output_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.input_pattern() == domain::machine::script_pattern::non_standard);
+    REQUIRE(instance.pattern() == domain::machine::script_pattern::non_standard);
 }
 
 // Data-driven tests.

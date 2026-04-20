@@ -35,6 +35,7 @@
 #include <kth/domain/machine/operation.hpp>
 #include <kth/domain/machine/program.hpp>
 #include <kth/domain/machine/script_flags.hpp>
+#include <kth/domain/machine/script_pattern.hpp>
 
 #include <kth/domain/math/stealth.hpp>
 

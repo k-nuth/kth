@@ -72,7 +72,7 @@ ptree property_tree(std::vector<config::header> const& headers, bool json) {
 ptree property_list(chain::input const& tx_input) {
     ptree tree;
 
-    // This does not support pay_multisig or pay_public_key (nonstandard).
+    // This does not support pay_to_multisig or pay_to_public_key (nonstandard).
     // This will have default versioning, but the address version is unused.
     auto const address = tx_input.address();
 
@@ -124,7 +124,7 @@ ptree property_tree(std::vector<config::input> const& inputs, bool json) {
 ptree property_list(const chain::output& tx_output) {
     ptree tree;
 
-    // This does not support pay_multisig or pay_public_key (nonstandard).
+    // This does not support pay_to_multisig or pay_to_public_key (nonstandard).
     // This will have default versioning, but the address version is unused.
     auto const address = tx_output.address();
 

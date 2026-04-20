@@ -44,7 +44,6 @@
 #include <kth/infrastructure/log/sink.hpp>
 
 #include <kth/infrastructure/machine/number.hpp>
-#include <kth/infrastructure/machine/script_pattern.hpp>
 #include <kth/infrastructure/machine/script_version.hpp>
 #include <kth/infrastructure/machine/sighash_algorithm.hpp>
 
