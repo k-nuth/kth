@@ -58,10 +58,10 @@ kth_bool_t kth_chain_double_spend_proof_equals(kth_double_spend_proof_const_t se
 
 /** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
 KTH_EXPORT KTH_OWNED
-uint8_t* kth_chain_double_spend_proof_to_data(kth_double_spend_proof_const_t self, kth_size_t version, kth_size_t* out_size);
+uint8_t* kth_chain_double_spend_proof_to_data(kth_double_spend_proof_const_t self, uint32_t version, kth_size_t* out_size);
 
 KTH_EXPORT
-kth_size_t kth_chain_double_spend_proof_serialized_size(kth_double_spend_proof_const_t self, kth_size_t version);
+kth_size_t kth_chain_double_spend_proof_serialized_size(kth_double_spend_proof_const_t self, uint32_t version);
 
 
 // Getters

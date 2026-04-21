@@ -129,12 +129,12 @@ struct KD_API double_spend_proof {
     void set_spender2(spender const& x);
 
     [[nodiscard]]
-    data_chunk to_data(size_t /*version*/) const;
+    data_chunk to_data(uint32_t /*version*/) const;
 
-    void to_data(size_t /*version*/, data_sink& stream) const;
+    void to_data(uint32_t /*version*/, data_sink& stream) const;
 
     template <typename W>
-    void to_data(size_t /*version*/, W& sink) const {
+    void to_data(uint32_t /*version*/, W& sink) const {
         out_point_.to_data(sink);
         spender1_.to_data(sink);
         spender2_.to_data(sink);
@@ -149,7 +149,7 @@ struct KD_API double_spend_proof {
     void reset();
 
     [[nodiscard]]
-    size_t serialized_size(size_t /*version*/) const {
+    size_t serialized_size(uint32_t /*version*/) const {
         return out_point_.serialized_size() +
             spender1_.serialized_size() +
             spender2_.serialized_size();

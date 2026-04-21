@@ -74,18 +74,16 @@ kth_bool_t kth_chain_double_spend_proof_equals(kth_double_spend_proof_const_t se
 
 // Serialization
 
-uint8_t* kth_chain_double_spend_proof_to_data(kth_double_spend_proof_const_t self, kth_size_t version, kth_size_t* out_size) {
+uint8_t* kth_chain_double_spend_proof_to_data(kth_double_spend_proof_const_t self, uint32_t version, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto const version_cpp = kth::sz(version);
-    auto const data = kth::cpp_ref<cpp_t>(self).to_data(version_cpp);
+    auto const data = kth::cpp_ref<cpp_t>(self).to_data(version);
     return kth::create_c_array(data, *out_size);
 }
 
-kth_size_t kth_chain_double_spend_proof_serialized_size(kth_double_spend_proof_const_t self, kth_size_t version) {
+kth_size_t kth_chain_double_spend_proof_serialized_size(kth_double_spend_proof_const_t self, uint32_t version) {
     KTH_PRECONDITION(self != nullptr);
-    auto const version_cpp = kth::sz(version);
-    return kth::cpp_ref<cpp_t>(self).serialized_size(version_cpp);
+    return kth::cpp_ref<cpp_t>(self).serialized_size(version);
 }
 
 
