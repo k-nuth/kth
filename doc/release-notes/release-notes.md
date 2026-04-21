@@ -1,3 +1,15 @@
+# version 0.80.1
+
+You can install Knuth node version v0.80.1 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* fix(domain): align double_spend_proof version parameter with sibling message classes by @fpelliccioni in https://github.com/k-nuth/kth/pull/283
+* release: 0.80.1 by @fpelliccioni in https://github.com/k-nuth/kth/pull/284
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.80.0...v0.80.1
+
+
 # version 0.80.0
 
 You can install Knuth node version v0.80.0 [using these instructions](https://kth.cash/#download).
