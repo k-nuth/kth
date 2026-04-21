@@ -23,8 +23,9 @@ kth_hd_public_mut_t kth_wallet_hd_public_construct_default(void) {
     return kth::leak<cpp_t>();
 }
 
-kth_hd_public_mut_t kth_wallet_hd_public_construct_from_public_key(kth_hd_key_t public_key) {
-    auto const public_key_cpp = kth::hd_key_to_cpp(public_key.data);
+kth_hd_public_mut_t kth_wallet_hd_public_construct_from_public_key(kth_hd_key_t const* public_key) {
+    KTH_PRECONDITION(public_key != nullptr);
+    auto const public_key_cpp = kth::hd_key_to_cpp(public_key->data);
     return kth::leak_if_valid(cpp_t(public_key_cpp));
 }
 
@@ -34,8 +35,9 @@ kth_hd_public_mut_t kth_wallet_hd_public_construct_from_public_key_unsafe(uint8_
     return kth::leak_if_valid(cpp_t(public_key_cpp));
 }
 
-kth_hd_public_mut_t kth_wallet_hd_public_construct_from_public_key_prefix(kth_hd_key_t public_key, uint32_t prefix) {
-    auto const public_key_cpp = kth::hd_key_to_cpp(public_key.data);
+kth_hd_public_mut_t kth_wallet_hd_public_construct_from_public_key_prefix(kth_hd_key_t const* public_key, uint32_t prefix) {
+    KTH_PRECONDITION(public_key != nullptr);
+    auto const public_key_cpp = kth::hd_key_to_cpp(public_key->data);
     return kth::leak_if_valid(cpp_t(public_key_cpp, prefix));
 }
 

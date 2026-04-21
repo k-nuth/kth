@@ -205,17 +205,19 @@ kth_error_code_t kth_chain_script_from_data_with_size(uint8_t const* data, kth_s
 KTH_EXPORT
 kth_hash_t kth_chain_script_generate_signature_hash(kth_transaction_const_t tx, uint32_t input_index, kth_script_const_t script_code, uint8_t sighash_type, kth_script_flags_t active_flags, uint64_t value, kth_size_t* out_size);
 
+/** @param signature Borrowed input; must be non-null. Read during the call; ownership of `signature` stays with the caller. */
 KTH_EXPORT
-kth_bool_t kth_chain_script_check_signature(kth_longhash_t signature, uint8_t sighash_type, uint8_t const* public_key, kth_size_t n, kth_script_const_t script_code, kth_transaction_const_t tx, uint32_t input_index, kth_script_flags_t active_flags, uint64_t value, kth_size_t* out_size);
+kth_bool_t kth_chain_script_check_signature(kth_longhash_t const* signature, uint8_t sighash_type, uint8_t const* public_key, kth_size_t n, kth_script_const_t script_code, kth_transaction_const_t tx, uint32_t input_index, kth_script_flags_t active_flags, uint64_t value, kth_size_t* out_size);
 
-/** @warning `signature` MUST point to a buffer of at least 64 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value. */
+/** @warning `signature` MUST point to a buffer of at least 64 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_longhash_t`. */
 KTH_EXPORT
 kth_bool_t kth_chain_script_check_signature_unsafe(uint8_t const* signature, uint8_t sighash_type, uint8_t const* public_key, kth_size_t n, kth_script_const_t script_code, kth_transaction_const_t tx, uint32_t input_index, kth_script_flags_t active_flags, uint64_t value, kth_size_t* out_size);
 
+/** @param secret Borrowed input; must be non-null. Read during the call; ownership of `secret` stays with the caller. */
 KTH_EXPORT
-kth_error_code_t kth_chain_script_create_endorsement(kth_hash_t secret, kth_script_const_t prevout_script, kth_transaction_const_t tx, uint32_t input_index, uint8_t sighash_type, kth_script_flags_t active_flags, uint64_t value, kth_endorsement_type_t type, KTH_OUT_OWNED uint8_t** out, kth_size_t* out_size);
+kth_error_code_t kth_chain_script_create_endorsement(kth_hash_t const* secret, kth_script_const_t prevout_script, kth_transaction_const_t tx, uint32_t input_index, uint8_t sighash_type, kth_script_flags_t active_flags, uint64_t value, kth_endorsement_type_t type, KTH_OUT_OWNED uint8_t** out, kth_size_t* out_size);
 
-/** @warning `secret` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value. */
+/** @warning `secret` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
 KTH_EXPORT
 kth_error_code_t kth_chain_script_create_endorsement_unsafe(uint8_t const* secret, kth_script_const_t prevout_script, kth_transaction_const_t tx, uint32_t input_index, uint8_t sighash_type, kth_script_flags_t active_flags, uint64_t value, kth_endorsement_type_t type, KTH_OUT_OWNED uint8_t** out, kth_size_t* out_size);
 
@@ -227,13 +229,16 @@ kth_operation_list_mut_t kth_chain_script_to_null_data_pattern(uint8_t const* da
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_chain_script_to_pay_public_key_pattern(uint8_t const* point, kth_size_t n);
 
-/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+/**
+ * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`.
+ * @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_operation_list_mut_t kth_chain_script_to_pay_public_key_hash_pattern(kth_shorthash_t hash);
+kth_operation_list_mut_t kth_chain_script_to_pay_public_key_hash_pattern(kth_shorthash_t const* hash);
 
 /**
  * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`.
- * @warning `hash` MUST point to a buffer of at least 20 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `hash` MUST point to a buffer of at least 20 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_shorthash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_chain_script_to_pay_public_key_hash_pattern_unsafe(uint8_t const* hash);
@@ -250,24 +255,30 @@ kth_operation_list_mut_t kth_chain_script_to_pay_public_key_hash_pattern_unlocki
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_chain_script_to_pay_script_hash_pattern_unlocking_placeholder(kth_size_t script_size, kth_bool_t multisig);
 
-/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+/**
+ * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`.
+ * @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_operation_list_mut_t kth_chain_script_to_pay_script_hash_pattern(kth_shorthash_t hash);
+kth_operation_list_mut_t kth_chain_script_to_pay_script_hash_pattern(kth_shorthash_t const* hash);
 
 /**
  * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`.
- * @warning `hash` MUST point to a buffer of at least 20 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `hash` MUST point to a buffer of at least 20 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_shorthash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_chain_script_to_pay_script_hash_pattern_unsafe(uint8_t const* hash);
 
-/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+/**
+ * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`.
+ * @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_operation_list_mut_t kth_chain_script_to_pay_script_hash_32_pattern(kth_hash_t hash);
+kth_operation_list_mut_t kth_chain_script_to_pay_script_hash_32_pattern(kth_hash_t const* hash);
 
 /**
  * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`.
- * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_chain_script_to_pay_script_hash_32_pattern_unsafe(uint8_t const* hash);

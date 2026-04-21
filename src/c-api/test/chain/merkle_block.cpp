@@ -65,7 +65,7 @@ static uint8_t const kFlags[3] = { 0xFF, 0x0F, 0x00 };
 
 static kth_header_mut_t make_header(void) {
     return kth_chain_header_construct(
-        kHdrVersion, kPrevHash, kMerkle, kHdrTimestamp, kHdrBits, kHdrNonce);
+        kHdrVersion, &kPrevHash, &kMerkle, kHdrTimestamp, kHdrBits, kHdrNonce);
 }
 
 static kth_hash_list_mut_t make_two_hashes(void) {

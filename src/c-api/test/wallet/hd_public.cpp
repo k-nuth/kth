@@ -76,7 +76,7 @@ TEST_CASE("C-API HdPublic - to_hd_key round-trips through construct_from_public_
     REQUIRE(original != NULL);
 
     kth_hd_key_t hd_key = kth_wallet_hd_public_to_hd_key(original);
-    kth_hd_public_mut_t reconstructed = kth_wallet_hd_public_construct_from_public_key(hd_key);
+    kth_hd_public_mut_t reconstructed = kth_wallet_hd_public_construct_from_public_key(&hd_key);
     REQUIRE(reconstructed != NULL);
     REQUIRE(kth_wallet_hd_public_equals(original, reconstructed) != 0);
 

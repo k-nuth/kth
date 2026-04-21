@@ -64,7 +64,7 @@ static kth_input_list_mut_t make_inputs(void) {
     kth_input_list_mut_t list = kth_chain_input_list_construct_default();
     REQUIRE(list != NULL);
 
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kPrevHash, 0);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kPrevHash, 0);
     REQUIRE(op != NULL);
     kth_script_mut_t script = make_script();
     kth_input_mut_t in = kth_chain_input_construct(op, script, 0xffffffffu);

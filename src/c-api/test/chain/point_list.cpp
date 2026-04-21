@@ -22,7 +22,7 @@ static kth_hash_t const kHash = {{
 }};
 
 static kth_point_mut_t make_point(void) {
-    kth_point_mut_t pt = kth_chain_point_construct(kHash, 42);
+    kth_point_mut_t pt = kth_chain_point_construct(&kHash, 42);
     REQUIRE(pt != NULL);
     return pt;
 }

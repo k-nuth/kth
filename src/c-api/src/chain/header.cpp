@@ -38,9 +38,11 @@ kth_error_code_t kth_chain_header_construct_from_data(uint8_t const* data, kth_s
     return kth_ec_success;
 }
 
-kth_header_mut_t kth_chain_header_construct(uint32_t version, kth_hash_t previous_block_hash, kth_hash_t merkle, uint32_t timestamp, uint32_t bits, uint32_t nonce) {
-    auto const previous_block_hash_cpp = kth::hash_to_cpp(previous_block_hash.hash);
-    auto const merkle_cpp = kth::hash_to_cpp(merkle.hash);
+kth_header_mut_t kth_chain_header_construct(uint32_t version, kth_hash_t const* previous_block_hash, kth_hash_t const* merkle, uint32_t timestamp, uint32_t bits, uint32_t nonce) {
+    KTH_PRECONDITION(previous_block_hash != nullptr);
+    KTH_PRECONDITION(merkle != nullptr);
+    auto const previous_block_hash_cpp = kth::hash_to_cpp(previous_block_hash->hash);
+    auto const merkle_cpp = kth::hash_to_cpp(merkle->hash);
     return kth::leak<cpp_t>(version, previous_block_hash_cpp, merkle_cpp, timestamp, bits, nonce);
 }
 
@@ -139,9 +141,10 @@ void kth_chain_header_set_version(kth_header_mut_t self, uint32_t value) {
     kth::cpp_ref<cpp_t>(self).set_version(value);
 }
 
-void kth_chain_header_set_previous_block_hash(kth_header_mut_t self, kth_hash_t value) {
+void kth_chain_header_set_previous_block_hash(kth_header_mut_t self, kth_hash_t const* value) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth::hash_to_cpp(value.hash);
+    KTH_PRECONDITION(value != nullptr);
+    auto const value_cpp = kth::hash_to_cpp(value->hash);
     kth::cpp_ref<cpp_t>(self).set_previous_block_hash(value_cpp);
 }
 
@@ -152,9 +155,10 @@ void kth_chain_header_set_previous_block_hash_unsafe(kth_header_mut_t self, uint
     kth::cpp_ref<cpp_t>(self).set_previous_block_hash(value_cpp);
 }
 
-void kth_chain_header_set_merkle(kth_header_mut_t self, kth_hash_t value) {
+void kth_chain_header_set_merkle(kth_header_mut_t self, kth_hash_t const* value) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth::hash_to_cpp(value.hash);
+    KTH_PRECONDITION(value != nullptr);
+    auto const value_cpp = kth::hash_to_cpp(value->hash);
     kth::cpp_ref<cpp_t>(self).set_merkle(value_cpp);
 }
 

@@ -63,7 +63,7 @@ TEST_CASE("C-API Utxo - construct_default builds a handle with zero fields",
 
 TEST_CASE("C-API Utxo - construct from point+amount yields engaged values",
           "[C-API Utxo]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kTxid, 7u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 7u);
     kth_utxo_mut_t u = kth_chain_utxo_construct(op, 5000u, NULL);
 
     REQUIRE(kth_chain_utxo_amount(u) == 5000u);
@@ -76,8 +76,8 @@ TEST_CASE("C-API Utxo - construct from point+amount yields engaged values",
 
 TEST_CASE("C-API Utxo - construct with token_data stores it",
           "[C-API Utxo]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kTxid, 0u);
-    kth_token_data_mut_t td = kth_chain_token_make_fungible(kCategory, 1234u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 0u);
+    kth_token_data_mut_t td = kth_chain_token_make_fungible(&kCategory, 1234u);
     kth_utxo_mut_t u = kth_chain_utxo_construct(op, 1000u, td);
 
     kth_token_data_const_t got = kth_chain_utxo_token_data(u);
@@ -95,7 +95,7 @@ TEST_CASE("C-API Utxo - construct with token_data stores it",
 
 TEST_CASE("C-API Utxo - copy preserves fields and equals original",
           "[C-API Utxo]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kTxid, 3u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 3u);
     kth_utxo_mut_t u = kth_chain_utxo_construct(op, 999u, NULL);
     kth_chain_utxo_set_height(u, 42u);
 
@@ -113,7 +113,7 @@ TEST_CASE("C-API Utxo - copy preserves fields and equals original",
 
 TEST_CASE("C-API Utxo - mutating amount breaks equality",
           "[C-API Utxo]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kTxid, 1u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 1u);
     kth_utxo_mut_t a = kth_chain_utxo_construct(op, 10u, NULL);
     kth_utxo_mut_t b = kth_chain_utxo_copy(a);
 
@@ -128,7 +128,7 @@ TEST_CASE("C-API Utxo - mutating amount breaks equality",
 
 TEST_CASE("C-API Utxo - mutating height breaks equality",
           "[C-API Utxo]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kTxid, 1u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 1u);
     kth_utxo_mut_t a = kth_chain_utxo_construct(op, 10u, NULL);
     kth_utxo_mut_t b = kth_chain_utxo_copy(a);
 
@@ -143,12 +143,12 @@ TEST_CASE("C-API Utxo - mutating height breaks equality",
 
 TEST_CASE("C-API Utxo - mutating point breaks equality",
           "[C-API Utxo]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kTxid, 1u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 1u);
     kth_utxo_mut_t a = kth_chain_utxo_construct(op, 10u, NULL);
     kth_utxo_mut_t b = kth_chain_utxo_copy(a);
 
     REQUIRE(kth_chain_utxo_equals(a, b) != 0);
-    kth_output_point_mut_t op2 = kth_chain_output_point_construct_from_hash_index(kTxid, 99u);
+    kth_output_point_mut_t op2 = kth_chain_output_point_construct_from_hash_index(&kTxid, 99u);
     kth_chain_utxo_set_point(b, op2);
     REQUIRE(kth_chain_utxo_equals(a, b) == 0);
 
@@ -160,12 +160,12 @@ TEST_CASE("C-API Utxo - mutating point breaks equality",
 
 TEST_CASE("C-API Utxo - mutating token_data breaks equality",
           "[C-API Utxo]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kTxid, 1u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 1u);
     kth_utxo_mut_t a = kth_chain_utxo_construct(op, 10u, NULL);
     kth_utxo_mut_t b = kth_chain_utxo_copy(a);
 
     REQUIRE(kth_chain_utxo_equals(a, b) != 0);
-    kth_token_data_mut_t td = kth_chain_token_make_fungible(kCategory, 1u);
+    kth_token_data_mut_t td = kth_chain_token_make_fungible(&kCategory, 1u);
     kth_chain_utxo_set_token_data(b, td);
     REQUIRE(kth_chain_utxo_equals(a, b) == 0);
 
@@ -188,11 +188,11 @@ TEST_CASE("C-API Utxo - setters round-trip through getters",
     REQUIRE(kth_chain_utxo_height(u) == 123u);
     REQUIRE(kth_chain_utxo_amount(u) == 456u);
 
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kTxid, 9u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 9u);
     kth_chain_utxo_set_point(u, op);
     REQUIRE(kth_chain_output_point_index(kth_chain_utxo_point(u)) == 9u);
 
-    kth_token_data_mut_t td = kth_chain_token_make_fungible(kCategory, 77u);
+    kth_token_data_mut_t td = kth_chain_token_make_fungible(&kCategory, 77u);
     kth_chain_utxo_set_token_data(u, td);
     REQUIRE(kth_chain_utxo_token_data(u) != NULL);
     REQUIRE(kth_chain_token_data_get_amount(kth_chain_utxo_token_data(u)) == 77);
@@ -245,8 +245,8 @@ TEST_CASE("C-API Utxo - set_point null aborts",
 
 TEST_CASE("C-API Utxo - setters null self aborts",
           "[C-API Utxo][precondition]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kTxid, 0u);
-    kth_token_data_mut_t td = kth_chain_token_make_fungible(kCategory, 1u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 0u);
+    kth_token_data_mut_t td = kth_chain_token_make_fungible(&kCategory, 1u);
 
     KTH_EXPECT_ABORT(kth_chain_utxo_set_height(NULL, 1u));
     KTH_EXPECT_ABORT(kth_chain_utxo_set_amount(NULL, 1u));

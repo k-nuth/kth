@@ -36,14 +36,15 @@ kth_transaction_mut_t kth_chain_transaction_construct_from_version_locktime_inpu
 /**
  * @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`.
  * @param x Borrowed input. Copied by value into the resulting object; ownership of `x` stays with the caller.
+ * @param hash Borrowed input; must be non-null. Copied into the resulting object; ownership of `hash` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
-kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash(kth_transaction_const_t x, kth_hash_t hash);
+kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash(kth_transaction_const_t x, kth_hash_t const* hash);
 
 /**
  * @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`.
  * @param x Borrowed input. Copied by value into the resulting object; ownership of `x` stays with the caller.
- * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash_unsafe(kth_transaction_const_t x, uint8_t const* hash);

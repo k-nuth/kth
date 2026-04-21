@@ -159,6 +159,7 @@ endif()
 set(kth_sources
 
   src/node_info.cpp
+  src/secure_memory.cpp
   src/string_list.cpp
   src/double_list.cpp
   src/u32_list.cpp

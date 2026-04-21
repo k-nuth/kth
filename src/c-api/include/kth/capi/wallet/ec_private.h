@@ -25,35 +25,44 @@ kth_ec_private_mut_t kth_wallet_ec_private_construct_default(void);
 KTH_EXPORT KTH_OWNED
 kth_ec_private_mut_t kth_wallet_ec_private_construct_from_wif_version(char const* wif, uint8_t version);
 
-/** @return Owned `kth_ec_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_private_destruct`. */
+/**
+ * @return Owned `kth_ec_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_private_destruct`.
+ * @param wif_compressed Borrowed input; must be non-null. Copied into the resulting object; ownership of `wif_compressed` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_ec_private_mut_t kth_wallet_ec_private_construct_from_wif_compressed_version(kth_wif_compressed_t wif_compressed, uint8_t version);
+kth_ec_private_mut_t kth_wallet_ec_private_construct_from_wif_compressed_version(kth_wif_compressed_t const* wif_compressed, uint8_t version);
 
 /**
  * @return Owned `kth_ec_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_private_destruct`.
- * @warning `wif_compressed` MUST point to a buffer of at least 38 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `wif_compressed` MUST point to a buffer of at least 38 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_wif_compressed_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_ec_private_mut_t kth_wallet_ec_private_construct_from_wif_compressed_version_unsafe(uint8_t const* wif_compressed, uint8_t version);
 
-/** @return Owned `kth_ec_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_private_destruct`. */
+/**
+ * @return Owned `kth_ec_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_private_destruct`.
+ * @param wif_uncompressed Borrowed input; must be non-null. Copied into the resulting object; ownership of `wif_uncompressed` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_ec_private_mut_t kth_wallet_ec_private_construct_from_wif_uncompressed_version(kth_wif_uncompressed_t wif_uncompressed, uint8_t version);
+kth_ec_private_mut_t kth_wallet_ec_private_construct_from_wif_uncompressed_version(kth_wif_uncompressed_t const* wif_uncompressed, uint8_t version);
 
 /**
  * @return Owned `kth_ec_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_private_destruct`.
- * @warning `wif_uncompressed` MUST point to a buffer of at least 37 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `wif_uncompressed` MUST point to a buffer of at least 37 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_wif_uncompressed_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_ec_private_mut_t kth_wallet_ec_private_construct_from_wif_uncompressed_version_unsafe(uint8_t const* wif_uncompressed, uint8_t version);
 
-/** @return Owned `kth_ec_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_private_destruct`. */
+/**
+ * @return Owned `kth_ec_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_private_destruct`.
+ * @param secret Borrowed input; must be non-null. Copied into the resulting object; ownership of `secret` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_ec_private_mut_t kth_wallet_ec_private_construct_from_secret_version_compress(kth_hash_t secret, uint16_t version, kth_bool_t compress);
+kth_ec_private_mut_t kth_wallet_ec_private_construct_from_secret_version_compress(kth_hash_t const* secret, uint16_t version, kth_bool_t compress);
 
 /**
  * @return Owned `kth_ec_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_private_destruct`.
- * @warning `secret` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `secret` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_ec_private_mut_t kth_wallet_ec_private_construct_from_secret_version_compress_unsafe(uint8_t const* secret, uint16_t version, kth_bool_t compress);

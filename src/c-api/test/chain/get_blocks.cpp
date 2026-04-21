@@ -70,7 +70,7 @@ TEST_CASE("C-API GetBlocks - default construct is invalid", "[C-API GetBlocks]")
 
 TEST_CASE("C-API GetBlocks - field constructor is valid", "[C-API GetBlocks]") {
     kth_hash_list_mut_t starts = make_hash_list_of_two();
-    kth_get_blocks_mut_t gb = kth_chain_get_blocks_construct(starts, kStopHash);
+    kth_get_blocks_mut_t gb = kth_chain_get_blocks_construct(starts, &kStopHash);
     REQUIRE(gb != NULL);
     REQUIRE(kth_chain_get_blocks_is_valid(gb) != 0);
     kth_chain_get_blocks_destruct(gb);
@@ -82,7 +82,7 @@ TEST_CASE("C-API GetBlocks - construct_unsafe matches safe variant",
     kth_hash_list_mut_t starts = make_hash_list_of_two();
 
     kth_get_blocks_mut_t safe =
-        kth_chain_get_blocks_construct(starts, kStopHash);
+        kth_chain_get_blocks_construct(starts, &kStopHash);
     kth_get_blocks_mut_t unsafe =
         kth_chain_get_blocks_construct_unsafe(starts, kStopHash.hash);
 
@@ -105,7 +105,7 @@ TEST_CASE("C-API GetBlocks - to_data / from_data round-trip",
           "[C-API GetBlocks]") {
     kth_hash_list_mut_t starts = make_hash_list_of_two();
     kth_get_blocks_mut_t original =
-        kth_chain_get_blocks_construct(starts, kStopHash);
+        kth_chain_get_blocks_construct(starts, &kStopHash);
 
     kth_size_t out_size = 0;
     uint8_t* raw =
@@ -132,7 +132,7 @@ TEST_CASE("C-API GetBlocks - serialized_size matches to_data length",
           "[C-API GetBlocks]") {
     kth_hash_list_mut_t starts = make_hash_list_of_two();
     kth_get_blocks_mut_t gb =
-        kth_chain_get_blocks_construct(starts, kStopHash);
+        kth_chain_get_blocks_construct(starts, &kStopHash);
 
     kth_size_t expected =
         kth_chain_get_blocks_serialized_size(gb, kProtoVersion);
@@ -154,7 +154,7 @@ TEST_CASE("C-API GetBlocks - serialized_size matches to_data length",
 TEST_CASE("C-API GetBlocks - copy preserves equality", "[C-API GetBlocks]") {
     kth_hash_list_mut_t starts = make_hash_list_of_two();
     kth_get_blocks_mut_t original =
-        kth_chain_get_blocks_construct(starts, kStopHash);
+        kth_chain_get_blocks_construct(starts, &kStopHash);
 
     kth_get_blocks_mut_t copy = kth_chain_get_blocks_copy(original);
     REQUIRE(copy != NULL);
@@ -170,7 +170,7 @@ TEST_CASE("C-API GetBlocks - equals distinguishes different instances",
     kth_hash_list_mut_t starts = make_hash_list_of_two();
 
     kth_get_blocks_mut_t a =
-        kth_chain_get_blocks_construct(starts, kStopHash);
+        kth_chain_get_blocks_construct(starts, &kStopHash);
     kth_get_blocks_mut_t b = kth_chain_get_blocks_construct_default();
 
     REQUIRE(kth_chain_get_blocks_equals(a, b) == 0);
@@ -187,7 +187,7 @@ TEST_CASE("C-API GetBlocks - equals distinguishes different instances",
 TEST_CASE("C-API GetBlocks - stop_hash round-trips by value",
           "[C-API GetBlocks]") {
     kth_get_blocks_mut_t gb = kth_chain_get_blocks_construct_default();
-    kth_chain_get_blocks_set_stop_hash(gb, kStopHash);
+    kth_chain_get_blocks_set_stop_hash(gb, &kStopHash);
 
     kth_hash_t got = kth_chain_get_blocks_stop_hash(gb);
     REQUIRE(memcmp(got.hash, kStopHash.hash, KTH_BITCOIN_HASH_SIZE) == 0);
@@ -232,7 +232,7 @@ TEST_CASE("C-API GetBlocks - start_hashes count reflects input list",
 TEST_CASE("C-API GetBlocks - reset clears the object", "[C-API GetBlocks]") {
     kth_hash_list_mut_t starts = make_hash_list_of_two();
     kth_get_blocks_mut_t gb =
-        kth_chain_get_blocks_construct(starts, kStopHash);
+        kth_chain_get_blocks_construct(starts, &kStopHash);
 
     kth_chain_get_blocks_reset(gb);
 
@@ -249,7 +249,14 @@ TEST_CASE("C-API GetBlocks - reset clears the object", "[C-API GetBlocks]") {
 
 TEST_CASE("C-API GetBlocks - construct null start hashes aborts",
           "[C-API GetBlocks][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_get_blocks_construct(NULL, kStopHash));
+    KTH_EXPECT_ABORT(kth_chain_get_blocks_construct(NULL, &kStopHash));
+}
+
+TEST_CASE("C-API GetBlocks - construct null stop aborts",
+          "[C-API GetBlocks][precondition]") {
+    kth_hash_list_mut_t starts = make_hash_list_of_two();
+    KTH_EXPECT_ABORT(kth_chain_get_blocks_construct(starts, NULL));
+    kth_core_hash_list_destruct(starts);
 }
 
 TEST_CASE("C-API GetBlocks - construct_unsafe null stop aborts",
@@ -312,6 +319,13 @@ TEST_CASE("C-API GetBlocks - set_start_hashes null value aborts",
           "[C-API GetBlocks][precondition]") {
     kth_get_blocks_mut_t gb = kth_chain_get_blocks_construct_default();
     KTH_EXPECT_ABORT(kth_chain_get_blocks_set_start_hashes(gb, NULL));
+    kth_chain_get_blocks_destruct(gb);
+}
+
+TEST_CASE("C-API GetBlocks - set_stop_hash null aborts",
+          "[C-API GetBlocks][precondition]") {
+    kth_get_blocks_mut_t gb = kth_chain_get_blocks_construct_default();
+    KTH_EXPECT_ABORT(kth_chain_get_blocks_set_stop_hash(gb, NULL));
     kth_chain_get_blocks_destruct(gb);
 }
 

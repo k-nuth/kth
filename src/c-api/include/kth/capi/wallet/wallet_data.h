@@ -53,10 +53,11 @@ void kth_wallet_wallet_data_set_mnemonics(kth_wallet_data_mut_t self, kth_string
 KTH_EXPORT
 void kth_wallet_wallet_data_set_xpub(kth_wallet_data_mut_t self, kth_hd_public_const_t value);
 
+/** @param value Borrowed input; must be non-null. Copied into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
-void kth_wallet_wallet_data_set_encrypted_seed(kth_wallet_data_mut_t self, kth_encrypted_seed_t value);
+void kth_wallet_wallet_data_set_encrypted_seed(kth_wallet_data_mut_t self, kth_encrypted_seed_t const* value);
 
-/** @warning `value` MUST point to a buffer of at least 96 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value. */
+/** @warning `value` MUST point to a buffer of at least 96 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_encrypted_seed_t`. */
 KTH_EXPORT
 void kth_wallet_wallet_data_set_encrypted_seed_unsafe(kth_wallet_data_mut_t self, uint8_t const* value);
 

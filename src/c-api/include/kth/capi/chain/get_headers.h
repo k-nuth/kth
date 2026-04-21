@@ -27,14 +27,15 @@ kth_error_code_t kth_chain_get_headers_construct_from_data(uint8_t const* data, 
 /**
  * @return Owned `kth_get_headers_mut_t`. Caller must release with `kth_chain_get_headers_destruct`.
  * @param start Borrowed input. Copied by value into the resulting object; ownership of `start` stays with the caller.
+ * @param stop Borrowed input; must be non-null. Copied into the resulting object; ownership of `stop` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
-kth_get_headers_mut_t kth_chain_get_headers_construct(kth_hash_list_const_t start, kth_hash_t stop);
+kth_get_headers_mut_t kth_chain_get_headers_construct(kth_hash_list_const_t start, kth_hash_t const* stop);
 
 /**
  * @return Owned `kth_get_headers_mut_t`. Caller must release with `kth_chain_get_headers_destruct`.
  * @param start Borrowed input. Copied by value into the resulting object; ownership of `start` stays with the caller.
- * @warning `stop` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `stop` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_get_headers_mut_t kth_chain_get_headers_construct_unsafe(kth_hash_list_const_t start, uint8_t const* stop);
@@ -86,10 +87,11 @@ kth_hash_t kth_chain_get_headers_stop_hash(kth_get_headers_const_t self);
 KTH_EXPORT
 void kth_chain_get_headers_set_start_hashes(kth_get_headers_mut_t self, kth_hash_list_const_t value);
 
+/** @param value Borrowed input; must be non-null. Copied into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
-void kth_chain_get_headers_set_stop_hash(kth_get_headers_mut_t self, kth_hash_t value);
+void kth_chain_get_headers_set_stop_hash(kth_get_headers_mut_t self, kth_hash_t const* value);
 
-/** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value. */
+/** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
 KTH_EXPORT
 void kth_chain_get_headers_set_stop_hash_unsafe(kth_get_headers_mut_t self, uint8_t const* value);
 

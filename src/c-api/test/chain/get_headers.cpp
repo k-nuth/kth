@@ -70,7 +70,7 @@ TEST_CASE("C-API GetHeaders - default construct is invalid", "[C-API GetHeaders]
 
 TEST_CASE("C-API GetHeaders - field constructor is valid", "[C-API GetHeaders]") {
     kth_hash_list_mut_t starts = make_hash_list_of_two();
-    kth_get_headers_mut_t gh = kth_chain_get_headers_construct(starts, kStopHash);
+    kth_get_headers_mut_t gh = kth_chain_get_headers_construct(starts, &kStopHash);
     REQUIRE(gh != NULL);
     REQUIRE(kth_chain_get_headers_is_valid(gh) != 0);
     kth_chain_get_headers_destruct(gh);
@@ -82,7 +82,7 @@ TEST_CASE("C-API GetHeaders - construct_unsafe matches safe variant",
     kth_hash_list_mut_t starts = make_hash_list_of_two();
 
     kth_get_headers_mut_t safe =
-        kth_chain_get_headers_construct(starts, kStopHash);
+        kth_chain_get_headers_construct(starts, &kStopHash);
     kth_get_headers_mut_t unsafe =
         kth_chain_get_headers_construct_unsafe(starts, kStopHash.hash);
 
@@ -105,7 +105,7 @@ TEST_CASE("C-API GetHeaders - to_data / from_data round-trip",
           "[C-API GetHeaders]") {
     kth_hash_list_mut_t starts = make_hash_list_of_two();
     kth_get_headers_mut_t original =
-        kth_chain_get_headers_construct(starts, kStopHash);
+        kth_chain_get_headers_construct(starts, &kStopHash);
 
     kth_size_t out_size = 0;
     uint8_t* raw =
@@ -132,7 +132,7 @@ TEST_CASE("C-API GetHeaders - serialized_size matches to_data length",
           "[C-API GetHeaders]") {
     kth_hash_list_mut_t starts = make_hash_list_of_two();
     kth_get_headers_mut_t gh =
-        kth_chain_get_headers_construct(starts, kStopHash);
+        kth_chain_get_headers_construct(starts, &kStopHash);
 
     kth_size_t expected =
         kth_chain_get_headers_serialized_size(gh, kProtoVersion);
@@ -154,7 +154,7 @@ TEST_CASE("C-API GetHeaders - serialized_size matches to_data length",
 TEST_CASE("C-API GetHeaders - copy preserves equality", "[C-API GetHeaders]") {
     kth_hash_list_mut_t starts = make_hash_list_of_two();
     kth_get_headers_mut_t original =
-        kth_chain_get_headers_construct(starts, kStopHash);
+        kth_chain_get_headers_construct(starts, &kStopHash);
 
     kth_get_headers_mut_t copy = kth_chain_get_headers_copy(original);
     REQUIRE(copy != NULL);
@@ -170,7 +170,7 @@ TEST_CASE("C-API GetHeaders - equals distinguishes different instances",
     kth_hash_list_mut_t starts = make_hash_list_of_two();
 
     kth_get_headers_mut_t a =
-        kth_chain_get_headers_construct(starts, kStopHash);
+        kth_chain_get_headers_construct(starts, &kStopHash);
     kth_get_headers_mut_t b = kth_chain_get_headers_construct_default();
 
     REQUIRE(kth_chain_get_headers_equals(a, b) == 0);
@@ -187,7 +187,7 @@ TEST_CASE("C-API GetHeaders - equals distinguishes different instances",
 TEST_CASE("C-API GetHeaders - stop_hash round-trips by value",
           "[C-API GetHeaders]") {
     kth_get_headers_mut_t gh = kth_chain_get_headers_construct_default();
-    kth_chain_get_headers_set_stop_hash(gh, kStopHash);
+    kth_chain_get_headers_set_stop_hash(gh, &kStopHash);
 
     kth_hash_t got = kth_chain_get_headers_stop_hash(gh);
     REQUIRE(memcmp(got.hash, kStopHash.hash, KTH_BITCOIN_HASH_SIZE) == 0);
@@ -232,7 +232,7 @@ TEST_CASE("C-API GetHeaders - start_hashes count reflects input list",
 TEST_CASE("C-API GetHeaders - reset clears the object", "[C-API GetHeaders]") {
     kth_hash_list_mut_t starts = make_hash_list_of_two();
     kth_get_headers_mut_t gh =
-        kth_chain_get_headers_construct(starts, kStopHash);
+        kth_chain_get_headers_construct(starts, &kStopHash);
 
     kth_chain_get_headers_reset(gh);
 
@@ -249,7 +249,14 @@ TEST_CASE("C-API GetHeaders - reset clears the object", "[C-API GetHeaders]") {
 
 TEST_CASE("C-API GetHeaders - construct null start hashes aborts",
           "[C-API GetHeaders][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_get_headers_construct(NULL, kStopHash));
+    KTH_EXPECT_ABORT(kth_chain_get_headers_construct(NULL, &kStopHash));
+}
+
+TEST_CASE("C-API GetHeaders - construct null stop aborts",
+          "[C-API GetHeaders][precondition]") {
+    kth_hash_list_mut_t starts = make_hash_list_of_two();
+    KTH_EXPECT_ABORT(kth_chain_get_headers_construct(starts, NULL));
+    kth_core_hash_list_destruct(starts);
 }
 
 TEST_CASE("C-API GetHeaders - construct_unsafe null stop aborts",
@@ -312,6 +319,13 @@ TEST_CASE("C-API GetHeaders - set_start_hashes null value aborts",
           "[C-API GetHeaders][precondition]") {
     kth_get_headers_mut_t gh = kth_chain_get_headers_construct_default();
     KTH_EXPECT_ABORT(kth_chain_get_headers_set_start_hashes(gh, NULL));
+    kth_chain_get_headers_destruct(gh);
+}
+
+TEST_CASE("C-API GetHeaders - set_stop_hash null aborts",
+          "[C-API GetHeaders][precondition]") {
+    kth_get_headers_mut_t gh = kth_chain_get_headers_construct_default();
+    KTH_EXPECT_ABORT(kth_chain_get_headers_set_stop_hash(gh, NULL));
     kth_chain_get_headers_destruct(gh);
 }
 
