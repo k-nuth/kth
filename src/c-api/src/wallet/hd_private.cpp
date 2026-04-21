@@ -29,36 +29,45 @@ kth_hd_private_mut_t kth_wallet_hd_private_construct_from_seed_prefixes(uint8_t 
     return kth::leak_if_valid(cpp_t(seed_cpp, prefixes));
 }
 
-kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key(kth_hd_key_t private_key) {
-    auto const private_key_cpp = kth::hd_key_to_cpp(private_key.data);
+kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key(kth_hd_key_t const* private_key) {
+    KTH_PRECONDITION(private_key != nullptr);
+    auto private_key_cpp = kth::hd_key_to_cpp(private_key->data);
+    kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
     return kth::leak_if_valid(cpp_t(private_key_cpp));
 }
 
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_unsafe(uint8_t const* private_key) {
     KTH_PRECONDITION(private_key != nullptr);
-    auto const private_key_cpp = kth::hd_key_to_cpp(private_key);
+    auto private_key_cpp = kth::hd_key_to_cpp(private_key);
+    kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
     return kth::leak_if_valid(cpp_t(private_key_cpp));
 }
 
-kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefixes(kth_hd_key_t private_key, uint64_t prefixes) {
-    auto const private_key_cpp = kth::hd_key_to_cpp(private_key.data);
+kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefixes(kth_hd_key_t const* private_key, uint64_t prefixes) {
+    KTH_PRECONDITION(private_key != nullptr);
+    auto private_key_cpp = kth::hd_key_to_cpp(private_key->data);
+    kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
     return kth::leak_if_valid(cpp_t(private_key_cpp, prefixes));
 }
 
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefixes_unsafe(uint8_t const* private_key, uint64_t prefixes) {
     KTH_PRECONDITION(private_key != nullptr);
-    auto const private_key_cpp = kth::hd_key_to_cpp(private_key);
+    auto private_key_cpp = kth::hd_key_to_cpp(private_key);
+    kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
     return kth::leak_if_valid(cpp_t(private_key_cpp, prefixes));
 }
 
-kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefix(kth_hd_key_t private_key, uint32_t prefix) {
-    auto const private_key_cpp = kth::hd_key_to_cpp(private_key.data);
+kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefix(kth_hd_key_t const* private_key, uint32_t prefix) {
+    KTH_PRECONDITION(private_key != nullptr);
+    auto private_key_cpp = kth::hd_key_to_cpp(private_key->data);
+    kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
     return kth::leak_if_valid(cpp_t(private_key_cpp, prefix));
 }
 
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefix_unsafe(uint8_t const* private_key, uint32_t prefix) {
     KTH_PRECONDITION(private_key != nullptr);
-    auto const private_key_cpp = kth::hd_key_to_cpp(private_key);
+    auto private_key_cpp = kth::hd_key_to_cpp(private_key);
+    kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
     return kth::leak_if_valid(cpp_t(private_key_cpp, prefix));
 }
 

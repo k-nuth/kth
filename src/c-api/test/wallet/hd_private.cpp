@@ -94,7 +94,7 @@ TEST_CASE("C-API HdPrivate - to_hd_key round-trips", "[C-API HdPrivate]") {
     REQUIRE(original != NULL);
 
     kth_hd_key_t hd_key = kth_wallet_hd_private_to_hd_key(original);
-    kth_hd_private_mut_t reconstructed = kth_wallet_hd_private_construct_from_private_key(hd_key);
+    kth_hd_private_mut_t reconstructed = kth_wallet_hd_private_construct_from_private_key(&hd_key);
     REQUIRE(reconstructed != NULL);
     REQUIRE(kth_wallet_hd_private_equals(original, reconstructed) != 0);
 
@@ -189,4 +189,19 @@ TEST_CASE("C-API HdPrivate - copy null aborts",
 TEST_CASE("C-API HdPrivate - construct_from_seed null data with non-zero size aborts",
           "[C-API HdPrivate][precondition]") {
     KTH_EXPECT_ABORT(kth_wallet_hd_private_construct_from_seed_prefixes(NULL, 16, 0));
+}
+
+TEST_CASE("C-API HdPrivate - construct_from_private_key null aborts",
+          "[C-API HdPrivate][precondition]") {
+    KTH_EXPECT_ABORT(kth_wallet_hd_private_construct_from_private_key(NULL));
+}
+
+TEST_CASE("C-API HdPrivate - construct_from_private_key_prefixes null aborts",
+          "[C-API HdPrivate][precondition]") {
+    KTH_EXPECT_ABORT(kth_wallet_hd_private_construct_from_private_key_prefixes(NULL, 0));
+}
+
+TEST_CASE("C-API HdPrivate - construct_from_private_key_prefix null aborts",
+          "[C-API HdPrivate][precondition]") {
+    KTH_EXPECT_ABORT(kth_wallet_hd_private_construct_from_private_key_prefix(NULL, 0));
 }

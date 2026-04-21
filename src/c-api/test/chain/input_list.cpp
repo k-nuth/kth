@@ -34,7 +34,7 @@ static kth_input_mut_t make_input(void) {
     kth_error_code_t ec = kth_chain_script_construct_from_data(
         kScriptBody, sizeof(kScriptBody), 0, &script);
     REQUIRE(ec == kth_ec_success);
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kPrevHash, 0);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kPrevHash, 0);
     REQUIRE(op != NULL);
     kth_input_mut_t in = kth_chain_input_construct(op, script, 0xffffffffu);
     REQUIRE(in != NULL);

@@ -39,8 +39,35 @@
 #include <kth/node/full_node.hpp>
 // #endif
 
+#include <kth/capi/secure_memory.h>
+
 
 namespace kth {
+
+// RAII scrub for stack-local `kth::hash_digest` / `kth::hd_key` /
+// `kth::encrypted_seed` / WIF copies that the C-API impl materialises
+// from a `kth_xxx_t const*` input via `hash_to_cpp` / `hd_key_to_cpp` /
+// etc. The C-API leaves those copies on its own stack frame; a guard
+// scoped for the lifetime of the local wipes them on every return path
+// (including exceptions propagating past KTH_PRECONDITION / expected
+// error-returns) so key material does not linger beyond the call.
+//
+// Declared non-copyable / non-movable so accidental copies can't
+// duplicate the pointer in multiple guards that would double-scrub
+// (harmless but confusing if later changed to do more).
+struct secure_scrub {
+    void* p;
+    std::size_t n;
+
+    secure_scrub(void* p_, std::size_t n_) noexcept : p(p_), n(n_) {}
+    ~secure_scrub() noexcept { kth_core_secure_zero(p, n); }
+
+    secure_scrub(secure_scrub const&) = delete;
+    secure_scrub(secure_scrub&&) = delete;
+    secure_scrub& operator=(secure_scrub const&) = delete;
+    secure_scrub& operator=(secure_scrub&&) = delete;
+};
+
 namespace detail {
 
 // template <typename T>

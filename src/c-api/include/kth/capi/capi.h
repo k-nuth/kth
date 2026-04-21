@@ -79,6 +79,7 @@
 #include <kth/capi/double_list.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/hash_list.h>
+#include <kth/capi/secure_memory.h>
 #include <kth/capi/string_list.h>
 #include <kth/capi/u32_list.h>
 #include <kth/capi/u64_list.h>

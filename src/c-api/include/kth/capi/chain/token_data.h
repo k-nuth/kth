@@ -25,35 +25,44 @@ kth_error_code_t kth_chain_token_construct_from_data(uint8_t const* data, kth_si
 
 // Static factories
 
-/** @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`. */
+/**
+ * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
+ * @param id Borrowed input; must be non-null. Read during the call; ownership of `id` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_token_data_mut_t kth_chain_token_make_fungible(kth_hash_t id, uint64_t amount);
+kth_token_data_mut_t kth_chain_token_make_fungible(kth_hash_t const* id, uint64_t amount);
 
 /**
  * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
- * @warning `id` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `id` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_token_data_mut_t kth_chain_token_make_fungible_unsafe(uint8_t const* id, uint64_t amount);
 
-/** @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`. */
+/**
+ * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
+ * @param id Borrowed input; must be non-null. Read during the call; ownership of `id` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_token_data_mut_t kth_chain_token_make_non_fungible(kth_hash_t id, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
+kth_token_data_mut_t kth_chain_token_make_non_fungible(kth_hash_t const* id, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
 
 /**
  * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
- * @warning `id` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `id` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_token_data_mut_t kth_chain_token_make_non_fungible_unsafe(uint8_t const* id, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
 
-/** @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`. */
+/**
+ * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
+ * @param id Borrowed input; must be non-null. Read during the call; ownership of `id` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_token_data_mut_t kth_chain_token_make_both(kth_hash_t id, uint64_t amount, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
+kth_token_data_mut_t kth_chain_token_make_both(kth_hash_t const* id, uint64_t amount, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
 
 /**
  * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
- * @warning `id` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `id` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_token_data_mut_t kth_chain_token_make_both_unsafe(uint8_t const* id, uint64_t amount, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
@@ -113,10 +122,11 @@ uint8_t kth_chain_token_data_bitfield(kth_token_data_const_t self);
 
 // Setters
 
+/** @param value Borrowed input; must be non-null. Copied into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
-void kth_chain_token_data_set_id(kth_token_data_mut_t self, kth_hash_t value);
+void kth_chain_token_data_set_id(kth_token_data_mut_t self, kth_hash_t const* value);
 
-/** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value. */
+/** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
 KTH_EXPORT
 void kth_chain_token_data_set_id_unsafe(kth_token_data_mut_t self, uint8_t const* value);
 

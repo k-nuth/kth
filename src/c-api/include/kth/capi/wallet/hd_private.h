@@ -26,35 +26,44 @@ kth_hd_private_mut_t kth_wallet_hd_private_construct_default(void);
 KTH_EXPORT KTH_OWNED
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_seed_prefixes(uint8_t const* seed, kth_size_t n, uint64_t prefixes);
 
-/** @return Owned `kth_hd_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_private_destruct`. */
+/**
+ * @return Owned `kth_hd_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_private_destruct`.
+ * @param private_key Borrowed input; must be non-null. Copied into the resulting object; ownership of `private_key` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key(kth_hd_key_t private_key);
+kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key(kth_hd_key_t const* private_key);
 
 /**
  * @return Owned `kth_hd_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_private_destruct`.
- * @warning `private_key` MUST point to a buffer of at least 82 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `private_key` MUST point to a buffer of at least 82 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hd_key_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_unsafe(uint8_t const* private_key);
 
-/** @return Owned `kth_hd_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_private_destruct`. */
+/**
+ * @return Owned `kth_hd_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_private_destruct`.
+ * @param private_key Borrowed input; must be non-null. Copied into the resulting object; ownership of `private_key` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefixes(kth_hd_key_t private_key, uint64_t prefixes);
+kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefixes(kth_hd_key_t const* private_key, uint64_t prefixes);
 
 /**
  * @return Owned `kth_hd_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_private_destruct`.
- * @warning `private_key` MUST point to a buffer of at least 82 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `private_key` MUST point to a buffer of at least 82 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hd_key_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefixes_unsafe(uint8_t const* private_key, uint64_t prefixes);
 
-/** @return Owned `kth_hd_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_private_destruct`. */
+/**
+ * @return Owned `kth_hd_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_private_destruct`.
+ * @param private_key Borrowed input; must be non-null. Copied into the resulting object; ownership of `private_key` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefix(kth_hd_key_t private_key, uint32_t prefix);
+kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefix(kth_hd_key_t const* private_key, uint32_t prefix);
 
 /**
  * @return Owned `kth_hd_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_private_destruct`.
- * @warning `private_key` MUST point to a buffer of at least 82 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `private_key` MUST point to a buffer of at least 82 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hd_key_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefix_unsafe(uint8_t const* private_key, uint32_t prefix);

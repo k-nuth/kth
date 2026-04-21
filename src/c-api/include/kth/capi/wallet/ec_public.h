@@ -36,24 +36,30 @@ kth_ec_public_mut_t kth_wallet_ec_public_construct_from_decoded(uint8_t const* d
 KTH_EXPORT KTH_OWNED
 kth_ec_public_mut_t kth_wallet_ec_public_construct_from_base16(char const* base16);
 
-/** @return Owned `kth_ec_public_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_public_destruct`. */
+/**
+ * @return Owned `kth_ec_public_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_public_destruct`.
+ * @param compressed_point Borrowed input; must be non-null. Copied into the resulting object; ownership of `compressed_point` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_ec_public_mut_t kth_wallet_ec_public_construct_from_compressed_point_compress(kth_ec_compressed_t compressed_point, kth_bool_t compress);
+kth_ec_public_mut_t kth_wallet_ec_public_construct_from_compressed_point_compress(kth_ec_compressed_t const* compressed_point, kth_bool_t compress);
 
 /**
  * @return Owned `kth_ec_public_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_public_destruct`.
- * @warning `compressed_point` MUST point to a buffer of at least 33 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `compressed_point` MUST point to a buffer of at least 33 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_ec_compressed_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_ec_public_mut_t kth_wallet_ec_public_construct_from_compressed_point_compress_unsafe(uint8_t const* compressed_point, kth_bool_t compress);
 
-/** @return Owned `kth_ec_public_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_public_destruct`. */
+/**
+ * @return Owned `kth_ec_public_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_public_destruct`.
+ * @param uncompressed_point Borrowed input; must be non-null. Copied into the resulting object; ownership of `uncompressed_point` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_ec_public_mut_t kth_wallet_ec_public_construct_from_uncompressed_point_compress(kth_ec_uncompressed_t uncompressed_point, kth_bool_t compress);
+kth_ec_public_mut_t kth_wallet_ec_public_construct_from_uncompressed_point_compress(kth_ec_uncompressed_t const* uncompressed_point, kth_bool_t compress);
 
 /**
  * @return Owned `kth_ec_public_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_public_destruct`.
- * @warning `uncompressed_point` MUST point to a buffer of at least 65 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `uncompressed_point` MUST point to a buffer of at least 65 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_ec_uncompressed_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_ec_public_mut_t kth_wallet_ec_public_construct_from_uncompressed_point_compress_unsafe(uint8_t const* uncompressed_point, kth_bool_t compress);

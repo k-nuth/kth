@@ -59,7 +59,7 @@ static uint8_t const kMinimalTx[10] = {
 
 static kth_header_mut_t make_header(void) {
     return kth_chain_header_construct(
-        kHdrVersion, kPrevHash, kMerkle, kHdrTimestamp, kHdrBits, kHdrNonce);
+        kHdrVersion, &kPrevHash, &kMerkle, kHdrTimestamp, kHdrBits, kHdrNonce);
 }
 
 static kth_transaction_mut_t make_tx(void) {

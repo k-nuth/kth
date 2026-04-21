@@ -69,16 +69,19 @@ void kth_wallet_wallet_data_set_xpub(kth_wallet_data_mut_t self, kth_hd_public_c
     kth::cpp_ref<cpp_t>(self).xpub = value_cpp;
 }
 
-void kth_wallet_wallet_data_set_encrypted_seed(kth_wallet_data_mut_t self, kth_encrypted_seed_t value) {
+void kth_wallet_wallet_data_set_encrypted_seed(kth_wallet_data_mut_t self, kth_encrypted_seed_t const* value) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth::encrypted_seed_to_cpp(value.hash);
+    KTH_PRECONDITION(value != nullptr);
+    auto value_cpp = kth::encrypted_seed_to_cpp(value->hash);
+    kth::secure_scrub value_cpp_scrub{&value_cpp, sizeof(value_cpp)};
     kth::cpp_ref<cpp_t>(self).encrypted_seed = value_cpp;
 }
 
 void kth_wallet_wallet_data_set_encrypted_seed_unsafe(kth_wallet_data_mut_t self, uint8_t const* value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
-    auto const value_cpp = kth::encrypted_seed_to_cpp(value);
+    auto value_cpp = kth::encrypted_seed_to_cpp(value);
+    kth::secure_scrub value_cpp_scrub{&value_cpp, sizeof(value_cpp)};
     kth::cpp_ref<cpp_t>(self).encrypted_seed = value_cpp;
 }
 

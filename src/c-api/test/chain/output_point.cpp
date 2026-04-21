@@ -49,7 +49,7 @@ TEST_CASE("C-API OutputPoint - default construct is invalid", "[C-API OutputPoin
 }
 
 TEST_CASE("C-API OutputPoint - construct from hash and index", "[C-API OutputPoint]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kHash, 1234u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHash, 1234u);
     REQUIRE(kth_chain_output_point_is_valid(op) != 0);
     REQUIRE(kth_chain_output_point_index(op) == 1234u);
     REQUIRE(kth_hash_equal(kth_chain_output_point_hash(op), kHash) != 0);
@@ -57,7 +57,7 @@ TEST_CASE("C-API OutputPoint - construct from hash and index", "[C-API OutputPoi
 }
 
 TEST_CASE("C-API OutputPoint - construct from point preserves fields", "[C-API OutputPoint]") {
-    kth_point_mut_t pt = kth_chain_point_construct(kHash, 42u);
+    kth_point_mut_t pt = kth_chain_point_construct(&kHash, 42u);
     kth_output_point_mut_t op = kth_chain_output_point_construct_from_point(pt);
 
     REQUIRE(kth_chain_output_point_is_valid(op) != 0);
@@ -83,7 +83,7 @@ TEST_CASE("C-API OutputPoint - from_data insufficient bytes fails", "[C-API Outp
 
 TEST_CASE("C-API OutputPoint - to_data / from_data roundtrip", "[C-API OutputPoint]") {
     kth_output_point_mut_t expected =
-        kth_chain_output_point_construct_from_hash_index(kHash, 53213u);
+        kth_chain_output_point_construct_from_hash_index(&kHash, 53213u);
 
     kth_size_t size = 0;
     uint8_t* raw = kth_chain_output_point_to_data(expected, 1, &size);
@@ -125,13 +125,13 @@ TEST_CASE("C-API OutputPoint - construct_from_data NULL data with zero size retu
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API OutputPoint - serialized_size is fixed 36", "[C-API OutputPoint]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kHash, 7u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHash, 7u);
     REQUIRE(kth_chain_output_point_serialized_size(op, 1) == 36u);
     kth_chain_output_point_destruct(op);
 }
 
 TEST_CASE("C-API OutputPoint - to_data fixed-size payload", "[C-API OutputPoint]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kHash, 7u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHash, 7u);
 
     kth_size_t size = 0;
     uint8_t* raw = kth_chain_output_point_to_data(op, 1, &size);
@@ -156,7 +156,7 @@ TEST_CASE("C-API OutputPoint - hash setter roundtrip", "[C-API OutputPoint]") {
     kth_output_point_mut_t op = kth_chain_output_point_construct_default();
     REQUIRE(kth_hash_is_null(kth_chain_output_point_hash(op)) != 0);
 
-    kth_chain_output_point_set_hash(op, kHash);
+    kth_chain_output_point_set_hash(op, &kHash);
     REQUIRE(kth_hash_equal(kth_chain_output_point_hash(op), kHash) != 0);
 
     kth_chain_output_point_destruct(op);
@@ -175,7 +175,7 @@ TEST_CASE("C-API OutputPoint - index setter roundtrip", "[C-API OutputPoint]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API OutputPoint - copy preserves fields", "[C-API OutputPoint]") {
-    kth_output_point_mut_t original = kth_chain_output_point_construct_from_hash_index(kHash, 524342u);
+    kth_output_point_mut_t original = kth_chain_output_point_construct_from_hash_index(&kHash, 524342u);
     kth_output_point_mut_t copy = kth_chain_output_point_copy(original);
 
     REQUIRE(kth_chain_output_point_is_valid(copy) != 0);
@@ -187,8 +187,8 @@ TEST_CASE("C-API OutputPoint - copy preserves fields", "[C-API OutputPoint]") {
 }
 
 TEST_CASE("C-API OutputPoint - equals duplicates", "[C-API OutputPoint]") {
-    kth_output_point_mut_t a = kth_chain_output_point_construct_from_hash_index(kHash, 524342u);
-    kth_output_point_mut_t b = kth_chain_output_point_construct_from_hash_index(kHash, 524342u);
+    kth_output_point_mut_t a = kth_chain_output_point_construct_from_hash_index(&kHash, 524342u);
+    kth_output_point_mut_t b = kth_chain_output_point_construct_from_hash_index(&kHash, 524342u);
     kth_output_point_mut_t c = kth_chain_output_point_construct_default();
 
     REQUIRE(kth_chain_output_point_equals(a, b) != 0);
@@ -204,7 +204,7 @@ TEST_CASE("C-API OutputPoint - equals duplicates", "[C-API OutputPoint]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API OutputPoint - checksum all ones", "[C-API OutputPoint]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kAllOnes, 0xffffffffu);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kAllOnes, 0xffffffffu);
     REQUIRE(kth_chain_output_point_checksum(op) == 0xffffffffffffffffull);
     kth_chain_output_point_destruct(op);
 }
@@ -212,7 +212,7 @@ TEST_CASE("C-API OutputPoint - checksum all ones", "[C-API OutputPoint]") {
 TEST_CASE("C-API OutputPoint - checksum all zeros", "[C-API OutputPoint]") {
     kth_hash_t zero;
     memset(zero.hash, 0, sizeof(zero.hash));
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(zero, 0u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&zero, 0u);
     REQUIRE(kth_chain_output_point_checksum(op) == 0ull);
     kth_chain_output_point_destruct(op);
 }
@@ -244,9 +244,15 @@ TEST_CASE("C-API OutputPoint - construct_from_data null out aborts",
     KTH_EXPECT_ABORT(kth_chain_output_point_construct_from_data(data, 10, 1, NULL));
 }
 
-// Safe `kth_chain_output_point_construct_from_hash_index` takes the hash
-// by value: passing NULL is a compile error. The runtime precondition
-// still applies on the `_unsafe` companion.
+// Both `kth_chain_output_point_construct_from_hash_index` (safe, takes
+// `kth_hash_t const*`) and its `_unsafe` companion (takes raw
+// `uint8_t const*`) enforce the same runtime precondition that the hash
+// pointer is non-null.
+TEST_CASE("C-API OutputPoint - construct_from_hash_index null hash aborts",
+          "[C-API OutputPoint][precondition]") {
+    KTH_EXPECT_ABORT(kth_chain_output_point_construct_from_hash_index(NULL, 0));
+}
+
 TEST_CASE("C-API OutputPoint - construct_from_hash_index_unsafe null hash aborts",
           "[C-API OutputPoint][precondition]") {
     KTH_EXPECT_ABORT(kth_chain_output_point_construct_from_hash_index_unsafe(NULL, 0));
@@ -267,6 +273,13 @@ TEST_CASE("C-API OutputPoint - to_data null out_size aborts",
 TEST_CASE("C-API OutputPoint - copy null self aborts",
           "[C-API OutputPoint][precondition]") {
     KTH_EXPECT_ABORT(kth_chain_output_point_copy(NULL));
+}
+
+TEST_CASE("C-API OutputPoint - set_hash null aborts",
+          "[C-API OutputPoint][precondition]") {
+    kth_output_point_mut_t op = kth_chain_output_point_construct_default();
+    KTH_EXPECT_ABORT(kth_chain_output_point_set_hash(op, NULL));
+    kth_chain_output_point_destruct(op);
 }
 
 TEST_CASE("C-API OutputPoint - set_hash_unsafe null aborts",

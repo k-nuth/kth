@@ -24,13 +24,16 @@ kth_output_point_mut_t kth_chain_output_point_construct_default(void);
 KTH_EXPORT
 kth_error_code_t kth_chain_output_point_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_output_point_mut_t* out);
 
-/** @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`. */
+/**
+ * @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`.
+ * @param hash Borrowed input; must be non-null. Copied into the resulting object; ownership of `hash` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_output_point_mut_t kth_chain_output_point_construct_from_hash_index(kth_hash_t hash, uint32_t index);
+kth_output_point_mut_t kth_chain_output_point_construct_from_hash_index(kth_hash_t const* hash, uint32_t index);
 
 /**
  * @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`.
- * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_output_point_mut_t kth_chain_output_point_construct_from_hash_index_unsafe(uint8_t const* hash, uint32_t index);
@@ -87,10 +90,11 @@ uint64_t kth_chain_output_point_checksum(kth_output_point_const_t self);
 
 // Setters
 
+/** @param value Borrowed input; must be non-null. Copied into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
-void kth_chain_output_point_set_hash(kth_output_point_mut_t self, kth_hash_t value);
+void kth_chain_output_point_set_hash(kth_output_point_mut_t self, kth_hash_t const* value);
 
-/** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value. */
+/** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
 KTH_EXPORT
 void kth_chain_output_point_set_hash_unsafe(kth_output_point_mut_t self, uint8_t const* value);
 

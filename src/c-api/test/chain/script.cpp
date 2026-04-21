@@ -174,7 +174,7 @@ TEST_CASE("C-API Script - equals different scripts", "[C-API Script]") {
 TEST_CASE("C-API Script - to_pay_script_hash_pattern returns operation list",
           "[C-API Script]") {
     kth_operation_list_mut_t ops =
-        kth_chain_script_to_pay_script_hash_pattern(kShortHash);
+        kth_chain_script_to_pay_script_hash_pattern(&kShortHash);
     REQUIRE(ops != NULL);
     // We can't introspect operation_list element-by-element from the C-API
     // yet, but constructing a script from it should yield a valid script.
@@ -188,7 +188,7 @@ TEST_CASE("C-API Script - to_pay_script_hash_pattern returns operation list",
 TEST_CASE("C-API Script - to_pay_script_hash_32_pattern returns operation list",
           "[C-API Script]") {
     kth_operation_list_mut_t ops =
-        kth_chain_script_to_pay_script_hash_32_pattern(kHash32);
+        kth_chain_script_to_pay_script_hash_32_pattern(&kHash32);
     REQUIRE(ops != NULL);
     kth_script_mut_t script = kth_chain_script_construct_from_operations(ops);
     REQUIRE(kth_chain_script_is_valid(script) != 0);
@@ -311,7 +311,7 @@ TEST_CASE("C-API Script - to_pay_public_key_hash_pattern always returns a list",
     // empty-as-failure convention. Any 20-byte hash produces a valid
     // 5-op list, so the factory never returns NULL.
     kth_operation_list_mut_t ops =
-        kth_chain_script_to_pay_public_key_hash_pattern(kShortHash);
+        kth_chain_script_to_pay_public_key_hash_pattern(&kShortHash);
     REQUIRE(ops != NULL);
     kth_chain_operation_list_destruct(ops);
 }
@@ -401,9 +401,15 @@ TEST_CASE("C-API Script - equals null self aborts",
     kth_chain_script_destruct(other);
 }
 
-// Safe `kth_chain_script_to_pay_script_hash_pattern` takes the short
-// hash by value: passing NULL is a compile error. The runtime
-// precondition still applies on the `_unsafe` companion.
+// Both `kth_chain_script_to_pay_script_hash_pattern` (safe, takes
+// `kth_shorthash_t const*`) and its `_unsafe` companion (takes raw
+// `uint8_t const*`) enforce the same runtime precondition that the hash
+// pointer is non-null.
+TEST_CASE("C-API Script - to_pay_script_hash_pattern null hash aborts",
+          "[C-API Script][precondition]") {
+    KTH_EXPECT_ABORT(kth_chain_script_to_pay_script_hash_pattern(NULL));
+}
+
 TEST_CASE("C-API Script - to_pay_script_hash_pattern_unsafe null hash aborts",
           "[C-API Script][precondition]") {
     KTH_EXPECT_ABORT(kth_chain_script_to_pay_script_hash_pattern_unsafe(NULL));
@@ -427,6 +433,17 @@ TEST_CASE("C-API Script - at() out of bounds aborts",
     kth_chain_script_destruct(script);
 }
 
+TEST_CASE("C-API Script - check_signature null signature aborts",
+          "[C-API Script][precondition]") {
+    kth_transaction_mut_t tx = kth_chain_transaction_construct_default();
+    kth_script_mut_t script = kth_chain_script_construct_default();
+    kth_size_t out_size = 0;
+    KTH_EXPECT_ABORT(kth_chain_script_check_signature(
+        NULL, 0, NULL, 0, script, tx, 0, 0, 0, &out_size));
+    kth_chain_script_destruct(script);
+    kth_chain_transaction_destruct(tx);
+}
+
 // ---------------------------------------------------------------------------
 // Regression: null public_key with zero size must not UB
 // ---------------------------------------------------------------------------
@@ -442,7 +459,7 @@ TEST_CASE("C-API Script - check_signature with null public_key and zero size",
     // public_key=NULL, public_key_n=0 is valid per the precondition.
     // Must not crash (data_chunk(nullptr, nullptr+0) is UB).
     kth_bool_t result = kth_chain_script_check_signature(
-        sig, 0, NULL, 0, script, tx, 0, 0, 0, &out_size);
+        &sig, 0, NULL, 0, script, tx, 0, 0, 0, &out_size);
     (void)result;
 
     kth_chain_script_destruct(script);

@@ -43,8 +43,9 @@ kth_ec_public_mut_t kth_wallet_ec_public_construct_from_base16(char const* base1
     return kth::leak_if_valid(cpp_t(base16_cpp));
 }
 
-kth_ec_public_mut_t kth_wallet_ec_public_construct_from_compressed_point_compress(kth_ec_compressed_t compressed_point, kth_bool_t compress) {
-    auto const compressed_point_cpp = kth::ec_compressed_to_cpp(compressed_point.data);
+kth_ec_public_mut_t kth_wallet_ec_public_construct_from_compressed_point_compress(kth_ec_compressed_t const* compressed_point, kth_bool_t compress) {
+    KTH_PRECONDITION(compressed_point != nullptr);
+    auto const compressed_point_cpp = kth::ec_compressed_to_cpp(compressed_point->data);
     auto const compress_cpp = kth::int_to_bool(compress);
     return kth::leak_if_valid(cpp_t(compressed_point_cpp, compress_cpp));
 }
@@ -56,8 +57,9 @@ kth_ec_public_mut_t kth_wallet_ec_public_construct_from_compressed_point_compres
     return kth::leak_if_valid(cpp_t(compressed_point_cpp, compress_cpp));
 }
 
-kth_ec_public_mut_t kth_wallet_ec_public_construct_from_uncompressed_point_compress(kth_ec_uncompressed_t uncompressed_point, kth_bool_t compress) {
-    auto const uncompressed_point_cpp = kth::ec_uncompressed_to_cpp(uncompressed_point.data);
+kth_ec_public_mut_t kth_wallet_ec_public_construct_from_uncompressed_point_compress(kth_ec_uncompressed_t const* uncompressed_point, kth_bool_t compress) {
+    KTH_PRECONDITION(uncompressed_point != nullptr);
+    auto const uncompressed_point_cpp = kth::ec_uncompressed_to_cpp(uncompressed_point->data);
     auto const compress_cpp = kth::int_to_bool(compress);
     return kth::leak_if_valid(cpp_t(uncompressed_point_cpp, compress_cpp));
 }

@@ -46,10 +46,11 @@ kth_transaction_mut_t kth_chain_transaction_construct_from_version_locktime_inpu
     return kth::leak<cpp_t>(version, locktime, inputs_cpp, outputs_cpp);
 }
 
-kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash(kth_transaction_const_t x, kth_hash_t hash) {
+kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash(kth_transaction_const_t x, kth_hash_t const* hash) {
     KTH_PRECONDITION(x != nullptr);
+    KTH_PRECONDITION(hash != nullptr);
     auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
-    auto const hash_cpp = kth::hash_to_cpp(hash.hash);
+    auto const hash_cpp = kth::hash_to_cpp(hash->hash);
     return kth::leak<cpp_t>(x_cpp, hash_cpp);
 }
 

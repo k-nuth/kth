@@ -23,8 +23,9 @@ kth_payment_address_mut_t kth_wallet_payment_address_construct_default(void) {
     return kth::leak<cpp_t>();
 }
 
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_decoded(kth_payment_t decoded) {
-    auto const decoded_cpp = kth::payment_to_cpp(decoded.hash);
+kth_payment_address_mut_t kth_wallet_payment_address_construct_from_decoded(kth_payment_t const* decoded) {
+    KTH_PRECONDITION(decoded != nullptr);
+    auto const decoded_cpp = kth::payment_to_cpp(decoded->hash);
     return kth::leak_if_valid(cpp_t(decoded_cpp));
 }
 
@@ -53,8 +54,9 @@ kth_payment_address_mut_t kth_wallet_payment_address_construct_from_address_net(
     return kth::leak_if_valid(cpp_t(address_cpp, net_cpp));
 }
 
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_short_hash_version(kth_shorthash_t short_hash, uint8_t version) {
-    auto const short_hash_cpp = kth::short_hash_to_cpp(short_hash.hash);
+kth_payment_address_mut_t kth_wallet_payment_address_construct_from_short_hash_version(kth_shorthash_t const* short_hash, uint8_t version) {
+    KTH_PRECONDITION(short_hash != nullptr);
+    auto const short_hash_cpp = kth::short_hash_to_cpp(short_hash->hash);
     return kth::leak_if_valid(cpp_t(short_hash_cpp, version));
 }
 
@@ -64,8 +66,9 @@ kth_payment_address_mut_t kth_wallet_payment_address_construct_from_short_hash_v
     return kth::leak_if_valid(cpp_t(short_hash_cpp, version));
 }
 
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_hash_version(kth_hash_t hash, uint8_t version) {
-    auto const hash_cpp = kth::hash_to_cpp(hash.hash);
+kth_payment_address_mut_t kth_wallet_payment_address_construct_from_hash_version(kth_hash_t const* hash, uint8_t version) {
+    KTH_PRECONDITION(hash != nullptr);
+    auto const hash_cpp = kth::hash_to_cpp(hash->hash);
     return kth::leak_if_valid(cpp_t(hash_cpp, version));
 }
 

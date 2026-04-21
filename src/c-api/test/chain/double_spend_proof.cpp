@@ -189,9 +189,9 @@ TEST_CASE("C-API DspSpender - hash setters round-trip",
         kSpenderWire, sizeof(kSpenderWire), 0u, &sp);
     REQUIRE(ec == kth_ec_success);
 
-    kth_chain_double_spend_proof_spender_set_prev_outs_hash(sp, kHashB);
-    kth_chain_double_spend_proof_spender_set_sequence_hash(sp, kHashC);
-    kth_chain_double_spend_proof_spender_set_outputs_hash(sp, kHashA);
+    kth_chain_double_spend_proof_spender_set_prev_outs_hash(sp, &kHashB);
+    kth_chain_double_spend_proof_spender_set_sequence_hash(sp, &kHashC);
+    kth_chain_double_spend_proof_spender_set_outputs_hash(sp, &kHashA);
 
     REQUIRE(kth_hash_equal(kth_chain_double_spend_proof_spender_prev_outs_hash(sp), kHashB) != 0);
     REQUIRE(kth_hash_equal(kth_chain_double_spend_proof_spender_sequence_hash(sp), kHashC) != 0);
@@ -314,6 +314,36 @@ TEST_CASE("C-API DspSpender - set_prev_outs_hash_unsafe null aborts",
     kth_chain_double_spend_proof_spender_destruct(sp);
 }
 
+TEST_CASE("C-API DspSpender - set_prev_outs_hash null aborts",
+          "[C-API DspSpender][precondition]") {
+    kth_double_spend_proof_spender_mut_t sp = NULL;
+    kth_error_code_t ec = kth_chain_double_spend_proof_spender_construct_from_data(
+        kSpenderWire, sizeof(kSpenderWire), 0u, &sp);
+    REQUIRE(ec == kth_ec_success);
+    KTH_EXPECT_ABORT(kth_chain_double_spend_proof_spender_set_prev_outs_hash(sp, NULL));
+    kth_chain_double_spend_proof_spender_destruct(sp);
+}
+
+TEST_CASE("C-API DspSpender - set_sequence_hash null aborts",
+          "[C-API DspSpender][precondition]") {
+    kth_double_spend_proof_spender_mut_t sp = NULL;
+    kth_error_code_t ec = kth_chain_double_spend_proof_spender_construct_from_data(
+        kSpenderWire, sizeof(kSpenderWire), 0u, &sp);
+    REQUIRE(ec == kth_ec_success);
+    KTH_EXPECT_ABORT(kth_chain_double_spend_proof_spender_set_sequence_hash(sp, NULL));
+    kth_chain_double_spend_proof_spender_destruct(sp);
+}
+
+TEST_CASE("C-API DspSpender - set_outputs_hash null aborts",
+          "[C-API DspSpender][precondition]") {
+    kth_double_spend_proof_spender_mut_t sp = NULL;
+    kth_error_code_t ec = kth_chain_double_spend_proof_spender_construct_from_data(
+        kSpenderWire, sizeof(kSpenderWire), 0u, &sp);
+    REQUIRE(ec == kth_ec_success);
+    KTH_EXPECT_ABORT(kth_chain_double_spend_proof_spender_set_outputs_hash(sp, NULL));
+    kth_chain_double_spend_proof_spender_destruct(sp);
+}
+
 // ===========================================================================
 // DoubleSpendProof
 // ===========================================================================
@@ -342,7 +372,7 @@ TEST_CASE("C-API Dsp - destruct null is safe", "[C-API Dsp]") {
 
 TEST_CASE("C-API Dsp - construct with valid components is valid",
           "[C-API Dsp]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kHashA, 7u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHashA, 7u);
     kth_double_spend_proof_spender_mut_t s1 = NULL;
     kth_double_spend_proof_spender_mut_t s2 = NULL;
     REQUIRE(kth_chain_double_spend_proof_spender_construct_from_data(
@@ -377,7 +407,7 @@ TEST_CASE("C-API Dsp - construct with valid components is valid",
 
 TEST_CASE("C-API Dsp - serialized_size matches to_data length",
           "[C-API Dsp]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kHashA, 0u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHashA, 0u);
     kth_double_spend_proof_spender_mut_t s1 = NULL;
     kth_double_spend_proof_spender_mut_t s2 = NULL;
     REQUIRE(kth_chain_double_spend_proof_spender_construct_from_data(
@@ -413,7 +443,7 @@ TEST_CASE("C-API Dsp - setters replace fields",
     kth_double_spend_proof_mut_t dsp = kth_chain_double_spend_proof_construct_default();
     REQUIRE(dsp != NULL);
 
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kHashB, 42u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHashB, 42u);
     kth_chain_double_spend_proof_set_out_point(dsp, op);
     kth_output_point_const_t op_view = kth_chain_double_spend_proof_out_point(dsp);
     REQUIRE(kth_chain_output_point_index(op_view) == 42u);
@@ -440,7 +470,7 @@ TEST_CASE("C-API Dsp - setters replace fields",
 
 TEST_CASE("C-API Dsp - copy preserves equality and diverges after mutation",
           "[C-API Dsp]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kHashA, 7u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHashA, 7u);
     kth_double_spend_proof_spender_mut_t s1 = NULL;
     kth_double_spend_proof_spender_mut_t s2 = NULL;
     REQUIRE(kth_chain_double_spend_proof_spender_construct_from_data(
@@ -455,7 +485,7 @@ TEST_CASE("C-API Dsp - copy preserves equality and diverges after mutation",
     REQUIRE(kth_chain_double_spend_proof_equals(original, copy) != 0);
 
     // Mutate the copy — the two must diverge.
-    kth_output_point_mut_t other_op = kth_chain_output_point_construct_from_hash_index(kHashB, 99u);
+    kth_output_point_mut_t other_op = kth_chain_output_point_construct_from_hash_index(&kHashB, 99u);
     kth_chain_double_spend_proof_set_out_point(copy, other_op);
     REQUIRE(kth_chain_double_spend_proof_equals(original, copy) == 0);
 
@@ -473,7 +503,7 @@ TEST_CASE("C-API Dsp - copy preserves equality and diverges after mutation",
 
 TEST_CASE("C-API Dsp - hash is deterministic and mutation changes it",
           "[C-API Dsp]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kHashA, 0u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHashA, 0u);
     kth_double_spend_proof_spender_mut_t s1 = NULL;
     kth_double_spend_proof_spender_mut_t s2 = NULL;
     REQUIRE(kth_chain_double_spend_proof_spender_construct_from_data(
@@ -509,7 +539,7 @@ TEST_CASE("C-API Dsp - hash is deterministic and mutation changes it",
 
 TEST_CASE("C-API Dsp - reset drops to invalid state",
           "[C-API Dsp]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(kHashA, 7u);
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHashA, 7u);
     kth_double_spend_proof_spender_mut_t s1 = NULL;
     kth_double_spend_proof_spender_mut_t s2 = NULL;
     REQUIRE(kth_chain_double_spend_proof_spender_construct_from_data(

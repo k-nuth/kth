@@ -21,13 +21,16 @@ extern "C" {
 KTH_EXPORT KTH_OWNED
 kth_payment_address_mut_t kth_wallet_payment_address_construct_default(void);
 
-/** @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`. */
+/**
+ * @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`.
+ * @param decoded Borrowed input; must be non-null. Copied into the resulting object; ownership of `decoded` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_decoded(kth_payment_t decoded);
+kth_payment_address_mut_t kth_wallet_payment_address_construct_from_decoded(kth_payment_t const* decoded);
 
 /**
  * @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`.
- * @warning `decoded` MUST point to a buffer of at least 25 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `decoded` MUST point to a buffer of at least 25 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_payment_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_decoded_unsafe(uint8_t const* decoded);
@@ -47,24 +50,30 @@ kth_payment_address_mut_t kth_wallet_payment_address_construct_from_address(char
 KTH_EXPORT KTH_OWNED
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_address_net(char const* address, kth_network_t net);
 
-/** @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`. */
+/**
+ * @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`.
+ * @param short_hash Borrowed input; must be non-null. Copied into the resulting object; ownership of `short_hash` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_short_hash_version(kth_shorthash_t short_hash, uint8_t version);
+kth_payment_address_mut_t kth_wallet_payment_address_construct_from_short_hash_version(kth_shorthash_t const* short_hash, uint8_t version);
 
 /**
  * @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`.
- * @warning `short_hash` MUST point to a buffer of at least 20 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `short_hash` MUST point to a buffer of at least 20 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_shorthash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_short_hash_version_unsafe(uint8_t const* short_hash, uint8_t version);
 
-/** @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`. */
+/**
+ * @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`.
+ * @param hash Borrowed input; must be non-null. Copied into the resulting object; ownership of `hash` stays with the caller.
+ */
 KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_hash_version(kth_hash_t hash, uint8_t version);
+kth_payment_address_mut_t kth_wallet_payment_address_construct_from_hash_version(kth_hash_t const* hash, uint8_t version);
 
 /**
  * @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`.
- * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a C struct by value.
+ * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_hash_version_unsafe(uint8_t const* hash, uint8_t version);

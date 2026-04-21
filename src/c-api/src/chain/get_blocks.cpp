@@ -37,10 +37,11 @@ kth_error_code_t kth_chain_get_blocks_construct_from_data(uint8_t const* data, k
     return kth_ec_success;
 }
 
-kth_get_blocks_mut_t kth_chain_get_blocks_construct(kth_hash_list_const_t start, kth_hash_t stop) {
+kth_get_blocks_mut_t kth_chain_get_blocks_construct(kth_hash_list_const_t start, kth_hash_t const* stop) {
     KTH_PRECONDITION(start != nullptr);
+    KTH_PRECONDITION(stop != nullptr);
     auto const& start_cpp = kth::cpp_ref<kth::hash_list>(start);
-    auto const stop_cpp = kth::hash_to_cpp(stop.hash);
+    auto const stop_cpp = kth::hash_to_cpp(stop->hash);
     return kth::leak<cpp_t>(start_cpp, stop_cpp);
 }
 
@@ -114,9 +115,10 @@ void kth_chain_get_blocks_set_start_hashes(kth_get_blocks_mut_t self, kth_hash_l
     kth::cpp_ref<cpp_t>(self).set_start_hashes(value_cpp);
 }
 
-void kth_chain_get_blocks_set_stop_hash(kth_get_blocks_mut_t self, kth_hash_t value) {
+void kth_chain_get_blocks_set_stop_hash(kth_get_blocks_mut_t self, kth_hash_t const* value) {
     KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth::hash_to_cpp(value.hash);
+    KTH_PRECONDITION(value != nullptr);
+    auto const value_cpp = kth::hash_to_cpp(value->hash);
     kth::cpp_ref<cpp_t>(self).set_stop_hash(value_cpp);
 }
 
