@@ -107,7 +107,7 @@ expect<double_spend_proof> double_spend_proof::from_data(byte_reader& reader, ui
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk double_spend_proof::to_data(size_t version) const {
+data_chunk double_spend_proof::to_data(uint32_t version) const {
     data_chunk data;
     auto const size = serialized_size(version);
     data.reserve(size);
@@ -118,7 +118,7 @@ data_chunk double_spend_proof::to_data(size_t version) const {
     return data;
 }
 
-void double_spend_proof::to_data(size_t version, data_sink& stream) const {
+void double_spend_proof::to_data(uint32_t version, data_sink& stream) const {
     ostream_writer sink_w(stream);
     to_data(version, sink_w);
 }
