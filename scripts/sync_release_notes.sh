@@ -5,7 +5,7 @@
 
 REPO_OWNER="k-nuth"
 REPO_NAME="kth-mono"
-NOTES_FILE="doc/release-notes/release-notes.md"
+NOTES_FILE="docs/release-notes/release-notes.md"
 
 echo "🔄 Syncing release notes from GitHub Releases to ${NOTES_FILE}..."
 

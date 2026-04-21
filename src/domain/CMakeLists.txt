@@ -250,6 +250,7 @@ set(kth_sources_just_legacy
 
         src/wallet/bitcoin_uri.cpp
         src/wallet/cashaddr.cpp
+        src/wallet/cashtoken_minting.cpp
         src/wallet/dictionary.cpp
         src/wallet/ec_private.cpp
         src/wallet/ec_public.cpp
@@ -385,6 +386,7 @@ set(kth_headers
     # include/kth/domain/wallet/transaction_functions.hpp
     include/kth/domain/wallet/bitcoin_uri.hpp
     include/kth/domain/wallet/cashaddr.hpp
+    include/kth/domain/wallet/cashtoken_minting.hpp
     include/kth/domain/wallet/dictionary.hpp
     include/kth/domain/wallet/ec_private.hpp
     include/kth/domain/wallet/stealth_receiver.hpp
@@ -623,6 +625,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/wallet/encrypted_keys.cpp
         test/wallet/message.cpp
         test/wallet/payment_address.cpp
+        test/wallet/cashtoken_minting.cpp
         test/wallet/coin_selection.cpp
         test/wallet/stealth_address.cpp
         test/wallet/stealth_receiver.cpp

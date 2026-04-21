@@ -9,7 +9,7 @@ REPOS=(
     "k-nuth/c-api"
 )
 
-NOTES_FILE="doc/release-notes/release-notes.md"
+NOTES_FILE="docs/release-notes/release-notes.md"
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 

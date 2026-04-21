@@ -15,11 +15,14 @@
 #include <vector>
 
 #include <kth/domain/chain/script.hpp>
+#include <kth/domain/chain/script_basis.hpp>
 #include <kth/domain/concepts.hpp>
 #include <kth/domain/constants.hpp>
+#include <kth/domain/constants/bch.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/domain/deserialization.hpp>
 #include <kth/domain/machine/opcode.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 
 #include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -67,6 +70,21 @@ enum class capability_t : uint8_t {
 inline constexpr
 bool is_valid_capability(uint8_t b) {
     return b <= uint8_t(capability_t::minting);
+}
+
+// Return the maximum legal commitment length for NFTs under the given
+// set of active script flags. Currently the limit is:
+//   - 40 bytes under Descartes rules (2023-May, mainnet default)
+//   - 128 bytes once Leibniz (2026-May) activates, gated by `bch_loops`
+//
+// Builders and validators should call this instead of referencing a
+// bare literal so future upgrades that raise the cap flow through a
+// single choke point.
+inline constexpr
+size_t max_token_commitment_length(script_flags_t flags) {
+    return script_basis::is_enabled(flags, machine::script_flags::bch_loops)
+        ? max_token_commitment_length_leibniz
+        : max_token_commitment_length_descartes;
 }
 
 inline constexpr
