@@ -1,3 +1,50 @@
+# version 0.80.0
+
+You can install Knuth node version v0.80.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* refactor(c-api): unify and harden binary bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/232
+* refactor(c-api): unify and harden chain/get_blocks bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/234
+* refactor(c-api): unify and harden chain/get_headers bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/236
+* refactor(c-api): unify and harden chain/{merkle,compact}_block bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/237
+* chore(c-api): remove dead raw_output and transaction_functions scaffolding by @fpelliccioni in https://github.com/k-nuth/kth/pull/238
+* chore(c-api): refresh generated headers with richer lifetime docs by @fpelliccioni in https://github.com/k-nuth/kth/pull/239
+* refactor: replace cashaddr global prefix with constexpr network mapping by @fpelliccioni in https://github.com/k-nuth/kth/pull/240
+* refactor(c-api): unify and harden wallet/payment_address bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/241
+* refactor(c-api): unify and harden ec_public, ec_private, and operation bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/245
+* refactor: move BIP-specific wallet classes from infrastructure to domain by @fpelliccioni in https://github.com/k-nuth/kth/pull/249
+* refactor(c-api): unify and harden wallet/hd_public and hd_private bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/250
+* ci: cancel redundant workflow runs on PR updates by @fpelliccioni in https://github.com/k-nuth/kth/pull/252
+* refactor(c-api): unify and harden history_compact and stealth_compact bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/253
+* refactor(c-api): unify and harden chain/double_spend_proof bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/254
+* refactor(c-api): harden constructors and modernize wallet/ec_public by @fpelliccioni in https://github.com/k-nuth/kth/pull/255
+* refactor(c-api): collapse factory pattern via make_leaked helpers by @fpelliccioni in https://github.com/k-nuth/kth/pull/258
+* refactor(c-api): nullable contract for empty-as-failure list factories by @fpelliccioni in https://github.com/k-nuth/kth/pull/259
+* refactor(c-api): unify and harden chain/token_data bindings + cleanup by @fpelliccioni in https://github.com/k-nuth/kth/pull/260
+* refactor(c-api): migrate wallet_data binding; rename wallet::create by @fpelliccioni in https://github.com/k-nuth/kth/pull/261
+* refactor(c-api): migrate utxo binding; drop flattened token accessors by @fpelliccioni in https://github.com/k-nuth/kth/pull/263
+* refactor(c-api): replace per-type opaque-handle converters with cpp_ref<T> by @fpelliccioni in https://github.com/k-nuth/kth/pull/264
+* refactor(c-api): migrate vm::program binding; forward rvalue-ref params properly by @fpelliccioni in https://github.com/k-nuth/kth/pull/265
+* refactor(c-api): cleanup helpers + file-local cpp_t alias by @fpelliccioni in https://github.com/k-nuth/kth/pull/267
+* refactor(c-api): regenerate 5 standalone enum headers via unified generator by @fpelliccioni in https://github.com/k-nuth/kth/pull/268
+* refactor(c-api): move opcode helpers to opcode.h; regen sighash_algorithm.h via generator by @fpelliccioni in https://github.com/k-nuth/kth/pull/269
+* refactor(c-api): extract primitives.h enums into their own headers by @fpelliccioni in https://github.com/k-nuth/kth/pull/270
+* refactor(domain): reshape interpreter run and debug around op_result + debug_snapshot by @fpelliccioni in https://github.com/k-nuth/kth/pull/271
+* test(blockchain): run/debug_run parity checks in vmlimits suite by @fpelliccioni in https://github.com/k-nuth/kth/pull/273
+* refactor(domain): replace set_jump_register address lookup with PC by @fpelliccioni in https://github.com/k-nuth/kth/pull/274
+* feat(c-api): interpreter + debug_snapshot bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/275
+* refactor(c-api): split primitives.h into handles.h + callbacks.h by @fpelliccioni in https://github.com/k-nuth/kth/pull/276
+* refactor(domain): move script_pattern to domain + rename pay_* to pay_to_* by @fpelliccioni in https://github.com/k-nuth/kth/pull/277
+* feat(domain): add pay_to_script (P2S) pattern for BCH 2026-May leibniz by @fpelliccioni in https://github.com/k-nuth/kth/pull/278
+* chore(c-api): drop dead macro / wrapper comments by @fpelliccioni in https://github.com/k-nuth/kth/pull/279
+* refactor(c-api): sync binding surface with current library policy by @fpelliccioni in https://github.com/k-nuth/kth/pull/280
+* fix(c-api): migrate test to output_pattern_simple after rename by @fpelliccioni in https://github.com/k-nuth/kth/pull/281
+* release: 0.80.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/282
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.79.0...v0.80.0
+
+
 # version 0.79.0
 
 You can install Knuth node version v0.79.0 [using these instructions](https://kth.cash/#download).
