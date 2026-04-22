@@ -9,7 +9,7 @@ on:
       - '**.txt'
       - '**/LICENSE*'
       - '**/CHANGELOG*'
-      - 'doc/**'
+      - 'docs/**'
       - '.github/workflows/cosmetic-changes.yml'
 
 concurrency:
@@ -52,7 +52,6 @@ jobs:
             "NOTICE*"
             "AUTHORS*"
             "CONTRIBUTORS*"
-            "doc/*"
             "docs/*"
             ".github/workflows/cosmetic-changes.yml"
           )

@@ -759,12 +759,6 @@ bool is_overspent(transaction_basis const& tx) {
 
 #if defined(KTH_CURRENCY_BCH)
 
-size_t max_token_commitment_length(script_flags_t flags) {
-    return script_basis::is_enabled(flags, machine::script_flags::bch_loops)
-        ? max_token_commitment_length_leibniz
-        : max_token_commitment_length_descartes;
-}
-
 code transaction_basis::validate_tokens(script_flags_t flags) const {
     if ( ! script::is_enabled(flags, machine::script_flags::bch_tokens)) {
         // Pre-activation sanity (BCHN: CheckPreActivationSanity):

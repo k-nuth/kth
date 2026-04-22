@@ -81,7 +81,7 @@ RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed "s/temp-v${VERSION}/v${VERSION}/g")
 
 # Step 3: Update local release notes file
 echo -e "${GREEN}📄 Updating local release notes file...${NC}"
-NOTES_FILE="doc/release-notes/release-notes.md"
+NOTES_FILE="docs/release-notes/release-notes.md"
 
 # Create a backup
 cp "$NOTES_FILE" "${NOTES_FILE}.backup"

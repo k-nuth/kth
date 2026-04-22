@@ -62,7 +62,7 @@ Knuth includes comprehensive test suites that run automatically during builds an
 ./scripts/test.sh 1.0.0
 ```
 
-For detailed testing information, see [BUILD_WITH_TESTS.md](doc/BUILD_WITH_TESTS.md).
+For detailed testing information, see [BUILD_WITH_TESTS.md](docs/BUILD_WITH_TESTS.md).
 
 ## Getting Started
 
@@ -291,7 +291,7 @@ To optimize CI/CD performance, we use specific branch prefixes that determine wh
 
 All other branches (`feature/`, `fix/`, `refactor/`, etc.) run the full CI pipeline.
 
-📖 **See [Branch Conventions Guide](doc/BRANCH_CONVENTIONS.md) for detailed usage examples.**
+📖 **See [Branch Conventions Guide](docs/BRANCH_CONVENTIONS.md) for detailed usage examples.**
 
 ## Contact
 
