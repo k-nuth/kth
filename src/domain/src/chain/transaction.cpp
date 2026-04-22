@@ -704,9 +704,17 @@ code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, s
 
     // INPUT_SIGCHECKS: density limit on signature checks per input.
     // Formula from BCHN: scriptSig.size() >= sigChecks * 43 - 60
+    //
+    // The RHS can legitimately be negative when sig_checks is zero or
+    // very small — compute it in int64_t so the intermediate
+    // `uint32_t * int` product doesn't promote the whole expression
+    // to unsigned and wrap a negative RHS around to a huge positive.
     if (script::is_enabled(flags, machine::script_flags::bch_input_sigchecks)) {
-        auto const sig_size = int(input_script.serialized_size(false));
-        if (sig_size < int(total_sig_checks) * sigchecks_input_density_factor - sigchecks_input_density_offset) {
+        int64_t const sig_size = int64_t(input_script.serialized_size(false));
+        int64_t const min_sig_size =
+            int64_t(total_sig_checks) * sigchecks_input_density_factor
+            - sigchecks_input_density_offset;
+        if (sig_size < min_sig_size) {
             return error::invalid_script;
         }
     }

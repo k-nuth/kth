@@ -97,6 +97,7 @@ enum script_flags : script_flags_t {
     bch_2027_may             = 1ULL << 31,   //2027-May cantor (xxxxxxxxx)
 
     // Policy/standardness flags (grow from bit 61 downward, not enforced in block validation)
+    bch_vm_limits_standard         = 1ULL << 57, // strict (relay) VM limit costing — 3x hash iter cost (BCHN: SCRIPT_VM_LIMITS_STANDARD). Only meaningful when bch_vm_limits is active.
     bch_minimalif                  = 1ULL << 58, // OP_IF/NOTIF minimal encoding (BCHN: SCRIPT_VERIFY_MINIMALIF)
     bch_input_sigchecks            = 1ULL << 59, // per-input sigcheck density limit (BCHN: SCRIPT_VERIFY_INPUT_SIGCHECKS)
     bch_discourage_upgradable_nops = 1ULL << 60, // rejects NOP1, NOP4-NOP10
@@ -119,9 +120,9 @@ enum script_flags : script_flags_t {
     /// Sentinel bit to indicate tx has not been validated.
     unverified = 1ULL << 63,
 
-    /// Policy/standardness flags mask (bits 58-61, grow downward).
+    /// Policy/standardness flags mask (bits 57-61, grow downward).
     all_policy_flags = bch_disallow_segwit_recovery | bch_discourage_upgradable_nops
-                     | bch_input_sigchecks | bch_minimalif,
+                     | bch_input_sigchecks | bch_minimalif | bch_vm_limits_standard,
 
     /// All consensus rules (excludes policy flags, retarget, and unverified).
     all_rules = 0xffffffffffffffff & ~all_policy_flags & ~retarget & ~unverified,

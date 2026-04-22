@@ -574,6 +574,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/machine/interpreter.cpp
         test/machine/interpreter_function_table_stack_budget.cpp
         test/machine/interpreter_nested_invoke.cpp
+        test/machine/metrics.cpp
         test/machine/opcode.cpp
         test/machine/operation.cpp
         test/machine/program.cpp
