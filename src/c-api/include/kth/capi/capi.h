@@ -73,9 +73,13 @@
 
 #include <kth/capi/p2p/p2p.h>
 
+#include <kth/capi/vm/debug_snapshot.h>
+#include <kth/capi/vm/debug_snapshot_list.h>
+#include <kth/capi/vm/function_table.h>
 #include <kth/capi/vm/interpreter.h>
 #include <kth/capi/vm/program.h>
 
+#include <kth/capi/bool_list.h>
 #include <kth/capi/double_list.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/hash_list.h>
