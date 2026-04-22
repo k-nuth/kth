@@ -1,3 +1,15 @@
+# version 0.81.1
+
+You can install Knuth node version v0.81.1 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* fix(c-api): fill in missing vm + bool_list headers in kth/capi.h aggregator by @fpelliccioni in https://github.com/k-nuth/kth/pull/290
+* release: 0.81.1 by @fpelliccioni in https://github.com/k-nuth/kth/pull/291
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.81.0...v0.81.1
+
+
 # version 0.81.0
 
 You can install Knuth node version v0.81.0 [using these instructions](https://kth.cash/#download).
