@@ -23,10 +23,14 @@ namespace kth::domain::wallet::cashtoken {
 // Commitment helpers
 // ---------------------------------------------------------------------------
 
-data_chunk encode_nft_number(int64_t value) {
-    auto const n = infrastructure::machine::number::from_int(value);
+std::expected<data_chunk, std::error_code> encode_nft_number(int64_t value) {
+    auto n = infrastructure::machine::number::from_int(value);
     if ( ! n.has_value()) {
-        return data_chunk{};
+        // Propagate the underlying error (e.g. `INT64_MIN`). Returning
+        // an empty `data_chunk` here would collide with the valid
+        // encoding of `0`, silently turning an invalid input into a
+        // valid-looking commitment.
+        return std::unexpected(make_error_code(n.error()));
     }
     return n->data();
 }
@@ -668,12 +672,17 @@ create_token_transfer(token_transfer_params const& params) {
     if (want_ft == want_nft) {
         return std::unexpected(kth::error::operation_failed);
     }
-    // An explicit zero fungible amount is treated as an out-of-range
-    // request (matches `create_token_genesis`, which rejects `ft == 0`
-    // with `token_amount_overflow`). This disambiguates "forgot what to
-    // send" from "asked to send zero".
-    if (want_ft && *params.ft_amount == 0) {
-        return std::unexpected(kth::error::token_amount_overflow);
+    // The fungible amount must be in the valid VM-number range
+    // `[1, INT64_MAX]` — same check as `create_token_genesis`. A zero
+    // amount is also rejected so "forgot what to send" is distinct from
+    // "asked to send zero"; above-`INT64_MAX` values would otherwise
+    // reach `make_fungible` and produce an unsigned transaction that
+    // only fails at broadcast time with a token-validation error.
+    if (want_ft) {
+        uint64_t const ft = *params.ft_amount;
+        if (ft == 0 || ft > static_cast<uint64_t>(INT64_MAX)) {
+            return std::unexpected(kth::error::token_amount_overflow);
+        }
     }
 
     // The NFT spec, if provided, must carry a valid capability byte.

@@ -62,13 +62,18 @@ inline constexpr size_t max_op_return_payload_size = 220;
 // a counter (`0`, `1`, ... `N`) and by mint covenants that advance the
 // counter in the preserved minting NFT.
 //
-// Notes:
-//   - Returns an empty `data_chunk` for `value == 0` (VM-number 0 is
-//     the empty byte string).
-//   - `int64_t` is the VM's native signed-number type; negative values
-//     round-trip correctly but are not expected for counter use.
+// Returns the encoded bytes on success; `std::unexpected` when `value`
+// is outside the VM script-number range (the encoder rejects
+// `INT64_MIN` because its two's-complement negation overflows, which
+// the spec forbids — BCHN's `CScriptNum::serialize` has the same guard
+// via `validRange`). Value `0` encodes as an empty `data_chunk`
+// distinctly from the error case, so the success `.value()` is
+// unambiguous.
+//
+// `int64_t` is the VM's native signed-number type; negative values
+// round-trip correctly but are not expected for counter use.
 KD_API
-data_chunk encode_nft_number(int64_t value);
+std::expected<data_chunk, std::error_code> encode_nft_number(int64_t value);
 
 
 // ---------------------------------------------------------------------------
