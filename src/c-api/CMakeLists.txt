@@ -526,6 +526,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/wallet/wallet_data.cpp
         test/vm/program.cpp
         test/vm/interpreter.cpp
+        test/vm/debug_snapshot.cpp
         test/vm/function_table.cpp
     )
 
