@@ -9,6 +9,7 @@
 #include <kth/domain/machine/script_limits.hpp>
 
 using namespace kth;
+using namespace kth::domain;
 using namespace kth::domain::machine;
 
 namespace {
