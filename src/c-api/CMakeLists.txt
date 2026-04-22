@@ -198,6 +198,7 @@ set(kth_sources
   src/vm/debug_snapshot_list.cpp
   src/vm/function_table.cpp
   src/vm/interpreter.cpp
+  src/vm/metrics.cpp
   src/vm/program.cpp
 
 
@@ -346,6 +347,7 @@ set(kth_headers
   include/kth/capi/libconfig/libconfig.h
 
   include/kth/capi/vm/interpreter.h
+  include/kth/capi/vm/metrics.h
   include/kth/capi/vm/program.h
 
   include/kth/capi.h
@@ -528,6 +530,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/vm/interpreter.cpp
         test/vm/debug_snapshot.cpp
         test/vm/function_table.cpp
+        test/vm/metrics.cpp
     )
 
     target_link_libraries(kth_capi_test PUBLIC ${PROJECT_NAME})
