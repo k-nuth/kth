@@ -95,42 +95,57 @@ utxo make_both_utxo(hash_digest const& parent, uint32_t index,
 TEST_CASE("encode_nft_number: BCHN reference vectors", "[cashtoken_minting]") {
     // Sourced from bitcoin-cash-node/src/test/scriptnum_tests.cpp,
     // the canonical CScriptNum serialization suite.
-    REQUIRE(encode_nft_number(0)    == data_chunk{});
-    REQUIRE(encode_nft_number(1)    == data_chunk{0x01});
-    REQUIRE(encode_nft_number(-1)   == data_chunk{0x81});
-    REQUIRE(encode_nft_number(127)  == data_chunk{0x7f});
-    REQUIRE(encode_nft_number(128)  == (data_chunk{0x80, 0x00}));
-    REQUIRE(encode_nft_number(256)  == (data_chunk{0x00, 0x01}));
-    REQUIRE(encode_nft_number(-255) == (data_chunk{0xff, 0x80}));
+    REQUIRE(encode_nft_number(0).value()    == data_chunk{});
+    REQUIRE(encode_nft_number(1).value()    == data_chunk{0x01});
+    REQUIRE(encode_nft_number(-1).value()   == data_chunk{0x81});
+    REQUIRE(encode_nft_number(127).value()  == data_chunk{0x7f});
+    REQUIRE(encode_nft_number(128).value()  == (data_chunk{0x80, 0x00}));
+    REQUIRE(encode_nft_number(256).value()  == (data_chunk{0x00, 0x01}));
+    REQUIRE(encode_nft_number(-255).value() == (data_chunk{0xff, 0x80}));
 }
 
 TEST_CASE("encode_nft_number: power-of-two boundaries", "[cashtoken_minting]") {
     // Just-under / just-over boundaries where the encoded length grows
     // by one byte. These are the exact transitions BCHN exercises in
     // its `offsets` loop.
-    REQUIRE(encode_nft_number(0x7f).size()   == 1);   // 127 = 7-bit max positive
-    REQUIRE(encode_nft_number(0x80).size()   == 2);   // 128 forces a new byte
-    REQUIRE(encode_nft_number(0x7fff).size() == 2);   // 15-bit max positive
-    REQUIRE(encode_nft_number(0x8000).size() == 3);   // 32768 forces a new byte
-    REQUIRE(encode_nft_number(0xffff).size() == 3);
-    REQUIRE(encode_nft_number(0x10000).size() == 3);
+    REQUIRE(encode_nft_number(0x7f)->size()   == 1);   // 127 = 7-bit max positive
+    REQUIRE(encode_nft_number(0x80)->size()   == 2);   // 128 forces a new byte
+    REQUIRE(encode_nft_number(0x7fff)->size() == 2);   // 15-bit max positive
+    REQUIRE(encode_nft_number(0x8000)->size() == 3);   // 32768 forces a new byte
+    REQUIRE(encode_nft_number(0xffff)->size() == 3);
+    REQUIRE(encode_nft_number(0x10000)->size() == 3);
 }
 
 TEST_CASE("encode_nft_number: realistic NFT counter sizes", "[cashtoken_minting]") {
     // A counter commitment for a 10k-NFT collection fits in 2 bytes;
     // a 1M-NFT collection in 3 bytes — well under the 40-byte Descartes
     // cap and the 128-byte Leibniz cap.
-    REQUIRE(encode_nft_number(500).size()       == 2);
-    REQUIRE(encode_nft_number(9999).size()      == 2);
-    REQUIRE(encode_nft_number(1'000'000).size() == 3);
+    REQUIRE(encode_nft_number(500)->size()       == 2);
+    REQUIRE(encode_nft_number(9999)->size()      == 2);
+    REQUIRE(encode_nft_number(1'000'000)->size() == 3);
 }
 
 TEST_CASE("encode_nft_number: round-trip sanity for negatives", "[cashtoken_minting]") {
     // NFT counters are positive in practice, but the encoder must
     // preserve the full script-number range so callers can use it for
     // any commitment value they can derive from an integer.
-    REQUIRE(encode_nft_number(-128) == (data_chunk{0x80, 0x80}));
-    REQUIRE(encode_nft_number(-256) == (data_chunk{0x00, 0x81}));
+    REQUIRE(encode_nft_number(-128).value() == (data_chunk{0x80, 0x80}));
+    REQUIRE(encode_nft_number(-256).value() == (data_chunk{0x00, 0x81}));
+}
+
+TEST_CASE("encode_nft_number: INT64_MIN rejected with distinct error", "[cashtoken_minting]") {
+    // `INT64_MIN` cannot be negated in two's complement and therefore
+    // has no valid VM-number encoding. The function must surface this
+    // as an error, NOT collide with the empty-chunk encoding of `0`.
+    auto const r = encode_nft_number(std::numeric_limits<int64_t>::min());
+    REQUIRE( ! r.has_value());
+}
+
+TEST_CASE("encode_nft_number: INT64_MAX encodes to a valid 8-byte vector", "[cashtoken_minting]") {
+    // The upper bound of the VM-number range must round-trip.
+    auto const r = encode_nft_number(std::numeric_limits<int64_t>::max());
+    REQUIRE(r.has_value());
+    REQUIRE(r->size() == 8);
 }
 
 // ===========================================================================
@@ -446,6 +461,38 @@ TEST_CASE("create_token_transfer rejects insufficient fungible supply", "[cashto
     auto result = create_token_transfer(params);
     REQUIRE( ! result.has_value());
     REQUIRE(result.error() == kth::error::token_fungible_insufficient);
+}
+
+TEST_CASE("create_token_transfer rejects zero fungible amount", "[cashtoken_minting]") {
+    token_transfer_params params{};
+    params.token_utxos.push_back(make_ft_utxo(parent_tx_a, 0, category_a, 1000));
+    params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
+    params.destination = make_addr(0x22);
+    params.ft_amount = 0;
+    params.token_change_address = make_addr(0x11);
+
+    auto result = create_token_transfer(params);
+    REQUIRE( ! result.has_value());
+    REQUIRE(result.error() == kth::error::token_amount_overflow);
+}
+
+TEST_CASE("create_token_transfer rejects fungible amount above INT64_MAX", "[cashtoken_minting]") {
+    // Values above `INT64_MAX` are outside the VM token-amount range;
+    // `make_fungible` would otherwise accept the out-of-range value and
+    // the transaction would only fail at broadcast-time token
+    // validation — returning a clear API error here is the difference
+    // between a loud compile-time-quality rejection and a silent
+    // unrelayable TX handed back to the caller.
+    token_transfer_params params{};
+    params.token_utxos.push_back(make_ft_utxo(parent_tx_a, 0, category_a, 1000));
+    params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
+    params.destination = make_addr(0x22);
+    params.ft_amount = static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1;
+    params.token_change_address = make_addr(0x11);
+
+    auto result = create_token_transfer(params);
+    REQUIRE( ! result.has_value());
+    REQUIRE(result.error() == kth::error::token_amount_overflow);
 }
 
 TEST_CASE("create_token_transfer rejects UTXOs from different categories", "[cashtoken_minting]") {
