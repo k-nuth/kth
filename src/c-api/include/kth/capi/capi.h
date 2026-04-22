@@ -77,6 +77,7 @@
 #include <kth/capi/vm/debug_snapshot_list.h>
 #include <kth/capi/vm/function_table.h>
 #include <kth/capi/vm/interpreter.h>
+#include <kth/capi/vm/metrics.h>
 #include <kth/capi/vm/program.h>
 
 #include <kth/capi/bool_list.h>

@@ -77,6 +77,7 @@ typedef uint64_t kth_script_flags_t;
 #define kth_script_flags_bch_2027_may                      (1ULL << 31)   // 2027-May cantor (xxxxxxxxx)
 
 // Policy/standardness flags (grow from bit 61 downward, not enforced in block validation)
+#define kth_script_flags_bch_vm_limits_standard            (1ULL << 57)   // strict (relay) VM limit costing — 3x hash iter cost (BCHN: SCRIPT_VM_LIMITS_STANDARD). Only meaningful when bch_vm_limits is active.
 #define kth_script_flags_bch_minimalif                     (1ULL << 58)   // OP_IF/NOTIF minimal encoding (BCHN: SCRIPT_VERIFY_MINIMALIF)
 #define kth_script_flags_bch_input_sigchecks               (1ULL << 59)   // per-input sigcheck density limit (BCHN: SCRIPT_VERIFY_INPUT_SIGCHECKS)
 #define kth_script_flags_bch_discourage_upgradable_nops    (1ULL << 60)   // rejects NOP1, NOP4-NOP10
@@ -99,8 +100,8 @@ typedef uint64_t kth_script_flags_t;
 /// Sentinel bit to indicate tx has not been validated.
 #define kth_script_flags_unverified                        (1ULL << 63)
 
-/// Policy/standardness flags mask (bits 58-61, grow downward).
-#define kth_script_flags_all_policy_flags                  (kth_script_flags_bch_disallow_segwit_recovery | kth_script_flags_bch_discourage_upgradable_nops | kth_script_flags_bch_input_sigchecks | kth_script_flags_bch_minimalif)
+/// Policy/standardness flags mask (bits 57-61, grow downward).
+#define kth_script_flags_all_policy_flags                  (kth_script_flags_bch_disallow_segwit_recovery | kth_script_flags_bch_discourage_upgradable_nops | kth_script_flags_bch_input_sigchecks | kth_script_flags_bch_minimalif | kth_script_flags_bch_vm_limits_standard)
 
 /// All consensus rules (excludes policy flags, retarget, and unverified).
 #define kth_script_flags_all_rules                         (0xffffffffffffffff & ~kth_script_flags_all_policy_flags & ~kth_script_flags_retarget & ~kth_script_flags_unverified)
