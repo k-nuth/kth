@@ -1,3 +1,16 @@
+# version 0.81.0
+
+You can install Knuth node version v0.81.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* refactor(c-api): value_struct params by const* in the safe variant by @fpelliccioni in https://github.com/k-nuth/kth/pull/285
+* fix(c-api): declare explicit_bzero prototype to bypass feature-test gating by @fpelliccioni in https://github.com/k-nuth/kth/pull/287
+* release: 0.81.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/289
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.80.1...v0.81.0
+
+
 # version 0.80.1
 
 You can install Knuth node version v0.80.1 [using these instructions](https://kth.cash/#download).
