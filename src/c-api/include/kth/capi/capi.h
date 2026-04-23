@@ -93,6 +93,7 @@
 #include <kth/capi/wallet/ec_private.h>
 #include <kth/capi/wallet/ec_public.h>
 #include <kth/capi/wallet/elliptic_curve.h>
+#include <kth/capi/wallet/cashtoken_minting.h>
 #include <kth/capi/wallet/hd_lineage.h>
 #include <kth/capi/wallet/hd_private.h>
 #include <kth/capi/wallet/hd_public.h>
