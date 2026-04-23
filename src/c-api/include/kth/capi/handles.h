@@ -190,8 +190,9 @@ typedef void* kth_ec_compressed_list_mut_t;
 typedef void const* kth_ec_compressed_list_const_t;
 
 // Vector of byte buffers — used by Bitcoin script's runtime stack and by
-// `to_pay_multisig_pattern` for the signature variant. The owning C-API
-// type is opaque; element accessors are not exposed yet.
+// `to_pay_multisig_pattern` for the signature variant. Variable-length
+// elements (`kth_byte_buffer_t` in spirit) are exposed through the
+// `kth_core_data_stack_*` module.
 typedef void* kth_data_stack_mut_t;
 typedef void const* kth_data_stack_const_t;
 
@@ -201,6 +202,12 @@ typedef void* kth_metrics_mut_t;
 typedef void const* kth_metrics_const_t;
 typedef void* kth_program_mut_t;
 typedef void const* kth_program_const_t;
+// Bounded 4-byte script integer (`kth::infrastructure::machine::number`).
+typedef void* kth_number_mut_t;
+typedef void const* kth_number_const_t;
+// Unbounded big-integer for BCH 2025 (`kth::infrastructure::machine::big_number`).
+typedef void* kth_big_number_mut_t;
+typedef void const* kth_big_number_const_t;
 typedef void* kth_debug_snapshot_mut_t;
 typedef void const* kth_debug_snapshot_const_t;
 typedef void* kth_debug_snapshot_list_mut_t;
