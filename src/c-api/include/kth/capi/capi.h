@@ -101,6 +101,7 @@
 #include <kth/capi/wallet/hd_lineage.h>
 #include <kth/capi/wallet/hd_private.h>
 #include <kth/capi/wallet/hd_public.h>
+#include <kth/capi/wallet/message.h>
 #include <kth/capi/wallet/payment_address.h>
 #include <kth/capi/wallet/payment_address_list.h>
 #include <kth/capi/wallet/primitives.h>
