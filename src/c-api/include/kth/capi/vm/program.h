@@ -202,6 +202,14 @@ kth_error_code_t kth_vm_program_pop_int32(kth_program_mut_t self, int32_t* out);
 KTH_EXPORT
 kth_error_code_t kth_vm_program_pop_int64(kth_program_mut_t self, int64_t* out);
 
+/** @param[out] out Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_vm_program_pop_number(kth_program_mut_t self, kth_size_t maximum_size, KTH_OUT_OWNED kth_number_mut_t* out);
+
+/** @param[out] out Must point to a null `kth_big_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_big_number_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_vm_program_pop_big_number(kth_program_mut_t self, kth_size_t maximum_size, KTH_OUT_OWNED kth_big_number_mut_t* out);
+
 KTH_EXPORT
 kth_error_code_t kth_vm_program_pop_index(kth_program_mut_t self, uint32_t* out);
 
@@ -223,6 +231,14 @@ kth_bool_t kth_vm_program_if_(kth_program_const_t self, kth_operation_const_t op
 /** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
 KTH_EXPORT KTH_OWNED
 uint8_t* kth_vm_program_item(kth_program_const_t self, kth_size_t index, kth_size_t* out_size);
+
+/** @param[out] out Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_vm_program_top_number(kth_program_const_t self, kth_size_t maximum_size, KTH_OUT_OWNED kth_number_mut_t* out);
+
+/** @param[out] out Must point to a null `kth_big_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_big_number_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_vm_program_top_big_number(kth_program_const_t self, kth_size_t maximum_size, KTH_OUT_OWNED kth_big_number_mut_t* out);
 
 KTH_EXPORT
 void kth_vm_program_push_alternate(kth_program_mut_t self, uint8_t const* value, kth_size_t n);
