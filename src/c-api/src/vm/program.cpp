@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <utility>
+
 #include <kth/capi/vm/program.h>
 
 #include <kth/capi/conversions.hpp>
@@ -297,6 +299,28 @@ kth_error_code_t kth_vm_program_pop_int64(kth_program_mut_t self, int64_t* out) 
     return kth_ec_success;
 }
 
+kth_error_code_t kth_vm_program_pop_number(kth_program_mut_t self, kth_size_t maximum_size, KTH_OUT_OWNED kth_number_mut_t* out) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const maximum_size_cpp = kth::sz(maximum_size);
+    auto result = kth::cpp_ref<cpp_t>(self).pop_number(maximum_size_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
+kth_error_code_t kth_vm_program_pop_big_number(kth_program_mut_t self, kth_size_t maximum_size, KTH_OUT_OWNED kth_big_number_mut_t* out) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const maximum_size_cpp = kth::sz(maximum_size);
+    auto result = kth::cpp_ref<cpp_t>(self).pop_big_number(maximum_size_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
 kth_error_code_t kth_vm_program_pop_index(kth_program_mut_t self, uint32_t* out) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
@@ -344,6 +368,28 @@ uint8_t* kth_vm_program_item(kth_program_const_t self, kth_size_t index, kth_siz
     auto const index_cpp = kth::sz(index);
     auto const& data = kth::cpp_ref<cpp_t>(self).item(index_cpp);
     return kth::create_c_array(data, *out_size);
+}
+
+kth_error_code_t kth_vm_program_top_number(kth_program_const_t self, kth_size_t maximum_size, KTH_OUT_OWNED kth_number_mut_t* out) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const maximum_size_cpp = kth::sz(maximum_size);
+    auto result = kth::cpp_ref<cpp_t>(self).top_number(maximum_size_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
+kth_error_code_t kth_vm_program_top_big_number(kth_program_const_t self, kth_size_t maximum_size, KTH_OUT_OWNED kth_big_number_mut_t* out) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const maximum_size_cpp = kth::sz(maximum_size);
+    auto result = kth::cpp_ref<cpp_t>(self).top_big_number(maximum_size_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
 void kth_vm_program_push_alternate(kth_program_mut_t self, uint8_t const* value, kth_size_t n) {

@@ -14,6 +14,8 @@
 
 #include <kth/capi/chain/script.h>
 #include <kth/capi/primitives.h>
+#include <kth/capi/vm/big_number.h>
+#include <kth/capi/vm/number.h>
 #include <kth/capi/vm/program.h>
 
 #include "../test_helpers.hpp"
@@ -100,6 +102,86 @@ TEST_CASE("C-API Program - mark_code_separator rejects out-of-range PC",
 
     // Huge PC value must also be rejected without UB.
     REQUIRE(kth_vm_program_mark_code_separator(prog, (kth_size_t)(~(kth_size_t)0)) == 0);
+
+    kth_vm_program_destruct(prog);
+    kth_chain_script_destruct(script);
+}
+
+// ---------------------------------------------------------------------------
+// top_number / pop_number — handle-returning wrappers over the stack top
+// ---------------------------------------------------------------------------
+
+TEST_CASE("C-API Program - top_number reads the script integer at TOS",
+          "[C-API Program][number]") {
+    // `push(true)` leaves the 1-byte encoding of 1 on the main stack.
+    // `top_number` wraps it into a `number` handle without popping.
+    kth_program_mut_t prog = NULL;
+    kth_script_mut_t script = NULL;
+    build_program_for_two_op_script(&prog, &script);
+    kth_vm_program_push(prog, 1);
+
+    kth_number_mut_t out = NULL;
+    REQUIRE(kth_vm_program_top_number(prog, 4, &out) == kth_ec_success);
+    REQUIRE(out != NULL);
+    REQUIRE(kth_vm_number_int64(out) == 1);
+    kth_vm_number_destruct(out);
+
+    kth_vm_program_destruct(prog);
+    kth_chain_script_destruct(script);
+}
+
+TEST_CASE("C-API Program - pop_number consumes the stack top",
+          "[C-API Program][number]") {
+    // Distinguish pop from top by reading size before and after.
+    kth_program_mut_t prog = NULL;
+    kth_script_mut_t script = NULL;
+    build_program_for_two_op_script(&prog, &script);
+    kth_vm_program_push(prog, 1);
+
+    kth_number_mut_t out = NULL;
+    REQUIRE(kth_vm_program_pop_number(prog, 4, &out) == kth_ec_success);
+    REQUIRE(kth_vm_number_int64(out) == 1);
+    kth_vm_number_destruct(out);
+
+    // Subsequent pop must fail — the stack is empty.
+    kth_number_mut_t out2 = NULL;
+    REQUIRE(kth_vm_program_pop_number(prog, 4, &out2) != kth_ec_success);
+    REQUIRE(out2 == NULL);
+
+    kth_vm_program_destruct(prog);
+    kth_chain_script_destruct(script);
+}
+
+TEST_CASE("C-API Program - top_big_number reads the stack top as big-int",
+          "[C-API Program][big_number]") {
+    // `push(true)` puts a minimally-encoded 1 on the stack; the
+    // big-int parse must see the same value as the `number` overload.
+    kth_program_mut_t prog = NULL;
+    kth_script_mut_t script = NULL;
+    build_program_for_two_op_script(&prog, &script);
+    kth_vm_program_push(prog, 1);
+
+    kth_big_number_mut_t out = NULL;
+    REQUIRE(kth_vm_program_top_big_number(prog, 4, &out) == kth_ec_success);
+    REQUIRE(out != NULL);
+    REQUIRE(kth_vm_big_number_to_int32_saturating(out) == 1);
+    kth_vm_big_number_destruct(out);
+
+    kth_vm_program_destruct(prog);
+    kth_chain_script_destruct(script);
+}
+
+TEST_CASE("C-API Program - pop_big_number consumes the stack top",
+          "[C-API Program][big_number]") {
+    kth_program_mut_t prog = NULL;
+    kth_script_mut_t script = NULL;
+    build_program_for_two_op_script(&prog, &script);
+    kth_vm_program_push(prog, 1);
+
+    kth_big_number_mut_t out = NULL;
+    REQUIRE(kth_vm_program_pop_big_number(prog, 4, &out) == kth_ec_success);
+    REQUIRE(kth_vm_big_number_to_int32_saturating(out) == 1);
+    kth_vm_big_number_destruct(out);
 
     kth_vm_program_destruct(prog);
     kth_chain_script_destruct(script);
