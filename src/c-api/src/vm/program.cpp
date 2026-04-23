@@ -122,6 +122,12 @@ kth_transaction_const_t kth_vm_program_transaction(kth_program_const_t self) {
     return &(kth::cpp_ref<cpp_t>(self).transaction());
 }
 
+kth_script_execution_context_const_t kth_vm_program_context(kth_program_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const& opt = kth::cpp_ref<cpp_t>(self).context();
+    return opt.has_value() ? &(*opt) : nullptr;
+}
+
 kth_script_const_t kth_vm_program_get_script(kth_program_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return &(kth::cpp_ref<cpp_t>(self).get_script());

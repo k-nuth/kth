@@ -207,6 +207,8 @@ typedef void* kth_debug_snapshot_list_mut_t;
 typedef void const* kth_debug_snapshot_list_const_t;
 typedef void* kth_function_table_mut_t;
 typedef void const* kth_function_table_const_t;
+typedef void* kth_script_execution_context_mut_t;
+typedef void const* kth_script_execution_context_const_t;
 
 
 // Hash structs

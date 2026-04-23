@@ -79,6 +79,7 @@
 #include <kth/capi/vm/interpreter.h>
 #include <kth/capi/vm/metrics.h>
 #include <kth/capi/vm/program.h>
+#include <kth/capi/vm/script_execution_context.h>
 
 #include <kth/capi/bool_list.h>
 #include <kth/capi/double_list.h>
