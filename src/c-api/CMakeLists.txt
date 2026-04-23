@@ -195,13 +195,17 @@ set(kth_sources
 
   src/node/settings.cpp
 
+  src/vm/big_number.cpp
   src/vm/debug_snapshot.cpp
   src/vm/debug_snapshot_list.cpp
   src/vm/function_table.cpp
   src/vm/interpreter.cpp
   src/vm/metrics.cpp
+  src/vm/number.cpp
   src/vm/program.cpp
   src/vm/script_execution_context.cpp
+
+  src/data_stack.cpp
 
 
 )
@@ -321,6 +325,7 @@ set(kth_headers
   include/kth/capi/primitives.h
   include/kth/capi/handles.h
   include/kth/capi/callbacks.h
+  include/kth/capi/data_stack.h
   include/kth/capi/hash_list.h
   include/kth/capi/error.h
   include/kth/capi/hash.h
@@ -350,8 +355,10 @@ set(kth_headers
 
   include/kth/capi/libconfig/libconfig.h
 
+  include/kth/capi/vm/big_number.h
   include/kth/capi/vm/interpreter.h
   include/kth/capi/vm/metrics.h
+  include/kth/capi/vm/number.h
   include/kth/capi/vm/program.h
   include/kth/capi/vm/script_execution_context.h
 
@@ -532,12 +539,15 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/wallet/hd_public.cpp
         test/wallet/hd_private.cpp
         test/wallet/wallet_data.cpp
+        test/vm/big_number.cpp
         test/vm/program.cpp
         test/vm/interpreter.cpp
         test/vm/debug_snapshot.cpp
         test/vm/function_table.cpp
         test/vm/metrics.cpp
+        test/vm/number.cpp
         test/vm/script_execution_context.cpp
+        test/data_stack.cpp
     )
 
     target_link_libraries(kth_capi_test PUBLIC ${PROJECT_NAME})

@@ -73,15 +73,18 @@
 
 #include <kth/capi/p2p/p2p.h>
 
+#include <kth/capi/vm/big_number.h>
 #include <kth/capi/vm/debug_snapshot.h>
 #include <kth/capi/vm/debug_snapshot_list.h>
 #include <kth/capi/vm/function_table.h>
 #include <kth/capi/vm/interpreter.h>
 #include <kth/capi/vm/metrics.h>
+#include <kth/capi/vm/number.h>
 #include <kth/capi/vm/program.h>
 #include <kth/capi/vm/script_execution_context.h>
 
 #include <kth/capi/bool_list.h>
+#include <kth/capi/data_stack.h>
 #include <kth/capi/double_list.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/hash_list.h>
