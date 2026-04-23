@@ -225,6 +225,22 @@ TEST_CASE("C-API OutputPoint - satoshi_fixed_size is 36", "[C-API OutputPoint]")
     REQUIRE(kth_chain_output_point_satoshi_fixed_size() == 36u);
 }
 
+TEST_CASE("C-API OutputPoint - null factory returns is_null",
+          "[C-API OutputPoint]") {
+    // `output_point::null()` shadows the inherited `point::null()` so
+    // the generated wrapper hands back an `output_point` handle, not
+    // a sliced `point`. The sentinel itself is the coinbase marker:
+    // a 32-byte null_hash paired with the null-index sentinel
+    // (`max_uint32`). Pin both halves so a future regression that
+    // preserves only one can't sneak through.
+    kth_output_point_mut_t op = kth_chain_output_point_null();
+    REQUIRE(op != NULL);
+    REQUIRE(kth_chain_output_point_is_null(op) != 0);
+    REQUIRE(kth_chain_output_point_index(op) == 0xffffffffu);
+    REQUIRE(kth_hash_is_null(kth_chain_output_point_hash(op)) != 0);
+    kth_chain_output_point_destruct(op);
+}
+
 // ---------------------------------------------------------------------------
 // Preconditions (death tests via fork)
 // ---------------------------------------------------------------------------

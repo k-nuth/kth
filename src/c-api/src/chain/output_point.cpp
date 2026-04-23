@@ -57,6 +57,13 @@ kth_output_point_mut_t kth_chain_output_point_construct_from_point(kth_point_con
 }
 
 
+// Static factories
+
+kth_output_point_mut_t kth_chain_output_point_null(void) {
+    return kth::leak(cpp_t::null());
+}
+
+
 // Destructor
 
 void kth_chain_output_point_destruct(kth_output_point_mut_t self) {
