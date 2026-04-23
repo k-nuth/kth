@@ -1,3 +1,19 @@
+# version 0.82.0
+
+You can install Knuth node version v0.82.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* test(c-api): add debug_snapshot C-API test coverage by @fpelliccioni in https://github.com/k-nuth/kth/pull/294
+* feat(wallet): add cashtoken_minting API by @fpelliccioni in https://github.com/k-nuth/kth/pull/288
+* fix(wallet): harden cashtoken_minting input validation by @fpelliccioni in https://github.com/k-nuth/kth/pull/296
+* refactor(domain): metrics cleanup + kth-native VM_LIMITS_STANDARD flag by @fpelliccioni in https://github.com/k-nuth/kth/pull/297
+* feat(c-api): expose vm::metrics binding + tests + vm_limits_standard flag by @fpelliccioni in https://github.com/k-nuth/kth/pull/298
+* release: 0.82.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/299
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.81.1...v0.82.0
+
+
 # version 0.81.1
 
 You can install Knuth node version v0.81.1 [using these instructions](https://kth.cash/#download).
