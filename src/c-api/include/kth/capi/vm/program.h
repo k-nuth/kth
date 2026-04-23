@@ -194,7 +194,7 @@ void kth_vm_program_drop(kth_program_mut_t self);
 
 /** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
 KTH_EXPORT KTH_OWNED
-uint8_t* kth_vm_program_pop(kth_program_mut_t self, kth_size_t* out_size);
+uint8_t* kth_vm_program_pop_simple(kth_program_mut_t self, kth_size_t* out_size);
 
 KTH_EXPORT
 kth_error_code_t kth_vm_program_pop_int32(kth_program_mut_t self, int32_t* out);
@@ -206,12 +206,46 @@ kth_error_code_t kth_vm_program_pop_int64(kth_program_mut_t self, int64_t* out);
 KTH_EXPORT
 kth_error_code_t kth_vm_program_pop_number(kth_program_mut_t self, kth_size_t maximum_size, KTH_OUT_OWNED kth_number_mut_t* out);
 
+/**
+ * @param[out] out_first Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error.
+ * @param[out] out_second Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_vm_program_pop_binary(kth_program_mut_t self, KTH_OUT_OWNED kth_number_mut_t* out_first, KTH_OUT_OWNED kth_number_mut_t* out_second);
+
+/**
+ * @param[out] out_0 Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error.
+ * @param[out] out_1 Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error.
+ * @param[out] out_2 Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_vm_program_pop_ternary(kth_program_mut_t self, KTH_OUT_OWNED kth_number_mut_t* out_0, KTH_OUT_OWNED kth_number_mut_t* out_1, KTH_OUT_OWNED kth_number_mut_t* out_2);
+
 /** @param[out] out Must point to a null `kth_big_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_big_number_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_vm_program_pop_big_number(kth_program_mut_t self, kth_size_t maximum_size, KTH_OUT_OWNED kth_big_number_mut_t* out);
 
+/**
+ * @param[out] out_first Must point to a null `kth_big_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_big_number_destruct`. Untouched on error.
+ * @param[out] out_second Must point to a null `kth_big_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_big_number_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_vm_program_pop_big_binary(kth_program_mut_t self, KTH_OUT_OWNED kth_big_number_mut_t* out_first, KTH_OUT_OWNED kth_big_number_mut_t* out_second);
+
+/**
+ * @param[out] out_0 Must point to a null `kth_big_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_big_number_destruct`. Untouched on error.
+ * @param[out] out_1 Must point to a null `kth_big_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_big_number_destruct`. Untouched on error.
+ * @param[out] out_2 Must point to a null `kth_big_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_big_number_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_vm_program_pop_big_ternary(kth_program_mut_t self, KTH_OUT_OWNED kth_big_number_mut_t* out_0, KTH_OUT_OWNED kth_big_number_mut_t* out_1, KTH_OUT_OWNED kth_big_number_mut_t* out_2);
+
 KTH_EXPORT
 kth_error_code_t kth_vm_program_pop_index(kth_program_mut_t self, uint32_t* out);
+
+/** @param[out] out Must point to a null `kth_data_stack_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_data_stack_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_vm_program_pop(kth_program_mut_t self, kth_size_t count, KTH_OUT_OWNED kth_data_stack_mut_t* out);
 
 KTH_EXPORT
 void kth_vm_program_duplicate(kth_program_mut_t self, kth_size_t index);

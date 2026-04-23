@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <tuple>
 #include <utility>
 
 #include <kth/capi/vm/program.h>
@@ -274,7 +275,7 @@ void kth_vm_program_drop(kth_program_mut_t self) {
     kth::cpp_ref<cpp_t>(self).drop();
 }
 
-uint8_t* kth_vm_program_pop(kth_program_mut_t self, kth_size_t* out_size) {
+uint8_t* kth_vm_program_pop_simple(kth_program_mut_t self, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
     auto const data = kth::cpp_ref<cpp_t>(self).pop();
@@ -310,6 +311,35 @@ kth_error_code_t kth_vm_program_pop_number(kth_program_mut_t self, kth_size_t ma
     return kth_ec_success;
 }
 
+kth_error_code_t kth_vm_program_pop_binary(kth_program_mut_t self, KTH_OUT_OWNED kth_number_mut_t* out_first, KTH_OUT_OWNED kth_number_mut_t* out_second) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out_first != nullptr);
+    KTH_PRECONDITION(*out_first == nullptr);
+    KTH_PRECONDITION(out_second != nullptr);
+    KTH_PRECONDITION(*out_second == nullptr);
+    auto result = kth::cpp_ref<cpp_t>(self).pop_binary();
+    if ( ! result) return kth::to_c_err(result.error());
+    *out_first = kth::leak(std::move(result->first));
+    *out_second = kth::leak(std::move(result->second));
+    return kth_ec_success;
+}
+
+kth_error_code_t kth_vm_program_pop_ternary(kth_program_mut_t self, KTH_OUT_OWNED kth_number_mut_t* out_0, KTH_OUT_OWNED kth_number_mut_t* out_1, KTH_OUT_OWNED kth_number_mut_t* out_2) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out_0 != nullptr);
+    KTH_PRECONDITION(*out_0 == nullptr);
+    KTH_PRECONDITION(out_1 != nullptr);
+    KTH_PRECONDITION(*out_1 == nullptr);
+    KTH_PRECONDITION(out_2 != nullptr);
+    KTH_PRECONDITION(*out_2 == nullptr);
+    auto result = kth::cpp_ref<cpp_t>(self).pop_ternary();
+    if ( ! result) return kth::to_c_err(result.error());
+    *out_0 = kth::leak(std::move(std::get<0>(*result)));
+    *out_1 = kth::leak(std::move(std::get<1>(*result)));
+    *out_2 = kth::leak(std::move(std::get<2>(*result)));
+    return kth_ec_success;
+}
+
 kth_error_code_t kth_vm_program_pop_big_number(kth_program_mut_t self, kth_size_t maximum_size, KTH_OUT_OWNED kth_big_number_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
@@ -321,12 +351,52 @@ kth_error_code_t kth_vm_program_pop_big_number(kth_program_mut_t self, kth_size_
     return kth_ec_success;
 }
 
+kth_error_code_t kth_vm_program_pop_big_binary(kth_program_mut_t self, KTH_OUT_OWNED kth_big_number_mut_t* out_first, KTH_OUT_OWNED kth_big_number_mut_t* out_second) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out_first != nullptr);
+    KTH_PRECONDITION(*out_first == nullptr);
+    KTH_PRECONDITION(out_second != nullptr);
+    KTH_PRECONDITION(*out_second == nullptr);
+    auto result = kth::cpp_ref<cpp_t>(self).pop_big_binary();
+    if ( ! result) return kth::to_c_err(result.error());
+    *out_first = kth::leak(std::move(result->first));
+    *out_second = kth::leak(std::move(result->second));
+    return kth_ec_success;
+}
+
+kth_error_code_t kth_vm_program_pop_big_ternary(kth_program_mut_t self, KTH_OUT_OWNED kth_big_number_mut_t* out_0, KTH_OUT_OWNED kth_big_number_mut_t* out_1, KTH_OUT_OWNED kth_big_number_mut_t* out_2) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out_0 != nullptr);
+    KTH_PRECONDITION(*out_0 == nullptr);
+    KTH_PRECONDITION(out_1 != nullptr);
+    KTH_PRECONDITION(*out_1 == nullptr);
+    KTH_PRECONDITION(out_2 != nullptr);
+    KTH_PRECONDITION(*out_2 == nullptr);
+    auto result = kth::cpp_ref<cpp_t>(self).pop_big_ternary();
+    if ( ! result) return kth::to_c_err(result.error());
+    *out_0 = kth::leak(std::move(std::get<0>(*result)));
+    *out_1 = kth::leak(std::move(std::get<1>(*result)));
+    *out_2 = kth::leak(std::move(std::get<2>(*result)));
+    return kth_ec_success;
+}
+
 kth_error_code_t kth_vm_program_pop_index(kth_program_mut_t self, uint32_t* out) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
     auto const result = kth::cpp_ref<cpp_t>(self).pop_index();
     if ( ! result) return kth::to_c_err(result.error());
     *out = static_cast<uint32_t>(*result);
+    return kth_ec_success;
+}
+
+kth_error_code_t kth_vm_program_pop(kth_program_mut_t self, kth_size_t count, KTH_OUT_OWNED kth_data_stack_mut_t* out) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const count_cpp = kth::sz(count);
+    auto result = kth::cpp_ref<cpp_t>(self).pop(count_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak<kth::data_stack>(std::move(*result));
     return kth_ec_success;
 }
 

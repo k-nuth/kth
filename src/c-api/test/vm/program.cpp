@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include <kth/capi/chain/script.h>
+#include <kth/capi/data_stack.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/vm/big_number.h>
 #include <kth/capi/vm/number.h>
@@ -182,6 +183,175 @@ TEST_CASE("C-API Program - pop_big_number consumes the stack top",
     REQUIRE(kth_vm_program_pop_big_number(prog, 4, &out) == kth_ec_success);
     REQUIRE(kth_vm_big_number_to_int32_saturating(out) == 1);
     kth_vm_big_number_destruct(out);
+
+    kth_vm_program_destruct(prog);
+    kth_chain_script_destruct(script);
+}
+
+// ---------------------------------------------------------------------------
+// pop_binary / pop_ternary — multi-value stack reads (number)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("C-API Program - pop_binary pops two numbers from TOS",
+          "[C-API Program][number]") {
+    // Two `push(true)` calls leave two 1-byte `1` encodings on the
+    // main stack. `pop_binary` consumes both as `number` handles.
+    kth_program_mut_t prog = NULL;
+    kth_script_mut_t script = NULL;
+    build_program_for_two_op_script(&prog, &script);
+    kth_vm_program_push(prog, 1);
+    kth_vm_program_push(prog, 1);
+
+    kth_number_mut_t a = NULL;
+    kth_number_mut_t b = NULL;
+    REQUIRE(kth_vm_program_pop_binary(prog, &a, &b) == kth_ec_success);
+    REQUIRE(a != NULL);
+    REQUIRE(b != NULL);
+    REQUIRE(kth_vm_number_int64(a) == 1);
+    REQUIRE(kth_vm_number_int64(b) == 1);
+
+    // Stack must be empty afterwards.
+    kth_number_mut_t c = NULL;
+    REQUIRE(kth_vm_program_pop_number(prog, 4, &c) != kth_ec_success);
+    REQUIRE(c == NULL);
+
+    kth_vm_number_destruct(b);
+    kth_vm_number_destruct(a);
+    kth_vm_program_destruct(prog);
+    kth_chain_script_destruct(script);
+}
+
+TEST_CASE("C-API Program - pop_ternary pops three numbers from TOS",
+          "[C-API Program][number]") {
+    kth_program_mut_t prog = NULL;
+    kth_script_mut_t script = NULL;
+    build_program_for_two_op_script(&prog, &script);
+    kth_vm_program_push(prog, 1);
+    kth_vm_program_push(prog, 1);
+    kth_vm_program_push(prog, 1);
+
+    kth_number_mut_t a = NULL;
+    kth_number_mut_t b = NULL;
+    kth_number_mut_t c = NULL;
+    REQUIRE(kth_vm_program_pop_ternary(prog, &a, &b, &c) == kth_ec_success);
+    REQUIRE(kth_vm_number_int64(a) == 1);
+    REQUIRE(kth_vm_number_int64(b) == 1);
+    REQUIRE(kth_vm_number_int64(c) == 1);
+
+    kth_vm_number_destruct(c);
+    kth_vm_number_destruct(b);
+    kth_vm_number_destruct(a);
+    kth_vm_program_destruct(prog);
+    kth_chain_script_destruct(script);
+}
+
+TEST_CASE("C-API Program - pop_binary on empty stack reports error",
+          "[C-API Program][number]") {
+    // No push first — the underlying `expected` returns an error and
+    // the wrapper must leave both out-slots untouched.
+    kth_program_mut_t prog = NULL;
+    kth_script_mut_t script = NULL;
+    build_program_for_two_op_script(&prog, &script);
+
+    kth_number_mut_t a = NULL;
+    kth_number_mut_t b = NULL;
+    REQUIRE(kth_vm_program_pop_binary(prog, &a, &b) != kth_ec_success);
+    REQUIRE(a == NULL);
+    REQUIRE(b == NULL);
+
+    kth_vm_program_destruct(prog);
+    kth_chain_script_destruct(script);
+}
+
+// ---------------------------------------------------------------------------
+// pop_big_binary / pop_big_ternary — same shape for the big-int variant
+// ---------------------------------------------------------------------------
+
+TEST_CASE("C-API Program - pop_big_binary pops two big numbers from TOS",
+          "[C-API Program][big_number]") {
+    kth_program_mut_t prog = NULL;
+    kth_script_mut_t script = NULL;
+    build_program_for_two_op_script(&prog, &script);
+    kth_vm_program_push(prog, 1);
+    kth_vm_program_push(prog, 1);
+
+    kth_big_number_mut_t a = NULL;
+    kth_big_number_mut_t b = NULL;
+    REQUIRE(kth_vm_program_pop_big_binary(prog, &a, &b) == kth_ec_success);
+    REQUIRE(kth_vm_big_number_to_int32_saturating(a) == 1);
+    REQUIRE(kth_vm_big_number_to_int32_saturating(b) == 1);
+
+    kth_vm_big_number_destruct(b);
+    kth_vm_big_number_destruct(a);
+    kth_vm_program_destruct(prog);
+    kth_chain_script_destruct(script);
+}
+
+TEST_CASE("C-API Program - pop_big_ternary pops three big numbers from TOS",
+          "[C-API Program][big_number]") {
+    kth_program_mut_t prog = NULL;
+    kth_script_mut_t script = NULL;
+    build_program_for_two_op_script(&prog, &script);
+    kth_vm_program_push(prog, 1);
+    kth_vm_program_push(prog, 1);
+    kth_vm_program_push(prog, 1);
+
+    kth_big_number_mut_t a = NULL;
+    kth_big_number_mut_t b = NULL;
+    kth_big_number_mut_t c = NULL;
+    REQUIRE(kth_vm_program_pop_big_ternary(prog, &a, &b, &c) == kth_ec_success);
+    REQUIRE(kth_vm_big_number_to_int32_saturating(a) == 1);
+    REQUIRE(kth_vm_big_number_to_int32_saturating(b) == 1);
+    REQUIRE(kth_vm_big_number_to_int32_saturating(c) == 1);
+
+    kth_vm_big_number_destruct(c);
+    kth_vm_big_number_destruct(b);
+    kth_vm_big_number_destruct(a);
+    kth_vm_program_destruct(prog);
+    kth_chain_script_destruct(script);
+}
+
+// ---------------------------------------------------------------------------
+// pop(count) — owned data_stack of the top `count` elements
+// ---------------------------------------------------------------------------
+
+TEST_CASE("C-API Program - pop(count) returns the top N stack elements",
+          "[C-API Program][stack]") {
+    kth_program_mut_t prog = NULL;
+    kth_script_mut_t script = NULL;
+    build_program_for_two_op_script(&prog, &script);
+    kth_vm_program_push(prog, 1);
+    kth_vm_program_push(prog, 1);
+    kth_vm_program_push(prog, 1);
+
+    kth_data_stack_mut_t popped = NULL;
+    REQUIRE(kth_vm_program_pop(prog, 2, &popped) == kth_ec_success);
+    REQUIRE(popped != NULL);
+    REQUIRE(kth_core_data_stack_count(popped) == 2);
+
+    // Each popped element is the minimally-encoded `true` (1 byte = 0x01).
+    kth_size_t size = 0;
+    uint8_t const* elem = kth_core_data_stack_nth(popped, 0, &size);
+    REQUIRE(size == 1);
+    REQUIRE(elem[0] == 0x01);
+
+    kth_core_data_stack_destruct(popped);
+    kth_vm_program_destruct(prog);
+    kth_chain_script_destruct(script);
+}
+
+TEST_CASE("C-API Program - pop(count) fails when the stack is too short",
+          "[C-API Program][stack]") {
+    // One element on the stack, asking for two — the underlying
+    // `expected` signals an error and the wrapper leaves `out` NULL.
+    kth_program_mut_t prog = NULL;
+    kth_script_mut_t script = NULL;
+    build_program_for_two_op_script(&prog, &script);
+    kth_vm_program_push(prog, 1);
+
+    kth_data_stack_mut_t popped = NULL;
+    REQUIRE(kth_vm_program_pop(prog, 2, &popped) != kth_ec_success);
+    REQUIRE(popped == NULL);
 
     kth_vm_program_destruct(prog);
     kth_chain_script_destruct(script);
