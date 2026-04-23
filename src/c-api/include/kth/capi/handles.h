@@ -185,6 +185,11 @@ typedef void const* kth_bool_list_const_t;
 typedef void* kth_wallet_data_mut_t;
 typedef void const* kth_wallet_data_const_t;
 
+typedef void* kth_stealth_address_mut_t;
+typedef void const* kth_stealth_address_const_t;
+typedef void* kth_bitcoin_uri_mut_t;
+typedef void const* kth_bitcoin_uri_const_t;
+
 typedef void* kth_ec_compressed_list_t;
 typedef void* kth_ec_compressed_list_mut_t;
 typedef void const* kth_ec_compressed_list_const_t;
