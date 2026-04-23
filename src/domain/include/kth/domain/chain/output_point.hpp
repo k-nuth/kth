@@ -58,6 +58,21 @@ public:
     output_point(point const& x);
     output_point& operator=(point const& /*x*/);
 
+    // Shadows the inherited `point::null()` so the return type is
+    // `output_point`. Without this, `output_point::null()` resolves
+    // to the base-class static and slices to `point` — callers (and
+    // generated bindings) that expected an `output_point` back end
+    // up with a `point`. Forwards to the base factory via the
+    // `point`-taking conversion constructor so the coinbase sentinel
+    // (`null_hash + null_index`) stays in one place. Not `constexpr`
+    // because the `validation_type` member brings in a non-constexpr
+    // `output` default, but `noexcept` mirrors `point::null()`.
+    [[nodiscard]]
+    static
+    output_point null() noexcept {
+        return output_point{point::null()};
+    }
+
     // Operators.
     //-------------------------------------------------------------------------
 
