@@ -184,6 +184,7 @@ set(kth_sources
   src/wallet/hd_private.cpp
 
   src/wallet/cashtoken_minting.cpp
+  src/wallet/message.cpp
   src/wallet/payment_address.cpp
   src/wallet/payment_address_list.cpp
   src/wallet/wallet.cpp
@@ -315,6 +316,7 @@ set(kth_headers
 
   include/kth/capi/wallet/cashtoken_minting.h
   include/kth/capi/wallet/ec_public.h
+  include/kth/capi/wallet/message.h
   include/kth/capi/wallet/payment_address.h
   include/kth/capi/wallet/payment_address_list.h
   include/kth/capi/wallet/wallet.h
@@ -538,6 +540,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/wallet/cashtoken_minting.cpp
         test/wallet/hd_public.cpp
         test/wallet/hd_private.cpp
+        test/wallet/message.cpp
         test/wallet/wallet_data.cpp
         test/vm/big_number.cpp
         test/vm/program.cpp

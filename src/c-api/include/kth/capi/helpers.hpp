@@ -21,6 +21,7 @@
 #include <kth/domain/config/network.hpp>
 #include <kth/domain/machine/opcode.hpp>
 #include <kth/domain/wallet/hd_public.hpp>
+#include <kth/domain/wallet/message.hpp>
 #include <kth/domain/wallet/wallet_manager.hpp>
 
 #include <kth/infrastructure/math/hash.hpp>
@@ -342,6 +343,21 @@ inline kth_ec_uncompressed_t to_ec_uncompressed_t(kth::ec_uncompressed const& x)
 }
 inline kth::ec_uncompressed ec_uncompressed_to_cpp(uint8_t const* x) {
     return to_array_cpp<kth::ec_uncompressed_size>(x);
+}
+
+// message_signature (65 bytes: BIP137 magic byte + ECDSA r,s). Same
+// underlying layout as `ec_uncompressed` (both are byte_array<65>),
+// but exposed as a distinct helper so call sites carry the right
+// intent — a signature, not a public key point.
+inline kth_message_signature_t to_message_signature_t(
+        kth::domain::wallet::message_signature const& x) {
+    kth_message_signature_t ret;
+    std::copy_n(x.begin(), x.size(), ret.data);
+    return ret;
+}
+inline kth::domain::wallet::message_signature message_signature_to_cpp(
+        uint8_t const* x) {
+    return to_array_cpp<kth::domain::wallet::message_signature_size>(x);
 }
 
 // wif_compressed (38 bytes)

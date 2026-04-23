@@ -57,6 +57,12 @@ typedef struct {
     uint8_t data[KTH_EC_SIGNATURE_SIZE];
 } kth_ec_signature_t;
 
+// BIP137 signed-message envelope: 1 recovery-magic byte + 64-byte ECDSA sig.
+#define KTH_MESSAGE_SIGNATURE_SIZE 65
+typedef struct kth_message_signature_t {
+    uint8_t data[KTH_MESSAGE_SIGNATURE_SIZE];
+} kth_message_signature_t;
+
 #define KTH_BITCOIN_PAYMENT_SIZE 25
 typedef struct kth_payment_t {
     uint8_t hash[KTH_BITCOIN_PAYMENT_SIZE];
