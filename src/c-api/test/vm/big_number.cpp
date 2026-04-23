@@ -143,6 +143,35 @@ TEST_CASE("C-API BigNumber - pow produces a new handle with correct value",
     kth_vm_big_number_destruct(base);
 }
 
+TEST_CASE("C-API BigNumber - add / subtract / multiply operators produce new handles",
+          "[C-API BigNumber][arithmetic]") {
+    // `operator+ - *` surface is emitted as `add` / `subtract` /
+    // `multiply` — functional semantics, inputs untouched. One
+    // battery covers all three so the precondition / ownership
+    // shape exercises together.
+    kth_big_number_mut_t a = kth_vm_big_number_construct_from_value(12345);
+    kth_big_number_mut_t b = kth_vm_big_number_construct_from_value(67);
+
+    kth_big_number_mut_t sum = kth_vm_big_number_add(a, b);
+    REQUIRE(kth_vm_big_number_to_int32_saturating(sum) == 12345 + 67);
+
+    kth_big_number_mut_t diff = kth_vm_big_number_subtract(a, b);
+    REQUIRE(kth_vm_big_number_to_int32_saturating(diff) == 12345 - 67);
+
+    kth_big_number_mut_t product = kth_vm_big_number_multiply(a, b);
+    REQUIRE(kth_vm_big_number_to_int32_saturating(product) == 12345 * 67);
+
+    // `a` and `b` still hold their original values.
+    REQUIRE(kth_vm_big_number_to_int32_saturating(a) == 12345);
+    REQUIRE(kth_vm_big_number_to_int32_saturating(b) == 67);
+
+    kth_vm_big_number_destruct(product);
+    kth_vm_big_number_destruct(diff);
+    kth_vm_big_number_destruct(sum);
+    kth_vm_big_number_destruct(b);
+    kth_vm_big_number_destruct(a);
+}
+
 // ---------------------------------------------------------------------------
 // Serialization
 // ---------------------------------------------------------------------------

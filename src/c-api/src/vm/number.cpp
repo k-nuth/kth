@@ -130,6 +130,37 @@ kth_bool_t kth_vm_number_less_or_equal(kth_number_const_t self, int64_t value) {
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).operator<=(value));
 }
 
+kth_number_mut_t kth_vm_number_add_int64(kth_number_const_t self, int64_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::leak(kth::cpp_ref<cpp_t>(self).operator+(value));
+}
+
+kth_number_mut_t kth_vm_number_subtract_int64(kth_number_const_t self, int64_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::leak(kth::cpp_ref<cpp_t>(self).operator-(value));
+}
+
+kth_number_mut_t kth_vm_number_add_number(kth_number_const_t self, kth_number_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
+    return kth::leak(kth::cpp_ref<cpp_t>(self).operator+(x_cpp));
+}
+
+kth_number_mut_t kth_vm_number_subtract_number(kth_number_const_t self, kth_number_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
+    return kth::leak(kth::cpp_ref<cpp_t>(self).operator-(x_cpp));
+}
+
+kth_number_mut_t kth_vm_number_multiply(kth_number_const_t self, kth_number_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
+    return kth::leak(kth::cpp_ref<cpp_t>(self).operator*(x_cpp));
+}
+
 kth_bool_t kth_vm_number_safe_add_number(kth_number_mut_t self, kth_number_const_t x) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(x != nullptr);

@@ -144,6 +144,90 @@ TEST_CASE("C-API Number - safe_sub_number subtracts by handle",
 }
 
 // ---------------------------------------------------------------------------
+// Arithmetic operators — `operator+/-/*` renamed to `add`/`subtract`/`multiply`
+// ---------------------------------------------------------------------------
+
+TEST_CASE("C-API Number - add_number produces a new handle without mutating inputs",
+          "[C-API Number][arithmetic]") {
+    // `operator+(number const&)` → `add_number`. Returns an owned
+    // handle; inputs stay intact. Compare against the mutating
+    // `safe_add_*` family: this is the functional path.
+    kth_number_mut_t a = NULL;
+    kth_number_mut_t b = NULL;
+    REQUIRE(kth_vm_number_from_int(3, &a) == kth_ec_success);
+    REQUIRE(kth_vm_number_from_int(4, &b) == kth_ec_success);
+
+    kth_number_mut_t sum = kth_vm_number_add_number(a, b);
+    REQUIRE(sum != NULL);
+    REQUIRE(kth_vm_number_int64(sum) == 7);
+
+    REQUIRE(kth_vm_number_int64(a) == 3);
+    REQUIRE(kth_vm_number_int64(b) == 4);
+
+    kth_vm_number_destruct(sum);
+    kth_vm_number_destruct(b);
+    kth_vm_number_destruct(a);
+}
+
+TEST_CASE("C-API Number - add_int64 uses the int64 overload of operator+",
+          "[C-API Number][arithmetic]") {
+    kth_number_mut_t a = NULL;
+    REQUIRE(kth_vm_number_from_int(10, &a) == kth_ec_success);
+
+    kth_number_mut_t sum = kth_vm_number_add_int64(a, 5);
+    REQUIRE(kth_vm_number_int64(sum) == 15);
+    REQUIRE(kth_vm_number_int64(a) == 10);     // source unchanged
+
+    kth_vm_number_destruct(sum);
+    kth_vm_number_destruct(a);
+}
+
+TEST_CASE("C-API Number - subtract_number returns a new difference",
+          "[C-API Number][arithmetic]") {
+    kth_number_mut_t a = NULL;
+    kth_number_mut_t b = NULL;
+    REQUIRE(kth_vm_number_from_int(100, &a) == kth_ec_success);
+    REQUIRE(kth_vm_number_from_int(30, &b) == kth_ec_success);
+
+    kth_number_mut_t diff = kth_vm_number_subtract_number(a, b);
+    REQUIRE(kth_vm_number_int64(diff) == 70);
+    REQUIRE(kth_vm_number_int64(a) == 100);
+    REQUIRE(kth_vm_number_int64(b) == 30);
+
+    kth_vm_number_destruct(diff);
+    kth_vm_number_destruct(b);
+    kth_vm_number_destruct(a);
+}
+
+TEST_CASE("C-API Number - subtract_int64 uses the int64 overload of operator-",
+          "[C-API Number][arithmetic]") {
+    kth_number_mut_t a = NULL;
+    REQUIRE(kth_vm_number_from_int(20, &a) == kth_ec_success);
+
+    kth_number_mut_t diff = kth_vm_number_subtract_int64(a, 7);
+    REQUIRE(kth_vm_number_int64(diff) == 13);
+    REQUIRE(kth_vm_number_int64(a) == 20);     // source unchanged
+
+    kth_vm_number_destruct(diff);
+    kth_vm_number_destruct(a);
+}
+
+TEST_CASE("C-API Number - multiply returns the product as a new handle",
+          "[C-API Number][arithmetic]") {
+    kth_number_mut_t a = NULL;
+    kth_number_mut_t b = NULL;
+    REQUIRE(kth_vm_number_from_int(6, &a) == kth_ec_success);
+    REQUIRE(kth_vm_number_from_int(7, &b) == kth_ec_success);
+
+    kth_number_mut_t product = kth_vm_number_multiply(a, b);
+    REQUIRE(kth_vm_number_int64(product) == 42);
+
+    kth_vm_number_destruct(product);
+    kth_vm_number_destruct(b);
+    kth_vm_number_destruct(a);
+}
+
+// ---------------------------------------------------------------------------
 // safe_add_number2 / safe_sub_number2 / safe_mul_number2 — static variants
 // ---------------------------------------------------------------------------
 
