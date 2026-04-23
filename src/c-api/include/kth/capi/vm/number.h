@@ -89,6 +89,26 @@ kth_bool_t kth_vm_number_greater_or_equal(kth_number_const_t self, int64_t value
 KTH_EXPORT
 kth_bool_t kth_vm_number_less_or_equal(kth_number_const_t self, int64_t value);
 
+/** @return Owned `kth_number_mut_t`. Caller must release with `kth_vm_number_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_number_mut_t kth_vm_number_add_int64(kth_number_const_t self, int64_t value);
+
+/** @return Owned `kth_number_mut_t`. Caller must release with `kth_vm_number_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_number_mut_t kth_vm_number_subtract_int64(kth_number_const_t self, int64_t value);
+
+/** @return Owned `kth_number_mut_t`. Caller must release with `kth_vm_number_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_number_mut_t kth_vm_number_add_number(kth_number_const_t self, kth_number_const_t x);
+
+/** @return Owned `kth_number_mut_t`. Caller must release with `kth_vm_number_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_number_mut_t kth_vm_number_subtract_number(kth_number_const_t self, kth_number_const_t x);
+
+/** @return Owned `kth_number_mut_t`. Caller must release with `kth_vm_number_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_number_mut_t kth_vm_number_multiply(kth_number_const_t self, kth_number_const_t x);
+
 KTH_EXPORT
 kth_bool_t kth_vm_number_safe_add_number(kth_number_mut_t self, kth_number_const_t x);
 

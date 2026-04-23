@@ -180,6 +180,27 @@ int kth_vm_big_number_compare(kth_big_number_const_t self, kth_big_number_const_
     return kth::cpp_ref<cpp_t>(self).compare(other_cpp);
 }
 
+kth_big_number_mut_t kth_vm_big_number_add(kth_big_number_const_t self, kth_big_number_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    auto const& other_cpp = kth::cpp_ref<cpp_t>(other);
+    return kth::leak(kth::cpp_ref<cpp_t>(self).operator+(other_cpp));
+}
+
+kth_big_number_mut_t kth_vm_big_number_subtract(kth_big_number_const_t self, kth_big_number_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    auto const& other_cpp = kth::cpp_ref<cpp_t>(other);
+    return kth::leak(kth::cpp_ref<cpp_t>(self).operator-(other_cpp));
+}
+
+kth_big_number_mut_t kth_vm_big_number_multiply(kth_big_number_const_t self, kth_big_number_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    auto const& other_cpp = kth::cpp_ref<cpp_t>(other);
+    return kth::leak(kth::cpp_ref<cpp_t>(self).operator*(other_cpp));
+}
+
 void kth_vm_big_number_negate(kth_big_number_mut_t self) {
     KTH_PRECONDITION(self != nullptr);
     kth::cpp_ref<cpp_t>(self).negate();

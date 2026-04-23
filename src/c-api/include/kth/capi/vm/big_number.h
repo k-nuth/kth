@@ -123,6 +123,18 @@ kth_bool_t kth_vm_big_number_deserialize(kth_big_number_mut_t self, uint8_t cons
 KTH_EXPORT
 int kth_vm_big_number_compare(kth_big_number_const_t self, kth_big_number_const_t other);
 
+/** @return Owned `kth_big_number_mut_t`. Caller must release with `kth_vm_big_number_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_big_number_mut_t kth_vm_big_number_add(kth_big_number_const_t self, kth_big_number_const_t other);
+
+/** @return Owned `kth_big_number_mut_t`. Caller must release with `kth_vm_big_number_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_big_number_mut_t kth_vm_big_number_subtract(kth_big_number_const_t self, kth_big_number_const_t other);
+
+/** @return Owned `kth_big_number_mut_t`. Caller must release with `kth_vm_big_number_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_big_number_mut_t kth_vm_big_number_multiply(kth_big_number_const_t self, kth_big_number_const_t other);
+
 KTH_EXPORT
 void kth_vm_big_number_negate(kth_big_number_mut_t self);
 
