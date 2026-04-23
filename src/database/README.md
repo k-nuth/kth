@@ -16,7 +16,7 @@ $ conan config install https://github.com/k-nuth/ci-utils/raw/master/conan/confi
 2. Install the appropriate library:
 
 ```
-$ conan install --requires=database/0.81.1 --update
+$ conan install --requires=database/0.82.0 --update
 ```
 
 For more more detailed instructions, please refer to our [documentation](https://kth.cash/docs/).
