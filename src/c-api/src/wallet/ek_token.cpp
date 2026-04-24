@@ -37,7 +37,7 @@ kth_ek_token_mut_t kth_wallet_ek_token_construct_from_value(kth_encrypted_token_
 
 kth_ek_token_mut_t kth_wallet_ek_token_construct_from_value_unsafe(uint8_t const* value) {
     KTH_PRECONDITION(value != nullptr);
-    auto const value_cpp = kth::to_array_cpp<53>(value);
+    auto const value_cpp = kth::encrypted_token_to_cpp(value);
     return kth::leak_if_valid(cpp_t(value_cpp));
 }
 

@@ -427,6 +427,36 @@ inline kth::domain::wallet::encrypted_token encrypted_token_to_cpp(uint8_t const
     return to_array_cpp<kth::domain::wallet::encrypted_token_decoded_size>(x);
 }
 
+// BIP38 ek_seed (24 bytes) — caller-provided key-pair randomness.
+inline kth_ek_seed_t to_ek_seed_t(kth::domain::wallet::ek_seed const& x) {
+    kth_ek_seed_t ret;
+    std::copy_n(x.begin(), x.size(), ret.data);
+    return ret;
+}
+inline kth::domain::wallet::ek_seed ek_seed_to_cpp(uint8_t const* x) {
+    return to_array_cpp<kth::domain::wallet::ek_seed_size>(x);
+}
+
+// BIP38 ek_salt (4 bytes) — lot+sequence-mode salt input.
+inline kth_ek_salt_t to_ek_salt_t(kth::domain::wallet::ek_salt const& x) {
+    kth_ek_salt_t ret;
+    std::copy_n(x.begin(), x.size(), ret.data);
+    return ret;
+}
+inline kth::domain::wallet::ek_salt ek_salt_to_cpp(uint8_t const* x) {
+    return to_array_cpp<kth::domain::wallet::ek_salt_size>(x);
+}
+
+// BIP38 ek_entropy (8 bytes) — passphrase-mode token randomness.
+inline kth_ek_entropy_t to_ek_entropy_t(kth::domain::wallet::ek_entropy const& x) {
+    kth_ek_entropy_t ret;
+    std::copy_n(x.begin(), x.size(), ret.data);
+    return ret;
+}
+inline kth::domain::wallet::ek_entropy ek_entropy_to_cpp(uint8_t const* x) {
+    return to_array_cpp<kth::domain::wallet::ek_entropy_size>(x);
+}
+
 template <typename T>
 inline
 T* mnew(std::size_t n = 1) {

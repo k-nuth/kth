@@ -37,7 +37,7 @@ kth_ek_public_mut_t kth_wallet_ek_public_construct_from_value(kth_encrypted_publ
 
 kth_ek_public_mut_t kth_wallet_ek_public_construct_from_value_unsafe(uint8_t const* value) {
     KTH_PRECONDITION(value != nullptr);
-    auto const value_cpp = kth::to_array_cpp<55>(value);
+    auto const value_cpp = kth::encrypted_public_to_cpp(value);
     return kth::leak_if_valid(cpp_t(value_cpp));
 }
 
