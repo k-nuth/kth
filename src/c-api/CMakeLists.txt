@@ -216,6 +216,8 @@ set(kth_sources
   src/wallet/payment_address.cpp
   src/wallet/payment_address_list.cpp
   src/wallet/stealth_address.cpp
+  src/wallet/stealth_receiver.cpp
+  src/wallet/stealth_sender.cpp
   src/wallet/wallet.cpp
   src/wallet/ec_compressed_list.cpp
   src/wallet/wallet_data.cpp
@@ -359,6 +361,8 @@ set(kth_headers
   include/kth/capi/wallet/payment_address.h
   include/kth/capi/wallet/payment_address_list.h
   include/kth/capi/wallet/stealth_address.h
+  include/kth/capi/wallet/stealth_receiver.h
+  include/kth/capi/wallet/stealth_sender.h
   include/kth/capi/wallet/wallet.h
   include/kth/capi/wallet/ec_compressed_list.h
   include/kth/capi/wallet/wallet_data.h
@@ -589,6 +593,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/wallet/message.cpp
         test/wallet/mnemonic.cpp
         test/wallet/stealth_address.cpp
+        test/wallet/stealth_receiver.cpp
+        test/wallet/stealth_sender.cpp
         test/wallet/wallet_data.cpp
         test/vm/big_number.cpp
         test/vm/program.cpp
