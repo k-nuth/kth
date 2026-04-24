@@ -200,6 +200,12 @@ typedef void const* kth_ek_public_const_t;
 typedef void* kth_ek_token_mut_t;
 typedef void const* kth_ek_token_const_t;
 
+// BCH CashTokens coin-selection result. Returned by the
+// `kth_wallet_coin_selection_select_utxos*` family; carries the
+// selected-amount totals plus the container metadata fields.
+typedef void* kth_coin_selection_result_mut_t;
+typedef void const* kth_coin_selection_result_const_t;
+
 // BIP39 wordlist handles. `dictionary` is `std::array<char const*, 2048>`
 // and `dictionary_list` is `std::vector<dictionary const*>`; callers
 // obtain handles through the `kth_wallet_language_*` factories

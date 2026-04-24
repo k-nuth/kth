@@ -30,6 +30,7 @@
 #include <kth/infrastructure/machine/script_version.hpp>
 
 #include <kth/capi/chain/coin_selection_algorithm.h>
+#include <kth/capi/wallet/coin_selection_strategy.h>
 #include <kth/domain/wallet/coin_selection.hpp>
 #include <kth/capi/chain/opcode.h>
 #include <kth/capi/chain/script_flags.h>
@@ -713,6 +714,16 @@ kth::domain::wallet::coin_selection_algorithm coin_selection_algorithm_to_cpp(kt
 inline
 kth_coin_selection_algorithm_t coin_selection_algorithm_to_c(kth::domain::wallet::coin_selection_algorithm algo) {
     return static_cast<kth_coin_selection_algorithm_t>(algo);
+}
+
+inline
+kth::domain::wallet::coin_selection_strategy coin_selection_strategy_to_cpp(kth_coin_selection_strategy_t strategy) {
+    return static_cast<kth::domain::wallet::coin_selection_strategy>(strategy);
+}
+
+inline
+kth_coin_selection_strategy_t coin_selection_strategy_to_c(kth::domain::wallet::coin_selection_strategy strategy) {
+    return static_cast<kth_coin_selection_strategy_t>(strategy);
 }
 
 // Cash Tokens -----------------------------------------------------
