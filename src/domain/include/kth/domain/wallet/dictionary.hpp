@@ -48,6 +48,32 @@ namespace language {
     extern const dictionary_list all;
 }
 
+// Function-shaped accessors over the `language::` globals above.
+// The existing `extern const` names are variables, not callables, so
+// a binding generator can't bind them directly; the factories below
+// give each built-in wordlist a function surface at the same
+// namespace level. They forward by reference and cost nothing at
+// runtime (every compiler inlines the return statement).
+namespace languages {
+
+inline dictionary const& en()      noexcept { return language::en; }
+inline dictionary const& es()      noexcept { return language::es; }
+inline dictionary const& ja()      noexcept { return language::ja; }
+inline dictionary const& it()      noexcept { return language::it; }
+inline dictionary const& fr()      noexcept { return language::fr; }
+inline dictionary const& cs()      noexcept { return language::cs; }
+inline dictionary const& ru()      noexcept { return language::ru; }
+inline dictionary const& uk()      noexcept { return language::uk; }
+inline dictionary const& zh_Hans() noexcept { return language::zh_Hans; }
+inline dictionary const& zh_Hant() noexcept { return language::zh_Hant; }
+
+// The union of every built-in BIP39 wordlist; the default lexicon for
+// `validate_mnemonic(word_list, dictionary_list)` when the caller
+// doesn't know which language produced the mnemonic.
+inline dictionary_list const& all() noexcept { return language::all; }
+
+} // namespace languages
+
 } // namespace kth::domain::wallet
 
 #endif // KTH_DOMAIN_WALLET_DICTIONARY_HPP_

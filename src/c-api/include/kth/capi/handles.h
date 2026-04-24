@@ -190,6 +190,15 @@ typedef void const* kth_stealth_address_const_t;
 typedef void* kth_bitcoin_uri_mut_t;
 typedef void const* kth_bitcoin_uri_const_t;
 
+// BIP39 wordlist handles. `dictionary` is `std::array<char const*, 2048>`
+// and `dictionary_list` is `std::vector<dictionary const*>`; callers
+// obtain handles through the `kth_wallet_language_*` factories
+// (borrowed views into static storage — do not destruct).
+typedef void* kth_dictionary_mut_t;
+typedef void const* kth_dictionary_const_t;
+typedef void* kth_dictionary_list_mut_t;
+typedef void const* kth_dictionary_list_const_t;
+
 typedef void* kth_ec_compressed_list_t;
 typedef void* kth_ec_compressed_list_mut_t;
 typedef void const* kth_ec_compressed_list_const_t;
