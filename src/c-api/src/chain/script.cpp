@@ -479,7 +479,7 @@ kth_operation_list_mut_t kth_chain_script_to_pay_script_hash_32_pattern_unsafe(u
 
 kth_operation_list_mut_t kth_chain_script_to_pay_multisig_pattern_ec_compressed_list(uint8_t signatures, kth_ec_compressed_list_const_t points) {
     KTH_PRECONDITION(points != nullptr);
-    auto const& points_cpp = kth::cpp_ref<std::vector<std::array<unsigned char, 33>>>(points);
+    auto const& points_cpp = kth::cpp_ref<kth::point_list>(points);
     return kth::leak_list<kth::domain::machine::operation>(cpp_t::to_pay_multisig_pattern(signatures, points_cpp));
 }
 
