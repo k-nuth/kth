@@ -13,6 +13,12 @@ concurrency:
 jobs:
   coverage:
     runs-on: ubuntu-latest
+    # Ceiling for the whole job. The coverage run had been hovering at
+    # ~65–85 min with `-O0` and losing the runner intermittently during
+    # the gcovr / upload tail; the optimizations below should bring it
+    # well under 60 min, and this cap keeps a wedged job from burning
+    # the full 6-hour GHA default before surfacing as a failure.
+    timeout-minutes: 90
     container:
       image: kthnode/gcc15-ubuntu24.04
 
@@ -32,6 +38,15 @@ jobs:
         run: |
           apt-get update -qq && apt-get install -y -qq ccache > /dev/null 2>&1 || true
           ccache --version || true
+          # Relativise absolute paths in the cache key so moving the
+          # workspace around (different branches, re-checkouts) doesn't
+          # evict entries that are otherwise byte-identical. The `.gcno`
+          # files emitted by `--coverage` also embed the cwd; pairing
+          # `CCACHE_BASEDIR` with `CCACHE_NOHASHDIR` keeps them out of
+          # the hash too. Written to the GHA env so subsequent steps
+          # (the actual build) inherit it.
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          echo "CCACHE_NOHASHDIR=1" >> "$GITHUB_ENV"
 
       - name: 🗄️ Restore ccache
         uses: actions/cache@v4
@@ -51,13 +66,20 @@ jobs:
           export PATH="/usr/lib/ccache:$PATH"
           ccache --zero-stats
 
+          # Coverage flags intentionally do NOT force `-O0`. The
+          # Release preset applies `-O3`, which combined with `--coverage`
+          # still yields usable line/branch metrics and cuts test
+          # runtime by ~5× versus the unoptimised instrumentation.
+          # Compile-time grows slightly but the net end-to-end win
+          # comes from the test phase — which on this repo runs the
+          # full suite per job.
           cmake --preset conan-release \
             -DCMAKE_VERBOSE_MAKEFILE=OFF \
             -DGLOBAL_BUILD=ON \
             -DENABLE_TEST=ON \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_FLAGS="--coverage -O0" \
-            -DCMAKE_CXX_FLAGS="--coverage -O0" \
+            -DCMAKE_C_FLAGS="--coverage" \
+            -DCMAKE_CXX_FLAGS="--coverage" \
             -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
@@ -71,17 +93,26 @@ jobs:
 
       - name: 📊 Generate coverage report
         if: always()
+        timeout-minutes: 20
         run: |
           python3 -m pip install gcovr
           mkdir -p coverage-report
+          # gcovr accepts search paths as positional args (not a
+          # flag); listing the in-tree build dir + the dirs we filter
+          # on keeps the .gcda/.gcno crawl from walking the whole
+          # sandbox (including conan caches), which balloons both
+          # memory and wall time. `-j` parallelises the scan so large
+          # projects stay within the step's 20-min budget.
           gcovr --root . \
             --filter 'src/domain/' \
             --filter 'src/infrastructure/' \
             --filter 'src/blockchain/' \
             --exclude '.*test.*' \
+            --jobs $(nproc) \
             --xml coverage.xml \
             --html-details coverage-report/index.html \
-            --print-summary
+            --print-summary \
+            build/ src/domain/ src/infrastructure/ src/blockchain/
 
       - name: ☁️ Upload to Codecov
         if: always()
