@@ -57,7 +57,26 @@ endif()
 message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 
 # --------------------------------------------------------------------------------
-string(TIMESTAMP KTH_CAPI_BUILD_TIMESTAMP "%s" UTC)
+# `KTH_CAPI_BUILD_TIMESTAMP` gets baked into every C-API translation
+# unit as a `-D` flag. Because the value is the UTC epoch at configure
+# time, every fresh configure changes the flag and therefore
+# invalidates the ccache entry for every c-api `.o` — a ~20-point
+# hit-rate drop was traced to this in the Code Coverage workflow.
+#
+# Gated on `KTH_EMBED_BUILD_TIMESTAMP` (OFF by default) so the
+# timestamp is stable at 0 for CI / developer builds and only the
+# release pipeline opts in. Release builds pass
+# `-DKTH_EMBED_BUILD_TIMESTAMP=ON` to restore the per-release stamp
+# in published binaries.
+option(KTH_EMBED_BUILD_TIMESTAMP
+    "Embed the UTC configure-time epoch into the C-API binary. \
+Turn ON for release builds; leave OFF for CI / dev to keep ccache \
+hits stable." OFF)
+if (KTH_EMBED_BUILD_TIMESTAMP)
+    string(TIMESTAMP KTH_CAPI_BUILD_TIMESTAMP "%s" UTC)
+else()
+    set(KTH_CAPI_BUILD_TIMESTAMP "0")
+endif()
 message(STATUS "Knuth: KTH_CAPI_BUILD_TIMESTAMP: ${KTH_CAPI_BUILD_TIMESTAMP}")
 add_definitions(-DKTH_CAPI_BUILD_TIMESTAMP=${KTH_CAPI_BUILD_TIMESTAMP})
 # --------------------------------------------------------------------------------
