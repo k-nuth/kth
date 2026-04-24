@@ -20,6 +20,7 @@
 #include <kth/domain/chain/token_data.hpp>
 #include <kth/domain/config/network.hpp>
 #include <kth/domain/machine/opcode.hpp>
+#include <kth/domain/wallet/encrypted_keys.hpp>
 #include <kth/domain/wallet/hd_public.hpp>
 #include <kth/domain/wallet/message.hpp>
 #include <kth/domain/wallet/wallet_manager.hpp>
@@ -393,6 +394,36 @@ inline kth::domain::wallet::hd_key hd_key_to_cpp(uint8_t const* x) {
 // encrypted_seed (96 bytes)
 inline kth::domain::wallet::encrypted_seed_t encrypted_seed_to_cpp(uint8_t const* x) {
     return to_array_cpp<std::tuple_size_v<kth::domain::wallet::encrypted_seed_t>>(x);
+}
+
+// BIP38 encrypted_private (43 bytes)
+inline kth_encrypted_private_t to_encrypted_private_t(kth::domain::wallet::encrypted_private const& x) {
+    kth_encrypted_private_t ret;
+    std::copy_n(x.begin(), x.size(), ret.data);
+    return ret;
+}
+inline kth::domain::wallet::encrypted_private encrypted_private_to_cpp(uint8_t const* x) {
+    return to_array_cpp<kth::domain::wallet::ek_private_decoded_size>(x);
+}
+
+// BIP38 encrypted_public (55 bytes)
+inline kth_encrypted_public_t to_encrypted_public_t(kth::domain::wallet::encrypted_public const& x) {
+    kth_encrypted_public_t ret;
+    std::copy_n(x.begin(), x.size(), ret.data);
+    return ret;
+}
+inline kth::domain::wallet::encrypted_public encrypted_public_to_cpp(uint8_t const* x) {
+    return to_array_cpp<kth::domain::wallet::encrypted_public_decoded_size>(x);
+}
+
+// BIP38 encrypted_token (53 bytes)
+inline kth_encrypted_token_t to_encrypted_token_t(kth::domain::wallet::encrypted_token const& x) {
+    kth_encrypted_token_t ret;
+    std::copy_n(x.begin(), x.size(), ret.data);
+    return ret;
+}
+inline kth::domain::wallet::encrypted_token encrypted_token_to_cpp(uint8_t const* x) {
+    return to_array_cpp<kth::domain::wallet::encrypted_token_decoded_size>(x);
 }
 
 template <typename T>

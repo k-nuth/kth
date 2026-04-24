@@ -190,6 +190,16 @@ typedef void const* kth_stealth_address_const_t;
 typedef void* kth_bitcoin_uri_mut_t;
 typedef void const* kth_bitcoin_uri_const_t;
 
+// BIP38 encrypted key wrappers. Each is a thin opaque handle around
+// a base58-checked `encrypted_{private,public,token}` byte_array
+// with string I/O and a typed accessor.
+typedef void* kth_ek_private_mut_t;
+typedef void const* kth_ek_private_const_t;
+typedef void* kth_ek_public_mut_t;
+typedef void const* kth_ek_public_const_t;
+typedef void* kth_ek_token_mut_t;
+typedef void const* kth_ek_token_const_t;
+
 // BIP39 wordlist handles. `dictionary` is `std::array<char const*, 2048>`
 // and `dictionary_list` is `std::vector<dictionary const*>`; callers
 // obtain handles through the `kth_wallet_language_*` factories

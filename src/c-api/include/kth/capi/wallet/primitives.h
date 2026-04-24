@@ -68,6 +68,24 @@ typedef struct kth_payment_t {
     uint8_t hash[KTH_BITCOIN_PAYMENT_SIZE];
 } kth_payment_t;
 
+// BIP38 encrypted-key byte payloads. These are the base58-checked
+// wire forms that `ek_private` / `ek_public` / `ek_token` wrap, each
+// a fixed-size byte_array in the domain layer.
+#define KTH_EK_PRIVATE_DECODED_SIZE 43
+#define KTH_EK_PUBLIC_DECODED_SIZE 55
+#define KTH_EK_TOKEN_DECODED_SIZE 53
+typedef struct kth_encrypted_private_t {
+    uint8_t data[KTH_EK_PRIVATE_DECODED_SIZE];
+} kth_encrypted_private_t;
+
+typedef struct kth_encrypted_public_t {
+    uint8_t data[KTH_EK_PUBLIC_DECODED_SIZE];
+} kth_encrypted_public_t;
+
+typedef struct kth_encrypted_token_t {
+    uint8_t data[KTH_EK_TOKEN_DECODED_SIZE];
+} kth_encrypted_token_t;
+
 
 typedef void* kth_ec_private_t;
 typedef void* kth_ec_private_mut_t;
