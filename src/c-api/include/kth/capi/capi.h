@@ -97,6 +97,7 @@
 #include <kth/capi/wallet/ec_private.h>
 #include <kth/capi/wallet/ec_public.h>
 #include <kth/capi/wallet/elliptic_curve.h>
+#include <kth/capi/wallet/cashaddr.h>
 #include <kth/capi/wallet/cashtoken_minting.h>
 #include <kth/capi/wallet/coin_selection.h>
 #include <kth/capi/wallet/coin_selection_result.h>
