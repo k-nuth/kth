@@ -113,6 +113,8 @@
 #include <kth/capi/wallet/mnemonic.h>
 #include <kth/capi/wallet/payment_address.h>
 #include <kth/capi/wallet/stealth_address.h>
+#include <kth/capi/wallet/stealth_receiver.h>
+#include <kth/capi/wallet/stealth_sender.h>
 #include <kth/capi/wallet/payment_address_list.h>
 #include <kth/capi/wallet/primitives.h>
 #include <kth/capi/wallet/wallet.h>
