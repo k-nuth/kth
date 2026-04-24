@@ -86,6 +86,24 @@ typedef struct kth_encrypted_token_t {
     uint8_t data[KTH_EK_TOKEN_DECODED_SIZE];
 } kth_encrypted_token_t;
 
+// BIP38 random-input byte_arrays. These are caller-provided entropy
+// sources consumed by `create_key_pair` / `create_token`; they never
+// base58-encode, just pass through as fixed-size buffers.
+#define KTH_EK_SEED_SIZE 24
+#define KTH_EK_SALT_SIZE 4
+#define KTH_EK_ENTROPY_SIZE 8
+typedef struct kth_ek_seed_t {
+    uint8_t data[KTH_EK_SEED_SIZE];
+} kth_ek_seed_t;
+
+typedef struct kth_ek_salt_t {
+    uint8_t data[KTH_EK_SALT_SIZE];
+} kth_ek_salt_t;
+
+typedef struct kth_ek_entropy_t {
+    uint8_t data[KTH_EK_ENTROPY_SIZE];
+} kth_ek_entropy_t;
+
 
 typedef void* kth_ec_private_t;
 typedef void* kth_ec_private_mut_t;

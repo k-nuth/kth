@@ -101,6 +101,7 @@
 #include <kth/capi/wallet/coin_selection.h>
 #include <kth/capi/wallet/coin_selection_result.h>
 #include <kth/capi/wallet/coin_selection_strategy.h>
+#include <kth/capi/wallet/encrypted_keys.h>
 #include <kth/capi/wallet/ek_private.h>
 #include <kth/capi/wallet/ek_public.h>
 #include <kth/capi/wallet/ek_token.h>

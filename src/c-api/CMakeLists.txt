@@ -206,6 +206,7 @@ set(kth_sources
   src/wallet/cashtoken_minting.cpp
   src/wallet/coin_selection.cpp
   src/wallet/coin_selection_result.cpp
+  src/wallet/encrypted_keys.cpp
   src/wallet/ek_private.cpp
   src/wallet/ek_public.cpp
   src/wallet/ek_token.cpp
@@ -348,6 +349,7 @@ set(kth_headers
   include/kth/capi/wallet/coin_selection_result.h
   include/kth/capi/wallet/coin_selection_strategy.h
   include/kth/capi/wallet/ec_public.h
+  include/kth/capi/wallet/encrypted_keys.h
   include/kth/capi/wallet/ek_private.h
   include/kth/capi/wallet/ek_public.h
   include/kth/capi/wallet/ek_token.h
@@ -578,6 +580,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/wallet/bitcoin_uri.cpp
         test/wallet/cashtoken_minting.cpp
         test/wallet/coin_selection.cpp
+        test/wallet/encrypted_keys.cpp
         test/wallet/ek_private.cpp
         test/wallet/ek_public.cpp
         test/wallet/ek_token.cpp
