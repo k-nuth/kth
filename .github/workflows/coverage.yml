@@ -95,7 +95,14 @@ jobs:
         if: always()
         timeout-minutes: 20
         run: |
-          python3 -m pip install gcovr
+          # Pin to the 8.x major. Letting `pip install gcovr` resolve
+          # to whatever PyPI ships HEAD'd this very fix when 8.6
+          # tightened the option grammar (`--jobs` removed) and broke
+          # every coverage run silently. The upper bound catches the
+          # next major early — a future 9.x option-grammar change
+          # surfaces at dependency-bump review time, not in a red CI
+          # run on an unrelated PR.
+          python3 -m pip install 'gcovr>=8.6,<9'
           mkdir -p coverage-report
           # gcovr accepts search paths as positional args (not a
           # flag); listing the in-tree build dir + the dirs we filter
@@ -103,12 +110,18 @@ jobs:
           # sandbox (including conan caches), which balloons both
           # memory and wall time. `-j` parallelises the scan so large
           # projects stay within the step's 20-min budget.
+          #
+          # gcovr 8.x dropped the `--jobs` long form; only the `-j`
+          # short form survives ("Set the number of threads to use
+          # in parallel" in the 8.6 --help). PR #309 originally used
+          # `--jobs $(nproc)` and started failing once the runner
+          # picked up gcovr 8.6 from PyPI.
           gcovr --root . \
             --filter 'src/domain/' \
             --filter 'src/infrastructure/' \
             --filter 'src/blockchain/' \
             --exclude '.*test.*' \
-            --jobs $(nproc) \
+            -j $(nproc) \
             --xml coverage.xml \
             --html-details coverage-report/index.html \
             --print-summary \
