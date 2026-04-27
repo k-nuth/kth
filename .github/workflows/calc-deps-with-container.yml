@@ -41,7 +41,7 @@ jobs:
           submodules: true
 
       - name: 💾 Cache Conan packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.conan/data
           key: alpine-${{ hashFiles('**/conan.lock') }}

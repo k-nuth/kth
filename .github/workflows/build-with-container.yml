@@ -85,12 +85,18 @@ jobs:
         with:
           submodules: true
 
-      - name: 💾 Cache Conan packages
-        uses: actions/cache@v4
+      # Split restore/save so a flaky GH Cache Service can't fail
+      # the whole job during the post-action. See `coverage.yml`
+      # for the longer rationale; the short version is that the
+      # save POSTs to the cache service have been timing out at
+      # 18+ min and marking otherwise-green jobs as `failure`.
+      - name: 💾 Restore Conan packages
+        id: restore-conan
+        uses: actions/cache/restore@v5
         with:
           path: ~/.conan/data
           key: ${{ runner.os }}-${{ hashFiles('**/conan.lock') }}
-      # - uses: actions/cache@v4
+      # - uses: actions/cache@v5
       #   with:
       #     path: ~/.cache/pip
       #     key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -128,8 +134,9 @@ jobs:
           ccache --version || true
 
       - name: 🗄️ Restore ccache
+        id: restore-ccache
         if: ${{ inputs.upload != true }}
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v5
         with:
           path: /github/home/.cache/ccache
           key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ github.sha }}
@@ -208,6 +215,38 @@ jobs:
               ccache --show-stats
             fi
           fi
+
+      # Persist caches as soon as the build finishes — saves get the
+      # most benefit on every run (even ones where tests fail later).
+      # `continue-on-error` keeps a flaky GH Cache Service save from
+      # failing the whole job; the failure becomes a non-fatal
+      # warning rather than the 18+ min hangs we've been seeing on
+      # the post-action.
+      # `key` reuses the restore step's cache-primary-key output —
+      # `hashFiles('**/conan.lock')` would re-evaluate here against
+      # the post-build tree (`build/conan.lock` now exists) and
+      # produce a different hash than at restore time, causing
+      # every save to land under a fresh key the next restore can
+      # never match. The restore step is also the right ground
+      # truth for whether to save (`cache-hit != 'true'`), and the
+      # save deliberately runs for both regular and upload jobs —
+      # there's no reason to deny upload jobs the chance to
+      # repopulate a cold conan cache.
+      - name: 💾 Save Conan packages
+        if: always() && steps.restore-conan.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.conan/data
+          key: ${{ steps.restore-conan.outputs.cache-primary-key }}
+
+      - name: 🗄️ Save ccache
+        if: always() && inputs.upload != true && steps.restore-ccache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: /github/home/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ github.sha }}
 
       - name: 📊 Build summary
         if: always()
