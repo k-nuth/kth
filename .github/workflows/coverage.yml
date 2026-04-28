@@ -13,12 +13,15 @@ concurrency:
 jobs:
   coverage:
     runs-on: ubuntu-latest
-    # Ceiling for the whole job. The coverage run had been hovering at
-    # ~65–85 min with `-O0` and losing the runner intermittently during
-    # the gcovr / upload tail; the optimizations below should bring it
-    # well under 60 min, and this cap keeps a wedged job from burning
-    # the full 6-hour GHA default before surfacing as a failure.
-    timeout-minutes: 90
+    # Ceiling for the whole job. With a hot ccache, the run finishes
+    # in ~25–30 min (build ~10–15 min on 86 %+ hits, tests ~7 min,
+    # report + upload ~5 min). A genuinely cold run — fresh cache
+    # version bump, key prefix change, or the first run after a
+    # compiler upgrade in the container image — pushes the build
+    # alone to ~80 min, so the cap has to clear that. 130 leaves
+    # margin without letting a wedged job burn the full 6-hour
+    # GHA default.
+    timeout-minutes: 130
     container:
       image: kthnode/gcc15-ubuntu24.04
 
@@ -38,18 +41,31 @@ jobs:
         run: |
           apt-get update -qq && apt-get install -y -qq ccache > /dev/null 2>&1 || true
           ccache --version || true
-          # Relativise absolute paths in the cache key so moving the
-          # workspace around (different branches, re-checkouts) doesn't
-          # evict entries that are otherwise byte-identical. The `.gcno`
-          # files emitted by `--coverage` also embed the cwd; pairing
-          # `CCACHE_BASEDIR` with `CCACHE_NOHASHDIR` keeps them out of
-          # the hash too. Written to the GHA env so subsequent steps
-          # (the actual build) inherit it.
-          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
-          echo "CCACHE_NOHASHDIR=1" >> "$GITHUB_ENV"
+          # Match the sister `build-with-container.yml` workflow's
+          # ccache config, which on the same hosted runner hits 86 %
+          # against the same 1074 TUs. PR #309 added
+          # `CCACHE_BASEDIR=$GITHUB_WORKSPACE` + `CCACHE_NOHASHDIR=1`
+          # here on the theory that coverage's `.gcno` files embed
+          # the cwd and the relativisation would help. In practice
+          # the inverse held: hit rate dropped to 0 / 1074 (every
+          # TU a miss, even for files that hadn't changed in
+          # months). Probable interaction with `--coverage`'s
+          # path bookkeeping in ccache 4.9.1; rather than chase
+          # that, drop the two envs and rely on absolute paths
+          # the way the other CI jobs do — Actions containers
+          # always check out at `/__w/kth/kth`, so absolute paths
+          # are stable across runs anyway.
 
+      # Split restore/save so a flaky GH Cache Service can't fail
+      # the whole job during the post-action. Recent runs have been
+      # losing the runner here for 18+ min as the save POSTs to
+      # `cache-service` time out — the build + tests had already
+      # passed, but the job ended up red. The save below carries
+      # `continue-on-error: true` so a cache-side failure becomes a
+      # non-fatal warning rather than a job failure.
       - name: 🗄️ Restore ccache
-        uses: actions/cache@v4
+        id: restore-ccache
+        uses: actions/cache/restore@v5
         with:
           path: /github/home/.cache/ccache
           key: ccache-coverage-${{ github.sha }}
@@ -66,26 +82,42 @@ jobs:
           export PATH="/usr/lib/ccache:$PATH"
           ccache --zero-stats
 
-          # Coverage flags intentionally do NOT force `-O0`. The
-          # Release preset applies `-O3`, which combined with `--coverage`
-          # still yields usable line/branch metrics and cuts test
-          # runtime by ~5× versus the unoptimised instrumentation.
-          # Compile-time grows slightly but the net end-to-end win
-          # comes from the test phase — which on this repo runs the
-          # full suite per job.
+          # Force -O0 on the coverage build. PR #309 dropped this
+          # to "cut test runtime by ~5×", but with -O3 + --coverage
+          # gcc 15 emits much larger .gcno/.gcda files (every inlined
+          # copy gets its own block bookkeeping), and gcovr 8.6 then
+          # hangs for 45+ min on report generation until the GHA
+          # runner kills the step. The last green coverage run on
+          # master (24851108475, 2026-04-23) was on -O0 with gcovr
+          # finishing in ~4 min. Slower tests are the right trade —
+          # this job's purpose is the report, not benchmarking.
           cmake --preset conan-release \
             -DCMAKE_VERBOSE_MAKEFILE=OFF \
             -DGLOBAL_BUILD=ON \
             -DENABLE_TEST=ON \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_FLAGS="--coverage" \
-            -DCMAKE_CXX_FLAGS="--coverage" \
+            -DCMAKE_C_FLAGS="-O0 --coverage" \
+            -DCMAKE_CXX_FLAGS="-O0 --coverage" \
             -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
           cmake --build --preset conan-release -j$(nproc)
           ccache --show-stats
+
+      # Persist ccache as soon as the build finishes — the compile
+      # output is what populates it, so saving here gets the most
+      # benefit on every run (even ones where tests / report fail
+      # later). `continue-on-error` keeps a flaky GH Cache Service
+      # save from failing the whole job; the failure becomes a
+      # non-fatal warning.
+      - name: 🗄️ Save ccache
+        if: always() && steps.restore-ccache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: /github/home/.cache/ccache
+          key: ccache-coverage-${{ github.sha }}
 
       - name: 🧪 Run tests
         run: |
@@ -104,28 +136,29 @@ jobs:
           # run on an unrelated PR.
           python3 -m pip install 'gcovr>=8.6,<9'
           mkdir -p coverage-report
-          # gcovr accepts search paths as positional args (not a
-          # flag); listing the in-tree build dir + the dirs we filter
-          # on keeps the .gcda/.gcno crawl from walking the whole
-          # sandbox (including conan caches), which balloons both
-          # memory and wall time. `-j` parallelises the scan so large
-          # projects stay within the step's 20-min budget.
-          #
-          # gcovr 8.x dropped the `--jobs` long form; only the `-j`
-          # short form survives ("Set the number of threads to use
-          # in parallel" in the 8.6 --help). PR #309 originally used
-          # `--jobs $(nproc)` and started failing once the runner
-          # picked up gcovr 8.6 from PyPI.
+          # The gcovr invocation here is intentionally minimal —
+          # this is the form that was last green on master
+          # (run 24851108475, 2026-04-23, gcovr step ~4 min).
+          # PR #309 added `--jobs $(nproc)` + narrowed search paths
+          # to "stay within the 20-min budget", but `--jobs` was
+          # silently ignored by gcovr 8.6 (the long form was removed
+          # in 8.x), so coverage kept running serial and was still
+          # green. PR #316 then "fixed" it to `-j $(nproc)`, which
+          # actually engaged parallelism — and gcovr 8.6 with `-j`
+          # on this project's TU count hangs for 15+ min producing
+          # no output until the GHA runner cancels the step. The
+          # narrowed search paths likewise interacted poorly. Going
+          # back to the working form fixes the symptom; if we ever
+          # need to shave runtime later, profile gcovr first instead
+          # of reaching for `-j`.
           gcovr --root . \
             --filter 'src/domain/' \
             --filter 'src/infrastructure/' \
             --filter 'src/blockchain/' \
             --exclude '.*test.*' \
-            -j $(nproc) \
             --xml coverage.xml \
             --html-details coverage-report/index.html \
-            --print-summary \
-            build/ src/domain/ src/infrastructure/ src/blockchain/
+            --print-summary
 
       - name: ☁️ Upload to Codecov
         if: always()
