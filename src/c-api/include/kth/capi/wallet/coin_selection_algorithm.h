@@ -4,8 +4,8 @@
 
 // This file is auto-generated. Do not edit manually.
 
-#ifndef KTH_CAPI_CHAIN_COIN_SELECTION_H_
-#define KTH_CAPI_CHAIN_COIN_SELECTION_H_
+#ifndef KTH_CAPI_WALLET_COIN_SELECTION_ALGORITHM_H_
+#define KTH_CAPI_WALLET_COIN_SELECTION_ALGORITHM_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,4 +22,4 @@ typedef enum {
 } // extern "C"
 #endif
 
-#endif /* KTH_CAPI_CHAIN_COIN_SELECTION_H_ */
+#endif /* KTH_CAPI_WALLET_COIN_SELECTION_ALGORITHM_H_ */

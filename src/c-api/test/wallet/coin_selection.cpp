@@ -13,15 +13,22 @@
 #include <stdint.h>
 
 #include <kth/capi/chain/output_point.h>
+#include <kth/capi/chain/output_point_list.h>
 #include <kth/capi/chain/token_data.h>
+#include <kth/capi/chain/transaction.h>
 #include <kth/capi/chain/utxo.h>
 #include <kth/capi/chain/utxo_list.h>
 #include <kth/capi/double_list.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/primitives.h>
+#include <kth/capi/u32_list.h>
+#include <kth/capi/u64_list.h>
 #include <kth/capi/wallet/coin_selection.h>
+#include <kth/capi/wallet/coin_selection_algorithm.h>
 #include <kth/capi/wallet/coin_selection_result.h>
 #include <kth/capi/wallet/coin_selection_strategy.h>
+#include <kth/capi/wallet/payment_address.h>
+#include <kth/capi/wallet/payment_address_list.h>
 
 #include "../test_helpers.hpp"
 
@@ -228,4 +235,184 @@ TEST_CASE("C-API wallet::coin_selection - select_utxos(NULL out) aborts",
         utxos, 1u, 1u, &kBchCategory,
         kth_coin_selection_strategy_clean, NULL));
     kth_chain_utxo_list_destruct(utxos);
+}
+
+// ---------------------------------------------------------------------------
+// create_tx_template — happy path + preconditions
+// ---------------------------------------------------------------------------
+
+// Real, parse-able mainnet P2PKH addresses. Default-constructed
+// payment_address objects are rejected by the domain layer, so tests
+// must use addresses that round-trip through the legacy CashAddr
+// decoder.
+static char const* const kAddrDest =
+    "bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz";
+static char const* const kAddrChange1 =
+    "bitcoincash:qrhea03074073ff3zv9whh0nggxc7k03ssh8jv9mkx";
+static char const* const kAddrChange2 =
+    "bitcoincash:qz4t90ackhtsdcz5e7sf6sszphpv2t5ucslvfvkavn";
+
+TEST_CASE("C-API wallet::coin_selection - create_tx_template builds a tx with explicit ratios",
+          "[C-API WalletCoinSelection][create_tx_template]") {
+    uint64_t const amounts[] = { 100000u, 200000u, 300000u };
+    kth_utxo_list_mut_t utxos = make_bch_utxos(amounts, 3);
+
+    kth_payment_address_mut_t dest    = kth_wallet_payment_address_construct_from_address(kAddrDest);
+    kth_payment_address_mut_t change1 = kth_wallet_payment_address_construct_from_address(kAddrChange1);
+    kth_payment_address_mut_t change2 = kth_wallet_payment_address_construct_from_address(kAddrChange2);
+    kth_payment_address_list_mut_t change_addrs = kth_wallet_payment_address_list_construct_default();
+    kth_wallet_payment_address_list_push_back(change_addrs, change1);
+    kth_wallet_payment_address_list_push_back(change_addrs, change2);
+
+    kth_double_list_mut_t ratios = kth_core_double_list_construct_default();
+    kth_core_double_list_push_back(ratios, 0.4);
+    kth_core_double_list_push_back(ratios, 0.6);
+
+    kth_transaction_mut_t          out_tx        = NULL;
+    kth_u32_list_mut_t             out_indices   = NULL;
+    kth_payment_address_list_mut_t out_addresses = NULL;
+    kth_u64_list_mut_t             out_amounts   = NULL;
+
+    kth_error_code_t ec = kth_wallet_coin_selection_create_tx_template(
+        utxos, 50000u, dest, change_addrs, ratios,
+        kth_coin_selection_algorithm_largest_first,
+        &out_tx, &out_indices, &out_addresses, &out_amounts);
+
+    REQUIRE(ec == kth_ec_success);
+    REQUIRE(out_tx != NULL);
+    REQUIRE(out_indices != NULL);
+    REQUIRE(out_addresses != NULL);
+    REQUIRE(out_amounts != NULL);
+    // One destination output + two change outputs = 3.
+    REQUIRE(kth_wallet_payment_address_list_count(out_addresses) == 3u);
+    REQUIRE(kth_core_u64_list_count(out_amounts) == 3u);
+    // At least one input was selected to cover the 50000 sat target.
+    REQUIRE(kth_core_u32_list_count(out_indices) >= 1u);
+
+    kth_chain_transaction_destruct(out_tx);
+    kth_core_u32_list_destruct(out_indices);
+    kth_wallet_payment_address_list_destruct(out_addresses);
+    kth_core_u64_list_destruct(out_amounts);
+
+    kth_core_double_list_destruct(ratios);
+    kth_wallet_payment_address_list_destruct(change_addrs);
+    kth_wallet_payment_address_destruct(change2);
+    kth_wallet_payment_address_destruct(change1);
+    kth_wallet_payment_address_destruct(dest);
+    kth_chain_utxo_list_destruct(utxos);
+}
+
+TEST_CASE("C-API wallet::coin_selection - create_tx_template_default_ratios builds a tx",
+          "[C-API WalletCoinSelection][create_tx_template]") {
+    uint64_t const amounts[] = { 100000u, 200000u, 300000u };
+    kth_utxo_list_mut_t utxos = make_bch_utxos(amounts, 3);
+
+    kth_payment_address_mut_t dest    = kth_wallet_payment_address_construct_from_address(kAddrDest);
+    kth_payment_address_mut_t change1 = kth_wallet_payment_address_construct_from_address(kAddrChange1);
+    kth_payment_address_list_mut_t change_addrs = kth_wallet_payment_address_list_construct_default();
+    kth_wallet_payment_address_list_push_back(change_addrs, change1);
+
+    kth_transaction_mut_t          out_tx        = NULL;
+    kth_u32_list_mut_t             out_indices   = NULL;
+    kth_payment_address_list_mut_t out_addresses = NULL;
+    kth_u64_list_mut_t             out_amounts   = NULL;
+
+    kth_error_code_t ec = kth_wallet_coin_selection_create_tx_template_default_ratios(
+        utxos, 50000u, dest, change_addrs,
+        kth_coin_selection_algorithm_largest_first,
+        &out_tx, &out_indices, &out_addresses, &out_amounts);
+
+    REQUIRE(ec == kth_ec_success);
+    REQUIRE(out_tx != NULL);
+    REQUIRE(out_indices != NULL);
+    REQUIRE(out_addresses != NULL);
+    REQUIRE(out_amounts != NULL);
+
+    kth_chain_transaction_destruct(out_tx);
+    kth_core_u32_list_destruct(out_indices);
+    kth_wallet_payment_address_list_destruct(out_addresses);
+    kth_core_u64_list_destruct(out_amounts);
+
+    kth_wallet_payment_address_list_destruct(change_addrs);
+    kth_wallet_payment_address_destruct(change1);
+    kth_wallet_payment_address_destruct(dest);
+    kth_chain_utxo_list_destruct(utxos);
+}
+
+TEST_CASE("C-API wallet::coin_selection - create_tx_template(NULL utxos) aborts",
+          "[C-API WalletCoinSelection][precondition]") {
+    kth_payment_address_mut_t dest = kth_wallet_payment_address_construct_from_address(kAddrDest);
+    kth_payment_address_list_mut_t change_addrs = kth_wallet_payment_address_list_construct_default();
+    kth_double_list_mut_t ratios = kth_core_double_list_construct_default();
+    kth_transaction_mut_t          out_tx        = NULL;
+    kth_u32_list_mut_t             out_indices   = NULL;
+    kth_payment_address_list_mut_t out_addresses = NULL;
+    kth_u64_list_mut_t             out_amounts   = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_coin_selection_create_tx_template(
+        NULL, 1u, dest, change_addrs, ratios,
+        kth_coin_selection_algorithm_smallest_first,
+        &out_tx, &out_indices, &out_addresses, &out_amounts));
+    kth_core_double_list_destruct(ratios);
+    kth_wallet_payment_address_list_destruct(change_addrs);
+    kth_wallet_payment_address_destruct(dest);
+}
+
+TEST_CASE("C-API wallet::coin_selection - create_tx_template(NULL out_tx) aborts",
+          "[C-API WalletCoinSelection][precondition]") {
+    uint64_t const amounts[] = { 100000u };
+    kth_utxo_list_mut_t utxos = make_bch_utxos(amounts, 1);
+    kth_payment_address_mut_t dest = kth_wallet_payment_address_construct_from_address(kAddrDest);
+    kth_payment_address_list_mut_t change_addrs = kth_wallet_payment_address_list_construct_default();
+    kth_double_list_mut_t ratios = kth_core_double_list_construct_default();
+    kth_u32_list_mut_t             out_indices   = NULL;
+    kth_payment_address_list_mut_t out_addresses = NULL;
+    kth_u64_list_mut_t             out_amounts   = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_coin_selection_create_tx_template(
+        utxos, 1u, dest, change_addrs, ratios,
+        kth_coin_selection_algorithm_smallest_first,
+        NULL, &out_indices, &out_addresses, &out_amounts));
+    kth_core_double_list_destruct(ratios);
+    kth_wallet_payment_address_list_destruct(change_addrs);
+    kth_wallet_payment_address_destruct(dest);
+    kth_chain_utxo_list_destruct(utxos);
+}
+
+// ---------------------------------------------------------------------------
+// create_token_split_tx_template — preconditions
+// ---------------------------------------------------------------------------
+
+TEST_CASE("C-API wallet::coin_selection - create_token_split_tx_template(NULL outpoints) aborts",
+          "[C-API WalletCoinSelection][precondition]") {
+    kth_utxo_list_mut_t utxos = kth_chain_utxo_list_construct_default();
+    kth_payment_address_mut_t dest = kth_wallet_payment_address_construct_from_address(kAddrDest);
+    kth_transaction_mut_t          out_tx        = NULL;
+    kth_payment_address_list_mut_t out_addresses = NULL;
+    kth_u64_list_mut_t             out_amounts   = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_coin_selection_create_token_split_tx_template(
+        NULL, utxos, dest, &out_tx, &out_addresses, &out_amounts));
+    kth_wallet_payment_address_destruct(dest);
+    kth_chain_utxo_list_destruct(utxos);
+}
+
+TEST_CASE("C-API wallet::coin_selection - create_token_split_tx_template(empty outpoints) returns error",
+          "[C-API WalletCoinSelection][create_token_split]") {
+    kth_output_point_list_mut_t outpoints = kth_chain_output_point_list_construct_default();
+    kth_utxo_list_mut_t utxos = kth_chain_utxo_list_construct_default();
+    kth_payment_address_mut_t dest = kth_wallet_payment_address_construct_from_address(kAddrDest);
+    kth_transaction_mut_t          out_tx        = NULL;
+    kth_payment_address_list_mut_t out_addresses = NULL;
+    kth_u64_list_mut_t             out_amounts   = NULL;
+
+    kth_error_code_t ec = kth_wallet_coin_selection_create_token_split_tx_template(
+        outpoints, utxos, dest, &out_tx, &out_addresses, &out_amounts);
+
+    // Empty outpoint list is an error condition; out params untouched.
+    REQUIRE(ec != kth_ec_success);
+    REQUIRE(out_tx == NULL);
+    REQUIRE(out_addresses == NULL);
+    REQUIRE(out_amounts == NULL);
+
+    kth_wallet_payment_address_destruct(dest);
+    kth_chain_utxo_list_destruct(utxos);
+    kth_chain_output_point_list_destruct(outpoints);
 }

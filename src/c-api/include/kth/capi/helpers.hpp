@@ -29,7 +29,7 @@
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/machine/script_version.hpp>
 
-#include <kth/capi/chain/coin_selection_algorithm.h>
+#include <kth/capi/wallet/coin_selection_algorithm.h>
 #include <kth/capi/wallet/coin_selection_strategy.h>
 #include <kth/domain/wallet/coin_selection.hpp>
 #include <kth/capi/chain/opcode.h>

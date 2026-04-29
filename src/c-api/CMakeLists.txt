@@ -331,7 +331,6 @@ set(kth_headers
   include/kth/capi/u32_list.h
   include/kth/capi/u64_list.h
 
-  include/kth/capi/chain/coin_selection_algorithm.h
   include/kth/capi/chain/opcode.h
   include/kth/capi/chain/operation_list.h
   include/kth/capi/chain/operation.h
@@ -350,6 +349,7 @@ set(kth_headers
   include/kth/capi/wallet/cashaddr.h
   include/kth/capi/wallet/cashtoken_minting.h
   include/kth/capi/wallet/coin_selection.h
+  include/kth/capi/wallet/coin_selection_algorithm.h
   include/kth/capi/wallet/coin_selection_result.h
   include/kth/capi/wallet/coin_selection_strategy.h
   include/kth/capi/wallet/ec_public.h
