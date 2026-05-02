@@ -143,7 +143,7 @@ $ g++ -std=c++23 example.cpp -I./kth/include -L./kth/lib \
 
 ### 🌐 Using the C API
 
-The C API mirrors the same pattern: `kth_config_settings_default(kth_network_mainnet)` returns a pre-populated settings struct that you hand to `kth_node_construct`.
+The C API mirrors the same pattern: `kth_config_settings_default(kth_network_mainnet)` returns a pre-populated settings struct that you hand to `kth_node_construct`. The chain interface comes in two flavours — `kth_chain_sync_*` (blocks the caller) and `kth_chain_async_*` (callback fires when the answer is ready). The example below uses the async surface to mirror the C++ snippet above.
 
 ```c
 // hello_knuth.c
@@ -151,6 +151,14 @@ The C API mirrors the same pattern: `kth_config_settings_default(kth_network_mai
 #include <stdint.h>
 #include <stdio.h>
 #include <kth/capi.h>
+
+// Fires once the chain has resolved the request.
+static void on_height(kth_chain_t chain, void* ctx, kth_error_code_t ec, kth_size_t height) {
+    (void)chain; (void)ctx;
+    if (ec == kth_ec_success) {
+        printf("Current height: %" PRIu64 "\n", (uint64_t)height);
+    }
+}
 
 int main(void) {
     // Mainnet defaults.
@@ -162,11 +170,14 @@ int main(void) {
 
     kth_node_t node = kth_node_construct(&settings, /*stdout_enabled=*/1);
 
+    // Submit the height query asynchronously; on_height fires once the chain
+    // can answer it.
     kth_chain_t chain = kth_node_get_chain(node);
-    kth_size_t height = 0;
-    if (kth_chain_sync_last_height(chain, &height) == kth_ec_success) {
-        printf("Current height: %" PRIu64 "\n", (uint64_t)height);
-    }
+    kth_chain_async_last_height(chain, /*ctx=*/NULL, on_height);
+
+    // Bring the node up and block until SIGINT/SIGTERM. The async query
+    // resolves while the node is running.
+    kth_node_init_run_and_wait_for_signal(node, NULL, kth_start_modules_all, NULL);
 
     kth_node_destruct(node);
     return 0;
