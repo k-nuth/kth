@@ -40,7 +40,6 @@ Built on top of the C API:
 
 ## 📚 Documentation
 
-- **Project site & guides**: [kth.cash/docs](https://kth.cash/docs/)
 - **Ask DeepWiki**: [deepwiki.com/k-nuth/kth](https://deepwiki.com/k-nuth/kth) — auto-generated, conversational documentation indexed over the codebase. Useful when you want to ask "where is X handled?" or "show me an example of Y" without grepping the tree yourself.
 - **Branch & contribution conventions**: [`docs/BRANCH_CONVENTIONS.md`](docs/BRANCH_CONVENTIONS.md)
 - **Build with tests**: [`docs/BUILD_WITH_TESTS.md`](docs/BUILD_WITH_TESTS.md)
@@ -100,26 +99,38 @@ $ ./kth/bin/kth
 
 ### 🔧 Using the C++ library
 
-The example below constructs a node with mainnet defaults and queries the current chain tip from the local database. No `config.cfg` file required — the `configuration` constructor pulls in the network defaults for you.
+The example below constructs a full node with mainnet defaults, opens the chain database and prints the current tip. No `config.cfg` file required — the `configuration` constructor pulls in the network defaults for you. Tweak any field on `cfg` before handing it to `full_node` if you want to override a default.
+
+The chain interface is asynchronous: you call methods on `node.chain()` and your callback fires when the result is ready, so you can interact with the node while it keeps doing its work.
 
 ```cpp
 // example.cpp
+#include <latch>
 #include <print>
+#include <system_error>
 
 #include <kth/node.hpp>
-#include <kth/node/executor/executor.hpp>
-#include <kth/domain/config/network.hpp>
 
 int main() {
     // Mainnet defaults — equivalent to what the node-exe ships with.
     kth::node::configuration cfg{kth::domain::config::network::mainnet};
-    kth::node::executor node{cfg};
 
-    std::size_t height = 0;
-    if (node.node().chain().get_last_height(height)) {
-        std::println("Current height: {}", height);
-    }
-    return 0;
+    // Override individual settings if you need to, e.g.:
+    //   cfg.database.directory = "/var/lib/kth";
+    //   cfg.network.threads    = 8;
+
+    kth::node::full_node node{cfg};
+
+    std::latch done{1};
+    node.start_chain([&](std::error_code const& ec) {
+        if (ec) { done.count_down(); return; }
+        node.chain().fetch_last_height([&](std::error_code const& fec, std::size_t height) {
+            if ( ! fec) std::println("Current height: {}", height);
+            done.count_down();
+        });
+    });
+    done.wait();
+    node.close();
 }
 ```
 
@@ -144,6 +155,11 @@ The C API mirrors the same pattern: `kth_config_settings_default(kth_network_mai
 int main(void) {
     // Mainnet defaults; no config file required.
     kth_settings settings = kth_config_settings_default(kth_network_mainnet);
+
+    // Override individual settings if you need to, e.g.:
+    //   settings.database.directory = "/var/lib/kth";
+    //   settings.network.threads    = 8;
+
     kth_node_t node = kth_node_construct(&settings, /*stdout_enabled=*/1);
 
     kth_chain_t chain = kth_node_get_chain(node);
@@ -163,21 +179,21 @@ Link against the C API library:
 $ gcc hello_knuth.c -I./kth/include -L./kth/lib -lc-api
 ```
 
-For deeper guides see the [project documentation](https://kth.cash/docs/).
+For deeper guides, ask [DeepWiki](https://deepwiki.com/k-nuth/kth) — it indexes the codebase and answers natural-language questions about it.
 
 ## Releases
 
-Latest release across the family:
+Latest release across the family. Each badge is the live shields.io endpoint, so the version updates as soon as a new release tag or package version is published.
 
-| Component | Version |
+| Component | Latest |
 |---|---|
-| <img alt="kth" src="https://github.com/k-nuth/cs-api/raw/master/docs/images/kth-purple.png" width="35" height="35" /> Mono-repo | <img src="https://img.shields.io/github/v/release/k-nuth/kth?display_name=tag&style=for-the-badge&color=3b009b&logo=bitcoincash" /> |
-| <img alt="C++" src="https://kth.cash/images/libraries/cpp.svg" width="35" height="35" /> C++ | <img src="https://img.shields.io/github/v/release/k-nuth/kth?display_name=tag&style=for-the-badge&color=00599C&logo=cplusplus" /> |
-| <img alt="C" src="https://kth.cash/images/libraries/c.svg" width="35" height="35" /> C | <img src="https://img.shields.io/github/v/release/k-nuth/kth?display_name=tag&style=for-the-badge&color=A8B9CC&logo=c" /> |
-| <img alt="JavaScript / TypeScript" src="https://kth.cash/images/libraries/javascript.svg" width="35" height="35" /> JS / TS (`@knuth/bch`) | <img src="https://img.shields.io/npm/v/@knuth/bch?logo=npm&style=for-the-badge" /> |
-| <img alt="JS/TS WebAssembly" src="https://kth.cash/images/libraries/wasm.svg" width="35" height="35" /> JS / TS WebAssembly (`@knuth/js-wasm`) | <img src="https://img.shields.io/npm/v/@knuth/js-wasm?logo=npm&style=for-the-badge" /> |
-| <img alt="C#" src="https://kth.cash/images/libraries/csharp.svg" width="35" height="35" /> C# (NuGet `kth-bch`) | <img src="https://img.shields.io/nuget/v/kth-bch?logo=nuget&label=release&style=for-the-badge" /> |
-| <img alt="Python" src="https://kth.cash/images/libraries/python.svg" width="35" height="35" /> Python (PyPI `kth`) | <img src="https://img.shields.io/pypi/v/kth?logo=python&style=for-the-badge&color=3776AB" /> |
+| Knuth (this repo) | ![](https://img.shields.io/github/v/release/k-nuth/kth?display_name=tag&style=for-the-badge&color=3b009b&logo=bitcoincash) |
+| C++ library | ![](https://img.shields.io/github/v/release/k-nuth/kth?display_name=tag&style=for-the-badge&color=00599C&logo=cplusplus) |
+| C library | ![](https://img.shields.io/github/v/release/k-nuth/kth?display_name=tag&style=for-the-badge&color=A8B9CC&logo=c) |
+| JS / TS — npm `@knuth/bch` | ![](https://img.shields.io/npm/v/@knuth/bch?logo=npm&style=for-the-badge) |
+| JS / TS WebAssembly — npm `@knuth/js-wasm` | ![](https://img.shields.io/npm/v/@knuth/js-wasm?logo=npm&style=for-the-badge) |
+| C# — NuGet `kth-bch` | ![](https://img.shields.io/nuget/v/kth-bch?logo=nuget&label=release&style=for-the-badge) |
+| Python — PyPI `kth` | ![](https://img.shields.io/pypi/v/kth?logo=python&style=for-the-badge&color=3776AB) |
 
 For the story behind the version numbers (and why Node appears to "skip" 0.59 → 0.67), see [`docs/VERSION_HISTORY.md`](docs/VERSION_HISTORY.md).
 
@@ -197,13 +213,13 @@ Knuth runs on any 64-bit system. We routinely test x86-64 on FreeBSD, Linux, mac
 
 ## Language Bindings
 
-<a href="https://github.com/k-nuth/kth/tree/master/src/node"><img alt="C++" src="https://kth.cash/images/libraries/cpp.svg" width="80" height="80" /></a>
-<a href="https://github.com/k-nuth/kth/tree/master/src/c-api"><img alt="C" src="https://kth.cash/images/libraries/c.svg" width="80" height="80" /></a>
-<a href="https://github.com/k-nuth/js-api"><img alt="JavaScript" src="https://kth.cash/images/libraries/javascript.svg" width="80" height="80" /></a>
-<a href="https://github.com/k-nuth/js-api"><img alt="TypeScript" src="https://kth.cash/images/libraries/typescript.svg" width="80" height="80" /></a>
-<a href="https://github.com/k-nuth/js-wasm"><img alt="JS/TS WebAssembly" src="https://kth.cash/images/libraries/wasm.svg" width="80" height="80" /></a>
-<a href="https://github.com/k-nuth/cs-api"><img alt="C#" src="https://kth.cash/images/libraries/csharp.svg" width="80" height="80" /></a>
-<a href="https://github.com/k-nuth/py-api"><img alt="Python" src="https://kth.cash/images/libraries/python.svg" width="80" height="80" /></a>
+- <a href="https://github.com/k-nuth/kth/tree/master/src/node"><img alt="C++" src="https://kth.cash/images/libraries/cpp.svg" width="60" height="60" /></a>
+- <a href="https://github.com/k-nuth/kth/tree/master/src/c-api"><img alt="C" src="https://kth.cash/images/libraries/c.svg" width="60" height="60" /></a>
+- <a href="https://github.com/k-nuth/js-api"><img alt="JavaScript" src="https://kth.cash/images/libraries/javascript.svg" width="60" height="60" /></a>
+- <a href="https://github.com/k-nuth/js-api"><img alt="TypeScript" src="https://kth.cash/images/libraries/typescript.svg" width="60" height="60" /></a>
+- <a href="https://github.com/k-nuth/js-wasm"><img alt="JS/TS WebAssembly" src="https://kth.cash/images/libraries/wasm.svg" width="60" height="60" /></a>
+- <a href="https://github.com/k-nuth/cs-api"><img alt="C#" src="https://kth.cash/images/libraries/csharp.svg" width="60" height="60" /></a>
+- <a href="https://github.com/k-nuth/py-api"><img alt="Python" src="https://kth.cash/images/libraries/python.svg" width="60" height="60" /></a>
 
 ## Donations
 
