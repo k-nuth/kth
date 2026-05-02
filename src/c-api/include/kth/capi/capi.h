@@ -20,7 +20,6 @@
 #include <kth/capi/chain/block_list.h>
 #include <kth/capi/chain/chain_async.h>
 #include <kth/capi/chain/chain_sync.h>
-#include <kth/capi/chain/coin_selection_algorithm.h>
 #include <kth/capi/chain/compact_block.h>
 #include <kth/capi/chain/double_spend_proof.h>
 #include <kth/capi/chain/double_spend_proof_spender.h>
@@ -100,6 +99,7 @@
 #include <kth/capi/wallet/cashaddr.h>
 #include <kth/capi/wallet/cashtoken_minting.h>
 #include <kth/capi/wallet/coin_selection.h>
+#include <kth/capi/wallet/coin_selection_algorithm.h>
 #include <kth/capi/wallet/coin_selection_result.h>
 #include <kth/capi/wallet/coin_selection_strategy.h>
 #include <kth/capi/wallet/encrypted_keys.h>
