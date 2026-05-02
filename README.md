@@ -1,4 +1,4 @@
-# knuth <a target="_blank" href="https://github.com/k-nuth/kth-mono/releases">![Github Releases][badge.release]</a> <a target="_blank" href="https://github.com/k-nuth/kth-mono/actions">![Build status][badge.GithubActions]</a> <a href="#">![CPP][badge.cpp]</a> <a target="_blank" href="https://t.me/knuth_cash">![Telegram][badge.telegram]</a>
+# knuth <a target="_blank" href="https://github.com/k-nuth/kth-mono/releases">![GitHub Releases][badge.release]</a> <a target="_blank" href="https://github.com/k-nuth/kth-mono/actions">![Build status][badge.GithubActions]</a> <a href="#">![CPP][badge.cpp]</a> <a target="_blank" href="https://deepwiki.com/k-nuth/kth">![Ask DeepWiki][badge.deepwiki]</a> <a target="_blank" href="https://t.me/knuth_cash">![Telegram][badge.telegram]</a>
 
 > High performance Bitcoin development platform.
 
@@ -310,6 +310,7 @@ Fernando Pelliccioni (fpelliccioni@gmail.com) - GPG Fingerprint: 8C1C 3163 AAE1 
 [badge.version]: https://badge.fury.io/gh/k-nuth%2Fkth-kth-mono.svg
 [badge.release]: https://img.shields.io/github/v/release/k-nuth/kth-mono?display_name=tag&style=for-the-badge&color=3b009b&logo=bitcoincash
 [badge.cpp]: https://img.shields.io/badge/C++-23-blue.svg?logo=c%2B%2B&style=for-the-badge
+[badge.deepwiki]: https://img.shields.io/badge/Ask-DeepWiki-3b009b?style=for-the-badge&logo=readthedocs&logoColor=white
 [badge.telegram]: https://img.shields.io/badge/telegram-badge-blue.svg?logo=telegram&style=for-the-badge
 
 <!-- [badge.Gitter]: https://img.shields.io/badge/gitter-join%20chat-blue.svg -->
