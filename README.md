@@ -99,7 +99,7 @@ $ ./kth/bin/kth
 
 ### 🔧 Using the C++ library
 
-The example below constructs a full node with mainnet defaults, opens the chain database and prints the current tip. No `config.cfg` file required — the `configuration` constructor pulls in the network defaults for you. Tweak any field on `cfg` before handing it to `full_node` if you want to override a default.
+The example below constructs a full node with mainnet defaults, opens the chain database and prints the current tip. The `configuration` constructor pulls in the network defaults for you; tweak any field on `cfg` before handing it to `full_node` if you want to override a default.
 
 The chain interface is asynchronous: you call methods on `node.chain()` and your callback fires when the result is ready, so you can interact with the node while it keeps doing its work.
 
@@ -153,7 +153,7 @@ The C API mirrors the same pattern: `kth_config_settings_default(kth_network_mai
 #include <kth/capi.h>
 
 int main(void) {
-    // Mainnet defaults; no config file required.
+    // Mainnet defaults.
     kth_settings settings = kth_config_settings_default(kth_network_mainnet);
 
     // Override individual settings if you need to, e.g.:
