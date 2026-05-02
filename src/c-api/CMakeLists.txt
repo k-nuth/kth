@@ -616,6 +616,30 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     include(CTest)
     include(Catch)
     catch_discover_tests(kth_capi_test)
+
+    # README C snippet — compile-only check. Verbatim copy of the
+    # README's "Using the C API" snippet. Builds, but is not
+    # registered as a runtime test: the snippet ends in
+    # `kth_node_init_run_and_wait_for_signal`, which blocks until
+    # SIGINT/SIGTERM. The compile is enough to fail the build if any
+    # public symbol the snippet references drifts.
+    add_executable(kth_readme_c_compile_check test/readme_c_compile_check.c)
+    target_link_libraries(kth_readme_c_compile_check PRIVATE ${PROJECT_NAME})
+
+    # README C snippet — runtime smoke. Same flow as the README but
+    # adapted for CI: regtest network, fresh temp data dir, 16 MiB DB
+    # cap, no network threads. A pthread issues the async height query
+    # once the chain's dispatcher is up, and the result handler calls
+    # `kth_node_signal_stop`, which unblocks
+    # `kth_node_init_run_and_wait_for_signal` so the test can exit
+    # without an external SIGINT. Asserts the freshly initialised
+    # regtest reports height 0.
+    find_package(Threads REQUIRED)
+    add_executable(kth_readme_c_runtime test/readme_c_runtime.c)
+    target_link_libraries(kth_readme_c_runtime PRIVATE ${PROJECT_NAME})
+    target_link_libraries(kth_readme_c_runtime PRIVATE Threads::Threads)
+    add_test(NAME kth_readme_c_runtime COMMAND kth_readme_c_runtime)
+    set_tests_properties(kth_readme_c_runtime PROPERTIES TIMEOUT 60)
 endif()
 
 
