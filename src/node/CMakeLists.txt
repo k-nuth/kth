@@ -292,6 +292,26 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # Fallback to manual test registration
     add_test(NAME kth_node_test COMMAND kth_node_test)
   endif()
+
+  # README C++ snippet — compile-only check. Verbatim copy of the
+  # README's "Using the C++ library" snippet. Builds, but is not
+  # registered as a runtime test: the snippet uses `mainnet` defaults
+  # (400 GiB LMDB cap, real data dir) and assumes a populated chain
+  # database, which CI does not provide. The compile is enough to
+  # fail the build if any public symbol the snippet references drifts.
+  add_executable(kth_readme_cpp_compile_check test/readme_cpp_compile_check.cpp)
+  target_link_libraries(kth_readme_cpp_compile_check PRIVATE ${PROJECT_NAME})
+
+  # README C++ snippet — runtime smoke. Same flow as the README but
+  # adapted for CI: regtest network, fresh temp data dir, 16 MiB DB
+  # cap, no network threads. Initialises the chain via `executor`
+  # then runs the `full_node` + `start_chain` + `chain().fetch_last_height`
+  # + `close` flow the README example shows; asserts the freshly
+  # initialised regtest reports height 0.
+  add_executable(kth_readme_cpp_runtime test/readme_cpp_runtime.cpp)
+  target_link_libraries(kth_readme_cpp_runtime PRIVATE ${PROJECT_NAME})
+  add_test(NAME kth_readme_cpp_runtime COMMAND kth_readme_cpp_runtime)
+  set_tests_properties(kth_readme_cpp_runtime PROPERTIES TIMEOUT 60)
 endif()
 
 
