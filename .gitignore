@@ -8,6 +8,7 @@ build_debug/
 build_release/
 CMakeUserPresets.json
 build-asan/
+build-create/
 build-release-*/
 test_runner/
 doc/release-notes/*.backup
