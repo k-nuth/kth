@@ -244,13 +244,20 @@ TEST_CASE("C-API wallet::coin_selection - select_utxos(NULL out) aborts",
 // Real, parse-able mainnet P2PKH addresses. Default-constructed
 // payment_address objects are rejected by the domain layer, so tests
 // must use addresses that round-trip through the legacy CashAddr
-// decoder.
+// decoder. The previous `kAddrChange2`
+// ("bitcoincash:qz4t90ackhtsdcz5e7sf6sszphpv2t5ucslvfvkavn") had an
+// invalid CashAddr checksum, so
+// `kth_wallet_payment_address_construct_from_address` returned NULL
+// and the subsequent `kth_wallet_payment_address_list_push_back`
+// fired its non-null precondition with SIGABRT — silently masked on
+// Linux by the sanitizer test step's `|| echo` and only surfacing
+// when the macOS sanitizer run flagged it.
 static char const* const kAddrDest =
     "bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz";
 static char const* const kAddrChange1 =
     "bitcoincash:qrhea03074073ff3zv9whh0nggxc7k03ssh8jv9mkx";
 static char const* const kAddrChange2 =
-    "bitcoincash:qz4t90ackhtsdcz5e7sf6sszphpv2t5ucslvfvkavn";
+    "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a";
 
 TEST_CASE("C-API wallet::coin_selection - create_tx_template builds a tx with explicit ratios",
           "[C-API WalletCoinSelection][create_tx_template]") {
