@@ -68,7 +68,7 @@ kth_error_code_t kth_chain_sync_transaction_position(kth_chain_t chain, kth_hash
 
 // Spend ---------------------------------------------------------------------
 KTH_EXPORT
-kth_error_code_t kth_chain_sync_spend(kth_chain_t chain, kth_output_point_const_t op, kth_inputpoint_t* out_input_point);
+kth_error_code_t kth_chain_sync_spend(kth_chain_t chain, kth_output_point_const_t op, kth_input_point_mut_t* out_input_point);
 
 // History ---------------------------------------------------------------------
 KTH_EXPORT
