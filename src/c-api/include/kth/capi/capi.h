@@ -30,6 +30,7 @@
 #include <kth/capi/chain/history_compact_list.h>
 #include <kth/capi/chain/input.h>
 #include <kth/capi/chain/input_list.h>
+#include <kth/capi/chain/input_point.h>
 #include <kth/capi/chain/mempool_transaction.h>
 #include <kth/capi/chain/mempool_transaction_list.h>
 #include <kth/capi/chain/merkle_block.h>

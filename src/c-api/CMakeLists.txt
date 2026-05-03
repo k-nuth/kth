@@ -272,6 +272,7 @@ set(kth_sources
         src/chain/stealth_compact_list.cpp
         src/chain/input.cpp
         src/chain/input_list.cpp
+        src/chain/input_point.cpp
         src/chain/mempool_transaction_list.cpp
         src/chain/merkle_block.cpp
         src/chain/output.cpp
@@ -425,6 +426,7 @@ set(kth_headers
     include/kth/capi/chain/token_kind.h
     include/kth/capi/chain/token_data.h
     include/kth/capi/chain/input.h
+    include/kth/capi/chain/input_point.h
     include/kth/capi/chain/chain.h
     include/kth/capi/chain/chain_sync.h
     include/kth/capi/chain/chain_other.h
@@ -561,6 +563,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/binary.cpp
         test/chain/header.cpp
         test/chain/point.cpp
+        test/chain/input_point.cpp
         test/chain/output_point.cpp
         test/chain/script.cpp
         test/chain/output.cpp

@@ -59,8 +59,8 @@ typedef void (*kth_last_height_fetch_handler_t)(kth_chain_t, void*, kth_error_co
 typedef void (*kth_merkle_block_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_merkle_block_mut_t block, kth_size_t);
 typedef void (*kth_output_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_output_mut_t output);
 
-// Owned: `spend` (`kth_inputpoint_t`) — caller takes ownership; no public destructor exposed yet.
-typedef void (*kth_spend_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_inputpoint_t spend);
+// Owned: `spend` (`kth_input_point_mut_t`) — caller must release with `kth_chain_input_point_destruct`.
+typedef void (*kth_spend_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_input_point_mut_t spend);
 
 // Owned: `tx` (`kth_transaction_mut_t`) — caller must release with `kth_chain_transaction_destruct`.
 typedef void (*kth_transaction_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_transaction_mut_t tx, kth_size_t, kth_size_t);

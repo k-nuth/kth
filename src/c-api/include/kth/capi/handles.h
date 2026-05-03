@@ -113,7 +113,16 @@ typedef void* kth_input_list_mut_t;
 typedef void const* kth_input_list_const_t;
 typedef void* kth_utxo_list_mut_t;
 typedef void const* kth_utxo_list_const_t;
-typedef void* kth_inputpoint_t;
+typedef void* kth_input_point_mut_t;
+typedef void const* kth_input_point_const_t;
+// Deprecated alias for back-compat with consumers built before the
+// typedef was renamed. New code should use `kth_input_point_mut_t` /
+// `kth_input_point_const_t`. The old spelling matches the project's
+// pre-convention "<name>_t" shape (no mut/const discriminant) — every
+// other handle in this file follows the two-word naming. Removal is
+// out of scope for the cleanup PR that introduced the new names; can
+// be dropped on a major version bump.
+typedef kth_input_point_mut_t kth_inputpoint_t;
 typedef void* kth_merkle_block_mut_t;
 typedef void const* kth_merkle_block_const_t;
 typedef void* kth_prefilled_transaction_mut_t;
