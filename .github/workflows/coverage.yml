@@ -127,51 +127,47 @@ jobs:
         if: always()
         timeout-minutes: 20
         run: |
-          # Pin to the 8.x major. Letting `pip install gcovr` resolve
-          # to whatever PyPI ships HEAD'd this very fix when 8.6
-          # tightened the option grammar (`--jobs` removed) and broke
-          # every coverage run silently. The upper bound catches the
-          # next major early — a future 9.x option-grammar change
-          # surfaces at dependency-bump review time, not in a red CI
-          # run on an unrelated PR.
-          python3 -m pip install 'gcovr>=8.6,<9'
-          mkdir -p coverage-report
-          # The gcovr invocation here is intentionally minimal —
-          # this is the form that was last green on master
-          # (run 24851108475, 2026-04-23, gcovr step ~4 min).
-          # PR #309 added `--jobs $(nproc)` + narrowed search paths
-          # to "stay within the 20-min budget", but `--jobs` was
-          # silently ignored by gcovr 8.6 (the long form was removed
-          # in 8.x), so coverage kept running serial and was still
-          # green. PR #316 then "fixed" it to `-j $(nproc)`, which
-          # actually engaged parallelism — and gcovr 8.6 with `-j`
-          # on this project's TU count hangs for 15+ min producing
-          # no output until the GHA runner cancels the step. The
-          # narrowed search paths likewise interacted poorly. Going
-          # back to the working form fixes the symptom; if we ever
-          # need to shave runtime later, profile gcovr first instead
-          # of reaching for `-j`.
-          gcovr --root . \
-            --filter 'src/domain/' \
-            --filter 'src/infrastructure/' \
-            --filter 'src/blockchain/' \
-            --exclude '.*test.*' \
-            --xml coverage.xml \
-            --html-details coverage-report/index.html \
-            --print-summary
+          # Switched off gcovr to lcov. gcovr 8.5 and 8.6 both blow
+          # past the GHA hosted runner's memory ceiling on this
+          # project's TU count: the in-memory coverage tree gcovr
+          # builds (every translation unit's parsed source +
+          # decision/branch records) is held entirely in resident
+          # memory before any output writer runs, and the OS kills
+          # the runner with "lost communication with the server"
+          # before the 20-min step timeout fires. Confirmed
+          # empirically — both versions hung past the timeout on
+          # this branch's coverage runs.
+          # lcov is a C tool with bounded per-TU memory: it streams
+          # `.gcda` / `.gcno` pairs through `geninfo` without
+          # buffering the whole project. Codecov accepts the
+          # resulting `coverage.info` natively, so the upload
+          # contract is unchanged.
+          apt-get update -qq && apt-get install -y -qq lcov > /dev/null 2>&1
+          lcov --version
+          lcov --capture \
+               --directory build \
+               --base-directory . \
+               --no-external \
+               --rc geninfo_unexecuted_blocks=1 \
+               --output-file coverage.info
+          # Same filter set used historically: domain /
+          # infrastructure / blockchain modules, test sources
+          # excluded.
+          lcov --extract coverage.info \
+               '*/src/domain/*' \
+               '*/src/infrastructure/*' \
+               '*/src/blockchain/*' \
+               --output-file coverage.info
+          lcov --remove coverage.info \
+               '*/test/*' '*/tests/*' \
+               --output-file coverage.info
+          lcov --list coverage.info | tail -1
 
       - name: ☁️ Upload to Codecov
         if: always()
         uses: codecov/codecov-action@v5
         with:
-          files: coverage.xml
+          files: coverage.info
           fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_search: true
-
-      - name: 📎 Upload HTML report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage-report/
