@@ -290,7 +290,7 @@ jobs:
       compiler-version: ${{ matrix.config.version }}
       build-version: "${{ needs.setup.outputs.build-version }}"
       enable-asan: false   # Always enabled (sanitizer builds)
-      enable-ubsan: false  # Always enabled (sanitizer builds) 
+      enable-ubsan: false  # Always enabled (sanitizer builds)
       enable-tsan: false   # Always enabled (sanitizer builds)
       skip-tests: false
     secrets:

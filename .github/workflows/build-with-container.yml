@@ -328,7 +328,21 @@ jobs:
           if [ "${{ inputs.enable-asan }}" = "true" ] || [ "${{ inputs.enable-ubsan }}" = "true" ] || [ "$TSAN_ENABLED_FOR_TESTS" = "true" ]; then
             timeout 1800 ctest --output-on-failure --parallel 2 || echo "Some tests may have failed or timed out with sanitizers"
           else
-            ctest --output-on-failure --parallel 4 || echo "Some tests may have failed, but continuing..."
+            # `ctest --parallel 4` was OK until ~2026-05-03, when the
+            # post-merge master CI started dying inside the test step
+            # with "runner lost communication with the server" — GHA's
+            # report when the runner process gets OS-killed (memory
+            # SIGKILL). The trigger was `readme_c_runtime` /
+            # `readme_cpp_runtime` (added in PR #325): both spin up a
+            # full node with LMDB databases and network threads, and
+            # when ctest scheduled them in parallel with three other
+            # tests the peak memory exceeded the hosted runner's
+            # 7 GB ceiling. Capping parallelism at 2 keeps the heavy
+            # tests from pairing up with each other or with other
+            # memory-hungry tests; the wall-clock cost is ~50 % more
+            # in the worst case but the build was already test-bound,
+            # not CPU-bound.
+            ctest --output-on-failure --parallel 2 || echo "Some tests may have failed, but continuing..."
           fi
 
       - name: ⏭️ Skip tests info

@@ -311,7 +311,18 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   add_executable(kth_readme_cpp_runtime test/readme_cpp_runtime.cpp)
   target_link_libraries(kth_readme_cpp_runtime PRIVATE ${PROJECT_NAME})
   add_test(NAME kth_readme_cpp_runtime COMMAND kth_readme_cpp_runtime)
-  set_tests_properties(kth_readme_cpp_runtime PROPERTIES TIMEOUT 60)
+  # Spins up a full `kth::node::full_node` instance with an LMDB
+  # chain database and a network thread pool — peak memory is
+  # large enough that ctest scheduling it concurrently with other
+  # tests on the GHA hosted runner (7 GB ceiling) tipped the
+  # post-merge master CI into runner-OOM kills since 2026-05-03.
+  # PROCESSORS 4 reserves the full CPU slot count, so ctest
+  # serialises this against every other test on a 4-core runner
+  # without forcing the rest of the suite to run serially.
+  set_tests_properties(kth_readme_cpp_runtime PROPERTIES
+      TIMEOUT 60
+      PROCESSORS 4
+      RUN_SERIAL TRUE)
 endif()
 
 
