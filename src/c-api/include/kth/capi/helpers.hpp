@@ -208,20 +208,36 @@ kth_encrypted_seed_t to_encrypted_seed_t(kth::domain::wallet::encrypted_seed_t c
 //     0, 0, 0, 0, 0, 0, 0, 0}};
 
 // Cast a C-side integral to a C++ strongly-typed enum.
-// Generic form used by the generator at param-forwarding sites;
-// shorter than spelling out `static_cast<E>(x)` and self-documenting.
+// Underlying form is `static_cast<E>(x)`. Use this only on the
+// to_c direction (a valid C++ enum value is always representable
+// as the underlying integer) or for enums whose entire integer
+// range is meaningful by design — opcodes (every byte 0..255 is
+// a valid placeholder), bitfields (`script_flags`), or other
+// uses where "out of range" is not a concept. Discrete enums
+// take a dedicated `<name>_to_cpp` helper with an explicit
+// switch + safe default; see below.
 template <typename E, typename T>
 inline constexpr E ecast(T x) {
     return static_cast<E>(x);
 }
 
-// Per-enum named shortcuts for enums that don't already have a
-// dedicated `<name>_to_cpp` / `<name>_to_c` helper further down in
-// this file. For enums that do, the generator routes through those
-// existing helpers (`opcode_to_cpp`, `network_to_cpp` — which carries
-// a safe switch fallback, etc.) and never lands here.
+// Per-enum named conversions. The to_cpp direction validates the C
+// integer against the enum's known cases and falls through to a
+// sensible default for out-of-range values — `static_cast` on an
+// out-of-range integer to an `enum class` produces an unspecified
+// value (UB in practice), so callers that hand us a stale or
+// fuzzed enum integer would silently land on garbage without these
+// switches. The to_c direction stays as a plain cast: every C++
+// enum value is by definition representable as the underlying
+// integer.
 inline constexpr kth::domain::chain::point_kind point_kind_to_cpp(kth_point_kind_t x) {
-    return ecast<kth::domain::chain::point_kind>(x);
+    switch (x) {
+        case kth_point_kind_spend:
+            return kth::domain::chain::point_kind::spend;
+        default:
+        case kth_point_kind_output:
+            return kth::domain::chain::point_kind::output;
+    }
 }
 inline constexpr kth_point_kind_t point_kind_to_c(kth::domain::chain::point_kind x) {
     return ecast<kth_point_kind_t>(x);
@@ -687,6 +703,9 @@ bool witness(int x = 1) {
 //     return static_cast<E1>(e);
 // }
 
+// Plain `static_cast`: every byte 0..255 is a valid opcode value
+// in the protocol — there's no concept of "out of range" the way
+// a discrete enum like `point_kind` has.
 inline
 kth::domain::machine::opcode opcode_to_cpp(kth_opcode_t op) {
     return static_cast<kth::domain::machine::opcode>(op);
@@ -704,6 +723,10 @@ kth_script_flags_t script_flags_to_c(kth::domain::machine::script_flags flags) {
     return static_cast<kth_script_flags_t>(flags);
 }
 
+// Plain `static_cast`: `script_flags` is a `uint64_t` bitfield —
+// any bit pattern is a meaningful (if possibly unknown) value, the
+// interpreter ignores bits it doesn't recognise. Validating against
+// a fixed set of cases would be wrong here.
 inline
 kth::domain::machine::script_flags script_flags_to_cpp(kth_script_flags_t flags) {
     return static_cast<kth::domain::machine::script_flags>(flags);
@@ -718,7 +741,23 @@ kth_script_pattern_t script_pattern_to_c(kth::domain::machine::script_pattern pa
 
 inline
 kth::domain::machine::script_pattern script_pattern_to_cpp(kth_script_pattern_t pattern) {
-    return static_cast<kth::domain::machine::script_pattern>(pattern);
+    using kth::domain::machine::script_pattern;
+    switch (pattern) {
+        case kth_script_pattern_null_data:                return script_pattern::null_data;
+        case kth_script_pattern_pay_to_multisig:          return script_pattern::pay_to_multisig;
+        case kth_script_pattern_pay_to_public_key:        return script_pattern::pay_to_public_key;
+        case kth_script_pattern_pay_to_public_key_hash:   return script_pattern::pay_to_public_key_hash;
+        case kth_script_pattern_pay_to_script_hash:       return script_pattern::pay_to_script_hash;
+        case kth_script_pattern_pay_to_script_hash_32:    return script_pattern::pay_to_script_hash_32;
+        case kth_script_pattern_pay_to_script:            return script_pattern::pay_to_script;
+        case kth_script_pattern_sign_multisig:            return script_pattern::sign_multisig;
+        case kth_script_pattern_sign_public_key:          return script_pattern::sign_public_key;
+        case kth_script_pattern_sign_public_key_hash:     return script_pattern::sign_public_key_hash;
+        case kth_script_pattern_sign_script_hash:         return script_pattern::sign_script_hash;
+        case kth_script_pattern_witness_reservation:      return script_pattern::witness_reservation;
+        default:
+        case kth_script_pattern_non_standard:             return script_pattern::non_standard;
+    }
 }
 
 // Script Version -----------------------------------------------------
@@ -726,7 +765,16 @@ kth::domain::machine::script_pattern script_pattern_to_cpp(kth_script_pattern_t 
 #if ! defined(KTH_CURRENCY_BCH)
 inline
 kth::infrastructure::machine::script_version script_version_to_cpp(kth_script_version_t version) {
-    return static_cast<kth::infrastructure::machine::script_version>(version);
+    using kth::infrastructure::machine::script_version;
+    switch (version) {
+        case kth_script_version_zero:
+            return script_version::zero;
+        case kth_script_version_reserved:
+            return script_version::reserved;
+        default:
+        case kth_script_version_unversioned:
+            return script_version::unversioned;
+    }
 }
 
 inline
@@ -738,7 +786,18 @@ kth_script_version_t script_version_to_c(kth::infrastructure::machine::script_ve
 
 inline
 kth::domain::wallet::coin_selection_algorithm coin_selection_algorithm_to_cpp(kth_coin_selection_algorithm_t algo) {
-    return static_cast<kth::domain::wallet::coin_selection_algorithm>(algo);
+    using kth::domain::wallet::coin_selection_algorithm;
+    switch (algo) {
+        case kth_coin_selection_algorithm_largest_first:
+            return coin_selection_algorithm::largest_first;
+        case kth_coin_selection_algorithm_manual:
+            return coin_selection_algorithm::manual;
+        case kth_coin_selection_algorithm_send_all:
+            return coin_selection_algorithm::send_all;
+        default:
+        case kth_coin_selection_algorithm_smallest_first:
+            return coin_selection_algorithm::smallest_first;
+    }
 }
 
 inline
@@ -748,7 +807,14 @@ kth_coin_selection_algorithm_t coin_selection_algorithm_to_c(kth::domain::wallet
 
 inline
 kth::domain::wallet::coin_selection_strategy coin_selection_strategy_to_cpp(kth_coin_selection_strategy_t strategy) {
-    return static_cast<kth::domain::wallet::coin_selection_strategy>(strategy);
+    using kth::domain::wallet::coin_selection_strategy;
+    switch (strategy) {
+        case kth_coin_selection_strategy_mixed:
+            return coin_selection_strategy::mixed;
+        default:
+        case kth_coin_selection_strategy_clean:
+            return coin_selection_strategy::clean;
+    }
 }
 
 inline
@@ -760,7 +826,16 @@ kth_coin_selection_strategy_t coin_selection_strategy_to_c(kth::domain::wallet::
 
 inline
 kth::domain::chain::capability_t token_capability_to_cpp(kth_token_capability_t capability) {
-    return static_cast<kth::domain::chain::capability_t>(capability);
+    using kth::domain::chain::capability_t;
+    switch (capability) {
+        case kth_token_capability_mut:
+            return capability_t::mut;
+        case kth_token_capability_minting:
+            return capability_t::minting;
+        default:
+        case kth_token_capability_none:
+            return capability_t::none;
+    }
 }
 
 inline
@@ -773,7 +848,14 @@ kth_token_capability_t token_capability_to_c(kth::domain::chain::capability_t ca
 
 inline
 kth::domain::chain::endorsement_type endorsement_type_to_cpp(kth_endorsement_type_t type) {
-    return static_cast<kth::domain::chain::endorsement_type>(type);
+    using kth::domain::chain::endorsement_type;
+    switch (type) {
+        case kth_endorsement_type_schnorr:
+            return endorsement_type::schnorr;
+        default:
+        case kth_endorsement_type_ecdsa:
+            return endorsement_type::ecdsa;
+    }
 }
 
 inline
