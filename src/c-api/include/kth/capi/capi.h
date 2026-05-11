@@ -59,6 +59,11 @@
 #include <kth/capi/chain/transaction_list.h>
 #include <kth/capi/chain/utxo.h>
 #include <kth/capi/chain/utxo_list.h>
+#include <kth/capi/chain/abla.h>
+#include <kth/capi/chain/abla_config.h>
+#include <kth/capi/chain/abla_state.h>
+#include <kth/capi/chain/abla_config_validity.h>
+#include <kth/capi/chain/abla_state_validity.h>
 
 #include <kth/capi/config/authority.h>
 #include <kth/capi/config/blockchain_settings.h>

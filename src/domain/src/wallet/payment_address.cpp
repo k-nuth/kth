@@ -322,7 +322,15 @@ std::string payment_address::encoded_legacy() const {
     // can detect "no legacy form available" instead of acting on
     // wrong-but-plausible output. CashAddr (`encoded_cashaddr` /
     // `encoded_token`) is the right encoder for 32-byte hashes.
-    if (hash_size_ != short_hash_size) {
+    //
+    // Default-constructed / invalid addresses (`hash_size_ == 0`)
+    // fall through deliberately: the resulting "1111…oLvT2"
+    // base58-of-zeros sentinel has been the documented "this is
+    // an uninitialised address" marker for years, and several
+    // callers rely on the recognisable string to distinguish a
+    // freshly-constructed instance from a real one. Only the
+    // *larger-than-20* case is truncation.
+    if (hash_size_ > short_hash_size) {
         return {};
     }
     return encode_base58(wrap(version_, hash20()));
@@ -442,7 +450,13 @@ short_hash payment_address::hash20() const {
     // as the zero sentinel so callers can detect "no 20-byte hash
     // available" — use `hash32()` for 32-byte payloads or
     // `hash_span()` for the general case.
-    if (hash_size_ != short_hash_size) {
+    //
+    // Smaller-than-20 cases (default-constructed addresses have
+    // `hash_size_ == 0`) fall through: the first 20 bytes of
+    // `hash_data_` are zeros, so callers reading `hash20()` on
+    // an uninitialised address still get `null_short_hash` — the
+    // pre-existing convention — without the guard firing.
+    if (hash_size_ > short_hash_size) {
         return null_short_hash;
     }
     short_hash hash;
@@ -466,7 +480,11 @@ payment payment_address::to_payment() const {
     // looking but wrong payment. Return the zero sentinel so
     // callers can detect "no `payment` representation" and route
     // through CashAddr instead.
-    if (hash_size_ != short_hash_size) {
+    //
+    // Default-constructed addresses fall through to keep the
+    // documented "uninitialised payment" base58 sentinel
+    // (`encoded_legacy()` then yields "1111…oLvT2").
+    if (hash_size_ > short_hash_size) {
         return payment{};
     }
     return wrap(version_, hash20());
