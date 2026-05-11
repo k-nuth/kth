@@ -112,6 +112,12 @@ struct KD_API payment_address {
     bool valid() const;
 
     /// Serializer.
+    /// Legacy base58 encoding (`<version><20-byte hash><checksum>`).
+    /// Only valid for 20-byte addresses (P2KH, P2SH). Returns an
+    /// empty string when the address carries a 32-byte hash
+    /// (`pay_script_hash_32`, BCH 2025 Leibniz) — that hash size
+    /// has no legacy representation; use `encoded_cashaddr()` /
+    /// `encoded_token()` instead.
     [[nodiscard]]
     std::string encoded_legacy() const;
 
@@ -130,6 +136,10 @@ struct KD_API payment_address {
     [[nodiscard]]
     byte_span hash_span() const;
 
+    /// 20-byte hash accessor. Only valid for 20-byte addresses
+    /// (P2KH, P2SH). Returns `null_short_hash` when the address
+    /// carries a 32-byte hash — use `hash32()` for 32-byte payloads
+    /// or `hash_span()` for the size-agnostic path.
     [[nodiscard]]
     short_hash hash20() const;
 
@@ -137,6 +147,10 @@ struct KD_API payment_address {
     hash_digest const& hash32() const;
 
     /// Methods.
+    /// 25-byte `<version><20-byte hash><checksum>` payment layout.
+    /// Only valid for 20-byte addresses. Returns a zero-initialised
+    /// `payment` when the address carries a 32-byte hash — the
+    /// `payment` byte_array has no representation for that size.
     [[nodiscard]]
     payment to_payment() const;
 

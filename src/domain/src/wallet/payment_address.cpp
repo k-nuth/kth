@@ -314,6 +314,17 @@ bool payment_address::valid() const {
 // ----------------------------------------------------------------------------
 
 std::string payment_address::encoded_legacy() const {
+    // Legacy base58 wraps a 20-byte hash; the format has no
+    // representation for the 32-byte hashes that ship under BCH's
+    // `pay_script_hash_32` pattern (2025 Leibniz). Calling this on
+    // such an address would silently truncate to the first 20
+    // bytes — surface that as an empty string sentinel so callers
+    // can detect "no legacy form available" instead of acting on
+    // wrong-but-plausible output. CashAddr (`encoded_cashaddr` /
+    // `encoded_token`) is the right encoder for 32-byte hashes.
+    if (hash_size_ != short_hash_size) {
+        return {};
+    }
     return encode_base58(wrap(version_, hash20()));
 }
 
@@ -425,6 +436,15 @@ kth::byte_span payment_address::hash_span() const {
 }
 
 short_hash payment_address::hash20() const {
+    // `pay_script_hash_32` (BCH 2025 Leibniz) addresses store a
+    // 32-byte hash that doesn't fit in a `short_hash`. Returning
+    // the first 20 bytes would be silent truncation. Surface that
+    // as the zero sentinel so callers can detect "no 20-byte hash
+    // available" — use `hash32()` for 32-byte payloads or
+    // `hash_span()` for the general case.
+    if (hash_size_ != short_hash_size) {
+        return null_short_hash;
+    }
     short_hash hash;
     std::copy_n(hash_data_.begin(), hash.size(), hash.begin());
     return hash;
@@ -438,6 +458,17 @@ hash_digest const& payment_address::hash32() const {
 // ----------------------------------------------------------------------------
 
 payment payment_address::to_payment() const {
+    // `payment` is the fixed 25-byte (`version` + 20-byte hash +
+    // 4-byte checksum) layout. There's no representation for a
+    // 32-byte hash — calling this on a `pay_script_hash_32`
+    // address would silently truncate via `hash20()` and then
+    // checksum-sign the truncated bytes, producing a plausible-
+    // looking but wrong payment. Return the zero sentinel so
+    // callers can detect "no `payment` representation" and route
+    // through CashAddr instead.
+    if (hash_size_ != short_hash_size) {
+        return payment{};
+    }
     return wrap(version_, hash20());
 }
 
