@@ -281,7 +281,51 @@ TEST_CASE("payment_address token address from string", "[payment_address]") {
     REQUIRE(address.valid());
     REQUIRE(address.encoded_cashaddr(false) == "bitcoincash:pvstqkm54dtvnpyqxt5m5n7sjsn4enrlxc526xyxlnjkaycdzfeu69reyzmqx");
     REQUIRE(address.encoded_cashaddr(true) == "bitcoincash:rvstqkm54dtvnpyqxt5m5n7sjsn4enrlxc526xyxlnjkaycdzfeu6hs99m6ed");
-    REQUIRE(address.encoded_legacy() == "34frpCV2v6wtzig9xx4Z9XJ6s4jU3zqwR7");  // In fact a 32-byte address is not representable in legacy encoding.
+    // 32-byte address (`pay_script_hash_32`) — no legacy
+    // representation; `encoded_legacy()` returns an empty string
+    // instead of truncating the hash to 20 bytes and producing a
+    // plausible-looking but incorrect base58 result.
+    REQUIRE(address.encoded_legacy().empty());
+}
+
+// ---------------------------------------------------------------------------
+// 32-byte hash truncation guards (`pay_script_hash_32`, BCH 2025 Leibniz)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("payment_address 32-byte hash20 returns null sentinel", "[payment_address]") {
+    // Build a `payment_address` directly from a 32-byte hash, then
+    // call the 20-byte accessor. Previous behaviour was a silent
+    // copy of the first 20 bytes (truncation); the fix surfaces
+    // that as the all-zeros sentinel so callers can detect it.
+    hash_digest h32;
+    for (size_t i = 0; i < h32.size(); ++i) h32[i] = static_cast<uint8_t>(i + 1);
+    payment_address const address(h32);
+    REQUIRE(address.valid());
+    REQUIRE(address.hash20() == null_short_hash);
+    REQUIRE(address.hash32() == h32);
+}
+
+TEST_CASE("payment_address 32-byte to_payment returns zero sentinel", "[payment_address]") {
+    hash_digest h32;
+    for (size_t i = 0; i < h32.size(); ++i) h32[i] = static_cast<uint8_t>(i + 1);
+    payment_address const address(h32);
+    REQUIRE(address.valid());
+    // `payment` is `byte_array<25>`; zero-initialised compares
+    // equal against any other zero-initialised `payment`.
+    payment const zero_payment{};
+    REQUIRE(address.to_payment() == zero_payment);
+}
+
+TEST_CASE("payment_address 20-byte accessors stay untouched on 20-byte hashes", "[payment_address]") {
+    // Regression: the 32-byte guard must not engage for the
+    // common P2KH / P2SH case.
+    auto const hash = decode_base16<short_hash_size>(compressed_hash);
+    REQUIRE(hash);
+    payment_address const address(*hash);
+    REQUIRE(address.valid());
+    REQUIRE(address.hash20() == *hash);
+    REQUIRE_FALSE(address.encoded_legacy().empty());
+    REQUIRE(address.encoded_legacy() == address_compressed);
 }
 
 #endif
