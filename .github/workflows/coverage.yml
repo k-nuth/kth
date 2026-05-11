@@ -13,6 +13,23 @@ concurrency:
 jobs:
   coverage:
     runs-on: ubuntu-latest
+    # Advisory job: a failure here doesn't block the PR's required
+    # checks. The hosted runner (7 GB) consistently OOMs on
+    # instrumented builds for this project's current TU count —
+    # gcovr 8.6, gcovr 8.5, lcov serial, and lcov --parallel with a
+    # narrowed scope all hit the same "runner lost communication"
+    # signature, regardless of the report tool's memory profile.
+    # Until coverage moves to a runner with more headroom (or the
+    # codebase shrinks), keep the job present so it can capture
+    # data on the runs that do squeeze through, without making
+    # every PR red on the runs that don't.
+    #
+    # Side-effect to keep in mind: `continue-on-error` also softens
+    # the Codecov upload step's `fail_ci_if_error` — a misconfigured
+    # token or a corrupt `coverage.info` will now mark the upload
+    # step red without failing the job. Monitor uploads on the
+    # Codecov dashboard rather than relying on PR gates for it.
+    continue-on-error: true
     # Ceiling for the whole job. With a hot ccache, the run finishes
     # in ~25–30 min (build ~10–15 min on 86 %+ hits, tests ~7 min,
     # report + upload ~5 min). A genuinely cold run — fresh cache
@@ -127,51 +144,79 @@ jobs:
         if: always()
         timeout-minutes: 20
         run: |
-          # Pin to the 8.x major. Letting `pip install gcovr` resolve
-          # to whatever PyPI ships HEAD'd this very fix when 8.6
-          # tightened the option grammar (`--jobs` removed) and broke
-          # every coverage run silently. The upper bound catches the
-          # next major early — a future 9.x option-grammar change
-          # surfaces at dependency-bump review time, not in a red CI
-          # run on an unrelated PR.
-          python3 -m pip install 'gcovr>=8.6,<9'
-          mkdir -p coverage-report
-          # The gcovr invocation here is intentionally minimal —
-          # this is the form that was last green on master
-          # (run 24851108475, 2026-04-23, gcovr step ~4 min).
-          # PR #309 added `--jobs $(nproc)` + narrowed search paths
-          # to "stay within the 20-min budget", but `--jobs` was
-          # silently ignored by gcovr 8.6 (the long form was removed
-          # in 8.x), so coverage kept running serial and was still
-          # green. PR #316 then "fixed" it to `-j $(nproc)`, which
-          # actually engaged parallelism — and gcovr 8.6 with `-j`
-          # on this project's TU count hangs for 15+ min producing
-          # no output until the GHA runner cancels the step. The
-          # narrowed search paths likewise interacted poorly. Going
-          # back to the working form fixes the symptom; if we ever
-          # need to shave runtime later, profile gcovr first instead
-          # of reaching for `-j`.
-          gcovr --root . \
-            --filter 'src/domain/' \
-            --filter 'src/infrastructure/' \
-            --filter 'src/blockchain/' \
-            --exclude '.*test.*' \
-            --xml coverage.xml \
-            --html-details coverage-report/index.html \
-            --print-summary
+          # Switched off gcovr to lcov. gcovr 8.5 and 8.6 both blow
+          # past the GHA hosted runner's memory ceiling on this
+          # project's TU count: the in-memory coverage tree gcovr
+          # builds (every translation unit's parsed source +
+          # decision/branch records) is held entirely in resident
+          # memory before any output writer runs, and the OS kills
+          # the runner with "lost communication with the server"
+          # before the 20-min step timeout fires. Confirmed
+          # empirically — both versions hung past the timeout on
+          # this branch's coverage runs.
+          #
+          # lcov streams .gcda/.gcno through gcov subprocesses, so
+          # peak memory is bounded by the per-process residency
+          # rather than by the whole project tree. The first lcov
+          # attempt on this branch still ran past the 20-min
+          # timeout, but lcov was running gcov serially on every TU
+          # under build/, including the ~50% of subdirs (c-api,
+          # database, network, node, …) we filter out at extract
+          # time anyway. The configuration below narrows the
+          # capture scope to just the sub-projects we keep,
+          # invokes gcov in parallel ($(nproc) workers), drops
+          # branch coverage (smaller intermediate files, faster
+          # parse), and keeps geninfo_unexecuted_blocks so
+          # unreached functions still show as 0%. Codecov accepts
+          # `coverage.info` natively, so the upload contract is
+          # unchanged.
+          set -o pipefail
+          apt-get update -qq && apt-get install -y -qq lcov
+          lcov --version
+          # Pre-check the build subtrees exist before invoking lcov.
+          # If a future refactor renames a sub-project, lcov would
+          # warn-and-continue with a partial `coverage.info` that
+          # silently shrinks the reported surface — and since this
+          # job is advisory, the regression could go unnoticed.
+          for d in domain infrastructure blockchain; do
+            test -d "build/build/Release/src/$d" || {
+              echo "::error::missing coverage source dir: build/build/Release/src/$d";
+              exit 1;
+            }
+          done
+          # `--ignore-errors mismatch` keeps lcov 2.0 from aborting
+          # the whole capture when geninfo hits a "mismatched end
+          # line" between gcov output and source — known
+          # lcov-2.0-on-GCC-15 quirk, harmless for our usage.
+          # `branch_coverage=0` is the lcov-2.x spelling of the
+          # legacy `lcov_branch_coverage` option (still accepted,
+          # but emits a deprecation warning per invocation).
+          lcov --capture \
+               --directory build/build/Release/src/domain \
+               --directory build/build/Release/src/infrastructure \
+               --directory build/build/Release/src/blockchain \
+               --base-directory . \
+               --no-external \
+               --parallel $(nproc) \
+               --ignore-errors mismatch \
+               --rc branch_coverage=0 \
+               --rc geninfo_unexecuted_blocks=1 \
+               --output-file coverage.info
+          # Test sources still need pruning: they live alongside
+          # the headers we keep, so `--no-external` and the
+          # narrowed `--directory` set don't filter them.
+          lcov --remove coverage.info \
+               '*/test/*' '*/tests/*' \
+               --ignore-errors mismatch \
+               --rc branch_coverage=0 \
+               --output-file coverage.info
+          lcov --list coverage.info | tail -1
 
       - name: ☁️ Upload to Codecov
         if: always()
         uses: codecov/codecov-action@v5
         with:
-          files: coverage.xml
+          files: coverage.info
           fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_search: true
-
-      - name: 📎 Upload HTML report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage-report/
