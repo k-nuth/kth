@@ -194,6 +194,9 @@ set(kth_sources
   src/chain/transaction_list.cpp
   src/chain/utxo.cpp
   src/chain/utxo_list.cpp
+  src/chain/abla.cpp
+  src/chain/abla_config.cpp
+  src/chain/abla_state.cpp
 
 
   src/wallet/ec_private.cpp
@@ -457,6 +460,11 @@ set(kth_headers
     include/kth/capi/chain/input_list.h
     include/kth/capi/chain/utxo.h
     include/kth/capi/chain/utxo_list.h
+    include/kth/capi/chain/abla.h
+    include/kth/capi/chain/abla_config.h
+    include/kth/capi/chain/abla_state.h
+    include/kth/capi/chain/abla_config_validity.h
+    include/kth/capi/chain/abla_state_validity.h
     include/kth/capi/platform.h
     include/kth/capi/p2p/p2p.h
     include/kth/capi/node.h
@@ -586,6 +594,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/double_spend_proof.cpp
         test/chain/token_data.cpp
         test/chain/utxo.cpp
+        test/chain/abla.cpp
         test/wallet/bitcoin_uri.cpp
         test/wallet/cashaddr.cpp
         test/wallet/cashtoken_minting.cpp
