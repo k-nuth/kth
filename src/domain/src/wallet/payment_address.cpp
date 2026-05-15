@@ -322,7 +322,13 @@ std::string payment_address::encoded_legacy() const {
     // can detect "no legacy form available" instead of acting on
     // wrong-but-plausible output. CashAddr (`encoded_cashaddr` /
     // `encoded_token`) is the right encoder for 32-byte hashes.
-    if (hash_size_ != short_hash_size) {
+    //
+    // Default-constructed addresses have hash_size_ == 0; they must
+    // keep returning the historical zero-hash sentinel (the all-1's
+    // base58 string "1111…oLvT2") that callers and existing tests
+    // rely on, so the guard only triggers for the genuinely oversized
+    // 32-byte case.
+    if (hash_size_ > short_hash_size) {
         return {};
     }
     return encode_base58(wrap(version_, hash20()));
