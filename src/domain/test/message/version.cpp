@@ -345,7 +345,32 @@ TEST_CASE("version from data valid input  success", "[version]") {
     REQUIRE(expected == result);
 }
 
+// Newer peers append unknown trailing fields to the version message. The
+// receiver must accept the message and leave the reader exhausted; otherwise
+// the channel proxy classifies the payload as malformed and drops the
+// connection, isolating the node from any peer running a newer protocol.
+TEST_CASE("version from data tolerates trailing bytes  success", "[version]") {
+    const message::version expected{
+        70017u, 1515u, 979797u,
+        {734678u, 5357534u,
+         {{0x47, 0x81, 0x6a, 0x40, 0xbb, 0x92, 0xbd, 0xb4,
+           0xe0, 0xb8, 0x25, 0x68, 0x61, 0xf9, 0x6a, 0x55}},
+         123u},
+        {46324u, 1515u,
+         {{0xab, 0xcd, 0x6a, 0x40, 0x33, 0x92, 0x77, 0xb4,
+           0xe0, 0xb8, 0xda, 0x43, 0x61, 0x66, 0x6a, 0x88}},
+         351u},
+        13626u, "my agent", 100u, true};
 
+    auto data = expected.to_data(version_maximum);
+    data.insert(data.end(), {0xde, 0xad, 0xbe, 0xef, 0x00, 0x01, 0x02, 0x03});
+
+    byte_reader reader(data);
+    auto const result_exp = message::version::from_data(reader, version_maximum);
+    REQUIRE(result_exp);
+    REQUIRE(reader.is_exhausted());
+    REQUIRE(*result_exp == expected);
+}
 
 TEST_CASE("version  value accessor  returns initialized value", "[version]") {
     uint32_t const expected = 210u;
