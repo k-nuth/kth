@@ -113,6 +113,13 @@ expect<message::version> version::from_data(byte_reader& reader, uint32_t versio
         reader.is_exhausted() ||
         (self_bip37 && reader.read_byte().value_or(0) != 0);
 
+    // Newer peers (e.g. BCHN/ABC at protocol >= 70016) append additional
+    // optional fields to `version`. Bitcoin's wire format is forward-compatible
+    // by design — receivers must ignore unknown trailing data instead of
+    // dropping the connection. Drain whatever the peer added so the channel
+    // proxy's exhaustion check does not classify the message as malformed.
+    reader.skip_remaining();
+
     return message::version {
         *value,
         *services,
