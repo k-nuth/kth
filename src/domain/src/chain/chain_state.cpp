@@ -584,13 +584,11 @@ chain_state::activations chain_state::activation(data const& values, script_flag
 
     auto const mtp = median_time_past(values);
     if (is_mtp_activated(mtp, std::to_underlying(leibniz_activation_time))) {
-        //Note(Fernando): Move this to the next fork rules
-        result.flags |= (to_flags(upgrade::bch_leibniz) & flags);
+        result.flags |= to_flags(upgrade::bch_leibniz);
     }
 
     if (is_mtp_activated(mtp, std::to_underlying(cantor_activation_time))) {
-        //Note(Fernando): Move this to the next fork rules
-        result.flags |= (to_flags(upgrade::bch_cantor) & flags);
+        result.flags |= to_flags(upgrade::bch_cantor);
     }
 
     // Old rules with Replay Protection
