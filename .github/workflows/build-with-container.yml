@@ -340,7 +340,7 @@ jobs:
             # the only setting where a single overweight test can't
             # pair with anything; cost is ~50 % more wall-clock on a
             # test suite that was already I/O bound, not CPU bound.
-            ctest --output-on-failure --parallel 1 || echo "Some tests may have failed, but continuing..."
+            timeout 1800 ctest --output-on-failure --parallel 1 || echo "Some tests may have failed or timed out, but continuing..."
           fi
 
       - name: ⏭️ Skip tests info
