@@ -1,3 +1,51 @@
+# version 0.83.0
+
+You can install Knuth node version v0.83.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* feat(c-api): add cashtoken_minting bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/300
+* feat(c-api): expose script_execution_context + program::context() by @fpelliccioni in https://github.com/k-nuth/kth/pull/301
+* feat(c-api): expose number, big_number, data_stack handles + tests by @fpelliccioni in https://github.com/k-nuth/kth/pull/302
+* feat(c-api): expose program::pop_number / top_number (+big variants) by @fpelliccioni in https://github.com/k-nuth/kth/pull/303
+* feat(c-api): expose pop_binary / pop_ternary / pop(count) by @fpelliccioni in https://github.com/k-nuth/kth/pull/304
+* feat(c-api): expose output_point::null() coinbase sentinel by @fpelliccioni in https://github.com/k-nuth/kth/pull/305
+* feat(c-api): expose operator+ / - / * on number and big_number by @fpelliccioni in https://github.com/k-nuth/kth/pull/306
+* feat(c-api): expose BIP137 wallet::message module + tests by @fpelliccioni in https://github.com/k-nuth/kth/pull/307
+* feat(c-api): expose stealth_address (BIP63) + bitcoin_uri (BIP21) + tests by @fpelliccioni in https://github.com/k-nuth/kth/pull/308
+* ci(coverage): drop -O0, stabilise ccache, tighten gcovr scope by @fpelliccioni in https://github.com/k-nuth/kth/pull/309
+* feat(c-api): expose BIP39 mnemonic create / validate + language factories by @fpelliccioni in https://github.com/k-nuth/kth/pull/310
+* feat(c-api): expose BIP38 ek_private / ek_public / ek_token + tests by @fpelliccioni in https://github.com/k-nuth/kth/pull/311
+* feat(c-api): expose wallet::coin_selection (BCH CashTokens UTXO picker) by @fpelliccioni in https://github.com/k-nuth/kth/pull/312
+* feat(c-api): expose BIP38 create_key_pair free function by @fpelliccioni in https://github.com/k-nuth/kth/pull/313
+* feat(c-api): expose stealth_receiver + stealth_sender (BIP63) by @fpelliccioni in https://github.com/k-nuth/kth/pull/314
+* ci(coverage): replace gcovr --jobs with -j (8.x compat) by @fpelliccioni in https://github.com/k-nuth/kth/pull/316
+* feat(c-api): expose wallet::cashaddr encode/decode by @fpelliccioni in https://github.com/k-nuth/kth/pull/315
+* ci: bump actions/cache to v5 + fix coverage cache hit rate + split restore/save by @fpelliccioni in https://github.com/k-nuth/kth/pull/317
+* docs: add DeepWiki badge to README header by @fpelliccioni in https://github.com/k-nuth/kth/pull/319
+* chore: remove build-create/ from tracking + ignore future runs by @fpelliccioni in https://github.com/k-nuth/kth/pull/320
+* feat(c-api): expose wallet::create_tx_template + create_token_split_tx_template by @fpelliccioni in https://github.com/k-nuth/kth/pull/318
+* docs: README overhaul + extract version history by @fpelliccioni in https://github.com/k-nuth/kth/pull/321
+* docs: README follow-up — drop kth.cash/docs, fix table rendering, tweak examples by @fpelliccioni in https://github.com/k-nuth/kth/pull/322
+* docs: drop the redundant "No config.cfg file required" wording by @fpelliccioni in https://github.com/k-nuth/kth/pull/323
+* docs: switch the C-API example to the async surface by @fpelliccioni in https://github.com/k-nuth/kth/pull/324
+* test: build + run README C++ and C snippets in CI by @fpelliccioni in https://github.com/k-nuth/kth/pull/325
+* test(c-api): fix invalid CashAddr literal in create_tx_template test by @fpelliccioni in https://github.com/k-nuth/kth/pull/326
+* refactor(c-api): bring coin_selection bindings under the unified wallet shape by @fpelliccioni in https://github.com/k-nuth/kth/pull/328
+* fix(c-api): make C → C++ enum conversion safe against out-of-range integers by @fpelliccioni in https://github.com/k-nuth/kth/pull/330
+* ci: serialize full-node smoke tests + cap ctest parallelism by @fpelliccioni in https://github.com/k-nuth/kth/pull/331
+* ci(coverage): make the job advisory + switch to lcov by @fpelliccioni in https://github.com/k-nuth/kth/pull/329
+* fix(wallet): payment_address accessors return sentinels for 32-byte hashes by @fpelliccioni in https://github.com/k-nuth/kth/pull/332
+* chore: drop leaked personal config + stale sample cfg files by @fpelliccioni in https://github.com/k-nuth/kth/pull/336
+* ci: run ctest serially in the Sanitizers job to stop the runner OOM by @fpelliccioni in https://github.com/k-nuth/kth/pull/337
+* feat(c-api): expose chain::abla — BCH block-size limit calculator by @fpelliccioni in https://github.com/k-nuth/kth/pull/333
+* fix(domain): tolerate trailing bytes in version message for forward compat by @fpelliccioni in https://github.com/k-nuth/kth/pull/338
+* fix(domain): activate new feature bits for MTP-gated upgrades in chain_state by @fpelliccioni in https://github.com/k-nuth/kth/pull/340
+* release: 0.83.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/341
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.82.0...v0.83.0
+
+
 # version 0.82.0
 
 You can install Knuth node version v0.82.0 [using these instructions](https://kth.cash/#download).
