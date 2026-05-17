@@ -326,19 +326,26 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # ==========================================================================
   # 1. Thread-safety tests with TSan (debug, -O1)
   # ==========================================================================
-  add_executable(kth_blockchain_tsan_tests test/block_index_bench/benchmarks.cpp)
-  target_include_directories(kth_blockchain_tsan_tests PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test/block_index_bench>
-  )
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE nanobench::nanobench)
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE fmt::fmt-header-only)
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE Boost::boost)
-  target_link_libraries(kth_blockchain_tsan_tests PRIVATE ${PROJECT_NAME})
-  target_compile_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread -g -O1)
-  target_link_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread)
-  target_compile_definitions(kth_blockchain_tsan_tests PRIVATE TSAN_BUILD=1)
-  _group_sources(kth_blockchain_tsan_tests "${CMAKE_CURRENT_LIST_DIR}/test")
+  # ASan and TSan can't share a process: the target's hardcoded
+  # `-fsanitize=thread` would compose with a global `-fsanitize=address`
+  # and gcc rejects the combination at the cc1plus level. Skip the TSan
+  # target whenever the parent build is already instrumented with ASan.
+  string(FIND "${CMAKE_CXX_FLAGS}" "-fsanitize=address" _kth_asan_in_cxxflags)
+  if(_kth_asan_in_cxxflags EQUAL -1)
+    add_executable(kth_blockchain_tsan_tests test/block_index_bench/benchmarks.cpp)
+    target_include_directories(kth_blockchain_tsan_tests PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test/block_index_bench>
+    )
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE nanobench::nanobench)
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE fmt::fmt-header-only)
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE Boost::boost)
+    target_link_libraries(kth_blockchain_tsan_tests PRIVATE ${PROJECT_NAME})
+    target_compile_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread -g -O1)
+    target_link_options(kth_blockchain_tsan_tests PRIVATE -fsanitize=thread)
+    target_compile_definitions(kth_blockchain_tsan_tests PRIVATE TSAN_BUILD=1)
+    _group_sources(kth_blockchain_tsan_tests "${CMAKE_CURRENT_LIST_DIR}/test")
+  endif()
 
   # ==========================================================================
   # 2. Performance benchmarks (release, full optimization)

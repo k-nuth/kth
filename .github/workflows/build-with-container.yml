@@ -139,8 +139,13 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: /github/home/.cache/ccache
-          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ github.sha }}
-          restore-keys: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-
+          # Two disjoint cache families: 'sanitizers' and 'clean'.
+          # Sanitizer flags change every compile command, so a sanitizer
+          # cache restored into a non-sanitizer build (or vice-versa)
+          # produces ~0 hits. The explicit suffix on both branches keeps
+          # `restore-keys`' prefix match from leaking between families.
+          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-
 
       - name: 🔨 Build
         working-directory: .
@@ -184,16 +189,27 @@ jobs:
             export LDFLAGS="$LDFLAGS $SANITIZER_FLAGS"
           fi
           
+          # secp256k1's `field_5x52_asm_impl.h` reserves enough registers
+          # that ASan's shadow-register pressure pushes it over the limit
+          # and the compile fails with "'asm' operand has impossible
+          # constraints or there are not enough registers". When ASan is
+          # active fall back to the C path for that module. UBSan alone
+          # is fine.
+          EXTRA_CONAN_OPTS=""
+          if [ "${{ inputs.enable-asan }}" = "true" ]; then
+            EXTRA_CONAN_OPTS="-o secp256k1_use_asm=False"
+          fi
+
           # Choose build strategy based on whether we need to upload
           if [ "${{ inputs.upload }}" = "true" ]; then
             echo "🚀 Release build - using conan create (includes package validation)"
             conan remote login -p ${{ secrets.CONAN_PASSWORD }} ${{ inputs.conan-remote }} ${{ secrets.CONAN_LOGIN_USERNAME }}
-            conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh
-            conan create conanfile.py --version ${{ inputs.build-version }} --lockfile=build/conan.lock -pr:b linux-ci-cd -pr:h linux-ci-cd --build=missing -o march_id=ZLm9Pjh -o tests=False
+            conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh $EXTRA_CONAN_OPTS
+            conan create conanfile.py --version ${{ inputs.build-version }} --lockfile=build/conan.lock -pr:b linux-ci-cd -pr:h linux-ci-cd --build=missing -o march_id=ZLm9Pjh -o tests=False $EXTRA_CONAN_OPTS
           else
             echo "🔨 Development build - direct compilation with tests"
-            conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh
-            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh -o tests=True
+            conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh $EXTRA_CONAN_OPTS
+            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh -o tests=True $EXTRA_CONAN_OPTS
             
             CCACHE_OPT=""
             if command -v ccache &>/dev/null; then
@@ -246,7 +262,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: /github/home/.cache/ccache
-          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ github.sha }}
+          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ github.sha }}
 
       - name: 📊 Build summary
         if: always()
@@ -297,6 +313,17 @@ jobs:
         if: ${{ inputs.skip-tests != true && inputs.upload != true }}
         working-directory: .
         run: |
+          # The Build & Test job has been ending with the container in a
+          # state where `docker exec` no longer responds — `Post Checkout
+          # code` then sits in_progress until the step timeout fires and
+          # the whole job is reported as failed, even though ctest itself
+          # passed. Print memory pressure and the kernel ring tail before
+          # and after the test phase so the next stuck run leaves OOM /
+          # cgroup-kill evidence in the workflow log instead of vanishing
+          # with the container.
+          echo "=== mem before tests ==="; free -m || true
+          echo "=== dmesg tail before tests ==="; dmesg | tail -20 2>/dev/null || true
+
           echo "🧪 Running unit tests for development build..."
           
           # Set sanitizer options for better reporting (preserve conflict resolution from build step)
@@ -342,6 +369,10 @@ jobs:
             # test suite that was already I/O bound, not CPU bound.
             timeout 1800 ctest --output-on-failure --parallel 1 || echo "Some tests may have failed or timed out, but continuing..."
           fi
+
+          echo "=== mem after tests ==="; free -m || true
+          echo "=== dmesg tail after tests ==="; dmesg | tail -40 2>/dev/null || true
+          echo "=== processes still alive ==="; ps -eo pid,ppid,rss,comm --sort=-rss | head -20 || true
 
       - name: ⏭️ Skip tests info
         if: ${{ inputs.skip-tests == true }}
