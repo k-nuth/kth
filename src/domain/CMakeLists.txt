@@ -557,6 +557,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         ${VM_AUTO_TEST_SOURCES}
         ${VMB_AUTO_TEST_SOURCES}
         test/chain/block.cpp
+        test/chain/chain_state.cpp
         test/chain/compact.cpp
         test/chain/header.cpp
         test/chain/input.cpp
