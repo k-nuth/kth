@@ -124,11 +124,28 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/Library/Caches/ccache
-          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ github.sha }}
-          restore-keys: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-
+          # Two disjoint cache families ('sanitizers' / 'clean') so the
+          # restore-keys' prefix match can't leak across families.
+          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-
 
       - name: 🔨 Build
         working-directory: .
+        env:
+          # Hosted macOS runners change the workspace path between runs
+          # (`/Users/runner/work/_temp/<random>/…`), and apple-clang is
+          # invoked from `/Applications/Xcode_*.app/Contents/…`. Without
+          # the overrides below ccache hashes those absolute paths into
+          # its "Direct" key, falls through to "Preprocessed" mode for
+          # every TU and ends up at ~6 % hit rate — the build re-runs
+          # nearly from scratch. `CCACHE_BASEDIR` rewrites paths under
+          # the workspace to be relative before hashing; `compilercheck=
+          # content` keys off the compiler binary's contents instead of
+          # its mtime/path; the sloppiness list ignores macros that
+          # vary across runs but don't change generated code.
+          CCACHE_BASEDIR: ${{ github.workspace }}
+          CCACHE_COMPILERCHECK: content
+          CCACHE_SLOPPINESS: pch_defines,time_macros,locale,system_headers
         run: |
           # Prepare sanitizer flags
           SANITIZER_FLAGS=""

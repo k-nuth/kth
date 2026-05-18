@@ -277,11 +277,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
-    name: ${{ matrix.config.name }} (Sanitizers)
+    name: ${{ matrix.config.name }} (Build & Test)
     uses: ./.github/workflows/build-with-container.yml
     with:
       if: ${{ matrix.config.compiler == 'GCC' }}
-      upload: false  # Never upload sanitizer builds
+      upload: false
       os: ${{ matrix.config.os }}
       image: "kthnode/gcc${{ matrix.config.version }}${{ matrix.config.docker_suffix }}"
       conan-remote: "kth"
@@ -289,9 +289,34 @@ jobs:
       compiler: ${{ matrix.config.compiler }}
       compiler-version: ${{ matrix.config.version }}
       build-version: "${{ needs.setup.outputs.build-version }}"
-      enable-asan: false   # Always enabled (sanitizer builds)
-      enable-ubsan: false  # Always enabled (sanitizer builds)
-      enable-tsan: false   # Always enabled (sanitizer builds)
+      enable-asan: false
+      enable-ubsan: false
+      enable-tsan: false
+      skip-tests: false
+    secrets:
+      CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
+      CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
+
+  build-with-container-sanitizers:
+    needs: [setup, generate-matrix]
+    strategy:
+      fail-fast: false
+      matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
+    name: ${{ matrix.config.name }} (Sanitizers)
+    uses: ./.github/workflows/build-with-container.yml
+    with:
+      if: ${{ matrix.config.compiler == 'GCC' }}
+      upload: false
+      os: ${{ matrix.config.os }}
+      image: "kthnode/gcc${{ matrix.config.version }}${{ matrix.config.docker_suffix }}"
+      conan-remote: "kth"
+      recipe-name: "kth"
+      compiler: ${{ matrix.config.compiler }}
+      compiler-version: ${{ matrix.config.version }}
+      build-version: "${{ needs.setup.outputs.build-version }}"
+      enable-asan: true
+      enable-ubsan: true
+      enable-tsan: false   # tsan is mutually exclusive with asan
       skip-tests: false
     secrets:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
@@ -302,11 +327,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
-    name: ${{ matrix.config.name }} (Sanitizers)
+    name: ${{ matrix.config.name }} (Build & Test)
     uses: ./.github/workflows/build-without-container.yml
     with:
       if: ${{ matrix.config.compiler != 'GCC' }}
-      upload: false  # Never upload sanitizer builds
+      upload: false
       os: ${{ matrix.config.os }}
       conan-remote: "kth"
       recipe-name: "kth"
