@@ -38,13 +38,13 @@ namespace machine {
 enum script_flags : script_flags_t {
     no_rules = 0,
 
-    /// Allow minimum difficulty blocks (hard fork, testnet).
+    /// Allow minimum difficulty blocks (network upgrade, testnet).
     easy_blocks = 1ULL << 0,
 
     /// Pay-to-script-hash enabled (soft fork, feature).
     bip16_rule = 1ULL << 1,
 
-    /// No duplicated unspent transaction ids (hard fork, security).
+    /// No duplicated unspent transaction ids (network upgrade, security).
     bip30_rule = 1ULL << 2,
 
     /// Coinbase must include height (soft fork, security).
@@ -56,10 +56,10 @@ enum script_flags : script_flags_t {
     /// Operation nop2 becomes check locktime verify (soft fork, feature).
     bip65_rule = 1ULL << 5,
 
-    /// Hard code bip34-based activation heights (hard fork, optimization).
+    /// Hard code bip34-based activation heights (network upgrade, optimization).
     bip90_rule = 1ULL << 6,
 
-    /// Assume hash collisions cannot happen (hard fork, optimization).
+    /// Assume hash collisions cannot happen (network upgrade, optimization).
     allow_collisions = 1ULL << 7,
 
     /// Enforce relative locktime (soft fork, feature).
@@ -114,7 +114,7 @@ enum script_flags : script_flags_t {
     bip147_rule = 1ULL << 13,
 #endif //KTH_CURRENCY_BCH
 
-    /// Perform difficulty retargeting (hard fork, regtest).
+    /// Perform difficulty retargeting (network upgrade, regtest).
     retarget = 1ULL << 62,
 
     /// Sentinel bit to indicate tx has not been validated.

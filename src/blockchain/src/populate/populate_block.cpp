@@ -105,7 +105,7 @@ void populate_block::populate_coinbase(branch::const_ptr branch, block_const_ptr
 
     //*************************************************************************
     // CONSENSUS: Satoshi implemented allow collisions in Nov 2015. This is a
-    // hard fork that destroys unspent outputs in case of hash collision.
+    // network upgrade that destroys unspent outputs in case of hash collision.
     // The tx duplicate check must apply to coinbase txs, handled here.
     //*************************************************************************
     if ( ! state->is_enabled(domain::machine::script_flags::allow_collisions)) {
@@ -187,7 +187,7 @@ void populate_block::populate_transactions(branch::const_ptr branch, size_t buck
 
         //*********************************************************************
         // CONSENSUS: Satoshi implemented allow collisions in Nov 2015. This is
-        // a hard fork that destroys unspent outputs in case of hash collision.
+        // a network upgrade that destroys unspent outputs in case of hash collision.
         //*********************************************************************
         //Knuth: we are not validating tx duplicates.
         // if ( ! collide) {

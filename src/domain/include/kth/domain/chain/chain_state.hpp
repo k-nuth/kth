@@ -143,7 +143,7 @@ struct KD_API chain_state {
                 // , descartes_t descartes_activation_time
                 // , lobachevski_t lobachevski_activation_time
                 // , galois_t galois_activation_time
-                , leibniz_t leibniz_activation_time
+                // , leibniz_t leibniz_activation_time
                 , cantor_t cantor_activation_time
 #endif  //KTH_CURRENCY_BCH
     );
@@ -227,8 +227,8 @@ struct KD_API chain_state {
     // [[nodiscard]]
     // galois_t galois_activation_time() const;
 
-    [[nodiscard]]
-    leibniz_t leibniz_activation_time() const;
+    // [[nodiscard]]
+    // leibniz_t leibniz_activation_time() const;
 
     [[nodiscard]]
     cantor_t cantor_activation_time() const;
@@ -327,7 +327,7 @@ protected:
             // , descartes_t descartes_activation_time
             // , lobachevski_t lobachevski_activation_time
             // , galois_t galois_activation_time
-            , leibniz_t leibniz_activation_time
+            // , leibniz_t leibniz_activation_time
             , cantor_t cantor_activation_time
 #endif  //KTH_CURRENCY_BCH
     );
@@ -340,7 +340,7 @@ protected:
                             // , descartes_t descartes_activation_time
                             // , lobachevski_t lobachevski_activation_time
                             // , galois_t galois_activation_time
-                            , leibniz_t leibniz_activation_time
+                            // , leibniz_t leibniz_activation_time
                             , cantor_t cantor_activation_time
                             , assert_anchor_block_info_t const& assert_anchor_block_info
                             , uint32_t asert_half_life
@@ -428,8 +428,8 @@ public:
     static
     bool is_galois_enabled(size_t height, config::network network);
 
-    // static
-    // bool is_leibniz_enabled(size_t height, config::network network);
+    static
+    bool is_leibniz_enabled(size_t height, config::network network);
 
     // static
     // bool is_cantor_enabled(size_t height, config::network network);
@@ -520,7 +520,7 @@ private:
     // descartes_t const descartes_activation_time_;
     // lobachevski_t const lobachevski_activation_time_;
     // galois_t const galois_activation_time_;
-    leibniz_t const leibniz_activation_time_;
+    // leibniz_t const leibniz_activation_time_;
     cantor_t const cantor_activation_time_;
 #endif  //KTH_CURRENCY_BCH
 };

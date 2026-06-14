@@ -404,7 +404,7 @@ options_metadata parser::load_settings() {
     )(
         "fork.bip90",
         value<bool>(&configured.chain.bip90),
-        "Assume bip34, bip65, and bip66 activation if enabled, defaults to true (hard fork)."
+        "Assume bip34, bip65, and bip66 activation if enabled, defaults to true (network upgrade)."
     )(
         "fork.bip68",
         value<bool>(&configured.chain.bip68),
@@ -424,42 +424,42 @@ options_metadata parser::load_settings() {
     // (
     //     "fork.uahf_height",
     //     value<size_t>(&configured.chain.uahf_height),
-    //     "Height of the 2017-Aug-01 hard fork (UAHF), defaults to 478559 (Mainnet)."
+    //     "Height of the 2017-Aug-01 network upgrade (UAHF), defaults to 478559 (Mainnet)."
     // )
     // (
     //     "fork.daa_height",
     //     value<size_t>(&configured.chain.daa_height),
-    //     "Height of the 2017-Nov-13 hard fork (DAA), defaults to 504031 (Mainnet)."
+    //     "Height of the 2017-Nov-13 network upgrade (DAA), defaults to 504031 (Mainnet)."
     // )
     // (
     //     "fork.pythagoras_activation_time",
     //     value<uint64_t>(&configured.chain.pythagoras_activation_time),
-    //     "Unix time used for MTP activation of 2018-May-15 hard fork, defaults to 1526400000."
+    //     "Unix time used for MTP activation of 2018-May-15 network upgrade, defaults to 1526400000."
     // )
     // (
     //     "fork.euclid_activation_time",
     //     value<uint64_t>(&configured.chain.euclid_activation_time),
-    //     "Unix time used for MTP activation of 2018-Nov-15 hard fork, defaults to 1542300000."
+    //     "Unix time used for MTP activation of 2018-Nov-15 network upgrade, defaults to 1542300000."
     // )
     // (
     //     "fork.pisano_activation_time",
     //     value<uint64_t>(&configured.chain.pisano_activation_time),
-    //     "Unix time used for MTP activation of 2019-May-15 hard fork, defaults to 1557921600."
+    //     "Unix time used for MTP activation of 2019-May-15 network upgrade, defaults to 1557921600."
     // )
     // (
     //     "fork.mersenne_activation_time",
     //     value<uint64_t>(&configured.chain.mersenne_activation_time),
-    //     "Unix time used for MTP activation of 2019-Nov-15 hard fork, defaults to 1573819200."
+    //     "Unix time used for MTP activation of 2019-Nov-15 network upgrade, defaults to 1573819200."
     // )
     // (
     //     "fork.fermat_activation_time",
     //     value<uint64_t>(&configured.chain.fermat_activation_time),
-    //     "Unix time used for MTP activation of 2020-May-15 hard fork, defaults to 1589544000."
+    //     "Unix time used for MTP activation of 2020-May-15 network upgrade, defaults to 1589544000."
     // )
     // (
     //     "fork.euler_activation_time",
     //     value<uint64_t>(&configured.chain.euler_activation_time),
-    //     "Unix time used for MTP activation of 2020-Nov-15 hard fork, defaults to 1605441600."
+    //     "Unix time used for MTP activation of 2020-Nov-15 network upgrade, defaults to 1605441600."
     // )
 
     // No HF for 2021-May-15
@@ -467,37 +467,37 @@ options_metadata parser::load_settings() {
     // (
     //     "fork.gauss_activation_time",
     //     value<uint64_t>(&configured.chain.gauss_activation_time),
-    //     "Unix time used for MTP activation of 2022-May-15 hard fork, defaults to 1652616000."
+    //     "Unix time used for MTP activation of 2022-May-15 network upgrade, defaults to 1652616000."
     // )
     // (
     //     "fork.descartes_activation_time",
     //     value<uint64_t>(&configured.chain.descartes_activation_time),
-    //     "Unix time used for MTP activation of 2023-May-15 hard fork, defaults to 1684152000."
+    //     "Unix time used for MTP activation of 2023-May-15 network upgrade, defaults to 1684152000."
     // )
     // (
     //     "fork.lobachevski_activation_time",
     //     value<uint64_t>(&configured.chain.lobachevski_activation_time),
-    //     "Unix time used for MTP activation of 2024-May-15 hard fork, defaults to 1715774400."
+    //     "Unix time used for MTP activation of 2024-May-15 network upgrade, defaults to 1715774400."
     // )
     // (
     //     "fork.galois_activation_time",
     //     value<uint64_t>(&configured.chain.galois_activation_time),
-    //     "Unix time used for MTP activation of 2025-May-15 hard fork, defaults to 1747310400."
+    //     "Unix time used for MTP activation of 2025-May-15 network upgrade, defaults to 1747310400."
     // )
     (
         "fork.leibniz_activation_time",
         value<uint64_t>(&configured.chain.leibniz_activation_time),
-        "Unix time used for MTP activation of 2026-May-15 hard fork, defaults to 1778846400."
+        "Unix time used for MTP activation of 2026-May-15 network upgrade, defaults to 1778846400."
     )
     (
         "fork.cantor_activation_time",
         value<uint64_t>(&configured.chain.cantor_activation_time),
-        "Unix time used for MTP activation of 2027-May-15 hard fork, defaults to xxxxxxxxx."
+        "Unix time used for MTP activation of 2027-May-15 network upgrade, defaults to xxxxxxxxx."
     )
     // (
     //     "fork.unnamed_activation_time",
     //     value<uint64_t>(&configured.chain.unnamed_activation_time),
-    //     "Unix time used for MTP activation of ????-???-?? hard fork, defaults to 9999999999."
+    //     "Unix time used for MTP activation of ????-???-?? network upgrade, defaults to 9999999999."
     // )
     (
         "fork.asert_half_life",
