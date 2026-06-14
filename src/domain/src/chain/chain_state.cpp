@@ -39,7 +39,7 @@ using namespace boost::adaptors;
 // Constructors.
 //-----------------------------------------------------------------------------
 
-// The allow_collisions hard fork is always activated (not configurable).
+// The allow_collisions network upgrade is always activated (not configurable).
 chain_state::chain_state(data&& values, script_flags_t flags, checkpoints const& checkpoints
     , domain::config::network network
 #if defined(KTH_CURRENCY_BCH)
@@ -55,7 +55,7 @@ chain_state::chain_state(data&& values, script_flags_t flags, checkpoints const&
     // , descartes_t descartes_activation_time
     // , lobachevski_t lobachevski_activation_time
     // , galois_t galois_activation_time
-    , leibniz_t leibniz_activation_time
+    // , leibniz_t leibniz_activation_time
     , cantor_t cantor_activation_time
 #endif  //KTH_CURRENCY_BCH
 )
@@ -77,7 +77,7 @@ chain_state::chain_state(data&& values, script_flags_t flags, checkpoints const&
         // , descartes_activation_time
         // , lobachevski_activation_time
         // , galois_activation_time
-        , leibniz_activation_time
+        // , leibniz_activation_time
         , cantor_activation_time
 #endif  //KTH_CURRENCY_BCH
         ))
@@ -89,7 +89,7 @@ chain_state::chain_state(data&& values, script_flags_t flags, checkpoints const&
             // , descartes_activation_time
             // , lobachevski_activation_time
             // , galois_activation_time
-            , leibniz_activation_time
+            // , leibniz_activation_time
             , cantor_activation_time
             , assert_anchor_block_info_
             , asert_half_life
@@ -107,7 +107,7 @@ chain_state::chain_state(data&& values, script_flags_t flags, checkpoints const&
     // , descartes_activation_time_(descartes_activation_time)
     // , lobachevski_activation_time_(lobachevski_activation_time)
     // , galois_activation_time_(galois_activation_time)
-    , leibniz_activation_time_(leibniz_activation_time)
+    // , leibniz_activation_time_(leibniz_activation_time)
     , cantor_activation_time_(cantor_activation_time)
 #endif  //KTH_CURRENCY_BCH
 {}
@@ -138,7 +138,7 @@ std::shared_ptr<chain_state> chain_state::from_pool_ptr(chain_state const& pool,
         // , pool.descartes_activation_time_
         // , pool.lobachevski_activation_time_
         // , pool.galois_activation_time_
-        , pool.leibniz_activation_time_
+        // , pool.leibniz_activation_time_
         , pool.cantor_activation_time_
 #endif  //KTH_CURRENCY_BCH
     );
@@ -339,7 +339,7 @@ bool chain_state::is_euler_enabled() const {
     return is_euler_enabled(height(), network());
 }
 
-// 2021-May: There were no hard forks in 2021
+// 2021-May: There were no network upgrades in 2021
 
 // 2022-May
 bool chain_state::is_gauss_enabled() const {
@@ -363,9 +363,7 @@ bool chain_state::is_galois_enabled() const {
 
 // 2026-May
 bool chain_state::is_leibniz_enabled() const {
-   //TODO(fernando): this was activated, change to the other method
-    return is_mtp_activated(median_time_past(), std::to_underlying(leibniz_activation_time()));
-    // return is_leibniz_enabled(height(), network());
+    return is_leibniz_enabled(height(), network());
 }
 
 // 2027-May
@@ -401,7 +399,7 @@ chain_state::activations chain_state::activation(data const& values, script_flag
         // , descartes_t descartes_activation_time
         // , lobachevski_t lobachevski_activation_time
         // , galois_t galois_activation_time
-        , leibniz_t leibniz_activation_time
+        // , leibniz_t leibniz_activation_time
         , cantor_t cantor_activation_time
 #endif  //KTH_CURRENCY_BCH
 ) {
@@ -436,13 +434,13 @@ chain_state::activations chain_state::activation(data const& values, script_flag
     // Initialize activation results with genesis values.
     activations result{script_flags::no_rules, first_version};
 
-    // retarget is only activated via configuration (hard fork).
+    // retarget is only activated via configuration (network upgrade).
     result.flags |= (script_flags::retarget & flags);
 
-    // testnet is activated based on configuration alone (hard fork).
+    // testnet is activated based on configuration alone (network upgrade).
     result.flags |= (script_flags::easy_blocks & flags);
 
-    // bip90 is activated based on configuration alone (hard fork).
+    // bip90 is activated based on configuration alone (network upgrade).
     result.flags |= (script_flags::bip90_rule & flags);
 
     // bip16 is activated with a one-time test on mainnet/testnet (~55% rule).
@@ -582,11 +580,11 @@ chain_state::activations chain_state::activation(data const& values, script_flag
         result.flags |= (to_flags(upgrade::bch_galois) & flags);
     }
 
-    auto const mtp = median_time_past(values);
-    if (is_mtp_activated(mtp, std::to_underlying(leibniz_activation_time))) {
-        result.flags |= to_flags(upgrade::bch_leibniz);
+    if (is_leibniz_enabled(values.height, network)) {
+        result.flags |= (to_flags(upgrade::bch_leibniz) & flags);
     }
 
+    auto const mtp = median_time_past(values);
     if (is_mtp_activated(mtp, std::to_underlying(cantor_activation_time))) {
         result.flags |= to_flags(upgrade::bch_cantor);
     }
@@ -723,7 +721,7 @@ bool chain_state::is_csv_enabled(size_t height, config::network network) {
     return res;
 }
 
-//2017-August-01 hard fork
+//2017-August-01 network upgrade
 bool chain_state::is_uahf_enabled(size_t height, config::network network) {
     auto res = is_rule_enabled(height, network
         , mainnet_uahf_activation_height
@@ -736,7 +734,7 @@ bool chain_state::is_uahf_enabled(size_t height, config::network network) {
     return res;
 }
 
-//2017-November-13 hard fork
+//2017-November-13 network upgrade
 bool chain_state::is_daa_cw144_enabled(size_t height, config::network network) {
     return is_rule_enabled(height, network
         , mainnet_daa_cw144_activation_height
@@ -747,7 +745,7 @@ bool chain_state::is_daa_cw144_enabled(size_t height, config::network network) {
         );
 }
 
-//2018-May hard fork
+//2018-May network upgrade
 bool chain_state::is_pythagoras_enabled(size_t height, config::network network) {
     return is_rule_enabled(height, network
         , mainnet_pythagoras_activation_height
@@ -758,7 +756,7 @@ bool chain_state::is_pythagoras_enabled(size_t height, config::network network) 
         );
 }
 
-//2018-Nov hard fork
+//2018-Nov network upgrade
 bool chain_state::is_euclid_enabled(size_t height, config::network network) {
     return is_rule_enabled(height, network
         , mainnet_euclid_activation_height
@@ -769,7 +767,7 @@ bool chain_state::is_euclid_enabled(size_t height, config::network network) {
         );
 }
 
-//2019-May hard fork
+//2019-May network upgrade
 bool chain_state::is_pisano_enabled(size_t height, config::network network) {
     return is_rule_enabled(height, network
         , mainnet_pisano_activation_height
@@ -780,7 +778,7 @@ bool chain_state::is_pisano_enabled(size_t height, config::network network) {
         );
 }
 
-//2019-Nov hard fork
+//2019-Nov network upgrade
 bool chain_state::is_mersenne_enabled(size_t height, config::network network) {
     return is_rule_enabled(height, network
         , mainnet_mersenne_activation_height
@@ -791,7 +789,7 @@ bool chain_state::is_mersenne_enabled(size_t height, config::network network) {
         );
 }
 
-//2020-May hard fork
+//2020-May network upgrade
 bool chain_state::is_fermat_enabled(size_t height, config::network network) {
     return is_rule_enabled(height, network
         , mainnet_fermat_activation_height
@@ -802,7 +800,7 @@ bool chain_state::is_fermat_enabled(size_t height, config::network network) {
         );
 }
 
-//2020-Nov hard fork
+//2020-Nov network upgrade
 bool chain_state::is_euler_enabled(size_t height, config::network network) {
     return is_rule_enabled(height, network
         , mainnet_euler_activation_height
@@ -813,7 +811,7 @@ bool chain_state::is_euler_enabled(size_t height, config::network network) {
      );
 }
 
-//2022-May hard fork
+//2022-May network upgrade
 bool chain_state::is_gauss_enabled(size_t height, config::network network) {
     return is_rule_enabled(height, network
         , mainnet_gauss_activation_height
@@ -824,7 +822,7 @@ bool chain_state::is_gauss_enabled(size_t height, config::network network) {
      );
 }
 
-//2023-May hard fork
+//2023-May network upgrade
 bool chain_state::is_descartes_enabled(size_t height, config::network network) {
     return is_rule_enabled(height, network
         , mainnet_descartes_activation_height
@@ -835,7 +833,7 @@ bool chain_state::is_descartes_enabled(size_t height, config::network network) {
      );
 }
 
-// 2024-May hard fork
+// 2024-May network upgrade
 bool chain_state::is_lobachevski_enabled(size_t height, config::network network) {
     return is_rule_enabled(height, network
         , mainnet_lobachevski_activation_height
@@ -846,7 +844,7 @@ bool chain_state::is_lobachevski_enabled(size_t height, config::network network)
      );
 }
 
-// 2025-May hard fork
+// 2025-May network upgrade
 bool chain_state::is_galois_enabled(size_t height, config::network network) {
     return is_rule_enabled(height, network
         , mainnet_galois_activation_height
@@ -857,20 +855,19 @@ bool chain_state::is_galois_enabled(size_t height, config::network network) {
      );
 }
 
-//2026-May hard fork
-// Complete after the hard fork
-// bool chain_state::is_leibniz_enabled(size_t height, config::network network) {
-//     return is_rule_enabled(height, network
-//         , mainnet_leibniz_activation_height
-//         , testnet_leibniz_activation_height
-//         , testnet4_leibniz_activation_height
-//         , scalenet_leibniz_activation_height
-//         , chipnet_leibniz_activation_height
-//      );
-// }
+// 2026-May network upgrade
+bool chain_state::is_leibniz_enabled(size_t height, config::network network) {
+    return is_rule_enabled(height, network
+        , mainnet_leibniz_activation_height
+        , testnet_leibniz_activation_height
+        , testnet4_leibniz_activation_height
+        , scalenet_leibniz_activation_height
+        , chipnet_leibniz_activation_height
+     );
+}
 
-//2027-May hard fork
-// Complete after the hard fork
+//2027-May network upgrade
+// Complete after the network upgrade
 // bool chain_state::is_cantor_enabled(size_t height, config::network network) {
 //     return is_rule_enabled(height, network
 //         , mainnet_cantor_activation_height
@@ -881,8 +878,8 @@ bool chain_state::is_galois_enabled(size_t height, config::network network) {
 //      );
 // }
 
-//20xx-May hard fork
-// Complete after the hard fork
+//20xx-May network upgrade
+// Complete after the network upgrade
 // bool chain_state::is_unnamed_enabled(size_t height, config::network network) {
 //     return is_rule_enabled(height, network
 //         , mainnet_unnamed_activation_height
@@ -1036,7 +1033,7 @@ uint32_t chain_state::work_required(data const& values, config::network network,
                                     // , descartes_t descartes_activation_time
                                     // , lobachevski_t lobachevski_activation_time
                                     // , galois_t galois_activation_time
-                                    , leibniz_t leibniz_activation_time
+                                    // , leibniz_t leibniz_activation_time
                                     , cantor_t cantor_activation_time
                                     , assert_anchor_block_info_t const& assert_anchor_block_info
                                     , uint32_t asert_half_life
@@ -1451,9 +1448,9 @@ uint64_t chain_state::dynamic_max_block_sigchecks() const {
 //     return galois_activation_time_;
 // }
 
-leibniz_t chain_state::leibniz_activation_time() const {
-    return leibniz_activation_time_;
-}
+// leibniz_t chain_state::leibniz_activation_time() const {
+//     return leibniz_activation_time_;
+// }
 
 cantor_t chain_state::cantor_activation_time() const {
     return cantor_activation_time_;
@@ -1490,7 +1487,7 @@ uint32_t chain_state::get_next_work_required(uint32_t time_now) {
                             // , descartes_activation_time()
                             // , lobachevski_activation_time()
                             // , galois_activation_time()
-                            , leibniz_activation_time()
+                            // , leibniz_activation_time()
                             , cantor_activation_time()
                             , assert_anchor_block_info_
                             , asert_half_life()

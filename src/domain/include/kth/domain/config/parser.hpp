@@ -49,7 +49,7 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
 //TODO(fernando): Set Litecoin checkpoints
 #if defined(KTH_CURRENCY_BCH)
     if (network == domain::config::network::testnet) {
-        checkpoints.reserve(38);
+        checkpoints.reserve(42);
         checkpoints.emplace_back("000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943", 0);
         checkpoints.emplace_back("00000000009e2958c15ff9290d571bf9459e93b19765c6801ddeccadbb160a1e", 100000);
         checkpoints.emplace_back("0000000000287bffd321963ef05feab753ebe274e1d78b2fd4e2bfe9ad3aa6f2", 200000);
@@ -111,18 +111,11 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
         checkpoints.emplace_back("00000000062c7f32591d883c99fc89ebe74a83287c0f2b7ffeef72e62217d40b", 1421481);  //mediantime: 1605442008. New rules activated in the next block.
         checkpoints.emplace_back("0000000023e0680a8a062b3cc289a4a341124ce7fcb6340ede207e194d73b60a", 1421482);  //mediantime: 1605443209. New rules activated in this block.
 
-        // //2021-May Upgrade - gauss - (1652616000)
-        // checkpoints.emplace_back("", 9999999);  //mediantime: 9999999999
-        // checkpoints.emplace_back("", 9999999);  //mediantime: 9999999999. New rules activated in the next block.
-        // checkpoints.emplace_back("", 9999999);  //mediantime: 9999999999. New rules activated in this block.
-
-        // //2021-Nov Upgrade - unnamed - (9999999999)
-        // checkpoints.emplace_back("", 9999999);  //mediantime: 9999999999
-        // checkpoints.emplace_back("", 9999999);  //mediantime: 9999999999. New rules activated in the next block.
-        // checkpoints.emplace_back("", 9999999);  //mediantime: 9999999999. New rules activated in this block.
+        // 2026-May Upgrade - leibniz - (1778846400)
+        checkpoints.emplace_back("00000000078fe0c74ffa0c5221081c34774aa7d17a3c14c36f952f829463f120", 1710483);
 
     } else if (network == domain::config::network::testnet4) {
-        checkpoints.reserve(18);
+        checkpoints.reserve(21);
         checkpoints.emplace_back("000000001dd410c49a788668ce26751718cc797474d3152a5fc073dd44fd9f7b", 0);
 
         checkpoints.emplace_back("000000001d4ea1368ef790f94fd0f267814701d7ec0f5a5711d7dfe9b1f57ad6", 4);
@@ -148,6 +141,11 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
         checkpoints.emplace_back("000000008bdc7862ad9368f78a952ec754f68db569b5e4620bf35d480d238155", 16843);  //mediantime: 1605436827
         checkpoints.emplace_back("00000000602570ee2b66c1d3f75d404c234f8aacdcc784da97e65838a2daf0fc", 16844);  //mediantime: 1605442049. New rules activated in the next block.
         checkpoints.emplace_back("00000000fb325b8f34fe80c96a5f708a08699a68bbab82dba4474d86bd743077", 16845);  //mediantime: 1605445733. New rules activated in this block.
+
+        // 2026-May Upgrade - leibniz - (1778846400)
+        checkpoints.emplace_back("00000000c45de7decceacab29002b82e454841dccf0a71db13b0572081d3cc8c", 305847);
+        checkpoints.emplace_back("00000000601bf68f9927154cf55557b1c08245b4d415658d1cbcd1eb4502dabc", 305848);
+        checkpoints.emplace_back("000000002da8249454eb69ea7f38fb455305a51d34224494ecd533ab36a489e6", 305849);
     } else if (network == domain::config::network::scalenet) {
         checkpoints.reserve(19);
         checkpoints.emplace_back("00000000e6453dc2dfe1ffa19023f86002eb11dbb8e87d0291a4599f0430be52", 0);
@@ -178,7 +176,7 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
         checkpoints.emplace_back("00000000e4627a1a0bf9aaae007af5cea32720fb54cf2ccf0aa20b02a18392ab", 16869);  //mediantime: 1605444236. New rules activated in this block.
 
     } else if (network == domain::config::network::chipnet) {
-        checkpoints.reserve(17);
+        checkpoints.reserve(20);
 
         checkpoints.emplace_back("000000001dd410c49a788668ce26751718cc797474d3152a5fc073dd44fd9f7b", 0);
 
@@ -214,8 +212,13 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
         checkpoints.emplace_back("00000000144b00db5736b33bd572b3a3a52aa9b4c26ba59fc212aeb68a9b7a20", 228000);
         checkpoints.emplace_back("0000000017d92f88ed2c81885c57f999184860a042250510be06b3edd12e0dc5", 232000);
 
+        // 2026-May Upgrade - leibniz - (1778846400)
+        checkpoints.emplace_back("00000000261a64ba18da8edee2562957bad84c4d2405e5e4f044c5306fd3e195", 279791);
+        checkpoints.emplace_back("0000000019fdedee4233df4236800ec8bbe8ce45185ff531f43b307db12122b4", 279792);
+        checkpoints.emplace_back("00000000292db830fbd551b9b6ccf2a0e562acb6daf5b45d56588ec742d0ef1d", 279793);
+
     } else if (network == domain::config::network::mainnet) {
-        checkpoints.reserve(60);
+        checkpoints.reserve(92);
         checkpoints.emplace_back("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",       0);
         checkpoints.emplace_back("0000000069e244f73d78e8fd29ba2fd2ed618bd6fa2ee92559f542fdb26e7c1d",  11'111);
         checkpoints.emplace_back("000000002dd5588a74784eaa7ab0507a18ad16a236e7b1ce69f00d7ddfb5d0a6",  33'333);
@@ -340,10 +343,15 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
         checkpoints.emplace_back("00000000000000000157a0a3dcdc80f1acd809648d238c1e893b26247091b3b4", 898'374);
         checkpoints.emplace_back("0000000000000000007e2e7dd49323c90d16fd76a521804d709f0d5a442fd42a", 898'375);
 
-        // //2026-May Upgrade - leibniz - (1778846400)
-        // checkpoints.emplace_back("", 0);
-        // checkpoints.emplace_back("", 0);
-        // checkpoints.emplace_back("", 0);
+        checkpoints.emplace_back("000000000000000001fb491cce2c6d44f628e812519a2bc420bbc774cdc2d647", 905'000);
+        checkpoints.emplace_back("0000000000000000016a9d52a9c0a7d7fd3cf1a7cea538565674613a65341186", 920'000);
+        checkpoints.emplace_back("00000000000000000099a0c2d63cfa812992761580d7a8995fe699ee6a9c848e", 935'000);
+        checkpoints.emplace_back("00000000000000000046655be4cd21fd8ee3c59cf9218f3b349c5ea78538fabf", 950'000);
+
+        // 2026-May Upgrade - leibniz - (1778846400)
+        checkpoints.emplace_back("0000000000000000009647b105551f1776362ef92f08aa0312311ff0e9fdad3f", 951'144);
+        checkpoints.emplace_back("000000000000000000f64dbed68370486f945097ba90b17e30d7bf5c43df7a60", 951'145);
+        checkpoints.emplace_back("0000000000000000005cc515e90a5f37ea3029d1e2741d8a00e863edb55f3d1d", 951'146);
 
         // //2027-May Upgrade - cantor - (1810382400)
         // checkpoints.emplace_back("", 0);

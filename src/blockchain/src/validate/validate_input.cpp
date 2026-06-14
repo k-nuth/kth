@@ -106,7 +106,7 @@ uint32_t validate_input::convert_flags(script_flags_t active_flags) {
         flags |= verify_flags_enable_may2026;
     }
 
-    // // We make sure this node will have replay protection during the next hard fork.
+    // // We make sure this node will have replay protection during the next network upgrade.
     // if (script::is_enabled(active_flags, domain::machine::script_flags::bch_replay_protection)) {
     //     flags |= verify_flags_enable_replay_protection;
     // }

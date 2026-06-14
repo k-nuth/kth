@@ -103,7 +103,7 @@ domain::script_flags_t settings::enabled_flags() const {
     flags |= (bch_descartes   ? to_flags(upgrade::bch_descartes)   : 0);
     flags |= (bch_lobachevski ? to_flags(upgrade::bch_lobachevski) : 0);
     flags |= (bch_galois      ? to_flags(upgrade::bch_galois)      : 0);
-    // flags |= (bch_leibniz     ? to_flags(upgrade::bch_leibniz)     : 0);
+    flags |= (bch_leibniz     ? to_flags(upgrade::bch_leibniz)     : 0);
     // flags |= (bch_cantor     ? to_flags(upgrade::bch_cantor)     : 0);
     // flags |= (bch_unnamed     ? to_flags(upgrade::bch_unnamed)     : 0);
 #else

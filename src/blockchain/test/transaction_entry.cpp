@@ -42,7 +42,6 @@ transaction_const_ptr make_tx() {
             domain::chain::chain_state::assert_anchor_block_info_t{}, 
             0, 
             abla::config{},
-            kth::leibniz_t(0),
             kth::cantor_t(0)
         });
 #else
