@@ -81,7 +81,7 @@ jobs:
 
 
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
           submodules: true
 
@@ -92,18 +92,18 @@ jobs:
       # 18+ min and marking otherwise-green jobs as `failure`.
       - name: 💾 Restore Conan packages
         id: restore-conan
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: ~/.conan/data
           key: ${{ runner.os }}-${{ hashFiles('**/conan.lock') }}
-      # - uses: actions/cache@v5
+      # - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
       #   with:
       #     path: ~/.cache/pip
       #     key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
 
 
       # - if: ${{ inputs.compiler != 'GCC' }}
-      #   uses: actions/setup-python@v5
+      #   uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
       #   with:
       #     python-version: '3.11'
 
@@ -136,7 +136,7 @@ jobs:
       - name: 🗄️ Restore ccache
         id: restore-ccache
         if: ${{ inputs.upload != true }}
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: /github/home/.cache/ccache
           # Two disjoint cache families: 'sanitizers' and 'clean'.
@@ -251,7 +251,7 @@ jobs:
       - name: 💾 Save Conan packages
         if: always() && steps.restore-conan.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: ~/.conan/data
           key: ${{ steps.restore-conan.outputs.cache-primary-key }}
@@ -259,7 +259,7 @@ jobs:
       - name: 🗄️ Save ccache
         if: always() && inputs.upload != true && steps.restore-ccache.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: /github/home/.cache/ccache
           key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ github.sha }}

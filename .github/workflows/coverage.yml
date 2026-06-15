@@ -44,7 +44,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
           submodules: true
 
@@ -82,7 +82,7 @@ jobs:
       # non-fatal warning rather than a job failure.
       - name: 🗄️ Restore ccache
         id: restore-ccache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: /github/home/.cache/ccache
           key: ccache-coverage-${{ github.sha }}
@@ -131,7 +131,7 @@ jobs:
       - name: 🗄️ Save ccache
         if: always() && steps.restore-ccache.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: /github/home/.cache/ccache
           key: ccache-coverage-${{ github.sha }}
@@ -214,7 +214,7 @@ jobs:
 
       - name: ☁️ Upload to Codecov
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac  # v5.5.5
         with:
           files: coverage.info
           fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
