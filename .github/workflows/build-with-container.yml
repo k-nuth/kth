@@ -94,8 +94,8 @@ jobs:
         id: restore-conan
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
-          path: ~/.conan/data
-          key: ${{ runner.os }}-${{ hashFiles('**/conan.lock') }}
+          path: ~/.conan2
+          key: ${{ runner.os }}-conan2-${{ hashFiles('**/conan.lock') }}
       # - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
       #   with:
       #     path: ~/.cache/pip
@@ -253,7 +253,7 @@ jobs:
         continue-on-error: true
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
-          path: ~/.conan/data
+          path: ~/.conan2
           key: ${{ steps.restore-conan.outputs.cache-primary-key }}
 
       - name: 🗄️ Save ccache
