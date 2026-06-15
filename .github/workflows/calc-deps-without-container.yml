@@ -39,8 +39,8 @@ jobs:
       - name: 💾 Cache Conan packages
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
-          path: ~/.conan/data
-          key: alpine-${{ hashFiles('**/conan.lock') }}
+          path: ~/.conan2
+          key: alpine-conan2-${{ hashFiles('**/conan.lock') }}
 
       # - if: ${{ inputs.compiler != 'GCC' }}
       - name: 🐍 Setup Python
