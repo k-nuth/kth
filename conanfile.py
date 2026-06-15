@@ -148,9 +148,9 @@ class KthRecipe(KnuthConanFileV2):
             check_min_cppstd(self, "23")
 
     def requirements(self):
-        self.requires("boost/1.90.0", transitive_headers=True, transitive_libs=True)
-        self.requires("fmt/12.0.0", transitive_headers=True, transitive_libs=True)
-        self.requires("spdlog/1.16.0", transitive_headers=True, transitive_libs=True)
+        self.requires("boost/1.91.0", transitive_headers=True, transitive_libs=True)
+        self.requires("fmt/12.1.0", transitive_headers=True, transitive_libs=True)
+        self.requires("spdlog/1.17.0", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/0.9.32", transitive_headers=True, transitive_libs=True)
         
         # GMP is required for BigInt support in the native interpreter.
@@ -162,17 +162,17 @@ class KthRecipe(KnuthConanFileV2):
         #     self.requires("openssl/3.6.0", transitive_headers=True, transitive_libs=True)
 
         if self.options.consensus:
-            self.requires("openssl/3.6.0", transitive_headers=True, transitive_libs=True)
+            self.requires("openssl/3.6.3", transitive_headers=True, transitive_libs=True)
 
         self.requires("ctre/3.10.0", transitive_headers=True, transitive_libs=True)
         self.requires("tiny-aes-c/1.0.0", transitive_headers=True, transitive_libs=True)
 
         # simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)
         if self.settings.os != "Emscripten":
-            self.requires("simdutf/7.1.0", transitive_headers=True, transitive_libs=True)
+            self.requires("simdutf/9.0.0", transitive_headers=True, transitive_libs=True)
 
         if self.options.with_png:
-            self.requires("libpng/1.6.51", transitive_headers=True, transitive_libs=True)
+            self.requires("libpng/1.6.58", transitive_headers=True, transitive_libs=True)
 
         if self.options.with_qrencode:
             self.requires("libqrencode/4.1.1", transitive_headers=True, transitive_libs=True)
@@ -184,7 +184,7 @@ class KthRecipe(KnuthConanFileV2):
     def build_requirements(self):
         self.tool_requires("secp256k1-precompute/1.0.0")
         if self.options.tests:
-            self.test_requires("catch2/3.11.0")
+            self.test_requires("catch2/3.15.0")
             self.test_requires("nanobench/4.3.11")
 
     def config_options(self):
@@ -215,6 +215,14 @@ class KthRecipe(KnuthConanFileV2):
         self.output.info("Compiling for OS: %s" % (self.settings.os,))
         if self.settings.os == "Emscripten":
             self.options["boost/*"].header_only = True
+
+        # boost 1.91 added a cobalt_io_ssl sub-library, but the CCI recipe
+        # lists it as expected-to-be-built without producing it, so
+        # package_info() raises. Disable the whole cobalt module — kth
+        # doesn't use it. (CI profiles set the same option for the
+        # standalone deps-build path where this conanfile isn't the
+        # consumer.)
+        self.options["boost/*"].without_cobalt = True
 
         self.options["spdlog/*"].header_only = True
 
