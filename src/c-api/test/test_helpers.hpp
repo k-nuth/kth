@@ -9,6 +9,9 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#if defined(__linux__)
+#include <sys/prctl.h>
+#endif
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -27,6 +30,15 @@
 #define KTH_TEST_POP_DIAG
 #endif
 
+// Mark the calling process as non-dumpable so the kernel skips its
+// core-dump path entirely (no core_pattern handler invoked). See the
+// comment in KTH_EXPECT_ABORT below for the why.
+#if defined(__linux__)
+#define IF_LINUX_DISABLE_CORE_DUMP() prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
+#else
+#define IF_LINUX_DISABLE_CORE_DUMP() ((void)0)
+#endif
+
 // Verify that a statement triggers KTH_PRECONDITION (abort).
 // Forks a child process to run the statement; if the child does not abort,
 // the test fails. Catch2-friendly: uses REQUIRE for assertions.
@@ -41,6 +53,20 @@
     pid_t _pid = fork();                                             \
     REQUIRE(_pid >= 0);                                              \
     if (_pid == 0) {                                                 \
+        /* SIGABRT below normally triggers the kernel's core-dump    \
+         * pass, which on most Linux distros pipes to                \
+         * systemd-coredump regardless of RLIMIT_CORE (the limit     \
+         * only suppresses the file write — the handler still runs  \
+         * and adds tens of ms per abort). With ~250 death tests    \
+         * per run that's ~9 s locally and hangs on GHA containers  \
+         * where the piped handler isn't even present. PR_SET_      \
+         * DUMPABLE=0 tells the kernel to skip the core-dump path   \
+         * *entirely*: SIGABRT still gets delivered, parent's       \
+         * waitpid() still sees WIFSIGNALED + WTERMSIG==SIGABRT,    \
+         * but no handler runs. ~500x faster than RLIMIT_CORE=0     \
+         * in microbenchmarks. Linux-only; macOS and BSDs don't     \
+         * have the systemd-coredump issue. */                      \
+        IF_LINUX_DISABLE_CORE_DUMP();                                \
         /* child: silence stderr to avoid abort() messages */        \
         freopen("/dev/null", "w", stderr);                           \
         /* Catch2 installs its own SIGABRT handler in the test       \
