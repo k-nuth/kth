@@ -216,11 +216,16 @@ TEST_CASE("C-API CompactBlock - nonce round-trips",
 TEST_CASE("C-API CompactBlock - short_ids getter reflects input",
           "[C-API CompactBlock]") {
     kth_compact_block_mut_t cb = make_fixture();
-    kth_u64_list_const_t view = kth_chain_compact_block_short_ids(cb);
-    REQUIRE(view != NULL);
-    REQUIRE(kth_core_u64_list_count(view) == 2u);
-    REQUIRE(kth_core_u64_list_nth(view, 0) == 0x010203040506ull);
-    REQUIRE(kth_core_u64_list_nth(view, 1) == 0x0a0b0c0d0e0full);
+    // `kth_chain_compact_block_short_ids` returns an owned
+    // `kth_u64_list_mut_t` (the parent doesn't keep it after the call),
+    // so the test owns it and must release with
+    // `kth_core_u64_list_destruct`.
+    kth_u64_list_mut_t ids = kth_chain_compact_block_short_ids(cb);
+    REQUIRE(ids != NULL);
+    REQUIRE(kth_core_u64_list_count(ids) == 2u);
+    REQUIRE(kth_core_u64_list_nth(ids, 0) == 0x010203040506ull);
+    REQUIRE(kth_core_u64_list_nth(ids, 1) == 0x0a0b0c0d0e0full);
+    kth_core_u64_list_destruct(ids);
     kth_chain_compact_block_destruct(cb);
 }
 

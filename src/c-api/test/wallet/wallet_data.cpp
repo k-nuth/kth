@@ -41,9 +41,14 @@ TEST_CASE("C-API WalletData - create with English default returns a handle",
     REQUIRE(wd != NULL);
 
     // mnemonics: 24-word BIP39 seed phrase (256-bit entropy default).
-    kth_string_list_const_t mnemonics = kth_wallet_wallet_data_mnemonics(wd);
+    // `kth_wallet_wallet_data_mnemonics` returns an owned
+    // `kth_string_list_mut_t` (the parent doesn't keep it after the call),
+    // so the test owns it and must release with
+    // `kth_core_string_list_destruct`.
+    kth_string_list_mut_t mnemonics = kth_wallet_wallet_data_mnemonics(wd);
     REQUIRE(mnemonics != NULL);
     REQUIRE(kth_core_string_list_count(mnemonics) == 24u);
+    kth_core_string_list_destruct(mnemonics);
 
     // xpub: a non-null borrowed view.
     kth_hd_public_const_t xpub = kth_wallet_wallet_data_xpub(wd);
@@ -72,8 +77,13 @@ TEST_CASE("C-API WalletData - copy preserves mnemonics count and xpub validity",
     REQUIRE(copy != NULL);
     REQUIRE(copy != original);  // different heap allocations
 
-    REQUIRE(kth_core_string_list_count(kth_wallet_wallet_data_mnemonics(copy))
-            == kth_core_string_list_count(kth_wallet_wallet_data_mnemonics(original)));
+    kth_string_list_mut_t copy_mnemonics = kth_wallet_wallet_data_mnemonics(copy);
+    kth_string_list_mut_t orig_mnemonics = kth_wallet_wallet_data_mnemonics(original);
+    REQUIRE(kth_core_string_list_count(copy_mnemonics)
+            == kth_core_string_list_count(orig_mnemonics));
+    kth_core_string_list_destruct(copy_mnemonics);
+    kth_core_string_list_destruct(orig_mnemonics);
+
     REQUIRE(kth_wallet_hd_public_valid(kth_wallet_wallet_data_xpub(copy)) != 0);
 
     kth_wallet_wallet_data_destruct(copy);
@@ -95,7 +105,9 @@ TEST_CASE("C-API WalletData - set_mnemonics replaces the word list",
     kth_core_string_list_push_back(replacement, "word-two");
 
     kth_wallet_wallet_data_set_mnemonics(wd, replacement);
-    REQUIRE(kth_core_string_list_count(kth_wallet_wallet_data_mnemonics(wd)) == 2u);
+    kth_string_list_mut_t mnemonics = kth_wallet_wallet_data_mnemonics(wd);
+    REQUIRE(kth_core_string_list_count(mnemonics) == 2u);
+    kth_core_string_list_destruct(mnemonics);
 
     kth_core_string_list_destruct(replacement);
     kth_wallet_wallet_data_destruct(wd);

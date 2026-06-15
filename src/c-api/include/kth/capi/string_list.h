@@ -28,8 +28,8 @@ void kth_core_string_list_destruct(kth_string_list_mut_t list);
 KTH_EXPORT
 kth_size_t kth_core_string_list_count(kth_string_list_const_t list);
 
-/** @return Owned string. Caller must release with `free()`. */
-KTH_EXPORT KTH_OWNED
+/** @return Borrowed `char const*` view into the list element. Do not free; the list retains ownership. Invalidated by any mutation or destruct of the list. */
+KTH_EXPORT
 char const* kth_core_string_list_nth(kth_string_list_const_t list, kth_size_t index);
 
 KTH_EXPORT
