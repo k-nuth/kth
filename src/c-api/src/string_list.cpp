@@ -39,7 +39,7 @@ char const* kth_core_string_list_nth(kth_string_list_const_t list, kth_size_t in
     KTH_PRECONDITION(list != nullptr);
     auto const& vec = kth::list_ref<cpp_t>(list);
     KTH_PRECONDITION(index < vec.size());
-    return kth::create_c_str(vec[index]);
+    return vec[index].c_str();
 }
 
 void kth_core_string_list_assign_at(kth_string_list_mut_t list, kth_size_t index, char const* elem) {
