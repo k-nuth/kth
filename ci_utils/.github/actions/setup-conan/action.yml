@@ -18,7 +18,7 @@ runs:
     - run: conan --version
       shell: bash
 
-    - run: conan profile detect
+    - run: conan profile detect --force
       shell: bash
 
     - run: conan config install -t dir ./ci_utils/.conan
