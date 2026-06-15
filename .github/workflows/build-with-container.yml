@@ -309,70 +309,152 @@ jobs:
             echo "- None enabled" >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: 🧪 Run unit tests
+      # Test phase — split per binary instead of one ctest invocation.
+      #
+      # The single-step `ctest` setup ended with the GHA runner annotation
+      # "The hosted runner lost communication with the server... starves
+      # it for CPU/Memory" on a non-trivial fraction of runs, and when it
+      # happened the test step archived ZERO output. Splitting per binary
+      # made it observable: the last step that *started* identifies the
+      # culprit. Root cause turned out to be `kth_capi_test` — its death
+      # tests fork() + abort() the binary ~50 times, and the kernel core-
+      # dump pass (RLIMIT_CORE=unlimited, core_pattern piped to a handler
+      # absent inside the container) hangs waiting for the handler. With
+      # ~50 death tests per run that's enough to wedge the runner.
+      # Fixed properly in `src/c-api/test/test_helpers.hpp` (`RLIMIT_CORE=0`
+      # in the child); the split + `--kill-after` here is defence in depth
+      # so a single hung binary can't take the whole job down again.
+      #
+      # Order is cheap → heavy (kth_domain_test last) so when the runner
+      # does die mid-run we lose the least diagnostic data.
+      - name: 🧪 Pre-test diagnostics
         if: ${{ inputs.skip-tests != true && inputs.upload != true }}
-        working-directory: .
         run: |
-          # The Build & Test job has been ending with the container in a
-          # state where `docker exec` no longer responds — `Post Checkout
-          # code` then sits in_progress until the step timeout fires and
-          # the whole job is reported as failed, even though ctest itself
-          # passed. Print memory pressure and the kernel ring tail before
-          # and after the test phase so the next stuck run leaves OOM /
-          # cgroup-kill evidence in the workflow log instead of vanishing
-          # with the container.
           echo "=== mem before tests ==="; free -m || true
           echo "=== dmesg tail before tests ==="; dmesg | tail -20 2>/dev/null || true
 
-          echo "🧪 Running unit tests for development build..."
-          
-          # Set sanitizer options for better reporting (preserve conflict resolution from build step)
+          # Sanitizer runtime options (preserve conflict resolution from build).
           TSAN_ENABLED_FOR_TESTS="${{ inputs.enable-tsan }}"
           if [ "${{ inputs.enable-asan }}" = "true" ] && [ "${{ inputs.enable-tsan }}" = "true" ]; then
             TSAN_ENABLED_FOR_TESTS=false
           fi
-          
-          if [ "${{ inputs.enable-asan }}" = "true" ] || [ "${{ inputs.enable-ubsan }}" = "true" ] || [ "$TSAN_ENABLED_FOR_TESTS" = "true" ]; then
-            echo "🧪 Running tests with sanitizers enabled..."
-            echo "⚠️ Tests may run slower due to sanitizer overhead"
-            
+          {
             if [ "${{ inputs.enable-asan }}" = "true" ]; then
-              export ASAN_OPTIONS="detect_leaks=1:abort_on_error=1:print_stats=1"
+              echo 'ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:print_stats=1'
             fi
-            
             if [ "${{ inputs.enable-ubsan }}" = "true" ]; then
-              export UBSAN_OPTIONS="print_stacktrace=1:abort_on_error=1"
+              echo 'UBSAN_OPTIONS=print_stacktrace=1:abort_on_error=1'
             fi
-            
             if [ "$TSAN_ENABLED_FOR_TESTS" = "true" ]; then
-              export TSAN_OPTIONS="halt_on_error=1:abort_on_error=1"
+              echo 'TSAN_OPTIONS=halt_on_error=1:abort_on_error=1'
             fi
+          } >> "$GITHUB_ENV"
+
+      # Each test step captures the test binary's exit code via `|| rc=$?`
+      # instead of swallowing it with `|| echo`. The step itself still exits
+      # 0 so the remaining steps run (we want every binary to report, not
+      # short-circuit on the first failure), but a non-zero rc is recorded
+      # in $GITHUB_ENV. The final gate step reads that and fails the job
+      # so the workflow correctly surfaces test failures.
+      - name: 🧪 secp256k1 (tests + exhaustive)
+        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
+        working-directory: build/build/Release
+        run: |
+          rc=0
+          timeout --kill-after=30 300 ./src/secp256k1/secp256k1-tests || rc=$?
+          if [ "$rc" != 0 ]; then
+            echo "::error::secp256k1-tests failed or timed out (exit=$rc)"
+            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
           fi
-          
-          # Run unit tests (project was already built with tests in previous step)
-          cd build/build/Release
-          
-          if [ "${{ inputs.enable-asan }}" = "true" ] || [ "${{ inputs.enable-ubsan }}" = "true" ] || [ "$TSAN_ENABLED_FOR_TESTS" = "true" ]; then
-            timeout 1800 ctest --output-on-failure --parallel 2 || echo "Some tests may have failed or timed out with sanitizers"
-          else
-            # ctest is run serially. PR #331 dropped parallelism from 4
-            # to 2 + marked `readme_*_runtime` with `RUN_SERIAL`, which
-            # kept the two heaviest tests from running together; on most
-            # runs that was enough. But the post-merge Sanitizers job
-            # kept hitting "runner lost communication with the server"
-            # (the GHA-side report when the runner OS-kills the process
-            # for memory pressure) on a non-trivial fraction of master
-            # runs and on every recent PR — five consecutive runs on
-            # PR #333 hung in this step before this change. Serial is
-            # the only setting where a single overweight test can't
-            # pair with anything; cost is ~50 % more wall-clock on a
-            # test suite that was already I/O bound, not CPU bound.
-            timeout 1800 ctest --output-on-failure --parallel 1 || echo "Some tests may have failed or timed out, but continuing..."
+          rc=0
+          timeout --kill-after=30 600 ./src/secp256k1/secp256k1-exhaustive_tests || rc=$?
+          if [ "$rc" != 0 ]; then
+            echo "::error::secp256k1-exhaustive_tests failed or timed out (exit=$rc)"
+            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
           fi
 
+      - name: 🧪 kth_infrastructure_test (+ compile-fail)
+        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
+        working-directory: build/build/Release
+        run: |
+          rc=0
+          timeout --kill-after=30 300 ./src/infrastructure/kth_infrastructure_test --reporter compact || rc=$?
+          if [ "$rc" != 0 ]; then
+            echo "::error::kth_infrastructure_test failed or timed out (exit=$rc)"
+            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
+          fi
+          # The Python compile-fail test is registered via add_test(); run it
+          # through ctest so we keep its environment exactly as defined in
+          # src/infrastructure/CMakeLists.txt.
+          rc=0
+          timeout --kill-after=30 120 ctest --output-on-failure -R '^kth_infrastructure_compile_fail_tests$' || rc=$?
+          if [ "$rc" != 0 ]; then
+            echo "::error::kth_infrastructure_compile_fail_tests failed or timed out (exit=$rc)"
+            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
+          fi
+
+      - name: 🧪 kth_blockchain_test (vmlimits)
+        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
+        working-directory: build/build/Release
+        run: |
+          rc=0
+          timeout --kill-after=30 300 ./src/blockchain/kth_blockchain_test --reporter compact || rc=$?
+          if [ "$rc" != 0 ]; then
+            echo "::error::kth_blockchain_test failed or timed out (exit=$rc)"
+            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
+          fi
+
+      - name: 🧪 kth_node_test
+        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
+        working-directory: build/build/Release
+        run: |
+          rc=0
+          timeout --kill-after=30 300 ./src/node/kth_node_test --reporter compact || rc=$?
+          if [ "$rc" != 0 ]; then
+            echo "::error::kth_node_test failed or timed out (exit=$rc)"
+            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
+          fi
+
+      - name: 🧪 kth_capi_test
+        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
+        working-directory: build/build/Release
+        run: |
+          rc=0
+          timeout --kill-after=30 300 ./src/c-api/kth_capi_test --reporter compact || rc=$?
+          if [ "$rc" != 0 ]; then
+            echo "::error::kth_capi_test failed or timed out (exit=$rc)"
+            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
+          fi
+
+      - name: 🧪 kth_domain_test (heaviest — VMB auto suite)
+        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
+        working-directory: build/build/Release
+        run: |
+          rc=0
+          timeout --kill-after=30 1500 ./src/domain/kth_domain_test --reporter compact || rc=$?
+          if [ "$rc" != 0 ]; then
+            echo "::error::kth_domain_test failed or timed out (exit=$rc)"
+            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
+          fi
+
+      - name: 🧪 Post-test diagnostics
+        if: ${{ always() && inputs.skip-tests != true && inputs.upload != true }}
+        run: |
           echo "=== mem after tests ==="; free -m || true
           echo "=== dmesg tail after tests ==="; dmesg | tail -40 2>/dev/null || true
           echo "=== processes still alive ==="; ps -eo pid,ppid,rss,comm --sort=-rss | head -20 || true
+
+      # Gate that turns the recorded test failures into a job failure.
+      # Runs unconditionally (`always()`) so it fires even if an earlier
+      # step ended in failure for an unrelated reason.
+      - name: 🧪 Test results gate
+        if: ${{ always() && inputs.skip-tests != true && inputs.upload != true }}
+        run: |
+          if [ "${TESTS_FAILED:-0}" = "1" ]; then
+            echo "::error::One or more test binaries failed or timed out (see annotations above)"
+            exit 1
+          fi
+          echo "All test binaries passed"
 
       - name: ⏭️ Skip tests info
         if: ${{ inputs.skip-tests == true }}
