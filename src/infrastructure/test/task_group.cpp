@@ -195,7 +195,7 @@ TEST_CASE("task_group handles rapid task completion without deadlock", "[task_gr
     pool.join();
 }
 
-TEST_CASE("task_group exception in task still allows join to complete", "[task_group tests]") {
+TEST_CASE("task_group exception in task is propagated by join", "[task_group tests]") {
     threadpool pool("test", 2);
     auto executor = pool.get_executor();
 
@@ -220,12 +220,23 @@ TEST_CASE("task_group exception in task still allows join to complete", "[task_g
             task2_completed = true;
         });
 
-        co_await group.join();
+        bool rethrown = false;
+        std::string ex_what;
+        try {
+            co_await group.join();
+        } catch (std::exception const& ex) {
+            rethrown = true;
+            ex_what = ex.what();
+        }
 
-        // Both tasks should be considered "done" (one threw, one completed)
+        // join() must wait for every task (both flags set) AND rethrow the
+        // first exception so the caller can react instead of having it
+        // swallowed silently in the spawned coroutine.
         REQUIRE(task1_completed);
         REQUIRE(task2_completed);
         REQUIRE(group.active_count() == 0);
+        REQUIRE(rethrown);
+        REQUIRE(ex_what == "test exception");
 
         done.set_value();
     }, ::asio::detached);

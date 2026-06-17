@@ -7,9 +7,11 @@
 
 #include <atomic>
 #include <chrono>
-#include <cstddef>
 #include <concepts>
+#include <cstddef>
+#include <exception>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -119,7 +121,17 @@ public:
                     }
                 } catch (...) {
                     spdlog::debug("[task_group:{}] EXCEPTION: {}", state->name, name);
-                    // TODO: Store exception for later propagation
+                    // Stash the first exception so join() can rethrow it.
+                    // Subsequent exceptions are swallowed (logged above) — we
+                    // can only carry one exception out of join() and the
+                    // first one is the most useful for diagnosis. Exception
+                    // capture is a slow path; a mutex here is cheaper than
+                    // the cost of materializing the std::current_exception
+                    // we'd be throwing away on contention.
+                    std::lock_guard<std::mutex> lk(state->exception_mutex);
+                    if ( ! state->first_exception) {
+                        state->first_exception = std::current_exception();
+                    }
                 }
                 spdlog::debug("[task_group:{}] END: {} (active: {})", state->name, name, state->active_count.load() - 1);
                 state->decrement_and_signal();
@@ -146,6 +158,18 @@ public:
             }
             timer.expires_after(std::chrono::milliseconds(1));
             co_await timer.async_wait(::asio::use_awaitable);
+        }
+        // If any task threw, re-throw its exception now that everyone has
+        // wound down. We move it out of the slot first so a re-entrant
+        // join() on the same state doesn't re-fire the same exception.
+        std::exception_ptr ex;
+        {
+            std::lock_guard<std::mutex> lk(state_->exception_mutex);
+            ex = std::move(state_->first_exception);
+            state_->first_exception = nullptr;
+        }
+        if (ex) {
+            std::rethrow_exception(ex);
         }
         co_return;
     }
@@ -185,6 +209,13 @@ private:
         ::asio::any_io_executor executor;
         std::atomic<size_t> active_count{0};
         std::atomic<size_t> total_spawned{0};
+        // First exception thrown by any spawned task. join() re-throws it
+        // after all tasks complete so callers see the failure instead of
+        // it being silently swallowed in the detached coroutine.
+        // std::exception_ptr is not trivially copyable, so it lives behind
+        // a mutex rather than in a std::atomic.
+        std::mutex exception_mutex;
+        std::exception_ptr first_exception;
     };
 
     std::shared_ptr<shared_state> state_;

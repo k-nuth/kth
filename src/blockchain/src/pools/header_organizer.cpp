@@ -43,16 +43,29 @@ bool header_organizer::stop() {
 // =============================================================================
 
 void header_organizer::sync_tip() {
-    // Sync tip from the header index (assumes index is already initialized)
+    // Tip = entry with maximum cumulative chain_work. The header_index
+    // now stores chain_work as uint256_t (computed from header bits via
+    // header_basis::proof), so this is the canonical Bitcoin tip even
+    // when forks coexist in the index. Tie-break on the lowest index_t,
+    // which corresponds to the entry that landed first.
     auto const size = index_.size();
-    if (size > 0) {
-        // For now, assume tip is the last added entry (index size - 1)
-        // TODO(fernando): properly track the actual chain tip when we support forks
-        tip_index_ = index_t(size - 1);
-        tip_hash_ = index_.get_hash(tip_index_);
-        spdlog::info("[header_organizer] Synced tip: index {}, hash {}",
-            tip_index_, encode_hash(tip_hash_));
+    if (size == 0) {
+        return;
     }
+
+    index_t best_idx = 0;
+    uint256_t best_work = index_.get_chain_work(best_idx);
+    for (index_t i = 1; i < index_t(size); ++i) {
+        auto const w = index_.get_chain_work(i);
+        if (w > best_work) {
+            best_work = w;
+            best_idx = i;
+        }
+    }
+    tip_index_ = best_idx;
+    tip_hash_ = index_.get_hash(tip_index_);
+    spdlog::info("[header_organizer] Synced tip: index {}, hash {}",
+        tip_index_, encode_hash(tip_hash_));
 }
 
 // =============================================================================

@@ -587,19 +587,8 @@ static
     uint32_t const checkpoint_height = uint32_t(chain.chain_settings().max_checkpoint_height);
     spdlog::info("[sync_orchestrator] Fast IBD mode up to checkpoint height {}", checkpoint_height);
 
-    // Check if we need to build UTXO set on startup
-    // UTXO build on startup — no longer needed, handled incrementally by block_storage_task.
-    // TODO(fernando): remove this block once incremental UTXO build is validated.
-    // if (initial_block_height >= checkpoint_height) {
-    //     auto utxo_height = chain.get_utxo_built_height();
-    //     uint32_t current_utxo_height = utxo_height.value_or(0);
-    //     if (current_utxo_height < checkpoint_height) {
-    //         auto utxo_result = co_await blockchain::build_utxo_set(
-    //             chain, network.thread_pool().get(), 1, checkpoint_height,
-    //             blockchain::utxo_build_strategy::sequential_batch);
-    //         if (utxo_result != database::result_code::success) { co_return; }
-    //     }
-    // }
+    // UTXO build now happens incrementally inside block_storage_task as
+    // each block lands; no startup-time bulk build is needed.
 
     all_tasks.spawn("block_validation_task", block_validation_task(
         chain,
