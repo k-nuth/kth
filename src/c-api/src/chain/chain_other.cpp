@@ -65,7 +65,7 @@ extern "C" {
 // Subscribers.
 //-------------------------------------------------------------------------
 
-void kth_chain_subscribe_blockchain(kth_node_t exec, kth_chain_t chain, void* ctx, kth_subscribe_block_handler_t handler) {
+void kth_chain_subscribe_blockchain(kth_node_t exec, kth_chain_t chain, void* ctx, kth_subscribe_blockchain_handler_t handler) {
     auto& bc = safe_chain(chain);
     auto channel = bc.subscribe_blockchain();
 

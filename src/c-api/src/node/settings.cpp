@@ -14,7 +14,7 @@
 #include <kth/domain/multi_crypto_support.hpp>
 
 #if ! defined(__EMSCRIPTEN__)
-#include <kth/network/p2p.hpp>
+#include <kth/network/p2p_node.hpp>
 #endif
 
 // ---------------------------------------------------------------------------
@@ -28,7 +28,7 @@ kth_currency_t kth_node_settings_get_currency() {
 kth_network_t kth_node_settings_get_network(kth_node_t exec) {
 
     kth_p2p_t p2p_node = kth_node_get_p2p(exec);
-    auto const& node = *static_cast<kth::network::p2p*>(p2p_node);
+    auto const& node = *static_cast<kth::network::p2p_node*>(p2p_node);
 
     auto const& sett = node.network_settings();
     auto id = sett.identifier;

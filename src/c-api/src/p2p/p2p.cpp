@@ -4,14 +4,14 @@
 
 #include <kth/capi/p2p/p2p.h>
 
-#include <kth/network/p2p.hpp>
+#include <kth/network/p2p_node.hpp>
 #include <kth/capi/helpers.hpp>
 
 namespace {
 
 inline
-kth::network::p2p& p2p_cast(kth_p2p_t p2p) {
-    return *static_cast<kth::network::p2p*>(p2p);
+kth::network::p2p_node& p2p_cast(kth_p2p_t p2p) {
+    return *static_cast<kth::network::p2p_node*>(p2p);
 }
 
 } /* end of anonymous namespace */
@@ -27,8 +27,12 @@ void kth_p2p_stop(kth_p2p_t p2p) {
     p2p_cast(p2p).stop();
 }
 
+// v1.0 replaced `p2p::close()` with `stop()` + `join()`. Preserve the
+// existing C-API semantics: kth_p2p_close blocks until shutdown is done.
 void kth_p2p_close(kth_p2p_t p2p) {
-    p2p_cast(p2p).close();
+    auto& node = p2p_cast(p2p);
+    node.stop();
+    node.join();
 }
 
 kth_bool_t kth_p2p_stopped(kth_p2p_t p2p) {
