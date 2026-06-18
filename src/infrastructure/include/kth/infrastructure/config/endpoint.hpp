@@ -155,8 +155,6 @@ private:
 
 } // namespace kth::infrastructure::config
 
-// template <> struct fmt::formatter<kth::infrastructure::config::endpoint> : ostream_formatter {};
-
 template <>
 struct fmt::formatter<kth::infrastructure::config::endpoint> : fmt::formatter<std::string> {
     template <typename FormatContext>

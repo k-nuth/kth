@@ -104,9 +104,9 @@ struct SafeAmount : ScriptIntBase<SafeAmount> {
 
     SERIALIZE_METHODS(SafeAmount, obj) {
         uint64_t val;
-        SER_WRITE(obj, val = static_cast<uint64_t>(obj.value_));
+        SER_WRITE(obj, val = uint64_t(obj.value_));
         READWRITE(Using<CompactSizeFormatter<false /* no range check here */>>(val));
-        if (val > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+        if (val > uint64_t(std::numeric_limits<int64_t>::max())) {
             throw AmountOutOfRangeError("Token amount out of range");
         } else if (val == 0u) {
             // as per spec, we refuse to (un)serialize an amount of `0`.

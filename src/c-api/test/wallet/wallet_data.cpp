@@ -35,7 +35,7 @@ TEST_CASE("C-API WalletData - destruct null is safe", "[C-API WalletData]") {
 TEST_CASE("C-API WalletData - create with English default returns a handle",
           "[C-API WalletData]") {
     kth_wallet_data_mut_t wd = NULL;
-    kth_error_code_t ec = kth_wallet_create(
+    kth_error_code_t ec = kth_wallet_create_simple(
         "testpassword", "testpassphrase", &wd);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(wd != NULL);
@@ -70,7 +70,7 @@ TEST_CASE("C-API WalletData - create with English default returns a handle",
 TEST_CASE("C-API WalletData - copy preserves mnemonics count and xpub validity",
           "[C-API WalletData]") {
     kth_wallet_data_mut_t original = NULL;
-    REQUIRE(kth_wallet_create(
+    REQUIRE(kth_wallet_create_simple(
         "pwd", "passphrase", &original) == kth_ec_success);
 
     kth_wallet_data_mut_t copy = kth_wallet_wallet_data_copy(original);
@@ -97,7 +97,7 @@ TEST_CASE("C-API WalletData - copy preserves mnemonics count and xpub validity",
 TEST_CASE("C-API WalletData - set_mnemonics replaces the word list",
           "[C-API WalletData]") {
     kth_wallet_data_mut_t wd = NULL;
-    REQUIRE(kth_wallet_create(
+    REQUIRE(kth_wallet_create_simple(
         "p", "p", &wd) == kth_ec_success);
 
     kth_string_list_mut_t replacement = kth_core_string_list_construct_default();
@@ -116,7 +116,7 @@ TEST_CASE("C-API WalletData - set_mnemonics replaces the word list",
 TEST_CASE("C-API WalletData - set_encrypted_seed_unsafe round-trip",
           "[C-API WalletData]") {
     kth_wallet_data_mut_t wd = NULL;
-    REQUIRE(kth_wallet_create(
+    REQUIRE(kth_wallet_create_simple(
         "p", "p", &wd) == kth_ec_success);
 
     uint8_t replacement[96];
@@ -146,33 +146,33 @@ TEST_CASE("C-API WalletData - mnemonics getter null aborts",
 
 TEST_CASE("C-API WalletData - create null out aborts",
           "[C-API WalletData][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_create("p", "p", NULL));
+    KTH_EXPECT_ABORT(kth_wallet_create_simple("p", "p", NULL));
 }
 
 TEST_CASE("C-API WalletData - create null password aborts",
           "[C-API WalletData][precondition]") {
     kth_wallet_data_mut_t wd = NULL;
-    KTH_EXPECT_ABORT(kth_wallet_create(NULL, "p", &wd));
+    KTH_EXPECT_ABORT(kth_wallet_create_simple(NULL, "p", &wd));
 }
 
 TEST_CASE("C-API WalletData - create null passphrase aborts",
           "[C-API WalletData][precondition]") {
     kth_wallet_data_mut_t wd = NULL;
-    KTH_EXPECT_ABORT(kth_wallet_create("p", NULL, &wd));
+    KTH_EXPECT_ABORT(kth_wallet_create_simple("p", NULL, &wd));
 }
 
 TEST_CASE("C-API WalletData - create non-null *out aborts",
           "[C-API WalletData][precondition]") {
     kth_wallet_data_mut_t already = NULL;
-    REQUIRE(kth_wallet_create("p", "p", &already) == kth_ec_success);
-    KTH_EXPECT_ABORT(kth_wallet_create("p", "p", &already));
+    REQUIRE(kth_wallet_create_simple("p", "p", &already) == kth_ec_success);
+    KTH_EXPECT_ABORT(kth_wallet_create_simple("p", "p", &already));
     kth_wallet_wallet_data_destruct(already);
 }
 
 TEST_CASE("C-API WalletData - set_encrypted_seed_unsafe null aborts",
           "[C-API WalletData][precondition]") {
     kth_wallet_data_mut_t wd = NULL;
-    REQUIRE(kth_wallet_create("p", "p", &wd) == kth_ec_success);
+    REQUIRE(kth_wallet_create_simple("p", "p", &wd) == kth_ec_success);
     KTH_EXPECT_ABORT(kth_wallet_wallet_data_set_encrypted_seed_unsafe(wd, NULL));
     kth_wallet_wallet_data_destruct(wd);
 }

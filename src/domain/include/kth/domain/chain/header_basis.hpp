@@ -12,7 +12,6 @@
 #include <string>
 #include <vector>
 
-#include <kth/domain/chain/chain_state.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/hash.hpp>
@@ -148,9 +147,6 @@ struct KD_API header_basis {
 
     [[nodiscard]]
     code check(hash_digest const& hash, bool retarget = false) const;
-
-    [[nodiscard]]
-    code accept(::kth::domain::chain::chain_state const& state, hash_digest const& hash) const;
 
     void reset();
 

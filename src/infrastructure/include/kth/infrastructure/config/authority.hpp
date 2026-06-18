@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef KTH_INFRASTUCTURE_CONFIG_AUTHORITY_HPP
-#define KTH_INFRASTUCTURE_CONFIG_AUTHORITY_HPP
+#ifndef KTH_INFRASTRUCTURE_CONFIG_AUTHORITY_HPP
+#define KTH_INFRASTRUCTURE_CONFIG_AUTHORITY_HPP
 
 #include <cstdint>
 #include <iostream>
@@ -81,8 +81,6 @@ private:
 };
 
 } // namespace kth::infrastructure::config
-
-// template <> struct fmt::formatter<kth::infrastructure::config::authority> : ostream_formatter {};
 
 template <>
 struct fmt::formatter<kth::infrastructure::config::authority> : fmt::formatter<std::string> {

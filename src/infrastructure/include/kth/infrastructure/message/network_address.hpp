@@ -76,6 +76,7 @@ struct KI_API network_address {
     }
 
     bool is_valid() const;
+    bool is_routable() const;
     void reset();
 
     static

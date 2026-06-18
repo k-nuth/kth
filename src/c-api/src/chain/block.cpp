@@ -133,9 +133,9 @@ kth_error_code_t kth_chain_block_check(kth_block_const_t self) {
     return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check());
 }
 
-kth_error_code_t kth_chain_block_connect(kth_block_const_t self) {
+kth_error_code_t kth_chain_block_check_body(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).connect());
+    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check_body());
 }
 
 kth_hash_list_mut_t kth_chain_block_to_hashes(kth_block_const_t self) {
@@ -265,16 +265,6 @@ kth_size_t kth_chain_block_total_inputs(kth_block_const_t self, kth_bool_t with_
     return kth::cpp_ref<cpp_t>(self).total_inputs(with_coinbase_cpp);
 }
 
-kth_error_code_t kth_chain_block_accept(kth_block_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_block_size_dynamic, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transactions) {
-    KTH_PRECONDITION(self != nullptr);
-    auto const height_cpp = kth::sz(height);
-    auto const max_block_size_dynamic_cpp = kth::sz(max_block_size_dynamic);
-    auto const max_sigops_cpp = kth::sz(max_sigops);
-    auto const is_under_checkpoint_cpp = kth::int_to_bool(is_under_checkpoint);
-    auto const transactions_cpp = kth::int_to_bool(transactions);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).accept(flags, height_cpp, median_time_past, max_block_size_dynamic_cpp, max_sigops_cpp, is_under_checkpoint_cpp, transactions_cpp));
-}
-
 uint64_t kth_chain_block_reward(kth_block_const_t self, kth_size_t height) {
     KTH_PRECONDITION(self != nullptr);
     auto const height_cpp = kth::sz(height);
@@ -286,21 +276,6 @@ kth_size_t kth_chain_block_signature_operations(kth_block_const_t self, kth_bool
     auto const bip16_cpp = kth::int_to_bool(bip16);
     auto const bip141_cpp = kth::int_to_bool(bip141);
     return kth::cpp_ref<cpp_t>(self).signature_operations(bip16_cpp, bip141_cpp);
-}
-
-kth_error_code_t kth_chain_block_accept_transactions(kth_block_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint) {
-    KTH_PRECONDITION(self != nullptr);
-    auto const height_cpp = kth::sz(height);
-    auto const max_sigops_cpp = kth::sz(max_sigops);
-    auto const is_under_checkpoint_cpp = kth::int_to_bool(is_under_checkpoint);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).accept_transactions(flags, height_cpp, median_time_past, max_sigops_cpp, is_under_checkpoint_cpp));
-}
-
-kth_error_code_t kth_chain_block_connect_transactions(kth_block_const_t self, kth_chain_state_const_t state) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(state != nullptr);
-    auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).connect_transactions(state_cpp));
 }
 
 void kth_chain_block_reset(kth_block_mut_t self) {

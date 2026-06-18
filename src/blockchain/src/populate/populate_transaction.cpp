@@ -10,11 +10,14 @@
 #include <functional>
 
 #include <kth/blockchain/define.hpp>
-#include <kth/blockchain/interface/fast_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/domain.hpp>
 
-#include <kth/infrastructure/utility/synchronizer.hpp>
+#include <asio/co_spawn.hpp>
+#include <asio/post.hpp>
+#include <asio/use_awaitable.hpp>
+#include <asio/experimental/concurrent_channel.hpp>
 
 namespace kth::blockchain {
 
@@ -26,17 +29,17 @@ using namespace std::placeholders;
 // Database access is limited to calling populate_base.
 
 #if defined(KTH_WITH_MEMPOOL)
-populate_transaction::populate_transaction(dispatcher& dispatch, fast_chain const& chain, mining::mempool const& mp)
-    : populate_base(dispatch, chain)
+populate_transaction::populate_transaction(executor_type executor, size_t threads, block_chain const& chain, mining::mempool const& mp)
+    : populate_base(std::move(executor), threads, chain)
     , mempool_(mp)
 {}
 #else
-populate_transaction::populate_transaction(dispatcher& dispatch, fast_chain const& chain)
-    : populate_base(dispatch, chain)
+populate_transaction::populate_transaction(executor_type executor, size_t threads, block_chain const& chain)
+    : populate_base(std::move(executor), threads, chain)
 {}
 #endif
 
-void populate_transaction::populate(transaction_const_ptr tx, result_handler&& handler) const {
+::asio::awaitable<code> populate_transaction::populate(transaction_const_ptr tx) const {
     auto const state = tx->validation.state;
     KTH_ASSERT(state);
 
@@ -57,28 +60,48 @@ void populate_transaction::populate(transaction_const_ptr tx, result_handler&& h
     // Because txs include no proof of work we much short circuit here.
     // Otherwise a peer can flood us with repeat transactions to validate.
     if (tx->validation.duplicate) {
-        handler(error::unspent_duplicate);
-        return;
+        co_return error::unspent_duplicate;
     }
 
     auto const total_inputs = tx->inputs().size();
 
     // Return if there are no inputs to validate (will fail later).
     if (total_inputs == 0) {
-        handler(error::success);
-        return;
+        co_return error::success;
     }
 
-    auto const buckets = std::min(dispatch_.size(), total_inputs);
-    auto const join_handler = synchronize(std::move(handler), buckets, NAME);
+    auto const buckets = std::min(threads_, total_inputs);
     KTH_ASSERT(buckets != 0);
 
+    // Use a channel to collect results from parallel tasks
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+    auto channel = std::make_shared<result_channel>(executor_, buckets);
+
+    // Launch parallel tasks
     for (size_t bucket = 0; bucket < buckets; ++bucket) {
-        dispatch_.concurrent(&populate_transaction::populate_inputs, this, tx, chain_height, bucket, buckets, join_handler);
+        ::asio::post(executor_, [this, tx, chain_height, bucket, buckets, channel]() {
+            auto result = populate_inputs_sync(tx, chain_height, bucket, buckets);
+            channel->try_send(std::error_code{}, result);
+        });
     }
+
+    // Wait for all results - return first error or success if all succeed
+    code final_result = error::success;
+    for (size_t i = 0; i < buckets; ++i) {
+        auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+        if (ec) {
+            // Channel error - shouldn't happen
+            co_return error::operation_failed;
+        }
+        if (result != error::success && final_result == error::success) {
+            final_result = result;
+        }
+    }
+
+    co_return final_result;
 }
 
-void populate_transaction::populate_inputs(transaction_const_ptr tx, size_t chain_height, size_t bucket, size_t buckets, result_handler handler) const {
+code populate_transaction::populate_inputs_sync(transaction_const_ptr tx, size_t chain_height, size_t bucket, size_t buckets) const {
     KTH_ASSERT(bucket < buckets);
     auto const& inputs = tx->inputs();
 
@@ -99,7 +122,7 @@ void populate_transaction::populate_inputs(transaction_const_ptr tx, size_t chai
 
     }
 
-    handler(error::success);
+    return error::success;
 }
 
 } // namespace kth::blockchain

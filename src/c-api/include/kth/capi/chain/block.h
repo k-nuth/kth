@@ -9,7 +9,6 @@
 
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
-#include <kth/capi/chain/script_flags.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -104,7 +103,7 @@ KTH_EXPORT
 kth_error_code_t kth_chain_block_check(kth_block_const_t self);
 
 KTH_EXPORT
-kth_error_code_t kth_chain_block_connect(kth_block_const_t self);
+kth_error_code_t kth_chain_block_check_body(kth_block_const_t self);
 
 /** @return Owned `kth_hash_list_mut_t`. Caller must release with `kth_core_hash_list_destruct`. */
 KTH_EXPORT KTH_OWNED
@@ -187,19 +186,10 @@ KTH_EXPORT
 kth_size_t kth_chain_block_total_inputs(kth_block_const_t self, kth_bool_t with_coinbase);
 
 KTH_EXPORT
-kth_error_code_t kth_chain_block_accept(kth_block_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_block_size_dynamic, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transactions);
-
-KTH_EXPORT
 uint64_t kth_chain_block_reward(kth_block_const_t self, kth_size_t height);
 
 KTH_EXPORT
 kth_size_t kth_chain_block_signature_operations(kth_block_const_t self, kth_bool_t bip16, kth_bool_t bip141);
-
-KTH_EXPORT
-kth_error_code_t kth_chain_block_accept_transactions(kth_block_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint);
-
-KTH_EXPORT
-kth_error_code_t kth_chain_block_connect_transactions(kth_block_const_t self, kth_chain_state_const_t state);
 
 KTH_EXPORT
 void kth_chain_block_reset(kth_block_mut_t self);

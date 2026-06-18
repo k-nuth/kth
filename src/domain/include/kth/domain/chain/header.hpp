@@ -106,8 +106,6 @@ public:
     bool is_valid_proof_of_work(bool retarget = true) const;
 
     code check(bool retarget = false) const;
-    code accept(chain_state const& state) const;
-
 
     // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
     mutable validation_t validation{};

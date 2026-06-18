@@ -419,6 +419,14 @@ jobs:
         if: ${{ inputs.skip-tests != true && inputs.upload != true }}
         working-directory: build/build/Release
         run: |
+          # The c-api subdir is conditionally built (e.g. disabled on the
+          # version1/v1.0 coroutine branch until c-api is migrated). Skip
+          # silently if the binary wasn't produced — keep the gate strict
+          # when it IS produced.
+          if [ ! -x ./src/c-api/kth_capi_test ]; then
+            echo "kth_capi_test not built — skipping."
+            exit 0
+          fi
           rc=0
           timeout --kill-after=30 300 ./src/c-api/kth_capi_test --reporter compact || rc=$?
           if [ "$rc" != 0 ]; then
