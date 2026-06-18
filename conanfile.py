@@ -147,8 +147,13 @@ class KthRecipe(KnuthConanFileV2):
         "use_scalar": ""
     }
 
-    # exports_sources = "src/*", "CMakeLists.txt", "ci_utils/cmake/*", "cmake/*", "knuthbuildinfo.cmake","include/*", "test/*", "console/*"
-    exports_sources = "src/*", "include/*", "data/*", "CMakeLists.txt", "cmake/*", "ci_utils/cmake/*"
+    # `data/utxo_bloom.dat` (~68 MB) lives under `data/` but is intentionally
+    # NOT included in the recipe export: the Conan remote caps source
+    # uploads below that size, and the bloom is build-data, not source.
+    # The bloom is consumed from `${CMAKE_SOURCE_DIR}/data/utxo_bloom.dat`
+    # when present (CI / git-checkout builds embed it); source-tarball
+    # rebuilds gracefully fall back to no-embed (slower IBD, still correct).
+    exports_sources = "src/*", "include/*", "CMakeLists.txt", "cmake/*", "ci_utils/cmake/*"
 
 
     @property
@@ -488,10 +493,15 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["node"].names["cmake_find_package"] = "node"
         self.cpp_info.components["node"].names["cmake_find_package_multi"] = "node"
         self.cpp_info.components["node"].defines = [currency_define] + static_defines
-        # Node depends on blockchain and optionally network (if not Emscripten)
+        # Node depends on blockchain and optionally network (if not Emscripten).
+        # ftxui is consumed by the node-exe TUI dashboard (executable, not a
+        # library component); listing it here keeps Conan 2's strict
+        # "every direct dependency must be used by some component" check
+        # happy. It's a no-op for library consumers.
         node_requires = ["blockchain"]
         if self.settings.os != "Emscripten":
             node_requires.append("network")
+            node_requires.append("ftxui::ftxui")
         self.cpp_info.components["node"].requires = node_requires
         
         # Optional components

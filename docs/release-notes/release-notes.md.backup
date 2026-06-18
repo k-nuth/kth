@@ -1,3 +1,24 @@
+# version 0.84.0
+
+You can install Knuth node version v0.84.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* ci: temporarily disable kth_readme_*_runtime tests by @fpelliccioni in https://github.com/k-nuth/kth/pull/343
+* ci: split Linux into Build & Test + Sanitizers; fix ccache hit rate on macOS by @fpelliccioni in https://github.com/k-nuth/kth/pull/344
+* consensus(bch): switch Leibniz (2026-May) to height-based activation by @fpelliccioni in https://github.com/k-nuth/kth/pull/346
+* test(domain): cover chain_state activation MTP gate by @fpelliccioni in https://github.com/k-nuth/kth/pull/345
+* ci: stop death-test core dumps from wedging the runner, split tests per binary by @fpelliccioni in https://github.com/k-nuth/kth/pull/347
+* fix(c-api): plug ASan-detected leaks in kth_capi_test by @fpelliccioni in https://github.com/k-nuth/kth/pull/349
+* ci(macos): chase ccache hit rate + add gate and ccache log artifact by @fpelliccioni in https://github.com/k-nuth/kth/pull/348
+* ci: pin all third-party actions to full-length commit SHAs by @fpelliccioni in https://github.com/k-nuth/kth/pull/350
+* ci: fix Conan cache path (Conan 2.x lives in ~/.conan2, not ~/.conan/data) by @fpelliccioni in https://github.com/k-nuth/kth/pull/351
+* ci: make Setup Conan idempotent against a pre-populated ~/.conan2 by @fpelliccioni in https://github.com/k-nuth/kth/pull/352
+* release: 0.84.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/353
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.83.0...v0.84.0
+
+
 # version 0.83.0
 
 You can install Knuth node version v0.83.0 [using these instructions](https://kth.cash/#download).
