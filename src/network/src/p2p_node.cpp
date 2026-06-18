@@ -462,15 +462,6 @@ peer_manager& p2p_node::peers() {
     return manager_;
 }
 
-std::vector<peer_session::ptr> p2p_node::get_peers() const {
-    // Note: This is a blocking call that runs the coroutine synchronously.
-    // For async access, use peers().all() directly.
-    std::vector<peer_session::ptr> result;
-    // For now, return empty - callers should use the async version
-    // TODO: Consider removing this sync method or implementing properly
-    return result;
-}
-
 concurrent_channel<peer_notification>& p2p_node::peer_events() {
     return *peer_notification_channel_;
 }

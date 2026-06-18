@@ -248,10 +248,6 @@ public:
     [[nodiscard]]
     peer_manager& peers();
 
-    /// Get a copy of all connected peer sessions
-    [[nodiscard]]
-    std::vector<peer_session::ptr> get_peers() const;
-
     /// Get the channel that receives peer lifecycle events (CSP pattern)
     /// Use this to subscribe to peer connection/disconnection events.
     [[nodiscard]]

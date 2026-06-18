@@ -331,8 +331,10 @@ private:
     std::vector<index_t> skip_indices_;
     std::vector<int32_t> heights_;
     std::vector<uint256_t> chain_works_;
-    // TODO(fernando): if we find data races causing issues, consider using atomics again
-    // std::unique_ptr<std::atomic<uint32_t>[]> statuses_;  // atomic array for lock-free status updates
+    // statuses_ is protected by CFM's bucket lock (acquired through
+    // insert_and_visit/visit). If readers ever observe a torn status,
+    // switch to `std::unique_ptr<std::atomic<uint32_t>[]>` so the field
+    // can be updated lock-free.
     std::vector<uint32_t> statuses_;
     std::vector<uint32_t> versions_;
     std::vector<hash_digest> merkle_roots_;

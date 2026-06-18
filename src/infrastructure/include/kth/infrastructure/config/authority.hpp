@@ -5,8 +5,6 @@
 #ifndef KTH_INFRASTRUCTURE_CONFIG_AUTHORITY_HPP
 #define KTH_INFRASTRUCTURE_CONFIG_AUTHORITY_HPP
 
-// TODO(fernando): refactor authority to separate validation from state mutation
-
 #include <cstdint>
 #include <iostream>
 #include <string>

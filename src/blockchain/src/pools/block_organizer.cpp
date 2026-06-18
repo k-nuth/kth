@@ -86,8 +86,13 @@ bool block_organizer::stop() {
 ::asio::awaitable<code> block_organizer::organize(block_const_ptr block, bool headers_pre_validated) {
     // Critical Section
     ///////////////////////////////////////////////////////////////////////////
-    mutex_.lock_high_priority(); //TODO: is it possible to remove this mutex?
-    //TODO: any smart way to avoid blocking other high priority tasks during await?
+    // The mutex is held across `co_await` calls below (validator_.check,
+    // populator_.populate, ...). This serialises concurrent `organize()`
+    // callers against each other — necessary for now because the legacy
+    // pool/validator code paths assume single-writer semantics. Replacing
+    // this with a serialising channel (CSP) would unblock higher-priority
+    // tasks while a block validates; that refactor is out of scope here.
+    mutex_.lock_high_priority();
 
     if (stopped()) {
         mutex_.unlock_high_priority();

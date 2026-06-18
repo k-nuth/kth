@@ -51,8 +51,7 @@ using database::heights_t;
 struct KB_API block_chain {
     using executor_type = ::asio::any_io_executor;
 
-    //TODO: unordered_flat_map or concurrent_flat_map  (do we need concurrency here?)
-    using mempool_mini_hash_map = std::unordered_map<mini_hash, domain::chain::transaction>;
+    using mempool_mini_hash_map = boost::unordered_flat_map<mini_hash, domain::chain::transaction>;
 
     // =========================================================================
     // CONSTRUCTION

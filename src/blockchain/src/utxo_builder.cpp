@@ -845,15 +845,10 @@ std::shared_ptr<database::utxo_bloom_filter const> load_utxo_bloom() {
             // ===== TIMING: Process batch (delta + serialization) =====
             auto t_process_start = clock::now();
 
-            // Old domain-object path (for reference / parallel_batch):
-            //   utxo_delta delta;
-            //   if (strategy == utxo_build_strategy::parallel_batch) {
-            //       delta = co_await process_blocks_parallel(pool, blocks_ctx);
-            //   } else {
-            //       delta = process_blocks_sequential(blocks_ctx);
-            //   }
-            // TODO: parallel_batch — post process_compact_block_utxos to thread pool,
-            //       then merge results in order (same pattern as process_blocks_parallel).
+            // Sequential path. A parallel variant (post per-block work to
+            // the thread pool, then merge deltas in order) is feasible but
+            // not yet wired in; the sequential path is what current IBD
+            // exercises.
             utxo_raw_delta delta;
             for (size_t i = 0; i < compact_blocks.size(); ++i) {
                 uint32_t h = batch_start + static_cast<uint32_t>(i);

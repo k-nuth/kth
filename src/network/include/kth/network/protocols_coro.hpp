@@ -432,46 +432,6 @@ KN_API ::asio::awaitable<code> send_not_found(
     domain::message::not_found const& not_found);
 
 // -----------------------------------------------------------------------------
-// Message Parsing Helpers
-// -----------------------------------------------------------------------------
-
-/// Parse a getheaders message from raw bytes
-[[nodiscard]]
-KN_API std::expected<domain::message::get_headers, code> parse_getheaders(
-    raw_message const& raw,
-    uint32_t version);
-
-/// Parse a getdata message from raw bytes
-[[nodiscard]]
-KN_API std::expected<domain::message::get_data, code> parse_getdata(
-    raw_message const& raw,
-    uint32_t version);
-
-/// Parse an inventory message from raw bytes
-[[nodiscard]]
-KN_API std::expected<domain::message::inventory, code> parse_inventory(
-    raw_message const& raw,
-    uint32_t version);
-
-/// Parse a headers message from raw bytes
-[[nodiscard]]
-KN_API std::expected<domain::message::headers, code> parse_headers(
-    raw_message const& raw,
-    uint32_t version);
-
-// /// Parse a block message from raw bytes
-// [[nodiscard]]
-// KN_API std::expected<domain::message::block, code> parse_block(
-//     raw_message const& raw,
-//     uint32_t version);
-
-/// Parse a transaction message from raw bytes
-[[nodiscard]]
-KN_API std::expected<domain::message::transaction, code> parse_transaction(
-    raw_message const& raw,
-    uint32_t version);
-
-// -----------------------------------------------------------------------------
 // Message Loop Handler
 // -----------------------------------------------------------------------------
 
