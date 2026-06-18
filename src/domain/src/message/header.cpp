@@ -6,11 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <istream>
-#include <utility>
 
-#include <kth/domain/chain/header.hpp>
-#include <kth/domain/chain/transaction.hpp>
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/utility/container_sink.hpp>
@@ -24,40 +20,17 @@ uint32_t const header::version_maximum = version::level::maximum;
 
 size_t header::satoshi_fixed_size(uint32_t version) {
     auto const canonical = (version == version::level::canonical);
-    return chain::header::satoshi_fixed_size() + (canonical ? 0 : infrastructure::message::variable_uint_size(0));
-}
-
-header::header(uint32_t version,
-               hash_digest const& previous_block_hash,
-               hash_digest const& merkle,
-               uint32_t timestamp,
-               uint32_t bits,
-               uint32_t nonce)
-    : chain::header(version, previous_block_hash, merkle, timestamp, bits, nonce)
-{}
-
-header::header(chain::header const& x)
-    : chain::header(x) {
-}
-
-header& header::operator=(chain::header const& x) {
-    chain::header::operator=(x);
-    return *this;
-}
-
-header& header::operator=(header const& x) {
-    chain::header::operator=(x);
-    return *this;
+    return chain::header::satoshi_fixed_size() +
+           (canonical ? 0 : infrastructure::message::variable_uint_size(0));
 }
 
 // Deserialization.
 //-----------------------------------------------------------------------------
 
-// static
 expect<header> header::from_data(byte_reader& reader, uint32_t version) {
-    auto header = chain::header::from_data(reader);
-    if ( ! header) {
-        return std::unexpected(header.error());
+    auto chain_header = chain::header::from_data(reader, true);  // wire=true
+    if ( ! chain_header) {
+        return std::unexpected(chain_header.error());
     }
 
     // The header message must trail a zero byte (yes, it's stoopid).
@@ -71,7 +44,8 @@ expect<header> header::from_data(byte_reader& reader, uint32_t version) {
             return std::unexpected(error::version_too_new);
         }
     }
-    return header;
+
+    return header{*chain_header};
 }
 
 // Serialization.
@@ -91,10 +65,6 @@ data_chunk header::to_data(uint32_t version) const {
 void header::to_data(uint32_t version, data_sink& stream) const {
     ostream_writer sink_w(stream);
     to_data(version, sink_w);
-}
-
-void header::reset() {
-    chain::header::reset();
 }
 
 size_t header::serialized_size(uint32_t version) const {

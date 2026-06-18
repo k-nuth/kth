@@ -744,7 +744,7 @@ TEST_CASE("internal database  insert block genesis and get", "[None]") {
 
 
     auto const& m = block.generate_merkle_root();
-    auto const& m2 = block.header().merkle();
+    auto const m2 = block.header().merkle();
 
     REQUIRE(block.is_valid_merkle_root() == true);
 }

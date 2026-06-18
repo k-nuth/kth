@@ -31,9 +31,14 @@ void block_pool::add(block_const_ptr valid_block) {
     ////KTH_ASSERT( ! block->validation.error);
     block_entry entry{ valid_block };
 
-    // Not all blocks will have validation state.
-    ////KTH_ASSERT(block->validation.state);
-    auto height = valid_block->header().validation.height;
+    // Height previously came from header().validation.height; the header
+    // is now a pure value type, so we read it from the block's chain_state
+    // which is populated by the validator before the block reaches the pool.
+    // Fall back to 0 to preserve the legacy semantics when an unvalidated
+    // block (no chain_state) is added — e.g. dedup-only test paths.
+    auto height = valid_block->validation.state
+        ? static_cast<size_t>(valid_block->validation.state->height())
+        : size_t{0};
     auto const& left = blocks_.left;
 
     // Caller ensure the entry does not exist by using get_path, but
@@ -94,7 +99,8 @@ void block_pool::remove(block_const_ptr_list_const_ptr accepted_blocks) {
 
         // Copy the entry so that it can be deleted and replanted with height.
         auto const copy = it->first;
-        auto const height = copy.block()->header().validation.height;
+        KTH_ASSERT(copy.block()->validation.state);
+        auto const height = static_cast<size_t>(copy.block()->validation.state->height());
         KTH_ASSERT(it->second == 0);
 
         // Critical Section
@@ -116,7 +122,9 @@ void block_pool::prune(hash_list const& hashes, size_t minimum_height) {
         auto const it = left.find(block_entry{ hash });
         KTH_ASSERT(it != left.end());
 
-        auto const height = it->first.block()->header().validation.height;
+        KTH_ASSERT(it->first.block()->validation.state);
+        auto const height = static_cast<size_t>(
+            it->first.block()->validation.state->height());
 
         // Delete all roots and expired non-roots and recurse their children.
         if (it->second != 0 || height < minimum_height) {

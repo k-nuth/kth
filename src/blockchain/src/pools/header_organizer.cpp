@@ -109,7 +109,7 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
     // it matches an older block in our chain. If so, these are stale/duplicate headers
     // that can be silently skipped.
     if (!headers.empty()) {
-        auto const& first_prev_hash = headers.front().previous_block_hash();
+        auto const first_prev_hash = headers.front().previous_block_hash();
         spdlog::debug("[header_organizer] First header prev_hash: {}",
             encode_hash(first_prev_hash));
 
@@ -142,7 +142,7 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
     for (auto const& header : headers) {
         // Compute hash first (needed for validation)
         KTH_STATS_TIME_START(hash);
-        auto const hash = header.hash();
+        auto const hash = domain::chain::hash(header);
         KTH_STATS_TIME_END(global_sync_stats(), hash, hash_time_ns, hash_calls);
 
         // Validate header with full chain-state validation

@@ -36,8 +36,9 @@ TEST_CASE("block entry  construct2  default block hash  round trips", "[block en
 
 TEST_CASE("block entry  parent  hash42  expected", "[block entry tests]")
 {
-    auto const block = std::make_shared<domain::message::block>();
-    block->header().set_previous_block_hash(hash42);
+    domain::chain::header const hdr{0, hash42, null_hash, 0, 0, 0};
+    auto const block = std::make_shared<domain::message::block>(
+        hdr, domain::chain::transaction::list{});
     block_entry instance(block);
     REQUIRE(instance.parent() == hash42);
 }
@@ -65,8 +66,9 @@ TEST_CASE("block entry  add child  two  expected order", "[block entry tests]") 
     auto const child1 = std::make_shared<const domain::message::block>();
     instance.add_child(child1);
 
-    auto const child2 = std::make_shared<domain::message::block>();
-    child2->header().set_previous_block_hash(hash42);
+    domain::chain::header const hdr{0, hash42, null_hash, 0, 0, 0};
+    auto const child2 = std::make_shared<domain::message::block>(
+        hdr, domain::chain::transaction::list{});
     instance.add_child(child2);
 
     REQUIRE(instance.children().size() == 2u);
