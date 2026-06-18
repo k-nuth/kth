@@ -26,6 +26,7 @@ peers.dat
 build_asan/
 Testing/
 utxo-z/
+blockchain-old/
 
 # Local working notes (not for upstream)
 TODO.md

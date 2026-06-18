@@ -5,6 +5,7 @@
 #include <kth/network/settings.hpp>
 
 #include <kth/domain.hpp>
+#include <kth/network/net_permissions.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 
 namespace kth::network {
@@ -14,7 +15,7 @@ using namespace kd::message;
 
 // Common default values (no settings context).
 settings::settings()
-    : threads(0)
+    : threads(4)
     , protocol_maximum(version::level::maximum)
     , protocol_minimum(version::level::minimum)
     , services(version::service::node_network)
@@ -26,17 +27,19 @@ settings::settings()
     , relay_transactions(true)
     , validate_checksum(false)
     , inbound_connections(0)
-    , outbound_connections(8)
+    , outbound_connections(16)
     , manual_attempt_limit(0)
     , connect_batch_size(5)
     , connect_timeout_seconds(5)
     , channel_handshake_seconds(6000)
-    , channel_heartbeat_minutes(5)
+    , channel_heartbeat_minutes(2)  // BCHN: PING_INTERVAL = 2 minutes
     , channel_inactivity_minutes(10)
     , channel_expiration_minutes(60)
     , channel_germination_seconds(30)
     , host_pool_capacity(1000)
     , hosts_file("hosts.cache")
+    , banlist_file("banlist.dat")
+    , peers_file("peers.dat")
     , self(unspecified_network_address)
     // , bitcoin_cash(false)
 
@@ -50,7 +53,10 @@ settings::settings()
     , maximum_archive_files(0)
     , statistics_server(unspecified_network_address)
     , verbose(false)
-    , use_ipv6(true)
+    // Default to IPv4-only: kth's ASIO resolver path currently produces
+    // many "Host not found" errors for IPv6 peers; operators can opt in
+    // by setting `network.use_ipv6 = true` once that path is reviewed.
+    , use_ipv6(false)
 {}
 
 // Use push_back due to initializer_list bug:
@@ -77,6 +83,7 @@ settings::settings(domain::config::network context)
 
 #if defined(KTH_CURRENCY_BCH)
             identifier = netmagic::bch_mainnet;
+
             seeds.reserve(7);
             seeds.emplace_back("seed.flowee.cash", 8333);                     // Flowee
             seeds.emplace_back("btccash-seeder.bitcoinunlimited.info", 8333); // Bitcoin Unlimited
@@ -194,6 +201,75 @@ duration settings::channel_expiration() const {
 
 duration settings::channel_germination() const {
     return seconds(channel_germination_seconds);
+}
+
+namespace {
+
+// CIDR-style subnet membership over the 16-byte IPv6 representation.
+// prefix_bits=128 means an exact match; 0 matches everything.
+bool ip_in_subnet(infrastructure::message::ip_address const& target,
+                  infrastructure::message::ip_address const& subnet,
+                  uint8_t prefix_bits) {
+    if (prefix_bits >= 128) {
+        return target == subnet;
+    }
+    auto const whole_bytes = static_cast<size_t>(prefix_bits / 8);
+    auto const tail_bits = static_cast<uint8_t>(prefix_bits % 8);
+    for (size_t i = 0; i < whole_bytes; ++i) {
+        if (target[i] != subnet[i]) return false;
+    }
+    if (tail_bits != 0) {
+        uint8_t const mask = static_cast<uint8_t>(0xFFu << (8 - tail_bits));
+        if ((target[whole_bytes] & mask) != (subnet[whole_bytes] & mask)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+permission_flags settings::get_whitelist_permissions(
+    infrastructure::config::authority const& addr) const {
+
+    // Check whitelist entries for matching address (CIDR-aware).
+    for (auto const& entry : whitelist) {
+        if (ip_in_subnet(addr.ip(), entry.subnet.ip(), entry.prefix_bits)) {
+            return entry.flags;
+        }
+    }
+
+    return permission_flags::none;
+}
+
+permission_flags settings::apply_legacy_whitelist_permissions(permission_flags flags) const {
+    // BCHN: NetPermissions::AddFlag in net_permissions.cpp
+    // This applies -whitelistforcerelay and -whitelistrelay legacy options
+    // to implicit permissions (permissions without explicit @permissions prefix)
+
+    if ( ! has_permission(flags, permission_flags::is_implicit)) {
+        // Explicit permissions - don't modify
+        return flags;
+    }
+
+    // Remove the implicit flag marker
+    clear_permission(flags, permission_flags::is_implicit);
+
+    // Apply legacy whitelist behavior
+    // BCHN: if (gArgs.GetBoolArg("-whitelistforcerelay", DEFAULT_WHITELISTFORCERELAY))
+    if (whitelist_force_relay) {
+        add_permission(flags, permission_flags::forcerelay);
+    }
+
+    // BCHN: if (gArgs.GetBoolArg("-whitelistrelay", DEFAULT_WHITELISTRELAY))
+    if (whitelist_relay) {
+        add_permission(flags, permission_flags::relay);
+    }
+
+    // BCHN also adds noban by default for implicit whitelist
+    add_permission(flags, permission_flags::noban);
+
+    return flags;
 }
 
 } // namespace kth::network

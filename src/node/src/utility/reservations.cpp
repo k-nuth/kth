@@ -22,7 +22,7 @@ namespace kth::node {
 using namespace kth::blockchain;
 using namespace kth::domain::chain;
 
-reservations::reservations(check_list& hashes, fast_chain& chain, settings const& settings)
+reservations::reservations(check_list& hashes, block_chain& chain, settings const& settings)
     : hashes_(hashes)
     , max_request_(max_get_data)
     , timeout_(settings.sync_timeout_seconds)

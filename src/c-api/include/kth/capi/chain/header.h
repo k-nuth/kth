@@ -144,9 +144,6 @@ KTH_EXPORT
 kth_error_code_t kth_chain_header_check(kth_header_const_t self, kth_bool_t retarget);
 
 KTH_EXPORT
-kth_error_code_t kth_chain_header_accept(kth_header_const_t self, kth_chain_state_const_t state);
-
-KTH_EXPORT
 void kth_chain_header_reset(kth_header_mut_t self);
 
 

@@ -212,13 +212,6 @@ kth_error_code_t kth_chain_header_check(kth_header_const_t self, kth_bool_t reta
     return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check(retarget_cpp));
 }
 
-kth_error_code_t kth_chain_header_accept(kth_header_const_t self, kth_chain_state_const_t state) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(state != nullptr);
-    auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).accept(state_cpp));
-}
-
 void kth_chain_header_reset(kth_header_mut_t self) {
     KTH_PRECONDITION(self != nullptr);
     kth::cpp_ref<cpp_t>(self).reset();

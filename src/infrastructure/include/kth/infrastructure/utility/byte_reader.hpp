@@ -35,6 +35,9 @@ struct byte_reader {
     size_t buffer_size() const { return buffer_.size(); }
 
     [[nodiscard]] constexpr
+    byte_span buffer() const { return buffer_; }
+
+    [[nodiscard]] constexpr
     size_t remaining_size() const { return buffer_.size() - position_; }
 
     [[nodiscard]] constexpr
