@@ -9,9 +9,11 @@ on:
       - 'dev-publish/**' # development branches that publish packages
     tags:
       - v* # semver release
-  pull_request: # runs tests only for PRs to master
+  pull_request: # runs tests for PRs to master and to long-lived integration branches
     branches:
       - master
+      - version1   # v1.0 integration branch (PR #151); stacked PRs land here first
+      - v0.x       # v0.x maintenance branch
   workflow_dispatch: {}
 
 concurrency:

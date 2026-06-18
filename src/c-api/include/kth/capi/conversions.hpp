@@ -43,7 +43,7 @@
 #include <kth/domain/wallet/wallet_manager.hpp>
 
 // #ifndef __EMSCRIPTEN__
-#include <kth/blockchain/interface/safe_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 // #endif
 
 // Element type for the hand-written `kth_wallet_ec_compressed_list`

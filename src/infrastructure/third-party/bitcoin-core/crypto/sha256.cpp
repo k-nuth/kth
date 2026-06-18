@@ -60,6 +60,8 @@ void Transform_2way(unsigned char* out, const unsigned char* in);
 }
 #endif // DISABLE_OPTIMIZED_SHA256
 
+namespace kth {
+
 // Internal implementation code.
 namespace
 {
@@ -779,3 +781,5 @@ void SHA256D64(unsigned char* out, const unsigned char* in, size_t blocks)
         --blocks;
     }
 }
+
+} // namespace kth

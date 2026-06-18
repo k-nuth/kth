@@ -10,7 +10,7 @@
 #include <unordered_map>
 
 
-#if defined(ASIO_STANDALONE)
+#if defined(KTH_ASIO_STANDALONE)
 #include <asio/error_code.hpp>
 #else
 #include <boost/system/error_code.hpp>
@@ -32,7 +32,7 @@ using code = std::error_code;
 
 /// Alias for boost error code declarations.
 
-#if defined(ASIO_STANDALONE)
+#if defined(KTH_ASIO_STANDALONE)
 using boost_code = ::asio::error_code;
 #else
 using boost_code = boost::system::error_code;

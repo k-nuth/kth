@@ -94,6 +94,6 @@ kth_bool_t kth_chain_is_stale(kth_chain_t chain);
 // Subscribers.
 //-------------------------------------------------------------------------
 
-//virtual void subscribe_blockchain(reorganize_handler&& handler) = 0;
+//virtual void subscribe_blockchain(block_handler&& handler) = 0;
 //virtual void subscribe_transaction(transaction_handler&& handler) = 0;
 

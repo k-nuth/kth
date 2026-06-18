@@ -58,7 +58,7 @@ kth_encrypted_seed_t kth_wallet_wallet_data_encrypted_seed(kth_wallet_data_const
 void kth_wallet_wallet_data_set_mnemonics(kth_wallet_data_mut_t self, kth_string_list_const_t value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth::cpp_ref<std::vector<std::string>>(value);
+    auto const& value_cpp = kth::cpp_ref<kth::string_list>(value);
     kth::cpp_ref<cpp_t>(self).mnemonics = value_cpp;
 }
 
@@ -88,7 +88,22 @@ void kth_wallet_wallet_data_set_encrypted_seed_unsafe(kth_wallet_data_mut_t self
 
 // Static utilities
 
-kth_error_code_t kth_wallet_create(char const* password, char const* normalized_passphrase, KTH_OUT_OWNED kth_wallet_data_mut_t* out) {
+kth_error_code_t kth_wallet_create(char const* password, char const* normalized_passphrase, kth_dictionary_const_t lexicon, KTH_OUT_OWNED kth_wallet_data_mut_t* out) {
+    KTH_PRECONDITION(password != nullptr);
+    KTH_PRECONDITION(normalized_passphrase != nullptr);
+    KTH_PRECONDITION(lexicon != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const password_cpp = std::string(password);
+    auto const normalized_passphrase_cpp = std::string(normalized_passphrase);
+    auto const& lexicon_cpp = kth::cpp_ref<std::array<const char *, 2048>>(lexicon);
+    auto result = kth::domain::wallet::create(password_cpp, normalized_passphrase_cpp, lexicon_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
+kth_error_code_t kth_wallet_create_simple(char const* password, char const* normalized_passphrase, KTH_OUT_OWNED kth_wallet_data_mut_t* out) {
     KTH_PRECONDITION(password != nullptr);
     KTH_PRECONDITION(normalized_passphrase != nullptr);
     KTH_PRECONDITION(out != nullptr);

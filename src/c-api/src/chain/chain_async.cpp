@@ -4,26 +4,27 @@
 
 #include <kth/capi/chain/chain_async.h>
 #include <cstdio>
-#include <latch>
 #include <memory>
-
-// #include <boost/thread/latch.hpp>
+#include <system_error>
 
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/message/merkle_block.hpp>
 #include <kth/domain/chain/transaction.hpp>
-#include <kth/blockchain/interface/safe_chain.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
 
 #include <kth/capi/chain/block_list.h>
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
 
+#include <asio/co_spawn.hpp>
+#include <asio/detached.hpp>
+
 namespace {
 
 inline
-kth::blockchain::safe_chain& safe_chain(kth_chain_t chain) {
-    return *static_cast<kth::blockchain::safe_chain*>(chain);
+kth::blockchain::block_chain& safe_chain(kth_chain_t chain) {
+    return *static_cast<kth::blockchain::block_chain*>(chain);
 }
 
 inline
@@ -32,13 +33,6 @@ kth::domain::message::transaction::const_ptr tx_shared(kth_transaction_const_t t
     auto* tx_new = new kth::domain::message::transaction(tx_ref);
     return kth::domain::message::transaction::const_ptr(tx_new);
 }
-
-// inline
-// kth::domain::chain::transaction::const_ptr tx_shared(kth_transaction_t tx) {
-//     auto const& tx_ref = *static_cast<kth::domain::chain::transaction const*>(tx);
-//     auto* tx_new = new kth::domain::chain::transaction(tx_ref);
-//     return kth::domain::chain::transaction::const_ptr(tx_new);
-// }
 
 inline
 kth::domain::message::block::const_ptr block_shared(kth_block_const_t block) {
@@ -54,147 +48,257 @@ kth::domain::message::block::const_ptr block_shared(kth_block_const_t block) {
 extern "C" {
 
 void kth_chain_async_last_height(kth_chain_t chain, void* ctx, kth_last_height_fetch_handler_t handler) {
-    safe_chain(chain).fetch_last_height([chain, ctx, handler](std::error_code const& ec, size_t h) {
-        handler(chain, ctx, kth::to_c_err(ec), h);
-    });
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_last_height();
+        if (result) {
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), result->block);
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), 0);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_block_height(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_block_height_fetch_handler_t handler) {
     auto hash_cpp = kth::to_array(hash.hash);
-    safe_chain(chain).fetch_block_height(hash_cpp, [chain, ctx, handler](std::error_code const& ec, size_t h) {
-        handler(chain, ctx, kth::to_c_err(ec), h);
-    });
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_block_height(hash_cpp);
+        if (result) {
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), *result);
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), 0);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_block_header_by_height(kth_chain_t chain, void* ctx, kth_size_t height, kth_block_header_fetch_handler_t handler) {
-    safe_chain(chain).fetch_block_header(height, [chain, ctx, handler](std::error_code const& ec, kth::domain::chain::header::ptr header, size_t h) {
-        handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(header, ec), h);
-    });
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, height, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_block_header(height);
+        if (result) {
+            auto const& [header, h] = *result;
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(header, std::error_code{}), h);
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_block_header_by_hash(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_block_header_fetch_handler_t handler) {
     auto hash_cpp = kth::to_array(hash.hash);
-    safe_chain(chain).fetch_block_header(hash_cpp, [chain, ctx, handler](std::error_code const& ec, kth::domain::chain::header::ptr header, size_t h) {
-        handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(header, ec), h);
-    });
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_block_header(hash_cpp);
+        if (result) {
+            auto const& [header, h] = *result;
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(header, std::error_code{}), h);
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_block_by_height(kth_chain_t chain, void* ctx, kth_size_t height, kth_block_fetch_handler_t handler) {
-    safe_chain(chain).fetch_block(height, [chain, ctx, handler](std::error_code const& ec, kth::domain::message::block::const_ptr block, size_t h) {
-        handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(block, ec), h);
-    });
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, height, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_block(height);
+        if (result) {
+            auto const& [block, h] = *result;
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(block, std::error_code{}), h);
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_block_by_hash(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_block_fetch_handler_t handler) {
     auto hash_cpp = kth::to_array(hash.hash);
-    safe_chain(chain).fetch_block(hash_cpp, [chain, ctx, handler](std::error_code const& ec, kth::domain::message::block::const_ptr block, size_t h) {
-        handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(block, ec), h);
-    });
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_block(hash_cpp);
+        if (result) {
+            auto const& [block, h] = *result;
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(block, std::error_code{}), h);
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_block_header_by_hash_txs_size(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_block_header_txs_size_fetch_handler_t handler) {
     auto hash_cpp = kth::to_array(hash.hash);
-
-    safe_chain(chain).fetch_block_header_txs_size(hash_cpp, [chain, ctx, handler](std::error_code const& ec, kth::domain::message::header::const_ptr header, size_t block_height, std::shared_ptr<kth::hash_list> tx_hashes, uint64_t block_serialized_size) {
-        handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(header, ec), block_height, kth::leak_if_success(tx_hashes, ec), block_serialized_size);
-    });
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_block_header_txs_size(hash_cpp);
+        if (result) {
+            auto const& [header, block_height, tx_hashes, block_serialized_size] = *result;
+            handler(chain, ctx, kth::to_c_err(std::error_code{}),
+                    kth::leak_if_success(header, std::error_code{}),
+                    block_height,
+                    kth::leak_if_success(tx_hashes, std::error_code{}),
+                    block_serialized_size);
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0, nullptr, 0);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_merkle_block_by_height(kth_chain_t chain, void* ctx, kth_size_t height, kth_merkle_block_fetch_handler_t handler) {
-    safe_chain(chain).fetch_merkle_block(height, [chain, ctx, handler](std::error_code const& ec, kth::domain::message::merkle_block::const_ptr block, size_t h) {
-        handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(block, ec), h);
-    });
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, height, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_merkle_block(height);
+        if (result) {
+            auto const& [block, h] = *result;
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(block, std::error_code{}), h);
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_merkle_block_by_hash(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_merkle_block_fetch_handler_t handler) {
     auto hash_cpp = kth::to_array(hash.hash);
-    safe_chain(chain).fetch_merkle_block(hash_cpp, [chain, ctx, handler](std::error_code const& ec, kth::domain::message::merkle_block::const_ptr block, size_t h) {
-        handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(block, ec), h);
-    });
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_merkle_block(hash_cpp);
+        if (result) {
+            auto const& [block, h] = *result;
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(block, std::error_code{}), h);
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_compact_block_by_height(kth_chain_t chain, void* ctx, kth_size_t height, kth_compact_block_fetch_handler_t handler) {
-    safe_chain(chain).fetch_compact_block(height, [chain, ctx, handler](std::error_code const& ec, kth::domain::message::compact_block::const_ptr block, size_t h) {
-        handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(block, ec), h);
-    });
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, height, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_compact_block(height);
+        if (result) {
+            auto const& [block, h] = *result;
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(block, std::error_code{}), h);
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_compact_block_by_hash(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_compact_block_fetch_handler_t handler) {
     auto hash_cpp = kth::to_array(hash.hash);
-
-    safe_chain(chain).fetch_compact_block(hash_cpp, [chain, ctx, handler](std::error_code const& ec, kth::domain::message::compact_block::const_ptr block, size_t h) {
-        handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(block, ec), h);
-    });
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_compact_block(hash_cpp);
+        if (result) {
+            auto const& [block, h] = *result;
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(block, std::error_code{}), h);
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_block_by_height_timestamp(kth_chain_t chain, void* ctx, kth_size_t height, kth_blockhash_timestamp_fetch_handler_t handler) {
-    safe_chain(chain).fetch_block_hash_timestamp(height, [chain, ctx, handler](std::error_code const& ec, kth::hash_digest const& hash, uint32_t timestamp, size_t h) {
-        if (ec == kth::error::success) {
-            handler(chain, ctx, kth::to_c_err(ec), kth::to_hash_t(hash), timestamp, h);
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, height, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_block_hash_timestamp(height);
+        if (result) {
+            auto const& [hash, timestamp, h] = *result;
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::to_hash_t(hash), timestamp, h);
         } else {
-            handler(chain, ctx, kth::to_c_err(ec), kth::to_hash_t(kth::null_hash), 0, h);
+            handler(chain, ctx, kth::to_c_err(result.error()), kth::to_hash_t(kth::null_hash), 0, 0);
         }
-    });
+    }, ::asio::detached);
 }
 
 void kth_chain_async_transaction(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_bool_t require_confirmed, kth_transaction_fetch_handler_t handler) {
-    //precondition:  [hash, 32] is a valid range
     auto hash_cpp = kth::to_array(hash.hash);
-    safe_chain(chain).fetch_transaction(hash_cpp, kth::int_to_bool(require_confirmed), [chain, ctx, handler](std::error_code const& ec, kth::domain::message::transaction::const_ptr transaction, size_t i, size_t h) {
-        handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(transaction, ec), i, h);
-    });
+    auto const confirmed = kth::int_to_bool(require_confirmed);
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, confirmed, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_transaction(hash_cpp, confirmed);
+        if (result) {
+            auto const& [transaction, i, h] = *result;
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(transaction, std::error_code{}), i, h);
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0, 0);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_transaction_position(kth_chain_t chain, void* ctx, kth_hash_t hash, int require_confirmed, kth_transaction_index_fetch_handler_t handler) {
     auto hash_cpp = kth::to_array(hash.hash);
-
-    safe_chain(chain).fetch_transaction_position(hash_cpp, kth::int_to_bool(require_confirmed), [chain, ctx, handler](std::error_code const& ec, size_t position, size_t height) {
-        handler(chain, ctx, kth::to_c_err(ec), position, height);
-    });
+    auto const confirmed = kth::int_to_bool(require_confirmed);
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, confirmed, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_transaction_position(hash_cpp, confirmed);
+        if (result) {
+            auto const& [position, height] = *result;
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), position, height);
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), 0, 0);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_spend(kth_chain_t chain, void* ctx, kth_output_point_const_t op, kth_spend_fetch_handler_t handler) {
     auto const* outpoint_cpp = static_cast<kth::domain::chain::output_point const*>(op);
-
-    safe_chain(chain).fetch_spend(*outpoint_cpp, [chain, ctx, handler](std::error_code const& ec, kth::domain::chain::input_point input_point) {
-        handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(input_point, ec));
-    });
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, outpoint_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_spend(*outpoint_cpp);
+        if (result) {
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(*result, std::error_code{}));
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), nullptr);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_history(kth_chain_t chain, void* ctx, kth_payment_address_t address, kth_size_t limit, kth_size_t from_height, kth_history_fetch_handler_t handler) {
-    safe_chain(chain).fetch_history(kth::cpp_ref<kth::domain::wallet::payment_address>(address).hash20(), limit, from_height, [chain, ctx, handler](std::error_code const& ec, kth::domain::chain::history_compact::list history) {
-        handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(history, ec));
-    });
+    auto const addr_hash = kth::cpp_ref<kth::domain::wallet::payment_address>(address).hash20();
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, addr_hash, limit, from_height, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_history(addr_hash, limit, from_height);
+        if (result) {
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(*result, std::error_code{}));
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), nullptr);
+        }
+    }, ::asio::detached);
 }
 
 void kth_chain_async_confirmed_transactions(kth_chain_t chain, void* ctx, kth_payment_address_t address, uint64_t max, uint64_t start_height, kth_transactions_by_address_fetch_handler_t handler) {
-    safe_chain(chain).fetch_confirmed_transactions(kth::cpp_ref<kth::domain::wallet::payment_address>(address).hash20(), max, start_height, [chain, ctx, handler](std::error_code const& ec, std::vector<kth::hash_digest> const& txs) {
-        handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(txs, ec));
-    });
+    auto const addr_hash = kth::cpp_ref<kth::domain::wallet::payment_address>(address).hash20();
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, addr_hash, max, start_height, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_confirmed_transactions(addr_hash, max, start_height);
+        if (result) {
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(*result, std::error_code{}));
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), nullptr);
+        }
+    }, ::asio::detached);
 }
-
-// void kth_chain_async_stealth(kth_chain_t chain, void* ctx, kth_binary_t filter, uint64_t from_height, kth_stealth_fetch_handler_t handler) {
-// 	auto* filter_cpp_ptr = static_cast<kth::binary const*>(filter);
-// 	kth::binary const& filter_cpp = *filter_cpp_ptr;
-
-//     safe_chain(chain).fetch_stealth(filter_cpp, from_height, [chain, ctx, handler](std::error_code const& ec, kth::domain::chain::stealth_compact::list stealth) {
-//         handler(chain, ctx, kth::to_c_err(ec), kth::leak_if_success(stealth, ec));
-//     });
-// }
 
 // Organizers.
 //-------------------------------------------------------------------------
 
 void kth_chain_async_organize_block(kth_chain_t chain, void* ctx, kth_block_mut_t block, kth_result_handler_t handler) {
-    safe_chain(chain).organize(block_shared(block), [chain, ctx, handler](std::error_code const& ec) {
+    auto& bc = safe_chain(chain);
+    auto block_cpp = block_shared(block);
+    ::asio::co_spawn(bc.executor(), [&bc, block_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto ec = co_await bc.organize(block_cpp);
         handler(chain, ctx, kth::to_c_err(ec));
-    });
+    }, ::asio::detached);
 }
 
 void kth_chain_async_organize_transaction(kth_chain_t chain, void* ctx, kth_transaction_mut_t transaction, kth_result_handler_t handler) {
-    safe_chain(chain).organize(tx_shared(transaction), [chain, ctx, handler](std::error_code const& ec) {
+    auto& bc = safe_chain(chain);
+    auto tx_cpp = tx_shared(transaction);
+    ::asio::co_spawn(bc.executor(), [&bc, tx_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto ec = co_await bc.organize(tx_cpp);
         handler(chain, ctx, kth::to_c_err(ec));
-    });
+    }, ::asio::detached);
 }
 
 } // extern "C"

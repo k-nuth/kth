@@ -9,28 +9,33 @@
 #include <cstdint>
 
 #include <kth/blockchain/define.hpp>
-#include <kth/blockchain/interface/fast_chain.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/domain.hpp>
 
+#include <asio/any_io_executor.hpp>
+
 namespace kth::blockchain {
+
+// Forward declaration
+struct block_chain;
 
 /// This class is NOT thread safe.
 class KB_API populate_base {
 protected:
-    using result_handler = handle0;
+    using executor_type = ::asio::any_io_executor;
 
-    populate_base(dispatcher& dispatch, fast_chain const& chain);
+    populate_base(executor_type executor, size_t threads, block_chain const& chain);
 
-    void populate_duplicate(size_t maximum_height, const domain::chain::transaction& tx, bool require_confirmed) const;
+    void populate_duplicate(size_t maximum_height, domain::chain::transaction const& tx, bool require_confirmed) const;
     void populate_pooled(domain::chain::transaction const& tx, uint32_t height) const;
     void populate_prevout(size_t maximum_height, domain::chain::output_point const& outpoint, bool require_confirmed) const;
 
-    // This is thread safe.
-    dispatcher& dispatch_;
+    // Thread pool executor for parallel operations
+    executor_type executor_;
+    size_t threads_;
 
     // The store is protected by caller not invoking populate concurrently.
-    fast_chain const& fast_chain_;
+    block_chain const& chain_;
 };
 
 } // namespace kth::blockchain

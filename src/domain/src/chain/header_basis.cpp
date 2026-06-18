@@ -8,7 +8,6 @@
 #include <cstddef>
 #include <utility>
 
-#include <kth/domain/chain/chain_state.hpp>
 #include <kth/domain/chain/compact.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/infrastructure/error.hpp>
@@ -263,30 +262,6 @@ code header_basis::check(hash_digest const& hash, bool retarget) const {
 
     if ( ! is_valid_timestamp()) {
         return error::futuristic_timestamp;
-    }
-
-    return error::success;
-}
-
-code header_basis::accept(chain_state const& state, hash_digest const& hash) const {
-    if (bits_ != state.work_required()) {
-        return error::incorrect_proof_of_work;
-    }
-
-    if (state.is_checkpoint_conflict(hash)) {
-        return error::checkpoints_failed;
-    }
-
-    if (state.is_under_checkpoint()) {
-        return error::success;
-    }
-
-    if (version_ < state.minimum_version()) {
-        return error::old_version_block;
-    }
-
-    if (timestamp_ <= state.median_time_past()) {
-        return error::timestamp_too_early;
     }
 
     return error::success;

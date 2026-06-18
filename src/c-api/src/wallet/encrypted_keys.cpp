@@ -21,6 +21,7 @@ kth_bool_t kth_wallet_encrypted_keys_create_key_pair(kth_encrypted_private_t* ou
     KTH_PRECONDITION(token != nullptr);
     KTH_PRECONDITION(seed != nullptr);
     kth::domain::wallet::encrypted_private out_private_cpp;
+    kth::secure_scrub out_private_cpp_scrub{&out_private_cpp, sizeof(out_private_cpp)};
     kth::ec_compressed out_point_cpp;
     auto const token_cpp = kth::encrypted_token_to_cpp(token->data);
     auto const seed_cpp = kth::ek_seed_to_cpp(seed->data);
@@ -39,6 +40,7 @@ kth_bool_t kth_wallet_encrypted_keys_create_key_pair_unsafe(kth_encrypted_privat
     KTH_PRECONDITION(token != nullptr);
     KTH_PRECONDITION(seed != nullptr);
     kth::domain::wallet::encrypted_private out_private_cpp;
+    kth::secure_scrub out_private_cpp_scrub{&out_private_cpp, sizeof(out_private_cpp)};
     kth::ec_compressed out_point_cpp;
     auto const token_cpp = kth::encrypted_token_to_cpp(token);
     auto const seed_cpp = kth::ek_seed_to_cpp(seed);

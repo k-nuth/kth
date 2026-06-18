@@ -145,18 +145,9 @@ public:
 
     code check() const;
 
-    /// Contextual validation — prevout cache must be populated.
-    code accept(
-        script_flags_t flags,
-        size_t height,
-        uint32_t median_time_past,
-        size_t max_block_size_dynamic,
-        size_t max_sigops,
-        bool is_under_checkpoint,
-        bool transactions = true
-    ) const;
-
-    code connect() const;
+    /// Check block body only (skip header validation for headers-first sync).
+    /// Use this when headers have already been validated during header sync.
+    code check_body() const;
 
     // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
     mutable validation_t validation{};

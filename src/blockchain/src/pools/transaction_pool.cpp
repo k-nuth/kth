@@ -5,6 +5,7 @@
 #include <kth/blockchain/pools/transaction_pool.hpp>
 
 #include <cstddef>
+#include <expected>
 #include <memory>
 
 #include <kth/blockchain/settings.hpp>
@@ -18,23 +19,22 @@ namespace kth::blockchain {
 // exmaple implementation simply tests all txs in a new block against
 // transactions in previous blocks.
 
-transaction_pool::transaction_pool(settings const& settings)
-  ////: reject_conflicts_(settings.reject_conflicts),
-  ////  minimum_fee_(settings.minimum_fee_satoshis)
+transaction_pool::transaction_pool(settings const& /*settings*/)
 {}
 
 // TODO(legacy): implement block template discovery.
-void transaction_pool::fetch_template(merkle_block_fetch_handler handler) const {
+awaitable_expected<std::pair<merkle_block_ptr, size_t>>
+transaction_pool::fetch_template() const {
     size_t const height = max_size_t;
     auto const block = std::make_shared<domain::message::merkle_block>();
-    handler(error::success, block, height);
+    co_return std::pair{block, height};
 }
 
 // TODO(legacy): implement mempool message payload discovery.
-void transaction_pool::fetch_mempool(size_t maximum,
-    inventory_fetch_handler handler) const {
+awaitable_expected<inventory_ptr>
+transaction_pool::fetch_mempool(size_t /*maximum*/) const {
     auto const empty = std::make_shared<domain::message::inventory>();
-    handler(error::success, empty);
+    co_return empty;
 }
 
 } // namespace kth::blockchain

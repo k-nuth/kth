@@ -25,7 +25,7 @@ kth_bool_t kth_wallet_message_sign_message_ec_private(kth_message_signature_t* o
     KTH_PRECONDITION(out_signature != nullptr);
     KTH_PRECONDITION(message != nullptr || n == 0);
     KTH_PRECONDITION(secret != nullptr);
-    std::array<uint8_t, 65> out_signature_cpp;
+    kth::ec_uncompressed out_signature_cpp;
     auto const message_cpp = kth::byte_span(message, kth::sz(n));
     auto const& secret_cpp = kth::cpp_ref<kth::domain::wallet::ec_private>(secret);
     auto const cpp_result = kth::domain::wallet::sign_message(out_signature_cpp, message_cpp, secret_cpp);
@@ -39,7 +39,7 @@ kth_bool_t kth_wallet_message_sign_message_string(kth_message_signature_t* out_s
     KTH_PRECONDITION(out_signature != nullptr);
     KTH_PRECONDITION(message != nullptr || n == 0);
     KTH_PRECONDITION(wif != nullptr);
-    std::array<uint8_t, 65> out_signature_cpp;
+    kth::ec_uncompressed out_signature_cpp;
     auto const message_cpp = kth::byte_span(message, kth::sz(n));
     auto const wif_cpp = std::string(wif);
     auto const cpp_result = kth::domain::wallet::sign_message(out_signature_cpp, message_cpp, wif_cpp);
@@ -53,7 +53,7 @@ kth_bool_t kth_wallet_message_sign_message_hash(kth_message_signature_t* out_sig
     KTH_PRECONDITION(out_signature != nullptr);
     KTH_PRECONDITION(message != nullptr || n == 0);
     KTH_PRECONDITION(secret != nullptr);
-    std::array<uint8_t, 65> out_signature_cpp;
+    kth::ec_uncompressed out_signature_cpp;
     auto const message_cpp = kth::byte_span(message, kth::sz(n));
     auto secret_cpp = kth::hash_to_cpp(secret->hash);
     kth::secure_scrub secret_cpp_scrub{&secret_cpp, sizeof(secret_cpp)};
@@ -69,7 +69,7 @@ kth_bool_t kth_wallet_message_sign_message_hash_unsafe(kth_message_signature_t* 
     KTH_PRECONDITION(out_signature != nullptr);
     KTH_PRECONDITION(message != nullptr || n == 0);
     KTH_PRECONDITION(secret != nullptr);
-    std::array<uint8_t, 65> out_signature_cpp;
+    kth::ec_uncompressed out_signature_cpp;
     auto const message_cpp = kth::byte_span(message, kth::sz(n));
     auto secret_cpp = kth::hash_to_cpp(secret);
     kth::secure_scrub secret_cpp_scrub{&secret_cpp, sizeof(secret_cpp)};

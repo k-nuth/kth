@@ -9,6 +9,8 @@
 #include <cstdlib>
 #include <string>
 
+namespace kth {
+
 /** A hasher class for SHA-256. */
 class CSHA256
 {
@@ -49,5 +51,7 @@ std::string SHA256AutoDetect(sha256_implementation::UseImplementation use_implem
  *  blocks:  the number of hashes to compute.
  */
 void SHA256D64(unsigned char* output, const unsigned char* input, size_t blocks);
+
+} // namespace kth
 
 #endif // BITCOIN_CRYPTO_SHA256_H
