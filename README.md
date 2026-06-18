@@ -2,6 +2,27 @@
 
 > High-performance Bitcoin Cash development platform.
 
+> [!IMPORTANT]
+> **Branch model — June 2026 onwards**
+>
+> `master` now tracks the **v1.x** line: a coroutine-based node with
+> UTXO-Z storage, fast full IBD (mainnet from genesis to tip in under
+> an hour on typical hardware), and a public C++/C API rebuilt around
+> `asio::awaitable`. The first tag on this line is **v1.0.0**.
+>
+> The previous callback-based architecture lives on as a maintenance
+> branch: [**`v0.x`**](https://github.com/k-nuth/kth/tree/v0.x).
+> While v1.x stabilises in the field we keep `v0.x` shipping critical
+> bug fixes (consensus-class issues, security patches, build/dep
+> upgrades) so existing integrations have a safe place to stay. New
+> features land on `master` only.
+>
+> If you're an existing consumer of the C-API or any language binding,
+> see the **Breaking changes** section of the v1.0.0 release notes
+> before upgrading — `block_chain` async methods are now
+> `awaitable_expected<T>`, `p2p::close()` is replaced by
+> `stop()` + `join()`, and a few legacy types were removed.
+
 Knuth is a high-performance implementation of the Bitcoin protocol aimed at users that need extra performance and flexibility — wallets, exchanges, block explorers and miners.
 
 ## Not just a node
