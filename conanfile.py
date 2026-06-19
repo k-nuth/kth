@@ -124,7 +124,7 @@ class KthRecipe(KnuthConanFileV2):
         # For now, keep disabled until a proper solution is implemented.
         "with_jemalloc": False,
         "with_stats": False,
-        "embed_utxo_bloom": True,
+        "embed_utxo_bloom": False,
         "utxoz_compact": False,
         "asio_standalone": True,
 
