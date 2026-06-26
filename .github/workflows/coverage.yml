@@ -40,7 +40,7 @@ jobs:
     # GHA default.
     timeout-minutes: 130
     container:
-      image: kthnode/gcc15-ubuntu24.04
+      image: kthnode/gcc16-ubuntu24.04
 
     steps:
       - name: 📥 Checkout

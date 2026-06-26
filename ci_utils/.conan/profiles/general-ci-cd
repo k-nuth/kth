@@ -9,3 +9,9 @@ compiler.cppstd=23
 # where the consumer conanfile's options aren't applied. kth doesn't
 # use cobalt.
 boost/*:without_cobalt=True
+# stacktrace_backtrace expects an external libbacktrace at build time;
+# the GCC 16 toolchain image bundles libbacktrace inside GCC rather
+# than via apt's libbacktrace-dev, so boost's auto-detection skips the
+# component and package_info() then raises "expected to be built".
+# kth doesn't use boost.stacktrace.
+boost/*:without_stacktrace_backtrace=True
