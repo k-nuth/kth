@@ -95,7 +95,7 @@ jobs:
       build-version: ${{ steps.version.outputs.build-version }}
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           submodules: true
           fetch-depth: 0 # Required due to the way Git works, without it this action won't be able to find any or the correct tags
@@ -160,7 +160,7 @@ jobs:
   #     # name: docker.pkg.github.com/${{ github.repository }}/alpine-image
   #     name: docker.pkg.github.com/k-nuth/kth/alpine-image
   #   steps:
-  #     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+  #     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
   #       with:
   #         submodules: true
   #     - id: version
@@ -200,7 +200,7 @@ jobs:
           echo "Head ref: ${{ github.head_ref }}"
           echo "Base ref: ${{ github.base_ref }}"
       - name: 📥 Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           submodules: true
       - name: 🧮 Generate Job Matrix
@@ -415,7 +415,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           submodules: true
 
