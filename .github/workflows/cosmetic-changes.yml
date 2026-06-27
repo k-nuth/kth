@@ -22,7 +22,7 @@ jobs:
         startsWith(github.head_ref, 'style/') || 
         startsWith(github.head_ref, 'chore/') || 
         startsWith(github.head_ref, 'noci/')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     
     steps:
       - name: 📥 Checkout code
@@ -114,7 +114,7 @@ jobs:
     if: startsWith(github.head_ref, 'docs/') || 
         startsWith(github.head_ref, 'style/') ||
         startsWith(github.head_ref, 'chore/')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: cosmetic-check
     
     steps:

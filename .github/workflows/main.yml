@@ -46,7 +46,7 @@ env:
 
 jobs:
   debug:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       permitted: ${{ steps.check.outputs.permitted }}
     steps:
@@ -65,7 +65,7 @@ jobs:
        !startsWith(github.head_ref, 'style/') &&
        !startsWith(github.head_ref, 'chore/') &&
        !startsWith(github.head_ref, 'noci/'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       permitted: ${{ steps.check.outputs.permitted }}
     steps:
@@ -90,7 +90,7 @@ jobs:
        !startsWith(github.head_ref, 'style/') &&
        !startsWith(github.head_ref, 'chore/') &&
        !startsWith(github.head_ref, 'noci/'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       build-version: ${{ steps.version.outputs.build-version }}
     steps:
@@ -152,7 +152,7 @@ jobs:
 
   # build-base-docker-image:
   #   name: Builds Alpine Docker image
-  #   runs-on: ubuntu-latest
+  #   runs-on: ubuntu-24.04
   #   outputs:
   #     # name: docker.pkg.github.com/${{ github.repository }}/alpine-image:${{ steps.version.outputs.version }}
   #     name: docker.pkg.github.com/k-nuth/kth/alpine-image:${{ steps.version.outputs.version }}
@@ -189,7 +189,7 @@ jobs:
        !startsWith(github.head_ref, 'chore/') &&
        !startsWith(github.head_ref, 'noci/'))
     name: Generate Job Matrix
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
@@ -412,7 +412,7 @@ jobs:
        !startsWith(github.head_ref, 'chore/') &&
        !startsWith(github.head_ref, 'noci/'))
 
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
