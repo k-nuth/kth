@@ -274,7 +274,8 @@ TEST_CASE("C-API Transaction - equals identical txs is true, different is false"
     // an `equals()` impl that ignores fields.
     kth_transaction_mut_t mutated = make_tx();
     kth_chain_transaction_set_locktime(mutated, kLocktime + 1u);
-    kth_chain_transaction_recompute_hash(mutated);
+    // No recompute_hash needed — the new transaction value type has no
+    // internal hash cache; `hash()` always reflects the current fields.
 
     // `c` is a default (invalid) tx, structurally distinct from `a`.
     kth_transaction_mut_t c = kth_chain_transaction_construct_default();
