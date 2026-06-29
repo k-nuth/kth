@@ -175,7 +175,6 @@ set(kth_sources_just_legacy
         src/chain/input_basis.cpp
         src/chain/input.cpp
         src/chain/light_block.cpp
-        src/chain/output_basis.cpp
         src/chain/output.cpp
         src/chain/output_point.cpp
         src/chain/point.cpp
@@ -377,7 +376,6 @@ set(kth_headers
     include/kth/domain/chain/script.hpp
     include/kth/domain/chain/transaction.hpp
     include/kth/domain/chain/point.hpp
-    include/kth/domain/chain/output_basis.hpp
     include/kth/domain/chain/point_value.hpp
     include/kth/domain/chain/utxo.hpp
     include/kth/domain/define.hpp

@@ -78,7 +78,7 @@ void populate_base::populate_prevout(size_t branch_height, output_point const& o
     auto const spend_height = prevout.cache.validation.spender_height;
 
     // The previous output has already been spent (double spend).
-    if ((spend_height <= branch_height) && (spend_height != output::validation::not_spent)) {
+    if ((spend_height <= branch_height) && (spend_height != output::validation_t::not_spent)) {
         prevout.spent = true;
         prevout.confirmed = true;
         prevout.cache = domain::chain::output{};
