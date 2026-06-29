@@ -15,7 +15,7 @@
 #include <vector>
 
 #include <kth/domain/chain/script.hpp>
-#include <kth/domain/chain/script_basis.hpp>
+#include <kth/domain/chain/script.hpp>
 #include <kth/domain/concepts.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/constants/bch.hpp>
@@ -82,7 +82,7 @@ bool is_valid_capability(uint8_t b) {
 // single choke point.
 inline constexpr
 size_t max_token_commitment_length(script_flags_t flags) {
-    return script_basis::is_enabled(flags, machine::script_flags::bch_loops)
+    return script::is_enabled(flags, machine::script_flags::bch_loops)
         ? max_token_commitment_length_leibniz
         : max_token_commitment_length_descartes;
 }

@@ -466,7 +466,7 @@ code transaction_basis::check(uint64_t total_output_value, size_t max_block_size
 
 size_t transaction_basis::min_tx_size(script_flags_t flags) const {
     auto const is_enabled = [](script_flags_t active, auto flag) {
-        return script_basis::is_enabled(active, flag);
+        return script::is_enabled(active, flag);
     };
 #if defined(KTH_CURRENCY_BCH)
     if (is_enabled(flags, kth::domain::machine::script_flags::bch_tokens)) {
@@ -492,7 +492,7 @@ code transaction_basis::accept(
     bool transaction_pool
 ) const {
     auto const is_enabled = [](script_flags_t active, auto flag) {
-        return script_basis::is_enabled(active, flag);
+        return script::is_enabled(active, flag);
     };
 
     auto const bip16 = is_enabled(flags, kth::domain::machine::script_flags::bip16_rule);

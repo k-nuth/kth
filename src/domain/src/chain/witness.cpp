@@ -243,7 +243,7 @@ operation::list witness::to_pay_key_hash(data_chunk&& program) {
 // Returns true if is a witness program - even if potentially invalid.
 bool witness::extract_sigop_script(script& out_script,
                                    script const& program_script) const {
-    out_script.clear();
+    out_script.reset();
 
     switch (program_script.version()) {
         case script_version::zero: {

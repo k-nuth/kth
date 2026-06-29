@@ -409,7 +409,7 @@ namespace {
 // frame so the caller can iterate through the function body
 // one op at a time) is future work tied to BCH 2026-May surfacing.
 op_result step_one(debug_snapshot& s) {
-    auto const& ops = s.prog.get_script().operations();
+    auto const ops = s.prog.get_script().operations();
     if (s.step >= ops.size()) {
         return {error::invalid_operation_count, std::nullopt};
     }

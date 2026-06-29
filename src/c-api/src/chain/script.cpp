@@ -26,13 +26,13 @@ kth_script_mut_t kth_chain_script_construct_default(void) {
     return kth::leak<cpp_t>();
 }
 
-kth_error_code_t kth_chain_script_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_script_mut_t* out) {
+kth_error_code_t kth_chain_script_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t prefix, KTH_OUT_OWNED kth_script_mut_t* out) {
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
     auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
-    auto const wire_cpp = kth::int_to_bool(wire);
-    auto result = cpp_t::from_data(data_cpp, wire_cpp);
+    auto const prefix_cpp = kth::int_to_bool(prefix);
+    auto result = cpp_t::from_data(data_cpp, prefix_cpp);
     if ( ! result) return kth::to_c_err(result.error());
     *out = kth::leak(std::move(*result));
     return kth_ec_success;
@@ -95,31 +95,16 @@ kth_size_t kth_chain_script_serialized_size(kth_script_const_t self, kth_bool_t 
 
 // Getters
 
-kth_bool_t kth_chain_script_empty(kth_script_const_t self) {
+uint8_t* kth_chain_script_bytes(kth_script_const_t self, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).empty());
+    KTH_PRECONDITION(out_size != nullptr);
+    auto const& data = kth::cpp_ref<cpp_t>(self).bytes();
+    return kth::create_c_array(data, *out_size);
 }
 
-kth_size_t kth_chain_script_size(kth_script_const_t self) {
+kth_operation_list_mut_t kth_chain_script_operations(kth_script_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::cpp_ref<cpp_t>(self).size();
-}
-
-kth_operation_const_t kth_chain_script_front(kth_script_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION( ! kth::cpp_ref<cpp_t>(self).empty());
-    return &(kth::cpp_ref<cpp_t>(self).front());
-}
-
-kth_operation_const_t kth_chain_script_back(kth_script_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION( ! kth::cpp_ref<cpp_t>(self).empty());
-    return &(kth::cpp_ref<cpp_t>(self).back());
-}
-
-kth_operation_list_const_t kth_chain_script_operations(kth_script_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return &(kth::cpp_ref<cpp_t>(self).operations());
+    return kth::leak_list<kth::domain::machine::operation>(kth::cpp_ref<cpp_t>(self).operations());
 }
 
 kth_operation_mut_t kth_chain_script_first_operation(kth_script_const_t self) {
@@ -142,19 +127,21 @@ kth_script_pattern_t kth_chain_script_input_pattern(kth_script_const_t self) {
     return kth::script_pattern_to_c(kth::cpp_ref<cpp_t>(self).input_pattern());
 }
 
-uint8_t* kth_chain_script_bytes(kth_script_const_t self, kth_size_t* out_size) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(out_size != nullptr);
-    auto const& data = kth::cpp_ref<cpp_t>(self).bytes();
-    return kth::create_c_array(data, *out_size);
-}
-
 
 // Predicates
+
+kth_bool_t kth_chain_script_is_valid(kth_script_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid());
+}
 
 kth_bool_t kth_chain_script_is_valid_operations(kth_script_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid_operations());
+}
+
+kth_bool_t kth_chain_script_is_enabled(kth_script_flags_t active_flags, kth_script_flags_t fork) {
+    return kth::bool_to_int(cpp_t::is_enabled(active_flags, fork));
 }
 
 kth_bool_t kth_chain_script_is_push_only(kth_operation_list_const_t ops) {
@@ -251,23 +238,14 @@ kth_bool_t kth_chain_script_is_pay_to_script_hash_32(kth_script_const_t self, kt
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_pay_to_script_hash_32(flags));
 }
 
-kth_bool_t kth_chain_script_is_valid(kth_script_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid());
-}
-
-kth_bool_t kth_chain_script_is_enabled(kth_script_flags_t active_flags, kth_script_flags_t fork) {
-    return kth::bool_to_int(cpp_t::is_enabled(active_flags, fork));
-}
-
 
 // Operations
 
 void kth_chain_script_from_operations(kth_script_mut_t self, kth_operation_list_const_t ops) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(ops != nullptr);
-    auto ops_cpp = kth::cpp_ref<kth::domain::machine::operation::list>(ops);
-    kth::cpp_ref<cpp_t>(self).from_operations(std::move(ops_cpp));
+    auto const& ops_cpp = kth::cpp_ref<kth::domain::machine::operation::list>(ops);
+    kth::cpp_ref<cpp_t>(self).from_operations(ops_cpp);
 }
 
 kth_bool_t kth_chain_script_from_string(kth_script_mut_t self, char const* mnemonic) {
@@ -281,18 +259,6 @@ char* kth_chain_script_to_string(kth_script_const_t self, kth_script_flags_t act
     KTH_PRECONDITION(self != nullptr);
     auto const s = kth::cpp_ref<cpp_t>(self).to_string(active_flags);
     return kth::create_c_str(s);
-}
-
-void kth_chain_script_clear(kth_script_mut_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).clear();
-}
-
-kth_operation_const_t kth_chain_script_at(kth_script_const_t self, kth_size_t index) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(index < kth::cpp_ref<cpp_t>(self).size());
-    auto const index_cpp = kth::sz(index);
-    return &(kth::cpp_ref<cpp_t>(self).operator[](index_cpp));
 }
 
 kth_script_pattern_t kth_chain_script_output_pattern(kth_script_const_t self, kth_script_flags_t flags) {
