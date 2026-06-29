@@ -305,7 +305,7 @@ void check_blocks_db(KTH_DB_env* env_, KTH_DB_dbi& dbi_blocks_db_, uint32_t heig
 
     data_chunk data {static_cast<uint8_t*>(kth_db_get_data(value)), static_cast<uint8_t*>(kth_db_get_data(value)) + kth_db_get_size(value)};
     byte_reader reader(data);
-    auto block_res = domain::chain::block::from_data(reader, false);
+    auto block_res = domain::chain::block::from_data(reader);
     REQUIRE(block_res);
     auto block = *block_res;
 
@@ -465,11 +465,11 @@ void check_reorg_block(KTH_DB_env* env_, KTH_DB_dbi& dbi_reorg_block_, uint32_t 
 
     data_chunk data {static_cast<uint8_t*>(kth_db_get_data(value)), static_cast<uint8_t*>(kth_db_get_data(value)) + kth_db_get_size(value)};
     byte_reader reader(data);
-    auto block_res = domain::chain::block::from_data(reader, false);
+    auto block_res = domain::chain::block::from_data(reader);
     REQUIRE(block_res);
     auto block = *block_res;
 
-    REQUIRE(encode_base16(block.to_data(false)) == block_enc);
+    REQUIRE(encode_base16(block.to_data()) == block_enc);
 }
 
 void check_reorg_block_doesnt_exists(KTH_DB_env* env_, KTH_DB_dbi& dbi_reorg_block_, uint32_t height) {
