@@ -22,7 +22,7 @@ kth_block_mut_t kth_chain_block_construct_default(void);
 
 /** @param[out] out Must point to a null `kth_block_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_block_destruct`. Untouched on error. */
 KTH_EXPORT
-kth_error_code_t kth_chain_block_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_block_mut_t* out);
+kth_error_code_t kth_chain_block_construct_from_data(uint8_t const* data, kth_size_t n, KTH_OUT_OWNED kth_block_mut_t* out);
 
 /**
  * @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`.
@@ -91,7 +91,7 @@ kth_size_t kth_chain_block_serialized_size(kth_block_const_t self);
 
 /** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
 KTH_EXPORT KTH_OWNED
-uint8_t* kth_chain_block_to_data(kth_block_const_t self, kth_size_t serialized_size, kth_size_t* out_size);
+uint8_t* kth_chain_block_to_data(kth_block_const_t self, kth_size_t* out_size);
 
 
 // Getters

@@ -162,7 +162,6 @@ if (ENABLE_SHARED)
 endif()
 
 set(kth_sources_just_legacy
-        src/chain/block_basis.cpp
         src/chain/block.cpp
         src/chain/chain_state.cpp
         src/chain/compact.cpp
@@ -352,7 +351,6 @@ set(kth_headers
     include/kth/domain/concepts.hpp
     include/kth/domain/chain/points_value.hpp
     include/kth/domain/chain/chain_state.hpp
-    include/kth/domain/chain/block_basis.hpp
     include/kth/domain/chain/input_point.hpp
     include/kth/domain/chain/light_block.hpp
     include/kth/domain/chain/block.hpp
