@@ -33,7 +33,8 @@ code validate_header::check(domain::chain::header const& header) const {
     // Delegate to header's check() which validates:
     // 1. Proof of work (hash <= target derived from bits)
     // 2. Timestamp not too far in future (2 hours)
-    return header.check(retarget_);
+    auto const hash = domain::chain::hash(header);
+    return header.check(hash, retarget_);
 }
 
 // Chain-context validation
@@ -48,7 +49,7 @@ code validate_header::accept(domain::chain::header const& header, size_t height,
         return error::store_block_missing_parent;
     }
 
-    auto const hash = header.hash();
+    auto const hash = domain::chain::hash(header);
 
     // Validate against checkpoints
     if (is_checkpoint_conflict(hash, height)) {

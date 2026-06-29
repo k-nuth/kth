@@ -98,11 +98,6 @@ kth_size_t kth_chain_header_serialized_size(kth_header_const_t self, kth_bool_t 
 
 // Getters
 
-kth_hash_t kth_chain_header_hash_pow(kth_header_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::to_hash_t(kth::cpp_ref<cpp_t>(self).hash_pow());
-}
-
 uint32_t kth_chain_header_version(kth_header_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::cpp_ref<cpp_t>(self).version();
@@ -133,65 +128,13 @@ uint32_t kth_chain_header_nonce(kth_header_const_t self) {
     return kth::cpp_ref<cpp_t>(self).nonce();
 }
 
-
-// Setters
-
-void kth_chain_header_set_version(kth_header_mut_t self, uint32_t value) {
+kth_hash_t kth_chain_header_hash(kth_header_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).set_version(value);
-}
-
-void kth_chain_header_set_previous_block_hash(kth_header_mut_t self, kth_hash_t const* value) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(value != nullptr);
-    auto const value_cpp = kth::hash_to_cpp(value->hash);
-    kth::cpp_ref<cpp_t>(self).set_previous_block_hash(value_cpp);
-}
-
-void kth_chain_header_set_previous_block_hash_unsafe(kth_header_mut_t self, uint8_t const* value) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(value != nullptr);
-    auto const value_cpp = kth::hash_to_cpp(value);
-    kth::cpp_ref<cpp_t>(self).set_previous_block_hash(value_cpp);
-}
-
-void kth_chain_header_set_merkle(kth_header_mut_t self, kth_hash_t const* value) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(value != nullptr);
-    auto const value_cpp = kth::hash_to_cpp(value->hash);
-    kth::cpp_ref<cpp_t>(self).set_merkle(value_cpp);
-}
-
-void kth_chain_header_set_merkle_unsafe(kth_header_mut_t self, uint8_t const* value) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(value != nullptr);
-    auto const value_cpp = kth::hash_to_cpp(value);
-    kth::cpp_ref<cpp_t>(self).set_merkle(value_cpp);
-}
-
-void kth_chain_header_set_timestamp(kth_header_mut_t self, uint32_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).set_timestamp(value);
-}
-
-void kth_chain_header_set_bits(kth_header_mut_t self, uint32_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).set_bits(value);
-}
-
-void kth_chain_header_set_nonce(kth_header_mut_t self, uint32_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).set_nonce(value);
+    return kth::to_hash_t(kth::domain::chain::hash(kth::cpp_ref<cpp_t>(self)));
 }
 
 
 // Predicates
-
-kth_bool_t kth_chain_header_is_valid_proof_of_work(kth_header_const_t self, kth_bool_t retarget) {
-    KTH_PRECONDITION(self != nullptr);
-    auto const retarget_cpp = kth::int_to_bool(retarget);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid_proof_of_work(retarget_cpp));
-}
 
 kth_bool_t kth_chain_header_is_valid(kth_header_const_t self) {
     KTH_PRECONDITION(self != nullptr);
@@ -203,18 +146,57 @@ kth_bool_t kth_chain_header_is_valid_timestamp(kth_header_const_t self) {
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid_timestamp());
 }
 
+kth_bool_t kth_chain_header_is_valid_proof_of_work(kth_header_const_t self, kth_hash_t const* hash, kth_bool_t retarget) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(hash != nullptr);
+    auto const hash_cpp = kth::hash_to_cpp(hash->hash);
+    auto const retarget_cpp = kth::int_to_bool(retarget);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid_proof_of_work(hash_cpp, retarget_cpp));
+}
+
+kth_bool_t kth_chain_header_is_valid_proof_of_work_unsafe(kth_header_const_t self, uint8_t const* hash, kth_bool_t retarget) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(hash != nullptr);
+    auto const hash_cpp = kth::hash_to_cpp(hash);
+    auto const retarget_cpp = kth::int_to_bool(retarget);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid_proof_of_work(hash_cpp, retarget_cpp));
+}
+
 
 // Operations
 
-kth_error_code_t kth_chain_header_check(kth_header_const_t self, kth_bool_t retarget) {
+kth_error_code_t kth_chain_header_check(kth_header_const_t self, kth_hash_t const* hash, kth_bool_t retarget) {
     KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(hash != nullptr);
+    auto const hash_cpp = kth::hash_to_cpp(hash->hash);
     auto const retarget_cpp = kth::int_to_bool(retarget);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check(retarget_cpp));
+    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check(hash_cpp, retarget_cpp));
 }
 
-void kth_chain_header_reset(kth_header_mut_t self) {
+kth_error_code_t kth_chain_header_check_unsafe(kth_header_const_t self, uint8_t const* hash, kth_bool_t retarget) {
     KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).reset();
+    KTH_PRECONDITION(hash != nullptr);
+    auto const hash_cpp = kth::hash_to_cpp(hash);
+    auto const retarget_cpp = kth::int_to_bool(retarget);
+    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check(hash_cpp, retarget_cpp));
+}
+
+kth_error_code_t kth_chain_header_accept(kth_header_const_t self, kth_chain_state_const_t state, kth_hash_t const* hash) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(state != nullptr);
+    KTH_PRECONDITION(hash != nullptr);
+    auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
+    auto const hash_cpp = kth::hash_to_cpp(hash->hash);
+    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).accept(state_cpp, hash_cpp));
+}
+
+kth_error_code_t kth_chain_header_accept_unsafe(kth_header_const_t self, kth_chain_state_const_t state, uint8_t const* hash) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(state != nullptr);
+    KTH_PRECONDITION(hash != nullptr);
+    auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
+    auto const hash_cpp = kth::hash_to_cpp(hash);
+    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).accept(state_cpp, hash_cpp));
 }
 
 

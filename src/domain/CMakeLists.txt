@@ -166,8 +166,12 @@ set(kth_sources_just_legacy
         src/chain/block.cpp
         src/chain/chain_state.cpp
         src/chain/compact.cpp
-        src/chain/header_basis.cpp
-        src/chain/header.cpp
+        # Header v1: standalone value type, two impls selected via
+        # KTH_USE_HEADER_MEMBERS at preprocessor time (see
+        # include/kth/domain/chain/header.hpp). Old src/chain/header.cpp
+        # + src/chain/header_basis.cpp live as .disabled siblings.
+        src/chain/header_raw.cpp
+        src/chain/header_members.cpp
         src/chain/input_basis.cpp
         src/chain/input.cpp
         src/chain/light_block.cpp
@@ -352,7 +356,6 @@ set(kth_headers
     include/kth/domain/concepts.hpp
     include/kth/domain/chain/points_value.hpp
     include/kth/domain/chain/chain_state.hpp
-    include/kth/domain/chain/header_basis.hpp
     include/kth/domain/chain/block_basis.hpp
     include/kth/domain/chain/input_point.hpp
     include/kth/domain/chain/input_basis.hpp
@@ -363,12 +366,13 @@ set(kth_headers
     include/kth/domain/chain/token_data.hpp
     include/kth/domain/chain/token_data_serialization.hpp
     include/kth/domain/chain/output_point.hpp
-    include/kth/domain/chain/hash_memoizer.hpp
     include/kth/domain/chain/script_basis.hpp
     include/kth/domain/chain/transaction_basis.hpp
     include/kth/domain/chain/stealth.hpp
     include/kth/domain/chain/point_iterator.hpp
     include/kth/domain/chain/header.hpp
+    include/kth/domain/chain/header_raw.hpp
+    include/kth/domain/chain/header_members.hpp
     include/kth/domain/chain/history.hpp
     include/kth/domain/chain/compact.hpp
     include/kth/domain/chain/input.hpp

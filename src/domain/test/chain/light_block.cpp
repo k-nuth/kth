@@ -96,7 +96,7 @@ TEST_CASE("light_block header hash matches full block", "[chain light_block]") {
     REQUIRE(full_result.has_value());
 
     // Hashes must match
-    REQUIRE(light_result->header().hash() == full_result->header().hash());
+    REQUIRE(chain::hash(light_result->header()) == chain::hash(full_result->header()));
 }
 
 TEST_CASE("light_block is_valid_merkle_root returns true for valid block", "[chain light_block]") {

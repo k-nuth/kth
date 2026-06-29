@@ -30,7 +30,7 @@ hash_digest const& block_entry::hash() const {
 }
 
 // Not callable if the entry is a search key.
-hash_digest const& block_entry::parent() const {
+hash_digest block_entry::parent() const {
     KTH_ASSERT(block_);
     return block_->header().previous_block_hash();
 }

@@ -67,7 +67,7 @@ TEST_CASE("header_index add single header", "[header_index]") {
 
     auto const prev_hash = null_hash;
     auto const hdr = make_header_at(0, prev_hash);
-    auto const hash = hdr.hash();
+    auto const hash = kth::domain::chain::hash(hdr);
 
     auto const result = index.add(hash, hdr);
 
@@ -81,7 +81,7 @@ TEST_CASE("header_index add duplicate returns existing index", "[header_index]")
     header_index index(100);
 
     auto const hdr = make_header_at(0, null_hash);
-    auto const hash = hdr.hash();
+    auto const hash = kth::domain::chain::hash(hdr);
 
     auto const result1 = index.add(hash, hdr);
     auto const result2 = index.add(hash, hdr);
@@ -96,7 +96,7 @@ TEST_CASE("header_index find existing header", "[header_index]") {
     header_index index(100);
 
     auto const hdr = make_header_at(0, null_hash);
-    auto const hash = hdr.hash();
+    auto const hash = kth::domain::chain::hash(hdr);
 
     (void)index.add(hash, hdr);
     auto const found_idx = index.find(hash);
@@ -116,7 +116,7 @@ TEST_CASE("header_index contains", "[header_index]") {
     header_index index(100);
 
     auto const hdr = make_header_at(0, null_hash);
-    auto const hash = hdr.hash();
+    auto const hash = kth::domain::chain::hash(hdr);
 
     REQUIRE_FALSE(index.contains(hash));
     (void)index.add(hash, hdr);
@@ -138,7 +138,7 @@ TEST_CASE("header_index field accessors", "[header_index]") {
     uint32_t const nonce = 12345;
 
     auto const hdr = make_header(version, prev_hash, merkle, timestamp, bits, nonce);
-    auto const hash = hdr.hash();
+    auto const hash = kth::domain::chain::hash(hdr);
 
     auto const result = index.add(hash, hdr);
     auto const idx = result.index;
@@ -162,7 +162,7 @@ TEST_CASE("header_index get_entry returns all fields", "[header_index]") {
     uint32_t const nonce = 12345;
 
     auto const hdr = make_header(version, prev_hash, merkle, timestamp, bits, nonce);
-    auto const hash = hdr.hash();
+    auto const hash = kth::domain::chain::hash(hdr);
 
     auto const result = index.add(hash, hdr);
     auto const entry = index.get_entry(result.index);
@@ -186,7 +186,7 @@ TEST_CASE("header_index parent linkage", "[header_index]") {
 
     // Add genesis (no parent)
     auto const genesis = make_header_at(0, null_hash);
-    auto const genesis_hash = genesis.hash();
+    auto const genesis_hash = kth::domain::chain::hash(genesis);
     auto const genesis_result = index.add(genesis_hash, genesis);
 
     REQUIRE(index.get_parent_index(genesis_result.index) == header_index::null_index);
@@ -194,7 +194,7 @@ TEST_CASE("header_index parent linkage", "[header_index]") {
 
     // Add block 1 (parent = genesis)
     auto const block1 = make_header_at(1, genesis_hash);
-    auto const block1_hash = block1.hash();
+    auto const block1_hash = kth::domain::chain::hash(block1);
     auto const block1_result = index.add(block1_hash, block1);
 
     REQUIRE(index.get_parent_index(block1_result.index) == genesis_result.index);
@@ -202,7 +202,7 @@ TEST_CASE("header_index parent linkage", "[header_index]") {
 
     // Add block 2 (parent = block1)
     auto const block2 = make_header_at(2, block1_hash);
-    auto const block2_hash = block2.hash();
+    auto const block2_hash = kth::domain::chain::hash(block2);
     auto const block2_result = index.add(block2_hash, block2);
 
     REQUIRE(index.get_parent_index(block2_result.index) == block1_result.index);
@@ -217,7 +217,7 @@ TEST_CASE("header_index status management", "[header_index]") {
     header_index index(100);
 
     auto const hdr = make_header_at(0, null_hash);
-    auto const hash = hdr.hash();
+    auto const hash = kth::domain::chain::hash(hdr);
     auto const result = index.add(hash, hdr);
     auto const idx = result.index;
 
@@ -257,7 +257,7 @@ TEST_CASE("header_index chain work", "[header_index]") {
     header_index index(100);
 
     auto const hdr = make_header_at(0, null_hash);
-    auto const hash = hdr.hash();
+    auto const hash = kth::domain::chain::hash(hdr);
     auto const result = index.add(hash, hdr);
     auto const idx = result.index;
 
@@ -283,7 +283,7 @@ TEST_CASE("header_index traverse_back", "[header_index]") {
 
     for (uint32_t i = 0; i < 5; ++i) {
         auto const hdr = make_header_at(i, prev_hash);
-        auto const hash = hdr.hash();
+        auto const hash = kth::domain::chain::hash(hdr);
         auto const result = index.add(hash, hdr);
         indices.push_back(result.index);
         prev_hash = hash;
@@ -312,7 +312,7 @@ TEST_CASE("header_index traverse_back with max_steps", "[header_index]") {
 
     for (uint32_t i = 0; i < 5; ++i) {
         auto const hdr = make_header_at(i, prev_hash);
-        auto const hash = hdr.hash();
+        auto const hash = kth::domain::chain::hash(hdr);
         auto const result = index.add(hash, hdr);
         indices.push_back(result.index);
         prev_hash = hash;
@@ -338,7 +338,7 @@ TEST_CASE("header_index get_ancestor_linear", "[header_index]") {
 
     for (uint32_t i = 0; i < 10; ++i) {
         auto const hdr = make_header_at(i, prev_hash);
-        auto const hash = hdr.hash();
+        auto const hash = kth::domain::chain::hash(hdr);
         auto const result = index.add(hash, hdr);
         indices.push_back(result.index);
         prev_hash = hash;
@@ -370,7 +370,7 @@ TEST_CASE("header_index get_ancestor with skip pointers", "[header_index]") {
 
     for (uint32_t i = 0; i < 100; ++i) {
         auto const hdr = make_header_at(i, prev_hash);
-        auto const hash = hdr.hash();
+        auto const hash = kth::domain::chain::hash(hdr);
         auto const result = index.add(hash, hdr);
         indices.push_back(result.index);
         prev_hash = hash;
@@ -396,7 +396,7 @@ TEST_CASE("header_index find_fork same chain", "[header_index]") {
 
     for (uint32_t i = 0; i < 10; ++i) {
         auto const hdr = make_header_at(i, prev_hash);
-        auto const hash = hdr.hash();
+        auto const hash = kth::domain::chain::hash(hdr);
         auto const result = index.add(hash, hdr);
         indices.push_back(result.index);
         prev_hash = hash;
@@ -420,7 +420,7 @@ TEST_CASE("header_index find_fork different branches", "[header_index]") {
 
     for (uint32_t i = 0; i < 5; ++i) {
         auto const hdr = make_header_at(i, prev_hash);
-        auto const hash = hdr.hash();
+        auto const hash = kth::domain::chain::hash(hdr);
         auto const result = index.add(hash, hdr);
         main_chain.push_back(result.index);
         prev_hash = hash;
@@ -432,22 +432,22 @@ TEST_CASE("header_index find_fork different branches", "[header_index]") {
     // Let me fix this - we need to compute the hash
 
     // For simplicity, let's create a fork by using a different merkle root
-    auto const fork_base_hash = make_header_at(2, index.get_prev_block_hash(main_chain[2])).hash();
+    auto const fork_base_hash = kth::domain::chain::hash(make_header_at(2, index.get_prev_block_hash(main_chain[2])));
 
     // Build fork: use block 2's hash as parent for fork
     // We need to get hash of block 2 from the main chain
     // Since we don't store the hash, let's rebuild it
     auto hdr2 = make_header_at(2, index.get_prev_block_hash(main_chain[2]));
-    auto hash2 = hdr2.hash();
+    auto hash2 = kth::domain::chain::hash(hdr2);
 
     // Create fork block 3' with different merkle
     auto fork3 = make_header(1, hash2, make_hash(9999), 3 * 600, 0x1d00ffff, 999);
-    auto fork3_hash = fork3.hash();
+    auto fork3_hash = kth::domain::chain::hash(fork3);
     auto fork3_result = index.add(fork3_hash, fork3);
 
     // Create fork block 4'
     auto fork4 = make_header(1, fork3_hash, make_hash(9998), 4 * 600, 0x1d00ffff, 998);
-    auto fork4_hash = fork4.hash();
+    auto fork4_hash = kth::domain::chain::hash(fork4);
     auto fork4_result = index.add(fork4_hash, fork4);
 
     // Find fork point between main_chain[4] and fork4
@@ -466,7 +466,7 @@ TEST_CASE("header_index capacity warning", "[header_index]") {
     hash_digest prev_hash = null_hash;
     for (uint32_t i = 0; i < 95; ++i) {
         auto const hdr = make_header_at(i, prev_hash);
-        auto const hash = hdr.hash();
+        auto const hash = kth::domain::chain::hash(hdr);
         auto const result = index.add(hash, hdr);
         prev_hash = hash;
         REQUIRE_FALSE(result.capacity_warning);
@@ -475,7 +475,7 @@ TEST_CASE("header_index capacity warning", "[header_index]") {
 
     // Add 96th header (index 95) - triggers warning
     auto const hdr = make_header_at(95, prev_hash);
-    auto const result = index.add(hdr.hash(), hdr);
+    auto const result = index.add(kth::domain::chain::hash(hdr), hdr);
     REQUIRE(result.capacity_warning);
     REQUIRE(index.at_capacity_warning());
 }
@@ -489,7 +489,7 @@ TEST_CASE("header_index memory_usage", "[header_index]") {
     hash_digest prev_hash = null_hash;
     for (uint32_t i = 0; i < 10; ++i) {
         auto const hdr = make_header_at(i, prev_hash);
-        auto const hash = hdr.hash();
+        auto const hash = kth::domain::chain::hash(hdr);
         (void)index.add(hash, hdr);
         prev_hash = hash;
     }
@@ -525,7 +525,7 @@ TEST_CASE("header_index orphan header (parent not found)", "[header_index]") {
 
     // Add a header whose parent doesn't exist
     auto const orphan = make_header_at(5, make_hash(999));
-    auto const orphan_hash = orphan.hash();
+    auto const orphan_hash = kth::domain::chain::hash(orphan);
     auto const result = index.add(orphan_hash, orphan);
 
     REQUIRE(result.inserted == true);

@@ -34,7 +34,10 @@ struct KB_API block_entry {
     hash_digest const& hash() const;
 
     /// The hash table entry's parent (preceding block) hash.
-    hash_digest const& parent() const;
+    /// Returned by value: the new header value type decodes
+    /// `previous_block_hash()` from raw bytes into a temporary, so a
+    /// reference would dangle.
+    hash_digest parent() const;
 
     /// The hash table entry's child (succeeding block) hashes.
     hash_list const& children() const;

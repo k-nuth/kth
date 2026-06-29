@@ -74,9 +74,6 @@ kth_size_t kth_chain_header_serialized_size(kth_header_const_t self, kth_bool_t 
 // Getters
 
 KTH_EXPORT
-kth_hash_t kth_chain_header_hash_pow(kth_header_const_t self);
-
-KTH_EXPORT
 uint32_t kth_chain_header_version(kth_header_const_t self);
 
 KTH_EXPORT
@@ -94,42 +91,11 @@ uint32_t kth_chain_header_bits(kth_header_const_t self);
 KTH_EXPORT
 uint32_t kth_chain_header_nonce(kth_header_const_t self);
 
-
-// Setters
-
 KTH_EXPORT
-void kth_chain_header_set_version(kth_header_mut_t self, uint32_t value);
-
-/** @param value Borrowed input; must be non-null. Copied into the resulting object; ownership of `value` stays with the caller. */
-KTH_EXPORT
-void kth_chain_header_set_previous_block_hash(kth_header_mut_t self, kth_hash_t const* value);
-
-/** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
-KTH_EXPORT
-void kth_chain_header_set_previous_block_hash_unsafe(kth_header_mut_t self, uint8_t const* value);
-
-/** @param value Borrowed input; must be non-null. Copied into the resulting object; ownership of `value` stays with the caller. */
-KTH_EXPORT
-void kth_chain_header_set_merkle(kth_header_mut_t self, kth_hash_t const* value);
-
-/** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
-KTH_EXPORT
-void kth_chain_header_set_merkle_unsafe(kth_header_mut_t self, uint8_t const* value);
-
-KTH_EXPORT
-void kth_chain_header_set_timestamp(kth_header_mut_t self, uint32_t value);
-
-KTH_EXPORT
-void kth_chain_header_set_bits(kth_header_mut_t self, uint32_t value);
-
-KTH_EXPORT
-void kth_chain_header_set_nonce(kth_header_mut_t self, uint32_t value);
+kth_hash_t kth_chain_header_hash(kth_header_const_t self);
 
 
 // Predicates
-
-KTH_EXPORT
-kth_bool_t kth_chain_header_is_valid_proof_of_work(kth_header_const_t self, kth_bool_t retarget);
 
 KTH_EXPORT
 kth_bool_t kth_chain_header_is_valid(kth_header_const_t self);
@@ -137,14 +103,32 @@ kth_bool_t kth_chain_header_is_valid(kth_header_const_t self);
 KTH_EXPORT
 kth_bool_t kth_chain_header_is_valid_timestamp(kth_header_const_t self);
 
+/** @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller. */
+KTH_EXPORT
+kth_bool_t kth_chain_header_is_valid_proof_of_work(kth_header_const_t self, kth_hash_t const* hash, kth_bool_t retarget);
+
+/** @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
+KTH_EXPORT
+kth_bool_t kth_chain_header_is_valid_proof_of_work_unsafe(kth_header_const_t self, uint8_t const* hash, kth_bool_t retarget);
+
 
 // Operations
 
+/** @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller. */
 KTH_EXPORT
-kth_error_code_t kth_chain_header_check(kth_header_const_t self, kth_bool_t retarget);
+kth_error_code_t kth_chain_header_check(kth_header_const_t self, kth_hash_t const* hash, kth_bool_t retarget);
 
+/** @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
 KTH_EXPORT
-void kth_chain_header_reset(kth_header_mut_t self);
+kth_error_code_t kth_chain_header_check_unsafe(kth_header_const_t self, uint8_t const* hash, kth_bool_t retarget);
+
+/** @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller. */
+KTH_EXPORT
+kth_error_code_t kth_chain_header_accept(kth_header_const_t self, kth_chain_state_const_t state, kth_hash_t const* hash);
+
+/** @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
+KTH_EXPORT
+kth_error_code_t kth_chain_header_accept_unsafe(kth_header_const_t self, kth_chain_state_const_t state, uint8_t const* hash);
 
 
 // Static utilities
