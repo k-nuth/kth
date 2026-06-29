@@ -424,7 +424,7 @@ result_code internal_database_basis<Clock>::set_spend(domain::chain::output_poin
 
 template <typename Clock>
 result_code internal_database_basis<Clock>::set_unspend(domain::chain::output_point const& point, KTH_DB_txn* db_txn) {
-    return set_spend(point, domain::chain::output::validation::not_spent, db_txn);
+    return set_spend(point, domain::chain::output::validation_t::not_spent, db_txn);
 }
 #endif // ! defined(KTH_DB_READONLY)
 

@@ -305,7 +305,7 @@ void block_organizer::populate_prevout_1(branch::const_ptr branch, domain::chain
     auto const spend_height = prevout.cache.validation.spender_height;
 
     // The previous output has already been spent (double spend).
-    if ((spend_height <= branch_height) && (spend_height != output::validation::not_spent)) {
+    if ((spend_height <= branch_height) && (spend_height != output::validation_t::not_spent)) {
         prevout.spent = true;
         prevout.confirmed = true;
         prevout.cache = domain::chain::output{};
