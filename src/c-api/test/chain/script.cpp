@@ -57,8 +57,7 @@ static kth_hash_t const kHash32 = {{
 
 TEST_CASE("C-API Script - default construct is empty", "[C-API Script]") {
     kth_script_mut_t script = kth_chain_script_construct_default();
-    REQUIRE(kth_chain_script_empty(script) != 0);
-    REQUIRE(kth_chain_script_size(script) == 0u);
+    REQUIRE(kth_chain_script_serialized_size(script, 0) == 0u);
     kth_chain_script_destruct(script);
 }
 
@@ -77,8 +76,7 @@ TEST_CASE("C-API Script - from_data prefixed roundtrip", "[C-API Script]") {
     REQUIRE(ec == kth_ec_success);
     REQUIRE(script != NULL);
     REQUIRE(kth_chain_script_is_valid(script) != 0);
-    REQUIRE(kth_chain_script_size(script) == 1u);
-    REQUIRE(kth_chain_script_empty(script) == 0);
+    REQUIRE(kth_chain_script_serialized_size(script, 0) == 1u);
 
     kth_size_t out_size = 0;
     uint8_t* raw = kth_chain_script_to_data(script, 1, &out_size);
@@ -108,21 +106,13 @@ TEST_CASE("C-API Script - serialized_size matches to_data length",
 // Container accessors
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Script - non-empty script has size 1", "[C-API Script]") {
+TEST_CASE("C-API Script - non-empty script has one operation", "[C-API Script]") {
     kth_script_mut_t script = NULL;
     REQUIRE(kth_chain_script_construct_from_data(
         kOpReturnPrefixed, sizeof(kOpReturnPrefixed), 1, &script) == kth_ec_success);
-    REQUIRE(kth_chain_script_size(script) == 1u);
-    kth_chain_script_destruct(script);
-}
-
-TEST_CASE("C-API Script - clear empties a non-empty script", "[C-API Script]") {
-    kth_script_mut_t script = NULL;
-    REQUIRE(kth_chain_script_construct_from_data(
-        kOpReturnPrefixed, sizeof(kOpReturnPrefixed), 1, &script) == kth_ec_success);
-    REQUIRE(kth_chain_script_empty(script) == 0);
-    kth_chain_script_clear(script);
-    REQUIRE(kth_chain_script_empty(script) != 0);
+    kth_operation_list_mut_t ops = kth_chain_script_operations(script);
+    REQUIRE(kth_chain_operation_list_count(ops) == 1u);
+    kth_chain_operation_list_destruct(ops);
     kth_chain_script_destruct(script);
 }
 
@@ -133,7 +123,7 @@ TEST_CASE("C-API Script - clear empties a non-empty script", "[C-API Script]") {
 TEST_CASE("C-API Script - from_string empty mnemonic", "[C-API Script]") {
     kth_script_mut_t script = kth_chain_script_construct_default();
     REQUIRE(kth_chain_script_from_string(script, "") != 0);
-    REQUIRE(kth_chain_script_empty(script) != 0);
+    REQUIRE(kth_chain_script_serialized_size(script, 0) == 0u);
     kth_chain_script_destruct(script);
 }
 
@@ -149,7 +139,8 @@ TEST_CASE("C-API Script - copy preserves equality", "[C-API Script]") {
     kth_script_mut_t copy = kth_chain_script_copy(original);
     REQUIRE(kth_chain_script_is_valid(copy) != 0);
     REQUIRE(kth_chain_script_equals(original, copy) != 0);
-    REQUIRE(kth_chain_script_size(copy) == kth_chain_script_size(original));
+    REQUIRE(kth_chain_script_serialized_size(copy, 0) ==
+            kth_chain_script_serialized_size(original, 0));
 
     kth_chain_script_destruct(copy);
     kth_chain_script_destruct(original);
@@ -180,7 +171,7 @@ TEST_CASE("C-API Script - to_pay_script_hash_pattern returns operation list",
     // yet, but constructing a script from it should yield a valid script.
     kth_script_mut_t script = kth_chain_script_construct_from_operations(ops);
     REQUIRE(kth_chain_script_is_valid(script) != 0);
-    REQUIRE(kth_chain_script_empty(script) == 0);
+    REQUIRE(kth_chain_script_serialized_size(script, 0) > 0u);
     kth_chain_script_destruct(script);
     kth_chain_operation_list_destruct(ops);
 }
@@ -192,7 +183,7 @@ TEST_CASE("C-API Script - to_pay_script_hash_32_pattern returns operation list",
     REQUIRE(ops != NULL);
     kth_script_mut_t script = kth_chain_script_construct_from_operations(ops);
     REQUIRE(kth_chain_script_is_valid(script) != 0);
-    REQUIRE(kth_chain_script_empty(script) == 0);
+    REQUIRE(kth_chain_script_serialized_size(script, 0) > 0u);
     kth_chain_script_destruct(script);
     kth_chain_operation_list_destruct(ops);
 }
@@ -372,7 +363,7 @@ TEST_CASE("C-API Script - construct_from_data NULL data with zero size succeeds"
     kth_error_code_t ec = kth_chain_script_construct_from_data(NULL, 0, 0, &out);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(out != NULL);
-    REQUIRE(kth_chain_script_empty(out) != 0);
+    REQUIRE(kth_chain_script_serialized_size(out, 0) == 0u);
     kth_chain_script_destruct(out);
 }
 
@@ -413,24 +404,6 @@ TEST_CASE("C-API Script - to_pay_script_hash_pattern null hash aborts",
 TEST_CASE("C-API Script - to_pay_script_hash_pattern_unsafe null hash aborts",
           "[C-API Script][precondition]") {
     KTH_EXPECT_ABORT(kth_chain_script_to_pay_script_hash_pattern_unsafe(NULL));
-}
-
-TEST_CASE("C-API Script - at() on empty script aborts",
-          "[C-API Script][precondition]") {
-    kth_script_mut_t script = kth_chain_script_construct_default();
-    KTH_EXPECT_ABORT(kth_chain_script_at(script, 0));
-    kth_chain_script_destruct(script);
-}
-
-TEST_CASE("C-API Script - at() out of bounds aborts",
-          "[C-API Script][precondition]") {
-    // Reuse the file-level OP_RETURN fixture: 1 operation at index 0.
-    kth_script_mut_t script = NULL;
-    kth_error_code_t ec = kth_chain_script_construct_from_data(
-        kOpReturnPrefixed, sizeof(kOpReturnPrefixed), 1, &script);
-    REQUIRE(ec == kth_ec_success);
-    KTH_EXPECT_ABORT(kth_chain_script_at(script, 1));
-    kth_chain_script_destruct(script);
 }
 
 TEST_CASE("C-API Script - check_signature null signature aborts",

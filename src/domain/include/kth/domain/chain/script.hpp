@@ -12,28 +12,29 @@
 #include <string>
 #include <tuple>
 #include <type_traits>
+#include <vector>
 
 #include <expected>
 
-#include <kth/domain/chain/script_basis.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
 
 #include <kth/domain/machine/operation.hpp>
 #include <kth/domain/machine/script_flags.hpp>
+#include <kth/domain/machine/script_pattern.hpp>
+#include <kth/domain/wallet/ec_public.hpp>
 
 #include <kth/infrastructure/error.hpp>
-#include <kth/domain/machine/script_pattern.hpp>
 #include <kth/infrastructure/machine/script_version.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/thread.hpp>
 #include <kth/infrastructure/utility/writer.hpp>
 
-
 #include <kth/domain/concepts.hpp>
+
 namespace kth::domain::chain {
 
 class transaction;
@@ -44,8 +45,7 @@ enum class endorsement_type {
     schnorr
 };
 
-struct KD_API script : script_basis {
-public:
+struct KD_API script {
     using operation = machine::operation;
     using script_flags = machine::script_flags;
     using script_pattern = domain::machine::script_pattern;
@@ -69,60 +69,74 @@ public:
 
     script(data_chunk&& encoded, bool prefix);
 
-    explicit
-    script(script_basis const& x);
-
-    explicit
-    script(script_basis&& x) noexcept;
-
-    // Special member functions.
+    // Operators.
     //-------------------------------------------------------------------------
 
-    script(script const& x);
-    script(script&& x) noexcept;
-    script& operator=(script const& x);
-    script& operator=(script&& x) noexcept;
+    friend
+    bool operator==(script const& x, script const& y);
+
+    friend
+    bool operator!=(script const& x, script const& y);
 
     // Deserialization.
     //-------------------------------------------------------------------------
 
     static
-    expect<script> from_data(byte_reader& reader, bool wire);
+    expect<script> from_data(byte_reader& reader, bool prefix);
 
     static
     expect<script> from_data_with_size(byte_reader& reader, size_t size);
 
-    /// Deserialization invalidates the iterator.
-    void from_operations(operation::list&& ops);
     void from_operations(operation::list const& ops);
+    void from_operations(operation::list&& ops);
     bool from_string(std::string const& mnemonic);
 
+    /// A script object is valid if the byte count matches the prefix.
+    [[nodiscard]]
+    bool is_valid() const;
+
     /// Script operations is valid if all push ops have the predicated size.
+    [[nodiscard]]
     bool is_valid_operations() const;
 
     // Serialization.
     //-------------------------------------------------------------------------
 
+    [[nodiscard]]
+    data_chunk to_data(bool prefix) const;
+
+    void to_data(data_sink& stream, bool prefix) const;
+
+    template <typename W>
+    void to_data(W& sink, bool prefix) const {
+        // TODO(legacy): optimize by always storing the prefixed serialization.
+        if (prefix) {
+            sink.write_variable_little_endian(serialized_size(false));
+        }
+
+        sink.write_bytes(bytes_);
+    }
+
+    [[nodiscard]]
     std::string to_string(script_flags_t active_flags) const;
 
-    // Iteration.
+    // Properties (size, accessors).
     //-------------------------------------------------------------------------
+    //
+    // NOTE: operations are NOT cached. operations() returns a freshly-parsed
+    // list on every call. Callers in hot paths must hoist the call outside the
+    // loop. Caching, if needed, is the caller's responsibility.
 
-    void clear();
-    bool empty() const;
-    size_t size() const;
-    operation const& front() const;
-    operation const& back() const;
-    operation::iterator begin() const;
-    operation::iterator end() const;
-    operation const& operator[](size_t index) const;
+    [[nodiscard]]
+    size_t serialized_size(bool prefix) const;
 
-    // Properties (size, accessors, cache).
-    //-------------------------------------------------------------------------
+    [[nodiscard]]
+    data_chunk const& bytes() const;
 
-    // size_t serialized_size(bool prefix) const;
-    using script_basis::serialized_size;
-    operation::list const& operations() const;
+    [[nodiscard]]
+    operation::list operations() const;
+
+    [[nodiscard]]
     operation first_operation() const;
 
     // Signing.
@@ -152,9 +166,6 @@ public:
 #endif // ! KTH_CURRENCY_BCH
                             uint64_t value = max_uint64);
 
-    // static
-    // bool create_endorsement(endorsement& out, ec_secret const& secret, script const& prevout_script, transaction const& tx, uint32_t input_index, uint8_t sighash_type, script_version version = script_version::unversioned, uint64_t value = max_uint64);
-
     static
     std::expected<endorsement, std::error_code> create_endorsement(
         ec_secret const& secret,
@@ -169,21 +180,23 @@ public:
         uint64_t value = max_uint64,
         endorsement_type type = endorsement_type::ecdsa);
 
-
     // Utilities (static).
     //-------------------------------------------------------------------------
 
-    /// Transaction helpers.
-    // static
-    // hash_digest to_outputs(transaction const& tx);
+    /// Determine if any of the given flag bits are enabled in the active flags set.
+    static constexpr
+    bool is_enabled(script_flags_t active_flags, script_flags_t fork) {
+        return (fork & active_flags) != 0;
+    }
 
-    // static
-    // hash_digest to_inpoints(transaction const& tx);
-
-    // static
-    // hash_digest to_sequences(transaction const& tx);
-
-    // is_enabled and are_enabled inherited from script_basis.
+    /// Determine if multiple flags are enabled. Returns a tuple of bools
+    /// usable with structured bindings:
+    ///   auto const [a, b, c] = are_enabled(flags, fork_a, fork_b, fork_c);
+    template <typename... Forks>
+    static constexpr
+    auto are_enabled(script_flags_t active_flags, Forks... flags) {
+        return std::tuple{is_enabled(active_flags, flags)...};
+    }
 
     /// Consensus patterns.
     static
@@ -256,6 +269,7 @@ public:
 
     static
     operation::list to_pay_script_hash_32_pattern(hash_digest const& hash);
+
     static
     operation::list to_pay_multisig_pattern(uint8_t signatures, point_list const& points);
 
@@ -267,37 +281,50 @@ public:
 
     /// Common pattern detection.
 #if defined(KTH_SEGWIT_ENABLED)
+    [[nodiscard]]
     data_chunk witness_program() const;
 #endif // KTH_SEGWIT_ENABLED
 
 #if ! defined(KTH_CURRENCY_BCH)
+    [[nodiscard]]
     script_version version() const;
 #endif // ! KTH_CURRENCY_BCH
 
+    [[nodiscard]]
     script_pattern pattern() const;
+
+    [[nodiscard]]
     script_pattern output_pattern() const;
+
     /// Flag-aware output-pattern classifier. Identical to `output_pattern()`
     /// except when `flags & bch_p2s` is active: any scriptPubKey that
     /// doesn't match one of the known templates and whose serialised size
     /// fits within `max_p2s_script_size` returns `pay_to_script` instead of
     /// `non_standard`. Mirrors BCHN's `Solver(scriptPubKey, ..., flags)`.
+    [[nodiscard]]
     script_pattern output_pattern(script_flags_t flags) const;
+
+    [[nodiscard]]
     script_pattern input_pattern() const;
 
     /// Consensus computations.
+    [[nodiscard]]
     size_t sigops(bool accurate) const;
+
+    [[nodiscard]]
     bool is_unspendable() const;
 
     void reset();
 
+    [[nodiscard]]
     bool is_pay_to_script_hash(script_flags_t flags) const;
 
+    [[nodiscard]]
     bool is_pay_to_script_hash_32(script_flags_t flags) const;
 
     // Validation.
-    //-----------------------------------------------------------------------------
+    //-------------------------------------------------------------------------
 
-    //TODO: move to script_basis (?)
     static
     code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t /*value*/);
 
@@ -314,17 +341,22 @@ private:
     static
     std::pair<hash_digest, size_t> generate_unversioned_signature_hash(transaction const& tx, uint32_t input_index, script const& script_code, uint8_t sighash_type);
 
-    // These are protected by mutex.
-    mutable bool cached_{false};
-    mutable operation::list operations_;
+    static
+    std::pair<hash_digest, size_t> generate_version_0_signature_hash(
+        transaction const& tx,
+        uint32_t input_index,
+        script const& script_code,
+        uint64_t value,
+        uint8_t sighash_type,
+        script_flags_t active_flags);
 
-#if ! defined(__EMSCRIPTEN__)
-    mutable upgrade_mutex mutex_;
-#else
-    mutable shared_mutex mutex_;
-#endif
+    data_chunk bytes_;
+    bool valid_{false};
 };
+
+machine::operation::list operations(script const& s);
+machine::operation first_operation(script const& s);
 
 } // namespace kth::domain::chain
 
-#endif
+#endif // KTH_DOMAIN_CHAIN_SCRIPT_HPP

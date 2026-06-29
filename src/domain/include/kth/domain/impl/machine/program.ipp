@@ -110,8 +110,8 @@ std::optional<script_execution_context> const& program::context() const {
 inline
 program::op_iterator program::begin() const {
     return active_frames_.empty()
-        ? script_->begin()
-        : active_frames_.back().script->begin();
+        ? script_ops_.begin()
+        : active_frames_.back().ops.begin();
 }
 
 inline
@@ -122,8 +122,8 @@ program::op_iterator program::jump() const {
 inline
 program::op_iterator program::end() const {
     return active_frames_.empty()
-        ? script_->end()
-        : active_frames_.back().script->end();
+        ? script_ops_.end()
+        : active_frames_.back().ops.end();
 }
 
 inline
@@ -141,7 +141,9 @@ void program::set_active_script(chain::script const* s) {
         reset_active_script();
         return;
     }
-    active_frames_.push_back({s, s->begin()});
+    auto ops = chain::operations(*s);
+    auto const begin = ops.begin();
+    active_frames_.push_back({s, std::move(ops), begin});
 }
 
 inline
@@ -199,8 +201,10 @@ bool program::increment_operation_count(int32_t public_keys) {
 
 inline
 bool program::mark_code_separator(size_t pc) {
-    auto const& active = get_script();
-    auto const size = active.size();
+    auto const& ops = active_frames_.empty()
+        ? script_ops_
+        : active_frames_.back().ops;
+    auto const size = ops.size();
     // Script must be non-empty and `pc` must point at a real op
     // (since we anchor the marker at `pc + 1`, pc == size-1 is the
     // last valid position — target would be `end()`, which the
@@ -215,7 +219,7 @@ bool program::mark_code_separator(size_t pc) {
     if (pc >= size) {
         return false;
     }
-    auto const target = active.begin() + static_cast<ptrdiff_t>(pc + 1);
+    auto const target = ops.begin() + static_cast<ptrdiff_t>(pc + 1);
 
     if (active_frames_.empty()) {
         jump_ = target;
