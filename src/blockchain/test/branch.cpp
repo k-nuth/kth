@@ -13,9 +13,16 @@ using namespace kth::blockchain;
 
 // Start Test Suite: branch tests
 
-#define DECLARE_BLOCK(name, number) \
-    auto const name##number = std::make_shared<block>(); \
-    name##number->header().set_bits(number);
+// Header is now an immutable value type: build the block with the header
+// pre-set instead of mutating fields after construction.
+static
+std::shared_ptr<block> make_test_block(uint32_t bits,
+                                       hash_digest const& prev = null_hash) {
+    return std::make_shared<block>(block{
+        kd::chain::header{0u, prev, null_hash, 0u, bits, 0u},
+        kd::chain::transaction::list{}
+    });
+}
 
 // Access to protected members.
 class branch_fixture
@@ -41,11 +48,9 @@ TEST_CASE("branch hash default null hash", "[branch tests]") {
 }
 
 TEST_CASE("branch hash one block only previous block hash", "[branch tests]") {
-    DECLARE_BLOCK(block, 0);
-    DECLARE_BLOCK(block, 1);
-
+    auto const block0 = make_test_block(0u);
     auto const expected = block0->hash();
-    block1->header().set_previous_block_hash(expected);
+    auto const block1 = make_test_block(1u, expected);
 
     branch instance;
     REQUIRE(instance.push_front(block1));
@@ -54,14 +59,10 @@ TEST_CASE("branch hash one block only previous block hash", "[branch tests]") {
 
 TEST_CASE("branch hash two blocks first previous block hash", "[branch tests]") {
     branch instance;
-    DECLARE_BLOCK(top, 42);
-    DECLARE_BLOCK(block, 0);
-    DECLARE_BLOCK(block, 1);
-
-    // Link the blocks.
+    auto const top42 = make_test_block(42u);
     auto const expected = top42->hash();
-    block0->header().set_previous_block_hash(expected);
-    block1->header().set_previous_block_hash(block0->hash());
+    auto const block0 = make_test_block(0u, expected);
+    auto const block1 = make_test_block(1u, block0->hash());
 
     REQUIRE(instance.push_front(block1));
     REQUIRE(instance.push_front(block0));
@@ -138,7 +139,7 @@ TEST_CASE("branch empty default true", "[branch tests]") {
 
 TEST_CASE("branch empty push one false", "[branch tests]") {
     branch instance;
-    DECLARE_BLOCK(block, 0);
+    auto const block0 = make_test_block(0u);
     REQUIRE(instance.push_front(block0));
     REQUIRE( ! instance.empty());
 }
@@ -152,7 +153,7 @@ TEST_CASE("branch blocks default empty", "[branch tests]") {
 
 TEST_CASE("branch blocks one empty", "[branch tests]") {
     branch instance;
-    DECLARE_BLOCK(block, 0);
+    auto const block0 = make_test_block(0u);
     REQUIRE(instance.push_front(block0));
     REQUIRE( ! instance.empty());
     REQUIRE(instance.blocks()->size() == 1u);
@@ -162,7 +163,7 @@ TEST_CASE("branch blocks one empty", "[branch tests]") {
 
 TEST_CASE("branch push front one success", "[branch tests]") {
     branch_fixture instance;
-    DECLARE_BLOCK(block, 0);
+    auto const block0 = make_test_block(0u);
     REQUIRE(instance.push_front(block0));
     REQUIRE( ! instance.empty());
     REQUIRE(instance.size() == 1u);
@@ -171,11 +172,8 @@ TEST_CASE("branch push front one success", "[branch tests]") {
 
 TEST_CASE("branch push front two linked success", "[branch tests]") {
     branch_fixture instance;
-    DECLARE_BLOCK(block, 0);
-    DECLARE_BLOCK(block, 1);
-
-    // Link the blocks.
-    block1->header().set_previous_block_hash(block0->hash());
+    auto const block0 = make_test_block(0u);
+    auto const block1 = make_test_block(1u, block0->hash());
 
     REQUIRE(instance.push_front(block1));
     REQUIRE(instance.push_front(block0));
@@ -186,11 +184,9 @@ TEST_CASE("branch push front two linked success", "[branch tests]") {
 
 TEST_CASE("branch push front two unlinked link failure", "[branch tests]") {
     branch_fixture instance;
-    DECLARE_BLOCK(block, 0);
-    DECLARE_BLOCK(block, 1);
-
-    // Ensure the blocks are not linked.
-    block1->header().set_previous_block_hash(null_hash);
+    auto const block0 = make_test_block(0u);
+    // block1 has null prev_hash by default, so it cannot link to block0.
+    auto const block1 = make_test_block(1u);
 
     REQUIRE(instance.push_front(block1));
     REQUIRE( ! instance.push_front(block0));
@@ -207,11 +203,8 @@ TEST_CASE("branch top default nullptr", "[branch tests]") {
 
 TEST_CASE("branch top two blocks expected", "[branch tests]") {
     branch_fixture instance;
-    DECLARE_BLOCK(block, 0);
-    DECLARE_BLOCK(block, 1);
-
-    // Link the blocks.
-    block1->header().set_previous_block_hash(block0->hash());
+    auto const block0 = make_test_block(0u);
+    auto const block1 = make_test_block(1u, block0->hash());
 
     REQUIRE(instance.push_front(block1));
     REQUIRE(instance.push_front(block0));
@@ -228,14 +221,11 @@ TEST_CASE("branch top height default 0", "[branch tests]") {
 
 TEST_CASE("branch top height two blocks expected", "[branch tests]") {
     branch_fixture instance;
-    DECLARE_BLOCK(block, 0);
-    DECLARE_BLOCK(block, 1);
+    auto const block0 = make_test_block(0u);
+    auto const block1 = make_test_block(1u, block0->hash());
 
     static size_t const expected = 42;
     instance.set_height(expected - 2);
-
-    // Link the blocks.
-    block1->header().set_previous_block_hash(block0->hash());
 
     REQUIRE(instance.push_front(block1));
     REQUIRE(instance.push_front(block0));
@@ -252,11 +242,8 @@ TEST_CASE("branch work default zero", "[branch tests]") {
 
 TEST_CASE("branch work two blocks expected", "[branch tests]") {
     branch instance;
-    DECLARE_BLOCK(block, 0);
-    DECLARE_BLOCK(block, 1);
-
-    // Link the blocks.
-    block1->header().set_previous_block_hash(block0->hash());
+    auto const block0 = make_test_block(0u);
+    auto const block1 = make_test_block(1u, block0->hash());
 
     REQUIRE(instance.push_front(block1));
     REQUIRE(instance.push_front(block0));

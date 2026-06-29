@@ -40,7 +40,7 @@ hash_digest build_chain(header_index& index, size_t length) {
 
     for (size_t i = 0; i < length; ++i) {
         auto hdr = make_header_with_prev(prev_hash, uint32_t(i));
-        auto hash = hdr.hash();
+        auto hash = kth::domain::chain::hash(hdr);
 
         auto result = index.add(hash, hdr);
         REQUIRE(result.inserted);
@@ -87,7 +87,7 @@ TEST_CASE("header_organizer stale batch returns stale_chain error", "[header_org
     hash_digest prev = ancestor_hash;
     for (int i = 0; i < 3; ++i) {
         auto hdr = make_header_with_prev(prev, uint32_t(100 + i));  // Different heights to avoid collision
-        prev = hdr.hash();
+        prev = kth::domain::chain::hash(hdr);
         stale_headers.push_back(std::move(hdr));
     }
 
@@ -117,7 +117,7 @@ TEST_CASE("header_organizer normal batch returns success", "[header_organizer][s
     hash_digest prev = tip_hash;
     for (int i = 0; i < 3; ++i) {
         auto hdr = make_header_with_prev(prev, uint32_t(10 + i));
-        prev = hdr.hash();
+        prev = kth::domain::chain::hash(hdr);
         new_headers.push_back(std::move(hdr));
     }
 
@@ -166,7 +166,7 @@ TEST_CASE("header_organizer duplicate headers in same batch", "[header_organizer
     hash_digest prev = tip_hash;
     for (int i = 0; i < 3; ++i) {
         auto hdr = make_header_with_prev(prev, uint32_t(5 + i));
-        prev = hdr.hash();
+        prev = kth::domain::chain::hash(hdr);
         headers.push_back(std::move(hdr));
     }
 

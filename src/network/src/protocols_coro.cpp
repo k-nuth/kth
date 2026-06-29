@@ -860,8 +860,8 @@ awaitable_expected<std::vector<block_result<Mode>>> request_blocks_batch(
 
         total_deserialize_us += deser_us;
 
-        // Look up the height for this block (both types have .header().hash())
-        auto const block_hash = block_parse_result->header().hash();
+        // Look up the height for this block (both types expose hash via chain::hash)
+        auto const block_hash = domain::chain::hash(block_parse_result->header());
         auto it = expected_blocks.find(block_hash);
         if (it == expected_blocks.end()) {
             spdlog::trace("[protocol] Received unexpected block from [{}], ignoring",
@@ -965,7 +965,7 @@ template awaitable_expected<std::vector<block_result<sync_mode::slow>>> request_
     domain::message::block const& block)
 {
     spdlog::trace("[protocol] Sending block {} to [{}]",
-        encode_hash(block.header().hash()), peer.authority());
+        encode_hash(domain::chain::hash(block.header())), peer.authority());
     co_return co_await peer.send(block);
 }
 

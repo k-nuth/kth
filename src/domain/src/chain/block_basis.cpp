@@ -75,7 +75,7 @@ bool block_basis::operator!=(block_basis const& x) const {
 
 // private
 void block_basis::reset() {
-    header_.reset();
+    header_ = chain::header{};
     transactions_.clear();
     transactions_.shrink_to_fit();
 }
@@ -172,7 +172,7 @@ void block_basis::set_transactions(transaction::list&& value) {
 
 // Convenience property.
 hash_digest block_basis::hash() const {
-    return header_.hash();
+    return chain::hash(header_);
 }
 
 // Validation helpers.
@@ -445,7 +445,8 @@ code block_basis::check_transactions() const {
 code block_basis::check(size_t serialized_size_false) const {
     code ec;
 
-    if ((ec = header_.check())) {
+    auto const header_hash = chain::hash(header_);
+    if ((ec = header_.check(header_hash))) {
         return ec;
     }
 

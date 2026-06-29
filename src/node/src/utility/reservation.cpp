@@ -271,7 +271,7 @@ void reservation::insert(hash_digest&& hash, size_t height) {
 #if ! defined(KTH_DB_READONLY)
 void reservation::import(block_const_ptr block) {
     size_t height;
-    auto const hash = block->header().hash();
+    auto const hash = kth::domain::chain::hash(block->header());
     auto const encoded = encode_hash(hash);
 
     if ( ! find_height_and_erase(hash, height)) {
