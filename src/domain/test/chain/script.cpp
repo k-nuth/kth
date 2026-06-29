@@ -315,25 +315,25 @@ TEST_CASE("script from string - two of three multisig - success", "[script]") {
 
 TEST_CASE("script empty - default - true", "[script]") {
     script instance;
-    REQUIRE(instance.empty());
+    REQUIRE(instance.bytes().empty());
 }
 
 TEST_CASE("script empty - empty operations - true", "[script]") {
     script instance(operation::list{});
-    REQUIRE(instance.empty());
+    REQUIRE(instance.bytes().empty());
 }
 
 TEST_CASE("script empty - non empty - false", "[script]") {
     script instance(script::to_null_data_pattern(data_chunk{42u}));
-    REQUIRE( ! instance.empty());
+    REQUIRE( ! instance.bytes().empty());
 }
 
 TEST_CASE("script clear - non empty - empty", "[script]") {
     script instance(script::to_null_data_pattern(data_chunk{42u}));
-    REQUIRE( ! instance.empty());
+    REQUIRE( ! instance.bytes().empty());
 
-    instance.clear();
-    REQUIRE(instance.empty());
+    instance.reset();
+    REQUIRE(instance.bytes().empty());
 }
 
 // Pattern matching tests.

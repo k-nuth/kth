@@ -323,6 +323,10 @@ private:
     // pointed-to script and transaction are still logically immutable;
     // the indirection is purely a storage choice.
     chain::script const* script_{nullptr};
+    // Parsed-operations cache for the outermost script (frame 0).
+    // Same rationale as `active_frame::ops`: domain `script` is cache-
+    // free, so the interpreter parses once at program construction.
+    operation::list script_ops_;
     chain::transaction const* transaction_{nullptr};
     uint32_t input_index_{0};
     script_flags_t flags_{0};
@@ -337,8 +341,14 @@ private:
     // and lost the caller function's active bytecode — a consensus
     // split once BCH 2026-May (subroutines) activates. BCHN's
     // `EvalStack` uses the same per-frame model.
+    //
+    // `ops` is the frame-local parsed-operations cache: the domain
+    // `script` type is intentionally cache-free (PR refactor: caller
+    // owns the cache), so `program` parses each script once on push
+    // and iterates the resulting list.
     struct active_frame {
         chain::script const* script;
+        operation::list ops;
         op_iterator jump;
     };
     std::vector<active_frame> active_frames_;

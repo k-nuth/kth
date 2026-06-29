@@ -26,8 +26,9 @@ bool is_stealth_script(script const& script) {
         return false;
     }
 
-    KTH_ASSERT(script.size() == 2);
-    return (script[1].data().size() >= hash_size);
+    auto const ops = script.operations();
+    KTH_ASSERT(ops.size() == 2);
+    return (ops[1].data().size() >= hash_size);
 }
 
 bool to_stealth_prefix(uint32_t& out_prefix, script const& script) {
@@ -124,7 +125,7 @@ bool create_stealth_script(script& out_null_data, ec_secret const& secret, binar
         }
     }
 
-    out_null_data.clear();
+    out_null_data.reset();
     return false;
 }
 
@@ -139,7 +140,8 @@ bool extract_ephemeral_key(ec_compressed& out_ephemeral_public_key,
     // That requires iteration with probability of 1 in 2 chance of success.
     out_ephemeral_public_key[0] = ec_even_sign;
 
-    auto const& data = script[1].data();
+    auto const ops = script.operations();
+    auto const& data = ops[1].data();
     std::copy_n(data.begin(), hash_size, out_ephemeral_public_key.begin() + 1);
     return true;
 }
@@ -150,7 +152,8 @@ bool extract_ephemeral_key(hash_digest& out_unsigned_ephemeral_key,
         return false;
     }
 
-    auto const& data = script[1].data();
+    auto const ops = script.operations();
+    auto const& data = ops[1].data();
     std::copy_n(data.begin(), hash_size, out_unsigned_ephemeral_key.begin());
     return true;
 }

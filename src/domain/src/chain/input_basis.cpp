@@ -208,7 +208,7 @@ size_t input_basis::signature_operations(bool bip16, bool bip141) const {
 // This requires that previous outputs have been populated.
 expect<chain::script> input_basis::extract_embedded_script() const {
     ////KTH_ASSERT(previous_output_.is_valid());
-    auto const& ops = script_.operations();
+    auto const ops = script_.operations();
     auto const& prevout_script = previous_output_.validation.cache.script();
 
     // There are no embedded sigops when the prevout script is not p2sh or p2sh32.
