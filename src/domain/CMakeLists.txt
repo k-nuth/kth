@@ -172,7 +172,6 @@ set(kth_sources_just_legacy
         # + src/chain/header_basis.cpp live as .disabled siblings.
         src/chain/header_raw.cpp
         src/chain/header_members.cpp
-        src/chain/input_basis.cpp
         src/chain/input.cpp
         src/chain/light_block.cpp
         src/chain/output.cpp
@@ -356,7 +355,6 @@ set(kth_headers
     include/kth/domain/chain/chain_state.hpp
     include/kth/domain/chain/block_basis.hpp
     include/kth/domain/chain/input_point.hpp
-    include/kth/domain/chain/input_basis.hpp
     include/kth/domain/chain/light_block.hpp
     include/kth/domain/chain/block.hpp
     include/kth/domain/chain/output.hpp
