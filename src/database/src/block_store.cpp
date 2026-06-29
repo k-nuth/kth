@@ -105,7 +105,7 @@ bool block_store::initialize() {
 // =============================================================================
 
 flat_file_pos block_store::save_block(domain::chain::block const& block, uint32_t height) {
-    auto const raw = block.to_data(true);  // wire=true
+    auto const raw = block.to_data();  // wire=true (always canonical for block)
     return save_block_raw(raw, height, block.header().timestamp());
 }
 
@@ -169,7 +169,7 @@ block_store::read_block(flat_file_pos const& pos) const {
     }
 
     byte_reader reader(*raw_result);
-    auto block = domain::chain::block::from_data(reader, true);  // wire=true
+    auto block = domain::chain::block::from_data(reader);
     if (!block) {
         return std::unexpected(result_code::other);
     }
