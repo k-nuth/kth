@@ -781,6 +781,12 @@ static
         uint32_t blocks_synced_to = initial_block_height;
         uint32_t headers_synced_to = initial_header_height;
         bool header_sync_complete = false;
+        // Tracks whether the post-checkpoint (SLOW) block_range_request has
+        // been sent. Without this guard the FAST → SLOW transition would
+        // either never fire (if `blocks_synced_to < headers_synced_to` at
+        // FAST SYNC COMPLETE — chain stalls forever at the checkpoint) or
+        // fire on every subsequent chunk/block event.
+        bool slow_sync_started = false;
 
         // For ETA calculation
         auto header_sync_start = std::chrono::steady_clock::now();
@@ -1000,6 +1006,28 @@ static
                         spdlog::info("[sync_coordinator] UTXO set build handled by block_storage_task (incremental)");
                     }
 
+                    // Trigger SLOW block sync for the post-checkpoint range.
+                    // FAST SYNC COMPLETE only stops the in-flight chunk_coordinator
+                    // (whose end_height was the checkpoint); without this trigger
+                    // the orchestrator stalls forever at the checkpoint when
+                    // headers are already ahead of the bloom height. The
+                    // `slow_sync_started` guard keeps subsequent block_validated
+                    // events from re-sending the request.
+                    if (blocks_synced_to >= checkpoint_height && !slow_sync_started &&
+                        headers_synced_to > blocks_synced_to) {
+                        spdlog::info("[sync_coordinator] Starting SLOW block sync: {} to {} ({} blocks)",
+                            blocks_synced_to + 1, headers_synced_to,
+                            headers_synced_to - blocks_synced_to);
+                        if (!block_download_input.try_send(std::error_code{}, block_range_request{
+                            .start_height = blocks_synced_to + 1,
+                            .end_height = headers_synced_to
+                        })) {
+                            spdlog::warn("[sync_coordinator] Channel full, SLOW block_range_request dropped");
+                        } else {
+                            slow_sync_started = true;
+                        }
+                    }
+
                     // Check if we've caught up to headers
                     if (blocks_synced_to >= headers_synced_to && header_sync_complete) {
                         // Whether before or after checkpoint, we need to keep looking for more headers
@@ -1010,6 +1038,7 @@ static
                         header_sync_complete = false;
                         header_sync_start = std::chrono::steady_clock::now();
                         headers_at_start = headers_synced_to;
+                        slow_sync_started = false;  // allow next FAST→SLOW transition after a full re-sync
 
                         auto next_hash = organizer.index().get_hash(
                             static_cast<blockchain::header_index::index_t>(headers_synced_to));
@@ -1071,6 +1100,25 @@ static
                         spdlog::info("[sync_coordinator] UTXO set build handled by block_storage_task (incremental)");
                     }
 
+                    // Trigger SLOW block sync for the post-checkpoint range.
+                    // See the matching block in the block_validated branch
+                    // above for the rationale — same fix on the chunk path,
+                    // which is the one that fires during the FAST IBD itself.
+                    if (blocks_synced_to >= checkpoint_height && !slow_sync_started &&
+                        headers_synced_to > blocks_synced_to) {
+                        spdlog::info("[sync_coordinator] Starting SLOW block sync: {} to {} ({} blocks)",
+                            blocks_synced_to + 1, headers_synced_to,
+                            headers_synced_to - blocks_synced_to);
+                        if (!block_download_input.try_send(std::error_code{}, block_range_request{
+                            .start_height = blocks_synced_to + 1,
+                            .end_height = headers_synced_to
+                        })) {
+                            spdlog::warn("[sync_coordinator] Channel full, SLOW block_range_request dropped");
+                        } else {
+                            slow_sync_started = true;
+                        }
+                    }
+
                     // Check if we've caught up to headers
                     if (blocks_synced_to >= headers_synced_to && header_sync_complete) {
                         spdlog::info("[sync_coordinator] Block sync caught up to headers at {} (checkpoint={}), restarting header sync",
@@ -1079,6 +1127,7 @@ static
                         header_sync_complete = false;
                         header_sync_start = std::chrono::steady_clock::now();
                         headers_at_start = headers_synced_to;
+                        slow_sync_started = false;
 
                         auto next_hash = organizer.index().get_hash(
                             static_cast<blockchain::header_index::index_t>(headers_synced_to));
