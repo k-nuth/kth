@@ -38,28 +38,12 @@ kth_error_code_t kth_chain_transaction_construct_from_data(uint8_t const* data, 
     return kth_ec_success;
 }
 
-kth_transaction_mut_t kth_chain_transaction_construct_from_version_locktime_inputs_outputs(uint32_t version, uint32_t locktime, kth_input_list_const_t inputs, kth_output_list_const_t outputs) {
+kth_transaction_mut_t kth_chain_transaction_construct(uint32_t version, uint32_t locktime, kth_input_list_const_t inputs, kth_output_list_const_t outputs) {
     KTH_PRECONDITION(inputs != nullptr);
     KTH_PRECONDITION(outputs != nullptr);
     auto const& inputs_cpp = kth::cpp_ref<kth::domain::chain::input::list>(inputs);
     auto const& outputs_cpp = kth::cpp_ref<kth::domain::chain::output::list>(outputs);
     return kth::leak<cpp_t>(version, locktime, inputs_cpp, outputs_cpp);
-}
-
-kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash(kth_transaction_const_t x, kth_hash_t const* hash) {
-    KTH_PRECONDITION(x != nullptr);
-    KTH_PRECONDITION(hash != nullptr);
-    auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
-    auto const hash_cpp = kth::hash_to_cpp(hash->hash);
-    return kth::leak<cpp_t>(x_cpp, hash_cpp);
-}
-
-kth_transaction_mut_t kth_chain_transaction_construct_from_transaction_hash_unsafe(kth_transaction_const_t x, uint8_t const* hash) {
-    KTH_PRECONDITION(x != nullptr);
-    KTH_PRECONDITION(hash != nullptr);
-    auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
-    auto const hash_cpp = kth::hash_to_cpp(hash);
-    return kth::leak<cpp_t>(x_cpp, hash_cpp);
 }
 
 
@@ -106,56 +90,6 @@ kth_size_t kth_chain_transaction_serialized_size(kth_transaction_const_t self, k
 
 // Getters
 
-kth_hash_t kth_chain_transaction_outputs_hash(kth_transaction_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::to_hash_t(kth::cpp_ref<cpp_t>(self).outputs_hash());
-}
-
-kth_hash_t kth_chain_transaction_inpoints_hash(kth_transaction_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::to_hash_t(kth::cpp_ref<cpp_t>(self).inpoints_hash());
-}
-
-kth_hash_t kth_chain_transaction_sequences_hash(kth_transaction_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::to_hash_t(kth::cpp_ref<cpp_t>(self).sequences_hash());
-}
-
-kth_hash_t kth_chain_transaction_utxos_hash(kth_transaction_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::to_hash_t(kth::cpp_ref<cpp_t>(self).utxos_hash());
-}
-
-kth_hash_t kth_chain_transaction_hash(kth_transaction_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::to_hash_t(kth::cpp_ref<cpp_t>(self).hash());
-}
-
-uint64_t kth_chain_transaction_fees(kth_transaction_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::cpp_ref<cpp_t>(self).fees();
-}
-
-uint64_t kth_chain_transaction_total_input_value(kth_transaction_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::cpp_ref<cpp_t>(self).total_input_value();
-}
-
-uint64_t kth_chain_transaction_total_output_value(kth_transaction_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::cpp_ref<cpp_t>(self).total_output_value();
-}
-
-kth_size_t kth_chain_transaction_signature_operations_simple(kth_transaction_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::cpp_ref<cpp_t>(self).signature_operations();
-}
-
-kth_error_code_t kth_chain_transaction_connect_simple(kth_transaction_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).connect());
-}
-
 uint32_t kth_chain_transaction_version(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::cpp_ref<cpp_t>(self).version();
@@ -176,6 +110,36 @@ kth_output_list_const_t kth_chain_transaction_outputs(kth_transaction_const_t se
     return &(kth::cpp_ref<cpp_t>(self).outputs());
 }
 
+kth_hash_t kth_chain_transaction_hash(kth_transaction_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::to_hash_t(kth::cpp_ref<cpp_t>(self).hash());
+}
+
+kth_hash_t kth_chain_transaction_outputs_hash(kth_transaction_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::to_hash_t(kth::cpp_ref<cpp_t>(self).outputs_hash());
+}
+
+kth_hash_t kth_chain_transaction_inpoints_hash(kth_transaction_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::to_hash_t(kth::cpp_ref<cpp_t>(self).inpoints_hash());
+}
+
+kth_hash_t kth_chain_transaction_sequences_hash(kth_transaction_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::to_hash_t(kth::cpp_ref<cpp_t>(self).sequences_hash());
+}
+
+kth_hash_t kth_chain_transaction_utxos_hash(kth_transaction_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::to_hash_t(kth::cpp_ref<cpp_t>(self).utxos_hash());
+}
+
+uint64_t kth_chain_transaction_fees(kth_transaction_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::cpp_ref<cpp_t>(self).fees();
+}
+
 kth_point_list_mut_t kth_chain_transaction_previous_outputs(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::leak_list<kth::domain::chain::point>(kth::cpp_ref<cpp_t>(self).previous_outputs());
@@ -189,6 +153,26 @@ kth_point_list_mut_t kth_chain_transaction_missing_previous_outputs(kth_transact
 kth_hash_list_mut_t kth_chain_transaction_missing_previous_transactions(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::leak_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).missing_previous_transactions());
+}
+
+uint64_t kth_chain_transaction_total_input_value(kth_transaction_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::cpp_ref<cpp_t>(self).total_input_value();
+}
+
+uint64_t kth_chain_transaction_total_output_value(kth_transaction_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::cpp_ref<cpp_t>(self).total_output_value();
+}
+
+kth_size_t kth_chain_transaction_signature_operations_simple(kth_transaction_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::cpp_ref<cpp_t>(self).signature_operations();
+}
+
+kth_error_code_t kth_chain_transaction_connect_simple(kth_transaction_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).connect());
 }
 
 
@@ -220,11 +204,6 @@ void kth_chain_transaction_set_outputs(kth_transaction_mut_t self, kth_output_li
 
 
 // Predicates
-
-kth_bool_t kth_chain_transaction_is_overspent(kth_transaction_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_overspent());
-}
 
 kth_bool_t kth_chain_transaction_is_valid(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
@@ -290,6 +269,11 @@ kth_bool_t kth_chain_transaction_is_locktime_conflict(kth_transaction_const_t se
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_locktime_conflict());
 }
 
+kth_bool_t kth_chain_transaction_is_overspent(kth_transaction_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_overspent());
+}
+
 kth_bool_t kth_chain_transaction_is_standard_simple(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_standard());
@@ -303,9 +287,11 @@ kth_bool_t kth_chain_transaction_is_standard(kth_transaction_const_t self, kth_s
 
 // Operations
 
-void kth_chain_transaction_recompute_hash(kth_transaction_mut_t self) {
+kth_size_t kth_chain_transaction_signature_operations(kth_transaction_const_t self, kth_bool_t bip16, kth_bool_t bip141) {
     KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).recompute_hash();
+    auto const bip16_cpp = kth::int_to_bool(bip16);
+    auto const bip141_cpp = kth::int_to_bool(bip141);
+    return kth::cpp_ref<cpp_t>(self).signature_operations(bip16_cpp, bip141_cpp);
 }
 
 kth_error_code_t kth_chain_transaction_check(kth_transaction_const_t self, kth_size_t max_block_size, kth_bool_t transaction_pool, kth_bool_t retarget) {
@@ -314,6 +300,11 @@ kth_error_code_t kth_chain_transaction_check(kth_transaction_const_t self, kth_s
     auto const transaction_pool_cpp = kth::int_to_bool(transaction_pool);
     auto const retarget_cpp = kth::int_to_bool(retarget);
     return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check(max_block_size_cpp, transaction_pool_cpp, retarget_cpp));
+}
+
+kth_size_t kth_chain_transaction_min_tx_size(kth_transaction_const_t self, kth_script_flags_t flags) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::cpp_ref<cpp_t>(self).min_tx_size(flags);
 }
 
 kth_error_code_t kth_chain_transaction_accept(kth_transaction_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transaction_pool) {
@@ -343,18 +334,6 @@ kth_error_code_t kth_chain_transaction_connect_input(kth_transaction_const_t sel
 void kth_chain_transaction_reset(kth_transaction_mut_t self) {
     KTH_PRECONDITION(self != nullptr);
     kth::cpp_ref<cpp_t>(self).reset();
-}
-
-kth_size_t kth_chain_transaction_signature_operations(kth_transaction_const_t self, kth_bool_t bip16, kth_bool_t bip141) {
-    KTH_PRECONDITION(self != nullptr);
-    auto const bip16_cpp = kth::int_to_bool(bip16);
-    auto const bip141_cpp = kth::int_to_bool(bip141);
-    return kth::cpp_ref<cpp_t>(self).signature_operations(bip16_cpp, bip141_cpp);
-}
-
-kth_size_t kth_chain_transaction_min_tx_size(kth_transaction_const_t self, kth_script_flags_t flags) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::cpp_ref<cpp_t>(self).min_tx_size(flags);
 }
 
 } // extern "C"

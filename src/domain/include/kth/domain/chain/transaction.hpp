@@ -5,6 +5,7 @@
 #ifndef KTH_DOMAIN_CHAIN_TRANSACTION_HPP
 #define KTH_DOMAIN_CHAIN_TRANSACTION_HPP
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <istream>
@@ -17,9 +18,7 @@
 #include <kth/domain/chain/input.hpp>
 #include <kth/domain/chain/output.hpp>
 #include <kth/domain/chain/point.hpp>
-#include <kth/domain/chain/transaction_basis.hpp>
 #include <kth/domain/chain/utxo.hpp>
-
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/domain/machine/opcode.hpp>
@@ -32,24 +31,53 @@
 #include <kth/infrastructure/utility/reader.hpp>
 #include <kth/infrastructure/utility/writer.hpp>
 
-
 #include <kth/domain/concepts.hpp>
-
-#include <expected>
-
+#include <kth/domain/deserialization.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
 
 namespace kth::domain::chain {
 
-struct KD_API transaction : transaction_basis {
-public:
+namespace detail {
+
+// Write a length-prefixed collection of inputs or outputs to the sink.
+template <class Sink, class Put>
+void write(Sink& sink, std::vector<Put> const& puts, bool wire) {
+    sink.write_variable_little_endian(puts.size());
+
+    auto const serialize = [&](const Put& put) {
+        put.to_data(sink, wire);
+    };
+
+    std::for_each(puts.begin(), puts.end(), serialize);
+}
+
+} // namespace detail
+
+class transaction;
+
+hash_digest hash(transaction const& tx);
+hash_digest outputs_hash(transaction const& tx);
+hash_digest inpoints_hash(transaction const& tx);
+hash_digest sequences_hash(transaction const& tx);
+hash_digest utxos_hash(transaction const& tx);
+
+hash_digest to_outputs(transaction const& tx);
+hash_digest to_inpoints(transaction const& tx);
+hash_digest to_sequences(transaction const& tx);
+hash_digest to_utxos(transaction const& tx);
+
+uint64_t total_input_value(transaction const& tx);
+uint64_t total_output_value(transaction const& tx);
+uint64_t fees(transaction const& tx);
+bool is_overspent(transaction const& tx);
+
+struct KD_API transaction {
     using ins = input::list;
     using outs = output::list;
     using list = std::vector<transaction>;
-    using hash_ptr = std::shared_ptr<hash_digest>;
 
     // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
-    struct validation {
+    struct validation_t {
         uint64_t originator = 0;
         code error = error::not_found;
         chain_state::ptr state = nullptr;
@@ -73,37 +101,29 @@ public:
     // Constructors.
     //-----------------------------------------------------------------------------
 
-    transaction();
+    transaction() = default;
     transaction(uint32_t version, uint32_t locktime, ins const& inputs, outs const& outputs);
     transaction(uint32_t version, uint32_t locktime, ins&& inputs, outs&& outputs);
-    transaction(transaction const& x, hash_digest const& hash);
-    transaction(transaction&& x, hash_digest const& hash);
 
-    explicit
-    transaction(transaction_basis const& x);
-    explicit
-    transaction(transaction_basis&& x) noexcept;
-
-
-    // Special member functions.
+    // Operators.
     //-----------------------------------------------------------------------------
 
-
-    //Note(kth): cannot be defaulted because of the mutex data member.
-    transaction(transaction const& x);
-    transaction(transaction&& x) noexcept;
-    transaction& operator=(transaction const& x);
-    transaction& operator=(transaction&& x) noexcept;
+    bool operator==(transaction const& x) const;
+    bool operator!=(transaction const& x) const;
 
     // Deserialization.
     //-----------------------------------------------------------------------------
 
     static
-    expect<transaction> from_data(byte_reader& reader, bool wire);
+    expect<transaction> from_data(byte_reader& reader, bool wire = true);
+
+    [[nodiscard]]
+    bool is_valid() const;
 
     // Serialization.
     //-----------------------------------------------------------------------------
 
+    [[nodiscard]]
     data_chunk to_data(bool wire = true) const;
 
     void to_data(data_sink& stream, bool wire = true) const;
@@ -111,50 +131,144 @@ public:
     template <typename W>
         requires ( ! std::is_same_v<W, bool>)
     void to_data(W& sink, bool wire = true) const {
-        transaction_basis::to_data(sink, wire);
+        if (wire) {
+            sink.write_4_bytes_little_endian(version_);
+            detail::write(sink, inputs_, wire);
+            detail::write(sink, outputs_, wire);
+            sink.write_4_bytes_little_endian(locktime_);
+        } else {
+            // Database (outputs forward) serialization.
+            detail::write(sink, outputs_, wire);
+            detail::write(sink, inputs_, wire);
+            sink.write_variable_little_endian(locktime_);
+            sink.write_variable_little_endian(version_);
+        }
     }
 
-    // Properties (size, accessors, cache).
+    // Properties (size, accessors).
     //-----------------------------------------------------------------------------
 
+    [[nodiscard]]
     size_t serialized_size(bool wire = true) const;
 
+    [[nodiscard]]
+    uint32_t version() const;
     void set_version(uint32_t value);
+
+    [[nodiscard]]
+    uint32_t locktime() const;
     void set_locktime(uint32_t value);
+
+    // [[deprecated]] // unsafe
+    ins& inputs();
+
+    [[nodiscard]]
+    ins const& inputs() const;
+
     void set_inputs(ins const& value);
     void set_inputs(ins&& value);
+
+    // [[deprecated]] // unsafe
+    outs& outputs();
+
+    [[nodiscard]]
+    outs const& outputs() const;
+
     void set_outputs(outs const& value);
     void set_outputs(outs&& value);
 
-    hash_digest outputs_hash() const;
-    hash_digest inpoints_hash() const;
-    hash_digest sequences_hash() const;
-    hash_digest utxos_hash() const;
+    // Hashes — recomputed on every call (no cache).
+    //-----------------------------------------------------------------------------
 
+    [[nodiscard]]
     hash_digest hash() const;
 
-    // Utilities.
-    //-------------------------------------------------------------------------
+    [[nodiscard]]
+    hash_digest outputs_hash() const;
 
-    void recompute_hash();
+    [[nodiscard]]
+    hash_digest inpoints_hash() const;
+
+    [[nodiscard]]
+    hash_digest sequences_hash() const;
+
+    [[nodiscard]]
+    hash_digest utxos_hash() const;
 
     // Validation.
     //-----------------------------------------------------------------------------
 
-    using transaction_basis::signature_operations;
-
+    [[nodiscard]]
     uint64_t fees() const;
-    // point::list previous_outputs() const;
-    // hash_list missing_previous_transactions() const;
+
+    [[nodiscard]]
+    point::list previous_outputs() const;
+
+    [[nodiscard]]
+    point::list missing_previous_outputs() const;
+
+    [[nodiscard]]
+    hash_list missing_previous_transactions() const;
+
+    [[nodiscard]]
     uint64_t total_input_value() const;
+
+    [[nodiscard]]
     uint64_t total_output_value() const;
+
+    [[nodiscard]]
     size_t signature_operations() const;
 
+    [[nodiscard]]
+    size_t signature_operations(bool bip16, bool bip141) const;
+
+    [[nodiscard]]
+    bool is_coinbase() const;
+
+    [[nodiscard]]
+    bool is_null_non_coinbase() const;
+
+    [[nodiscard]]
+    bool is_oversized_coinbase() const;
+
+    [[nodiscard]]
+    bool is_mature(size_t height) const;
+
+    [[nodiscard]]
+    bool is_internal_double_spend() const;
+
+    [[nodiscard]]
+    bool is_double_spend(bool include_unconfirmed) const;
+
+    [[nodiscard]]
+    bool is_dusty(uint64_t minimum_output_value) const;
+
+    [[nodiscard]]
+    bool is_missing_previous_outputs() const;
+
+    [[nodiscard]]
+    bool is_final(size_t block_height, uint32_t block_time) const;
+
+    [[nodiscard]]
+    bool is_locked(size_t block_height, uint32_t median_time_past) const;
+
+    [[nodiscard]]
+    bool is_locktime_conflict() const;
+
+    [[nodiscard]]
     bool is_overspent() const;
 
+    /// Structural validation — no context needed, no prevout cache needed.
+    /// Can be called immediately after deserialization for fast rejection.
+    [[nodiscard]]
     code check(size_t max_block_size, bool transaction_pool, bool retarget = true) const;
 
-    /// Contextual validation — prevout cache must be populated.
+    [[nodiscard]]
+    size_t min_tx_size(script_flags_t flags) const;
+
+    /// Contextual validation — requires flags, height, etc. Prevout cache must be populated.
+    /// Call after check() passes and prevout cache is filled.
+    [[nodiscard]]
     code accept(
         script_flags_t flags,
         size_t height,
@@ -164,57 +278,51 @@ public:
         bool transaction_pool
     ) const;
 
+    [[nodiscard]]
     code connect() const;
+
+    [[nodiscard]]
     code connect(chain_state const& state) const;
+
+    [[nodiscard]]
     code connect_input(chain_state const& state, size_t input_index) const;
 
+    [[nodiscard]]
+    bool is_standard() const;
 
-    // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
-    mutable validation validation{};
+    /// Flag-aware counterpart of `is_standard()`. Outputs are classified
+    /// through `script::output_pattern(flags)` (so `bch_p2s` can promote a
+    /// sub-201-byte non-matching scriptPubKey to `pay_to_script`, BCH
+    /// 2026-May leibniz); inputs keep the classical `input_pattern()`
+    /// classification — the P2S catch-all is intentionally asymmetric and
+    /// applies to locking bytecode only, matching BCHN's `Solver()` being
+    /// passed flags only on the scriptPubKey side.
+    [[nodiscard]]
+    bool is_standard(script_flags_t flags) const;
 
-// protected:
     void reset();
 
-protected:
-    void invalidate_cache() const;
-    bool all_inputs_final() const;
+    // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
+    mutable validation_t validation{};
 
 private:
+    [[nodiscard]]
+    bool all_inputs_final() const;
 
-    // TODO(kth): (refactor to transaction_result)
-    // this 3 variables should be stored in transaction_unconfired database when the store
-    // function is called. This values will be in the transaction_result object before
-    // creating the transaction object
-
-    // These share a mutex as they are not expected to contend.
-    mutable hash_ptr hash_;
-    mutable hash_ptr outputs_hash_;
-    mutable hash_ptr inpoints_hash_;
-    mutable hash_ptr sequences_hash_;
-    mutable hash_ptr utxos_hash_;
-
-#if ! defined(__EMSCRIPTEN__)
-    mutable upgrade_mutex hash_mutex_;
-#else
-    mutable shared_mutex hash_mutex_;
+#if defined(KTH_CURRENCY_BCH)
+    [[nodiscard]]
+    code validate_tokens(script_flags_t flags) const;
 #endif
 
-    // These share a mutex as they are not expected to contend.
-    mutable std::optional<uint64_t> total_input_value_;
-    mutable std::optional<uint64_t> total_output_value_;
-    mutable std::optional<bool> segregated_;
-
-#if ! defined(__EMSCRIPTEN__)
-    mutable upgrade_mutex mutex_;
-#else
-    mutable shared_mutex mutex_;
-#endif
+    uint32_t version_{0};
+    uint32_t locktime_{0};
+    input::list inputs_;
+    output::list outputs_;
 };
-
 
 code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t /*value*/);
 code verify(transaction const& tx, uint32_t input, script_flags_t flags);
 
 } // namespace kth::domain::chain
 
-#endif
+#endif // KTH_DOMAIN_CHAIN_TRANSACTION_HPP

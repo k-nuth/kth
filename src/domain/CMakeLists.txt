@@ -181,7 +181,6 @@ set(kth_sources_just_legacy
         src/chain/point_value.cpp
         src/chain/points_value.cpp
         src/chain/script.cpp
-        src/chain/transaction_basis.cpp
         src/chain/transaction.cpp
         src/chain/utxo.cpp
 
@@ -362,7 +361,6 @@ set(kth_headers
     include/kth/domain/chain/token_data.hpp
     include/kth/domain/chain/token_data_serialization.hpp
     include/kth/domain/chain/output_point.hpp
-    include/kth/domain/chain/transaction_basis.hpp
     include/kth/domain/chain/stealth.hpp
     include/kth/domain/chain/point_iterator.hpp
     include/kth/domain/chain/header.hpp
