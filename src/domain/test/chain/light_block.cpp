@@ -92,7 +92,7 @@ TEST_CASE("light_block header hash matches full block", "[chain light_block]") {
 
     // Parse as full block
     byte_reader full_reader(raw_block);
-    auto const full_result = chain::block::from_data(full_reader, true);
+    auto const full_result = chain::block::from_data(full_reader);
     REQUIRE(full_result.has_value());
 
     // Hashes must match
