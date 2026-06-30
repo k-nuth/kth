@@ -126,7 +126,7 @@ jobs:
           path: ~/Library/Caches/ccache
           # Two disjoint cache families ('sanitizers' / 'clean') so the
           # restore-keys' prefix match can't leak across families.
-          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ github.sha }}
+          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ hashFiles('conanfile.py') }}
           restore-keys: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-
 
       - name: 🔨 Build
@@ -218,7 +218,7 @@ jobs:
                  -DCMAKE_BUILD_TYPE=Release \
                  $CCACHE_OPT
 
-            cmake --build --preset conan-release -j4
+            cmake --build --preset conan-release -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
 
             if command -v ccache &>/dev/null; then
               ccache --show-stats

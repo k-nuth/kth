@@ -275,7 +275,11 @@ jobs:
       conan-password: ${{ secrets.CONAN_3_PASSWORD }}
 
   build-with-container:
-    needs: [setup, generate-matrix]
+    # Wait for the deps job to push prebuilt packages to the conan remote.
+    # Without this `needs:` edge, `conan install --build=missing` here races
+    # the deps build and ends up rebuilding heavy packages (boost, utxoz,
+    # etc.) from source — adds ~5 min on Linux, ~20 min on macOS.
+    needs: [setup, generate-matrix, build-deps-with-container]
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
@@ -300,7 +304,7 @@ jobs:
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
 
   build-with-container-sanitizers:
-    needs: [setup, generate-matrix]
+    needs: [setup, generate-matrix, build-deps-with-container]
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
@@ -325,7 +329,10 @@ jobs:
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
 
   build-without-container:
-    needs: [setup, generate-matrix]
+    # Wait for the macOS deps build to populate the conan remote. Hosted
+    # macOS runners are slow (~30 min) when forced to rebuild deps from
+    # source — gating on the deps job pays for itself many times over.
+    needs: [setup, generate-matrix, build-deps-without-container]
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
