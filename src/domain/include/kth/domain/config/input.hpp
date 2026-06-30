@@ -66,9 +66,10 @@ struct KD_API input {
 
 private:
     /**
-     * The state of this object.
+     * The state of this object — populated by the string-tuple ctor
+     * or the stream-in operator. Empty until populated.
      */
-    chain::input value_;
+    chain::input_opt value_;
 };
 
 } // namespace kth::domain::config

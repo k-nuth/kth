@@ -66,7 +66,6 @@ TEST_CASE("C-API InputList - push_back / count / nth",
 
     kth_input_const_t elem = kth_chain_input_list_nth(list, 0);
     REQUIRE(elem != NULL);
-    REQUIRE(kth_chain_input_is_valid(elem) != 0);
 
     kth_chain_input_destruct(in);
     kth_chain_input_list_destruct(list);

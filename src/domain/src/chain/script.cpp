@@ -87,17 +87,6 @@ script::script(data_chunk const& encoded, bool prefix) {
     *this = std::move(obj.value());
 }
 
-// Operators.
-//-----------------------------------------------------------------------------
-
-bool operator==(script const& x, script const& y) {
-    return x.bytes_ == y.bytes_;
-}
-
-bool operator!=(script const& x, script const& y) {
-    return !(x == y);
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

@@ -16,8 +16,9 @@ namespace kth::domain::chain {
 // Constructors.
 //-----------------------------------------------------------------------------
 
+// Default = coinbase null prevout (matches `output_point::null()`).
 output_point::output_point()
-    : validation{}
+    : point(null_hash, null_index), validation{}
 {}
 
 output_point::output_point(hash_digest const& hash, uint32_t index)
@@ -32,8 +33,8 @@ output_point::output_point(point const& x)
 //-----------------------------------------------------------------------------
 
 output_point& output_point::operator=(point const& x) {
-    reset();
     point::operator=(x);
+    validation = {};
     return *this;
 }
 
@@ -55,10 +56,6 @@ bool operator!=(point const& x, output_point const& y) {
 
 bool operator==(output_point const& x, output_point const& y) {
     return static_cast<point const&>(x) == static_cast<point const&>(y);
-}
-
-bool operator!=(output_point const& x, output_point const& y) {
-    return !(x == y);
 }
 
 // Validation.

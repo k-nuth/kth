@@ -61,9 +61,13 @@ static kth_output_point_mut_t make_outpoint(void) {
 // Constructors / lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Input - default construct is invalid", "[C-API Input]") {
+// input is valid-by-construction; the default ctor stays for ABI but
+// produces a zeroed value rather than an "invalid" sentinel. Tests check
+// observable state only.
+
+TEST_CASE("C-API Input - default construct returns handle", "[C-API Input]") {
     kth_input_mut_t in = kth_chain_input_construct_default();
-    REQUIRE(kth_chain_input_is_valid(in) == 0);
+    REQUIRE(in != NULL);
     kth_chain_input_destruct(in);
 }
 
@@ -72,7 +76,6 @@ TEST_CASE("C-API Input - field constructor preserves fields",
     kth_output_point_mut_t op = make_outpoint();
     kth_script_mut_t script = make_script();
     kth_input_mut_t in = kth_chain_input_construct(op, script, kSequence);
-    REQUIRE(kth_chain_input_is_valid(in) != 0);
     REQUIRE(kth_chain_input_sequence(in) == kSequence);
     kth_chain_input_destruct(in);
     kth_chain_script_destruct(script);
@@ -112,7 +115,6 @@ TEST_CASE("C-API Input - to_data / from_data roundtrip", "[C-API Input]") {
     kth_error_code_t ec = kth_chain_input_construct_from_data(raw, size, 1, &parsed);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(parsed != NULL);
-    REQUIRE(kth_chain_input_is_valid(parsed) != 0);
     REQUIRE(kth_chain_input_sequence(parsed) == kSequence);
     REQUIRE(kth_chain_input_equals(expected, parsed) != 0);
 
@@ -199,7 +201,6 @@ TEST_CASE("C-API Input - copy preserves fields", "[C-API Input]") {
     kth_input_mut_t original = kth_chain_input_construct(op, script, kSequence);
     kth_input_mut_t copy = kth_chain_input_copy(original);
 
-    REQUIRE(kth_chain_input_is_valid(copy) != 0);
     REQUIRE(kth_chain_input_equals(original, copy) != 0);
     REQUIRE(kth_chain_input_sequence(copy) == kSequence);
 

@@ -51,11 +51,15 @@ struct KD_API output {
     // Operators.
     //-------------------------------------------------------------------------
 
+    // NOTE: `==` is not `= default` because the `validation` member is
+    // tracing metadata, not part of the value's identity. `!=` is defaulted
+    // (delegates to `!(==)`) so callers that spell out the member call still
+    // resolve.
     friend
     bool operator==(output const&, output const&);
 
     friend
-    bool operator!=(output const&, output const&);
+    bool operator!=(output const&, output const&) = default;
 
     // Deserialization.
     //-------------------------------------------------------------------------

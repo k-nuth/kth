@@ -144,11 +144,6 @@ struct KD_API double_spend_proof {
     expect<double_spend_proof> from_data(byte_reader& reader, uint32_t /*version*/);
 
     [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
-
-    [[nodiscard]]
     size_t serialized_size(uint32_t /*version*/) const {
         return out_point_.serialized_size() +
             spender1_.serialized_size() +

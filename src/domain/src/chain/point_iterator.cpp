@@ -85,14 +85,6 @@ point_iterator point_iterator::operator-(int value) const {
     return value < 0 ? increase(unsigned(std::abs(value))) : decrease(value);
 }
 
-bool point_iterator::operator==(point_iterator const& x) const {
-    return (current_ == x.current_) && (point_ == x.point_);
-}
-
-bool point_iterator::operator!=(point_iterator const& x) const {
-    return !(*this == x);
-}
-
 // Utilities.
 //-----------------------------------------------------------------------------
 // private

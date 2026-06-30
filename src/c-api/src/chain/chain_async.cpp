@@ -247,7 +247,7 @@ void kth_chain_async_spend(kth_chain_t chain, void* ctx, kth_output_point_const_
     ::asio::co_spawn(bc.executor(), [&bc, outpoint_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
         auto result = co_await bc.fetch_spend(*outpoint_cpp);
         if (result) {
-            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(*result, std::error_code{}));
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(**result, std::error_code{}));
         } else {
             handler(chain, ctx, kth::to_c_err(result.error()), nullptr);
         }

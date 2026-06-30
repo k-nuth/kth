@@ -418,7 +418,7 @@ TEST_CASE("chain transaction  is locktime conflict  input max sequence  returns 
     // This must be non-const.
     chain::input::list inputs;
 
-    inputs.emplace_back();
+    inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
     inputs.back().set_sequence(max_input_sequence);
     chain::transaction const instance(0, 2143u, std::move(inputs), {});
     REQUIRE(instance.is_locktime_conflict());
@@ -608,7 +608,7 @@ TEST_CASE("chain transaction  is oversized coinbase  script size below min  retu
 TEST_CASE("chain transaction  is oversized coinbase  script size above max  returns true", "[chain transaction]") {
     chain::transaction instance;
     auto& inputs = instance.inputs();
-    inputs.emplace_back();
+    inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
     inputs.back().previous_output().set_index(chain::point::null_index);
     inputs.back().previous_output().set_hash(null_hash);
     
@@ -626,7 +626,7 @@ TEST_CASE("chain transaction  is oversized coinbase  script size above max  retu
 TEST_CASE("chain transaction  is oversized coinbase  script size within bounds  returns false", "[chain transaction]") {
     chain::transaction instance;
     auto& inputs = instance.inputs();
-    inputs.emplace_back();
+    inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
     inputs.back().previous_output().set_index(chain::point::null_index);
     inputs.back().previous_output().set_hash(null_hash);
 
@@ -659,8 +659,8 @@ TEST_CASE("chain transaction  is null non coinbase  no null input prevout  retur
 TEST_CASE("chain transaction  is null non coinbase  null input prevout  returns true", "[chain transaction]") {
     chain::transaction instance;
     auto& inputs = instance.inputs();
-    inputs.emplace_back();
-    inputs.emplace_back();
+    inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
+    inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
     inputs.back().previous_output().set_index(chain::point::null_index);
     inputs.back().previous_output().set_hash(null_hash);
     REQUIRE( ! instance.is_coinbase());
@@ -678,9 +678,9 @@ TEST_CASE("chain transaction  total input value  no cache  returns zero", "[chai
 TEST_CASE("chain transaction  total input value  cache  returns cache value sum", "[chain transaction]") {
     chain::transaction instance;
     auto& inputs = instance.inputs();
-    inputs.emplace_back();
+    inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
     inputs.back().previous_output().validation.cache.set_value(123u);
-    inputs.emplace_back();
+    inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
     inputs.back().previous_output().validation.cache.set_value(321u);
     REQUIRE(instance.total_input_value() == 444u);
 }
@@ -707,9 +707,9 @@ TEST_CASE("chain transaction  total output value  non empty outputs  returns sum
 TEST_CASE("chain transaction  fees  nonempty  returns outputs minus inputs", "[chain transaction]") {
     chain::transaction instance;
     auto& inputs = instance.inputs();
-    inputs.emplace_back();
+    inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
     inputs.back().previous_output().validation.cache.set_value(123u);
-    inputs.emplace_back();
+    inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
     inputs.back().previous_output().validation.cache.set_value(321u);
     instance.outputs().emplace_back();
     instance.outputs().back().set_value(44u);

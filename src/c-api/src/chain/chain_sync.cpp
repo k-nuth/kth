@@ -277,7 +277,7 @@ kth_error_code_t kth_chain_sync_spend(kth_chain_t chain, kth_output_point_const_
     auto const* outpoint_cpp = static_cast<kth::domain::chain::output_point const*>(op);
     auto result = sync_wait(bc, bc.fetch_spend(*outpoint_cpp));
     if (result) {
-        *out_input_point = kth::leak_if_success(*result, std::error_code{});
+        *out_input_point = kth::leak_if_success(**result, std::error_code{});
         return kth::to_c_err(std::error_code{});
     }
     *out_input_point = nullptr;

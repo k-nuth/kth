@@ -9,7 +9,8 @@ using namespace kd;
 
 namespace {
 
-// Test helper.
+// Test helper. input/output_point are valid-by-construction; we only
+// need to inspect script validity and output's not_found sentinel.
 bool all_valid(chain::transaction::list const& transactions) {
     auto valid = true;
 
@@ -17,7 +18,6 @@ bool all_valid(chain::transaction::list const& transactions) {
         valid = valid && tx.is_valid();
 
         for (auto const& input : tx.inputs()) {
-            valid = valid && input.is_valid();
             valid = valid && input.script().is_valid();
         }
 

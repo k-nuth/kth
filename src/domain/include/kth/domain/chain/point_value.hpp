@@ -21,7 +21,7 @@ public:
     // Constructors.
     //-------------------------------------------------------------------------
 
-    point_value() = default;
+    point_value() : point(null_hash, null_index) {}
     point_value(point const& p, uint64_t value);
 
     // point_value(point_value const& x) = default;
@@ -31,10 +31,7 @@ public:
     //-------------------------------------------------------------------------
 
     friend
-    bool operator==(point_value const& x, point_value const& y);
-
-    friend
-    bool operator!=(point_value const& x, point_value const& y);
+    bool operator==(point_value const&, point_value const&) = default;
 
     // Swap implementation required to properly handle base class.
     friend

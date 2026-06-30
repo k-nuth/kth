@@ -41,15 +41,14 @@ static kth_hash_t const kAllOnes = {{
 // Constructors
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Point - default construct is invalid", "[C-API Point]") {
-    kth_point_mut_t point = kth_chain_point_construct_default();
-    REQUIRE(kth_chain_point_is_valid(point) == 0);
+TEST_CASE("C-API Point - null factory yields coinbase sentinel", "[C-API Point]") {
+    kth_point_mut_t point = kth_chain_point_null();
+    REQUIRE(kth_chain_point_is_null(point) != 0);
     kth_chain_point_destruct(point);
 }
 
 TEST_CASE("C-API Point - field constructor preserves hash and index", "[C-API Point]") {
     kth_point_mut_t point = kth_chain_point_construct(&kHash, 1234u);
-    REQUIRE(kth_chain_point_is_valid(point) != 0);
     REQUIRE(kth_chain_point_index(point) == 1234u);
     REQUIRE(kth_hash_equal(kth_chain_point_hash(point), kHash) != 0);
     kth_chain_point_destruct(point);
@@ -81,7 +80,6 @@ TEST_CASE("C-API Point - to_data / from_data roundtrip", "[C-API Point]") {
     REQUIRE(ec == kth_ec_success);
     REQUIRE(parsed != NULL);
 
-    REQUIRE(kth_chain_point_is_valid(parsed) != 0);
     REQUIRE(kth_chain_point_equals(expected, parsed) != 0);
     REQUIRE(kth_chain_point_index(parsed) == 53213u);
     REQUIRE(kth_hash_equal(kth_chain_point_hash(parsed), kHash) != 0);
@@ -96,7 +94,7 @@ TEST_CASE("C-API Point - to_data / from_data roundtrip", "[C-API Point]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API Point - hash setter roundtrip", "[C-API Point]") {
-    kth_point_mut_t point = kth_chain_point_construct_default();
+    kth_point_mut_t point = kth_chain_point_null();
     REQUIRE(kth_hash_is_null(kth_chain_point_hash(point)) != 0);
 
     kth_chain_point_set_hash(point, &kHash);
@@ -106,8 +104,7 @@ TEST_CASE("C-API Point - hash setter roundtrip", "[C-API Point]") {
 }
 
 TEST_CASE("C-API Point - index setter roundtrip", "[C-API Point]") {
-    kth_point_mut_t point = kth_chain_point_construct_default();
-    REQUIRE(kth_chain_point_index(point) != 1254u);
+    kth_point_mut_t point = kth_chain_point_null();
     kth_chain_point_set_index(point, 1254u);
     REQUIRE(kth_chain_point_index(point) == 1254u);
     kth_chain_point_destruct(point);
@@ -121,7 +118,6 @@ TEST_CASE("C-API Point - copy preserves fields", "[C-API Point]") {
     kth_point_mut_t original = kth_chain_point_construct(&kHash, 524342u);
     kth_point_mut_t copy = kth_chain_point_copy(original);
 
-    REQUIRE(kth_chain_point_is_valid(copy) != 0);
     REQUIRE(kth_chain_point_equals(original, copy) != 0);
     REQUIRE(kth_chain_point_index(copy) == 524342u);
 
@@ -132,7 +128,7 @@ TEST_CASE("C-API Point - copy preserves fields", "[C-API Point]") {
 TEST_CASE("C-API Point - equals duplicates", "[C-API Point]") {
     kth_point_mut_t a = kth_chain_point_construct(&kHash, 524342u);
     kth_point_mut_t b = kth_chain_point_construct(&kHash, 524342u);
-    kth_point_mut_t c = kth_chain_point_construct_default();
+    kth_point_mut_t c = kth_chain_point_null();
 
     REQUIRE(kth_chain_point_equals(a, b) != 0);
     REQUIRE(kth_chain_point_equals(a, c) == 0);
@@ -218,7 +214,7 @@ TEST_CASE("C-API Point - construct_unsafe null hash aborts",
 
 TEST_CASE("C-API Point - to_data null out_size aborts",
           "[C-API Point][precondition]") {
-    kth_point_mut_t point = kth_chain_point_construct_default();
+    kth_point_mut_t point = kth_chain_point_null();
     KTH_EXPECT_ABORT(kth_chain_point_to_data(point, 1, NULL));
     kth_chain_point_destruct(point);
 }
@@ -230,21 +226,21 @@ TEST_CASE("C-API Point - copy null self aborts",
 
 TEST_CASE("C-API Point - set_hash null aborts",
           "[C-API Point][precondition]") {
-    kth_point_mut_t point = kth_chain_point_construct_default();
+    kth_point_mut_t point = kth_chain_point_null();
     KTH_EXPECT_ABORT(kth_chain_point_set_hash(point, NULL));
     kth_chain_point_destruct(point);
 }
 
 TEST_CASE("C-API Point - set_hash_unsafe null aborts",
           "[C-API Point][precondition]") {
-    kth_point_mut_t point = kth_chain_point_construct_default();
+    kth_point_mut_t point = kth_chain_point_null();
     KTH_EXPECT_ABORT(kth_chain_point_set_hash_unsafe(point, NULL));
     kth_chain_point_destruct(point);
 }
 
 TEST_CASE("C-API Point - equals null self aborts",
           "[C-API Point][precondition]") {
-    kth_point_mut_t other = kth_chain_point_construct_default();
+    kth_point_mut_t other = kth_chain_point_null();
     KTH_EXPECT_ABORT(kth_chain_point_equals(NULL, other));
     kth_chain_point_destruct(other);
 }

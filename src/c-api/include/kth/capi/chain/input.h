@@ -16,10 +16,6 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_input_mut_t`. Caller must release with `kth_chain_input_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_input_mut_t kth_chain_input_construct_default(void);
-
 /** @param[out] out Must point to a null `kth_input_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_input_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_chain_input_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_input_mut_t* out);
@@ -106,9 +102,6 @@ void kth_chain_input_set_sequence(kth_input_mut_t self, uint32_t value);
 // Predicates
 
 KTH_EXPORT
-kth_bool_t kth_chain_input_is_valid(kth_input_const_t self);
-
-KTH_EXPORT
 kth_bool_t kth_chain_input_is_final(kth_input_const_t self);
 
 KTH_EXPORT
@@ -119,9 +112,6 @@ kth_bool_t kth_chain_input_is_locked(kth_input_const_t self, kth_size_t block_he
 
 KTH_EXPORT
 kth_size_t kth_chain_input_signature_operations(kth_input_const_t self, kth_bool_t bip16, kth_bool_t bip141);
-
-KTH_EXPORT
-void kth_chain_input_reset(kth_input_mut_t self);
 
 #ifdef __cplusplus
 } // extern "C"

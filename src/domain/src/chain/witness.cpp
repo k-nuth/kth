@@ -78,10 +78,6 @@ bool witness::operator==(witness const& x) const {
     return stack_ == x.stack_;
 }
 
-bool witness::operator!=(witness const& x) const {
-    return !(*this == x);
-}
-
 // private/static
 size_t witness::serialized_size(data_stack const& stack) {
     auto const sum = [](size_t total, data_chunk const& element) {

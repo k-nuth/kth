@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <istream>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <kth/domain/chain/output_point.hpp>
@@ -27,11 +28,11 @@ namespace kth::domain::chain {
 
 struct KD_API input {
     using list = std::vector<input>;
+    using opt = std::optional<input>;
 
     // Constructors.
     //-------------------------------------------------------------------------
 
-    input() = default;
     input(output_point const& previous_output, chain::script const& script, uint32_t sequence);
     input(output_point&& previous_output, chain::script&& script, uint32_t sequence);
 
@@ -39,19 +40,13 @@ struct KD_API input {
     //-------------------------------------------------------------------------
 
     friend
-    bool operator==(input const&, input const&);
-
-    friend
-    bool operator!=(input const&, input const&);
+    constexpr bool operator==(input const&, input const&) = default;
 
     // Deserialization.
     //-------------------------------------------------------------------------
 
     static
     expect<input> from_data(byte_reader& reader, bool wire);
-
-    [[nodiscard]]
-    bool is_valid() const;
 
     // Serialization.
     //-------------------------------------------------------------------------
@@ -122,13 +117,13 @@ struct KD_API input {
     [[nodiscard]]
     expect<chain::script> extract_embedded_script() const;
 
-    void reset();
-
 private:
     output_point previous_output_;
     chain::script script_;
     uint32_t sequence_{0};
 };
+
+using input_opt = input::opt;
 
 } // namespace kth::domain::chain
 

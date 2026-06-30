@@ -12,11 +12,6 @@ data_chunk valid_raw_input = to_chunk("54b755c39207d443fd96a8d12c94446a1c6f66e39
 
 // Start Test Suite: input tests
 
-TEST_CASE("input  constructor 1  always  returns default initialized", "[input]") {
-    input instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("input  constructor 2  valid input  returns input initialized", "[input]") {
     output_point const previous_output{null_hash, 5434u};
     auto script_data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
@@ -28,7 +23,6 @@ TEST_CASE("input  constructor 2  valid input  returns input initialized", "[inpu
     uint32_t sequence = 4568656u;
 
     input instance(previous_output, script, sequence);
-    REQUIRE(instance.is_valid());
     REQUIRE(previous_output == instance.previous_output());
     REQUIRE(script == instance.script());
     REQUIRE(sequence == instance.sequence());
@@ -47,8 +41,6 @@ TEST_CASE("input  constructor 3  valid input  returns input initialized", "[inpu
     auto dup_previous_output = previous_output;
     auto dup_script = script;
     input instance(std::move(dup_previous_output), std::move(dup_script), sequence);
-
-    REQUIRE(instance.is_valid());
     REQUIRE(previous_output == instance.previous_output());
     REQUIRE(script == instance.script());
     REQUIRE(sequence == instance.sequence());
@@ -61,7 +53,6 @@ TEST_CASE("input  constructor 4  valid input  returns input initialized", "[inpu
     auto expected = *expected_result;
 
     input instance(expected);
-    REQUIRE(instance.is_valid());
     REQUIRE(expected == instance);
 }
 
@@ -72,7 +63,6 @@ TEST_CASE("input  constructor 5  valid input  returns input initialized", "[inpu
     auto expected = *expected_result;
 
     input instance(std::move(expected));
-    REQUIRE(instance.is_valid());
 }
 
 TEST_CASE("input from data insufficient data  failure", "[input]") {
@@ -96,7 +86,6 @@ TEST_CASE("input from data valid input  success", "[input]") {
     auto result = input::from_data(reader, true);
     REQUIRE(result);
     auto const instance = *result;
-    REQUIRE(instance.is_valid());
     REQUIRE(instance.serialized_size() == valid_raw_input.size());
 
     // Re-save and compare against original.
@@ -110,7 +99,6 @@ TEST_CASE("input  factory from data 2  valid input  success", "[input]") {
     auto result = input::from_data(reader, true);
     REQUIRE(result);
     auto const& instance = *result;
-    REQUIRE(instance.is_valid());
     REQUIRE(instance.serialized_size() == valid_raw_input.size());
 
     // Re-save and compare against original.
@@ -124,7 +112,6 @@ TEST_CASE("input  factory from data 3  valid input  success", "[input]") {
     auto result = input::from_data(reader, true);
     REQUIRE(result);
     auto const& instance = *result;
-    REQUIRE(instance.is_valid());
     REQUIRE(instance.serialized_size() == valid_raw_input.size());
 
     // Re-save and compare against original.
@@ -225,7 +212,7 @@ TEST_CASE("input  signature operations  bip16 inactive  returns script sigops", 
     auto result = script::from_data(reader, true);
     REQUIRE(result);
     auto const& script = *result;
-    input instance;
+    input instance{output_point{}, script{}, 0u};
     instance.set_script(script);
     REQUIRE(script.sigops(false) == instance.signature_operations(false, false));
 }
@@ -236,7 +223,7 @@ TEST_CASE("input  signature operations  bip16 active cache empty  returns script
     auto result = script::from_data(reader, true);
     REQUIRE(result);
     auto const& script = *result;
-    input instance;
+    input instance{output_point{}, script{}, 0u};
     instance.set_script(script);
     REQUIRE(script.sigops(false) == instance.signature_operations(true, false));
 }
@@ -246,7 +233,7 @@ TEST_CASE("input  previous output setter 1  roundtrip  success", "[input]") {
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
         5434u};
 
-    input instance;
+    input instance{output_point{}, script{}, 0u};
     REQUIRE(value != instance.previous_output());
     instance.set_previous_output(value);
     REQUIRE(value == instance.previous_output());
@@ -261,7 +248,7 @@ TEST_CASE("input  previous output setter 2  roundtrip  success", "[input]") {
 
     auto dup_value = value;
 
-    input instance;
+    input instance{output_point{}, script{}, 0u};
     REQUIRE(value != instance.previous_output());
     instance.set_previous_output(std::move(dup_value));
     REQUIRE(value == instance.previous_output());
@@ -276,7 +263,7 @@ TEST_CASE("input  script setter 1  roundtrip  success", "[input]") {
     REQUIRE(result);
     auto const& value = *result;
 
-    input instance;
+    input instance{output_point{}, script{}, 0u};
     REQUIRE(value != instance.script());
     instance.set_script(value);
     REQUIRE(value == instance.script());
@@ -292,7 +279,7 @@ TEST_CASE("input  script setter 2  roundtrip  success", "[input]") {
     auto const& value = *result;
 
     auto dup_value = value;
-    input instance;
+    input instance{output_point{}, script{}, 0u};
     REQUIRE(value != instance.script());
     instance.set_script(std::move(dup_value));
     REQUIRE(value == instance.script());
@@ -302,7 +289,7 @@ TEST_CASE("input  script setter 2  roundtrip  success", "[input]") {
 
 TEST_CASE("input  sequence  roundtrip  success", "[input]") {
     uint32_t value = 1254u;
-    input instance;
+    input instance{output_point{}, script{}, 0u};
     REQUIRE(value != instance.sequence());
     instance.set_sequence(value);
     REQUIRE(value == instance.sequence());
@@ -326,14 +313,14 @@ TEST_CASE("input  operator assign equals 2  always  matches equivalent", "[input
     auto result = input::from_data(reader, true);
     REQUIRE(result);
     auto const expected = std::move(*result);
-    input instance;
+    input instance{output_point{}, script{}, 0u};
     instance = expected;
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("input  operator boolean equals  duplicates  returns true", "[input]") {
-    input alpha;
-    input beta;
+    input alpha{output_point{}, script{}, 0u};
+    input beta{output_point{}, script{}, 0u};
     byte_reader reader(valid_raw_input);
     auto result = input::from_data(reader, true);
     REQUIRE(result);
@@ -346,8 +333,8 @@ TEST_CASE("input  operator boolean equals  duplicates  returns true", "[input]")
 }
 
 TEST_CASE("input  operator boolean equals  differs  returns false", "[input]") {
-    input alpha;
-    input beta;
+    input alpha{output_point{}, script{}, 0u};
+    input beta{output_point{}, script{}, 0u};
     byte_reader reader(valid_raw_input);
     auto result = input::from_data(reader, true);
     REQUIRE(result);
@@ -356,8 +343,8 @@ TEST_CASE("input  operator boolean equals  differs  returns false", "[input]") {
 }
 
 TEST_CASE("input  operator boolean not equals  duplicates  returns false", "[input]") {
-    input alpha;
-    input beta;
+    input alpha{output_point{}, script{}, 0u};
+    input beta{output_point{}, script{}, 0u};
     byte_reader reader(valid_raw_input);
     auto result = input::from_data(reader, true);
     REQUIRE(result);
@@ -370,8 +357,8 @@ TEST_CASE("input  operator boolean not equals  duplicates  returns false", "[inp
 }
 
 TEST_CASE("input  operator boolean not equals  differs  returns true", "[input]") {
-    input alpha;
-    input beta;
+    input alpha{output_point{}, script{}, 0u};
+    input beta{output_point{}, script{}, 0u};
     byte_reader reader(valid_raw_input);
     auto result = input::from_data(reader, true);
     REQUIRE(result);

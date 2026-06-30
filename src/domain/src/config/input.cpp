@@ -21,20 +21,21 @@ using namespace boost::program_options;
 
 // input is currently a private encoding in bx.
 static
-bool decode_input(chain::input& input, std::string const& tuple) {
+chain::input_opt decode_input(std::string const& tuple) {
     auto const tokens = split(tuple, point::delimeter);
     if (tokens.size() != 2 && tokens.size() != 3) {
-        return false;
+        return std::nullopt;
     }
 
-    input.set_sequence(max_input_sequence);
-    input.set_previous_output(point(tokens[0] + ":" + tokens[1]));
+    auto const sequence = (tokens.size() == 3)
+        ? deserialize<uint32_t>(tokens[2], true)
+        : max_input_sequence;
 
-    if (tokens.size() == 3) {
-        input.set_sequence(deserialize<uint32_t>(tokens[2], true));
-    }
-
-    return true;
+    return chain::input{
+        chain::output_point{point(tokens[0] + ":" + tokens[1])},
+        chain::script{},
+        sequence
+    };
 }
 
 // input is currently a private encoding in bx.
@@ -55,28 +56,32 @@ input::input(chain::input const& value)
     : value_(value) {}
 
 input::input(input const& x)
-    : input(x.value_) {}
+    : value_(x.value_) {}
 
 input::input(chain::input_point const& value)
     : value_(chain::input{value, {}, max_input_sequence}) {}
 
 input::operator chain::input const&() const {
-    return value_;
+    KTH_ASSERT(value_.has_value());
+    return *value_;
 }
 
 std::istream& operator>>(std::istream& stream, input& argument) {
     std::string tuple;
     stream >> tuple;
 
-    if ( ! decode_input(argument.value_, tuple)) {
+    auto decoded = decode_input(tuple);
+    if ( ! decoded) {
         BOOST_THROW_EXCEPTION(invalid_option_value(tuple));
     }
+    argument.value_ = std::move(*decoded);
 
     return stream;
 }
 
 std::ostream& operator<<(std::ostream& output, input const& argument) {
-    output << encode_input(argument.value_);
+    KTH_ASSERT(argument.value_.has_value());
+    output << encode_input(*argument.value_);
     return output;
 }
 

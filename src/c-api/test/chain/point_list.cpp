@@ -50,7 +50,6 @@ TEST_CASE("C-API PointList - push_back / count / nth",
 
     kth_point_const_t elem = kth_chain_point_list_nth(list, 0);
     REQUIRE(elem != NULL);
-    REQUIRE(kth_chain_point_is_valid(elem) != 0);
 
     kth_chain_point_destruct(pt);
     kth_chain_point_list_destruct(list);
