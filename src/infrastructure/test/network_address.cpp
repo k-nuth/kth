@@ -109,7 +109,7 @@ TEST_CASE("network address  from data 1  without timestamp  success", "[network 
         123u
     };
 
-    auto const data = expected.to_data(version_level_minimum, false);
+    auto const data = kth::to_data_chunk(expected, version_level_minimum, false);
     byte_reader reader(data);
     auto const result = network_address::from_data(reader, version_level_minimum, false);
 
@@ -127,7 +127,7 @@ TEST_CASE("network address  from data 2  without timestamp  success", "[network 
         123u
     };
 
-    auto const data = expected.to_data(version_level_minimum, false);
+    auto const data = kth::to_data_chunk(expected, version_level_minimum, false);
     byte_reader reader(data);
     auto const result = network_address::from_data(reader, version_level_minimum, false);
 
@@ -145,7 +145,7 @@ TEST_CASE("network address  from data 3  without timestamp  success", "[network 
         123u
     };
 
-    auto const data = expected.to_data(version_level_minimum, false);
+    auto const data = kth::to_data_chunk(expected, version_level_minimum, false);
     byte_reader reader(data);
     auto const result = network_address::from_data(reader, version_level_minimum, false);
 
@@ -163,7 +163,7 @@ TEST_CASE("network address  from data 1  with timestamp  success", "[network add
         123u
     };
 
-    auto const data = expected.to_data(version_level_minimum, true);
+    auto const data = kth::to_data_chunk(expected, version_level_minimum, true);
     byte_reader reader(data);
     auto const result = network_address::from_data(reader, version_level_minimum, true);
 
@@ -181,7 +181,7 @@ TEST_CASE("network address  from data 2  with timestamp  success", "[network add
         123u
     };
 
-    auto const data = expected.to_data(version_level_minimum, true);
+    auto const data = kth::to_data_chunk(expected, version_level_minimum, true);
     byte_reader reader(data);
     auto const result = network_address::from_data(reader, version_level_minimum, true);
 
@@ -199,7 +199,7 @@ TEST_CASE("network address  from data 3  with timestamp  success", "[network add
         123u
     };
 
-    auto const data = expected.to_data(version_level_minimum, true);
+    auto const data = kth::to_data_chunk(expected, version_level_minimum, true);
     byte_reader reader(data);
     auto const result = network_address::from_data(reader, version_level_minimum, true);
 

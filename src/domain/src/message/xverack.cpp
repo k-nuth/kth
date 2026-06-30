@@ -5,9 +5,6 @@
 #include <kth/domain/message/xverack.hpp>
 
 #include <kth/domain/message/version.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const xverack::command = "xverack";
@@ -21,7 +18,7 @@ bool xverack::is_valid() const {
 void xverack::reset() {
 }
 
-// Deserialization.
+// Serialization.
 //-----------------------------------------------------------------------------
 
 // static
@@ -29,22 +26,9 @@ expect<xverack> xverack::from_data(byte_reader& /*reader*/, uint32_t /*version*/
     return xverack();
 }
 
-// Serialization.
-//-----------------------------------------------------------------------------
-
-data_chunk xverack::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
+expect<void> xverack::to_data(byte_writer& /*writer*/, uint32_t /*version*/) const {
+    return {};
 }
-
-//TODO(fernando): empty?
-void xverack::to_data(uint32_t /*version*/, data_sink& /*stream*/) const {}
 
 size_t xverack::serialized_size(uint32_t version) const {
     return xverack::satoshi_fixed_size(version);

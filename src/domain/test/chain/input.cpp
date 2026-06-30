@@ -89,7 +89,7 @@ TEST_CASE("input from data valid input  success", "[input]") {
     REQUIRE(instance.serialized_size() == valid_raw_input.size());
 
     // Re-save and compare against original.
-    auto const resave = instance.to_data();
+    auto const resave = kth::to_data_chunk(instance, true);
     REQUIRE(resave.size() == valid_raw_input.size());
     REQUIRE(resave == valid_raw_input);
 }
@@ -102,7 +102,7 @@ TEST_CASE("input  factory from data 2  valid input  success", "[input]") {
     REQUIRE(instance.serialized_size() == valid_raw_input.size());
 
     // Re-save and compare against original.
-    auto const resave = instance.to_data();
+    auto const resave = kth::to_data_chunk(instance, true);
     REQUIRE(resave.size() == valid_raw_input.size());
     REQUIRE(resave == valid_raw_input);
 }
@@ -115,7 +115,7 @@ TEST_CASE("input  factory from data 3  valid input  success", "[input]") {
     REQUIRE(instance.serialized_size() == valid_raw_input.size());
 
     // Re-save and compare against original.
-    auto const resave = instance.to_data();
+    auto const resave = kth::to_data_chunk(instance, true);
     REQUIRE(resave.size() == valid_raw_input.size());
     REQUIRE(resave == valid_raw_input);
 }

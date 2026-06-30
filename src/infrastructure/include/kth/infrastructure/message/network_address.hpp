@@ -11,6 +11,7 @@
 
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/reader.hpp>
 #include <kth/infrastructure/utility/writer.hpp>
@@ -59,21 +60,8 @@ struct KI_API network_address {
     static
     expect<network_address> from_data(byte_reader& reader, uint32_t version, bool with_timestamp);
 
-    data_chunk to_data(uint32_t version, bool with_timestamp) const;
-    // void to_data(uint32_t version, std::ostream& stream, bool with_timestamp) const;
-    void to_data(uint32_t version, data_sink& stream, bool with_timestamp) const;
-
-    // void to_data(uint32_t version, writer& sink, bool with_timestamp) const;
-    template <typename W>
-    void to_data(uint32_t version, W& sink, bool with_timestamp) const {
-        if (with_timestamp) {
-            sink.write_4_bytes_little_endian(timestamp_);
-        }
-
-        sink.write_8_bytes_little_endian(services_);
-        sink.write_bytes(ip_.data(), ip_.size());
-        sink.write_2_bytes_big_endian(port_);
-    }
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer, uint32_t version, bool with_timestamp) const;
 
     bool is_valid() const;
     bool is_routable() const;

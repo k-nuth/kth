@@ -8,10 +8,7 @@
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const alert::command = "alert";
@@ -78,21 +75,7 @@ expect<alert> alert::from_data(byte_reader& reader, uint32_t /*version*/) {
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk alert::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void alert::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 size_t alert::serialized_size(uint32_t /*version*/) const {
     return infrastructure::message::variable_uint_size(payload_.size()) + payload_.size() +
@@ -129,6 +112,14 @@ void alert::set_signature(data_chunk const& value) {
 
 void alert::set_signature(data_chunk&& value) {
     signature_ = std::move(value);
+}
+
+expect<void> alert::to_data(byte_writer& writer, uint32_t version) const {
+        if (auto r = writer.write_variable_little_endian(payload_.size()); ! r) return r;
+        if (auto r = writer.write_bytes(payload_); ! r) return r;
+        if (auto r = writer.write_variable_little_endian(signature_.size()); ! r) return r;
+        if (auto r = writer.write_bytes(signature_); ! r) return r;
+        return {};
 }
 
 } // namespace kth::domain::message

@@ -119,7 +119,6 @@ struct KD_API heading {
         sink.write_4_bytes_little_endian(checksum_);
     }
 
-    //void to_data(writer& sink) const;
     [[nodiscard]]
     bool is_valid() const;
 

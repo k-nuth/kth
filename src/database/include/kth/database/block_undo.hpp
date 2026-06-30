@@ -25,22 +25,22 @@ struct KD_API tx_undo {
     [[nodiscard]]
     size_t serialized_size() const;
 
-    /// Serialize to data chunk.
-    [[nodiscard]]
-    data_chunk to_data() const;
-
-    /// Serialize to writer.
-    template <typename W, KTH_IS_WRITER(W)>
-    void to_data(W& sink) const {
-        sink.write_variable_little_endian(prev_outputs.size());
-        for (auto const& entry : prev_outputs) {
-            entry.to_data(sink);
-        }
-    }
-
     /// Deserialize from reader.
     [[nodiscard]]
     static std::expected<tx_undo, database::result_code> from_data(byte_reader& reader);
+
+    /// Serialize.
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer) const {
+        if (auto r = writer.write_variable_little_endian(prev_outputs.size()); ! r) return r;
+        for (auto const& entry : prev_outputs) {
+            if (auto r = entry.to_data(writer); ! r) return r;
+        }
+        return {};
+    }
+
+    [[nodiscard]]
+    data_chunk to_data() const;
 };
 
 /// Undo information for a block.
@@ -52,22 +52,22 @@ struct KD_API block_undo {
     [[nodiscard]]
     size_t serialized_size() const;
 
-    /// Serialize to data chunk.
-    [[nodiscard]]
-    data_chunk to_data() const;
-
-    /// Serialize to writer.
-    template <typename W, KTH_IS_WRITER(W)>
-    void to_data(W& sink) const {
-        sink.write_variable_little_endian(tx_undos.size());
-        for (auto const& tx : tx_undos) {
-            tx.to_data(sink);
-        }
-    }
-
     /// Deserialize from reader.
     [[nodiscard]]
     static std::expected<block_undo, database::result_code> from_data(byte_reader& reader);
+
+    /// Serialize.
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer) const {
+        if (auto r = writer.write_variable_little_endian(tx_undos.size()); ! r) return r;
+        for (auto const& tx : tx_undos) {
+            if (auto r = tx.to_data(writer); ! r) return r;
+        }
+        return {};
+    }
+
+    [[nodiscard]]
+    data_chunk to_data() const;
 
     /// Create block undo from a block and the UTXOs it spends.
     /// @param block The block being connected.

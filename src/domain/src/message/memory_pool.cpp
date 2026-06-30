@@ -44,22 +44,6 @@ expect<memory_pool> memory_pool::from_data(byte_reader& reader, uint32_t version
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk memory_pool::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-void memory_pool::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
-
 size_t memory_pool::serialized_size(uint32_t version) const {
     return memory_pool::satoshi_fixed_size(version);
 }

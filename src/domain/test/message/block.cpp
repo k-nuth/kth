@@ -145,7 +145,7 @@ TEST_CASE("block  factory data 1  genesis mainnet  success", "[message block]") 
     REQUIRE(genesis.header().serialized_size() == 80u);
 
     // Save genesis block.
-    auto raw_block = genesis.to_data();
+    auto raw_block = kth::to_data_chunk(genesis);
     REQUIRE(raw_block.size() == 285u);
 
     // Reload genesis block.
@@ -160,7 +160,7 @@ TEST_CASE("block  factory data 1  genesis mainnet  success", "[message block]") 
     // Verify merkle root from transactions.
     REQUIRE(block.generate_merkle_root() == genesis.header().merkle());
 
-    auto raw_reserialization = block.to_data(version::level::minimum);
+    auto raw_reserialization = kth::to_data_chunk(block, version::level::minimum);
     REQUIRE(raw_reserialization == raw_block);
     REQUIRE(raw_reserialization.size() == block.serialized_size(version::level::minimum));
 }

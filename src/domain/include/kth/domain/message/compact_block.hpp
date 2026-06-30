@@ -13,12 +13,8 @@
 #include <kth/domain/message/block.hpp>
 #include <kth/domain/message/prefilled_transaction.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
-
-
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/domain/concepts.hpp>
 
 namespace kth::domain::message {
@@ -75,33 +71,8 @@ struct KD_API compact_block {
     bool from_block(message::block const& block);
 
     [[nodiscard]]
-    data_chunk to_data(uint32_t version) const;
+    expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
-    void to_data(uint32_t version, data_sink& stream) const;
-
-    template <typename W>
-    void to_data(uint32_t version, W& sink) const {
-        header_.to_data(sink);
-        sink.write_8_bytes_little_endian(nonce_);
-        sink.write_variable_little_endian(short_ids_.size());
-
-        for (auto const& element : short_ids_) {
-            //sink.write_mini_hash(element);
-            uint32_t lsb = element & 0xffffffff;
-            uint16_t msb = (element >> 32) & 0xffff;
-            sink.write_4_bytes_little_endian(lsb);
-            sink.write_2_bytes_little_endian(msb);
-        }
-
-        sink.write_variable_little_endian(transactions_.size());
-
-        // NOTE: Witness flag is controlled by prefilled tx
-        for (auto const& element : transactions_) {
-            element.to_data(version, sink);
-        }
-    }
-
-    //void to_data(uint32_t version, writer& sink) const;
     [[nodiscard]]
     bool is_valid() const;
 
@@ -125,16 +96,6 @@ private:
     short_id_list short_ids_;
     prefilled_transaction::list transactions_;
 };
-
-template <typename W>
-void to_data_header_nonce(compact_block const& block, W& sink) {
-    block.header().to_data(sink);
-    sink.write_8_bytes_little_endian(block.nonce());
-}
-
-void to_data_header_nonce(compact_block const& block, data_sink& stream);
-
-data_chunk to_data_header_nonce(compact_block const& block);
 
 hash_digest hash(compact_block const& block);
 

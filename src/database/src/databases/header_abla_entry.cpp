@@ -7,47 +7,58 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::database {
 
+expect<void> to_data_with_abla_state(byte_writer& writer, domain::chain::block const& block) {
+    if (auto r = block.header().to_data(writer, true); ! r) return r;
+    auto const a = block.validation.state
+        ? block.validation.state->abla_state()
+        : domain::chain::abla::state{};
+    if (auto r = writer.write_little_endian<uint64_t>(a.block_size); ! r) return r;
+    if (auto r = writer.write_little_endian<uint64_t>(a.control_block_size); ! r) return r;
+    return writer.write_little_endian<uint64_t>(a.elastic_buffer_size);
+}
+
+expect<void> to_data_header_only(byte_writer& writer, domain::chain::header const& header) {
+    if (auto r = header.to_data(writer, true); ! r) return r;
+    // ABLA state is unknown for headers received before blocks
+    // Store zeros, will be updated when block is received
+    if (auto r = writer.write_little_endian<uint64_t>(0); ! r) return r;
+    if (auto r = writer.write_little_endian<uint64_t>(0); ! r) return r;
+    return writer.write_little_endian<uint64_t>(0);
+}
+
+expect<void> to_data_header_with_abla_state(byte_writer& writer, domain::chain::header const& header, uint64_t block_size, uint64_t control_block_size, uint64_t elastic_buffer_size) {
+    if (auto r = header.to_data(writer, true); ! r) return r;
+    if (auto r = writer.write_little_endian<uint64_t>(block_size); ! r) return r;
+    if (auto r = writer.write_little_endian<uint64_t>(control_block_size); ! r) return r;
+    return writer.write_little_endian<uint64_t>(elastic_buffer_size);
+}
+
 data_chunk to_data_with_abla_state(domain::chain::block const& block) {
-    data_chunk data;
     auto const size = block.header().serialized_size(true) + 8 + 8 + 8;
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data_with_abla_state(ostream, block);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
+    data_chunk data(size);
+    byte_writer writer(data);
+    auto const r = to_data_with_abla_state(writer, block);
+    KTH_ASSERT(r.has_value());
     return data;
 }
 
-void to_data_with_abla_state(std::ostream& stream, domain::chain::block const& block) {
-    ostream_writer sink(stream);
-    to_data_with_abla_state(sink, block);
-}
-
 data_chunk to_data_header_only(domain::chain::header const& header) {
-    data_chunk data;
     auto const size = header.serialized_size(true) + 8 + 8 + 8;
-    data.reserve(size);
-    data_sink ostream(data);
-    ostream_writer sink(ostream);
-    to_data_header_only(sink, header);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
+    data_chunk data(size);
+    byte_writer writer(data);
+    auto const r = to_data_header_only(writer, header);
+    KTH_ASSERT(r.has_value());
     return data;
 }
 
 data_chunk to_data_header_with_abla_state(domain::chain::header const& header, uint64_t block_size, uint64_t control_block_size, uint64_t elastic_buffer_size) {
-    data_chunk data;
     auto const size = header.serialized_size(true) + 8 + 8 + 8;
-    data.reserve(size);
-    data_sink ostream(data);
-    ostream_writer sink(ostream);
-    to_data_header_with_abla_state(sink, header, block_size, control_block_size, elastic_buffer_size);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
+    data_chunk data(size);
+    byte_writer writer(data);
+    auto const r = to_data_header_with_abla_state(writer, header, block_size, control_block_size, elastic_buffer_size);
+    KTH_ASSERT(r.has_value());
     return data;
 }
 

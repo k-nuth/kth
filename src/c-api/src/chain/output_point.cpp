@@ -94,8 +94,7 @@ uint8_t* kth_chain_output_point_to_data(kth_output_point_const_t self, kth_bool_
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
     auto const wire_cpp = kth::int_to_bool(wire);
-    auto const data = kth::cpp_ref<cpp_t>(self).to_data(wire_cpp);
-    return kth::create_c_array(data, *out_size);
+    return kth::to_c_array_from(kth::cpp_ref<cpp_t>(self), *out_size, wire_cpp);
 }
 
 kth_size_t kth_chain_output_point_serialized_size(kth_output_point_const_t self, kth_bool_t wire) {

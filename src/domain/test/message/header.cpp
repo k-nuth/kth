@@ -125,7 +125,7 @@ TEST_CASE("message header from data valid input canonical version  no transactio
         6523454u,
         68644u};
 
-    auto const data = expected.to_data(version);
+    auto const data = kth::to_data_chunk(expected, version);
 
     byte_reader reader(data);
     auto const result_exp = message::header::from_data(reader, version);
@@ -148,7 +148,7 @@ TEST_CASE("message header from data valid input  success", "[message header]") {
         6523454u,
         68644u};
 
-    auto const data = expected.to_data(version);
+    auto const data = kth::to_data_chunk(expected, version);
 
     byte_reader reader(data);
     auto const result_exp = message::header::from_data(reader, version);

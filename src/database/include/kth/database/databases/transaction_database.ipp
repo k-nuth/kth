@@ -80,8 +80,7 @@ transaction_entry internal_database_basis<Clock>::get_transaction(uint64_t id, K
     }
 
     auto data = db_value_to_data_chunk(value);
-    byte_reader reader(data);
-    auto entry_res = transaction_entry::from_data(reader);
+    auto entry_res = kth::from_data_chunk<transaction_entry>(data);
     if ( ! entry_res) {
         return {};
     }

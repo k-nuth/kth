@@ -46,7 +46,7 @@ TEST_CASE("pong from data round trip  expected", "[pong]") {
         4306550u};
 
     static auto const version = message::version::level::minimum;
-    auto const data = expected.to_data(version);
+    auto const data = kth::to_data_chunk(expected, version);
     byte_reader reader(data);
     auto const result_exp = message::pong::from_data(reader, version);
     REQUIRE(result_exp);

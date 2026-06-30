@@ -157,7 +157,7 @@ TEST_CASE("block transactions from data insufficient version  failure", "[block 
     REQUIRE(result);
     auto expected = std::move(*result);
 
-    auto const data = expected.to_data(message::block_transactions::version_minimum);
+    auto const data = kth::to_data_chunk(expected, message::block_transactions::version_minimum);
 
     REQUIRE(raw == data);
 
@@ -199,7 +199,7 @@ TEST_CASE("block transactions from data valid input  success", "[block transacti
     REQUIRE(result_exp);
     auto expected = std::move(*result_exp);
 
-    auto const data = expected.to_data(message::block_transactions::version_minimum);
+    auto const data = kth::to_data_chunk(expected, message::block_transactions::version_minimum);
 
     REQUIRE(raw == data);
     byte_reader reader2(data);

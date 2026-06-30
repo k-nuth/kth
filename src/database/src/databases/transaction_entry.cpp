@@ -8,7 +8,6 @@
 #include <cstdint>
 
 // #include <kth/infrastructure.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::database {
 
@@ -97,39 +96,19 @@ expect<transaction_entry> transaction_entry::from_data(byte_reader& reader) {
 
 // static
 data_chunk transaction_entry::factory_to_data(domain::chain::transaction const& tx, uint32_t height, uint32_t median_time_past, uint32_t position) {
-    data_chunk data;
-    auto const size = serialized_size(tx);
-    data.reserve(size);
-    data_sink ostream(data);
-    factory_to_data(ostream, tx, height, median_time_past, position);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
+    data_chunk data(serialized_size(tx));
+    byte_writer writer(data);
+    auto const r = factory_to_data(writer, tx, height, median_time_past, position);
+    KTH_ASSERT(r.has_value());
     return data;
 }
-
-// static
-void transaction_entry::factory_to_data(std::ostream& stream, domain::chain::transaction const& tx, uint32_t height, uint32_t median_time_past, uint32_t position) {
-    ostream_writer sink(stream);
-    factory_to_data(sink, tx, height, median_time_past, position);
-}
-
-// Serialization.
-//-----------------------------------------------------------------------------
 
 data_chunk transaction_entry::to_data() const {
-    data_chunk data;
-    auto const size = serialized_size(transaction_);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
+    data_chunk data(serialized_size(transaction_));
+    byte_writer writer(data);
+    auto const r = to_data(writer);
+    KTH_ASSERT(r.has_value());
     return data;
-}
-
-void transaction_entry::to_data(std::ostream& stream) const {
-    ostream_writer sink(stream);
-    to_data(sink);
 }
 
 // Deserialization.

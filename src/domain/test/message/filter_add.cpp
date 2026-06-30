@@ -62,7 +62,7 @@ TEST_CASE("filter add from data insufficient version  failure", "[filter add]") 
          0xc3, 0x0d, 0x6f, 0x55, 0x7d, 0x71, 0x12, 0x1a,
          0x37, 0xc0, 0xb0, 0x32, 0xf0, 0xd6, 0x6e, 0xdf}};
 
-    auto const data = expected.to_data(message::version::level::maximum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::maximum);
     byte_reader reader(data);
     auto const result = message::filter_add::from_data(reader, message::version::level::minimum - 1);
     REQUIRE( ! result);
@@ -76,7 +76,7 @@ TEST_CASE("filter add from data valid input  success", "[filter add]") {
          0xc3, 0x0d, 0x6f, 0x55, 0x7d, 0x71, 0x12, 0x1a,
          0x37, 0xc0, 0xb0, 0x32, 0xf0, 0xd6, 0x6e, 0xdf}};
 
-    auto const data = expected.to_data(message::version::level::maximum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::maximum);
     byte_reader reader(data);
     auto const result_exp = message::filter_add::from_data(reader, message::version::level::maximum);
     REQUIRE(result_exp);

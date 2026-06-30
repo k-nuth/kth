@@ -92,7 +92,7 @@ TEST_CASE("output from data  valid input success", "[output]") {
     REQUIRE( ! instance.token_data().has_value());
 
     // Re-save and compare against original.
-    data_chunk resave = instance.to_data();
+    data_chunk resave = kth::to_data_chunk(instance, true);
     REQUIRE(resave.size() == valid_raw_output.size());
     REQUIRE(resave == valid_raw_output);
 }
@@ -107,7 +107,7 @@ TEST_CASE("output factory from data 2  valid input success", "[output]") {
     REQUIRE( ! instance.token_data().has_value());
 
     // Re-save and compare against original.
-    data_chunk resave = instance.to_data();
+    data_chunk resave = kth::to_data_chunk(instance, true);
     REQUIRE(resave.size() == valid_raw_output.size());
     REQUIRE(resave == valid_raw_output);
 }
@@ -122,7 +122,7 @@ TEST_CASE("output factory from data 3  valid input success", "[output]") {
     REQUIRE( ! instance.token_data().has_value());
 
     // Re-save and compare against original.
-    data_chunk resave = instance.to_data();
+    data_chunk resave = kth::to_data_chunk(instance, true);
     REQUIRE(resave.size() == valid_raw_output.size());
     REQUIRE(resave == valid_raw_output);
 }
@@ -272,8 +272,8 @@ TEST_CASE("output deserialization with just FT amount 1", "[output]") {
     auto const& ft = std::get<chain::fungible>(instance.token_data().value().data);
     REQUIRE(ft.amount == chain::amount_t{0x01});
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with just FT amount 252", "[output]") {
@@ -295,8 +295,8 @@ TEST_CASE("output deserialization with just FT amount 252", "[output]") {
     auto const& ft = std::get<chain::fungible>(instance.token_data().value().data);
     REQUIRE(ft.amount == chain::amount_t{252});
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with just FT amount 253", "[output]") {
@@ -318,8 +318,8 @@ TEST_CASE("output deserialization with just FT amount 253", "[output]") {
     auto const& ft = std::get<chain::fungible>(instance.token_data().value().data);
     REQUIRE(ft.amount == chain::amount_t{253});
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with just FT amount 9223372036854775807", "[output]") {
@@ -341,8 +341,8 @@ TEST_CASE("output deserialization with just FT amount 9223372036854775807", "[ou
     auto const& ft = std::get<chain::fungible>(instance.token_data().value().data);
     REQUIRE(ft.amount == chain::amount_t{9223372036854775807});
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with just immutable NFT 0-byte commitment", "[output]") {
@@ -365,8 +365,8 @@ TEST_CASE("output deserialization with just immutable NFT 0-byte commitment", "[
     REQUIRE(nft.commitment.size() == 0);
     REQUIRE(nft.capability == chain::capability_t::none); // immutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - FT amount 1", "[output]") {
@@ -391,8 +391,8 @@ TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - 
     REQUIRE(nft.commitment.size() == 0);
     REQUIRE(nft.capability == chain::capability_t::none); // immutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - FT amount 253", "[output]") {
@@ -417,8 +417,8 @@ TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - 
     REQUIRE(nft.commitment.size() == 0);
     REQUIRE(nft.capability == chain::capability_t::none); // immutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - FT amount 9223372036854775807", "[output]") {
@@ -443,8 +443,8 @@ TEST_CASE("output deserialization with both - immutable NFT 0-byte commitment - 
     REQUIRE(nft.commitment.size() == 0);
     REQUIRE(nft.capability == chain::capability_t::none); // immutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with just immutable NFT 1-byte commitment", "[output]") {
@@ -468,8 +468,8 @@ TEST_CASE("output deserialization with just immutable NFT 1-byte commitment", "[
     REQUIRE(encode_base16(nft.commitment) == "cc");
     REQUIRE(nft.capability == chain::capability_t::none); // immutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - immutable NFT 1-byte commitment - FT amount 252", "[output]") {
@@ -495,8 +495,8 @@ TEST_CASE("output deserialization with both - immutable NFT 1-byte commitment - 
     REQUIRE(encode_base16(nft.commitment) == "cc");
     REQUIRE(nft.capability == chain::capability_t::none); // immutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - immutable NFT 2-byte commitment - FT amount 253", "[output]") {
@@ -522,8 +522,8 @@ TEST_CASE("output deserialization with both - immutable NFT 2-byte commitment - 
     REQUIRE(encode_base16(nft.commitment) == "cccc");
     REQUIRE(nft.capability == chain::capability_t::none); // immutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - immutable NFT 10-byte commitment - FT amount 65535", "[output]") {
@@ -549,8 +549,8 @@ TEST_CASE("output deserialization with both - immutable NFT 10-byte commitment -
     REQUIRE(encode_base16(nft.commitment) == "cccccccccccccccccccc");
     REQUIRE(nft.capability == chain::capability_t::none); // immutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - immutable NFT 40-byte commitment - FT amount 65536", "[output]") {
@@ -576,8 +576,8 @@ TEST_CASE("output deserialization with both - immutable NFT 40-byte commitment -
     REQUIRE(encode_base16(nft.commitment) == "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
     REQUIRE(nft.capability == chain::capability_t::none); // immutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with just mutable NFT 0-byte commitment", "[output]") {
@@ -600,8 +600,8 @@ TEST_CASE("output deserialization with just mutable NFT 0-byte commitment", "[ou
     REQUIRE(nft.commitment.size() == 0);
     REQUIRE(nft.capability == chain::capability_t::mut);
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - mutable NFT 0-byte commitment - FT amount 4294967295", "[output]") {
@@ -626,8 +626,8 @@ TEST_CASE("output deserialization with both - mutable NFT 0-byte commitment - FT
     REQUIRE(nft.commitment.size() == 0);
     REQUIRE(nft.capability == chain::capability_t::mut); // mutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with just mutable NFT 1-byte commitment", "[output]") {
@@ -651,8 +651,8 @@ TEST_CASE("output deserialization with just mutable NFT 1-byte commitment", "[ou
     REQUIRE(encode_base16(nft.commitment) == "cc");
     REQUIRE(nft.capability == chain::capability_t::mut); // mutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - mutable NFT 1-byte commitment - FT amount 4294967296", "[output]") {
@@ -678,8 +678,8 @@ TEST_CASE("output deserialization with both - mutable NFT 1-byte commitment - FT
     REQUIRE(encode_base16(nft.commitment) == "cc");
     REQUIRE(nft.capability == chain::capability_t::mut); // mutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - mutable NFT 2-byte commitment - FT amount 9223372036854775807", "[output]") {
@@ -705,8 +705,8 @@ TEST_CASE("output deserialization with both - mutable NFT 2-byte commitment - FT
     REQUIRE(encode_base16(nft.commitment) == "cccc");
     REQUIRE(nft.capability == chain::capability_t::mut); // mutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - mutable NFT 10-byte commitment - FT amount 1", "[output]") {
@@ -732,8 +732,8 @@ TEST_CASE("output deserialization with both - mutable NFT 10-byte commitment - F
     REQUIRE(encode_base16(nft.commitment) == "cccccccccccccccccccc");
     REQUIRE(nft.capability == chain::capability_t::mut); // mutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - mutable NFT 40-byte commitment - FT amount 252", "[output]") {
@@ -759,8 +759,8 @@ TEST_CASE("output deserialization with both - mutable NFT 40-byte commitment - F
     REQUIRE(encode_base16(nft.commitment) == "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
     REQUIRE(nft.capability == chain::capability_t::mut); // mutable
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with just minting NFT 0-byte commitment", "[output]") {
@@ -783,8 +783,8 @@ TEST_CASE("output deserialization with just minting NFT 0-byte commitment", "[ou
     REQUIRE(nft.commitment.size() == 0);
     REQUIRE(nft.capability == chain::capability_t::minting);
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - minting NFT 0-byte commitment - FT amount 253", "[output]") {
@@ -809,8 +809,8 @@ TEST_CASE("output deserialization with both - minting NFT 0-byte commitment - FT
     REQUIRE(nft.commitment.size() == 0);
     REQUIRE(nft.capability == chain::capability_t::minting); // minting
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with just minting NFT 1-byte commitment", "[output]") {
@@ -834,8 +834,8 @@ TEST_CASE("output deserialization with just minting NFT 1-byte commitment", "[ou
     REQUIRE(encode_base16(nft.commitment) == "cc");
     REQUIRE(nft.capability == chain::capability_t::minting); // minting
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - minting NFT 1-byte commitment - FT amount 65535", "[output]") {
@@ -861,8 +861,8 @@ TEST_CASE("output deserialization with both - minting NFT 1-byte commitment - FT
     REQUIRE(encode_base16(nft.commitment) == "cc");
     REQUIRE(nft.capability == chain::capability_t::minting); // minting
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - minting NFT 2-byte commitment - FT amount 65536", "[output]") {
@@ -888,8 +888,8 @@ TEST_CASE("output deserialization with both - minting NFT 2-byte commitment - FT
     REQUIRE(encode_base16(nft.commitment) == "cccc");
     REQUIRE(nft.capability == chain::capability_t::minting); // minting
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - minting NFT 10-byte commitment - FT amount 4294967297", "[output]") {
@@ -915,8 +915,8 @@ TEST_CASE("output deserialization with both - minting NFT 10-byte commitment - F
     REQUIRE(encode_base16(nft.commitment) == "cccccccccccccccccccc");
     REQUIRE(nft.capability == chain::capability_t::minting); // minting
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization with both - minting NFT 40-byte commitment - FT amount 9223372036854775807", "[output]") {
@@ -942,8 +942,8 @@ TEST_CASE("output deserialization with both - minting NFT 40-byte commitment - F
     REQUIRE(encode_base16(nft.commitment) == "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
     REQUIRE(nft.capability == chain::capability_t::minting); // minting
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a914905f933de850988603aafeeb2fd7fce61e66fe5d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 TEST_CASE("output deserialization ...", "[output]") {
@@ -965,8 +965,8 @@ TEST_CASE("output deserialization ...", "[output]") {
     auto const& ft = std::get<chain::fungible>(instance.token_data().value().data);
     REQUIRE(ft.amount == chain::amount_t{0x0a});
 
-    REQUIRE(encode_base16(instance.script().to_data(true)) == "1976a91448a5e322b29f3db7297f4dc744e30bca63a0179d88ac");
-    REQUIRE(encode_base16(instance.to_data(true)) == encode_base16(data));
+    REQUIRE(encode_base16(kth::to_data_chunk(instance.script(), true)) == "1976a91448a5e322b29f3db7297f4dc744e30bca63a0179d88ac");
+    REQUIRE(encode_base16(kth::to_data_chunk(instance, true)) == encode_base16(data));
 }
 
 // End Test Suite

@@ -126,7 +126,6 @@ struct KD_API witness {
         std::for_each(stack_.begin(), stack_.end(), serialize);
     }
 
-    //void to_data(writer& sink, bool prefix) const;
 
     std::string to_string() const;
 

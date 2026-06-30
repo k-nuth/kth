@@ -184,7 +184,7 @@ TEST_CASE("message transaction from data case 1 valid data  success", "[message 
 
     // Re-save tx and compare against original.
     REQUIRE(tx.serialized_size(version::level::minimum) == raw_tx.size());
-    data_chunk resave = tx.to_data(version::level::minimum);
+    data_chunk resave = kth::to_data_chunk(tx, version::level::minimum);
     REQUIRE(resave == raw_tx);
 }
 
@@ -202,7 +202,7 @@ TEST_CASE("message transaction from data case 2 valid data  success", "[message 
 
     // Re-save tx and compare against original.
     REQUIRE(tx.serialized_size(version::level::minimum) == raw_tx.size());
-    data_chunk resave = tx.to_data(version::level::minimum);
+    data_chunk resave = kth::to_data_chunk(tx, version::level::minimum);
     REQUIRE(resave == raw_tx);
 }
 

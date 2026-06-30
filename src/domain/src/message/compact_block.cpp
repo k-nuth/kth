@@ -11,9 +11,7 @@
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/infrastructure/math/sip_hash.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 #include <kth/infrastructure/utility/pseudo_random_broken_do_not_use.hpp>
 
 namespace kth::domain::message {
@@ -165,23 +163,7 @@ expect<compact_block> compact_block::from_data(byte_reader& reader, uint32_t ver
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk compact_block::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void compact_block::to_data(uint32_t version, data_sink& stream) const {
-    //std::println("compact_block::to_data 2");
-
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 size_t compact_block::serialized_size(uint32_t version) const {
     //std::println("compact_block::serialized_size");
@@ -262,28 +244,36 @@ void compact_block::set_transactions(prefilled_transaction::list&& value) {
     transactions_ = std::move(value);
 }
 
-// void to_data_header_nonce(compact_block const& block, std::ostream& stream) {
-void to_data_header_nonce(compact_block const& block, data_sink& stream) {
-    ostream_writer sink_w(stream);
-    to_data_header_nonce(block, sink_w);
-}
-
-data_chunk to_data_header_nonce(compact_block const& block) {
-    //std::println("compact_block::to_data");
-
-    data_chunk data;
-    auto size = chain::header::satoshi_fixed_size() + sizeof(block.nonce());
-
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data_header_nonce(block, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
 hash_digest hash(compact_block const& block) {
-    return sha256_hash(to_data_header_nonce(block));
+    auto const size = chain::header::satoshi_fixed_size() + sizeof(block.nonce());
+    data_chunk buf(size);
+    byte_writer writer(buf);
+    auto const r1 = block.header().to_data(writer, true);
+    auto const r2 = writer.write_little_endian<uint64_t>(block.nonce());
+    KTH_ASSERT(r1.has_value() && r2.has_value());
+    return sha256_hash(buf);
+}
+
+expect<void> compact_block::to_data(byte_writer& writer, uint32_t version) const {
+        if (auto r = header_.to_data(writer, true); ! r) return r;
+        if (auto r = writer.write_little_endian<uint64_t>(nonce_); ! r) return r;
+        if (auto r = writer.write_variable_little_endian(short_ids_.size()); ! r) return r;
+
+        for (auto const& element : short_ids_) {
+            //sink.write_mini_hash(element);
+            uint32_t lsb = element & 0xffffffff;
+            uint16_t msb = (element >> 32) & 0xffff;
+            if (auto r = writer.write_little_endian<uint32_t>(lsb); ! r) return r;
+            if (auto r = writer.write_little_endian<uint16_t>(msb); ! r) return r;
+        }
+
+        if (auto r = writer.write_variable_little_endian(transactions_.size()); ! r) return r;
+
+        // NOTE: Witness flag is controlled by prefilled tx
+        for (auto const& element : transactions_) {
+            if (auto r = element.to_data(writer, version); ! r) return r;
+        }
+        return {};
 }
 
 } // namespace kth::domain::message

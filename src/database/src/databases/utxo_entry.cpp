@@ -8,7 +8,6 @@
 #include <cstdint>
 
 // #include <kth/infrastructure.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::database {
 
@@ -64,39 +63,22 @@ size_t utxo_entry::serialized_size() const {
 
 // static
 data_chunk utxo_entry::to_data_fixed(uint32_t height, uint32_t median_time_past, bool coinbase) {
-    data_chunk data;
     auto const size = serialized_size_fixed();
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data_fixed(ostream, height, median_time_past, coinbase);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
+    data_chunk data(size);
+    byte_writer writer(data);
+    auto const r = to_data_fixed(writer, height, median_time_past, coinbase);
+    KTH_ASSERT(r.has_value());
     return data;
-}
-
-// static
-void utxo_entry::to_data_fixed(std::ostream& stream, uint32_t height, uint32_t median_time_past, bool coinbase) {
-    ostream_writer sink(stream);
-    to_data_fixed(sink, height, median_time_past, coinbase);
 }
 
 // static
 data_chunk utxo_entry::to_data_with_fixed(domain::chain::output const& output, data_chunk const& fixed) {
-    //TODO(fernando):  reuse fixed vector (do not create a new one)
-    data_chunk data;
     auto const size = output.serialized_size(false) + fixed.size();
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data_with_fixed(ostream, output, fixed);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
+    data_chunk data(size);
+    byte_writer writer(data);
+    auto const r = to_data_with_fixed(writer, output, fixed);
+    KTH_ASSERT(r.has_value());
     return data;
-}
-
-// static
-void utxo_entry::to_data_with_fixed(std::ostream& stream, domain::chain::output const& output, data_chunk const& fixed) {
-    ostream_writer sink(stream);
-    to_data_with_fixed(sink, output, fixed);
 }
 
 
@@ -133,19 +115,7 @@ expect<utxo_entry> utxo_entry::from_data(byte_reader& reader) {
 //-----------------------------------------------------------------------------
 
 data_chunk utxo_entry::to_data() const {
-    data_chunk data;
-    auto const size = serialized_size();
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-void utxo_entry::to_data(std::ostream& stream) const {
-    ostream_writer sink(stream);
-    to_data(sink);
+    return kth::to_data_chunk(*this);
 }
 
 } // namespace kth::database

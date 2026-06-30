@@ -40,7 +40,7 @@ bool to_stealth_prefix(uint32_t& out_prefix, script const& script) {
     // A stealth filter is a leftmost substring of the stealth prefix.
     ////constexpr size_t size = binary::bits_per_block * sizeof(uint32_t);
 
-    auto const script_hash = bitcoin_hash(script.to_data(false));
+    auto const script_hash = bitcoin_hash(kth::to_data_chunk(script, false));
     out_prefix = from_little_endian_unsafe<uint32_t>(script_hash);
     return true;
 }

@@ -50,7 +50,7 @@ std::expected<transaction, std::error_code> transaction::from_string(std::string
 }
 
 std::string transaction::to_string() const {
-    return kth::encode_base16(value_.to_data());
+    return kth::encode_base16(kth::to_data_chunk(value_, true));
 }
 
 } // namespace kth::domain::config

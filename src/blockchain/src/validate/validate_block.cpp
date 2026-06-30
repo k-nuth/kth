@@ -412,7 +412,7 @@ float validate_block::hit_rate() const {
 
 void validate_block::dump(code const& ec, transaction const& tx, uint32_t input_index, script_flags_t flags, size_t height) {
     auto const& prevout = tx.inputs()[input_index].previous_output();
-    auto const script = prevout.validation.cache.script().to_data(false);
+    auto const script = kth::to_data_chunk(prevout.validation.cache.script(), false);
     auto const hash = encode_hash(prevout.hash());
     auto const tx_hash = encode_hash(tx.hash());
 
@@ -424,7 +424,7 @@ void validate_block::dump(code const& ec, transaction const& tx, uint32_t input_
         " inpoint      : {}:{}\n"
         " transaction  : {}",
         height, ec.message(), flags, hash, prevout.index(), encode_base16(script),
-        prevout.validation.cache.value(), tx_hash, input_index, encode_base16(tx.to_data(true)));
+        prevout.validation.cache.value(), tx_hash, input_index, encode_base16(kth::to_data_chunk(tx, true)));
 }
 
 // =============================================================================

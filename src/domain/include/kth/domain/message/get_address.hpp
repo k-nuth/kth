@@ -11,10 +11,8 @@
 
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
 
 
 #include <kth/domain/concepts.hpp>
@@ -35,17 +33,11 @@ struct KD_API get_address {
     expect<get_address> from_data(byte_reader& reader, uint32_t /*version*/);
 
     [[nodiscard]]
-    data_chunk to_data(uint32_t version) const;
-
-    void to_data(uint32_t version, data_sink& stream) const;
-
-    //TODO(fernando): this function is empty!!!!!
-    template <typename W>
-    void to_data(uint32_t /*version*/, W&  /*sink*/) const {
-
+    expect<void> to_data(byte_writer& /*writer*/, uint32_t /*version*/) const {
+        //TODO(fernando): this function is empty!!!!!
+        return {};
     }
 
-    //void to_data(uint32_t version, writer& sink) const;
     [[nodiscard]]
     bool is_valid() const;
 
