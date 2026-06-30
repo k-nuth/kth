@@ -117,7 +117,7 @@ TEST_CASE("inventory vector from data  valid input  success", "[inventory vector
           0x37, 0xc0, 0xb0, 0x32, 0xf0, 0xd6, 0x6e, 0xdf}}};
 
     static auto const version = version::level::minimum;
-    auto const data = expected.to_data(version);
+    auto const data = kth::to_data_chunk(expected, version);
     byte_reader reader(data);
     auto const result_exp = inventory_vector::from_data(reader, version);
     REQUIRE(result_exp);

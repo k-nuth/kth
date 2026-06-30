@@ -99,10 +99,10 @@ kth_bool_t kth_chain_block_equals(kth_block_const_t self, kth_block_const_t othe
 
 // Serialization
 
-uint8_t* kth_chain_block_to_data_simple(kth_block_const_t self, kth_size_t* out_size) {
+uint8_t* kth_chain_block_to_data(kth_block_const_t self, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto const data = kth::cpp_ref<cpp_t>(self).to_data();
+    auto const data = kth::to_data_chunk(kth::cpp_ref<cpp_t>(self));
     return kth::create_c_array(data, *out_size);
 }
 
@@ -111,35 +111,8 @@ kth_size_t kth_chain_block_serialized_size(kth_block_const_t self) {
     return kth::cpp_ref<cpp_t>(self).serialized_size();
 }
 
-uint8_t* kth_chain_block_to_data(kth_block_const_t self, kth_size_t* out_size) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(out_size != nullptr);
-    auto const data = kth::cpp_ref<cpp_t>(self).to_data();
-    return kth::create_c_array(data, *out_size);
-}
-
 
 // Getters
-
-kth_size_t kth_chain_block_signature_operations_simple(kth_block_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::cpp_ref<cpp_t>(self).signature_operations();
-}
-
-kth_error_code_t kth_chain_block_check(kth_block_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check());
-}
-
-kth_error_code_t kth_chain_block_check_body(kth_block_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check_body());
-}
-
-kth_hash_list_mut_t kth_chain_block_to_hashes(kth_block_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::leak_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).to_hashes());
-}
 
 kth_header_const_t kth_chain_block_header(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
@@ -154,6 +127,11 @@ kth_transaction_list_const_t kth_chain_block_transactions(kth_block_const_t self
 kth_hash_t kth_chain_block_hash(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::to_hash_t(kth::cpp_ref<cpp_t>(self).hash());
+}
+
+kth_hash_list_mut_t kth_chain_block_to_hashes(kth_block_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::leak_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).to_hashes());
 }
 
 uint64_t kth_chain_block_fees(kth_block_const_t self) {
@@ -171,6 +149,21 @@ kth_hash_t kth_chain_block_generate_merkle_root(kth_block_const_t self) {
     return kth::to_hash_t(kth::cpp_ref<cpp_t>(self).generate_merkle_root());
 }
 
+kth_size_t kth_chain_block_signature_operations_simple(kth_block_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::cpp_ref<cpp_t>(self).signature_operations();
+}
+
+kth_error_code_t kth_chain_block_check(kth_block_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check());
+}
+
+kth_error_code_t kth_chain_block_check_body(kth_block_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check_body());
+}
+
 kth_error_code_t kth_chain_block_check_transactions(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check_transactions());
@@ -184,18 +177,18 @@ kth_size_t kth_chain_block_non_coinbase_input_count(kth_block_const_t self) {
 
 // Setters
 
-void kth_chain_block_set_transactions(kth_block_mut_t self, kth_transaction_list_const_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth::cpp_ref<kth::domain::chain::transaction::list>(value);
-    kth::cpp_ref<cpp_t>(self).set_transactions(value_cpp);
-}
-
 void kth_chain_block_set_header(kth_block_mut_t self, kth_header_const_t value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
     auto const& value_cpp = kth::cpp_ref<kth::domain::chain::header>(value);
     kth::cpp_ref<cpp_t>(self).set_header(value_cpp);
+}
+
+void kth_chain_block_set_transactions(kth_block_mut_t self, kth_transaction_list_const_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(value != nullptr);
+    auto const& value_cpp = kth::cpp_ref<kth::domain::chain::transaction::list>(value);
+    kth::cpp_ref<cpp_t>(self).set_transactions(value_cpp);
 }
 
 
@@ -257,12 +250,6 @@ kth_bool_t kth_chain_block_is_valid_merkle_root(kth_block_const_t self) {
 
 // Operations
 
-kth_size_t kth_chain_block_total_inputs(kth_block_const_t self, kth_bool_t with_coinbase) {
-    KTH_PRECONDITION(self != nullptr);
-    auto const with_coinbase_cpp = kth::int_to_bool(with_coinbase);
-    return kth::cpp_ref<cpp_t>(self).total_inputs(with_coinbase_cpp);
-}
-
 uint64_t kth_chain_block_reward(kth_block_const_t self, kth_size_t height) {
     KTH_PRECONDITION(self != nullptr);
     auto const height_cpp = kth::sz(height);
@@ -274,6 +261,12 @@ kth_size_t kth_chain_block_signature_operations(kth_block_const_t self, kth_bool
     auto const bip16_cpp = kth::int_to_bool(bip16);
     auto const bip141_cpp = kth::int_to_bool(bip141);
     return kth::cpp_ref<cpp_t>(self).signature_operations(bip16_cpp, bip141_cpp);
+}
+
+kth_size_t kth_chain_block_total_inputs(kth_block_const_t self, kth_bool_t with_coinbase) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const with_coinbase_cpp = kth::int_to_bool(with_coinbase);
+    return kth::cpp_ref<cpp_t>(self).total_inputs(with_coinbase_cpp);
 }
 
 void kth_chain_block_reset(kth_block_mut_t self) {

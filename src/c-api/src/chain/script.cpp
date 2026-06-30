@@ -82,7 +82,7 @@ uint8_t* kth_chain_script_to_data(kth_script_const_t self, kth_bool_t prefix, kt
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
     auto const prefix_cpp = kth::int_to_bool(prefix);
-    auto const data = kth::cpp_ref<cpp_t>(self).to_data(prefix_cpp);
+    auto const data = kth::to_data_chunk(kth::cpp_ref<cpp_t>(self), kth::int_to_bool(prefix));
     return kth::create_c_array(data, *out_size);
 }
 

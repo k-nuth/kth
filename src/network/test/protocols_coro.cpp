@@ -217,7 +217,7 @@ TEST_CASE("perform_handshake success", "[protocols_coro]") {
     remote_version.set_user_agent("/RemotePeer:1.0/");
     remote_version.set_start_height(50000);
 
-    auto version_payload = remote_version.to_data(70015);
+    auto version_payload = kth::to_data_chunk(remote_version, 70015);
     auto version_msg = build_message_proto("version", version_payload, settings.identifier);
     ::asio::write(client, ::asio::buffer(version_msg), read_ec);
     REQUIRE(!read_ec);
@@ -304,7 +304,7 @@ TEST_CASE("perform_handshake rejects low version peer", "[protocols_coro]") {
     remote_version.set_user_agent("/OldPeer:0.1/");
     remote_version.set_start_height(50000);
 
-    auto version_payload = remote_version.to_data(31402);
+    auto version_payload = kth::to_data_chunk(remote_version, 31402);
     auto version_msg = build_message_proto("version", version_payload, settings.identifier);
     ::asio::write(client, ::asio::buffer(version_msg), read_ec);
 
@@ -336,7 +336,7 @@ TEST_CASE("run_ping_pong responds to ping", "[protocols_coro]") {
 
     // Send a ping from client
     domain::message::ping ping{123456789};
-    auto ping_payload = ping.to_data(70015);
+    auto ping_payload = kth::to_data_chunk(ping, 70015);
     auto ping_msg = build_message_proto("ping", ping_payload, settings.identifier);
 
     std::error_code write_ec;

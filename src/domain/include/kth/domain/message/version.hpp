@@ -14,11 +14,7 @@
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/message/network_address.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
-
-
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/domain/concepts.hpp>
 
 namespace kth::domain::message {
@@ -221,26 +217,7 @@ struct KD_API version {
     expect<message::version> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
-    data_chunk to_data(uint32_t version) const;
-
-    void to_data(uint32_t version, data_sink& stream) const;
-
-    template <typename W>
-    void to_data(uint32_t version, W& sink) const {
-        sink.write_4_bytes_little_endian(value_);
-        auto const effective_version = std::min(version, value_);
-        sink.write_8_bytes_little_endian(services_);
-        sink.write_8_bytes_little_endian(timestamp_);
-        address_receiver_.to_data(version, sink, false);
-        address_sender_.to_data(version, sink, false);
-        sink.write_8_bytes_little_endian(nonce_);
-        sink.write_string(user_agent_);
-        sink.write_4_bytes_little_endian(start_height_);
-
-        if (effective_version >= level::bip37) {
-            sink.write_byte(relay_ ? 1 : 0);
-        }
-    }
+    expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
     //void to_data(uint32_t version, writer& sink) const;
     [[nodiscard]]

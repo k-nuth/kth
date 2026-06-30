@@ -361,6 +361,7 @@ set(kth_headers
     include/kth/infrastructure/utility/atomic.hpp
     include/kth/infrastructure/utility/binary.hpp
     include/kth/infrastructure/utility/byte_reader.hpp
+    include/kth/infrastructure/utility/byte_writer.hpp
     include/kth/infrastructure/utility/collection.hpp
     include/kth/infrastructure/utility/color.hpp
     include/kth/infrastructure/utility/conditional_lock.hpp
@@ -671,6 +672,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/operators.cpp
     test/utility/serializer.cpp
     test/utility/byte_reader.cpp
+    test/utility/byte_writer.cpp
     test/utility/thread.cpp
     test/utility/threadpool.cpp
     test/utility/coroutine_smoke_test.cpp

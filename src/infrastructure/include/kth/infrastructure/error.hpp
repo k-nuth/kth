@@ -267,6 +267,7 @@ enum error_code_t {
     // Domain object serialization/deserialization
     read_past_end_of_buffer,
     skip_past_end_of_buffer,
+    write_past_end_of_buffer,
     invalid_size,
     invalid_script_type,
     script_not_push_only,

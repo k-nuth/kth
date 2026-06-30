@@ -25,10 +25,9 @@
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/asio.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
 
 namespace kth::domain::chain {
 
@@ -78,38 +77,20 @@ public:
     bool operator==(block const& x) const;
     bool operator!=(block const& x) const = default;
 
-    // Deserialization.
+    // Serialization.
     //-------------------------------------------------------------------------
 
     static
     expect<block> from_data(byte_reader& reader);
 
     [[nodiscard]]
-    bool is_valid() const;
-
-    // Serialization.
-    //-------------------------------------------------------------------------
-
-    data_chunk to_data() const;
-    void to_data(data_sink& stream) const;
-
-    template <typename W>
-    void to_data(W& sink) const {
-        header_.to_data(sink, true);
-        sink.write_size_little_endian(transactions_.size());
-        auto const to = [&sink](transaction const& tx) {
-            tx.to_data(sink, true);
-        };
-        std::for_each(transactions_.begin(), transactions_.end(), to);
-    }
+    expect<void> to_data(byte_writer& writer) const;
 
     [[nodiscard]]
-    hash_list to_hashes() const;
-
-    // Properties (size, accessors).
-    //-------------------------------------------------------------------------
-
     size_t serialized_size() const;
+
+    // Properties (accessors).
+    //-------------------------------------------------------------------------
 
     chain::header& header();
 
@@ -128,6 +109,9 @@ public:
 
     [[nodiscard]]
     hash_digest hash() const;
+
+    [[nodiscard]]
+    hash_list to_hashes() const;
 
     // Utilities.
     //-------------------------------------------------------------------------
@@ -160,6 +144,9 @@ public:
 
     // Validation.
     //-------------------------------------------------------------------------
+
+    [[nodiscard]]
+    bool is_valid() const;
 
     static
     uint64_t subsidy(size_t height, bool retarget);

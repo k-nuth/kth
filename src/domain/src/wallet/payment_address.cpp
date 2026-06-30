@@ -290,9 +290,7 @@ payment_address payment_address::from_public(ec_public const& point, uint8_t ver
 }
 
 payment_address payment_address::from_script(chain::script const& script, uint8_t version) {
-    // Working around VC++ CTP compiler break here.
-    auto const data = script.to_data(false);
-    return payment_address{bitcoin_short_hash(data), version};
+    return payment_address(bitcoin_short_hash(kth::to_data_chunk(script, false)), version);
 }
 
 // Cast operators.

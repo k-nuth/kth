@@ -77,7 +77,7 @@ TEST_CASE("point from data roundtrip  success", "[point]") {
     REQUIRE(hash == initial.hash());
     REQUIRE(index == initial.index());
 
-    data_chunk output = initial.to_data();
+    data_chunk output = kth::to_data_chunk(initial, true);
     byte_reader reader(output);
     auto result_exp = chain::point::from_data(reader);
     REQUIRE(result_exp);
@@ -101,7 +101,7 @@ TEST_CASE("point from data roundtrip  success 2", "[point]") {
     REQUIRE(encode_hash(point.hash()) == "8ed5a0af151cdbc8c0c546cde29334f15b4472bba105394a1221a7f088246846");
     REQUIRE(point.index() == 0);
 
-    data_chunk output = point.to_data();
+    data_chunk output = kth::to_data_chunk(point, true);
     REQUIRE(output == raw);
 }
 

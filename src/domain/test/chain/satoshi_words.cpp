@@ -21,7 +21,7 @@ TEST_CASE( "satoshi words mainnet", "[satoshi words]" ) {
 
     // Convert the input script to its raw format.
     auto const& coinbase_input = coinbase_inputs[0];
-    auto const raw_message = coinbase_input.script().to_data(false);
+    auto const raw_message = kth::to_data_chunk(coinbase_input.script(), false);
     REQUIRE(raw_message.size() > 8u);
 
     // Convert to a string after removing the 8 byte checksum.

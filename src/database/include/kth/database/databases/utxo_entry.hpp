@@ -26,44 +26,37 @@ struct KD_API utxo_entry {
 
     size_t serialized_size() const;
 
-    data_chunk to_data() const;
-    void to_data(std::ostream& stream) const;
-
-    template <typename W, KTH_IS_WRITER(W)>
-    void to_data(W& sink) const {
-        output_.to_data(sink, false);
-        to_data_fixed(sink, height_, median_time_past_, coinbase_);
-    }
-
     static
     expect<utxo_entry> from_data(byte_reader& reader);
+
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer) const {
+        if (auto r = output_.to_data(writer, false); ! r) return r;
+        return to_data_fixed(writer, height_, median_time_past_, coinbase_);
+    }
+
+    data_chunk to_data() const;
+
+    [[nodiscard]]
+    static
+    expect<void> to_data_fixed(byte_writer& writer, uint32_t height, uint32_t median_time_past, bool coinbase) {
+        if (auto r = writer.write_little_endian<uint32_t>(height); ! r) return r;
+        if (auto r = writer.write_little_endian<uint32_t>(median_time_past); ! r) return r;
+        return writer.write_byte(coinbase ? 1 : 0);
+    }
 
     static
     data_chunk to_data_fixed(uint32_t height, uint32_t median_time_past, bool coinbase);
 
+    [[nodiscard]]
     static
-    void to_data_fixed(std::ostream& stream, uint32_t height, uint32_t median_time_past, bool coinbase);
-
-    template <typename W, KTH_IS_WRITER(W)>
-    static
-    void to_data_fixed(W& sink, uint32_t height, uint32_t median_time_past, bool coinbase) {
-        sink.write_4_bytes_little_endian(height);
-        sink.write_4_bytes_little_endian(median_time_past);
-        sink.write_byte(coinbase);
+    expect<void> to_data_with_fixed(byte_writer& writer, domain::chain::output const& output, data_chunk const& fixed) {
+        if (auto r = output.to_data(writer, false); ! r) return r;
+        return writer.write_bytes(fixed);
     }
 
     static
     data_chunk to_data_with_fixed(domain::chain::output const& output, data_chunk const& fixed);
-
-    static
-    void to_data_with_fixed(std::ostream& stream, domain::chain::output const& output, data_chunk const& fixed);
-
-    template <typename W, KTH_IS_WRITER(W)>
-    static
-    void to_data_with_fixed(W& sink, domain::chain::output const& output, data_chunk const& fixed) {
-        output.to_data(sink, false);
-        sink.write_bytes(fixed);
-    }
 
 private:
     void reset();

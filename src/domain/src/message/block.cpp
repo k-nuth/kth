@@ -12,9 +12,7 @@
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/domain/message/version.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 #include <kth/infrastructure/utility/reader.hpp>
 
 namespace kth::domain::message {
@@ -87,44 +85,26 @@ expect<block> block::from_data(byte_reader& reader, uint32_t /*version*/) {
 
 // Witness is always serialized if present.
 // NOTE: Witness on BCH is dissabled on the chain::block class
-data_chunk block::to_data(uint32_t /*unused*/) const {
-    return chain::block::to_data();
-}
 
-void block::to_data(uint32_t /*version*/, data_sink& stream) const {
-    chain::block::to_data(stream);
-}
 
 size_t block::serialized_size(uint32_t /*unused*/) const {
     return chain::block::serialized_size();
 }
 
-// //TODO(fernando): check this family of functions: to_data_header_nonce
-// void to_data_header_nonce(block const& block, uint64_t nonce, writer& sink) {
-//     block.header().to_data(sink);
-//     sink.write_8_bytes_little_endian(nonce);
-// }
-
-// void to_data_header_nonce(block const& block, uint64_t nonce, std::ostream& stream) {
-void to_data_header_nonce(block const& block, uint64_t nonce, data_sink& stream) {
-    ostream_writer sink_w(stream);
-    to_data_header_nonce(block, nonce, sink_w);
-}
-
-data_chunk to_data_header_nonce(block const& block, uint64_t nonce) {
-    data_chunk data;
-    auto size = chain::header::satoshi_fixed_size() + sizeof(nonce);
-
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data_header_nonce(block, nonce, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
 hash_digest hash(block const& block, uint64_t nonce) {
-    return sha256_hash(to_data_header_nonce(block, nonce));
+    auto const size = chain::header::satoshi_fixed_size() + sizeof(nonce);
+    data_chunk buf(size);
+    byte_writer writer(buf);
+    auto const r1 = block.header().to_data(writer, true);
+    auto const r2 = writer.write_little_endian<uint64_t>(nonce);
+    KTH_ASSERT(r1.has_value() && r2.has_value());
+    return sha256_hash(buf);
+}
+
+expect<void> block::to_data(byte_writer& writer, uint32_t version) const {
+        chain::block::to_data(writer);
+        return {};
 }
 
 } // namespace kth::domain::message

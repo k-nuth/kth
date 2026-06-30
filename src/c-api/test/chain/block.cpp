@@ -75,7 +75,7 @@ TEST_CASE("C-API Block - to_data / from_data roundtrip",
     kth_block_mut_t expected = make_block();
 
     kth_size_t size = 0;
-    uint8_t* raw = kth_chain_block_to_data_simple(expected, &size);
+    uint8_t* raw = kth_chain_block_to_data(expected, &size);
     REQUIRE(raw != NULL);
     REQUIRE(size > 0);
 
@@ -127,7 +127,7 @@ TEST_CASE("C-API Block - serialized_size matches to_data length",
           "[C-API Block]") {
     kth_block_mut_t blk = make_block();
     kth_size_t size = 0;
-    uint8_t* raw = kth_chain_block_to_data_simple(blk, &size);
+    uint8_t* raw = kth_chain_block_to_data(blk, &size);
     REQUIRE(raw != NULL);
     REQUIRE(kth_chain_block_serialized_size(blk) == size);
     kth_core_destruct_array(raw);
@@ -209,6 +209,6 @@ TEST_CASE("C-API Block - copy null self aborts",
 TEST_CASE("C-API Block - to_data_simple null out_size aborts",
           "[C-API Block][precondition]") {
     kth_block_mut_t blk = kth_chain_block_construct_default();
-    KTH_EXPECT_ABORT(kth_chain_block_to_data_simple(blk, NULL));
+    KTH_EXPECT_ABORT(kth_chain_block_to_data(blk, NULL));
     kth_chain_block_destruct(blk);
 }

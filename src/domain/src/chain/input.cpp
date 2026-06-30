@@ -10,8 +10,6 @@
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::domain::chain {
 
@@ -33,7 +31,7 @@ input::input(output_point&& previous_output, chain::script&& script, uint32_t se
     , sequence_(sequence)
 {}
 
-// Deserialization.
+// Serialization.
 //-----------------------------------------------------------------------------
 
 // static
@@ -53,23 +51,14 @@ expect<input> input::from_data(byte_reader& reader, bool wire) {
     return input{std::move(*point), std::move(*script), *sequence};
 }
 
-// Serialization.
-//-----------------------------------------------------------------------------
-
-data_chunk input::to_data(bool wire) const {
-    data_chunk data;
-    auto const size = serialized_size(wire);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(ostream, wire);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-void input::to_data(data_sink& stream, bool wire) const {
-    ostream_writer sink_w(stream);
-    to_data(sink_w, wire);
+expect<void> input::to_data(byte_writer& writer, bool wire) const {
+    if (auto r = previous_output_.to_data(writer, wire); ! r) {
+        return r;
+    }
+    if (auto r = script_.to_data(writer, true); ! r) {
+        return r;
+    }
+    return writer.write_little_endian<uint32_t>(sequence_);
 }
 
 // Size.

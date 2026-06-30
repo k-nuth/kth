@@ -57,7 +57,7 @@ TEST_CASE("ping  from data 1  minimum version  success zero nonce", "[ping]") {
     static const message::ping value{213153u};
 
     // This serializes the nonce.
-    auto const data = value.to_data(message::version::level::bip31);
+    auto const data = kth::to_data_chunk(value, message::version::level::bip31);
     REQUIRE(data.size() == 8u);
 
     // This leaves the nonce on the wire but otherwise succeeds with a zero nonce.
@@ -75,7 +75,7 @@ TEST_CASE("ping from data minimum version round trip  zero nonce", "[ping]") {
         16545612u};
 
     static auto const version = message::version::level::minimum;
-    auto const data = value.to_data(version);
+    auto const data = kth::to_data_chunk(value, version);
     byte_reader reader(data);
     auto const result_exp = message::ping::from_data(reader, version);
     REQUIRE(result_exp);
@@ -91,7 +91,7 @@ TEST_CASE("ping  from data 1  maximum version  success expected nonce", "[ping]"
         213153u};
 
     // This serializes the nonce.
-    auto const data = expected.to_data(message::version::level::bip31);
+    auto const data = kth::to_data_chunk(expected, message::version::level::bip31);
     REQUIRE(data.size() == 8u);
 
     // This leaves the nonce on the wire but otherwise succeeds with a zero nonce.
@@ -109,7 +109,7 @@ TEST_CASE("ping from data bip31 version round trip  expected nonce", "[ping]") {
         16545612u};
 
     static auto const version = message::version::level::bip31;
-    auto const data = expected.to_data(version);
+    auto const data = kth::to_data_chunk(expected, version);
     byte_reader reader(data);
     auto const result_exp = message::ping::from_data(reader, version);
     REQUIRE(result_exp);

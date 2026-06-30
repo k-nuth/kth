@@ -64,7 +64,12 @@ chain::script find_and_delete_endorsement(chain::script const& script_code, data
     pattern.insert(pattern.end(), endorsement.begin(), endorsement.end());
 
     // Serialize the script_code (without length prefix).
-    auto serialized = script_code.to_data(false);
+    data_chunk serialized(script_code.serialized_size(false));
+    {
+        byte_writer writer(serialized);
+        auto const r = script_code.to_data(writer, false);
+        KTH_ASSERT(r.has_value());
+    }
 
     // Search and remove all occurrences of the pattern (matching BCHN's byte-level FindAndDelete).
     bool found = false;
@@ -2806,7 +2811,12 @@ interpreter::result interpreter::op_utxo_bytecode(program& program) {
     data_chunk bytecode;
     if ( ! tokens_active && prevout_cache.token_data().has_value()) {
         // Pre-activation: return full serialized blob (prefix + token_data + script)
-        auto const full = prevout_cache.to_data(false);
+        data_chunk full(prevout_cache.serialized_size(false));
+        {
+            byte_writer w(full);
+            auto const r = prevout_cache.to_data(w, false);
+            KTH_ASSERT(r.has_value());
+        }
         auto const token_size = chain::token::encoding::serialized_size(prevout_cache.token_data());
         auto const script_size = prevout_cache.script().serialized_size(false);
         auto const wrapped_size = 1 + token_size + script_size;
@@ -3026,7 +3036,12 @@ interpreter::result interpreter::op_output_bytecode(program& program) {
     if ( ! tokens_active && out.token_data().has_value()) {
         // Rebuild the wrapped script: PREFIX_BYTE + token_data + script
         // Serialize the full output and strip the value (8 bytes) + varint script_size.
-        auto const full = out.to_data(false);
+        data_chunk full(out.serialized_size(false));
+        {
+            byte_writer w(full);
+            auto const r = out.to_data(w, false);
+            KTH_ASSERT(r.has_value());
+        }
         // full = value(8) + varint(script_size) + prefix + token + script
         auto const token_size = chain::token::encoding::serialized_size(out.token_data());
         auto const script_size = out.script().serialized_size(false);

@@ -705,8 +705,7 @@ std::expected<domain::chain::header::list, result_code> internal_database_basis<
     }
 
     auto data = db_value_to_data_chunk(value);
-    byte_reader reader1(data);
-    auto res1 = domain::chain::header::from_data(reader1);
+    auto res1 = kth::from_data_chunk<domain::chain::header>(data);
     if (res1) {
         list.push_back(*res1);
     }
@@ -715,8 +714,7 @@ std::expected<domain::chain::header::list, result_code> internal_database_basis<
         auto height = *static_cast<uint32_t*>(kth_db_get_data(key));
         if (height > to) break;
         auto data = db_value_to_data_chunk(value);
-        byte_reader reader2(data);
-        auto res2 = domain::chain::header::from_data(reader2);
+        auto res2 = kth::from_data_chunk<domain::chain::header>(data);
         if (res2) {
             list.push_back(*res2);
         }

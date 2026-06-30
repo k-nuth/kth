@@ -13,10 +13,8 @@
 // #include <kth/domain/message/block.hpp>
 // #include <kth/domain/message/prefilled_transaction.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
 
 
 #include <kth/domain/concepts.hpp>
@@ -86,15 +84,15 @@ struct KD_API double_spend_proof {
                 push_data.size();
         }
 
-        template <typename W>
-        void to_data(W& sink) const {
-            sink.write_4_bytes_little_endian(version);
-            sink.write_4_bytes_little_endian(out_sequence);
-            sink.write_4_bytes_little_endian(locktime);
-            sink.write_hash(prev_outs_hash);
-            sink.write_hash(sequence_hash);
-            sink.write_hash(outputs_hash);
-            sink.write_bytes(push_data);
+        [[nodiscard]]
+        expect<void> to_data(byte_writer& writer) const {
+            if (auto r = writer.write_little_endian<uint32_t>(version); ! r) return r;
+            if (auto r = writer.write_little_endian<uint32_t>(out_sequence); ! r) return r;
+            if (auto r = writer.write_little_endian<uint32_t>(locktime); ! r) return r;
+            if (auto r = writer.write_hash(prev_outs_hash); ! r) return r;
+            if (auto r = writer.write_hash(sequence_hash); ! r) return r;
+            if (auto r = writer.write_hash(outputs_hash); ! r) return r;
+            return writer.write_bytes(push_data);
         }
 
         static
@@ -128,20 +126,11 @@ struct KD_API double_spend_proof {
     spender const& spender2() const;
     void set_spender2(spender const& x);
 
-    [[nodiscard]]
-    data_chunk to_data(uint32_t /*version*/) const;
-
-    void to_data(uint32_t /*version*/, data_sink& stream) const;
-
-    template <typename W>
-    void to_data(uint32_t /*version*/, W& sink) const {
-        out_point_.to_data(sink);
-        spender1_.to_data(sink);
-        spender2_.to_data(sink);
-    }
-
     static
     expect<double_spend_proof> from_data(byte_reader& reader, uint32_t /*version*/);
+
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer, uint32_t /*version*/) const;
 
     [[nodiscard]]
     size_t serialized_size(uint32_t /*version*/) const {

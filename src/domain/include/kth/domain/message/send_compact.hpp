@@ -11,12 +11,8 @@
 
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
-
-
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/domain/concepts.hpp>
 
 namespace kth::domain::message {
@@ -49,15 +45,7 @@ struct KD_API send_compact {
     expect<send_compact> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
-    data_chunk to_data(uint32_t version) const;
-
-    void to_data(uint32_t version, data_sink& stream) const;
-
-    template <typename W>
-    void to_data(uint32_t /*version*/, W& sink) const {
-        sink.write_byte(uint8_t(high_bandwidth_mode_));
-        sink.write_8_bytes_little_endian(this->version_);
-    }
+    expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
     //void to_data(uint32_t version, writer& sink) const;
     [[nodiscard]]

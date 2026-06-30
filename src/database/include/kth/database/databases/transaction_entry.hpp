@@ -13,14 +13,14 @@
 namespace kth::database {
 
 
-template <typename W, KTH_IS_WRITER(W)>
-void write_position(W& serial, uint32_t position) {
-    serial.KTH_POSITION_WRITER(position);
+inline
+expect<void> write_position(byte_writer& writer, uint32_t position) {
+    return writer.write_little_endian<kth_position_t>(static_cast<kth_position_t>(position));
 }
 
-template <typename Deserializer>
-uint32_t read_position(Deserializer& deserial) {
-    return deserial.KTH_POSITION_READER();
+inline
+expect<kth_position_t> read_position(byte_reader& reader) {
+    return reader.read_little_endian<kth_position_t>();
 }
 
 struct KD_API transaction_entry {
@@ -42,37 +42,32 @@ struct KD_API transaction_entry {
     static
     size_t serialized_size(domain::chain::transaction const& tx);
 
-    data_chunk to_data() const;
-    void to_data(std::ostream& stream) const;
-
-
-    template <typename W, KTH_IS_WRITER(W)>
-    void to_data(W& sink) const {
-        factory_to_data(sink, transaction_, height_, median_time_past_, position_ );
-    }
-
     static
     expect<transaction_entry> from_data(byte_reader& reader);
+
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer) const {
+        return factory_to_data(writer, transaction_, height_, median_time_past_, position_);
+    }
+
+    data_chunk to_data() const;
 
     bool confirmed() const;
 
     //TODO(kth): we don't have spent information
     //bool is_spent(size_t fork_height) const;
 
+    [[nodiscard]]
+    static
+    expect<void> factory_to_data(byte_writer& writer, domain::chain::transaction const& tx, uint32_t height, uint32_t median_time_past, uint32_t position) {
+        if (auto r = tx.to_data(writer, false); ! r) return r;
+        if (auto r = writer.write_little_endian<uint32_t>(height); ! r) return r;
+        if (auto r = writer.write_little_endian<uint32_t>(median_time_past); ! r) return r;
+        return write_position(writer, position);
+    }
+
     static
     data_chunk factory_to_data(domain::chain::transaction const& tx, uint32_t height, uint32_t median_time_past, uint32_t position);
-
-    static
-    void factory_to_data(std::ostream& stream, domain::chain::transaction const& tx, uint32_t height, uint32_t median_time_past, uint32_t position);
-
-    template <typename W, KTH_IS_WRITER(W)>
-    static
-    void factory_to_data(W& sink, domain::chain::transaction const& tx, uint32_t height, uint32_t median_time_past, uint32_t position) {
-        tx.to_data(sink, false);
-        sink.write_4_bytes_little_endian(height);
-        sink.write_4_bytes_little_endian(median_time_past);
-        write_position(sink, position);
-    }
 
 private:
     void reset();

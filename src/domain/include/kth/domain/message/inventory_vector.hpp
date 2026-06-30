@@ -12,12 +12,8 @@
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
-
-
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/domain/concepts.hpp>
 #include <kth/domain/deserialization.hpp>
 
@@ -85,16 +81,7 @@ struct KD_API inventory_vector {
     expect<inventory_vector> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
-    data_chunk to_data(uint32_t version) const;
-
-    void to_data(uint32_t version, data_sink& stream) const;
-
-    template <typename W>
-    void to_data(uint32_t /*version*/, W& sink) const {
-        auto const raw_type = inventory_vector::to_number(type_);
-        sink.write_4_bytes_little_endian(raw_type);
-        sink.write_hash(hash_);
-    }
+    expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
     //void to_data(uint32_t version, writer& sink) const;
     [[nodiscard]]

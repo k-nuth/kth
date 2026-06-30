@@ -92,7 +92,7 @@ TEST_CASE("get blocks from data valid input  success", "[get blocks]") {
          "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash},
         "7777777777777777777777777777777777777777777777777777777777777777"_hash};
 
-    auto const data = expected.to_data(message::version::level::minimum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::minimum);
     byte_reader reader(data);
     auto const result_exp = message::get_blocks::from_data(reader, message::version::level::minimum);
     REQUIRE(result_exp);

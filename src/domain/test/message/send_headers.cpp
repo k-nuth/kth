@@ -11,7 +11,7 @@ using namespace kd;
 
 TEST_CASE("send headers - roundtrip to data factory from data chunk", "[send headers]") {
     const message::send_headers expected{};
-    auto const data = expected.to_data(message::version::level::maximum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::maximum);
     byte_reader reader(data);
     auto const result_exp = message::send_headers::from_data(reader, message::version::level::maximum);
     REQUIRE(result_exp);

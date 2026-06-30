@@ -48,7 +48,7 @@ TEST_CASE("fee filter from data insufficient bytes failure", "[fee filter]") {
 
 TEST_CASE("fee filter from data insufficient version failure", "[fee filter]") {
     fee_filter const expected{1};
-    auto const data = expected.to_data(fee_filter::version_maximum);
+    auto const data = kth::to_data_chunk(expected, fee_filter::version_maximum);
     byte_reader reader(data);
     auto const result = fee_filter::from_data(reader, fee_filter::version_minimum - 1);
     REQUIRE( ! result);
@@ -56,7 +56,7 @@ TEST_CASE("fee filter from data insufficient version failure", "[fee filter]") {
 
 TEST_CASE("fee filter from data roundtrip  success", "[fee filter]") {
     fee_filter const expected{123};
-    auto const data = expected.to_data(fee_filter::version_maximum);
+    auto const data = kth::to_data_chunk(expected, fee_filter::version_maximum);
     byte_reader reader(data);
     auto const result_exp = fee_filter::from_data(reader, fee_filter::version_maximum);
     REQUIRE(result_exp);

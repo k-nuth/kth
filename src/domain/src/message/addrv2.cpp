@@ -6,10 +6,7 @@
 
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 // Address sizes for each BIP155 network type
@@ -273,21 +270,7 @@ expect<addrv2> addrv2::from_data(byte_reader& reader, uint32_t version) {
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk addrv2::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void addrv2::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 size_t addrv2::serialized_size(uint32_t /*version*/) const {
     size_t size = infrastructure::message::variable_uint_size(addresses_.size());
@@ -302,6 +285,20 @@ size_t addrv2::serialized_size(uint32_t /*version*/) const {
     }
 
     return size;
+}
+
+expect<void> addrv2::to_data(byte_writer& writer, uint32_t version) const {
+        if (auto r = writer.write_variable_little_endian(addresses_.size()); ! r) return r;
+
+        for (auto const& entry : addresses_) {
+            if (auto r = writer.write_little_endian<uint32_t>(entry.time); ! r) return r;
+            if (auto r = writer.write_variable_little_endian(entry.services); ! r) return r;
+            if (auto r = writer.write_byte(static_cast<uint8_t>(entry.network)); ! r) return r;
+            if (auto r = writer.write_variable_little_endian(entry.addr.size()); ! r) return r;
+            if (auto r = writer.write_bytes(entry.addr); ! r) return r;
+            if (auto r = writer.write_big_endian<uint16_t>(entry.port); ! r) return r;
+        }
+        return {};
 }
 
 } // namespace kth::domain::message

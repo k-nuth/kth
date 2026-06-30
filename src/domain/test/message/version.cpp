@@ -274,7 +274,7 @@ TEST_CASE("version from data mismatched sender services invalid", "[version]") {
         100u,
         false);
 
-    auto const data = expected.to_data(version_maximum);
+    auto const data = kth::to_data_chunk(expected, version_maximum);
     byte_reader reader(data);
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
@@ -305,7 +305,7 @@ TEST_CASE("version from data version meets bip37  success", "[version]") {
         100u,
         true};
 
-    auto const data = expected.to_data(version_maximum);
+    auto const data = kth::to_data_chunk(expected, version_maximum);
     byte_reader reader(data);
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
@@ -334,7 +334,7 @@ TEST_CASE("version from data valid input  success", "[version]") {
         100u,
         true};
 
-    auto const data = expected.to_data(version_maximum);
+    auto const data = kth::to_data_chunk(expected, version_maximum);
     byte_reader reader(data);
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
@@ -362,7 +362,7 @@ TEST_CASE("version from data tolerates trailing bytes  success", "[version]") {
          351u},
         13626u, "my agent", 100u, true};
 
-    auto data = expected.to_data(version_maximum);
+    auto data = kth::to_data_chunk(expected, version_maximum);
     data.insert(data.end(), {0xde, 0xad, 0xbe, 0xef, 0x00, 0x01, 0x02, 0x03});
 
     byte_reader reader(data);

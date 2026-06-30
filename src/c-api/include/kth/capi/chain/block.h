@@ -84,30 +84,13 @@ kth_bool_t kth_chain_block_equals(kth_block_const_t self, kth_block_const_t othe
 
 /** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
 KTH_EXPORT KTH_OWNED
-uint8_t* kth_chain_block_to_data_simple(kth_block_const_t self, kth_size_t* out_size);
+uint8_t* kth_chain_block_to_data(kth_block_const_t self, kth_size_t* out_size);
 
 KTH_EXPORT
 kth_size_t kth_chain_block_serialized_size(kth_block_const_t self);
 
-/** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
-KTH_EXPORT KTH_OWNED
-uint8_t* kth_chain_block_to_data(kth_block_const_t self, kth_size_t* out_size);
-
 
 // Getters
-
-KTH_EXPORT
-kth_size_t kth_chain_block_signature_operations_simple(kth_block_const_t self);
-
-KTH_EXPORT
-kth_error_code_t kth_chain_block_check(kth_block_const_t self);
-
-KTH_EXPORT
-kth_error_code_t kth_chain_block_check_body(kth_block_const_t self);
-
-/** @return Owned `kth_hash_list_mut_t`. Caller must release with `kth_core_hash_list_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_hash_list_mut_t kth_chain_block_to_hashes(kth_block_const_t self);
 
 /** @return Borrowed `kth_header_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
@@ -120,6 +103,10 @@ kth_transaction_list_const_t kth_chain_block_transactions(kth_block_const_t self
 KTH_EXPORT
 kth_hash_t kth_chain_block_hash(kth_block_const_t self);
 
+/** @return Owned `kth_hash_list_mut_t`. Caller must release with `kth_core_hash_list_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_hash_list_mut_t kth_chain_block_to_hashes(kth_block_const_t self);
+
 KTH_EXPORT
 uint64_t kth_chain_block_fees(kth_block_const_t self);
 
@@ -128,6 +115,15 @@ uint64_t kth_chain_block_claim(kth_block_const_t self);
 
 KTH_EXPORT
 kth_hash_t kth_chain_block_generate_merkle_root(kth_block_const_t self);
+
+KTH_EXPORT
+kth_size_t kth_chain_block_signature_operations_simple(kth_block_const_t self);
+
+KTH_EXPORT
+kth_error_code_t kth_chain_block_check(kth_block_const_t self);
+
+KTH_EXPORT
+kth_error_code_t kth_chain_block_check_body(kth_block_const_t self);
 
 KTH_EXPORT
 kth_error_code_t kth_chain_block_check_transactions(kth_block_const_t self);
@@ -140,11 +136,11 @@ kth_size_t kth_chain_block_non_coinbase_input_count(kth_block_const_t self);
 
 /** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
-void kth_chain_block_set_transactions(kth_block_mut_t self, kth_transaction_list_const_t value);
+void kth_chain_block_set_header(kth_block_mut_t self, kth_header_const_t value);
 
 /** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
-void kth_chain_block_set_header(kth_block_mut_t self, kth_header_const_t value);
+void kth_chain_block_set_transactions(kth_block_mut_t self, kth_transaction_list_const_t value);
 
 
 // Predicates
@@ -183,13 +179,13 @@ kth_bool_t kth_chain_block_is_valid_merkle_root(kth_block_const_t self);
 // Operations
 
 KTH_EXPORT
-kth_size_t kth_chain_block_total_inputs(kth_block_const_t self, kth_bool_t with_coinbase);
-
-KTH_EXPORT
 uint64_t kth_chain_block_reward(kth_block_const_t self, kth_size_t height);
 
 KTH_EXPORT
 kth_size_t kth_chain_block_signature_operations(kth_block_const_t self, kth_bool_t bip16, kth_bool_t bip141);
+
+KTH_EXPORT
+kth_size_t kth_chain_block_total_inputs(kth_block_const_t self, kth_bool_t with_coinbase);
 
 KTH_EXPORT
 void kth_chain_block_reset(kth_block_mut_t self);

@@ -91,7 +91,7 @@ TEST_CASE("filter load from data insufficient version  failure", "[filter load]"
         0xab
     };
 
-    data_chunk const data = expected.to_data(message::version::level::maximum);
+    data_chunk const data = kth::to_data_chunk(expected, message::version::level::maximum);
     
     byte_reader reader(data);
     auto result = message::filter_load::from_data(reader, message::filter_load::version_minimum - 1);
@@ -105,7 +105,7 @@ TEST_CASE("filter load from data valid input  success", "[filter load]") {
         10,
         0xab};
 
-    auto const data = expected.to_data(message::version::level::maximum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::maximum);
     byte_reader reader(data);
     auto const result_exp = message::filter_load::from_data(reader, message::version::level::maximum);
     REQUIRE(result_exp);

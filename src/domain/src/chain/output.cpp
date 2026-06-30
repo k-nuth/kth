@@ -10,8 +10,6 @@
 
 #include <kth/domain/constants.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::domain::chain {
 
@@ -41,7 +39,7 @@ bool operator==(output const& a, output const& b) {
         && a.token_data_ == b.token_data_;
 }
 
-// Deserialization.
+// Serialization.
 //-----------------------------------------------------------------------------
 
 void output::reset() {
@@ -110,23 +108,34 @@ expect<output> output::from_data(byte_reader& reader, bool wire) {
     return result;
 }
 
-// Serialization.
-//-----------------------------------------------------------------------------
+expect<void> output::to_data(byte_writer& writer, bool wire) const {
+    if ( ! wire) {
+        auto const height32 = *safe_unsigned<uint32_t>(validation.spender_height);
+        if (auto r = writer.write_little_endian<uint32_t>(height32); ! r) {
+            return r;
+        }
+    }
 
-data_chunk output::to_data(bool wire) const {
-    data_chunk data;
-    auto const size = serialized_size(wire);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(ostream, wire);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
+    if (auto r = writer.write_little_endian<uint64_t>(value_); ! r) {
+        return r;
+    }
 
-void output::to_data(data_sink& stream, bool wire) const {
-    ostream_writer sink_w(stream);
-    to_data(sink_w, wire);
+    if ( ! token_data_.has_value()) {
+        return script_.to_data(writer, true);
+    }
+
+    auto const size = token::encoding::serialized_size(token_data_) + script_.serialized_size(false) + 1;
+    if (auto r = writer.write_variable_little_endian(size); ! r) {
+        return r;
+    }
+
+    if (auto r = writer.write_byte(chain::encoding::PREFIX_BYTE); ! r) {
+        return r;
+    }
+    if (auto r = token::encoding::to_data(writer, token_data_.value()); ! r) {
+        return r;
+    }
+    return script_.to_data(writer, false);
 }
 
 // Size.

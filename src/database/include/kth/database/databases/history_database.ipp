@@ -160,8 +160,7 @@ std::expected<domain::chain::history_compact::list, result_code> internal_databa
     if ((rc = kth_db_cursor_get(cursor, &key_hash, &value, MDB_SET)) == 0) {
 
         auto data = db_value_to_data_chunk(value);
-        byte_reader reader1(data);
-        auto entry_res = history_entry::from_data(reader1);
+        auto entry_res = kth::from_data_chunk<history_entry>(data);
 
         if (entry_res && (from_height == 0 || entry_res->height() >= from_height)) {
             result.push_back(history_entry_to_history_compact(*entry_res));
@@ -174,8 +173,7 @@ std::expected<domain::chain::history_compact::list, result_code> internal_databa
             }
 
             auto data = db_value_to_data_chunk(value);
-            byte_reader reader2(data);
-            auto entry_res2 = history_entry::from_data(reader2);
+            auto entry_res2 = kth::from_data_chunk<history_entry>(data);
 
             if (entry_res2 && (from_height == 0 || entry_res2->height() >= from_height)) {
                 result.push_back(history_entry_to_history_compact(*entry_res2));
@@ -221,8 +219,7 @@ std::expected<std::vector<hash_digest>, result_code> internal_database_basis<Clo
     if ((rc = kth_db_cursor_get(cursor, &key_hash, &value, MDB_SET)) == 0) {
 
         auto data = db_value_to_data_chunk(value);
-        byte_reader reader3(data);
-        auto entry_res3 = history_entry::from_data(reader3);
+        auto entry_res3 = kth::from_data_chunk<history_entry>(data);
 
         if (entry_res3 && (from_height == 0 || entry_res3->height() >= from_height)) {
             // Avoid inserting the same tx
@@ -240,8 +237,7 @@ std::expected<std::vector<hash_digest>, result_code> internal_database_basis<Clo
             }
 
             auto data = db_value_to_data_chunk(value);
-            byte_reader reader4(data);
-            auto entry_res4 = history_entry::from_data(reader4);
+            auto entry_res4 = kth::from_data_chunk<history_entry>(data);
 
             if (entry_res4 && (from_height == 0 || entry_res4->height() >= from_height)) {
                 // Avoid inserting the same tx
@@ -336,8 +332,7 @@ result_code internal_database_basis<Clock>::remove_history_db(short_hash const& 
     if ((rc = kth_db_cursor_get(cursor, &key_hash, &value, MDB_SET)) == 0) {
 
         auto data = db_value_to_data_chunk(value);
-        byte_reader reader5(data);
-        auto entry_res5 = history_entry::from_data(reader5);
+        auto entry_res5 = kth::from_data_chunk<history_entry>(data);
 
         if (entry_res5 && entry_res5->height() == height) {
 
@@ -350,8 +345,7 @@ result_code internal_database_basis<Clock>::remove_history_db(short_hash const& 
         while ((rc = kth_db_cursor_get(cursor, &key_hash, &value, MDB_NEXT_DUP)) == 0) {
 
             auto data = db_value_to_data_chunk(value);
-            byte_reader reader6(data);
-            auto entry_res6 = history_entry::from_data(reader6);
+            auto entry_res6 = kth::from_data_chunk<history_entry>(data);
 
             if (entry_res6 && entry_res6->height() == height) {
                 if (kth_db_cursor_del(cursor, 0) != KTH_DB_SUCCESS) {
