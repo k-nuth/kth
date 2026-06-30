@@ -115,16 +115,7 @@ KTH_EXPORT
 kth_bool_t kth_chain_output_point_is_mature(kth_output_point_const_t self, kth_size_t height);
 
 KTH_EXPORT
-kth_bool_t kth_chain_output_point_is_valid(kth_output_point_const_t self);
-
-KTH_EXPORT
 kth_bool_t kth_chain_output_point_is_null(kth_output_point_const_t self);
-
-
-// Operations
-
-KTH_EXPORT
-void kth_chain_output_point_reset(kth_output_point_mut_t self);
 
 
 // Static utilities

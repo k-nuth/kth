@@ -73,10 +73,6 @@ bool transaction::operator==(transaction const& x) const {
         && outputs_ == x.outputs_;
 }
 
-bool transaction::operator!=(transaction const& x) const {
-    return !(*this == x);
-}
-
 void transaction::reset() {
     version_ = 0;
     locktime_ = 0;

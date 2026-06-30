@@ -10,6 +10,7 @@
 namespace kth::domain::chain {
 
 using input_point = point;
+using input_point_opt = input_point::opt;
 
 } // namespace kth::domain::chain
 

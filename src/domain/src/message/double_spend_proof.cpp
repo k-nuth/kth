@@ -27,19 +27,6 @@ double_spend_proof::double_spend_proof(chain::output_point const& out_point, spe
     , spender2_(spender2)
 {}
 
-bool double_spend_proof::is_valid() const {
-    return out_point_.is_valid()
-        && spender1_.is_valid()
-        && spender2_.is_valid();
-}
-
-void double_spend_proof::reset() {
-    out_point_.reset();
-    spender1_.reset();
-    spender2_.reset();
-}
-
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

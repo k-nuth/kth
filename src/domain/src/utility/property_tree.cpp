@@ -112,10 +112,8 @@ ptree property_tree(const config::input& input) {
 }
 
 ptree property_tree(std::vector<config::input> const& inputs, bool json) {
-    auto const tx_inputs = cast<input, chain::input>(inputs);
-
     ptree tree;
-    tree.add_child("inputs", property_tree_list("input", tx_inputs, json));
+    tree.add_child("inputs", property_tree_list("input", inputs, json));
     return tree;
 }
 

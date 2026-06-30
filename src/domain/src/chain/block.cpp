@@ -191,11 +191,7 @@ block::block(chain::header const& header, transaction::list&& transactions)
 //-----------------------------------------------------------------------------
 
 bool block::operator==(block const& x) const {
-    return (header_ == x.header_) && (transactions_ == x.transactions_);
-}
-
-bool block::operator!=(block const& x) const {
-    return !(*this == x);
+    return header_ == x.header_ && transactions_ == x.transactions_;
 }
 
 // Deserialization.

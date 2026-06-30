@@ -48,15 +48,14 @@ TEST_CASE("C-API InputPoint - destruct frees an allocated handle", "[C-API Input
 // Smoke coverage of the alias-prefixed surface.
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API InputPoint - default construct is invalid", "[C-API InputPoint]") {
-    kth_input_point_mut_t ip = kth_chain_input_point_construct_default();
-    REQUIRE(kth_chain_input_point_is_valid(ip) == 0);
+TEST_CASE("C-API InputPoint - null factory yields coinbase sentinel", "[C-API InputPoint]") {
+    kth_input_point_mut_t ip = kth_chain_input_point_null();
+    REQUIRE(kth_chain_input_point_is_null(ip) != 0);
     kth_chain_input_point_destruct(ip);
 }
 
 TEST_CASE("C-API InputPoint - field constructor preserves hash and index", "[C-API InputPoint]") {
     kth_input_point_mut_t ip = kth_chain_input_point_construct(&kHash, 1234u);
-    REQUIRE(kth_chain_input_point_is_valid(ip) != 0);
     REQUIRE(kth_chain_input_point_index(ip) == 1234u);
     REQUIRE(kth_hash_equal(kth_chain_input_point_hash(ip), kHash) != 0);
     kth_chain_input_point_destruct(ip);

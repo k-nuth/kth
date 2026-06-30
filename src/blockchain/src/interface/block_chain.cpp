@@ -1375,7 +1375,7 @@ block_chain::fetch_block_locator(block::indexes const& heights) const {
     co_return message;
 }
 
-awaitable_expected<domain::chain::input_point>
+awaitable_expected<domain::chain::input_point_opt>
 block_chain::fetch_spend(domain::chain::output_point const& outpoint) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
@@ -1391,7 +1391,7 @@ block_chain::fetch_spend(domain::chain::output_point const& outpoint) const {
         co_return std::unexpected(error::not_found);
     }
 
-    co_return *point;
+    co_return domain::chain::input_point_opt{*point};
 }
 
 awaitable_expected<domain::chain::history_compact::list>

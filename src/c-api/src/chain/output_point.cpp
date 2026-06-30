@@ -153,22 +153,9 @@ kth_bool_t kth_chain_output_point_is_mature(kth_output_point_const_t self, kth_s
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_mature(height_cpp));
 }
 
-kth_bool_t kth_chain_output_point_is_valid(kth_output_point_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid());
-}
-
 kth_bool_t kth_chain_output_point_is_null(kth_output_point_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_null());
-}
-
-
-// Operations
-
-void kth_chain_output_point_reset(kth_output_point_mut_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).reset();
 }
 
 

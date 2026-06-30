@@ -22,10 +22,6 @@ extern "C" {
 
 // Constructors
 
-kth_input_mut_t kth_chain_input_construct_default(void) {
-    return kth::leak<cpp_t>();
-}
-
 kth_error_code_t kth_chain_input_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_input_mut_t* out) {
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
@@ -150,11 +146,6 @@ void kth_chain_input_set_sequence(kth_input_mut_t self, uint32_t value) {
 
 // Predicates
 
-kth_bool_t kth_chain_input_is_valid(kth_input_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid());
-}
-
 kth_bool_t kth_chain_input_is_final(kth_input_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_final());
@@ -174,11 +165,6 @@ kth_size_t kth_chain_input_signature_operations(kth_input_const_t self, kth_bool
     auto const bip16_cpp = kth::int_to_bool(bip16);
     auto const bip141_cpp = kth::int_to_bool(bip141);
     return kth::cpp_ref<cpp_t>(self).signature_operations(bip16_cpp, bip141_cpp);
-}
-
-void kth_chain_input_reset(kth_input_mut_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).reset();
 }
 
 } // extern "C"

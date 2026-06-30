@@ -52,6 +52,12 @@ public:
     // Constructors.
     //-------------------------------------------------------------------------
 
+    // NOTE: default ctor produces the coinbase null prevout (null_hash,
+    // null_index). Kept because several aggregate types (history,
+    // token_genesis_params, utxo, config::point) rely on it as a
+    // default-init member; removing it cascades through wallet/cashtoken
+    // and the config wrappers. Tracked as a follow-up to fully apply the
+    // "valid by construction" pattern (see task list).
     output_point();
     output_point(hash_digest const& hash, uint32_t index);
 
@@ -76,6 +82,11 @@ public:
     // Operators.
     //-------------------------------------------------------------------------
 
+    // NOTE: `==` is not `= default` because `validation` is tracing/cache
+    // metadata — equality is defined over the (hash, index) base, ignoring
+    // it. Self-self `!=` is defaulted (delegates to `!(==)`); cross-type
+    // pairs cannot be defaulted (the standard requires identical parameter
+    // types), so they are hand-written.
     friend bool operator==(output_point const& x, point const& y);
     friend bool operator!=(output_point const& x, point const& y);
 
@@ -83,7 +94,7 @@ public:
     friend bool operator!=(point const& x, output_point const& y);
 
     friend bool operator==(output_point const& x, output_point const& y);
-    friend bool operator!=(output_point const& x, output_point const& y);
+    friend bool operator!=(output_point const& x, output_point const& y) = default;
 
     // Validation.
     //-------------------------------------------------------------------------

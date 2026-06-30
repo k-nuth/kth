@@ -28,16 +28,6 @@ point_value::point_value(point const& p, uint64_t value)
 // }
 
 // friend
-bool operator==(point_value const& x, point_value const& y) {
-    return static_cast<point const&>(x) == static_cast<point const&>(y) && x.value_ == y.value_;
-}
-
-// friend
-bool operator!=(point_value const& x, point_value const& y) {
-    return !(x == y);
-}
-
-// friend
 void swap(point_value& x, point_value& y) {
     using std::swap;
     swap(static_cast<point&>(x), static_cast<point&>(y));

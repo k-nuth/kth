@@ -71,8 +71,12 @@ public:
     // Operators.
     //-------------------------------------------------------------------------
 
+    // NOTE: `==` is not `= default` because the `validation` member is
+    // tracing metadata, not part of the value's identity. `!=` is defaulted
+    // (delegates to `!(==)`) so callers that spell out the member call still
+    // resolve.
     bool operator==(block const& x) const;
-    bool operator!=(block const& x) const;
+    bool operator!=(block const& x) const = default;
 
     // Deserialization.
     //-------------------------------------------------------------------------

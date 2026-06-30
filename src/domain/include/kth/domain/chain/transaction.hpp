@@ -108,8 +108,12 @@ struct KD_API transaction {
     // Operators.
     //-----------------------------------------------------------------------------
 
+    // NOTE: `==` is not `= default` because the `validation` member is
+    // tracing metadata, not part of the value's identity. `!=` is defaulted
+    // (delegates to `!(==)`) so callers that spell out the member call still
+    // resolve.
     bool operator==(transaction const& x) const;
-    bool operator!=(transaction const& x) const;
+    bool operator!=(transaction const& x) const = default;
 
     // Deserialization.
     //-----------------------------------------------------------------------------

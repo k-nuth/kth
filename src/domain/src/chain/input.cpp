@@ -33,32 +33,6 @@ input::input(output_point&& previous_output, chain::script&& script, uint32_t se
     , sequence_(sequence)
 {}
 
-// Operators.
-//-----------------------------------------------------------------------------
-
-bool operator==(input const& a, input const& b) {
-    return a.previous_output_ == b.previous_output_
-        && a.script_ == b.script_
-        && a.sequence_ == b.sequence_;
-}
-
-bool operator!=(input const& a, input const& b) {
-    return !(a == b);
-}
-
-void input::reset() {
-    previous_output_.reset();
-    script_.reset();
-    sequence_ = 0;
-}
-
-// Since empty scripts and zero sequence are valid this relies on the prevout.
-bool input::is_valid() const {
-    return sequence_ != 0
-        || previous_output_.is_valid()
-        || script_.is_valid();
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

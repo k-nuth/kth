@@ -22,10 +22,6 @@ extern "C" {
 
 // Constructors
 
-kth_input_point_mut_t kth_chain_input_point_construct_default(void) {
-    return kth::leak<cpp_t>();
-}
-
 kth_error_code_t kth_chain_input_point_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_input_point_mut_t* out) {
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
@@ -141,22 +137,9 @@ void kth_chain_input_point_set_index(kth_input_point_mut_t self, uint32_t value)
 
 // Predicates
 
-kth_bool_t kth_chain_input_point_is_valid(kth_input_point_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid());
-}
-
 kth_bool_t kth_chain_input_point_is_null(kth_input_point_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_null());
-}
-
-
-// Operations
-
-void kth_chain_input_point_reset(kth_input_point_mut_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).reset();
 }
 
 

@@ -41,10 +41,6 @@ bool operator==(output const& a, output const& b) {
         && a.token_data_ == b.token_data_;
 }
 
-bool operator!=(output const& a, output const& b) {
-    return !(a == b);
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

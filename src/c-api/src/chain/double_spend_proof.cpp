@@ -133,20 +133,4 @@ void kth_chain_double_spend_proof_set_spender2(kth_double_spend_proof_mut_t self
     kth::cpp_ref<cpp_t>(self).set_spender2(x_cpp);
 }
 
-
-// Predicates
-
-kth_bool_t kth_chain_double_spend_proof_is_valid(kth_double_spend_proof_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid());
-}
-
-
-// Operations
-
-void kth_chain_double_spend_proof_reset(kth_double_spend_proof_mut_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).reset();
-}
-
 } // extern "C"

@@ -73,10 +73,7 @@ struct KD_API script {
     //-------------------------------------------------------------------------
 
     friend
-    bool operator==(script const& x, script const& y);
-
-    friend
-    bool operator!=(script const& x, script const& y);
+    constexpr bool operator==(script const&, script const&) = default;
 
     // Deserialization.
     //-------------------------------------------------------------------------
