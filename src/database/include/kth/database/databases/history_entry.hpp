@@ -28,32 +28,34 @@ struct KD_API history_entry {
         return sizeof(uint64_t) + point.serialized_size(false) + sizeof(uint8_t) + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint64_t);
     }
 
-    data_chunk to_data() const;
-    void to_data(std::ostream& stream) const;
-
-    template <typename W, KTH_IS_WRITER(W)>
-    void to_data(W& sink) const {
-        factory_to_data(sink, id_, point_, point_kind_, height_, index_, value_or_checksum_);
+    // Instance-side wrapper so the type satisfies `kth::Serializable`
+    // and can flow through `kth::to_data_chunk`.
+    [[nodiscard]]
+    constexpr size_t serialized_size() const {
+        return serialized_size(point_);
     }
 
     static
     expect<history_entry> from_data(byte_reader& reader);
 
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer) const {
+        return factory_to_data(writer, id_, point_, point_kind_, height_, index_, value_or_checksum_);
+    }
+
+    data_chunk to_data() const;
+
     static
     data_chunk factory_to_data(uint64_t id, domain::chain::point const& point, domain::chain::point_kind kind, uint32_t height, uint32_t index, uint64_t value_or_checksum);
 
     static
-    void factory_to_data(std::ostream& stream, uint64_t id, domain::chain::point const& point, domain::chain::point_kind kind, uint32_t height, uint32_t index, uint64_t value_or_checksum);
-
-    template <typename W, KTH_IS_WRITER(W)>
-    static
-    void factory_to_data(W& sink, uint64_t id, domain::chain::point const& point, domain::chain::point_kind kind, uint32_t height, uint32_t index, uint64_t value_or_checksum) {
-        sink.write_8_bytes_little_endian(id);
-        point.to_data(sink, false);
-        sink.write_byte(uint8_t(kind));
-        sink.write_4_bytes_little_endian(height);
-        sink.write_4_bytes_little_endian(index);
-        sink.write_8_bytes_little_endian(value_or_checksum);
+    expect<void> factory_to_data(byte_writer& writer, uint64_t id, domain::chain::point const& point, domain::chain::point_kind kind, uint32_t height, uint32_t index, uint64_t value_or_checksum) {
+        if (auto r = writer.write_little_endian<uint64_t>(id); ! r) return r;
+        if (auto r = point.to_data(writer, false); ! r) return r;
+        if (auto r = writer.write_byte(uint8_t(kind)); ! r) return r;
+        if (auto r = writer.write_little_endian<uint32_t>(height); ! r) return r;
+        if (auto r = writer.write_little_endian<uint32_t>(index); ! r) return r;
+        return writer.write_little_endian<uint64_t>(value_or_checksum);
     }
 
 private:

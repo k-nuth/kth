@@ -28,6 +28,8 @@
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/machine/script_version.hpp>
+#include <kth/infrastructure/utility/assert.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 
 #include <kth/capi/wallet/coin_selection_algorithm.h>
 #include <kth/capi/wallet/coin_selection_strategy.h>
@@ -539,6 +541,30 @@ uint8_t* create_c_array(kth::data_chunk const& arr, N& out_size) {
     auto* ret = mnew<uint8_t>(n != 0 ? n : 1);
     out_size = n;
     std::copy_n(arr.begin(), n, ret);
+    return ret;
+}
+
+// Fused variant of `to_data_chunk(obj, args...)` + `create_c_array(chunk, out_size)`.
+// The naive pipeline is `data_chunk → uint8_t*` and does two heap allocations
+// (the vector, then the C buffer) plus one byte-for-byte copy. Fold both
+// into a single `malloc(serialized_size)` and serialize straight into the
+// C-owned buffer; the C-API `to_data` wrappers hit this once per exported
+// object so removing the intermediate vector matters.
+template <typename N, typename T, typename... Args>
+    requires kth::Serializable<T, Args...>
+inline
+uint8_t* to_c_array_from(T const& obj, N& out_size, Args... args) {
+    auto const n = obj.serialized_size(args...);
+    // Same non-NULL sentinel as `create_c_array` — see comment there.
+    auto* ret = mnew<uint8_t>(n != 0 ? n : 1);
+    out_size = n;
+    kth::byte_writer writer(std::span<uint8_t>{ret, n});
+    auto const r = obj.to_data(writer, args...);
+    // Failure here would ship a partially-initialised buffer over the C
+    // ABI (garbage past `writer.position()`). `KTH_CONTRACT` stays live
+    // in Release so we abort instead of returning a broken payload.
+    KTH_CONTRACT(r.has_value());
+    KTH_CONTRACT(writer.position() == n);
     return ret;
 }
 

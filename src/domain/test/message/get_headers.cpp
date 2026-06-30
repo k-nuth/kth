@@ -94,7 +94,7 @@ TEST_CASE("get headers from data insufficient version failure", "[get headers]")
         }, "7777777777777777777777777777777777777777777777777777777777777777"_hash
     };
 
-    auto const data = expected.to_data(message::get_headers::version_minimum);
+    auto const data = kth::to_data_chunk(expected, message::get_headers::version_minimum);
     message::get_headers instance{};
 
     byte_reader reader(data);
@@ -113,7 +113,7 @@ TEST_CASE("get headers from data valid input  success", "[get headers]") {
         }, "7777777777777777777777777777777777777777777777777777777777777777"_hash
     };
 
-    auto const data = expected.to_data(message::get_headers::version_minimum);
+    auto const data = kth::to_data_chunk(expected, message::get_headers::version_minimum);
     byte_reader reader(data);
     auto const result_exp = message::get_headers::from_data(reader, message::get_headers::version_minimum);
     REQUIRE(result_exp);

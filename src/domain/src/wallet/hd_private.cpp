@@ -24,7 +24,6 @@
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
-#include <kth/infrastructure/utility/serializer.hpp>
 
 namespace kth::domain::wallet {
 

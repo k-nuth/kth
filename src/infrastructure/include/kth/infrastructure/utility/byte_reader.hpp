@@ -248,6 +248,24 @@ private:
     size_t position_;
 };
 
+// Anything with a `static expect<T> from_data(byte_reader&, args...)` factory.
+// Symmetric to `Serializable` in byte_writer.hpp.
+template <typename T, typename... Args>
+concept Deserializable = requires(byte_reader& r, Args... args) {
+    { T::from_data(r, args...) } -> std::same_as<expect<T>>;
+};
+
+// Build a `byte_reader` over `data` and invoke `T::from_data(reader, args...)`.
+// Replaces the boilerplate of constructing a reader at every call site that
+// already holds a `data_chunk` (or any contiguous byte range).
+template <typename T, typename Range, typename... Args>
+    requires Deserializable<T, Args...>
+[[nodiscard]] inline
+expect<T> from_data_chunk(Range const& data, Args... args) {
+    byte_reader reader(byte_span{data});
+    return T::from_data(reader, args...);
+}
+
 } // namespace kth
 
 #endif // KTH_INFRASTRUCTURE_BYTES_READER_HPP

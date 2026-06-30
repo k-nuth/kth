@@ -20,10 +20,8 @@
 
 #include <kth/domain/machine/script_pattern.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
 
 
 
@@ -71,30 +69,8 @@ struct KD_API operation {
     [[nodiscard]]
     data_chunk to_data() const;
 
-    void to_data(data_sink& stream) const;
-
-    template <typename W>
-    void to_data(W& sink) const {
-        auto const size = data_.size();
-
-        sink.write_byte(uint8_t(code_));
-
-        switch (code_) {
-            case opcode::push_one_size:
-                sink.write_byte(uint8_t(size));
-                break;
-            case opcode::push_two_size:
-                sink.write_2_bytes_little_endian(uint16_t(size));
-                break;
-            case opcode::push_four_size:
-                sink.write_4_bytes_little_endian(uint32_t(size));
-                break;
-            default:
-                break;
-        }
-
-        sink.write_bytes(data_);
-    }
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer) const;
 
     [[nodiscard]]
     std::string to_string(script_flags_t active_flags) const;

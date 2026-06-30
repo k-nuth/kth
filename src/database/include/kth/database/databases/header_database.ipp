@@ -223,8 +223,7 @@ std::expected<domain::chain::header, result_code> internal_database_basis<Clock>
         return std::unexpected(result_code::other);
     }
 
-    auto data = db_value_to_data_chunk(value);
-    byte_reader reader(data);
+    auto reader = kth::database::db_reader(value);
     auto opt = get_header_and_abla_state_from_data(reader);
     if ( ! opt) {
         return std::unexpected(result_code::other);
@@ -245,8 +244,7 @@ std::expected<header_with_abla_state_t, result_code> internal_database_basis<Clo
         return std::unexpected(result_code::other);
     }
 
-    auto data = db_value_to_data_chunk(value);
-    byte_reader reader(data);
+    auto reader = kth::database::db_reader(value);
     auto opt = get_header_and_abla_state_from_data(reader);
     if ( ! opt) {
         return std::unexpected(result_code::other);

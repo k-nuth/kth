@@ -11,12 +11,8 @@
 
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
-
-
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/domain/concepts.hpp>
 
 namespace kth::domain::message {
@@ -35,11 +31,7 @@ struct KD_API verack {
     expect<verack> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
-    data_chunk to_data(uint32_t version) const;
-
-    void to_data(uint32_t version, data_sink& stream) const;
-    void to_data(uint32_t version, writer& sink) const;
-
+    expect<void> to_data(byte_writer& writer, uint32_t version) const;
     [[nodiscard]]
     bool is_valid() const;
 

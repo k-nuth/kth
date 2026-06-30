@@ -15,11 +15,10 @@
 
 #include <kth/domain/machine/operation.hpp>
 
-#include <kth/infrastructure/utility/container_sink.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
 #include <kth/infrastructure/utility/thread.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
 
 #include <kth/domain/utils.hpp>
 #include <kth/domain/concepts.hpp>
@@ -60,45 +59,7 @@ struct KD_API witness {
     // Prefixed data assumed valid here though caller may confirm with is_valid.
 
     /// Deserialization invalidates the iterator.
-    template <typename R, KTH_IS_READER(R)>
-    bool from_data(R& source, bool prefix) {
-        reset();
-        valid_ = true;
-
-        auto const read_element = [](R& source) {
-            // Tokens encoded as variable integer prefixed byte array (bip144).
-            auto const size = source.read_size_little_endian();
-
-            // The max_script_size and max_push_data_size constants limit
-            // evaluation, but not all stacks evaluate, so use max_block_weight
-            // to guard memory allocation here.
-            if (size > max_block_weight) {
-                source.invalidate();
-                return data_chunk{};
-            }
-
-            return source.read_bytes(size);
-        };
-
-        // TODO(legacy): optimize store serialization to avoid loop, reading data directly.
-        if (prefix) {
-            // Witness prefix is an element count, not byte length (unlike script).
-            // On wire each witness is prefixed with number of elements (bip144).
-            for (auto count = source.read_size_little_endian(); count > 0; --count) {
-                stack_.push_back(read_element(source));
-            }
-        } else {
-            while ( ! source.is_exhausted()) {
-                stack_.push_back(read_element(source));
-            }
-        }
-
-        if ( ! source) {
-            reset();
-        }
-
-        return source;
-    }
+    bool from_data(byte_reader& reader, bool prefix);
 
     /// The witness deserialized ccording to count and size prefixing.
     bool is_valid() const;
@@ -106,27 +67,12 @@ struct KD_API witness {
     // Serialization.
     //-------------------------------------------------------------------------
 
+    [[nodiscard]]
     data_chunk to_data(bool prefix) const;
-    void to_data(data_sink& stream, bool prefix) const;
 
-    template <typename W>
-    void to_data(W& sink, bool prefix) const {
-        // Witness prefix is an element count, not byte length (unlike script).
-        if (prefix) {
-            sink.write_size_little_endian(stack_.size());
-        }
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer, bool prefix) const;
 
-        auto const serialize = [&sink](data_chunk const& element) {
-            // Tokens encoded as variable integer prefixed byte array (bip144).
-            sink.write_size_little_endian(element.size());
-            sink.write_bytes(element);
-        };
-
-        // TODO(legacy): optimize store serialization to avoid loop, writing data directly.
-        std::for_each(stack_.begin(), stack_.end(), serialize);
-    }
-
-    //void to_data(writer& sink, bool prefix) const;
 
     std::string to_string() const;
 

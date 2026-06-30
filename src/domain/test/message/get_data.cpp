@@ -110,7 +110,7 @@ TEST_CASE("get data from data insufficient version  failure", "[get data]") {
         {inventory_vector::type_id::error,
          "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash}};
 
-    auto const raw = expected.to_data(version::level::maximum);
+    auto const raw = kth::to_data_chunk(expected, version::level::maximum);
     byte_reader reader(raw);
     auto const result = get_data::from_data(reader, get_data::version_minimum - 1);
     REQUIRE( ! result);
@@ -122,7 +122,7 @@ TEST_CASE("get data from data valid input  success", "[get data]") {
          "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash}};
 
     static auto const version = version::level::maximum;
-    auto const data = expected.to_data(version);
+    auto const data = kth::to_data_chunk(expected, version);
     byte_reader reader(data);
     auto const result_exp = get_data::from_data(reader, version);
     REQUIRE(result_exp);

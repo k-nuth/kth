@@ -5,9 +5,6 @@
 #include <kth/domain/message/get_address.hpp>
 
 #include <kth/domain/message/version.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const get_address::command = "getaddr";
@@ -31,21 +28,6 @@ expect<get_address> get_address::from_data(byte_reader& reader, uint32_t /*versi
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk get_address::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-void get_address::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 size_t get_address::serialized_size(uint32_t version) const {
     return get_address::satoshi_fixed_size(version);

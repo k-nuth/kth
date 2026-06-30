@@ -10,8 +10,7 @@
 #include <kth/domain/multi_crypto_support.hpp>
 
 #include <kth/infrastructure/message/message_tools.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 
 namespace kth::domain::message {
 
@@ -104,19 +103,14 @@ expect<heading> heading::from_data(byte_reader& reader, uint32_t /*version*/) {
 //-----------------------------------------------------------------------------
 
 data_chunk heading::to_data() const {
-    data_chunk data;
-    auto const size = satoshi_fixed_size();
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
+    return kth::to_data_chunk(*this);
 }
 
-void heading::to_data(data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(sink_w);
+expect<void> heading::to_data(byte_writer& writer) const {
+    if (auto r = writer.write_little_endian<uint32_t>(magic_); ! r) return r;
+    if (auto r = writer.write_string_fixed(command_, command_size); ! r) return r;
+    if (auto r = writer.write_little_endian<uint32_t>(payload_size_); ! r) return r;
+    return writer.write_little_endian<uint32_t>(checksum_);
 }
 
 message_type heading::type() const {

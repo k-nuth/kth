@@ -24,10 +24,7 @@
 #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 #include <kth/infrastructure/utility/collection.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::chain {
 
 using namespace kth::domain::machine;
@@ -105,37 +102,21 @@ bool witness::is_valid() const {
 //-----------------------------------------------------------------------------
 
 data_chunk witness::to_data(bool prefix) const {
-    data_chunk data;
-    auto const size = serialized_size(prefix);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(ostream, prefix);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
+    return kth::to_data_chunk(*this, prefix);
 }
 
-void witness::to_data(data_sink& stream, bool prefix) const {
-    ostream_writer sink_w(stream);
-    to_data(sink_w, prefix);
+expect<void> witness::to_data(byte_writer& writer, bool prefix) const {
+    // Witness prefix is an element count, not byte length (unlike script).
+    if (prefix) {
+        if (auto r = writer.write_size_little_endian(stack_.size()); ! r) return r;
+    }
+    // Each element on the witness stack: varint(element.size()) || bytes (bip144).
+    for (auto const& element : stack_) {
+        if (auto r = writer.write_size_little_endian(element.size()); ! r) return r;
+        if (auto r = writer.write_bytes(element); ! r) return r;
+    }
+    return {};
 }
-
-//void witness::to_data(writer& sink, bool prefix) const
-//{
-//    // Witness prefix is an element count, not byte length (unlike script).
-//    if (prefix)
-//        sink.write_size_little_endian(stack_.size());
-//
-//    auto const serialize = [&sink](data_chunk const& element)
-//    {
-//        // Tokens encoded as variable integer prefixed byte array (bip144).
-//        sink.write_size_little_endian(element.size());
-//        sink.write_bytes(element);
-//    };
-//
-//    // TODO(legacy): optimize store serialization to avoid loop, writing data directly.
-//    std::for_each(stack_.begin(), stack_.end(), serialize);
-//}
 
 std::string witness::to_string() const {
     if ( ! valid_) {

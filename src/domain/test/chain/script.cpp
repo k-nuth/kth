@@ -246,7 +246,7 @@ TEST_CASE("script from data to data roundtrips", "[script]") {
     REQUIRE(script.sigops(true) == 1u);
     REQUIRE(script.pattern() == script_pattern::pay_to_public_key_hash);
 
-    auto const roundtrip = script.to_data(false);
+    auto const roundtrip = kth::to_data_chunk(script, false);
     REQUIRE(roundtrip == normal_output_script);
 }
 
@@ -259,7 +259,7 @@ TEST_CASE("script from data to data weird roundtrips", "[script]") {
     REQUIRE(result);
     weird = std::move(*result);
 
-    auto const roundtrip_result = weird.to_data(false);
+    auto const roundtrip_result = kth::to_data_chunk(weird, false);
     REQUIRE(roundtrip_result == weird_raw_script);
 }
 

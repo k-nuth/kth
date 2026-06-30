@@ -207,7 +207,7 @@ struct consensus_result {
 };
 
 consensus_result eval_consensus(data_stack initial_stack, script const& scr, unsigned int flags) {
-    auto const script_bytes = scr.to_data(false);
+    auto const script_bytes = kth::to_data_chunk(scr, false);
     auto stack = initial_stack;
     script_eval_metrics metrics{};
     auto const result = eval_script_with_metrics(

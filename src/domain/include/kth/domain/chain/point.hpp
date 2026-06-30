@@ -18,10 +18,9 @@
 #include <kth/domain/define.hpp>
 #include <kth/domain/deserialization.hpp>
 #include <kth/infrastructure/math/hash.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
 
 
 #include <kth/domain/concepts.hpp>
@@ -54,36 +53,29 @@ struct KD_API point {
     // ("arbitrary order to support set uniqueness").
     friend constexpr auto operator<=>(point const&, point const&) = default;
 
-    // Deserialization.
+    // Serialization.
     //-------------------------------------------------------------------------
 
     static
     expect<point> from_data(byte_reader& reader, bool wire = true);
 
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer, bool wire) const;
+
+    [[nodiscard]]
+    static constexpr size_t satoshi_fixed_size() {
+        return hash_size + sizeof(index_);
+    }
+
+    [[nodiscard]]
+    constexpr size_t serialized_size(bool wire = true) const {
+        return wire ? point::satoshi_fixed_size() : (hash_size + sizeof(uint16_t));
+    }
+
     /// Returns a null point (coinbase input reference).
     [[nodiscard]]
     static constexpr point null() noexcept {
         return point{null_hash, null_index};
-    }
-
-    // Serialization.
-    //-------------------------------------------------------------------------
-
-    [[nodiscard]]
-    data_chunk to_data(bool wire = true) const;
-
-    void to_data(data_sink& stream, bool wire = true) const;
-
-    template <typename W>
-    void to_data(W& sink, bool wire = true) const {
-        sink.write_hash(hash_);
-
-        if (wire) {
-            sink.write_4_bytes_little_endian(index_);
-        } else {
-            KTH_ASSERT(index_ == null_index || index_ < max_uint16);
-            sink.write_2_bytes_little_endian(uint16_t(index_));
-        }
     }
 
     // Iteration (limited to store serialization).
@@ -95,18 +87,8 @@ struct KD_API point {
     [[nodiscard]]
     point_iterator end() const;
 
-    // Properties (size, accessors, cache).
+    // Properties (accessors, cache).
     //-------------------------------------------------------------------------
-
-    [[nodiscard]]
-    static constexpr size_t satoshi_fixed_size() {
-        return hash_size + sizeof(index_);
-    }
-
-    [[nodiscard]]
-    constexpr size_t serialized_size(bool wire = true) const {
-        return wire ? point::satoshi_fixed_size() : (hash_size + sizeof(uint16_t));
-    }
 
     // deprecated (unsafe)
     constexpr hash_digest& hash() {

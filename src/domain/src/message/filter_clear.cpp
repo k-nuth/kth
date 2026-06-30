@@ -5,8 +5,6 @@
 #include <kth/domain/message/filter_clear.hpp>
 
 #include <kth/domain/message/version.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::domain::message {
 
@@ -44,19 +42,7 @@ expect<filter_clear> filter_clear::from_data(byte_reader& reader, uint32_t versi
 //-----------------------------------------------------------------------------
 
 data_chunk filter_clear::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-void filter_clear::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
+    return kth::to_data_chunk(*this, version);
 }
 
 size_t filter_clear::serialized_size(uint32_t version) const {

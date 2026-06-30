@@ -427,10 +427,10 @@ TEST_CASE("chain transaction from data compare wire to store  success", "[None]"
         auto result = chain::transaction::from_data(reader, wire);
         REQUIRE(result);
         wire_tx = std::move(*result);
-        REQUIRE(to_chunk(tx3_wire_serialized) == wire_tx.to_data(wire));
+        REQUIRE(to_chunk(tx3_wire_serialized) == kth::to_data_chunk(wire_tx, wire));
     }
 
-    auto const get_store_text = encode_base16(wire_tx.to_data(!wire));
+    auto const get_store_text = encode_base16(kth::to_data_chunk(wire_tx, !wire));
 
     chain::transaction store_tx;
     {
@@ -438,7 +438,7 @@ TEST_CASE("chain transaction from data compare wire to store  success", "[None]"
         auto result = chain::transaction::from_data(reader, !wire);
         REQUIRE(result);
         store_tx = std::move(*result);
-        REQUIRE(to_chunk(tx3_store_serialized_v3) == store_tx.to_data(!wire));
+        REQUIRE(to_chunk(tx3_store_serialized_v3) == kth::to_data_chunk(store_tx, !wire));
     }
 
     REQUIRE(wire_tx == store_tx);
@@ -459,7 +459,7 @@ TEST_CASE("chain transaction  factory data 1  case 1  success", "[chain transact
 
     // Re-save tx and compare against original.
     REQUIRE(tx.serialized_size() == tx1.size());
-    data_chunk resave = tx.to_data();
+    data_chunk resave = kth::to_data_chunk(tx, true);
     REQUIRE(resave == to_chunk(tx1));
 }
 
@@ -477,7 +477,7 @@ TEST_CASE("chain transaction  factory data 1  case 2  success", "[chain transact
 
     // Re-save tx and compare against original.
     REQUIRE(tx.serialized_size() == tx4.size());
-    data_chunk resave = tx.to_data();
+    data_chunk resave = kth::to_data_chunk(tx, true);
     REQUIRE(resave == to_chunk(tx4));
 }
 
@@ -997,6 +997,6 @@ TEST_CASE("chain transaction  hash  block320670  success", "[chain transaction]"
     REQUIRE(result);
     chain::transaction const instance = std::move(*result);
     REQUIRE(expected == instance.hash());
-    REQUIRE(to_chunk(tx7) == instance.to_data());
+    REQUIRE(to_chunk(tx7) == kth::to_data_chunk(instance, true));
 }
 

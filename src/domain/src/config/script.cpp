@@ -50,7 +50,7 @@ script::script(script const& x)
 }
 
 data_chunk script::to_data() const {
-    return value_.to_data(false);
+    return kth::to_data_chunk(value_, false);
 }
 
 std::string script::to_string() const {

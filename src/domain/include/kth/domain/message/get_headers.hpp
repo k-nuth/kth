@@ -12,9 +12,6 @@
 #include <kth/domain/message/get_blocks.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-
-
 #include <kth/domain/concepts.hpp>
 
 namespace kth::domain::message {

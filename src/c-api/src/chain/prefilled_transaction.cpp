@@ -73,8 +73,7 @@ kth_bool_t kth_chain_prefilled_transaction_equals(kth_prefilled_transaction_cons
 uint8_t* kth_chain_prefilled_transaction_to_data(kth_prefilled_transaction_const_t self, uint32_t version, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto const data = kth::cpp_ref<cpp_t>(self).to_data(version);
-    return kth::create_c_array(data, *out_size);
+    return kth::to_c_array_from(kth::cpp_ref<cpp_t>(self), *out_size, version);
 }
 
 kth_size_t kth_chain_prefilled_transaction_serialized_size(kth_prefilled_transaction_const_t self, uint32_t version) {

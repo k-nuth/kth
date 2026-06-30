@@ -52,17 +52,8 @@ struct KD_API header : chain::header {
     expect<header> from_data(byte_reader& reader, uint32_t version);
 
     // Serialization to P2P wire (writes trailing zero byte).
-    data_chunk to_data(uint32_t version) const;
-    void to_data(uint32_t version, data_sink& stream) const;
-
-    template <typename W>
-    void to_data(uint32_t version, W& sink) const {
-        chain::header::to_data(sink, true);  // wire=true
-
-        if (version != version::level::canonical) {
-            sink.write_variable_little_endian(uint64_t{0});
-        }
-    }
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
     size_t serialized_size(uint32_t version) const;
 };

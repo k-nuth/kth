@@ -13,8 +13,6 @@
 #include <kth/domain/chain/point.hpp>
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/define.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-
 namespace kth::domain::chain {
 
 struct KD_API output_point : point {

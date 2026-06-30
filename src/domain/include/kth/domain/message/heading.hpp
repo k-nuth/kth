@@ -16,10 +16,8 @@
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/math/checksum.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
 
 
 #include <kth/domain/concepts.hpp>
@@ -109,17 +107,18 @@ struct KD_API heading {
     [[nodiscard]]
     data_chunk to_data() const;
 
-    void to_data(data_sink& stream) const;
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer) const;
 
-    template <typename W>
-    void to_data(W& sink) const {
-        sink.write_4_bytes_little_endian(magic_);
-        sink.write_string(command_, command_size);
-        sink.write_4_bytes_little_endian(payload_size_);
-        sink.write_4_bytes_little_endian(checksum_);
+    // Instance-side wrapper so the type satisfies `kth::Serializable`
+    // and can flow through `kth::to_data_chunk`. Headings are a fixed
+    // shape (magic + command_size + payload_size + checksum), so this
+    // just forwards to the static formula.
+    [[nodiscard]]
+    size_t serialized_size() const {
+        return satoshi_fixed_size();
     }
 
-    //void to_data(writer& sink) const;
     [[nodiscard]]
     bool is_valid() const;
 

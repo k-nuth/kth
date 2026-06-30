@@ -17,9 +17,8 @@
 #include <kth/domain/chain/token_data.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 
 #include <kth/domain/concepts.hpp>
 
@@ -61,50 +60,20 @@ struct KD_API output {
     friend
     bool operator!=(output const&, output const&) = default;
 
-    // Deserialization.
+    // Serialization.
     //-------------------------------------------------------------------------
 
     static
     expect<output> from_data(byte_reader& reader, bool wire = true);
 
     [[nodiscard]]
-    bool is_valid() const;
-
-    // Serialization.
-    //-------------------------------------------------------------------------
-
-    [[nodiscard]]
-    data_chunk to_data(bool wire = true) const;
-
-    void to_data(data_sink& stream, bool wire = true) const;
-
-    template <typename W>
-    void to_data(W& sink, bool wire = true) const {
-        if ( ! wire) {
-            auto const height32 = *safe_unsigned<uint32_t>(validation.spender_height);
-            sink.write_4_bytes_little_endian(height32);
-        }
-
-        sink.write_8_bytes_little_endian(value_);
-
-        if ( ! token_data_.has_value()) {
-            script_.to_data(sink, true);
-            return;
-        }
-
-        auto const size = token::encoding::serialized_size(token_data_) + script_.serialized_size(false) + 1;
-        sink.write_variable_little_endian(size);
-
-        sink.write_byte(chain::encoding::PREFIX_BYTE);
-        token::encoding::to_data(sink, token_data_.value());
-        script_.to_data(sink, false);
-    }
-
-    // Properties (size, accessors).
-    //-------------------------------------------------------------------------
+    expect<void> to_data(byte_writer& writer, bool wire) const;
 
     [[nodiscard]]
     size_t serialized_size(bool wire = true) const;
+
+    // Properties (accessors).
+    //-------------------------------------------------------------------------
 
     [[nodiscard]]
     uint64_t value() const;
@@ -147,6 +116,9 @@ struct KD_API output {
 
     // Validation.
     //-------------------------------------------------------------------------
+
+    [[nodiscard]]
+    bool is_valid() const;
 
     [[nodiscard]]
     size_t signature_operations(bool bip141) const;

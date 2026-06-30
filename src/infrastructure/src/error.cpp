@@ -255,7 +255,12 @@ std::string error_category_impl::message(int ev) const noexcept {
         { error::impossible_encoding, "impossible encoding" },
         { error::invalid_split_range, "invalid split range" },
         { error::invalid_number_encoding, "invalid number encoding" },
-        { error::operand_size_mismatch, "operand size mismatch" }
+        { error::operand_size_mismatch, "operand size mismatch" },
+
+        // Domain object serialization/deserialization
+        { error::read_past_end_of_buffer, "read past end of buffer" },
+        { error::skip_past_end_of_buffer, "skip past end of buffer" },
+        { error::write_past_end_of_buffer, "write past end of buffer" }
     };
 
     auto const message = messages.find(ev);

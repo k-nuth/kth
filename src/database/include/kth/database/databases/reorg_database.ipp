@@ -55,11 +55,10 @@ result_code internal_database_basis<Clock>::insert_reorg_pool(uint32_t height, K
 template <typename Clock>
 result_code internal_database_basis<Clock>::push_block_reorg(domain::chain::block const& block, uint32_t height, KTH_DB_txn* db_txn) {
 
-    auto valuearr = block.to_data();               //TODO(fernando): podría estar afuera de la DBTx
     auto key = kth_db_make_value(sizeof(height), &height);              //TODO(fernando): podría estar afuera de la DBTx
-    auto value = kth_db_make_value(valuearr.size(), valuearr.data());   //TODO(fernando): podría estar afuera de la DBTx
+    auto value = kth::database::to_db_value(block);                     //TODO(fernando): podría estar afuera de la DBTx
 
-    auto res = kth_db_put(db_txn, dbi_reorg_block_, &key, &value, KTH_DB_NOOVERWRITE);
+    auto res = kth_db_put(db_txn, dbi_reorg_block_, &key, &value.val, KTH_DB_NOOVERWRITE);
     if (res == KTH_DB_KEYEXIST) {
         spdlog::info("[database] Duplicate key inserting in reorg block [push_block_reorg] {}", res);
         return result_code::duplicated_key;
@@ -74,11 +73,10 @@ result_code internal_database_basis<Clock>::push_block_reorg(domain::chain::bloc
 
 template <typename Clock>
 result_code internal_database_basis<Clock>::insert_output_from_reorg_and_remove(domain::chain::output_point const& point, KTH_DB_txn* db_txn) {
-    auto keyarr = point.to_data(KTH_INTERNAL_DB_WIRE);
-    auto key = kth_db_make_value(keyarr.size(), keyarr.data());
+    auto key = kth::database::to_db_value(point, KTH_INTERNAL_DB_WIRE);
 
     KTH_DB_val value;
-    auto res = kth_db_get(db_txn, dbi_reorg_pool_, &key, &value);
+    auto res = kth_db_get(db_txn, dbi_reorg_pool_, &key.val, &value);
     if (res == KTH_DB_NOTFOUND) {
         spdlog::info("[database] Key not found in reorg pool [insert_output_from_reorg_and_remove] {}", res);
         return result_code::key_not_found;
@@ -88,7 +86,7 @@ result_code internal_database_basis<Clock>::insert_output_from_reorg_and_remove(
         return result_code::other;
     }
 
-    res = kth_db_put(db_txn, dbi_utxo_, &key, &value, KTH_DB_NOOVERWRITE);
+    res = kth_db_put(db_txn, dbi_utxo_, &key.val, &value, KTH_DB_NOOVERWRITE);
     if (res == KTH_DB_KEYEXIST) {
         spdlog::info("[database] Duplicate key inserting in UTXO [insert_output_from_reorg_and_remove] {}", res);
         return result_code::duplicated_key;
@@ -98,7 +96,7 @@ result_code internal_database_basis<Clock>::insert_output_from_reorg_and_remove(
         return result_code::other;
     }
 
-    res = kth_db_del(db_txn, dbi_reorg_pool_, &key, NULL);
+    res = kth_db_del(db_txn, dbi_reorg_pool_, &key.val, NULL);
     if (res == KTH_DB_NOTFOUND) {
         spdlog::info("[database] Key not found deleting in reorg pool [insert_output_from_reorg_and_remove] {}", res);
         return result_code::key_not_found;
@@ -157,9 +155,7 @@ std::expected<domain::chain::block, result_code> internal_database_basis<Clock>:
         return std::unexpected(result_code::other);
     }
 
-    auto data = db_value_to_data_chunk(value);
-    byte_reader reader(data);       //TODO(fernando): mover fuera de la DbTx
-    auto res = domain::chain::block::from_data(reader);
+    auto res = kth::database::from_db_value<domain::chain::block>(value);
     if ( ! res) {
         return std::unexpected(result_code::other);
     }

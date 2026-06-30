@@ -180,8 +180,7 @@ std::expected<utxo_entry, result_code> utxoz_database::resolve_compact_ref(
     }
 
     // Parse the transaction
-    byte_reader reader(*raw_tx);
-    auto tx = domain::chain::transaction::from_data(reader, true);  // wire=true
+    auto tx = kth::from_data_chunk<domain::chain::transaction>(*raw_tx, true);  // wire=true
     if ( ! tx) {
         spdlog::error("[utxoz_database] resolve_compact_ref: failed to parse tx at file={} offset={}",
             ref.file_number, ref.offset);
@@ -263,9 +262,8 @@ std::vector<uint8_t> utxoz_database::entry_to_bytes(utxo_entry const& entry) {
 
 std::expected<utxo_entry, result_code> utxoz_database::bytes_to_entry(std::span<uint8_t const> bytes) {
     data_chunk data(bytes.begin(), bytes.end());
-    byte_reader reader(data);
 
-    auto entry = utxo_entry::from_data(reader);
+    auto entry = kth::from_data_chunk<utxo_entry>(data);
     if ( ! entry) {
         return std::unexpected(result_code::other);
     }

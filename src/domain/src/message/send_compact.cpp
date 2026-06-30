@@ -7,9 +7,6 @@
 #include <cstdint>
 
 #include <kth/domain/message/version.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const send_compact::command = "sendcmpct";
@@ -69,21 +66,7 @@ expect<send_compact> send_compact::from_data(byte_reader& reader, uint32_t versi
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk send_compact::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void send_compact::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 size_t send_compact::serialized_size(uint32_t version) const {
     return send_compact::satoshi_fixed_size(version);
@@ -103,6 +86,12 @@ uint64_t send_compact::version() const {
 
 void send_compact::set_version(uint64_t version) {
     version_ = version;
+}
+
+expect<void> send_compact::to_data(byte_writer& writer, uint32_t version) const {
+        if (auto r = writer.write_byte(uint8_t(high_bandwidth_mode_)); ! r) return r;
+        if (auto r = writer.write_little_endian<uint64_t>(this->version_); ! r) return r;
+        return {};
 }
 
 } // namespace kth::domain::message

@@ -15,11 +15,10 @@
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/hash.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
 
 #include <kth/domain/deserialization.hpp>
 
@@ -237,35 +236,24 @@ public:
         return data_;
     }
 
-    // Deserialization.
+    // Serialization.
     //-------------------------------------------------------------------------
 
     static
     expect<header> from_data(byte_reader& reader, bool wire = true);
 
     [[nodiscard]]
+    expect<void> to_data(byte_writer& writer, bool wire) const {
+        (void)wire;
+        // Write raw bytes directly - already in little-endian wire format.
+        return writer.write_bytes(std::span<uint8_t const>{data_.data(), serialized_size_wire});
+    }
+
+    [[nodiscard]]
     constexpr bool is_valid() const {
         // Check if any field is non-zero (header has been set).
         constexpr std::array<uint8_t, serialized_size_wire> zero_data{};
         return data_ != zero_data;
-    }
-
-    // Serialization.
-    //-------------------------------------------------------------------------
-
-    [[nodiscard]]
-    data_chunk to_data(bool wire = true) const;
-
-    void to_data(data_sink& stream, bool wire = true) const;
-
-    template <typename W>
-    void to_data(W& sink, bool wire = true) const {
-        // Write raw bytes directly - already in little-endian wire format.
-        sink.write_bytes(data_.data(), serialized_size_wire);
-
-        // if ( ! wire) {
-        //     sink.write_4_bytes_little_endian(median_time_past_);
-        // }
     }
 
     // Properties (size).

@@ -9,9 +9,6 @@
 
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const header::command = "headers";
@@ -51,24 +48,19 @@ expect<header> header::from_data(byte_reader& reader, uint32_t version) {
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk header::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void header::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 size_t header::serialized_size(uint32_t version) const {
     return satoshi_fixed_size(version);
+}
+
+expect<void> header::to_data(byte_writer& writer, uint32_t version) const {
+        chain::header::to_data(writer, true);  // wire=true
+
+        if (version != version::level::canonical) {
+            if (auto r = writer.write_variable_little_endian(uint64_t{0}); ! r) return r;
+        }
+        return {};
 }
 
 } // namespace kth::domain::message

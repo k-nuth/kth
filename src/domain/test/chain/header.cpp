@@ -255,7 +255,7 @@ TEST_CASE("chain header from data valid input  success", "[chain header]") {
         6523454,
         68644};
 
-    auto const data = expected.to_data();
+    auto const data = kth::to_data_chunk(expected, true);
 
     byte_reader reader(data);
     auto const result_exp = chain::header::from_data(reader);
@@ -275,7 +275,7 @@ TEST_CASE("chain header  factory from data 2  valid input  success", "[chain hea
         6523454,
         68644};
 
-    auto const data = expected.to_data();
+    auto const data = kth::to_data_chunk(expected, true);
     byte_reader reader(data);
     auto const result_exp = chain::header::from_data(reader);
     REQUIRE(result_exp);
@@ -294,7 +294,7 @@ TEST_CASE("chain header  factory from data 3  valid input  success", "[chain hea
         6523454,
         68644};
 
-    auto const data = expected.to_data();
+    auto const data = kth::to_data_chunk(expected, true);
     byte_reader reader(data);
     auto const result_exp = chain::header::from_data(reader);
     REQUIRE(result_exp);

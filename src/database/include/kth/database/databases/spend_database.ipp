@@ -13,8 +13,7 @@ namespace kth::database {
 template <typename Clock>
 std::expected<domain::chain::input_point, result_code> internal_database_basis<Clock>::get_spend(domain::chain::output_point const& point) const {
 
-    auto keyarr = point.to_data(KTH_INTERNAL_DB_WIRE);
-    auto key = kth_db_make_value(keyarr.size(), keyarr.data());
+    auto key = kth::database::to_db_value(point, KTH_INTERNAL_DB_WIRE);
     KTH_DB_val value;
 
     KTH_DB_txn* db_txn;
@@ -24,7 +23,7 @@ std::expected<domain::chain::input_point, result_code> internal_database_basis<C
         return std::unexpected(result_code::other);
     }
 
-    res0 = kth_db_get(db_txn, dbi_spend_db_, &key, &value);
+    res0 = kth_db_get(db_txn, dbi_spend_db_, &key.val, &value);
     if (res0 == KTH_DB_NOTFOUND) {
         kth_db_txn_commit(db_txn);
         return std::unexpected(result_code::key_not_found);
@@ -34,7 +33,11 @@ std::expected<domain::chain::input_point, result_code> internal_database_basis<C
         return std::unexpected(result_code::other);
     }
 
-    auto data = db_value_to_data_chunk(value);
+    // Deserialize while the txn is still open — `value` points into
+    // store-owned memory that is only valid until commit. This also
+    // removes the intermediate `data_chunk` copy the previous code
+    // needed to survive the commit.
+    auto res_input = kth::database::from_db_value<domain::chain::input_point>(value);
 
     res0 = kth_db_txn_commit(db_txn);
     if (res0 != KTH_DB_SUCCESS) {
@@ -42,8 +45,6 @@ std::expected<domain::chain::input_point, result_code> internal_database_basis<C
         return std::unexpected(result_code::other);
     }
 
-    byte_reader reader(data);
-    auto res_input = domain::chain::input_point::from_data(reader);
     if ( ! res_input) {
         return std::unexpected(result_code::other);
     }
@@ -56,13 +57,10 @@ std::expected<domain::chain::input_point, result_code> internal_database_basis<C
 template <typename Clock>
 result_code internal_database_basis<Clock>::insert_spend(domain::chain::output_point const& out_point, domain::chain::input_point const& in_point, KTH_DB_txn* db_txn) {
 
-    auto keyarr = out_point.to_data(KTH_INTERNAL_DB_WIRE);
-    auto key = kth_db_make_value(keyarr.size(), keyarr.data());
+    auto key = kth::database::to_db_value(out_point, KTH_INTERNAL_DB_WIRE);
+    auto value = kth::database::to_db_value(in_point, true);
 
-    auto value_arr = in_point.to_data();
-    auto value = kth_db_make_value(value_arr.size(), value_arr.data());
-
-    auto res = kth_db_put(db_txn, dbi_spend_db_, &key, &value, KTH_DB_NOOVERWRITE);
+    auto res = kth_db_put(db_txn, dbi_spend_db_, &key.val, &value.val, KTH_DB_NOOVERWRITE);
     if (res == KTH_DB_KEYEXIST) {
         spdlog::info("[database] Duplicate key inserting spend [insert_spend] {}", res);
         return result_code::duplicated_key;
@@ -99,10 +97,9 @@ result_code internal_database_basis<Clock>::remove_transaction_spend_db(domain::
 template <typename Clock>
 result_code internal_database_basis<Clock>::remove_spend(domain::chain::output_point const& out_point, KTH_DB_txn* db_txn) {
 
-    auto keyarr = out_point.to_data(KTH_INTERNAL_DB_WIRE);      //TODO(fernando): podría estar afuera de la DBTx
-    auto key = kth_db_make_value(keyarr.size(), keyarr.data());                     //TODO(fernando): podría estar afuera de la DBTx
+    auto key = kth::database::to_db_value(out_point, KTH_INTERNAL_DB_WIRE);
 
-    auto res = kth_db_del(db_txn, dbi_spend_db_, &key, NULL);
+    auto res = kth_db_del(db_txn, dbi_spend_db_, &key.val, NULL);
 
     if (res == KTH_DB_NOTFOUND) {
         spdlog::info("[database] Key not found deleting spend [remove_spend] {}", res);

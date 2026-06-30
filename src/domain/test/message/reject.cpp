@@ -107,7 +107,7 @@ TEST_CASE("reject from data insufficient version  failure", "[reject]") {
         reason_text,
         data);
 
-    data_chunk const raw = expected.to_data(version_maximum);
+    data_chunk const raw = kth::to_data_chunk(expected, version_maximum);
     message::reject instance{};
     byte_reader reader(raw);
     auto result = message::reject::from_data(reader, message::reject::version_minimum - 1);
@@ -121,7 +121,7 @@ TEST_CASE("reject from data code malformed  success", "[reject]") {
         reason_text,
         data);
 
-    data_chunk const raw = expected.to_data(version_maximum);
+    data_chunk const raw = kth::to_data_chunk(expected, version_maximum);
     message::reject instance{};
     byte_reader reader(raw);
     auto result = message::reject::from_data(reader, message::reject::version_minimum);
@@ -137,7 +137,7 @@ TEST_CASE("reject from data code invalid  success", "[reject]") {
         reason_text,
         data);
 
-    data_chunk const raw = expected.to_data(version_maximum);
+    data_chunk const raw = kth::to_data_chunk(expected, version_maximum);
     message::reject instance{};
 
     byte_reader reader(raw);
@@ -154,7 +154,7 @@ TEST_CASE("reject from data code obsolete  success", "[reject]") {
         reason_text,
         data);
 
-    data_chunk const raw = expected.to_data(version_maximum);
+    data_chunk const raw = kth::to_data_chunk(expected, version_maximum);
     message::reject instance{};
     byte_reader reader(raw);
     auto result = message::reject::from_data(reader, message::reject::version_minimum);
@@ -170,7 +170,7 @@ TEST_CASE("reject from data code duplicate  success", "[reject]") {
         reason_text,
         data);
 
-    data_chunk const raw = expected.to_data(version_maximum);
+    data_chunk const raw = kth::to_data_chunk(expected, version_maximum);
     message::reject instance{};
     byte_reader reader(raw);
     auto result = message::reject::from_data(reader, message::reject::version_minimum);
@@ -186,7 +186,7 @@ TEST_CASE("reject from data code nonstandard  success", "[reject]") {
         reason_text,
         data);
 
-    data_chunk const raw = expected.to_data(version_maximum);
+    data_chunk const raw = kth::to_data_chunk(expected, version_maximum);
     message::reject instance{};
     byte_reader reader(raw);
     auto result = message::reject::from_data(reader, message::reject::version_minimum);
@@ -202,7 +202,7 @@ TEST_CASE("reject from data code dust  success", "[reject]") {
         reason_text,
         data);
 
-    data_chunk const raw = expected.to_data(version_maximum);
+    data_chunk const raw = kth::to_data_chunk(expected, version_maximum);
     message::reject instance{};
     byte_reader reader(raw);
     auto result = message::reject::from_data(reader, message::reject::version_minimum);
@@ -218,7 +218,7 @@ TEST_CASE("reject from data code insufficient fee  success", "[reject]") {
         reason_text,
         data);
 
-    data_chunk const raw = expected.to_data(version_maximum);
+    data_chunk const raw = kth::to_data_chunk(expected, version_maximum);
     message::reject instance{};
     byte_reader reader(raw);
     auto result = message::reject::from_data(reader, message::reject::version_minimum);
@@ -234,7 +234,7 @@ TEST_CASE("reject from data code checkpoint  success", "[reject]") {
         reason_text,
         data);
 
-    data_chunk const raw = expected.to_data(version_maximum);
+    data_chunk const raw = kth::to_data_chunk(expected, version_maximum);
     message::reject instance{};
 
     byte_reader reader(raw);
@@ -251,7 +251,7 @@ TEST_CASE("reject from data code undefined  success", "[reject]") {
         reason_text,
         data);
 
-    data_chunk const raw = expected.to_data(version_maximum);
+    data_chunk const raw = kth::to_data_chunk(expected, version_maximum);
     message::reject instance{};
 
     byte_reader reader(raw);
@@ -268,7 +268,7 @@ TEST_CASE("reject from data valid input  success", "[reject]") {
         reason_text,
         data);
 
-    auto const data = expected.to_data(version_maximum);
+    auto const data = kth::to_data_chunk(expected, version_maximum);
     byte_reader reader(data);
     auto const result_exp = message::reject::from_data(reader, version_maximum);
     REQUIRE(result_exp);

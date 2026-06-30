@@ -7,9 +7,8 @@
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/domain/wallet/ec_private.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::domain::wallet {
 
@@ -24,13 +23,16 @@ hash_digest hash_message(byte_span message) {
     // This is a specified magic prefix.
     static std::string const prefix("Bitcoin Signed Message:\n");
 
-    data_chunk data;
-    data_sink ostream(data);
-    ostream_writer sink_w(ostream);
-    sink_w.write_string(prefix);
-    sink_w.write_variable_little_endian(message.size());
-    sink_w.write_bytes(message.data(), message.size());
-    ostream.flush();
+    // Wire layout: varint(prefix.size) || prefix || varint(message.size) || message
+    auto const size = kth::size_variable_integer(prefix.size()) + prefix.size()
+                    + kth::size_variable_integer(message.size()) + message.size();
+    data_chunk data(size);
+    byte_writer writer(data);
+    auto write_ok = [](expect<void> const& r) { KTH_CONTRACT(r.has_value()); };
+    write_ok(writer.write_string(prefix));
+    write_ok(writer.write_variable_little_endian(message.size()));
+    write_ok(writer.write_bytes(message));
+    KTH_CONTRACT(writer.position() == data.size());
     return bitcoin_hash(data);
 }
 
