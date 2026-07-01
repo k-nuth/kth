@@ -1,3 +1,26 @@
+# version 1.1.0
+
+You can install Knuth node version v1.1.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* chore(conan): default embed_utxo_bloom to False by @fpelliccioni in https://github.com/k-nuth/kth/pull/365
+* ci: bump pinned action versions (pass 1 of #367) by @fpelliccioni in https://github.com/k-nuth/kth/pull/376
+* ci: bump Linux toolchain to GCC 16 by @fpelliccioni in https://github.com/k-nuth/kth/pull/379
+* ci: pin runners to specific versions + bump macOS to apple-clang 21 by @fpelliccioni in https://github.com/k-nuth/kth/pull/380
+* feat(ci): publish node Docker image to GHCR on release by @CyberAshven in https://github.com/k-nuth/kth/pull/378
+* fix(node/sync): trigger SLOW block sync after FAST SYNC COMPLETE by @fpelliccioni in https://github.com/k-nuth/kth/pull/382
+* ci: cut wall-clock by gating builds on deps + stabilizing ccache keys by @fpelliccioni in https://github.com/k-nuth/kth/pull/395
+* ci: run UBSan-only advisory sanitizer on PRs, full ASan+UBSan on push by @fpelliccioni in https://github.com/k-nuth/kth/pull/396
+* ci: skip sanitizer entirely on PRs; run only on push to master by @fpelliccioni in https://github.com/k-nuth/kth/pull/397
+* ci: apply ccache path-agnostic env to Linux Build step by @fpelliccioni in https://github.com/k-nuth/kth/pull/398
+* release: 1.1.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/399
+
+## New Contributors
+* @CyberAshven made their first contribution in https://github.com/k-nuth/kth/pull/378
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.0.0...v1.1.0
+
+
 # version 1.0.0
 
 You can install Knuth node version v1.0.0 [using these instructions](https://kth.cash/#download).
