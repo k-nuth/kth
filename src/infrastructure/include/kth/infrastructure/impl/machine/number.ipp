@@ -5,6 +5,7 @@
 #ifndef KTH_INFRASTUCTURE_MACHINE_NUMBER_IPP
 #define KTH_INFRASTUCTURE_MACHINE_NUMBER_IPP
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <stdexcept>
@@ -62,13 +63,21 @@ bool number::set_data(data_chunk const& data, size_t max_size) {
         return true;
     }
 
-    // This is "from little endian" with a variable buffer.
-    for (size_t i = 0; i != data.size(); ++i) {
+    // This is "from little endian" with a variable buffer. Any byte at
+    // index >= 8 can't fit in `int64_t` — some `max_size` values (e.g.
+    // for BCH bignum opcodes) allow wider inputs. Guard the shift so
+    // UBSan doesn't flag `x << 64+` as undefined; the byte is silently
+    // dropped since it can't affect the low 64 bits anyway.
+    auto const width = std::min<size_t>(data.size(), sizeof(value_));
+    for (size_t i = 0; i != width; ++i) {
         value_ |= int64_t(data[i]) << (8 * i);
     }
 
     if (is_negative(data)) {
-        auto const last_shift = 8 * (data.size() - 1);
+        // `last_shift` is the position of the sign bit in the top byte
+        // of the actual data. Same width clamp: if the number is wider
+        // than 64 bits, sign-flipping only touches what fits.
+        auto const last_shift = 8 * (width - 1);
         auto const mask = ~(negative_bit << last_shift);
         value_ = -1 * (int64_t(value_ & mask));
     }
