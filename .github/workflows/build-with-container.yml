@@ -144,7 +144,10 @@ jobs:
           # cache restored into a non-sanitizer build (or vice-versa)
           # produces ~0 hits. The explicit suffix on both branches keeps
           # `restore-keys`' prefix match from leaking between families.
-          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ github.sha }}
+          # Key is per-day so the cache rotates without being commit-pinned
+          # (which guaranteed a miss + restore-keys fallback every run).
+          # Within the same day the primary key hits, so saves are no-ops.
+          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ hashFiles('conanfile.py') }}
           restore-keys: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-
 
       - name: 🔨 Build
@@ -225,7 +228,7 @@ jobs:
                  -DCMAKE_BUILD_TYPE=Release \
                  $CCACHE_OPT
 
-            cmake --build --preset conan-release -j4
+            cmake --build --preset conan-release -j"$(nproc)"
 
             if command -v ccache &>/dev/null; then
               ccache --show-stats
@@ -262,7 +265,7 @@ jobs:
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: /github/home/.cache/ccache
-          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ github.sha }}
+          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ hashFiles('conanfile.py') }}
 
       - name: 📊 Build summary
         if: always()
