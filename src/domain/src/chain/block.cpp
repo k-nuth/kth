@@ -395,10 +395,17 @@ uint256_t block::proof() const {
 // static
 uint64_t block::subsidy(size_t height, bool retarget) {
     static auto const overflow = sizeof(uint64_t) * byte_bits;
-    auto subsidy = initial_block_subsidy_satoshi();
     auto const halvings = height / subsidy_interval(retarget);
-    subsidy >>= (halvings >= overflow ? 0 : halvings);
-    return subsidy;
+    // Past the 64th halving the shift `initial >> halvings` would be UB
+    // (exponent ≥ type width). The previous guard `>>= (halvings >= 64 ?
+    // 0 : halvings)` sidestepped the UB but ran `>>= 0` instead, which
+    // is a no-op — the initial subsidy stuck around forever, silently
+    // restarting the emission clock. Return 0 explicitly for
+    // `halvings >= 64` so the schedule terminates at zero.
+    if (halvings >= overflow) {
+        return 0;
+    }
+    return initial_block_subsidy_satoshi() >> halvings;
 }
 
 // Returns max_size_t in case of overflow.

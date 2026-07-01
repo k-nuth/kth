@@ -165,12 +165,17 @@ set(kth_sources_just_legacy
         src/chain/block.cpp
         src/chain/chain_state.cpp
         src/chain/compact.cpp
-        # Header v1: standalone value type, two impls selected via
-        # KTH_USE_HEADER_MEMBERS at preprocessor time (see
-        # include/kth/domain/chain/header.hpp). Old src/chain/header.cpp
-        # + src/chain/header_basis.cpp live as .disabled siblings.
-        src/chain/header_raw.cpp
-        src/chain/header_members.cpp
+        # Header v1: standalone value type, two impls selected by
+        # KTH_USE_HEADER_MEMBERS. Both TUs define the same qualified
+        # symbols (`kth::domain::chain::header::from_data`,
+        # `chain::hash(header const&)`, …) — compiling both together
+        # is an ODR violation that only *happens* to link because the
+        # static-archive linker picks the first definition and
+        # silently drops the second. Callers still see whichever
+        # `struct header` layout their TU included via the switching
+        # `header.hpp`, and the mismatched layout produces subtle
+        # UB. Pick exactly one here.
+        $<IF:$<BOOL:${KTH_USE_HEADER_MEMBERS}>,src/chain/header_members.cpp,src/chain/header_raw.cpp>
         src/chain/input.cpp
         src/chain/light_block.cpp
         src/chain/output.cpp
