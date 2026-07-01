@@ -303,51 +303,29 @@ jobs:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
 
-  # Sanitizers matrix — split by event so the PR critical path drops
-  # ~45–55 min while master keeps the full-fat safety net.
+  # Sanitizers only run on push (master / release / hotfix /
+  # dev-publish / tags), NOT on `pull_request`. Rationale:
   #
-  # Two separate caller jobs are used because GitHub Actions rejects
-  # expressions in reusable-workflow boolean inputs and doesn't allow
-  # `continue-on-error` on a caller job that uses `uses:`. The
-  # advisory-vs-required split is instead plumbed through the
-  # `advisory` input of the reusable workflow, which wraps the Build
-  # step in a step-level `continue-on-error`.
+  # - Under sanitizers the ~500k VMB script vectors execute with
+  #   shadow memory + red zones + UBSan instrumentation, pushing this
+  #   job to 60–80 min. That was the whole wall-clock cost of every
+  #   PR — the advisory hack from PR #396 kept it from blocking
+  #   merges but didn't reduce the actual wall-clock (workflow still
+  #   waited for it to complete).
+  # - Master is a fast-forward-only branch; every merge lands here
+  #   and this job runs against the exact merge commit before any
+  #   release tag. So any UB introduced by a PR is caught here
+  #   before it can ship, just one merge later than under the
+  #   PR-time model.
+  # - PRs still get the full non-sanitizer Linux + macOS
+  #   `(Build & Test)` matrix as required checks; functional
+  #   coverage is unchanged.
   #
-  # PR path: UBSan only, advisory. UBSan on its own catches the
-  # classes of bug this repo has historically shipped through review
-  # (signed overflow, shift ≥ width, invalid enum load, misaligned
-  # access) and builds noticeably faster than ASan+UBSan. Findings
-  # surface as job annotations but don't block the merge.
-  build-with-container-sanitizers-pr:
-    if: github.event_name == 'pull_request'
-    needs: [setup, generate-matrix, build-deps-with-container]
-    strategy:
-      fail-fast: false
-      matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
-    name: ${{ matrix.config.name }} (Sanitizers)
-    uses: ./.github/workflows/build-with-container.yml
-    with:
-      if: ${{ matrix.config.compiler == 'GCC' }}
-      upload: false
-      os: ${{ matrix.config.os }}
-      image: "kthnode/gcc${{ matrix.config.version }}${{ matrix.config.docker_suffix }}"
-      conan-remote: "kth"
-      recipe-name: "kth"
-      compiler: ${{ matrix.config.compiler }}
-      compiler-version: ${{ matrix.config.version }}
-      build-version: "${{ needs.setup.outputs.build-version }}"
-      enable-asan: false
-      enable-ubsan: true
-      enable-tsan: false
-      skip-tests: false
-      advisory: true
-    secrets:
-      CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
-      CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
-
-  # Push path (master / release / hotfix / dev-publish / tags): full
-  # ASan + UBSan combo, hard-blocking. Any UB that leaked past the
-  # advisory PR run is caught here before the release.
+  # Effect: PR wall-clock drops from ~80 min to ~30 min. The
+  # `advisory` input on the reusable workflow (added by PR #396)
+  # stays in place — no callers reference it now, but the plumbing
+  # is cheap and lets us re-enable an advisory sanitizer run later
+  # without another workflow surgery.
   build-with-container-sanitizers-push:
     if: github.event_name != 'pull_request'
     needs: [setup, generate-matrix, build-deps-with-container]
