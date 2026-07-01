@@ -12,10 +12,12 @@ using namespace kth::domain::chain;
 
 static auto const hash1 = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
-TEST_CASE("point value  default constructor  always  zero value", "[point value]") {
+TEST_CASE("point value  default constructor  always  null point + zero value", "[point value]") {
     static point_value const instance;
+    // Default is `point(null_hash, null_index)` (matches the coinbase-input
+    // sentinel used across the codebase), not "all zeros".
     REQUIRE(instance.hash() == null_hash);
-    REQUIRE(instance.index() == 0u);
+    REQUIRE(instance.index() == chain::point::null_index);
     REQUIRE(instance.value() == 0u);
 }
 

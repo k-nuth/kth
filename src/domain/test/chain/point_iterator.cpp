@@ -13,23 +13,23 @@ static auto const valid_raw_point_iterator_source = to_chunk("000000000019d6689c
 // Start Test Suite: point iterator tests
 
 TEST_CASE("point iterator  operator bool  not at end  returns true", "[point iterator]") {
-    point_iterator instance(point{});
+    point_iterator instance(point{null_hash, 0u});
     REQUIRE((bool)instance);
 }
 
 TEST_CASE("point iterator  operator bool at end  returns false", "[point iterator]") {
-    point value;
+    point value{null_hash, 0u};
     point_iterator instance(value, unsigned(value.serialized_size(false)));
     REQUIRE( ! instance);
 }
 
 TEST_CASE("point iterator  operator asterisk  initialized point  matches source", "[point iterator]") {
-    point point;
+    point p{null_hash, 0u};
     byte_reader reader(valid_raw_point_iterator_source);
     auto result = point::from_data(reader, false);
     REQUIRE(result);
-    point = std::move(*result);
-    point_iterator instance(point);
+    p = std::move(*result);
+    point_iterator instance(p);
 
     for (size_t i = 0; i < valid_raw_point_iterator_source.size(); i++, instance++) {
        REQUIRE(instance);
@@ -41,12 +41,12 @@ TEST_CASE("point iterator  operator asterisk  initialized point  matches source"
 }
 
 TEST_CASE("point iterator  operator arrow  initialized point  matches source", "[point iterator]") {
-    point point;
+    point p{null_hash, 0u};
     byte_reader reader(valid_raw_point_iterator_source);
     auto result = point::from_data(reader, false);
     REQUIRE(result);
-    point = std::move(*result);
-    point_iterator instance(point);
+    p = std::move(*result);
+    point_iterator instance(p);
     REQUIRE(valid_raw_point_iterator_source.size() > 0);
 
     for (size_t i = 0; i < valid_raw_point_iterator_source.size(); i++, instance++) {
@@ -59,14 +59,14 @@ TEST_CASE("point iterator  operator arrow  initialized point  matches source", "
 }
 
 TEST_CASE("point iterator  operator plus minus int  roundtrip  success", "[point iterator]") {
-    point point;
+    point p{null_hash, 0u};
     uint8_t offset = 5u;
     byte_reader reader(valid_raw_point_iterator_source);
     auto result = point::from_data(reader, false);
     REQUIRE(result);
-    point = std::move(*result);
+    p = std::move(*result);
 
-    point_iterator instance(point, offset);
+    point_iterator instance(p, offset);
     point_iterator expected(instance);
 
     auto initial = instance++;
@@ -79,14 +79,14 @@ TEST_CASE("point iterator  operator plus minus int  roundtrip  success", "[point
 }
 
 TEST_CASE("point iterator  operator plus minus  roundtrip  success", "[point iterator]") {
-    point point;
+    point p{null_hash, 0u};
     uint8_t offset = 5u;
     byte_reader reader(valid_raw_point_iterator_source);
     auto result = point::from_data(reader, false);
     REQUIRE(result);
-    point = std::move(*result);
+    p = std::move(*result);
 
-    point_iterator instance(point, offset);
+    point_iterator instance(p, offset);
     point_iterator expected(instance);
 
     ++instance;
@@ -97,14 +97,14 @@ TEST_CASE("point iterator  operator plus minus  roundtrip  success", "[point ite
 }
 
 TEST_CASE("point iterator  copy assigment", "[point iterator]") {
-    point point;
+    point p{null_hash, 0u};
     uint8_t offset = 5u;
     byte_reader reader(valid_raw_point_iterator_source);
     auto result = point::from_data(reader, false);
     REQUIRE(result);
-    point = std::move(*result);
+    p = std::move(*result);
 
-    point_iterator instance(point, offset);
+    point_iterator instance(p, offset);
     point_iterator expected(instance);
 
     instance = expected;

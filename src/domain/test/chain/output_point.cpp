@@ -193,7 +193,7 @@ TEST_CASE("output point  operator assign equals 1  always  matches equivalent", 
     REQUIRE(result);
     auto const expected = std::move(*result);
     chain::output_point instance{null_hash, 0u};
-    chain::output_point value;
+    chain::output_point value{null_hash, 0u};
     reader.reset();
     result = chain::output_point::from_data(reader);
     REQUIRE(result);
@@ -247,8 +247,8 @@ TEST_CASE("output point  operator boolean equals 1  duplicates  returns true", "
 }
 
 TEST_CASE("output point  operator boolean equals 1  differs  returns false", "[output point]") {
-    chain::output_point alpha;
-    chain::output_point beta;
+    chain::output_point alpha{null_hash, 0u};
+    chain::output_point beta{null_hash, 0u};
     byte_reader reader(valid_raw_output_point);
     auto result = chain::output_point::from_data(reader);
     REQUIRE(result);
@@ -269,8 +269,8 @@ TEST_CASE("output point  operator boolean equals 2  duplicates  returns true", "
 }
 
 TEST_CASE("output point  operator boolean equals 2  differs  returns false", "[output point]") {
-    chain::output_point alpha;
-    chain::point beta;
+    chain::output_point alpha{null_hash, 0u};
+    chain::point beta{null_hash, 0u};
     byte_reader reader(valid_raw_output_point);
     auto result = chain::output_point::from_data(reader);
     REQUIRE(result);
@@ -279,8 +279,8 @@ TEST_CASE("output point  operator boolean equals 2  differs  returns false", "[o
 }
 
 TEST_CASE("output point  operator boolean not equals 1  duplicates  returns false", "[output point]") {
-    chain::output_point alpha;
-    chain::output_point beta;
+    chain::output_point alpha{null_hash, 0u};
+    chain::output_point beta{null_hash, 0u};
     byte_reader reader(valid_raw_output_point);
     auto result = chain::output_point::from_data(reader);
     REQUIRE(result);
@@ -293,8 +293,8 @@ TEST_CASE("output point  operator boolean not equals 1  duplicates  returns fals
 }
 
 TEST_CASE("output point  operator boolean not equals 1  differs  returns true", "[output point]") {
-    chain::output_point alpha;
-    chain::output_point beta;
+    chain::output_point alpha{null_hash, 0u};
+    chain::output_point beta{null_hash, 0u};
     byte_reader reader(valid_raw_output_point);
     auto result = chain::output_point::from_data(reader);
     REQUIRE(result);
@@ -315,8 +315,8 @@ TEST_CASE("output point  operator boolean not equals 2  duplicates  returns fals
 }
 
 TEST_CASE("output point  operator boolean not equals 2  differs  returns true", "[output point]") {
-    chain::output_point alpha;
-    chain::point beta;
+    chain::output_point alpha{null_hash, 0u};
+    chain::point beta{null_hash, 0u};
     byte_reader reader(valid_raw_output_point);
     auto result = chain::output_point::from_data(reader);
     REQUIRE(result);

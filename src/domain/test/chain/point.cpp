@@ -144,7 +144,7 @@ TEST_CASE("point  operator assign equals 1  always  matches equivalent", "[point
     chain::point instance{null_hash, 0u};
 
     // This must be non-const.
-    chain::point value;
+    chain::point value{null_hash, 0u};
 
     reader.reset();
     result = chain::point::from_data(reader);
@@ -165,8 +165,8 @@ TEST_CASE("point  operator assign equals 2  always  matches equivalent", "[point
 }
 
 TEST_CASE("point  operator boolean equals  duplicates  returns true", "[point]") {
-    chain::point alpha;
-    chain::point beta;
+    chain::point alpha{null_hash, 0u};
+    chain::point beta{null_hash, 0u};
     byte_reader reader(valid_raw_point);
     auto result = chain::point::from_data(reader);
     REQUIRE(result);
@@ -179,8 +179,8 @@ TEST_CASE("point  operator boolean equals  duplicates  returns true", "[point]")
 }
 
 TEST_CASE("point  operator boolean equals  differs  returns false", "[point]") {
-    chain::point alpha;
-    chain::point beta;
+    chain::point alpha{null_hash, 0u};
+    chain::point beta{null_hash, 0u};
     byte_reader reader(valid_raw_point);
     auto result = chain::point::from_data(reader);
     REQUIRE(result);
@@ -189,8 +189,8 @@ TEST_CASE("point  operator boolean equals  differs  returns false", "[point]") {
 }
 
 TEST_CASE("point  operator boolean not equals  duplicates  returns false", "[point]") {
-    chain::point alpha;
-    chain::point beta;
+    chain::point alpha{null_hash, 0u};
+    chain::point beta{null_hash, 0u};
     byte_reader reader(valid_raw_point);
     auto result = chain::point::from_data(reader);
     REQUIRE(result);
@@ -203,8 +203,8 @@ TEST_CASE("point  operator boolean not equals  duplicates  returns false", "[poi
 }
 
 TEST_CASE("point  operator boolean not equals  differs  returns true", "[point]") {
-    chain::point alpha;
-    chain::point beta;
+    chain::point alpha{null_hash, 0u};
+    chain::point beta{null_hash, 0u};
     byte_reader reader(valid_raw_point);
     auto result = chain::point::from_data(reader);
     REQUIRE(result);

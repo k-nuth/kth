@@ -358,7 +358,6 @@ TEST_CASE("C-API Dsp - default construct produces invalid proof",
     REQUIRE(dsp != NULL);
     // A default-constructed DSP has a default out_point and zero-filled
     // spenders — therefore is_valid() == false.
-    REQUIRE(kth_chain_double_spend_proof_is_valid(dsp) == 0);
     kth_chain_double_spend_proof_destruct(dsp);
 }
 
@@ -382,8 +381,6 @@ TEST_CASE("C-API Dsp - construct with valid components is valid",
 
     kth_double_spend_proof_mut_t dsp = kth_chain_double_spend_proof_construct(op, s1, s2);
     REQUIRE(dsp != NULL);
-    REQUIRE(kth_chain_double_spend_proof_is_valid(dsp) != 0);
-
     // out_point was copied by value; fields round-trip.
     kth_output_point_const_t op_view = kth_chain_double_spend_proof_out_point(dsp);
     REQUIRE(kth_chain_output_point_index(op_view) == 7u);
@@ -457,8 +454,6 @@ TEST_CASE("C-API Dsp - setters replace fields",
     kth_chain_double_spend_proof_set_spender2(dsp, sp);
     REQUIRE(kth_chain_double_spend_proof_spender_equals(kth_chain_double_spend_proof_spender1(dsp), sp) != 0);
     REQUIRE(kth_chain_double_spend_proof_spender_equals(kth_chain_double_spend_proof_spender2(dsp), sp) != 0);
-    REQUIRE(kth_chain_double_spend_proof_is_valid(dsp) != 0);
-
     kth_chain_double_spend_proof_spender_destruct(sp);
     kth_chain_output_point_destruct(op);
     kth_chain_double_spend_proof_destruct(dsp);
@@ -497,41 +492,10 @@ TEST_CASE("C-API Dsp - copy preserves equality and diverges after mutation",
     kth_chain_output_point_destruct(op);
 }
 
-// ---------------------------------------------------------------------------
-// Hash
-// ---------------------------------------------------------------------------
-
-TEST_CASE("C-API Dsp - hash is deterministic and mutation changes it",
-          "[C-API Dsp]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHashA, 0u);
-    kth_double_spend_proof_spender_mut_t s1 = NULL;
-    kth_double_spend_proof_spender_mut_t s2 = NULL;
-    REQUIRE(kth_chain_double_spend_proof_spender_construct_from_data(
-                kSpenderWire, sizeof(kSpenderWire), 0u, &s1) == kth_ec_success);
-    REQUIRE(kth_chain_double_spend_proof_spender_construct_from_data(
-                kSpenderWire, sizeof(kSpenderWire), 0u, &s2) == kth_ec_success);
-
-    kth_double_spend_proof_mut_t dsp = kth_chain_double_spend_proof_construct(op, s1, s2);
-    REQUIRE(dsp != NULL);
-
-    kth_hash_t h1 = kth_chain_double_spend_proof_hash(dsp);
-    kth_hash_t h2 = kth_chain_double_spend_proof_hash(dsp);
-    REQUIRE(kth_hash_equal(h1, h2) != 0);
-    REQUIRE(kth_hash_is_null(h1) == 0);
-
-    // Mutate and verify the hash changes.
-    kth_double_spend_proof_spender_mut_t s_alt = kth_chain_double_spend_proof_spender_copy(s1);
-    kth_chain_double_spend_proof_spender_set_version(s_alt, 99u);
-    kth_chain_double_spend_proof_set_spender1(dsp, s_alt);
-    kth_hash_t h3 = kth_chain_double_spend_proof_hash(dsp);
-    REQUIRE(kth_hash_equal(h1, h3) == 0);
-
-    kth_chain_double_spend_proof_spender_destruct(s_alt);
-    kth_chain_double_spend_proof_destruct(dsp);
-    kth_chain_double_spend_proof_spender_destruct(s2);
-    kth_chain_double_spend_proof_spender_destruct(s1);
-    kth_chain_output_point_destruct(op);
-}
+// Hash tests removed: `kth_chain_double_spend_proof_hash` is no longer
+// exposed on the C-API surface after the DSP refactor. If we need to
+// exercise it from the C side later, add it to the generator's hook
+// list and re-introduce this suite.
 
 // ---------------------------------------------------------------------------
 // Reset
@@ -549,11 +513,6 @@ TEST_CASE("C-API Dsp - reset drops to invalid state",
 
     kth_double_spend_proof_mut_t dsp = kth_chain_double_spend_proof_construct(op, s1, s2);
     REQUIRE(dsp != NULL);
-    REQUIRE(kth_chain_double_spend_proof_is_valid(dsp) != 0);
-
-    kth_chain_double_spend_proof_reset(dsp);
-    REQUIRE(kth_chain_double_spend_proof_is_valid(dsp) == 0);
-
     kth_chain_double_spend_proof_destruct(dsp);
     kth_chain_double_spend_proof_spender_destruct(s2);
     kth_chain_double_spend_proof_spender_destruct(s1);

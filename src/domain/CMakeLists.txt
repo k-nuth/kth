@@ -674,8 +674,17 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(kth_domain_bench_hash PRIVATE ${PROJECT_NAME})
   target_link_libraries(kth_domain_bench_hash PRIVATE nanobench::nanobench)
 
+  # to_data serialization benchmarks (per-type micro-benchmarks so we can
+  # compare the legacy data_sink/ostream_writer path here against the
+  # byte_writer path on PR #394)
+  add_executable(kth_domain_bench_to_data bench/to_data/benchmarks.cpp)
+  target_include_directories(kth_domain_bench_to_data PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/bench>)
+  target_link_libraries(kth_domain_bench_to_data PRIVATE ${PROJECT_NAME})
+  target_link_libraries(kth_domain_bench_to_data PRIVATE nanobench::nanobench)
+
   _group_sources(kth_domain_bench_merkle "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_hash "${CMAKE_CURRENT_LIST_DIR}/bench")
+  _group_sources(kth_domain_bench_to_data "${CMAKE_CURRENT_LIST_DIR}/bench")
 endif()
 
 # Examples

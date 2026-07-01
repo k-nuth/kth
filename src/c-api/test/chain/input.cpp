@@ -57,6 +57,19 @@ static kth_output_point_mut_t make_outpoint(void) {
     return op;
 }
 
+// input has no default ctor after the value-types refactor; this
+// helper builds one from the shared outpoint + script fixtures so
+// tests that used to call `..._construct_default()` still work.
+static kth_input_mut_t make_default_input(void) {
+    kth_output_point_mut_t op = make_outpoint();
+    kth_script_mut_t script = make_script();
+    kth_input_mut_t in = kth_chain_input_construct(op, script, 0u);
+    REQUIRE(in != NULL);
+    kth_chain_output_point_destruct(op);
+    kth_chain_script_destruct(script);
+    return in;
+}
+
 // ---------------------------------------------------------------------------
 // Constructors / lifecycle
 // ---------------------------------------------------------------------------
@@ -66,7 +79,7 @@ static kth_output_point_mut_t make_outpoint(void) {
 // observable state only.
 
 TEST_CASE("C-API Input - default construct returns handle", "[C-API Input]") {
-    kth_input_mut_t in = kth_chain_input_construct_default();
+    kth_input_mut_t in = make_default_input();
     REQUIRE(in != NULL);
     kth_chain_input_destruct(in);
 }
@@ -130,7 +143,7 @@ TEST_CASE("C-API Input - to_data / from_data roundtrip", "[C-API Input]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API Input - sequence setter roundtrip", "[C-API Input]") {
-    kth_input_mut_t in = kth_chain_input_construct_default();
+    kth_input_mut_t in = make_default_input();
     REQUIRE(kth_chain_input_sequence(in) != kSequence);
     kth_chain_input_set_sequence(in, kSequence);
     REQUIRE(kth_chain_input_sequence(in) == kSequence);
@@ -138,7 +151,7 @@ TEST_CASE("C-API Input - sequence setter roundtrip", "[C-API Input]") {
 }
 
 TEST_CASE("C-API Input - script setter roundtrip", "[C-API Input]") {
-    kth_input_mut_t in = kth_chain_input_construct_default();
+    kth_input_mut_t in = make_default_input();
     kth_script_mut_t script = make_script();
     kth_chain_input_set_script(in, script);
     // Read the borrowed view back and assert it equals what we wrote.
@@ -152,7 +165,7 @@ TEST_CASE("C-API Input - script setter roundtrip", "[C-API Input]") {
 }
 
 TEST_CASE("C-API Input - previous_output setter roundtrip", "[C-API Input]") {
-    kth_input_mut_t in = kth_chain_input_construct_default();
+    kth_input_mut_t in = make_default_input();
     kth_output_point_mut_t op = make_outpoint();
     kth_chain_input_set_previous_output(in, op);
     // Read the borrowed view back and assert it equals what we wrote.
@@ -170,7 +183,7 @@ TEST_CASE("C-API Input - previous_output setter roundtrip", "[C-API Input]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API Input - is_final on max sequence is true", "[C-API Input]") {
-    kth_input_mut_t in = kth_chain_input_construct_default();
+    kth_input_mut_t in = make_default_input();
     kth_chain_input_set_sequence(in, 0xffffffffu);
     REQUIRE(kth_chain_input_is_final(in) != 0);
     kth_chain_input_destruct(in);
@@ -178,7 +191,7 @@ TEST_CASE("C-API Input - is_final on max sequence is true", "[C-API Input]") {
 
 TEST_CASE("C-API Input - is_final on non-max sequence is false",
           "[C-API Input]") {
-    kth_input_mut_t in = kth_chain_input_construct_default();
+    kth_input_mut_t in = make_default_input();
     kth_chain_input_set_sequence(in, 0u);
     REQUIRE(kth_chain_input_is_final(in) == 0);
     kth_chain_input_destruct(in);
@@ -186,7 +199,7 @@ TEST_CASE("C-API Input - is_final on non-max sequence is false",
 
 TEST_CASE("C-API Input - signature_operations on default is zero",
           "[C-API Input]") {
-    kth_input_mut_t in = kth_chain_input_construct_default();
+    kth_input_mut_t in = make_default_input();
     REQUIRE(kth_chain_input_signature_operations(in, 0, 0) == 0);
     kth_chain_input_destruct(in);
 }
@@ -215,7 +228,7 @@ TEST_CASE("C-API Input - equals different inputs", "[C-API Input]") {
     kth_script_mut_t script = make_script();
     kth_input_mut_t a = kth_chain_input_construct(op, script, kSequence);
     kth_input_mut_t b = kth_chain_input_construct(op, script, kSequence);
-    kth_input_mut_t c = kth_chain_input_construct_default();
+    kth_input_mut_t c = make_default_input();
 
     REQUIRE(kth_chain_input_equals(a, b) != 0);
     REQUIRE(kth_chain_input_equals(a, c) == 0);
@@ -248,7 +261,7 @@ TEST_CASE("C-API Input - construct_from_data null out aborts",
 
 TEST_CASE("C-API Input - to_data null out_size aborts",
           "[C-API Input][precondition]") {
-    kth_input_mut_t in = kth_chain_input_construct_default();
+    kth_input_mut_t in = make_default_input();
     KTH_EXPECT_ABORT(kth_chain_input_to_data(in, 1, NULL));
     kth_chain_input_destruct(in);
 }
