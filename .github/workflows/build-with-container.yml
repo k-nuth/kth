@@ -168,6 +168,26 @@ jobs:
         # the finding on the job.
         continue-on-error: ${{ inputs.advisory }}
         working-directory: .
+        env:
+          # Without these, ccache hashes absolute paths, the compiler
+          # binary's mtime, and the working directory into every
+          # translation-unit key. The container-runner's paths and mtimes
+          # shift between runs, so ~80% of files fell through to a "miss"
+          # even when a warm cache had been restored (measured: 18% hits
+          # in a real Linux Build & Test run, ~80 min build). Same fix
+          # already applied to the macOS caller (build-without-container.yml).
+          #
+          # - `BASEDIR`: rewrite workspace paths to be relative before hashing.
+          # - `NOHASHDIR`: don't hash the CWD at all — it changes per run.
+          # - `COMPILERCHECK=content`: key off the compiler binary's SHA,
+          #   not its mtime + path.
+          # - `SLOPPINESS`: ignore benign per-run drift (system-header
+          #   timestamps, __TIME__/__DATE__, locale sensitivity, PCH,
+          #   include-file ctime/mtime).
+          CCACHE_BASEDIR: ${{ github.workspace }}
+          CCACHE_COMPILERCHECK: content
+          CCACHE_NOHASHDIR: "true"
+          CCACHE_SLOPPINESS: pch_defines,time_macros,locale,system_headers,include_file_mtime,include_file_ctime
         run: |
           # Prepare sanitizer flags
           SANITIZER_FLAGS=""
