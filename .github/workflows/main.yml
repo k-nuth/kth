@@ -303,7 +303,53 @@ jobs:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
 
-  build-with-container-sanitizers:
+  # Sanitizers matrix — split by event so the PR critical path drops
+  # ~45–55 min while master keeps the full-fat safety net.
+  #
+  # Two separate caller jobs are used because GitHub Actions rejects
+  # expressions in reusable-workflow boolean inputs and doesn't allow
+  # `continue-on-error` on a caller job that uses `uses:`. The
+  # advisory-vs-required split is instead plumbed through the
+  # `advisory` input of the reusable workflow, which wraps the Build
+  # step in a step-level `continue-on-error`.
+  #
+  # PR path: UBSan only, advisory. UBSan on its own catches the
+  # classes of bug this repo has historically shipped through review
+  # (signed overflow, shift ≥ width, invalid enum load, misaligned
+  # access) and builds noticeably faster than ASan+UBSan. Findings
+  # surface as job annotations but don't block the merge.
+  build-with-container-sanitizers-pr:
+    if: github.event_name == 'pull_request'
+    needs: [setup, generate-matrix, build-deps-with-container]
+    strategy:
+      fail-fast: false
+      matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
+    name: ${{ matrix.config.name }} (Sanitizers)
+    uses: ./.github/workflows/build-with-container.yml
+    with:
+      if: ${{ matrix.config.compiler == 'GCC' }}
+      upload: false
+      os: ${{ matrix.config.os }}
+      image: "kthnode/gcc${{ matrix.config.version }}${{ matrix.config.docker_suffix }}"
+      conan-remote: "kth"
+      recipe-name: "kth"
+      compiler: ${{ matrix.config.compiler }}
+      compiler-version: ${{ matrix.config.version }}
+      build-version: "${{ needs.setup.outputs.build-version }}"
+      enable-asan: false
+      enable-ubsan: true
+      enable-tsan: false
+      skip-tests: false
+      advisory: true
+    secrets:
+      CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
+      CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
+
+  # Push path (master / release / hotfix / dev-publish / tags): full
+  # ASan + UBSan combo, hard-blocking. Any UB that leaked past the
+  # advisory PR run is caught here before the release.
+  build-with-container-sanitizers-push:
+    if: github.event_name != 'pull_request'
     needs: [setup, generate-matrix, build-deps-with-container]
     strategy:
       fail-fast: false
@@ -324,6 +370,7 @@ jobs:
       enable-ubsan: true
       enable-tsan: false   # tsan is mutually exclusive with asan
       skip-tests: false
+      advisory: false
     secrets:
       CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
