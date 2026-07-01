@@ -1,3 +1,15 @@
+# version 0.85.0
+
+You can install Knuth node version v0.85.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* chore(deps): bump third-party libs to latest CCI by @fpelliccioni in https://github.com/k-nuth/kth/pull/354
+* release: 0.85.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/355
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.84.0...v0.85.0
+
+
 # version 0.84.0
 
 You can install Knuth node version v0.84.0 [using these instructions](https://kth.cash/#download).
