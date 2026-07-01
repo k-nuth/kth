@@ -42,15 +42,53 @@ public:
     }
 };
 
+// Height used to be stamped onto `header().validation.height`. The header
+// is now an immutable value type; `block_pool` reads height from
+// `block.validation.state->height()`, so the chain_state is wired here.
+//
+// `chain_state`'s constructor evaluates `median_time_past(data)` and
+// `work_required(data, ...)` eagerly. Both walk the `data.*.ordered`
+// vectors; an empty `data{}` would segfault. We seed each ordered vector
+// with one sentinel element so both helpers exit cleanly. Retarget is
+// disabled via script_flags=0, which routes `work_required` through the
+// cheap `bits_high(data)` path.
+static
+std::shared_ptr<domain::chain::chain_state>
+make_state_at_height(size_t height) {
+    domain::chain::chain_state::data data{};
+    data.height = height;
+    data.bits.ordered.push_back(0u);
+    data.version.ordered.push_back(1u);
+    data.timestamp.ordered.push_back(0u);
+#if defined(KTH_CURRENCY_BCH)
+    return std::make_shared<domain::chain::chain_state>(
+        std::move(data),
+        domain::script_flags_t{0},
+        domain::chain::chain_state::checkpoints{},
+        domain::config::network::testnet4,
+        domain::chain::chain_state::assert_anchor_block_info_t{},
+        0u,
+        domain::chain::abla::config{},
+        kth::cantor_t(0)
+    );
+#else
+    return std::make_shared<domain::chain::chain_state>(
+        std::move(data),
+        domain::script_flags_t{0},
+        domain::chain::chain_state::checkpoints{}
+    );
+#endif
+}
+
 block_const_ptr make_block(uint32_t id, size_t height,
     hash_digest const& parent)
 {
-    auto const block = std::make_shared<const domain::message::block>(domain::message::block
+    auto const block = std::make_shared<domain::message::block>(domain::message::block
     {
         domain::chain::header{ id, parent, null_hash, 0, 0, 0 }, {}
     });
 
-    block->header().validation.height = height;
+    block->validation.state = make_state_at_height(height);
     return block;
 }
 

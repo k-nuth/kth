@@ -26,13 +26,12 @@ kth_block_mut_t kth_chain_block_construct_default(void) {
     return kth::leak<cpp_t>();
 }
 
-kth_error_code_t kth_chain_block_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_block_mut_t* out) {
+kth_error_code_t kth_chain_block_construct_from_data(uint8_t const* data, kth_size_t n, KTH_OUT_OWNED kth_block_mut_t* out) {
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
     auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
-    auto const wire_cpp = kth::int_to_bool(wire);
-    auto result = cpp_t::from_data(data_cpp, wire_cpp);
+    auto result = cpp_t::from_data(data_cpp);
     if ( ! result) return kth::to_c_err(result.error());
     *out = kth::leak(std::move(*result));
     return kth_ec_success;
@@ -112,11 +111,10 @@ kth_size_t kth_chain_block_serialized_size(kth_block_const_t self) {
     return kth::cpp_ref<cpp_t>(self).serialized_size();
 }
 
-uint8_t* kth_chain_block_to_data(kth_block_const_t self, kth_size_t serialized_size, kth_size_t* out_size) {
+uint8_t* kth_chain_block_to_data(kth_block_const_t self, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto const serialized_size_cpp = kth::sz(serialized_size);
-    auto const data = kth::cpp_ref<cpp_t>(self).to_data(serialized_size_cpp);
+    auto const data = kth::cpp_ref<cpp_t>(self).to_data();
     return kth::create_c_array(data, *out_size);
 }
 

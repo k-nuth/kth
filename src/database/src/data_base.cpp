@@ -145,7 +145,7 @@ std::optional<hash_digest> get_previous_hash(internal_database const& db, size_t
     if ( ! result) {
         return std::nullopt;
     }
-    return result->hash();
+    return kth::domain::chain::hash(*result);
 }
 
 //TODO(fernando): const?

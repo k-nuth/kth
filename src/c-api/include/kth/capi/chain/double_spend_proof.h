@@ -96,18 +96,6 @@ void kth_chain_double_spend_proof_set_spender1(kth_double_spend_proof_mut_t self
 KTH_EXPORT
 void kth_chain_double_spend_proof_set_spender2(kth_double_spend_proof_mut_t self, kth_double_spend_proof_spender_const_t x);
 
-
-// Predicates
-
-KTH_EXPORT
-kth_bool_t kth_chain_double_spend_proof_is_valid(kth_double_spend_proof_const_t self);
-
-
-// Operations
-
-KTH_EXPORT
-void kth_chain_double_spend_proof_reset(kth_double_spend_proof_mut_t self);
-
 #ifdef __cplusplus
 } // extern "C"
 #endif

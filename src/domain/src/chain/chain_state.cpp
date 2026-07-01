@@ -1322,7 +1322,7 @@ chain_state::data chain_state::to_block(chain_state const& pool, block const& bl
     // Replace pool chain state with block state at same (next) height.
     // Preserve data.timestamp.retarget promotion.
     auto const& header = block.header();
-    data.hash = header.hash();
+    data.hash = chain::hash(header);
     data.bits.self = header.bits();
     data.version.self = header.version();
     data.timestamp.self = header.timestamp();

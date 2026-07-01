@@ -63,7 +63,7 @@ result_code internal_database_basis<Clock>::push_header_only(domain::chain::head
         return result_code::other;
     }
 
-    auto key_by_hash_arr = header.hash();
+    auto key_by_hash_arr = kth::domain::chain::hash(header);
     auto key_by_hash = kth_db_make_value(key_by_hash_arr.size(), key_by_hash_arr.data());
 
     res = kth_db_put(db_txn, dbi_block_header_by_hash_, &key_by_hash, &key, KTH_DB_NOOVERWRITE);
@@ -125,7 +125,7 @@ result_code internal_database_basis<Clock>::push_header_with_abla(domain::chain:
         return result_code::other;
     }
 
-    auto key_by_hash_arr = header.hash();
+    auto key_by_hash_arr = kth::domain::chain::hash(header);
     auto key_by_hash = kth_db_make_value(key_by_hash_arr.size(), key_by_hash_arr.data());
 
     res = kth_db_put(db_txn, dbi_block_header_by_hash_, &key_by_hash, &key, KTH_DB_NOOVERWRITE);

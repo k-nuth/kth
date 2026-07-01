@@ -9,7 +9,8 @@ using namespace kd;
 
 namespace {
 
-// Test helper.
+// Test helper. input/output_point are valid-by-construction; we only
+// need to inspect script validity and output's not_found sentinel.
 bool all_valid(chain::transaction::list const& transactions) {
     auto valid = true;
 
@@ -17,7 +18,6 @@ bool all_valid(chain::transaction::list const& transactions) {
         valid = valid && tx.is_valid();
 
         for (auto const& input : tx.inputs()) {
-            valid = valid && input.is_valid();
             valid = valid && input.script().is_valid();
         }
 
@@ -178,7 +178,7 @@ TEST_CASE("block constructor 5 always equals params", "[chain block]") {
 
 TEST_CASE("block  hash  always  returns header hash", "[chain block]") {
     chain::block const instance;
-    REQUIRE(instance.header().hash() == instance.hash());
+    REQUIRE(chain::hash(instance.header()) == instance.hash());
 }
 
 TEST_CASE("block  is valid merkle root  uninitialized  returns true", "[chain block]") {
@@ -713,6 +713,50 @@ TEST_CASE("block  is forward reference  forward reference  true", "[block is for
     chain::block value;
     value.set_transactions({before, after});
     REQUIRE(value.is_forward_reference());
+}
+
+// Subsidy semantics — issuance schedule.
+// -----------------------------------------------------------------------------
+// Bitcoin/BCH: subsidy starts at initial_block_subsidy_satoshi() (5 × 10⁹ sat)
+// and halves every `subsidy_interval(retarget)` blocks. After the 64th
+// halving there is nothing left to shift — any further block MUST emit 0.
+
+TEST_CASE("block subsidy  height zero  initial subsidy", "[chain block subsidy]") {
+    REQUIRE(chain::block::subsidy(0, true) == initial_block_subsidy_satoshi());
+}
+
+TEST_CASE("block subsidy  halving 1  half of initial", "[chain block subsidy]") {
+    auto const interval = subsidy_interval(true);
+    REQUIRE(chain::block::subsidy(interval, true)
+            == initial_block_subsidy_satoshi() / 2u);
+}
+
+TEST_CASE("block subsidy  halving 32  one sat", "[chain block subsidy]") {
+    // 5 × 10⁹ ≈ 2³² · 1.16 → floor(initial >> 32) == 1 sat.
+    auto const interval = subsidy_interval(true);
+    REQUIRE(chain::block::subsidy(interval * 32, true)
+            == (initial_block_subsidy_satoshi() >> 32u));
+}
+
+TEST_CASE("block subsidy  halving 33  zero sat", "[chain block subsidy]") {
+    auto const interval = subsidy_interval(true);
+    REQUIRE(chain::block::subsidy(interval * 33, true) == 0u);
+}
+
+// This is the demonstrator for the bug flagged on PR #387. The original
+// guard `subsidy >>= (halvings >= 64 ? 0 : halvings)` avoids the UB of
+// shifting by ≥ the type width, but on the `>= 64` branch it does
+// `>>= 0`, which keeps the initial subsidy in place — the emission
+// schedule "resets" to full instead of terminating at zero. The
+// expectation here is the consensus-correct value.
+TEST_CASE("block subsidy  halving 64  zero sat (post-final halving)", "[chain block subsidy]") {
+    auto const interval = subsidy_interval(true);
+    REQUIRE(chain::block::subsidy(interval * 64, true) == 0u);
+}
+
+TEST_CASE("block subsidy  halving 128  zero sat", "[chain block subsidy]") {
+    auto const interval = subsidy_interval(true);
+    REQUIRE(chain::block::subsidy(interval * 128, true) == 0u);
 }
 
 // End Test Suite

@@ -168,10 +168,10 @@ bool block_organizer::stop() {
 
     auto& top_block = branch->top()->validation;
     top_block.error = error::success;
-
-    auto& top_header = branch->top()->header().validation;
-    top_header.median_time_past = top_block.state->median_time_past();
-    top_header.height = branch->top_height();
+    // The header used to carry mutable validation.median_time_past /
+    // .height stamped here. The header is now a pure value type; both
+    // values are already available on the block's chain_state and the
+    // branch's top_height(), so we no longer mutate the header.
 
     auto const work = branch->work();
     auto const first_height = branch->height() + 1u;
@@ -305,7 +305,7 @@ void block_organizer::populate_prevout_1(branch::const_ptr branch, domain::chain
     auto const spend_height = prevout.cache.validation.spender_height;
 
     // The previous output has already been spent (double spend).
-    if ((spend_height <= branch_height) && (spend_height != output::validation::not_spent)) {
+    if ((spend_height <= branch_height) && (spend_height != output::validation_t::not_spent)) {
         prevout.spent = true;
         prevout.confirmed = true;
         prevout.cache = domain::chain::output{};

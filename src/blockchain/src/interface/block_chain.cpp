@@ -185,7 +185,7 @@ bool block_chain::start(uint32_t disk_magic) {
         // Only genesis in DB - just add genesis to index
         auto const genesis = get_header(0);
         if (genesis) {
-            auto const hash = genesis->hash();
+            auto const hash = domain::chain::hash(*genesis);
             auto const [inserted, idx, capacity_warning] = header_index_.add(hash, *genesis);
             if ( ! inserted) {
                 spdlog::error("[blockchain] Failed to initialize header index with genesis block.");
@@ -214,7 +214,7 @@ bool block_chain::start(uint32_t disk_magic) {
 
             size_t height = from;
             for (auto const& header : *headers_result) {
-                auto const hash = header.hash();
+                auto const hash = domain::chain::hash(header);
                 auto const [inserted, idx, capacity_warning] = header_index_.add(hash, header);
                 if ( ! inserted && height > 0) {
                     // Genesis might already be added, ignore that case
@@ -404,7 +404,7 @@ bool block_chain::stopped() const {
     // Each block writes to its own index entry — safe without locks.
     for (size_t i = 0; i < n; ++i) {
         auto const& block = blocks[i];
-        auto const block_hash = block->header().hash();
+        auto const block_hash = domain::chain::hash(block->header());
         auto const idx = header_index_.find(block_hash);
         if (idx != header_index::null_index) {
             auto const& data_pos = (*positions)[i];
@@ -535,7 +535,7 @@ static constexpr bool chunk_serial_validation = true;
         }
 
         // 2. Update header_index with block file position
-        auto const block_hash = block->header().hash();
+        auto const block_hash = domain::chain::hash(block->header());
         auto const idx = header_index_.find(block_hash);
         if (idx != header_index::null_index) {
             header_index_.set_block_pos(idx, static_cast<int16_t>(pos.file), pos.pos);
@@ -867,7 +867,7 @@ std::expected<hash_digest, database::result_code> block_chain::get_block_hash(si
     if ( ! result) {
         return std::unexpected(result.error());
     }
-    return result->hash();
+    return domain::chain::hash(*result);
 }
 
 bool block_chain::header_exists(hash_digest const& block_hash) const {
@@ -1111,7 +1111,7 @@ block_chain::fetch_block_hash_timestamp(size_t height) const {
         co_return std::unexpected(error::not_found);
     }
 
-    co_return std::tuple{result->hash(), result->timestamp(), height};
+    co_return std::tuple{domain::chain::hash(*result), result->timestamp(), height};
 }
 
 // DEPRECATED: Block storage moved to flat files (blk*.dat)
@@ -1299,7 +1299,7 @@ block_chain::fetch_locator_block_hashes(get_blocks_const_ptr locator,
             break;
         }
         static auto const id = inventory::type_id::block;
-        hashes->inventories().emplace_back(id, result->hash());
+        hashes->inventories().emplace_back(id, domain::chain::hash(*result));
     }
 
     co_return hashes;
@@ -1369,13 +1369,13 @@ block_chain::fetch_block_locator(block::indexes const& heights) const {
         if ( ! result) {
             co_return std::unexpected(error::not_found);
         }
-        hashes.push_back(result->hash());
+        hashes.push_back(domain::chain::hash(*result));
     }
 
     co_return message;
 }
 
-awaitable_expected<domain::chain::input_point>
+awaitable_expected<domain::chain::input_point_opt>
 block_chain::fetch_spend(domain::chain::output_point const& outpoint) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
@@ -1391,7 +1391,7 @@ block_chain::fetch_spend(domain::chain::output_point const& outpoint) const {
         co_return std::unexpected(error::not_found);
     }
 
-    co_return *point;
+    co_return domain::chain::input_point_opt{*point};
 }
 
 awaitable_expected<domain::chain::history_compact::list>

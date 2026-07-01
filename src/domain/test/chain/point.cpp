@@ -11,17 +11,11 @@ auto const valid_raw_point = to_chunk("000000000019d6689c085ae165831e934ff763ae4
 
 // Start Test Suite: point tests
 
-TEST_CASE("point  constructor 1  always  returns default initialized", "[point]") {
-    chain::point instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("point  constructor 2  valid input  returns input initialized", "[point]") {
     auto const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
     uint32_t index = 1234u;
 
     chain::point instance(hash, index);
-    REQUIRE(instance.is_valid());
     REQUIRE(hash == instance.hash());
     REQUIRE(index == instance.index());
 }
@@ -34,7 +28,6 @@ TEST_CASE("point  constructor 3  valid input  returns input initialized", "[poin
     auto dup_hash = hash;
 
     chain::point instance(std::move(dup_hash), index);
-    REQUIRE(instance.is_valid());
     REQUIRE(hash == instance.hash());
     REQUIRE(index == instance.index());
 }
@@ -45,7 +38,6 @@ TEST_CASE("point  constructor 4  valid input  returns input initialized", "[poin
         524342u};
 
     chain::point instance(expected);
-    REQUIRE(instance.is_valid());
     REQUIRE(expected == instance);
 }
 
@@ -56,7 +48,6 @@ TEST_CASE("point  constructor 5  valid input  returns input initialized", "[poin
         524342u};
 
     chain::point instance(std::move(expected));
-    REQUIRE(instance.is_valid());
 }
 
 TEST_CASE("point  begin end  initialized  begin not equal end", "[point]") {
@@ -67,12 +58,11 @@ TEST_CASE("point  begin end  initialized  begin not equal end", "[point]") {
 
 TEST_CASE("point from data insufficient bytes  failure", "[point]") {
     data_chunk data(10);
-    chain::point instance;
+    chain::point instance{null_hash, 0u};
 
     byte_reader reader(data);
     auto result = chain::point::from_data(reader);
     REQUIRE( ! result);
-    REQUIRE( ! instance.is_valid());
 }
 
 TEST_CASE("point from data roundtrip  success", "[point]") {
@@ -84,8 +74,6 @@ TEST_CASE("point from data roundtrip  success", "[point]") {
          0x01, 0x11, 0x11, 0x11, 0xab, 0x11, 0x11, 0xcd}};
 
     chain::point initial{hash, index};
-
-    REQUIRE(initial.is_valid());
     REQUIRE(hash == initial.hash());
     REQUIRE(index == initial.index());
 
@@ -94,7 +82,6 @@ TEST_CASE("point from data roundtrip  success", "[point]") {
     auto result_exp = chain::point::from_data(reader);
     REQUIRE(result_exp);
     auto const point = std::move(*result_exp);
-    REQUIRE(point.is_valid());
     REQUIRE(point == initial);
 }
 
@@ -111,8 +98,6 @@ TEST_CASE("point from data roundtrip  success 2", "[point]") {
     auto result_exp = chain::point::from_data(reader);
     REQUIRE(result_exp);
     auto const point = std::move(*result_exp);
-
-    REQUIRE(point.is_valid());
     REQUIRE(encode_hash(point.hash()) == "8ed5a0af151cdbc8c0c546cde29334f15b4472bba105394a1221a7f088246846");
     REQUIRE(point.index() == 0);
 
@@ -125,7 +110,7 @@ TEST_CASE("point from data roundtrip  success 2", "[point]") {
 TEST_CASE("point  hash setter 1  roundtrip  success", "[point]") {
     auto const value = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
-    chain::point instance;
+    chain::point instance{null_hash, 0u};
     REQUIRE(value != instance.hash());
     instance.set_hash(value);
     REQUIRE(value == instance.hash());
@@ -137,7 +122,7 @@ TEST_CASE("point  hash setter 2  roundtrip  success", "[point]") {
     // This must be non-const.
     auto dup_value = value;
 
-    chain::point instance;
+    chain::point instance{null_hash, 0u};
     REQUIRE(value != instance.hash());
     instance.set_hash(std::move(dup_value));
     REQUIRE(value == instance.hash());
@@ -145,7 +130,7 @@ TEST_CASE("point  hash setter 2  roundtrip  success", "[point]") {
 
 TEST_CASE("point  index  roundtrip  success", "[point]") {
     uint32_t value = 1254u;
-    chain::point instance;
+    chain::point instance{null_hash, 0u};
     REQUIRE(value != instance.index());
     instance.set_index(value);
     REQUIRE(value == instance.index());
@@ -156,10 +141,10 @@ TEST_CASE("point  operator assign equals 1  always  matches equivalent", "[point
     auto result = chain::point::from_data(reader);
     REQUIRE(result);
     auto const expected = std::move(*result);
-    chain::point instance;
+    chain::point instance{null_hash, 0u};
 
     // This must be non-const.
-    chain::point value;
+    chain::point value{null_hash, 0u};
 
     reader.reset();
     result = chain::point::from_data(reader);
@@ -174,14 +159,14 @@ TEST_CASE("point  operator assign equals 2  always  matches equivalent", "[point
     auto result = chain::point::from_data(reader);
     REQUIRE(result);
     auto const expected = std::move(*result);
-    chain::point instance;
+    chain::point instance{null_hash, 0u};
     instance = expected;
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("point  operator boolean equals  duplicates  returns true", "[point]") {
-    chain::point alpha;
-    chain::point beta;
+    chain::point alpha{null_hash, 0u};
+    chain::point beta{null_hash, 0u};
     byte_reader reader(valid_raw_point);
     auto result = chain::point::from_data(reader);
     REQUIRE(result);
@@ -194,8 +179,8 @@ TEST_CASE("point  operator boolean equals  duplicates  returns true", "[point]")
 }
 
 TEST_CASE("point  operator boolean equals  differs  returns false", "[point]") {
-    chain::point alpha;
-    chain::point beta;
+    chain::point alpha{null_hash, 0u};
+    chain::point beta{null_hash, 0u};
     byte_reader reader(valid_raw_point);
     auto result = chain::point::from_data(reader);
     REQUIRE(result);
@@ -204,8 +189,8 @@ TEST_CASE("point  operator boolean equals  differs  returns false", "[point]") {
 }
 
 TEST_CASE("point  operator boolean not equals  duplicates  returns false", "[point]") {
-    chain::point alpha;
-    chain::point beta;
+    chain::point alpha{null_hash, 0u};
+    chain::point beta{null_hash, 0u};
     byte_reader reader(valid_raw_point);
     auto result = chain::point::from_data(reader);
     REQUIRE(result);
@@ -218,8 +203,8 @@ TEST_CASE("point  operator boolean not equals  duplicates  returns false", "[poi
 }
 
 TEST_CASE("point  operator boolean not equals  differs  returns true", "[point]") {
-    chain::point alpha;
-    chain::point beta;
+    chain::point alpha{null_hash, 0u};
+    chain::point beta{null_hash, 0u};
     byte_reader reader(valid_raw_point);
     auto result = chain::point::from_data(reader);
     REQUIRE(result);

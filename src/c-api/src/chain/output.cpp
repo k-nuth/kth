@@ -108,16 +108,16 @@ kth_token_data_const_t kth_chain_output_token_data(kth_output_const_t self) {
 
 // Setters
 
+void kth_chain_output_set_value(kth_output_mut_t self, uint64_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    kth::cpp_ref<cpp_t>(self).set_value(value);
+}
+
 void kth_chain_output_set_script(kth_output_mut_t self, kth_script_const_t value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
     auto const& value_cpp = kth::cpp_ref<kth::domain::chain::script>(value);
     kth::cpp_ref<cpp_t>(self).set_script(value_cpp);
-}
-
-void kth_chain_output_set_value(kth_output_mut_t self, uint64_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).set_value(value);
 }
 
 void kth_chain_output_set_token_data(kth_output_mut_t self, kth_token_data_const_t value) {

@@ -81,7 +81,7 @@ static kth_output_list_mut_t make_outputs(void) {
 static kth_transaction_mut_t make_tx(void) {
     kth_input_list_mut_t ins = make_inputs();
     kth_output_list_mut_t outs = make_outputs();
-    kth_transaction_mut_t tx = kth_chain_transaction_construct_from_version_locktime_inputs_outputs(
+    kth_transaction_mut_t tx = kth_chain_transaction_construct(
         kVersion, kLocktime, ins, outs);
     REQUIRE(tx != NULL);
     kth_chain_input_list_destruct(ins);

@@ -74,19 +74,21 @@ public:
 
 // Create a minimal block with just a header (no transactions)
 kth::block_const_ptr create_kth_block(kth::hash_digest const& prev_hash, uint32_t height) {
-    // Create header with the given previous hash
-    kth::domain::chain::header hdr;
-    hdr.set_version(1);
-    hdr.set_previous_block_hash(prev_hash);
-    hdr.set_merkle(kth::null_hash);  // Empty merkle
-    hdr.set_timestamp(1231006505 + height * 600);  // ~10 min per block
-    hdr.set_bits(0x1d00ffff);
-    hdr.set_nonce(height);
+    // Header is now a value type with no setters and no validation struct.
+    // Pass every field through the 6-arg ctor.
+    kth::domain::chain::header const hdr{
+        /*version*/   1u,
+        /*prev*/      prev_hash,
+        /*merkle*/    kth::null_hash,
+        /*timestamp*/ uint32_t(1231006505u + height * 600u),  // ~10 min per block
+        /*bits*/      0x1d00ffffu,
+        /*nonce*/     height,
+    };
 
-    // Set validation height (required by block_pool)
-    hdr.validation.height = height;
-
-    // Create block with empty transactions (just header)
+    // The previous benchmark stamped height onto hdr.validation; block_pool
+    // now reads height from block.validation.state. This benchmark exercises
+    // the header_index path which does not consult block.validation.state,
+    // so no extra setup is needed here.
     auto block = std::make_shared<kth::domain::message::block>(
         hdr,
         kth::domain::chain::transaction::list{}

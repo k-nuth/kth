@@ -49,8 +49,11 @@ struct KD_API witness {
     // Operators.
     //-------------------------------------------------------------------------
 
+    // NOTE: `==` is not `= default` because the `valid_` member is internal
+    // "has-been-parsed" state — equality is defined by the witness stack
+    // alone. `!=` is defaulted (delegates to `!(==)`).
     bool operator==(witness const& x) const;
-    bool operator!=(witness const& x) const;
+    bool operator!=(witness const& x) const = default;
 
     // Deserialization (from witness stack).
     //-------------------------------------------------------------------------

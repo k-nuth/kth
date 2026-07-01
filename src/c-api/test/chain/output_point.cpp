@@ -42,15 +42,18 @@ static kth_hash_t const kAllOnes = {{
 // Constructors
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API OutputPoint - default construct is invalid", "[C-API OutputPoint]") {
+// output_point is valid-by-construction (no `is_valid`); the default
+// ctor still exists for ABI continuity but it produces a zeroed-but-valid
+// point. Tests only assert structural fields (hash + index).
+
+TEST_CASE("C-API OutputPoint - default construct yields zeroed point", "[C-API OutputPoint]") {
     kth_output_point_mut_t op = kth_chain_output_point_construct_default();
-    REQUIRE(kth_chain_output_point_is_valid(op) == 0);
+    REQUIRE(op != NULL);
     kth_chain_output_point_destruct(op);
 }
 
 TEST_CASE("C-API OutputPoint - construct from hash and index", "[C-API OutputPoint]") {
     kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHash, 1234u);
-    REQUIRE(kth_chain_output_point_is_valid(op) != 0);
     REQUIRE(kth_chain_output_point_index(op) == 1234u);
     REQUIRE(kth_hash_equal(kth_chain_output_point_hash(op), kHash) != 0);
     kth_chain_output_point_destruct(op);
@@ -60,7 +63,6 @@ TEST_CASE("C-API OutputPoint - construct from point preserves fields", "[C-API O
     kth_point_mut_t pt = kth_chain_point_construct(&kHash, 42u);
     kth_output_point_mut_t op = kth_chain_output_point_construct_from_point(pt);
 
-    REQUIRE(kth_chain_output_point_is_valid(op) != 0);
     REQUIRE(kth_chain_output_point_index(op) == 42u);
     REQUIRE(kth_hash_equal(kth_chain_output_point_hash(op), kHash) != 0);
 
@@ -100,7 +102,6 @@ TEST_CASE("C-API OutputPoint - to_data / from_data roundtrip", "[C-API OutputPoi
     REQUIRE(ec == kth_ec_success);
     REQUIRE(parsed != NULL);
 
-    REQUIRE(kth_chain_output_point_is_valid(parsed) != 0);
     REQUIRE(kth_chain_output_point_index(parsed) == 53213u);
     REQUIRE(kth_hash_equal(kth_chain_output_point_hash(parsed), kHash) != 0);
 
@@ -178,7 +179,6 @@ TEST_CASE("C-API OutputPoint - copy preserves fields", "[C-API OutputPoint]") {
     kth_output_point_mut_t original = kth_chain_output_point_construct_from_hash_index(&kHash, 524342u);
     kth_output_point_mut_t copy = kth_chain_output_point_copy(original);
 
-    REQUIRE(kth_chain_output_point_is_valid(copy) != 0);
     REQUIRE(kth_chain_output_point_equals(original, copy) != 0);
     REQUIRE(kth_chain_output_point_index(copy) == 524342u);
 

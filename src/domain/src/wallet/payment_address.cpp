@@ -538,19 +538,21 @@ payment_address::list payment_address::extract_input(chain::script const& script
     auto const pattern = script.input_pattern();
     // std::println("input_pattern(): {}", int(pattern));
 
+    auto const ops = script.operations();
+
     switch (pattern) {
         // Given lack of context (prevout) sign_public_key_hash is always ambiguous
         // with sign_script_hash, so return both potentially-correct addresses.
         // A server can differentiate by extracting from the previous output.
         case script_pattern::sign_public_key_hash: {
             return {
-                payment_address{ec_public{script[1].data()}, p2kh_version},
-                payment_address{bitcoin_short_hash(script.back().data()), p2sh_version}
+                payment_address{ec_public{ops[1].data()}, p2kh_version},
+                payment_address{bitcoin_short_hash(ops.back().data()), p2sh_version}
             };
         }
         case script_pattern::sign_script_hash: {
             return {
-                payment_address{bitcoin_short_hash(script.back().data()), p2sh_version}
+                payment_address{bitcoin_short_hash(ops.back().data()), p2sh_version}
             };
         }
 
@@ -577,27 +579,28 @@ payment_address::list payment_address::extract_input(chain::script const& script
 // A server should use this against the prevout instead of using extract_input.
 payment_address::list payment_address::extract_output(chain::script const& script, uint8_t p2kh_version, uint8_t p2sh_version) {
     auto const pattern = script.output_pattern();
+    auto const ops = script.operations();
 
     switch (pattern) {
         case script_pattern::pay_to_public_key_hash: {
             return {
-                payment_address{to_array<short_hash_size>(script[2].data()), p2kh_version}
+                payment_address{to_array<short_hash_size>(ops[2].data()), p2kh_version}
             };
         }
         case script_pattern::pay_to_script_hash: {
             return {
-                payment_address{to_array<short_hash_size>(script[1].data()), p2sh_version}
+                payment_address{to_array<short_hash_size>(ops[1].data()), p2sh_version}
             };
         }
         case script_pattern::pay_to_script_hash_32: {
             return {
-                payment_address{to_array<hash_size>(script[1].data()), p2sh_version}
+                payment_address{to_array<hash_size>(ops[1].data()), p2sh_version}
             };
         }
         case script_pattern::pay_to_public_key: {
             return {
                 // pay_to_public_key is not p2kh but we conflate for tracking.
-                payment_address{ec_public{script[0].data()}, p2kh_version}
+                payment_address{ec_public{ops[0].data()}, p2kh_version}
             };
         }
 

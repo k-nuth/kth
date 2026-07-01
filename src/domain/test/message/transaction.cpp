@@ -137,7 +137,14 @@ TEST_CASE("message transaction  constructor 6  always  equals equivalent tx", "[
 }
 
 TEST_CASE("message transaction  constructor 7  always  equals equivalent tx", "[message transaction]") {
-    transaction instance(15u, 1234u, chain::input::list{{}, {}}, chain::output::list{{}, {}, {}});
+    // input/output no longer have default ctors after the value-types
+    // refactor. Build the counts explicitly so the vector sizes match
+    // the REQUIREs below.
+    chain::input const empty_in{chain::output_point{null_hash, 0u}, chain::script{}, 0u};
+    chain::output const empty_out{0u, chain::script{}, std::nullopt};
+    transaction instance(15u, 1234u,
+        chain::input::list{empty_in, empty_in},
+        chain::output::list{empty_out, empty_out, empty_out});
     REQUIRE(instance.is_valid());
     REQUIRE(instance.version() == 15u);
     REQUIRE(instance.locktime() == 1234u);

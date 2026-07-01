@@ -362,7 +362,7 @@ struct KB_API block_chain {
     fetch_block_locator(domain::chain::block::indexes const& heights) const;
 
     // Server queries
-    [[nodiscard]] awaitable_expected<domain::chain::input_point>
+    [[nodiscard]] awaitable_expected<domain::chain::input_point_opt>
     fetch_spend(domain::chain::output_point const& outpoint) const;
 
     [[nodiscard]] awaitable_expected<domain::chain::history_compact::list>

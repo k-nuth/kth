@@ -17,65 +17,47 @@ namespace kth::domain::chain {
 
 using namespace kth::domain::wallet;
 
-// This is a consensus critical value that must be set on reset.
-uint64_t const output::not_found = sighash_null_value;
-
-// This is a non-consensus sentinel used to indicate an output is unspent.
-uint32_t const output::validation::not_spent = max_uint32;
-
 // Constructors.
 //-----------------------------------------------------------------------------
 
-output::output(output_basis const& x)
-    : output_basis(x)
+output::output(uint64_t value, chain::script const& script, token_data_opt const& token_data)
+    : value_(value)
+    , script_(script)
+    , token_data_(token_data)
 {}
 
-output::output(output_basis&& x) noexcept
-    : output_basis(std::move(x))
+output::output(uint64_t value, chain::script&& script, token_data_opt&& token_data)
+    : value_(value)
+    , script_(std::move(script))
+    , token_data_(std::move(token_data))
 {}
 
-output::output(output const& x)
-    : output_basis(x)
-    , addresses_(x.addresses_cache())
-    , validation(x.validation)
-{}
+// Operators.
+//-----------------------------------------------------------------------------
 
-output::output(output&& x) noexcept
-    : output_basis(std::move(x))
-    , addresses_(x.addresses_cache())
-    , validation(x.validation)
-{}
-
-output& output::operator=(output const& x) {
-    output_basis::operator=(x);
-    addresses_ = x.addresses_cache();
-    validation = x.validation;
-    return *this;
-}
-
-output& output::operator=(output&& x) noexcept {
-    output_basis::operator=(std::move(static_cast<output_basis&&>(x)));
-    addresses_ = x.addresses_cache();
-    validation = x.validation;
-    return *this;
-}
-
-// Private cache access for copy/move construction.
-output::addresses_ptr output::addresses_cache() const {
-    ///////////////////////////////////////////////////////////////////////////
-    // Critical Section
-    shared_lock lock(mutex_);
-
-    return addresses_;
-    ///////////////////////////////////////////////////////////////////////////
+bool operator==(output const& a, output const& b) {
+    return a.value_ == b.value_
+        && a.script_ == b.script_
+        && a.token_data_ == b.token_data_;
 }
 
 // Deserialization.
 //-----------------------------------------------------------------------------
 
+void output::reset() {
+    value_ = output::not_found;
+    script_.reset();
+    token_data_.reset();
+}
+
+// Empty scripts are valid, validation relies on not_found only.
+bool output::is_valid() const {
+    return value_ != output::not_found && chain::is_valid(token_data_);
+}
+
 // static
 expect<output> output::from_data(byte_reader& reader, bool wire) {
-    uint32_t spender_height = validation::not_spent;
+    uint32_t spender_height = validation_t::not_spent;
     if ( ! wire) {
         auto const height = reader.read_little_endian<uint32_t>();
         if ( ! height) {
@@ -84,11 +66,46 @@ expect<output> output::from_data(byte_reader& reader, bool wire) {
         spender_height = *height;
     }
 
-    auto basis = output_basis::from_data(reader, wire);
-    if ( ! basis) {
-        return std::unexpected(basis.error());
+    auto const value = reader.read_little_endian<uint64_t>();
+    if ( ! value) {
+        return std::unexpected(value.error());
     }
-    output result(std::move(*basis));
+
+    auto const script_size_exp = reader.read_size_little_endian();
+    if ( ! script_size_exp) {
+        return std::unexpected(script_size_exp.error());
+    }
+    auto script_size = *script_size_exp;
+
+    // Minimum token prefix: 0xef (1) + category_id (32) + bitfield (1) = 34 bytes.
+    static constexpr size_t min_token_prefix_size = 1 + 32 + 1;
+    token_data_opt token_data = std::nullopt;
+    auto const has_token_data = script_size >= min_token_prefix_size && [&] {
+        auto const token_prefix_byte = reader.peek_byte();
+        return token_prefix_byte && *token_prefix_byte == chain::encoding::PREFIX_BYTE;
+    }();
+    if (has_token_data) {
+        reader.unsafe_skip_byte(); // skip prefix byte (safe: peek_byte succeeded above)
+        auto token = token::encoding::from_data(reader);
+        if ( ! token) {
+            return std::unexpected(token.error());
+        }
+        token_data.emplace(std::move(*token));
+
+        script_size -= token::encoding::serialized_size(token_data);
+        script_size -= 1; // prefix byte
+    }
+
+    auto script = script::from_data_with_size(reader, script_size);
+    if ( ! script) {
+        return std::unexpected(script.error());
+    }
+
+    output result{
+        *value,
+        std::move(*script),
+        std::move(token_data)
+    };
     result.validation.spender_height = spender_height;
     return result;
 }
@@ -117,51 +134,56 @@ void output::to_data(data_sink& stream, bool wire) const {
 
 size_t output::serialized_size(bool wire) const {
     // validation.spender_height is size_t stored as uint32_t.
-    return (wire ? 0 : sizeof(uint32_t))
-            + output_basis::serialized_size(wire);
+    auto const wire_size =
+        sizeof(value_) +
+        script_.serialized_size(true) +
+        token::encoding::serialized_size(token_data_) +
+        size_t(token_data_.has_value());
+
+    return (wire ? 0 : sizeof(uint32_t)) + wire_size;
 }
 
 // Accessors.
 //-----------------------------------------------------------------------------
 
-void output::set_script(chain::script const& value) {
-    output_basis::set_script(value);
-    invalidate_cache();
+uint64_t output::value() const {
+    return value_;
 }
 
-void output::set_script(chain::script&& value) {
-    output_basis::set_script(std::move(value));
-    invalidate_cache();
+void output::set_value(uint64_t x) {
+    value_ = x;
 }
 
-// protected
-void output::invalidate_cache() const {
-#if ! defined(__EMSCRIPTEN__)
-    ///////////////////////////////////////////////////////////////////////////
-    // Critical Section
-    mutex_.lock_upgrade();
+chain::script& output::script() {
+    return script_;
+}
 
-    if (addresses_) {
-        mutex_.unlock_upgrade_and_lock();
-        //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        addresses_.reset();
-        //---------------------------------------------------------------------
-        mutex_.unlock_and_lock_upgrade();
-    }
+chain::script const& output::script() const {
+    return script_;
+}
 
-    mutex_.unlock_upgrade();
-    ///////////////////////////////////////////////////////////////////////////
-#else
-    {
-        std::shared_lock lock(mutex_);
-        if ( ! addresses_) {
-            return;
-        }
-    }
+void output::set_script(chain::script const& x) {
+    script_ = x;
+}
 
-    std::unique_lock lock(mutex_);
-    addresses_.reset();
-#endif
+void output::set_script(chain::script&& x) {
+    script_ = std::move(x);
+}
+
+chain::token_data_opt& output::token_data() {
+    return token_data_;
+}
+
+chain::token_data_opt const& output::token_data() const {
+    return token_data_;
+}
+
+void output::set_token_data(chain::token_data_opt const& x) {
+    token_data_ = x;
+}
+
+void output::set_token_data(chain::token_data_opt&& x) {
+    token_data_ = std::move(x);
 }
 
 payment_address output::address(bool testnet /*= false*/) const {
@@ -177,37 +199,19 @@ payment_address output::address(uint8_t p2kh_version, uint8_t p2sh_version) cons
 }
 
 payment_address::list output::addresses(uint8_t p2kh_version, uint8_t p2sh_version) const {
-#if ! defined(__EMSCRIPTEN__)
-    ///////////////////////////////////////////////////////////////////////////
-    // Critical Section
-    mutex_.lock_upgrade();
+    return payment_address::extract_output(script_, p2kh_version, p2sh_version);
+}
 
-    if ( ! addresses_) {
-        //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        mutex_.unlock_upgrade_and_lock();
-        addresses_ = std::make_shared<payment_address::list>(payment_address::extract_output(script(), p2kh_version, p2sh_version));
-        mutex_.unlock_and_lock_upgrade();
-        //---------------------------------------------------------------------
-    }
+// Validation helpers.
+//-----------------------------------------------------------------------------
 
-    auto addresses = *addresses_;
-    mutex_.unlock_upgrade();
-    ///////////////////////////////////////////////////////////////////////////
-#else
-    {
-        std::shared_lock lock(mutex_);
-        if (addresses_) {
-            return *addresses_;
-        }
-    }
+size_t output::signature_operations(bool /*bip141*/) const {
+    return script_.sigops(false);
+}
 
-    std::unique_lock lock(mutex_);
-    if ( ! addresses_) {
-        addresses_ = std::make_shared<payment_address::list>(payment_address::extract_output(script(), p2kh_version, p2sh_version));
-    }
-    auto addresses = *addresses_;
-#endif
-    return addresses;
+bool output::is_dust(uint64_t minimum_output_value) const {
+    // If provably unspendable it does not expand the unspent output set.
+    return value_ < minimum_output_value && !script_.is_unspendable();
 }
 
 } // namespace kth::domain::chain

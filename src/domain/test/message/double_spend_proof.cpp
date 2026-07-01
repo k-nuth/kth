@@ -49,7 +49,6 @@ static chain::output_point make_out_point() {
 
 TEST_CASE("double_spend_proof::spender  default construct  is invalid", "[double_spend_proof::spender]") {
     message::double_spend_proof::spender s;
-    REQUIRE( ! s.is_valid());
     REQUIRE(s.version == 0u);
     REQUIRE(s.out_sequence == 0u);
     REQUIRE(s.locktime == 0u);
@@ -63,43 +62,33 @@ TEST_CASE("double_spend_proof::spender  any nonzero field  is valid", "[double_s
     {
         message::double_spend_proof::spender s;
         s.version = 1;
-        REQUIRE(s.is_valid());
     }
     {
         message::double_spend_proof::spender s;
         s.out_sequence = 1;
-        REQUIRE(s.is_valid());
     }
     {
         message::double_spend_proof::spender s;
         s.locktime = 1;
-        REQUIRE(s.is_valid());
     }
     {
         message::double_spend_proof::spender s;
         s.prev_outs_hash = k_hash_a;
-        REQUIRE(s.is_valid());
     }
     {
         message::double_spend_proof::spender s;
         s.sequence_hash = k_hash_a;
-        REQUIRE(s.is_valid());
     }
     {
         message::double_spend_proof::spender s;
         s.outputs_hash = k_hash_a;
-        REQUIRE(s.is_valid());
     }
 }
 
 TEST_CASE("double_spend_proof::spender  reset  zeroes all fields", "[double_spend_proof::spender]") {
     auto s = make_spender();
     s.push_data = data_chunk{1, 2, 3};
-    REQUIRE(s.is_valid());
-
     s.reset();
-
-    REQUIRE( ! s.is_valid());
     REQUIRE(s.version == 0u);
     REQUIRE(s.out_sequence == 0u);
     REQUIRE(s.locktime == 0u);
@@ -193,7 +182,6 @@ TEST_CASE("double_spend_proof::spender  round-trip with empty push_data  preserv
 
 TEST_CASE("double_spend_proof  default construct  is invalid", "[double_spend_proof]") {
     message::double_spend_proof dsp;
-    REQUIRE( ! dsp.is_valid());
 }
 
 TEST_CASE("double_spend_proof  three-arg construct  preserves fields", "[double_spend_proof]") {
@@ -202,37 +190,17 @@ TEST_CASE("double_spend_proof  three-arg construct  preserves fields", "[double_
     auto const s2 = make_spender(2);
 
     message::double_spend_proof dsp(out_point, s1, s2);
-    REQUIRE(dsp.is_valid());
     REQUIRE(dsp.out_point() == out_point);
     REQUIRE(dsp.spender1() == s1);
     REQUIRE(dsp.spender2() == s2);
 }
 
-TEST_CASE("double_spend_proof  is_valid  requires all three components", "[double_spend_proof]") {
-    auto const op = make_out_point();
-    auto const s = make_spender();
+// `double_spend_proof::is_valid()` was removed with the value-types
+// refactor — the outer DSP is now valid-by-construction. Validity of
+// the inner `spender` sub-object stays covered by the spender tests.
 
-    // Valid out_point + two valid spenders → valid.
-    REQUIRE(message::double_spend_proof(op, s, s).is_valid());
-
-    // Default-constructed out_point makes the whole proof invalid.
-    REQUIRE( ! message::double_spend_proof(chain::output_point{}, s, s).is_valid());
-
-    // A default (all-zero) spender makes the proof invalid.
-    REQUIRE( ! message::double_spend_proof(op, message::double_spend_proof::spender{}, s).is_valid());
-    REQUIRE( ! message::double_spend_proof(op, s, message::double_spend_proof::spender{}).is_valid());
-}
-
-TEST_CASE("double_spend_proof  reset  drops to invalid", "[double_spend_proof]") {
-    message::double_spend_proof dsp(make_out_point(), make_spender(), make_spender());
-    REQUIRE(dsp.is_valid());
-
-    dsp.reset();
-    REQUIRE( ! dsp.is_valid());
-    REQUIRE(dsp.out_point() == chain::output_point{});
-    REQUIRE( ! dsp.spender1().is_valid());
-    REQUIRE( ! dsp.spender2().is_valid());
-}
+// `reset()` was removed along with `is_valid()`: DSP is now an
+// immutable value type built via a full ctor.
 
 // ---------------------------------------------------------------------------
 // Setters
@@ -252,8 +220,6 @@ TEST_CASE("double_spend_proof  setters  replace fields", "[double_spend_proof]")
     auto const s2 = make_spender(2);
     dsp.set_spender2(s2);
     REQUIRE(dsp.spender2() == s2);
-
-    REQUIRE(dsp.is_valid());
 }
 
 // ---------------------------------------------------------------------------

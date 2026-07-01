@@ -21,108 +21,107 @@ using namespace kth::domain::machine;
 // Constructors.
 //-----------------------------------------------------------------------------
 
-input::input(input_basis const& x)
-    : input_basis(x)
+input::input(output_point const& previous_output, chain::script const& script, uint32_t sequence)
+    : previous_output_(previous_output)
+    , script_(script)
+    , sequence_(sequence)
 {}
 
-input::input(input_basis&& x) noexcept
-    : input_basis(std::move(x))
+input::input(output_point&& previous_output, chain::script&& script, uint32_t sequence)
+    : previous_output_(std::move(previous_output))
+    , script_(std::move(script))
+    , sequence_(sequence)
 {}
-
-// Private cache access for copy/move construction.
-input::addresses_ptr input::addresses_cache() const {
-    ///////////////////////////////////////////////////////////////////////////
-    // Critical Section
-    shared_lock lock(mutex_);
-
-    return addresses_;
-    ///////////////////////////////////////////////////////////////////////////
-}
-
-input::input(input const& x)
-    : input_basis(x)
-    , addresses_(x.addresses_cache())
-{}
-
-input::input(input&& x) noexcept
-    : input_basis(std::move(x))
-    , addresses_(x.addresses_cache())
-{}
-
-// Operators.
-//-----------------------------------------------------------------------------
-
-input& input::operator=(input const& x) {
-    input_basis::operator=(x);
-    addresses_ = x.addresses_cache();
-    return *this;
-}
-
-input& input::operator=(input&& x) noexcept {
-    input_basis::operator=(std::move(static_cast<input_basis&&>(x)));
-    addresses_ = x.addresses_cache();
-    return *this;
-}
-
-void input::reset() {
-    input_basis::reset();
-    addresses_.reset();
-}
 
 // Deserialization.
 //-----------------------------------------------------------------------------
 
 // static
 expect<input> input::from_data(byte_reader& reader, bool wire) {
-    auto basis = input_basis::from_data(reader, wire);
-    if ( ! basis) {
-        return std::unexpected(basis.error());
+    auto point = output_point::from_data(reader, wire);
+    if ( ! point) {
+        return std::unexpected(point.error());
     }
-    return input(std::move(*basis));
+    auto script = script::from_data(reader, true);
+    if ( ! script) {
+        return std::unexpected(script.error());
+    }
+    auto sequence = reader.read_little_endian<uint32_t>();
+    if ( ! sequence) {
+        return std::unexpected(sequence.error());
+    }
+    return input{std::move(*point), std::move(*script), *sequence};
+}
+
+// Serialization.
+//-----------------------------------------------------------------------------
+
+data_chunk input::to_data(bool wire) const {
+    data_chunk data;
+    auto const size = serialized_size(wire);
+    data.reserve(size);
+    data_sink ostream(data);
+    to_data(ostream, wire);
+    ostream.flush();
+    KTH_ASSERT(data.size() == size);
+    return data;
+}
+
+void input::to_data(data_sink& stream, bool wire) const {
+    ostream_writer sink_w(stream);
+    to_data(sink_w, wire);
+}
+
+// Size.
+//-----------------------------------------------------------------------------
+
+size_t input::serialized_size(bool wire) const {
+    return previous_output_.serialized_size(wire)
+        + script_.serialized_size(true)
+        + sizeof(sequence_);
 }
 
 // Accessors.
 //-----------------------------------------------------------------------------
 
+output_point& input::previous_output() {
+    return previous_output_;
+}
+
+output_point const& input::previous_output() const {
+    return previous_output_;
+}
+
+void input::set_previous_output(output_point const& value) {
+    previous_output_ = value;
+}
+
+void input::set_previous_output(output_point&& value) {
+    previous_output_ = std::move(value);
+}
+
+chain::script& input::script() {
+    return script_;
+}
+
+chain::script const& input::script() const {
+    return script_;
+}
+
 void input::set_script(chain::script const& value) {
-    input_basis::set_script(value);
-    invalidate_cache();
+    script_ = value;
 }
 
 void input::set_script(chain::script&& value) {
-    input_basis::set_script(std::move(value));
-    invalidate_cache();
+    script_ = std::move(value);
 }
 
-// protected
-void input::invalidate_cache() const {
-#if ! defined(__EMSCRIPTEN__)
-    ///////////////////////////////////////////////////////////////////////////
-    // Critical Section
-    mutex_.lock_upgrade();
+uint32_t input::sequence() const {
+    return sequence_;
+}
 
-    if (addresses_) {
-        mutex_.unlock_upgrade_and_lock();
-        //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        addresses_.reset();
-        //---------------------------------------------------------------------
-        mutex_.unlock_and_lock_upgrade();
-    }
-
-    mutex_.unlock_upgrade();
-    ///////////////////////////////////////////////////////////////////////////
-
-#else
-    {
-        std::shared_lock lock(mutex_);
-        if ( ! addresses_) {
-            return;
-        }
-    }
-
-    std::unique_lock lock(mutex_);
-    addresses_.reset();
-#endif
+void input::set_sequence(uint32_t value) {
+    sequence_ = value;
 }
 
 payment_address input::address() const {
@@ -131,42 +130,77 @@ payment_address input::address() const {
 }
 
 payment_address::list input::addresses() const {
-#if ! defined(__EMSCRIPTEN__)
-    ///////////////////////////////////////////////////////////////////////////
-    // Critical Section
-    mutex_.lock_upgrade();
+    // TODO(legacy): expand to include segregated witness address extraction.
+    return payment_address::extract_input(script_);
+}
 
-    if ( ! addresses_) {
-        //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        mutex_.unlock_upgrade_and_lock();
+// Validation helpers.
+//-----------------------------------------------------------------------------
 
-        // TODO(legacy): expand to include segregated witness address extraction.
-        addresses_ = std::make_shared<payment_address::list>(payment_address::extract_input(script()));
-        mutex_.unlock_and_lock_upgrade();
-        //---------------------------------------------------------------------
+bool input::is_final() const {
+    return sequence_ == max_input_sequence;
+}
+
+bool input::is_locked(size_t block_height, uint32_t median_time_past) const {
+    if ((sequence_ & relative_locktime_disabled) != 0) {
+        return false;
     }
 
-    auto addresses = *addresses_;
-    mutex_.unlock_upgrade();
-    ///////////////////////////////////////////////////////////////////////////
-#else
-    {
-        std::shared_lock lock(mutex_);
+    // bip68: a minimum block-height constraint over the input's age.
+    auto const minimum = (sequence_ & relative_locktime_mask);
+    auto const& prevout = previous_output_.validation;
 
-        if (addresses_) {
-            return *addresses_;
+    if ((sequence_ & relative_locktime_time_locked) != 0) {
+        // Median time past must be monotonically-increasing by block.
+        KTH_ASSERT(median_time_past >= prevout.median_time_past);
+        auto const age_seconds = median_time_past - prevout.median_time_past;
+        return age_seconds < (minimum << relative_locktime_seconds_shift);
+    }
+
+    KTH_ASSERT(block_height >= prevout.height);
+    auto const age_blocks = block_height - prevout.height;
+    return age_blocks < minimum;
+}
+
+// This requires that previous outputs have been populated.
+// This cannot overflow because each total is limited by max ops.
+size_t input::signature_operations(bool bip16, bool /*bip141*/) const {
+    size_t const sigops_factor = 1U;
+    // Count heavy sigops in the input script.
+    auto sigops = script_.sigops(false) * sigops_factor;
+
+    if (bip16) {
+        auto const embedded = extract_embedded_script();
+        if (embedded) {
+            // Add heavy sigops in the embedded script (bip16).
+            return sigops + embedded->sigops(true) * sigops_factor;
         }
     }
 
-    std::unique_lock lock(mutex_);
-    if ( ! addresses_) {
-        addresses_ = std::make_shared<payment_address::list>(payment_address::extract_input(script()));
+    return sigops;
+}
+
+// This requires that previous outputs have been populated.
+expect<chain::script> input::extract_embedded_script() const {
+    ////KTH_ASSERT(previous_output_.is_valid());
+    auto const ops = script_.operations();
+    auto const& prevout_script = previous_output_.validation.cache.script();
+
+    // There are no embedded sigops when the prevout script is not p2sh or p2sh32.
+    if ( ! prevout_script.is_pay_to_script_hash(script_flags::bip16_rule) &&
+         ! prevout_script.is_pay_to_script_hash_32(script_flags::bch_p2sh_32)) {
+            return std::unexpected(error::invalid_script_type);
     }
 
-    auto addresses = *addresses_;
-#endif
+    // There are no embedded sigops when the input script is not push only.
+    if (ops.empty() || !script::is_relaxed_push(ops)) {
+        return std::unexpected(error::script_not_push_only);
+    }
 
-    return addresses;
+    // Parse the embedded script from the last input script item (data).
+    // This cannot fail because there is no prefix to invalidate the length.
+    byte_reader reader(std::span<uint8_t const>(ops.back().data()));
+    return script::from_data(reader, false);
 }
 
 } // namespace kth::domain::chain

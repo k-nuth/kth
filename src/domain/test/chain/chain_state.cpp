@@ -74,7 +74,7 @@ TEST_CASE("chain_state activation enables Cantor feature bits once MTP passes th
     // the buggy pattern used to choke on.
     auto const settings_mask = domain::to_flags(upgrade::bch_leibniz);
 
-    REQUIRE_FALSE(chain::script_basis::is_enabled(settings_mask, script_flags::bch_2027_may));
+    REQUIRE_FALSE(chain::script::is_enabled(settings_mask, script_flags::bch_2027_may));
 
     auto const result = chain_state_test_access::activation(
         values,
@@ -86,7 +86,7 @@ TEST_CASE("chain_state activation enables Cantor feature bits once MTP passes th
     // The feature bit the Cantor upgrade introduces must reach `result.flags`
     // once the MTP gate fires, regardless of what the settings mask did or
     // did not pre-list.
-    REQUIRE(chain::script_basis::is_enabled(result.flags, script_flags::bch_2027_may));
+    REQUIRE(chain::script::is_enabled(result.flags, script_flags::bch_2027_may));
 }
 
 // Symmetric guard: when MTP is below the activation time the upgrade must
@@ -108,5 +108,5 @@ TEST_CASE("chain_state activation leaves Cantor bits off while MTP is below the 
         bch_cantor_activation_time
     );
 
-    REQUIRE_FALSE(chain::script_basis::is_enabled(result.flags, script_flags::bch_2027_may));
+    REQUIRE_FALSE(chain::script::is_enabled(result.flags, script_flags::bch_2027_may));
 }

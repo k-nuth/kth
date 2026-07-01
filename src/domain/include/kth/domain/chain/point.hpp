@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <istream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -34,47 +35,27 @@ struct KD_API point {
     uint32_t null_index = no_previous_output;
 
     using list = std::vector<point>;
+    using opt = std::optional<point>;
     using indexes = std::vector<uint32_t>;
 
     // Constructors.
     //-------------------------------------------------------------------------
 
-    // constexpr
-    point();
-
-    // constexpr
-    point(hash_digest const& hash, uint32_t index);
-
-    // constexpr
-    point(point const& x) = default;
-
-    // constexpr
-    point& operator=(point const& x) = default;
+    constexpr point(hash_digest const& hash, uint32_t index)
+        : index_(index), hash_(hash)
+    {}
 
     // Operators.
     //-------------------------------------------------------------------------
 
-    // constexpr    //Note(kth): Could be constexpr in C++20
-    friend bool operator==(point const& x, point const& y);
-
-    // constexpr    //Note(kth): Could be constexpr in C++20
-    friend bool operator!=(point const& x, point const& y);
-
-    // constexpr
-    friend bool operator<(point const& x, point const& y);
-
-    // constexpr
-    friend bool operator>(point const& x, point const& y);
-
-    // constexpr
-    friend bool operator<=(point const& x, point const& y);
-
-    // constexpr
-    friend bool operator>=(point const& x, point const& y);
+    // Member order (index_, then hash_) is deliberate: it makes the defaulted
+    // `<=>` compare index first — index comparisons are cheaper than 32-byte
+    // hashes, and this matches the pre-refactor hand-written `operator<`
+    // ("arbitrary order to support set uniqueness").
+    friend constexpr auto operator<=>(point const&, point const&) = default;
 
     // Deserialization.
     //-------------------------------------------------------------------------
-
 
     static
     expect<point> from_data(byte_reader& reader, bool wire = true);
@@ -84,10 +65,6 @@ struct KD_API point {
     static constexpr point null() noexcept {
         return point{null_hash, null_index};
     }
-
-    // constexpr
-    [[nodiscard]]
-    bool is_valid() const;
 
     // Serialization.
     //-------------------------------------------------------------------------
@@ -121,60 +98,73 @@ struct KD_API point {
     // Properties (size, accessors, cache).
     //-------------------------------------------------------------------------
 
-    // constexpr
-    static
-    size_t satoshi_fixed_size();
-
-    // constexpr
     [[nodiscard]]
-    size_t serialized_size(bool wire = true) const;
+    static constexpr size_t satoshi_fixed_size() {
+        return hash_size + sizeof(index_);
+    }
+
+    [[nodiscard]]
+    constexpr size_t serialized_size(bool wire = true) const {
+        return wire ? point::satoshi_fixed_size() : (hash_size + sizeof(uint16_t));
+    }
 
     // deprecated (unsafe)
-    // constexpr
-    hash_digest& hash();
+    constexpr hash_digest& hash() {
+        return hash_;
+    }
 
-    // constexpr
     [[nodiscard]]
-    hash_digest const& hash() const;
+    constexpr hash_digest const& hash() const {
+        return hash_;
+    }
 
-    // constexpr
-    void set_hash(hash_digest const& value);
+    constexpr void set_hash(hash_digest const& value) {
+        hash_ = value;
+    }
 
-    // constexpr
     [[nodiscard]]
-    uint32_t index() const;
+    constexpr uint32_t index() const {
+        return index_;
+    }
 
-    // constexpr
-    void set_index(uint32_t value);
+    constexpr void set_index(uint32_t value) {
+        index_ = value;
+    }
 
     // Utilities.
     //-------------------------------------------------------------------------
 
     /// This is for client-server, not related to consensus or p2p networking.
     [[nodiscard]]
-    uint64_t checksum() const;
+    constexpr uint64_t checksum() const {
+        // Reserve 49 bits for the tx hash and 15 bits (32768) for the input index.
+        constexpr uint64_t mask = 0xffffffffffff8000;
+
+        // Use an offset to the middle of the hash to avoid coincidental mining
+        // of values into the front or back of tx hash (not a security feature).
+        // Use most possible bits of tx hash to make intentional collision hard.
+        auto const tx = from_little_endian_unsafe<uint64_t>(std::span{hash_}.subspan(12));
+        auto const index = uint64_t(index_);
+
+        auto const tx_upper_49_bits = tx & mask;
+        auto const index_lower_15_bits = index & ~mask;
+        return tx_upper_49_bits | index_lower_15_bits;
+    }
 
     // Validation.
     //-------------------------------------------------------------------------
 
-    // constexpr
     [[nodiscard]]
-    bool is_null() const;
-
-// protected:
-    // point(hash_digest const& hash, uint32_t index, bool valid);
-    void reset();
+    constexpr bool is_null() const {
+        return index_ == null_index && hash_ == null_hash;
+    }
 
 private:
-    // Design note: A default-constructed point is "uninitialized" (not valid).
-    // A "null" point (null_hash + null_index) represents a coinbase input and IS valid.
-    // These are distinct concepts:
-    //   - is_valid(): has been properly initialized (explicitly or via deserialization)
-    //   - is_null(): references no previous output (coinbase input)
-    hash_digest hash_{null_hash};
-    uint32_t index_{0};  // Intentionally 0, not null_index. See comment above.
-    bool valid_{false};
+    uint32_t index_;
+    hash_digest hash_;
 };
+
+using point_opt = point::opt;
 
 } // namespace kth::domain::chain
 

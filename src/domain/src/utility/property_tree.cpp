@@ -46,7 +46,7 @@ ptree property_list(config::header const& header) {
 
     ptree tree;
     tree.put("bits", block_header.bits());
-    tree.put("hash", hash256(block_header.hash()));
+    tree.put("hash", hash256(chain::hash(block_header)));
     tree.put("merkle_tree_hash", hash256(block_header.merkle()));
     tree.put("nonce", block_header.nonce());
     tree.put("previous_block_hash", hash256(block_header.previous_block_hash()));
@@ -112,10 +112,8 @@ ptree property_tree(const config::input& input) {
 }
 
 ptree property_tree(std::vector<config::input> const& inputs, bool json) {
-    auto const tx_inputs = cast<input, chain::input>(inputs);
-
     ptree tree;
-    tree.add_child("inputs", property_tree_list("input", tx_inputs, json));
+    tree.add_child("inputs", property_tree_list("input", inputs, json));
     return tree;
 }
 

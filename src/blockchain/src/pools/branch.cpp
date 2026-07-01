@@ -124,7 +124,12 @@ uint32_t branch::height_at(size_t index) const {
 // private
 uint32_t branch::median_time_past_at(size_t index) const {
     KTH_ASSERT(index < size());
-    return (*blocks_)[index]->header().validation.median_time_past;
+    // MTP used to live on header.validation.median_time_past; the header
+    // is now a pure value type, so we read it from the block's chain_state
+    // (populated by the validator before the block reaches the branch).
+    auto const& block = *(*blocks_)[index];
+    KTH_ASSERT(block.validation.state);
+    return block.validation.state->median_time_past();
 }
 
 // TODO(legacy): absorb into the main chain for speed and code consolidation.

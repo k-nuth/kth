@@ -78,10 +78,6 @@ bool witness::operator==(witness const& x) const {
     return stack_ == x.stack_;
 }
 
-bool witness::operator!=(witness const& x) const {
-    return !(*this == x);
-}
-
 // private/static
 size_t witness::serialized_size(data_stack const& stack) {
     auto const sum = [](size_t total, data_chunk const& element) {
@@ -243,7 +239,7 @@ operation::list witness::to_pay_key_hash(data_chunk&& program) {
 // Returns true if is a witness program - even if potentially invalid.
 bool witness::extract_sigop_script(script& out_script,
                                    script const& program_script) const {
-    out_script.clear();
+    out_script.reset();
 
     switch (program_script.version()) {
         case script_version::zero: {

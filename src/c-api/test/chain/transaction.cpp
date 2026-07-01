@@ -97,7 +97,7 @@ static kth_output_list_mut_t make_outputs(void) {
 static kth_transaction_mut_t make_tx(void) {
     kth_input_list_mut_t ins = make_inputs();
     kth_output_list_mut_t outs = make_outputs();
-    kth_transaction_mut_t tx = kth_chain_transaction_construct_from_version_locktime_inputs_outputs(
+    kth_transaction_mut_t tx = kth_chain_transaction_construct(
         kVersion, kLocktime, ins, outs);
     REQUIRE(tx != NULL);
     kth_chain_input_list_destruct(ins);
@@ -274,7 +274,8 @@ TEST_CASE("C-API Transaction - equals identical txs is true, different is false"
     // an `equals()` impl that ignores fields.
     kth_transaction_mut_t mutated = make_tx();
     kth_chain_transaction_set_locktime(mutated, kLocktime + 1u);
-    kth_chain_transaction_recompute_hash(mutated);
+    // No recompute_hash needed — the new transaction value type has no
+    // internal hash cache; `hash()` always reflects the current fields.
 
     // `c` is a default (invalid) tx, structurally distinct from `a`.
     kth_transaction_mut_t c = kth_chain_transaction_construct_default();
@@ -324,7 +325,7 @@ TEST_CASE("C-API Transaction - construct null inputs aborts",
           "[C-API Transaction][precondition]") {
     kth_output_list_mut_t outs = make_outputs();
     KTH_EXPECT_ABORT(
-        kth_chain_transaction_construct_from_version_locktime_inputs_outputs(
+        kth_chain_transaction_construct(
             kVersion, kLocktime, NULL, outs));
     kth_chain_output_list_destruct(outs);
 }
@@ -333,7 +334,7 @@ TEST_CASE("C-API Transaction - construct null outputs aborts",
           "[C-API Transaction][precondition]") {
     kth_input_list_mut_t ins = make_inputs();
     KTH_EXPECT_ABORT(
-        kth_chain_transaction_construct_from_version_locktime_inputs_outputs(
+        kth_chain_transaction_construct(
             kVersion, kLocktime, ins, NULL));
     kth_chain_input_list_destruct(ins);
 }

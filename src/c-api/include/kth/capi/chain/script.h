@@ -25,7 +25,7 @@ kth_script_mut_t kth_chain_script_construct_default(void);
 
 /** @param[out] out Must point to a null `kth_script_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_script_destruct`. Untouched on error. */
 KTH_EXPORT
-kth_error_code_t kth_chain_script_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_script_mut_t* out);
+kth_error_code_t kth_chain_script_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t prefix, KTH_OUT_OWNED kth_script_mut_t* out);
 
 /**
  * @return Owned `kth_script_mut_t`. Caller must release with `kth_chain_script_destruct`.
@@ -71,23 +71,13 @@ kth_size_t kth_chain_script_serialized_size(kth_script_const_t self, kth_bool_t 
 
 // Getters
 
-KTH_EXPORT
-kth_bool_t kth_chain_script_empty(kth_script_const_t self);
+/** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
+KTH_EXPORT KTH_OWNED
+uint8_t* kth_chain_script_bytes(kth_script_const_t self, kth_size_t* out_size);
 
-KTH_EXPORT
-kth_size_t kth_chain_script_size(kth_script_const_t self);
-
-/** @return Borrowed `kth_operation_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
-KTH_EXPORT
-kth_operation_const_t kth_chain_script_front(kth_script_const_t self);
-
-/** @return Borrowed `kth_operation_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
-KTH_EXPORT
-kth_operation_const_t kth_chain_script_back(kth_script_const_t self);
-
-/** @return Borrowed `kth_operation_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
-KTH_EXPORT
-kth_operation_list_const_t kth_chain_script_operations(kth_script_const_t self);
+/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_operation_list_mut_t kth_chain_script_operations(kth_script_const_t self);
 
 /** @return Owned `kth_operation_mut_t`. Caller must release with `kth_chain_operation_destruct`. */
 KTH_EXPORT KTH_OWNED
@@ -102,15 +92,17 @@ kth_script_pattern_t kth_chain_script_output_pattern_simple(kth_script_const_t s
 KTH_EXPORT
 kth_script_pattern_t kth_chain_script_input_pattern(kth_script_const_t self);
 
-/** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
-KTH_EXPORT KTH_OWNED
-uint8_t* kth_chain_script_bytes(kth_script_const_t self, kth_size_t* out_size);
-
 
 // Predicates
 
 KTH_EXPORT
+kth_bool_t kth_chain_script_is_valid(kth_script_const_t self);
+
+KTH_EXPORT
 kth_bool_t kth_chain_script_is_valid_operations(kth_script_const_t self);
+
+KTH_EXPORT
+kth_bool_t kth_chain_script_is_enabled(kth_script_flags_t active_flags, kth_script_flags_t fork);
 
 KTH_EXPORT
 kth_bool_t kth_chain_script_is_push_only(kth_operation_list_const_t ops);
@@ -160,12 +152,6 @@ kth_bool_t kth_chain_script_is_pay_to_script_hash(kth_script_const_t self, kth_s
 KTH_EXPORT
 kth_bool_t kth_chain_script_is_pay_to_script_hash_32(kth_script_const_t self, kth_script_flags_t flags);
 
-KTH_EXPORT
-kth_bool_t kth_chain_script_is_valid(kth_script_const_t self);
-
-KTH_EXPORT
-kth_bool_t kth_chain_script_is_enabled(kth_script_flags_t active_flags, kth_script_flags_t fork);
-
 
 // Operations
 
@@ -178,13 +164,6 @@ kth_bool_t kth_chain_script_from_string(kth_script_mut_t self, char const* mnemo
 /** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
 KTH_EXPORT KTH_OWNED
 char* kth_chain_script_to_string(kth_script_const_t self, kth_script_flags_t active_flags);
-
-KTH_EXPORT
-void kth_chain_script_clear(kth_script_mut_t self);
-
-/** @return Borrowed `kth_operation_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
-KTH_EXPORT
-kth_operation_const_t kth_chain_script_at(kth_script_const_t self, kth_size_t index);
 
 KTH_EXPORT
 kth_script_pattern_t kth_chain_script_output_pattern(kth_script_const_t self, kth_script_flags_t flags);

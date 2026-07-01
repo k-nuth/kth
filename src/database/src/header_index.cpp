@@ -6,7 +6,7 @@
 
 #include <cstring>
 
-#include <kth/domain/chain/header_basis.hpp>
+#include <kth/domain/chain/header.hpp>
 #include <kth/infrastructure/utility/stats.hpp>
 
 namespace kth::database {
@@ -64,7 +64,7 @@ header_index_result header_index::add(hash_digest const& hash, domain::chain::he
     if (parent_idx != null_index) {
         height = heights_[parent_idx] + 1;
         // chainwork = sum of per-block work (2^256 / (target+1)) along the chain
-        chain_work = chain_works_[parent_idx] + domain::chain::header_basis::proof(header.bits());
+        chain_work = chain_works_[parent_idx] + domain::chain::header::proof(header.bits());
     }
 
     // Build skip pointer BEFORE acquiring insert lock (O(log n) operation)

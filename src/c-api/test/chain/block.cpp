@@ -65,7 +65,7 @@ TEST_CASE("C-API Block - from_data insufficient bytes fails",
     memset(data, 0, sizeof(data));
     kth_block_mut_t blk = NULL;
     kth_error_code_t ec = kth_chain_block_construct_from_data(
-        data, sizeof(data), 1, &blk);
+        data, sizeof(data), &blk);
     REQUIRE(ec != kth_ec_success);
     REQUIRE(blk == NULL);
 }
@@ -80,7 +80,7 @@ TEST_CASE("C-API Block - to_data / from_data roundtrip",
     REQUIRE(size > 0);
 
     kth_block_mut_t parsed = NULL;
-    kth_error_code_t ec = kth_chain_block_construct_from_data(raw, size, 1, &parsed);
+    kth_error_code_t ec = kth_chain_block_construct_from_data(raw, size, &parsed);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(parsed != NULL);
     REQUIRE(kth_chain_block_is_valid(parsed) != 0);
@@ -190,7 +190,7 @@ TEST_CASE("C-API Block - construct_from_data null data with non-zero size aborts
           "[C-API Block][precondition]") {
     KTH_EXPECT_ABORT({
         kth_block_mut_t out = NULL;
-        kth_chain_block_construct_from_data(NULL, 1, 1, &out);
+        kth_chain_block_construct_from_data(NULL, 1, &out);
     });
 }
 
@@ -198,7 +198,7 @@ TEST_CASE("C-API Block - construct_from_data null out aborts",
           "[C-API Block][precondition]") {
     uint8_t data[10];
     memset(data, 0, sizeof(data));
-    KTH_EXPECT_ABORT(kth_chain_block_construct_from_data(data, 10, 1, NULL));
+    KTH_EXPECT_ABORT(kth_chain_block_construct_from_data(data, 10, NULL));
 }
 
 TEST_CASE("C-API Block - copy null self aborts",

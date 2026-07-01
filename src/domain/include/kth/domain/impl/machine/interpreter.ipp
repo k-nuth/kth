@@ -2631,9 +2631,8 @@ interpreter::result interpreter::op_active_bytecode(program& program) {
 
     // Subset of active script starting at the most recent code separator (if any)
     // or the entire script if no code separators are present.
-    auto const& active = program.get_script();
     auto const begin_code_hash = program.jump();
-    auto const script_end = active.end();
+    auto const script_end = program.end();
 
     // Calculate the size of the active bytecode
     auto const script_size = size_t(script_end - begin_code_hash);

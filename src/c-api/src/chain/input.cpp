@@ -22,10 +22,6 @@ extern "C" {
 
 // Constructors
 
-kth_input_mut_t kth_chain_input_construct_default(void) {
-    return kth::leak<cpp_t>();
-}
-
 kth_error_code_t kth_chain_input_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_input_mut_t* out) {
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
@@ -90,16 +86,6 @@ kth_size_t kth_chain_input_serialized_size(kth_input_const_t self, kth_bool_t wi
 
 // Getters
 
-kth_payment_address_mut_t kth_chain_input_address(kth_input_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).address());
-}
-
-kth_payment_address_list_mut_t kth_chain_input_addresses(kth_input_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::leak_list<kth::domain::wallet::payment_address>(kth::cpp_ref<cpp_t>(self).addresses());
-}
-
 kth_output_point_const_t kth_chain_input_previous_output(kth_input_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return &(kth::cpp_ref<cpp_t>(self).previous_output());
@@ -115,6 +101,16 @@ uint32_t kth_chain_input_sequence(kth_input_const_t self) {
     return kth::cpp_ref<cpp_t>(self).sequence();
 }
 
+kth_payment_address_mut_t kth_chain_input_address(kth_input_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).address());
+}
+
+kth_payment_address_list_mut_t kth_chain_input_addresses(kth_input_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::leak_list<kth::domain::wallet::payment_address>(kth::cpp_ref<cpp_t>(self).addresses());
+}
+
 kth_error_code_t kth_chain_input_extract_embedded_script(kth_input_const_t self, KTH_OUT_OWNED kth_script_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
@@ -128,18 +124,18 @@ kth_error_code_t kth_chain_input_extract_embedded_script(kth_input_const_t self,
 
 // Setters
 
-void kth_chain_input_set_script(kth_input_mut_t self, kth_script_const_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth::cpp_ref<kth::domain::chain::script>(value);
-    kth::cpp_ref<cpp_t>(self).set_script(value_cpp);
-}
-
 void kth_chain_input_set_previous_output(kth_input_mut_t self, kth_output_point_const_t value) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(value != nullptr);
     auto const& value_cpp = kth::cpp_ref<kth::domain::chain::output_point>(value);
     kth::cpp_ref<cpp_t>(self).set_previous_output(value_cpp);
+}
+
+void kth_chain_input_set_script(kth_input_mut_t self, kth_script_const_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(value != nullptr);
+    auto const& value_cpp = kth::cpp_ref<kth::domain::chain::script>(value);
+    kth::cpp_ref<cpp_t>(self).set_script(value_cpp);
 }
 
 void kth_chain_input_set_sequence(kth_input_mut_t self, uint32_t value) {
@@ -149,11 +145,6 @@ void kth_chain_input_set_sequence(kth_input_mut_t self, uint32_t value) {
 
 
 // Predicates
-
-kth_bool_t kth_chain_input_is_valid(kth_input_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid());
-}
 
 kth_bool_t kth_chain_input_is_final(kth_input_const_t self) {
     KTH_PRECONDITION(self != nullptr);
@@ -168,11 +159,6 @@ kth_bool_t kth_chain_input_is_locked(kth_input_const_t self, kth_size_t block_he
 
 
 // Operations
-
-void kth_chain_input_reset(kth_input_mut_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).reset();
-}
 
 kth_size_t kth_chain_input_signature_operations(kth_input_const_t self, kth_bool_t bip16, kth_bool_t bip141) {
     KTH_PRECONDITION(self != nullptr);

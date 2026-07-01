@@ -79,12 +79,12 @@ kth_token_data_const_t kth_chain_output_token_data(kth_output_const_t self);
 
 // Setters
 
+KTH_EXPORT
+void kth_chain_output_set_value(kth_output_mut_t self, uint64_t value);
+
 /** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT
 void kth_chain_output_set_script(kth_output_mut_t self, kth_script_const_t value);
-
-KTH_EXPORT
-void kth_chain_output_set_value(kth_output_mut_t self, uint64_t value);
 
 /** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
 KTH_EXPORT

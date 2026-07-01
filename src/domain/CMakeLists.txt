@@ -162,25 +162,29 @@ if (ENABLE_SHARED)
 endif()
 
 set(kth_sources_just_legacy
-        src/chain/block_basis.cpp
         src/chain/block.cpp
         src/chain/chain_state.cpp
         src/chain/compact.cpp
-        src/chain/header_basis.cpp
-        src/chain/header.cpp
-        src/chain/input_basis.cpp
+        # Header v1: standalone value type, two impls selected by
+        # KTH_USE_HEADER_MEMBERS. Both TUs define the same qualified
+        # symbols (`kth::domain::chain::header::from_data`,
+        # `chain::hash(header const&)`, …) — compiling both together
+        # is an ODR violation that only *happens* to link because the
+        # static-archive linker picks the first definition and
+        # silently drops the second. Callers still see whichever
+        # `struct header` layout their TU included via the switching
+        # `header.hpp`, and the mismatched layout produces subtle
+        # UB. Pick exactly one here.
+        $<IF:$<BOOL:${KTH_USE_HEADER_MEMBERS}>,src/chain/header_members.cpp,src/chain/header_raw.cpp>
         src/chain/input.cpp
         src/chain/light_block.cpp
-        src/chain/output_basis.cpp
         src/chain/output.cpp
         src/chain/output_point.cpp
         src/chain/point.cpp
         src/chain/point_iterator.cpp
         src/chain/point_value.cpp
         src/chain/points_value.cpp
-        src/chain/script_basis.cpp
         src/chain/script.cpp
-        src/chain/transaction_basis.cpp
         src/chain/transaction.cpp
         src/chain/utxo.cpp
 
@@ -352,10 +356,7 @@ set(kth_headers
     include/kth/domain/concepts.hpp
     include/kth/domain/chain/points_value.hpp
     include/kth/domain/chain/chain_state.hpp
-    include/kth/domain/chain/header_basis.hpp
-    include/kth/domain/chain/block_basis.hpp
     include/kth/domain/chain/input_point.hpp
-    include/kth/domain/chain/input_basis.hpp
     include/kth/domain/chain/light_block.hpp
     include/kth/domain/chain/block.hpp
     include/kth/domain/chain/output.hpp
@@ -363,19 +364,17 @@ set(kth_headers
     include/kth/domain/chain/token_data.hpp
     include/kth/domain/chain/token_data_serialization.hpp
     include/kth/domain/chain/output_point.hpp
-    include/kth/domain/chain/hash_memoizer.hpp
-    include/kth/domain/chain/script_basis.hpp
-    include/kth/domain/chain/transaction_basis.hpp
     include/kth/domain/chain/stealth.hpp
     include/kth/domain/chain/point_iterator.hpp
     include/kth/domain/chain/header.hpp
+    include/kth/domain/chain/header_raw.hpp
+    include/kth/domain/chain/header_members.hpp
     include/kth/domain/chain/history.hpp
     include/kth/domain/chain/compact.hpp
     include/kth/domain/chain/input.hpp
     include/kth/domain/chain/script.hpp
     include/kth/domain/chain/transaction.hpp
     include/kth/domain/chain/point.hpp
-    include/kth/domain/chain/output_basis.hpp
     include/kth/domain/chain/point_value.hpp
     include/kth/domain/chain/utxo.hpp
     include/kth/domain/define.hpp
@@ -680,8 +679,17 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(kth_domain_bench_hash PRIVATE ${PROJECT_NAME})
   target_link_libraries(kth_domain_bench_hash PRIVATE nanobench::nanobench)
 
+  # to_data serialization benchmarks (per-type micro-benchmarks so we can
+  # compare the legacy data_sink/ostream_writer path here against the
+  # byte_writer path on PR #394)
+  add_executable(kth_domain_bench_to_data bench/to_data/benchmarks.cpp)
+  target_include_directories(kth_domain_bench_to_data PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/bench>)
+  target_link_libraries(kth_domain_bench_to_data PRIVATE ${PROJECT_NAME})
+  target_link_libraries(kth_domain_bench_to_data PRIVATE nanobench::nanobench)
+
   _group_sources(kth_domain_bench_merkle "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_hash "${CMAKE_CURRENT_LIST_DIR}/bench")
+  _group_sources(kth_domain_bench_to_data "${CMAKE_CURRENT_LIST_DIR}/bench")
 endif()
 
 # Examples

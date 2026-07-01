@@ -432,7 +432,7 @@ TEST_CASE("OP_CHECKLOCKTIMEVERIFY propagates top_number parse error",
     // Needs a transaction context with at least one input (CLTV
     // reads tx.inputs()[input_index]).
     chain::transaction tx;
-    tx.inputs().push_back(chain::input{});
+    tx.inputs().emplace_back(chain::output_point{}, chain::script{}, 0u);
     auto scr = script_of({operation(opcode::checklocktimeverify)});
     program prog(scr, tx, 0, script_flags::bip65_rule, 0);
     auto const result = interpreter::run(prog);
@@ -450,7 +450,7 @@ TEST_CASE("OP_CHECKSEQUENCEVERIFY propagates top_number parse error",
     // pre-check at the top of `op_check_sequence_verify` doesn't
     // preempt with its own error.
     chain::transaction tx;
-    tx.inputs().push_back(chain::input{});
+    tx.inputs().emplace_back(chain::output_point{}, chain::script{}, 0u);
     auto scr = script_of({
         operation(data_chunk{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}),
         operation(opcode::checksequenceverify),
