@@ -50,6 +50,18 @@ on:
         required: false
         type: boolean
         default: true
+      advisory:
+        description: >-
+          When true, non-passing Build / Package / Test steps are marked
+          `continue-on-error: true` so the job still exits green. Used
+          by the sanitizer matrix on `pull_request` events, where
+          UBSan findings surface as annotations but must not block a
+          merge (see main.yml). Job-level `continue-on-error` isn't
+          allowed on reusable-workflow callers, so we plumb the
+          advisory bit down to the step level here.
+        required: false
+        type: boolean
+        default: false
     secrets:
       CONAN_LOGIN_USERNAME:
         required: true
@@ -151,6 +163,10 @@ jobs:
           restore-keys: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-
 
       - name: 🔨 Build
+        # See `advisory` input above: PR sanitizer runs pass regardless
+        # of failure so the workflow exits green while still surfacing
+        # the finding on the job.
+        continue-on-error: ${{ inputs.advisory }}
         working-directory: .
         run: |
           # Prepare sanitizer flags
