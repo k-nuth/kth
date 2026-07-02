@@ -7,9 +7,6 @@
 #include <kth/domain/constants.hpp>
 // #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 // Libbitcon doesn't use this.
@@ -163,21 +160,7 @@ void alert_payload::reset() {
     reserved_.shrink_to_fit();
 }
 
-data_chunk alert_payload::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void alert_payload::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 size_t alert_payload::serialized_size(uint32_t /*version*/) const {
     size_t size = 40u +
@@ -336,6 +319,33 @@ void alert_payload::set_reserved(std::string const& value) {
 
 void alert_payload::set_reserved(std::string&& value) {
     reserved_ = std::move(value);
+}
+
+expect<void> alert_payload::to_data(byte_writer& writer, uint32_t version) const {
+        if (auto r = writer.write_little_endian<uint32_t>(this->version_); ! r) return r;
+        if (auto r = writer.write_little_endian<uint64_t>(relay_until_); ! r) return r;
+        if (auto r = writer.write_little_endian<uint64_t>(expiration_); ! r) return r;
+        if (auto r = writer.write_little_endian<uint32_t>(id_); ! r) return r;
+        if (auto r = writer.write_little_endian<uint32_t>(cancel_); ! r) return r;
+        if (auto r = writer.write_variable_little_endian(set_cancel_.size()); ! r) return r;
+
+        for (auto const& entry : set_cancel_) {
+            if (auto r = writer.write_little_endian<uint32_t>(entry); ! r) return r;
+}
+
+        if (auto r = writer.write_little_endian<uint32_t>(min_version_); ! r) return r;
+        if (auto r = writer.write_little_endian<uint32_t>(max_version_); ! r) return r;
+        if (auto r = writer.write_variable_little_endian(set_sub_version_.size()); ! r) return r;
+
+        for (auto const& entry : set_sub_version_) {
+            if (auto r = writer.write_string(entry); ! r) return r;
+}
+
+        if (auto r = writer.write_little_endian<uint32_t>(priority_); ! r) return r;
+        if (auto r = writer.write_string(comment_); ! r) return r;
+        if (auto r = writer.write_string(status_bar_); ! r) return r;
+        if (auto r = writer.write_string(reserved_); ! r) return r;
+        return {};
 }
 
 } // namespace kth::domain::message

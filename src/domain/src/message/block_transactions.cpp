@@ -8,10 +8,7 @@
 #include <kth/domain/message/version.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const block_transactions::command = "blocktxn";
@@ -75,21 +72,7 @@ expect<block_transactions> block_transactions::from_data(byte_reader& reader, ui
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk block_transactions::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void block_transactions::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 size_t block_transactions::serialized_size(uint32_t /*version*/) const {
     auto size = hash_size + infrastructure::message::variable_uint_size(transactions_.size());
@@ -129,5 +112,15 @@ void block_transactions::set_transactions(chain::transaction::list&& x) {
     transactions_ = std::move(x);
 }
 
+
+expect<void> block_transactions::to_data(byte_writer& writer, uint32_t version) const {
+        if (auto r = writer.write_hash(block_hash_); ! r) return r;
+        if (auto r = writer.write_variable_little_endian(transactions_.size()); ! r) return r;
+
+        for (auto const& element : transactions_) {
+            element.to_data(writer, /*wire*/ true);
+        }
+        return {};
+}
 
 } // namespace kth::domain::message

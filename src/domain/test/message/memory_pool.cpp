@@ -11,7 +11,7 @@ using namespace kd;
 
 TEST_CASE("memory pool - from data insufficient version failure", "[memory pool]") {
     message::memory_pool const expected;
-    data_chunk const data = expected.to_data(message::version::level::maximum);
+    data_chunk const data = kth::to_data_chunk(expected, message::version::level::maximum);
     message::memory_pool instance{};
     byte_reader reader(data);
     auto result = message::memory_pool::from_data(reader, message::memory_pool::version_minimum - 1);
@@ -21,7 +21,7 @@ TEST_CASE("memory pool - from data insufficient version failure", "[memory pool]
 
 TEST_CASE("memory pool - roundtrip to data factory from data chunk", "[memory pool]") {
     message::memory_pool const expected{};
-    auto const data = expected.to_data(message::version::level::maximum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::maximum);
     byte_reader reader(data);
     auto const result_exp = message::memory_pool::from_data(reader, message::version::level::maximum);
     REQUIRE(result_exp);

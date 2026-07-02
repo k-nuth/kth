@@ -99,13 +99,6 @@ kth_bool_t kth_chain_block_equals(kth_block_const_t self, kth_block_const_t othe
 
 // Serialization
 
-uint8_t* kth_chain_block_to_data_simple(kth_block_const_t self, kth_size_t* out_size) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(out_size != nullptr);
-    auto const data = kth::cpp_ref<cpp_t>(self).to_data();
-    return kth::create_c_array(data, *out_size);
-}
-
 kth_size_t kth_chain_block_serialized_size(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::cpp_ref<cpp_t>(self).serialized_size();
@@ -114,8 +107,7 @@ kth_size_t kth_chain_block_serialized_size(kth_block_const_t self) {
 uint8_t* kth_chain_block_to_data(kth_block_const_t self, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto const data = kth::cpp_ref<cpp_t>(self).to_data();
-    return kth::create_c_array(data, *out_size);
+    return kth::to_c_array_from(kth::cpp_ref<cpp_t>(self), *out_size);
 }
 
 

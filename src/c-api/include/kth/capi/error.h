@@ -236,6 +236,7 @@ typedef enum kth_error_code {
     // Domain object serialization/deserialization
     kth_ec_read_past_end_of_buffer,
     kth_ec_skip_past_end_of_buffer,
+    kth_ec_write_past_end_of_buffer,
     kth_ec_invalid_size,
     kth_ec_invalid_script_type,
     kth_ec_script_not_push_only,

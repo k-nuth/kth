@@ -249,7 +249,7 @@ TEST_CASE("double_spend_proof  serialized_size  matches to_data length", "[doubl
     // outpoint (36) + spender1 (108) + spender2 (108) = 252
     REQUIRE(size == 252u);
 
-    auto const raw = dsp.to_data(0);
+    auto const raw = kth::to_data_chunk(dsp, 0);
     REQUIRE(raw.size() == size);
 }
 

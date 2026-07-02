@@ -145,7 +145,7 @@ TEST_CASE("address from data roundtrip  success", "[address]") {
           "47816a40bb92bdb4e0b8256861f96a55"_base16,
           123u}});
 
-    auto const data = expected.to_data(version::level::minimum);
+    auto const data = kth::to_data_chunk(expected, version::level::minimum);
     byte_reader reader(data);
     auto const result_exp = address::from_data(reader, version::level::minimum);
     REQUIRE(result_exp);

@@ -139,7 +139,7 @@ TEST_CASE("headers from data insufficient version  failure", "[headers]") {
          6523454,
          68644}};
 
-    data_chunk const data = expected.to_data(headers::version_minimum);
+    data_chunk const data = kth::to_data_chunk(expected, headers::version_minimum);
     headers instance{};
     byte_reader reader(data);
     auto result = headers::from_data(reader, headers::version_minimum - 1);
@@ -156,7 +156,7 @@ TEST_CASE("headers from data valid input  success", "[headers]") {
          68644}};
 
     static auto const version = headers::version_minimum;
-    auto const data = expected.to_data(version);
+    auto const data = kth::to_data_chunk(expected, version);
     byte_reader reader(data);
     auto const result_exp = headers::from_data(reader, version);
     REQUIRE(result_exp);

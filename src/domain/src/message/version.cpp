@@ -6,9 +6,6 @@
 
 #include <algorithm>
 #include <kth/infrastructure/message/message_tools.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const version::command = "version";
@@ -136,21 +133,7 @@ expect<message::version> version::from_data(byte_reader& reader, uint32_t versio
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk version::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void version::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 size_t version::serialized_size(uint32_t version) const {
     auto size =
@@ -256,6 +239,23 @@ bool version::relay() const {
 
 void version::set_relay(bool relay) {
     relay_ = relay;
+}
+
+expect<void> version::to_data(byte_writer& writer, uint32_t version) const {
+        if (auto r = writer.write_little_endian<uint32_t>(value_); ! r) return r;
+        auto const effective_version = std::min(version, value_);
+        if (auto r = writer.write_little_endian<uint64_t>(services_); ! r) return r;
+        if (auto r = writer.write_little_endian<uint64_t>(timestamp_); ! r) return r;
+        if (auto r = address_receiver_.to_data(writer, version, false); ! r) return r;
+        if (auto r = address_sender_.to_data(writer, version, false); ! r) return r;
+        if (auto r = writer.write_little_endian<uint64_t>(nonce_); ! r) return r;
+        if (auto r = writer.write_string(user_agent_); ! r) return r;
+        if (auto r = writer.write_little_endian<uint32_t>(start_height_); ! r) return r;
+
+        if (effective_version >= level::bip37) {
+            if (auto r = writer.write_byte(relay_ ? 1 : 0); ! r) return r;
+        }
+        return {};
 }
 
 } // namespace kth::domain::message

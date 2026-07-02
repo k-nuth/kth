@@ -14,12 +14,8 @@
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
-
-
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/domain/concepts.hpp>
 
 namespace kth::domain::message {
@@ -69,27 +65,8 @@ struct KD_API merkle_block {
     expect<merkle_block> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
-    data_chunk to_data(uint32_t version) const;
+    expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
-    void to_data(uint32_t version, data_sink& stream) const;
-
-    template <typename W>
-    void to_data(uint32_t /*version*/, W& sink) const {
-        header_.to_data(sink);
-
-        auto const total32 = *safe_unsigned<uint32_t>(total_transactions_);
-        sink.write_4_bytes_little_endian(total32);
-        sink.write_variable_little_endian(hashes_.size());
-
-        for (auto const& hash : hashes_) {
-            sink.write_hash(hash);
-        }
-
-        sink.write_variable_little_endian(flags_.size());
-        sink.write_bytes(flags_);
-    }
-
-    //void to_data(uint32_t version, writer& sink) const;
     [[nodiscard]]
     bool is_valid() const;
 

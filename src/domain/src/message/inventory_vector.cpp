@@ -8,9 +8,6 @@
 #include <string>
 
 #include <kth/domain/message/inventory.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 uint32_t inventory_vector::to_number(type_id type) {
@@ -83,21 +80,7 @@ expect<inventory_vector> inventory_vector::from_data(byte_reader& reader, uint32
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk inventory_vector::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void inventory_vector::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 size_t inventory_vector::serialized_size(uint32_t version) const {
     return inventory_vector::satoshi_fixed_size(version);
@@ -142,6 +125,13 @@ hash_digest const& inventory_vector::hash() const {
 
 void inventory_vector::set_hash(hash_digest const& value) {
     hash_ = value;
+}
+
+expect<void> inventory_vector::to_data(byte_writer& writer, uint32_t version) const {
+        auto const raw_type = inventory_vector::to_number(type_);
+        if (auto r = writer.write_little_endian<uint32_t>(raw_type); ! r) return r;
+        if (auto r = writer.write_hash(hash_); ! r) return r;
+        return {};
 }
 
 } // namespace kth::domain::message

@@ -5,9 +5,6 @@
 #include <kth/domain/message/verack.hpp>
 
 #include <kth/domain/message/version.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const verack::command = "verack";
@@ -20,7 +17,7 @@ bool verack::is_valid() const {
 
 void verack::reset() {}
 
-// Deserialization.
+// Serialization.
 //-----------------------------------------------------------------------------
 
 // static
@@ -28,22 +25,8 @@ expect<verack> verack::from_data(byte_reader& /*reader*/, uint32_t /*version*/) 
     return verack();
 }
 
-// Serialization.
-//-----------------------------------------------------------------------------
-
-data_chunk verack::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-//TODO(fernando): empty?
-void verack::to_data(uint32_t /*version*/, data_sink& /*stream*/) const {
+expect<void> verack::to_data(byte_writer& /*writer*/, uint32_t /*version*/) const {
+    return {};
 }
 
 size_t verack::serialized_size(uint32_t version) const {

@@ -15,12 +15,14 @@
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/message/network_address.hpp>
 
-// Pretty printing operators for domain-specific types
+// Pretty printing operators for domain-specific types. All print via
+// `kth::to_data_chunk(x, args...)` so they stay in sync with the
+// byte_writer-based serialization API.
 namespace kth::infrastructure::message {
 
 inline
 std::ostream& operator<<(std::ostream& os, network_address const& x) {
-    os << encode_base16(x.to_data(kth::domain::message::version::level::minimum, false));
+    os << encode_base16(kth::to_data_chunk(x, kth::domain::message::version::level::minimum, false));
     return os;
 }
 
@@ -30,19 +32,19 @@ namespace kth::domain::chain {
 
 inline
 std::ostream& operator<<(std::ostream& os, input const& x) {
-    os << encode_base16(x.to_data());
+    os << encode_base16(kth::to_data_chunk(x, true));
     return os;
 }
 
 inline
 std::ostream& operator<<(std::ostream& os, output const& x) {
-    os << encode_base16(x.to_data());
+    os << encode_base16(kth::to_data_chunk(x, true));
     return os;
 }
 
 inline
 std::ostream& operator<<(std::ostream& os, transaction const& x) {
-    os << encode_base16(x.to_data());
+    os << encode_base16(kth::to_data_chunk(x, true));
     return os;
 }
 
@@ -52,7 +54,7 @@ namespace kth::domain::message {
 
 inline
 std::ostream& operator<<(std::ostream& os, prefilled_transaction const& x) {
-    os << encode_base16(x.to_data(version::level::minimum));
+    os << encode_base16(kth::to_data_chunk(x, version::level::minimum));
     return os;
 }
 

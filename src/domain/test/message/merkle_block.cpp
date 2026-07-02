@@ -131,7 +131,7 @@ TEST_CASE("from data insufficient version fails", "[merkle block]") {
         {"4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash},
         {0x00}};
 
-    auto const data = expected.to_data(message::version::level::maximum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::maximum);
     message::merkle_block instance{};
 
     byte_reader reader(data);
@@ -152,7 +152,7 @@ TEST_CASE("merkle block - roundtrip to data factory from data chunk", "[merkle b
         {"4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash},
         {0x00}};
 
-    auto const data = expected.to_data(message::version::level::maximum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::maximum);
     byte_reader reader(data);
     auto const result_exp = message::merkle_block::from_data(reader, message::version::level::maximum);
     REQUIRE(result_exp);

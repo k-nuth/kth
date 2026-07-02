@@ -13,7 +13,7 @@ namespace kth::database {
 template <typename Clock>
 std::expected<domain::chain::input_point, result_code> internal_database_basis<Clock>::get_spend(domain::chain::output_point const& point) const {
 
-    auto keyarr = point.to_data(KTH_INTERNAL_DB_WIRE);
+    auto keyarr = kth::to_data_chunk(point, KTH_INTERNAL_DB_WIRE);
     auto key = kth_db_make_value(keyarr.size(), keyarr.data());
     KTH_DB_val value;
 
@@ -42,8 +42,7 @@ std::expected<domain::chain::input_point, result_code> internal_database_basis<C
         return std::unexpected(result_code::other);
     }
 
-    byte_reader reader(data);
-    auto res_input = domain::chain::input_point::from_data(reader);
+    auto res_input = kth::from_data_chunk<domain::chain::input_point>(data);
     if ( ! res_input) {
         return std::unexpected(result_code::other);
     }
@@ -56,10 +55,10 @@ std::expected<domain::chain::input_point, result_code> internal_database_basis<C
 template <typename Clock>
 result_code internal_database_basis<Clock>::insert_spend(domain::chain::output_point const& out_point, domain::chain::input_point const& in_point, KTH_DB_txn* db_txn) {
 
-    auto keyarr = out_point.to_data(KTH_INTERNAL_DB_WIRE);
+    auto keyarr = kth::to_data_chunk(out_point, KTH_INTERNAL_DB_WIRE);
     auto key = kth_db_make_value(keyarr.size(), keyarr.data());
 
-    auto value_arr = in_point.to_data();
+    auto value_arr = kth::to_data_chunk(in_point, true);
     auto value = kth_db_make_value(value_arr.size(), value_arr.data());
 
     auto res = kth_db_put(db_txn, dbi_spend_db_, &key, &value, KTH_DB_NOOVERWRITE);
@@ -99,8 +98,8 @@ result_code internal_database_basis<Clock>::remove_transaction_spend_db(domain::
 template <typename Clock>
 result_code internal_database_basis<Clock>::remove_spend(domain::chain::output_point const& out_point, KTH_DB_txn* db_txn) {
 
-    auto keyarr = out_point.to_data(KTH_INTERNAL_DB_WIRE);      //TODO(fernando): podría estar afuera de la DBTx
-    auto key = kth_db_make_value(keyarr.size(), keyarr.data());                     //TODO(fernando): podría estar afuera de la DBTx
+    auto keyarr = kth::to_data_chunk(out_point, KTH_INTERNAL_DB_WIRE);
+    auto key = kth_db_make_value(keyarr.size(), keyarr.data());
 
     auto res = kth_db_del(db_txn, dbi_spend_db_, &key, NULL);
 

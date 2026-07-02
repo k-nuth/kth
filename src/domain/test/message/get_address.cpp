@@ -11,7 +11,7 @@ using namespace kd;
 
 TEST_CASE("get address - roundtrip to data factory from data chunk", "[get address]") {
     const message::get_address expected{};
-    auto const data = expected.to_data(message::version::level::minimum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::minimum);
     byte_reader reader(data);
     auto const result_exp = message::get_address::from_data(reader, message::version::level::minimum);
     REQUIRE(result_exp);

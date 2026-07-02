@@ -3,12 +3,16 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 // Micro-benchmarks for `to_data(...)` across the chain types. On this
-// branch the serialization path is the legacy `data_sink` + `ostream_writer`
-// stack — every write goes through a boost::iostreams sink into a
-// growing `data_chunk`. The sibling PR #394 replaces that with
-// `byte_writer` writing into a pre-sized `data_chunk` in one shot; the
-// benchmark file over there is a straight adaptation of this one so the
-// numbers are directly comparable.
+// branch the serialization path is the new `byte_writer` API: every
+// write is bounds-checked against a caller-owned `data_chunk` sized to
+// the exact `serialized_size(...)`. The helper `kth::to_data_chunk(x,
+// args...)` (in `<kth/infrastructure/utility/byte_writer.hpp>`) folds
+// the allocate/write/return dance into one call so the callsite reads
+// like the old convenience overload.
+//
+// The parent PR #387 has the same benchmark file measuring the legacy
+// `data_sink` + `ostream_writer` stack; the two runs share fixtures
+// and are directly comparable.
 
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
@@ -27,6 +31,7 @@
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/infrastructure/math/hash.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
 using namespace kth;
@@ -123,19 +128,21 @@ block make_block(size_t tx_count, uint32_t salt) {
 }
 
 // -----------------------------------------------------------------------------
-// Legacy `to_data(...)` calls. These return a fresh `data_chunk` built by
-// the `data_sink`/`ostream_writer` stack. `doNotOptimizeAway` on the
-// result keeps the compiler from folding the whole call away.
+// `byte_writer`-backed `to_data(...)` calls via the `to_data_chunk` helper.
+// The helper allocates the buffer sized to `serialized_size(args...)`,
+// constructs a `byte_writer` over it, and returns the filled `data_chunk`
+// in one call. `doNotOptimizeAway` on the result keeps the compiler from
+// folding the whole call away.
 // -----------------------------------------------------------------------------
 
 void bench_point(Bench& b) {
     auto const p = make_point(1);
     b.run("point::to_data(wire)", [&] {
-        auto data = p.to_data(true);
+        auto data = kth::to_data_chunk(p, true);
         ankerl::nanobench::doNotOptimizeAway(data);
     });
     b.run("point::to_data(!wire)", [&] {
-        auto data = p.to_data(false);
+        auto data = kth::to_data_chunk(p, false);
         ankerl::nanobench::doNotOptimizeAway(data);
     });
 }
@@ -144,11 +151,11 @@ void bench_script(Bench& b) {
     auto const s_small = make_script(25, 2);
     auto const s_large = make_script(400, 3);
     b.run("script::to_data(prefix) [25B]", [&] {
-        auto data = s_small.to_data(true);
+        auto data = kth::to_data_chunk(s_small, true);
         ankerl::nanobench::doNotOptimizeAway(data);
     });
     b.run("script::to_data(prefix) [400B]", [&] {
-        auto data = s_large.to_data(true);
+        auto data = kth::to_data_chunk(s_large, true);
         ankerl::nanobench::doNotOptimizeAway(data);
     });
 }
@@ -156,7 +163,7 @@ void bench_script(Bench& b) {
 void bench_input(Bench& b) {
     auto const in = make_input(4);
     b.run("input::to_data(wire)", [&] {
-        auto data = in.to_data(true);
+        auto data = kth::to_data_chunk(in, true);
         ankerl::nanobench::doNotOptimizeAway(data);
     });
 }
@@ -164,7 +171,7 @@ void bench_input(Bench& b) {
 void bench_output(Bench& b) {
     auto const out = make_output(5);
     b.run("output::to_data(wire)", [&] {
-        auto data = out.to_data(true);
+        auto data = kth::to_data_chunk(out, true);
         ankerl::nanobench::doNotOptimizeAway(data);
     });
 }
@@ -173,11 +180,11 @@ void bench_transaction(Bench& b) {
     auto const tx_small = make_transaction(1, 2, 6);
     auto const tx_big = make_transaction(20, 20, 7);
     b.run("transaction::to_data(wire) [1in/2out]", [&] {
-        auto data = tx_small.to_data(true);
+        auto data = kth::to_data_chunk(tx_small, true);
         ankerl::nanobench::doNotOptimizeAway(data);
     });
     b.run("transaction::to_data(wire) [20in/20out]", [&] {
-        auto data = tx_big.to_data(true);
+        auto data = kth::to_data_chunk(tx_big, true);
         ankerl::nanobench::doNotOptimizeAway(data);
     });
 }
@@ -186,11 +193,11 @@ void bench_block(Bench& b) {
     auto const blk_small = make_block(10, 8);
     auto const blk_large = make_block(500, 9);
     b.run("block::to_data() [10 tx]", [&] {
-        auto data = blk_small.to_data();
+        auto data = kth::to_data_chunk(blk_small);
         ankerl::nanobench::doNotOptimizeAway(data);
     });
     b.run("block::to_data() [500 tx]", [&] {
-        auto data = blk_large.to_data();
+        auto data = kth::to_data_chunk(blk_large);
         ankerl::nanobench::doNotOptimizeAway(data);
     });
 }
@@ -201,7 +208,7 @@ void bench_block(Bench& b) {
 
 int main() {
     Bench bench;
-    bench.title("to_data (legacy data_sink/ostream_writer path)")
+    bench.title("to_data (byte_writer path via kth::to_data_chunk)")
          .unit("op")
          .minEpochIterations(50);
 

@@ -28,10 +28,9 @@
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/machine/script_version.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
 
 #include <kth/domain/concepts.hpp>
 
@@ -96,23 +95,8 @@ struct KD_API script {
     [[nodiscard]]
     bool is_valid_operations() const;
 
-    // Serialization.
-    //-------------------------------------------------------------------------
-
     [[nodiscard]]
-    data_chunk to_data(bool prefix) const;
-
-    void to_data(data_sink& stream, bool prefix) const;
-
-    template <typename W>
-    void to_data(W& sink, bool prefix) const {
-        // TODO(legacy): optimize by always storing the prefixed serialization.
-        if (prefix) {
-            sink.write_variable_little_endian(serialized_size(false));
-        }
-
-        sink.write_bytes(bytes_);
-    }
+    expect<void> to_data(byte_writer& writer, bool prefix) const;
 
     [[nodiscard]]
     std::string to_string(script_flags_t active_flags) const;

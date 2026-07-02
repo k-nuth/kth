@@ -11,7 +11,7 @@ using namespace kd;
 
 TEST_CASE("verack - roundtrip to data factory from data chunk", "[verack]") {
     const message::verack expected{};
-    auto const data = expected.to_data(message::version::level::minimum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::minimum);
     byte_reader reader(data);
     auto const result_exp = message::verack::from_data(reader, message::version::level::minimum);
     REQUIRE(result_exp);

@@ -10,8 +10,6 @@
 
 #include <kth/domain/constants.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::domain::chain {
 
@@ -41,7 +39,7 @@ bool operator==(output const& a, output const& b) {
         && a.token_data_ == b.token_data_;
 }
 
-// Deserialization.
+// Serialization.
 //-----------------------------------------------------------------------------
 
 void output::reset() {
@@ -110,35 +108,66 @@ expect<output> output::from_data(byte_reader& reader, bool wire) {
     return result;
 }
 
-// Serialization.
-//-----------------------------------------------------------------------------
+expect<void> output::to_data(byte_writer& writer, bool wire) const {
+    auto const start = writer.position();
+    if ( ! wire) {
+        auto const height32 = *safe_unsigned<uint32_t>(validation.spender_height);
+        if (auto r = writer.write_little_endian<uint32_t>(height32); ! r) {
+            return r;
+        }
+    }
 
-data_chunk output::to_data(bool wire) const {
-    data_chunk data;
-    auto const size = serialized_size(wire);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(ostream, wire);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
+    if (auto r = writer.write_little_endian<uint64_t>(value_); ! r) {
+        return r;
+    }
 
-void output::to_data(data_sink& stream, bool wire) const {
-    ostream_writer sink_w(stream);
-    to_data(sink_w, wire);
+    if ( ! token_data_.has_value()) {
+        auto const r = script_.to_data(writer, true);
+        KTH_CONTRACT(writer.position() - start == serialized_size(wire));
+        return r;
+    }
+
+    auto const size = token::encoding::serialized_size(token_data_) + script_.serialized_size(false) + 1;
+    if (auto r = writer.write_variable_little_endian(size); ! r) {
+        return r;
+    }
+
+    if (auto r = writer.write_byte(chain::encoding::PREFIX_BYTE); ! r) {
+        return r;
+    }
+    if (auto r = token::encoding::to_data(writer, token_data_.value()); ! r) {
+        return r;
+    }
+    auto const r = script_.to_data(writer, false);
+    KTH_CONTRACT(writer.position() - start == serialized_size(wire));
+    return r;
 }
 
 // Size.
 //-----------------------------------------------------------------------------
 
 size_t output::serialized_size(bool wire) const {
-    // validation.spender_height is size_t stored as uint32_t.
-    auto const wire_size =
-        sizeof(value_) +
-        script_.serialized_size(true) +
-        token::encoding::serialized_size(token_data_) +
-        size_t(token_data_.has_value());
+    // Wire format:
+    //   value(8) + script                     (no token)
+    //   value(8) + varint(wrapper_size) + prefix_byte(1) + token + script_bytes  (with token)
+    // The tokenized branch prefixes the whole wrapper (prefix+token+script_bytes)
+    // with a single varint, NOT the bare script bytes. Using
+    // `script_.serialized_size(true)` here would embed `varint(script_bytes)`
+    // which is a different length than `varint(wrapper_size)` whenever the
+    // two values fall on opposite sides of a varint boundary (e.g. one fits
+    // in 1 byte, the other needs 3). That mismatch used to be masked by the
+    // growable `data_sink`; the fixed-size `byte_writer` truncates instead.
+    size_t wire_size;
+    if (token_data_.has_value()) {
+        auto const token_size = token::encoding::serialized_size(token_data_);
+        auto const script_size = script_.serialized_size(false);
+        auto const wrapper_size = 1 /*prefix*/ + token_size + script_size;
+        wire_size = sizeof(value_)
+                  + kth::size_variable_integer(wrapper_size)
+                  + wrapper_size;
+    } else {
+        wire_size = sizeof(value_) + script_.serialized_size(true);
+    }
 
     return (wire ? 0 : sizeof(uint32_t)) + wire_size;
 }

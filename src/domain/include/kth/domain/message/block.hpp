@@ -16,11 +16,8 @@
 #include <kth/domain/define.hpp>
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-
-
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/domain/concepts.hpp>
 
 
@@ -50,9 +47,8 @@ public:
     bool operator==(block const& x) const;
     bool operator!=(block const& x) const;
 
-    // Deserialization.
+    // Serialization.
     //-------------------------------------------------------------------------
-
     static
     expect<block> from_data(byte_reader& reader, uint32_t /*version*/);
 
@@ -60,15 +56,9 @@ public:
     //-------------------------------------------------------------------------
 
 
-    data_chunk to_data(uint32_t version) const;
-    void to_data(uint32_t version, data_sink& stream) const;
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
-    template <typename W>
-    void to_data(uint32_t /*version*/, W& sink) const {
-        chain::block::to_data(sink);
-    }
-
-    //void to_data(uint32_t version, writer& sink) const;
     size_t serialized_size(uint32_t version) const;
 
 
@@ -81,19 +71,6 @@ public:
     static
     uint32_t const version_maximum;
 };
-
-//TODO(fernando): check this family of functions: to_data_header_nonce
-template <typename W>
-void to_data_header_nonce(block const& block, uint64_t nonce, W& sink) {
-    block.header().to_data(sink);
-    sink.write_8_bytes_little_endian(nonce);
-}
-// void to_data_header_nonce(block const& block, uint64_t nonce, writer& sink);
-
-// void to_data_header_nonce(block const& block, uint64_t nonce, std::ostream& stream);
-void to_data_header_nonce(block const& block, uint64_t nonce, data_sink& stream);
-
-data_chunk to_data_header_nonce(block const& block, uint64_t nonce);
 
 hash_digest hash(block const& block, uint64_t nonce);
 

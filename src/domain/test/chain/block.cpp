@@ -296,7 +296,7 @@ TEST_CASE("block from data genesis mainnet  success", "[block serialization]") {
     REQUIRE(genesis.header().serialized_size() == 80u);
 
     // Save genesis block.
-    auto const raw_block = genesis.to_data();
+    auto const raw_block = kth::to_data_chunk(genesis);
     REQUIRE(raw_block.size() == 285u);
 
     // Reload genesis block.
@@ -318,7 +318,7 @@ TEST_CASE("block  factory from data 2  genesis mainnet  success", "[block serial
     REQUIRE(genesis.header().serialized_size() == 80u);
 
     // Save genesis block.
-    auto const raw_block = genesis.to_data();
+    auto const raw_block = kth::to_data_chunk(genesis);
     REQUIRE(raw_block.size() == 285u);
 
     // Reload genesis block.
@@ -340,7 +340,7 @@ TEST_CASE("block  factory from data 3  genesis mainnet  success", "[block serial
     REQUIRE(genesis.header().serialized_size() == 80u);
 
     // Save genesis block.
-    data_chunk const raw_block = genesis.to_data();
+    data_chunk const raw_block = kth::to_data_chunk(genesis);
     REQUIRE(raw_block.size() == 285u);
 
     // Reload genesis block.
@@ -398,7 +398,7 @@ TEST_CASE("block  generate merkle root  block with multiple transactions  matche
     auto const& block100k = *result;
     REQUIRE(block100k.is_valid());
 
-    auto const serial = block100k.to_data();
+    auto const serial = kth::to_data_chunk(block100k);
     REQUIRE(raw == serial);
 
     auto const header = block100k.header();

@@ -7,9 +7,6 @@
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 #if defined(KTH_CURRENCY_BCH)
@@ -65,21 +62,7 @@ expect<prefilled_transaction> prefilled_transaction::from_data(byte_reader& read
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk prefilled_transaction::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void prefilled_transaction::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 size_t prefilled_transaction::serialized_size(uint32_t /*version*/) const {
     return infrastructure::message::variable_uint_size(index_) +
@@ -108,6 +91,12 @@ void prefilled_transaction::set_transaction(chain::transaction const& tx) {
 
 void prefilled_transaction::set_transaction(chain::transaction&& tx) {
     transaction_ = std::move(tx);
+}
+
+expect<void> prefilled_transaction::to_data(byte_writer& writer, uint32_t version) const {
+        if (auto r = writer.write_variable_little_endian(index_); ! r) return r;
+        transaction_.to_data(writer, true);
+        return {};
 }
 
 } // namespace kth::domain::message

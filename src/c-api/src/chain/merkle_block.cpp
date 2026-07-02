@@ -84,7 +84,7 @@ kth_bool_t kth_chain_merkle_block_equals(kth_merkle_block_const_t self, kth_merk
 uint8_t* kth_chain_merkle_block_to_data(kth_merkle_block_const_t self, uint32_t version, kth_size_t* out_size) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto const data = kth::cpp_ref<cpp_t>(self).to_data(version);
+    auto const data = kth::to_data_chunk(kth::cpp_ref<cpp_t>(self), version);
     return kth::create_c_array(data, *out_size);
 }
 

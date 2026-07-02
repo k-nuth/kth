@@ -74,7 +74,7 @@ TEST_CASE("get block transactions from data valid input  success", "[get block t
          37,
          44}};
 
-    auto const data = expected.to_data(message::version::level::minimum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::minimum);
     byte_reader reader(data);
     auto const result_exp = message::get_block_transactions::from_data(reader, message::version::level::minimum);
     REQUIRE(result_exp);

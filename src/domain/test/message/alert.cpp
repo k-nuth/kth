@@ -129,7 +129,7 @@ TEST_CASE("alert from data wiki sample  success", "[alert]") {
     REQUIRE(raw.size() == result.serialized_size(message::version::level::minimum));
     REQUIRE(result == expected);
 
-    auto const data = expected.to_data(message::version::level::minimum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::minimum);
 
     REQUIRE(raw.size() == data.size());
     REQUIRE(data.size() == expected.serialized_size(message::version::level::minimum));
@@ -140,7 +140,7 @@ TEST_CASE("alert from data roundtrip  success", "[alert]") {
         {0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
         {0x04, 0xff, 0xab, 0xcd, 0xee}};
 
-    auto const data = expected.to_data(message::version::level::minimum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::minimum);
     byte_reader reader(data);
     auto const result_exp = message::alert::from_data(reader, message::version::level::minimum);
     REQUIRE(result_exp);

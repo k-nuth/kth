@@ -114,7 +114,7 @@ TEST_CASE("not found from data insufficient version  failure", "[not found]") {
             0x37, 0xc0, 0xb0, 0x32, 0xf0, 0xd6, 0x6e, 0xdf}}}}};
 
     auto const version = version::level::maximum;
-    data_chunk const raw = expected.to_data(version);
+    data_chunk const raw = kth::to_data_chunk(expected, version);
     not_found instance;
     byte_reader reader(raw);
     auto result = not_found::from_data(reader, not_found::version_minimum - 1);
@@ -131,7 +131,7 @@ TEST_CASE("not found from data valid input  success", "[not found]") {
             0x37, 0xc0, 0xb0, 0x32, 0xf0, 0xd6, 0x6e, 0xdf}}}}};
 
     auto const version = version::level::maximum;
-    auto const data = expected.to_data(version);
+    auto const data = kth::to_data_chunk(expected, version);
     byte_reader reader(data);
     auto const result_exp = not_found::from_data(reader, version);
     REQUIRE(result_exp);

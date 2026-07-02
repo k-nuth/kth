@@ -8,9 +8,6 @@
 #include <kth/infrastructure/message/message_tools.hpp>
 // #include <kth/domain/message/transaction.hpp>
 #include <kth/domain/message/version.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const reject::command = "reject";
@@ -130,21 +127,7 @@ expect<reject> reject::from_data(byte_reader& reader, uint32_t version) {
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk reject::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void reject::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 size_t reject::serialized_size(uint32_t /*version*/) const {
     size_t size = 1u + infrastructure::message::variable_uint_size(message_.size()) +
@@ -255,6 +238,18 @@ uint8_t reject::reason_to_byte(reason_code value) {
         default:
             return 0x00;
     }
+}
+
+expect<void> reject::to_data(byte_writer& writer, uint32_t version) const {
+        if (auto r = writer.write_string(message_); ! r) return r;
+        if (auto r = writer.write_byte(reason_to_byte(code_)); ! r) return r;
+        if (auto r = writer.write_string(reason_); ! r) return r;
+
+        if ((message_ == block::command) ||
+            (message_ == transaction::command)) {
+            if (auto r = writer.write_hash(data_); ! r) return r;
+        }
+        return {};
 }
 
 } // namespace kth::domain::message

@@ -8,10 +8,7 @@
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const filter_add::command = "filteradd";
@@ -70,21 +67,7 @@ expect<filter_add> filter_add::from_data(byte_reader& reader, uint32_t version) 
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk filter_add::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void filter_add::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 size_t filter_add::serialized_size(uint32_t /*version*/) const {
     return infrastructure::message::variable_uint_size(data_.size()) + data_.size();
@@ -104,6 +87,12 @@ void filter_add::set_data(data_chunk const& value) {
 
 void filter_add::set_data(data_chunk&& value) {
     data_ = std::move(value);
+}
+
+expect<void> filter_add::to_data(byte_writer& writer, uint32_t version) const {
+        if (auto r = writer.write_variable_little_endian(data_.size()); ! r) return r;
+        if (auto r = writer.write_bytes(data_); ! r) return r;
+        return {};
 }
 
 } // namespace kth::domain::message
