@@ -31,31 +31,33 @@ struct KD_API transaction_unconfirmed_entry {
     static
     size_t serialized_size(domain::chain::transaction const& tx);
 
-    data_chunk to_data() const;
-    void to_data(std::ostream& stream) const;
-
-
-    template <typename W, KTH_IS_WRITER(W)>
-    void to_data(W& sink) const {
-        factory_to_data(sink, transaction_, arrival_time_, height_);
+    // Instance-side wrapper so the type satisfies `kth::Serializable`
+    // and can flow through `kth::to_data_chunk`.
+    [[nodiscard]]
+    size_t serialized_size() const {
+        return serialized_size(transaction_);
     }
 
     static
     expect<transaction_unconfirmed_entry> from_data(byte_reader& reader);
 
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer) const {
+        return factory_to_data(writer, transaction_, arrival_time_, height_);
+    }
+
+    data_chunk to_data() const;
+
+    [[nodiscard]]
+    static
+    expect<void> factory_to_data(byte_writer& writer, domain::chain::transaction const& tx, uint32_t arrival_time, uint32_t height) {
+        if (auto r = tx.to_data(writer, false); ! r) return r;
+        if (auto r = writer.write_little_endian<uint32_t>(arrival_time); ! r) return r;
+        return writer.write_little_endian<uint32_t>(height);
+    }
+
     static
     data_chunk factory_to_data(domain::chain::transaction const& tx, uint32_t arrival_time, uint32_t height);
-
-    static
-    void factory_to_data(std::ostream& stream, domain::chain::transaction const& tx, uint32_t arrival_time, uint32_t height);
-
-    template <typename W, KTH_IS_WRITER(W)>
-    static
-    void factory_to_data(W& sink, domain::chain::transaction const& tx, uint32_t arrival_time, uint32_t height) {
-        tx.to_data(sink, false);
-        sink.write_4_bytes_little_endian(arrival_time);
-        sink.write_4_bytes_little_endian(height);
-    }
 
 private:
     void reset();

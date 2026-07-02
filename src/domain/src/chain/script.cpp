@@ -32,9 +32,7 @@
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 #include <kth/infrastructure/utility/string.hpp>
 
 using namespace kth::domain::machine;
@@ -60,8 +58,7 @@ script::script(operation::list&& ops) {
 
 script::script(data_chunk&& encoded, bool prefix) {
     if (prefix) {
-        byte_reader reader(encoded);
-        auto obj = from_data(reader, prefix);
+        auto obj = kth::from_data_chunk<script>(encoded, prefix);
         if ( ! obj) {
             valid_ = false;
             return;
@@ -77,8 +74,7 @@ script::script(data_chunk&& encoded, bool prefix) {
 }
 
 script::script(data_chunk const& encoded, bool prefix) {
-    byte_reader reader(encoded);
-    auto obj = from_data(reader, prefix);
+    auto obj = kth::from_data_chunk<script>(encoded, prefix);
     if ( ! obj) {
         valid_ = false;
         return;
@@ -87,7 +83,7 @@ script::script(data_chunk const& encoded, bool prefix) {
     *this = std::move(obj.value());
 }
 
-// Deserialization.
+// Serialization.
 //-----------------------------------------------------------------------------
 
 // static
@@ -199,23 +195,14 @@ bool script::is_valid_operations() const {
     return ops.empty() || ops.back().is_valid();
 }
 
-// Serialization.
-//-----------------------------------------------------------------------------
-
-data_chunk script::to_data(bool prefix) const {
-    data_chunk data;
-    auto const size = serialized_size(prefix);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(ostream, prefix);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-void script::to_data(data_sink& stream, bool prefix) const {
-    ostream_writer sink_w(stream);
-    to_data(sink_w, prefix);
+expect<void> script::to_data(byte_writer& writer, bool prefix) const {
+    // TODO(legacy): optimize by always storing the prefixed serialization.
+    if (prefix) {
+        if (auto r = writer.write_variable_little_endian(serialized_size(false)); ! r) {
+            return r;
+        }
+    }
+    return writer.write_bytes(bytes_);
 }
 
 std::string script::to_string(script_flags_t active_flags) const {
@@ -262,7 +249,7 @@ inline
 std::pair<hash_digest, size_t> signature_hash(transaction const& tx, uint32_t sighash_type) {
     KTH_ASSERT( ! tx.is_coinbase());
 
-    auto serialized = tx.to_data(true);
+    auto serialized = to_data_chunk(tx, true);
     extend_data(serialized, to_little_endian(sighash_type));
     return {bitcoin_hash(serialized), serialized.size()};
 }
@@ -438,12 +425,27 @@ std::pair<hash_digest, size_t> script::generate_version_0_signature_hash(
     auto const& input = tx.inputs()[input_index];
     auto const& prevout = input.previous_output().validation.cache;
     KTH_ASSERT(prevout.is_valid());
-    auto const size = preimage_size(script_code.serialized_size(true));
+    auto size = preimage_size(script_code.serialized_size(true));
+    // preimage_size() covers the fixed 11 required fields only. Two
+    // BCH-native additions to the sighash preimage (utxos hash after
+    // field 2, and per-input token data after field 5) are opt-in per
+    // sighash flag and consensus activation. When either fires the
+    // buffer must grow to cover them or the writes below silently no-op
+    // in release builds (KTH_ASSERT is compiled out), producing a
+    // truncated sighash and NULLFAIL on every downstream signature.
+#if defined(KTH_CURRENCY_BCH)
+    auto const tokens_active = is_enabled(active_flags,
+        domain::machine::script_flags::bch_tokens);
+    if (tokens_active && (sighash_type & sighash_algorithm::utxos) != 0) {
+        size += hash_size;
+    }
+    if (tokens_active && prevout.token_data().has_value()) {
+        size += 1 /*prefix*/ + chain::token::encoding::serialized_size(prevout.token_data());
+    }
+#endif
 
-    data_chunk data;
-    data.reserve(size);
-    data_sink ostream(data);
-    ostream_writer sink_w(ostream);
+    data_chunk data(size);
+    byte_writer writer(data);
 
     auto const sighash = to_sighash_enum(sighash_type);
     auto const any = (sighash_type & sighash_algorithm::anyone_can_pay) != 0;
@@ -461,55 +463,62 @@ std::pair<hash_digest, size_t> script::generate_version_0_signature_hash(
     auto const all = sighash == sighash_algorithm::all;
 #endif
 
+    auto const single_out_hash = [&]() {
+        auto const& out = tx.outputs()[input_index];
+        return bitcoin_hash(to_data_chunk(out, true));
+    };
+
+    auto const write_ok = [&](expect<void> const& r) {
+        KTH_CONTRACT(r.has_value());
+    };
+
     // 1. transaction version (4-byte little endian).
-    sink_w.write_little_endian(tx.version());
+    write_ok(writer.write_little_endian<uint32_t>(tx.version()));
 
     // 2. inpoints hash (32-byte hash).
-    sink_w.write_hash( ! any ? tx.inpoints_hash() : null_hash);
+    write_ok(writer.write_hash( ! any ? tx.inpoints_hash() : null_hash));
 
     // 3. Optional utxos hash (32-byte hash).
     if (is_enabled(active_flags, domain::machine::script_flags::bch_tokens) && utxos) {
-        sink_w.write_hash(tx.utxos_hash());
+        write_ok(writer.write_hash(tx.utxos_hash()));
     }
 
     // 4. sequences hash (32-byte hash).
-    sink_w.write_hash( ! any && all ? tx.sequences_hash() : null_hash);
+    write_ok(writer.write_hash( ! any && all ? tx.sequences_hash() : null_hash));
 
     // 5. outpoint (32-byte hash + 4-byte little endian).
-    input.previous_output().to_data(sink_w);
+    write_ok(input.previous_output().to_data(writer, true));
 
     // 6. Optional token data (variable size).
     if (is_enabled(active_flags, domain::machine::script_flags::bch_tokens) && prevout.token_data().has_value()) {
         auto const& token_data = prevout.token_data().value();
-        sink_w.write_byte(chain::encoding::PREFIX_BYTE);
-        chain::token::encoding::to_data(sink_w, token_data);
+        write_ok(writer.write_byte(chain::encoding::PREFIX_BYTE));
+        write_ok(chain::token::encoding::to_data(writer, token_data));
     }
 
     // 7. script of the input (with prefix).
-    script_code.to_data(sink_w, true);
+    write_ok(script_code.to_data(writer, true));
 
     // 8. value of the output spent by this input (8-byte little endian).
-    sink_w.write_little_endian(value);
+    write_ok(writer.write_little_endian<uint64_t>(value));
 
     // 9. sequence of the input (4-byte little endian).
-    sink_w.write_little_endian(input.sequence());
+    write_ok(writer.write_little_endian<uint32_t>(input.sequence()));
 
     // 10. outputs hash (32-byte hash).
-    sink_w.write_hash(all ?
+    write_ok(writer.write_hash(all ?
         tx.outputs_hash() :
         (single && input_index < tx.outputs().size() ?
-            bitcoin_hash(tx.outputs()[input_index].to_data()) :
-            null_hash));
+            single_out_hash() :
+            null_hash)));
 
     // 11. transaction locktime (4-byte little endian).
-    sink_w.write_little_endian(tx.locktime());
+    write_ok(writer.write_little_endian<uint32_t>(tx.locktime()));
 
     // 12. sighash type of the signature (4-byte [not 1] little endian).
-    sink_w.write_4_bytes_little_endian(sighash_type);
+    write_ok(writer.write_little_endian<uint32_t>(sighash_type));
 
-    ostream.flush();
-
-    KTH_ASSERT(data.size() == size);
+    KTH_CONTRACT(writer.position() == data.size());
     return {bitcoin_hash(data), data.size()};
 }
 

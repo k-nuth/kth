@@ -42,7 +42,7 @@ TEST_CASE("send compact  constructor 4  always  equals params", "[send compact]"
 
 TEST_CASE("send compact from data valid input  success", "[send compact]") {
     const message::send_compact expected{true, 164};
-    auto const data = expected.to_data(message::send_compact::version_minimum);
+    auto const data = kth::to_data_chunk(expected, message::send_compact::version_minimum);
     byte_reader reader(data);
     auto const result_exp = message::send_compact::from_data(reader, message::send_compact::version_minimum);
     REQUIRE(result_exp);
@@ -67,7 +67,7 @@ TEST_CASE("send compact  from data 1  invalid mode byte  failure", "[send compac
 
 TEST_CASE("send compact  from data 1  insufficient version  failure", "[send compact]") {
     const message::send_compact expected{true, 257};
-    data_chunk raw_data = expected.to_data(message::send_compact::version_minimum);
+    data_chunk raw_data = kth::to_data_chunk(expected, message::send_compact::version_minimum);
     message::send_compact msg;
     byte_reader reader(raw_data);
     auto exp_result = message::send_compact::from_data(reader, message::send_compact::version_minimum - 1);

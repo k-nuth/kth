@@ -13,9 +13,7 @@
 #include <kth/domain/machine/opcode.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 #include <kth/infrastructure/utility/string.hpp>
 
 namespace kth::domain::machine {
@@ -179,19 +177,31 @@ expect<operation> operation::from_data(byte_reader& reader) {
 //-----------------------------------------------------------------------------
 
 data_chunk operation::to_data() const {
-    data_chunk data;
-    auto const size = serialized_size();
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
+    return kth::to_data_chunk(*this);
 }
 
-void operation::to_data(data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(sink_w);
+expect<void> operation::to_data(byte_writer& writer) const {
+    if (auto r = writer.write_byte(uint8_t(code_)); ! r) return r;
+
+    // For explicit-size push opcodes, the size prefix (1/2/4 bytes LE)
+    // precedes the payload. Non-push opcodes only emit the opcode byte
+    // itself and any embedded data.
+    auto const size = data_.size();
+    switch (code_) {
+        case opcode::push_one_size:
+            if (auto r = writer.write_byte(uint8_t(size)); ! r) return r;
+            break;
+        case opcode::push_two_size:
+            if (auto r = writer.write_little_endian<uint16_t>(uint16_t(size)); ! r) return r;
+            break;
+        case opcode::push_four_size:
+            if (auto r = writer.write_little_endian<uint32_t>(uint32_t(size)); ! r) return r;
+            break;
+        default:
+            break;
+    }
+
+    return writer.write_bytes(data_);
 }
 
 static

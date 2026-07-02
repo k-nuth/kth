@@ -18,9 +18,8 @@
 #include <kth/domain/wallet/payment_address.hpp>
 
 #include <kth/infrastructure/math/hash.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 
 #include <kth/domain/concepts.hpp>
 
@@ -42,33 +41,21 @@ struct KD_API input {
     friend
     constexpr bool operator==(input const&, input const&) = default;
 
-    // Deserialization.
+    // Serialization.
     //-------------------------------------------------------------------------
 
     static
     expect<input> from_data(byte_reader& reader, bool wire);
 
-    // Serialization.
-    //-------------------------------------------------------------------------
-
     [[nodiscard]]
-    data_chunk to_data(bool wire = true) const;
-
-    void to_data(data_sink& stream, bool wire = true) const;
-
-    template <typename W>
-    void to_data(W& sink, bool wire = true) const {
-        previous_output_.to_data(sink, wire);
-        script_.to_data(sink, true);
-        sink.write_4_bytes_little_endian(sequence_);
-    }
-
-    // Properties (size, accessors).
-    //-------------------------------------------------------------------------
+    expect<void> to_data(byte_writer& writer, bool wire) const;
 
     /// This accounts for wire, but does not read or write it.
     [[nodiscard]]
     size_t serialized_size(bool wire = true) const;
+
+    // Properties (accessors).
+    //-------------------------------------------------------------------------
 
     output_point& previous_output();
 

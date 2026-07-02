@@ -28,8 +28,6 @@
 #include <kth/database/databases/utxoz_database.hpp>
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/machine/opcode.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-
 namespace kth::blockchain {
 
 // =============================================================================

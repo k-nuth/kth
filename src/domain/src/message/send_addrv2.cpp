@@ -5,9 +5,6 @@
 #include <kth/domain/message/send_addrv2.hpp>
 
 #include <kth/domain/message/version.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const send_addrv2::command = "sendaddrv2";
@@ -32,7 +29,7 @@ void send_addrv2::reset() {
     insufficient_version_ = true;
 }
 
-// Deserialization.
+// Serialization.
 //-----------------------------------------------------------------------------
 
 // static
@@ -44,26 +41,9 @@ expect<send_addrv2> send_addrv2::from_data(byte_reader& reader, uint32_t version
     return send_addrv2(insufficient_version);
 }
 
-// Serialization.
-//-----------------------------------------------------------------------------
-
-data_chunk send_addrv2::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-void send_addrv2::to_data(uint32_t /*version*/, data_sink& /*stream*/) const {
+expect<void> send_addrv2::to_data(byte_writer& /*writer*/, uint32_t /*version*/) const {
     // Empty message - no payload
-}
-
-void send_addrv2::to_data(uint32_t /*version*/, writer& /*sink*/) const {
-    // Empty message - no payload
+    return {};
 }
 
 size_t send_addrv2::serialized_size(uint32_t version) const {

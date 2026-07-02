@@ -16,11 +16,8 @@
 #include <kth/domain/define.hpp>
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-
-
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/domain/concepts.hpp>
 
 namespace kth::domain::message {
@@ -57,13 +54,8 @@ public:
     static
     expect<transaction> from_data(byte_reader& reader, uint32_t version);
 
-    data_chunk to_data(uint32_t version) const;
-    void to_data(uint32_t version, data_sink& stream) const;
-
-    template <typename W>
-    void to_data(uint32_t /*version*/, W& sink) const {
-        chain::transaction::to_data(sink, true);
-    }
+    [[nodiscard]]
+    expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
     size_t serialized_size(uint32_t version) const;
 

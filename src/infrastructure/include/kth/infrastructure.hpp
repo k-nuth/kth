@@ -116,6 +116,8 @@
 #include <kth/infrastructure/utility/threadpool.hpp>
 #include <kth/infrastructure/utility/timer.hpp>
 #include <kth/infrastructure/utility/track.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/writer.hpp>
 
 // #include <kth/infrastructure/wallet/message.hpp>

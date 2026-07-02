@@ -13,10 +13,9 @@
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/hash.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
 
 #include <kth/domain/deserialization.hpp>
 
@@ -81,38 +80,31 @@ public:
     [[nodiscard]] constexpr uint32_t bits() const { return bits_; }
     [[nodiscard]] constexpr uint32_t nonce() const { return nonce_; }
 
-    // Deserialization.
+    // Serialization.
     //-------------------------------------------------------------------------
 
     static
     expect<header> from_data(byte_reader& reader, bool wire = true);
 
     [[nodiscard]]
-    constexpr bool is_valid() const {
-        return (version_ != 0) ||
-               (previous_block_hash_ != null_hash) ||
-               (merkle_ != null_hash) ||
-               (timestamp_ != 0) ||
-               (bits_ != 0) ||
-               (nonce_ != 0);
+    expect<void> to_data(byte_writer& writer, bool wire) const {
+        (void)wire;
+        if (auto r = writer.write_little_endian<uint32_t>(version_); ! r) return r;
+        if (auto r = writer.write_hash(previous_block_hash_); ! r) return r;
+        if (auto r = writer.write_hash(merkle_); ! r) return r;
+        if (auto r = writer.write_little_endian<uint32_t>(timestamp_); ! r) return r;
+        if (auto r = writer.write_little_endian<uint32_t>(bits_); ! r) return r;
+        return writer.write_little_endian<uint32_t>(nonce_);
     }
 
-    // Serialization.
-    //-------------------------------------------------------------------------
-
     [[nodiscard]]
-    data_chunk to_data(bool wire = true) const;
-
-    void to_data(data_sink& stream, bool wire = true) const;
-
-    template <typename W>
-    void to_data(W& sink, bool wire = true) const {
-        sink.write_4_bytes_little_endian(version_);
-        sink.write_hash(previous_block_hash_);
-        sink.write_hash(merkle_);
-        sink.write_4_bytes_little_endian(timestamp_);
-        sink.write_4_bytes_little_endian(bits_);
-        sink.write_4_bytes_little_endian(nonce_);
+    constexpr bool is_valid() const {
+        return version_ != 0 ||
+               previous_block_hash_ != null_hash ||
+               merkle_ != null_hash ||
+               timestamp_ != 0 ||
+               bits_ != 0 ||
+               nonce_ != 0;
     }
 
     // Properties (size).

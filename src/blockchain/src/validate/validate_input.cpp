@@ -235,7 +235,7 @@ coins_t create_context_data(transaction const& tx, bool should_create_context) {
 
     for (auto const& input : tx.inputs()) {
         auto const& prevout = input.previous_output().validation.cache;
-        coins.emplace_back(prevout.to_data(true));
+        coins.emplace_back(kth::to_data_chunk(prevout, true));
     }
     return coins;
 }
@@ -245,16 +245,16 @@ std::pair<code, size_t> validate_input::verify_script(transaction const& tx, uin
 
     KTH_ASSERT(input_index < tx.inputs().size());
     auto const& prevout = tx.inputs()[input_index].previous_output().validation;
-    auto const locking_script_data = prevout.cache.script().to_data(false);
+    auto const locking_script_data = kth::to_data_chunk(prevout.cache.script(), false);
     auto const token_data = prevout.cache.token_data();
     auto const amount = prevout.cache.value();
-    auto const tx_data = tx.to_data(true);
+    auto const tx_data = kth::to_data_chunk(tx, true);
 
     size_t sig_checks;
     bool const should_create_context = script::is_enabled(flags, domain::machine::script_flags::bch_native_introspection)
                                    || script::is_enabled(flags, domain::machine::script_flags::bch_tokens);
     auto const coins = create_context_data(tx, should_create_context);
-    auto const unlock_script_data = tx.inputs()[input_index].script().to_data(prefix);
+    auto const unlock_script_data = kth::to_data_chunk(tx.inputs()[input_index].script(), prefix);
 
     auto res = consensus::verify_script(
         tx_data.data(),

@@ -24,13 +24,10 @@
 #include <kth/domain/machine/opcode.hpp>
 #include <kth/domain/machine/script_flags.hpp>
 
-#include <kth/infrastructure/utility/container_sink.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/serializer.hpp>
 #include <kth/infrastructure/utility/thread.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
 
 namespace kth::domain::chain {
 
@@ -412,40 +409,37 @@ uint8_t bitfield(token_data_t const& x) {
     return std::visit(visitor, x.data);
 }
 
-template <typename W>
-inline constexpr
-void to_data(W& sink, fungible const& x) {
-    sink.write_variable_little_endian(uint64_t(x.amount));
+inline
+expect<void> to_data(byte_writer& writer, fungible const& x) {
+    return writer.write_variable_little_endian(uint64_t(x.amount));
 }
 
-template <typename W>
-inline constexpr
-void to_data(W& sink, non_fungible const& x) {
-    if (x.commitment.empty()) return;
-
-    sink.write_size_little_endian(x.commitment.size());
-    sink.write_bytes(x.commitment);
+inline
+expect<void> to_data(byte_writer& writer, non_fungible const& x) {
+    if (x.commitment.empty()) return {};
+    if (auto r = writer.write_size_little_endian(x.commitment.size()); ! r) return r;
+    return writer.write_bytes(x.commitment);
 }
 
-template <typename W>
-inline constexpr
-void to_data(W& sink, both_kinds const& x) {
+inline
+expect<void> to_data(byte_writer& writer, both_kinds const& x) {
     // CashTokens wire format writes the NFT portion first, then the
     // fungible amount — keep that order even with the named fields.
-    to_data(sink, x.non_fungible_part);
-    to_data(sink, x.fungible_part);
+    if (auto r = to_data(writer, x.non_fungible_part); ! r) return r;
+    return to_data(writer, x.fungible_part);
 }
 
-template <typename W>
-inline constexpr
-void to_data(W& sink, token_data_t const& x) {
-    sink.write_hash(x.id);
-    sink.write_byte(bitfield(x));
+inline
+expect<void> to_data(byte_writer& writer, token_data_t const& x) {
+    if (auto r = writer.write_hash(x.id); ! r) return r;
+    if (auto r = writer.write_byte(bitfield(x)); ! r) return r;
 
-    auto const visitor = [&sink](auto&& arg) {
-        to_data(sink, arg);
+    expect<void> result;
+    auto const visitor = [&](auto&& arg) {
+        result = to_data(writer, arg);
     };
     std::visit(visitor, x.data);
+    return result;
 }
 
 inline constexpr
@@ -557,7 +551,7 @@ expect<token_data_t> from_data(byte_reader& reader) {
     return x;
 }
 
-// Non-templated entry points that adapt the templated `to_data<W>`
+// Non-templated entry points that adapt the `byte_writer`-based `to_data`
 // above to an owned `data_chunk`. Historically these lived in
 // `token_data_serialization.hpp`; consolidating them here means the
 // C-API binding generator — which parses a single header per class —
@@ -569,14 +563,10 @@ namespace detail {
 
 template <typename T>
 data_chunk to_data_impl(T const& x) {
-    data_chunk data;
-    auto const size = serialized_size(x);
-    data.reserve(size);
-    data_sink ostream(data);
-    ostream_writer sink_w(ostream);
-    to_data(sink_w, x);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
+    data_chunk data(serialized_size(x));
+    byte_writer writer(data);
+    auto const r = to_data(writer, x);
+    KTH_ASSERT(r.has_value());
     return data;
 }
 

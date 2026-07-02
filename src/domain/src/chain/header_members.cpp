@@ -17,7 +17,6 @@
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/math/hash.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::domain::chain {
 
@@ -72,33 +71,15 @@ expect<header> header::from_data(byte_reader& reader, bool /*wire*/) {
     };
 }
 
-// Serialization.
-//-----------------------------------------------------------------------------
-
-data_chunk header::to_data(bool wire) const {
-    data_chunk data;
-    auto const size = serialized_size(wire);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(ostream, wire);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-void header::to_data(data_sink& stream, bool wire) const {
-    ostream_writer sink_w(stream);
-    to_data(sink_w, wire);
-}
-
 // Hash function.
 //-----------------------------------------------------------------------------
 
 hash_digest hash(header const& hdr) {
+    auto const buf = kth::to_data_chunk(hdr, true);
 #if defined(KTH_CURRENCY_LTC)
-    auto const result = litecoin_hash(hdr.to_data());
+    auto const result = litecoin_hash(buf);
 #else
-    auto const result = bitcoin_hash(hdr.to_data());
+    auto const result = bitcoin_hash(buf);
 #endif
 
     // Track hash call statistics

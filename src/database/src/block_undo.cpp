@@ -5,9 +5,6 @@
 #include <kth/database/block_undo.hpp>
 
 #include <kth/infrastructure/message/message_tools.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::database {
 
 // =============================================================================
@@ -23,13 +20,7 @@ size_t tx_undo::serialized_size() const {
 }
 
 data_chunk tx_undo::to_data() const {
-    data_chunk data;
-    data.reserve(serialized_size());
-    data_sink ostream(data);
-    ostream_writer sink(ostream);
-    to_data(sink);
-    ostream.flush();
-    return data;
+    return kth::to_data_chunk(*this);
 }
 
 std::expected<tx_undo, database::result_code> tx_undo::from_data(byte_reader& reader) {
@@ -65,13 +56,7 @@ size_t block_undo::serialized_size() const {
 }
 
 data_chunk block_undo::to_data() const {
-    data_chunk data;
-    data.reserve(serialized_size());
-    data_sink ostream(data);
-    ostream_writer sink(ostream);
-    to_data(sink);
-    ostream.flush();
-    return data;
+    return kth::to_data_chunk(*this);
 }
 
 std::expected<block_undo, database::result_code> block_undo::from_data(byte_reader& reader) {

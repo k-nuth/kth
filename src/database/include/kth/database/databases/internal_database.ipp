@@ -704,9 +704,7 @@ std::expected<domain::chain::header::list, result_code> internal_database_basis<
         return std::unexpected(result_code::other);
     }
 
-    auto data = db_value_to_data_chunk(value);
-    byte_reader reader1(data);
-    auto res1 = domain::chain::header::from_data(reader1);
+    auto res1 = kth::database::from_db_value<domain::chain::header>(value);
     if (res1) {
         list.push_back(*res1);
     }
@@ -714,9 +712,7 @@ std::expected<domain::chain::header::list, result_code> internal_database_basis<
     while ((rc = kth_db_cursor_get(cursor, &key, &value, KTH_DB_NEXT)) == KTH_DB_SUCCESS) {
         auto height = *static_cast<uint32_t*>(kth_db_get_data(key));
         if (height > to) break;
-        auto data = db_value_to_data_chunk(value);
-        byte_reader reader2(data);
-        auto res2 = domain::chain::header::from_data(reader2);
+        auto res2 = kth::database::from_db_value<domain::chain::header>(value);
         if (res2) {
             list.push_back(*res2);
         }
@@ -831,16 +827,19 @@ result_code internal_database_basis<Clock>::insert_reorg_into_pool(utxo_pool_t& 
         return result_code::other;
     }
 
-    auto entry_data = db_value_to_data_chunk(value);
-    byte_reader entry_reader(entry_data);
-    auto entry_res = utxo_entry::from_data(entry_reader);
+    auto entry_res = kth::database::from_db_value<utxo_entry>(value);
     if ( ! entry_res) {
         spdlog::error("[database] Error deserializing utxo_entry from reorg pool");
         return result_code::other;
     }
 
-    auto point_data = db_value_to_data_chunk(key_point);
-    byte_reader point_reader(point_data);
+    // `output_point : point` — the inherited `from_data` returns
+    // `expect<point>`, which trips the `Deserializable<output_point,
+    // bool>` concept check that expects `expect<output_point>`. The
+    // slice is fine at the value level (output_point has no state
+    // beyond `point`'s), so read straight through `point::from_data`
+    // here rather than special-casing the concept.
+    auto point_reader = kth::database::db_reader(key_point);
     auto point_res = domain::chain::output_point::from_data(point_reader, KTH_INTERNAL_DB_WIRE);
     if ( ! point_res) {
         spdlog::error("[database] Error deserializing output_point from reorg pool");

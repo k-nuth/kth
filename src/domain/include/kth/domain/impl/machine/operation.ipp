@@ -135,24 +135,6 @@ data_chunk const& operation::data() const {
 // than two bytes to encode. However the four byte encoding can represent
 // a value of any size, so remains valid despite the data size limit.
 //*****************************************************************************
-// template <typename R>
-// inline
-// uint32_t operation::read_data_size(opcode code, R& source) {
-//     constexpr auto op_75 = uint8_t(opcode::push_size_75);
-
-//     switch (code) {
-//         case opcode::push_one_size:
-//             return source.read_byte();
-//         case opcode::push_two_size:
-//             return source.read_2_bytes_little_endian();
-//         case opcode::push_four_size:
-//             return source.read_4_bytes_little_endian();
-//         default:
-//             auto const byte = uint8_t(code);
-//             return byte <= op_75 ? byte : 0;
-//     }
-// }
-
 inline
 expect<uint32_t> operation::read_data_size(opcode code, byte_reader& reader) {
     constexpr auto op_75 = uint8_t(opcode::push_size_75);

@@ -6,10 +6,7 @@
 
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const get_blocks::command = "getblocks";
@@ -91,21 +88,7 @@ expect<get_blocks> get_blocks::from_data(byte_reader& reader, [[maybe_unused]] u
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk get_blocks::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void get_blocks::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 size_t get_blocks::serialized_size(uint32_t /*version*/) const {
     return size_t(36) + infrastructure::message::variable_uint_size(start_hashes_.size()) + hash_size * start_hashes_.size();
@@ -137,6 +120,18 @@ hash_digest const& get_blocks::stop_hash() const {
 
 void get_blocks::set_stop_hash(hash_digest const& value) {
     stop_hash_ = value;
+}
+
+expect<void> get_blocks::to_data(byte_writer& writer, uint32_t version) const {
+        if (auto r = writer.write_little_endian<uint32_t>(version); ! r) return r;
+        if (auto r = writer.write_variable_little_endian(start_hashes_.size()); ! r) return r;
+
+        for (auto const& start_hash : start_hashes_) {
+            if (auto r = writer.write_hash(start_hash); ! r) return r;
+        }
+
+        if (auto r = writer.write_hash(stop_hash_); ! r) return r;
+        return {};
 }
 
 } // namespace kth::domain::message

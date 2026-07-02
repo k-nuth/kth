@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::database {
 
@@ -61,36 +60,16 @@ expect<history_entry> history_entry::from_data(byte_reader& reader) {
 
 // static
 data_chunk history_entry::factory_to_data(uint64_t id, domain::chain::point const& point, domain::chain::point_kind kind, uint32_t height, uint32_t index, uint64_t value_or_checksum) {
-    data_chunk data;
     auto const size = serialized_size(point);
-    data.reserve(size);
-    data_sink ostream(data);
-    factory_to_data(ostream, id, point, kind, height, index, value_or_checksum);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
+    data_chunk data(size);
+    byte_writer writer(data);
+    auto const r = factory_to_data(writer, id, point, kind, height, index, value_or_checksum);
+    KTH_ASSERT(r.has_value());
     return data;
-}
-
-// static
-void history_entry::factory_to_data(std::ostream& stream, uint64_t id, domain::chain::point const& point, domain::chain::point_kind kind, uint32_t height, uint32_t index, uint64_t value_or_checksum) {
-    ostream_writer sink(stream);
-    factory_to_data(sink, id, point, kind, height, index, value_or_checksum);
 }
 
 data_chunk history_entry::to_data() const {
-    data_chunk data;
-    auto const size = serialized_size(point_);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-void history_entry::to_data(std::ostream& stream) const {
-    ostream_writer sink(stream);
-    to_data(sink);
+    return kth::to_data_chunk(*this);
 }
 
 } // namespace kth::database

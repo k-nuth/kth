@@ -169,7 +169,7 @@ TEST_CASE("compact block from data insufficient version  failure", "[compact blo
     auto result_exp = message::compact_block::from_data(reader, message::compact_block::version_minimum);
     REQUIRE(result_exp);
     auto const expected = std::move(*result_exp);
-    auto const data = expected.to_data(message::compact_block::version_minimum);
+    auto const data = kth::to_data_chunk(expected, message::compact_block::version_minimum);
     REQUIRE(raw == data);
 
     byte_reader reader2(raw);
@@ -184,7 +184,7 @@ TEST_CASE("compact block from data valid input  success", "[compact block]") {
     auto result_exp = message::compact_block::from_data(reader, message::compact_block::version_minimum);
     REQUIRE(result_exp);
     auto const expected = std::move(*result_exp);
-    auto const data = expected.to_data(message::compact_block::version_minimum);
+    auto const data = kth::to_data_chunk(expected, message::compact_block::version_minimum);
     REQUIRE(raw == data);
 
     byte_reader reader2(data);

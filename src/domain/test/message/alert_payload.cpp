@@ -214,7 +214,7 @@ TEST_CASE("alert payload from data wiki sample test  success", "[alert payload]"
     REQUIRE(raw.size() == result.serialized_size(message::version::level::minimum));
     REQUIRE(result == expected);
 
-    auto const data = expected.to_data(message::version::level::minimum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::minimum);
 
     REQUIRE(raw.size() == data.size());
     REQUIRE(data.size() == expected.serialized_size(message::version::level::minimum));
@@ -236,7 +236,7 @@ TEST_CASE("alert payload from data roundtrip  success", "[alert payload]") {
         "My Status Bar",
         "RESERVED?"};
 
-    auto const data = expected.to_data(message::version::level::minimum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::minimum);
     byte_reader reader(data);
     auto const result_exp = message::alert_payload::from_data(reader, message::version::level::minimum);
     REQUIRE(result_exp);

@@ -16,12 +16,8 @@
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
-
-
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/domain/concepts.hpp>
 #include <kth/domain/deserialization.hpp>
 
@@ -57,21 +53,7 @@ struct KD_API get_blocks {
     expect<get_blocks> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
-    data_chunk to_data(uint32_t version) const;
-
-    void to_data(uint32_t version, data_sink& stream) const;
-
-    template <typename W>
-    void to_data(uint32_t version, W& sink) const {
-        sink.write_4_bytes_little_endian(version);
-        sink.write_variable_little_endian(start_hashes_.size());
-
-        for (auto const& start_hash : start_hashes_) {
-            sink.write_hash(start_hash);
-        }
-
-        sink.write_hash(stop_hash_);
-    }
+    expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
     [[nodiscard]]
     bool is_valid() const;

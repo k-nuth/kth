@@ -27,9 +27,8 @@
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/math/hash.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 
 #include <kth/domain/concepts.hpp>
 #include <kth/domain/deserialization.hpp>
@@ -39,16 +38,18 @@ namespace kth::domain::chain {
 
 namespace detail {
 
-// Write a length-prefixed collection of inputs or outputs to the sink.
-template <class Sink, class Put>
-void write(Sink& sink, std::vector<Put> const& puts, bool wire) {
-    sink.write_variable_little_endian(puts.size());
-
-    auto const serialize = [&](const Put& put) {
-        put.to_data(sink, wire);
-    };
-
-    std::for_each(puts.begin(), puts.end(), serialize);
+// Write a length-prefixed collection of inputs or outputs to the writer.
+template <class Put>
+expect<void> write(byte_writer& writer, std::vector<Put> const& puts, bool wire) {
+    if (auto r = writer.write_variable_little_endian(puts.size()); ! r) {
+        return r;
+    }
+    for (auto const& put : puts) {
+        if (auto r = put.to_data(writer, wire); ! r) {
+            return r;
+        }
+    }
+    return {};
 }
 
 } // namespace detail
@@ -115,45 +116,20 @@ struct KD_API transaction {
     bool operator==(transaction const& x) const;
     bool operator!=(transaction const& x) const = default;
 
-    // Deserialization.
+    // Serialization.
     //-----------------------------------------------------------------------------
 
     static
     expect<transaction> from_data(byte_reader& reader, bool wire = true);
 
     [[nodiscard]]
-    bool is_valid() const;
-
-    // Serialization.
-    //-----------------------------------------------------------------------------
-
-    [[nodiscard]]
-    data_chunk to_data(bool wire = true) const;
-
-    void to_data(data_sink& stream, bool wire = true) const;
-
-    template <typename W>
-        requires ( ! std::is_same_v<W, bool>)
-    void to_data(W& sink, bool wire = true) const {
-        if (wire) {
-            sink.write_4_bytes_little_endian(version_);
-            detail::write(sink, inputs_, wire);
-            detail::write(sink, outputs_, wire);
-            sink.write_4_bytes_little_endian(locktime_);
-        } else {
-            // Database (outputs forward) serialization.
-            detail::write(sink, outputs_, wire);
-            detail::write(sink, inputs_, wire);
-            sink.write_variable_little_endian(locktime_);
-            sink.write_variable_little_endian(version_);
-        }
-    }
-
-    // Properties (size, accessors).
-    //-----------------------------------------------------------------------------
+    expect<void> to_data(byte_writer& writer, bool wire) const;
 
     [[nodiscard]]
     size_t serialized_size(bool wire = true) const;
+
+    // Properties (accessors).
+    //-----------------------------------------------------------------------------
 
     [[nodiscard]]
     uint32_t version() const;
@@ -201,6 +177,9 @@ struct KD_API transaction {
 
     // Validation.
     //-----------------------------------------------------------------------------
+
+    [[nodiscard]]
+    bool is_valid() const;
 
     [[nodiscard]]
     uint64_t fees() const;

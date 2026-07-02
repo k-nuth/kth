@@ -67,7 +67,7 @@ TEST_CASE("prefilled transaction from data valid input  success", "[prefilled tr
             {},
             {}});
 
-    auto const data = expected.to_data(message::version::level::minimum);
+    auto const data = kth::to_data_chunk(expected, message::version::level::minimum);
     byte_reader reader(data);
     auto const result_exp = message::prefilled_transaction::from_data(reader, message::version::level::minimum);
     REQUIRE(result_exp);

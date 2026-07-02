@@ -11,9 +11,6 @@
 #include <thread>
 
 #include <spdlog/spdlog.h>
-
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 #include <kth/infrastructure/utility/stats.hpp>
 
 namespace kth::database {
@@ -105,8 +102,7 @@ bool block_store::initialize() {
 // =============================================================================
 
 flat_file_pos block_store::save_block(domain::chain::block const& block, uint32_t height) {
-    auto const raw = block.to_data();  // wire=true (always canonical for block)
-    return save_block_raw(raw, height, block.header().timestamp());
+    return save_block_raw(kth::to_data_chunk(block), height, block.header().timestamp());
 }
 
 flat_file_pos block_store::save_block_raw(data_chunk const& raw_block, uint32_t height, uint64_t timestamp) {
@@ -168,8 +164,7 @@ block_store::read_block(flat_file_pos const& pos) const {
         return std::unexpected(raw_result.error());
     }
 
-    byte_reader reader(*raw_result);
-    auto block = domain::chain::block::from_data(reader);
+    auto block = kth::from_data_chunk<domain::chain::block>(*raw_result);
     if (!block) {
         return std::unexpected(result_code::other);
     }

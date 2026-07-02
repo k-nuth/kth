@@ -18,22 +18,6 @@
 
 namespace kth {
 
-inline constexpr
-size_t size_variable_integer(uint64_t value) {
-    if (value < varint_two_bytes) {
-        return 1;
-    }
-    if (value <= max_uint16) {
-        return 3;
-    }
-
-    if (value <= max_uint32) {
-        return 5;
-    }
-
-    return 9;
-}
-
 /// Writer to wrap arbitrary iterator.
 template <typename Iterator>
 class serializer

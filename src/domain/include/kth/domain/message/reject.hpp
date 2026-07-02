@@ -14,11 +14,7 @@
 #include <kth/domain/message/block.hpp>
 #include <kth/domain/message/transaction.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
-
-
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/domain/concepts.hpp>
 
 namespace kth::domain::message {
@@ -100,21 +96,7 @@ struct KD_API reject {
     expect<reject> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
-    data_chunk to_data(uint32_t version) const;
-
-    void to_data(uint32_t version, data_sink& stream) const;
-
-    template <typename W>
-    void to_data(uint32_t /*version*/, W& sink) const {
-        sink.write_string(message_);
-        sink.write_byte(reason_to_byte(code_));
-        sink.write_string(reason_);
-
-        if ((message_ == block::command) ||
-            (message_ == transaction::command)) {
-            sink.write_hash(data_);
-        }
-    }
+    expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
     [[nodiscard]]
     bool is_valid() const;

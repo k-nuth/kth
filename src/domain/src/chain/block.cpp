@@ -35,9 +35,7 @@
 #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/utility/asio.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 // Bitcoin Core optimized SHA256D64 for merkle tree computation
 #include <crypto/sha256.h>
@@ -194,7 +192,7 @@ bool block::operator==(block const& x) const {
     return header_ == x.header_ && transactions_ == x.transactions_;
 }
 
-// Deserialization.
+// Serialization.
 //-----------------------------------------------------------------------------
 
 // static
@@ -215,6 +213,15 @@ expect<block> block::from_data(byte_reader& reader) {
     return res;
 }
 
+expect<void> block::to_data(byte_writer& writer) const {
+    if (auto r = header_.to_data(writer, true); ! r) return r;
+    if (auto r = writer.write_size_little_endian(transactions_.size()); ! r) return r;
+    for (auto const& tx : transactions_) {
+        if (auto r = tx.to_data(writer, true); ! r) return r;
+    }
+    return {};
+}
+
 void block::reset() {
     header_ = chain::header{};
     transactions_.clear();
@@ -223,26 +230,6 @@ void block::reset() {
 
 bool block::is_valid() const {
     return !transactions_.empty() || header_.is_valid();
-}
-
-// Serialization.
-//-----------------------------------------------------------------------------
-
-data_chunk block::to_data() const {
-    data_chunk data;
-    auto const size = serialized_size();
-
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-void block::to_data(data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(sink_w);
 }
 
 hash_list block::to_hashes() const {

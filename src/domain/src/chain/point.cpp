@@ -9,14 +9,12 @@
 
 #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::domain::chain {
 
 constexpr auto store_point_size = std::tuple_size<point>::value;
 
-// Deserialization.
+// Serialization.
 //-----------------------------------------------------------------------------
 
 expect<point> point::from_data(byte_reader& reader, bool wire) {
@@ -43,23 +41,18 @@ expect<point> point::from_data(byte_reader& reader, bool wire) {
     return point {*hash, *index};
 }
 
-// Serialization.
-//-----------------------------------------------------------------------------
-
-data_chunk point::to_data(bool wire) const {
-    data_chunk data;
-    auto const size = serialized_size(wire);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(ostream, wire);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-void point::to_data(data_sink& stream, bool wire) const {
-    ostream_writer sink_w(stream);
-    to_data(sink_w, wire);
+expect<void> point::to_data(byte_writer& writer, bool wire) const {
+    if (auto r = writer.write_hash(hash_); ! r) {
+        return r;
+    }
+    if (wire) {
+        return writer.write_little_endian<uint32_t>(index_);
+    }
+    KTH_ASSERT(index_ == null_index || index_ < max_uint16);
+    auto const compact = (index_ == null_index)
+        ? max_uint16
+        : static_cast<uint16_t>(index_);
+    return writer.write_little_endian<uint16_t>(compact);
 }
 
 // Iterator.

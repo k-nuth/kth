@@ -16,10 +16,7 @@
 #include <kth/domain/deserialization.hpp>
 #include <kth/infrastructure/message/network_address.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
-#include <kth/infrastructure/utility/writer.hpp>
-
+#include <kth/infrastructure/utility/byte_writer.hpp>
 namespace kth::domain::message {
 
 /// BIP155 network identifiers
@@ -87,23 +84,7 @@ struct KD_API addrv2 {
     expect<addrv2> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
-    data_chunk to_data(uint32_t version) const;
-
-    void to_data(uint32_t version, data_sink& stream) const;
-
-    template <typename W>
-    void to_data(uint32_t version, W& sink) const {
-        sink.write_variable_little_endian(addresses_.size());
-
-        for (auto const& entry : addresses_) {
-            sink.write_4_bytes_little_endian(entry.time);
-            sink.write_variable_little_endian(entry.services);
-            sink.write_byte(static_cast<uint8_t>(entry.network));
-            sink.write_variable_little_endian(entry.addr.size());
-            sink.write_bytes(entry.addr);
-            sink.write_2_bytes_big_endian(entry.port);
-        }
-    }
+    expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
     [[nodiscard]]
     bool is_valid() const;

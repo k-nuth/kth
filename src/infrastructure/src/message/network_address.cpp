@@ -7,8 +7,6 @@
 #include <algorithm>
 #include <cstdint>
 
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::infrastructure::message {
 
@@ -185,20 +183,13 @@ expect<network_address> network_address::from_data(byte_reader& reader, uint32_t
     return network_address(timestamp, *services, ip_addr, *port);
 }
 
-data_chunk network_address::to_data(uint32_t version, bool with_timestamp) const {
-    data_chunk data;
-    auto const size = serialized_size(version, with_timestamp);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream, with_timestamp);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-void network_address::to_data(uint32_t version, data_sink& stream, bool with_timestamp) const {
-    ostream_writer sink(stream);
-    to_data(version, sink, with_timestamp);
+expect<void> network_address::to_data(byte_writer& writer, uint32_t /*version*/, bool with_timestamp) const {
+    if (with_timestamp) {
+        if (auto r = writer.write_little_endian<uint32_t>(timestamp_); ! r) return r;
+    }
+    if (auto r = writer.write_little_endian<uint64_t>(services_); ! r) return r;
+    if (auto r = writer.write_bytes(std::span<uint8_t const>{ip_.data(), ip_.size()}); ! r) return r;
+    return writer.write_big_endian<uint16_t>(port_);
 }
 
 size_t network_address::serialized_size(uint32_t version, bool with_timestamp) const {

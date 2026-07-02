@@ -40,8 +40,7 @@ transaction_unconfirmed_entry internal_database_basis<Clock>::get_transaction_un
         return {};
     }
 
-    auto data = db_value_to_data_chunk(value);
-    byte_reader reader(data);
+    auto reader = kth::database::db_reader(value);
     auto res_entry = transaction_unconfirmed_entry::from_data(reader);
     if ( ! res_entry) {
         return {};
@@ -74,16 +73,14 @@ std::expected<std::vector<transaction_unconfirmed_entry>, result_code> internal_
     int rc;
     if ((rc = kth_db_cursor_get(cursor, &key, &value, KTH_DB_NEXT)) == 0) {
 
-        auto data = db_value_to_data_chunk(value);
-        byte_reader reader1(data);
+        auto reader1 = kth::database::db_reader(value);
         auto res1 = transaction_unconfirmed_entry::from_data(reader1);
         if (res1) {
             result.push_back(*res1);
         }
 
         while ((rc = kth_db_cursor_get(cursor, &key, &value, KTH_DB_NEXT)) == 0) {
-            auto data = db_value_to_data_chunk(value);
-            byte_reader reader2(data);
+            auto reader2 = kth::database::db_reader(value);
             auto res2 = transaction_unconfirmed_entry::from_data(reader2);
             if (res2) {
                 result.push_back(*res2);

@@ -11,7 +11,6 @@
 #include <kth/domain/chain/output.hpp>
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-#include <kth/infrastructure/utility/reader.hpp>
 
 namespace kth::domain::message {
 
@@ -72,16 +71,15 @@ expect<transaction> transaction::from_data(byte_reader& reader, uint32_t version
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk transaction::to_data(uint32_t /*version*/) const {
-    return chain::transaction::to_data(true);
-}
 
-void transaction::to_data(uint32_t /*version*/, data_sink& stream) const {
-    chain::transaction::to_data(stream, true);
-}
 
 size_t transaction::serialized_size(uint32_t /*unused*/) const {
     return chain::transaction::serialized_size(true);
+}
+
+expect<void> transaction::to_data(byte_writer& writer, uint32_t version) const {
+        chain::transaction::to_data(writer, true);
+        return {};
 }
 
 } // namespace kth::domain::message

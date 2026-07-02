@@ -5,9 +5,6 @@
 #include <kth/domain/message/ping.hpp>
 
 // #include <kth/domain/message/version.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const ping::command = "ping";
@@ -52,21 +49,7 @@ expect<ping> ping::from_data(byte_reader& reader, uint32_t version) {
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk ping::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void ping::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 bool ping::is_valid() const {
     return valid_ || nonceless_ || nonce_ != 0;
@@ -88,6 +71,13 @@ uint64_t ping::nonce() const {
 
 void ping::set_nonce(uint64_t value) {
     nonce_ = value;
+}
+
+expect<void> ping::to_data(byte_writer& writer, uint32_t version) const {
+        if (version >= version::level::bip31) {
+            if (auto r = writer.write_little_endian<uint64_t>(nonce_); ! r) return r;
+        }
+        return {};
 }
 
 } // namespace kth::domain::message

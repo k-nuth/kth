@@ -30,10 +30,8 @@
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/utility/collection.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 #if defined(KTH_CURRENCY_BCH)
 #include <boost/container_hash/hash.hpp>
@@ -86,7 +84,7 @@ bool transaction::is_valid() const {
     return (version_ != 0) || (locktime_ != 0) || !inputs_.empty() || !outputs_.empty();
 }
 
-// Deserialization.
+// Serialization.
 //-----------------------------------------------------------------------------
 
 // static
@@ -146,28 +144,18 @@ expect<transaction> transaction::from_data(byte_reader& reader, bool wire /*= tr
     };
 }
 
-// Serialization.
-//-----------------------------------------------------------------------------
-
-data_chunk transaction::to_data(bool wire) const {
-    data_chunk data;
-    auto const size = serialized_size(wire);
-
-    // Reserve an extra byte to prevent full reallocation in the case of
-    // generate_signature_hash extension by addition of the sighash_type.
-    data.reserve(size + sizeof(uint8_t));
-
-    data_sink ostream(data);
-    to_data(ostream, wire);
-
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-void transaction::to_data(data_sink& stream, bool wire) const {
-    ostream_writer sink_w(stream);
-    to_data(sink_w, wire);
+expect<void> transaction::to_data(byte_writer& writer, bool wire) const {
+    if (wire) {
+        if (auto r = writer.write_little_endian<uint32_t>(version_); ! r) return r;
+        if (auto r = detail::write(writer, inputs_, wire); ! r) return r;
+        if (auto r = detail::write(writer, outputs_, wire); ! r) return r;
+        return writer.write_little_endian<uint32_t>(locktime_);
+    }
+    // Database (outputs forward) serialization.
+    if (auto r = detail::write(writer, outputs_, wire); ! r) return r;
+    if (auto r = detail::write(writer, inputs_, wire); ! r) return r;
+    if (auto r = writer.write_variable_little_endian(locktime_); ! r) return r;
+    return writer.write_variable_little_endian(version_);
 }
 
 // Size.
@@ -628,7 +616,7 @@ bool transaction::is_standard(script_flags_t flags) const {
 //-----------------------------------------------------------------------------
 
 hash_digest hash(transaction const& tx) {
-    return bitcoin_hash(tx.to_data(true));
+    return bitcoin_hash(kth::to_data_chunk(tx, true));
 }
 
 hash_digest outputs_hash(transaction const& tx) {
@@ -647,98 +635,70 @@ hash_digest utxos_hash(transaction const& tx) {
     return to_utxos(tx);
 }
 
-hash_digest to_outputs(transaction const& tx) {
-    auto const sum = [&](size_t total, output const& output) {
-        return total + output.serialized_size();
-    };
+namespace {
 
-    auto const& outs = tx.outputs();
-    auto size = std::accumulate(outs.begin(), outs.end(), size_t(0), sum);
-    data_chunk data;
-    data.reserve(size);
-    data_sink ostream(data);
-    ostream_writer sink_w(ostream);
-
-    auto const write = [&](output const& output) {
-        output.to_data(sink_w, true);
-    };
-
-    std::for_each(outs.begin(), outs.end(), write);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
+// Hash the concatenation of `obj.to_data(writer, wire=true)` over `range`.
+// Hoisted out of every BIP143 hash helper that used to repeat the same
+// allocate-buffer-write-loop boilerplate. `proj` extracts the inner
+// `Serializable` object from each input element.
+template <typename Range, typename Proj>
+hash_digest hash_concat(Range const& range, Proj proj) {
+    size_t size = 0;
+    for (auto const& item : range) {
+        auto const& obj = proj(item);
+        size += obj.serialized_size();
+    }
+    data_chunk data(size);
+    byte_writer writer(data);
+    for (auto const& item : range) {
+        auto const& obj = proj(item);
+        auto const r = obj.to_data(writer, true);
+        KTH_CONTRACT(r.has_value());
+    }
+    KTH_CONTRACT(writer.position() == data.size());
     return bitcoin_hash(data);
+}
+
+} // namespace
+
+hash_digest to_outputs(transaction const& tx) {
+    return hash_concat(tx.outputs(), [](output const& o) -> output const& { return o; });
 }
 
 hash_digest to_inpoints(transaction const& tx) {
-    auto const sum = [&](size_t total, input const& input) {
-        return total + input.previous_output().serialized_size();
-    };
-
-    auto const& ins = tx.inputs();
-    auto size = std::accumulate(ins.begin(), ins.end(), size_t(0), sum);
-    data_chunk data;
-    data.reserve(size);
-    data_sink ostream(data);
-    ostream_writer sink_w(ostream);
-
-    auto const write = [&](input const& input) {
-        input.previous_output().to_data(sink_w);
-    };
-
-    std::for_each(ins.begin(), ins.end(), write);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return bitcoin_hash(data);
+    return hash_concat(tx.inputs(),
+        [](input const& i) -> output_point const& { return i.previous_output(); });
 }
 
 hash_digest to_sequences(transaction const& tx) {
-    auto const sum = [&](size_t total, input const& /*input*/) {
-        return total + sizeof(uint32_t);
-    };
-
     auto const& ins = tx.inputs();
-    auto size = std::accumulate(ins.begin(), ins.end(), size_t(0), sum);
-    data_chunk data;
-    data.reserve(size);
-    data_sink ostream(data);
-    ostream_writer sink_w(ostream);
-
-    auto const write = [&](input const& input) {
-        sink_w.write_4_bytes_little_endian(input.sequence());
-    };
-
-    std::for_each(ins.begin(), ins.end(), write);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
+    auto const size = ins.size() * sizeof(uint32_t);
+    data_chunk data(size);
+    byte_writer writer(data);
+    for (auto const& i : ins) {
+        auto const r = writer.write_little_endian<uint32_t>(i.sequence());
+        KTH_CONTRACT(r.has_value());
+    }
+    KTH_CONTRACT(writer.position() == data.size());
     return bitcoin_hash(data);
 }
 
 hash_digest to_utxos(transaction const& tx) {
-    auto const sum = [&](size_t total, input const& input) {
-        auto const& prevout = input.previous_output().validation.cache;
-        auto const missing = !prevout.is_valid();
-        total += missing ? 0 : prevout.serialized_size();
-        return total;
-    };
-
     auto const& ins = tx.inputs();
-    auto const size = std::accumulate(ins.begin(), ins.end(), size_t(0), sum);
-
-    data_chunk data;
-    data.reserve(size);
-    data_sink ostream(data);
-    ostream_writer sink_w(ostream);
-
-    auto const write = [&](input const& input) {
-        auto const& prevout = input.previous_output().validation.cache;
-        auto const missing = !prevout.is_valid();
-        if (missing) return;
-        prevout.to_data(sink_w);
-    };
-
-    std::for_each(ins.begin(), ins.end(), write);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
+    size_t size = 0;
+    for (auto const& i : ins) {
+        auto const& prevout = i.previous_output().validation.cache;
+        if (prevout.is_valid()) size += prevout.serialized_size();
+    }
+    data_chunk data(size);
+    byte_writer writer(data);
+    for (auto const& i : ins) {
+        auto const& prevout = i.previous_output().validation.cache;
+        if ( ! prevout.is_valid()) continue;
+        auto const r = prevout.to_data(writer, true);
+        KTH_CONTRACT(r.has_value());
+    }
+    KTH_CONTRACT(writer.position() == data.size());
     return bitcoin_hash(data);
 }
 

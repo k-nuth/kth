@@ -46,7 +46,6 @@
 #include <kth/domain/message/xversion.hpp>
 
 #include <kth/infrastructure/message/network_address.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
 
@@ -151,22 +150,13 @@ data_chunk serialize(uint32_t version, const Message& packet, uint32_t magic) {
     auto const payload_size = packet.serialized_size(version);
     auto const message_size = heading_size + payload_size;
 
-    // Unfortunately data_sink doesn't support seek, so this is a little ugly.
-    // The header requires payload size and checksum but prepends the payload.
-    // Use a stream to prevent unnecessary copying of the payload.
-    data_chunk data;
-
-    // Reserve memory for the full message.
-    data.reserve(message_size);
-
-    // Size the vector for the heading so that payload insertion will follow.
-    data.resize(heading_size);
-
-    // Insert the payload after the heading and into the reservation.
-    data_sink ostream(data);
-    packet.to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == message_size);
+    // Reserve the full message, write the payload into the tail span, then
+    // splice in the heading once we know the size and checksum.
+    data_chunk data(message_size);
+    std::span<uint8_t> payload_span{data.data() + heading_size, payload_size};
+    byte_writer payload_writer(payload_span);
+    auto const wr = packet.to_data(payload_writer, version);
+    KTH_ASSERT(wr.has_value());
 
     // Create the payload checksum without copying the buffer.
     byte_span span(data.data() + heading_size, data.data() + message_size);

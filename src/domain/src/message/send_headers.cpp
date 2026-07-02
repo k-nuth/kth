@@ -5,9 +5,6 @@
 #include <kth/domain/message/send_headers.hpp>
 
 #include <kth/domain/message/version.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const send_headers::command = "sendheaders";
@@ -32,7 +29,7 @@ void send_headers::reset() {
     insufficient_version_ = true;
 }
 
-// Deserialization.
+// Serialization.
 //-----------------------------------------------------------------------------
 
 // static
@@ -44,22 +41,8 @@ expect<send_headers> send_headers::from_data(byte_reader& reader, uint32_t versi
     return send_headers(insufficient_version);
 }
 
-// Serialization.
-//-----------------------------------------------------------------------------
-
-data_chunk send_headers::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-//TODO(fernando): empty?
-void send_headers::to_data(uint32_t /*version*/, data_sink& /*stream*/) const {
+expect<void> send_headers::to_data(byte_writer& /*writer*/, uint32_t /*version*/) const {
+    return {};
 }
 
 size_t send_headers::serialized_size(uint32_t version) const {

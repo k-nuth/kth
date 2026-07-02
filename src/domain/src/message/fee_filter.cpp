@@ -6,9 +6,6 @@
 
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/error.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
-
 namespace kth::domain::message {
 
 std::string const fee_filter::command = "feefilter";
@@ -59,21 +56,7 @@ expect<fee_filter> fee_filter::from_data(byte_reader& reader, uint32_t version) 
 // Serialization.
 //-----------------------------------------------------------------------------
 
-data_chunk fee_filter::to_data(uint32_t version) const {
-    data_chunk data;
-    auto const size = serialized_size(version);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(version, ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
 
-void fee_filter::to_data(uint32_t version, data_sink& stream) const {
-    ostream_writer sink_w(stream);
-    to_data(version, sink_w);
-}
 
 bool fee_filter::is_valid() const {
     // return !insufficient_version_;
@@ -99,6 +82,11 @@ void fee_filter::set_minimum_fee(uint64_t value) {
 
     // This is no longer a default instance, so is valid.
     insufficient_version_ = false;
+}
+
+expect<void> fee_filter::to_data(byte_writer& writer, uint32_t version) const {
+        if (auto r = writer.write_little_endian<uint64_t>(minimum_fee_); ! r) return r;
+        return {};
 }
 
 } // namespace kth::domain::message

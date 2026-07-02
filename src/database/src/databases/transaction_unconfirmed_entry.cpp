@@ -8,7 +8,6 @@
 #include <cstdint>
 
 // #include <kth/infrastructure.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth::database {
 
@@ -78,39 +77,16 @@ expect<transaction_unconfirmed_entry> transaction_unconfirmed_entry::from_data(b
 
 // static
 data_chunk transaction_unconfirmed_entry::factory_to_data(domain::chain::transaction const& tx, uint32_t arrival_time, uint32_t height) {
-    data_chunk data;
     auto const size = serialized_size(tx);
-    data.reserve(size);
-    data_sink ostream(data);
-    factory_to_data(ostream, tx, arrival_time, height);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
+    data_chunk data(size);
+    byte_writer writer(data);
+    auto const r = factory_to_data(writer, tx, arrival_time, height);
+    KTH_ASSERT(r.has_value());
     return data;
 }
-
-// static
-void transaction_unconfirmed_entry::factory_to_data(std::ostream& stream, domain::chain::transaction const& tx, uint32_t arrival_time, uint32_t height) {
-    ostream_writer sink(stream);
-    factory_to_data(sink, tx, arrival_time, height);
-}
-
-// Serialization.
-//-----------------------------------------------------------------------------
 
 data_chunk transaction_unconfirmed_entry::to_data() const {
-    data_chunk data;
-    auto const size = serialized_size(transaction_);
-    data.reserve(size);
-    data_sink ostream(data);
-    to_data(ostream);
-    ostream.flush();
-    KTH_ASSERT(data.size() == size);
-    return data;
-}
-
-void transaction_unconfirmed_entry::to_data(std::ostream& stream) const {
-    ostream_writer sink(stream);
-    to_data(sink);
+    return kth::to_data_chunk(*this);
 }
 
 } // namespace kth::database

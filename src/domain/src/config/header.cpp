@@ -46,7 +46,7 @@ std::expected<header, std::error_code> header::from_string(std::string_view text
 }
 
 std::string header::to_string() const {
-    return kth::encode_base16(value_.to_data());
+    return kth::encode_base16(kth::to_data_chunk(value_, true));
 }
 
 } // namespace kth::domain::config
