@@ -2,11 +2,6 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-///////////////////////////////////////////////////////////////////////////////
-//
-//        GENERATED SOURCE CODE, DO NOT EDIT EXCEPT EXPERIMENTALLY
-//
-///////////////////////////////////////////////////////////////////////////////
 #ifndef KTH_VERSION_HPP
 #define KTH_VERSION_HPP
 
@@ -14,8 +9,12 @@
 
 namespace kth {
 
-// Version string from build system (conan -> cmake -> C++)
-inline constexpr std::string_view version = "1.1.0";
+// The version string is defined in `src/version.cpp` (generated per build
+// from `src/version.cpp.in`) so it doesn't invalidate ccache for every
+// translation unit that transitively includes this header. A bare declaration
+// here keeps the API stable; the linker resolves it against the one TU that
+// carries the build-time value.
+extern std::string_view const version;
 
 // Currency identifier
 #if defined(KTH_CURRENCY_BCH)

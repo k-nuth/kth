@@ -57,14 +57,19 @@ endif()
 
 message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 
-# Generate version.hpp from template (conan -> cmake -> C++)
+# Generate version.cpp from template (conan -> cmake -> C++). The version
+# string used to live in `version.hpp` as `inline constexpr`, but that made
+# every TU that transitively includes the domain umbrella (about half the
+# codebase) a ccache miss on every commit-count change. The header is now
+# a stable declaration and only this one generated `.cpp` carries the
+# build-time value.
 if (NOT DEFINED KTH_VERSION)
   set(KTH_VERSION "0.0.0-dev")
 endif()
 message(STATUS "Knuth: Version: ${KTH_VERSION}")
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/kth/domain/version.hpp.in
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/kth/domain/version.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/version.cpp.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/version.cpp
     @ONLY
 )
 
@@ -162,6 +167,7 @@ if (ENABLE_SHARED)
 endif()
 
 set(kth_sources_just_legacy
+        ${CMAKE_CURRENT_BINARY_DIR}/generated/version.cpp
         src/chain/block.cpp
         src/chain/chain_state.cpp
         src/chain/compact.cpp
