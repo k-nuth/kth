@@ -126,7 +126,16 @@ jobs:
           path: ~/Library/Caches/ccache
           # Two disjoint cache families ('sanitizers' / 'clean') so the
           # restore-keys' prefix match can't leak across families.
-          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ hashFiles('conanfile.py') }}
+          #
+          # The primary key ends in `${{ github.run_id }}` on purpose:
+          # `actions/cache@v5`'s post-job save only runs when the primary
+          # key was NOT restored, so pinning the key to a stable value
+          # (previously `hashFiles('conanfile.py')`) meant the post-save
+          # never fired — the cache was frozen at whatever the first
+          # run populated. A unique-per-run primary key guarantees the
+          # save fires; restore falls through to `restore-keys` and
+          # picks the most-recently-saved family member.
+          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ github.run_id }}
           restore-keys: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-
 
       - name: 🔨 Build

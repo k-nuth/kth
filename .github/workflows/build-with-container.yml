@@ -151,15 +151,26 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: /github/home/.cache/ccache
-          # Two disjoint cache families: 'sanitizers' and 'clean'.
-          # Sanitizer flags change every compile command, so a sanitizer
-          # cache restored into a non-sanitizer build (or vice-versa)
-          # produces ~0 hits. The explicit suffix on both branches keeps
-          # `restore-keys`' prefix match from leaking between families.
-          # Key is per-day so the cache rotates without being commit-pinned
-          # (which guaranteed a miss + restore-keys fallback every run).
-          # Within the same day the primary key hits, so saves are no-ops.
-          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ hashFiles('conanfile.py') }}
+          # Two disjoint cache families: 'sanitizers' and 'clean'. Sanitizer
+          # flags change every compile command, so a sanitizer cache
+          # restored into a non-sanitizer build (or vice-versa) produces
+          # ~0 hits. The explicit suffix keeps `restore-keys`' prefix
+          # match from leaking between families.
+          #
+          # The primary key ends in `${{ github.run_id }}` so it is
+          # guaranteed *not* to be an exact restore hit — this is
+          # deliberate. Previously the key ended in
+          # `hashFiles('conanfile.py')`, which almost never changed
+          # between runs, so the sibling save step (gated on
+          # `cache-hit != 'true'`) was always skipped and the on-disk
+          # cache stayed pinned to whatever the first run wrote
+          # (Hits: 0 / 1090 = 0.00% on master's Linux Build & Test).
+          # With the run_id-suffixed key, restore always falls through
+          # to `restore-keys` and picks the most-recently-saved family
+          # member; the save step below then writes back the freshly
+          # populated cache. GHA's LRU eviction keeps total per-repo
+          # cache under the 10 GB cap.
+          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ github.run_id }}
           restore-keys: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-
 
       - name: 🔨 Build
@@ -296,12 +307,20 @@ jobs:
           key: ${{ steps.restore-conan.outputs.cache-primary-key }}
 
       - name: 🗄️ Save ccache
+        # Save on every non-upload run. The old gate
+        # `cache-hit != 'true'` skipped saves for every run whose
+        # `conanfile.py`-hashed key already existed, freezing the cache
+        # at whatever the first run wrote. The primary key now includes
+        # `github.run_id` so it's unique per run, cache-hit is never
+        # `'true'`, and the save actually runs — but the gate stays as
+        # documentation of the invariant we want (save only when we
+        # have something new to save).
         if: always() && inputs.upload != true && steps.restore-ccache.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: /github/home/.cache/ccache
-          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ hashFiles('conanfile.py') }}
+          key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ github.run_id }}
 
       - name: 📊 Build summary
         if: always()
