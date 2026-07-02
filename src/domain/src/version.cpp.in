@@ -1,0 +1,21 @@
+// Copyright (c) 2016-2025 Knuth Project developers.
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+///////////////////////////////////////////////////////////////////////////////
+//
+//        GENERATED FROM src/version.cpp.in — DO NOT EDIT
+//
+///////////////////////////////////////////////////////////////////////////////
+
+#include <kth/domain/version.hpp>
+
+namespace kth {
+
+// Only this translation unit sees the build-time version string. Bumping
+// `KTH_VERSION` (e.g. across a commit-count change in the CI build) only
+// forces `version.cpp.o` to be rebuilt, not every TU that includes the
+// header.
+std::string_view const version = "@KTH_VERSION@";
+
+} // namespace kth
