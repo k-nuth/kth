@@ -80,63 +80,63 @@ TEST_CASE("VM-AUTO #1327 [Should Fail: MINIMALDATA]: 1 to 16 minimally represent
 
 TEST_CASE("VM-AUTO #1328 [Should Fail: MINIMALDATA]: [02] | drop 1", "[vm][auto]") { run_bchn_test({"[02]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1329 [Should Fail: MINIMALDATA]:  | [02] drop 1", "[vm][auto]") { run_bchn_test({"", "[02] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1329 [Should Fail: MINIMALDATA]: | [02] drop 1", "[vm][auto]") { run_bchn_test({"", "[02] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1330 [Should Fail: MINIMALDATA]: [03] | drop 1", "[vm][auto]") { run_bchn_test({"[03]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1331 [Should Fail: MINIMALDATA]:  | [03] drop 1", "[vm][auto]") { run_bchn_test({"", "[03] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1331 [Should Fail: MINIMALDATA]: | [03] drop 1", "[vm][auto]") { run_bchn_test({"", "[03] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1332 [Should Fail: MINIMALDATA]: [04] | drop 1", "[vm][auto]") { run_bchn_test({"[04]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1333 [Should Fail: MINIMALDATA]:  | [04] drop 1", "[vm][auto]") { run_bchn_test({"", "[04] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1333 [Should Fail: MINIMALDATA]: | [04] drop 1", "[vm][auto]") { run_bchn_test({"", "[04] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1334 [Should Fail: MINIMALDATA]: [05] | drop 1", "[vm][auto]") { run_bchn_test({"[05]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1335 [Should Fail: MINIMALDATA]:  | [05] drop 1", "[vm][auto]") { run_bchn_test({"", "[05] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1335 [Should Fail: MINIMALDATA]: | [05] drop 1", "[vm][auto]") { run_bchn_test({"", "[05] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1336 [Should Fail: MINIMALDATA]: [06] | drop 1", "[vm][auto]") { run_bchn_test({"[06]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1337 [Should Fail: MINIMALDATA]:  | [06] drop 1", "[vm][auto]") { run_bchn_test({"", "[06] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1337 [Should Fail: MINIMALDATA]: | [06] drop 1", "[vm][auto]") { run_bchn_test({"", "[06] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1338 [Should Fail: MINIMALDATA]: [07] | drop 1", "[vm][auto]") { run_bchn_test({"[07]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1339 [Should Fail: MINIMALDATA]:  | [07] drop 1", "[vm][auto]") { run_bchn_test({"", "[07] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1339 [Should Fail: MINIMALDATA]: | [07] drop 1", "[vm][auto]") { run_bchn_test({"", "[07] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1340 [Should Fail: MINIMALDATA]: [08] | drop 1", "[vm][auto]") { run_bchn_test({"[08]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1341 [Should Fail: MINIMALDATA]:  | [08] drop 1", "[vm][auto]") { run_bchn_test({"", "[08] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1341 [Should Fail: MINIMALDATA]: | [08] drop 1", "[vm][auto]") { run_bchn_test({"", "[08] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1342 [Should Fail: MINIMALDATA]: [09] | drop 1", "[vm][auto]") { run_bchn_test({"[09]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1343 [Should Fail: MINIMALDATA]:  | [09] drop 1", "[vm][auto]") { run_bchn_test({"", "[09] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1343 [Should Fail: MINIMALDATA]: | [09] drop 1", "[vm][auto]") { run_bchn_test({"", "[09] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1344 [Should Fail: MINIMALDATA]: [0a] | drop 1", "[vm][auto]") { run_bchn_test({"[0a]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1345 [Should Fail: MINIMALDATA]:  | [0a] drop 1", "[vm][auto]") { run_bchn_test({"", "[0a] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1345 [Should Fail: MINIMALDATA]: | [0a] drop 1", "[vm][auto]") { run_bchn_test({"", "[0a] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1346 [Should Fail: MINIMALDATA]: [0b] | drop 1", "[vm][auto]") { run_bchn_test({"[0b]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1347 [Should Fail: MINIMALDATA]:  | [0b] drop 1", "[vm][auto]") { run_bchn_test({"", "[0b] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1347 [Should Fail: MINIMALDATA]: | [0b] drop 1", "[vm][auto]") { run_bchn_test({"", "[0b] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1348 [Should Fail: MINIMALDATA]: [0c] | drop 1", "[vm][auto]") { run_bchn_test({"[0c]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1349 [Should Fail: MINIMALDATA]:  | [0c] drop 1", "[vm][auto]") { run_bchn_test({"", "[0c] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1349 [Should Fail: MINIMALDATA]: | [0c] drop 1", "[vm][auto]") { run_bchn_test({"", "[0c] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1350 [Should Fail: MINIMALDATA]: [0d] | drop 1", "[vm][auto]") { run_bchn_test({"[0d]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1351 [Should Fail: MINIMALDATA]:  | [0d] drop 1", "[vm][auto]") { run_bchn_test({"", "[0d] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1351 [Should Fail: MINIMALDATA]: | [0d] drop 1", "[vm][auto]") { run_bchn_test({"", "[0d] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1352 [Should Fail: MINIMALDATA]: [0e] | drop 1", "[vm][auto]") { run_bchn_test({"[0e]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1353 [Should Fail: MINIMALDATA]:  | [0e] drop 1", "[vm][auto]") { run_bchn_test({"", "[0e] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1353 [Should Fail: MINIMALDATA]: | [0e] drop 1", "[vm][auto]") { run_bchn_test({"", "[0e] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1354 [Should Fail: MINIMALDATA]: [0f] | drop 1", "[vm][auto]") { run_bchn_test({"[0f]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1355 [Should Fail: MINIMALDATA]:  | [0f] drop 1", "[vm][auto]") { run_bchn_test({"", "[0f] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1355 [Should Fail: MINIMALDATA]: | [0f] drop 1", "[vm][auto]") { run_bchn_test({"", "[0f] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1356 [Should Fail: MINIMALDATA]: [10] | drop 1", "[vm][auto]") { run_bchn_test({"[10]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
-TEST_CASE("VM-AUTO #1357 [Should Fail: MINIMALDATA]:  | [10] drop 1", "[vm][auto]") { run_bchn_test({"", "[10] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
+TEST_CASE("VM-AUTO #1357 [Should Fail: MINIMALDATA]: | [10] drop 1", "[vm][auto]") { run_bchn_test({"", "[10] drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, ""}); } // flags: MINIMALDATA, expected: MINIMALDATA
 
 TEST_CASE("VM-AUTO #1358 [Should Fail: MINIMALDATA]: PUSHDATA1 of 72 bytes minimally represented by direct push", "[vm][auto]") { run_bchn_test({"[1.111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111]", "drop 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::minimaldata, "PUSHDATA1 of 72 bytes minimally represented by direct push"}); } // flags: MINIMALDATA, expected: MINIMALDATA
 

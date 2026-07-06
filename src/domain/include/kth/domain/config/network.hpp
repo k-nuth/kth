@@ -5,7 +5,14 @@
 #ifndef KTH_DOMAIN_CONFIG_NETWORK_HPP_
 #define KTH_DOMAIN_CONFIG_NETWORK_HPP_
 
+#include <algorithm>
+#include <cctype>
+#include <expected>
+#include <iterator>
 #include <string>
+#include <string_view>
+
+#include <kth/infrastructure/error.hpp>
 
 namespace kth::domain::config {
 
@@ -40,6 +47,28 @@ std::string_view name(network net) {
         case network::mainnet:
             return "Mainnet";
     }
+}
+
+/**
+ * Parse a case-insensitive network name. Returns `error::illegal_value`
+ * on an unknown value.
+ */
+[[nodiscard]] inline
+std::expected<network, kth::code> parse_network(std::string_view text) {
+    std::string upper;
+    upper.reserve(text.size());
+    std::transform(text.begin(), text.end(), std::back_inserter(upper),
+        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+
+    if (upper == "MAINNET") return network::mainnet;
+    if (upper == "TESTNET") return network::testnet;
+    if (upper == "REGTEST") return network::regtest;
+#if defined(KTH_CURRENCY_BCH)
+    if (upper == "TESTNET4") return network::testnet4;
+    if (upper == "SCALENET") return network::scalenet;
+    if (upper == "CHIPNET")  return network::chipnet;
+#endif
+    return std::unexpected(kth::error::illegal_value);
 }
 
 } // namespace kth::domain::config

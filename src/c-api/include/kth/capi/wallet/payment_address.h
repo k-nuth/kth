@@ -23,35 +23,6 @@ kth_payment_address_mut_t kth_wallet_payment_address_construct_default(void);
 
 /**
  * @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`.
- * @param decoded Borrowed input; must be non-null. Copied into the resulting object; ownership of `decoded` stays with the caller.
- */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_decoded(kth_payment_t const* decoded);
-
-/**
- * @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`.
- * @warning `decoded` MUST point to a buffer of at least 25 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_payment_t`.
- */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_decoded_unsafe(uint8_t const* decoded);
-
-/**
- * @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`.
- * @param secret Borrowed input. Copied by value into the resulting object; ownership of `secret` stays with the caller.
- */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_ec_private(kth_ec_private_const_t secret);
-
-/** @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_address(char const* address);
-
-/** @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_address_net(char const* address, kth_network_t net);
-
-/**
- * @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`.
  * @param short_hash Borrowed input; must be non-null. Copied into the resulting object; ownership of `short_hash` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
@@ -78,26 +49,12 @@ kth_payment_address_mut_t kth_wallet_payment_address_construct_from_hash_version
 KTH_EXPORT KTH_OWNED
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_hash_version_unsafe(uint8_t const* hash, uint8_t version);
 
-/**
- * @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`.
- * @param point Borrowed input. Copied by value into the resulting object; ownership of `point` stays with the caller.
- */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_ec_public_version(kth_ec_public_const_t point, uint8_t version);
-
-/**
- * @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`.
- * @param script Borrowed input. Copied by value into the resulting object; ownership of `script` stays with the caller.
- */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_script_version(kth_script_const_t script, uint8_t version);
-
 
 // Static factories
 
 /** @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`. */
 KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_from_pay_public_key_hash_script(kth_script_const_t script, uint8_t version);
+kth_payment_address_mut_t kth_wallet_payment_address_from_script(kth_script_const_t script, uint8_t version);
 
 
 // Destructor
@@ -119,10 +76,27 @@ kth_payment_address_mut_t kth_wallet_payment_address_copy(kth_payment_address_co
 KTH_EXPORT
 kth_bool_t kth_wallet_payment_address_equals(kth_payment_address_const_t self, kth_payment_address_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_wallet_payment_address_not_equal(kth_payment_address_const_t self, kth_payment_address_const_t other);
+
+
+// Ordering
+
+KTH_EXPORT
+kth_bool_t kth_wallet_payment_address_less(kth_payment_address_const_t self, kth_payment_address_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_wallet_payment_address_greater(kth_payment_address_const_t self, kth_payment_address_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_wallet_payment_address_less_or_equal(kth_payment_address_const_t self, kth_payment_address_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_wallet_payment_address_greater_or_equal(kth_payment_address_const_t self, kth_payment_address_const_t x);
+
 
 // Getters
 
-/** @return Non-zero if `self` is in a valid state, zero otherwise. */
 KTH_EXPORT
 kth_bool_t kth_wallet_payment_address_valid(kth_payment_address_const_t self);
 
@@ -150,11 +124,12 @@ kth_hash_t kth_wallet_payment_address_hash32(kth_payment_address_const_t self);
 KTH_EXPORT
 kth_payment_t kth_wallet_payment_address_to_payment(kth_payment_address_const_t self);
 
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_wallet_payment_address_to_string(kth_payment_address_const_t self);
+
 
 // Operations
-
-KTH_EXPORT
-kth_bool_t kth_wallet_payment_address_less(kth_payment_address_const_t self, kth_payment_address_const_t x);
 
 /** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
 KTH_EXPORT KTH_OWNED
@@ -162,6 +137,10 @@ char* kth_wallet_payment_address_encoded_cashaddr(kth_payment_address_const_t se
 
 
 // Static utilities
+
+/** @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_payment_address_from_pay_public_key_hash_script(kth_script_const_t script, uint8_t version, KTH_OUT_OWNED kth_payment_address_mut_t* out);
 
 /** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
 KTH_EXPORT KTH_OWNED
@@ -178,6 +157,36 @@ kth_payment_address_list_mut_t kth_wallet_payment_address_extract_input(kth_scri
 /** @return Owned `kth_payment_address_list_mut_t`. Caller must release with `kth_wallet_payment_address_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_payment_address_list_mut_t kth_wallet_payment_address_extract_output(kth_script_const_t script, uint8_t p2kh_version, uint8_t p2sh_version);
+
+/** @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_payment_address_parse_from_simple(char const* address, KTH_OUT_OWNED kth_payment_address_mut_t* out);
+
+/** @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_payment_address_parse_from(char const* address, kth_network_t net, KTH_OUT_OWNED kth_payment_address_mut_t* out);
+
+/**
+ * @param decoded Borrowed input; must be non-null. Read during the call; ownership of `decoded` stays with the caller.
+ * @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_wallet_payment_address_from_payment(kth_payment_t const* decoded, KTH_OUT_OWNED kth_payment_address_mut_t* out);
+
+/**
+ * @warning `decoded` MUST point to a buffer of at least 25 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_payment_t`.
+ * @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_wallet_payment_address_from_payment_unsafe(uint8_t const* decoded, KTH_OUT_OWNED kth_payment_address_mut_t* out);
+
+/** @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_payment_address_from_ec_private(kth_ec_private_const_t secret, KTH_OUT_OWNED kth_payment_address_mut_t* out);
+
+/** @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_payment_address_from_ec_public(kth_ec_public_const_t point, uint8_t version, KTH_OUT_OWNED kth_payment_address_mut_t* out);
 
 #ifdef __cplusplus
 } // extern "C"

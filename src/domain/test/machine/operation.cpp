@@ -12,7 +12,7 @@ data_chunk valid_raw_operation = to_chunk("0900ff11ee22bb33aa44"_base16);
 
 // Start Test Suite: operation tests
 
-TEST_CASE("operation  constructor 1  always  returns default initialized", "[operation]") {
+TEST_CASE("operation constructor 1 always returns default initialized", "[operation]") {
     operation instance;
 
     REQUIRE( ! instance.is_valid());
@@ -21,7 +21,7 @@ TEST_CASE("operation  constructor 1  always  returns default initialized", "[ope
     REQUIRE(instance.code() == opcode::invalidopcode);
 }
 
-TEST_CASE("operation  constructor 2  valid input  returns input initialized", "[operation]") {
+TEST_CASE("operation constructor 2 valid input returns input initialized", "[operation]") {
     auto const data = to_chunk("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_base16);
     auto dup_data = data;
     operation instance(std::move(dup_data));
@@ -31,7 +31,7 @@ TEST_CASE("operation  constructor 2  valid input  returns input initialized", "[
     REQUIRE(instance.data() == data);
 }
 
-TEST_CASE("operation  constructor 3  valid input  returns input initialized", "[operation]") {
+TEST_CASE("operation constructor 3 valid input returns input initialized", "[operation]") {
     auto const data = to_chunk("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_base16);
     operation instance(data);
 
@@ -40,7 +40,7 @@ TEST_CASE("operation  constructor 3  valid input  returns input initialized", "[
     REQUIRE(instance.data() == data);
 }
 
-TEST_CASE("operation  constructor 4  valid input  returns input initialized", "[operation]") {
+TEST_CASE("operation constructor 4 valid input returns input initialized", "[operation]") {
     operation const expected(to_chunk("23156214"_base16));
     operation instance(expected);
 
@@ -48,21 +48,21 @@ TEST_CASE("operation  constructor 4  valid input  returns input initialized", "[
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("operation  constructor 5  valid input  returns input initialized", "[operation]") {
+TEST_CASE("operation constructor 5 valid input returns input initialized", "[operation]") {
     operation expected(to_chunk("23156214"_base16));
     operation instance(std::move(expected));
 
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("operation from data insufficient bytes  failure", "[operation]") {
+TEST_CASE("operation from data insufficient bytes failure", "[operation]") {
     data_chunk const data;
     byte_reader reader(data);
     auto result = operation::from_data(reader);
     REQUIRE( ! result);
 }
 
-TEST_CASE("operation from data roundtrip push size 0  success", "[operation]") {
+TEST_CASE("operation from data roundtrip push size 0 success", "[operation]") {
     auto const data0 = to_chunk(""_base16);
     auto const raw_operation = to_chunk("00"_base16);
     operation instance;
@@ -85,7 +85,7 @@ TEST_CASE("operation from data roundtrip push size 0  success", "[operation]") {
     REQUIRE(instance.data() == data0);
 }
 
-TEST_CASE("operation from data roundtrip push size 75  success", "[operation]") {
+TEST_CASE("operation from data roundtrip push size 75 success", "[operation]") {
     auto const data75 = data_chunk(75, '.');
     auto const raw_operation = build_chunk({"4b"_base16, data75});
     operation instance;
@@ -108,7 +108,7 @@ TEST_CASE("operation from data roundtrip push size 75  success", "[operation]") 
     REQUIRE(instance.data() == data75);
 }
 
-TEST_CASE("operation from data roundtrip push negative 1  success", "[operation]") {
+TEST_CASE("operation from data roundtrip push negative 1 success", "[operation]") {
     static auto const op_79 = uint8_t(opcode::push_negative_1);
     auto const data1 = data_chunk{op_79};
     auto const raw_operation = data1;
@@ -135,7 +135,7 @@ TEST_CASE("operation from data roundtrip push negative 1  success", "[operation]
     REQUIRE(instance.data() == data_chunk{});
 }
 
-TEST_CASE("operation from data roundtrip push positive 1  success", "[operation]") {
+TEST_CASE("operation from data roundtrip push positive 1 success", "[operation]") {
     static auto const op_81 = uint8_t(opcode::push_positive_1);
     auto const data1 = data_chunk{op_81};
     auto const raw_operation = data1;
@@ -162,7 +162,7 @@ TEST_CASE("operation from data roundtrip push positive 1  success", "[operation]
     REQUIRE(instance.data() == data_chunk{});
 }
 
-TEST_CASE("operation from data roundtrip push positive 16  success", "[operation]") {
+TEST_CASE("operation from data roundtrip push positive 16 success", "[operation]") {
     static auto const op_96 = uint8_t(opcode::push_positive_16);
     auto const data1 = data_chunk{op_96};
     auto const raw_operation = data1;
@@ -188,7 +188,7 @@ TEST_CASE("operation from data roundtrip push positive 16  success", "[operation
     REQUIRE(instance.data() == data_chunk{});
 }
 
-TEST_CASE("operation from data roundtrip push one size  success", "[operation]") {
+TEST_CASE("operation from data roundtrip push one size success", "[operation]") {
     auto const data255 = data_chunk(255, '.');
     auto const raw_operation = build_chunk({"4cff"_base16, data255});
     operation instance;
@@ -211,7 +211,7 @@ TEST_CASE("operation from data roundtrip push one size  success", "[operation]")
     REQUIRE(instance.data() == data255);
 }
 
-TEST_CASE("operation from data roundtrip push two size  success", "[operation]") {
+TEST_CASE("operation from data roundtrip push two size success", "[operation]") {
     auto const data520 = data_chunk(520, '.');
     auto const raw_operation = build_chunk({"4d0802"_base16, data520});
     operation instance;
@@ -236,7 +236,7 @@ TEST_CASE("operation from data roundtrip push two size  success", "[operation]")
     REQUIRE(instance.data() == data520);
 }
 
-TEST_CASE("operation from data roundtrip push four size  success", "[operation]") {
+TEST_CASE("operation from data roundtrip push four size success", "[operation]") {
     auto const data520 = data_chunk(520, '.');
     auto const raw_operation = build_chunk({"4e08020000"_base16, data520});
     operation instance;
@@ -259,7 +259,7 @@ TEST_CASE("operation from data roundtrip push four size  success", "[operation]"
     REQUIRE(instance.data() == data520);
 }
 
-TEST_CASE("operation from data roundtrip  success", "[operation]") {
+TEST_CASE("operation from data roundtrip success", "[operation]") {
     byte_reader reader(valid_raw_operation);
     auto result_exp = machine::operation::from_data(reader);
     REQUIRE(result_exp);
@@ -270,7 +270,7 @@ TEST_CASE("operation from data roundtrip  success", "[operation]") {
     REQUIRE(output == valid_raw_operation);
 }
 
-TEST_CASE("operation  operator assign equals 1  always  matches equivalent", "[operation]") {
+TEST_CASE("operation operator assign equals 1 always matches equivalent", "[operation]") {
     byte_reader reader(valid_raw_operation);
     auto result = operation::from_data(reader);
     REQUIRE(result);
@@ -285,7 +285,7 @@ TEST_CASE("operation  operator assign equals 1  always  matches equivalent", "[o
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("operation  operator assign equals 2  always  matches equivalent", "[operation]") {
+TEST_CASE("operation operator assign equals 2 always matches equivalent", "[operation]") {
     byte_reader reader(valid_raw_operation);
     auto result = operation::from_data(reader);
     REQUIRE(result);
@@ -295,7 +295,7 @@ TEST_CASE("operation  operator assign equals 2  always  matches equivalent", "[o
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("operation  operator boolean equals  duplicates  returns true", "[operation]") {
+TEST_CASE("operation operator boolean equals duplicates returns true", "[operation]") {
     operation alpha;
     operation beta;
     byte_reader reader(valid_raw_operation);
@@ -309,7 +309,7 @@ TEST_CASE("operation  operator boolean equals  duplicates  returns true", "[oper
     REQUIRE(alpha == beta);
 }
 
-TEST_CASE("operation  operator boolean equals  differs  returns false", "[operation]") {
+TEST_CASE("operation operator boolean equals differs returns false", "[operation]") {
     operation alpha;
     operation beta;
     byte_reader reader(valid_raw_operation);
@@ -319,7 +319,7 @@ TEST_CASE("operation  operator boolean equals  differs  returns false", "[operat
     REQUIRE(alpha != beta);
 }
 
-TEST_CASE("operation  operator boolean not equals  duplicates  returns false", "[operation]") {
+TEST_CASE("operation operator boolean not equals duplicates returns false", "[operation]") {
     operation alpha;
     operation beta;
     byte_reader reader(valid_raw_operation);
@@ -333,7 +333,7 @@ TEST_CASE("operation  operator boolean not equals  duplicates  returns false", "
     REQUIRE(alpha == beta);
 }
 
-TEST_CASE("operation  operator boolean not equals  differs  returns true", "[operation]") {
+TEST_CASE("operation operator boolean not equals differs returns true", "[operation]") {
     operation alpha;
     operation beta;
     byte_reader reader(valid_raw_operation);
@@ -345,43 +345,43 @@ TEST_CASE("operation  operator boolean not equals  differs  returns true", "[ope
 
 // to_string
 
-TEST_CASE("operation  to string  push size 0  zero", "[operation]") {
+TEST_CASE("operation to string push size 0 zero", "[operation]") {
     operation value(opcode::push_size_0);
     REQUIRE(value.to_string(0) == "zero");
 }
 
-TEST_CASE("operation  to string  push size 75  push 75", "[operation]") {
+TEST_CASE("operation to string push size 75 push 75", "[operation]") {
     // Empty data allows the push code to serialize as an op code.
     operation value(opcode::push_size_75);
     REQUIRE(value.to_string(0) == "push_75");
 }
 
-TEST_CASE("operation  to string  push positive 7  7", "[operation]") {
+TEST_CASE("operation to string push positive 7 7", "[operation]") {
     operation value(opcode::push_positive_7);
     REQUIRE(value.to_string(0) == "7");
 }
 
-TEST_CASE("operation  to string minimal  0x07  7", "[operation]") {
+TEST_CASE("operation to string minimal 0x07 7", "[operation]") {
     operation value({0x07}, true);
     REQUIRE(value.to_string(0) == "7");
 }
 
-TEST_CASE("operation  to string nominal  0x07  0x07", "[operation]") {
+TEST_CASE("operation to string nominal 0x07 0x07", "[operation]") {
     operation value({0x07}, false);
     REQUIRE(value.to_string(0) == "[07]");
 }
 
-TEST_CASE("operation  to string  0x42  0x42", "[operation]") {
+TEST_CASE("operation to string 0x42 0x42", "[operation]") {
     operation value({0x42}, true);
     REQUIRE(value.to_string(0) == "[42]");
 }
 
-TEST_CASE("operation  to string  0x112233  0x112233", "[operation]") {
+TEST_CASE("operation to string 0x112233 0x112233", "[operation]") {
     operation value({{0x11, 0x22, 0x33}}, true);
     REQUIRE(value.to_string(0) == "[112233]");
 }
 
-TEST_CASE("operation  to string  push size 3  0x112233  0x112233", "[operation]") {
+TEST_CASE("operation to string push size 3 0x112233 0x112233", "[operation]") {
     static data_chunk const encoded{{0x03, 0x11, 0x22, 0x33}};
 
     byte_reader reader(encoded);
@@ -391,7 +391,7 @@ TEST_CASE("operation  to string  push size 3  0x112233  0x112233", "[operation]"
     REQUIRE(value.to_string(0) == "[112233]");
 }
 
-TEST_CASE("operation  to string  push one size 0x112233  1 0x112233", "[operation]") {
+TEST_CASE("operation to string push one size 0x112233 1 0x112233", "[operation]") {
     static data_chunk const encoded{{0x4c, 0x03, 0x11, 0x22, 0x33}};
 
     byte_reader reader(encoded);
@@ -401,7 +401,7 @@ TEST_CASE("operation  to string  push one size 0x112233  1 0x112233", "[operatio
     REQUIRE(value.to_string(0) == "[1.112233]");
 }
 
-TEST_CASE("operation  to string  push two size 0x112233  2 0x112233", "[operation]") {
+TEST_CASE("operation to string push two size 0x112233 2 0x112233", "[operation]") {
     static data_chunk const encoded{{0x4d, 0x03, 0x00, 0x11, 0x22, 0x33}};
 
     byte_reader reader(encoded);
@@ -411,7 +411,7 @@ TEST_CASE("operation  to string  push two size 0x112233  2 0x112233", "[operatio
     REQUIRE(value.to_string(0) == "[2.112233]");
 }
 
-TEST_CASE("operation  to string  push four size 0x112233  4 0x112233", "[operation]") {
+TEST_CASE("operation to string push four size 0x112233 4 0x112233", "[operation]") {
     static data_chunk const encoded{{0x4e, 0x03, 0x00, 0x00, 0x00, 0x11, 0x22, 0x33}};
 
     byte_reader reader(encoded);
@@ -421,57 +421,57 @@ TEST_CASE("operation  to string  push four size 0x112233  4 0x112233", "[operati
     REQUIRE(value.to_string(0) == "[4.112233]");
 }
 
-TEST_CASE("operation  to string  nop2 no rules  nop2", "[operation]") {
+TEST_CASE("operation to string nop2 no rules nop2", "[operation]") {
     operation value(opcode::nop2);
     REQUIRE(value.to_string(machine::script_flags::no_rules) == "nop2");
 }
 
-TEST_CASE("operation  to string  nop2 bip65 rule  checklocktimeverify", "[operation]") {
+TEST_CASE("operation to string nop2 bip65 rule checklocktimeverify", "[operation]") {
     operation value(opcode::nop2);
     REQUIRE(value.to_string(machine::script_flags::bip65_rule) == "checklocktimeverify");
 }
 
-TEST_CASE("operation  to string  nop3 no rules  nop3", "[operation]") {
+TEST_CASE("operation to string nop3 no rules nop3", "[operation]") {
     operation value(opcode::nop3);
     REQUIRE(value.to_string(machine::script_flags::no_rules) == "nop3");
 }
 
-TEST_CASE("operation  to string  nop3 bip112 rule  checksequenceverify", "[operation]") {
+TEST_CASE("operation to string nop3 bip112 rule checksequenceverify", "[operation]") {
     operation value(opcode::nop3);
     REQUIRE(value.to_string(machine::script_flags::bip112_rule) == "checksequenceverify");
 }
 
 // from_string
 
-TEST_CASE("operation  from string  negative 1  push negative 1 empty", "[operation]") {
+TEST_CASE("operation from string negative 1 push negative 1 empty", "[operation]") {
     operation value;
     REQUIRE(value.from_string("-1"));
     REQUIRE(value.code() == opcode::push_negative_1);
     REQUIRE(value.data().empty());
 }
 
-TEST_CASE("operation  from string  0  push size 0 empty", "[operation]") {
+TEST_CASE("operation from string 0 push size 0 empty", "[operation]") {
     operation value;
     REQUIRE(value.from_string("0"));
     REQUIRE(value.code() == opcode::push_size_0);
     REQUIRE(value.data().empty());
 }
 
-TEST_CASE("operation  from string  1  push positive 1 empty", "[operation]") {
+TEST_CASE("operation from string 1 push positive 1 empty", "[operation]") {
     operation value;
     REQUIRE(value.from_string("1"));
     REQUIRE(value.code() == opcode::push_positive_1);
     REQUIRE(value.data().empty());
 }
 
-TEST_CASE("operation  from string  16  push positive 16 empty", "[operation]") {
+TEST_CASE("operation from string 16 push positive 16 empty", "[operation]") {
     operation value;
     REQUIRE(value.from_string("16"));
     REQUIRE(value.code() == opcode::push_positive_16);
     REQUIRE(value.data().empty());
 }
 
-TEST_CASE("operation  from string  17  push size 1 expected", "[operation]") {
+TEST_CASE("operation from string 17 push size 1 expected", "[operation]") {
     static data_chunk const expected{0x11};
     operation value;
     REQUIRE(value.from_string("17"));
@@ -481,7 +481,7 @@ TEST_CASE("operation  from string  17  push size 1 expected", "[operation]") {
     REQUIRE(value.data() == expected);
 }
 
-TEST_CASE("operation  from string  negative 2  push size 1 expected", "[operation]") {
+TEST_CASE("operation from string negative 2 push size 1 expected", "[operation]") {
     static data_chunk const expected{0x82};
     operation value;
     REQUIRE(value.from_string("-2"));
@@ -489,7 +489,7 @@ TEST_CASE("operation  from string  negative 2  push size 1 expected", "[operatio
     REQUIRE(value.data() == expected);
 }
 
-TEST_CASE("operation  from string  9223372036854775807  push size 8 expected", "[operation]") {
+TEST_CASE("operation from string 9223372036854775807 push size 8 expected", "[operation]") {
     static data_chunk const expected{{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f}};
     operation value;
     REQUIRE(value.from_string("9223372036854775807"));
@@ -497,7 +497,7 @@ TEST_CASE("operation  from string  9223372036854775807  push size 8 expected", "
     REQUIRE(value.data() == expected);
 }
 
-TEST_CASE("operation  from string  negative 9223372036854775807  push size 8 expected", "[operation]") {
+TEST_CASE("operation from string negative 9223372036854775807 push size 8 expected", "[operation]") {
     static data_chunk const expected{{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}};
     operation value;
     REQUIRE(value.from_string("-9223372036854775807"));
@@ -505,7 +505,7 @@ TEST_CASE("operation  from string  negative 9223372036854775807  push size 8 exp
     REQUIRE(value.data() == expected);
 }
 
-TEST_CASE("operation  from string  string empty  push size 0 empty", "[operation]") {
+TEST_CASE("operation from string string empty push size 0 empty", "[operation]") {
     static data_chunk const expected{0x61};
     operation value;
     REQUIRE(value.from_string("''"));
@@ -513,7 +513,7 @@ TEST_CASE("operation  from string  string empty  push size 0 empty", "[operation
     REQUIRE(value.data().empty());
 }
 
-TEST_CASE("operation  from string  string a  push size 1 expected byte", "[operation]") {
+TEST_CASE("operation from string string a push size 1 expected byte", "[operation]") {
     static data_chunk const expected{0x61};
     operation value;
     REQUIRE(value.from_string("'a'"));
@@ -521,7 +521,7 @@ TEST_CASE("operation  from string  string a  push size 1 expected byte", "[opera
     REQUIRE(value.data() == expected);
 }
 
-TEST_CASE("operation  from string  string abc  push size 3 expected byte order", "[operation]") {
+TEST_CASE("operation from string string abc push size 3 expected byte order", "[operation]") {
     static data_chunk const expected{{0x61, 0x62, 0x63}};
     operation value;
     REQUIRE(value.from_string("'abc'"));
@@ -529,7 +529,7 @@ TEST_CASE("operation  from string  string abc  push size 3 expected byte order",
     REQUIRE(value.data() == expected);
 }
 
-TEST_CASE("operation  from string  negative 1 character  push size 1 nominal encoding", "[operation]") {
+TEST_CASE("operation from string negative 1 character push size 1 nominal encoding", "[operation]") {
     static data_chunk const expected{0x4f};
     operation value;
     REQUIRE(value.from_string("'O'"));
@@ -537,52 +537,52 @@ TEST_CASE("operation  from string  negative 1 character  push size 1 nominal enc
     REQUIRE(value.data() == expected);
 }
 
-TEST_CASE("operation  from string  push 0  push size 0", "[operation]") {
+TEST_CASE("operation from string push 0 push size 0", "[operation]") {
     operation value;
     REQUIRE(value.from_string("push_0"));
     REQUIRE(value.code() == opcode::push_size_0);
     REQUIRE(value.data().empty());
 }
 
-TEST_CASE("operation  from string  push 1  false", "[operation]") {
+TEST_CASE("operation from string push 1 false", "[operation]") {
     operation value;
     REQUIRE( ! value.from_string("push_1"));
 }
 
-TEST_CASE("operation  from string  push 75  false", "[operation]") {
+TEST_CASE("operation from string push 75 false", "[operation]") {
     operation value;
     REQUIRE( ! value.from_string("push_75"));
 }
 
-TEST_CASE("operation  from string  push one  push one size empty", "[operation]") {
+TEST_CASE("operation from string push one push one size empty", "[operation]") {
     operation value;
     REQUIRE(value.from_string("push_one"));
     REQUIRE(value.code() == opcode::push_one_size);
     REQUIRE(value.data().empty());
 }
 
-TEST_CASE("operation  from string  push two  push two size empty", "[operation]") {
+TEST_CASE("operation from string push two push two size empty", "[operation]") {
     operation value;
     REQUIRE(value.from_string("push_two"));
     REQUIRE(value.code() == opcode::push_two_size);
     REQUIRE(value.data().empty());
 }
 
-TEST_CASE("operation  from string  push four  push four size empty", "[operation]") {
+TEST_CASE("operation from string push four push four size empty", "[operation]") {
     operation value;
     REQUIRE(value.from_string("push_four"));
     REQUIRE(value.code() == opcode::push_four_size);
     REQUIRE(value.data().empty());
 }
 
-TEST_CASE("operation  from string  7  push positive 7", "[operation]") {
+TEST_CASE("operation from string 7 push positive 7", "[operation]") {
     operation value;
     REQUIRE(value.from_string("7"));
     REQUIRE(value.code() == opcode::push_positive_7);
     REQUIRE(value.data().empty());
 }
 
-TEST_CASE("operation  from string  0x07  push size 1", "[operation]") {
+TEST_CASE("operation from string 0x07 push size 1", "[operation]") {
     static data_chunk const expected{0x07};
     operation value;
     REQUIRE(value.from_string("[07]"));
@@ -590,7 +590,7 @@ TEST_CASE("operation  from string  0x07  push size 1", "[operation]") {
     REQUIRE(value.data() == expected);
 }
 
-TEST_CASE("operation  from string  0x42  push size 1", "[operation]") {
+TEST_CASE("operation from string 0x42 push size 1", "[operation]") {
     static data_chunk const expected{0x42};
     operation value;
     REQUIRE(value.from_string("[42]"));
@@ -598,7 +598,7 @@ TEST_CASE("operation  from string  0x42  push size 1", "[operation]") {
     REQUIRE(value.data() == expected);
 }
 
-TEST_CASE("operation  from string  0x112233  push size 3", "[operation]") {
+TEST_CASE("operation from string 0x112233 push size 3", "[operation]") {
     static data_chunk const expected{{0x11, 0x22, 0x33}};
     operation value;
     REQUIRE(value.from_string("[112233]"));
@@ -606,7 +606,7 @@ TEST_CASE("operation  from string  0x112233  push size 3", "[operation]") {
     REQUIRE(value.data() == expected);
 }
 
-TEST_CASE("operation  from string  0 0x112233  push size 3", "[operation]") {
+TEST_CASE("operation from string 0 0x112233 push size 3", "[operation]") {
     static data_chunk const expected{{0x11, 0x22, 0x33}};
     operation value;
     REQUIRE(value.from_string("[0.112233]"));
@@ -614,7 +614,7 @@ TEST_CASE("operation  from string  0 0x112233  push size 3", "[operation]") {
     REQUIRE(value.data() == expected);
 }
 
-TEST_CASE("operation  from string  1 0x112233  push one size", "[operation]") {
+TEST_CASE("operation from string 1 0x112233 push one size", "[operation]") {
     static data_chunk const expected{{0x11, 0x22, 0x33}};
     operation value;
     REQUIRE(value.from_string("[1.112233]"));
@@ -622,7 +622,7 @@ TEST_CASE("operation  from string  1 0x112233  push one size", "[operation]") {
     REQUIRE(value.data() == expected);
 }
 
-TEST_CASE("operation  from string  2 0x112233  push two size", "[operation]") {
+TEST_CASE("operation from string 2 0x112233 push two size", "[operation]") {
     static data_chunk const expected{{0x11, 0x22, 0x33}};
     operation value;
     REQUIRE(value.from_string("[2.112233]"));
@@ -630,7 +630,7 @@ TEST_CASE("operation  from string  2 0x112233  push two size", "[operation]") {
     REQUIRE(value.data() == expected);
 }
 
-TEST_CASE("operation  from string  4 0x112233  push four size", "[operation]") {
+TEST_CASE("operation from string 4 0x112233 push four size", "[operation]") {
     static data_chunk const expected{{0x11, 0x22, 0x33}};
     operation value;
     REQUIRE(value.from_string("[4.112233]"));
@@ -638,17 +638,17 @@ TEST_CASE("operation  from string  4 0x112233  push four size", "[operation]") {
     REQUIRE(value.data() == expected);
 }
 
-TEST_CASE("operation  from string  5 0x112233  false", "[operation]") {
+TEST_CASE("operation from string 5 0x112233 false", "[operation]") {
     operation value;
     REQUIRE( ! value.from_string("[5.112233]"));
 }
 
-TEST_CASE("operation  from string  empty 0x112233  false", "[operation]") {
+TEST_CASE("operation from string empty 0x112233 false", "[operation]") {
     operation value;
     REQUIRE( ! value.from_string("[.112233]"));
 }
 
-TEST_CASE("operation  from string  nop2  nop2 checklocktimeverify", "[operation]") {
+TEST_CASE("operation from string nop2 nop2 checklocktimeverify", "[operation]") {
     operation value;
     REQUIRE(value.from_string("nop2"));
     REQUIRE(value.code() == opcode::nop2);
@@ -656,7 +656,7 @@ TEST_CASE("operation  from string  nop2  nop2 checklocktimeverify", "[operation]
     REQUIRE(value.data().empty());
 }
 
-TEST_CASE("operation  from string  checklocktimeverify  nop2 checklocktimeverify", "[operation]") {
+TEST_CASE("operation from string checklocktimeverify nop2 checklocktimeverify", "[operation]") {
     operation value;
     REQUIRE(value.from_string("checklocktimeverify"));
     REQUIRE(value.code() == opcode::nop2);
@@ -664,7 +664,7 @@ TEST_CASE("operation  from string  checklocktimeverify  nop2 checklocktimeverify
     REQUIRE(value.data().empty());
 }
 
-TEST_CASE("operation  from string  nop3  nop3 checksequenceverify", "[operation]") {
+TEST_CASE("operation from string nop3 nop3 checksequenceverify", "[operation]") {
     operation value;
     REQUIRE(value.from_string("nop3"));
     REQUIRE(value.code() == opcode::nop3);
@@ -672,7 +672,7 @@ TEST_CASE("operation  from string  nop3  nop3 checksequenceverify", "[operation]
     REQUIRE(value.data().empty());
 }
 
-TEST_CASE("operation  from string  checklocktimeverify  nop3 checksequenceverify", "[operation]") {
+TEST_CASE("operation from string checklocktimeverify nop3 checksequenceverify", "[operation]") {
     operation value;
     REQUIRE(value.from_string("checksequenceverify"));
     REQUIRE(value.code() == opcode::nop3);

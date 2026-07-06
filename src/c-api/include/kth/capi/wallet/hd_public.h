@@ -50,14 +50,6 @@ kth_hd_public_mut_t kth_wallet_hd_public_construct_from_public_key_prefix(kth_hd
 KTH_EXPORT KTH_OWNED
 kth_hd_public_mut_t kth_wallet_hd_public_construct_from_public_key_prefix_unsafe(uint8_t const* public_key, uint32_t prefix);
 
-/** @return Owned `kth_hd_public_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_public_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_hd_public_mut_t kth_wallet_hd_public_construct_from_encoded(char const* encoded);
-
-/** @return Owned `kth_hd_public_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_public_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_hd_public_mut_t kth_wallet_hd_public_construct_from_encoded_prefix(char const* encoded, uint32_t prefix);
-
 
 // Destructor
 
@@ -78,16 +70,29 @@ kth_hd_public_mut_t kth_wallet_hd_public_copy(kth_hd_public_const_t self);
 KTH_EXPORT
 kth_bool_t kth_wallet_hd_public_equals(kth_hd_public_const_t self, kth_hd_public_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_wallet_hd_public_not_equal(kth_hd_public_const_t self, kth_hd_public_const_t other);
+
+
+// Ordering
+
+KTH_EXPORT
+kth_bool_t kth_wallet_hd_public_less(kth_hd_public_const_t self, kth_hd_public_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_wallet_hd_public_greater(kth_hd_public_const_t self, kth_hd_public_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_wallet_hd_public_less_or_equal(kth_hd_public_const_t self, kth_hd_public_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_wallet_hd_public_greater_or_equal(kth_hd_public_const_t self, kth_hd_public_const_t x);
+
 
 // Getters
 
-/** @return Non-zero if `self` is in a valid state, zero otherwise. */
 KTH_EXPORT
 kth_bool_t kth_wallet_hd_public_valid(kth_hd_public_const_t self);
-
-/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
-KTH_EXPORT KTH_OWNED
-char* kth_wallet_hd_public_encoded(kth_hd_public_const_t self);
 
 KTH_EXPORT
 kth_hash_t kth_wallet_hd_public_chain_code(kth_hd_public_const_t self);
@@ -101,11 +106,12 @@ kth_ec_compressed_t kth_wallet_hd_public_point(kth_hd_public_const_t self);
 KTH_EXPORT
 kth_hd_key_t kth_wallet_hd_public_to_hd_key(kth_hd_public_const_t self);
 
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_wallet_hd_public_to_string(kth_hd_public_const_t self);
+
 
 // Operations
-
-KTH_EXPORT
-kth_bool_t kth_wallet_hd_public_less(kth_hd_public_const_t self, kth_hd_public_const_t x);
 
 /** @return Owned `kth_hd_public_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_hd_public_destruct`. */
 KTH_EXPORT KTH_OWNED
@@ -116,6 +122,14 @@ kth_hd_public_mut_t kth_wallet_hd_public_derive_public(kth_hd_public_const_t sel
 
 KTH_EXPORT
 uint32_t kth_wallet_hd_public_to_prefix(uint64_t prefixes);
+
+/** @param[out] out Must point to a null `kth_hd_public_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_hd_public_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_hd_public_parse_from(char const* encoded, KTH_OUT_OWNED kth_hd_public_mut_t* out);
+
+/** @param[out] out Must point to a null `kth_hd_public_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_hd_public_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_hd_public_parse_from_with_prefix(char const* encoded, uint32_t prefix, KTH_OUT_OWNED kth_hd_public_mut_t* out);
 
 #ifdef __cplusplus
 } // extern "C"

@@ -157,11 +157,11 @@ std::expected<whitelist_permissions, std::string> parse_whitelist(std::string_vi
     }
 
     // Try to parse as authority (IP:port or just IP)
-    try {
-        output.subnet = infrastructure::config::authority(std::string(address_str));
-    } catch (std::exception const& e) {
-        return std::unexpected("Invalid address: " + std::string(e.what()));
+    auto parsed = infrastructure::config::authority::parse_from(address_str);
+    if ( ! parsed) {
+        return std::unexpected("Invalid address: " + std::string(address_str));
     }
+    output.subnet = std::move(*parsed);
 
     return output;
 }
@@ -205,11 +205,11 @@ std::expected<whitebind_permissions, std::string> parse_whitebind(std::string_vi
         return std::unexpected("Missing bind address in whitebind entry");
     }
 
-    try {
-        output.bind_address = infrastructure::config::authority(std::string(address_str));
-    } catch (std::exception const& e) {
-        return std::unexpected("Invalid bind address: " + std::string(e.what()));
+    auto parsed = infrastructure::config::authority::parse_from(address_str);
+    if ( ! parsed) {
+        return std::unexpected("Invalid bind address: " + std::string(address_str));
     }
+    output.bind_address = std::move(*parsed);
 
     return output;
 }

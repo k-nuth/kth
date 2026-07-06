@@ -30,12 +30,10 @@ TEST_CASE("infrastructure binary encoded 8 bits from unsigned integer", "[infras
 
 // Start Test Suite: binary  to string
 
-TEST_CASE("infrastructure binary to string stream output", "[infrastructure][binary]") {
+TEST_CASE("infrastructure binary encoded string", "[infrastructure][binary]") {
     data_chunk const blocks{ { 0xba, 0xad, 0xf0, 0x0d } };
     binary const prefix(32, blocks);
-    std::stringstream stream;
-    stream << prefix;
-    REQUIRE(stream.str() == "10111010101011011111000000001101");
+    REQUIRE(prefix.encoded() == "10111010101011011111000000001101");
 }
 
 // End Test Suite
@@ -50,7 +48,7 @@ TEST_CASE("infrastructure binary shift left by zero", "[infrastructure][binary]"
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift left alternate initial", "[binary  shift left]") {
+TEST_CASE("shift left alternate initial", "[binary shift left]") {
     binary::size_type distance = 16;
     binary instance(24, data_chunk{ 0xAB, 0xCD, 0xEF });
     binary expected(8, data_chunk{ 0xEF });
@@ -58,7 +56,7 @@ TEST_CASE("shift left alternate initial", "[binary  shift left]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift left by less than byte", "[binary  shift left]") {
+TEST_CASE("shift left by less than byte", "[binary shift left]") {
     binary::size_type distance = 5;
     binary instance(24, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(19, data_chunk{ 0x55, 0x55, 0x40});
@@ -66,7 +64,7 @@ TEST_CASE("shift left by less than byte", "[binary  shift left]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift left by less than byte to byte align", "[binary  shift left]") {
+TEST_CASE("shift left by less than byte to byte align", "[binary shift left]") {
     binary::size_type distance = 5;
     binary instance(21, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(16, data_chunk{ 0x55, 0x55 });
@@ -74,7 +72,7 @@ TEST_CASE("shift left by less than byte to byte align", "[binary  shift left]") 
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift left by byte single", "[binary  shift left]") {
+TEST_CASE("shift left by byte single", "[binary shift left]") {
     binary::size_type distance = 8;
     binary instance(24, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(16, data_chunk{ 0xAA, 0xAA });
@@ -82,7 +80,7 @@ TEST_CASE("shift left by byte single", "[binary  shift left]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift left by greater than byte", "[binary  shift left]") {
+TEST_CASE("shift left by greater than byte", "[binary shift left]") {
     binary::size_type distance = 13;
     binary instance(24, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(11, data_chunk{ 0x55, 0x40 });
@@ -90,7 +88,7 @@ TEST_CASE("shift left by greater than byte", "[binary  shift left]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift left by greater than byte not initially aligned", "[binary  shift left]") {
+TEST_CASE("shift left by greater than byte not initially aligned", "[binary shift left]") {
     binary::size_type distance = 13;
     binary instance(18, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(5, data_chunk{ 0x50 });
@@ -98,7 +96,7 @@ TEST_CASE("shift left by greater than byte not initially aligned", "[binary  shi
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift left by byte multiple", "[binary  shift left]") {
+TEST_CASE("shift left by byte multiple", "[binary shift left]") {
     binary::size_type distance = 16;
     binary instance(24, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(8, data_chunk{ 0xAA });
@@ -106,7 +104,7 @@ TEST_CASE("shift left by byte multiple", "[binary  shift left]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift left by size", "[binary  shift left]") {
+TEST_CASE("shift left by size", "[binary shift left]") {
     binary::size_type distance = 24;
     binary instance(24, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(0, data_chunk{});
@@ -114,7 +112,7 @@ TEST_CASE("shift left by size", "[binary  shift left]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift left by greater than size", "[binary  shift left]") {
+TEST_CASE("shift left by greater than size", "[binary shift left]") {
     binary::size_type distance = 30;
     binary instance(24, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(0, data_chunk{});
@@ -126,7 +124,7 @@ TEST_CASE("shift left by greater than size", "[binary  shift left]") {
 
 // Start Test Suite: binary  shift right
 
-TEST_CASE("shift right by zero", "[binary  shift right]") {
+TEST_CASE("shift right by zero", "[binary shift right]") {
     binary::size_type distance = 0;
     binary instance(16, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(16, data_chunk{ 0xAA, 0xAA });
@@ -134,7 +132,7 @@ TEST_CASE("shift right by zero", "[binary  shift right]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift right by less than byte", "[binary  shift right]") {
+TEST_CASE("shift right by less than byte", "[binary shift right]") {
     binary::size_type distance = 5;
     binary instance(24, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(29, data_chunk{ 0x05, 0x55, 0x55, 0x50});
@@ -142,7 +140,7 @@ TEST_CASE("shift right by less than byte", "[binary  shift right]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift right by less than byte to byte align", "[binary  shift right]") {
+TEST_CASE("shift right by less than byte to byte align", "[binary shift right]") {
     binary::size_type distance = 3;
     binary instance(21, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(24, data_chunk{ 0x15, 0x55, 0x55 });
@@ -150,7 +148,7 @@ TEST_CASE("shift right by less than byte to byte align", "[binary  shift right]"
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift right by byte single", "[binary  shift right]") {
+TEST_CASE("shift right by byte single", "[binary shift right]") {
     binary::size_type distance = 8;
     binary instance(24, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(32, data_chunk{ 0x00, 0xAA, 0xAA, 0xAA });
@@ -158,7 +156,7 @@ TEST_CASE("shift right by byte single", "[binary  shift right]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift right by greater than byte", "[binary  shift right]") {
+TEST_CASE("shift right by greater than byte", "[binary shift right]") {
     binary::size_type distance = 13;
     binary instance(24, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(37, data_chunk{ 0x00, 0x05, 0x55, 0x55, 0x50 });
@@ -166,7 +164,7 @@ TEST_CASE("shift right by greater than byte", "[binary  shift right]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift right by greater than byte not initially aligned", "[binary  shift right]") {
+TEST_CASE("shift right by greater than byte not initially aligned", "[binary shift right]") {
     binary::size_type distance = 13;
     binary instance(18, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(31, data_chunk{ 0x00, 0x05, 0x55, 0x54 });
@@ -174,7 +172,7 @@ TEST_CASE("shift right by greater than byte not initially aligned", "[binary  sh
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift right by byte multiple", "[binary  shift right]") {
+TEST_CASE("shift right by byte multiple", "[binary shift right]") {
     binary::size_type distance = 16;
     binary instance(24, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(40, data_chunk{ 0x00, 0x00, 0xAA, 0xAA, 0xAA });
@@ -182,7 +180,7 @@ TEST_CASE("shift right by byte multiple", "[binary  shift right]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift right by size", "[binary  shift right]") {
+TEST_CASE("shift right by size", "[binary shift right]") {
     binary::size_type distance = 24;
     binary instance(24, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(48, data_chunk{ 0x00, 0x00, 0x00, 0xAA, 0xAA, 0xAA });
@@ -190,7 +188,7 @@ TEST_CASE("shift right by size", "[binary  shift right]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("shift right by greater than size", "[binary  shift right]") {
+TEST_CASE("shift right by greater than size", "[binary shift right]") {
     binary::size_type distance = 30;
     binary instance(24, data_chunk{ 0xAA, 0xAA, 0xAA });
     binary expected(54, data_chunk{ 0x00, 0x00, 0x00, 0x02, 0xAA, 0xAA, 0xA8 });
@@ -202,7 +200,7 @@ TEST_CASE("shift right by greater than size", "[binary  shift right]") {
 
 // Start Test Suite: binary  append
 
-TEST_CASE("append to zero length", "[binary  append]") {
+TEST_CASE("append to zero length", "[binary append]") {
     binary instance(0, data_chunk{ 0x00 });
     binary augment(24, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary expected(24, data_chunk{ 0xAA, 0xBB, 0xCC });
@@ -210,7 +208,7 @@ TEST_CASE("append to zero length", "[binary  append]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("append zero length to content", "[binary  append]") {
+TEST_CASE("append zero length to content", "[binary append]") {
     binary instance(24, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary augment(0, data_chunk{});
     binary expected(24, data_chunk{ 0xAA, 0xBB, 0xCC });
@@ -218,7 +216,7 @@ TEST_CASE("append zero length to content", "[binary  append]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("append byte aligned instances", "[binary  append]") {
+TEST_CASE("append byte aligned instances", "[binary append]") {
     binary instance(24, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary augment(24, data_chunk{ 0xDD, 0xEE, 0xFF });
     binary expected(48, data_chunk{ 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF });
@@ -226,7 +224,7 @@ TEST_CASE("append byte aligned instances", "[binary  append]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("append byte nonaligned instances", "[binary  append]") {
+TEST_CASE("append byte nonaligned instances", "[binary append]") {
     binary instance(20, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary augment(13, data_chunk{ 0xDD, 0xEE });
     binary expected(33, data_chunk{ 0xAA, 0xBB, 0xCD, 0xDE, 0x80 });
@@ -237,7 +235,7 @@ TEST_CASE("append byte nonaligned instances", "[binary  append]") {
 //
 // prepend tests
 //
-TEST_CASE("prepend to zero length", "[binary  append]") {
+TEST_CASE("prepend to zero length", "[binary append]") {
     binary instance(0, data_chunk{ 0x00 });
     binary augment(24, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary expected(24, data_chunk{ 0xAA, 0xBB, 0xCC });
@@ -245,7 +243,7 @@ TEST_CASE("prepend to zero length", "[binary  append]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("prepend zero length to content", "[binary  append]") {
+TEST_CASE("prepend zero length to content", "[binary append]") {
     binary instance(24, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary augment(0, data_chunk{});
     binary expected(24, data_chunk{ 0xAA, 0xBB, 0xCC });
@@ -253,7 +251,7 @@ TEST_CASE("prepend zero length to content", "[binary  append]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("prepend byte aligned instances", "[binary  append]") {
+TEST_CASE("prepend byte aligned instances", "[binary append]") {
     binary instance(24, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary augment(24, data_chunk{ 0xDD, 0xEE, 0xFF });
     binary expected(48, data_chunk{ 0xDD, 0xEE, 0xFF, 0xAA, 0xBB, 0xCC });
@@ -261,7 +259,7 @@ TEST_CASE("prepend byte aligned instances", "[binary  append]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("prepend byte nonaligned instances", "[binary  append]") {
+TEST_CASE("prepend byte nonaligned instances", "[binary append]") {
     binary instance(20, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary augment(13, data_chunk{ 0xDD, 0xEE });
     binary expected(33, data_chunk{ 0xDD, 0xED, 0x55, 0xDE, 0x00 });
@@ -273,7 +271,7 @@ TEST_CASE("prepend byte nonaligned instances", "[binary  append]") {
 
 // Start Test Suite: binary  substring
 
-TEST_CASE("substring start after end", "[binary  substring]") {
+TEST_CASE("substring start after end", "[binary substring]") {
     binary instance(20, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary::size_type start = 21;
     binary::size_type length = 10;
@@ -282,7 +280,7 @@ TEST_CASE("substring start after end", "[binary  substring]") {
     REQUIRE(expected == result);
 }
 
-TEST_CASE("substring length zero", "[binary  substring]") {
+TEST_CASE("substring length zero", "[binary substring]") {
     binary instance(20, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary::size_type start = 5;
     binary::size_type length = 0;
@@ -291,7 +289,7 @@ TEST_CASE("substring length zero", "[binary  substring]") {
     REQUIRE(expected == result);
 }
 
-TEST_CASE("substring byte aligned start", "[binary  substring]") {
+TEST_CASE("substring byte aligned start", "[binary substring]") {
     binary instance(20, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary::size_type start = 8;
     binary::size_type length = 10;
@@ -300,7 +298,7 @@ TEST_CASE("substring byte aligned start", "[binary  substring]") {
     REQUIRE(expected == result);
 }
 
-TEST_CASE("substring byte nonaligned start", "[binary  substring]") {
+TEST_CASE("substring byte nonaligned start", "[binary substring]") {
     binary instance(20, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary::size_type start = 10;
     binary::size_type length = 10;
@@ -309,7 +307,7 @@ TEST_CASE("substring byte nonaligned start", "[binary  substring]") {
     REQUIRE(expected == result);
 }
 
-TEST_CASE("substring request exceeds string", "[binary  substring]") {
+TEST_CASE("substring request exceeds string", "[binary substring]") {
     binary instance(20, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary::size_type start = 10;
     binary::size_type length = 15;
@@ -318,7 +316,7 @@ TEST_CASE("substring request exceeds string", "[binary  substring]") {
     REQUIRE(expected == result);
 }
 
-TEST_CASE("substring implicit length", "[binary  substring]") {
+TEST_CASE("substring implicit length", "[binary substring]") {
     binary instance(20, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary::size_type start = 10;
     binary expected(10, data_chunk{ 0xEF, 0x00 });
@@ -330,104 +328,94 @@ TEST_CASE("substring implicit length", "[binary  substring]") {
 
 // Start Test Suite: binary  blocks
 
-TEST_CASE("string to prefix  32 bits  expected value", "[binary  blocks]") {
+TEST_CASE("string to prefix 32 bits expected value", "[binary blocks]") {
     data_chunk const blocks{ { 0xba, 0xad, 0xf0, 0x0d } };
     binary const prefix("10111010101011011111000000001101");
     REQUIRE(prefix.blocks() == blocks);
 }
 
-TEST_CASE("prefix to bytes  32 bits  expected value", "[binary  blocks]") {
+TEST_CASE("prefix to bytes 32 bits expected value", "[binary blocks]") {
     data_chunk const blocks{ { 0xba, 0xad, 0xf0, 0x0d } };
     binary const prefix(32, blocks);
     REQUIRE(prefix.blocks() == blocks);
 }
 
-TEST_CASE("bytes to prefix  zero bits  round trips", "[binary  blocks]") {
+TEST_CASE("bytes to prefix zero bits round trips", "[binary blocks]") {
     data_chunk const bytes;
     binary const prefix(0, bytes);
-    std::stringstream stream;
-    stream << prefix;
     REQUIRE(prefix.size() == 0u);
     REQUIRE(prefix.blocks().size() == 0u);
-    REQUIRE(stream.str().empty());
+    REQUIRE(prefix.encoded().empty());
 }
 
-TEST_CASE("prefix to bytes  zero bits  round trips", "[binary  blocks]") {
+TEST_CASE("prefix to bytes zero bits round trips", "[binary blocks]") {
     data_chunk const blocks{ { 0x00, 0x00, 0x00, 0x00 } };
     binary const prefix(0, blocks);
     auto const bytes = prefix.blocks();
-    std::stringstream stream;
-    stream << prefix;
     REQUIRE(prefix.size() == 0u);
     REQUIRE(prefix.blocks().size() == 0u);
     REQUIRE(bytes.size() == 0u);
-    REQUIRE(stream.str().empty());
+    REQUIRE(prefix.encoded().empty());
 }
 
-TEST_CASE("bytes to prefix  one bit  round trips", "[binary  blocks]") {
+TEST_CASE("bytes to prefix one bit round trips", "[binary blocks]") {
     data_chunk bytes{ { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF } };
     auto prefix = binary(1, bytes);
-    std::stringstream stream;
-    stream << prefix;
+    auto const encoded = prefix.encoded();
     REQUIRE(prefix.size() == 1u);
     REQUIRE(prefix.blocks().size() == 1u);
-    REQUIRE(stream.str() == "1");
+    REQUIRE(encoded == "1");
 }
 
-TEST_CASE("prefix to bytes  one bit  round trips", "[binary  blocks]") {
+TEST_CASE("prefix to bytes one bit round trips", "[binary blocks]") {
     data_chunk const blocks{ { 0xff, 0xff, 0xff, 0xff } };
     binary const prefix(1, blocks);
     auto const bytes = prefix.blocks();
-    std::stringstream stream;
-    stream << prefix;
+    auto const encoded = prefix.encoded();
     REQUIRE(prefix.size() == 1u);
     REQUIRE(prefix.blocks().size() == 1u);
     REQUIRE(bytes.size() == 1u);
-    REQUIRE(stream.str() == "1");
+    REQUIRE(encoded == "1");
 }
 
-TEST_CASE("bytes to prefix  two bits leading zero  round trips", "[binary  blocks]") {
+TEST_CASE("bytes to prefix two bits leading zero round trips", "[binary blocks]") {
     data_chunk const bytes{ { 0x01, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42 } };
     auto const prefix = binary(2, bytes);
-    std::stringstream stream;
-    stream << prefix;
+    auto const encoded = prefix.encoded();
     REQUIRE(prefix.size() == 2u);
     REQUIRE(prefix.blocks().size() == 1u);
-    REQUIRE(stream.str() == "00");
+    REQUIRE(encoded == "00");
 }
 
-TEST_CASE("prefix to bytes  two bits leading zero  round trips", "[binary  blocks]") {
+TEST_CASE("prefix to bytes two bits leading zero round trips", "[binary blocks]") {
     data_chunk const blocks{ { 0x42, 0x42, 0x42, 0x01 } };
     binary const prefix(2, blocks);
     auto bytes = prefix.blocks();
-    std::stringstream stream;
-    stream << prefix;
+    auto const encoded = prefix.encoded();
     REQUIRE(prefix.size() == 2u);
     REQUIRE(prefix.blocks().size() == 1u);
     REQUIRE(bytes.size() == 1u);
-    REQUIRE(stream.str() == "01");
+    REQUIRE(encoded == "01");
 }
 
-TEST_CASE("bytes to prefix  two bytes leading null byte  round trips", "[binary  blocks]") {
+TEST_CASE("bytes to prefix two bytes leading null byte round trips", "[binary blocks]") {
     data_chunk const bytes{ { 0xFF, 0x00 } };
     auto const prefix = binary(16, bytes);
-    std::stringstream stream;
-    stream << prefix;
+    auto const encoded = prefix.encoded();
     REQUIRE(prefix.size() == 16u);
     REQUIRE(prefix.blocks().size() == 2u);
-    REQUIRE(stream.str() == "1111111100000000");
+    REQUIRE(encoded == "1111111100000000");
 }
 
-TEST_CASE("prefix to bytes  two bytes leading null byte  round trips", "[binary  blocks]") {
+TEST_CASE("prefix to bytes two bytes leading null byte round trips", "[binary blocks]") {
     data_chunk const blocks{ { 0x00, 0x00 } };
     binary const prefix(16, blocks);
     auto bytes = prefix.blocks();
-    std::stringstream stream;
-    stream << prefix;
+    auto const encoded = prefix.encoded();
     REQUIRE(prefix.size() == 16u);
     REQUIRE(prefix.blocks().size() == 2u);
     REQUIRE(bytes.size() == 2u);
-    REQUIRE(stream.str() == "0000000000000000");
+    REQUIRE(encoded == "0000000000000000");
 }
 
 // End Test Suite

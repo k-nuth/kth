@@ -101,7 +101,7 @@ TEST_CASE("C-API wallet::message - sign(ec_private) + verify round-trip",
     // Build a private key from the fixture secret, derive its payment
     // address, sign a message under the key, and verify the signature
     // resolves back to the same address.
-    kth_ec_private_mut_t secret = kth_wallet_ec_private_construct_from_secret_version_compress(
+    kth_ec_private_mut_t secret = kth_wallet_ec_private_construct(
         &kSecret, /*version=*/0x8000u, /*compress=*/1);
     REQUIRE(secret != NULL);
 
@@ -129,7 +129,7 @@ TEST_CASE("C-API wallet::message - sign(ec_private) + verify round-trip",
 
 TEST_CASE("C-API wallet::message - verify rejects a tampered message",
           "[C-API WalletMessage][verify]") {
-    kth_ec_private_mut_t secret = kth_wallet_ec_private_construct_from_secret_version_compress(
+    kth_ec_private_mut_t secret = kth_wallet_ec_private_construct(
         &kSecret, 0x8000u, 1);
     kth_payment_address_mut_t address = kth_wallet_ec_private_to_payment_address(secret);
 
@@ -154,7 +154,7 @@ TEST_CASE("C-API wallet::message - sign_hash (raw secret) produces the same resu
     // Signing with the raw 32-byte secret + `compressed=true` must
     // yield the same signature as signing via the `ec_private` handle
     // (both go through the same underlying ECDSA path).
-    kth_ec_private_mut_t secret_handle = kth_wallet_ec_private_construct_from_secret_version_compress(
+    kth_ec_private_mut_t secret_handle = kth_wallet_ec_private_construct(
         &kSecret, 0x8000u, 1);
     kth_message_signature_t via_handle;
     memset(&via_handle, 0, sizeof(via_handle));

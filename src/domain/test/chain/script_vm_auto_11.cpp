@@ -15,7 +15,7 @@ using namespace kth::domain::machine;
 
 extern void run_bchn_test(bchn_script_test const& test);
 
-TEST_CASE("VM-AUTO #1100 [Should Fail: INVALID_STACK_OPERATION]:  | checkdatasig", "[vm][auto]") { run_bchn_test({"", "checkdatasig", kth::domain::machine::script_flags::bch_nullfail | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::insufficient_main_stack, ""}); } // flags: P2SH,STRICTENC,NULLFAIL, expected: INVALID_STACK_OPERATION
+TEST_CASE("VM-AUTO #1100 [Should Fail: INVALID_STACK_OPERATION]: | checkdatasig", "[vm][auto]") { run_bchn_test({"", "checkdatasig", kth::domain::machine::script_flags::bch_nullfail | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::insufficient_main_stack, ""}); } // flags: P2SH,STRICTENC,NULLFAIL, expected: INVALID_STACK_OPERATION
 
 TEST_CASE("VM-AUTO #1101 [Should Fail: INVALID_STACK_OPERATION]: 0 | checkdatasig", "[vm][auto]") { run_bchn_test({"0", "checkdatasig", kth::domain::machine::script_flags::bch_nullfail | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::insufficient_main_stack, ""}); } // flags: P2SH,STRICTENC,NULLFAIL, expected: INVALID_STACK_OPERATION
 
@@ -33,7 +33,7 @@ TEST_CASE("VM-AUTO #1107 [Should Fail: SIG_DER]: Ensure that sighashtype is igno
 
 TEST_CASE("VM-AUTO #1108 [Should Fail: SIG_DER]: Non canonical DER encoding", "[vm][auto]") { run_bchn_test({"[300702010102020001] 0", "[038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508] checkdatasig", kth::domain::machine::script_flags::bch_nullfail | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::invalid_signature_lax_encoding, "Non canonical DER encoding"}); } // flags: P2SH,STRICTENC,NULLFAIL, expected: SIG_DER
 
-TEST_CASE("VM-AUTO #1109 [Should Fail: INVALID_STACK_OPERATION]:  | checkdatasigverify 1", "[vm][auto]") { run_bchn_test({"", "checkdatasigverify 1", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::insufficient_main_stack, ""}); } // flags: P2SH,STRICTENC, expected: INVALID_STACK_OPERATION
+TEST_CASE("VM-AUTO #1109 [Should Fail: INVALID_STACK_OPERATION]: | checkdatasigverify 1", "[vm][auto]") { run_bchn_test({"", "checkdatasigverify 1", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::insufficient_main_stack, ""}); } // flags: P2SH,STRICTENC, expected: INVALID_STACK_OPERATION
 
 TEST_CASE("VM-AUTO #1110 [Should Fail: INVALID_STACK_OPERATION]: 0 | checkdatasigverify 1", "[vm][auto]") { run_bchn_test({"0", "checkdatasigverify 1", kth::domain::machine::script_flags::bch_nullfail | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::insufficient_main_stack, ""}); } // flags: P2SH,STRICTENC,NULLFAIL, expected: INVALID_STACK_OPERATION
 

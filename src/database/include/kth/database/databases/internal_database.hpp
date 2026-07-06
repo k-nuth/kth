@@ -9,30 +9,25 @@
 #include <filesystem>
 #include <tuple>
 
-#include <boost/range/adaptor/reversed.hpp>
 #include <boost/interprocess/mapped_region.hpp>
+#include <boost/range/adaptor/reversed.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
 
 #include <kth/database/databases/generic_db.hpp>
-#include <kth/database/databases/property_code.hpp>
-
-#include <kth/domain.hpp>
-#include <kth/domain/chain/input_point.hpp>
-#include <kth/infrastructure/utility/byte_reader.hpp>
-
-#include <kth/database/define.hpp>
-
 #include <kth/database/databases/header_abla_entry.hpp>
-#include <kth/database/databases/result_code.hpp>
-#include <kth/database/databases/property_code.hpp>
-#include <kth/database/databases/tools.hpp>
-#include <kth/database/databases/utxo_entry.hpp>
 #include <kth/database/databases/history_entry.hpp>
+#include <kth/database/databases/property_code.hpp>
+#include <kth/database/databases/result_code.hpp>
+#include <kth/database/databases/tools.hpp>
 #include <kth/database/databases/transaction_entry.hpp>
 #include <kth/database/databases/transaction_unconfirmed_entry.hpp>
-
-// #include <kth/infrastructure.hpp>
+#include <kth/database/databases/utxo_entry.hpp>
+#include <kth/database/define.hpp>
+#include <kth/domain.hpp>
+#include <kth/domain/chain/input_point.hpp>
+#include <kth/infrastructure/path.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
 
 #ifdef KTH_INTERNAL_DB_4BYTES_INDEX
 #define KTH_INTERNAL_DB_WIRE true

@@ -114,13 +114,13 @@ chain::output create_combined_token_output(
 
 std::expected<prepare_genesis_result, std::error_code>
 prepare_genesis_utxo(prepare_genesis_params const& params) {
-    if ( ! bool(params.destination)) {
+    if ( ! params.destination.valid()) {
         return std::unexpected(kth::error::operation_failed);
     }
 
     // An explicit `change_address`, if set, must be a valid address —
     // otherwise the optional BCH change output would be unspendable.
-    if (params.change_address.has_value() && ! bool(*params.change_address)) {
+    if (params.change_address.has_value() && ! params.change_address->valid()) {
         return std::unexpected(kth::error::invalid_change);
     }
 
@@ -218,12 +218,12 @@ std::expected<token_genesis_result, std::error_code>
 create_token_genesis(token_genesis_params const& params) {
     // Destination address must be valid — silently building a TX with a
     // default-constructed address would produce an unspendable output.
-    if ( ! bool(params.destination)) {
+    if ( ! params.destination.valid()) {
         return std::unexpected(kth::error::operation_failed);
     }
 
     // An explicit `change_address`, if set, must also be valid.
-    if (params.change_address.has_value() && ! bool(*params.change_address)) {
+    if (params.change_address.has_value() && ! params.change_address->valid()) {
         return std::unexpected(kth::error::invalid_change);
     }
 
@@ -409,7 +409,7 @@ create_token_mint(token_mint_params const& params) {
 
     // Destinations (one per requested NFT) must all be valid addresses.
     for (auto const& req : params.nfts) {
-        if ( ! bool(req.destination)) {
+        if ( ! req.destination.valid()) {
             return std::unexpected(kth::error::operation_failed);
         }
     }
@@ -425,7 +425,7 @@ create_token_mint(token_mint_params const& params) {
     }
 
     // An explicit `change_address`, if set, must be a valid address.
-    if (params.change_address.has_value() && ! bool(*params.change_address)) {
+    if (params.change_address.has_value() && ! params.change_address->valid()) {
         return std::unexpected(kth::error::invalid_change);
     }
 
@@ -590,7 +590,7 @@ create_token_mint(token_mint_params const& params) {
         return std::unexpected(kth::error::operation_failed);
     }
     payment_address const minting_dest = *params.minting_destination;
-    if ( ! bool(minting_dest)) {
+    if ( ! minting_dest.valid()) {
         return std::unexpected(kth::error::operation_failed);
     }
 
@@ -659,7 +659,7 @@ create_token_mint(token_mint_params const& params) {
 
 std::expected<token_tx_result, std::error_code>
 create_token_transfer(token_transfer_params const& params) {
-    if ( ! bool(params.destination)) {
+    if ( ! params.destination.valid()) {
         return std::unexpected(kth::error::operation_failed);
     }
 
@@ -798,7 +798,7 @@ create_token_transfer(token_transfer_params const& params) {
             return std::unexpected(kth::error::invalid_change);
         }
         token_change_addr = *params.token_change_address;
-        if ( ! bool(token_change_addr)) {
+        if ( ! token_change_addr.valid()) {
             return std::unexpected(kth::error::invalid_change);
         }
     }
@@ -884,7 +884,7 @@ create_token_transfer(token_transfer_params const& params) {
         } else {
             bch_change_addr = params.destination;
         }
-        if ( ! bool(bch_change_addr)) {
+        if ( ! bch_change_addr.valid()) {
             return std::unexpected(kth::error::invalid_change);
         }
     }
@@ -982,14 +982,14 @@ create_token_transfer(token_transfer_params const& params) {
 
 std::expected<token_tx_result, std::error_code>
 create_token_burn(token_burn_params const& params) {
-    if ( ! bool(params.destination)) {
+    if ( ! params.destination.valid()) {
         return std::unexpected(kth::error::operation_failed);
     }
 
     // An explicit `change_address`, if set, must be a valid address —
     // otherwise `value_or(destination)` would happily emit BCH change
     // to an unspendable output.
-    if (params.change_address.has_value() && ! bool(*params.change_address)) {
+    if (params.change_address.has_value() && ! params.change_address->valid()) {
         return std::unexpected(kth::error::invalid_change);
     }
 
@@ -1231,7 +1231,7 @@ create_nft_collection(nft_collection_params const& params) {
         if (item.commitment.size() > commitment_cap) {
             return std::unexpected(kth::error::token_commitment_oversized);
         }
-        if (item.destination.has_value() && ! bool(*item.destination)) {
+        if (item.destination.has_value() && ! item.destination->valid()) {
             return std::unexpected(kth::error::operation_failed);
         }
     }
@@ -1239,7 +1239,7 @@ create_nft_collection(nft_collection_params const& params) {
     // any item omits its destination, `creator_address` must be valid
     // so it produces spendable mint outputs. (Also re-validated by
     // `create_token_genesis` below for its own use.)
-    if ( ! bool(params.creator_address)) {
+    if ( ! params.creator_address.valid()) {
         return std::unexpected(kth::error::operation_failed);
     }
 

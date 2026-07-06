@@ -25,10 +25,6 @@ kth_stealth_address_mut_t kth_wallet_stealth_address_construct_default(void);
 KTH_EXPORT KTH_OWNED
 kth_stealth_address_mut_t kth_wallet_stealth_address_construct_from_decoded(uint8_t const* decoded, kth_size_t n);
 
-/** @return Owned `kth_stealth_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_stealth_address_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_stealth_address_mut_t kth_wallet_stealth_address_construct_from_encoded(char const* encoded);
-
 /**
  * @return Owned `kth_stealth_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_stealth_address_destruct`.
  * @param filter Borrowed input. Copied by value into the resulting object; ownership of `filter` stays with the caller.
@@ -67,10 +63,27 @@ kth_stealth_address_mut_t kth_wallet_stealth_address_copy(kth_stealth_address_co
 KTH_EXPORT
 kth_bool_t kth_wallet_stealth_address_equals(kth_stealth_address_const_t self, kth_stealth_address_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_wallet_stealth_address_not_equal(kth_stealth_address_const_t self, kth_stealth_address_const_t other);
+
+
+// Ordering
+
+KTH_EXPORT
+kth_bool_t kth_wallet_stealth_address_less(kth_stealth_address_const_t self, kth_stealth_address_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_wallet_stealth_address_greater(kth_stealth_address_const_t self, kth_stealth_address_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_wallet_stealth_address_less_or_equal(kth_stealth_address_const_t self, kth_stealth_address_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_wallet_stealth_address_greater_or_equal(kth_stealth_address_const_t self, kth_stealth_address_const_t x);
+
 
 // Getters
 
-/** @return Non-zero if `self` is in a valid state, zero otherwise. */
 KTH_EXPORT
 kth_bool_t kth_wallet_stealth_address_valid(kth_stealth_address_const_t self);
 
@@ -99,11 +112,16 @@ kth_binary_const_t kth_wallet_stealth_address_filter(kth_stealth_address_const_t
 KTH_EXPORT KTH_OWNED
 uint8_t* kth_wallet_stealth_address_to_chunk(kth_stealth_address_const_t self, kth_size_t* out_size);
 
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_wallet_stealth_address_to_string(kth_stealth_address_const_t self);
 
-// Operations
 
+// Static utilities
+
+/** @param[out] out Must point to a null `kth_stealth_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_stealth_address_destruct`. Untouched on error. */
 KTH_EXPORT
-kth_bool_t kth_wallet_stealth_address_less(kth_stealth_address_const_t self, kth_stealth_address_const_t x);
+kth_error_code_t kth_wallet_stealth_address_parse_from(char const* encoded, KTH_OUT_OWNED kth_stealth_address_mut_t* out);
 
 #ifdef __cplusplus
 } // extern "C"

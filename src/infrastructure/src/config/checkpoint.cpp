@@ -4,146 +4,85 @@
 
 #include <kth/infrastructure/config/checkpoint.hpp>
 
+#include <algorithm>
 #include <charconv>
 #include <cstddef>
-#include <iostream>
-#include <regex>
 #include <string>
+#include <string_view>
+#include <system_error>
 
-#include <boost/lexical_cast.hpp>
+#include <ctre.hpp>
+#include <fmt/core.h>
 
-#if ! defined(__EMSCRIPTEN__)
-#include <boost/program_options.hpp>
-#endif
-
-#include <kth/infrastructure/define.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 
 namespace kth::infrastructure::config {
 
-// using namespace boost;
-#if ! defined(__EMSCRIPTEN__)
-using namespace boost::program_options;
-#endif
+// static
+std::expected<checkpoint, kth::code> checkpoint::parse_from(std::string_view value) {
+    constexpr auto pattern = ctll::fixed_string{R"(^([0-9a-f]{64})(:([0-9]{1,20}))?$)"};
 
-// checkpoint::checkpoint()
-//     : hash_(kth::null_hash)
-// {}
-
-checkpoint::checkpoint(std::string_view value)
-    : checkpoint()
-{
-    std::stringstream(std::string(value)) >> *this;
-}
-
-// checkpoint::checkpoint(checkpoint const& x)
-//     : hash_(x.hash()), height_(x.height())
-// {}
-
-// This is intended for static initialization (i.e. of the internal defaults).
-checkpoint::checkpoint(std::string_view hash, size_t height)
-    : height_(height)
-{
-    if ( ! decode_hash(hash_, hash)) {
-#if ! defined(__EMSCRIPTEN__)
-        using namespace boost::program_options;
-        BOOST_THROW_EXCEPTION(invalid_option_value(std::string(hash)));
-#else
-        throw std::invalid_argument(std::string(hash));
-#endif
+    auto match = ctre::match<pattern>(value);
+    if ( ! match) {
+        return std::unexpected(kth::error::illegal_value);
     }
+
+    hash_digest hash;
+    auto const hash_sv = match.get<1>().to_view();
+    if ( ! decode_hash(hash, std::string{hash_sv})) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+
+    size_t height = 0;
+    auto const height_group = match.get<3>();
+    if (height_group) {
+        auto const sv = height_group.to_view();
+        auto const result = std::from_chars(sv.data(), sv.data() + sv.size(), height);
+        if (result.ec != std::errc()) {
+            return std::unexpected(kth::error::illegal_value);
+        }
+    }
+
+    return checkpoint{hash, height};
 }
 
-checkpoint::checkpoint(hash_digest const& hash, size_t height)
-    : hash_(hash), height_(height)
-{}
-
-hash_digest const& checkpoint::hash() const {
-    return hash_;
-}
-
-size_t const checkpoint::height() const {
-    return height_;
+// static
+std::expected<checkpoint, kth::code> checkpoint::parse_from(std::string_view hash,
+                                                            size_t height) {
+    hash_digest decoded;
+    if ( ! decode_hash(decoded, std::string{hash})) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return checkpoint{decoded, height};
 }
 
 std::string checkpoint::to_string() const {
-    std::stringstream value;
-    value << *this;
-    return value.str();
+    return fmt::format("{}:{}", encode_hash(hash_), height_);
 }
 
-infrastructure::config::checkpoint::list checkpoint::sort(list const& checks) {
-    auto const comparitor = [](checkpoint const& left, checkpoint const& right) {
-        return left.height() < right.height();
-    };
-
+// static
+checkpoint::list checkpoint::sort(list const& checks) {
     auto copy = checks;
-    std::sort(copy.begin(), copy.end(), comparitor);
+    std::sort(copy.begin(), copy.end(),
+        [](checkpoint const& l, checkpoint const& r) {
+            return l.height() < r.height();
+        });
     return copy;
 }
 
+// static
 bool checkpoint::covered(size_t height, list const& checks) {
-    return !checks.empty() && height <= checks.back().height();
+    return ! checks.empty() && height <= checks.back().height();
 }
 
+// static
 bool checkpoint::validate(hash_digest const& hash, size_t height, list const& checks) {
-    auto const match_invalid = [&height, &hash](const infrastructure::config::checkpoint& item) {
+    auto const contradicts = [&](checkpoint const& item) {
         return height == item.height() && hash != item.hash();
     };
-
-    auto const it = std::find_if(checks.begin(), checks.end(), match_invalid);
-    return it == checks.end();
-}
-
-// bool checkpoint::operator==(checkpoint const& x) const {
-//     return height_ == x.height_ && hash_ == x.hash_;
-// }
-
-std::istream& operator>>(std::istream& input, checkpoint& argument) {
-    std::string value;
-    input >> value;
-
-    static
-    std::regex const regular("^([0-9a-f]{64})(:([0-9]{1,20}))?$");
-
-    std::sregex_iterator it(value.begin(), value.end(), regular), end;
-    if (it == end) {
-#if ! defined(__EMSCRIPTEN__)
-        using namespace boost::program_options;
-        BOOST_THROW_EXCEPTION(invalid_option_value(value));
-#else
-        throw std::invalid_argument(value);
-#endif
-    }
-
-    auto const& match = *it;
-    if ( ! decode_hash(argument.hash_, match[1].str())) {
-#if ! defined(__EMSCRIPTEN__)
-        using namespace boost::program_options;
-        BOOST_THROW_EXCEPTION(invalid_option_value(value));
-#else
-        throw std::invalid_argument(value);
-#endif
-    }
-
-    try {
-        argument.height_ = boost::lexical_cast<size_t>(match[3]);
-    } catch (...) {
-#if ! defined(__EMSCRIPTEN__)
-        using namespace boost::program_options;
-        BOOST_THROW_EXCEPTION(invalid_option_value(value));
-#else
-        throw std::invalid_argument(value);
-#endif
-    }
-
-    return input;
-}
-
-std::ostream& operator<<(std::ostream& output, checkpoint const& argument) {
-    output << encode_hash(argument.hash()) << ":" << argument.height();
-    return output;
+    return std::find_if(checks.begin(), checks.end(), contradicts) == checks.end();
 }
 
 } // namespace kth::infrastructure::config

@@ -128,8 +128,6 @@
 #endif
 
 #if ! defined(__EMSCRIPTEN__)
-#include <kth/infrastructure/config/parameter.hpp>
-#include <kth/infrastructure/config/printer.hpp>
 #include <kth/infrastructure/utility/pending.hpp>
 #endif
 

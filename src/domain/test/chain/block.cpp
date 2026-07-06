@@ -176,23 +176,23 @@ TEST_CASE("block constructor 5 always equals params", "[chain block]") {
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("block  hash  always  returns header hash", "[chain block]") {
+TEST_CASE("block hash always returns header hash", "[chain block]") {
     chain::block const instance;
     REQUIRE(chain::hash(instance.header()) == instance.hash());
 }
 
-TEST_CASE("block  is valid merkle root  uninitialized  returns true", "[chain block]") {
+TEST_CASE("block is valid merkle root uninitialized returns true", "[chain block]") {
     chain::block const instance;
     REQUIRE(instance.is_valid_merkle_root());
 }
 
-TEST_CASE("block  is valid merkle root  non empty tx invalid block  returns false", "[chain block]") {
+TEST_CASE("block is valid merkle root non empty tx invalid block returns false", "[chain block]") {
     chain::block instance;
     instance.set_transactions(chain::transaction::list{chain::transaction{}});
     REQUIRE( ! instance.is_valid_merkle_root());
 }
 
-TEST_CASE("block  is valid merkle root  valid  returns true", "[chain block]") {
+TEST_CASE("block is valid merkle root valid returns true", "[chain block]") {
      auto const raw_block = to_chunk(
         "010000007f110631052deeee06f0754a3629ad7663e56359fd5f3aa7b3e30a0000000"
         "0005f55996827d9712147a8eb6d7bae44175fe0bcfa967e424a25bfe9f4dc118244d6"
@@ -225,14 +225,14 @@ TEST_CASE("block  is valid merkle root  valid  returns true", "[chain block]") {
 
 // Start Test Suite: block serialization tests
 
-TEST_CASE("block from data insufficient bytes  failure", "[block serialization]") {
+TEST_CASE("block from data insufficient bytes failure", "[block serialization]") {
     data_chunk const data(10);
     byte_reader reader(data);
     auto const result = chain::block::from_data(reader);
     REQUIRE( ! result);
 }
 
-TEST_CASE("block from data insufficient transaction bytes  failure", "[block serialization]") {
+TEST_CASE("block from data insufficient transaction bytes failure", "[block serialization]") {
     data_chunk const data = to_chunk(
         "010000007f110631052deeee06f0754a3629ad7663e56359fd5f3aa7b3e30a00"
         "000000005f55996827d9712147a8eb6d7bae44175fe0bcfa967e424a25bfe9f4"
@@ -290,7 +290,7 @@ TEST_CASE("block genesis chipnet valid structure", "[block serialization]") {
 
 #endif
 
-TEST_CASE("block from data genesis mainnet  success", "[block serialization]") {
+TEST_CASE("block from data genesis mainnet success", "[block serialization]") {
     auto const genesis = chain::block::genesis_mainnet();
     REQUIRE(genesis.serialized_size() == 285u);
     REQUIRE(genesis.header().serialized_size() == 80u);
@@ -312,7 +312,7 @@ TEST_CASE("block from data genesis mainnet  success", "[block serialization]") {
     REQUIRE(genesis.header().merkle() == block.generate_merkle_root());
 }
 
-TEST_CASE("block  factory from data 2  genesis mainnet  success", "[block serialization]") {
+TEST_CASE("block factory from data 2 genesis mainnet success", "[block serialization]") {
     auto const genesis = chain::block::genesis_mainnet();
     REQUIRE(genesis.serialized_size() == 285u);
     REQUIRE(genesis.header().serialized_size() == 80u);
@@ -334,7 +334,7 @@ TEST_CASE("block  factory from data 2  genesis mainnet  success", "[block serial
     REQUIRE(genesis.header().merkle() == block.generate_merkle_root());
 }
 
-TEST_CASE("block  factory from data 3  genesis mainnet  success", "[block serialization]") {
+TEST_CASE("block factory from data 3 genesis mainnet success", "[block serialization]") {
     auto const genesis = chain::block::genesis_mainnet();
     REQUIRE(genesis.serialized_size() == 285u);
     REQUIRE(genesis.header().serialized_size() == 80u);
@@ -360,12 +360,12 @@ TEST_CASE("block  factory from data 3  genesis mainnet  success", "[block serial
 
 // Start Test Suite: block generate merkle root tests
 
-TEST_CASE("block  generate merkle root  block with zero transactions  matches null hash", "[block generate merkle root]") {
+TEST_CASE("block generate merkle root block with zero transactions matches null hash", "[block generate merkle root]") {
     chain::block const empty;
     REQUIRE(empty.generate_merkle_root() == null_hash);
 }
 
-TEST_CASE("block  generate merkle root  block with multiple transactions  matches historic data", "[block generate merkle root]") {
+TEST_CASE("block generate merkle root block with multiple transactions matches historic data", "[block generate merkle root]") {
     // encodes the 100,000 block data.
     data_chunk const raw = to_chunk(
         "010000007f110631052deeee06f0754a3629ad7663e56359fd5f3aa7b3e30a00"
@@ -407,7 +407,7 @@ TEST_CASE("block  generate merkle root  block with multiple transactions  matche
     REQUIRE(header.merkle() == block100k.generate_merkle_root());
 }
 
-TEST_CASE("block  header accessor  always  returns initialized value", "[block generate merkle root]") {
+TEST_CASE("block header accessor always returns initialized value", "[block generate merkle root]") {
     chain::header const header {
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -427,7 +427,7 @@ TEST_CASE("block  header accessor  always  returns initialized value", "[block g
     REQUIRE(header == instance.header());
 }
 
-TEST_CASE("block  header setter 1  roundtrip  success", "[block generate merkle root]") {
+TEST_CASE("block header setter 1 roundtrip success", "[block generate merkle root]") {
     chain::header const header {
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -443,7 +443,7 @@ TEST_CASE("block  header setter 1  roundtrip  success", "[block generate merkle 
     REQUIRE(header == instance.header());
 }
 
-TEST_CASE("block  header setter 2  roundtrip  success", "[block generate merkle root]") {
+TEST_CASE("block header setter 2 roundtrip success", "[block generate merkle root]") {
     chain::header const header {
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -462,7 +462,7 @@ TEST_CASE("block  header setter 2  roundtrip  success", "[block generate merkle 
     REQUIRE(header == instance.header());
 }
 
-TEST_CASE("block  transactions accessor  always  returns initialized value", "[block generate merkle root]") {
+TEST_CASE("block transactions accessor always returns initialized value", "[block generate merkle root]") {
     chain::header const header {
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -482,7 +482,7 @@ TEST_CASE("block  transactions accessor  always  returns initialized value", "[b
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("block  transactions setter 1  roundtrip  success", "[block generate merkle root]") {
+TEST_CASE("block transactions setter 1 roundtrip success", "[block generate merkle root]") {
     chain::transaction::list const transactions{
         chain::transaction(1, 48, {}, {}),
         chain::transaction(2, 32, {}, {}),
@@ -495,7 +495,7 @@ TEST_CASE("block  transactions setter 1  roundtrip  success", "[block generate m
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("block  transactions setter 2  roundtrip  success", "[block generate merkle root]") {
+TEST_CASE("block transactions setter 2 roundtrip success", "[block generate merkle root]") {
     chain::transaction::list const transactions{
         chain::transaction(1, 48, {}, {}),
         chain::transaction(2, 32, {}, {}),
@@ -511,7 +511,7 @@ TEST_CASE("block  transactions setter 2  roundtrip  success", "[block generate m
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("block  operator assign equals  always  matches equivalent", "[block generate merkle root]") {
+TEST_CASE("block operator assign equals always matches equivalent", "[block generate merkle root]") {
     chain::header const header(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -539,7 +539,7 @@ TEST_CASE("block  operator assign equals  always  matches equivalent", "[block g
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("block  operator boolean equals  duplicates  returns true", "[block generate merkle root]") {
+TEST_CASE("block operator boolean equals duplicates returns true", "[block generate merkle root]") {
     chain::block const expected(
         chain::header {
             10u,
@@ -560,7 +560,7 @@ TEST_CASE("block  operator boolean equals  duplicates  returns true", "[block ge
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("block  operator boolean equals  differs  returns false", "[block generate merkle root]") {
+TEST_CASE("block operator boolean equals differs returns false", "[block generate merkle root]") {
     chain::block const expected(
         chain::header {
             10u,
@@ -581,7 +581,7 @@ TEST_CASE("block  operator boolean equals  differs  returns false", "[block gene
     REQUIRE( ! (instance == expected));
 }
 
-TEST_CASE("block  operator boolean not equals  duplicates  returns false", "[block generate merkle root]") {
+TEST_CASE("block operator boolean not equals duplicates returns false", "[block generate merkle root]") {
     chain::block const expected {
         chain::header {
             10u,
@@ -602,7 +602,7 @@ TEST_CASE("block  operator boolean not equals  duplicates  returns false", "[blo
     REQUIRE( ! (instance != expected));
 }
 
-TEST_CASE("block  operator boolean not equals  differs  returns true", "[block generate merkle root]") {
+TEST_CASE("block operator boolean not equals differs returns true", "[block generate merkle root]") {
     chain::block const expected(
         chain::header {
             10u,
@@ -627,36 +627,36 @@ TEST_CASE("block  operator boolean not equals  differs  returns true", "[block g
 
 // Start Test Suite: block is distinct transaction set tests
 
-TEST_CASE("block  distinct transactions  empty  true", "[block is distinct transaction set]") {
+TEST_CASE("block distinct transactions empty true", "[block is distinct transaction set]") {
     chain::block const value;
     REQUIRE(value.is_distinct_transaction_set());
 }
 
-TEST_CASE("validate block  is distinct tx set  single  true", "[block is distinct transaction set]") {
+TEST_CASE("validate block is distinct tx set single true", "[block is distinct transaction set]") {
     chain::block value;
     value.set_transactions({{1, 0, {}, {}}});
     REQUIRE(value.is_distinct_transaction_set());
 }
 
-TEST_CASE("validate block  is distinct tx set  duplicate  false", "[block is distinct transaction set]") {
+TEST_CASE("validate block is distinct tx set duplicate false", "[block is distinct transaction set]") {
     chain::block value;
     value.set_transactions({{1, 0, {}, {}}, {1, 0, {}, {}}});
     REQUIRE( ! value.is_distinct_transaction_set());
 }
 
-TEST_CASE("validate block  is distinct tx set  distinct by version  true", "[block is distinct transaction set]") {
+TEST_CASE("validate block is distinct tx set distinct by version true", "[block is distinct transaction set]") {
     chain::block value;
     value.set_transactions({{1, 0, {}, {}}, {2, 0, {}, {}}, {3, 0, {}, {}}});
     REQUIRE(value.is_distinct_transaction_set());
 }
 
-TEST_CASE("validate block  is distinct tx set  partialy distinct by version  false", "[block is distinct transaction set]") {
+TEST_CASE("validate block is distinct tx set partialy distinct by version false", "[block is distinct transaction set]") {
     chain::block value;
     value.set_transactions({{1, 0, {}, {}}, {2, 0, {}, {}}, {2, 0, {}, {}}});
     REQUIRE( ! value.is_distinct_transaction_set());
 }
 
-TEST_CASE("validate block  is distinct tx set  partialy distinct not adjacent by version  false", "[block is distinct transaction set]") {
+TEST_CASE("validate block is distinct tx set partialy distinct not adjacent by version false", "[block is distinct transaction set]") {
     chain::block value;
     value.set_transactions({{1, 0, {}, {}}, {2, 0, {}, {}}, {1, 0, {}, {}}});
     REQUIRE( ! value.is_distinct_transaction_set());
@@ -675,18 +675,18 @@ TEST_CASE("validate block is cash pow valid true", "[block is distinct transacti
 
 // Start Test Suite: block is forward reference tests
 
-TEST_CASE("block  is forward reference  no transactions  false", "[block is forward reference]") {
+TEST_CASE("block is forward reference no transactions false", "[block is forward reference]") {
     chain::block const value;
     REQUIRE( ! value.is_forward_reference());
 }
 
-TEST_CASE("block  is forward reference  multiple empty transactions  false", "[block is forward reference]") {
+TEST_CASE("block is forward reference multiple empty transactions false", "[block is forward reference]") {
     chain::block value;
     value.set_transactions({{1, 0, {}, {}}, {2, 0, {}, {}}});
     REQUIRE( ! value.is_forward_reference());
 }
 
-TEST_CASE("block  is forward reference  backward reference  false", "[block is forward reference]") {
+TEST_CASE("block is forward reference backward reference false", "[block is forward reference]") {
     chain::transaction const before{2, 0, {}, {}};
     chain::transaction const after{1, 0, {{{before.hash(), 0}, {}, 0}}, {}};
     chain::block value;
@@ -694,20 +694,20 @@ TEST_CASE("block  is forward reference  backward reference  false", "[block is f
     REQUIRE( ! value.is_forward_reference());
 }
 
-TEST_CASE("block  is forward reference  duplicate transactions  false", "[block is forward reference]") {
+TEST_CASE("block is forward reference duplicate transactions false", "[block is forward reference]") {
     chain::block value;
     value.set_transactions({{1, 0, {}, {}}, {1, 0, {}, {}}});
     REQUIRE( ! value.is_forward_reference());
 }
 
-TEST_CASE("block  is forward reference  coinbase and multiple empty transactions  false", "[block is forward reference]") {
+TEST_CASE("block is forward reference coinbase and multiple empty transactions false", "[block is forward reference]") {
     chain::transaction const coinbase{1, 0, {{{null_hash, chain::point::null_index}, {}, 0}}, {}};
     chain::block value;
     value.set_transactions({coinbase, {2, 0, {}, {}}, {3, 0, {}, {}}});
     REQUIRE( ! value.is_forward_reference());
 }
 
-TEST_CASE("block  is forward reference  forward reference  true", "[block is forward reference]") {
+TEST_CASE("block is forward reference forward reference true", "[block is forward reference]") {
     chain::transaction const after{2, 0, {}, {}};
     chain::transaction const before{1, 0, {{{after.hash(), 0}, {}, 0}}, {}};
     chain::block value;
@@ -721,24 +721,24 @@ TEST_CASE("block  is forward reference  forward reference  true", "[block is for
 // and halves every `subsidy_interval(retarget)` blocks. After the 64th
 // halving there is nothing left to shift — any further block MUST emit 0.
 
-TEST_CASE("block subsidy  height zero  initial subsidy", "[chain block subsidy]") {
+TEST_CASE("block subsidy height zero initial subsidy", "[chain block subsidy]") {
     REQUIRE(chain::block::subsidy(0, true) == initial_block_subsidy_satoshi());
 }
 
-TEST_CASE("block subsidy  halving 1  half of initial", "[chain block subsidy]") {
+TEST_CASE("block subsidy halving 1 half of initial", "[chain block subsidy]") {
     auto const interval = subsidy_interval(true);
     REQUIRE(chain::block::subsidy(interval, true)
             == initial_block_subsidy_satoshi() / 2u);
 }
 
-TEST_CASE("block subsidy  halving 32  one sat", "[chain block subsidy]") {
+TEST_CASE("block subsidy halving 32 one sat", "[chain block subsidy]") {
     // 5 × 10⁹ ≈ 2³² · 1.16 → floor(initial >> 32) == 1 sat.
     auto const interval = subsidy_interval(true);
     REQUIRE(chain::block::subsidy(interval * 32, true)
             == (initial_block_subsidy_satoshi() >> 32u));
 }
 
-TEST_CASE("block subsidy  halving 33  zero sat", "[chain block subsidy]") {
+TEST_CASE("block subsidy halving 33 zero sat", "[chain block subsidy]") {
     auto const interval = subsidy_interval(true);
     REQUIRE(chain::block::subsidy(interval * 33, true) == 0u);
 }
@@ -749,12 +749,12 @@ TEST_CASE("block subsidy  halving 33  zero sat", "[chain block subsidy]") {
 // `>>= 0`, which keeps the initial subsidy in place — the emission
 // schedule "resets" to full instead of terminating at zero. The
 // expectation here is the consensus-correct value.
-TEST_CASE("block subsidy  halving 64  zero sat (post-final halving)", "[chain block subsidy]") {
+TEST_CASE("block subsidy halving 64 zero sat (post-final halving)", "[chain block subsidy]") {
     auto const interval = subsidy_interval(true);
     REQUIRE(chain::block::subsidy(interval * 64, true) == 0u);
 }
 
-TEST_CASE("block subsidy  halving 128  zero sat", "[chain block subsidy]") {
+TEST_CASE("block subsidy halving 128 zero sat", "[chain block subsidy]") {
     auto const interval = subsidy_interval(true);
     REQUIRE(chain::block::subsidy(interval * 128, true) == 0u);
 }

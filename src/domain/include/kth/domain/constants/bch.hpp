@@ -72,15 +72,15 @@ constexpr size_t chipnet_bip34_freeze = 2;
 
 static
 const infrastructure::config::checkpoint testnet4_bip34_active_checkpoint {
-    "00000000b0c65b1e03baace7d5c093db0d6aac224df01484985ffd5e86a1a20c", 2};
+    "00000000b0c65b1e03baace7d5c093db0d6aac224df01484985ffd5e86a1a20c"_hash, 2};
 
 static
 const infrastructure::config::checkpoint scalenet_bip34_active_checkpoint {
-    "00000000c8c35eaac40e0089a83bf5c5d9ecf831601f98c21ed4a7cb511a07d8", 2};
+    "00000000c8c35eaac40e0089a83bf5c5d9ecf831601f98c21ed4a7cb511a07d8"_hash, 2};
 
 static
 const infrastructure::config::checkpoint chipnet_bip34_active_checkpoint {
-    "00000000b0c65b1e03baace7d5c093db0d6aac224df01484985ffd5e86a1a20c", 2};
+    "00000000b0c65b1e03baace7d5c093db0d6aac224df01484985ffd5e86a1a20c"_hash, 2};
 
 // enum class pythagoras_t : uint64_t {};
 // enum class euclid_t : uint64_t {};

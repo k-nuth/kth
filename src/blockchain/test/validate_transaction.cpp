@@ -12,7 +12,7 @@ using namespace kd::machine;
 
 // Start Test Suite: validate transaction tests
 
-TEST_CASE("validate transaction  native  block 438513 tx  valid", "[validate transaction tests]") {
+TEST_CASE("validate transaction native block 438513 tx valid", "[validate transaction tests]") {
     // TODO
 }
 

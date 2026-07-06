@@ -7,19 +7,22 @@
 
 #include <algorithm>
 #include <cctype>
-#include <istream>
+#include <expected>
+#include <iterator>
+#include <string>
+#include <string_view>
 
-#include <boost/program_options.hpp>
+#include <kth/infrastructure/error.hpp>
 
 namespace kth::database {
 
-// TODO(fernando): rename
-
+/// Named keys for the internal database's `properties` bucket. Values
+/// are the on-disk identifiers, so append-only (never renumber).
 enum class property_code {
-    db_mode = 0,
+    db_mode            = 0,
     last_header_height = 1,
-    last_block_height = 2,
-    utxo_built_height = 3,  // Last block height for which UTXO set was built
+    last_block_height  = 2,
+    utxo_built_height  = 3,  // Last block height for which UTXO set was built
 };
 
 enum class db_mode_type {
@@ -28,30 +31,17 @@ enum class db_mode_type {
     full,
 };
 
-inline
-std::istream& operator>> (std::istream &in, db_mode_type& db_mode) {
-    using namespace boost::program_options;
+[[nodiscard]] inline
+std::expected<db_mode_type, kth::code> parse_db_mode(std::string_view text) {
+    std::string upper;
+    upper.reserve(text.size());
+    std::transform(text.begin(), text.end(), std::back_inserter(upper),
+        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
 
-    std::string mode_str;
-    in >> mode_str;
-
-    std::transform(mode_str.begin(), mode_str.end(), mode_str.begin(),
-        [](unsigned char c){ return std::toupper(c); });
-
-    if (mode_str == "PRUNED") {
-        db_mode = db_mode_type::pruned;
-    }
-    else if (mode_str == "BLOCKS") {
-        db_mode = db_mode_type::blocks;
-    }
-    else if (mode_str == "FULL") {
-        db_mode = db_mode_type::full;
-    }
-    else {
-        throw validation_error(validation_error::invalid_option_value);
-    }
-
-    return in;
+    if (upper == "PRUNED") return db_mode_type::pruned;
+    if (upper == "BLOCKS") return db_mode_type::blocks;
+    if (upper == "FULL")   return db_mode_type::full;
+    return std::unexpected(kth::error::illegal_value);
 }
 
 } // namespace kth::database

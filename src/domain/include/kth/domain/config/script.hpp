@@ -5,97 +5,87 @@
 #ifndef KTH_CONFIG_SCRIPT_HPP
 #define KTH_CONFIG_SCRIPT_HPP
 
-#include <iostream>
 #include <string>
+#include <string_view>
 #include <vector>
+
+#include <fmt/core.h>
 
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
 namespace kth::domain::config {
 
 /**
- * Serialization helper to convert between base16/raw script and script_type.
+ * Serialization helper to convert between base16 / mnemonic / raw script
+ * and chain::script.
+ *
+ * Valid-by-construction: no default ctor. Every fallible source
+ * (mnemonic string, raw bytes, joined token list) is a named factory
+ * that returns `expect<script>` — no throwing constructors.
  */
 struct KD_API script {
-    script() = default;
 
     /**
-     * Initialization constructor.
-     * @param[in]  mnemonic  The value to initialize with.
+     * Parse a whitespace-separated mnemonic (e.g. `"OP_DUP OP_HASH160 ..."`).
+     * Returns `error::illegal_value` on malformed input.
      */
-    script(std::string const& mnemonic);
+    [[nodiscard]] static
+    expect<script> parse_from(std::string_view mnemonic);
 
     /**
-     * Initialization constructor.
-     * @param[in]  value  The value to initialize with.
+     * Deserialize from the wire byte encoding.
      */
-    script(chain::script const& value);
+    [[nodiscard]] static
+    expect<script> from_data_chunk(data_chunk const& value);
 
     /**
-     * Initialization constructor.
-     * @param[in]  value  The value to initialize with.
+     * Same as `parse_from` after joining the tokens with spaces.
      */
-    script(data_chunk const& value);
+    [[nodiscard]] static
+    expect<script> parse_tokens(std::vector<std::string> const& tokens);
 
     /**
-     * Initialization constructor.
-     * @param[in]  tokens  The mnemonic tokens to initialize with.
+     * Wrap an already-populated chain::script.
      */
-    script(std::vector<std::string> const& tokens);
-
-    /**
-     * Copy constructor.
-     * @param[in]  other  The object to copy into self on construct.
-     */
-    script(script const& x);
+    constexpr explicit
+    script(chain::script const& value)
+        : value_(value) {}
 
     /**
      * Serialize the script to bytes according to the wire protocol.
-     * @return  The byte serialized copy of the script.
      */
     [[nodiscard]]
     kth::data_chunk to_data() const;
 
     /**
-     * Return a pretty-printed copy of the script.
-     * @return  A mnemonic-printed copy of the internal script.
+     * Return the mnemonic form of the script.
      */
     [[nodiscard]]
     std::string to_string() const;
 
     /**
-     * Overload cast to internal type.
-     * @return  This object's value cast to internal type.
+     * Explicit accessor.
      */
-    operator chain::script const&() const;
-
-    /**
-     * Overload stream in. Throws if input is invalid.
-     * @param[in]   input     The input stream to read the value from.
-     * @param[out]  argument  The object to receive the read value.
-     * @return                The input stream reference.
-     */
-    friend std::istream& operator>>(std::istream& input,
-                                    script& argument);
-
-    /**
-     * Overload stream out.
-     * @param[in]   output    The output stream to write the value to.
-     * @param[out]  argument  The object from which to obtain the value.
-     * @return                The output stream reference.
-     */
-    friend std::ostream& operator<<(std::ostream& output,
-                                    script const& argument);
+    [[nodiscard]] constexpr
+    chain::script const& value() const noexcept { return value_; }
 
 private:
-    /**
-     * The state of this object.
-     */
     chain::script value_;
 };
 
 } // namespace kth::domain::config
+
+template <>
+struct fmt::formatter<kth::domain::config::script> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    auto format(kth::domain::config::script const& value,
+                format_context& ctx) const {
+        return fmt::format_to(ctx.out(), "{}", value.to_string());
+    }
+};
 
 #endif

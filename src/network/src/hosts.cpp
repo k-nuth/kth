@@ -56,15 +56,15 @@ void hosts::load_from_file() {
     size_t loaded = 0;
 
     while (std::getline(file, line)) {
-        infrastructure::config::authority host(line);
-
-        if (host.port() != 0) {
-            auto const addr = host.to_network_address();
-            // Filter: routable + (IPv4 always, IPv6 when enabled)
-            if (addr.is_routable() && (use_ipv6_ || is_ipv4_mapped(addr.ip()))) {
-                if (addresses_.insert(addr)) {
-                    ++loaded;
-                }
+        auto parsed = infrastructure::config::authority::parse_from(line);
+        if ( ! parsed || parsed->port() == 0) {
+            continue;
+        }
+        auto const addr = parsed->to_network_address();
+        // Filter: routable + (IPv4 always, IPv6 when enabled)
+        if (addr.is_routable() && (use_ipv6_ || is_ipv4_mapped(addr.ip()))) {
+            if (addresses_.insert(addr)) {
+                ++loaded;
             }
         }
     }
@@ -81,7 +81,7 @@ void hosts::save_to_file() const {
 
     size_t saved = 0;
     addresses_.cvisit_all([&](address const& addr) {
-        file << infrastructure::config::authority(addr) << std::endl;
+        file << infrastructure::config::authority(addr).to_string() << std::endl;
         ++saved;
     });
 

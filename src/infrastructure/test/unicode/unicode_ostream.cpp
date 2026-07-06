@@ -12,7 +12,7 @@ using namespace kth;
 // Start Test Suite: unicode ostream tests
 
 // Use of L is not recommended as it will only work for ascii.
-TEST_CASE("unicode ostream  conditional  test", "[unicode ostream tests]") {
+TEST_CASE("unicode ostream conditional test", "[unicode ostream tests]") {
     std::wstringstream wide_stream;
     std::stringstream narrow_stream;
 
@@ -29,7 +29,7 @@ TEST_CASE("unicode ostream  conditional  test", "[unicode ostream tests]") {
 #endif
 }
 
-TEST_CASE("unicode ostream  non ascii  test", "[unicode ostream tests]") {
+TEST_CASE("unicode ostream non ascii test", "[unicode ostream tests]") {
     auto const utf8 = "テスト";
     auto const utf16 = to_utf16(utf8);
 
@@ -49,7 +49,7 @@ TEST_CASE("unicode ostream  non ascii  test", "[unicode ostream tests]") {
 #endif
 }
 
-TEST_CASE("unicode ostream  overflow  test", "[unicode ostream tests]") {
+TEST_CASE("unicode ostream overflow test", "[unicode ostream tests]") {
     // This is a 20x10 matrix of 3 bytes per character triples (1800 bytes).
     // The buffer is 256 (wide) and 1024 (narrow), resulting in a potential
     // character split because 256 is not a multiple of 3. The overflow

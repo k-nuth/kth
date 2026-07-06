@@ -172,7 +172,7 @@ TEST_CASE("chain header constructor 1 always initialized invalid", "[chain heade
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("chain header  constructor 2  always  equals params", "[chain header]") {
+TEST_CASE("chain header constructor 2 always equals params", "[chain header]") {
     uint32_t const version = 10u;
     auto const previous = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
     auto const merkle = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
@@ -190,7 +190,7 @@ TEST_CASE("chain header  constructor 2  always  equals params", "[chain header]"
     REQUIRE(merkle == instance.merkle());
 }
 
-TEST_CASE("chain header  constructor 3  always  equals params", "[chain header]") {
+TEST_CASE("chain header constructor 3 always equals params", "[chain header]") {
     uint32_t const version = 10u;
     uint32_t const timestamp = 531234u;
     uint32_t const bits = 6523454u;
@@ -210,7 +210,7 @@ TEST_CASE("chain header  constructor 3  always  equals params", "[chain header]"
     REQUIRE(merkle == instance.merkle());
 }
 
-TEST_CASE("chain header  constructor 4  always  equals params", "[chain header]") {
+TEST_CASE("chain header constructor 4 always equals params", "[chain header]") {
     chain::header const expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -224,7 +224,7 @@ TEST_CASE("chain header  constructor 4  always  equals params", "[chain header]"
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("chain header  constructor 5  always  equals params", "[chain header]") {
+TEST_CASE("chain header constructor 5 always equals params", "[chain header]") {
     // This must be non-const.
     chain::header expected(
         10u,
@@ -239,14 +239,14 @@ TEST_CASE("chain header  constructor 5  always  equals params", "[chain header]"
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("chain header from data insufficient bytes  failure", "[chain header]") {
+TEST_CASE("chain header from data insufficient bytes failure", "[chain header]") {
     data_chunk data(10);
     byte_reader reader(data);
     auto const result = chain::header::from_data(reader);
     REQUIRE( ! result);
 }
 
-TEST_CASE("chain header from data valid input  success", "[chain header]") {
+TEST_CASE("chain header from data valid input success", "[chain header]") {
     chain::header expected{
         10,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -266,7 +266,7 @@ TEST_CASE("chain header from data valid input  success", "[chain header]") {
     REQUIRE(expected == result);
 }
 
-TEST_CASE("chain header  factory from data 2  valid input  success", "[chain header]") {
+TEST_CASE("chain header factory from data 2 valid input success", "[chain header]") {
     chain::header expected{
         10,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -285,7 +285,7 @@ TEST_CASE("chain header  factory from data 2  valid input  success", "[chain hea
     REQUIRE(expected == result);
 }
 
-TEST_CASE("chain header  factory from data 3  valid input  success", "[chain header]") {
+TEST_CASE("chain header factory from data 3 valid input success", "[chain header]") {
     chain::header const expected{
         10,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -304,7 +304,7 @@ TEST_CASE("chain header  factory from data 3  valid input  success", "[chain hea
     REQUIRE(expected == result);
 }
 
-TEST_CASE("chain header  version accessor  always  returns initialized value", "[chain header]") {
+TEST_CASE("chain header version accessor always returns initialized value", "[chain header]") {
     uint32_t const value = 11234u;
     chain::header const instance(
         value,
@@ -319,7 +319,7 @@ TEST_CASE("chain header  version accessor  always  returns initialized value", "
 
 // Note: setter tests removed - header is now immutable
 
-TEST_CASE("chain header  previous block hash accessor 1  always  returns initialized value", "[chain header]") {
+TEST_CASE("chain header previous block hash accessor 1 always returns initialized value", "[chain header]") {
     auto const value = "abababababababababababababababababababababababababababababababab"_hash;
     chain::header instance(
         11234u,
@@ -332,7 +332,7 @@ TEST_CASE("chain header  previous block hash accessor 1  always  returns initial
     REQUIRE(value == instance.previous_block_hash());
 }
 
-TEST_CASE("chain header  previous block hash accessor 2  always  returns initialized value", "[chain header]") {
+TEST_CASE("chain header previous block hash accessor 2 always returns initialized value", "[chain header]") {
     auto const value = "abababababababababababababababababababababababababababababababab"_hash;
     chain::header const instance(
         11234u,
@@ -345,7 +345,7 @@ TEST_CASE("chain header  previous block hash accessor 2  always  returns initial
     REQUIRE(value == instance.previous_block_hash());
 }
 
-TEST_CASE("chain header  merkle accessor 1  always  returns initialized value", "[chain header]") {
+TEST_CASE("chain header merkle accessor 1 always returns initialized value", "[chain header]") {
     auto const value = "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"_hash;
     chain::header instance(
         11234u,
@@ -358,7 +358,7 @@ TEST_CASE("chain header  merkle accessor 1  always  returns initialized value", 
     REQUIRE(value == instance.merkle());
 }
 
-TEST_CASE("chain header  merkle accessor 2  always  returns initialized value", "[chain header]") {
+TEST_CASE("chain header merkle accessor 2 always returns initialized value", "[chain header]") {
     auto const value = "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"_hash;
     chain::header const instance(
         11234u,
@@ -371,7 +371,7 @@ TEST_CASE("chain header  merkle accessor 2  always  returns initialized value", 
     REQUIRE(value == instance.merkle());
 }
 
-TEST_CASE("chain header  timestamp accessor  always  returns initialized value", "[chain header]") {
+TEST_CASE("chain header timestamp accessor always returns initialized value", "[chain header]") {
     uint32_t value = 753234u;
     chain::header instance(
         11234u,
@@ -384,7 +384,7 @@ TEST_CASE("chain header  timestamp accessor  always  returns initialized value",
     REQUIRE(value == instance.timestamp());
 }
 
-TEST_CASE("chain header  bits accessor  always  returns initialized value", "[chain header]") {
+TEST_CASE("chain header bits accessor always returns initialized value", "[chain header]") {
     uint32_t value = 4356344u;
     chain::header instance(
         11234u,
@@ -397,7 +397,7 @@ TEST_CASE("chain header  bits accessor  always  returns initialized value", "[ch
     REQUIRE(value == instance.bits());
 }
 
-TEST_CASE("chain header  nonce accessor  always  returns initialized value", "[chain header]") {
+TEST_CASE("chain header nonce accessor always returns initialized value", "[chain header]") {
     uint32_t value = 34564u;
     chain::header instance(
         11234u,
@@ -410,11 +410,11 @@ TEST_CASE("chain header  nonce accessor  always  returns initialized value", "[c
     REQUIRE(value == instance.nonce());
 }
 
-TEST_CASE("chain header  proof1  genesis mainnet  expected", "[chain header]") {
+TEST_CASE("chain header proof1 genesis mainnet expected", "[chain header]") {
     REQUIRE(chain::header::proof(0x1d00ffff) == 0x0000000100010001);
 }
 
-TEST_CASE("chain header  is valid proof of work  bits exceeds maximum  returns false", "[chain header]") {
+TEST_CASE("chain header is valid proof of work bits exceeds maximum returns false", "[chain header]") {
     chain::header const instance{
         1u, null_hash, null_hash, 0u,
         retarget_proof_of_work_limit + 1, 0u
@@ -423,7 +423,7 @@ TEST_CASE("chain header  is valid proof of work  bits exceeds maximum  returns f
     REQUIRE( ! instance.is_valid_proof_of_work(hdr_hash));
 }
 
-TEST_CASE("chain header  is valid proof of work  retarget bits exceeds maximum  returns false", "[chain header]") {
+TEST_CASE("chain header is valid proof of work retarget bits exceeds maximum returns false", "[chain header]") {
     chain::header const instance{
         1u, null_hash, null_hash, 0u,
         no_retarget_proof_of_work_limit + 1, 0u
@@ -432,7 +432,7 @@ TEST_CASE("chain header  is valid proof of work  retarget bits exceeds maximum  
     REQUIRE( ! instance.is_valid_proof_of_work(hdr_hash, false));
 }
 
-TEST_CASE("chain header  is valid proof of work  hash greater bits  returns false", "[chain header]") {
+TEST_CASE("chain header is valid proof of work hash greater bits returns false", "[chain header]") {
     chain::header const instance(
         11234u,
         "abababababababababababababababababababababababababababababababab"_hash,
@@ -445,7 +445,7 @@ TEST_CASE("chain header  is valid proof of work  hash greater bits  returns fals
     REQUIRE( ! instance.is_valid_proof_of_work(hdr_hash));
 }
 
-TEST_CASE("chain header  is valid proof of work  hash less than bits  returns true", "[chain header]") {
+TEST_CASE("chain header is valid proof of work hash less than bits returns true", "[chain header]") {
     chain::header const instance(
         4u,
         "000000000000000003ddc1e929e2944b8b0039af9aa0d826c480a83d8b39c373"_hash,
@@ -458,7 +458,7 @@ TEST_CASE("chain header  is valid proof of work  hash less than bits  returns tr
     REQUIRE(instance.is_valid_proof_of_work(hdr_hash));
 }
 
-TEST_CASE("chain header  operator assign equals  always  matches equivalent", "[chain header]") {
+TEST_CASE("chain header operator assign equals always matches equivalent", "[chain header]") {
     // This must be non-const.
     chain::header value(
         10u,
@@ -477,7 +477,7 @@ TEST_CASE("chain header  operator assign equals  always  matches equivalent", "[
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("chain header  operator boolean equals  duplicates  returns true", "[chain header]") {
+TEST_CASE("chain header operator boolean equals duplicates returns true", "[chain header]") {
     chain::header const expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -490,7 +490,7 @@ TEST_CASE("chain header  operator boolean equals  duplicates  returns true", "[c
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("chain header  operator boolean equals  differs  returns false", "[chain header]") {
+TEST_CASE("chain header operator boolean equals differs returns false", "[chain header]") {
     chain::header const expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -503,7 +503,7 @@ TEST_CASE("chain header  operator boolean equals  differs  returns false", "[cha
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("chain header  operator boolean not equals  duplicates  returns false", "[chain header]") {
+TEST_CASE("chain header operator boolean not equals duplicates returns false", "[chain header]") {
     chain::header const expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -516,7 +516,7 @@ TEST_CASE("chain header  operator boolean not equals  duplicates  returns false"
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("chain header  operator boolean not equals  differs  returns true", "[chain header]") {
+TEST_CASE("chain header operator boolean not equals differs returns true", "[chain header]") {
     chain::header const expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,

@@ -257,9 +257,10 @@ TEST_CASE("C-API Script - to_pay_public_key_pattern wrong-size point returns NUL
 
 TEST_CASE("C-API Script - to_pay_public_key_hash_pattern_unlocking valid pubkey returns list",
           "[C-API Script]") {
-    kth_ec_public_mut_t pub =
-        kth_wallet_ec_public_construct_from_decoded(
-            kValidCompressedPoint, sizeof(kValidCompressedPoint));
+    kth_ec_public_mut_t pub = NULL;
+    REQUIRE(kth_wallet_ec_public_construct_from_data(
+                kValidCompressedPoint, sizeof(kValidCompressedPoint), &pub)
+            == kth_ec_success);
     REQUIRE(pub != NULL);
 
     // A 71-byte DER-like endorsement blob; content is not validated at

@@ -244,9 +244,9 @@ TEST_CASE("VM-Limits: individual opcode costs — push operations", "[vm][vmlimi
         | script_flags::bch_minimaldata | script_flags::bch_input_sigchecks
         | script_flags::bch_enforce_sigchecks;
 
-    SECTION("OP_0")  { check_eval({}, parse_script("0"), flags, data_stack{{}}, 0, 0, 100); }
-    SECTION("OP_1")  { check_eval({}, parse_script("1"), flags, data_stack{{0x01}}, 0, 0, 101); }
-    SECTION("OP_2")  { check_eval({}, parse_script("2"), flags, data_stack{{0x02}}, 0, 0, 101); }
+    SECTION("OP_0") { check_eval({}, parse_script("0"), flags, data_stack{{}}, 0, 0, 100); }
+    SECTION("OP_1") { check_eval({}, parse_script("1"), flags, data_stack{{0x01}}, 0, 0, 101); }
+    SECTION("OP_2") { check_eval({}, parse_script("2"), flags, data_stack{{0x02}}, 0, 0, 101); }
     SECTION("OP_16") { check_eval({}, parse_script("16"), flags, data_stack{{0x10}}, 0, 0, 101); }
     SECTION("push 1 byte") {
         data_chunk one_byte(1);
@@ -276,17 +276,17 @@ TEST_CASE("VM-Limits: individual opcode costs — stack manipulation", "[vm][vml
     data_chunk const v4 = {0x04};
 
     SECTION("2DROP") { check_eval({v1, v2}, parse_script("2drop"), flags, data_stack{}, 0, 0, 100); }
-    SECTION("2DUP")  { check_eval({v1, v2}, parse_script("2dup"), flags, data_stack{v1, v2, v1, v2}, 0, 0, 102); }
-    SECTION("3DUP")  { check_eval({v1, v2, v3}, parse_script("3dup"), flags, data_stack{v1, v2, v3, v1, v2, v3}, 0, 0, 103); }
+    SECTION("2DUP") { check_eval({v1, v2}, parse_script("2dup"), flags, data_stack{v1, v2, v1, v2}, 0, 0, 102); }
+    SECTION("3DUP") { check_eval({v1, v2, v3}, parse_script("3dup"), flags, data_stack{v1, v2, v3, v1, v2, v3}, 0, 0, 103); }
     SECTION("2OVER") { check_eval({v1, v2, v3, v4}, parse_script("2over"), flags, data_stack{v1, v2, v3, v4, v1, v2}, 0, 0, 102); }
     SECTION("2SWAP") { check_eval({v1, v2, v3, v4}, parse_script("2swap"), flags, data_stack{v3, v4, v1, v2}, 0, 0, 100); }
-    SECTION("DUP")   { check_eval(data_stack{{0xd0}}, parse_script("dup"), flags, data_stack{{0xd0}, {0xd0}}, 0, 0, 101); }
-    SECTION("OVER")  { check_eval({v1, v2, v3}, parse_script("over"), flags, data_stack{v1, v2, v3, v2}, 0, 0, 101); }
-    SECTION("ROT")   { check_eval({v1, v2, v3}, parse_script("rot"), flags, data_stack{v2, v3, v1}, 0, 0, 100); }
-    SECTION("SWAP")  { check_eval({v1, v2, v3}, parse_script("swap"), flags, data_stack{v1, v3, v2}, 0, 0, 100); }
-    SECTION("TUCK")  { check_eval({v2, v3}, parse_script("tuck"), flags, data_stack{v3, v2, v3}, 0, 0, 101); }
-    SECTION("DROP")  { check_eval({v1}, parse_script("drop"), flags, data_stack{}, 0, 0, 100); }
-    SECTION("NIP")   { check_eval({v1, v2, v3}, parse_script("nip"), flags, data_stack{v1, v3}, 0, 0, 100); }
+    SECTION("DUP") { check_eval(data_stack{{0xd0}}, parse_script("dup"), flags, data_stack{{0xd0}, {0xd0}}, 0, 0, 101); }
+    SECTION("OVER") { check_eval({v1, v2, v3}, parse_script("over"), flags, data_stack{v1, v2, v3, v2}, 0, 0, 101); }
+    SECTION("ROT") { check_eval({v1, v2, v3}, parse_script("rot"), flags, data_stack{v2, v3, v1}, 0, 0, 100); }
+    SECTION("SWAP") { check_eval({v1, v2, v3}, parse_script("swap"), flags, data_stack{v1, v3, v2}, 0, 0, 100); }
+    SECTION("TUCK") { check_eval({v2, v3}, parse_script("tuck"), flags, data_stack{v3, v2, v3}, 0, 0, 101); }
+    SECTION("DROP") { check_eval({v1}, parse_script("drop"), flags, data_stack{}, 0, 0, 100); }
+    SECTION("NIP") { check_eval({v1, v2, v3}, parse_script("nip"), flags, data_stack{v1, v3}, 0, 0, 100); }
     SECTION("DEPTH") {
         data_stack big(999, v1);
         auto expected = big;
@@ -297,7 +297,7 @@ TEST_CASE("VM-Limits: individual opcode costs — stack manipulation", "[vm][vml
         check_eval({v1}, parse_script("toaltstack fromaltstack"), flags, data_stack{v1}, 0, 0, 201);
     }
     SECTION("IFDUP false") { check_eval(data_stack{{}}, parse_script("ifdup"), flags, data_stack{{}}, 0, 0, 100); }
-    SECTION("IFDUP true")  { check_eval({v2}, parse_script("ifdup"), flags, data_stack{v2, v2}, 0, 0, 101); }
+    SECTION("IFDUP true") { check_eval({v2}, parse_script("ifdup"), flags, data_stack{v2, v2}, 0, 0, 101); }
 }
 
 TEST_CASE("VM-Limits: individual opcode costs — hash operations", "[vm][vmlimits]") {
@@ -311,10 +311,10 @@ TEST_CASE("VM-Limits: individual opcode costs — hash operations", "[vm][vmlimi
 
     // hash_iters for 100-byte message: single-round = 1 + (100+8)/64 = 2, two-round = 3
     SECTION("RIPEMD160") { check_eval(data_stack{blob100}, parse_script("ripemd160"), flags, std::nullopt, 0, 2, 120 + 192*2, 120 + 64*2); }
-    SECTION("SHA1")      { check_eval(data_stack{blob100}, parse_script("sha1"),      flags, std::nullopt, 0, 2, 120 + 192*2, 120 + 64*2); }
-    SECTION("SHA256")    { check_eval(data_stack{blob100}, parse_script("sha256"),    flags, std::nullopt, 0, 2, 132 + 192*2, 132 + 64*2); }
-    SECTION("HASH160")   { check_eval(data_stack{blob100}, parse_script("hash160"),   flags, std::nullopt, 0, 3, 120 + 192*3, 120 + 64*3); }
-    SECTION("HASH256")   { check_eval(data_stack{blob100}, parse_script("hash256"),   flags, std::nullopt, 0, 3, 132 + 192*3, 132 + 64*3); }
+    SECTION("SHA1") { check_eval(data_stack{blob100}, parse_script("sha1"),      flags, std::nullopt, 0, 2, 120 + 192*2, 120 + 64*2); }
+    SECTION("SHA256") { check_eval(data_stack{blob100}, parse_script("sha256"),    flags, std::nullopt, 0, 2, 132 + 192*2, 132 + 64*2); }
+    SECTION("HASH160") { check_eval(data_stack{blob100}, parse_script("hash160"),   flags, std::nullopt, 0, 3, 120 + 192*3, 120 + 64*3); }
+    SECTION("HASH256") { check_eval(data_stack{blob100}, parse_script("hash256"),   flags, std::nullopt, 0, 3, 132 + 192*3, 132 + 64*3); }
 }
 
 TEST_CASE("VM-Limits: individual opcode costs — arithmetic", "[vm][vmlimits]") {
@@ -325,22 +325,22 @@ TEST_CASE("VM-Limits: individual opcode costs — arithmetic", "[vm][vmlimits]")
         | script_flags::bch_minimaldata | script_flags::bch_input_sigchecks
         | script_flags::bch_enforce_sigchecks;
 
-    SECTION("1ADD")      { check_eval(data_stack{{0x00, 0x02, 0x03, 0x42}}, parse_script("1add"), flags, data_stack{{0x01, 0x02, 0x03, 0x42}}, 0, 0, 100 + 4*2); }
-    SECTION("1SUB")      { check_eval(data_stack{{0x01, 0x02, 0x03, 0x42}}, parse_script("1sub"), flags, data_stack{{0x00, 0x02, 0x03, 0x42}}, 0, 0, 100 + 4*2); }
-    SECTION("NEGATE")    { check_eval(data_stack{{0x2a}}, parse_script("negate"), flags, data_stack{{0xaa}}, 0, 0, 100 + 1*2); }
-    SECTION("ABS")       { check_eval(data_stack{{0xd2, 0x76, 0x86}}, parse_script("abs"), flags, data_stack{{0xd2, 0x76, 0x06}}, 0, 0, 100 + 3*2); }
-    SECTION("NOT true")  { check_eval(data_stack{{}}, parse_script("not"), flags, data_stack{{0x01}}, 0, 0, 101); }
+    SECTION("1ADD") { check_eval(data_stack{{0x00, 0x02, 0x03, 0x42}}, parse_script("1add"), flags, data_stack{{0x01, 0x02, 0x03, 0x42}}, 0, 0, 100 + 4*2); }
+    SECTION("1SUB") { check_eval(data_stack{{0x01, 0x02, 0x03, 0x42}}, parse_script("1sub"), flags, data_stack{{0x00, 0x02, 0x03, 0x42}}, 0, 0, 100 + 4*2); }
+    SECTION("NEGATE") { check_eval(data_stack{{0x2a}}, parse_script("negate"), flags, data_stack{{0xaa}}, 0, 0, 100 + 1*2); }
+    SECTION("ABS") { check_eval(data_stack{{0xd2, 0x76, 0x86}}, parse_script("abs"), flags, data_stack{{0xd2, 0x76, 0x06}}, 0, 0, 100 + 3*2); }
+    SECTION("NOT true") { check_eval(data_stack{{}}, parse_script("not"), flags, data_stack{{0x01}}, 0, 0, 101); }
     SECTION("NOT false") { check_eval(data_stack{{0x01}}, parse_script("not"), flags, data_stack{{}}, 0, 0, 100); }
-    SECTION("ADD")       { check_eval(data_stack{{0x88, 0x76, 0x0f}, {0xba, 0x7d}}, parse_script("add"), flags, data_stack{{0x42, 0xf4, 0x0f}}, 0, 0, 100 + 3*2); }
-    SECTION("SUB")       { check_eval(data_stack{{0x88, 0x76, 0x0f}, {0xba, 0x7d}}, parse_script("sub"), flags, data_stack{{0xce, 0xf8, 0x0e}}, 0, 0, 100 + 3*2); }
-    SECTION("BOOLAND true")  { check_eval(data_stack{{0x01}, {0x01}}, parse_script("booland"), flags, data_stack{{0x01}}, 0, 0, 101); }
+    SECTION("ADD") { check_eval(data_stack{{0x88, 0x76, 0x0f}, {0xba, 0x7d}}, parse_script("add"), flags, data_stack{{0x42, 0xf4, 0x0f}}, 0, 0, 100 + 3*2); }
+    SECTION("SUB") { check_eval(data_stack{{0x88, 0x76, 0x0f}, {0xba, 0x7d}}, parse_script("sub"), flags, data_stack{{0xce, 0xf8, 0x0e}}, 0, 0, 100 + 3*2); }
+    SECTION("BOOLAND true") { check_eval(data_stack{{0x01}, {0x01}}, parse_script("booland"), flags, data_stack{{0x01}}, 0, 0, 101); }
     SECTION("BOOLAND false") { check_eval(data_stack{{0x01}, {}}, parse_script("booland"), flags, data_stack{{}}, 0, 0, 100); }
-    SECTION("BOOLOR true")   { check_eval(data_stack{{0x01}, {}}, parse_script("boolor"), flags, data_stack{{0x01}}, 0, 0, 101); }
-    SECTION("BOOLOR false")  { check_eval(data_stack{{}, {}}, parse_script("boolor"), flags, data_stack{{}}, 0, 0, 100); }
-    SECTION("NUMEQUAL true")    { check_eval(data_stack{{0x12, 0x34}, {0x12, 0x34}}, parse_script("numequal"), flags, data_stack{{0x01}}, 0, 0, 101); }
-    SECTION("NUMEQUAL false")   { check_eval(data_stack{{0x12, 0x34}, {0x02, 0x34}}, parse_script("numequal"), flags, data_stack{{}}, 0, 0, 100); }
-    SECTION("LESSTHAN true")    { check_eval(data_stack{{0x02, 0x34}, {0x12, 0x34}}, parse_script("lessthan"), flags, data_stack{{0x01}}, 0, 0, 101); }
-    SECTION("LESSTHAN false")   { check_eval(data_stack{{0x12, 0x34}, {0x02, 0x34}}, parse_script("lessthan"), flags, data_stack{{}}, 0, 0, 100); }
+    SECTION("BOOLOR true") { check_eval(data_stack{{0x01}, {}}, parse_script("boolor"), flags, data_stack{{0x01}}, 0, 0, 101); }
+    SECTION("BOOLOR false") { check_eval(data_stack{{}, {}}, parse_script("boolor"), flags, data_stack{{}}, 0, 0, 100); }
+    SECTION("NUMEQUAL true") { check_eval(data_stack{{0x12, 0x34}, {0x12, 0x34}}, parse_script("numequal"), flags, data_stack{{0x01}}, 0, 0, 101); }
+    SECTION("NUMEQUAL false") { check_eval(data_stack{{0x12, 0x34}, {0x02, 0x34}}, parse_script("numequal"), flags, data_stack{{}}, 0, 0, 100); }
+    SECTION("LESSTHAN true") { check_eval(data_stack{{0x02, 0x34}, {0x12, 0x34}}, parse_script("lessthan"), flags, data_stack{{0x01}}, 0, 0, 101); }
+    SECTION("LESSTHAN false") { check_eval(data_stack{{0x12, 0x34}, {0x02, 0x34}}, parse_script("lessthan"), flags, data_stack{{}}, 0, 0, 100); }
     SECTION("GREATERTHAN true") { check_eval(data_stack{{0x12, 0x34}, {0x02, 0x34}}, parse_script("greaterthan"), flags, data_stack{{0x01}}, 0, 0, 101); }
     SECTION("MAX") { check_eval(data_stack{{0x22, 0x34}, {0x12, 0x34}}, parse_script("max"), flags, data_stack{{0x22, 0x34}}, 0, 0, 100 + 2*2); }
     SECTION("MIN") { check_eval(data_stack{{0x22, 0x34}, {0x12, 0x34}}, parse_script("min"), flags, data_stack{{0x12, 0x34}}, 0, 0, 100 + 2*2); }
@@ -354,9 +354,9 @@ TEST_CASE("VM-Limits: individual opcode costs — splice operations", "[vm][vmli
         | script_flags::bch_minimaldata | script_flags::bch_input_sigchecks
         | script_flags::bch_enforce_sigchecks;
 
-    SECTION("CAT")   { check_eval(data_stack{{0xde, 0xad}, {0xbe, 0xef}}, parse_script("cat"), flags, data_stack{{0xde, 0xad, 0xbe, 0xef}}, 0, 0, 104); }
+    SECTION("CAT") { check_eval(data_stack{{0xde, 0xad}, {0xbe, 0xef}}, parse_script("cat"), flags, data_stack{{0xde, 0xad, 0xbe, 0xef}}, 0, 0, 104); }
     SECTION("SPLIT") { check_eval(data_stack{{0xde, 0xad, 0xbe, 0xef}, {0x02}}, parse_script("split"), flags, data_stack{{0xde, 0xad}, {0xbe, 0xef}}, 0, 0, 104); }
-    SECTION("SIZE")  {
+    SECTION("SIZE") {
         data_chunk const blob(127, 0xfa);
         check_eval(data_stack{blob}, parse_script("size"), flags, data_stack{blob, {0x7f}}, 0, 0, 101);
     }
@@ -371,13 +371,13 @@ TEST_CASE("VM-Limits: individual opcode costs — control flow", "[vm][vmlimits]
         | script_flags::bch_minimaldata | script_flags::bch_input_sigchecks
         | script_flags::bch_enforce_sigchecks;
 
-    SECTION("IF branch not taken")    { check_eval(data_stack{{}}, parse_script("if 1 endif"), flags, data_stack{}, 0, 0, 300); }
-    SECTION("IF branch taken")        { check_eval(data_stack{{0x01}}, parse_script("if [fafa] endif"), flags, data_stack{{0xfa, 0xfa}}, 0, 0, 302); }
-    SECTION("IF/ELSE, else taken")    { check_eval(data_stack{{}}, parse_script("if else 1 endif"), flags, data_stack{{0x01}}, 0, 0, 401); }
+    SECTION("IF branch not taken") { check_eval(data_stack{{}}, parse_script("if 1 endif"), flags, data_stack{}, 0, 0, 300); }
+    SECTION("IF branch taken") { check_eval(data_stack{{0x01}}, parse_script("if [fafa] endif"), flags, data_stack{{0xfa, 0xfa}}, 0, 0, 302); }
+    SECTION("IF/ELSE, else taken") { check_eval(data_stack{{}}, parse_script("if else 1 endif"), flags, data_stack{{0x01}}, 0, 0, 401); }
     SECTION("NOTIF branch not taken") { check_eval(data_stack{{0x01}}, parse_script("notif 1 endif"), flags, data_stack{}, 0, 0, 300); }
-    SECTION("VERIFY success")         { check_eval(data_stack{{0x01}}, parse_script("verify"), flags, data_stack{}, 0, 0, 100); }
-    SECTION("CODESEPARATOR")          { check_eval(data_stack{{0xbb, 0xbb}}, parse_script("codeseparator"), flags, data_stack{{0xbb, 0xbb}}, 0, 0, 100); }
-    SECTION("NOP1")                   { check_eval({}, parse_script("nop1"), flags, data_stack{}, 0, 0, 100); }
+    SECTION("VERIFY success") { check_eval(data_stack{{0x01}}, parse_script("verify"), flags, data_stack{}, 0, 0, 100); }
+    SECTION("CODESEPARATOR") { check_eval(data_stack{{0xbb, 0xbb}}, parse_script("codeseparator"), flags, data_stack{{0xbb, 0xbb}}, 0, 0, 100); }
+    SECTION("NOP1") { check_eval({}, parse_script("nop1"), flags, data_stack{}, 0, 0, 100); }
 }
 
 TEST_CASE("VM-Limits: individual opcode costs — bitwise operations", "[vm][vmlimits]") {
@@ -389,9 +389,9 @@ TEST_CASE("VM-Limits: individual opcode costs — bitwise operations", "[vm][vml
         | script_flags::bch_enforce_sigchecks;
 
     SECTION("AND") { check_eval(data_stack{{0xf0, 0x0f}, {0xba, 0xba}}, parse_script("and"), flags, data_stack{{0xb0, 0x0a}}, 0, 0, 102); }
-    SECTION("OR")  { check_eval(data_stack{{0xf0, 0x0f}, {0xba, 0xba}}, parse_script("or"),  flags, data_stack{{0xfa, 0xbf}}, 0, 0, 102); }
+    SECTION("OR") { check_eval(data_stack{{0xf0, 0x0f}, {0xba, 0xba}}, parse_script("or"),  flags, data_stack{{0xfa, 0xbf}}, 0, 0, 102); }
     SECTION("XOR") { check_eval(data_stack{{0xf0, 0x0f}, {0xba, 0xba}}, parse_script("xor"), flags, data_stack{{0x4a, 0xb5}}, 0, 0, 102); }
-    SECTION("EQUAL true")  { check_eval(data_stack{{0x12, 0x34}, {0x12, 0x34}}, parse_script("equal"), flags, data_stack{{0x01}}, 0, 0, 101); }
+    SECTION("EQUAL true") { check_eval(data_stack{{0x12, 0x34}, {0x12, 0x34}}, parse_script("equal"), flags, data_stack{{0x01}}, 0, 0, 101); }
     SECTION("EQUAL false") { check_eval(data_stack{{0x12, 0x34}, {0x12, 0x35}}, parse_script("equal"), flags, data_stack{{}}, 0, 0, 100); }
     SECTION("EQUALVERIFY") { check_eval(data_stack{{0x12, 0x34}, {0x12, 0x34}}, parse_script("equalverify"), flags, data_stack{}, 0, 0, 101); }
 }

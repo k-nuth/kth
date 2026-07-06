@@ -9,12 +9,12 @@ using namespace kd;
 
 // Start Test Suite: get block transactions tests
 
-TEST_CASE("get block transactions  constructor 1  always invalid", "[get block transactions]") {
+TEST_CASE("get block transactions constructor 1 always invalid", "[get block transactions]") {
     message::get_block_transactions instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("get block transactions  constructor 2  always  equals params", "[get block transactions]") {
+TEST_CASE("get block transactions constructor 2 always equals params", "[get block transactions]") {
     hash_digest const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     const std::vector<uint64_t> indexes = {1u, 3454u, 4234u, 75123u, 455323u};
 
@@ -24,7 +24,7 @@ TEST_CASE("get block transactions  constructor 2  always  equals params", "[get 
     REQUIRE(indexes == instance.indexes());
 }
 
-TEST_CASE("get block transactions  constructor 3  always  equals params", "[get block transactions]") {
+TEST_CASE("get block transactions constructor 3 always equals params", "[get block transactions]") {
     hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     auto hash_dup = hash;
     std::vector<uint64_t> indexes = {1u, 3454u, 4234u, 75123u, 455323u};
@@ -36,7 +36,7 @@ TEST_CASE("get block transactions  constructor 3  always  equals params", "[get 
     REQUIRE(indexes == instance.indexes());
 }
 
-TEST_CASE("get block transactions  constructor 4  always  equals params", "[get block transactions]") {
+TEST_CASE("get block transactions constructor 4 always equals params", "[get block transactions]") {
     message::get_block_transactions value(
         "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         {1u, 3454u, 4234u, 75123u, 455323u});
@@ -46,7 +46,7 @@ TEST_CASE("get block transactions  constructor 4  always  equals params", "[get 
     REQUIRE(value == instance);
 }
 
-TEST_CASE("get block transactions  constructor 5  always  equals params", "[get block transactions]") {
+TEST_CASE("get block transactions constructor 5 always equals params", "[get block transactions]") {
     hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     std::vector<uint64_t> indexes = {1u, 3454u, 4234u, 75123u, 455323u};
 
@@ -57,7 +57,7 @@ TEST_CASE("get block transactions  constructor 5  always  equals params", "[get 
     REQUIRE(indexes == instance.indexes());
 }
 
-TEST_CASE("get block transactions from data insufficient bytes  failure", "[get block transactions]") {
+TEST_CASE("get block transactions from data insufficient bytes failure", "[get block transactions]") {
     data_chunk const raw{0xab, 0xcd};
     message::get_block_transactions instance{};
 
@@ -66,7 +66,7 @@ TEST_CASE("get block transactions from data insufficient bytes  failure", "[get 
     REQUIRE( ! result);
 }
 
-TEST_CASE("get block transactions from data valid input  success", "[get block transactions]") {
+TEST_CASE("get block transactions from data valid input success", "[get block transactions]") {
     const message::get_block_transactions expected{
         "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         {16,
@@ -88,21 +88,21 @@ TEST_CASE("get block transactions from data valid input  success", "[get block t
 
 
 
-TEST_CASE("get block transactions  block hash accessor 1  always  returns initialized value", "[get block transactions]") {
+TEST_CASE("get block transactions block hash accessor 1 always returns initialized value", "[get block transactions]") {
     hash_digest const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     const std::vector<uint64_t> indexes = {1u, 3454u, 4234u, 75123u, 455323u};
     message::get_block_transactions instance(hash, indexes);
     REQUIRE(hash == instance.block_hash());
 }
 
-TEST_CASE("get block transactions  block hash accessor 2  always  returns initialized value", "[get block transactions]") {
+TEST_CASE("get block transactions block hash accessor 2 always returns initialized value", "[get block transactions]") {
     hash_digest const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     const std::vector<uint64_t> indexes = {1u, 3454u, 4234u, 75123u, 455323u};
     const message::get_block_transactions instance(hash, indexes);
     REQUIRE(hash == instance.block_hash());
 }
 
-TEST_CASE("get block transactions  block hash setter 1  roundtrip  success", "[get block transactions]") {
+TEST_CASE("get block transactions block hash setter 1 roundtrip success", "[get block transactions]") {
     hash_digest const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::get_block_transactions instance;
     REQUIRE(hash != instance.block_hash());
@@ -110,7 +110,7 @@ TEST_CASE("get block transactions  block hash setter 1  roundtrip  success", "[g
     REQUIRE(hash == instance.block_hash());
 }
 
-TEST_CASE("get block transactions  block hash setter 2  roundtrip  success", "[get block transactions]") {
+TEST_CASE("get block transactions block hash setter 2 roundtrip success", "[get block transactions]") {
     hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     auto dup = hash;
     message::get_block_transactions instance;
@@ -119,21 +119,21 @@ TEST_CASE("get block transactions  block hash setter 2  roundtrip  success", "[g
     REQUIRE(hash == instance.block_hash());
 }
 
-TEST_CASE("get block transactions  indexes accessor 1  always  returns initialized value", "[get block transactions]") {
+TEST_CASE("get block transactions indexes accessor 1 always returns initialized value", "[get block transactions]") {
     hash_digest const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     const std::vector<uint64_t> indexes = {1u, 3454u, 4234u, 75123u, 455323u};
     message::get_block_transactions instance(hash, indexes);
     REQUIRE(indexes == instance.indexes());
 }
 
-TEST_CASE("get block transactions  indexes accessor 2  always  returns initialized value", "[get block transactions]") {
+TEST_CASE("get block transactions indexes accessor 2 always returns initialized value", "[get block transactions]") {
     hash_digest const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     const std::vector<uint64_t> indexes = {1u, 3454u, 4234u, 75123u, 455323u};
     const message::get_block_transactions instance(hash, indexes);
     REQUIRE(indexes == instance.indexes());
 }
 
-TEST_CASE("get block transactions  indexes setter 1  roundtrip  success", "[get block transactions]") {
+TEST_CASE("get block transactions indexes setter 1 roundtrip success", "[get block transactions]") {
     const std::vector<uint64_t> indexes = {1u, 3454u, 4234u, 75123u, 455323u};
     message::get_block_transactions instance;
     REQUIRE(indexes != instance.indexes());
@@ -141,7 +141,7 @@ TEST_CASE("get block transactions  indexes setter 1  roundtrip  success", "[get 
     REQUIRE(indexes == instance.indexes());
 }
 
-TEST_CASE("get block transactions  indexes setter 2  roundtrip  success", "[get block transactions]") {
+TEST_CASE("get block transactions indexes setter 2 roundtrip success", "[get block transactions]") {
     std::vector<uint64_t> indexes = {1u, 3454u, 4234u, 75123u, 455323u};
     auto dup = indexes;
     message::get_block_transactions instance;
@@ -150,7 +150,7 @@ TEST_CASE("get block transactions  indexes setter 2  roundtrip  success", "[get 
     REQUIRE(indexes == instance.indexes());
 }
 
-TEST_CASE("get block transactions  operator assign equals  always  matches equivalent", "[get block transactions]") {
+TEST_CASE("get block transactions operator assign equals always matches equivalent", "[get block transactions]") {
     hash_digest const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     const std::vector<uint64_t> indexes = {1u, 3454u, 4234u, 75123u, 455323u};
     message::get_block_transactions value(hash, indexes);
@@ -166,7 +166,7 @@ TEST_CASE("get block transactions  operator assign equals  always  matches equiv
     REQUIRE(indexes == instance.indexes());
 }
 
-TEST_CASE("get block transactions  operator boolean equals  duplicates  returns true", "[get block transactions]") {
+TEST_CASE("get block transactions operator boolean equals duplicates returns true", "[get block transactions]") {
     const message::get_block_transactions expected(
         "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         {1u, 3454u, 4234u, 75123u, 455323u});
@@ -175,7 +175,7 @@ TEST_CASE("get block transactions  operator boolean equals  duplicates  returns 
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("get block transactions  operator boolean equals  differs  returns false", "[get block transactions]") {
+TEST_CASE("get block transactions operator boolean equals differs returns false", "[get block transactions]") {
     const message::get_block_transactions expected(
         "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         {1u, 3454u, 4234u, 75123u, 455323u});
@@ -184,7 +184,7 @@ TEST_CASE("get block transactions  operator boolean equals  differs  returns fal
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("get block transactions  operator boolean not equals  duplicates  returns false", "[get block transactions]") {
+TEST_CASE("get block transactions operator boolean not equals duplicates returns false", "[get block transactions]") {
     const message::get_block_transactions expected(
         "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         {1u, 3454u, 4234u, 75123u, 455323u});
@@ -193,7 +193,7 @@ TEST_CASE("get block transactions  operator boolean not equals  duplicates  retu
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("get block transactions  operator boolean not equals  differs  returns true", "[get block transactions]") {
+TEST_CASE("get block transactions operator boolean not equals differs returns true", "[get block transactions]") {
     const message::get_block_transactions expected(
         "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
         {1u, 3454u, 4234u, 75123u, 455323u});

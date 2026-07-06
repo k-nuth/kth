@@ -88,25 +88,4 @@ T pop(std::vector<T>& stack) {
 
 } // namespace kth
 
-namespace std {
-
-template <typename T>
-std::ostream& operator<<(std::ostream& output, std::vector<T> const& list) {
-    size_t current = 0;
-    auto const end = list.size();
-
-    for (auto const& element : list) {
-        output << element;
-
-        if (++current < end) {
-            // output << std::endl;
-            output << '\n';
-        }
-    }
-
-    return output;
-}
-
-} // namespace std
-
 #endif

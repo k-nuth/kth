@@ -15,14 +15,14 @@ typedef std::vector<uint8_t> collection;
 
 // distinct
 
-TEST_CASE("collection  distinct  empty  same", "[collection tests]") {
+TEST_CASE("collection distinct empty same", "[collection tests]") {
     collection parameter;
     auto const& result = distinct(parameter);
     REQUIRE(parameter.empty());
     REQUIRE(&result == &parameter);
 }
 
-TEST_CASE("collection  distinct  single  match", "[collection tests]") {
+TEST_CASE("collection distinct single match", "[collection tests]") {
     uint8_t const expected = 42;
     collection set{ expected };
     auto const& result = distinct(set);
@@ -30,7 +30,7 @@ TEST_CASE("collection  distinct  single  match", "[collection tests]") {
     REQUIRE(result[0] == expected);
 }
 
-TEST_CASE("collection  distinct  distinct sorted  sorted", "[collection tests]") {
+TEST_CASE("collection distinct distinct sorted sorted", "[collection tests]") {
     collection set{ 0, 2, 4, 6, 8 };
     auto const& result = distinct(set);
     REQUIRE(result.size() == 5u);
@@ -41,7 +41,7 @@ TEST_CASE("collection  distinct  distinct sorted  sorted", "[collection tests]")
     REQUIRE(result[4] == 8u);
 }
 
-TEST_CASE("collection  distinct  distinct unsorted  sorted", "[collection tests]") {
+TEST_CASE("collection distinct distinct unsorted sorted", "[collection tests]") {
     collection set{ 2, 0, 8, 6, 4 };
     auto const& result = distinct(set);
     REQUIRE(result.size() == 5u);
@@ -52,7 +52,7 @@ TEST_CASE("collection  distinct  distinct unsorted  sorted", "[collection tests]
     REQUIRE(result[4] == 8u);
 }
 
-TEST_CASE("collection  distinct  distinct unsorted duplicates  sorted distinct", "[collection tests]") {
+TEST_CASE("collection distinct distinct unsorted duplicates sorted distinct", "[collection tests]") {
     collection set{ 2, 0, 0, 8, 6, 4 };
     auto const& result = distinct(set);
     REQUIRE(result.size() == 5u);
@@ -65,7 +65,7 @@ TEST_CASE("collection  distinct  distinct unsorted duplicates  sorted distinct",
 
 // move_append
 
-TEST_CASE("collection  move append  both empty  both empty", "[collection tests]") {
+TEST_CASE("collection move append both empty both empty", "[collection tests]") {
     collection source;
     collection target;
     move_append(target, source);
@@ -73,7 +73,7 @@ TEST_CASE("collection  move append  both empty  both empty", "[collection tests]
     REQUIRE(target.size() == 0u);
 }
 
-TEST_CASE("collection  move append  source empty  both unchanged", "[collection tests]") {
+TEST_CASE("collection move append source empty both unchanged", "[collection tests]") {
     collection source;
     collection target{ 0, 2, 4, 6, 8 };
     auto const expected = target.size();
@@ -87,7 +87,7 @@ TEST_CASE("collection  move append  source empty  both unchanged", "[collection 
     REQUIRE(target[4] == 8u);
 }
 
-TEST_CASE("collection  move append  target empty  swapped values", "[collection tests]") {
+TEST_CASE("collection move append target empty swapped values", "[collection tests]") {
     collection source{ 0, 2, 4, 6, 8 };
     collection target;
     auto const expected = source.size();
@@ -101,7 +101,7 @@ TEST_CASE("collection  move append  target empty  swapped values", "[collection 
     REQUIRE(target[4] == 8u);
 }
 
-TEST_CASE("collection  move append  neither empty  moved in order", "[collection tests]") {
+TEST_CASE("collection move append neither empty moved in order", "[collection tests]") {
     collection source{ 10, 12, 14, 16, 18 };
     collection target{ 0, 2, 4, 6, 8 };
     auto const expected = source.size() + source.size();
@@ -120,7 +120,7 @@ TEST_CASE("collection  move append  neither empty  moved in order", "[collection
     REQUIRE(target[9] == 18u);
 }
 
-TEST_CASE("collection  pop  single  empty and returns expected", "[collection tests]") {
+TEST_CASE("collection pop single empty and returns expected", "[collection tests]") {
     uint8_t const expected = 42u;
     collection stack{ expected };
     auto const value = pop(stack);
@@ -128,7 +128,7 @@ TEST_CASE("collection  pop  single  empty and returns expected", "[collection te
     REQUIRE(value == expected);
 }
 
-TEST_CASE("collection  pop  multiple  popped and returns expected", "[collection tests]") {
+TEST_CASE("collection pop multiple popped and returns expected", "[collection tests]") {
     uint8_t const expected = 42u;
     collection stack{ 0, 1, 2, 3, expected };
     auto const value = pop(stack);

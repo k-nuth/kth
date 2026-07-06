@@ -12,18 +12,18 @@ static auto const valid_raw_point_iterator_source = to_chunk("000000000019d6689c
 
 // Start Test Suite: point iterator tests
 
-TEST_CASE("point iterator  operator bool  not at end  returns true", "[point iterator]") {
+TEST_CASE("point iterator operator bool not at end returns true", "[point iterator]") {
     point_iterator instance(point{null_hash, 0u});
     REQUIRE((bool)instance);
 }
 
-TEST_CASE("point iterator  operator bool at end  returns false", "[point iterator]") {
+TEST_CASE("point iterator operator bool at end returns false", "[point iterator]") {
     point value{null_hash, 0u};
     point_iterator instance(value, unsigned(value.serialized_size(false)));
     REQUIRE( ! instance);
 }
 
-TEST_CASE("point iterator  operator asterisk  initialized point  matches source", "[point iterator]") {
+TEST_CASE("point iterator operator asterisk initialized point matches source", "[point iterator]") {
     point p{null_hash, 0u};
     byte_reader reader(valid_raw_point_iterator_source);
     auto result = point::from_data(reader, false);
@@ -40,7 +40,7 @@ TEST_CASE("point iterator  operator asterisk  initialized point  matches source"
     REQUIRE(0u == (*instance));
 }
 
-TEST_CASE("point iterator  operator arrow  initialized point  matches source", "[point iterator]") {
+TEST_CASE("point iterator operator arrow initialized point matches source", "[point iterator]") {
     point p{null_hash, 0u};
     byte_reader reader(valid_raw_point_iterator_source);
     auto result = point::from_data(reader, false);
@@ -58,7 +58,7 @@ TEST_CASE("point iterator  operator arrow  initialized point  matches source", "
     REQUIRE(0u == instance.operator->());
 }
 
-TEST_CASE("point iterator  operator plus minus int  roundtrip  success", "[point iterator]") {
+TEST_CASE("point iterator operator plus minus int roundtrip success", "[point iterator]") {
     point p{null_hash, 0u};
     uint8_t offset = 5u;
     byte_reader reader(valid_raw_point_iterator_source);
@@ -78,7 +78,7 @@ TEST_CASE("point iterator  operator plus minus int  roundtrip  success", "[point
     REQUIRE(modified != expected);
 }
 
-TEST_CASE("point iterator  operator plus minus  roundtrip  success", "[point iterator]") {
+TEST_CASE("point iterator operator plus minus roundtrip success", "[point iterator]") {
     point p{null_hash, 0u};
     uint8_t offset = 5u;
     byte_reader reader(valid_raw_point_iterator_source);
@@ -96,7 +96,7 @@ TEST_CASE("point iterator  operator plus minus  roundtrip  success", "[point ite
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("point iterator  copy assigment", "[point iterator]") {
+TEST_CASE("point iterator copy assigment", "[point iterator]") {
     point p{null_hash, 0u};
     uint8_t offset = 5u;
     byte_reader reader(valid_raw_point_iterator_source);

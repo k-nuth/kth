@@ -6,43 +6,60 @@
 #define KTH_INFRASTRUCTURE_CONFIG_AUTHORITY_HPP
 
 #include <cstdint>
-#include <iostream>
+#include <expected>
 #include <string>
 #include <string_view>
 #include <vector>
 
-// #include <fmt/ostream.h>
+#include <fmt/core.h>
 
 #include <kth/infrastructure/define.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/message/network_address.hpp>
-
-
-// #if ! defined(__EMSCRIPTEN__)
 #include <kth/infrastructure/utility/asio.hpp>
-// #endif
 
 namespace kth::infrastructure::config {
 
 /**
- * Serialization helper for a network authority.
- * This is a container for a {ip address, port} tuple.
+ * Serialization helper for a network authority: `{ip address, port}`.
+ *
+ * Valid-by-construction: no default ctor, no throwing ctor. Fallible
+ * inputs (host-port strings) go through `parse_from` returning
+ * `expect<authority>`.
  */
 struct KI_API authority {
     using list = std::vector<authority>;
 
-    authority() = default;
+    /**
+     * Sentinel "unspecified" authority (`[::]:0`). Kept as a factory so
+     * callers spell out that they want the empty-address form; the type
+     * itself remains valid-by-construction.
+     */
+    [[nodiscard]] static
+    authority any() noexcept;
 
-    explicit
-    authority(std::string_view authority);
+    /**
+     * Parse a text authority (`host:port`, IPv4 or bracketed IPv6).
+     * Returns `error::illegal_value` on malformed input.
+     */
+    [[nodiscard]] static
+    std::expected<authority, kth::code> parse_from(std::string_view text);
 
-    //Note(fernando): in kth-network it is used the implicit convertion
+    /**
+     * Non-throwing convenience: parses `host` (which may include
+     * brackets around an IPv6) and pairs it with the given port.
+     */
+    [[nodiscard]] static
+    std::expected<authority, kth::code> parse_from(std::string_view host, uint16_t port);
+
+    /**
+     * Wrap a wire-protocol network_address.
+     * (Kept implicit to preserve existing kth-network call sites.)
+     */
     // implicit
     authority(message::network_address const& address);
 
     authority(message::ip_address const& ip, uint16_t port);
-
-
-    authority(std::string_view host, uint16_t port);
 
 #if ! defined(__EMSCRIPTEN__)
     authority(asio::address const& ip, uint16_t port);
@@ -51,44 +68,35 @@ struct KI_API authority {
     authority(asio::endpoint const& endpoint);
 #endif
 
-    explicit
-    operator bool const() const;
+    [[nodiscard]] asio::ipv6            asio_ip() const;
+    [[nodiscard]] message::ip_address   ip() const;
+    [[nodiscard]] uint16_t              port() const;
+    [[nodiscard]] std::string           to_hostname() const;
+    [[nodiscard]] std::string           to_string() const;
+    [[nodiscard]] message::network_address to_network_address() const;
 
-
-// #if ! defined(__EMSCRIPTEN__)
-    asio::ipv6 asio_ip() const;
-// #endif
-
-    message::ip_address ip() const;
-    uint16_t port() const;
-    std::string to_hostname() const;
-    std::string to_string() const;
-    message::network_address to_network_address() const;
-
-    bool operator==(authority const& x) const;
-    bool operator!=(authority const& x) const;
-
-    friend
-    std::istream& operator>>(std::istream& input, authority& argument);
-    friend
-    std::ostream& operator<<(std::ostream& output, authority const& argument);
+    [[nodiscard]] bool operator==(authority const& x) const;
+    [[nodiscard]] bool operator!=(authority const& x) const;
 
 private:
-// #if ! defined(__EMSCRIPTEN__)
+    // Private "wrap only" ctor used by `parse_from`.
+    authority(asio::ipv6 const& ip, uint16_t port)
+        : ip_(ip), port_(port) {}
+
     asio::ipv6 ip_;
-// #endif
-    uint16_t port_{0};
+    uint16_t   port_{0};
 };
 
 } // namespace kth::infrastructure::config
 
 template <>
-struct fmt::formatter<kth::infrastructure::config::authority> : fmt::formatter<std::string> {
+struct fmt::formatter<kth::infrastructure::config::authority>
+    : fmt::formatter<std::string> {
     template <typename FormatContext>
-    auto format(kth::infrastructure::config::authority const& value, FormatContext& ctx) const {
+    auto format(kth::infrastructure::config::authority const& value,
+                FormatContext& ctx) const {
         return fmt::formatter<std::string>::format(value.to_string(), ctx);
     }
 };
-
 
 #endif

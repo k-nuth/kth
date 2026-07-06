@@ -4,11 +4,10 @@
 
 #include <kth/domain/wallet/ec_public.hpp>
 
-#include <algorithm>
-#include <iostream>
+#include <string>
+#include <string_view>
 
-#include <boost/program_options.hpp>
-
+#include <kth/domain/deserialization.hpp>
 #include <kth/domain/wallet/ec_private.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
 #include <kth/infrastructure/error.hpp>
@@ -20,33 +19,13 @@
 namespace kth::domain::wallet {
 
 uint8_t const ec_public::compressed_even = 0x02;
-uint8_t const ec_public::compressed_odd = 0x03;
-uint8_t const ec_public::uncompressed = 0x04;
+uint8_t const ec_public::compressed_odd  = 0x03;
+uint8_t const ec_public::uncompressed    = 0x04;
 #if defined(KTH_CURRENCY_LTC)
 uint8_t const ec_public::mainnet_p2kh = 0x30;
 #else
 uint8_t const ec_public::mainnet_p2kh = 0x00;
 #endif
-
-ec_public::ec_public(ec_private const& secret)
-    : ec_public(from_private(secret)) {
-}
-
-ec_public::ec_public(data_chunk const& decoded)
-    : ec_public(from_data(decoded)) {
-}
-
-ec_public::ec_public(std::string const& base16)
-    : ec_public(from_string(base16)) {
-}
-
-ec_public::ec_public(ec_uncompressed const& uncompressed_point, bool compress)
-    : ec_public(from_point(uncompressed_point, compress)) {
-}
-
-ec_public::ec_public(ec_compressed const& compressed_point, bool compress)
-    : valid_(true), compress_(compress), point_(compressed_point) {
-}
 
 // Validators.
 // ----------------------------------------------------------------------------
@@ -58,79 +37,64 @@ bool ec_public::is_point(byte_span decoded) {
 // Factories.
 // ----------------------------------------------------------------------------
 
-ec_public ec_public::from_private(ec_private const& secret) {
-    if ( ! secret) {
-        return ec_public();
-    }
-
-    return ec_public(secret.to_public());
-}
-
-ec_public ec_public::from_string(std::string const& base16) {
-    auto decoded = decode_base16(base16);
-    if ( ! decoded) {
-        return ec_public();
-    }
-
-    return ec_public(*decoded);
-}
-
-ec_public ec_public::from_data(data_chunk const& decoded) {
+// static
+expect<ec_public> ec_public::from_data(data_chunk const& decoded) {
     if ( ! is_point(decoded)) {
-        return ec_public();
+        return std::unexpected(kth::error::illegal_value);
     }
 
     if (decoded.size() == ec_compressed_size) {
-        return ec_public(to_array<ec_compressed_size>(decoded), true);
+        return ec_public{to_array<ec_compressed_size>(decoded), true};
     }
 
     ec_compressed compressed;
-    return kth::compress(compressed, to_array<ec_uncompressed_size>(decoded)) ? ec_public(compressed, false) : ec_public();
+    if ( ! kth::compress(compressed, to_array<ec_uncompressed_size>(decoded))) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return ec_public{compressed, false};
 }
 
-ec_public ec_public::from_point(ec_uncompressed const& point, bool compress) {
+// static
+expect<ec_public> ec_public::from_private(ec_private const& secret) {
+    if ( ! secret.valid()) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return ec_public{secret.to_public()};
+}
+
+// static
+expect<ec_public> ec_public::from_point(ec_uncompressed const& point, bool compress) {
     if ( ! is_point(point)) {
-        return ec_public();
+        return std::unexpected(kth::error::illegal_value);
     }
 
     ec_compressed compressed;
-    return kth::compress(compressed, point) ? ec_public(compressed, compress) : ec_public();
+    if ( ! kth::compress(compressed, point)) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return ec_public{compressed, compress};
 }
 
-// Cast operators.
-// ----------------------------------------------------------------------------
-
-ec_public::operator bool() const {
-    return valid_;
-}
-
-ec_public::operator ec_compressed const&() const {
-    return point_;
+// static
+expect<ec_public> ec_public::parse_from(std::string_view base16) {
+    auto decoded = decode_base16(base16);
+    if ( ! decoded) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return from_data(*decoded);
 }
 
 // Serializer.
 // ----------------------------------------------------------------------------
 
-std::string ec_public::encoded() const {
+std::string ec_public::to_string() const {
     if (compressed()) {
         return encode_base16(point_);
     }
 
-    // If the point is valid it should always decompress, but if not, is null.
+    // A well-formed point always decompresses.
     auto const uncompressed = to_uncompressed();
     return encode_base16(uncompressed ? *uncompressed : null_uncompressed_point);
-}
-
-
-// Accessors.
-// ----------------------------------------------------------------------------
-
-ec_compressed const& ec_public::point() const {
-    return point_;
-}
-
-bool ec_public::compressed() const {
-    return compress_;
 }
 
 // Methods.
@@ -140,7 +104,6 @@ std::expected<data_chunk, std::error_code> ec_public::to_data() const {
     if ( ! valid_) {
         return std::unexpected(error::pubkey_type);
     }
-
     if (compressed()) {
         return data_chunk(point_.begin(), point_.begin() + ec_compressed_size);
     }
@@ -156,7 +119,6 @@ std::expected<ec_uncompressed, std::error_code> ec_public::to_uncompressed() con
     if ( ! valid_) {
         return std::unexpected(error::pubkey_type);
     }
-
     ec_uncompressed out;
     if ( ! kth::decompress(out, to_array<ec_compressed_size>(point_))) {
         return std::unexpected(error::pubkey_type);
@@ -165,41 +127,7 @@ std::expected<ec_uncompressed, std::error_code> ec_public::to_uncompressed() con
 }
 
 payment_address ec_public::to_payment_address(uint8_t version) const {
-    return payment_address{*this, version};
-}
-
-// Operators.
-// ----------------------------------------------------------------------------
-
-bool ec_public::operator==(ec_public const& x) const {
-    return valid_ == x.valid_ && compress_ == x.compress_ &&
-           point_ == x.point_;
-}
-
-bool ec_public::operator!=(ec_public const& x) const {
-    return !(*this == x);
-}
-
-bool ec_public::operator<(ec_public const& x) const {
-    return encoded() < x.encoded();
-}
-
-std::istream& operator>>(std::istream& in, ec_public& to) {
-    std::string value;
-    in >> value;
-    to = ec_public(value);
-
-    if ( ! to) {
-        using namespace boost::program_options;
-        BOOST_THROW_EXCEPTION(invalid_option_value(value));
-    }
-
-    return in;
-}
-
-std::ostream& operator<<(std::ostream& out, ec_public const& of) {
-    out << of.encoded();
-    return out;
+    return payment_address::from_ec_public(*this, version).value_or(payment_address{});
 }
 
 } // namespace kth::domain::wallet

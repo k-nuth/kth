@@ -7,11 +7,12 @@
 
 #include <cstdint>
 #include <expected>
-#include <iostream>
 #include <string>
+#include <string_view>
 #include <system_error>
 
 #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -21,68 +22,78 @@ namespace kth::domain::wallet {
 class ec_private;
 class payment_address;
 
-/// Use to pass an ec point as either ec_compressed or ec_uncompressed.
-/// ec_public doesn't carry a version for address creation or base58 encoding.
+/**
+ * Elliptic-curve public key, either compressed or uncompressed.
+ *
+ * Default-constructible (invalid state) so the C-API generator can
+ * hand out an "empty" handle; the fallible construction paths return
+ * `expect<ec_public>`.
+ */
 struct KD_API ec_public {
-    static
-    uint8_t const compressed_even;
+    static uint8_t const compressed_even;
+    static uint8_t const compressed_odd;
+    static uint8_t const uncompressed;
+    static uint8_t const mainnet_p2kh;
 
+    /// Parse a base16-encoded key. `error::illegal_value` on malformed
+    /// input or a value that fails EC curve verification.
+    [[nodiscard]]
     static
-    uint8_t const compressed_odd;
+    expect<ec_public> parse_from(std::string_view base16);
 
+    /// Wrap a decoded chunk (33 or 65 bytes).
+    [[nodiscard]]
     static
-    uint8_t const uncompressed;
+    expect<ec_public> from_data(data_chunk const& decoded);
 
+    /// Derive from a validated `ec_private`.
+    [[nodiscard]]
     static
-    uint8_t const mainnet_p2kh;
+    expect<ec_public> from_private(ec_private const& secret);
 
-    /// Constructors.
+    /// Wrap an uncompressed EC point, keeping the compressed/uncompressed
+    /// wire form as requested.
+    [[nodiscard]]
+    static
+    expect<ec_public> from_point(ec_uncompressed const& point, bool compress);
+
     ec_public() = default;
 
+    /// Wrap an already-compressed EC point.
     explicit
-    ec_public(ec_private const& secret);
-
-    explicit
-    ec_public(data_chunk const& decoded);
-
-    explicit
-    ec_public(std::string const& base16);
-
-    explicit
-    ec_public(ec_compressed const& compressed_point, bool compress = true);
-
-    explicit
-    ec_public(ec_uncompressed const& uncompressed_point, bool compress = false);
-
-    ec_public(ec_public const& x) = default;
-    ec_public& operator=(ec_public const& x) = default;
-
-    /// Operators.
-    bool operator==(ec_public const& x) const;
-    bool operator!=(ec_public const& x) const;
-    bool operator<(ec_public const& x) const;
-
-    friend std::istream& operator>>(std::istream& in, ec_public& to);
-    friend std::ostream& operator<<(std::ostream& out, ec_public const& of);
-
-    /// Cast operators.
-    operator bool() const;
-    operator ec_compressed const&() const;
-
-    /// Serializer.
-    [[nodiscard]]
-    std::string encoded() const;
-
-    /// Accessors.
-    [[nodiscard]]
-    ec_compressed const& point() const;
+    ec_public(ec_compressed const& compressed_point, bool compress = true) noexcept
+        : valid_(true), compress_(compress), point_(compressed_point) {}
 
     [[nodiscard]]
-    bool compressed() const;
+    friend bool operator==(ec_public const&, ec_public const&) = default;
 
-    /// Methods.
+    [[nodiscard]]
+    friend auto operator<=>(ec_public const& a, ec_public const& b) {
+        return a.to_string() <=> b.to_string();
+    }
+
+    [[nodiscard]]
+    bool valid() const noexcept { return valid_; }
+
+    [[nodiscard]]
+    ec_compressed const& value() const noexcept { return point_; }
+
+    [[nodiscard]]
+    ec_compressed const& point() const noexcept { return point_; }
+
+    [[nodiscard]]
+    bool compressed() const noexcept { return compress_; }
+
+    /// Base16 encoding used by `fmt::formatter<ec_public>`.
+    [[nodiscard]]
+    std::string to_string() const;
+
+    [[nodiscard]]
+    std::string encoded() const { return to_string(); }
+
     [[nodiscard]]
     std::expected<data_chunk, std::error_code> to_data() const;
+
     [[nodiscard]]
     std::expected<ec_uncompressed, std::error_code> to_uncompressed() const;
 
@@ -90,25 +101,9 @@ struct KD_API ec_public {
     payment_address to_payment_address(uint8_t version = mainnet_p2kh) const;
 
 private:
-    /// Validators.
     static
     bool is_point(byte_span decoded);
 
-    /// Factories.
-    static
-    ec_public from_data(data_chunk const& decoded);
-
-    static
-    ec_public from_private(ec_private const& secret);
-
-    static
-    ec_public from_string(std::string const& base16);
-
-    static
-    ec_public from_point(ec_uncompressed const& point, bool compress);
-
-    /// Members.
-    /// These should be const, apart from the need to implement assignment.
     bool valid_{false};
     bool compress_{true};
     ec_compressed point_ = null_compressed_point;

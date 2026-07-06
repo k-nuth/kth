@@ -30,7 +30,8 @@ infrastructure::config::authority socket::authority() const {
     mutex_.unlock_shared();
     ///////////////////////////////////////////////////////////////////////////
 
-    return ec ? infrastructure::config::authority() : infrastructure::config::authority(endpoint);
+    return ec ? infrastructure::config::authority::any()
+              : infrastructure::config::authority(endpoint);
 }
 
 asio::socket& socket::get() {

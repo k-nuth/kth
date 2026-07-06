@@ -28,7 +28,7 @@ stealth_receiver::stealth_receiver(ec_secret const& scan_private,
 }
 
 stealth_receiver::operator bool() const {
-    return address_;
+    return address_.valid();
 }
 
 // Will be invalid if construct fails.
@@ -44,7 +44,11 @@ bool stealth_receiver::derive_address(payment_address& out_address,
         return false;
     }
 
-    out_address = payment_address{ec_public{receiver_public}, version_};
+    auto result = payment_address::from_ec_public(ec_public{receiver_public}, version_);
+    if ( ! result) {
+        return false;
+    }
+    out_address = *result;
     return true;
 }
 

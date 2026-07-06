@@ -28,13 +28,19 @@ struct temp_file_guard {
     }
 };
 
+// Test-only helper: `authority` no longer has a throwing string ctor. All
+// literals used here are known-good, so `.value()` is safe.
+infrastructure::config::authority auth(std::string_view text) {
+    return infrastructure::config::authority::parse_from(text).value();
+}
+
 } // anonymous namespace
 
 TEST_CASE("peer_database basic operations", "[peer_database]") {
     peer_database db;
 
-    infrastructure::config::authority addr1("192.168.1.1:8333");
-    infrastructure::config::authority addr2("192.168.1.2:8333");
+    auto addr1 = auth("192.168.1.1:8333");
+    auto addr2 = auth("192.168.1.2:8333");
 
     SECTION("get_or_create creates new record") {
         auto [record, result] = db.get_or_create(addr1);
@@ -88,7 +94,7 @@ TEST_CASE("peer_database basic operations", "[peer_database]") {
 TEST_CASE("peer_database ban operations", "[peer_database]") {
     peer_database db;
 
-    infrastructure::config::authority addr("192.168.1.1:8333");
+    auto addr = auth("192.168.1.1:8333");
 
     SECTION("ban creates record if not exists") {
         db.ban(addr, std::chrono::hours{1}, ban_reason::node_misbehaving);
@@ -131,7 +137,7 @@ TEST_CASE("peer_database ban operations", "[peer_database]") {
 
     SECTION("get_banned returns all banned") {
         db.ban(addr, std::chrono::hours{1}, ban_reason::node_misbehaving);
-        infrastructure::config::authority addr2("192.168.1.2:8333");
+        auto addr2 = auth("192.168.1.2:8333");
         (void)db.get_or_create(addr2);
 
         auto banned = db.get_banned();
@@ -158,7 +164,7 @@ TEST_CASE("peer_database ban operations", "[peer_database]") {
 TEST_CASE("peer_database reputation operations", "[peer_database]") {
     peer_database db;
 
-    infrastructure::config::authority addr("192.168.1.1:8333");
+    auto addr = auth("192.168.1.1:8333");
 
     SECTION("add_misbehavior accumulates score") {
         (void)db.get_or_create(addr);
@@ -212,9 +218,9 @@ TEST_CASE("peer_database reputation operations", "[peer_database]") {
 TEST_CASE("peer_database performance operations", "[peer_database]") {
     peer_database db;
 
-    infrastructure::config::authority addr1("192.168.1.1:8333");
-    infrastructure::config::authority addr2("192.168.1.2:8333");
-    infrastructure::config::authority addr3("192.168.1.3:8333");
+    auto addr1 = auth("192.168.1.1:8333");
+    auto addr2 = auth("192.168.1.2:8333");
+    auto addr3 = auth("192.168.1.3:8333");
 
     SECTION("record_block_download tracks stats") {
         (void)db.get_or_create(addr1);
@@ -242,9 +248,9 @@ TEST_CASE("peer_database performance operations", "[peer_database]") {
 TEST_CASE("peer_database query operations", "[peer_database]") {
     peer_database db;
 
-    infrastructure::config::authority addr1("192.168.1.1:8333");
-    infrastructure::config::authority addr2("192.168.1.2:8333");
-    infrastructure::config::authority addr3("192.168.1.3:8333");
+    auto addr1 = auth("192.168.1.1:8333");
+    auto addr2 = auth("192.168.1.2:8333");
+    auto addr3 = auth("192.168.1.3:8333");
 
     SECTION("get_connectable excludes banned") {
         (void)db.get_or_create(addr1);
@@ -289,8 +295,8 @@ TEST_CASE("peer_database query operations", "[peer_database]") {
 TEST_CASE("peer_database JSON persistence", "[peer_database]") {
     temp_file_guard guard;
 
-    infrastructure::config::authority addr1("192.168.1.1:8333");
-    infrastructure::config::authority addr2("192.168.1.2:8333");
+    auto addr1 = auth("192.168.1.1:8333");
+    auto addr2 = auth("192.168.1.2:8333");
 
     SECTION("save and load roundtrip") {
         {
@@ -416,9 +422,9 @@ TEST_CASE("peer_database import legacy files", "[peer_database]") {
 
         CHECK(imported == 3);
         CHECK(db.size() == 3);
-        CHECK(db.exists(infrastructure::config::authority("192.168.1.1:8333")));
-        CHECK(db.exists(infrastructure::config::authority("192.168.1.2:8333")));
-        CHECK(db.exists(infrastructure::config::authority("192.168.1.3:8333")));
+        CHECK(db.exists(auth("192.168.1.1:8333")));
+        CHECK(db.exists(auth("192.168.1.2:8333")));
+        CHECK(db.exists(auth("192.168.1.3:8333")));
 
         std::filesystem::remove(hosts_path);
     }
@@ -443,8 +449,8 @@ TEST_CASE("peer_database import legacy files", "[peer_database]") {
         size_t imported = db.import_banlist(banlist_path);
 
         CHECK(imported == 1);
-        CHECK(db.is_banned(infrastructure::config::authority("192.168.1.1:8333")));
-        CHECK(!db.is_banned(infrastructure::config::authority("192.168.1.2:8333")));
+        CHECK(db.is_banned(auth("192.168.1.1:8333")));
+        CHECK(!db.is_banned(auth("192.168.1.2:8333")));
 
         std::filesystem::remove(banlist_path);
     }
@@ -452,7 +458,7 @@ TEST_CASE("peer_database import legacy files", "[peer_database]") {
 
 TEST_CASE("peer_record helper methods", "[peer_record]") {
     peer_record record;
-    record.authority = infrastructure::config::authority("192.168.1.1:8333");
+    record.authority = auth("192.168.1.1:8333");
 
     SECTION("is_banned checks expiration") {
         CHECK(!record.is_banned());
@@ -509,10 +515,10 @@ TEST_CASE("peer_database capacity invariant", "[peer_database]") {
     // Create database with small capacity for testing
     peer_database db({}, 3);
 
-    infrastructure::config::authority addr1("192.168.1.1:8333");
-    infrastructure::config::authority addr2("192.168.1.2:8333");
-    infrastructure::config::authority addr3("192.168.1.3:8333");
-    infrastructure::config::authority addr4("192.168.1.4:8333");
+    auto addr1 = auth("192.168.1.1:8333");
+    auto addr2 = auth("192.168.1.2:8333");
+    auto addr3 = auth("192.168.1.3:8333");
+    auto addr4 = auth("192.168.1.4:8333");
 
     SECTION("get_or_create respects capacity") {
         auto [r1, res1] = db.get_or_create(addr1);

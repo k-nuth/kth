@@ -99,7 +99,7 @@ TEST_CASE("elliptic curve verify signature negative test", "[elliptic curve test
     REQUIRE( ! verify_signature(compressed2, sighash, signature));
 }
 
-TEST_CASE("elliptic curve  ec add  positive  test", "[elliptic curve tests]") {
+TEST_CASE("elliptic curve ec add positive test", "[elliptic curve tests]") {
     ec_secret secret1{ { 1, 2, 3 } };
     ec_secret const secret2{ { 3, 2, 1 } };
     ec_compressed public1;
@@ -113,7 +113,7 @@ TEST_CASE("elliptic curve  ec add  positive  test", "[elliptic curve tests]") {
     REQUIRE(std::equal(public1.begin(), public1.end(), public2.begin()));
 }
 
-TEST_CASE("elliptic curve  ec add  negative  test", "[elliptic curve tests]") {
+TEST_CASE("elliptic curve ec add negative test", "[elliptic curve tests]") {
     // = n - 1
     ec_secret secret1 = "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140"_base16;
     ec_secret secret2{ { 0 } };
@@ -124,7 +124,7 @@ TEST_CASE("elliptic curve  ec add  negative  test", "[elliptic curve tests]") {
     REQUIRE( ! ec_add(public1, secret2));
 }
 
-TEST_CASE("elliptic curve  ec multiply test", "[elliptic curve tests]") {
+TEST_CASE("elliptic curve ec multiply test", "[elliptic curve tests]") {
     ec_secret secret1{{0}};
     ec_secret secret2{{0}};
     secret1[31] = 11;

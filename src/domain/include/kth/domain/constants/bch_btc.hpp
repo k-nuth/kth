@@ -54,28 +54,28 @@ constexpr uint32_t bip16_activation_time = 0x4f3af580;
 // bitcointalk.org/index.php?topic=63165.msg788832#msg788832
 static
 const infrastructure::config::checkpoint mainnet_bip16_exception_checkpoint{
-    "00000000000002dc756eebf4f49723ed8d30cc28a5f108eb94b1ba88ac4f9c22", 170060};
+    "00000000000002dc756eebf4f49723ed8d30cc28a5f108eb94b1ba88ac4f9c22"_hash, 170060};
 
 // github.com/bitcoin/bips/blob/master/bip-0030.mediawiki#specification
 static
 const infrastructure::config::checkpoint mainnet_bip30_exception_checkpoint1{
-    "00000000000a4d0a398161ffc163c503763b1f4360639393e0e4c8e300e0caec", 91842};
+    "00000000000a4d0a398161ffc163c503763b1f4360639393e0e4c8e300e0caec"_hash, 91842};
 
 static
 const infrastructure::config::checkpoint mainnet_bip30_exception_checkpoint2{
-    "00000000000743f190a18c5577a3c2d2a1f610ae9601ac046a38084ccb7cd721", 91880};
+    "00000000000743f190a18c5577a3c2d2a1f610ae9601ac046a38084ccb7cd721"_hash, 91880};
 
 // bip90 stops checking unspent duplicates above this bip34 activation.
 static
 const infrastructure::config::checkpoint mainnet_bip34_active_checkpoint{
-    "000000000000024b89b42a942fe0d9fea3bb44ab7bd1b19115dd6a759c0808b8", 227931};
+    "000000000000024b89b42a942fe0d9fea3bb44ab7bd1b19115dd6a759c0808b8"_hash, 227931};
 static
 const infrastructure::config::checkpoint testnet_bip34_active_checkpoint{
-    "0000000023b3a96d3484e5abb3755c413e7d41500f8e2a5c3f0dd01299cd8ef8", 21111};
+    "0000000023b3a96d3484e5abb3755c413e7d41500f8e2a5c3f0dd01299cd8ef8"_hash, 21111};
 static
 const infrastructure::config::checkpoint regtest_bip34_active_checkpoint{
     // Since bip90 assumes a historical bip34 activation block, use genesis.
-    "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f", 0};
+    "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"_hash, 0};
 
 
 constexpr uint64_t retarget_subsidy_interval = 210000;

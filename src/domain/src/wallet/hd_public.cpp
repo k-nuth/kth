@@ -5,15 +5,14 @@
 #include <kth/domain/wallet/hd_public.hpp>
 
 #include <cstdint>
-#include <iostream>
 #include <string>
+#include <string_view>
 
-#if ! defined(__EMSCRIPTEN__)
-#include <boost/program_options.hpp>
-#endif
-
-#include <kth/infrastructure/constants.hpp>
 #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
+#include <kth/domain/wallet/hd_private.hpp>
+#include <kth/infrastructure/constants.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_58.hpp>
 #include <kth/infrastructure/math/checksum.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
@@ -22,7 +21,6 @@
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
-#include <kth/domain/wallet/hd_private.hpp>
 
 namespace kth::domain::wallet {
 
@@ -42,20 +40,38 @@ hd_public::hd_public(hd_key const& public_key)
     : hd_public(from_key(public_key))
 {}
 
-// This cannot validate the version.
-hd_public::hd_public(std::string const& encoded)
-    : hd_public(from_string(encoded))
-{}
-
 // This validates the version.
 hd_public::hd_public(hd_key const& public_key, uint32_t prefix)
     : hd_public(from_key(public_key, prefix))
 {}
 
-// This validates the version.
-hd_public::hd_public(std::string const& encoded, uint32_t prefix)
-    : hd_public(from_string(encoded, prefix))
-{}
+
+
+// static
+expect<hd_public> hd_public::parse_from(std::string_view encoded) {
+    hd_key key;
+    if ( ! decode_base58(key, std::string{encoded})) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    auto out = from_key(key);
+    if ( ! out.valid()) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return out;
+}
+
+// static
+expect<hd_public> hd_public::parse_from_with_prefix(std::string_view encoded, uint32_t prefix) {
+    hd_key key;
+    if ( ! decode_base58(key, std::string{encoded})) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    auto out = from_key(key, prefix);
+    if ( ! out.valid()) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return out;
+}
 
 hd_public::hd_public(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage)
     : valid_(true), point_(point), chain_(chain_code), lineage_(lineage)
@@ -72,15 +88,6 @@ hd_public hd_public::from_secret(ec_secret const& secret, hd_chain_code const& c
 hd_public hd_public::from_key(hd_key const& key) {
     auto const prefix = from_big_endian_unsafe<uint32_t>(key);
     return from_key(key, prefix);
-}
-
-hd_public hd_public::from_string(std::string const& encoded) {
-    hd_key key;
-    if ( ! decode_base58(key, encoded)) {
-        return {};
-    }
-
-    return hd_public(from_key(key));
 }
 
 hd_public hd_public::from_key(hd_key const& key, uint32_t prefix) {
@@ -127,46 +134,11 @@ hd_public hd_public::from_key(hd_key const& key, uint32_t prefix) {
     return hd_public(*point, *chain, lineage);
 }
 
-hd_public hd_public::from_string(std::string const& encoded, uint32_t prefix) {
-    hd_key key;
-    if ( ! decode_base58(key, encoded)) {
-        return {};
-    }
-
-    return hd_public(from_key(key, prefix));
-}
-
-// Cast operators.
-// ----------------------------------------------------------------------------
-
-hd_public::operator bool const() const {
-    return valid_;
-}
-
-hd_public::operator ec_compressed const&() const {
-    return point_;
-}
-
 // Serializer.
 // ----------------------------------------------------------------------------
 
-std::string hd_public::encoded() const {
+std::string hd_public::to_string() const {
     return encode_base58(to_hd_key());
-}
-
-// Accessors.
-// ----------------------------------------------------------------------------
-
-hd_chain_code const& hd_public::chain_code() const {
-    return chain_;
-}
-
-hd_lineage const& hd_public::lineage() const {
-    return lineage_;
-}
-
-ec_compressed const& hd_public::point() const {
-    return point_;
 }
 
 // Methods.
@@ -225,48 +197,5 @@ uint32_t hd_public::fingerprint() const {
     auto const message_digest = bitcoin_short_hash(point_);
     return from_big_endian_unsafe<uint32_t>(message_digest);
 }
-
-// Operators.
-// ----------------------------------------------------------------------------
-
-hd_public& hd_public::operator=(hd_public const& x) = default;
-
-bool hd_public::operator<(hd_public const& x) const {
-    return encoded() < x.encoded();
-}
-
-bool hd_public::operator==(hd_public const& x) const {
-    return valid_ == x.valid_ && chain_ == x.chain_ &&
-        lineage_ == x.lineage_ && point_ == x.point_;
-}
-
-bool hd_public::operator!=(hd_public const& x) const {
-    return !(*this == x);
-}
-
-std::istream& operator>>(std::istream& in, hd_public& to) {
-    std::string value;
-    in >> value;
-    to = hd_public(value);
-
-    if ( ! to) {
-#if ! defined(__EMSCRIPTEN__)
-        using namespace boost::program_options;
-        BOOST_THROW_EXCEPTION(invalid_option_value(value));
-#else
-        throw std::invalid_argument(value);
-#endif
-    }
-
-    return in;
-}
-
-std::ostream& operator<<(std::ostream& out, hd_public const& of) {
-    out << of.encoded();
-    return out;
-}
-
-// hd_lineage
-// ----------------------------------------------------------------------------
 
 } // namespace kth::domain::wallet

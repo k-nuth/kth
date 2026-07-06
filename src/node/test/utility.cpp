@@ -20,9 +20,8 @@ infrastructure::config::checkpoint const check0 {
     null_hash, 0
 };
 
-infrastructure::config::checkpoint const check42 {
-    "4242424242424242424242424242424242424242424242424242424242424242", 42
-};
+infrastructure::config::checkpoint const check42 = infrastructure::config::checkpoint::parse_from(
+    "4242424242424242424242424242424242424242424242424242424242424242", 42).value();
 
 const infrastructure::config::checkpoint::list no_checks;
 const infrastructure::config::checkpoint::list one_check{ check42 };

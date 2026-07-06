@@ -264,9 +264,12 @@ TEST_CASE("C-API wallet::coin_selection - create_tx_template builds a tx with ex
     uint64_t const amounts[] = { 100000u, 200000u, 300000u };
     kth_utxo_list_mut_t utxos = make_bch_utxos(amounts, 3);
 
-    kth_payment_address_mut_t dest    = kth_wallet_payment_address_construct_from_address(kAddrDest);
-    kth_payment_address_mut_t change1 = kth_wallet_payment_address_construct_from_address(kAddrChange1);
-    kth_payment_address_mut_t change2 = kth_wallet_payment_address_construct_from_address(kAddrChange2);
+    kth_payment_address_mut_t dest = NULL;
+    kth_wallet_payment_address_parse_from_simple(kAddrDest, &dest);
+    kth_payment_address_mut_t change1 = NULL;
+    kth_wallet_payment_address_parse_from_simple(kAddrChange1, &change1);
+    kth_payment_address_mut_t change2 = NULL;
+    kth_wallet_payment_address_parse_from_simple(kAddrChange2, &change2);
     kth_payment_address_list_mut_t change_addrs = kth_wallet_payment_address_list_construct_default();
     kth_wallet_payment_address_list_push_back(change_addrs, change1);
     kth_wallet_payment_address_list_push_back(change_addrs, change2);
@@ -314,8 +317,10 @@ TEST_CASE("C-API wallet::coin_selection - create_tx_template_default_ratios buil
     uint64_t const amounts[] = { 100000u, 200000u, 300000u };
     kth_utxo_list_mut_t utxos = make_bch_utxos(amounts, 3);
 
-    kth_payment_address_mut_t dest    = kth_wallet_payment_address_construct_from_address(kAddrDest);
-    kth_payment_address_mut_t change1 = kth_wallet_payment_address_construct_from_address(kAddrChange1);
+    kth_payment_address_mut_t dest = NULL;
+    kth_wallet_payment_address_parse_from_simple(kAddrDest, &dest);
+    kth_payment_address_mut_t change1 = NULL;
+    kth_wallet_payment_address_parse_from_simple(kAddrChange1, &change1);
     kth_payment_address_list_mut_t change_addrs = kth_wallet_payment_address_list_construct_default();
     kth_wallet_payment_address_list_push_back(change_addrs, change1);
 
@@ -348,7 +353,8 @@ TEST_CASE("C-API wallet::coin_selection - create_tx_template_default_ratios buil
 
 TEST_CASE("C-API wallet::coin_selection - create_tx_template(NULL utxos) aborts",
           "[C-API WalletCoinSelection][precondition]") {
-    kth_payment_address_mut_t dest = kth_wallet_payment_address_construct_from_address(kAddrDest);
+    kth_payment_address_mut_t dest = NULL;
+    kth_wallet_payment_address_parse_from_simple(kAddrDest, &dest);
     kth_payment_address_list_mut_t change_addrs = kth_wallet_payment_address_list_construct_default();
     kth_double_list_mut_t ratios = kth_core_double_list_construct_default();
     kth_transaction_mut_t          out_tx        = NULL;
@@ -368,7 +374,8 @@ TEST_CASE("C-API wallet::coin_selection - create_tx_template(NULL out_tx) aborts
           "[C-API WalletCoinSelection][precondition]") {
     uint64_t const amounts[] = { 100000u };
     kth_utxo_list_mut_t utxos = make_bch_utxos(amounts, 1);
-    kth_payment_address_mut_t dest = kth_wallet_payment_address_construct_from_address(kAddrDest);
+    kth_payment_address_mut_t dest = NULL;
+    kth_wallet_payment_address_parse_from_simple(kAddrDest, &dest);
     kth_payment_address_list_mut_t change_addrs = kth_wallet_payment_address_list_construct_default();
     kth_double_list_mut_t ratios = kth_core_double_list_construct_default();
     kth_u32_list_mut_t             out_indices   = NULL;
@@ -391,7 +398,8 @@ TEST_CASE("C-API wallet::coin_selection - create_tx_template(NULL out_tx) aborts
 TEST_CASE("C-API wallet::coin_selection - create_token_split_tx_template(NULL outpoints) aborts",
           "[C-API WalletCoinSelection][precondition]") {
     kth_utxo_list_mut_t utxos = kth_chain_utxo_list_construct_default();
-    kth_payment_address_mut_t dest = kth_wallet_payment_address_construct_from_address(kAddrDest);
+    kth_payment_address_mut_t dest = NULL;
+    kth_wallet_payment_address_parse_from_simple(kAddrDest, &dest);
     kth_transaction_mut_t          out_tx        = NULL;
     kth_payment_address_list_mut_t out_addresses = NULL;
     kth_u64_list_mut_t             out_amounts   = NULL;
@@ -405,7 +413,8 @@ TEST_CASE("C-API wallet::coin_selection - create_token_split_tx_template(empty o
           "[C-API WalletCoinSelection][create_token_split]") {
     kth_output_point_list_mut_t outpoints = kth_chain_output_point_list_construct_default();
     kth_utxo_list_mut_t utxos = kth_chain_utxo_list_construct_default();
-    kth_payment_address_mut_t dest = kth_wallet_payment_address_construct_from_address(kAddrDest);
+    kth_payment_address_mut_t dest = NULL;
+    kth_wallet_payment_address_parse_from_simple(kAddrDest, &dest);
     kth_transaction_mut_t          out_tx        = NULL;
     kth_payment_address_list_mut_t out_addresses = NULL;
     kth_u64_list_mut_t             out_amounts   = NULL;

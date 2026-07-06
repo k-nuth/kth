@@ -5,7 +5,6 @@
 #ifndef KTH_INFRASTRUCTURE_COLLECTION_HPP
 #define KTH_INFRASTRUCTURE_COLLECTION_HPP
 
-#include <iostream>
 #include <iterator>
 #include <vector>
 
@@ -86,20 +85,6 @@ template <typename T>
 T pop(std::vector<T>& stack);
 
 } // namespace kth
-
-namespace std {
-
-/**
- * Make vectors of serializable elements serializable to std::ostream.
- * @param      <T>     The type of list member elements.
- * @param[in]  output  The output stream to serialize to.
- * @param[in]  list    The list to serialize.
- * @return             The output stream.
- */
-template <typename T>
-std::ostream& operator<<(std::ostream& output, std::vector<T> const& list);
-
-} // namespace std
 
 #include <kth/infrastructure/impl/utility/collection.ipp>
 

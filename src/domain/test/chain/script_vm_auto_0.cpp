@@ -19,9 +19,9 @@ TEST_CASE("VM-AUTO #0 [Should Pass]: Test the test: we should have an empty stac
 
 TEST_CASE("VM-AUTO #1 [Should Pass]: and multiple spaces should not change that.", "[vm][auto]") { run_bchn_test({"", "depth 0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, "and multiple spaces should not change that."}); } // flags: P2SH,STRICTENC, expected: OK
 
-TEST_CASE("VM-AUTO #2 [Should Pass]:  | depth 0 equal", "[vm][auto]") { run_bchn_test({"", "depth 0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
+TEST_CASE("VM-AUTO #2 [Should Pass]: | depth 0 equal", "[vm][auto]") { run_bchn_test({"", "depth 0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
 
-TEST_CASE("VM-AUTO #3 [Should Pass]:  | depth 0 equal", "[vm][auto]") { run_bchn_test({"", "depth 0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
+TEST_CASE("VM-AUTO #3 [Should Pass]: | depth 0 equal", "[vm][auto]") { run_bchn_test({"", "depth 0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
 
 TEST_CASE("VM-AUTO #4 [Should Pass]: Similarly whitespace around and between symbols", "[vm][auto]") { run_bchn_test({"1 2", "2 equalverify 1 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, "Similarly whitespace around and between symbols"}); } // flags: P2SH,STRICTENC, expected: OK
 

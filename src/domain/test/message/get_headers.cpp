@@ -9,12 +9,12 @@ using namespace kd;
 
 // Start Test Suite: get headers tests
 
-TEST_CASE("get headers  constructor 1  always invalid", "[get headers]") {
+TEST_CASE("get headers constructor 1 always invalid", "[get headers]") {
     message::get_headers instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("get headers  constructor 2  always  equals params", "[get headers]") {
+TEST_CASE("get headers constructor 2 always equals params", "[get headers]") {
     hash_list starts = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
@@ -28,7 +28,7 @@ TEST_CASE("get headers  constructor 2  always  equals params", "[get headers]") 
     REQUIRE(stop == instance.stop_hash());
 }
 
-TEST_CASE("get headers  constructor 3  always  equals params", "[get headers]") {
+TEST_CASE("get headers constructor 3 always equals params", "[get headers]") {
     hash_list starts = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
@@ -43,7 +43,7 @@ TEST_CASE("get headers  constructor 3  always  equals params", "[get headers]") 
     REQUIRE(stop == instance.stop_hash());
 }
 
-TEST_CASE("get headers  constructor 4  always  equals params", "[get headers]") {
+TEST_CASE("get headers constructor 4 always equals params", "[get headers]") {
     hash_list starts = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
@@ -59,7 +59,7 @@ TEST_CASE("get headers  constructor 4  always  equals params", "[get headers]") 
     REQUIRE(stop == instance.stop_hash());
 }
 
-TEST_CASE("get headers  constructor 5  always  equals params", "[get headers]") {
+TEST_CASE("get headers constructor 5 always equals params", "[get headers]") {
     hash_list starts = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
@@ -102,7 +102,7 @@ TEST_CASE("get headers from data insufficient version failure", "[get headers]")
     REQUIRE( ! result);
 }
 
-TEST_CASE("get headers from data valid input  success", "[get headers]") {
+TEST_CASE("get headers from data valid input success", "[get headers]") {
     message::get_headers const expected {
         {
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
@@ -129,7 +129,7 @@ TEST_CASE("get headers from data valid input  success", "[get headers]") {
 
 
 
-TEST_CASE("get headers  operator assign equals  always  matches equivalent", "[get headers]") {
+TEST_CASE("get headers operator assign equals always matches equivalent", "[get headers]") {
     hash_list const start = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
@@ -153,7 +153,7 @@ TEST_CASE("get headers  operator assign equals  always  matches equivalent", "[g
     REQUIRE(stop == instance.stop_hash());
 }
 
-TEST_CASE("get headers  operator boolean equals  duplicates  returns true", "[get headers]") {
+TEST_CASE("get headers operator boolean equals duplicates returns true", "[get headers]") {
     message::get_headers const expected {
         {
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
@@ -168,7 +168,7 @@ TEST_CASE("get headers  operator boolean equals  duplicates  returns true", "[ge
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("get headers  operator boolean equals  differs  returns false", "[get headers]") {
+TEST_CASE("get headers operator boolean equals differs returns false", "[get headers]") {
     message::get_headers const expected {
         {
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
@@ -183,7 +183,7 @@ TEST_CASE("get headers  operator boolean equals  differs  returns false", "[get 
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("get headers  operator boolean not equals  duplicates  returns false", "[get headers]") {
+TEST_CASE("get headers operator boolean not equals duplicates returns false", "[get headers]") {
     message::get_headers const expected {
         {
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
@@ -198,7 +198,7 @@ TEST_CASE("get headers  operator boolean not equals  duplicates  returns false",
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("get headers  operator boolean not equals  differs  returns true", "[get headers]") {
+TEST_CASE("get headers operator boolean not equals differs returns true", "[get headers]") {
     message::get_headers const expected {
         {
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,

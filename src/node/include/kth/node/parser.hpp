@@ -7,45 +7,36 @@
 
 #include <ostream>
 
-#include <kth/domain.hpp>
-#include <kth/domain/config/parser.hpp>
+#include <kth/domain/config/network.hpp>
+#include <kth/infrastructure/path.hpp>
 
-#include <kth/node/define.hpp>
 #include <kth/node/configuration.hpp>
+#include <kth/node/define.hpp>
 
 namespace kth::node {
 
 /// Parse configurable values from environment variables, settings file, and
 /// command line positional and non-positional options.
-struct KND_API parser : domain::config::parser<parser> {
-public:
-    parser(domain::config::network context);
-    parser(configuration const& defaults);
+///
+/// Backed by CLI11 (no more Boost.Program_options).
+struct KND_API parser {
+    explicit parser(domain::config::network context);
+    explicit parser(configuration const& defaults);
 
-    /// Parse all configuration into member settings.
-    // virtual
+    /// Parse command line + KTH_* env vars + config file (if provided).
     bool parse(int argc, char const* argv[], std::ostream& error);
 
-    // virtual
+    /// Load settings directly from a config file path (no argv/env).
     bool parse_from_file(kth::path const& config_path, std::ostream& error);
 
     void set_default_configuration();
 
-    /// Load command line options (named).
-    // virtual
-    domain::options_metadata load_options();
+    /// Full CLI help text (options + arguments), matches `--help`.
+    [[nodiscard]] std::string help_text(std::string const& application,
+                                        std::string const& description = "") const;
 
-    /// Load command line arguments (positional).
-    // virtual
-    domain::arguments_metadata load_arguments();
-
-    /// Load configuration file settings.
-    // virtual
-    domain::options_metadata load_settings();
-
-    /// Load environment variable settings.
-    // virtual
-    domain::options_metadata load_environment();
+    /// The current settings expressed as an INI-style config-file snippet.
+    [[nodiscard]] std::string settings_text() const;
 
     /// The populated configuration settings values.
     configuration configured;

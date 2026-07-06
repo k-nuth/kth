@@ -109,7 +109,7 @@ TEST_CASE("message magic to recovery id invalid false", "[message recovery magic
 
 TEST_CASE("message sign message compressed expected", "[message sign message]") {
     auto const compressed = true;
-    payment_address const address(ec_private{secret, 0x00, compressed});
+    auto const address = payment_address::from_ec_private(ec_private{secret, 0x00, compressed}).value();
     auto const message = to_chunk(std::string("Compressed"));
     message_signature out_signature;
     REQUIRE(sign_message(out_signature, message, secret, compressed));
@@ -118,7 +118,7 @@ TEST_CASE("message sign message compressed expected", "[message sign message]") 
 
 TEST_CASE("message sign message uncompressed expected", "[message sign message]") {
     auto const compressed = false;
-    payment_address const address(ec_private{secret, 0x00, compressed});
+    auto const address = payment_address::from_ec_private(ec_private{secret, 0x00, compressed}).value();
     auto const message = to_chunk(std::string("Uncompressed"));
     message_signature out_signature;
     REQUIRE(sign_message(out_signature, message, secret, compressed));
@@ -126,8 +126,8 @@ TEST_CASE("message sign message uncompressed expected", "[message sign message]"
 }
 
 TEST_CASE("message sign message secret compressed expected", "[message sign message]") {
-    ec_private priv(wif_compressed_str);
-    payment_address const address(priv);
+    auto const priv = ec_private::parse_from(wif_compressed_str, ec_private::mainnet_p2kh).value();
+    auto const address = payment_address::from_ec_private(priv).value();
     auto const message = to_chunk(std::string("Compressed"));
     message_signature out_signature;
     REQUIRE(sign_message(out_signature, message, priv));
@@ -135,20 +135,20 @@ TEST_CASE("message sign message secret compressed expected", "[message sign mess
 }
 
 TEST_CASE("message sign message wif compressed expected", "[message sign message]") {
-    ec_private priv(wif_compressed_str);
-    payment_address const address(priv);
+    auto const priv = ec_private::parse_from(wif_compressed_str, ec_private::mainnet_p2kh).value();
+    auto const address = payment_address::from_ec_private(priv).value();
     auto const message = to_chunk(std::string("Compressed"));
     message_signature out_signature;
-    REQUIRE(sign_message(out_signature, message, priv, priv.compressed()));
+    REQUIRE(sign_message(out_signature, message, priv.secret(), priv.compressed()));
     REQUIRE(out_signature == signature_wif_compressed);
 }
 
 TEST_CASE("message sign message wif uncompressed expected", "[message sign message]") {
-    ec_private priv(wif_uncompressed_str);
-    payment_address const address(priv);
+    auto const priv = ec_private::parse_from(wif_uncompressed_str, ec_private::mainnet_p2kh).value();
+    auto const address = payment_address::from_ec_private(priv).value();
     auto const message = to_chunk(std::string("Uncompressed"));
     message_signature out_signature;
-    REQUIRE(sign_message(out_signature, message, priv, priv.compressed()));
+    REQUIRE(sign_message(out_signature, message, priv.secret(), priv.compressed()));
     REQUIRE(out_signature == signature_wif_uncompressed);
 }
 
@@ -157,27 +157,27 @@ TEST_CASE("message sign message wif uncompressed expected", "[message sign messa
 // Start Test Suite: message verify message
 
 TEST_CASE("message verify message compressed expected", "[message verify message]") {
-    payment_address const address(ec_private{secret});
+    auto const address = payment_address::from_ec_private(ec_private{secret}).value();
     auto const message = to_chunk(std::string("Compressed"));
     REQUIRE(verify_message(message, address, signature_compressed));
 }
 
 TEST_CASE("message verify message uncompressed expected", "[message verify message]") {
-    payment_address const address(ec_private{secret, 0x00, false});
+    auto const address = payment_address::from_ec_private(ec_private{secret, 0x00, false}).value();
     auto const message = to_chunk(std::string("Uncompressed"));
     REQUIRE(verify_message(message, address, signature_uncompressed));
 }
 
 TEST_CASE("message verify message wif compressed round trip", "[message verify message]") {
-    ec_private priv(wif_compressed_str);
-    payment_address const address(priv);
+    auto const priv = ec_private::parse_from(wif_compressed_str, ec_private::mainnet_p2kh).value();
+    auto const address = payment_address::from_ec_private(priv).value();
     auto const message = to_chunk(std::string("Compressed"));
     REQUIRE(verify_message(message, address, signature_wif_compressed));
 }
 
 TEST_CASE("message verify message wif uncompressed round trip", "[message verify message]") {
-    ec_private priv(wif_uncompressed_str);
-    payment_address const address(priv);
+    auto const priv = ec_private::parse_from(wif_uncompressed_str, ec_private::mainnet_p2kh).value();
+    auto const address = payment_address::from_ec_private(priv).value();
     auto const message = to_chunk(std::string("Uncompressed"));
     REQUIRE(verify_message(message, address, signature_wif_uncompressed));
 }
@@ -187,7 +187,7 @@ TEST_CASE("message verify message electrum compressed okay", "[message verify me
     REQUIRE(sig);
 
     // Address of the compressed public key of the message signer.
-    payment_address const address("1PeChFbhxDD9NLbU21DfD55aQBC4ZTR3tE");
+    auto const address = payment_address::parse_from("1PeChFbhxDD9NLbU21DfD55aQBC4ZTR3tE").value();
     auto const message = to_chunk(std::string("Nakomoto"));
     REQUIRE(verify_message(message, address, *sig));
 }
@@ -197,7 +197,7 @@ TEST_CASE("message verify message electrum incorrect address false", "[message v
     REQUIRE(sig);
 
     // Address of the uncompressed public key of the message signer (incorrect).
-    payment_address const address("1Em1SX7qQq1pTmByqLRafhL1ypx2V786tP");
+    auto const address = payment_address::parse_from("1Em1SX7qQq1pTmByqLRafhL1ypx2V786tP").value();
     auto const message = to_chunk(std::string("Nakomoto"));
     REQUIRE( ! verify_message(message, address, *sig));
 }

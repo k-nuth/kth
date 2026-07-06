@@ -4,49 +4,45 @@
 
 #include <kth/domain/config/script.hpp>
 
-#include <iostream>
-#include <sstream>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include <boost/algorithm/string.hpp>
-#include <boost/program_options.hpp>
 
 #include <kth/domain/chain/script.hpp>
+#include <kth/infrastructure/config/base16.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/string.hpp>
-#include <kth/infrastructure/config/base16.hpp>
-
 
 namespace kth::domain::config {
 
-using namespace boost;
-using namespace boost::program_options;
-
-script::script(std::string const& mnemonic) {
-    std::stringstream(mnemonic) >> *this;
+// static
+expect<script> script::parse_from(std::string_view mnemonic) {
+    std::string trimmed{mnemonic};
+    boost::trim(trimmed);
+    chain::script s;
+    if ( ! s.from_string(trimmed) && ! trimmed.empty()) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return script{s};
 }
 
-script::script(chain::script const& value)
-    : value_(value) {
-}
-
-script::script(data_chunk const& value) {
+// static
+expect<script> script::from_data_chunk(data_chunk const& value) {
     byte_reader reader(value);
     auto script_exp = chain::script::from_data(reader, false);
     if ( ! script_exp) {
-        BOOST_THROW_EXCEPTION(invalid_option_value(encode_base16(value)));
+        return std::unexpected(kth::error::illegal_value);
     }
-    value_ = std::move(*script_exp);
+    return script{std::move(*script_exp)};
 }
 
-script::script(std::vector<std::string> const& tokens) {
-    auto const mnemonic = join(tokens);
-    std::stringstream(mnemonic) >> *this;
-}
-
-script::script(script const& x)
-    : script(x.value_) {
+// static
+expect<script> script::parse_tokens(std::vector<std::string> const& tokens) {
+    return parse_from(join(tokens));
 }
 
 data_chunk script::to_data() const {
@@ -56,29 +52,6 @@ data_chunk script::to_data() const {
 std::string script::to_string() const {
     static constexpr auto flags = machine::script_flags::all_rules;
     return value_.to_string(flags);
-}
-
-script::operator chain::script const&() const {
-    return value_;
-}
-
-std::istream& operator>>(std::istream& input, script& argument) {
-    std::istreambuf_iterator<char> end;
-    std::string mnemonic(std::istreambuf_iterator<char>(input), end);
-    boost::trim(mnemonic);
-
-    // Test for invalid result sentinel.
-    if ( ! argument.value_.from_string(mnemonic) && mnemonic.length() > 0) {
-        BOOST_THROW_EXCEPTION(invalid_option_value(mnemonic));
-    }
-
-    return input;
-}
-
-std::ostream& operator<<(std::ostream& output, script const& argument) {
-    static constexpr auto flags = machine::script_flags::all_rules;
-    output << argument.value_.to_string(flags);
-    return output;
 }
 
 } // namespace kth::domain::config

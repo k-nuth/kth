@@ -5,56 +5,56 @@
 #ifndef KTH_WALLET_EK_TOKEN_HPP
 #define KTH_WALLET_EK_TOKEN_HPP
 
-#include <iostream>
 #include <string>
+#include <string_view>
 
 #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
 #include <kth/domain/wallet/encrypted_keys.hpp>
 
 namespace kth::domain::wallet {
 
 /**
- * Serialization helper to convert between base58 string and bip38 token.
+ * BIP38 intermediate passphrase token.
+ *
+ * Default-constructible so the C-API generator can hand out an "empty"
+ * handle; string parsing goes through `parse_from` which returns
+ * `expect<ek_token>`.
  */
 struct KD_API ek_token {
-    /// Constructors.
-    ek_token();
-    ek_token(std::string const& encoded);
-    ek_token(encrypted_token const& value);
-    ek_token(ek_token const& x) = default;
-
-
-    ek_token& operator=(ek_token const& x) = default;
-
-    /// Operators.
-    bool operator==(ek_token const& x) const;
-    bool operator!=(ek_token const& x) const;
-    bool operator<(ek_token const& x) const;
-
-    friend std::istream& operator>>(std::istream& in, ek_token& to);
-    friend std::ostream& operator<<(std::ostream& out, ek_token const& of);
-
-    /// Cast operators.
-    operator bool() const;
-    operator encrypted_token const&() const;
-
-    /// Serializer.
     [[nodiscard]]
-    std::string encoded() const;
+    static
+    expect<ek_token> parse_from(std::string_view encoded);
 
-    /// Accessors.
+    ek_token() = default;
+
+    explicit
+    ek_token(encrypted_token const& value)
+        : valid_(true), token_(value) {}
+
     [[nodiscard]]
-    encrypted_token const& token() const;
+    friend bool operator==(ek_token const&, ek_token const&) = default;
+
+    [[nodiscard]]
+    friend auto operator<=>(ek_token const& a, ek_token const& b) {
+        return a.to_string() <=> b.to_string();
+    }
+
+    [[nodiscard]]
+    bool valid() const noexcept { return valid_; }
+
+    [[nodiscard]]
+    encrypted_token const& value() const noexcept { return token_; }
+
+    [[nodiscard]]
+    encrypted_token const& token() const noexcept { return token_; }
+
+    [[nodiscard]]
+    std::string to_string() const;
 
 private:
-    /// Factories.
-    static
-    ek_token from_string(std::string const& encoded);
-
-    /// Members.
-    /// These should be const, apart from the need to implement assignment.
     bool valid_{false};
-    encrypted_token token_;
+    encrypted_token token_{};
 };
 
 } // namespace kth::domain::wallet

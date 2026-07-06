@@ -110,7 +110,7 @@ TEST_CASE("infrastructure data build array exact fill from multiple spans", "[in
     REQUIRE(value[size1 + size2] == expected);
 }
 
-TEST_CASE("data  build array  overflow  returns false", "[data tests]") {
+TEST_CASE("data build array overflow returns false", "[data tests]") {
     std::array<uint8_t, 2> value;
     auto const result = build_array(value,
     {
@@ -120,7 +120,7 @@ TEST_CASE("data  build array  overflow  returns false", "[data tests]") {
     REQUIRE( ! result);
 }
 
-TEST_CASE("data  extend data  twice  expected", "[data tests]") {
+TEST_CASE("data extend data twice expected", "[data tests]") {
     uint8_t const expected = 24;
     data_chunk buffer1{ 0 };
     extend_data(buffer1, null_hash);
@@ -131,7 +131,7 @@ TEST_CASE("data  extend data  twice  expected", "[data tests]") {
     REQUIRE(buffer1[hash_size + 1] == expected);
 }
 
-TEST_CASE("data  slice  empty selection  compiles", "[data tests]") {
+TEST_CASE("data slice empty selection compiles", "[data tests]") {
     const byte_array<3> source
     {
         { 0, 0, 0 }
@@ -141,7 +141,7 @@ TEST_CASE("data  slice  empty selection  compiles", "[data tests]") {
     REQUIRE(true);
 }
 
-TEST_CASE("data  slice  three bytes front  expected", "[data tests]") {
+TEST_CASE("data slice three bytes front expected", "[data tests]") {
     uint8_t const expected = 24;
     const byte_array<3> source
     {
@@ -152,7 +152,7 @@ TEST_CASE("data  slice  three bytes front  expected", "[data tests]") {
     REQUIRE(result == expected);
 }
 
-TEST_CASE("data  slice  three bytes middle  expected", "[data tests]") {
+TEST_CASE("data slice three bytes middle expected", "[data tests]") {
     uint8_t const expected = 24;
     const byte_array<3> source
     {
@@ -163,7 +163,7 @@ TEST_CASE("data  slice  three bytes middle  expected", "[data tests]") {
     REQUIRE(result == expected);
 }
 
-TEST_CASE("data  slice  three bytes end  expected", "[data tests]") {
+TEST_CASE("data slice three bytes end expected", "[data tests]") {
     uint8_t const expected = 24;
     const byte_array<3> source
     {
@@ -174,7 +174,7 @@ TEST_CASE("data  slice  three bytes end  expected", "[data tests]") {
     REQUIRE(result == expected);
 }
 
-TEST_CASE("data  split  two bytes  expected", "[data tests]") {
+TEST_CASE("data split two bytes expected", "[data tests]") {
     uint8_t const expected_left = 42;
     uint8_t const expected_right = 24;
     const byte_array<2> source
@@ -187,7 +187,7 @@ TEST_CASE("data  split  two bytes  expected", "[data tests]") {
     REQUIRE(parts.right[0] == expected_right);
 }
 
-TEST_CASE("data  split  long hash  expected", "[data tests]") {
+TEST_CASE("data split long hash expected", "[data tests]") {
     uint8_t const l = 42;
     uint8_t const u = 24;
     long_hash source
@@ -205,7 +205,7 @@ TEST_CASE("data  split  long hash  expected", "[data tests]") {
     REQUIRE(parts.right[0] == u);
 }
 
-TEST_CASE("data  splice two  two bytes each  expected", "[data tests]") {
+TEST_CASE("data splice two two bytes each expected", "[data tests]") {
     uint8_t const expected_left = 42;
     uint8_t const expected_right = 24;
 
@@ -224,7 +224,7 @@ TEST_CASE("data  splice two  two bytes each  expected", "[data tests]") {
     REQUIRE(combined[3] == expected_right);
 }
 
-TEST_CASE("data  splice three  one two three bytes  expected", "[data tests]") {
+TEST_CASE("data splice three one two three bytes expected", "[data tests]") {
     uint8_t const expected_left = 42;
     uint8_t const expected_right = 24;
 
@@ -248,7 +248,7 @@ TEST_CASE("data  splice three  one two three bytes  expected", "[data tests]") {
     REQUIRE(combined[5] == expected_right);
 }
 
-TEST_CASE("data  to array slice  double long hash  expected", "[data tests]") {
+TEST_CASE("data to array slice double long hash expected", "[data tests]") {
     uint8_t const l = 42;
     uint8_t const u = 24;
     data_chunk const source
@@ -264,7 +264,7 @@ TEST_CASE("data  to array slice  double long hash  expected", "[data tests]") {
     REQUIRE(result[long_hash_size / 2] == u);
 }
 
-TEST_CASE("data  to chunk  long hash  expected", "[data tests]") {
+TEST_CASE("data to chunk long hash expected", "[data tests]") {
     uint8_t const l = 42;
     uint8_t const u = 24;
     long_hash const source
@@ -282,31 +282,31 @@ TEST_CASE("data  to chunk  long hash  expected", "[data tests]") {
     REQUIRE(result[32] == u);
 }
 
-TEST_CASE("data  starts with  empty empty  true", "[data tests]") {
+TEST_CASE("data starts with empty empty true", "[data tests]") {
     static data_chunk const buffer{};
     static data_chunk const sequence{};
     REQUIRE(starts_with(buffer.begin(), buffer.end(), sequence));
 }
 
-TEST_CASE("data  starts with  not empty empty  false", "[data tests]") {
+TEST_CASE("data starts with not empty empty false", "[data tests]") {
     static data_chunk const buffer{};
     static data_chunk const sequence{ 42 };
     REQUIRE( ! starts_with(buffer.begin(), buffer.end(), sequence));
 }
 
-TEST_CASE("data  starts with  same same  true", "[data tests]") {
+TEST_CASE("data starts with same same true", "[data tests]") {
     static data_chunk const buffer{ 42 };
     static data_chunk const sequence{ 42 };
     REQUIRE(starts_with(buffer.begin(), buffer.end(), sequence));
 }
 
-TEST_CASE("data  starts with  too short  false", "[data tests]") {
+TEST_CASE("data starts with too short false", "[data tests]") {
     static data_chunk const buffer{ 42 };
     static data_chunk const sequence{ 42, 24 };
     REQUIRE( ! starts_with(buffer.begin(), buffer.end(), sequence));
 }
 
-TEST_CASE("data  xor data0  same  zeros", "[data tests]") {
+TEST_CASE("data xor data0 same zeros", "[data tests]") {
     static data_chunk const source{ 0, 1 };
     auto const result = xor_data<2>(source, source);
     REQUIRE(result.size() == 2u);
@@ -314,13 +314,13 @@ TEST_CASE("data  xor data0  same  zeros", "[data tests]") {
     REQUIRE(result[1] == 0);
 }
 
-TEST_CASE("data  xor data1  empty  empty", "[data tests]") {
+TEST_CASE("data xor data1 empty empty", "[data tests]") {
     static data_chunk const source{};
     auto const result = xor_data<0>(source, source, 0);
     REQUIRE(result.size() == 0);
 }
 
-TEST_CASE("data  xor data1  same  zeros", "[data tests]") {
+TEST_CASE("data xor data1 same zeros", "[data tests]") {
     static data_chunk const source{ 0, 1 };
     auto const result = xor_data<2>(source, source, 0);
     REQUIRE(result.size() == 2u);
@@ -328,7 +328,7 @@ TEST_CASE("data  xor data1  same  zeros", "[data tests]") {
     REQUIRE(result[1] == 0);
 }
 
-TEST_CASE("data  xor data1  same offset  zeros", "[data tests]") {
+TEST_CASE("data xor data1 same offset zeros", "[data tests]") {
     static data_chunk const source{ 0, 1, 0 };
     auto const result = xor_data<2>(source, source, 1);
     REQUIRE(result.size() == 2u);
@@ -336,7 +336,7 @@ TEST_CASE("data  xor data1  same offset  zeros", "[data tests]") {
     REQUIRE(result[1] == 0);
 }
 
-TEST_CASE("data  xor data1  distinct  ones", "[data tests]") {
+TEST_CASE("data xor data1 distinct ones", "[data tests]") {
     static data_chunk const source{ 0, 1, 0 };
     static data_chunk const opposite{ 1, 0, 1 };
     auto const result = xor_data<3>(source, opposite, 0);
@@ -346,7 +346,7 @@ TEST_CASE("data  xor data1  distinct  ones", "[data tests]") {
     REQUIRE(result[2] == 1);
 }
 
-TEST_CASE("data  xor data1  distinct bites  bits", "[data tests]") {
+TEST_CASE("data xor data1 distinct bites bits", "[data tests]") {
     static data_chunk const source1{ 42, 13 };
     static data_chunk const source2{ 24, 13 };
     auto const result = xor_data<2>(source1, source2, 0);
@@ -355,7 +355,7 @@ TEST_CASE("data  xor data1  distinct bites  bits", "[data tests]") {
     REQUIRE(result[1] == 0);
 }
 
-TEST_CASE("data  xor data2  distinct bites  bits", "[data tests]") {
+TEST_CASE("data xor data2 distinct bites bits", "[data tests]") {
     static data_chunk const source1{ 0, 42, 13 };
     static data_chunk const source2{ 0, 0, 24, 13 };
     auto const result = xor_data<2>(source1, source2, 1, 2);

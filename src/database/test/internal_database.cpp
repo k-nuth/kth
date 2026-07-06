@@ -620,31 +620,31 @@ struct dummy_clock {
 
 // BOOST_FIXTURE_TEST_SUITE(internal_db_tests, internal_database_directory_setup_fixture)
 
-TEST_CASE("internal database  dummy clock", "[None]") {
+TEST_CASE("internal database dummy clock", "[None]") {
     auto start = dummy_clock<200>::now();
     auto end = dummy_clock<200>::now();
     // std::println("{}us.", std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
     REQUIRE(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() == 0);
 }
 
-TEST_CASE("internal database  adjust db size", "[None]") {
+TEST_CASE("internal database adjust db size", "[None]") {
     internal_database db(db_path, db_mode_type::full, 10000000, 1, true);
     REQUIRE(db.open());
 }
 
-TEST_CASE("internal database  open", "[None]") {
+TEST_CASE("internal database open", "[None]") {
     internal_database db(db_path, db_mode_type::full, 10000000, db_size, true);
     REQUIRE(db.open());
 }
 
 
-TEST_CASE("internal database  test get all transaction unconfirmed", "[None]") {
+TEST_CASE("internal database test get all transaction unconfirmed", "[None]") {
     internal_database db(db_path, db_mode_type::full, 10000000, db_size, true);
     db.open();
     auto ret = db.get_all_transaction_unconfirmed();
 }
 
-TEST_CASE("internal database  insert genesis", "[None]") {
+TEST_CASE("internal database insert genesis", "[None]") {
     auto const genesis = get_genesis();
 
     internal_database db(db_path, db_mode_type::full, 10000000, db_size, true);
@@ -680,7 +680,7 @@ TEST_CASE("internal database  insert genesis", "[None]") {
     REQUIRE(tx.is_valid());
 
 
-    auto const& address = domain::wallet::payment_address("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa");
+    auto const& address = domain::wallet::payment_address::parse_from("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa").value();
     REQUIRE(address);
 
     auto history_list = db.get_history(address.hash20(),max_uint32,0);
@@ -698,7 +698,7 @@ TEST_CASE("internal database  insert genesis", "[None]") {
     REQUIRE(encode_base16(output.to_data(true)) == output_enc);
 }
 
-TEST_CASE("internal database  insert duplicate block", "[None]") {
+TEST_CASE("internal database insert duplicate block", "[None]") {
     auto const genesis = get_genesis();
 
     internal_database db(db_path, db_mode_type::full, 10000000, db_size, true);
@@ -713,7 +713,7 @@ TEST_CASE("internal database  insert duplicate block", "[None]") {
     REQUIRE( ! succeed(res));
 }
 
-TEST_CASE("internal database  insert block genesis duplicate", "[None]") {
+TEST_CASE("internal database insert block genesis duplicate", "[None]") {
     auto const genesis = get_genesis();
 
     internal_database db(db_path, db_mode_type::full, 10000000, db_size, true);
@@ -730,7 +730,7 @@ TEST_CASE("internal database  insert block genesis duplicate", "[None]") {
 
 
 
-TEST_CASE("internal database  insert block genesis and get", "[None]") {
+TEST_CASE("internal database insert block genesis and get", "[None]") {
     auto const genesis = get_genesis();
 
     internal_database db(db_path, db_mode_type::full, 10000000, db_size, true);
@@ -749,7 +749,7 @@ TEST_CASE("internal database  insert block genesis and get", "[None]") {
     REQUIRE(block.is_valid_merkle_root() == true);
 }
 
-TEST_CASE("internal database  insert block genesis and get transaction", "[None]") {
+TEST_CASE("internal database insert block genesis and get transaction", "[None]") {
     auto const genesis = get_genesis();
 
     internal_database db(db_path, db_mode_type::full, 10000000, db_size, true);
@@ -769,7 +769,7 @@ TEST_CASE("internal database  insert block genesis and get transaction", "[None]
     REQUIRE(tx2.is_valid() == true);
 }
 
-TEST_CASE("internal database  insert duplicate block by hash", "[None]") {
+TEST_CASE("internal database insert duplicate block by hash", "[None]") {
     auto const genesis = get_genesis();
 
     internal_database db(db_path, db_mode_type::full, 10000000, db_size, true);
@@ -785,7 +785,7 @@ TEST_CASE("internal database  insert duplicate block by hash", "[None]") {
 }
 
 
-TEST_CASE("internal database  insert success duplicate coinbase", "[None]") {
+TEST_CASE("internal database insert success duplicate coinbase", "[None]") {
     auto const genesis = get_genesis();
     auto const fake = get_fake_genesis();
 
@@ -801,14 +801,14 @@ TEST_CASE("internal database  insert success duplicate coinbase", "[None]") {
     REQUIRE(succeed(res));
 }
 
-TEST_CASE("internal database  key not found", "[None]") {
+TEST_CASE("internal database key not found", "[None]") {
     auto const spender = get_block("01000000ba8b9cda965dd8e536670f9ddec10e53aab14b20bacad27b9137190000000000190760b278fe7b8565fda3b968b918d5fd997f993b23674c0af3b6fde300b38f33a5914ce6ed5b1b01e32f570201000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704e6ed5b1b014effffffff0100f2052a01000000434104b68a50eaa0287eff855189f949c1c6e5f58b37c88231373d8a59809cbae83059cc6469d65c665ccfd1cfeb75c6e8e19413bba7fbff9bc762419a76d87b16086eac000000000100000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000");
     internal_database db(db_path, db_mode_type::full, 10000000, db_size, true);
     REQUIRE(db.open());
     REQUIRE(db.push_block(spender, 1, 1) == result_code::key_not_found);
 }
 
-TEST_CASE("internal database  insert duplicate", "[None]") {
+TEST_CASE("internal database insert duplicate", "[None]") {
     auto const orig = get_block("01000000a594fda9d85f69e762e498650d6fdb54d838657cea7841915203170000000000a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f505da904ce6ed5b1b017fe8070101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704e6ed5b1b015cffffffff0100f2052a01000000434104283338ffd784c198147f99aed2cc16709c90b1522e3b3637b312a6f9130e0eda7081e373a96d36be319710cd5c134aaffba81ff08650d7de8af332fe4d8cde20ac00000000");
     auto const spender = get_block("01000000ba8b9cda965dd8e536670f9ddec10e53aab14b20bacad27b9137190000000000190760b278fe7b8565fda3b968b918d5fd997f993b23674c0af3b6fde300b38f33a5914ce6ed5b1b01e32f570201000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704e6ed5b1b014effffffff0100f2052a01000000434104b68a50eaa0287eff855189f949c1c6e5f58b37c88231373d8a59809cbae83059cc6469d65c665ccfd1cfeb75c6e8e19413bba7fbff9bc762419a76d87b16086eac000000000100000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000");
     // std::println("src/database/test/internal_database.cpp", encode_hash(orig.hash()));
@@ -821,7 +821,7 @@ TEST_CASE("internal database  insert duplicate", "[None]") {
     REQUIRE(db.push_block(spender, 1, 1) == result_code::duplicated_key);
 }
 
-TEST_CASE("internal database  insert double spend block", "[None]") {
+TEST_CASE("internal database insert double spend block", "[None]") {
     auto const orig = get_block("01000000a594fda9d85f69e762e498650d6fdb54d838657cea7841915203170000000000a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f505da904ce6ed5b1b017fe8070101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704e6ed5b1b015cffffffff0100f2052a01000000434104283338ffd784c198147f99aed2cc16709c90b1522e3b3637b312a6f9130e0eda7081e373a96d36be319710cd5c134aaffba81ff08650d7de8af332fe4d8cde20ac00000000");
     auto const spender0 = get_block("01000000ba8b9cda965dd8e536670f9ddec10e53aab14b20bacad27b9137190000000000190760b278fe7b8565fda3b968b918d5fd997f993b23674c0af3b6fde300b38f33a5914ce6ed5b1b01e32f570201000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704e6ed5b1b014effffffff0100f2052a01000000434104b68a50eaa0287eff855189f949c1c6e5f58b37c88231373d8a59809cbae83059cc6469d65c665ccfd1cfeb75c6e8e19413bba7fbff9bc762419a76d87b16086eac000000000100000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000");
     auto const spender1 = get_block("02000000ba8b9cda965dd8e536670f9ddec10e53aab14b20bacad27b9137190000000000190760b278fe7b8565fda3b968b918d5fd997f993b23674c0af3b6fde300b38f33a5914ce6ed5b1b01e32f570201000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704e6ed5b1b014effffffff0100f2052a01000000434104b68a50eaa0287eff855189f949c1c6e5f58b37c88231373d8a59809cbae83059cc6469d65c665ccfd1cfeb75c6e8e19413bba7fbff9bc762419a76d87b16086eac000000000200000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000");
@@ -836,7 +836,7 @@ TEST_CASE("internal database  insert double spend block", "[None]") {
     REQUIRE(db.push_block(spender1, 2, 1) == result_code::key_not_found);
 }
 
-TEST_CASE("internal database  spend", "[None]") {
+TEST_CASE("internal database spend", "[None]") {
     //79880
     auto const orig = get_block("01000000a594fda9d85f69e762e498650d6fdb54d838657cea7841915203170000000000a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f505da904ce6ed5b1b017fe8070101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704e6ed5b1b015cffffffff0100f2052a01000000434104283338ffd784c198147f99aed2cc16709c90b1522e3b3637b312a6f9130e0eda7081e373a96d36be319710cd5c134aaffba81ff08650d7de8af332fe4d8cde20ac00000000");
     //80000
@@ -900,7 +900,7 @@ TEST_CASE("internal database  spend", "[None]") {
 }
 
 
-TEST_CASE("internal database  reorg", "[None]") {
+TEST_CASE("internal database reorg", "[None]") {
     //79880 - 00000000002e872c6fbbcf39c93ef0d89e33484ebf457f6829cbf4b561f3af5a
     std::string orig_enc = "01000000a594fda9d85f69e762e498650d6fdb54d838657cea7841915203170000000000a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f505da904ce6ed5b1b017fe8070101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704e6ed5b1b015cffffffff0100f2052a01000000434104283338ffd784c198147f99aed2cc16709c90b1522e3b3637b312a6f9130e0eda7081e373a96d36be319710cd5c134aaffba81ff08650d7de8af332fe4d8cde20ac00000000";
     auto const orig = get_block(orig_enc);
@@ -949,7 +949,7 @@ TEST_CASE("internal database  reorg", "[None]") {
 
     check_blocks_db(env_, dbi_block_db_,dbi_block_header_, dbi_transaction_db_ ,  0);
     check_blocks_db(env_, dbi_block_db_,dbi_block_header_, dbi_transaction_db_, 1);
-    auto const& address = domain::wallet::payment_address("1JBSCVF6VM6QjFZyTnbpLjoCJTQEqVbepG");
+    auto const& address = domain::wallet::payment_address::parse_from("1JBSCVF6VM6QjFZyTnbpLjoCJTQEqVbepG").value();
     REQUIRE(address);
     REQUIRE(db_count_db_by_address(env_, dbi_history_db_, address) == 2);
 
@@ -964,7 +964,7 @@ TEST_CASE("internal database  reorg", "[None]") {
 }
 
 
-TEST_CASE("internal database  old blocks 0", "[None]") {
+TEST_CASE("internal database old blocks 0", "[None]") {
     //79880 - 00000000002e872c6fbbcf39c93ef0d89e33484ebf457f6829cbf4b561f3af5a
     // timestamp = 1284561413
     //             Sep 15, 2010 11:36:53 AM
@@ -1030,7 +1030,7 @@ TEST_CASE("internal database  old blocks 0", "[None]") {
     );
 }
 
-TEST_CASE("internal database  old blocks 1", "[None]") {
+TEST_CASE("internal database old blocks 1", "[None]") {
     //79880 - 00000000002e872c6fbbcf39c93ef0d89e33484ebf457f6829cbf4b561f3af5a
     // timestamp = 1284561413
     //             Sep 15, 2010 11:36:53 AM
@@ -1099,7 +1099,7 @@ TEST_CASE("internal database  old blocks 1", "[None]") {
 }
 
 
-TEST_CASE("internal database  old blocks 2", "[None]") {
+TEST_CASE("internal database old blocks 2", "[None]") {
     //79880 - 00000000002e872c6fbbcf39c93ef0d89e33484ebf457f6829cbf4b561f3af5a
     // timestamp = 1284561413
     //             Sep 15, 2010 11:36:53 AM
@@ -1168,7 +1168,7 @@ TEST_CASE("internal database  old blocks 2", "[None]") {
 }
 
 
-TEST_CASE("internal database  reorg index", "[None]") {
+TEST_CASE("internal database reorg index", "[None]") {
 
     // Block #4334
     // BlockHash 000000009cdad3c55df9c9bc88265329254a6c8ca810fa7f0e953c947df86dc7
@@ -1260,7 +1260,7 @@ TEST_CASE("internal database  reorg index", "[None]") {
 }
 
 
-TEST_CASE("internal database  reorg index2", "[None]") {
+TEST_CASE("internal database reorg index2", "[None]") {
 
     // Block #4334
     // BlockHash 000000009cdad3c55df9c9bc88265329254a6c8ca810fa7f0e953c947df86dc7
@@ -1401,7 +1401,7 @@ TEST_CASE("internal database  reorg index2", "[None]") {
 }
 
 /*
-TEST_CASE("internal database  test tx address", "[None]") {
+TEST_CASE("internal database test tx address", "[None]") {
 
 std::println("*************************************************************");
 
@@ -1439,7 +1439,7 @@ std::println("*************************************************************");
 
 */
 
-TEST_CASE("internal database  reorg 0", "[None]") {
+TEST_CASE("internal database reorg 0", "[None]") {
     //79880 - 00000000002e872c6fbbcf39c93ef0d89e33484ebf457f6829cbf4b561f3af5a
     // timestamp = 1284561413
     //             Sep 15, 2010 11:36:53 AM
@@ -1488,7 +1488,7 @@ TEST_CASE("internal database  reorg 0", "[None]") {
         auto entry = db.get_utxo(output_point{txid, 0});
         REQUIRE(entry.is_valid());
 
-        auto const& address = domain::wallet::payment_address("1JBSCVF6VM6QjFZyTnbpLjoCJTQEqVbepG");
+        auto const& address = domain::wallet::payment_address::parse_from("1JBSCVF6VM6QjFZyTnbpLjoCJTQEqVbepG").value();
         REQUIRE(address);
 
 
@@ -1524,7 +1524,7 @@ TEST_CASE("internal database  reorg 0", "[None]") {
 
     check_blocks_db(env_, dbi_block_db_,dbi_block_header_, dbi_transaction_db_, 0);
 
-    auto const& address = domain::wallet::payment_address("1JBSCVF6VM6QjFZyTnbpLjoCJTQEqVbepG");
+    auto const& address = domain::wallet::payment_address::parse_from("1JBSCVF6VM6QjFZyTnbpLjoCJTQEqVbepG").value();
     REQUIRE(address);
 
     REQUIRE(db_count_db_by_address(env_, dbi_history_db_, address) == 1);
@@ -1579,7 +1579,7 @@ TEST_CASE("internal database  reorg 0", "[None]") {
 
 
 
-        auto const& address = domain::wallet::payment_address("1JBSCVF6VM6QjFZyTnbpLjoCJTQEqVbepG");
+        auto const& address = domain::wallet::payment_address::parse_from("1JBSCVF6VM6QjFZyTnbpLjoCJTQEqVbepG").value();
         REQUIRE(address);
 
         auto history_list = db.get_history(address.hash20(),max_uint32,0);
@@ -1615,7 +1615,7 @@ TEST_CASE("internal database  reorg 0", "[None]") {
         REQUIRE(history_item.previous_checksum ==  point.checksum());
 
 
-        auto const& address2 = domain::wallet::payment_address("16ro3Jptwo4asSevZnsRX6vfRS24TGE6uK");
+        auto const& address2 = domain::wallet::payment_address::parse_from("16ro3Jptwo4asSevZnsRX6vfRS24TGE6uK").value();
         REQUIRE(address2);
 
         history_list = db.get_history(address2.hash20(), max_uint32, 0);
@@ -1659,11 +1659,11 @@ TEST_CASE("internal database  reorg 0", "[None]") {
 
     check_blocks_db(env_, dbi_block_db_,dbi_block_header_, dbi_transaction_db_, 1);
 
-    auto const& address4 = domain::wallet::payment_address("18REpJroZy5eYCtqK1jwwgQUvVkPojy2rR");
+    auto const& address4 = domain::wallet::payment_address::parse_from("18REpJroZy5eYCtqK1jwwgQUvVkPojy2rR").value();
     REQUIRE(address4);
     REQUIRE(db_count_db_by_address(env_, dbi_history_db_, address4) == 1);
 
-    auto const& address1 = domain::wallet::payment_address("16ro3Jptwo4asSevZnsRX6vfRS24TGE6uK");
+    auto const& address1 = domain::wallet::payment_address::parse_from("16ro3Jptwo4asSevZnsRX6vfRS24TGE6uK").value();
     REQUIRE(address1);
     REQUIRE(db_count_db_by_address(env_, dbi_history_db_, address1) == 1);
 
@@ -1715,7 +1715,7 @@ TEST_CASE("internal database  reorg 0", "[None]") {
 
 
 
-        /*auto const& address = domain::wallet::payment_address("1JBSCVF6VM6QjFZyTnbpLjoCJTQEqVbepG");
+        /*auto const& address = domain::wallet::payment_address::parse_from("1JBSCVF6VM6QjFZyTnbpLjoCJTQEqVbepG").value();
         REQUIRE(address);
 
         auto history_list = db.get_history(address.hash20(),max_uint32,0);
@@ -1734,7 +1734,7 @@ TEST_CASE("internal database  reorg 0", "[None]") {
         REQUIRE(history_item.value == 5000000000);
 
 
-        auto const& address2 = domain::wallet::payment_address("bitcoincash:qpqyxutst75m67y69lx495k9szm96d25n53frahv6a");
+        auto const& address2 = domain::wallet::payment_address::parse_from("bitcoincash:qpqyxutst75m67y69lx495k9szm96d25n53frahv6a").value();
         REQUIRE(address2);
 
         history_list = db.get_history(address2.hash(),max_uint32,0);
@@ -1815,7 +1815,7 @@ TEST_CASE("internal database  reorg 0", "[None]") {
 
 
 
-        auto const& address = domain::wallet::payment_address("1JBSCVF6VM6QjFZyTnbpLjoCJTQEqVbepG");
+        auto const& address = domain::wallet::payment_address::parse_from("1JBSCVF6VM6QjFZyTnbpLjoCJTQEqVbepG").value();
         REQUIRE(address);
 
         auto history_list = db.get_history(address.hash20(),max_uint32,0);
@@ -1853,7 +1853,7 @@ TEST_CASE("internal database  reorg 0", "[None]") {
 
 
 
-        auto const& address2 = domain::wallet::payment_address("16ro3Jptwo4asSevZnsRX6vfRS24TGE6uK");
+        auto const& address2 = domain::wallet::payment_address::parse_from("16ro3Jptwo4asSevZnsRX6vfRS24TGE6uK").value();
         REQUIRE(address2);
 
         history_list = db.get_history(address2.hash20(), max_uint32, 0);
@@ -1920,7 +1920,7 @@ TEST_CASE("internal database  reorg 0", "[None]") {
     );
 }
 
-TEST_CASE("internal database  reorg 1", "[None]") {
+TEST_CASE("internal database reorg 1", "[None]") {
     //79880 - 00000000002e872c6fbbcf39c93ef0d89e33484ebf457f6829cbf4b561f3af5a
     // timestamp = 1284561413
     //             Sep 15, 2010 11:36:53 AM
@@ -2114,7 +2114,7 @@ TEST_CASE("internal database  reorg 1", "[None]") {
 
 
 
-TEST_CASE("internal database  prune", "[None]") {
+TEST_CASE("internal database prune", "[None]") {
 
     // Block 0
     auto const genesis = get_genesis();
@@ -2805,7 +2805,7 @@ TEST_CASE("internal database  prune", "[None]") {
 
 
 
-TEST_CASE("internal database  prune 2", "[None]") {
+TEST_CASE("internal database prune 2", "[None]") {
 
     // Block 0
     auto const genesis = get_genesis();
@@ -3390,7 +3390,7 @@ TEST_CASE("internal database  prune 2", "[None]") {
 }
 
 
-TEST_CASE("internal database  prune 3", "[None]") {
+TEST_CASE("internal database prune 3", "[None]") {
 
     // Block 0
     auto const genesis = get_genesis();
@@ -3735,14 +3735,14 @@ TEST_CASE("internal database  prune 3", "[None]") {
 
 }
 
-TEST_CASE("internal database  prune empty blockchain", "[None]") {
+TEST_CASE("internal database prune empty blockchain", "[None]") {
     using my_clock = dummy_clock<1284613427>;
     internal_database_basis<my_clock> db(db_path, db_mode_type::full, 4, db_size, true);
     REQUIRE(db.open());
     REQUIRE(db.prune() == result_code::no_data_to_prune);
 }
 
-TEST_CASE("internal database  prune empty reorg pool", "[None]") {
+TEST_CASE("internal database prune empty reorg pool", "[None]") {
     using my_clock = dummy_clock<1284613427>;
     internal_database_basis<my_clock> db(db_path, db_mode_type::full, 1000, db_size, true);
     REQUIRE(db.open());
@@ -3751,7 +3751,7 @@ TEST_CASE("internal database  prune empty reorg pool", "[None]") {
 }
 
 
-TEST_CASE("internal database  prune empty reorg pool 2", "[None]") {
+TEST_CASE("internal database prune empty reorg pool 2", "[None]") {
     using my_clock = dummy_clock<1284613427>;
     internal_database_basis<my_clock> db(db_path, db_mode_type::full, 0, db_size, true);
     REQUIRE(db.open());
@@ -3759,7 +3759,7 @@ TEST_CASE("internal database  prune empty reorg pool 2", "[None]") {
     REQUIRE(db.prune() == result_code::no_data_to_prune);
 }
 
-TEST_CASE("internal database  prune empty reorg pool 3", "[None]") {
+TEST_CASE("internal database prune empty reorg pool 3", "[None]") {
     using my_clock = dummy_clock<1284613427>;
     {
         internal_database_basis<my_clock> db(db_path, db_mode_type::full, 10000000, db_size, true);

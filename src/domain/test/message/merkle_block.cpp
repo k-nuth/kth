@@ -9,12 +9,12 @@ using namespace kd;
 
 // Start Test Suite: merkle block tests
 
-TEST_CASE("merkle block  constructor 1  always invalid", "[merkle block]") {
+TEST_CASE("merkle block constructor 1 always invalid", "[merkle block]") {
     const message::merkle_block instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("merkle block  constructor 2  always  equals params", "[merkle block]") {
+TEST_CASE("merkle block constructor 2 always equals params", "[merkle block]") {
     chain::header const header(
         10,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -40,7 +40,7 @@ TEST_CASE("merkle block  constructor 2  always  equals params", "[merkle block]"
     REQUIRE(flags == instance.flags());
 }
 
-TEST_CASE("merkle block  constructor 3  always  equals params", "[merkle block]") {
+TEST_CASE("merkle block constructor 3 always equals params", "[merkle block]") {
     const message::merkle_block instance(
         chain::header{
             10,
@@ -60,7 +60,7 @@ TEST_CASE("merkle block  constructor 3  always  equals params", "[merkle block]"
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("merkle block  constructor 4  always  equals params", "[merkle block]") {
+TEST_CASE("merkle block constructor 4 always equals params", "[merkle block]") {
     const message::merkle_block expected(
         chain::header{
             10,
@@ -82,7 +82,7 @@ TEST_CASE("merkle block  constructor 4  always  equals params", "[merkle block]"
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("merkle block  constructor 5  always  equals params", "[merkle block]") {
+TEST_CASE("merkle block constructor 5 always equals params", "[merkle block]") {
     chain::header const header(
         10,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -164,7 +164,7 @@ TEST_CASE("merkle block - roundtrip to data factory from data chunk", "[merkle b
 
 
 
-TEST_CASE("merkle block  header accessor 1  always  returns initialized value", "[merkle block]") {
+TEST_CASE("merkle block header accessor 1 always returns initialized value", "[merkle block]") {
     chain::header const expected{
         10,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -186,7 +186,7 @@ TEST_CASE("merkle block  header accessor 1  always  returns initialized value", 
     REQUIRE(expected == instance.header());
 }
 
-TEST_CASE("merkle block  header accessor 2  always  returns initialized value", "[merkle block]") {
+TEST_CASE("merkle block header accessor 2 always returns initialized value", "[merkle block]") {
     chain::header const expected{
         10,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -208,7 +208,7 @@ TEST_CASE("merkle block  header accessor 2  always  returns initialized value", 
     REQUIRE(expected == instance.header());
 }
 
-TEST_CASE("merkle block  header setter 1  roundtrip  success", "[merkle block]") {
+TEST_CASE("merkle block header setter 1 roundtrip success", "[merkle block]") {
     chain::header const expected{
         10,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -223,7 +223,7 @@ TEST_CASE("merkle block  header setter 1  roundtrip  success", "[merkle block]")
     REQUIRE(expected == instance.header());
 }
 
-TEST_CASE("merkle block  header setter 2  roundtrip  success", "[merkle block]") {
+TEST_CASE("merkle block header setter 2 roundtrip success", "[merkle block]") {
     message::merkle_block instance;
     REQUIRE( ! instance.header().is_valid());
     instance.set_header(
@@ -238,7 +238,7 @@ TEST_CASE("merkle block  header setter 2  roundtrip  success", "[merkle block]")
     REQUIRE(instance.header().is_valid());
 }
 
-TEST_CASE("merkle block  hashes accessor 1  always  returns initialized value", "[merkle block]") {
+TEST_CASE("merkle block hashes accessor 1 always returns initialized value", "[merkle block]") {
     hash_list const expected{
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
@@ -260,7 +260,7 @@ TEST_CASE("merkle block  hashes accessor 1  always  returns initialized value", 
     REQUIRE(expected == instance.hashes());
 }
 
-TEST_CASE("merkle block  hashes accessor 2  always  returns initialized value", "[merkle block]") {
+TEST_CASE("merkle block hashes accessor 2 always returns initialized value", "[merkle block]") {
     hash_list const expected{
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
@@ -282,7 +282,7 @@ TEST_CASE("merkle block  hashes accessor 2  always  returns initialized value", 
     REQUIRE(expected == instance.hashes());
 }
 
-TEST_CASE("merkle block  hashes setter 1  roundtrip  success", "[merkle block]") {
+TEST_CASE("merkle block hashes setter 1 roundtrip success", "[merkle block]") {
     hash_list const expected{
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffffffffffffffffffffffffffffffff"_hash,
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"_hash,
@@ -295,7 +295,7 @@ TEST_CASE("merkle block  hashes setter 1  roundtrip  success", "[merkle block]")
     REQUIRE(expected == instance.hashes());
 }
 
-TEST_CASE("merkle block  hashes setter 2  roundtrip  success", "[merkle block]") {
+TEST_CASE("merkle block hashes setter 2 roundtrip success", "[merkle block]") {
     message::merkle_block instance;
     REQUIRE(instance.hashes().empty());
     instance.set_hashes(hash_list{
@@ -307,7 +307,7 @@ TEST_CASE("merkle block  hashes setter 2  roundtrip  success", "[merkle block]")
     REQUIRE( ! instance.hashes().empty());
 }
 
-TEST_CASE("merkle block  flags accessor 1  always  returns initialized value", "[merkle block]") {
+TEST_CASE("merkle block flags accessor 1 always returns initialized value", "[merkle block]") {
     data_chunk const expected{0xae, 0x56, 0x0f};
 
     const message::merkle_block instance(
@@ -329,7 +329,7 @@ TEST_CASE("merkle block  flags accessor 1  always  returns initialized value", "
     REQUIRE(expected == instance.flags());
 }
 
-TEST_CASE("merkle block  flags accessor 2  always  returns initialized value", "[merkle block]") {
+TEST_CASE("merkle block flags accessor 2 always returns initialized value", "[merkle block]") {
     data_chunk const expected{0xae, 0x56, 0x0f};
 
     const message::merkle_block instance(
@@ -351,7 +351,7 @@ TEST_CASE("merkle block  flags accessor 2  always  returns initialized value", "
     REQUIRE(expected == instance.flags());
 }
 
-TEST_CASE("merkle block  flags setter 1  roundtrip  success", "[merkle block]") {
+TEST_CASE("merkle block flags setter 1 roundtrip success", "[merkle block]") {
     data_chunk const expected{0xae, 0x56, 0x0f};
     message::merkle_block instance;
     REQUIRE(expected != instance.flags());
@@ -359,14 +359,14 @@ TEST_CASE("merkle block  flags setter 1  roundtrip  success", "[merkle block]") 
     REQUIRE(expected == instance.flags());
 }
 
-TEST_CASE("merkle block  flags setter 2  roundtrip  success", "[merkle block]") {
+TEST_CASE("merkle block flags setter 2 roundtrip success", "[merkle block]") {
     message::merkle_block instance;
     REQUIRE(instance.flags().empty());
     instance.set_flags(data_chunk{0xae, 0x56, 0x0f});
     REQUIRE( ! instance.flags().empty());
 }
 
-TEST_CASE("merkle block  operator assign equals  always  matches equivalent", "[merkle block]") {
+TEST_CASE("merkle block operator assign equals always matches equivalent", "[merkle block]") {
     message::merkle_block value(
         chain::header{
             10,
@@ -392,7 +392,7 @@ TEST_CASE("merkle block  operator assign equals  always  matches equivalent", "[
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("merkle block  operator boolean equals  duplicates  returns true", "[merkle block]") {
+TEST_CASE("merkle block operator boolean equals duplicates returns true", "[merkle block]") {
     const message::merkle_block expected(
         chain::header{
             10,
@@ -413,7 +413,7 @@ TEST_CASE("merkle block  operator boolean equals  duplicates  returns true", "[m
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("merkle block  operator boolean equals  differs  returns false", "[merkle block]") {
+TEST_CASE("merkle block operator boolean equals differs returns false", "[merkle block]") {
     const message::merkle_block expected(
         chain::header{
             10,
@@ -434,7 +434,7 @@ TEST_CASE("merkle block  operator boolean equals  differs  returns false", "[mer
     REQUIRE( ! (instance == expected));
 }
 
-TEST_CASE("merkle block  operator boolean not equals  duplicates  returns false", "[merkle block]") {
+TEST_CASE("merkle block operator boolean not equals duplicates returns false", "[merkle block]") {
     const message::merkle_block expected(
         chain::header{
             10,
@@ -455,7 +455,7 @@ TEST_CASE("merkle block  operator boolean not equals  duplicates  returns false"
     REQUIRE( ! (instance != expected));
 }
 
-TEST_CASE("merkle block  operator boolean not equals  differs  returns true", "[merkle block]") {
+TEST_CASE("merkle block operator boolean not equals differs returns true", "[merkle block]") {
     const message::merkle_block expected(
         chain::header{
             10,

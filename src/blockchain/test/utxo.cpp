@@ -94,7 +94,7 @@ domain::chain::block read_block(const std::string hex) {
 
 // Start Test Suite: utxo tests
 
-TEST_CASE("utxo  get utxo  not found  false", "[utxo tests]") {
+TEST_CASE("utxo get utxo not found false", "[utxo tests]") {
     START_BLOCKCHAIN(instance, false);
 
     domain::chain::output output;
@@ -106,7 +106,7 @@ TEST_CASE("utxo  get utxo  not found  false", "[utxo tests]") {
     REQUIRE( ! instance.get_utxo(output, height, median_time_past, coinbase, outpoint, branch_height));
 }
 
-TEST_CASE("utxo  get utxo  found  expected", "[utxo tests]") {
+TEST_CASE("utxo get utxo found expected", "[utxo tests]") {
     START_BLOCKCHAIN(instance, false);
 
     auto const block1 = NEW_BLOCK(1);
@@ -128,7 +128,7 @@ TEST_CASE("utxo  get utxo  found  expected", "[utxo tests]") {
     REQUIRE(output.script().to_string(0) == expected_script);
 }
 
-TEST_CASE("utxo  get utxo  above fork  false", "[utxo tests]") {
+TEST_CASE("utxo get utxo above fork false", "[utxo tests]") {
     START_BLOCKCHAIN(instance, false);
 
     auto const block1 = NEW_BLOCK(1);

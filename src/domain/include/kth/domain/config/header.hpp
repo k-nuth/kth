@@ -5,51 +5,46 @@
 #ifndef KTH_HEADER_HPP
 #define KTH_HEADER_HPP
 
-#include <expected>
 #include <string>
-#include <system_error>
+#include <string_view>
+
+#include <fmt/core.h>
 
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
 
 namespace kth::domain::config {
 
 /**
- * Serialization helper to convert between serialized and deserialized satoshi
- * header.
+ * Serialization helper to convert between base16 text and satoshi header.
+ *
+ * Valid-by-construction: no default ctor, no throwing ctor.
  */
 struct KD_API header {
-    header() = default;
 
     /**
-     * Initialization constructor.
-     * @param[in]  value  The value to initialize with.
-     */
-    header(chain::header const& value);
-
-    /**
-     * Copy constructor.
-     * @param[in]  other  The object to copy into self on construct.
-     */
-    header(header const& x);
-
-    /**
-     * Overload cast to internal type.
-     * @return  This object's value cast to internal type.
-     */
-    operator chain::header const&() const;
-
-    /**
-     * Parse a base16 string into a header object.
-     * @param[in]  text  The base16 encoded string to parse.
-     * @return           The parsed header object or an error.
+     * Parse a base16-encoded serialized header. Returns
+     * `error::illegal_value` on malformed input.
      */
     [[nodiscard]] static
-    std::expected<header, std::error_code> from_string(std::string_view text) noexcept;
+    expect<header> parse_from(std::string_view text) noexcept;
 
     /**
-     * Serialize the value to a base16 encoded string.
-     * @return  The base16 encoded string.
+     * Wrap an already-populated chain::header.
+     */
+    constexpr explicit
+    header(chain::header const& value)
+        : value_(value) {}
+
+    /**
+     * Explicit accessor.
+     */
+    [[nodiscard]] constexpr
+    chain::header const& value() const noexcept { return value_; }
+
+    /**
+     * Base16 encoding used by `fmt::formatter<header>`.
      */
     [[nodiscard]]
     std::string to_string() const;
@@ -59,5 +54,15 @@ private:
 };
 
 } // namespace kth::domain::config
+
+template <>
+struct fmt::formatter<kth::domain::config::header> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    auto format(kth::domain::config::header const& value,
+                format_context& ctx) const {
+        return fmt::format_to(ctx.out(), "{}", value.to_string());
+    }
+};
 
 #endif

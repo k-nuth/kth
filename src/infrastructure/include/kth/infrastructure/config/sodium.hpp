@@ -5,101 +5,72 @@
 #ifndef KTH_INFRASTUCTURE_CONFIG_SODIUM_HPP
 #define KTH_INFRASTUCTURE_CONFIG_SODIUM_HPP
 
-#include <iostream>
+#include <expected>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include <fmt/core.h>
+
 #include <kth/infrastructure/define.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
 namespace kth::infrastructure::config {
 
 /**
- * Serialization helper for base58 sodium keys.
+ * Serialization helper for base85 (Z85) sodium keys.
+ *
+ * Valid-by-construction: no default ctor, no throwing ctor. Fallible
+ * string parsing goes through `parse_from` returning `expect<sodium>`.
  */
-class KI_API sodium
-{
-public:
+struct KI_API sodium {
     using list = std::vector<sodium>;
 
-
-    sodium();
+    /**
+     * Parse a Z85 (base85) encoded 32-byte key. Returns
+     * `error::illegal_value` on malformed input or wrong length.
+     */
+    [[nodiscard]] static
+    std::expected<sodium, kth::code> parse_from(std::string_view base85);
 
     /**
-     * Initialization constructor.
-     * @param[in]  base85  The value to initialize with.
+     * Wrap an already-populated `hash_digest`.
      */
-    explicit
-    sodium(std::string_view base85);
+    constexpr explicit
+    sodium(hash_digest const& value) noexcept
+        : value_(value) {}
 
     /**
-     * Initialization constructor.
-     * @param[in]  value  The value to initialize with.
+     * Explicit accessor for the wrapped hash.
      */
-    explicit
-    sodium(hash_digest const& value);
+    [[nodiscard]] constexpr
+    hash_digest const& value() const noexcept { return value_; }
 
     /**
-     * Copy constructor.
-     * @param[in]  other  The object to copy into self on construct.
+     * Base85 encoding used by `fmt::formatter<sodium>`.
      */
-    sodium(sodium const& x);
-
-    /**
-     * Getter.
-     * @return True if the key is initialized.
-     */
-    explicit
-    operator bool const() const;
-
-    /**
-     * Overload cast to internal type.
-     * @return  This object's value cast to internal type.
-     */
-    explicit
-    operator hash_digest const&() const;
-
-    /**
-     * Overload cast to generic data reference.
-     * @return  This object's value cast to generic data.
-     */
-    explicit
-    operator byte_span() const;
-
-    /**
-     * Get the key as a base85 encoded (z85) string.
-     * @return The encoded key.
-     */
+    [[nodiscard]]
     std::string to_string() const;
 
-    /**
-     * Overload stream in. Throws if input is invalid.
-     * @param[in]   input     The input stream to read the value from.
-     * @param[out]  argument  The object to receive the read value.
-     * @return                The input stream reference.
-     */
-    friend
-    std::istream& operator>>(std::istream& input, sodium& argument);
-
-    /**
-     * Overload stream out.
-     * @param[in]   output    The output stream to write the value to.
-     * @param[out]  argument  The object from which to obtain the value.
-     * @return                The output stream reference.
-     */
-    friend
-    std::ostream& operator<<(std::ostream& output, const sodium& argument);
+    [[nodiscard]] constexpr
+    bool operator==(sodium const&) const noexcept = default;
 
 private:
-
-    /**
-     * The state of this object.
-     */
     hash_digest value_;
 };
 
 } // namespace kth::infrastructure::config
+
+template <>
+struct fmt::formatter<kth::infrastructure::config::sodium>
+    : fmt::formatter<std::string> {
+    template <typename FormatContext>
+    auto format(kth::infrastructure::config::sodium const& value,
+                FormatContext& ctx) const {
+        return fmt::formatter<std::string>::format(value.to_string(), ctx);
+    }
+};
 
 #endif

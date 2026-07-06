@@ -26,7 +26,7 @@ static hash_digest const data{
 
 // Start Test Suite: reject tests
 
-TEST_CASE("reject  factory from data  tx nonstandard empty data valid", "[reject]") {
+TEST_CASE("reject factory from data tx nonstandard empty data valid", "[reject]") {
     auto const payload = decode_base16(malformed_reject);
     REQUIRE(payload);
     byte_reader reader(*payload);
@@ -36,12 +36,12 @@ TEST_CASE("reject  factory from data  tx nonstandard empty data valid", "[reject
     REQUIRE(reject.is_valid());
 }
 
-TEST_CASE("reject  constructor 1  always invalid", "[reject]") {
+TEST_CASE("reject constructor 1 always invalid", "[reject]") {
     message::reject instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("reject  constructor 2  always  equals params", "[reject]") {
+TEST_CASE("reject constructor 2 always equals params", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
@@ -54,7 +54,7 @@ TEST_CASE("reject  constructor 2  always  equals params", "[reject]") {
     REQUIRE(data == instance.data());
 }
 
-TEST_CASE("reject  constructor 3  always  equals params", "[reject]") {
+TEST_CASE("reject constructor 3 always equals params", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "sadfasdgd";
     std::string reason = "jgfghkggfsr";
@@ -63,7 +63,7 @@ TEST_CASE("reject  constructor 3  always  equals params", "[reject]") {
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("reject  constructor 4  always  equals params", "[reject]") {
+TEST_CASE("reject constructor 4 always equals params", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
@@ -78,7 +78,7 @@ TEST_CASE("reject  constructor 4  always  equals params", "[reject]") {
     REQUIRE(data == instance.data());
 }
 
-TEST_CASE("reject  constructor 5  always  equals params", "[reject]") {
+TEST_CASE("reject constructor 5 always equals params", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
@@ -92,7 +92,7 @@ TEST_CASE("reject  constructor 5  always  equals params", "[reject]") {
     REQUIRE(data == instance.data());
 }
 
-TEST_CASE("reject from data insufficient bytes  failure", "[reject]") {
+TEST_CASE("reject from data insufficient bytes failure", "[reject]") {
     static data_chunk const raw{0xab};
     message::reject instance{};
     byte_reader reader(raw);
@@ -100,7 +100,7 @@ TEST_CASE("reject from data insufficient bytes  failure", "[reject]") {
     REQUIRE( ! result);
 }
 
-TEST_CASE("reject from data insufficient version  failure", "[reject]") {
+TEST_CASE("reject from data insufficient version failure", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::dust,
         message::block::command,
@@ -114,7 +114,7 @@ TEST_CASE("reject from data insufficient version  failure", "[reject]") {
     REQUIRE( ! result);
 }
 
-TEST_CASE("reject from data code malformed  success", "[reject]") {
+TEST_CASE("reject from data code malformed success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::malformed,
         message::block::command,
@@ -130,7 +130,7 @@ TEST_CASE("reject from data code malformed  success", "[reject]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject from data code invalid  success", "[reject]") {
+TEST_CASE("reject from data code invalid success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::invalid,
         message::block::command,
@@ -147,7 +147,7 @@ TEST_CASE("reject from data code invalid  success", "[reject]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject from data code obsolete  success", "[reject]") {
+TEST_CASE("reject from data code obsolete success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::obsolete,
         message::block::command,
@@ -163,7 +163,7 @@ TEST_CASE("reject from data code obsolete  success", "[reject]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject from data code duplicate  success", "[reject]") {
+TEST_CASE("reject from data code duplicate success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::duplicate,
         message::block::command,
@@ -179,7 +179,7 @@ TEST_CASE("reject from data code duplicate  success", "[reject]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject from data code nonstandard  success", "[reject]") {
+TEST_CASE("reject from data code nonstandard success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::nonstandard,
         message::block::command,
@@ -195,7 +195,7 @@ TEST_CASE("reject from data code nonstandard  success", "[reject]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject from data code dust  success", "[reject]") {
+TEST_CASE("reject from data code dust success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::dust,
         message::block::command,
@@ -211,7 +211,7 @@ TEST_CASE("reject from data code dust  success", "[reject]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject from data code insufficient fee  success", "[reject]") {
+TEST_CASE("reject from data code insufficient fee success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::insufficient_fee,
         message::block::command,
@@ -227,7 +227,7 @@ TEST_CASE("reject from data code insufficient fee  success", "[reject]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject from data code checkpoint  success", "[reject]") {
+TEST_CASE("reject from data code checkpoint success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::checkpoint,
         message::block::command,
@@ -244,7 +244,7 @@ TEST_CASE("reject from data code checkpoint  success", "[reject]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject from data code undefined  success", "[reject]") {
+TEST_CASE("reject from data code undefined success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::undefined,
         message::block::command,
@@ -261,7 +261,7 @@ TEST_CASE("reject from data code undefined  success", "[reject]") {
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("reject from data valid input  success", "[reject]") {
+TEST_CASE("reject from data valid input success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::dust,
         message::block::command,
@@ -281,7 +281,7 @@ TEST_CASE("reject from data valid input  success", "[reject]") {
 
 
 
-TEST_CASE("reject  code accessor  always  returns initialized value", "[reject]") {
+TEST_CASE("reject code accessor always returns initialized value", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
@@ -290,7 +290,7 @@ TEST_CASE("reject  code accessor  always  returns initialized value", "[reject]"
     REQUIRE(code == instance.code());
 }
 
-TEST_CASE("reject  code setter  roundtrip  success", "[reject]") {
+TEST_CASE("reject code setter roundtrip success", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
@@ -301,7 +301,7 @@ TEST_CASE("reject  code setter  roundtrip  success", "[reject]") {
     REQUIRE(code == instance.code());
 }
 
-TEST_CASE("reject  message accessor 1  always  returns initialized value", "[reject]") {
+TEST_CASE("reject message accessor 1 always returns initialized value", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
@@ -310,7 +310,7 @@ TEST_CASE("reject  message accessor 1  always  returns initialized value", "[rej
     REQUIRE(message == instance.message());
 }
 
-TEST_CASE("reject  message accessor 2  always  returns initialized value", "[reject]") {
+TEST_CASE("reject message accessor 2 always returns initialized value", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
@@ -319,7 +319,7 @@ TEST_CASE("reject  message accessor 2  always  returns initialized value", "[rej
     REQUIRE(message == instance.message());
 }
 
-TEST_CASE("reject  message setter 1  roundtrip  success", "[reject]") {
+TEST_CASE("reject message setter 1 roundtrip success", "[reject]") {
     std::string message = "Alpha Beta";
     message::reject instance;
     REQUIRE(message != instance.message());
@@ -327,7 +327,7 @@ TEST_CASE("reject  message setter 1  roundtrip  success", "[reject]") {
     REQUIRE(message == instance.message());
 }
 
-TEST_CASE("reject  message setter 2  roundtrip  success", "[reject]") {
+TEST_CASE("reject message setter 2 roundtrip success", "[reject]") {
     std::string duplicate = "Gamma";
     std::string message = "Gamma";
     message::reject instance;
@@ -336,7 +336,7 @@ TEST_CASE("reject  message setter 2  roundtrip  success", "[reject]") {
     REQUIRE(duplicate == instance.message());
 }
 
-TEST_CASE("reject  reason accessor 1  always  returns initialized value", "[reject]") {
+TEST_CASE("reject reason accessor 1 always returns initialized value", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
@@ -345,7 +345,7 @@ TEST_CASE("reject  reason accessor 1  always  returns initialized value", "[reje
     REQUIRE(reason == instance.reason());
 }
 
-TEST_CASE("reject  reason accessor 2  always  returns initialized value", "[reject]") {
+TEST_CASE("reject reason accessor 2 always returns initialized value", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
@@ -354,7 +354,7 @@ TEST_CASE("reject  reason accessor 2  always  returns initialized value", "[reje
     REQUIRE(reason == instance.reason());
 }
 
-TEST_CASE("reject  reason setter 1  roundtrip  success", "[reject]") {
+TEST_CASE("reject reason setter 1 roundtrip success", "[reject]") {
     std::string reason = "Alpha Beta";
     message::reject instance;
     REQUIRE(reason != instance.reason());
@@ -362,7 +362,7 @@ TEST_CASE("reject  reason setter 1  roundtrip  success", "[reject]") {
     REQUIRE(reason == instance.reason());
 }
 
-TEST_CASE("reject  reason setter 2  roundtrip  success", "[reject]") {
+TEST_CASE("reject reason setter 2 roundtrip success", "[reject]") {
     std::string duplicate = "Gamma";
     std::string reason = "Gamma";
     message::reject instance;
@@ -371,7 +371,7 @@ TEST_CASE("reject  reason setter 2  roundtrip  success", "[reject]") {
     REQUIRE(duplicate == instance.reason());
 }
 
-TEST_CASE("reject  data accessor 1  always  returns initialized value", "[reject]") {
+TEST_CASE("reject data accessor 1 always returns initialized value", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
@@ -380,7 +380,7 @@ TEST_CASE("reject  data accessor 1  always  returns initialized value", "[reject
     REQUIRE(data == instance.data());
 }
 
-TEST_CASE("reject  data accessor 2  always  returns initialized value", "[reject]") {
+TEST_CASE("reject data accessor 2 always returns initialized value", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
     std::string message = "Alpha Beta";
     std::string reason = "Gamma Delta";
@@ -389,7 +389,7 @@ TEST_CASE("reject  data accessor 2  always  returns initialized value", "[reject
     REQUIRE(data == instance.data());
 }
 
-TEST_CASE("reject  data setter 1  roundtrip  success", "[reject]") {
+TEST_CASE("reject data setter 1 roundtrip success", "[reject]") {
     hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject instance;
     REQUIRE(data != instance.data());
@@ -397,7 +397,7 @@ TEST_CASE("reject  data setter 1  roundtrip  success", "[reject]") {
     REQUIRE(data == instance.data());
 }
 
-TEST_CASE("reject  data setter 2  roundtrip  success", "[reject]") {
+TEST_CASE("reject data setter 2 roundtrip success", "[reject]") {
     hash_digest duplicate = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject instance;
@@ -406,7 +406,7 @@ TEST_CASE("reject  data setter 2  roundtrip  success", "[reject]") {
     REQUIRE(duplicate == instance.data());
 }
 
-TEST_CASE("reject  operator assign equals  always  matches equivalent", "[reject]") {
+TEST_CASE("reject operator assign equals always matches equivalent", "[reject]") {
     message::reject value(
         message::reject::reason_code::dust,
         "My Message",
@@ -422,7 +422,7 @@ TEST_CASE("reject  operator assign equals  always  matches equivalent", "[reject
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("reject  operator boolean equals  duplicates  returns true", "[reject]") {
+TEST_CASE("reject operator boolean equals duplicates returns true", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::dust,
         "My Message",
@@ -433,7 +433,7 @@ TEST_CASE("reject  operator boolean equals  duplicates  returns true", "[reject]
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("reject  operator boolean equals  differs  returns false", "[reject]") {
+TEST_CASE("reject operator boolean equals differs returns false", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::dust,
         "My Message",
@@ -444,7 +444,7 @@ TEST_CASE("reject  operator boolean equals  differs  returns false", "[reject]")
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("reject - reject  operator boolean not equals  duplicates  returns false", "[reject]") {
+TEST_CASE("reject - reject operator boolean not equals duplicates returns false", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::dust,
         "My Message",
@@ -455,7 +455,7 @@ TEST_CASE("reject - reject  operator boolean not equals  duplicates  returns fal
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("reject - reject  operator boolean not equals  differs  returns true", "[reject]") {
+TEST_CASE("reject - reject operator boolean not equals differs returns true", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::dust,
         "My Message",

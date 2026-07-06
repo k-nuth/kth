@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <kth/capi/error.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/wallet/ek_private.h>
 
@@ -54,16 +55,17 @@ TEST_CASE("C-API wallet::ek_private - destruct(NULL) is a no-op",
 // Encoded string round-trip
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::ek_private - encoded round-trips through construct_from_encoded",
+TEST_CASE("C-API wallet::ek_private - encoded round-trips through parse_from",
           "[C-API WalletEkPrivate][encode]") {
     // Parse a known-good BIP38 vector and re-serialise; the result
     // must match byte-for-byte. A regression in base58-check framing
     // would diverge here.
-    kth_ek_private_mut_t a = kth_wallet_ek_private_construct_from_encoded(kEncrypted);
+    kth_ek_private_mut_t a = NULL;
+    REQUIRE(kth_wallet_ek_private_parse_from(kEncrypted, &a) == kth_ec_success);
     REQUIRE(a != NULL);
     REQUIRE(kth_wallet_ek_private_valid(a) != 0);
 
-    char* back = kth_wallet_ek_private_encoded(a);
+    char* back = kth_wallet_ek_private_to_string(a);
     REQUIRE(back != NULL);
     REQUIRE(strcmp(back, kEncrypted) == 0);
     kth_core_destruct_string(back);
@@ -71,11 +73,13 @@ TEST_CASE("C-API wallet::ek_private - encoded round-trips through construct_from
     kth_wallet_ek_private_destruct(a);
 }
 
-TEST_CASE("C-API wallet::ek_private - invalid encoded string fails to construct",
+TEST_CASE("C-API wallet::ek_private - invalid encoded string fails to parse",
           "[C-API WalletEkPrivate][encode]") {
-    // Anything that isn't valid BIP38 base58-check fails the domain
-    // `from_string` factory and `leak_if_valid` maps that to NULL.
-    kth_ek_private_mut_t a = kth_wallet_ek_private_construct_from_encoded("not-a-key");
+    // Anything that isn't valid BIP38 base58-check surfaces as a
+    // non-success error code from `parse_from`; the OUT handle stays
+    // untouched (still NULL).
+    kth_ek_private_mut_t a = NULL;
+    REQUIRE(kth_wallet_ek_private_parse_from("not-a-key", &a) != kth_ec_success);
     REQUIRE(a == NULL);
 }
 
@@ -88,15 +92,16 @@ TEST_CASE("C-API wallet::ek_private - private_key byte payload round-trip",
     // encoded → ek_private → raw 43-byte payload → new ek_private →
     // encoded. This exercises both directions of the value-struct
     // bridge (`kth_encrypted_private_t` ↔ `encrypted_private`).
-    kth_ek_private_mut_t orig = kth_wallet_ek_private_construct_from_encoded(kEncrypted);
+    kth_ek_private_mut_t orig = NULL;
+    REQUIRE(kth_wallet_ek_private_parse_from(kEncrypted, &orig) == kth_ec_success);
     REQUIRE(orig != NULL);
     kth_encrypted_private_t bytes = kth_wallet_ek_private_private_key(orig);
 
-    kth_ek_private_mut_t rebuilt = kth_wallet_ek_private_construct_from_value(&bytes);
+    kth_ek_private_mut_t rebuilt = kth_wallet_ek_private_construct(&bytes);
     REQUIRE(rebuilt != NULL);
     REQUIRE(kth_wallet_ek_private_valid(rebuilt) != 0);
 
-    char* back = kth_wallet_ek_private_encoded(rebuilt);
+    char* back = kth_wallet_ek_private_to_string(rebuilt);
     REQUIRE(back != NULL);
     REQUIRE(strcmp(back, kEncrypted) == 0);
     kth_core_destruct_string(back);
@@ -105,17 +110,18 @@ TEST_CASE("C-API wallet::ek_private - private_key byte payload round-trip",
     kth_wallet_ek_private_destruct(orig);
 }
 
-TEST_CASE("C-API wallet::ek_private - construct_from_value_unsafe matches safe variant",
+TEST_CASE("C-API wallet::ek_private - construct_unsafe matches safe variant",
           "[C-API WalletEkPrivate][encode]") {
     // Equivalent call path for callers that can't pass a struct by
     // pointer (some FFIs can only hand over a raw `uint8_t*`). Both
     // must produce equal wrappers over the same payload.
-    kth_ek_private_mut_t orig = kth_wallet_ek_private_construct_from_encoded(kEncrypted);
+    kth_ek_private_mut_t orig = NULL;
+    REQUIRE(kth_wallet_ek_private_parse_from(kEncrypted, &orig) == kth_ec_success);
     REQUIRE(orig != NULL);
     kth_encrypted_private_t bytes = kth_wallet_ek_private_private_key(orig);
 
     kth_ek_private_mut_t rebuilt =
-        kth_wallet_ek_private_construct_from_value_unsafe(bytes.data);
+        kth_wallet_ek_private_construct_unsafe(bytes.data);
     REQUIRE(rebuilt != NULL);
     REQUIRE(kth_wallet_ek_private_equals(orig, rebuilt) != 0);
 
@@ -129,7 +135,8 @@ TEST_CASE("C-API wallet::ek_private - construct_from_value_unsafe matches safe v
 
 TEST_CASE("C-API wallet::ek_private - copy preserves value equality",
           "[C-API WalletEkPrivate][value]") {
-    kth_ek_private_mut_t a = kth_wallet_ek_private_construct_from_encoded(kEncrypted);
+    kth_ek_private_mut_t a = NULL;
+    REQUIRE(kth_wallet_ek_private_parse_from(kEncrypted, &a) == kth_ec_success);
     kth_ek_private_mut_t b = kth_wallet_ek_private_copy(a);
     REQUIRE(b != NULL);
     REQUIRE(kth_wallet_ek_private_equals(a, b) != 0);
@@ -141,8 +148,10 @@ TEST_CASE("C-API wallet::ek_private - equals / less compare distinct keys",
           "[C-API WalletEkPrivate][value]") {
     // Two different BIP38 keys must not compare equal; `less` is a
     // total ordering so exactly one of `a<b` / `b<a` is non-zero.
-    kth_ek_private_mut_t a = kth_wallet_ek_private_construct_from_encoded(kEncrypted);
-    kth_ek_private_mut_t b = kth_wallet_ek_private_construct_from_encoded(kEncryptedOther);
+    kth_ek_private_mut_t a = NULL;
+    kth_ek_private_mut_t b = NULL;
+    REQUIRE(kth_wallet_ek_private_parse_from(kEncrypted, &a) == kth_ec_success);
+    REQUIRE(kth_wallet_ek_private_parse_from(kEncryptedOther, &b) == kth_ec_success);
     REQUIRE(kth_wallet_ek_private_equals(a, b) == 0);
 
     int const a_less_b = kth_wallet_ek_private_less(a, b) != 0;
@@ -157,14 +166,9 @@ TEST_CASE("C-API wallet::ek_private - equals / less compare distinct keys",
 // Preconditions
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::ek_private - construct_from_encoded(NULL) aborts",
+TEST_CASE("C-API wallet::ek_private - construct(NULL) aborts",
           "[C-API WalletEkPrivate][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_ek_private_construct_from_encoded(NULL));
-}
-
-TEST_CASE("C-API wallet::ek_private - construct_from_value(NULL) aborts",
-          "[C-API WalletEkPrivate][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_ek_private_construct_from_value(NULL));
+    KTH_EXPECT_ABORT(kth_wallet_ek_private_construct(NULL));
 }
 
 TEST_CASE("C-API wallet::ek_private - valid(NULL) aborts",

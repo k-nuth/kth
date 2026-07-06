@@ -60,7 +60,8 @@ TEST_CASE("C-API BitcoinURI - parses amount / label / message / r",
           "[C-API BitcoinURI][parse]") {
     // `strict=1` rejects anything that doesn't conform to the BIP21
     // grammar; the fixture is well-formed so parsing succeeds.
-    kth_bitcoin_uri_mut_t u = kth_wallet_bitcoin_uri_construct(kFullUri, 1);
+    kth_bitcoin_uri_mut_t u = NULL;
+    REQUIRE(kth_wallet_bitcoin_uri_parse_from(kFullUri, 1, &u) == kth_ec_success);
     REQUIRE(u != NULL);
     REQUIRE(kth_wallet_bitcoin_uri_valid(u) != 0);
 
@@ -94,12 +95,12 @@ TEST_CASE("C-API BitcoinURI - parses amount / label / message / r",
 TEST_CASE("C-API BitcoinURI - strict mode rejects a malformed scheme",
           "[C-API BitcoinURI][parse]") {
     // BIP21 requires the `bitcoin:` scheme. In strict mode, anything
-    // else is rejected and the constructor hands back NULL (the
-    // `leak_if_valid` gate on the string-taking factory collapses an
-    // `operator bool == false` instance to a null handle) so the
-    // caller can distinguish a parse failure from a successful parse
-    // of a blank URI.
-    kth_bitcoin_uri_mut_t u = kth_wallet_bitcoin_uri_construct("http://example.com", 1);
+    // else is rejected — `parse_from` reports a non-success error code
+    // and leaves the OUT handle untouched (still NULL) so the caller
+    // can distinguish a parse failure from a successful parse of a
+    // blank URI.
+    kth_bitcoin_uri_mut_t u = NULL;
+    REQUIRE(kth_wallet_bitcoin_uri_parse_from("http://example.com", 1, &u) != kth_ec_success);
     REQUIRE(u == NULL);
 }
 
@@ -115,12 +116,14 @@ TEST_CASE("C-API BitcoinURI - encoded round-trips through construct",
     // Guard every handle / owned string explicitly — the getters abort
     // on NULL, and we'd rather a parse regression surface as a REQUIRE
     // failure than a SIGABRT during the test run.
-    kth_bitcoin_uri_mut_t u = kth_wallet_bitcoin_uri_construct(kFullUri, 1);
+    kth_bitcoin_uri_mut_t u = NULL;
+    REQUIRE(kth_wallet_bitcoin_uri_parse_from(kFullUri, 1, &u) == kth_ec_success);
     REQUIRE(u != NULL);
     char* encoded = kth_wallet_bitcoin_uri_encoded(u);
     REQUIRE(encoded != NULL);
 
-    kth_bitcoin_uri_mut_t reparsed = kth_wallet_bitcoin_uri_construct(encoded, 1);
+    kth_bitcoin_uri_mut_t reparsed = NULL;
+    REQUIRE(kth_wallet_bitcoin_uri_parse_from(encoded, 1, &reparsed) == kth_ec_success);
     REQUIRE(reparsed != NULL);
     REQUIRE(kth_wallet_bitcoin_uri_valid(reparsed) != 0);
     REQUIRE(kth_wallet_bitcoin_uri_amount(reparsed)

@@ -428,7 +428,12 @@ hash_digest const tx_hash_3 = {{
 // Using a function with local static to avoid static initialization order issues
 // (payment_address constructor parses cashaddr, which may depend on other statics).
 payment_address const& test_address() {
-    static payment_address const addr{"bitcoincash:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq5dc09yc9"};
+    // A canonical mainnet P2KH cashaddr used only to satisfy
+    // `create_token_split_tx_template`'s destination parameter — the
+    // tests here don't verify the address contents, they just need a
+    // real one so `parse_from` returns a value.
+    static payment_address const addr =
+        payment_address::parse_from("bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz").value();
     return addr;
 }
 

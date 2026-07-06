@@ -5,15 +5,16 @@
 #include <kth/domain/wallet/payment_address.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
-#include <iostream>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
-
-#include <boost/program_options.hpp>
 
 #include <kth/domain/wallet/ec_private.hpp>
 #include <kth/domain/wallet/ec_public.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_58.hpp>
 #include <kth/infrastructure/math/checksum.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
@@ -32,30 +33,6 @@ using namespace kth::domain::wallet;
 
 namespace kth::domain::wallet {
 
-payment_address::payment_address(payment const& decoded)
-    : payment_address(payment_address{from_payment(decoded)})
-{}
-
-payment_address::payment_address(std::string const& address)
-    : payment_address(payment_address{from_string(address)})
-{}
-
-payment_address::payment_address(std::string const& address, config::network net)
-    : payment_address(payment_address{from_string(address, net)})
-{}
-
-payment_address::payment_address(ec_private const& secret)
-    : payment_address(payment_address{from_private(secret)})
-{}
-
-payment_address::payment_address(ec_public const& point, uint8_t version)
-    : payment_address(payment_address{from_public(point, version)})
-{}
-
-payment_address::payment_address(chain::script const& script, uint8_t version)
-    : payment_address(payment_address{from_script(script, version)})
-{}
-
 payment_address::payment_address(short_hash const& short_hash, uint8_t version)
     : valid_(true)
     , version_(version)
@@ -71,20 +48,6 @@ payment_address::payment_address(hash_digest const& hash, uint8_t version)
     , hash_size_(hash.size())
 {}
 
-// Factories
-// ----------------------------------------------------------------------------
-
-payment_address payment_address::from_pay_public_key_hash_script(chain::script const& script, uint8_t version) {
-    auto const ops = script.operations();
-    if ( ! chain::script::is_pay_public_key_hash_pattern(ops)) {
-        return {};
-    }
-    short_hash hash;
-    std::copy(ops[2].data().begin(), ops[2].data().begin() + short_hash_size, hash.begin());
-
-    return payment_address{hash, version};
-}
-
 // Validators.
 // ----------------------------------------------------------------------------
 
@@ -92,7 +55,7 @@ bool payment_address::is_address(byte_span decoded) {
     return (decoded.size() == payment_size) && verify_checksum(decoded);
 }
 
-// Factories.
+// CashAddr helpers (BCH-only).
 // ----------------------------------------------------------------------------
 
 //TODO(fernando): move BCH cashaddr to another place
@@ -148,30 +111,28 @@ std::optional<config::network> payment_address::detect_cashaddr_network(std::str
     return std::nullopt;
 }
 
-payment_address payment_address::from_string_cashaddr(std::string const& address, config::network net) {
+expect<payment_address> payment_address::from_string_cashaddr(std::string const& address, config::network net) {
     auto const expected_prefix = cashaddr_prefix_for(net);
     auto const [prefix, payload] = cashaddr::decode(address, std::string(expected_prefix));
 
     if (prefix != expected_prefix) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     if (payload.empty()) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     // Check that the padding is zero.
     size_t extrabits = payload.size() * 5 % 8;
     if (extrabits >= 5) {
-        // We have more padding than allowed.
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     uint8_t last = payload.back();
     uint8_t mask = (1U << extrabits) - 1;
     if ((last & mask) != 0) {
-        // We have non zero bits as padding.
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     data_chunk data;
@@ -182,7 +143,7 @@ payment_address payment_address::from_string_cashaddr(std::string const& address
     uint8_t version = data[0];
     if ((version & 0x80) != 0) {
         // First bit is reserved.
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     auto type = cash_addr_type((version >> 3U) & 0x1f);
@@ -193,120 +154,109 @@ payment_address payment_address::from_string_cashaddr(std::string const& address
 
     // Check that we decoded the exact number of bytes we expected.
     if (data.size() != hash_size + 1) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     if (data.size() == short_hash_size + 1) {
         short_hash hash;
-        if ((data.size() - 1) != hash.size()) {
-            return {};
-        }
         std::copy(std::begin(data) + 1, std::end(data), std::begin(hash));
 
-        if (prefix == payment_address::cashaddr_prefix_mainnet) {
-            return payment_address{hash, type == PUBKEY_TYPE ? payment_address::mainnet_p2kh : payment_address::mainnet_p2sh};
+        if (prefix == cashaddr_prefix_mainnet) {
+            return payment_address{hash, type == PUBKEY_TYPE ? mainnet_p2kh : mainnet_p2sh};
         }
-        return payment_address{hash, type == PUBKEY_TYPE ? payment_address::testnet_p2kh : payment_address::testnet_p2sh};
+        return payment_address{hash, type == PUBKEY_TYPE ? testnet_p2kh : testnet_p2sh};
     }
 
-    if (data.size() == hash_size + 1) {
-        hash_digest hash;
-        if ((data.size() - 1) != hash.size()) {
-            return {};
-        }
-        std::copy(std::begin(data) + 1, std::end(data), std::begin(hash));
+    // 32-byte hash variant (BCH 2025 Leibniz `pay_script_hash_32`).
+    hash_digest hash;
+    std::copy(std::begin(data) + 1, std::end(data), std::begin(hash));
 
-        if (prefix == payment_address::cashaddr_prefix_mainnet) {
-            return payment_address{
-                hash,
-                type == PUBKEY_TYPE ?
-                    payment_address::mainnet_p2kh :
-                    payment_address::mainnet_p2sh
-            };
-        }
-        return payment_address{hash, type == PUBKEY_TYPE ? payment_address::testnet_p2kh : payment_address::testnet_p2sh};
+    if (prefix == cashaddr_prefix_mainnet) {
+        return payment_address{hash, type == PUBKEY_TYPE ? mainnet_p2kh : mainnet_p2sh};
     }
-
-    // Invalid address.
-    return {};
+    return payment_address{hash, type == PUBKEY_TYPE ? testnet_p2kh : testnet_p2sh};
 }
 
 #endif  //KTH_CURRENCY_BCH
 
-payment_address payment_address::from_string(std::string const& address) {
+// Named factories.
+// ----------------------------------------------------------------------------
+
+// static
+expect<payment_address> payment_address::parse_from(std::string_view address) {
+    std::string const s{address};
     payment decoded;
-    if ( ! decode_base58(decoded, address) || ! is_address(decoded)) {
-#if defined(KTH_CURRENCY_BCH)
-        auto const net = detect_cashaddr_network(address);
-        if ( ! net) return {};
-        return from_string_cashaddr(address, *net);
-#else
-        return {};
-#endif  //KTH_CURRENCY_BCH
+    if (decode_base58(decoded, s) && is_address(decoded)) {
+        return from_payment(decoded);
     }
-    return payment_address{decoded};
+#if defined(KTH_CURRENCY_BCH)
+    auto const net = detect_cashaddr_network(s);
+    if (net) {
+        return from_string_cashaddr(s, *net);
+    }
+#endif
+    return std::unexpected(kth::error::illegal_value);
 }
 
-payment_address payment_address::from_string(std::string const& address, config::network net) {
+// static
+expect<payment_address> payment_address::parse_from(std::string_view address, config::network net) {
+    std::string const s{address};
     payment decoded;
-    if ( ! decode_base58(decoded, address) || ! is_address(decoded)) {
-#if defined(KTH_CURRENCY_BCH)
-        return from_string_cashaddr(address, net);
-#else
-        return {};
-#endif  //KTH_CURRENCY_BCH
+    if (decode_base58(decoded, s) && is_address(decoded)) {
+        return from_payment(decoded);
     }
-    return payment_address{decoded};
+#if defined(KTH_CURRENCY_BCH)
+    return from_string_cashaddr(s, net);
+#else
+    (void)net;
+    return std::unexpected(kth::error::illegal_value);
+#endif
 }
 
-payment_address payment_address::from_payment(payment const& decoded) {
+// static
+expect<payment_address> payment_address::from_payment(payment const& decoded) {
     if ( ! is_address(decoded)) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
-
     auto const hash = slice<1, short_hash_size + 1>(decoded);
     return payment_address{hash, decoded.front()};
 }
 
-payment_address payment_address::from_private(ec_private const& secret) {
-    if ( ! secret) {
-        return payment_address{};
+// static
+expect<payment_address> payment_address::from_ec_private(ec_private const& secret) {
+    if ( ! secret.valid()) {
+        return std::unexpected(kth::error::illegal_value);
     }
-
-    return payment_address{secret.to_public(), secret.payment_version()};
+    return from_ec_public(secret.to_public(), secret.payment_version());
 }
 
-payment_address payment_address::from_public(ec_public const& point, uint8_t version) {
-    if ( ! point) {
-        return payment_address{};
+// static
+expect<payment_address> payment_address::from_ec_public(ec_public const& point, uint8_t version) {
+    if ( ! point.valid()) {
+        return std::unexpected(kth::error::illegal_value);
     }
-
     auto const data = point.to_data();
     if ( ! data) {
-        return payment_address{};
+        return std::unexpected(kth::error::illegal_value);
     }
-
     return payment_address{bitcoin_short_hash(*data), version};
 }
 
+// static
 payment_address payment_address::from_script(chain::script const& script, uint8_t version) {
-    return payment_address(bitcoin_short_hash(kth::to_data_chunk(script, false)), version);
+    return payment_address{bitcoin_short_hash(kth::to_data_chunk(script, false)), version};
 }
 
-// Cast operators.
-// ----------------------------------------------------------------------------
-
-payment_address::operator bool() const {
-    return valid_;
+// static
+expect<payment_address> payment_address::from_pay_public_key_hash_script(chain::script const& script, uint8_t version) {
+    auto const ops = script.operations();
+    if ( ! chain::script::is_pay_public_key_hash_pattern(ops)) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    short_hash hash;
+    std::copy(ops[2].data().begin(), ops[2].data().begin() + short_hash_size, hash.begin());
+    return payment_address{hash, version};
 }
-
-bool payment_address::valid() const {
-    return valid_;
-}
-
-// payment_address::operator short_hash const&() const {
-//     return hash_;
-// }
 
 // Serializer.
 // ----------------------------------------------------------------------------
@@ -318,20 +268,28 @@ std::string payment_address::encoded_legacy() const {
     // such an address would silently truncate to the first 20
     // bytes — surface that as an empty string sentinel so callers
     // can detect "no legacy form available" instead of acting on
-    // wrong-but-plausible output. CashAddr (`encoded_cashaddr` /
-    // `encoded_token`) is the right encoder for 32-byte hashes.
+    // wrong-but-plausible output.
     //
     // Default-constructed / invalid addresses (`hash_size_ == 0`)
     // fall through deliberately: the resulting "1111…oLvT2"
     // base58-of-zeros sentinel has been the documented "this is
-    // an uninitialised address" marker for years, and several
-    // callers rely on the recognisable string to distinguish a
-    // freshly-constructed instance from a real one. Only the
-    // *larger-than-20* case is truncation.
+    // an uninitialised address" marker for years.
     if (hash_size_ > short_hash_size) {
         return {};
     }
     return encode_base58(wrap(version_, hash20()));
+}
+
+std::string payment_address::to_string() const {
+#if defined(KTH_CURRENCY_BCH)
+    // Under BCH, CashAddr is the canonical wire form. token-unaware
+    // matches the modern default; callers wanting the token-aware
+    // variant call `encoded_token()` (or `encoded_cashaddr(true)`)
+    // explicitly.
+    return encoded_cashaddr(false);
+#else
+    return encoded_legacy();
+#endif
 }
 
 #if defined(KTH_CURRENCY_BCH)
@@ -346,30 +304,14 @@ data_chunk pack_addr_data_(T const& id, uint8_t type) {
     uint8_t encoded_size = 0;
 
     switch (size * 8) {
-        case 160:
-            encoded_size = 0;
-            break;
-        case 192:
-            encoded_size = 1;
-            break;
-        case 224:
-            encoded_size = 2;
-            break;
-        case 256:
-            encoded_size = 3;
-            break;
-        case 320:
-            encoded_size = 4;
-            break;
-        case 384:
-            encoded_size = 5;
-            break;
-        case 448:
-            encoded_size = 6;
-            break;
-        case 512:
-            encoded_size = 7;
-            break;
+        case 160: encoded_size = 0; break;
+        case 192: encoded_size = 1; break;
+        case 224: encoded_size = 2; break;
+        case 256: encoded_size = 3; break;
+        case 320: encoded_size = 4; break;
+        case 384: encoded_size = 5; break;
+        case 448: encoded_size = 6; break;
+        case 512: encoded_size = 7; break;
         default:
             throw std::runtime_error("Error packing cashaddr: invalid address length");
     }
@@ -389,31 +331,18 @@ data_chunk pack_addr_data_(T const& id, uint8_t type) {
 }
 
 std::string encode_cashaddr_(payment_address const& addr, bool token_aware) {
-    // Mainnet
-    if (addr.version() == payment_address::mainnet_p2kh || addr.version() == payment_address::mainnet_p2sh) {
-        if (token_aware) {
-            return cashaddr::encode(
-                payment_address::cashaddr_prefix_mainnet,
-                pack_addr_data_(addr.hash_span(), addr.version() == payment_address::mainnet_p2kh ? TOKEN_PUBKEY_TYPE : TOKEN_SCRIPT_TYPE));
-        }
-        return cashaddr::encode(
-            payment_address::cashaddr_prefix_mainnet,
-            pack_addr_data_(
-                addr.hash_span(),
-                addr.version() == payment_address::mainnet_p2kh ?
-                    PUBKEY_TYPE :
-                    SCRIPT_TYPE)
-        );
-    }
+    auto const p2kh_type = token_aware ? TOKEN_PUBKEY_TYPE : PUBKEY_TYPE;
+    auto const p2sh_type = token_aware ? TOKEN_SCRIPT_TYPE : SCRIPT_TYPE;
 
-    // Testnet
+    if (addr.version() == payment_address::mainnet_p2kh || addr.version() == payment_address::mainnet_p2sh) {
+        auto const type = addr.version() == payment_address::mainnet_p2kh ? p2kh_type : p2sh_type;
+        return cashaddr::encode(payment_address::cashaddr_prefix_mainnet,
+                                pack_addr_data_(addr.hash_span(), type));
+    }
     if (addr.version() == payment_address::testnet_p2kh || addr.version() == payment_address::testnet_p2sh) {
-        if (token_aware) {
-            return cashaddr::encode(payment_address::cashaddr_prefix_testnet,
-                pack_addr_data_(addr.hash_span(), addr.version() == payment_address::testnet_p2kh ? TOKEN_PUBKEY_TYPE : TOKEN_SCRIPT_TYPE));
-        }
+        auto const type = addr.version() == payment_address::testnet_p2kh ? p2kh_type : p2sh_type;
         return cashaddr::encode(payment_address::cashaddr_prefix_testnet,
-            pack_addr_data_(addr.hash_span(), addr.version() == payment_address::testnet_p2kh ? PUBKEY_TYPE : SCRIPT_TYPE));
+                                pack_addr_data_(addr.hash_span(), type));
     }
     return "";
 }
@@ -433,10 +362,6 @@ std::string payment_address::encoded_token() const {
 // Accessors.
 // ----------------------------------------------------------------------------
 
-uint8_t payment_address::version() const {
-    return version_;
-}
-
 kth::byte_span payment_address::hash_span() const {
     return {hash_data_.begin(), hash_size_};
 }
@@ -446,14 +371,7 @@ short_hash payment_address::hash20() const {
     // 32-byte hash that doesn't fit in a `short_hash`. Returning
     // the first 20 bytes would be silent truncation. Surface that
     // as the zero sentinel so callers can detect "no 20-byte hash
-    // available" — use `hash32()` for 32-byte payloads or
-    // `hash_span()` for the general case.
-    //
-    // Smaller-than-20 cases (default-constructed addresses have
-    // `hash_size_ == 0`) fall through: the first 20 bytes of
-    // `hash_data_` are zeros, so callers reading `hash20()` on
-    // an uninitialised address still get `null_short_hash` — the
-    // pre-existing convention — without the guard firing.
+    // available".
     if (hash_size_ > short_hash_size) {
         return null_short_hash;
     }
@@ -466,62 +384,19 @@ hash_digest const& payment_address::hash32() const {
     return hash_data_;
 }
 
-// Methods.
-// ----------------------------------------------------------------------------
-
 payment payment_address::to_payment() const {
     // `payment` is the fixed 25-byte (`version` + 20-byte hash +
     // 4-byte checksum) layout. There's no representation for a
-    // 32-byte hash — calling this on a `pay_script_hash_32`
-    // address would silently truncate via `hash20()` and then
-    // checksum-sign the truncated bytes, producing a plausible-
-    // looking but wrong payment. Return the zero sentinel so
-    // callers can detect "no `payment` representation" and route
-    // through CashAddr instead.
-    //
-    // Default-constructed addresses fall through to keep the
-    // documented "uninitialised payment" base58 sentinel
-    // (`encoded_legacy()` then yields "1111…oLvT2").
+    // 32-byte hash — surface as the zero sentinel so callers can
+    // detect "no `payment` representation" and route through
+    // CashAddr instead.
     if (hash_size_ > short_hash_size) {
         return payment{};
     }
     return wrap(version_, hash20());
 }
 
-// Operators.
-// ----------------------------------------------------------------------------
-bool payment_address::operator<(payment_address const& x) const {
-    return encoded_legacy() < x.encoded_legacy();
-}
-
-bool payment_address::operator==(payment_address const& x) const {
-    return valid_ == x.valid_ && version_ == x.version_ &&
-           std::equal(hash_data_.begin(), hash_data_.end(), x.hash_data_.begin());
-}
-
-bool payment_address::operator!=(payment_address const& x) const {
-    return !(*this == x);
-}
-
-std::istream& operator>>(std::istream& in, payment_address& to) {
-    std::string value;
-    in >> value;
-    to = payment_address(value);
-
-    if ( ! to) {
-        using namespace boost::program_options;
-        BOOST_THROW_EXCEPTION(invalid_option_value(value));
-    }
-
-    return in;
-}
-
-std::ostream& operator<<(std::ostream& out, payment_address const& of) {
-    out << of.encoded_legacy();
-    return out;
-}
-
-// Static functions.
+// Static extraction.
 // ----------------------------------------------------------------------------
 
 // Context free input extraction is provably ambiguous (see extract_input).
@@ -532,19 +407,29 @@ payment_address::list payment_address::extract(chain::script const& script, uint
 
 // Context free input extraction is provably ambiguous. See inline comments.
 payment_address::list payment_address::extract_input(chain::script const& script, uint8_t p2kh_version, uint8_t p2sh_version) {
-    // A sign_public_key_hash result always implies sign_script_hash as well.
     auto const pattern = script.input_pattern();
-    // std::println("input_pattern(): {}", int(pattern));
-
     auto const ops = script.operations();
 
     switch (pattern) {
-        // Given lack of context (prevout) sign_public_key_hash is always ambiguous
-        // with sign_script_hash, so return both potentially-correct addresses.
-        // A server can differentiate by extracting from the previous output.
+        // Given lack of context (prevout) sign_public_key_hash is always
+        // ambiguous with sign_script_hash, so return both potentially-
+        // correct addresses. A server can differentiate by extracting
+        // from the previous output.
         case script_pattern::sign_public_key_hash: {
+            auto const pub = ec_public::from_data(ops[1].data());
+            if ( ! pub) {
+                return {
+                    payment_address{bitcoin_short_hash(ops.back().data()), p2sh_version}
+                };
+            }
+            auto pa = from_ec_public(*pub, p2kh_version);
+            if ( ! pa) {
+                return {
+                    payment_address{bitcoin_short_hash(ops.back().data()), p2sh_version}
+                };
+            }
             return {
-                payment_address{ec_public{ops[1].data()}, p2kh_version},
+                *pa,
                 payment_address{bitcoin_short_hash(ops.back().data()), p2sh_version}
             };
         }
@@ -556,21 +441,12 @@ payment_address::list payment_address::extract_input(chain::script const& script
 
         // There is no address in sign_public_key script (signature only)
         // and the public key cannot be extracted from the signature.
-        // Given lack of context (prevout) sign_public_key is always ambiguous
-        // with sign_script_hash (though actual conflict seems very unlikely).
-        // A server can obtain by extracting from the previous output.
         case script_pattern::sign_public_key:
-
         // There are no addresses in sign_multisig script, signatures only.
-        // Nonstandard (non-zero) first op sign_multisig may conflict with
-        // sign_public_key_hash and/or sign_script_hash (or will be non_standard).
-        // A server can obtain the public keys extracting from the previous
-        // output, but bare multisig does not associate a payment address.
         case script_pattern::sign_multisig:
         case script_pattern::non_standard:
-        default: {
+        default:
             return {};
-        }
     }
 }
 
@@ -596,10 +472,16 @@ payment_address::list payment_address::extract_output(chain::script const& scrip
             };
         }
         case script_pattern::pay_to_public_key: {
-            return {
-                // pay_to_public_key is not p2kh but we conflate for tracking.
-                payment_address{ec_public{ops[0].data()}, p2kh_version}
-            };
+            auto const pub = ec_public::from_data(ops[0].data());
+            if ( ! pub) {
+                return {};
+            }
+            // pay_to_public_key is not p2kh but we conflate for tracking.
+            auto pa = from_ec_public(*pub, p2kh_version);
+            if ( ! pa) {
+                return {};
+            }
+            return { *pa };
         }
 
         // Bare multisig, null data and pay-to-script (BCH 2026-May leibniz)
@@ -610,9 +492,8 @@ payment_address::list payment_address::extract_output(chain::script const& scrip
         case script_pattern::null_data:
         case script_pattern::pay_to_script:
         case script_pattern::non_standard:
-        default: {
+        default:
             return {};
-        }
     }
 }
 

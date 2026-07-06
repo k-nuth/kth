@@ -4,56 +4,30 @@
 
 #include <kth/domain/config/ec_private.hpp>
 
-#include <iostream>
-#include <sstream>
 #include <string>
+#include <string_view>
 
-#include <boost/program_options.hpp>
-
-// #include <kth/domain.hpp>
-// #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
+#include <kth/infrastructure/math/elliptic_curve.hpp>
 
 namespace kth::domain::config {
 
-// ec_secret base16 format is private to bx.
-static
-bool decode_secret(ec_secret& secret, std::string const& encoded) {
-    auto result = decode_base16<ec_secret_size>(encoded);
-    if ( ! result) {
-        return false;
+// static
+expect<ec_private> ec_private::parse_from(std::string_view hexcode) {
+    auto decoded = decode_base16<ec_secret_size>(std::string{hexcode});
+    if ( ! decoded) {
+        return std::unexpected(kth::error::illegal_value);
     }
-    secret = *result;
-    return verify(secret);
-}
-
-ec_private::ec_private(std::string const& hexcode) {
-    //TODO(fernando): Eliminate std::stringstream everywhere (performance)
-    std::stringstream(hexcode) >> *this;
-}
-
-ec_private::ec_private(ec_secret const& secret)
-    : value_(secret) {
-}
-
-ec_private::operator ec_secret const&() const {
-    return value_;
-}
-
-std::istream& operator>>(std::istream& input, ec_private& argument) {
-    std::string hexcode;
-    input >> hexcode;
-
-    if ( ! decode_secret(argument.value_, hexcode)) {
-        BOOST_THROW_EXCEPTION(boost::program_options::invalid_option_value(hexcode));
+    if ( ! verify(*decoded)) {
+        return std::unexpected(kth::error::illegal_value);
     }
-
-    return input;
+    return ec_private{*decoded};
 }
 
-std::ostream& operator<<(std::ostream& output, ec_private const& argument) {
-    output << encode_base16(argument.value_);
-    return output;
+std::string ec_private::to_string() const {
+    return encode_base16(value_);
 }
 
 } // namespace kth::domain::config

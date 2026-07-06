@@ -9,12 +9,12 @@ using namespace kd;
 
 // Start Test Suite: message header tests
 
-TEST_CASE("message header constructor 1  always initialized invalid", "[message header]") {
+TEST_CASE("message header constructor 1 always initialized invalid", "[message header]") {
     message::header instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("message header  constructor 2  always  equals params", "[message header]") {
+TEST_CASE("message header constructor 2 always equals params", "[message header]") {
     uint32_t version = 10u;
     hash_digest previous = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
     hash_digest merkle = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
@@ -32,7 +32,7 @@ TEST_CASE("message header  constructor 2  always  equals params", "[message head
     REQUIRE(merkle == instance.merkle());
 }
 
-TEST_CASE("message header  constructor 3  always  equals params", "[message header]") {
+TEST_CASE("message header constructor 3 always equals params", "[message header]") {
     uint32_t version = 10u;
     hash_digest previous = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
     hash_digest merkle = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
@@ -50,7 +50,7 @@ TEST_CASE("message header  constructor 3  always  equals params", "[message head
     REQUIRE(merkle == instance.merkle());
 }
 
-TEST_CASE("message header  constructor 4  always  equals params", "[message header]") {
+TEST_CASE("message header constructor 4 always equals params", "[message header]") {
     chain::header const expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -64,7 +64,7 @@ TEST_CASE("message header  constructor 4  always  equals params", "[message head
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("message header  constructor 5  always  equals params", "[message header]") {
+TEST_CASE("message header constructor 5 always equals params", "[message header]") {
     chain::header expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -78,7 +78,7 @@ TEST_CASE("message header  constructor 5  always  equals params", "[message head
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("message header  constructor 6  always  equals params", "[message header]") {
+TEST_CASE("message header constructor 6 always equals params", "[message header]") {
     const message::header expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -92,7 +92,7 @@ TEST_CASE("message header  constructor 6  always  equals params", "[message head
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("message header  constructor 7  always  equals params", "[message header]") {
+TEST_CASE("message header constructor 7 always equals params", "[message header]") {
     message::header expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -106,7 +106,7 @@ TEST_CASE("message header  constructor 7  always  equals params", "[message head
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("message header from data insufficient bytes  failure", "[message header]") {
+TEST_CASE("message header from data insufficient bytes failure", "[message header]") {
     data_chunk data(10);
     message::header header;
     byte_reader reader(data);
@@ -115,7 +115,7 @@ TEST_CASE("message header from data insufficient bytes  failure", "[message head
     REQUIRE( ! header.is_valid());
 }
 
-TEST_CASE("message header from data valid input canonical version  no transaction count", "[message header]") {
+TEST_CASE("message header from data valid input canonical version no transaction count", "[message header]") {
     auto const version = message::version::level::canonical;
     message::header expected{
         10u,
@@ -138,7 +138,7 @@ TEST_CASE("message header from data valid input canonical version  no transactio
     REQUIRE(expected.serialized_size(version) == chain::header::satoshi_fixed_size());
 }
 
-TEST_CASE("message header from data valid input  success", "[message header]") {
+TEST_CASE("message header from data valid input success", "[message header]") {
     auto const version = message::header::version_minimum;
     message::header expected{
         10u,
@@ -163,7 +163,7 @@ TEST_CASE("message header from data valid input  success", "[message header]") {
 
 
 
-TEST_CASE("message header  operator assign equals 1  always  matches equivalent", "[message header]") {
+TEST_CASE("message header operator assign equals 1 always matches equivalent", "[message header]") {
     chain::header value(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -182,7 +182,7 @@ TEST_CASE("message header  operator assign equals 1  always  matches equivalent"
     REQUIRE(value == instance);
 }
 
-TEST_CASE("message header  operator assign equals 2  always  matches equivalent", "[message header]") {
+TEST_CASE("message header operator assign equals 2 always matches equivalent", "[message header]") {
     message::header value(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -201,7 +201,7 @@ TEST_CASE("message header  operator assign equals 2  always  matches equivalent"
     REQUIRE(value == instance);
 }
 
-TEST_CASE("message header  operator boolean equals 1  duplicates  returns true", "[message header]") {
+TEST_CASE("message header operator boolean equals 1 duplicates returns true", "[message header]") {
     chain::header const expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -214,7 +214,7 @@ TEST_CASE("message header  operator boolean equals 1  duplicates  returns true",
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("message header  operator boolean equals 1  differs  returns false", "[message header]") {
+TEST_CASE("message header operator boolean equals 1 differs returns false", "[message header]") {
     chain::header const expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -227,7 +227,7 @@ TEST_CASE("message header  operator boolean equals 1  differs  returns false", "
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("message header  operator boolean not equals 1  duplicates  returns false", "[message header]") {
+TEST_CASE("message header operator boolean not equals 1 duplicates returns false", "[message header]") {
     chain::header const expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -240,7 +240,7 @@ TEST_CASE("message header  operator boolean not equals 1  duplicates  returns fa
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("message header  operator boolean not equals 1  differs  returns true", "[message header]") {
+TEST_CASE("message header operator boolean not equals 1 differs returns true", "[message header]") {
     chain::header const expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -253,7 +253,7 @@ TEST_CASE("message header  operator boolean not equals 1  differs  returns true"
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("message header  operator boolean equals 2  duplicates  returns true", "[message header]") {
+TEST_CASE("message header operator boolean equals 2 duplicates returns true", "[message header]") {
     const message::header expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -266,7 +266,7 @@ TEST_CASE("message header  operator boolean equals 2  duplicates  returns true",
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("message header  operator boolean equals 2  differs  returns false", "[message header]") {
+TEST_CASE("message header operator boolean equals 2 differs returns false", "[message header]") {
     const message::header expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -279,7 +279,7 @@ TEST_CASE("message header  operator boolean equals 2  differs  returns false", "
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("message header  operator boolean not equals 2  duplicates  returns false", "[message header]") {
+TEST_CASE("message header operator boolean not equals 2 duplicates returns false", "[message header]") {
     const message::header expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -292,7 +292,7 @@ TEST_CASE("message header  operator boolean not equals 2  duplicates  returns fa
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("message header  operator boolean not equals 2  differs  returns true", "[message header]") {
+TEST_CASE("message header operator boolean not equals 2 differs returns true", "[message header]") {
     const message::header expected(
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,

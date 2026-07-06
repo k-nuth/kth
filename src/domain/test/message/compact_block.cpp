@@ -9,7 +9,7 @@ using namespace kd;
 
 // Start Test Suite: compact block tests
 
-TEST_CASE("compact block  constructor 1  always invalid", "[compact block]") {
+TEST_CASE("compact block constructor 1 always invalid", "[compact block]") {
     message::compact_block instance;
     REQUIRE( ! instance.is_valid());
 }
@@ -21,7 +21,7 @@ uint64_t convert_to_uint64t(std::string const& rawdata) {
     return value;
 }
 
-TEST_CASE("compact block  constructor 2  always  equals params", "[compact block]") {
+TEST_CASE("compact block constructor 2 always equals params", "[compact block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -50,7 +50,7 @@ TEST_CASE("compact block  constructor 2  always  equals params", "[compact block
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("compact block  constructor 3  always  equals params", "[compact block]") {
+TEST_CASE("compact block constructor 3 always equals params", "[compact block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -83,7 +83,7 @@ TEST_CASE("compact block  constructor 3  always  equals params", "[compact block
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("compact block  constructor 4  always  equals params", "[compact block]") {
+TEST_CASE("compact block constructor 4 always equals params", "[compact block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -114,7 +114,7 @@ TEST_CASE("compact block  constructor 4  always  equals params", "[compact block
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("compact block  constructor 5  always  equals params", "[compact block]") {
+TEST_CASE("compact block constructor 5 always equals params", "[compact block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -144,7 +144,7 @@ TEST_CASE("compact block  constructor 5  always  equals params", "[compact block
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("compact block from data insufficient bytes  failure", "[compact block]") {
+TEST_CASE("compact block from data insufficient bytes failure", "[compact block]") {
     data_chunk const raw{0xab, 0xcd};
     message::compact_block instance{};
     byte_reader reader(raw);
@@ -153,7 +153,7 @@ TEST_CASE("compact block from data insufficient bytes  failure", "[compact block
 }
 
 // TODO(fernando): review - original hex had 267 chars (odd), base16_literal truncated last char silently. Fixed to 266 chars.
-TEST_CASE("compact block from data insufficient bytes mid transaction  failure", "[compact block]") {
+TEST_CASE("compact block from data insufficient bytes mid transaction failure", "[compact block]") {
     auto const raw = to_chunk("0a0000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d61900000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a221b08003e8a6300240c0100d20400000000000004000000121212121212343434343434565656565678789a9a0201000000010000000000000100000001000000"_base16);
 
     message::compact_block instance{};
@@ -162,7 +162,7 @@ TEST_CASE("compact block from data insufficient bytes mid transaction  failure",
     REQUIRE( ! result);
 }
 
-TEST_CASE("compact block from data insufficient version  failure", "[compact block]") {
+TEST_CASE("compact block from data insufficient version failure", "[compact block]") {
     auto const raw = to_chunk("0a0000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d61900000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a221b08003e8a6300240c0100d20400000000000004000000121212121212343434343434565656565678789a9a0201000000010000000000000100000001000000000000"_base16);
 
     byte_reader reader(raw);
@@ -177,7 +177,7 @@ TEST_CASE("compact block from data insufficient version  failure", "[compact blo
     REQUIRE( ! result);
 }
 
-TEST_CASE("compact block from data valid input  success", "[compact block]") {
+TEST_CASE("compact block from data valid input success", "[compact block]") {
     auto const raw = to_chunk("0a0000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d61900000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a221b08003e8a6300240c0100d20400000000000004000000121212121212343434343434565656565678789a9a0201000000010000000000000100000001000000000000"_base16);
 
     byte_reader reader(raw);
@@ -198,7 +198,7 @@ TEST_CASE("compact block from data valid input  success", "[compact block]") {
     REQUIRE(expected.serialized_size(message::compact_block::version_minimum) == result.serialized_size(message::compact_block::version_minimum));
 }
 
-TEST_CASE("compact block  header accessor 1  always  returns initialized value", "[compact block]") {
+TEST_CASE("compact block header accessor 1 always returns initialized value", "[compact block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -222,7 +222,7 @@ TEST_CASE("compact block  header accessor 1  always  returns initialized value",
     REQUIRE(header == instance.header());
 }
 
-TEST_CASE("compact block  header accessor 2  always  returns initialized value", "[compact block]") {
+TEST_CASE("compact block header accessor 2 always returns initialized value", "[compact block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -246,7 +246,7 @@ TEST_CASE("compact block  header accessor 2  always  returns initialized value",
     REQUIRE(header == instance.header());
 }
 
-TEST_CASE("compact block  header setter 1  roundtrip  success", "[compact block]") {
+TEST_CASE("compact block header setter 1 roundtrip success", "[compact block]") {
     chain::header const value(10u,
                               "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                               "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -260,7 +260,7 @@ TEST_CASE("compact block  header setter 1  roundtrip  success", "[compact block]
     REQUIRE(value == instance.header());
 }
 
-TEST_CASE("compact block  header setter 2  roundtrip  success", "[compact block]") {
+TEST_CASE("compact block header setter 2 roundtrip success", "[compact block]") {
     chain::header const value(10u,
                               "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                               "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -275,7 +275,7 @@ TEST_CASE("compact block  header setter 2  roundtrip  success", "[compact block]
     REQUIRE(value == instance.header());
 }
 
-TEST_CASE("compact block  nonce accessor  always  returns initialized value", "[compact block]") {
+TEST_CASE("compact block nonce accessor always returns initialized value", "[compact block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -299,7 +299,7 @@ TEST_CASE("compact block  nonce accessor  always  returns initialized value", "[
     REQUIRE(nonce == instance.nonce());
 }
 
-TEST_CASE("compact block  nonce setter  roundtrip  success", "[compact block]") {
+TEST_CASE("compact block nonce setter roundtrip success", "[compact block]") {
     uint64_t value = 123356u;
 
     message::compact_block instance;
@@ -308,7 +308,7 @@ TEST_CASE("compact block  nonce setter  roundtrip  success", "[compact block]") 
     REQUIRE(value == instance.nonce());
 }
 
-TEST_CASE("compact block  short ids accessor 1  always  returns initialized value", "[compact block]") {
+TEST_CASE("compact block short ids accessor 1 always returns initialized value", "[compact block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -332,7 +332,7 @@ TEST_CASE("compact block  short ids accessor 1  always  returns initialized valu
     REQUIRE(short_ids == instance.short_ids());
 }
 
-TEST_CASE("compact block  short ids accessor 2  always  returns initialized value", "[compact block]") {
+TEST_CASE("compact block short ids accessor 2 always returns initialized value", "[compact block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -356,7 +356,7 @@ TEST_CASE("compact block  short ids accessor 2  always  returns initialized valu
     REQUIRE(short_ids == instance.short_ids());
 }
 
-TEST_CASE("compact block  short ids setter 1  roundtrip  success", "[compact block]") {
+TEST_CASE("compact block short ids setter 1 roundtrip success", "[compact block]") {
     const message::compact_block::short_id_list value = {
         convert_to_uint64t("aaaaaaaaaaaa"),
         convert_to_uint64t("bbbbbbbbbbbb"),
@@ -369,7 +369,7 @@ TEST_CASE("compact block  short ids setter 1  roundtrip  success", "[compact blo
     REQUIRE(value == instance.short_ids());
 }
 
-TEST_CASE("compact block  short ids setter 2  roundtrip  success", "[compact block]") {
+TEST_CASE("compact block short ids setter 2 roundtrip success", "[compact block]") {
     const message::compact_block::short_id_list value = {
         convert_to_uint64t("aaaaaaaaaaaa"),
         convert_to_uint64t("bbbbbbbbbbbb"),
@@ -383,7 +383,7 @@ TEST_CASE("compact block  short ids setter 2  roundtrip  success", "[compact blo
     REQUIRE(value == instance.short_ids());
 }
 
-TEST_CASE("compact block  transactions accessor 1  always  returns initialized value", "[compact block]") {
+TEST_CASE("compact block transactions accessor 1 always returns initialized value", "[compact block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -407,7 +407,7 @@ TEST_CASE("compact block  transactions accessor 1  always  returns initialized v
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("compact block  transactions accessor 2  always  returns initialized value", "[compact block]") {
+TEST_CASE("compact block transactions accessor 2 always returns initialized value", "[compact block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -431,7 +431,7 @@ TEST_CASE("compact block  transactions accessor 2  always  returns initialized v
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("compact block  transactions setter 1  roundtrip  success", "[compact block]") {
+TEST_CASE("compact block transactions setter 1 roundtrip success", "[compact block]") {
     const message::prefilled_transaction::list value = {
         message::prefilled_transaction(10, chain::transaction(1, 48, {}, {})),
         message::prefilled_transaction(20, chain::transaction(2, 32, {}, {})),
@@ -443,7 +443,7 @@ TEST_CASE("compact block  transactions setter 1  roundtrip  success", "[compact 
     REQUIRE(value == instance.transactions());
 }
 
-TEST_CASE("compact block  transactions setter 2  roundtrip  success", "[compact block]") {
+TEST_CASE("compact block transactions setter 2 roundtrip success", "[compact block]") {
     const message::prefilled_transaction::list value = {
         message::prefilled_transaction(10, chain::transaction(1, 48, {}, {})),
         message::prefilled_transaction(20, chain::transaction(2, 32, {}, {})),
@@ -456,7 +456,7 @@ TEST_CASE("compact block  transactions setter 2  roundtrip  success", "[compact 
     REQUIRE(value == instance.transactions());
 }
 
-TEST_CASE("compact block  operator assign equals  always  matches equivalent", "[compact block]") {
+TEST_CASE("compact block operator assign equals always matches equivalent", "[compact block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -488,7 +488,7 @@ TEST_CASE("compact block  operator assign equals  always  matches equivalent", "
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("compact block  operator boolean equals  duplicates  returns true", "[compact block]") {
+TEST_CASE("compact block operator boolean equals duplicates returns true", "[compact block]") {
     const message::compact_block expected(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -509,7 +509,7 @@ TEST_CASE("compact block  operator boolean equals  duplicates  returns true", "[
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("compact block  operator boolean equals  differs  returns false", "[compact block]") {
+TEST_CASE("compact block operator boolean equals differs returns false", "[compact block]") {
     const message::compact_block expected(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -530,7 +530,7 @@ TEST_CASE("compact block  operator boolean equals  differs  returns false", "[co
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("compact block  operator boolean not equals  duplicates  returns false", "[compact block]") {
+TEST_CASE("compact block operator boolean not equals duplicates returns false", "[compact block]") {
     const message::compact_block expected(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -551,7 +551,7 @@ TEST_CASE("compact block  operator boolean not equals  duplicates  returns false
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("compact block  operator boolean not equals  differs  returns true", "[compact block]") {
+TEST_CASE("compact block operator boolean not equals differs returns true", "[compact block]") {
     const message::compact_block expected(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,

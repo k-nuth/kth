@@ -10,12 +10,12 @@ using namespace kth::domain::message;
 
 // Start Test Suite: get data tests
 
-TEST_CASE("get data  constructor 1  always invalid", "[get data]") {
+TEST_CASE("get data constructor 1 always invalid", "[get data]") {
     get_data const instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("get data  constructor 2  always  equals params", "[get data]") {
+TEST_CASE("get data constructor 2 always equals params", "[get data]") {
     static inventory_vector::list const values =
         {
             inventory_vector{
@@ -30,7 +30,7 @@ TEST_CASE("get data  constructor 2  always  equals params", "[get data]") {
     REQUIRE(values == instance.inventories());
 }
 
-TEST_CASE("get data  constructor 3  always  equals params", "[get data]") {
+TEST_CASE("get data constructor 3 always equals params", "[get data]") {
     static auto const type = inventory_vector::type_id::error;
     static auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     inventory_vector::list const values{
@@ -44,7 +44,7 @@ TEST_CASE("get data  constructor 3  always  equals params", "[get data]") {
     REQUIRE(hash == inventories[0].hash());
 }
 
-TEST_CASE("get data  constructor 4  always  equals params", "[get data]") {
+TEST_CASE("get data constructor 4 always equals params", "[get data]") {
     static auto const type = inventory_vector::type_id::error;
     static auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     static hash_list const hashes{hash};
@@ -57,7 +57,7 @@ TEST_CASE("get data  constructor 4  always  equals params", "[get data]") {
     REQUIRE(hash == inventories[0].hash());
 }
 
-TEST_CASE("get data  constructor 5  always  equals params", "[get data]") {
+TEST_CASE("get data constructor 5 always equals params", "[get data]") {
     static auto const type = inventory_vector::type_id::error;
     static auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
@@ -69,7 +69,7 @@ TEST_CASE("get data  constructor 5  always  equals params", "[get data]") {
     REQUIRE(hash == inventories[0].hash());
 }
 
-TEST_CASE("get data  constructor 6  always  equals params", "[get data]") {
+TEST_CASE("get data constructor 6 always equals params", "[get data]") {
     static auto const type = inventory_vector::type_id::error;
     static auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
@@ -83,7 +83,7 @@ TEST_CASE("get data  constructor 6  always  equals params", "[get data]") {
     REQUIRE(value == instance);
 }
 
-TEST_CASE("get data  constructor 7  always  equals params", "[get data]") {
+TEST_CASE("get data constructor 7 always equals params", "[get data]") {
     static auto const type = inventory_vector::type_id::error;
     static auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
@@ -96,7 +96,7 @@ TEST_CASE("get data  constructor 7  always  equals params", "[get data]") {
     REQUIRE(hash == inventories[0].hash());
 }
 
-TEST_CASE("get data from data insufficient bytes  failure", "[get data]") {
+TEST_CASE("get data from data insufficient bytes failure", "[get data]") {
     static data_chunk const raw{0xab, 0xcd};
     get_data instance;
     static auto const version = version::level::maximum;
@@ -105,7 +105,7 @@ TEST_CASE("get data from data insufficient bytes  failure", "[get data]") {
     REQUIRE( ! result);
 }
 
-TEST_CASE("get data from data insufficient version  failure", "[get data]") {
+TEST_CASE("get data from data insufficient version failure", "[get data]") {
     static const get_data expected{
         {inventory_vector::type_id::error,
          "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash}};
@@ -116,7 +116,7 @@ TEST_CASE("get data from data insufficient version  failure", "[get data]") {
     REQUIRE( ! result);
 }
 
-TEST_CASE("get data from data valid input  success", "[get data]") {
+TEST_CASE("get data from data valid input success", "[get data]") {
     static const get_data expected{
         {inventory_vector::type_id::error,
          "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash}};
@@ -135,7 +135,7 @@ TEST_CASE("get data from data valid input  success", "[get data]") {
 
 
 
-TEST_CASE("get data  operator assign equals  always  matches equivalent", "[get data]") {
+TEST_CASE("get data operator assign equals always matches equivalent", "[get data]") {
     static auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     static inventory_vector::list const elements{
         inventory_vector(inventory_vector::type_id::error, hash)};
@@ -151,7 +151,7 @@ TEST_CASE("get data  operator assign equals  always  matches equivalent", "[get 
     REQUIRE(elements == instance.inventories());
 }
 
-TEST_CASE("get data  operator boolean equals  duplicates  returns true", "[get data]") {
+TEST_CASE("get data operator boolean equals duplicates returns true", "[get data]") {
     static auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     get_data const expected{
         inventory_vector(inventory_vector::type_id::error, hash)};
@@ -160,7 +160,7 @@ TEST_CASE("get data  operator boolean equals  duplicates  returns true", "[get d
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("get data  operator boolean equals  differs  returns false", "[get data]") {
+TEST_CASE("get data operator boolean equals differs returns false", "[get data]") {
     static auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     get_data const expected{
         inventory_vector(inventory_vector::type_id::error, hash)};
@@ -169,7 +169,7 @@ TEST_CASE("get data  operator boolean equals  differs  returns false", "[get dat
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("get data  operator boolean not equals  duplicates  returns false", "[get data]") {
+TEST_CASE("get data operator boolean not equals duplicates returns false", "[get data]") {
     static auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     get_data const expected{
         inventory_vector(inventory_vector::type_id::error, hash)};
@@ -178,7 +178,7 @@ TEST_CASE("get data  operator boolean not equals  duplicates  returns false", "[
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("get data  operator boolean not equals  differs  returns true", "[get data]") {
+TEST_CASE("get data operator boolean not equals differs returns true", "[get data]") {
     static auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     get_data const expected{
         inventory_vector(inventory_vector::type_id::error, hash)};

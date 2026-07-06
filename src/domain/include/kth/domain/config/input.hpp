@@ -5,73 +5,79 @@
 #ifndef KTH_INPUT_HPP
 #define KTH_INPUT_HPP
 
-#include <iostream>
 #include <string>
+#include <string_view>
+
+#include <fmt/core.h>
 
 #include <kth/domain/chain/input.hpp>
 #include <kth/domain/chain/input_point.hpp>
 #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
 
 namespace kth::domain::config {
 
 /**
  * Serialization helper stub for chain::input.
+ *
+ * Valid-by-construction: no default ctor. Callers obtain an instance
+ * via `parse_from` or one of the explicit domain-type ctors. A caller
+ * that needs "empty" semantics uses `std::optional<input>`.
+ *
+ * Wire format: `<txhash>:<index>[:<sequence>]`.
  */
 struct KD_API input {
-    input() = default;
 
     /**
-     * Initialization constructor.
-     * @param[in]  tuple  The value to initialize with.
+     * Parse the bx-tuple encoding. Returns `error::illegal_value` on
+     * malformed input. No exceptions.
      */
-    input(std::string const& tuple);
+    [[nodiscard]] static
+    expect<input> parse_from(std::string_view text);
 
     /**
-     * Initialization constructor. Only the point is retained.
-     * @param[in]  value  The value to initialize with.
+     * Wrap an already-populated chain::input.
      */
-    input(chain::input const& value);
-
-    input(input const& x);
-
-    /**
-     * Initialization constructor. Aspects of the input x than the point
-     * are defaulted.
-     * @param[in]  value  The value to initialize with.
-     */
-    input(chain::input_point const& value);
+    constexpr explicit
+    input(chain::input const& value)
+        : value_(value) {}
 
     /**
-     * Overload cast to internal type.
-     * @return  This object's value cast to internal type.
+     * Wrap a chain::input_point. Script defaults to empty; sequence
+     * defaults to `max_input_sequence`.
      */
-    operator chain::input const&() const;
+    explicit
+    input(chain::input_point const& value)
+        : value_(chain::input{value, {}, max_input_sequence}) {}
 
     /**
-     * Overload stream in. Throws if input is invalid.
-     * @param[in]   input     The input stream to read the value from.
-     * @param[out]  argument  The object to receive the read value.
-     * @return                The input stream reference.
+     * Explicit accessor. No implicit conversion — those used to make
+     * overload resolution surprising.
      */
-    friend std::istream& operator>>(std::istream& stream, input& argument);
+    [[nodiscard]] constexpr
+    chain::input const& value() const noexcept { return value_; }
 
     /**
-     * Overload stream out.
-     * @param[in]   output    The output stream to write the value to.
-     * @param[out]  argument  The object from which to obtain the value.
-     * @return                The output stream reference.
+     * Bx-tuple encoding used by `fmt::formatter<input>` and callers
+     * that need the wire representation.
      */
-    friend std::ostream& operator<<(std::ostream& output,
-                                    input const& argument);
+    [[nodiscard]]
+    std::string to_string() const;
 
 private:
-    /**
-     * The state of this object — populated by the string-tuple ctor
-     * or the stream-in operator. Empty until populated.
-     */
-    chain::input_opt value_;
+    chain::input value_;   // populated by every ctor / parse_from
 };
 
 } // namespace kth::domain::config
+
+template <>
+struct fmt::formatter<kth::domain::config::input> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    auto format(kth::domain::config::input const& value,
+                format_context& ctx) const {
+        return fmt::format_to(ctx.out(), "{}", value.to_string());
+    }
+};
 
 #endif

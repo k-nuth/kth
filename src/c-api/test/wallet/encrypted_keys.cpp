@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <kth/capi/error.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/wallet/ek_private.h>
 #include <kth/capi/wallet/ek_token.h>
@@ -54,7 +55,8 @@ TEST_CASE("C-API wallet::encrypted_keys - create_key_pair (vector 8, uncompresse
     // base58-check string into the raw 53-byte payload the encryption
     // function expects). This keeps the test honest: it exercises the
     // same input path a real C consumer would use.
-    kth_ek_token_mut_t token_handle = kth_wallet_ek_token_construct_from_encoded(kToken);
+    kth_ek_token_mut_t token_handle = NULL;
+    REQUIRE(kth_wallet_ek_token_parse_from(kToken, &token_handle) == kth_ec_success);
     REQUIRE(token_handle != NULL);
     kth_encrypted_token_t const token = kth_wallet_ek_token_token(token_handle);
     kth_wallet_ek_token_destruct(token_handle);
@@ -67,9 +69,9 @@ TEST_CASE("C-API wallet::encrypted_keys - create_key_pair (vector 8, uncompresse
 
     // Re-wrap the resulting 43-byte payload in an ek_private so we can
     // compare against the expected base58-check string.
-    kth_ek_private_mut_t priv = kth_wallet_ek_private_construct_from_value(&out_private);
+    kth_ek_private_mut_t priv = kth_wallet_ek_private_construct(&out_private);
     REQUIRE(priv != NULL);
-    char* encoded = kth_wallet_ek_private_encoded(priv);
+    char* encoded = kth_wallet_ek_private_to_string(priv);
     REQUIRE(encoded != NULL);
     REQUIRE(strcmp(encoded, kExpectedPrivate) == 0);
     kth_core_destruct_string(encoded);
@@ -80,7 +82,8 @@ TEST_CASE("C-API wallet::encrypted_keys - create_key_pair_unsafe matches the saf
           "[C-API WalletEncryptedKeys][create_key_pair]") {
     // Hit the same code path through the raw-pointer entry. Both must
     // agree; otherwise the safe/unsafe pair has drifted.
-    kth_ek_token_mut_t token_handle = kth_wallet_ek_token_construct_from_encoded(kToken);
+    kth_ek_token_mut_t token_handle = NULL;
+    REQUIRE(kth_wallet_ek_token_parse_from(kToken, &token_handle) == kth_ec_success);
     REQUIRE(token_handle != NULL);
     kth_encrypted_token_t const token = kth_wallet_ek_token_token(token_handle);
     kth_wallet_ek_token_destruct(token_handle);

@@ -2,7 +2,6 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-//TODO(fernando): use Boost.URL
 
 #include <test_helpers.hpp>
 #include <kth/infrastructure.hpp>
@@ -12,7 +11,7 @@ using namespace kth::infrastructure::wallet;
 
 // Start Test Suite: uri tests
 
-// TEST_CASE("uri  parse  http roundtrip  test", "[uri tests]") {
+// TEST_CASE("uri parse http roundtrip test", "[uri tests]") {
 //     auto const test = "http://github.com/k-nuth?good=true#nice";
 //     uri parsed;
 //     REQUIRE(parsed.decode(test));
@@ -30,7 +29,7 @@ using namespace kth::infrastructure::wallet;
 //     REQUIRE(parsed.encoded() == test);
 // }
 
-TEST_CASE("uri  parse  messy roundtrip  test", "[uri tests]") {
+TEST_CASE("uri parse messy roundtrip test", "[uri tests]") {
     auto const test = "TEST:%78?%79#%7a";
     uri parsed;
     REQUIRE(parsed.decode(test));
@@ -47,7 +46,7 @@ TEST_CASE("uri  parse  messy roundtrip  test", "[uri tests]") {
     REQUIRE(parsed.encoded() == test);
 }
 
-TEST_CASE("uri  parse  scheme  test", "[uri tests]") {
+TEST_CASE("uri parse scheme test", "[uri tests]") {
     uri parsed;
     REQUIRE( ! parsed.decode(""));
     REQUIRE( ! parsed.decode(":"));
@@ -62,7 +61,7 @@ TEST_CASE("uri  parse  scheme  test", "[uri tests]") {
     REQUIRE(parsed.path() == ":");
 }
 
-TEST_CASE("uri  parsing  non strict  test", "[uri tests]") {
+TEST_CASE("uri parsing non strict test", "[uri tests]") {
     uri parsed;
     REQUIRE( ! parsed.decode("test:?テスト"));
 
@@ -71,7 +70,7 @@ TEST_CASE("uri  parsing  non strict  test", "[uri tests]") {
     REQUIRE(parsed.path() == "テスト");
 }
 
-TEST_CASE("uri  parse  authority  test", "[uri tests]") {
+TEST_CASE("uri parse authority test", "[uri tests]") {
     uri parsed;
     REQUIRE(parsed.decode("test:/"));
     REQUIRE( ! parsed.has_authority());
@@ -97,7 +96,7 @@ TEST_CASE("uri  parse  authority  test", "[uri tests]") {
     REQUIRE(parsed.path() == "/path/");
 }
 
-TEST_CASE("uri  parse  query  test", "[uri tests]") {
+TEST_CASE("uri parse query test", "[uri tests]") {
     uri parsed;
     REQUIRE(parsed.decode("test:#?"));
     REQUIRE( ! parsed.has_query());
@@ -117,7 +116,7 @@ TEST_CASE("uri  parse  query  test", "[uri tests]") {
     REQUIRE(map["z"] == "");
 }
 
-TEST_CASE("uri  parse  fragment  test", "[uri tests]") {
+TEST_CASE("uri parse fragment test", "[uri tests]") {
     uri parsed;
     REQUIRE(parsed.decode("test:?"));
     REQUIRE( ! parsed.has_fragment());
@@ -131,7 +130,7 @@ TEST_CASE("uri  parse  fragment  test", "[uri tests]") {
     REQUIRE(parsed.fragment() == "?");
 }
 
-TEST_CASE("uri  encode  positive  test", "[uri tests]") {
+TEST_CASE("uri encode positive test", "[uri tests]") {
     uri out;
     out.set_scheme("test");
     out.set_authority("user@hostname");

@@ -31,18 +31,13 @@ std::string version() {
     return std::format("Knuth v{}", kth::version);
 }
 
-void do_help(kth::node::parser& metadata, std::ostream& output) {
-    auto const options = metadata.load_options();
-    kth::infrastructure::config::printer help(options, application_name, "Runs a Bitcoin Cash full-node.");
-    help.initialize();
-    help.commandline(output);
+void do_help(kth::node::parser const& metadata, std::ostream& output) {
+    output << metadata.help_text(application_name,
+        "Runs a Bitcoin Cash full-node.");
 }
 
-void do_settings(kth::node::parser& metadata, std::ostream& output) {
-    auto const settings = metadata.load_settings();
-    kth::infrastructure::config::printer print(settings, application_name, "These are the configuration settings that can be set.");
-    print.initialize();
-    print.settings(output);
+void do_settings(kth::node::parser const& metadata, std::ostream& output) {
+    output << metadata.settings_text();
 }
 
 // Global signal state for run_with_log

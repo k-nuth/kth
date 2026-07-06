@@ -7,84 +7,81 @@
 
 #include <array>
 #include <cstdint>
-#include <iostream>
 #include <string>
+#include <string_view>
+#include <utility>
+
+#include <fmt/core.h>
 
 #include <kth/domain.hpp>
 #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
 
 namespace kth::domain::config {
 
 /**
- * Serialization helper to convert between endorsement string and data_chunk.
+ * Serialization helper to convert between endorsement text and data_chunk.
+ *
+ * Valid-by-construction: no default ctor; string parsing goes through
+ * `parse_from` returning `expect<endorsement>`.
  */
 struct KD_API endorsement {
-    endorsement() = default;
 
     /**
-     * Initialization constructor.
-     * @param[in]  hexcode  The value to initialize with.
+     * Parse a base16-encoded signature. Returns `error::illegal_value`
+     * on malformed input or when the bytes exceed `max_endorsement_size`.
      */
-    endorsement(std::string const& hexcode);
+    [[nodiscard]] static
+    expect<endorsement> parse_from(std::string_view hexcode);
 
     /**
-     * Initialization constructor.
-     * @param[in]  value  The value to initialize with.
+     * Wrap already-decoded bytes.
      */
-    endorsement(data_chunk const& value);
+    explicit
+    endorsement(data_chunk value)
+        : value_(std::move(value)) {}
 
     /**
-     * Initialization constructor.
-     * @param[in]  value  The value to initialize with.
+     * Fixed-size byte-array convenience ctor. Marked `constexpr` so
+     * static signatures can be materialised at compile time.
      */
     template <size_t Size>
+    constexpr explicit
     endorsement(byte_array<Size> const& value)
-        : value_(value.begin(), value.end()) {
-    }
+        : value_(value.begin(), value.end()) {}
 
     /**
-     * Copy constructor.
-     * @param[in]  other  The object to copy into self on construct.
+     * Explicit accessor.
      */
-    endorsement(endorsement const& x);
+    [[nodiscard]]
+    data_chunk const& value() const noexcept { return value_; }
 
     /**
-     * Overload cast to internal type.
-     * @return  This object's value cast to internal type.
+     * Zero-copy byte-span view.
      */
-    operator data_chunk const&() const;
+    [[nodiscard]]
+    byte_span as_span() const noexcept { return value_; }
 
     /**
-     * Overload cast to generic data reference.
-     * @return  This object's value cast to a generic data reference.
+     * Base16 encoding used by `fmt::formatter<endorsement>`.
      */
-    operator byte_span() const;
-
-    /**
-     * Overload stream in. If input is invalid sets no bytes in argument.
-     * @param[in]   input     The input stream to read the value from.
-     * @param[out]  argument  The object to receive the read value.
-     * @return                The input stream reference.
-     */
-    friend std::istream& operator>>(std::istream& input,
-                                    endorsement& argument);
-
-    /**
-     * Overload stream out.
-     * @param[in]   output    The output stream to write the value to.
-     * @param[out]  argument  The object from which to obtain the value.
-     * @return                The output stream reference.
-     */
-    friend std::ostream& operator<<(std::ostream& output,
-                                    endorsement const& argument);
+    [[nodiscard]]
+    std::string to_string() const;
 
 private:
-    /**
-     * The state of this object.
-     */
     data_chunk value_;
 };
 
 } // namespace kth::domain::config
+
+template <>
+struct fmt::formatter<kth::domain::config::endorsement> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    auto format(kth::domain::config::endorsement const& value,
+                format_context& ctx) const {
+        return fmt::format_to(ctx.out(), "{}", value.to_string());
+    }
+};
 
 #endif

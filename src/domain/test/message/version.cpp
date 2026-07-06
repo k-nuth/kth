@@ -28,7 +28,7 @@ auto const version_maximum = message::version::level::maximum;
 
 // Start Test Suite: version tests
 
-TEST_CASE("version  factory  therealbitcoin dot org valid", "[version]") {
+TEST_CASE("version factory therealbitcoin dot org valid", "[version]") {
     auto const payload = decode_base16(NO_RELAY_THEREALBITCOIN_1);
     REQUIRE(payload);
     byte_reader reader(*payload);
@@ -38,7 +38,7 @@ TEST_CASE("version  factory  therealbitcoin dot org valid", "[version]") {
     REQUIRE(version.is_valid());
 }
 
-TEST_CASE("version  factory  anarchistprime1 valid", "[version]") {
+TEST_CASE("version factory anarchistprime1 valid", "[version]") {
     auto const payload = decode_base16(NO_RELAY_ANARCHISTPRIME_1);
     REQUIRE(payload);
     byte_reader reader(*payload);
@@ -48,7 +48,7 @@ TEST_CASE("version  factory  anarchistprime1 valid", "[version]") {
     REQUIRE(version.is_valid());
 }
 
-TEST_CASE("version  factory  anarchistprime2 valid", "[version]") {
+TEST_CASE("version factory anarchistprime2 valid", "[version]") {
     auto const payload = decode_base16(NO_RELAY_ANARCHISTPRIME_2);
     REQUIRE(payload);
     byte_reader reader(*payload);
@@ -58,7 +58,7 @@ TEST_CASE("version  factory  anarchistprime2 valid", "[version]") {
     REQUIRE(version.is_valid());
 }
 
-TEST_CASE("version  factory  falcon1 valid", "[version]") {
+TEST_CASE("version factory falcon1 valid", "[version]") {
     auto const payload = decode_base16(NO_RELAY_FALCON_1);
     REQUIRE(payload);
     byte_reader reader(*payload);
@@ -68,7 +68,7 @@ TEST_CASE("version  factory  falcon1 valid", "[version]") {
     REQUIRE(version.is_valid());
 }
 
-TEST_CASE("version  factory  falcon2 valid", "[version]") {
+TEST_CASE("version factory falcon2 valid", "[version]") {
     auto const payload = decode_base16(NO_RELAY_FALCON_2);
     REQUIRE(payload);
     byte_reader reader(*payload);
@@ -78,7 +78,7 @@ TEST_CASE("version  factory  falcon2 valid", "[version]") {
     REQUIRE(version.is_valid());
 }
 
-TEST_CASE("version  factory  satoshi1 valid", "[version]") {
+TEST_CASE("version factory satoshi1 valid", "[version]") {
     auto const payload = decode_base16(NO_RELAY_SATOSHI_1);
     REQUIRE(payload);
     byte_reader reader(*payload);
@@ -88,14 +88,14 @@ TEST_CASE("version  factory  satoshi1 valid", "[version]") {
     REQUIRE(version.is_valid());
 }
 
-TEST_CASE("version  constructor 1  always invalid", "[version]") {
+TEST_CASE("version constructor 1 always invalid", "[version]") {
     message::version instance;
     REQUIRE( ! instance.is_valid());
     REQUIRE( ! instance.address_receiver().is_valid());
     REQUIRE( ! instance.address_sender().is_valid());
 }
 
-TEST_CASE("version  constructor 2  always  equals params", "[version]") {
+TEST_CASE("version constructor 2 always equals params", "[version]") {
     uint32_t value = 45624u;
     uint64_t services = 263546u;
     uint64_t timestamp = 7668534u;
@@ -133,7 +133,7 @@ TEST_CASE("version  constructor 2  always  equals params", "[version]") {
     REQUIRE(relay == instance.relay());
 }
 
-TEST_CASE("version  constructor 3  always  equals params", "[version]") {
+TEST_CASE("version constructor 3 always equals params", "[version]") {
     uint32_t value = 45624u;
     uint64_t services = 263546u;
     uint64_t timestamp = 7668534u;
@@ -165,7 +165,7 @@ TEST_CASE("version  constructor 3  always  equals params", "[version]") {
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("version  constructor 4  always  equals params", "[version]") {
+TEST_CASE("version constructor 4 always equals params", "[version]") {
     uint32_t value = 45624u;
     uint64_t services = 263546u;
     uint64_t timestamp = 7668534u;
@@ -199,7 +199,7 @@ TEST_CASE("version  constructor 4  always  equals params", "[version]") {
     REQUIRE(beta == alpha);
 }
 
-TEST_CASE("version  constructor 5  always  equals params", "[version]") {
+TEST_CASE("version constructor 5 always equals params", "[version]") {
     uint32_t value = 45624u;
     uint64_t services = 263546u;
     uint64_t timestamp = 7668534u;
@@ -284,7 +284,7 @@ TEST_CASE("version from data mismatched sender services invalid", "[version]") {
     REQUIRE(/*!*/ result.is_valid());
 }
 
-TEST_CASE("version from data version meets bip37  success", "[version]") {
+TEST_CASE("version from data version meets bip37 success", "[version]") {
     auto const sender_services = 1515u;
     const message::version expected{
         message::version::level::bip37,
@@ -313,7 +313,7 @@ TEST_CASE("version from data version meets bip37  success", "[version]") {
     REQUIRE(result.is_valid());
 }
 
-TEST_CASE("version from data valid input  success", "[version]") {
+TEST_CASE("version from data valid input success", "[version]") {
     auto const sender_services = 1515u;
     const message::version expected{
         210u,
@@ -349,7 +349,7 @@ TEST_CASE("version from data valid input  success", "[version]") {
 // receiver must accept the message and leave the reader exhausted; otherwise
 // the channel proxy classifies the payload as malformed and drops the
 // connection, isolating the node from any peer running a newer protocol.
-TEST_CASE("version from data tolerates trailing bytes  success", "[version]") {
+TEST_CASE("version from data tolerates trailing bytes success", "[version]") {
     const message::version expected{
         70017u, 1515u, 979797u,
         {734678u, 5357534u,
@@ -372,7 +372,7 @@ TEST_CASE("version from data tolerates trailing bytes  success", "[version]") {
     REQUIRE(*result_exp == expected);
 }
 
-TEST_CASE("version  value accessor  returns initialized value", "[version]") {
+TEST_CASE("version value accessor returns initialized value", "[version]") {
     uint32_t const expected = 210u;
     const message::version instance(
         expected,
@@ -396,14 +396,14 @@ TEST_CASE("version  value accessor  returns initialized value", "[version]") {
     REQUIRE(expected == instance.value());
 }
 
-TEST_CASE("version  value setter  roundtrip  success", "[version]") {
+TEST_CASE("version value setter roundtrip success", "[version]") {
     uint32_t const expected = 210u;
     message::version instance;
     instance.set_value(expected);
     REQUIRE(expected == instance.value());
 }
 
-TEST_CASE("version  services accessor  always  returns initialized value", "[version]") {
+TEST_CASE("version services accessor always returns initialized value", "[version]") {
     uint64_t const expected = 1515u;
     const message::version instance(
         210u,
@@ -427,14 +427,14 @@ TEST_CASE("version  services accessor  always  returns initialized value", "[ver
     REQUIRE(expected == instance.services());
 }
 
-TEST_CASE("version  services setter  roundtrip  success", "[version]") {
+TEST_CASE("version services setter roundtrip success", "[version]") {
     uint64_t const expected = 1515u;
     message::version instance;
     instance.set_services(expected);
     REQUIRE(expected == instance.services());
 }
 
-TEST_CASE("version  timestamp accessor  always  returns initialized value", "[version]") {
+TEST_CASE("version timestamp accessor always returns initialized value", "[version]") {
     uint64_t const expected = 979797u;
     const message::version instance(
         210u,
@@ -458,14 +458,14 @@ TEST_CASE("version  timestamp accessor  always  returns initialized value", "[ve
     REQUIRE(expected == instance.timestamp());
 }
 
-TEST_CASE("version  timestamp setter  roundtrip  success", "[version]") {
+TEST_CASE("version timestamp setter roundtrip success", "[version]") {
     uint64_t const expected = 979797u;
     message::version instance;
     instance.set_timestamp(expected);
     REQUIRE(expected == instance.timestamp());
 }
 
-TEST_CASE("version  address receiver accessor  always  returns initialized value", "[version]") {
+TEST_CASE("version address receiver accessor always returns initialized value", "[version]") {
     const message::network_address expected{
         734678u,
         5357534u,
@@ -491,7 +491,7 @@ TEST_CASE("version  address receiver accessor  always  returns initialized value
     REQUIRE(expected == instance.address_receiver());
 }
 
-// TEST_CASE("version  address receiver setter 1  roundtrip  success", "[None]")
+// TEST_CASE("version address receiver setter 1 roundtrip success", "[None]")
 //{
 //    message::network_address expected
 //    {
@@ -514,7 +514,7 @@ TEST_CASE("version  address receiver accessor  always  returns initialized value
 //    REQUIRE(result.is_valid());
 //}
 
-TEST_CASE("version  address receiver setter 2  roundtrip  success", "[version]") {
+TEST_CASE("version address receiver setter 2 roundtrip success", "[version]") {
     message::version instance;
     REQUIRE( ! instance.address_receiver().is_valid());
     instance.set_address_receiver(message::network_address{
@@ -528,7 +528,7 @@ TEST_CASE("version  address receiver setter 2  roundtrip  success", "[version]")
     REQUIRE(result.is_valid());
 }
 
-TEST_CASE("version  address sender accessor  always  returns initialized value", "[version]") {
+TEST_CASE("version address sender accessor always returns initialized value", "[version]") {
     const message::network_address expected{
         46324u,
         1515u,
@@ -554,7 +554,7 @@ TEST_CASE("version  address sender accessor  always  returns initialized value",
     REQUIRE(expected == instance.address_sender());
 }
 
-// TEST_CASE("version  address sender setter 1  roundtrip  success", "[None]")
+// TEST_CASE("version address sender setter 1 roundtrip success", "[None]")
 //{
 //    message::network_address expected
 //    {
@@ -577,7 +577,7 @@ TEST_CASE("version  address sender accessor  always  returns initialized value",
 //    REQUIRE(result.is_valid());
 //}
 
-TEST_CASE("version  address sender setter 2  roundtrip  success", "[version]") {
+TEST_CASE("version address sender setter 2 roundtrip success", "[version]") {
     message::version instance;
     REQUIRE( ! instance.address_sender().is_valid());
     instance.set_address_sender(message::network_address{
@@ -591,7 +591,7 @@ TEST_CASE("version  address sender setter 2  roundtrip  success", "[version]") {
     REQUIRE(result.is_valid());
 }
 
-TEST_CASE("version  nonce accessor  always  returns initialized value", "[version]") {
+TEST_CASE("version nonce accessor always returns initialized value", "[version]") {
     uint64_t const expected = 13626u;
     const message::version instance(
         210u,
@@ -615,14 +615,14 @@ TEST_CASE("version  nonce accessor  always  returns initialized value", "[versio
     REQUIRE(expected == instance.nonce());
 }
 
-TEST_CASE("version  nonce setter  roundtrip  success", "[version]") {
+TEST_CASE("version nonce setter roundtrip success", "[version]") {
     uint64_t const expected = 13626u;
     message::version instance;
     instance.set_nonce(expected);
     REQUIRE(expected == instance.nonce());
 }
 
-TEST_CASE("version  user agent accessor  always  returns initialized value", "[version]") {
+TEST_CASE("version user agent accessor always returns initialized value", "[version]") {
     std::string const expected = "MyUseRAgenT";
     const message::version instance(
         210u,
@@ -646,14 +646,14 @@ TEST_CASE("version  user agent accessor  always  returns initialized value", "[v
     REQUIRE(expected == instance.user_agent());
 }
 
-TEST_CASE("version  user agent setter 1  roundtrip  success", "[version]") {
+TEST_CASE("version user agent setter 1 roundtrip success", "[version]") {
     std::string const expected = "MyUseRAgenT";
     message::version instance;
     instance.set_user_agent(expected);
     REQUIRE(expected == instance.user_agent());
 }
 
-TEST_CASE("version  user agent setter 2  roundtrip  success", "[version]") {
+TEST_CASE("version user agent setter 2 roundtrip success", "[version]") {
     std::string expected = "MyUseRAgenT";
     message::version instance;
     REQUIRE(instance.user_agent().empty());
@@ -661,7 +661,7 @@ TEST_CASE("version  user agent setter 2  roundtrip  success", "[version]") {
     REQUIRE( ! instance.user_agent().empty());
 }
 
-TEST_CASE("version  start height accessor  always  returns initialized value", "[version]") {
+TEST_CASE("version start height accessor always returns initialized value", "[version]") {
     uint32_t const expected = 514u;
     const message::version instance(
         210u,
@@ -685,14 +685,14 @@ TEST_CASE("version  start height accessor  always  returns initialized value", "
     REQUIRE(expected == instance.start_height());
 }
 
-TEST_CASE("version  start height setter  roundtrip  success", "[version]") {
+TEST_CASE("version start height setter roundtrip success", "[version]") {
     uint32_t const expected = 514u;
     message::version instance;
     instance.set_start_height(expected);
     REQUIRE(expected == instance.start_height());
 }
 
-TEST_CASE("version  relay accessor  always  returns initialized value", "[version]") {
+TEST_CASE("version relay accessor always returns initialized value", "[version]") {
     bool const expected = true;
     const message::version instance(
         210u,
@@ -716,14 +716,14 @@ TEST_CASE("version  relay accessor  always  returns initialized value", "[versio
     REQUIRE(expected == instance.relay());
 }
 
-TEST_CASE("version  relay setter  roundtrip  success", "[version]") {
+TEST_CASE("version relay setter roundtrip success", "[version]") {
     bool const expected = true;
     message::version instance;
     instance.set_relay(expected);
     REQUIRE(expected == instance.relay());
 }
 
-TEST_CASE("version  operator assign equals  always  matches equivalent", "[version]") {
+TEST_CASE("version operator assign equals always matches equivalent", "[version]") {
     message::version value(
         210u,
         15234u,
@@ -752,7 +752,7 @@ TEST_CASE("version  operator assign equals  always  matches equivalent", "[versi
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("version  operator boolean equals  duplicates  returns true", "[version]") {
+TEST_CASE("version operator boolean equals duplicates returns true", "[version]") {
     const message::version expected(
         210u,
         15234u,
@@ -778,7 +778,7 @@ TEST_CASE("version  operator boolean equals  duplicates  returns true", "[versio
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("version  operator boolean equals  differs  returns false", "[version]") {
+TEST_CASE("version operator boolean equals differs returns false", "[version]") {
     const message::version expected(
         210u,
         15234u,
@@ -804,7 +804,7 @@ TEST_CASE("version  operator boolean equals  differs  returns false", "[version]
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("version  operator boolean not equals  duplicates  returns false", "[version]") {
+TEST_CASE("version operator boolean not equals duplicates returns false", "[version]") {
     const message::version expected(
         210u,
         15234u,
@@ -830,7 +830,7 @@ TEST_CASE("version  operator boolean not equals  duplicates  returns false", "[v
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("version  operator boolean not equals  differs  returns true", "[version]") {
+TEST_CASE("version operator boolean not equals differs returns true", "[version]") {
     const message::version expected(
         210u,
         15234u,

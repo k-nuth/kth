@@ -21,10 +21,6 @@ extern "C" {
 KTH_EXPORT KTH_OWNED
 kth_bitcoin_uri_mut_t kth_wallet_bitcoin_uri_construct_default(void);
 
-/** @return Owned `kth_bitcoin_uri_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_bitcoin_uri_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_bitcoin_uri_mut_t kth_wallet_bitcoin_uri_construct(char const* uri, kth_bool_t strict);
-
 
 // Destructor
 
@@ -45,10 +41,27 @@ kth_bitcoin_uri_mut_t kth_wallet_bitcoin_uri_copy(kth_bitcoin_uri_const_t self);
 KTH_EXPORT
 kth_bool_t kth_wallet_bitcoin_uri_equals(kth_bitcoin_uri_const_t self, kth_bitcoin_uri_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_wallet_bitcoin_uri_not_equal(kth_bitcoin_uri_const_t self, kth_bitcoin_uri_const_t other);
+
+
+// Ordering
+
+KTH_EXPORT
+kth_bool_t kth_wallet_bitcoin_uri_less(kth_bitcoin_uri_const_t self, kth_bitcoin_uri_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_wallet_bitcoin_uri_greater(kth_bitcoin_uri_const_t self, kth_bitcoin_uri_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_wallet_bitcoin_uri_less_or_equal(kth_bitcoin_uri_const_t self, kth_bitcoin_uri_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_wallet_bitcoin_uri_greater_or_equal(kth_bitcoin_uri_const_t self, kth_bitcoin_uri_const_t x);
+
 
 // Getters
 
-/** @return Non-zero if `self` is in a valid state, zero otherwise. */
 KTH_EXPORT
 kth_bool_t kth_wallet_bitcoin_uri_valid(kth_bitcoin_uri_const_t self);
 
@@ -82,6 +95,10 @@ kth_payment_address_mut_t kth_wallet_bitcoin_uri_payment(kth_bitcoin_uri_const_t
 /** @return Owned `kth_stealth_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_stealth_address_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_stealth_address_mut_t kth_wallet_bitcoin_uri_stealth(kth_bitcoin_uri_const_t self);
+
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_wallet_bitcoin_uri_to_string(kth_bitcoin_uri_const_t self);
 
 
 // Setters
@@ -130,12 +147,16 @@ kth_bool_t kth_wallet_bitcoin_uri_set_parameter(kth_bitcoin_uri_mut_t self, char
 
 // Operations
 
-KTH_EXPORT
-kth_bool_t kth_wallet_bitcoin_uri_less(kth_bitcoin_uri_const_t self, kth_bitcoin_uri_const_t x);
-
 /** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
 KTH_EXPORT KTH_OWNED
 char* kth_wallet_bitcoin_uri_parameter(kth_bitcoin_uri_const_t self, char const* key);
+
+
+// Static utilities
+
+/** @param[out] out Must point to a null `kth_bitcoin_uri_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_bitcoin_uri_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_bitcoin_uri_parse_from(char const* uri, kth_bool_t strict, KTH_OUT_OWNED kth_bitcoin_uri_mut_t* out);
 
 #ifdef __cplusplus
 } // extern "C"

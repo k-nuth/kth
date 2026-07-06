@@ -11,7 +11,7 @@ auto const valid_raw_point = to_chunk("000000000019d6689c085ae165831e934ff763ae4
 
 // Start Test Suite: point tests
 
-TEST_CASE("point  constructor 2  valid input  returns input initialized", "[point]") {
+TEST_CASE("point constructor 2 valid input returns input initialized", "[point]") {
     auto const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
     uint32_t index = 1234u;
 
@@ -20,7 +20,7 @@ TEST_CASE("point  constructor 2  valid input  returns input initialized", "[poin
     REQUIRE(index == instance.index());
 }
 
-TEST_CASE("point  constructor 3  valid input  returns input initialized", "[point]") {
+TEST_CASE("point constructor 3 valid input returns input initialized", "[point]") {
     auto const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
     uint32_t index = 1234u;
 
@@ -32,7 +32,7 @@ TEST_CASE("point  constructor 3  valid input  returns input initialized", "[poin
     REQUIRE(index == instance.index());
 }
 
-TEST_CASE("point  constructor 4  valid input  returns input initialized", "[point]") {
+TEST_CASE("point constructor 4 valid input returns input initialized", "[point]") {
     const chain::point expected{
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
         524342u};
@@ -41,7 +41,7 @@ TEST_CASE("point  constructor 4  valid input  returns input initialized", "[poin
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("point  constructor 5  valid input  returns input initialized", "[point]") {
+TEST_CASE("point constructor 5 valid input returns input initialized", "[point]") {
     // This must be non-const.
     chain::point expected{
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -50,13 +50,13 @@ TEST_CASE("point  constructor 5  valid input  returns input initialized", "[poin
     chain::point instance(std::move(expected));
 }
 
-TEST_CASE("point  begin end  initialized  begin not equal end", "[point]") {
+TEST_CASE("point begin end initialized begin not equal end", "[point]") {
     chain::point instance{null_hash, 0};
 
     REQUIRE(instance.begin() != instance.end());
 }
 
-TEST_CASE("point from data insufficient bytes  failure", "[point]") {
+TEST_CASE("point from data insufficient bytes failure", "[point]") {
     data_chunk data(10);
     chain::point instance{null_hash, 0u};
 
@@ -65,7 +65,7 @@ TEST_CASE("point from data insufficient bytes  failure", "[point]") {
     REQUIRE( ! result);
 }
 
-TEST_CASE("point from data roundtrip  success", "[point]") {
+TEST_CASE("point from data roundtrip success", "[point]") {
     uint32_t index = 53213;
     hash_digest const hash{
         {0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
@@ -85,7 +85,7 @@ TEST_CASE("point from data roundtrip  success", "[point]") {
     REQUIRE(point == initial);
 }
 
-TEST_CASE("point from data roundtrip  success 2", "[point]") {
+TEST_CASE("point from data roundtrip success 2", "[point]") {
     auto const raw = to_chunk("46682488f0a721124a3905a1bb72445bf13493e2cd46c5c0c8db1c15afa0d58e00000000"_base16);
     auto const data = data_chunk{
         0x46, 0x68, 0x24, 0x88, 0xf0, 0xa7, 0x21, 0x12, 0x4a, 0x39, 0x05, 0xa1,
@@ -107,7 +107,7 @@ TEST_CASE("point from data roundtrip  success 2", "[point]") {
 
 
 
-TEST_CASE("point  hash setter 1  roundtrip  success", "[point]") {
+TEST_CASE("point hash setter 1 roundtrip success", "[point]") {
     auto const value = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     chain::point instance{null_hash, 0u};
@@ -116,7 +116,7 @@ TEST_CASE("point  hash setter 1  roundtrip  success", "[point]") {
     REQUIRE(value == instance.hash());
 }
 
-TEST_CASE("point  hash setter 2  roundtrip  success", "[point]") {
+TEST_CASE("point hash setter 2 roundtrip success", "[point]") {
     auto const value = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     // This must be non-const.
@@ -128,7 +128,7 @@ TEST_CASE("point  hash setter 2  roundtrip  success", "[point]") {
     REQUIRE(value == instance.hash());
 }
 
-TEST_CASE("point  index  roundtrip  success", "[point]") {
+TEST_CASE("point index roundtrip success", "[point]") {
     uint32_t value = 1254u;
     chain::point instance{null_hash, 0u};
     REQUIRE(value != instance.index());
@@ -136,7 +136,7 @@ TEST_CASE("point  index  roundtrip  success", "[point]") {
     REQUIRE(value == instance.index());
 }
 
-TEST_CASE("point  operator assign equals 1  always  matches equivalent", "[point]") {
+TEST_CASE("point operator assign equals 1 always matches equivalent", "[point]") {
     byte_reader reader(valid_raw_point);
     auto result = chain::point::from_data(reader);
     REQUIRE(result);
@@ -154,7 +154,7 @@ TEST_CASE("point  operator assign equals 1  always  matches equivalent", "[point
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("point  operator assign equals 2  always  matches equivalent", "[point]") {
+TEST_CASE("point operator assign equals 2 always matches equivalent", "[point]") {
     byte_reader reader(valid_raw_point);
     auto result = chain::point::from_data(reader);
     REQUIRE(result);
@@ -164,7 +164,7 @@ TEST_CASE("point  operator assign equals 2  always  matches equivalent", "[point
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("point  operator boolean equals  duplicates  returns true", "[point]") {
+TEST_CASE("point operator boolean equals duplicates returns true", "[point]") {
     chain::point alpha{null_hash, 0u};
     chain::point beta{null_hash, 0u};
     byte_reader reader(valid_raw_point);
@@ -178,7 +178,7 @@ TEST_CASE("point  operator boolean equals  duplicates  returns true", "[point]")
     REQUIRE(alpha == beta);
 }
 
-TEST_CASE("point  operator boolean equals  differs  returns false", "[point]") {
+TEST_CASE("point operator boolean equals differs returns false", "[point]") {
     chain::point alpha{null_hash, 0u};
     chain::point beta{null_hash, 0u};
     byte_reader reader(valid_raw_point);
@@ -188,7 +188,7 @@ TEST_CASE("point  operator boolean equals  differs  returns false", "[point]") {
     REQUIRE(alpha != beta);
 }
 
-TEST_CASE("point  operator boolean not equals  duplicates  returns false", "[point]") {
+TEST_CASE("point operator boolean not equals duplicates returns false", "[point]") {
     chain::point alpha{null_hash, 0u};
     chain::point beta{null_hash, 0u};
     byte_reader reader(valid_raw_point);
@@ -202,7 +202,7 @@ TEST_CASE("point  operator boolean not equals  duplicates  returns false", "[poi
     REQUIRE(alpha == beta);
 }
 
-TEST_CASE("point  operator boolean not equals  differs  returns true", "[point]") {
+TEST_CASE("point operator boolean not equals differs returns true", "[point]") {
     chain::point alpha{null_hash, 0u};
     chain::point beta{null_hash, 0u};
     byte_reader reader(valid_raw_point);
@@ -212,25 +212,25 @@ TEST_CASE("point  operator boolean not equals  differs  returns true", "[point]"
     REQUIRE(alpha != beta);
 }
 
-TEST_CASE("point  checksum  all ones  returns all ones", "[point]") {
+TEST_CASE("point checksum all ones returns all ones", "[point]") {
     static auto const tx_hash = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"_hash;
     chain::point instance(tx_hash, 0xffffffff);
     REQUIRE(instance.checksum() == 0xffffffffffffffff);
 }
 
-TEST_CASE("point  checksum  all zeroes  returns all zeroes", "[point]") {
+TEST_CASE("point checksum all zeroes returns all zeroes", "[point]") {
     static auto const tx_hash = "0000000000000000000000000000000000000000000000000000000000000000"_hash;
     chain::point instance(tx_hash, 0x00000000);
     REQUIRE(instance.checksum() == 0x0000000000000000);
 }
 
-TEST_CASE("point  checksum  pattern one  returns expected", "[point]") {
+TEST_CASE("point checksum pattern one returns expected", "[point]") {
     static auto const tx_hash = "000000000000000000000000aaaaaaaaaaaaaaaa000000000000000000000000"_hash;
     chain::point instance(tx_hash, 0x00000001);
     REQUIRE(instance.checksum() == 0xaaaaaaaaaaaa8001);
 }
 
-TEST_CASE("point  checksum  pattern high  returns expected", "[point]") {
+TEST_CASE("point checksum pattern high returns expected", "[point]") {
     static auto const tx_hash = "ffffffffffffffffffffffff01234567aaaaaaaaffffffffffffffffffffffff"_hash;
     chain::point instance(tx_hash, 0x89abcdef);
     REQUIRE(instance.checksum() == 0x1234567aaaacdef);
