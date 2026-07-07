@@ -6,61 +6,61 @@
 #define KTH_OUTPUT_HPP
 
 #include <cstdint>
-#include <iostream>
 #include <string>
+#include <string_view>
 
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 
 namespace kth::domain::config {
 
 /**
- * Serialization helper to convert between a base58-string:number and
- * a vector of chain::output.
+ * Serialization helper to convert a `target:amount[:seed]` tuple into a
+ * transaction output. `target` may be a payment address, a stealth
+ * address, or a serialized script (hex).
+ *
+ * Valid-by-construction: no default ctor, no throwing ctor. Fallible
+ * string parsing goes through `parse_from` returning `expect<output>`.
  */
 struct KD_API output {
 
-    output();
-
     /**
-     * Initialization constructor.
-     * @param[in]  tuple  The value to initialize with.
+     * Parse a `target:amount[:seed]` tuple. Returns `error::illegal_value`
+     * on malformed input.
      */
-    output(std::string const& tuple);
-
-    /// Parsed properties
-    [[nodiscard]]
-    bool is_stealth() const;
+    [[nodiscard]] static
+    expect<output> parse_from(std::string_view tuple);
 
     [[nodiscard]]
-    uint64_t amount() const;
+    bool is_stealth() const { return is_stealth_; }
 
     [[nodiscard]]
-    uint8_t version() const;
+    uint64_t amount() const { return amount_; }
 
     [[nodiscard]]
-    chain::script const& script() const;
+    uint8_t version() const { return version_; }
 
     [[nodiscard]]
-    short_hash const& pay_to_hash() const;
+    chain::script const& script() const { return script_; }
 
-    /**
-     * Overload stream in. Throws if input is invalid.
-     * @param[in]   input     The input stream to read the value from.
-     * @param[out]  argument  The object to receive the read value.
-     * @return                The input stream reference.
-     */
-    friend std::istream& operator>>(std::istream& input, output& argument);
+    [[nodiscard]]
+    short_hash const& pay_to_hash() const { return pay_to_hash_; }
 
 private:
-    /**
-     * The transaction output state of this object.
-     * This data is translated to an output given expected version information.
-     */
-    bool is_stealth_{false};
-    uint64_t amount_{0};
-    uint8_t version_{0};
+    output(bool is_stealth, uint64_t amount, uint8_t version,
+           chain::script script, short_hash pay_to_hash)
+        : is_stealth_(is_stealth)
+        , amount_(amount)
+        , version_(version)
+        , script_(std::move(script))
+        , pay_to_hash_(pay_to_hash)
+    {}
+
+    bool is_stealth_;
+    uint64_t amount_;
+    uint8_t version_;
     chain::script script_;
     short_hash pay_to_hash_;
 };

@@ -4,10 +4,7 @@
 
 #include <kth/infrastructure/utility/binary.hpp>
 
-#include <iostream>
-#include <sstream>
 #include <string>
-// #include <kth/infrastructure/math/limits.hpp>
 #include <kth/infrastructure/constants.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
@@ -28,7 +25,34 @@ bool binary::is_base2(std::string_view text) noexcept {
 binary::binary(std::string_view bit_string)
     : binary()
 {
-    std::stringstream(std::string(bit_string)) >> *this;
+    uint8_t block = 0;
+    auto bit_iterator = binary::bits_per_block;
+
+    for (char const representation : bit_string) {
+        if (representation != '0' && representation != '1') {
+            blocks_.clear();
+            return;
+        }
+
+        if (representation == '1') {
+            uint8_t const bitmask = 1 << (bit_iterator - 1);
+            block |= bitmask;
+        }
+
+        --bit_iterator;
+
+        if (bit_iterator == 0) {
+            blocks_.push_back(block);
+            block = 0;
+            bit_iterator = binary::bits_per_block;
+        }
+    }
+
+    if (bit_iterator != binary::bits_per_block) {
+        blocks_.push_back(block);
+    }
+
+    resize(bit_string.size());
 }
 
 binary::binary(size_type size, uint32_t number)
@@ -86,9 +110,19 @@ data_chunk const& binary::blocks() const noexcept {
 }
 
 std::string binary::encoded() const {
-    std::stringstream bits;
-    bits << *this;
-    return bits.str();
+    // Walk blocks (bytes), not bits: divisions by 8 in `operator[]`
+    // dominate the naive per-bit form. Uninitialized-then-write is
+    // faster than push_back — we know the exact size.
+    auto const n = size();
+    std::string bits(n, '0');
+    for (size_type i = 0; i < n; ++i) {
+        auto const block_i = i >> 3;                     // i / 8
+        auto const bit_pos = 7 - (i & 7);                 // i % 8, MSB-first
+        if ((blocks_[block_i] >> bit_pos) & 1) {
+            bits[i] = '1';
+        }
+    }
+    return bits;
 }
 
 binary::size_type binary::size() const noexcept {
@@ -238,54 +272,5 @@ bool binary::operator!=(binary const& x) const {
 }
 
 binary& binary::operator=(binary const& x) = default;
-
-std::istream& operator>>(std::istream& in, binary& to) {
-    std::string bitstring;
-    in >> bitstring;
-
-    to.resize(0);
-    uint8_t block = 0;
-    auto bit_iterator = binary::bits_per_block;
-
-    for (char const representation: bitstring) {
-        if (representation != '0' && representation != '1') {
-            to.blocks_.clear();
-            return in;
-        }
-
-        // Set bit to 1
-        if (representation == '1') {
-            uint8_t const bitmask = 1 << (bit_iterator - 1);
-            block |= bitmask;
-        }
-
-        // Next bit
-        --bit_iterator;
-
-        if (bit_iterator == 0) {
-            // Move to the next block.
-            to.blocks_.push_back(block);
-            block = 0;
-            bit_iterator = binary::bits_per_block;
-        }
-    }
-
-    // Block wasn't finished but push it back.
-    if (bit_iterator != binary::bits_per_block) {
-        to.blocks_.push_back(block);
-    }
-
-    to.resize(bitstring.size());
-    return in;
-}
-
-std::ostream& operator<<(std::ostream& out, binary const& of)
-{
-    for (binary::size_type i = 0; i < of.size(); ++i) {
-        out << (of[i] ? '1' : '0');
-    }
-
-    return out;
-}
 
 } // namespace kth

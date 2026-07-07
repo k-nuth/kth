@@ -31,7 +31,7 @@ public:
 BOOST_FIXTURE_TEST_SUITE(database_tests, spend_database_directory_setup_fixture)
 
 #ifdef KTH_DB_SPEND
-TEST_CASE("spend database  test", "[None]") {
+TEST_CASE("spend database test", "[None]") {
     domain::chain::output_point key1{ "4129e76f363f9742bc98dd3d40c99c9066e4d53b8e10e5097bd6f7b5059d7c53"_hash, 110 };
     domain::chain::output_point key2{ "eefa5d23968584be9d8d064bcf99c24666e4d53b8e10e5097bd6f7b5059d7c53"_hash, 4 };
     domain::chain::output_point key3{ "4129e76f363f9742bc98dd3d40c99c90eefa5d23968584be9d8d064bcf99c246"_hash, 8 };

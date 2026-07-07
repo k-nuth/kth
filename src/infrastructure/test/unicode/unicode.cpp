@@ -85,7 +85,7 @@ TEST_CASE("unicode string round trip utf8 test", "[unicode tests]") {
 // #endif
 // }
 
-TEST_CASE("unicode  to utf8 array  ascii  test", "[unicode tests]") {
+TEST_CASE("unicode to utf8 array ascii test", "[unicode tests]") {
     char utf8[20];
 
     // Text buffer provides null termination for test comparison.
@@ -100,7 +100,7 @@ TEST_CASE("unicode  to utf8 array  ascii  test", "[unicode tests]") {
     REQUIRE(size == expected_utf8.size());
 }
 
-TEST_CASE("unicode  to utf8 array  non ascii  test", "[unicode tests]") {
+TEST_CASE("unicode to utf8 array non ascii test", "[unicode tests]") {
     char utf8[36];
 
     // Text buffer provides null termination for test comparison.
@@ -134,7 +134,7 @@ TEST_CASE("unicode  to utf8 array  non ascii  test", "[unicode tests]") {
 //     REQUIRE(truncated == 0);
 // }
 
-// TEST_CASE("unicode  to utf16 array  non ascii  test", "[unicode tests]") {
+// TEST_CASE("unicode to utf16 array non ascii test", "[unicode tests]") {
 //     wchar_t utf16[36];
 
 //     // Text buffer provides null termination for test comparison.
@@ -151,7 +151,7 @@ TEST_CASE("unicode  to utf8 array  non ascii  test", "[unicode tests]") {
 //     REQUIRE(truncated == 0);
 // }
 
-// TEST_CASE("unicode  to utf16 array  non ascii truncation1  test", "[unicode tests]") {
+// TEST_CASE("unicode to utf16 array non ascii truncation1 test", "[unicode tests]") {
 //     wchar_t utf16[36];
 
 //     // Text buffer provides null termination for test comparison.
@@ -178,7 +178,7 @@ TEST_CASE("unicode  to utf8 array  non ascii  test", "[unicode tests]") {
 //     REQUIRE(size == expected_utf16.size());
 // }
 
-// TEST_CASE("unicode  to utf16 array  non ascii truncation2  test", "[unicode tests]") {
+// TEST_CASE("unicode to utf16 array non ascii truncation2 test", "[unicode tests]") {
 //     wchar_t utf16[36];
 
 //     // Text buffer provides null termination for test comparison.
@@ -205,7 +205,7 @@ TEST_CASE("unicode  to utf8 array  non ascii  test", "[unicode tests]") {
 //     REQUIRE(size == expected_utf16.size());
 // }
 
-// TEST_CASE("unicode  to utf8 environment  ascii  test", "[unicode tests]") {
+// TEST_CASE("unicode to utf8 environment ascii test", "[unicode tests]") {
 //     std::vector<const wchar_t*> wide_environment = { L"ascii", nullptr };
 
 //     auto variables = const_cast<wchar_t**>(&wide_environment[0]);
@@ -215,7 +215,7 @@ TEST_CASE("unicode  to utf8 array  non ascii  test", "[unicode tests]") {
 //     REQUIRE(narrow_environment[0] == "ascii");
 // }
 
-// TEST_CASE("unicode  to utf8 environment  utf16  test", "[unicode tests]") {
+// TEST_CASE("unicode to utf8 environment utf16 test", "[unicode tests]") {
 //     // We cannot use L for literal encoding of non-ascii text on Windows.
 //     auto utf16 = to_utf16("テスト");
 //     auto non_literal_utf16 = utf16.c_str();
@@ -229,7 +229,7 @@ TEST_CASE("unicode  to utf8 array  non ascii  test", "[unicode tests]") {
 //     REQUIRE(narrow_environment[1] == "テスト");
 // }
 
-TEST_CASE("unicode  to utf8 environment  null termination  test", "[unicode tests]") {
+TEST_CASE("unicode to utf8 environment null termination test", "[unicode tests]") {
     std::vector<const wchar_t*> wide_environment = { L"ascii", nullptr };
 
     auto variables = const_cast<wchar_t**>(&wide_environment[0]);
@@ -248,7 +248,7 @@ TEST_CASE("unicode  to utf8 environment  null termination  test", "[unicode test
     REQUIRE(environment_terminator == static_cast<char*>(nullptr));
 }
 
-// TEST_CASE("unicode  to utf8 main  ascii  test", "[unicode tests]") {
+// TEST_CASE("unicode to utf8 main ascii test", "[unicode tests]") {
 //     std::vector<const wchar_t*> wide_args = { L"ascii", nullptr };
 
 //     auto argv = const_cast<wchar_t**>(&wide_args[0]);
@@ -260,7 +260,7 @@ TEST_CASE("unicode  to utf8 environment  null termination  test", "[unicode test
 //     REQUIRE(narrow_args[0] == "ascii");
 // }
 
-// TEST_CASE("unicode  to utf8 main  utf16  test", "[unicode tests]") {
+// TEST_CASE("unicode to utf8 main utf16 test", "[unicode tests]") {
 //     // We cannot use L for literal encoding of non-ascii text on Windows.
 //     auto utf16 = to_utf16("テスト");
 //     auto non_literal_utf16 = utf16.c_str();
@@ -276,7 +276,7 @@ TEST_CASE("unicode  to utf8 environment  null termination  test", "[unicode test
 //     REQUIRE(narrow_args[1] == "テスト");
 // }
 
-TEST_CASE("unicode  to utf8 main  null termination  test", "[unicode tests]") {
+TEST_CASE("unicode to utf8 main null termination test", "[unicode tests]") {
     std::vector<const wchar_t*> wide_args = { L"ascii", nullptr };
 
     auto argv = const_cast<wchar_t**>(&wide_args[0]);

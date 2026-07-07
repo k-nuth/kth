@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <kth/capi/error.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/wallet/stealth_address.h>
 
@@ -53,9 +54,10 @@ TEST_CASE("C-API StealthAddress - destruct(NULL) is a no-op",
 // Encoded string round-trip
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API StealthAddress - encoded round-trips through construct_from_encoded (mainnet)",
+TEST_CASE("C-API StealthAddress - encoded round-trips through parse_from (mainnet)",
           "[C-API StealthAddress][encode]") {
-    kth_stealth_address_mut_t a = kth_wallet_stealth_address_construct_from_encoded(kScanMainnet);
+    kth_stealth_address_mut_t a = NULL;
+    REQUIRE(kth_wallet_stealth_address_parse_from(kScanMainnet, &a) == kth_ec_success);
     REQUIRE(a != NULL);
     REQUIRE(kth_wallet_stealth_address_valid(a) != 0);
     REQUIRE(kth_wallet_stealth_address_version(a) == 42u);
@@ -68,12 +70,13 @@ TEST_CASE("C-API StealthAddress - encoded round-trips through construct_from_enc
     kth_wallet_stealth_address_destruct(a);
 }
 
-TEST_CASE("C-API StealthAddress - encoded round-trips through construct_from_encoded (testnet)",
+TEST_CASE("C-API StealthAddress - encoded round-trips through parse_from (testnet)",
           "[C-API StealthAddress][encode]") {
     // Testnet addresses carry version 43, separating them from the 42
     // of mainnet — exercise both so a future regression that hardcodes
     // a version byte anywhere in the codepath trips here.
-    kth_stealth_address_mut_t a = kth_wallet_stealth_address_construct_from_encoded(kScanTestnet);
+    kth_stealth_address_mut_t a = NULL;
+    REQUIRE(kth_wallet_stealth_address_parse_from(kScanTestnet, &a) == kth_ec_success);
     REQUIRE(a != NULL);
     REQUIRE(kth_wallet_stealth_address_valid(a) != 0);
     REQUIRE(kth_wallet_stealth_address_version(a) == 43u);
@@ -83,7 +86,8 @@ TEST_CASE("C-API StealthAddress - encoded round-trips through construct_from_enc
 TEST_CASE("C-API StealthAddress - scan-only variant preserves version",
           "[C-API StealthAddress][encode]") {
     // Short variant (no spend keys) also hits the same parser path.
-    kth_stealth_address_mut_t a = kth_wallet_stealth_address_construct_from_encoded(kScanPubOnlyMainnet);
+    kth_stealth_address_mut_t a = NULL;
+    REQUIRE(kth_wallet_stealth_address_parse_from(kScanPubOnlyMainnet, &a) == kth_ec_success);
     REQUIRE(a != NULL);
     REQUIRE(kth_wallet_stealth_address_valid(a) != 0);
     REQUIRE(kth_wallet_stealth_address_version(a) == 42u);
@@ -96,7 +100,8 @@ TEST_CASE("C-API StealthAddress - scan-only variant preserves version",
 
 TEST_CASE("C-API StealthAddress - to_chunk / construct_from_decoded round-trips",
           "[C-API StealthAddress][encode]") {
-    kth_stealth_address_mut_t orig = kth_wallet_stealth_address_construct_from_encoded(kScanMainnet);
+    kth_stealth_address_mut_t orig = NULL;
+    REQUIRE(kth_wallet_stealth_address_parse_from(kScanMainnet, &orig) == kth_ec_success);
     REQUIRE(orig != NULL);
     REQUIRE(kth_wallet_stealth_address_valid(orig) != 0);
 
@@ -121,7 +126,8 @@ TEST_CASE("C-API StealthAddress - to_chunk / construct_from_decoded round-trips"
 
 TEST_CASE("C-API StealthAddress - copy produces an equal-but-independent handle",
           "[C-API StealthAddress][lifecycle]") {
-    kth_stealth_address_mut_t a = kth_wallet_stealth_address_construct_from_encoded(kScanMainnet);
+    kth_stealth_address_mut_t a = NULL;
+    REQUIRE(kth_wallet_stealth_address_parse_from(kScanMainnet, &a) == kth_ec_success);
     REQUIRE(a != NULL);
     kth_stealth_address_mut_t b = kth_wallet_stealth_address_copy(a);
     REQUIRE(b != NULL);

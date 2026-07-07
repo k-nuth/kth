@@ -4,71 +4,27 @@
 
 #include <kth/domain/config/endorsement.hpp>
 
-#include <array>
-#include <cstdint>
-#include <iostream>
-#include <sstream>
 #include <string>
-
-#include <boost/program_options.hpp>
+#include <string_view>
+#include <utility>
 
 #include <kth/domain.hpp>
 #include <kth/domain/define.hpp>
+#include <kth/infrastructure/error.hpp>
 
 namespace kth::domain::config {
 
-// endorsement format is currently private to bx.
-static
-bool decode_endorsement(kth::endorsement& endorsement,
-                               std::string const& encoded) {
-    auto decoded = decode_base16(encoded);
+// static
+expect<endorsement> endorsement::parse_from(std::string_view hexcode) {
+    auto decoded = decode_base16(std::string{hexcode});
     if ( ! decoded || decoded->size() > max_endorsement_size) {
-        return false;
+        return std::unexpected(kth::error::illegal_value);
     }
-
-    endorsement = std::move(*decoded);
-    return true;
+    return endorsement{std::move(*decoded)};
 }
 
-static
-std::string encode_endorsement(byte_span signature) {
-    return encode_base16(signature);
-}
-
-endorsement::endorsement(std::string const& hexcode) {
-    std::stringstream(hexcode) >> *this;
-}
-
-endorsement::endorsement(data_chunk const& value)
-    : value_(value) {
-}
-
-endorsement::endorsement(endorsement const& x)
-    : endorsement(x.value_) {
-}
-
-endorsement::operator data_chunk const&() const {
-    return value_;
-}
-
-endorsement::operator byte_span() const {
-    return value_;
-}
-
-std::istream& operator>>(std::istream& input, endorsement& argument) {
-    std::string hexcode;
-    input >> hexcode;
-
-    if ( ! decode_endorsement(argument.value_, hexcode)) {
-        BOOST_THROW_EXCEPTION(boost::program_options::invalid_option_value(hexcode));
-    }
-
-    return input;
-}
-
-std::ostream& operator<<(std::ostream& output, endorsement const& argument) {
-    output << encode_endorsement(argument.value_);
-    return output;
+std::string endorsement::to_string() const {
+    return encode_base16(value_);
 }
 
 } // namespace kth::domain::config

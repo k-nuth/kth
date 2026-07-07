@@ -14,7 +14,7 @@ using namespace kth;
 
 // Start Test Suite: log  general
 
-//TEST_CASE("log general  debug", "[log  general]") {
+//TEST_CASE("log general debug", "[log general]") {
 
     // spdlog::debug("[system]] helloworld{}", 1);
     // spdlog::debug(KTH_STRREP("{} ", KTH_PP_NARG("hello", "world", 1) + 1), LOG_SYSTEM, "hello", "world", 1);

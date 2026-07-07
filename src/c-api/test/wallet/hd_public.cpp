@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <kth/capi/error.h>
 #include <kth/capi/wallet/hd_public.h>
 #include <kth/capi/primitives.h>
 
@@ -26,15 +27,17 @@ TEST_CASE("C-API HdPublic - default construct is invalid", "[C-API HdPublic]") {
     kth_wallet_hd_public_destruct(key);
 }
 
-TEST_CASE("C-API HdPublic - construct from encoded is valid", "[C-API HdPublic]") {
-    kth_hd_public_mut_t key = kth_wallet_hd_public_construct_from_encoded(kXpub);
+TEST_CASE("C-API HdPublic - parse_from is valid", "[C-API HdPublic]") {
+    kth_hd_public_mut_t key = NULL;
+    REQUIRE(kth_wallet_hd_public_parse_from(kXpub, &key) == kth_ec_success);
     REQUIRE(key != NULL);
     REQUIRE(kth_wallet_hd_public_valid(key) != 0);
     kth_wallet_hd_public_destruct(key);
 }
 
-TEST_CASE("C-API HdPublic - construct from invalid encoded returns null", "[C-API HdPublic]") {
-    kth_hd_public_mut_t key = kth_wallet_hd_public_construct_from_encoded("not-a-valid-xpub");
+TEST_CASE("C-API HdPublic - parse_from invalid encoded returns error", "[C-API HdPublic]") {
+    kth_hd_public_mut_t key = NULL;
+    REQUIRE(kth_wallet_hd_public_parse_from("not-a-valid-xpub", &key) != kth_ec_success);
     REQUIRE(key == NULL);
 }
 
@@ -46,11 +49,12 @@ TEST_CASE("C-API HdPublic - destruct null is safe", "[C-API HdPublic]") {
 // Getters
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API HdPublic - encoded round-trips", "[C-API HdPublic]") {
-    kth_hd_public_mut_t key = kth_wallet_hd_public_construct_from_encoded(kXpub);
+TEST_CASE("C-API HdPublic - to_string round-trips", "[C-API HdPublic]") {
+    kth_hd_public_mut_t key = NULL;
+    REQUIRE(kth_wallet_hd_public_parse_from(kXpub, &key) == kth_ec_success);
     REQUIRE(key != NULL);
 
-    char* encoded = kth_wallet_hd_public_encoded(key);
+    char* encoded = kth_wallet_hd_public_to_string(key);
     REQUIRE(encoded != NULL);
     REQUIRE(strcmp(encoded, kXpub) == 0);
 
@@ -59,7 +63,8 @@ TEST_CASE("C-API HdPublic - encoded round-trips", "[C-API HdPublic]") {
 }
 
 TEST_CASE("C-API HdPublic - lineage returns valid data", "[C-API HdPublic]") {
-    kth_hd_public_mut_t key = kth_wallet_hd_public_construct_from_encoded(kXpub);
+    kth_hd_public_mut_t key = NULL;
+    REQUIRE(kth_wallet_hd_public_parse_from(kXpub, &key) == kth_ec_success);
     REQUIRE(key != NULL);
 
     kth_hd_lineage_t lineage = kth_wallet_hd_public_lineage(key);
@@ -72,7 +77,8 @@ TEST_CASE("C-API HdPublic - lineage returns valid data", "[C-API HdPublic]") {
 
 TEST_CASE("C-API HdPublic - to_hd_key round-trips through construct_from_public_key",
           "[C-API HdPublic]") {
-    kth_hd_public_mut_t original = kth_wallet_hd_public_construct_from_encoded(kXpub);
+    kth_hd_public_mut_t original = NULL;
+    REQUIRE(kth_wallet_hd_public_parse_from(kXpub, &original) == kth_ec_success);
     REQUIRE(original != NULL);
 
     kth_hd_key_t hd_key = kth_wallet_hd_public_to_hd_key(original);
@@ -89,7 +95,8 @@ TEST_CASE("C-API HdPublic - to_hd_key round-trips through construct_from_public_
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API HdPublic - copy preserves equality", "[C-API HdPublic]") {
-    kth_hd_public_mut_t original = kth_wallet_hd_public_construct_from_encoded(kXpub);
+    kth_hd_public_mut_t original = NULL;
+    REQUIRE(kth_wallet_hd_public_parse_from(kXpub, &original) == kth_ec_success);
     REQUIRE(original != NULL);
 
     kth_hd_public_mut_t copy = kth_wallet_hd_public_copy(original);
@@ -105,7 +112,8 @@ TEST_CASE("C-API HdPublic - copy preserves equality", "[C-API HdPublic]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API HdPublic - derive_public produces valid child", "[C-API HdPublic]") {
-    kth_hd_public_mut_t parent = kth_wallet_hd_public_construct_from_encoded(kXpub);
+    kth_hd_public_mut_t parent = NULL;
+    REQUIRE(kth_wallet_hd_public_parse_from(kXpub, &parent) == kth_ec_success);
     REQUIRE(parent != NULL);
 
     kth_hd_public_mut_t child = kth_wallet_hd_public_derive_public(parent, 0);
@@ -122,7 +130,8 @@ TEST_CASE("C-API HdPublic - derive_public produces valid child", "[C-API HdPubli
 
 TEST_CASE("C-API HdPublic - derive_public hardened index returns null",
           "[C-API HdPublic]") {
-    kth_hd_public_mut_t parent = kth_wallet_hd_public_construct_from_encoded(kXpub);
+    kth_hd_public_mut_t parent = NULL;
+    REQUIRE(kth_wallet_hd_public_parse_from(kXpub, &parent) == kth_ec_success);
     REQUIRE(parent != NULL);
 
     // Public derivation cannot produce hardened children.
@@ -136,9 +145,10 @@ TEST_CASE("C-API HdPublic - derive_public hardened index returns null",
 // Preconditions
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API HdPublic - construct_from_encoded null aborts",
+TEST_CASE("C-API HdPublic - parse_from null aborts",
           "[C-API HdPublic][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_hd_public_construct_from_encoded(NULL));
+    kth_hd_public_mut_t out = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_hd_public_parse_from(NULL, &out));
 }
 
 TEST_CASE("C-API HdPublic - copy null aborts",
@@ -148,7 +158,8 @@ TEST_CASE("C-API HdPublic - copy null aborts",
 
 TEST_CASE("C-API HdPublic - equals null aborts",
           "[C-API HdPublic][precondition]") {
-    kth_hd_public_mut_t other = kth_wallet_hd_public_construct_from_encoded(kXpub);
+    kth_hd_public_mut_t other = NULL;
+    REQUIRE(kth_wallet_hd_public_parse_from(kXpub, &other) == kth_ec_success);
     KTH_EXPECT_ABORT(kth_wallet_hd_public_equals(NULL, other));
     kth_wallet_hd_public_destruct(other);
 }

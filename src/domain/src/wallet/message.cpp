@@ -95,12 +95,15 @@ bool magic_to_recovery_id(uint8_t& out_recovery_id, bool& out_compressed, uint8_
 }
 
 bool sign_message(message_signature& out_signature, byte_span message, ec_private const& secret) {
-    return sign_message(out_signature, message, secret, secret.compressed());
+    return sign_message(out_signature, message, secret.secret(), secret.compressed());
 }
 
 bool sign_message(message_signature& out_signature, byte_span message, std::string const& wif) {
-    ec_private secret(wif);
-    return (secret && sign_message(out_signature, message, secret, secret.compressed()));
+    auto const parsed = ec_private::parse_from(wif, ec_private::mainnet_p2kh);
+    if ( ! parsed) {
+        return false;
+    }
+    return sign_message(out_signature, message, parsed->secret(), parsed->compressed());
 }
 
 bool sign_message(message_signature& out_signature, byte_span message, ec_secret const& secret, bool compressed) {

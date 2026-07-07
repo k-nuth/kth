@@ -9,12 +9,12 @@ using namespace kd;
 
 // Start Test Suite: alert payload tests
 
-TEST_CASE("alert payload  constructor 1  always invalid", "[alert payload]") {
+TEST_CASE("alert payload constructor 1 always invalid", "[alert payload]") {
     message::alert_payload instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("alert payload  constructor 2  always  equals params", "[alert payload]") {
+TEST_CASE("alert payload constructor 2 always equals params", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -49,7 +49,7 @@ TEST_CASE("alert payload  constructor 2  always  equals params", "[alert payload
     REQUIRE(reserved == instance.reserved());
 }
 
-TEST_CASE("alert payload  constructor 3  always  equals params", "[alert payload]") {
+TEST_CASE("alert payload constructor 3 always equals params", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -91,7 +91,7 @@ TEST_CASE("alert payload  constructor 3  always  equals params", "[alert payload
     REQUIRE(reserved == instance.reserved());
 }
 
-TEST_CASE("alert payload  constructor 4  always  equals params", "[alert payload]") {
+TEST_CASE("alert payload constructor 4 always equals params", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -128,7 +128,7 @@ TEST_CASE("alert payload  constructor 4  always  equals params", "[alert payload
     REQUIRE(reserved == instance.reserved());
 }
 
-TEST_CASE("alert payload  constructor 5  always  equals params", "[alert payload]") {
+TEST_CASE("alert payload constructor 5 always equals params", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -165,7 +165,7 @@ TEST_CASE("alert payload  constructor 5  always  equals params", "[alert payload
     REQUIRE(reserved == instance.reserved());
 }
 
-TEST_CASE("alert payload from data insufficient bytes  failure", "[alert payload]") {
+TEST_CASE("alert payload from data insufficient bytes failure", "[alert payload]") {
     data_chunk raw{0xab, 0x11};
     message::alert_payload instance;
 
@@ -175,7 +175,7 @@ TEST_CASE("alert payload from data insufficient bytes  failure", "[alert payload
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("alert payload from data wiki sample test  success", "[alert payload]") {
+TEST_CASE("alert payload from data wiki sample test success", "[alert payload]") {
     data_chunk const raw{
         0x01, 0x00, 0x00, 0x00, 0x37, 0x66, 0x40, 0x4f, 0x00, 0x00,
         0x00, 0x00, 0xb3, 0x05, 0x43, 0x4f, 0x00, 0x00, 0x00, 0x00,
@@ -220,7 +220,7 @@ TEST_CASE("alert payload from data wiki sample test  success", "[alert payload]"
     REQUIRE(data.size() == expected.serialized_size(message::version::level::minimum));
 }
 
-TEST_CASE("alert payload from data roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload from data roundtrip success", "[alert payload]") {
     message::alert_payload expected{
         5,
         105169,
@@ -250,7 +250,7 @@ TEST_CASE("alert payload from data roundtrip  success", "[alert payload]") {
 
 
 
-TEST_CASE("alert payload  version  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload version roundtrip success", "[alert payload]") {
     uint32_t value = 1234u;
     message::alert_payload instance;
     REQUIRE(instance.version() != value);
@@ -258,7 +258,7 @@ TEST_CASE("alert payload  version  roundtrip  success", "[alert payload]") {
     REQUIRE(value == instance.version());
 }
 
-TEST_CASE("alert payload  relay until  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload relay until roundtrip success", "[alert payload]") {
     uint64_t value = 5121234u;
     message::alert_payload instance;
     REQUIRE(instance.relay_until() != value);
@@ -266,7 +266,7 @@ TEST_CASE("alert payload  relay until  roundtrip  success", "[alert payload]") {
     REQUIRE(value == instance.relay_until());
 }
 
-TEST_CASE("alert payload  expiration  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload expiration roundtrip success", "[alert payload]") {
     uint64_t value = 5121234u;
     message::alert_payload instance;
     REQUIRE(instance.expiration() != value);
@@ -274,7 +274,7 @@ TEST_CASE("alert payload  expiration  roundtrip  success", "[alert payload]") {
     REQUIRE(value == instance.expiration());
 }
 
-TEST_CASE("alert payload  id  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload id roundtrip success", "[alert payload]") {
     uint32_t value = 68215u;
     message::alert_payload instance;
     REQUIRE(instance.id() != value);
@@ -282,7 +282,7 @@ TEST_CASE("alert payload  id  roundtrip  success", "[alert payload]") {
     REQUIRE(value == instance.id());
 }
 
-TEST_CASE("alert payload  cancel  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload cancel roundtrip success", "[alert payload]") {
     uint32_t value = 68215u;
     message::alert_payload instance;
     REQUIRE(instance.cancel() != value);
@@ -290,7 +290,7 @@ TEST_CASE("alert payload  cancel  roundtrip  success", "[alert payload]") {
     REQUIRE(value == instance.cancel());
 }
 
-TEST_CASE("alert payload  set cancel accessor 1  always  returns initialized", "[alert payload]") {
+TEST_CASE("alert payload set cancel accessor 1 always returns initialized", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -313,7 +313,7 @@ TEST_CASE("alert payload  set cancel accessor 1  always  returns initialized", "
     REQUIRE(set_cancel == instance.set_cancel());
 }
 
-TEST_CASE("alert payload  set cancel accessor 2  always  returns initialized", "[alert payload]") {
+TEST_CASE("alert payload set cancel accessor 2 always returns initialized", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -336,7 +336,7 @@ TEST_CASE("alert payload  set cancel accessor 2  always  returns initialized", "
     REQUIRE(set_cancel == instance.set_cancel());
 }
 
-TEST_CASE("alert payload  set cancel setter 1  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload set cancel setter 1 roundtrip success", "[alert payload]") {
     const std::vector<uint32_t> value = {68215u, 34542u, 4756u};
     message::alert_payload instance;
     REQUIRE(instance.set_cancel() != value);
@@ -344,7 +344,7 @@ TEST_CASE("alert payload  set cancel setter 1  roundtrip  success", "[alert payl
     REQUIRE(value == instance.set_cancel());
 }
 
-TEST_CASE("alert payload  set cancel setter 2  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload set cancel setter 2 roundtrip success", "[alert payload]") {
     const std::vector<uint32_t> value = {68215u, 34542u, 4756u};
     auto dup_value = value;
     message::alert_payload instance;
@@ -353,7 +353,7 @@ TEST_CASE("alert payload  set cancel setter 2  roundtrip  success", "[alert payl
     REQUIRE(value == instance.set_cancel());
 }
 
-TEST_CASE("alert payload  min version  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload min version roundtrip success", "[alert payload]") {
     uint32_t value = 68215u;
     message::alert_payload instance;
     REQUIRE(instance.min_version() != value);
@@ -361,7 +361,7 @@ TEST_CASE("alert payload  min version  roundtrip  success", "[alert payload]") {
     REQUIRE(value == instance.min_version());
 }
 
-TEST_CASE("alert payload  max version  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload max version roundtrip success", "[alert payload]") {
     uint32_t value = 68215u;
     message::alert_payload instance;
     REQUIRE(instance.max_version() != value);
@@ -369,7 +369,7 @@ TEST_CASE("alert payload  max version  roundtrip  success", "[alert payload]") {
     REQUIRE(value == instance.max_version());
 }
 
-TEST_CASE("alert payload  set sub version accessor 1  always  returns initialized", "[alert payload]") {
+TEST_CASE("alert payload set sub version accessor 1 always returns initialized", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -392,7 +392,7 @@ TEST_CASE("alert payload  set sub version accessor 1  always  returns initialize
     REQUIRE(set_sub_version == instance.set_sub_version());
 }
 
-TEST_CASE("alert payload  set sub version accessor 2  always  returns initialized", "[alert payload]") {
+TEST_CASE("alert payload set sub version accessor 2 always returns initialized", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -415,7 +415,7 @@ TEST_CASE("alert payload  set sub version accessor 2  always  returns initialize
     REQUIRE(set_sub_version == instance.set_sub_version());
 }
 
-TEST_CASE("alert payload  set sub version setter 1  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload set sub version setter 1 roundtrip success", "[alert payload]") {
     const std::vector<std::string> value = {"asdfa", "sgfdf", "Tryertsd"};
     message::alert_payload instance;
     REQUIRE(instance.set_sub_version() != value);
@@ -423,7 +423,7 @@ TEST_CASE("alert payload  set sub version setter 1  roundtrip  success", "[alert
     REQUIRE(value == instance.set_sub_version());
 }
 
-TEST_CASE("alert payload  set sub version setter 2  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload set sub version setter 2 roundtrip success", "[alert payload]") {
     const std::vector<std::string> value = {"asdfa", "sgfdf", "Tryertsd"};
     auto dup_value = value;
     message::alert_payload instance;
@@ -432,7 +432,7 @@ TEST_CASE("alert payload  set sub version setter 2  roundtrip  success", "[alert
     REQUIRE(value == instance.set_sub_version());
 }
 
-TEST_CASE("alert payload  priority  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload priority roundtrip success", "[alert payload]") {
     uint32_t value = 68215u;
     message::alert_payload instance;
     REQUIRE(instance.priority() != value);
@@ -440,7 +440,7 @@ TEST_CASE("alert payload  priority  roundtrip  success", "[alert payload]") {
     REQUIRE(value == instance.priority());
 }
 
-TEST_CASE("alert payload  comment accessor 1  always  returns initialized", "[alert payload]") {
+TEST_CASE("alert payload comment accessor 1 always returns initialized", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -463,7 +463,7 @@ TEST_CASE("alert payload  comment accessor 1  always  returns initialized", "[al
     REQUIRE(comment == instance.comment());
 }
 
-TEST_CASE("alert payload  comment accessor 2  always  returns initialized", "[alert payload]") {
+TEST_CASE("alert payload comment accessor 2 always returns initialized", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -486,7 +486,7 @@ TEST_CASE("alert payload  comment accessor 2  always  returns initialized", "[al
     REQUIRE(comment == instance.comment());
 }
 
-TEST_CASE("alert payload  comment setter 1  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload comment setter 1 roundtrip success", "[alert payload]") {
     std::string const value = "asdfa";
     message::alert_payload instance;
     REQUIRE(instance.comment() != value);
@@ -494,7 +494,7 @@ TEST_CASE("alert payload  comment setter 1  roundtrip  success", "[alert payload
     REQUIRE(value == instance.comment());
 }
 
-TEST_CASE("alert payload  comment setter 2  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload comment setter 2 roundtrip success", "[alert payload]") {
     std::string const value = "Tryertsd";
     auto dup_value = value;
     message::alert_payload instance;
@@ -503,7 +503,7 @@ TEST_CASE("alert payload  comment setter 2  roundtrip  success", "[alert payload
     REQUIRE(value == instance.comment());
 }
 
-TEST_CASE("alert payload  status bar accessor 1  always  returns initialized", "[alert payload]") {
+TEST_CASE("alert payload status bar accessor 1 always returns initialized", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -526,7 +526,7 @@ TEST_CASE("alert payload  status bar accessor 1  always  returns initialized", "
     REQUIRE(status_bar == instance.status_bar());
 }
 
-TEST_CASE("alert payload  status bar accessor 2  always  returns initialized", "[alert payload]") {
+TEST_CASE("alert payload status bar accessor 2 always returns initialized", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -549,7 +549,7 @@ TEST_CASE("alert payload  status bar accessor 2  always  returns initialized", "
     REQUIRE(status_bar == instance.status_bar());
 }
 
-TEST_CASE("alert payload  status bar setter 1  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload status bar setter 1 roundtrip success", "[alert payload]") {
     std::string const value = "asdfa";
     message::alert_payload instance;
     REQUIRE(instance.status_bar() != value);
@@ -557,7 +557,7 @@ TEST_CASE("alert payload  status bar setter 1  roundtrip  success", "[alert payl
     REQUIRE(value == instance.status_bar());
 }
 
-TEST_CASE("alert payload  status bar setter 2  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload status bar setter 2 roundtrip success", "[alert payload]") {
     std::string const value = "Tryertsd";
     auto dup_value = value;
     message::alert_payload instance;
@@ -566,7 +566,7 @@ TEST_CASE("alert payload  status bar setter 2  roundtrip  success", "[alert payl
     REQUIRE(value == instance.status_bar());
 }
 
-TEST_CASE("alert payload  reserved accessor 1  always  returns initialized", "[alert payload]") {
+TEST_CASE("alert payload reserved accessor 1 always returns initialized", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -589,7 +589,7 @@ TEST_CASE("alert payload  reserved accessor 1  always  returns initialized", "[a
     REQUIRE(reserved == instance.reserved());
 }
 
-TEST_CASE("alert payload  reserved accessor 2  always  returns initialized", "[alert payload]") {
+TEST_CASE("alert payload reserved accessor 2 always returns initialized", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -612,7 +612,7 @@ TEST_CASE("alert payload  reserved accessor 2  always  returns initialized", "[a
     REQUIRE(reserved == instance.reserved());
 }
 
-TEST_CASE("alert payload  reserved setter 1  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload reserved setter 1 roundtrip success", "[alert payload]") {
     std::string const value = "asdfa";
     message::alert_payload instance;
     REQUIRE(instance.reserved() != value);
@@ -620,7 +620,7 @@ TEST_CASE("alert payload  reserved setter 1  roundtrip  success", "[alert payloa
     REQUIRE(value == instance.reserved());
 }
 
-TEST_CASE("alert payload  reserved setter 2  roundtrip  success", "[alert payload]") {
+TEST_CASE("alert payload reserved setter 2 roundtrip success", "[alert payload]") {
     std::string const value = "Tryertsd";
     auto dup_value = value;
     message::alert_payload instance;
@@ -629,7 +629,7 @@ TEST_CASE("alert payload  reserved setter 2  roundtrip  success", "[alert payloa
     REQUIRE(value == instance.reserved());
 }
 
-TEST_CASE("alert payload  operator assign equals  always  matches equivalent", "[alert payload]") {
+TEST_CASE("alert payload operator assign equals always matches equivalent", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
     uint64_t const expiration = 78545u;
@@ -670,7 +670,7 @@ TEST_CASE("alert payload  operator assign equals  always  matches equivalent", "
     REQUIRE(reserved == instance.reserved());
 }
 
-TEST_CASE("alert payload  operator boolean equals  duplicates  returns true", "[alert payload]") {
+TEST_CASE("alert payload operator boolean equals duplicates returns true", "[alert payload]") {
     const message::alert_payload expected(3452u, 64556u, 78545u, 43547u,
                                           546562345u, {2345u, 346754u, 234u, 4356u}, 4644u, 89876u,
                                           {"foo", "bar", "baz"}, 34323u, "asfgsddsa", "fgjdfhjg", "utyurtevc");
@@ -679,7 +679,7 @@ TEST_CASE("alert payload  operator boolean equals  duplicates  returns true", "[
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("alert payload  operator boolean equals  differs  returns false", "[alert payload]") {
+TEST_CASE("alert payload operator boolean equals differs returns false", "[alert payload]") {
     const message::alert_payload expected(3452u, 64556u, 78545u, 43547u,
                                           546562345u, {2345u, 346754u, 234u, 4356u}, 4644u, 89876u,
                                           {"foo", "bar", "baz"}, 34323u, "asfgsddsa", "fgjdfhjg", "utyurtevc");
@@ -688,7 +688,7 @@ TEST_CASE("alert payload  operator boolean equals  differs  returns false", "[al
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("alert payload  operator boolean not equals  duplicates  returns false", "[alert payload]") {
+TEST_CASE("alert payload operator boolean not equals duplicates returns false", "[alert payload]") {
     const message::alert_payload expected(3452u, 64556u, 78545u, 43547u,
                                           546562345u, {2345u, 346754u, 234u, 4356u}, 4644u, 89876u,
                                           {"foo", "bar", "baz"}, 34323u, "asfgsddsa", "fgjdfhjg", "utyurtevc");
@@ -697,7 +697,7 @@ TEST_CASE("alert payload  operator boolean not equals  duplicates  returns false
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("alert payload  operator boolean not equals  differs  returns true", "[alert payload]") {
+TEST_CASE("alert payload operator boolean not equals differs returns true", "[alert payload]") {
     const message::alert_payload expected(3452u, 64556u, 78545u, 43547u,
                                           546562345u, {2345u, 346754u, 234u, 4356u}, 4644u, 89876u,
                                           {"foo", "bar", "baz"}, 34323u, "asfgsddsa", "fgjdfhjg", "utyurtevc");

@@ -50,12 +50,12 @@ static auto const raw_tx2_hash = "8a6d9302fbe24f0ec756a94ecfc837eaffe16c43d1e68c
 
 // Start Test Suite: message transaction tests
 
-TEST_CASE("message transaction  constructor 1  always  initialized invalid", "[message transaction]") {
+TEST_CASE("message transaction constructor 1 always initialized invalid", "[message transaction]") {
     transaction instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("message transaction  constructor 2  always  equals transaction", "[message transaction]") {
+TEST_CASE("message transaction constructor 2 always equals transaction", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx1);
 
     chain::transaction tx;
@@ -68,7 +68,7 @@ TEST_CASE("message transaction  constructor 2  always  equals transaction", "[me
     REQUIRE(instance == tx);
 }
 
-TEST_CASE("message transaction  constructor 3  always  equals param", "[message transaction]") {
+TEST_CASE("message transaction constructor 3 always equals param", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx1);
 
     chain::transaction tx;
@@ -85,7 +85,7 @@ TEST_CASE("message transaction  constructor 3  always  equals param", "[message 
     REQUIRE(beta == alpha);
 }
 
-TEST_CASE("message transaction  constructor 4  always  equals equivalent tx", "[message transaction]") {
+TEST_CASE("message transaction constructor 4 always equals equivalent tx", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx1);
 
     chain::transaction tx;
@@ -100,7 +100,7 @@ TEST_CASE("message transaction  constructor 4  always  equals equivalent tx", "[
     REQUIRE(instance == tx);
 }
 
-TEST_CASE("message transaction  constructor 5  always  equals equivalent tx", "[message transaction]") {
+TEST_CASE("message transaction constructor 5 always equals equivalent tx", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx1);
 
     chain::transaction tx;
@@ -118,7 +118,7 @@ TEST_CASE("message transaction  constructor 5  always  equals equivalent tx", "[
     REQUIRE(instance == tx);
 }
 
-TEST_CASE("message transaction  constructor 6  always  equals equivalent tx", "[message transaction]") {
+TEST_CASE("message transaction constructor 6 always equals equivalent tx", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx1);
 
     byte_reader reader(raw_tx);
@@ -136,7 +136,7 @@ TEST_CASE("message transaction  constructor 6  always  equals equivalent tx", "[
     REQUIRE(instance == tx);
 }
 
-TEST_CASE("message transaction  constructor 7  always  equals equivalent tx", "[message transaction]") {
+TEST_CASE("message transaction constructor 7 always equals equivalent tx", "[message transaction]") {
     // input/output no longer have default ctors after the value-types
     // refactor. Build the counts explicitly so the vector sizes match
     // the REQUIREs below.
@@ -152,7 +152,7 @@ TEST_CASE("message transaction  constructor 7  always  equals equivalent tx", "[
     REQUIRE(instance.outputs().size() == 3);
 }
 
-TEST_CASE("message transaction from data insufficient data  failure", "[message transaction]") {
+TEST_CASE("message transaction from data insufficient data failure", "[message transaction]") {
     data_chunk data(2);
     transaction instance;
     byte_reader reader(data);
@@ -161,7 +161,7 @@ TEST_CASE("message transaction from data insufficient data  failure", "[message 
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("message transaction from data valid junk  success", "[message transaction]") {
+TEST_CASE("message transaction from data valid junk success", "[message transaction]") {
     transaction tx;
     byte_reader reader(junk_data);
     auto result = transaction::from_data(reader, version::level::minimum);
@@ -169,7 +169,7 @@ TEST_CASE("message transaction from data valid junk  success", "[message transac
     tx = std::move(*result);
 }
 
-TEST_CASE("message transaction from data case 1 valid data  success", "[message transaction]") {
+TEST_CASE("message transaction from data case 1 valid data success", "[message transaction]") {
     hash_digest tx_hash = raw_tx1_hash;
     data_chunk raw_tx = to_chunk(raw_tx1);
     REQUIRE(raw_tx.size() == 225u);
@@ -188,7 +188,7 @@ TEST_CASE("message transaction from data case 1 valid data  success", "[message 
     REQUIRE(resave == raw_tx);
 }
 
-TEST_CASE("message transaction from data case 2 valid data  success", "[message transaction]") {
+TEST_CASE("message transaction from data case 2 valid data success", "[message transaction]") {
     hash_digest tx_hash = raw_tx2_hash;
     data_chunk raw_tx = to_chunk(raw_tx2);
     REQUIRE(raw_tx.size() == 523u);
@@ -206,7 +206,7 @@ TEST_CASE("message transaction from data case 2 valid data  success", "[message 
     REQUIRE(resave == raw_tx);
 }
 
-TEST_CASE("message transaction  operator assign equals 1  always  matches equivalent", "[message transaction]") {
+TEST_CASE("message transaction operator assign equals 1 always matches equivalent", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx2);
 
     byte_reader reader(raw_tx);
@@ -220,7 +220,7 @@ TEST_CASE("message transaction  operator assign equals 1  always  matches equiva
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("message transaction  operator assign equals 2  always  matches equivalent", "[message transaction]") {
+TEST_CASE("message transaction operator assign equals 2 always matches equivalent", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx2);
 
     byte_reader reader(raw_tx);
@@ -234,7 +234,7 @@ TEST_CASE("message transaction  operator assign equals 2  always  matches equiva
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("message transaction  operator boolean equals 1  duplicates  returns true", "[message transaction]") {
+TEST_CASE("message transaction operator boolean equals 1 duplicates returns true", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx2);
 
     byte_reader reader(raw_tx);
@@ -248,7 +248,7 @@ TEST_CASE("message transaction  operator boolean equals 1  duplicates  returns t
     REQUIRE(alpha == beta);
 }
 
-TEST_CASE("message transaction  operator boolean equals 1  differs  returns false", "[message transaction]") {
+TEST_CASE("message transaction operator boolean equals 1 differs returns false", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx2);
 
     transaction alpha;
@@ -260,7 +260,7 @@ TEST_CASE("message transaction  operator boolean equals 1  differs  returns fals
     REQUIRE(alpha != beta);
 }
 
-TEST_CASE("message transaction  operator boolean not equals 1  duplicates  returns false", "[message transaction]") {
+TEST_CASE("message transaction operator boolean not equals 1 duplicates returns false", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx2);
 
     transaction alpha;
@@ -276,7 +276,7 @@ TEST_CASE("message transaction  operator boolean not equals 1  duplicates  retur
     REQUIRE(alpha == beta);
 }
 
-TEST_CASE("message transaction  operator boolean not equals 1  differs  returns true", "[message transaction]") {
+TEST_CASE("message transaction operator boolean not equals 1 differs returns true", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx2);
 
     transaction alpha;
@@ -288,7 +288,7 @@ TEST_CASE("message transaction  operator boolean not equals 1  differs  returns 
     REQUIRE(alpha != beta);
 }
 
-TEST_CASE("message transaction  operator boolean equals 2  duplicates  returns true", "[message transaction]") {
+TEST_CASE("message transaction operator boolean equals 2 duplicates returns true", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx2);
 
     transaction alpha;
@@ -304,7 +304,7 @@ TEST_CASE("message transaction  operator boolean equals 2  duplicates  returns t
     REQUIRE(alpha == beta);
 }
 
-TEST_CASE("message transaction  operator boolean equals 2  differs  returns false", "[message transaction]") {
+TEST_CASE("message transaction operator boolean equals 2 differs returns false", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx2);
 
     transaction alpha;
@@ -316,7 +316,7 @@ TEST_CASE("message transaction  operator boolean equals 2  differs  returns fals
     REQUIRE(alpha != beta);
 }
 
-TEST_CASE("message transaction  operator boolean not equals 2  duplicates  returns false", "[message transaction]") {
+TEST_CASE("message transaction operator boolean not equals 2 duplicates returns false", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx2);
 
     transaction alpha;
@@ -332,7 +332,7 @@ TEST_CASE("message transaction  operator boolean not equals 2  duplicates  retur
     REQUIRE(alpha == beta);
 }
 
-TEST_CASE("message transaction  operator boolean not equals 2  differs  returns true", "[message transaction]") {
+TEST_CASE("message transaction operator boolean not equals 2 differs returns true", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx2);
 
     transaction alpha;

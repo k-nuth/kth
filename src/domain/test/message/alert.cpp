@@ -9,12 +9,12 @@ using namespace kd;
 
 // Start Test Suite: alert tests
 
-TEST_CASE("alert  constructor 1  always invalid", "[alert]") {
+TEST_CASE("alert constructor 1 always invalid", "[alert]") {
     message::alert instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("alert  constructor 2  always  equals params", "[alert]") {
+TEST_CASE("alert constructor 2 always equals params", "[alert]") {
     data_chunk const payload = to_chunk("0123456789abcdef"_base16);
     data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
@@ -25,7 +25,7 @@ TEST_CASE("alert  constructor 2  always  equals params", "[alert]") {
     REQUIRE(signature == instance.signature());
 }
 
-TEST_CASE("alert  constructor 3  always  equals params", "[alert]") {
+TEST_CASE("alert constructor 3 always equals params", "[alert]") {
     auto const payload = to_chunk("0123456789abcdef"_base16);
     auto const signature = to_chunk("fedcba9876543210"_base16);
     auto dup_payload = payload;
@@ -38,7 +38,7 @@ TEST_CASE("alert  constructor 3  always  equals params", "[alert]") {
     REQUIRE(signature == instance.signature());
 }
 
-TEST_CASE("alert  constructor 4  always  equals params", "[alert]") {
+TEST_CASE("alert constructor 4 always equals params", "[alert]") {
     data_chunk const payload = to_chunk("0123456789abcdef"_base16);
     data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
@@ -51,7 +51,7 @@ TEST_CASE("alert  constructor 4  always  equals params", "[alert]") {
     REQUIRE(signature == instance.signature());
 }
 
-TEST_CASE("alert  constructor 5  always  equals params", "[alert]") {
+TEST_CASE("alert constructor 5 always equals params", "[alert]") {
     data_chunk const payload = to_chunk("0123456789abcdef"_base16);
     data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
@@ -63,7 +63,7 @@ TEST_CASE("alert  constructor 5  always  equals params", "[alert]") {
     REQUIRE(signature == instance.signature());
 }
 
-TEST_CASE("alert from data insufficient bytes  failure", "[alert]") {
+TEST_CASE("alert from data insufficient bytes failure", "[alert]") {
     data_chunk const raw{0xab, 0x11};
     message::alert instance;
 
@@ -73,7 +73,7 @@ TEST_CASE("alert from data insufficient bytes  failure", "[alert]") {
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("alert from data wiki sample  success", "[alert]") {
+TEST_CASE("alert from data wiki sample success", "[alert]") {
     data_chunk const raw_payload{
         0x01, 0x00, 0x00, 0x00, 0x37, 0x66, 0x40, 0x4f, 0x00,
         0x00, 0x00, 0x00, 0xb3, 0x05, 0x43, 0x4f, 0x00, 0x00, 0x00,
@@ -135,7 +135,7 @@ TEST_CASE("alert from data wiki sample  success", "[alert]") {
     REQUIRE(data.size() == expected.serialized_size(message::version::level::minimum));
 }
 
-TEST_CASE("alert from data roundtrip  success", "[alert]") {
+TEST_CASE("alert from data roundtrip success", "[alert]") {
     const message::alert expected{
         {0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
         {0x04, 0xff, 0xab, 0xcd, 0xee}};
@@ -154,7 +154,7 @@ TEST_CASE("alert from data roundtrip  success", "[alert]") {
 
 
 
-TEST_CASE("alert  payload accessor 1  always  returns initialized", "[alert]") {
+TEST_CASE("alert payload accessor 1 always returns initialized", "[alert]") {
     data_chunk const payload = to_chunk("0123456789abcdef"_base16);
     data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
@@ -162,7 +162,7 @@ TEST_CASE("alert  payload accessor 1  always  returns initialized", "[alert]") {
     REQUIRE(payload == instance.payload());
 }
 
-TEST_CASE("alert  payload accessor 2  always  returns initialized", "[alert]") {
+TEST_CASE("alert payload accessor 2 always returns initialized", "[alert]") {
     data_chunk const payload = to_chunk("0123456789abcdef"_base16);
     data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
@@ -170,7 +170,7 @@ TEST_CASE("alert  payload accessor 2  always  returns initialized", "[alert]") {
     REQUIRE(payload == instance.payload());
 }
 
-TEST_CASE("alert  payload setter 1  roundtrip  success", "[alert]") {
+TEST_CASE("alert payload setter 1 roundtrip success", "[alert]") {
     auto const value = to_chunk("aabbccddeeff"_base16);
     message::alert instance;
     REQUIRE(instance.payload() != value);
@@ -178,7 +178,7 @@ TEST_CASE("alert  payload setter 1  roundtrip  success", "[alert]") {
     REQUIRE(value == instance.payload());
 }
 
-TEST_CASE("alert  payload setter 2  roundtrip  success", "[alert]") {
+TEST_CASE("alert payload setter 2 roundtrip success", "[alert]") {
     auto const value = to_chunk("aabbccddeeff"_base16);
     auto dup_value = value;
     message::alert instance;
@@ -187,7 +187,7 @@ TEST_CASE("alert  payload setter 2  roundtrip  success", "[alert]") {
     REQUIRE(value == instance.payload());
 }
 
-TEST_CASE("alert  signature accessor 1  always  returns initialized", "[alert]") {
+TEST_CASE("alert signature accessor 1 always returns initialized", "[alert]") {
     data_chunk const payload = to_chunk("0123456789abcdef"_base16);
     data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
@@ -195,7 +195,7 @@ TEST_CASE("alert  signature accessor 1  always  returns initialized", "[alert]")
     REQUIRE(signature == instance.signature());
 }
 
-TEST_CASE("alert  signature accessor 2  always  returns initialized", "[alert]") {
+TEST_CASE("alert signature accessor 2 always returns initialized", "[alert]") {
     data_chunk const payload = to_chunk("0123456789abcdef"_base16);
     data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
@@ -203,7 +203,7 @@ TEST_CASE("alert  signature accessor 2  always  returns initialized", "[alert]")
     REQUIRE(signature == instance.signature());
 }
 
-TEST_CASE("alert  signature setter 1  roundtrip  success", "[alert]") {
+TEST_CASE("alert signature setter 1 roundtrip success", "[alert]") {
     auto const value = to_chunk("aabbccddeeff"_base16);
     message::alert instance;
     REQUIRE(instance.signature() != value);
@@ -211,7 +211,7 @@ TEST_CASE("alert  signature setter 1  roundtrip  success", "[alert]") {
     REQUIRE(value == instance.signature());
 }
 
-TEST_CASE("alert  signature setter 2  roundtrip  success", "[alert]") {
+TEST_CASE("alert signature setter 2 roundtrip success", "[alert]") {
     auto const value = to_chunk("aabbccddeeff"_base16);
     auto dup_value = value;
     message::alert instance;
@@ -220,7 +220,7 @@ TEST_CASE("alert  signature setter 2  roundtrip  success", "[alert]") {
     REQUIRE(value == instance.signature());
 }
 
-TEST_CASE("alert  operator assign equals  always  matches equivalent", "[alert]") {
+TEST_CASE("alert operator assign equals always matches equivalent", "[alert]") {
     data_chunk const payload = to_chunk("0123456789abcdef"_base16);
     data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
@@ -237,7 +237,7 @@ TEST_CASE("alert  operator assign equals  always  matches equivalent", "[alert]"
     REQUIRE(signature == instance.signature());
 }
 
-TEST_CASE("alert  operator boolean equals  duplicates  returns true", "[alert]") {
+TEST_CASE("alert operator boolean equals duplicates returns true", "[alert]") {
     const message::alert expected(
         to_chunk("0123456789abcdef"_base16),
         to_chunk("fedcba9876543210"_base16));
@@ -246,7 +246,7 @@ TEST_CASE("alert  operator boolean equals  duplicates  returns true", "[alert]")
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("alert  operator boolean equals  differs  returns false", "[alert]") {
+TEST_CASE("alert operator boolean equals differs returns false", "[alert]") {
     const message::alert expected(
         to_chunk("0123456789abcdef"_base16),
         to_chunk("fedcba9876543210"_base16));
@@ -255,7 +255,7 @@ TEST_CASE("alert  operator boolean equals  differs  returns false", "[alert]") {
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("alert  operator boolean not equals  duplicates  returns false", "[alert]") {
+TEST_CASE("alert operator boolean not equals duplicates returns false", "[alert]") {
     const message::alert expected(
         to_chunk("0123456789abcdef"_base16),
         to_chunk("fedcba9876543210"_base16));
@@ -264,7 +264,7 @@ TEST_CASE("alert  operator boolean not equals  duplicates  returns false", "[ale
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("alert  operator boolean not equals  differs  returns true", "[alert]") {
+TEST_CASE("alert operator boolean not equals differs returns true", "[alert]") {
     const message::alert expected(
         to_chunk("0123456789abcdef"_base16),
         to_chunk("fedcba9876543210"_base16));

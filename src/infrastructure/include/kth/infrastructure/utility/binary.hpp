@@ -61,12 +61,6 @@ struct KI_API binary {
     [[nodiscard]] bool operator!=(binary const& x) const;
     [[nodiscard]] bool operator<(binary const& x) const;
 
-    friend
-    std::istream& operator>>(std::istream& in, binary& to);
-
-    friend
-    std::ostream& operator<<(std::ostream& out, binary const& of);
-
 private:
     static
     uint8_t shift_block_right(uint8_t next, uint8_t current, uint8_t prior, size_type original_offset, size_type intended_offset);

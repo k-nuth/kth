@@ -5,53 +5,56 @@
 #ifndef KTH_WALLET_EK_PUBLIC_HPP
 #define KTH_WALLET_EK_PUBLIC_HPP
 
-#include <iostream>
 #include <string>
+#include <string_view>
 
 #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
 #include <kth/domain/wallet/encrypted_keys.hpp>
 
 namespace kth::domain::wallet {
 
-/// Use to pass an encrypted public key.
+/**
+ * Encrypted public key (BIP38).
+ *
+ * Default-constructible so the C-API generator can hand out an "empty"
+ * handle; string parsing goes through `parse_from` which returns
+ * `expect<ek_public>`.
+ */
 struct KD_API ek_public {
-    /// Constructors.
-    ek_public();
-    ek_public(std::string const& encoded);
-    ek_public(encrypted_public const& value);
-    ek_public(ek_public const& x) = default;
-
-    ek_public& operator=(ek_public const& x) = default;
-
-    /// Operators.
-
-    bool operator==(ek_public const& x) const;
-    bool operator!=(ek_public const& x) const;
-    bool operator<(ek_public const& x) const;
-    friend std::istream& operator>>(std::istream& in, ek_public& to);
-    friend std::ostream& operator<<(std::ostream& out, ek_public const& of);
-
-    /// Cast operators.
-    operator bool() const;
-    operator encrypted_public const&() const;
-
-    /// Serializer.
     [[nodiscard]]
-    std::string encoded() const;
+    static
+    expect<ek_public> parse_from(std::string_view encoded);
 
-    /// Accessors.
+    ek_public() = default;
+
+    explicit
+    ek_public(encrypted_public const& value)
+        : valid_(true), public_(value) {}
+
     [[nodiscard]]
-    encrypted_public const& public_key() const;
+    friend bool operator==(ek_public const&, ek_public const&) = default;
+
+    [[nodiscard]]
+    friend auto operator<=>(ek_public const& a, ek_public const& b) {
+        return a.to_string() <=> b.to_string();
+    }
+
+    [[nodiscard]]
+    bool valid() const noexcept { return valid_; }
+
+    [[nodiscard]]
+    encrypted_public const& value() const noexcept { return public_; }
+
+    [[nodiscard]]
+    encrypted_public const& public_key() const noexcept { return public_; }
+
+    [[nodiscard]]
+    std::string to_string() const;
 
 private:
-    /// Factories.
-    static
-    ek_public from_string(std::string const& encoded);
-
-    /// Members.
-    /// These should be const, apart from the need to implement assignment.
     bool valid_{false};
-    encrypted_public public_;
+    encrypted_public public_{};
 };
 
 } // namespace kth::domain::wallet

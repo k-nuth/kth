@@ -10,18 +10,18 @@ using namespace kth::domain::chain;
 
 // Start Test Suite: points value tests
 
-TEST_CASE("points value  value  default  zero", "[points value]") {
+TEST_CASE("points value value default zero", "[points value]") {
     static const points_value instance{};
     REQUIRE(instance.value() == 0u);
 }
 
-TEST_CASE("points value  value  single point value  expected", "[points value]") {
+TEST_CASE("points value value single point value expected", "[points value]") {
     static auto const expected = 42u;
     static const points_value instance{{{{null_hash, 0u}, expected}}};
     REQUIRE(instance.value() == expected);
 }
 
-TEST_CASE("points value  value  multiple point values  expected", "[points value]") {
+TEST_CASE("points value value multiple point values expected", "[points value]") {
     static auto const expected = 10u + 30u + 42u;
     static const points_value instance{
         {
@@ -32,7 +32,7 @@ TEST_CASE("points value  value  multiple point values  expected", "[points value
     REQUIRE(instance.value() == expected);
 }
 
-TEST_CASE("points value  value  multiple point values remove last  expected", "[points value]") {
+TEST_CASE("points value value multiple point values remove last expected", "[points value]") {
     static auto const expected = 10u + 30u;
     points_value instance{
         {
@@ -44,7 +44,7 @@ TEST_CASE("points value  value  multiple point values remove last  expected", "[
     REQUIRE(instance.value() == expected);
 }
 
-TEST_CASE("points value  value  multiple point values clear  zero", "[points value]") {
+TEST_CASE("points value value multiple point values clear zero", "[points value]") {
     points_value instance{
         {
             {{null_hash, 0u}, 10u},

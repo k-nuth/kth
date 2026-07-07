@@ -4,49 +4,30 @@
 
 #include <kth/domain/config/transaction.hpp>
 
-#include <iostream>
-#include <sstream>
 #include <string>
-
-#include <boost/program_options.hpp>
+#include <string_view>
+#include <utility>
 
 #include <kth/domain/chain/transaction.hpp>
+#include <kth/domain/deserialization.hpp>
 #include <kth/infrastructure/config/base16.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 
 namespace kth::domain::config {
 
-using namespace boost::program_options;
-using namespace infrastructure::config;
-
-transaction::transaction(chain::transaction const& value)
-    : value_(value) {
-}
-
-transaction::transaction(transaction const& x)
-    : transaction(x.value_) {
-}
-
-chain::transaction& transaction::data() {
-    return value_;
-}
-
-transaction::operator chain::transaction const&() const {
-    return value_;
-}
-
-std::expected<transaction, std::error_code> transaction::from_string(std::string_view text) noexcept {
-    auto const bytes_result = base16::from_string(text);
+// static
+expect<transaction> transaction::parse_from(std::string_view text) noexcept {
+    auto const bytes_result = infrastructure::config::base16::parse_from(text);
     if ( ! bytes_result) {
         return std::unexpected(bytes_result.error());
     }
-    data_chunk const& bytes = *bytes_result;
-    byte_reader reader(bytes);
-    auto transaction_exp = chain::transaction::from_data(reader, true);
-    if ( ! transaction_exp) {
-        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    byte_reader reader{bytes_result->value()};
+    auto tx = chain::transaction::from_data(reader, true);
+    if ( ! tx) {
+        return std::unexpected(tx.error());
     }
-    return transaction(std::move(*transaction_exp));
+    return transaction{std::move(*tx)};
 }
 
 std::string transaction::to_string() const {

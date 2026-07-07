@@ -5,16 +5,13 @@
 #include <kth/domain/wallet/hd_private.hpp>
 
 #include <cstdint>
-#include <iostream>
 #include <string>
+#include <string_view>
 #include <utility>
 
-#if ! defined(__EMSCRIPTEN__)
-#include <boost/program_options.hpp>
-#endif
-
+#include <kth/domain/deserialization.hpp>
 #include <kth/infrastructure/constants.hpp>
-#include <kth/domain/define.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_58.hpp>
 #include <kth/infrastructure/math/checksum.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
@@ -36,29 +33,12 @@ hd_private::hd_private(hd_key const& private_key)
     : hd_private(from_key(private_key, hd_public::mainnet))
 {}
 
-// This reads the private version and sets the public to mainnet.
-hd_private::hd_private(std::string const& encoded)
-    : hd_private(from_string(encoded, hd_public::mainnet))
-{}
-
-// This reads the private version and sets the public.
 hd_private::hd_private(hd_key const& private_key, uint32_t prefix)
     : hd_private(from_key(private_key, prefix))
 {}
 
-// This validates the private version and sets the public.
 hd_private::hd_private(hd_key const& private_key, uint64_t prefixes)
     : hd_private(from_key(private_key, prefixes))
-{}
-
-// This reads the private version and sets the public.
-hd_private::hd_private(std::string const& encoded, uint32_t prefix)
-    : hd_private(from_string(encoded, prefix))
-{}
-
-// This validates the private version and sets the public.
-hd_private::hd_private(std::string const& encoded, uint64_t prefixes)
-    : hd_private(from_string(encoded, prefixes))
 {}
 
 hd_private::hd_private(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage)
@@ -66,8 +46,43 @@ hd_private::hd_private(ec_secret const& secret, hd_chain_code const& chain_code,
     , secret_(secret)
 {}
 
+
+
 // Factories.
 // ----------------------------------------------------------------------------
+
+// static
+expect<hd_private> hd_private::parse_from(std::string_view encoded) {
+    return parse_from_with_public_prefix(encoded, hd_public::mainnet);
+}
+
+// static
+expect<hd_private> hd_private::parse_from_with_public_prefix(std::string_view encoded, uint32_t public_prefix) {
+    hd_key key;
+    if ( ! decode_base58(key, std::string{encoded})) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+
+    hd_private out = from_key(key, public_prefix);
+    if ( ! out.valid()) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return out;
+}
+
+// static
+expect<hd_private> hd_private::parse_from_with_prefixes(std::string_view encoded, uint64_t prefixes) {
+    hd_key key;
+    if ( ! decode_base58(key, std::string{encoded})) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+
+    hd_private out{key, prefixes};
+    if ( ! out.valid()) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return out;
+}
 
 hd_private hd_private::from_seed(byte_span seed, uint64_t prefixes) {
     // This is a magic constant from BIP32.
@@ -142,40 +157,11 @@ hd_private hd_private::from_key(hd_key const& key, uint64_t prefixes) {
     return hd_private(*secret, *chain, lineage);
 }
 
-hd_private hd_private::from_string(std::string const& encoded, uint32_t public_prefix) {
-    hd_key key;
-    if ( ! decode_base58(key, encoded)) {
-        return {};
-    }
-
-    return hd_private(from_key(key, public_prefix));
-}
-
-hd_private hd_private::from_string(std::string const& encoded, uint64_t prefixes) {
-    hd_key key;
-    return decode_base58(key, encoded) ? hd_private(key, prefixes) :
-        hd_private{};
-}
-
-// Cast operators.
-// ----------------------------------------------------------------------------
-
-hd_private::operator ec_secret const&() const {
-    return secret_;
-}
-
 // Serializer.
 // ----------------------------------------------------------------------------
 
-std::string hd_private::encoded() const {
+std::string hd_private::to_string() const {
     return encode_base58(to_hd_key());
-}
-
-/// Accessors.
-// ----------------------------------------------------------------------------
-
-ec_secret const& hd_private::secret() const {
-    return secret_;
 }
 
 // Methods.
@@ -247,45 +233,6 @@ hd_public hd_private::derive_public(uint32_t index) const {
 hd_private& hd_private::operator=(hd_private x) {
     swap(*this, x);
     return *this;
-}
-
-bool hd_private::operator<(hd_private const& x) const {
-    return encoded() < x.encoded();
-}
-
-bool hd_private::operator==(hd_private const& x) const {
-    return secret_ == x.secret_ && valid_ == x.valid_ &&
-        chain_ == x.chain_ && lineage_ == x.lineage_ &&
-        point_ == x.point_;
-}
-
-bool hd_private::operator!=(hd_private const& x) const {
-    return !(*this == x);
-}
-
-// We must assume mainnet for public version here.
-// When converting this to public a clone of this key should be used, with the
-// public version specified - after validating the private version.
-std::istream& operator>>(std::istream& in, hd_private& to) {
-    std::string value;
-    in >> value;
-    to = hd_private(value, hd_public::mainnet);
-
-    if ( ! to) {
-#if ! defined(__EMSCRIPTEN__)
-        using namespace boost::program_options;
-        BOOST_THROW_EXCEPTION(invalid_option_value(value));
-#else
-        throw std::invalid_argument(value);
-#endif
-    }
-
-    return in;
-}
-
-std::ostream& operator<<(std::ostream& out, hd_private const& of) {
-    out << of.encoded();
-    return out;
 }
 
 // friend function, see: stackoverflow.com/a/5695855/1172329

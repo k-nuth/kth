@@ -60,7 +60,7 @@ transaction_entry::ptr make_instance() {
 
 // construct1/tx
 
-TEST_CASE("transaction entry  construct1  default tx  expected values", "[transaction entry tests]") {
+TEST_CASE("transaction entry construct1 default tx expected values", "[transaction entry tests]") {
     transaction_entry const instance(make_tx());
     REQUIRE(instance.is_anchor());
     REQUIRE(instance.fees() == 0);
@@ -78,7 +78,7 @@ TEST_CASE("transaction entry  construct1  default tx  expected values", "[transa
 
 // construct2/hash
 
-TEST_CASE("transaction entry  construct1  default block hash  expected values", "[transaction entry tests]") {
+TEST_CASE("transaction entry construct1 default block hash expected values", "[transaction entry tests]") {
     transaction_entry const instance(make_tx()->hash());
     REQUIRE(instance.is_anchor());
     REQUIRE(instance.fees() == 0);
@@ -93,14 +93,14 @@ TEST_CASE("transaction entry  construct1  default block hash  expected values", 
 
 // is_anchor
 
-TEST_CASE("transaction entry  is anchor  parents  false", "[transaction entry tests]") {
+TEST_CASE("transaction entry is anchor parents false", "[transaction entry tests]") {
     transaction_entry instance(make_tx());
     auto const parent = make_instance();
     instance.add_parent(parent);
     REQUIRE( ! instance.is_anchor());
 }
 
-TEST_CASE("transaction entry  is anchor  children  true", "[transaction entry tests]") {
+TEST_CASE("transaction entry is anchor children true", "[transaction entry tests]") {
     transaction_entry instance(make_tx());
     auto const child = make_instance();
     instance.add_child(child);
@@ -109,13 +109,13 @@ TEST_CASE("transaction entry  is anchor  children  true", "[transaction entry te
 
 // mark
 
-TEST_CASE("transaction entry  mark  true  expected", "[transaction entry tests]") {
+TEST_CASE("transaction entry mark true expected", "[transaction entry tests]") {
     transaction_entry instance(make_tx());
     instance.mark(true);
     REQUIRE(instance.is_marked());
 }
 
-TEST_CASE("transaction entry  mark  true false  expected", "[transaction entry tests]") {
+TEST_CASE("transaction entry mark true false expected", "[transaction entry tests]") {
     transaction_entry instance(make_tx());
     instance.mark(true);
     instance.mark(false);
@@ -124,12 +124,12 @@ TEST_CASE("transaction entry  mark  true false  expected", "[transaction entry t
 
 // is_marked
 
-TEST_CASE("transaction entry  mark  default  false", "[transaction entry tests]") {
+TEST_CASE("transaction entry mark default false", "[transaction entry tests]") {
     transaction_entry const instance(make_tx());
     REQUIRE( ! instance.is_marked());
 }
 
-TEST_CASE("transaction entry  is marked  true  true", "[transaction entry tests]") {
+TEST_CASE("transaction entry is marked true true", "[transaction entry tests]") {
     transaction_entry instance(make_tx());
     instance.mark(true);
     REQUIRE(instance.is_marked());
@@ -137,7 +137,7 @@ TEST_CASE("transaction entry  is marked  true  true", "[transaction entry tests]
 
 // add_parent
 
-TEST_CASE("transaction entry  add parent  one  expected parents", "[transaction entry tests]") {
+TEST_CASE("transaction entry add parent one expected parents", "[transaction entry tests]") {
     transaction_entry instance(make_tx());
     auto const parent = make_instance();
     instance.add_parent(parent);
@@ -147,7 +147,7 @@ TEST_CASE("transaction entry  add parent  one  expected parents", "[transaction 
 
 // add_child
 
-TEST_CASE("transaction entry  add child  one  expected children", "[transaction entry tests]") {
+TEST_CASE("transaction entry add child one expected children", "[transaction entry tests]") {
     transaction_entry instance(make_tx());
     auto const child = make_instance();
     instance.add_child(child);
@@ -157,14 +157,14 @@ TEST_CASE("transaction entry  add child  one  expected children", "[transaction 
 
 // remove_child
 
-TEST_CASE("transaction entry  remove child  not found  empty", "[transaction entry tests]") {
+TEST_CASE("transaction entry remove child not found empty", "[transaction entry tests]") {
     transaction_entry instance(make_tx());
     auto const child = make_instance();
     instance.remove_child(child);
     REQUIRE(instance.children().empty());
 }
 
-TEST_CASE("transaction entry  remove child  only found  empty", "[transaction entry tests]") {
+TEST_CASE("transaction entry remove child only found empty", "[transaction entry tests]") {
     transaction_entry instance(make_tx());
     auto const child = make_instance();
     instance.add_child(child);
@@ -173,7 +173,7 @@ TEST_CASE("transaction entry  remove child  only found  empty", "[transaction en
     REQUIRE(instance.children().empty());
 }
 
-TEST_CASE("transaction entry  remove child  one of two  expected one remains", "[transaction entry tests]") {
+TEST_CASE("transaction entry remove child one of two expected one remains", "[transaction entry tests]") {
     transaction_entry instance(make_tx());
     auto const child1 = make_instance();
     auto const child2 = make_instance();

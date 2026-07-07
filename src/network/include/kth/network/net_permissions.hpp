@@ -115,7 +115,7 @@ KN_API std::expected<permission_flags, std::string> parse_permissions(std::strin
 
 struct KN_API whitelist_permissions {
     permission_flags flags{permission_flags::none};
-    infrastructure::config::authority subnet;  // IP or subnet to match
+    infrastructure::config::authority subnet = infrastructure::config::authority::any();
     // Prefix length in bits over the 16-byte IPv6 address. For IPv4-mapped
     // subnets like 10.0.0.0/8 the parser stores 96 + 8 = 104. Default 128
     // means an exact-address match.
@@ -139,7 +139,7 @@ KN_API std::expected<whitelist_permissions, std::string> parse_whitelist(std::st
 
 struct KN_API whitebind_permissions {
     permission_flags flags{permission_flags::none};
-    infrastructure::config::authority bind_address;
+    infrastructure::config::authority bind_address = infrastructure::config::authority::any();
 };
 
 /// Parse whitebind entry string

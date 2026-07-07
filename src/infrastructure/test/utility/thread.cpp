@@ -52,7 +52,7 @@ void set_thread_priority_test(int priority) {
 
 // WARNING: This creates a side effect that may impact other tests.
 // We must run these sequentially to prevent concurrency-driven test failures.
-TEST_CASE("thread  set thread priorites  all  set as expected", "[thread tests]") {
+TEST_CASE("thread set thread priorites all set as expected", "[thread tests]") {
     // Save so we can restore at the end of this test case.
     int const save = get_thread_priority_test();
 
@@ -74,7 +74,7 @@ TEST_CASE("thread  set thread priorites  all  set as expected", "[thread tests]"
 
 // WARNING: This creates a side effect that may impact other tests.
 // We must run these sequentially to prevent concurrency-driven test failures.
-TEST_CASE("thread  set thread priorites  all  set as expected", "[thread tests]") {
+TEST_CASE("thread set thread priorites all set as expected", "[thread tests]") {
     // Save so we can restore at the end of this test case.
     int const save = get_thread_priority_test();
 
@@ -90,7 +90,7 @@ TEST_CASE("thread  set thread priorites  all  set as expected", "[thread tests]"
 
 #endif
 
-TEST_CASE("thread  set thread priority  invalid  throws invalid argument", "[thread tests]") {
+TEST_CASE("thread set thread priority invalid throws invalid argument", "[thread tests]") {
     REQUIRE_THROWS_AS(set_priority(static_cast<thread_priority>(42)), std::invalid_argument);
 }
 

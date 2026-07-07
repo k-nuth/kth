@@ -20,48 +20,60 @@ TEST_CASE("stealth address construct string expected encoding", "[stealth addres
     auto const spend1 = decode_base16<ec_compressed_size>(spend_key1);
     REQUIRE(spend1);
     stealth_address address({}, *scan, {*spend1}, 0, 42);
-    REQUIRE(address);
+    REQUIRE(address.valid());
     REQUIRE(address.encoded() == stealth_address_encoded);
 }
 
 TEST_CASE("stealth address construct decoded expected properties", "[stealth address]") {
-    stealth_address address(stealth_address_encoded);
+    auto const address = stealth_address::parse_from(stealth_address_encoded);
     REQUIRE(address);
-    REQUIRE((size_t)address.version() == 42);
-    REQUIRE(encode_base16(address.scan_key()) == scan_key);
-    REQUIRE(address.spend_keys().size() == 1u);
-    REQUIRE(encode_base16(address.spend_keys()[0]) == spend_key1);
-    REQUIRE((size_t)address.signatures() == 1u);
-    REQUIRE(address.filter().size() == 0u);
-    REQUIRE(address.encoded() == stealth_address_encoded);
+    REQUIRE((size_t)address->version() == 42);
+    REQUIRE(encode_base16(address->scan_key()) == scan_key);
+    REQUIRE(address->spend_keys().size() == 1u);
+    REQUIRE(encode_base16(address->spend_keys()[0]) == spend_key1);
+    REQUIRE((size_t)address->signatures() == 1u);
+    REQUIRE(address->filter().size() == 0u);
+    REQUIRE(address->encoded() == stealth_address_encoded);
 }
 
 TEST_CASE("stealth address encoding scan mainnet round trips", "[stealth address]") {
     auto const encoded = "vJmzLu29obZcUGXXgotapfQLUpz7dfnZpbr4xg1R75qctf8xaXAteRdi3ZUk3T2ZMSad5KyPbve7uyH6eswYAxLHRVSbWgNUeoGuXp";
-    stealth_address address(encoded);
-    REQUIRE(address.encoded() == encoded);
-    REQUIRE(address.version() == 42u);
+    auto const address = stealth_address::parse_from(encoded);
+    REQUIRE(address);
+    REQUIRE(address->encoded() == encoded);
+    REQUIRE(address->version() == 42u);
 }
 
 TEST_CASE("stealth address encoding scan testnet round trips", "[stealth address]") {
     std::string const encoded = "waPXhQwQE9tDugfgLkvpDs3dnkPx1RsfDjFt4zBq7EeWeATRHpyQpYrFZR8T4BQy91Vpvshm2TDER8b9ZryuZ8VSzz8ywzNzX8NqF4";
-    stealth_address address(encoded);
-    REQUIRE(address.encoded() == encoded);
-    REQUIRE(address.version() == 43u);
+    auto const address = stealth_address::parse_from(encoded);
+    REQUIRE(address);
+    REQUIRE(address->encoded() == encoded);
+    REQUIRE(address->version() == 43u);
 }
 
 TEST_CASE("stealth address encoding scan pub mainnet round trips", "[stealth address]") {
     auto const encoded = "hfFGUXFPKkQ5M6LC6aEUKMsURdhw93bUdYdacEtBA8XttLv7evZkira2i";
-    stealth_address address(encoded);
-    REQUIRE(address.encoded() == encoded);
-    REQUIRE(address.version() == 42u);
+    auto const address = stealth_address::parse_from(encoded);
+    REQUIRE(address);
+    REQUIRE(address->encoded() == encoded);
+    REQUIRE(address->version() == 42u);
 }
 
 TEST_CASE("stealth address encoding scan pub testnet round trip", "[stealth address]") {
     auto const encoded = "idPayBqZUpZH7Y5GTaoEyGxDsEmU377JUmhtqG8yoHCkfGfhnAHmGUJbL";
-    stealth_address address(encoded);
-    REQUIRE(address.encoded() == encoded);
-    REQUIRE(address.version() == 43u);
+    auto const address = stealth_address::parse_from(encoded);
+    REQUIRE(address);
+    REQUIRE(address->encoded() == encoded);
+    REQUIRE(address->version() == 43u);
+}
+
+TEST_CASE("stealth address parse_from empty string fails", "[stealth address]") {
+    REQUIRE( ! stealth_address::parse_from(""));
+}
+
+TEST_CASE("stealth address parse_from garbage fails", "[stealth address]") {
+    REQUIRE( ! stealth_address::parse_from("not-a-stealth-address"));
 }
 
 // End Test Suite

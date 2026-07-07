@@ -5,120 +5,100 @@
 #include <kth/domain/config/output.hpp>
 
 #include <cstdint>
-#include <iostream>
-#include <sstream>
 #include <string>
-
-#include <boost/program_options.hpp>
+#include <string_view>
+#include <utility>
 
 #include <kth/domain/config/point.hpp>
 #include <kth/domain/config/script.hpp>
+#include <kth/domain/constants.hpp>
+#include <kth/domain/deserialization.hpp>
 #include <kth/domain/math/stealth.hpp>
+#include <kth/domain/wallet/payment_address.hpp>
 #include <kth/domain/wallet/stealth_address.hpp>
+#include <kth/infrastructure/error.hpp>
+#include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/string.hpp>
 
 namespace kth::domain::config {
 
-using namespace boost::program_options;
-
-output::output()
-    : pay_to_hash_(null_short_hash)
-    // , script_()
-{}
-
-output::output(std::string const& tuple)
-    : output()
-{
-    std::stringstream(tuple) >> *this;
-}
-
-bool output::is_stealth() const {
-    return is_stealth_;
-}
-
-uint64_t output::amount() const {
-    return amount_;
-}
-
-uint8_t output::version() const {
-    return version_;
-}
-
-chain::script const& output::script() const {
-    return script_;
-}
-
-short_hash const& output::pay_to_hash() const {
-    return pay_to_hash_;
-}
-
-std::istream& operator>>(std::istream& input, output& argument) {
-    std::string tuple;
-    input >> tuple;
-
+// static
+expect<output> output::parse_from(std::string_view tuple) {
     auto const tokens = split(tuple, point::delimeter);
     if (tokens.size() < 2 || tokens.size() > 3) {
-        BOOST_THROW_EXCEPTION(invalid_option_value(tuple));
+        return std::unexpected(kth::error::illegal_value);
     }
 
-    uint64_t amount;
+    uint64_t amount = 0;
     deserialize(amount, tokens[1], true);
     if (amount > max_money()) {
-        BOOST_THROW_EXCEPTION(invalid_option_value(tuple));
+        return std::unexpected(kth::error::illegal_value);
     }
 
-    argument.amount_ = amount;
     auto const& target = tokens.front();
 
-    // Is the target a payment address?
-    wallet::payment_address const payment(target);
-    if (payment) {
-        argument.version_ = payment.version();
-        argument.pay_to_hash_ = payment.hash20();
-        return input;
+    if (auto payment = wallet::payment_address::parse_from(target); payment) {
+        return output{
+            /* is_stealth */ false,
+            amount,
+            payment->version(),
+            chain::script{},
+            payment->hash20()
+        };
     }
 
-    // Is the target a stealth address?
-    wallet::stealth_address const stealth(target);
-    if (stealth) {
-        // TODO(legacy): finish stealth multisig implemetation (p2sh and !p2sh).
-
-        if (stealth.spend_keys().size() != 1 || tokens.size() != 3) {
-            BOOST_THROW_EXCEPTION(invalid_option_value(tuple));
+    if (auto stealth = wallet::stealth_address::parse_from(target); stealth) {
+        // TODO(legacy): finish stealth multisig implementation (p2sh and !p2sh).
+        if (stealth->spend_keys().size() != 1 || tokens.size() != 3) {
+            return std::unexpected(kth::error::illegal_value);
         }
 
         auto seed = decode_base16(tokens[2]);
         if ( ! seed || seed->size() < minimum_seed_size) {
-            BOOST_THROW_EXCEPTION(invalid_option_value(tuple));
+            return std::unexpected(kth::error::illegal_value);
         }
 
+        chain::script stealth_script;
         ec_secret ephemeral_secret;
-        if ( ! create_stealth_data(argument.script_, ephemeral_secret, stealth.filter(), *seed)) {
-            BOOST_THROW_EXCEPTION(invalid_option_value(tuple));
+        if ( ! create_stealth_data(stealth_script, ephemeral_secret, stealth->filter(), *seed)) {
+            return std::unexpected(kth::error::illegal_value);
         }
 
         ec_compressed stealth_key;
-        if ( ! uncover_stealth(stealth_key, stealth.scan_key(), ephemeral_secret, stealth.spend_keys().front())) {
-            BOOST_THROW_EXCEPTION(invalid_option_value(tuple));
+        if ( ! uncover_stealth(stealth_key, stealth->scan_key(), ephemeral_secret, stealth->spend_keys().front())) {
+            return std::unexpected(kth::error::illegal_value);
         }
 
-        argument.is_stealth_ = true;
-        argument.pay_to_hash_ = bitcoin_short_hash(stealth_key);
-        argument.version_ = stealth.version();
-        return input;
+        return output{
+            /* is_stealth */ true,
+            amount,
+            stealth->version(),
+            std::move(stealth_script),
+            bitcoin_short_hash(stealth_key)
+        };
     }
 
     // The target must be a serialized script.
-    // Note that it is possible for a base16 encoded script to be interpreted
-    // as an address above. That is unlikely but considered intended behavior.
-    auto decoded = decode_base16(target);
+    // Note that it is possible for a base16-encoded script to be interpreted as
+    // an address above. That is unlikely but is considered intended behavior.
+    auto decoded = decode_base16(std::string{target});
     if ( ! decoded) {
-        BOOST_THROW_EXCEPTION(invalid_option_value(target));
+        return std::unexpected(kth::error::illegal_value);
     }
 
-    argument.script_ = script(*decoded);
-    return input;
+    auto script_result = script::from_data_chunk(*decoded);
+    if ( ! script_result) {
+        return std::unexpected(script_result.error());
+    }
+
+    return output{
+        /* is_stealth */ false,
+        amount,
+        /* version */ 0,
+        script_result->value(),
+        null_short_hash
+    };
 }
 
 } // namespace kth::domain::config

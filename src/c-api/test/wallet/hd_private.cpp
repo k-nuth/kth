@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <kth/capi/error.h>
 #include <kth/capi/wallet/hd_private.h>
 #include <kth/capi/wallet/hd_public.h>
 #include <kth/capi/primitives.h>
@@ -45,15 +46,17 @@ TEST_CASE("C-API HdPrivate - construct from seed is valid", "[C-API HdPrivate]")
     kth_wallet_hd_private_destruct(key);
 }
 
-TEST_CASE("C-API HdPrivate - construct from encoded is valid", "[C-API HdPrivate]") {
-    kth_hd_private_mut_t key = kth_wallet_hd_private_construct_from_encoded(kXprv);
+TEST_CASE("C-API HdPrivate - parse_from is valid", "[C-API HdPrivate]") {
+    kth_hd_private_mut_t key = NULL;
+    REQUIRE(kth_wallet_hd_private_parse_from(kXprv, &key) == kth_ec_success);
     REQUIRE(key != NULL);
     REQUIRE(kth_wallet_hd_private_valid(key) != 0);
     kth_wallet_hd_private_destruct(key);
 }
 
-TEST_CASE("C-API HdPrivate - construct from invalid encoded returns null", "[C-API HdPrivate]") {
-    kth_hd_private_mut_t key = kth_wallet_hd_private_construct_from_encoded("not-a-valid-xprv");
+TEST_CASE("C-API HdPrivate - parse_from invalid encoded returns error", "[C-API HdPrivate]") {
+    kth_hd_private_mut_t key = NULL;
+    REQUIRE(kth_wallet_hd_private_parse_from("not-a-valid-xprv", &key) != kth_ec_success);
     REQUIRE(key == NULL);
 }
 
@@ -65,11 +68,12 @@ TEST_CASE("C-API HdPrivate - destruct null is safe", "[C-API HdPrivate]") {
 // Getters
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API HdPrivate - encoded round-trips", "[C-API HdPrivate]") {
-    kth_hd_private_mut_t key = kth_wallet_hd_private_construct_from_encoded(kXprv);
+TEST_CASE("C-API HdPrivate - to_string round-trips", "[C-API HdPrivate]") {
+    kth_hd_private_mut_t key = NULL;
+    REQUIRE(kth_wallet_hd_private_parse_from(kXprv, &key) == kth_ec_success);
     REQUIRE(key != NULL);
 
-    char* encoded = kth_wallet_hd_private_encoded(key);
+    char* encoded = kth_wallet_hd_private_to_string(key);
     REQUIRE(encoded != NULL);
     REQUIRE(strcmp(encoded, kXprv) == 0);
 
@@ -78,7 +82,8 @@ TEST_CASE("C-API HdPrivate - encoded round-trips", "[C-API HdPrivate]") {
 }
 
 TEST_CASE("C-API HdPrivate - lineage returns valid data", "[C-API HdPrivate]") {
-    kth_hd_private_mut_t key = kth_wallet_hd_private_construct_from_encoded(kXprv);
+    kth_hd_private_mut_t key = NULL;
+    REQUIRE(kth_wallet_hd_private_parse_from(kXprv, &key) == kth_ec_success);
     REQUIRE(key != NULL);
 
     kth_hd_lineage_t lineage = kth_wallet_hd_private_lineage(key);
@@ -90,7 +95,8 @@ TEST_CASE("C-API HdPrivate - lineage returns valid data", "[C-API HdPrivate]") {
 }
 
 TEST_CASE("C-API HdPrivate - to_hd_key round-trips", "[C-API HdPrivate]") {
-    kth_hd_private_mut_t original = kth_wallet_hd_private_construct_from_encoded(kXprv);
+    kth_hd_private_mut_t original = NULL;
+    REQUIRE(kth_wallet_hd_private_parse_from(kXprv, &original) == kth_ec_success);
     REQUIRE(original != NULL);
 
     kth_hd_key_t hd_key = kth_wallet_hd_private_to_hd_key(original);
@@ -107,7 +113,8 @@ TEST_CASE("C-API HdPrivate - to_hd_key round-trips", "[C-API HdPrivate]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API HdPrivate - copy preserves equality", "[C-API HdPrivate]") {
-    kth_hd_private_mut_t original = kth_wallet_hd_private_construct_from_encoded(kXprv);
+    kth_hd_private_mut_t original = NULL;
+    REQUIRE(kth_wallet_hd_private_parse_from(kXprv, &original) == kth_ec_success);
     REQUIRE(original != NULL);
 
     kth_hd_private_mut_t copy = kth_wallet_hd_private_copy(original);
@@ -123,14 +130,15 @@ TEST_CASE("C-API HdPrivate - copy preserves equality", "[C-API HdPrivate]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API HdPrivate - to_public produces matching xpub", "[C-API HdPrivate]") {
-    kth_hd_private_mut_t priv = kth_wallet_hd_private_construct_from_encoded(kXprv);
+    kth_hd_private_mut_t priv = NULL;
+    REQUIRE(kth_wallet_hd_private_parse_from(kXprv, &priv) == kth_ec_success);
     REQUIRE(priv != NULL);
 
     kth_hd_public_mut_t pub = kth_wallet_hd_private_to_public(priv);
     REQUIRE(pub != NULL);
     REQUIRE(kth_wallet_hd_public_valid(pub) != 0);
 
-    char* pub_encoded = kth_wallet_hd_public_encoded(pub);
+    char* pub_encoded = kth_wallet_hd_public_to_string(pub);
     REQUIRE(strcmp(pub_encoded, kXpub) == 0);
 
     kth_core_destruct_string(pub_encoded);
@@ -140,7 +148,8 @@ TEST_CASE("C-API HdPrivate - to_public produces matching xpub", "[C-API HdPrivat
 
 TEST_CASE("C-API HdPrivate - derive_private produces BIP32 vector 1 child m/0h",
           "[C-API HdPrivate]") {
-    kth_hd_private_mut_t parent = kth_wallet_hd_private_construct_from_encoded(kXprv);
+    kth_hd_private_mut_t parent = NULL;
+    REQUIRE(kth_wallet_hd_private_parse_from(kXprv, &parent) == kth_ec_success);
     REQUIRE(parent != NULL);
 
     // BIP32 vector 1: m/0' (hardened child 0)
@@ -152,7 +161,7 @@ TEST_CASE("C-API HdPrivate - derive_private produces BIP32 vector 1 child m/0h",
     REQUIRE(lineage.depth == 1);
 
     // Verify against known BIP32 vector 1 child m/0'
-    char* child_encoded = kth_wallet_hd_private_encoded(child);
+    char* child_encoded = kth_wallet_hd_private_to_string(child);
     REQUIRE(strcmp(child_encoded, "xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7") == 0);
 
     kth_core_destruct_string(child_encoded);
@@ -161,7 +170,8 @@ TEST_CASE("C-API HdPrivate - derive_private produces BIP32 vector 1 child m/0h",
 }
 
 TEST_CASE("C-API HdPrivate - derive_public produces valid child", "[C-API HdPrivate]") {
-    kth_hd_private_mut_t parent = kth_wallet_hd_private_construct_from_encoded(kXprv);
+    kth_hd_private_mut_t parent = NULL;
+    REQUIRE(kth_wallet_hd_private_parse_from(kXprv, &parent) == kth_ec_success);
     REQUIRE(parent != NULL);
 
     kth_hd_public_mut_t child = kth_wallet_hd_private_derive_public(parent, 0);
@@ -176,9 +186,10 @@ TEST_CASE("C-API HdPrivate - derive_public produces valid child", "[C-API HdPriv
 // Preconditions
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API HdPrivate - construct_from_encoded null aborts",
+TEST_CASE("C-API HdPrivate - parse_from null aborts",
           "[C-API HdPrivate][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_hd_private_construct_from_encoded(NULL));
+    kth_hd_private_mut_t out = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_hd_private_parse_from(NULL, &out));
 }
 
 TEST_CASE("C-API HdPrivate - copy null aborts",

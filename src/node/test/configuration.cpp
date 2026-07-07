@@ -13,7 +13,7 @@ using namespace kth;
 //-----------------------------------------------------------------------------
 
 #if defined(KTH_CURRENCY_BCH)
-TEST_CASE("configuration  construct1  testnet4 context  expected", "[configuration tests]") {
+TEST_CASE("configuration construct1 testnet4 context expected", "[configuration tests]") {
     node::configuration instance(domain::config::network::testnet4);
     REQUIRE( ! instance.help);
     REQUIRE( ! instance.initchain);
@@ -23,7 +23,7 @@ TEST_CASE("configuration  construct1  testnet4 context  expected", "[configurati
     REQUIRE(instance.node.sync_timeout_seconds == 5u);
 }
 
-TEST_CASE("configuration  construct1  scalenet context  expected", "[configuration tests]") {
+TEST_CASE("configuration construct1 scalenet context expected", "[configuration tests]") {
     node::configuration instance(domain::config::network::scalenet);
     REQUIRE( ! instance.help);
     REQUIRE( ! instance.initchain);
@@ -33,7 +33,7 @@ TEST_CASE("configuration  construct1  scalenet context  expected", "[configurati
     REQUIRE(instance.node.sync_timeout_seconds == 5u);
 }
 
-TEST_CASE("configuration  construct1  chipnet context  expected", "[configuration tests]") {
+TEST_CASE("configuration construct1 chipnet context expected", "[configuration tests]") {
     node::configuration instance(domain::config::network::chipnet);
     REQUIRE( ! instance.help);
     REQUIRE( ! instance.initchain);
@@ -44,7 +44,7 @@ TEST_CASE("configuration  construct1  chipnet context  expected", "[configuratio
 }
 #endif
 
-TEST_CASE("configuration  construct1  mainnet context  expected", "[configuration tests]") {
+TEST_CASE("configuration construct1 mainnet context expected", "[configuration tests]") {
     node::configuration instance(domain::config::network::mainnet);
     REQUIRE( ! instance.help);
     REQUIRE( ! instance.initchain);
@@ -54,7 +54,7 @@ TEST_CASE("configuration  construct1  mainnet context  expected", "[configuratio
     REQUIRE(instance.node.sync_timeout_seconds == 5u);
 }
 
-TEST_CASE("configuration  construct1  testnet context  expected", "[configuration tests]") {
+TEST_CASE("configuration construct1 testnet context expected", "[configuration tests]") {
     node::configuration instance(domain::config::network::testnet);
     REQUIRE( ! instance.help);
     REQUIRE( ! instance.initchain);
@@ -65,7 +65,7 @@ TEST_CASE("configuration  construct1  testnet context  expected", "[configuratio
 }
 
 #if defined(KTH_CURRENCY_BCH)
-TEST_CASE("configuration  construct2  testnet4 context  expected", "[configuration tests]") {
+TEST_CASE("configuration construct2 testnet4 context expected", "[configuration tests]") {
     node::configuration instance1(domain::config::network::testnet4);
     instance1.help = true;
     instance1.initchain = true;
@@ -84,7 +84,7 @@ TEST_CASE("configuration  construct2  testnet4 context  expected", "[configurati
     REQUIRE(instance2.node.sync_timeout_seconds == 24u);
 }
 
-TEST_CASE("configuration  construct2  scalenet context  expected", "[configuration tests]") {
+TEST_CASE("configuration construct2 scalenet context expected", "[configuration tests]") {
     node::configuration instance1(domain::config::network::scalenet);
     instance1.help = true;
     instance1.initchain = true;
@@ -103,7 +103,7 @@ TEST_CASE("configuration  construct2  scalenet context  expected", "[configurati
     REQUIRE(instance2.node.sync_timeout_seconds == 24u);
 }
 
-TEST_CASE("configuration  construct2  chipnet context  expected", "[configuration tests]") {
+TEST_CASE("configuration construct2 chipnet context expected", "[configuration tests]") {
     node::configuration instance1(domain::config::network::chipnet);
     instance1.help = true;
     instance1.initchain = true;

@@ -6,6 +6,7 @@
 #define KTH_INFRASTRUCTURE_STRING_HPP
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <kth/infrastructure/define.hpp>
@@ -76,8 +77,8 @@ KI_API std::string join(string_list const& words,
  * @param[in]  trim       Trim the sentence for whitespace, defaults to true.
  * @return                The list of resulting strings.
  */
-KI_API string_list split(std::string const& sentence,
-    std::string const& delimiter=" ", bool trim=true);
+KI_API string_list split(std::string_view sentence,
+    std::string_view delimiter=" ", bool trim=true);
 
 } // namespace kth
 

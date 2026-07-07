@@ -41,13 +41,13 @@ TEST_CASE("VM-AUTO #211 [Should Pass]: 0 0 boolor | not", "[vm][auto]") { run_bc
 
 TEST_CASE("VM-AUTO #212 [Should Fail: EVAL_FALSE]: negative-0 negative-0 BOOLOR", "[vm][auto]") { run_bchn_test({"[80]", "dup boolor", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, "negative-0 negative-0 BOOLOR"}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
 
-TEST_CASE("VM-AUTO #213 [Should Fail: EVAL_FALSE]: non-minimal-0  non-minimal-0 BOOLOR", "[vm][auto]") { run_bchn_test({"[00]", "dup boolor", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, " non-minimal-0  non-minimal-0 BOOLOR"}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
+TEST_CASE("VM-AUTO #213 [Should Fail: EVAL_FALSE]: non-minimal-0 non-minimal-0 BOOLOR", "[vm][auto]") { run_bchn_test({"[00]", "dup boolor", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, " non-minimal-0  non-minimal-0 BOOLOR"}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
 
 TEST_CASE("VM-AUTO #214 [Should Pass]: -1 -1 BOOLOR", "[vm][auto]") { run_bchn_test({"[81]", "dup boolor", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, "-1 -1 BOOLOR"}); } // flags: P2SH,STRICTENC, expected: OK
 
 TEST_CASE("VM-AUTO #215 [Should Fail: EVAL_FALSE]: negative-0 negative-0 BOOLAND", "[vm][auto]") { run_bchn_test({"[80]", "dup booland", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, "negative-0 negative-0 BOOLAND"}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
 
-TEST_CASE("VM-AUTO #216 [Should Fail: EVAL_FALSE]: non-minimal-0  non-minimal-0 BOOLAND", "[vm][auto]") { run_bchn_test({"[00]", "dup booland", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, " non-minimal-0  non-minimal-0 BOOLAND"}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
+TEST_CASE("VM-AUTO #216 [Should Fail: EVAL_FALSE]: non-minimal-0 non-minimal-0 BOOLAND", "[vm][auto]") { run_bchn_test({"[00]", "dup booland", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, " non-minimal-0  non-minimal-0 BOOLAND"}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
 
 TEST_CASE("VM-AUTO #217 [Should Pass]: -1 -1 BOOLAND", "[vm][auto]") { run_bchn_test({"[81]", "dup booland", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, "-1 -1 BOOLAND"}); } // flags: P2SH,STRICTENC, expected: OK
 

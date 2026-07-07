@@ -165,15 +165,15 @@ TEST_CASE("VM-AUTO #771 [Should Fail: EVAL_FALSE]: Test the test: we should have
 
 TEST_CASE("VM-AUTO #772 [Should Fail: EVAL_FALSE]: and multiple spaces should not change that.", "[vm][auto]") { run_bchn_test({"", "depth", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, "and multiple spaces should not change that."}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
 
-TEST_CASE("VM-AUTO #773 [Should Fail: EVAL_FALSE]:  | depth", "[vm][auto]") { run_bchn_test({"", "depth", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, ""}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
+TEST_CASE("VM-AUTO #773 [Should Fail: EVAL_FALSE]: | depth", "[vm][auto]") { run_bchn_test({"", "depth", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, ""}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
 
-TEST_CASE("VM-AUTO #774 [Should Fail: EVAL_FALSE]:  | depth", "[vm][auto]") { run_bchn_test({"", "depth", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, ""}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
+TEST_CASE("VM-AUTO #774 [Should Fail: EVAL_FALSE]: | depth", "[vm][auto]") { run_bchn_test({"", "depth", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, ""}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
 
-TEST_CASE("VM-AUTO #775 [Should Fail: EVAL_FALSE]:  | ", "[vm][auto]") { run_bchn_test({"", "", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, ""}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
+TEST_CASE("VM-AUTO #775 [Should Fail: EVAL_FALSE]: | ", "[vm][auto]") { run_bchn_test({"", "", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, ""}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
 
-TEST_CASE("VM-AUTO #776 [Should Fail: EVAL_FALSE]:  | nop", "[vm][auto]") { run_bchn_test({"", "nop", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, ""}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
+TEST_CASE("VM-AUTO #776 [Should Fail: EVAL_FALSE]: | nop", "[vm][auto]") { run_bchn_test({"", "nop", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, ""}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
 
-TEST_CASE("VM-AUTO #777 [Should Fail: EVAL_FALSE]:  | nop depth", "[vm][auto]") { run_bchn_test({"", "nop depth", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, ""}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
+TEST_CASE("VM-AUTO #777 [Should Fail: EVAL_FALSE]: | nop depth", "[vm][auto]") { run_bchn_test({"", "nop depth", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, ""}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
 
 TEST_CASE("VM-AUTO #778 [Should Fail: EVAL_FALSE]: nop | ", "[vm][auto]") { run_bchn_test({"nop", "", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::stack_false, ""}); } // flags: P2SH,STRICTENC, expected: EVAL_FALSE
 

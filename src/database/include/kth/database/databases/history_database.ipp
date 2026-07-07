@@ -5,6 +5,8 @@
 #ifndef KTH_DATABASE_HISTORY_DATABASE_IPP_
 #define KTH_DATABASE_HISTORY_DATABASE_IPP_
 
+#include <set>
+
 #include <kth/infrastructure/log/source.hpp>
 
 namespace kth::database {

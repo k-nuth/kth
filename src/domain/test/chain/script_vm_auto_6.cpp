@@ -15,7 +15,7 @@ using namespace kth::domain::machine;
 
 extern void run_bchn_test(bchn_script_test const& test);
 
-TEST_CASE("VM-AUTO #600 [Should Pass]: OP_9  pushes 0x09", "[vm][auto]") { run_bchn_test({"[09]", "0x59 equal", kth::domain::machine::script_flags::no_rules, kth::error::success, "OP_9  pushes 0x09"}); } // flags: NONE, expected: OK
+TEST_CASE("VM-AUTO #600 [Should Pass]: OP_9 pushes 0x09", "[vm][auto]") { run_bchn_test({"[09]", "0x59 equal", kth::domain::machine::script_flags::no_rules, kth::error::success, "OP_9  pushes 0x09"}); } // flags: NONE, expected: OK
 
 TEST_CASE("VM-AUTO #601 [Should Pass]: OP_10 pushes 0x0a", "[vm][auto]") { run_bchn_test({"[0a]", "0x5a equal", kth::domain::machine::script_flags::no_rules, kth::error::success, "OP_10 pushes 0x0a"}); } // flags: NONE, expected: OK
 
@@ -65,41 +65,41 @@ TEST_CASE("VM-AUTO #623 [Should Pass]: 1NEGATE equiv", "[vm][auto]") { run_bchn_
 
 TEST_CASE("VM-AUTO #624 [Should Pass]: 1NEGATE equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [81] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "1NEGATE equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #625 [Should Pass]: OP_1  equiv", "[vm][auto]") { run_bchn_test({"0 if [01] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_1  equiv"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #625 [Should Pass]: OP_1 equiv", "[vm][auto]") { run_bchn_test({"0 if [01] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_1  equiv"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #626 [Should Pass]: OP_1  equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [01] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_1  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #626 [Should Pass]: OP_1 equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [01] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_1  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #627 [Should Pass]: OP_2  equiv", "[vm][auto]") { run_bchn_test({"0 if [02] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_2  equiv"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #627 [Should Pass]: OP_2 equiv", "[vm][auto]") { run_bchn_test({"0 if [02] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_2  equiv"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #628 [Should Pass]: OP_2  equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [02] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_2  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #628 [Should Pass]: OP_2 equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [02] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_2  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #629 [Should Pass]: OP_3  equiv", "[vm][auto]") { run_bchn_test({"0 if [03] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_3  equiv"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #629 [Should Pass]: OP_3 equiv", "[vm][auto]") { run_bchn_test({"0 if [03] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_3  equiv"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #630 [Should Pass]: OP_3  equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [03] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_3  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #630 [Should Pass]: OP_3 equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [03] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_3  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #631 [Should Pass]: OP_4  equiv", "[vm][auto]") { run_bchn_test({"0 if [04] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_4  equiv"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #631 [Should Pass]: OP_4 equiv", "[vm][auto]") { run_bchn_test({"0 if [04] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_4  equiv"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #632 [Should Pass]: OP_4  equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [04] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_4  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #632 [Should Pass]: OP_4 equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [04] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_4  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #633 [Should Pass]: OP_5  equiv", "[vm][auto]") { run_bchn_test({"0 if [05] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_5  equiv"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #633 [Should Pass]: OP_5 equiv", "[vm][auto]") { run_bchn_test({"0 if [05] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_5  equiv"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #634 [Should Pass]: OP_5  equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [05] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_5  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #634 [Should Pass]: OP_5 equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [05] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_5  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #635 [Should Pass]: OP_6  equiv", "[vm][auto]") { run_bchn_test({"0 if [06] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_6  equiv"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #635 [Should Pass]: OP_6 equiv", "[vm][auto]") { run_bchn_test({"0 if [06] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_6  equiv"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #636 [Should Pass]: OP_6  equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [06] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_6  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #636 [Should Pass]: OP_6 equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [06] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_6  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #637 [Should Pass]: OP_7  equiv", "[vm][auto]") { run_bchn_test({"0 if [07] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_7  equiv"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #637 [Should Pass]: OP_7 equiv", "[vm][auto]") { run_bchn_test({"0 if [07] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_7  equiv"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #638 [Should Pass]: OP_7  equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [07] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_7  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #638 [Should Pass]: OP_7 equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [07] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_7  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #639 [Should Pass]: OP_8  equiv", "[vm][auto]") { run_bchn_test({"0 if [08] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_8  equiv"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #639 [Should Pass]: OP_8 equiv", "[vm][auto]") { run_bchn_test({"0 if [08] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_8  equiv"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #640 [Should Pass]: OP_8  equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [08] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_8  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #640 [Should Pass]: OP_8 equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [08] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_8  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #641 [Should Pass]: OP_9  equiv", "[vm][auto]") { run_bchn_test({"0 if [09] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_9  equiv"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #641 [Should Pass]: OP_9 equiv", "[vm][auto]") { run_bchn_test({"0 if [09] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_9  equiv"}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #642 [Should Pass]: OP_9  equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [09] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_9  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #642 [Should Pass]: OP_9 equiv (scriptPubKey)", "[vm][auto]") { run_bchn_test({"", "0 if [09] endif 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_9  equiv (scriptPubKey)"}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #643 [Should Pass]: OP_10 equiv", "[vm][auto]") { run_bchn_test({"0 if [0a] endif 1", "", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, "OP_10 equiv"}); } // flags: MINIMALDATA, expected: OK
 
@@ -131,79 +131,79 @@ TEST_CASE("VM-AUTO #656 [Should Pass]: OP_16 equiv (scriptPubKey)", "[vm][auto]"
 
 TEST_CASE("VM-AUTO #657 [Should Pass]: [00] | 1", "[vm][auto]") { run_bchn_test({"[00]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #658 [Should Pass]:  | [00] 1", "[vm][auto]") { run_bchn_test({"", "[00] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #658 [Should Pass]: | [00] 1", "[vm][auto]") { run_bchn_test({"", "[00] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #659 [Should Pass]: [80] | 1", "[vm][auto]") { run_bchn_test({"[80]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #660 [Should Pass]:  | [80] 1", "[vm][auto]") { run_bchn_test({"", "[80] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #660 [Should Pass]: | [80] 1", "[vm][auto]") { run_bchn_test({"", "[80] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #661 [Should Pass]: [0180] | 1", "[vm][auto]") { run_bchn_test({"[0180]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #662 [Should Pass]:  | [0180] 1", "[vm][auto]") { run_bchn_test({"", "[0180] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #662 [Should Pass]: | [0180] 1", "[vm][auto]") { run_bchn_test({"", "[0180] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #663 [Should Pass]: [0100] | 1", "[vm][auto]") { run_bchn_test({"[0100]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #664 [Should Pass]:  | [0100] 1", "[vm][auto]") { run_bchn_test({"", "[0100] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #664 [Should Pass]: | [0100] 1", "[vm][auto]") { run_bchn_test({"", "[0100] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #665 [Should Pass]: [0200] | 1", "[vm][auto]") { run_bchn_test({"[0200]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #666 [Should Pass]:  | [0200] 1", "[vm][auto]") { run_bchn_test({"", "[0200] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #666 [Should Pass]: | [0200] 1", "[vm][auto]") { run_bchn_test({"", "[0200] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #667 [Should Pass]: [0300] | 1", "[vm][auto]") { run_bchn_test({"[0300]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #668 [Should Pass]:  | [0300] 1", "[vm][auto]") { run_bchn_test({"", "[0300] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #668 [Should Pass]: | [0300] 1", "[vm][auto]") { run_bchn_test({"", "[0300] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #669 [Should Pass]: [0400] | 1", "[vm][auto]") { run_bchn_test({"[0400]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #670 [Should Pass]:  | [0400] 1", "[vm][auto]") { run_bchn_test({"", "[0400] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #670 [Should Pass]: | [0400] 1", "[vm][auto]") { run_bchn_test({"", "[0400] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #671 [Should Pass]: [0500] | 1", "[vm][auto]") { run_bchn_test({"[0500]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #672 [Should Pass]:  | [0500] 1", "[vm][auto]") { run_bchn_test({"", "[0500] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #672 [Should Pass]: | [0500] 1", "[vm][auto]") { run_bchn_test({"", "[0500] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #673 [Should Pass]: [0600] | 1", "[vm][auto]") { run_bchn_test({"[0600]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #674 [Should Pass]:  | [0600] 1", "[vm][auto]") { run_bchn_test({"", "[0600] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #674 [Should Pass]: | [0600] 1", "[vm][auto]") { run_bchn_test({"", "[0600] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #675 [Should Pass]: [0700] | 1", "[vm][auto]") { run_bchn_test({"[0700]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #676 [Should Pass]:  | [0700] 1", "[vm][auto]") { run_bchn_test({"", "[0700] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #676 [Should Pass]: | [0700] 1", "[vm][auto]") { run_bchn_test({"", "[0700] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #677 [Should Pass]: [0800] | 1", "[vm][auto]") { run_bchn_test({"[0800]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #678 [Should Pass]:  | [0800] 1", "[vm][auto]") { run_bchn_test({"", "[0800] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #678 [Should Pass]: | [0800] 1", "[vm][auto]") { run_bchn_test({"", "[0800] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #679 [Should Pass]: [0900] | 1", "[vm][auto]") { run_bchn_test({"[0900]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #680 [Should Pass]:  | [0900] 1", "[vm][auto]") { run_bchn_test({"", "[0900] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #680 [Should Pass]: | [0900] 1", "[vm][auto]") { run_bchn_test({"", "[0900] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #681 [Should Pass]: [0a00] | 1", "[vm][auto]") { run_bchn_test({"[0a00]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #682 [Should Pass]:  | [0a00] 1", "[vm][auto]") { run_bchn_test({"", "[0a00] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #682 [Should Pass]: | [0a00] 1", "[vm][auto]") { run_bchn_test({"", "[0a00] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #683 [Should Pass]: [0b00] | 1", "[vm][auto]") { run_bchn_test({"[0b00]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #684 [Should Pass]:  | [0b00] 1", "[vm][auto]") { run_bchn_test({"", "[0b00] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #684 [Should Pass]: | [0b00] 1", "[vm][auto]") { run_bchn_test({"", "[0b00] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #685 [Should Pass]: [0c00] | 1", "[vm][auto]") { run_bchn_test({"[0c00]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #686 [Should Pass]:  | [0c00] 1", "[vm][auto]") { run_bchn_test({"", "[0c00] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #686 [Should Pass]: | [0c00] 1", "[vm][auto]") { run_bchn_test({"", "[0c00] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #687 [Should Pass]: [0d00] | 1", "[vm][auto]") { run_bchn_test({"[0d00]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #688 [Should Pass]:  | [0d00] 1", "[vm][auto]") { run_bchn_test({"", "[0d00] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #688 [Should Pass]: | [0d00] 1", "[vm][auto]") { run_bchn_test({"", "[0d00] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #689 [Should Pass]: [0e00] | 1", "[vm][auto]") { run_bchn_test({"[0e00]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #690 [Should Pass]:  | [0e00] 1", "[vm][auto]") { run_bchn_test({"", "[0e00] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #690 [Should Pass]: | [0e00] 1", "[vm][auto]") { run_bchn_test({"", "[0e00] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #691 [Should Pass]: [0f00] | 1", "[vm][auto]") { run_bchn_test({"[0f00]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #692 [Should Pass]:  | [0f00] 1", "[vm][auto]") { run_bchn_test({"", "[0f00] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #692 [Should Pass]: | [0f00] 1", "[vm][auto]") { run_bchn_test({"", "[0f00] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #693 [Should Pass]: [1000] | 1", "[vm][auto]") { run_bchn_test({"[1000]", "1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
-TEST_CASE("VM-AUTO #694 [Should Pass]:  | [1000] 1", "[vm][auto]") { run_bchn_test({"", "[1000] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
+TEST_CASE("VM-AUTO #694 [Should Pass]: | [1000] 1", "[vm][auto]") { run_bchn_test({"", "[1000] 1", kth::domain::machine::script_flags::bch_minimaldata, kth::error::success, ""}); } // flags: MINIMALDATA, expected: OK
 
 TEST_CASE("VM-AUTO #695 [Should Pass]: 1 [0000] | pick drop", "[vm][auto]") { run_bchn_test({"1 [0000]", "pick drop", kth::domain::machine::script_flags::no_rules, kth::error::success, ""}); } // flags: NONE, expected: OK
 

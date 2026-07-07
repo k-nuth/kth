@@ -12,12 +12,12 @@ using namespace kth::domain::message;
 
 // Start Test Suite: heading tests
 
-TEST_CASE("heading  constructor 1  always  initialized invalid", "[heading]") {
+TEST_CASE("heading constructor 1 always initialized invalid", "[heading]") {
     heading instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("heading  constructor 2  always  equals params", "[heading]") {
+TEST_CASE("heading constructor 2 always equals params", "[heading]") {
     uint32_t magic = 123u;
     std::string const command = "foo";
     uint32_t payload_size = 3454u;
@@ -30,7 +30,7 @@ TEST_CASE("heading  constructor 2  always  equals params", "[heading]") {
     REQUIRE(checksum == instance.checksum());
 }
 
-TEST_CASE("heading  constructor 3  always  equals params", "[heading]") {
+TEST_CASE("heading constructor 3 always equals params", "[heading]") {
     uint32_t magic = 123u;
     std::string const command = "foo";
     uint32_t payload_size = 3454u;
@@ -43,14 +43,14 @@ TEST_CASE("heading  constructor 3  always  equals params", "[heading]") {
     REQUIRE(checksum == instance.checksum());
 }
 
-TEST_CASE("heading  constructor 4  always  equals params", "[heading]") {
+TEST_CASE("heading constructor 4 always equals params", "[heading]") {
     heading expected(453u, "bar", 436u, 5743u);
     heading instance(expected);
     REQUIRE(instance.is_valid());
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("heading  constructor 5  always  equals params", "[heading]") {
+TEST_CASE("heading constructor 5 always equals params", "[heading]") {
     uint32_t magic = 123u;
     std::string const command = "foo";
     uint32_t payload_size = 3454u;
@@ -64,7 +64,7 @@ TEST_CASE("heading  constructor 5  always  equals params", "[heading]") {
     REQUIRE(checksum == instance.checksum());
 }
 
-TEST_CASE("heading  to data  checksum variations  success", "[heading]") {
+TEST_CASE("heading to data checksum variations success", "[heading]") {
     heading instance{
         32414u,
         "foo",
@@ -79,7 +79,7 @@ TEST_CASE("heading  to data  checksum variations  success", "[heading]") {
     REQUIRE(nonzero_checksum.size() == heading::satoshi_fixed_size());
 }
 
-TEST_CASE("heading from data insufficient bytes  failure", "[heading]") {
+TEST_CASE("heading from data insufficient bytes failure", "[heading]") {
     static data_chunk const raw{
         0xab, 0xcd};
 
@@ -89,7 +89,7 @@ TEST_CASE("heading from data insufficient bytes  failure", "[heading]") {
     REQUIRE( ! result);
 }
 
-TEST_CASE("heading from data valid input  success", "[heading]") {
+TEST_CASE("heading from data valid input success", "[heading]") {
     static const heading expected{
         32414u,
         "foo",
@@ -108,13 +108,13 @@ TEST_CASE("heading from data valid input  success", "[heading]") {
 
 
 
-TEST_CASE("heading  magic accessor  always  returns initialized value", "[heading]") {
+TEST_CASE("heading magic accessor always returns initialized value", "[heading]") {
     uint32_t expected = 3574u;
     message::heading instance(expected, "baz", 4356u, 7923u);
     REQUIRE(expected == instance.magic());
 }
 
-TEST_CASE("heading  magic setter  roundtrip  success", "[heading]") {
+TEST_CASE("heading magic setter roundtrip success", "[heading]") {
     uint32_t const expected = 3574u;
     message::heading instance;
     REQUIRE(0 == instance.magic());
@@ -122,19 +122,19 @@ TEST_CASE("heading  magic setter  roundtrip  success", "[heading]") {
     REQUIRE(expected == instance.magic());
 }
 
-TEST_CASE("heading  command accessor 1  always  returns initialized value", "[heading]") {
+TEST_CASE("heading command accessor 1 always returns initialized value", "[heading]") {
     std::string const expected = "asdge";
     message::heading instance(545u, expected, 4356u, 7923u);
     REQUIRE(expected == instance.command());
 }
 
-TEST_CASE("heading  command accessor 2  always  returns initialized value", "[heading]") {
+TEST_CASE("heading command accessor 2 always returns initialized value", "[heading]") {
     std::string const expected = "asdge";
     const message::heading instance(545u, expected, 4356u, 7923u);
     REQUIRE(expected == instance.command());
 }
 
-TEST_CASE("heading  command setter 1  roundtrip  success", "[heading]") {
+TEST_CASE("heading command setter 1 roundtrip success", "[heading]") {
     std::string const expected = "gdasd";
     message::heading instance;
     REQUIRE(expected != instance.command());
@@ -142,7 +142,7 @@ TEST_CASE("heading  command setter 1  roundtrip  success", "[heading]") {
     REQUIRE(expected == instance.command());
 }
 
-TEST_CASE("heading  command setter 2  roundtrip  success", "[heading]") {
+TEST_CASE("heading command setter 2 roundtrip success", "[heading]") {
     std::string expected = "eytyry";
     message::heading instance;
     REQUIRE(expected != instance.command());
@@ -150,13 +150,13 @@ TEST_CASE("heading  command setter 2  roundtrip  success", "[heading]") {
     REQUIRE(expected == instance.command());
 }
 
-TEST_CASE("heading  payload size accessor  always  returns initialized value", "[heading]") {
+TEST_CASE("heading payload size accessor always returns initialized value", "[heading]") {
     uint32_t const expected = 4356u;
     message::heading instance(3574u, "baz", expected, 7923u);
     REQUIRE(expected == instance.payload_size());
 }
 
-TEST_CASE("heading  payload size setter  roundtrip  success", "[heading]") {
+TEST_CASE("heading payload size setter roundtrip success", "[heading]") {
     uint32_t const expected = 3574u;
     message::heading instance;
     REQUIRE(0 == instance.payload_size());
@@ -164,13 +164,13 @@ TEST_CASE("heading  payload size setter  roundtrip  success", "[heading]") {
     REQUIRE(expected == instance.payload_size());
 }
 
-TEST_CASE("heading  checksum accessor  always  returns initialized value", "[heading]") {
+TEST_CASE("heading checksum accessor always returns initialized value", "[heading]") {
     uint32_t expected = 7923u;
     message::heading instance(3574u, "baz", 4356u, expected);
     REQUIRE(expected == instance.checksum());
 }
 
-TEST_CASE("heading  checksum setter  roundtrip  success", "[heading]") {
+TEST_CASE("heading checksum setter roundtrip success", "[heading]") {
     uint32_t const expected = 3574u;
     message::heading instance;
     REQUIRE(0 == instance.checksum());
@@ -178,7 +178,7 @@ TEST_CASE("heading  checksum setter  roundtrip  success", "[heading]") {
     REQUIRE(expected == instance.checksum());
 }
 
-TEST_CASE("heading  operator assign equals  always  matches equivalent", "[heading]") {
+TEST_CASE("heading operator assign equals always matches equivalent", "[heading]") {
     message::heading value(1u, "foobar", 2u, 3u);
     REQUIRE(value.is_valid());
     message::heading instance;
@@ -187,25 +187,25 @@ TEST_CASE("heading  operator assign equals  always  matches equivalent", "[headi
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("heading  operator boolean equals  duplicates  returns true", "[heading]") {
+TEST_CASE("heading operator boolean equals duplicates returns true", "[heading]") {
     const message::heading expected(1u, "foobar", 2u, 3u);
     message::heading instance(expected);
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("heading  operator boolean equals  differs  returns false", "[heading]") {
+TEST_CASE("heading operator boolean equals differs returns false", "[heading]") {
     const message::heading expected(1u, "foobar", 2u, 3u);
     message::heading instance;
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("heading  operator boolean not equals  duplicates  returns false", "[heading]") {
+TEST_CASE("heading operator boolean not equals duplicates returns false", "[heading]") {
     const message::heading expected(1u, "foobar", 2u, 3u);
     message::heading instance(expected);
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("heading  operator boolean not equals  differs  returns true", "[heading]") {
+TEST_CASE("heading operator boolean not equals differs returns true", "[heading]") {
     const message::heading expected(1u, "foobar", 2u, 3u);
     message::heading instance;
     REQUIRE(instance != expected);
@@ -274,7 +274,7 @@ TEST_CASE("heading type all cases match expected", "[heading]") {
     REQUIRE(message::message_type::xversion == instance.type());
 }
 
-TEST_CASE("heading  maximum size  always  matches satoshi fixed size", "[heading]") {
+TEST_CASE("heading maximum size always matches satoshi fixed size", "[heading]") {
     REQUIRE(heading::satoshi_fixed_size() == heading::maximum_size());
 }
 

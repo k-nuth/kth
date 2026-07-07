@@ -47,7 +47,9 @@ static char const* const kAddr1 =
     "bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz";
 
 static kth_payment_address_mut_t make_addr(void) {
-    return kth_wallet_payment_address_construct_from_address(kAddr1);
+    kth_payment_address_mut_t out = NULL;
+    kth_wallet_payment_address_parse_from_simple(kAddr1, &out);
+    return out;
 }
 
 // Build a plain BCH UTXO.

@@ -120,7 +120,9 @@ payment_address input::address() const {
 
 payment_address::list input::addresses() const {
     // TODO(legacy): expand to include segregated witness address extraction.
-    return payment_address::extract_input(script_);
+    return payment_address::extract_input(script_,
+                                          payment_address::mainnet_p2kh,
+                                          payment_address::mainnet_p2sh);
 }
 
 // Validation helpers.

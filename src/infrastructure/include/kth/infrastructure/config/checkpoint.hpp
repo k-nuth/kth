@@ -6,96 +6,97 @@
 #define KTH_INFRASTUCTURE_CONFIG_CHECKPOINT_HPP
 
 #include <cstddef>
-#include <iostream>
+#include <expected>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include <fmt/core.h>
+
 #include <kth/infrastructure/define.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 
 namespace kth::infrastructure::config {
 
 /**
- * Serialization helper for a blockchain checkpoint.
- * This is a container for a {block hash, block height} tuple.
+ * Serialization helper for a blockchain checkpoint:
+ * a `{block hash, block height}` tuple.
+ *
+ * Valid-by-construction: no default ctor, no throwing ctor. Fallible
+ * string parsing goes through `parse_from` returning `expect<checkpoint>`.
  */
 struct KI_API checkpoint {
     using list = std::vector<checkpoint>;
 
     /**
-     * Created a sorted copy of the list of checkpoints.
-     * @param[in]  checks  The list of checkpoints.
-     * @return             The sorted list of checkpoints.
+     * Parse `hash[:height]` text form. Height defaults to zero.
+     * Returns `error::illegal_value` on malformed input.
      */
-    static
+    [[nodiscard]] static
+    std::expected<checkpoint, kth::code> parse_from(std::string_view value);
+
+    /**
+     * Parse `hash` (hex) and pair with a caller-supplied height.
+     */
+    [[nodiscard]] static
+    std::expected<checkpoint, kth::code> parse_from(std::string_view hash, size_t height);
+
+    /**
+     * Wrap an already-decoded hash.
+     */
+    constexpr
+    checkpoint(hash_digest const& hash, size_t height) noexcept
+        : hash_(hash), height_(height) {}
+
+    /**
+     * Sorted copy of a checkpoint list (by height ascending).
+     */
+    [[nodiscard]] static
     list sort(list const& checks);
 
     /**
-     * Confirm a checkpoint is in the range of a sorted list of checkpoints.
-     * @param[in]  height  The height of checkpoint.
-     * @param[in]  checks  The list of checkpoints.
+     * True when `height` is at-or-below the last (highest) checkpoint.
      */
-    static
+    [[nodiscard]] static
     bool covered(size_t height, list const& checks);
 
     /**
-     * Validate a checkpoint against a set of checkpoints.
-     * @param[in]  hash    The hash of the checkpoint.
-     * @param[in]  height  The height of checkpoint.
-     * @param[in]  checks  The set of checkpoints.
+     * True unless the (hash, height) contradicts an entry in `checks`.
      */
-    static
+    [[nodiscard]] static
     bool validate(hash_digest const& hash, size_t height, list const& checks);
 
-    checkpoint() = default;
+    [[nodiscard]] constexpr
+    hash_digest const& hash() const noexcept { return hash_; }
+
+    [[nodiscard]] constexpr
+    size_t height() const noexcept { return height_; }
 
     /**
-     * Initialization constructor.
-     * The height is optional and will be set to zero if not provided.
-     * @param[in]  value  The value of the hash[:height] form.
+     * `hash:height` encoding, used by `fmt::formatter<checkpoint>`.
      */
-    explicit
-    checkpoint(std::string_view value);
-
-    /**
-     * Initialization constructor.
-     * @param[in]  hash    The string block hash for the checkpoint.
-     * @param[in]  height  The height of the hash.
-     */
-    checkpoint(std::string_view hash, size_t height);
-
-    /**
-     * Initialization constructor.
-     * @param[in]  hash    The block hash for the checkpoint.
-     * @param[in]  height  The height of the hash.
-     */
-    checkpoint(hash_digest const& hash, size_t height);
-
-    hash_digest const& hash() const;
-    size_t const height() const;
-
-    /**
-     * Get the checkpoint as a string.
-     * @return The ip address of the authority in the hash:height form.
-     */
+    [[nodiscard]]
     std::string to_string() const;
 
-    // bool operator==( const& x) const;
-    friend
+    [[nodiscard]] friend
     auto operator<=>(checkpoint const&, checkpoint const&) = default;
 
-    friend
-    std::istream& operator>>(std::istream& input, checkpoint& argument);
-
-    friend
-    std::ostream& operator<<(std::ostream& output, checkpoint const& argument);
-
 private:
-    hash_digest hash_ = null_hash;
-    size_t height_ = 0;
+    hash_digest hash_;
+    size_t      height_;
 };
 
 } // namespace kth::infrastructure::config
+
+template <>
+struct fmt::formatter<kth::infrastructure::config::checkpoint>
+    : fmt::formatter<std::string> {
+    template <typename FormatContext>
+    auto format(kth::infrastructure::config::checkpoint const& value,
+                FormatContext& ctx) const {
+        return fmt::formatter<std::string>::format(value.to_string(), ctx);
+    }
+};
 
 #endif

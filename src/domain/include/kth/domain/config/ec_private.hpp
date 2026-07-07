@@ -5,66 +5,65 @@
 #ifndef KTH_CONFIG_EC_PRIVATE_HPP
 #define KTH_CONFIG_EC_PRIVATE_HPP
 
-#include <iostream>
 #include <string>
+#include <string_view>
 
-#include <kth/domain.hpp>
+#include <fmt/core.h>
+
 #include <kth/domain/define.hpp>
-
+#include <kth/domain/deserialization.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 
 namespace kth::domain::config {
 
 /**
- * Serialization helper to convert between base16 string and ec_secret.
+ * Serialization helper to convert between a base16 string and `ec_secret`.
+ *
+ * Valid-by-construction: no default ctor, no throwing ctor. Fallible
+ * string parsing goes through `parse_from` returning `expect<ec_private>`.
  */
 struct KD_API ec_private {
 
-    ec_private() = default;
+    /**
+     * Parse a base16-encoded secret. Returns `error::illegal_value` on
+     * malformed input or a value that fails EC curve verification.
+     */
+    [[nodiscard]] static
+    expect<ec_private> parse_from(std::string_view hexcode);
 
     /**
-     * Initialization constructor.
-     * @param[in]  hexcode  The value to initialize with.
+     * Wrap an already-validated secret.
      */
-    ec_private(std::string const& hexcode);
+    constexpr explicit
+    ec_private(ec_secret const& secret) noexcept
+        : value_(secret) {}
 
     /**
-     * Initialization constructor.
-     * @param[in]  secret  The value to initialize with.
+     * Explicit accessor for the wrapped secret.
      */
-    ec_private(ec_secret const& secret);
+    [[nodiscard]] constexpr
+    ec_secret const& value() const noexcept { return value_; }
 
     /**
-     * Overload cast to internal type.
-     * @return  This object's value cast to internal type.
+     * Base16 encoding used by `fmt::formatter<ec_private>`.
      */
-    operator ec_secret const&() const;
-
-    /**
-     * Overload stream in. Throws if input is invalid.
-     * @param[in]   input     The input stream to read the value from.
-     * @param[out]  argument  The object to receive the read value.
-     * @return                The input stream reference.
-     */
-    friend
-    std::istream& operator>>(std::istream& input, ec_private& argument);
-
-    /**
-     * Overload stream out.
-     * @param[in]   output    The output stream to write the value to.
-     * @param[out]  argument  The object from which to obtain the value.
-     * @return                The output stream reference.
-     */
-    friend
-    std::ostream& operator<<(std::ostream& output, ec_private const& argument);
+    [[nodiscard]]
+    std::string to_string() const;
 
 private:
-    /**
-     * The state of this object.
-     */
     ec_secret value_;
 };
 
 } // namespace kth::domain::config
+
+template <>
+struct fmt::formatter<kth::domain::config::ec_private>
+    : fmt::formatter<std::string> {
+    template <typename FormatContext>
+    auto format(kth::domain::config::ec_private const& value,
+                FormatContext& ctx) const {
+        return fmt::formatter<std::string>::format(value.to_string(), ctx);
+    }
+};
 
 #endif

@@ -101,7 +101,7 @@ public:
 
 BOOST_FIXTURE_TEST_SUITE(hash_table_tests, hash_table_directory_setup_fixture)
 
-TEST_CASE("slab hash table  write read  test", "[None]") {
+TEST_CASE("slab hash table write read test", "[None]") {
     // Create the data file to be read below.
     create_database_file();
 
@@ -132,7 +132,7 @@ TEST_CASE("slab hash table  write read  test", "[None]") {
     }
 }
 
-TEST_CASE("slab hash table  test", "[None]") {
+TEST_CASE("slab hash table test", "[None]") {
     store::create(DIRECTORY "/slab_hash_table");
     memory_map file(DIRECTORY "/slab_hash_table");
     REQUIRE(file.open());

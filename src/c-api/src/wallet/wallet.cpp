@@ -104,7 +104,11 @@ kth_ec_public_t kth_wallet_ec_to_public(kth_ec_secret_t secret, kth_bool_t uncom
 
 kth_payment_address_t kth_wallet_ec_to_address(kth_ec_public_t point, uint32_t version) {
     kth::domain::wallet::ec_public const& point_cpp = *static_cast<kth::domain::wallet::ec_public const*>(point);
-    return kth::leak<kth::domain::wallet::payment_address>(point_cpp, version);
+    auto result = kth::domain::wallet::payment_address::from_ec_public(point_cpp, static_cast<uint8_t>(version));
+    if ( ! result) {
+        return nullptr;
+    }
+    return kth::leak<kth::domain::wallet::payment_address>(std::move(*result));
 }
 
 } // extern "C"

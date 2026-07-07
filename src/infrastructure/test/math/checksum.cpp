@@ -97,7 +97,7 @@ TEST_CASE("infrastructure checksum insert checksum to empty data", "[infrastruct
     REQUIRE(out[checksum++] == 0xe2u);
 }
 
-TEST_CASE("checksum  insert checksum  not empty  valid", "[checksum tests]") {
+TEST_CASE("checksum insert checksum not empty valid", "[checksum tests]") {
     byte_array<checksum_size + 5> out{ { 0, 0, 0, 0, 0 } };
     auto checksum = out.size() - checksum_size;
     REQUIRE(insert_checksum(out));
@@ -107,28 +107,28 @@ TEST_CASE("checksum  insert checksum  not empty  valid", "[checksum tests]") {
     REQUIRE(out[checksum++] == 0x93u);
 }
 
-TEST_CASE("checksum  insert checksum  underflow  false", "[checksum tests]") {
+TEST_CASE("checksum insert checksum underflow false", "[checksum tests]") {
     byte_array<checksum_size - 1> out;
     REQUIRE( ! insert_checksum(out));
 }
 
-TEST_CASE("checksum  verify checksum  underflow  false", "[checksum tests]") {
+TEST_CASE("checksum verify checksum underflow false", "[checksum tests]") {
     data_chunk const data = { 0, 0, 0 };
     REQUIRE( ! verify_checksum(data));
 }
 
-TEST_CASE("checksum  verify checksum  not set  false", "[checksum tests]") {
+TEST_CASE("checksum verify checksum not set false", "[checksum tests]") {
     data_chunk const data = { 0, 0, 0, 0, 0 };
     REQUIRE( ! verify_checksum(data));
 }
 
-TEST_CASE("checksum  verify checksum  added  true", "[checksum tests]") {
+TEST_CASE("checksum verify checksum added true", "[checksum tests]") {
     data_chunk data = { 0, 0, 0, 0, 0 };
     append_checksum(data);
     REQUIRE(verify_checksum(data));
 }
 
-TEST_CASE("checksum  verify checksum  invalidated  false", "[checksum tests]") {
+TEST_CASE("checksum verify checksum invalidated false", "[checksum tests]") {
     data_chunk data = { 0, 0, 0, 0, 0 };
     auto const data_size = data.size();
     append_checksum(data);

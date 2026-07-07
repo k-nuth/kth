@@ -75,7 +75,7 @@ configure_file(
 
 set(Boost_DEBUG ON)
 
-find_package(Boost COMPONENTS program_options thread REQUIRED)
+find_package(Boost COMPONENTS thread REQUIRED)
 
 find_package(Threads REQUIRED)
 
@@ -209,8 +209,7 @@ set(kth_sources_just_legacy
         src/config/script.cpp
         src/config/ec_private.cpp
         src/config/endorsement.cpp
-
-        src/utility/property_tree.cpp
+        src/config/parser.cpp
 
         src/multi_crypto_support.cpp
 
@@ -418,13 +417,10 @@ set(kth_headers
     include/kth/domain/machine/script_pattern.hpp
     include/kth/domain/math/limits.hpp
     include/kth/domain/math/stealth.hpp
-    include/kth/domain/utility/property_tree.hpp
     include/kth/domain/impl/machine
     include/kth/domain/impl/machine/program.ipp
     include/kth/domain/impl/machine/interpreter.ipp
     include/kth/domain/impl/machine/operation.ipp
-    include/kth/domain/impl/utility
-    include/kth/domain/impl/utility/property_tree.ipp
     include/kth/domain/config/ec_private.hpp
     include/kth/domain/config/output.hpp
     include/kth/domain/config/network.hpp

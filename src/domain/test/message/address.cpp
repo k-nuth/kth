@@ -23,12 +23,12 @@ bool equal(address const& x, address const& y) {
 
 // Start Test Suite: address tests
 
-TEST_CASE("address  constructor 1  always invalid", "[address]") {
+TEST_CASE("address constructor 1 always invalid", "[address]") {
     address instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("address  constructor 2  always  equals params", "[address]") {
+TEST_CASE("address constructor 2 always equals params", "[address]") {
     infrastructure::message::network_address::list const addresses{
         network_address(
             734678u,
@@ -52,7 +52,7 @@ TEST_CASE("address  constructor 2  always  equals params", "[address]") {
     REQUIRE(addresses == instance.addresses());
 }
 
-TEST_CASE("address  constructor 3  always  equals params", "[address]") {
+TEST_CASE("address constructor 3 always equals params", "[address]") {
     infrastructure::message::network_address::list const addresses{
         network_address(
             734678u,
@@ -78,7 +78,7 @@ TEST_CASE("address  constructor 3  always  equals params", "[address]") {
     REQUIRE(addresses == instance.addresses());
 }
 
-TEST_CASE("address  constructor 4  always  equals params", "[address]") {
+TEST_CASE("address constructor 4 always equals params", "[address]") {
     infrastructure::message::network_address::list const addresses{
         network_address(
             734678u,
@@ -104,7 +104,7 @@ TEST_CASE("address  constructor 4  always  equals params", "[address]") {
     REQUIRE(addresses == instance.addresses());
 }
 
-TEST_CASE("address  constructor 5  always  equals params", "[address]") {
+TEST_CASE("address constructor 5 always equals params", "[address]") {
     infrastructure::message::network_address::list const addresses{
         network_address(
             734678u,
@@ -129,7 +129,7 @@ TEST_CASE("address  constructor 5  always  equals params", "[address]") {
     REQUIRE(addresses == instance.addresses());
 }
 
-TEST_CASE("address from data insufficient bytes  failure", "[address]") {
+TEST_CASE("address from data insufficient bytes failure", "[address]") {
     data_chunk const raw{0xab};
     address instance;
 
@@ -138,7 +138,7 @@ TEST_CASE("address from data insufficient bytes  failure", "[address]") {
     REQUIRE( ! result);
 }
 
-TEST_CASE("address from data roundtrip  success", "[address]") {
+TEST_CASE("address from data roundtrip success", "[address]") {
     address const expected(
         {{734678u,
           5357534u,
@@ -160,7 +160,7 @@ TEST_CASE("address from data roundtrip  success", "[address]") {
 
 
 
-TEST_CASE("address  addresses setter 1  roundtrip  success", "[address]") {
+TEST_CASE("address addresses setter 1 roundtrip success", "[address]") {
     infrastructure::message::network_address::list const value{
         network_address(
             734678u,
@@ -184,7 +184,7 @@ TEST_CASE("address  addresses setter 1  roundtrip  success", "[address]") {
     REQUIRE(value == instance.addresses());
 }
 
-TEST_CASE("address  addresses setter 2  roundtrip  success", "[address]") {
+TEST_CASE("address addresses setter 2 roundtrip success", "[address]") {
     infrastructure::message::network_address::list const value{
         network_address(
             734678u,
@@ -209,7 +209,7 @@ TEST_CASE("address  addresses setter 2  roundtrip  success", "[address]") {
     REQUIRE(value == instance.addresses());
 }
 
-TEST_CASE("address  operator assign equals  always  matches equivalent", "[address]") {
+TEST_CASE("address operator assign equals always matches equivalent", "[address]") {
     infrastructure::message::network_address::list const addresses{
         network_address(
             734678u,
@@ -239,7 +239,7 @@ TEST_CASE("address  operator assign equals  always  matches equivalent", "[addre
     REQUIRE(addresses == instance.addresses());
 }
 
-TEST_CASE("address  operator boolean equals  duplicates  returns true", "[address]") {
+TEST_CASE("address operator boolean equals duplicates returns true", "[address]") {
     address const expected(
         {network_address(
              734678u,
@@ -261,7 +261,7 @@ TEST_CASE("address  operator boolean equals  duplicates  returns true", "[addres
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("address  operator boolean equals  differs  returns false", "[address]") {
+TEST_CASE("address operator boolean equals differs returns false", "[address]") {
     address const expected(
         {network_address(
              734678u,
@@ -283,7 +283,7 @@ TEST_CASE("address  operator boolean equals  differs  returns false", "[address]
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("address  operator boolean not equals  duplicates  returns false", "[address]") {
+TEST_CASE("address operator boolean not equals duplicates returns false", "[address]") {
     address const expected(
         {network_address(
              734678u,
@@ -305,7 +305,7 @@ TEST_CASE("address  operator boolean not equals  duplicates  returns false", "[a
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("address  operator boolean not equals  differs  returns true", "[address]") {
+TEST_CASE("address operator boolean not equals differs returns true", "[address]") {
     address const expected(
         {network_address(
              734678u,

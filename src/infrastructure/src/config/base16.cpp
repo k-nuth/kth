@@ -5,41 +5,21 @@
 #include <kth/infrastructure/config/base16.hpp>
 
 #include <string>
+#include <string_view>
+#include <utility>
 
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 
 namespace kth::infrastructure::config {
 
-base16::base16(data_chunk const& value)
-    : value_(value)
-{}
-
-base16::base16(data_chunk&& value)
-    : value_(std::move(value))
-{}
-
-base16::operator data_chunk const&() const noexcept {
-    return value_;
-}
-
-base16::operator byte_span() const noexcept {
-    return value_;
-}
-
-data_chunk const& base16::data() const noexcept {
-    return value_;
-}
-
-byte_span base16::as_span() const noexcept {
-    return value_;
-}
-
-std::expected<base16, std::error_code> base16::from_string(std::string_view text) noexcept {
+// static
+std::expected<base16, kth::code> base16::parse_from(std::string_view text) noexcept {
     auto result = decode_base16(text);
     if ( ! result) {
-        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+        return std::unexpected(kth::error::illegal_value);
     }
-    return base16(std::move(*result));
+    return base16{std::move(*result)};
 }
 
 std::string base16::to_string() const {

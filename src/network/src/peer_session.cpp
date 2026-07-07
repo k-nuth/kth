@@ -64,7 +64,7 @@ infrastructure::config::authority extract_authority(::asio::ip::tcp::socket cons
     boost_code ec;
     auto const endpoint = socket.remote_endpoint(ec);
     if (ec) {
-        return {};
+        return infrastructure::config::authority::any();
     }
     return infrastructure::config::authority(endpoint);
 }

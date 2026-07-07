@@ -709,10 +709,12 @@ std::optional<peer_record> peer_database::parse_line(std::string_view line, simd
             return std::nullopt;
         }
     }
-    record.authority = infrastructure::config::authority(std::string(endpoint_result.value()));
-    if (record.authority.port() == 0) {
+    auto parsed_auth = infrastructure::config::authority::parse_from(
+        std::string_view{endpoint_result.value()});
+    if ( ! parsed_auth || parsed_auth->port() == 0) {
         return std::nullopt;
     }
+    record.authority = std::move(*parsed_auth);
     record.ip = normalized_address(record.authority);
 
     // Optional fields with defaults
@@ -800,9 +802,10 @@ size_t peer_database::import_hosts_cache(kth::path const& file_path) {
         if (line.empty()) continue;
 
         try {
-            infrastructure::config::authority address(line);
-            if (address.port() == 0) continue;
+            auto parsed = infrastructure::config::authority::parse_from(line);
+            if ( ! parsed || parsed->port() == 0) continue;
 
+            auto const& address = *parsed;
             auto const ip = normalized_address(address.asio_ip());
 
             if (!records_.contains(ip) && records_.size() < capacity_) {

@@ -8,11 +8,10 @@
 #include <filesystem>
 #include <memory>
 
-#include <kth/domain.hpp>
 #include <kth/database/define.hpp>
-
+#include <kth/domain.hpp>
+#include <kth/infrastructure/path.hpp>
 #include <kth/infrastructure/utility/sequential_lock.hpp>
-
 
 namespace kth::database {
 

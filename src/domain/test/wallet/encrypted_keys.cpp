@@ -18,7 +18,7 @@ using namespace kth::domain::wallet;
 
 #ifdef WITH_ICU
 
-TEST_CASE("encrypted  fixture  unicode passphrase  matches encrypted test vector", "[encrypted]") {
+TEST_CASE("encrypted fixture unicode passphrase matches encrypted test vector", "[encrypted]") {
     auto const encoded_password = "cf92cc8100f0909080f09f92a9"_base16;
     std::string passphrase(encoded_password.begin(), encoded_password.end());
 
@@ -37,7 +37,7 @@ TEST_CASE("encrypted  fixture  unicode passphrase  matches encrypted test vector
     encrypted_token out_token;                                        \
     REQUIRE(create_token(out_token, passphrase, bytes, lot, sequence))
 
-TEST_CASE("encrypted  create token lot  lot overlow  false", "[encrypted  create token lot]") {
+TEST_CASE("encrypted create token lot lot overlow false", "[encrypted create token lot]") {
     size_t const lot = 1048575 + 1;
     size_t const sequence = 0;
     auto const passphrase = "";
@@ -46,7 +46,7 @@ TEST_CASE("encrypted  create token lot  lot overlow  false", "[encrypted  create
     REQUIRE( ! create_token(out_token, passphrase, salt, lot, sequence));
 }
 
-TEST_CASE("encrypted  create token lot  sequence overlow  false", "[encrypted  create token lot]") {
+TEST_CASE("encrypted create token lot sequence overlow false", "[encrypted create token lot]") {
     size_t const lot = 0;
     size_t const sequence = 4095 + 1;
     auto const passphrase = "";
@@ -55,7 +55,7 @@ TEST_CASE("encrypted  create token lot  sequence overlow  false", "[encrypted  c
     REQUIRE( ! create_token(out_token, passphrase, salt, lot, sequence));
 }
 
-TEST_CASE("encrypted  create token lot  defaults  expected", "[encrypted  create token lot]") {
+TEST_CASE("encrypted create token lot defaults expected", "[encrypted create token lot]") {
     size_t const lot = 0;
     size_t const sequence = 0;
     auto const passphrase = "";
@@ -64,7 +64,7 @@ TEST_CASE("encrypted  create token lot  defaults  expected", "[encrypted  create
     REQUIRE(encode_base58(out_token) == "passphrasecpXbDpHuo8F7yQVcg1eQKPuX7rzGwBtEH1YSZnKbyk75x3rugZu1ci4RyF4rEn");
 }
 
-TEST_CASE("encrypted  create token lot  passphrase  expected", "[encrypted  create token lot]") {
+TEST_CASE("encrypted create token lot passphrase expected", "[encrypted create token lot]") {
     size_t const lot = 0;
     size_t const sequence = 0;
     auto const passphrase = "passphrase";
@@ -73,7 +73,7 @@ TEST_CASE("encrypted  create token lot  passphrase  expected", "[encrypted  crea
     REQUIRE(encode_base58(out_token) == "passphrasecpXbDpHuo8F7x4pQXMhsJs2j7L8LTV8ujk9jGqgzUrafBeto9VrabP5SmvANvz");
 }
 
-TEST_CASE("encrypted  create token lot  passphrase lot max  expected", "[encrypted  create token lot]") {
+TEST_CASE("encrypted create token lot passphrase lot max expected", "[encrypted create token lot]") {
     size_t const lot = 1048575;
     size_t const sequence = 0;
     auto const passphrase = "passphrase";
@@ -82,7 +82,7 @@ TEST_CASE("encrypted  create token lot  passphrase lot max  expected", "[encrypt
     REQUIRE(encode_base58(out_token) == "passphrasecpXbDpHuo8FGWnwMTnTFiHSDnqyARArE2YSFQzMHtCZvM2oWg2K3Ua2crKyc11");
 }
 
-TEST_CASE("encrypted  create token lot  passphrase sequence max  expected", "[encrypted  create token lot]") {
+TEST_CASE("encrypted create token lot passphrase sequence max expected", "[encrypted create token lot]") {
     size_t const lot = 0;
     size_t const sequence = 4095;
     auto const passphrase = "passphrase";
@@ -91,7 +91,7 @@ TEST_CASE("encrypted  create token lot  passphrase sequence max  expected", "[en
     REQUIRE(encode_base58(out_token) == "passphrasecpXbDpHuo8FGWnwMTnTFiHSDnqyARArE2YSFQzMHtCZvM2oWg2K3Ua2crKyc11");
 }
 
-TEST_CASE("encrypted  create token lot  passphrase lot sequence  expected", "[encrypted  create token lot]") {
+TEST_CASE("encrypted create token lot passphrase lot sequence expected", "[encrypted create token lot]") {
     size_t const lot = 42;
     size_t const sequence = 42;
     auto const passphrase = "passphrase";
@@ -110,14 +110,14 @@ TEST_CASE("encrypted  create token lot  passphrase lot sequence  expected", "[en
     encrypted_token out_token;                     \
     create_token(out_token, passphrase, bytes)
 
-TEST_CASE("encrypted  create token entropy  defaults  expected", "[encrypted  create token entropy]") {
+TEST_CASE("encrypted create token entropy defaults expected", "[encrypted create token entropy]") {
     auto const passphrase = "";
     auto const entropy = "baadf00dbaadf00d"_base16;
     KD_CREATE_TOKEN_ENTROPY(passphrase, entropy);
     REQUIRE(encode_base58(out_token) == "passphraseqVHzjNrYRo5G6yLmJ7TQ49fKnQtsgjybNgNHAKBCQKoFZcTNjNJtg4oCUgtPt3");
 }
 
-TEST_CASE("encrypted  create token entropy  passphrase  expected", "[encrypted  create token entropy]") {
+TEST_CASE("encrypted create token entropy passphrase expected", "[encrypted create token entropy]") {
     auto const passphrase = "passphrase";
     auto const entropy = "baadf00dbaadf00d"_base16;
     KD_CREATE_TOKEN_ENTROPY(passphrase, entropy);
@@ -136,7 +136,7 @@ TEST_CASE("encrypted  create token entropy  passphrase  expected", "[encrypted  
     REQUIRE(encode_base58(out_private) == expected)
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#no-compression-no-ec-multiply
-TEST_CASE("encrypted  encrypt private  vector 0  expected", "[encrypted  encrypt private]") {
+TEST_CASE("encrypted encrypt private vector 0 expected", "[encrypted encrypt private]") {
     auto compression = false;
     uint8_t const version = 0x00;
     auto const expected = "6PRVWUbkzzsbcVac2qwfssoUJAN1Xhrg6bNk8J7Nzm5H7kxEbn2Nh2ZoGg";
@@ -145,7 +145,7 @@ TEST_CASE("encrypted  encrypt private  vector 0  expected", "[encrypted  encrypt
 }
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#no-compression-no-ec-multiply
-TEST_CASE("encrypted  encrypt private  vector 1  expected", "[encrypted  encrypt private]") {
+TEST_CASE("encrypted encrypt private vector 1 expected", "[encrypted encrypt private]") {
     auto compression = false;
     uint8_t const version = 0x00;
     auto const expected = "6PRNFFkZc2NZ6dJqFfhRoFNMR9Lnyj7dYGrzdgXXVMXcxoKTePPX1dWByq";
@@ -154,7 +154,7 @@ TEST_CASE("encrypted  encrypt private  vector 1  expected", "[encrypted  encrypt
 }
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#compression-no-ec-multiply
-TEST_CASE("encrypted  encrypt private  vector 2 compressed  expected", "[encrypted  encrypt private]") {
+TEST_CASE("encrypted encrypt private vector 2 compressed expected", "[encrypted encrypt private]") {
     auto compression = true;
     uint8_t const version = 0x00;
     auto const expected = "6PYNKZ1EAgYgmQfmNVamxyXVWHzK5s6DGhwP4J5o44cvXdoY7sRzhtpUeo";
@@ -163,7 +163,7 @@ TEST_CASE("encrypted  encrypt private  vector 2 compressed  expected", "[encrypt
 }
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#compression-no-ec-multiply
-TEST_CASE("encrypted  encrypt private  vector 3 compressed  expected", "[encrypted  encrypt private]") {
+TEST_CASE("encrypted encrypt private vector 3 compressed expected", "[encrypted encrypt private]") {
     auto compression = true;
     uint8_t const version = 0x00;
     auto const expected = "6PYLtMnXvfG3oJde97zRyLYFZCYizPU5T3LwgdYJz1fRhh16bU7u6PPmY7";
@@ -172,7 +172,7 @@ TEST_CASE("encrypted  encrypt private  vector 3 compressed  expected", "[encrypt
 }
 
 // #3 from: github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#no-compression-no-ec-multiply
-TEST_CASE("encrypted  encrypt private  vector unicode  expected", "[encrypted  encrypt private]") {
+TEST_CASE("encrypted encrypt private vector unicode expected", "[encrypted encrypt private]") {
     auto compression = false;
     uint8_t const version = 0x00;
     auto const encoded_password = "cf92cc8100f0909080f09f92a9"_base16;
@@ -197,7 +197,7 @@ TEST_CASE("encrypted  encrypt private  vector unicode  expected", "[encrypted  e
     REQUIRE(decrypt(out_secret, out_version, out_is_compressed, key, passphrase))
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#no-compression-no-ec-multiply
-TEST_CASE("encrypted  decrypt private  vector 0  expected", "[encrypted  decrypt1]") {
+TEST_CASE("encrypted decrypt private vector 0 expected", "[encrypted decrypt1]") {
     uint8_t const expected_version = 0x00;
     auto const key = base58_literal("6PRVWUbkzzsbcVac2qwfssoUJAN1Xhrg6bNk8J7Nzm5H7kxEbn2Nh2ZoGg");
     KD_REQUIRE_DECRYPT_SECRET(key, "TestingOneTwoThree");
@@ -207,7 +207,7 @@ TEST_CASE("encrypted  decrypt private  vector 0  expected", "[encrypted  decrypt
 }
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#no-compression-no-ec-multiply
-TEST_CASE("encrypted  decrypt private  vector 1  expected", "[encrypted  decrypt1]") {
+TEST_CASE("encrypted decrypt private vector 1 expected", "[encrypted decrypt1]") {
     uint8_t const expected_version = 0x00;
     auto const key = base58_literal("6PRNFFkZc2NZ6dJqFfhRoFNMR9Lnyj7dYGrzdgXXVMXcxoKTePPX1dWByq");
     KD_REQUIRE_DECRYPT_SECRET(key, "Satoshi");
@@ -217,7 +217,7 @@ TEST_CASE("encrypted  decrypt private  vector 1  expected", "[encrypted  decrypt
 }
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#compression-no-ec-multiply
-TEST_CASE("encrypted  decrypt private  vector 2 compressed  expected", "[encrypted  decrypt1]") {
+TEST_CASE("encrypted decrypt private vector 2 compressed expected", "[encrypted decrypt1]") {
     uint8_t const expected_version = 0x00;
     auto const key = base58_literal("6PYNKZ1EAgYgmQfmNVamxyXVWHzK5s6DGhwP4J5o44cvXdoY7sRzhtpUeo");
     KD_REQUIRE_DECRYPT_SECRET(key, "TestingOneTwoThree");
@@ -227,7 +227,7 @@ TEST_CASE("encrypted  decrypt private  vector 2 compressed  expected", "[encrypt
 }
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#compression-no-ec-multiply
-TEST_CASE("encrypted  decrypt private  vector 3 compressed  expected", "[encrypted  decrypt1]") {
+TEST_CASE("encrypted decrypt private vector 3 compressed expected", "[encrypted decrypt1]") {
     uint8_t const expected_version = 0x00;
     auto const key = base58_literal("6PYLtMnXvfG3oJde97zRyLYFZCYizPU5T3LwgdYJz1fRhh16bU7u6PPmY7");
     KD_REQUIRE_DECRYPT_SECRET(key, "Satoshi");
@@ -237,7 +237,7 @@ TEST_CASE("encrypted  decrypt private  vector 3 compressed  expected", "[encrypt
 }
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#no-compression-no-ec-multiply
-TEST_CASE("encrypted  decrypt private  vector 4 multiplied  expected", "[encrypted  decrypt1]") {
+TEST_CASE("encrypted decrypt private vector 4 multiplied expected", "[encrypted decrypt1]") {
     uint8_t const expected_version = 0x00;
     auto const key = base58_literal("6PfQu77ygVyJLZjfvMLyhLMQbYnu5uguoJJ4kMCLqWwPEdfpwANVS76gTX");
     KD_REQUIRE_DECRYPT_SECRET(key, "TestingOneTwoThree");
@@ -247,7 +247,7 @@ TEST_CASE("encrypted  decrypt private  vector 4 multiplied  expected", "[encrypt
 }
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#no-compression-no-ec-multiply
-TEST_CASE("encrypted  decrypt private  vector 5 multiplied  expected", "[encrypted  decrypt1]") {
+TEST_CASE("encrypted decrypt private vector 5 multiplied expected", "[encrypted decrypt1]") {
     uint8_t const expected_version = 0x00;
     auto const key = base58_literal("6PfLGnQs6VZnrNpmVKfjotbnQuaJK4KZoPFrAjx1JMJUa1Ft8gnf5WxfKd");
     KD_REQUIRE_DECRYPT_SECRET(key, "Satoshi");
@@ -257,7 +257,7 @@ TEST_CASE("encrypted  decrypt private  vector 5 multiplied  expected", "[encrypt
 }
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#ec-multiply-no-compression-lotsequence-numbers
-TEST_CASE("encrypted  decrypt private  vector 6 multiplied lot  expected", "[encrypted  decrypt1]") {
+TEST_CASE("encrypted decrypt private vector 6 multiplied lot expected", "[encrypted decrypt1]") {
     uint8_t const expected_version = 0x00;
     auto const key = base58_literal("6PgNBNNzDkKdhkT6uJntUXwwzQV8Rr2tZcbkDcuC9DZRsS6AtHts4Ypo1j");
     KD_REQUIRE_DECRYPT_SECRET(key, "MOLON LABE");
@@ -267,7 +267,7 @@ TEST_CASE("encrypted  decrypt private  vector 6 multiplied lot  expected", "[enc
 }
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#ec-multiply-no-compression-lotsequence-numbers
-TEST_CASE("encrypted  decrypt private  vector 7 multiplied lot  expected", "[encrypted  decrypt1]") {
+TEST_CASE("encrypted decrypt private vector 7 multiplied lot expected", "[encrypted decrypt1]") {
     uint8_t const expected_version = 0x00;
     auto const key = base58_literal("6PgGWtx25kUg8QWvwuJAgorN6k9FbE25rv5dMRwu5SKMnfpfVe5mar2ngH");
     KD_REQUIRE_DECRYPT_SECRET(key, "ΜΟΛΩΝ ΛΑΒΕ");
@@ -277,7 +277,7 @@ TEST_CASE("encrypted  decrypt private  vector 7 multiplied lot  expected", "[enc
 }
 
 // generated and verified using bit2factor.com, no lot/sequence
-TEST_CASE("encrypted  decrypt private  vector 8 multiplied  expected", "[encrypted  decrypt1]") {
+TEST_CASE("encrypted decrypt private vector 8 multiplied expected", "[encrypted decrypt1]") {
     uint8_t const expected_version = 0x00;
     auto const key = base58_literal("6PfPAw5HErFdzMyBvGMwSfSWjKmzgm3jDg7RxQyVCSSBJFZLAZ6hVupmpn");
     KD_REQUIRE_DECRYPT_SECRET(key, "kth test");
@@ -287,7 +287,7 @@ TEST_CASE("encrypted  decrypt private  vector 8 multiplied  expected", "[encrypt
 }
 
 // generated and verified using bit2factor.com, no lot/sequence
-TEST_CASE("encrypted  decrypt private  vector 9 multiplied  expected", "[encrypted  decrypt1]") {
+TEST_CASE("encrypted decrypt private vector 9 multiplied expected", "[encrypted decrypt1]") {
     uint8_t const expected_version = 0x00;
     auto const key = base58_literal("6PfU2yS6DUHjgH8wmsJRT1rHWXRofmDV5UJ3dypocew56BDcw5TQJXFYfm");
 //TODO(kth): replace the key
@@ -315,7 +315,7 @@ TEST_CASE("encrypted  decrypt private  vector 9 multiplied  expected", "[encrypt
     auto const derived_address = payment_address({out_point, out_is_compressed}, out_version).encoded()
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#ec-multiply-no-compression-lotsequence-numbers
-TEST_CASE("encrypted  decrypt public  vector 6 lot  expected", "[encrypted  decrypt public]") {
+TEST_CASE("encrypted decrypt public vector 6 lot expected", "[encrypted decrypt public]") {
     uint8_t const version = 0x00;
     auto const key = base58_literal("cfrm38V8aXBn7JWA1ESmFMUn6erxeBGZGAxJPY4e36S9QWkzZKtaVqLNMgnifETYw7BPwWC9aPD");
     KD_REQUIRE_DECRYPT_POINT(key, "MOLON LABE", version);
@@ -324,7 +324,7 @@ TEST_CASE("encrypted  decrypt public  vector 6 lot  expected", "[encrypted  decr
 }
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#ec-multiply-no-compression-lotsequence-numbers
-TEST_CASE("encrypted  decrypt public  vector 7 lot  expected", "[encrypted  decrypt public]") {
+TEST_CASE("encrypted decrypt public vector 7 lot expected", "[encrypted decrypt public]") {
     uint8_t const version = 0x00;
     auto const key = base58_literal("cfrm38V8G4qq2ywYEFfWLD5Cc6msj9UwsG2Mj4Z6QdGJAFQpdatZLavkgRd1i4iBMdRngDqDs51");
     KD_REQUIRE_DECRYPT_POINT(key, "ΜΟΛΩΝ ΛΑΒΕ", version);
@@ -333,7 +333,7 @@ TEST_CASE("encrypted  decrypt public  vector 7 lot  expected", "[encrypted  decr
 }
 
 // generated and verified using bit2factor.com, no lot/sequence
-TEST_CASE("encrypted  decrypt public  vector 8  expected", "[encrypted  decrypt public]") {
+TEST_CASE("encrypted decrypt public vector 8 expected", "[encrypted decrypt public]") {
     uint8_t const version = 0x00;
     auto const key = base58_literal("cfrm38V5Nm1mn7GxPBAGTXawqXRwE1EbR19GqsvJ9JmF5VKLqi8nETmULpELkQvExCGkTNCH2An");
     KD_REQUIRE_DECRYPT_POINT(key, "kth test", version);
@@ -342,7 +342,7 @@ TEST_CASE("encrypted  decrypt public  vector 8  expected", "[encrypted  decrypt 
 }
 
 // generated and verified using bit2factor.com, no lot/sequence
-TEST_CASE("encrypted  decrypt public  vector 9  expected", "[encrypted  decrypt public]") {
+TEST_CASE("encrypted decrypt public vector 9 expected", "[encrypted decrypt public]") {
     uint8_t const version = 0x00;
     auto const key = base58_literal("cfrm38V5ec4E5RKwBu46Jf5zfaE54nuB1NWHpHSpgX4GQqfzx7fvqm43mBHvr89pPgykDHts9VC");
 
@@ -367,7 +367,7 @@ TEST_CASE("encrypted  decrypt public  vector 9  expected", "[encrypted  decrypt 
     encrypted_private out_private;                                   \
     REQUIRE(create_key_pair(out_private, out_point, token, seed, version, compressed))
 
-TEST_CASE("encrypted  create key pair  bad checksum  false", "[encrypted  create key pair]") {
+TEST_CASE("encrypted create key pair bad checksum false", "[encrypted create key pair]") {
     auto compression = false;
     uint8_t const version = 0x00;
     auto const seed = "d36d8e703d8bd5445044178f69087657fba73d9f3ff211f7"_base16;
@@ -378,7 +378,7 @@ TEST_CASE("encrypted  create key pair  bad checksum  false", "[encrypted  create
 }
 
 // generated and verified using bit2factor.com, no lot/sequence
-TEST_CASE("encrypted  create key pair  vector 8  expected", "[encrypted  create key pair]") {
+TEST_CASE("encrypted create key pair vector 8 expected", "[encrypted create key pair]") {
     auto compression = false;
     uint8_t const version = 0x00;
     auto const seed = "d36d8e703d8bd5445044178f69087657fba73d9f3ff211f7"_base16;
@@ -392,7 +392,7 @@ TEST_CASE("encrypted  create key pair  vector 8  expected", "[encrypted  create 
 }
 
 // generated and verified using bit2factor.com, no lot/sequence
-TEST_CASE("encrypted  create key pair  vector 9  expected", "[encrypted  create key pair]") {
+TEST_CASE("encrypted create key pair vector 9 expected", "[encrypted create key pair]") {
     auto compression = false;
     uint8_t const version = 0x00;
     auto const seed = "bbeac8b9bb39381520b6873553544b387bcaa19112602230"_base16;
@@ -406,7 +406,7 @@ TEST_CASE("encrypted  create key pair  vector 9  expected", "[encrypted  create 
 }
 
 // generated and verified using bit2factor.com, no lot/sequence
-TEST_CASE("encrypted  create key pair  vector 9 compressed  expected", "[encrypted  create key pair]") {
+TEST_CASE("encrypted create key pair vector 9 compressed expected", "[encrypted create key pair]") {
     auto compression = true;
     uint8_t const version = 0x00;
     auto const seed = "bbeac8b9bb39381520b6873553544b387bcaa19112602230"_base16;
@@ -417,7 +417,7 @@ TEST_CASE("encrypted  create key pair  vector 9 compressed  expected", "[encrypt
 }
 
 // altchain vectors are based on preliminary bidirectional mapping proposal.
-TEST_CASE("encrypted  create key pair  vector 9 compressed testnet  expected", "[encrypted  create key pair]") {
+TEST_CASE("encrypted create key pair vector 9 compressed testnet expected", "[encrypted create key pair]") {
     auto compression = true;
     uint8_t const version = 111;
     auto const seed = "bbeac8b9bb39381520b6873553544b387bcaa19112602230"_base16;
@@ -441,7 +441,7 @@ TEST_CASE("encrypted  create key pair  vector 9 compressed testnet  expected", "
     encrypted_private out_private;                                                \
     REQUIRE(create_key_pair(out_private, out_public, out_point, token, seed, version, compressed))
 
-TEST_CASE("encrypted  create key pair with confirmation  bad checksum  false", "[encrypted  create key pair with confirmation]") {
+TEST_CASE("encrypted create key pair with confirmation bad checksum false", "[encrypted create key pair with confirmation]") {
     auto const seed = "d36d8e703d8bd5445044178f69087657fba73d9f3ff211f7"_base16;
     auto const token = base58_literal("passphraseo59BauW85etaRsKpbbTrEa5RRYw6bq5K9yrDf4r4N5fcirPdtDKmfJw9oYNoGN");
     ec_compressed out_point;
@@ -451,7 +451,7 @@ TEST_CASE("encrypted  create key pair with confirmation  bad checksum  false", "
 }
 
 // generated and verified using bit2factor.com, no lot/sequence
-TEST_CASE("encrypted  create key pair with confirmation  vector 8  expected", "[encrypted  create key pair with confirmation]") {
+TEST_CASE("encrypted create key pair with confirmation vector 8 expected", "[encrypted create key pair with confirmation]") {
     auto compression = false;
     uint8_t const version = 0x00;
     auto const seed = "d36d8e703d8bd5445044178f69087657fba73d9f3ff211f7"_base16;
@@ -466,7 +466,7 @@ TEST_CASE("encrypted  create key pair with confirmation  vector 8  expected", "[
 }
 
 // generated and verified using bit2factor.com, no lot/sequence
-TEST_CASE("encrypted  create key pair with confirmation  vector 9  expected", "[encrypted  create key pair with confirmation]") {
+TEST_CASE("encrypted create key pair with confirmation vector 9 expected", "[encrypted create key pair with confirmation]") {
     auto compression = false;
     uint8_t const version = 0x00;
     auto const seed = "bbeac8b9bb39381520b6873553544b387bcaa19112602230"_base16;
@@ -481,7 +481,7 @@ TEST_CASE("encrypted  create key pair with confirmation  vector 9  expected", "[
 }
 
 // generated and verified using bit2factor.com, no lot/sequence
-TEST_CASE("encrypted  create key pair with confirmation  vector 9 compressed  expected", "[encrypted  create key pair with confirmation]") {
+TEST_CASE("encrypted create key pair with confirmation vector 9 compressed expected", "[encrypted create key pair with confirmation]") {
     auto compression = true;
     uint8_t const version = 0x00;
     auto const seed = "bbeac8b9bb39381520b6873553544b387bcaa19112602230"_base16;
@@ -493,7 +493,7 @@ TEST_CASE("encrypted  create key pair with confirmation  vector 9 compressed  ex
 }
 
 // altchain vectors are based on preliminary bidirectional mapping proposal.
-TEST_CASE("encrypted  create key pair with confirmation  vector 9 compressed testnet  expected", "[encrypted  create key pair with confirmation]") {
+TEST_CASE("encrypted create key pair with confirmation vector 9 compressed testnet expected", "[encrypted create key pair with confirmation]") {
     auto compression = true;
     uint8_t const version = 111;
     auto const seed = "bbeac8b9bb39381520b6873553544b387bcaa19112602230"_base16;
@@ -512,7 +512,7 @@ TEST_CASE("encrypted  create key pair with confirmation  vector 9 compressed tes
 
 // Start Test Suite: encrypted  round trips
 
-TEST_CASE("encrypted  encrypt  compressed testnet  matches secret version and compression", "[encrypted  round trips]") {
+TEST_CASE("encrypted encrypt compressed testnet matches secret version and compression", "[encrypted round trips]") {
     auto const secret = "09c2686880095b1a4c249ee3ac4eea8a014f11e6f986d0b5025ac1f39afbd9ae"_base16;
     auto const passphrase = "passphrase";
 
@@ -534,7 +534,7 @@ TEST_CASE("encrypted  encrypt  compressed testnet  matches secret version and co
     REQUIRE(out_version == version);
 }
 
-TEST_CASE("encrypted  create token entropy  private uncompressed testnet  decrypts with matching version and compression", "[encrypted  round trips]") {
+TEST_CASE("encrypted create token entropy private uncompressed testnet decrypts with matching version and compression", "[encrypted round trips]") {
     // Create the token.
     encrypted_token out_token;
     auto const passphrase = "passphrase";
@@ -567,7 +567,7 @@ TEST_CASE("encrypted  create token entropy  private uncompressed testnet  decryp
     REQUIRE(encode_base16(out_point) == encode_base16(compressed));
 }
 
-TEST_CASE("encrypted  create token lot  private and public compressed testnet  decrypts with matching version and compression", "[encrypted  round trips]") {
+TEST_CASE("encrypted create token lot private and public compressed testnet decrypts with matching version and compression", "[encrypted round trips]") {
     // Create the token.
     encrypted_token out_token;
     auto const passphrase = "passphrase";

@@ -9,12 +9,12 @@ using namespace kd;
 
 // Start Test Suite: get blocks tests
 
-TEST_CASE("get blocks  constructor 1  always invalid", "[get blocks]") {
+TEST_CASE("get blocks constructor 1 always invalid", "[get blocks]") {
     message::get_blocks instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("get blocks  constructor 2  always  equals params", "[get blocks]") {
+TEST_CASE("get blocks constructor 2 always equals params", "[get blocks]") {
     hash_list const starts = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
@@ -28,7 +28,7 @@ TEST_CASE("get blocks  constructor 2  always  equals params", "[get blocks]") {
     REQUIRE(stop == instance.stop_hash());
 }
 
-TEST_CASE("get blocks  constructor 3  always  equals params", "[get blocks]") {
+TEST_CASE("get blocks constructor 3 always equals params", "[get blocks]") {
     hash_list starts = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
@@ -43,7 +43,7 @@ TEST_CASE("get blocks  constructor 3  always  equals params", "[get blocks]") {
     REQUIRE(stop == instance.stop_hash());
 }
 
-TEST_CASE("get blocks  constructor 4  always  equals params", "[get blocks]") {
+TEST_CASE("get blocks constructor 4 always equals params", "[get blocks]") {
     hash_list starts = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
@@ -59,7 +59,7 @@ TEST_CASE("get blocks  constructor 4  always  equals params", "[get blocks]") {
     REQUIRE(stop == instance.stop_hash());
 }
 
-TEST_CASE("get blocks  constructor 5  always  equals params", "[get blocks]") {
+TEST_CASE("get blocks constructor 5 always equals params", "[get blocks]") {
     hash_list starts = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"_hash,
@@ -74,7 +74,7 @@ TEST_CASE("get blocks  constructor 5  always  equals params", "[get blocks]") {
     REQUIRE(stop == instance.stop_hash());
 }
 
-TEST_CASE("get blocks from data insufficient bytes  failure", "[get blocks]") {
+TEST_CASE("get blocks from data insufficient bytes failure", "[get blocks]") {
     data_chunk const raw{0xab, 0xcd};
     message::get_blocks instance;
 
@@ -83,7 +83,7 @@ TEST_CASE("get blocks from data insufficient bytes  failure", "[get blocks]") {
     REQUIRE( ! result);
 }
 
-TEST_CASE("get blocks from data valid input  success", "[get blocks]") {
+TEST_CASE("get blocks from data valid input success", "[get blocks]") {
     const message::get_blocks expected{
         {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
@@ -106,7 +106,7 @@ TEST_CASE("get blocks from data valid input  success", "[get blocks]") {
 
 
 
-TEST_CASE("get blocks  start hashes accessor 1  always  returns initialized value", "[get blocks]") {
+TEST_CASE("get blocks start hashes accessor 1 always returns initialized value", "[get blocks]") {
     hash_list expected = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
@@ -121,7 +121,7 @@ TEST_CASE("get blocks  start hashes accessor 1  always  returns initialized valu
     REQUIRE(expected == instance.start_hashes());
 }
 
-TEST_CASE("get blocks  start hashes accessor 2  always  returns initialized value", "[get blocks]") {
+TEST_CASE("get blocks start hashes accessor 2 always returns initialized value", "[get blocks]") {
     hash_list expected = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
@@ -136,7 +136,7 @@ TEST_CASE("get blocks  start hashes accessor 2  always  returns initialized valu
     REQUIRE(expected == instance.start_hashes());
 }
 
-TEST_CASE("get blocks  start hashes setter 1  roundtrip  success", "[get blocks]") {
+TEST_CASE("get blocks start hashes setter 1 roundtrip success", "[get blocks]") {
     hash_list const values = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
@@ -150,7 +150,7 @@ TEST_CASE("get blocks  start hashes setter 1  roundtrip  success", "[get blocks]
     REQUIRE(values == instance.start_hashes());
 }
 
-TEST_CASE("get blocks  start hashes setter 2  roundtrip  success", "[get blocks]") {
+TEST_CASE("get blocks start hashes setter 2 roundtrip success", "[get blocks]") {
     hash_list values = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
@@ -166,7 +166,7 @@ TEST_CASE("get blocks  start hashes setter 2  roundtrip  success", "[get blocks]
     REQUIRE(values == instance.start_hashes());
 }
 
-TEST_CASE("get blocks  stop hash accessor 1  always  returns initialized value", "[get blocks]") {
+TEST_CASE("get blocks stop hash accessor 1 always returns initialized value", "[get blocks]") {
     hash_digest expected = "7777777777777777777777777777777777777777777777777777777777777777"_hash;
 
     message::get_blocks instance{
@@ -180,7 +180,7 @@ TEST_CASE("get blocks  stop hash accessor 1  always  returns initialized value",
     REQUIRE(expected == instance.stop_hash());
 }
 
-TEST_CASE("get blocks  stop hash accessor 2  always  returns initialized value", "[get blocks]") {
+TEST_CASE("get blocks stop hash accessor 2 always returns initialized value", "[get blocks]") {
     hash_digest expected = "7777777777777777777777777777777777777777777777777777777777777777"_hash;
 
     const message::get_blocks instance{
@@ -194,7 +194,7 @@ TEST_CASE("get blocks  stop hash accessor 2  always  returns initialized value",
     REQUIRE(expected == instance.stop_hash());
 }
 
-TEST_CASE("get blocks  stop hash setter 1  roundtrip  success", "[get blocks]") {
+TEST_CASE("get blocks stop hash setter 1 roundtrip success", "[get blocks]") {
     hash_digest value = "7777777777777777777777777777777777777777777777777777777777777777"_hash;
     message::get_blocks instance;
     REQUIRE(value != instance.stop_hash());
@@ -202,7 +202,7 @@ TEST_CASE("get blocks  stop hash setter 1  roundtrip  success", "[get blocks]") 
     REQUIRE(value == instance.stop_hash());
 }
 
-TEST_CASE("get blocks  stop hash setter 2  roundtrip  success", "[get blocks]") {
+TEST_CASE("get blocks stop hash setter 2 roundtrip success", "[get blocks]") {
     hash_digest value = "7777777777777777777777777777777777777777777777777777777777777777"_hash;
     message::get_blocks instance;
     REQUIRE(value != instance.stop_hash());
@@ -210,7 +210,7 @@ TEST_CASE("get blocks  stop hash setter 2  roundtrip  success", "[get blocks]") 
     REQUIRE(value == instance.stop_hash());
 }
 
-TEST_CASE("get blocks  operator assign equals  always  matches equivalent", "[get blocks]") {
+TEST_CASE("get blocks operator assign equals always matches equivalent", "[get blocks]") {
     hash_list start = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
@@ -233,7 +233,7 @@ TEST_CASE("get blocks  operator assign equals  always  matches equivalent", "[ge
     REQUIRE(stop == instance.stop_hash());
 }
 
-TEST_CASE("get blocks  operator boolean equals  duplicates  returns true", "[get blocks]") {
+TEST_CASE("get blocks operator boolean equals duplicates returns true", "[get blocks]") {
     const message::get_blocks expected{
         {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
@@ -246,7 +246,7 @@ TEST_CASE("get blocks  operator boolean equals  duplicates  returns true", "[get
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("get blocks  operator boolean equals  differs  returns false", "[get blocks]") {
+TEST_CASE("get blocks operator boolean equals differs returns false", "[get blocks]") {
     const message::get_blocks expected{
         {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
@@ -259,7 +259,7 @@ TEST_CASE("get blocks  operator boolean equals  differs  returns false", "[get b
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("get blocks  operator boolean not equals  duplicates  returns false", "[get blocks]") {
+TEST_CASE("get blocks operator boolean not equals duplicates returns false", "[get blocks]") {
     const message::get_blocks expected{
         {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,
@@ -272,7 +272,7 @@ TEST_CASE("get blocks  operator boolean not equals  duplicates  returns false", 
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("get blocks  operator boolean not equals  differs  returns true", "[get blocks]") {
+TEST_CASE("get blocks operator boolean not equals differs returns true", "[get blocks]") {
     const message::get_blocks expected{
         {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"_hash,

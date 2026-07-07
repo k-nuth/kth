@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <kth/capi/error.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/wallet/ek_public.h>
 
@@ -52,13 +53,14 @@ TEST_CASE("C-API wallet::ek_public - destruct(NULL) is a no-op",
 // Encoded string round-trip
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::ek_public - encoded round-trips through construct_from_encoded",
+TEST_CASE("C-API wallet::ek_public - encoded round-trips through parse_from",
           "[C-API WalletEkPublic][encode]") {
-    kth_ek_public_mut_t a = kth_wallet_ek_public_construct_from_encoded(kEncrypted);
+    kth_ek_public_mut_t a = NULL;
+    REQUIRE(kth_wallet_ek_public_parse_from(kEncrypted, &a) == kth_ec_success);
     REQUIRE(a != NULL);
     REQUIRE(kth_wallet_ek_public_valid(a) != 0);
 
-    char* back = kth_wallet_ek_public_encoded(a);
+    char* back = kth_wallet_ek_public_to_string(a);
     REQUIRE(back != NULL);
     REQUIRE(strcmp(back, kEncrypted) == 0);
     kth_core_destruct_string(back);
@@ -66,9 +68,10 @@ TEST_CASE("C-API wallet::ek_public - encoded round-trips through construct_from_
     kth_wallet_ek_public_destruct(a);
 }
 
-TEST_CASE("C-API wallet::ek_public - invalid encoded string fails to construct",
+TEST_CASE("C-API wallet::ek_public - invalid encoded string fails to parse",
           "[C-API WalletEkPublic][encode]") {
-    kth_ek_public_mut_t a = kth_wallet_ek_public_construct_from_encoded("not-a-key");
+    kth_ek_public_mut_t a = NULL;
+    REQUIRE(kth_wallet_ek_public_parse_from("not-a-key", &a) != kth_ec_success);
     REQUIRE(a == NULL);
 }
 
@@ -80,15 +83,16 @@ TEST_CASE("C-API wallet::ek_public - public_key byte payload round-trip",
           "[C-API WalletEkPublic][encode]") {
     // Exercises both directions of the `kth_encrypted_public_t` ↔
     // `encrypted_public` value-struct bridge (55-byte payload).
-    kth_ek_public_mut_t orig = kth_wallet_ek_public_construct_from_encoded(kEncrypted);
+    kth_ek_public_mut_t orig = NULL;
+    REQUIRE(kth_wallet_ek_public_parse_from(kEncrypted, &orig) == kth_ec_success);
     REQUIRE(orig != NULL);
     kth_encrypted_public_t bytes = kth_wallet_ek_public_public_key(orig);
 
-    kth_ek_public_mut_t rebuilt = kth_wallet_ek_public_construct_from_value(&bytes);
+    kth_ek_public_mut_t rebuilt = kth_wallet_ek_public_construct(&bytes);
     REQUIRE(rebuilt != NULL);
     REQUIRE(kth_wallet_ek_public_valid(rebuilt) != 0);
 
-    char* back = kth_wallet_ek_public_encoded(rebuilt);
+    char* back = kth_wallet_ek_public_to_string(rebuilt);
     REQUIRE(back != NULL);
     REQUIRE(strcmp(back, kEncrypted) == 0);
     kth_core_destruct_string(back);
@@ -97,14 +101,15 @@ TEST_CASE("C-API wallet::ek_public - public_key byte payload round-trip",
     kth_wallet_ek_public_destruct(orig);
 }
 
-TEST_CASE("C-API wallet::ek_public - construct_from_value_unsafe matches safe variant",
+TEST_CASE("C-API wallet::ek_public - construct_unsafe matches safe variant",
           "[C-API WalletEkPublic][encode]") {
-    kth_ek_public_mut_t orig = kth_wallet_ek_public_construct_from_encoded(kEncrypted);
+    kth_ek_public_mut_t orig = NULL;
+    REQUIRE(kth_wallet_ek_public_parse_from(kEncrypted, &orig) == kth_ec_success);
     REQUIRE(orig != NULL);
     kth_encrypted_public_t bytes = kth_wallet_ek_public_public_key(orig);
 
     kth_ek_public_mut_t rebuilt =
-        kth_wallet_ek_public_construct_from_value_unsafe(bytes.data);
+        kth_wallet_ek_public_construct_unsafe(bytes.data);
     REQUIRE(rebuilt != NULL);
     REQUIRE(kth_wallet_ek_public_equals(orig, rebuilt) != 0);
 
@@ -118,7 +123,8 @@ TEST_CASE("C-API wallet::ek_public - construct_from_value_unsafe matches safe va
 
 TEST_CASE("C-API wallet::ek_public - copy preserves value equality",
           "[C-API WalletEkPublic][value]") {
-    kth_ek_public_mut_t a = kth_wallet_ek_public_construct_from_encoded(kEncrypted);
+    kth_ek_public_mut_t a = NULL;
+    REQUIRE(kth_wallet_ek_public_parse_from(kEncrypted, &a) == kth_ec_success);
     kth_ek_public_mut_t b = kth_wallet_ek_public_copy(a);
     REQUIRE(b != NULL);
     REQUIRE(kth_wallet_ek_public_equals(a, b) != 0);
@@ -128,8 +134,10 @@ TEST_CASE("C-API wallet::ek_public - copy preserves value equality",
 
 TEST_CASE("C-API wallet::ek_public - equals / less compare distinct keys",
           "[C-API WalletEkPublic][value]") {
-    kth_ek_public_mut_t a = kth_wallet_ek_public_construct_from_encoded(kEncrypted);
-    kth_ek_public_mut_t b = kth_wallet_ek_public_construct_from_encoded(kEncryptedOther);
+    kth_ek_public_mut_t a = NULL;
+    kth_ek_public_mut_t b = NULL;
+    REQUIRE(kth_wallet_ek_public_parse_from(kEncrypted, &a) == kth_ec_success);
+    REQUIRE(kth_wallet_ek_public_parse_from(kEncryptedOther, &b) == kth_ec_success);
     REQUIRE(kth_wallet_ek_public_equals(a, b) == 0);
 
     int const a_less_b = kth_wallet_ek_public_less(a, b) != 0;
@@ -144,14 +152,15 @@ TEST_CASE("C-API wallet::ek_public - equals / less compare distinct keys",
 // Preconditions
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::ek_public - construct_from_encoded(NULL) aborts",
+TEST_CASE("C-API wallet::ek_public - parse_from(NULL) aborts",
           "[C-API WalletEkPublic][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_ek_public_construct_from_encoded(NULL));
+    kth_ek_public_mut_t out = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_ek_public_parse_from(NULL, &out));
 }
 
-TEST_CASE("C-API wallet::ek_public - construct_from_value(NULL) aborts",
+TEST_CASE("C-API wallet::ek_public - construct(NULL) aborts",
           "[C-API WalletEkPublic][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_ek_public_construct_from_value(NULL));
+    KTH_EXPECT_ABORT(kth_wallet_ek_public_construct(NULL));
 }
 
 TEST_CASE("C-API wallet::ek_public - valid(NULL) aborts",

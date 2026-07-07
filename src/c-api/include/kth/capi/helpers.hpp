@@ -10,6 +10,7 @@
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <concepts>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -284,12 +285,14 @@ kth::domain::wallet::payment payment_to_cpp(uint8_t const* x) {
 // Generic helper for C-compatible POD struct conversions.
 // Uses memcpy (standard-compliant, zero overhead — compilers optimize
 // Validity check for owned opaque handles returned by constructors and
-// factory methods. If T is convertible to bool (has operator bool),
-// checks it and returns false when the object is invalid. Otherwise
-// always returns true (assume valid).
+// factory methods. Prefers an explicit `T::valid()` when the type
+// exposes one, falls back to `operator bool` for the wallet types that
+// still expose it, and treats everything else as valid.
 template<typename T>
 inline bool check_valid(T* obj) {
-    if constexpr (std::is_constructible_v<bool, T const&>) {
+    if constexpr (requires (T const& t) { { t.valid() } -> std::same_as<bool>; }) {
+        return obj->valid();
+    } else if constexpr (std::is_constructible_v<bool, T const&>) {
         return static_cast<bool>(static_cast<T const&>(*obj));
     } else {
         return true;
@@ -683,11 +686,40 @@ inline kth_bool_t eq(void const* a, void const* b) {
     return bool_to_int(cpp_ref<T>(a) == cpp_ref<T>(b));
 }
 
+// Inequality counterpart for `_not_equal` bindings. Uses the
+// compiler-synthesized `!=` rewrite (C++20 rewrites `a != b` to
+// `!(a == b)` when only `operator==` is defined), so any T that
+// exposes `_equals` also picks this up automatically.
+template <typename T>
+inline kth_bool_t ne(void const* a, void const* b) {
+    return bool_to_int(cpp_ref<T>(a) != cpp_ref<T>(b));
+}
+
 // Strict-less-than through two opaque handles of the same type.
 // Counterpart to `eq` for `_less` bindings generated from `operator<`.
 template <typename T>
 inline kth_bool_t lt(void const* a, void const* b) {
     return bool_to_int(cpp_ref<T>(a) < cpp_ref<T>(b));
+}
+
+// Strict-greater-than counterpart for `_greater` bindings. Uses the
+// compiler-synthesized `>` from `operator<=>` when only the spaceship
+// is defined.
+template <typename T>
+inline kth_bool_t gt(void const* a, void const* b) {
+    return bool_to_int(cpp_ref<T>(a) > cpp_ref<T>(b));
+}
+
+// Less-or-equal counterpart for `_less_or_equal` bindings.
+template <typename T>
+inline kth_bool_t le(void const* a, void const* b) {
+    return bool_to_int(cpp_ref<T>(a) <= cpp_ref<T>(b));
+}
+
+// Greater-or-equal counterpart for `_greater_or_equal` bindings.
+template <typename T>
+inline kth_bool_t ge(void const* a, void const* b) {
+    return bool_to_int(cpp_ref<T>(a) >= cpp_ref<T>(b));
 }
 
 // `cpp_ref<std::vector<T>>(h)` shorthand. Same overload resolution

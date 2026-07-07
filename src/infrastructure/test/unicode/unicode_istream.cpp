@@ -12,7 +12,7 @@ using namespace kth;
 // Start Test Suite: unicode istream tests
 
 // Use of L is not recommended as it will only work for ascii.
-TEST_CASE("unicode istream  conditional  test", "[unicode istream tests]") {
+TEST_CASE("unicode istream conditional test", "[unicode istream tests]") {
     std::wstringstream wide_stream(L"windows ...");
     std::stringstream narrow_stream("linux ...");
 
@@ -27,7 +27,7 @@ TEST_CASE("unicode istream  conditional  test", "[unicode istream tests]") {
 #endif
 }
 
-TEST_CASE("unicode istream  non ascii  test", "[unicode istream tests]") {
+TEST_CASE("unicode istream non ascii test", "[unicode istream tests]") {
     auto const utf8 = "テスト";
     auto const utf16 = to_utf16(utf8);
 
@@ -41,7 +41,7 @@ TEST_CASE("unicode istream  non ascii  test", "[unicode istream tests]") {
     REQUIRE(result == utf8);
 }
 
-TEST_CASE("unicode istream  tokenization  test", "[unicode istream tests]") {
+TEST_CASE("unicode istream tokenization test", "[unicode istream tests]") {
     auto const utf8 = "テスト\rス\nト\tテス スト";
     auto const utf16 = to_utf16(utf8);
 
@@ -63,7 +63,7 @@ TEST_CASE("unicode istream  tokenization  test", "[unicode istream tests]") {
     REQUIRE(result == "スト");
 }
 
-TEST_CASE("unicode istream  overflow  test", "[unicode istream tests]") {
+TEST_CASE("unicode istream overflow test", "[unicode istream tests]") {
     // This is a 20x10 matrix of 3 bytes per character triples (1800 bytes).
     // The buffer is 256 (wide) and 1024 (narrow), resulting in a potential
     // character split because 256 is not a multiple of 3. However sgetn()

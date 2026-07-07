@@ -35,7 +35,7 @@ stealth_sender::stealth_sender(ec_secret const& ephemeral_private,
 }
 
 stealth_sender::operator bool() const {
-    return address_;
+    return address_.valid();
 }
 
 // private
@@ -60,7 +60,10 @@ void stealth_sender::initialize(ec_secret const& ephemeral_private,
     }
 
     if (create_stealth_script(script_, ephemeral_private, filter, seed)) {
-        address_ = wallet::payment_address{ec_public{sender_public}, version_};
+        auto address_result = wallet::payment_address::from_ec_public(ec_public{sender_public}, version_);
+        if (address_result) {
+            address_ = *address_result;
+        }
     }
 }
 

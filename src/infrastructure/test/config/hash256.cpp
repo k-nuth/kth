@@ -4,26 +4,18 @@
 
 #include <test_helpers.hpp>
 
-#if ! defined(__EMSCRIPTEN__)
-#include <boost/program_options.hpp>
-#endif
-
 #include <kth/infrastructure.hpp>
 
 using namespace kth;
 using namespace kth::infrastructure::config;
 
-// Start Test Suite: hash256 tests
-
-// Start Test Suite: hash256  construct
-
-TEST_CASE("hash256  construct  default  null hash", "[hash256  construct]") {
-    hash256 const uninitialized_hash;
-    auto const expectation = encode_hash(kth::null_hash);
-    auto const result = encode_hash(uninitialized_hash);
-    REQUIRE(expectation == result);
+TEST_CASE("hash256::parse_from accepts a 32-byte hex string and round-trips", "[hash256]") {
+    auto constexpr text = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+    auto const result = hash256::parse_from(text);
+    REQUIRE(result.has_value());
+    REQUIRE(result->to_string() == text);
 }
 
-// End Test Suite
-
-// End Test Suite
+TEST_CASE("hash256::parse_from rejects non-hex input", "[hash256]") {
+    REQUIRE( ! hash256::parse_from("not a hash").has_value());
+}

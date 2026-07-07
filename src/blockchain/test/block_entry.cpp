@@ -17,8 +17,7 @@ static auto const default_block_hash = "14508459b221041eab257d2baaa7459775ba7482
 
 // construct1/block
 
-TEST_CASE("block entry  construct1  default block  expected", "[block entry tests]")
-{
+TEST_CASE("block entry construct1 default block expected", "[block entry tests]") {
     auto const block = std::make_shared<const domain::message::block>();
     block_entry instance(block);
     REQUIRE(instance.block() == block);
@@ -27,15 +26,14 @@ TEST_CASE("block entry  construct1  default block  expected", "[block entry test
 
 // construct2/hash
 
-TEST_CASE("block entry  construct2  default block hash  round trips", "[block entry tests]") {
+TEST_CASE("block entry construct2 default block hash round trips", "[block entry tests]") {
     block_entry instance(default_block_hash);
     REQUIRE(instance.hash() == default_block_hash);
 }
 
 // parent
 
-TEST_CASE("block entry  parent  hash42  expected", "[block entry tests]")
-{
+TEST_CASE("block entry parent hash42 expected", "[block entry tests]") {
     domain::chain::header const hdr{0, hash42, null_hash, 0, 0, 0};
     auto const block = std::make_shared<domain::message::block>(
         hdr, domain::chain::transaction::list{});
@@ -45,14 +43,14 @@ TEST_CASE("block entry  parent  hash42  expected", "[block entry tests]")
 
 // children
 
-TEST_CASE("block entry  children  default  empty", "[block entry tests]") {
+TEST_CASE("block entry children default empty", "[block entry tests]") {
     block_entry instance(default_block_hash);
     REQUIRE(instance.children().empty());
 }
 
 // add_child
 
-TEST_CASE("block entry  add child  one  single", "[block entry tests]") {
+TEST_CASE("block entry add child one single", "[block entry tests]") {
     block_entry instance(null_hash);
     auto const child = std::make_shared<const domain::message::block>();
     instance.add_child(child);
@@ -60,7 +58,7 @@ TEST_CASE("block entry  add child  one  single", "[block entry tests]") {
     REQUIRE(instance.children()[0] == child->hash());
 }
 
-TEST_CASE("block entry  add child  two  expected order", "[block entry tests]") {
+TEST_CASE("block entry add child two expected order", "[block entry tests]") {
     block_entry instance(null_hash);
 
     auto const child1 = std::make_shared<const domain::message::block>();
@@ -86,7 +84,7 @@ TEST_CASE("block entry equality same true", "[block entry tests]") {
     REQUIRE(instance1 == instance2);
 }
 
-TEST_CASE("block entry  equality  different  false", "[block entry tests]") {
+TEST_CASE("block entry equality different false", "[block entry tests]") {
     auto const block = std::make_shared<const domain::message::block>();
     block_entry instance1(block);
     block_entry instance2(null_hash);

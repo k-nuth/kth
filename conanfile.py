@@ -171,6 +171,7 @@ class KthRecipe(KnuthConanFileV2):
 
     def requirements(self):
         self.requires("boost/1.91.0", transitive_headers=True, transitive_libs=True)
+        self.requires("cli11/2.5.0", transitive_headers=True)
         self.requires("fmt/12.1.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.17.0", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/0.9.32", transitive_headers=True, transitive_libs=True)
@@ -411,10 +412,11 @@ class KthRecipe(KnuthConanFileV2):
         if self.options.with_jemalloc:
             infrastructure_defines.append("KTH_WITH_JEMALLOC")
         self.cpp_info.components["infrastructure"].defines = infrastructure_defines
-        # Infrastructure core dependencies: secp256k1, boost, fmt, ctre, spdlog
+        # Infrastructure core dependencies: secp256k1, boost, fmt, ctre, spdlog, CLI11
         self.cpp_info.components["infrastructure"].requires = [
             "secp256k1",
             "boost::boost",
+            "cli11::cli11",
             "fmt::fmt",
             "ctre::ctre",
             "spdlog::spdlog"

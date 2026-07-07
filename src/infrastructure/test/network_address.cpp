@@ -24,12 +24,12 @@ bool equal(network_address const& x, network_address const& y, bool with_timesta
 
 // Start Test Suite: network address tests
 
-TEST_CASE("network address  constructor 1  always  invalid", "[network address tests]") {
+TEST_CASE("network address constructor 1 always invalid", "[network address tests]") {
     network_address instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("network address  constructor 2  always  equals params", "[network address tests]") {
+TEST_CASE("network address constructor 2 always equals params", "[network address tests]") {
     constexpr uint32_t timestamp = 734678u;
     constexpr uint64_t services = 5357534u;
     constexpr uint16_t port = 123u;
@@ -49,7 +49,7 @@ TEST_CASE("network address  constructor 2  always  equals params", "[network add
     REQUIRE(timestamp == instance.timestamp());
 }
 
-TEST_CASE("network address  constructor 3  always  equals params", "[network address tests]") {
+TEST_CASE("network address constructor 3 always equals params", "[network address tests]") {
     constexpr uint32_t timestamp = 734678u;
     constexpr uint64_t services = 5357534u;
     constexpr uint16_t port = 123u;
@@ -64,7 +64,7 @@ TEST_CASE("network address  constructor 3  always  equals params", "[network add
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("network address  constructor 4  always  equals params", "[network address tests]") {
+TEST_CASE("network address constructor 4 always equals params", "[network address tests]") {
     network_address const expected {
         734678u,
         5357534u,
@@ -79,7 +79,7 @@ TEST_CASE("network address  constructor 4  always  equals params", "[network add
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("network address  constructor 5  always  equals params", "[network address tests]") {
+TEST_CASE("network address constructor 5 always equals params", "[network address tests]") {
     network_address expected {
         734678u,
         5357534u,
@@ -93,7 +93,7 @@ TEST_CASE("network address  constructor 5  always  equals params", "[network add
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("network address from data insufficient bytes  failure", "[network address tests]") {
+TEST_CASE("network address from data insufficient bytes failure", "[network address tests]") {
     data_chunk const raw{1};
     byte_reader reader(raw);
 
@@ -101,7 +101,7 @@ TEST_CASE("network address from data insufficient bytes  failure", "[network add
     REQUIRE( ! result);
 }
 
-TEST_CASE("network address  from data 1  without timestamp  success", "[network address tests]") {
+TEST_CASE("network address from data 1 without timestamp success", "[network address tests]") {
     network_address const expected {
         734678u,
         5357534u,
@@ -119,7 +119,7 @@ TEST_CASE("network address  from data 1  without timestamp  success", "[network 
     REQUIRE(expected.serialized_size(version_level_minimum, false) == result->serialized_size(version_level_minimum, false));
 }
 
-TEST_CASE("network address  from data 2  without timestamp  success", "[network address tests]") {
+TEST_CASE("network address from data 2 without timestamp success", "[network address tests]") {
     network_address const expected {
         734678u,
         5357534u,
@@ -137,7 +137,7 @@ TEST_CASE("network address  from data 2  without timestamp  success", "[network 
     REQUIRE(expected.serialized_size(version_level_minimum, false) == result->serialized_size(version_level_minimum, false));
 }
 
-TEST_CASE("network address  from data 3  without timestamp  success", "[network address tests]") {
+TEST_CASE("network address from data 3 without timestamp success", "[network address tests]") {
     network_address const expected {
         734678u,
         5357534u,
@@ -155,7 +155,7 @@ TEST_CASE("network address  from data 3  without timestamp  success", "[network 
     REQUIRE(expected.serialized_size(version_level_minimum, false) == result->serialized_size(version_level_minimum, false));
 }
 
-TEST_CASE("network address  from data 1  with timestamp  success", "[network address tests]") {
+TEST_CASE("network address from data 1 with timestamp success", "[network address tests]") {
     network_address const expected {
         734678u,
         5357534u,
@@ -173,7 +173,7 @@ TEST_CASE("network address  from data 1  with timestamp  success", "[network add
     REQUIRE(expected.serialized_size(version_level_minimum, true) == result->serialized_size(version_level_minimum, true));
 }
 
-TEST_CASE("network address  from data 2  with timestamp  success", "[network address tests]") {
+TEST_CASE("network address from data 2 with timestamp success", "[network address tests]") {
     network_address const expected {
         734678u,
         5357534u,
@@ -191,7 +191,7 @@ TEST_CASE("network address  from data 2  with timestamp  success", "[network add
     REQUIRE(expected.serialized_size(version_level_minimum, true) == result->serialized_size(version_level_minimum, true));
 }
 
-TEST_CASE("network address  from data 3  with timestamp  success", "[network address tests]") {
+TEST_CASE("network address from data 3 with timestamp success", "[network address tests]") {
     network_address const expected {
         734678u,
         5357534u,
@@ -209,7 +209,7 @@ TEST_CASE("network address  from data 3  with timestamp  success", "[network add
     REQUIRE(expected.serialized_size(version_level_minimum, true) == result->serialized_size(version_level_minimum, true));
 }
 
-TEST_CASE("network address  timestamp accessor  always  returns initialized value", "[network address tests]") {
+TEST_CASE("network address timestamp accessor always returns initialized value", "[network address tests]") {
     constexpr uint32_t timestamp = 734678u;
     network_address const instance {
         timestamp,
@@ -221,7 +221,7 @@ TEST_CASE("network address  timestamp accessor  always  returns initialized valu
     REQUIRE(timestamp == instance.timestamp());
 }
 
-TEST_CASE("network address  timestamp setter  roundtrip  success", "[network address tests]") {
+TEST_CASE("network address timestamp setter roundtrip success", "[network address tests]") {
     constexpr uint32_t timestamp = 734678u;
     network_address instance;
     REQUIRE(timestamp != instance.timestamp());
@@ -229,7 +229,7 @@ TEST_CASE("network address  timestamp setter  roundtrip  success", "[network add
     REQUIRE(timestamp == instance.timestamp());
 }
 
-TEST_CASE("network address  services accessor  always  returns initialized value", "[network address tests]") {
+TEST_CASE("network address services accessor always returns initialized value", "[network address tests]") {
     constexpr uint32_t services = 5357534u;
     network_address instance {
         734678u,
@@ -241,7 +241,7 @@ TEST_CASE("network address  services accessor  always  returns initialized value
     REQUIRE(services == instance.services());
 }
 
-TEST_CASE("network address  services setter  roundtrip  success", "[network address tests]") {
+TEST_CASE("network address services setter roundtrip success", "[network address tests]") {
     constexpr uint64_t services = 6842368u;
     network_address instance;
     REQUIRE(services != instance.services());
@@ -249,7 +249,7 @@ TEST_CASE("network address  services setter  roundtrip  success", "[network addr
     REQUIRE(services == instance.services());
 }
 
-TEST_CASE("network address  ip accessor  always  returns initialized value", "[network address tests]") {
+TEST_CASE("network address ip accessor always returns initialized value", "[network address tests]") {
     constexpr message::ip_address ip = "127544abcdefa7b6d3e91486c57000aa"_base16;
 
     network_address const instance {
@@ -262,7 +262,7 @@ TEST_CASE("network address  ip accessor  always  returns initialized value", "[n
     REQUIRE(ip == instance.ip());
 }
 
-TEST_CASE("network address  ip setter 1  roundtrip  success", "[network address tests]") {
+TEST_CASE("network address ip setter 1 roundtrip success", "[network address tests]") {
     constexpr message::ip_address ip = "127544abcdefa7b6d3e91486c57000aa"_base16;
 
     network_address instance;
@@ -271,7 +271,7 @@ TEST_CASE("network address  ip setter 1  roundtrip  success", "[network address 
     REQUIRE(ip == instance.ip());
 }
 
-TEST_CASE("network address  ip setter 2  roundtrip  success", "[network address tests]") {
+TEST_CASE("network address ip setter 2 roundtrip success", "[network address tests]") {
     constexpr message::ip_address ip = "127544abcdefa7b6d3e91486c57000aa"_base16;
 
     network_address instance;
@@ -280,7 +280,7 @@ TEST_CASE("network address  ip setter 2  roundtrip  success", "[network address 
     REQUIRE(ip == instance.ip());
 }
 
-TEST_CASE("network address  port accessor  always  returns initialized value", "[network address tests]") {
+TEST_CASE("network address port accessor always returns initialized value", "[network address tests]") {
     constexpr uint16_t port = 123u;
     network_address const instance {
         734678u,
@@ -292,7 +292,7 @@ TEST_CASE("network address  port accessor  always  returns initialized value", "
     REQUIRE(port == instance.port());
 }
 
-TEST_CASE("network address  port setter  roundtrip  success", "[network address tests]") {
+TEST_CASE("network address port setter roundtrip success", "[network address tests]") {
     constexpr uint16_t port = 853u;
     network_address instance;
     REQUIRE(port != instance.port());
@@ -300,7 +300,7 @@ TEST_CASE("network address  port setter  roundtrip  success", "[network address 
     REQUIRE(port == instance.port());
 }
 
-TEST_CASE("network address  operator assign equals 1  always  matches equivalent", "[network address tests]") {
+TEST_CASE("network address operator assign equals 1 always matches equivalent", "[network address tests]") {
     network_address const value {
         14356u,
         54676843u,
@@ -317,7 +317,7 @@ TEST_CASE("network address  operator assign equals 1  always  matches equivalent
     REQUIRE(instance.is_valid());
 }
 
-TEST_CASE("network address  operator assign equals 2  always  matches equivalent", "[network address tests]") {
+TEST_CASE("network address operator assign equals 2 always matches equivalent", "[network address tests]") {
     network_address const value {
         14356u,
         54676843u,
@@ -335,7 +335,7 @@ TEST_CASE("network address  operator assign equals 2  always  matches equivalent
     REQUIRE(value == instance);
 }
 
-TEST_CASE("network address  operator boolean equals  duplicates  returns true", "[network address tests]") {
+TEST_CASE("network address operator boolean equals duplicates returns true", "[network address tests]") {
     network_address const expected {
         14356u,
         54676843u,
@@ -347,7 +347,7 @@ TEST_CASE("network address  operator boolean equals  duplicates  returns true", 
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("network address  operator boolean equals  differs timestamp  returns true", "[network address tests]") {
+TEST_CASE("network address operator boolean equals differs timestamp returns true", "[network address tests]") {
     network_address const expected {
         14356u,
         54676843u,
@@ -359,7 +359,7 @@ TEST_CASE("network address  operator boolean equals  differs timestamp  returns 
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("network address  operator boolean equals  differs  returns false", "[network address tests]") {
+TEST_CASE("network address operator boolean equals differs returns false", "[network address tests]") {
     network_address const expected {
         14356u,
         54676843u,
@@ -371,7 +371,7 @@ TEST_CASE("network address  operator boolean equals  differs  returns false", "[
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("network address  operator boolean not equals  duplicates  returns false", "[network address tests]") {
+TEST_CASE("network address operator boolean not equals duplicates returns false", "[network address tests]") {
     network_address const expected {
         14356u,
         54676843u,
@@ -383,7 +383,7 @@ TEST_CASE("network address  operator boolean not equals  duplicates  returns fal
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("network address  operator boolean not equals  differs timestamp  returns false", "[network address tests]") {
+TEST_CASE("network address operator boolean not equals differs timestamp returns false", "[network address tests]") {
     network_address const expected {
         14356u,
         54676843u,
@@ -395,7 +395,7 @@ TEST_CASE("network address  operator boolean not equals  differs timestamp  retu
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("network address  operator boolean not equals  differs  returns true", "[network address tests]") {
+TEST_CASE("network address operator boolean not equals differs returns true", "[network address tests]") {
     network_address const expected {
         14356u,
         54676843u,

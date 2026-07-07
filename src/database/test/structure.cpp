@@ -29,8 +29,7 @@ public:
 
 BOOST_FIXTURE_TEST_SUITE(structure_tests, structure_directory_setup_fixture)
 
-TEST_CASE("hash table header  test", "[None]")
-{
+TEST_CASE("hash table header test", "[None]") {
     store::create(DIRECTORY "/hash_table_header");
     memory_map file(DIRECTORY "/hash_table_header");
     REQUIRE(file.open());
@@ -45,8 +44,7 @@ TEST_CASE("hash table header  test", "[None]")
     REQUIRE(header.read(9) == 110);
 }
 
-TEST_CASE("slab manager  test", "[None]")
-{
+TEST_CASE("slab manager test", "[None]") {
     store::create(DIRECTORY "/slab_manager");
     memory_map file(DIRECTORY "/slab_manager");
     REQUIRE(file.open());
@@ -68,8 +66,7 @@ TEST_CASE("slab manager  test", "[None]")
     REQUIRE(file.size() >= 208);
 }
 
-TEST_CASE("record manager  test", "[None]")
-{
+TEST_CASE("record manager test", "[None]") {
     store::create(DIRECTORY "/record_manager");
     memory_map file(DIRECTORY "/record_manager");
     REQUIRE(file.open());
@@ -88,8 +85,7 @@ TEST_CASE("record manager  test", "[None]")
     recs.sync();
 }
 
-TEST_CASE("record list  test", "[None]")
-{
+TEST_CASE("record list test", "[None]") {
     // TODO
 }
 

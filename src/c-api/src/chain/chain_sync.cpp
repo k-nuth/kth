@@ -312,7 +312,7 @@ kth_error_code_t kth_chain_sync_confirmed_transactions(kth_chain_t chain, kth_pa
 
 kth_mempool_transaction_list_t kth_chain_sync_mempool_transactions(kth_chain_t chain, kth_payment_address_t address, kth_bool_t use_testnet_rules) {
     auto const& address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(address);
-    if (address_cpp) {
+    if (address_cpp.valid()) {
         auto txs = safe_chain(chain).get_mempool_transactions(address_cpp.encoded_cashaddr(false), kth::int_to_bool(use_testnet_rules));
         auto ret_txs = kth::leak(txs);
         return static_cast<kth_mempool_transaction_list_t>(ret_txs);

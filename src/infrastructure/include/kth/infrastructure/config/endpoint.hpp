@@ -6,159 +6,86 @@
 #define KTH_INFRASTUCTURE_CONFIG_ENDPOINT_HPP
 
 #include <cstdint>
-#include <iostream>
+#include <expected>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include <fmt/ostream.h>
+#include <fmt/core.h>
 
 #include <kth/infrastructure/config/authority.hpp>
 #include <kth/infrastructure/define.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/asio_helper.hpp>
 
 namespace kth::infrastructure::config {
 
 /**
- * Serialization helper for a network endpoint in URI format.
- * This is a container for a {scheme, host, port} tuple.
+ * Serialization helper for a network endpoint in URI format:
+ * `[scheme://]host[:port]`.
+ *
+ * Valid-by-construction: no default ctor, no throwing ctor. Fallible
+ * string parsing goes through `parse_from` returning `expect<endpoint>`.
  */
 struct KI_API endpoint {
     using list = std::vector<endpoint>;
 
-
-    endpoint();
-
     /**
-     * Copy constructor.
-     * @param[in]  x  The object to copy into self on construct.
+     * Parse the `[scheme://]host[:port]` form. Returns
+     * `error::illegal_value` on malformed input.
      */
-    endpoint(endpoint const& x);
+    [[nodiscard]] static
+    std::expected<endpoint, kth::code> parse_from(std::string_view text);
 
     /**
-     * Initialization constructor.
-     * The scheme and port may be undefined, in which case the port is reported
-     * as zero and the scheme is reported as an empty string.
-     * @param[in]  value  The initial value of the [scheme://]host[:port] form.
-     */
-    // explicit
-    // implicit
-    endpoint(std::string_view value);
-
-    /**
-     * Initialization constructor.
-     * @param[in]  authority  The value to initialize with.
+     * Wrap an authority (host+port, no scheme).
      */
     explicit
     endpoint(authority const& authority);
 
-    /**
-     * Initialization constructor.
-     * @param[in]  host  The host name or ip address to initialize with.
-     * @param[in]  port  The port to initialize with.
-     */
-    endpoint(std::string_view host, uint16_t port);
+    endpoint(std::string_view host, uint16_t port)
+        : host_(host), port_(port)
+    {}
 
 #if ! defined(__EMSCRIPTEN__)
-    /**
-     * Initialization constructor.
-     * @param[in]  endpoint  The endpoint addresss to initialize with.
-     */
     explicit
     endpoint(asio::endpoint const& host);
 
-    /**
-     * Initialization constructor.
-     * @param[in]  ip    The boost ip addresss to initialize with.
-     * @param[in]  port  The port to initialize with.
-     */
     endpoint(asio::address const& ip, uint16_t port);
 #endif
 
-    /**
-     * Getter.
-     * @return True if the endpoint is initialized.
-     */
-    explicit
-    operator bool const() const;
+    [[nodiscard]] std::string const& scheme() const { return scheme_; }
+    [[nodiscard]] std::string const& host()   const { return host_; }
+    [[nodiscard]] uint16_t           port()   const { return port_; }
 
-    /**
-     * Getter.
-     * @return The scheme of the endpoint or empty string.
-     */
-    std::string const& scheme() const;
-
-    /**
-     * Getter.
-     * @return The host name or ip address of the endpoint.
-     */
-    std::string const& host() const;
-
-    /**
-     * Getter.
-     * @return The tcp port of the endpoint.
-     */
-    uint16_t port() const;
-
-    /**
-     * Get the endpoint as a string.
-     * An empty scheme and/or empty port is omitted.
-     * @return The endpoint in the [scheme://]host[:port] form.
-     */
+    [[nodiscard]]
     std::string to_string() const;
 
-    /**
-     * Override the equality operator.
-     * @param[in]  x  The x object with which to compare.
-     */
+    [[nodiscard]]
     bool operator==(endpoint const& x) const;
 
-    /**
-     * Define stream in. Throws if input is invalid.
-     * @param[in]   input     The input stream to read the value from.
-     * @param[out]  argument  The object to receive the read value.
-     * @return                The input stream reference.
-     */
-    friend
-    std::istream& operator>>(std::istream& input, endpoint& argument);
-
-    /**
-     * Define stream out.
-     * @param[in]   output    The output stream to write the value to.
-     * @param[out]  argument  The object from which to obtain the value.
-     * @return                The output stream reference.
-     */
-    // friend
-    // std::ostream& operator<<(std::ostream& output, endpoint const& argument);
-
-    template <typename OStream>
-    friend
-    OStream& operator<<(OStream& output, endpoint const& argument) {
-        if ( ! argument.scheme().empty()) {
-            output << argument.scheme() << "://";
-        }
-
-        output << argument.host();
-
-        if (argument.port() != 0) {
-            output << ":" << argument.port();
-        }
-
-        return output;
-    }
 private:
+    // Private "populate all fields" ctor for use by parse_from.
+    endpoint(std::string scheme, std::string host, uint16_t port)
+        : scheme_(std::move(scheme))
+        , host_(std::move(host))
+        , port_(port)
+    {}
+
     std::string scheme_;
     std::string host_;
-    uint16_t port_;
+    uint16_t    port_{0};
 };
 
 } // namespace kth::infrastructure::config
 
 template <>
-struct fmt::formatter<kth::infrastructure::config::endpoint> : fmt::formatter<std::string> {
+struct fmt::formatter<kth::infrastructure::config::endpoint>
+    : fmt::formatter<std::string> {
     template <typename FormatContext>
-    auto format(kth::infrastructure::config::endpoint const& value, FormatContext& ctx) const {
+    auto format(kth::infrastructure::config::endpoint const& value,
+                FormatContext& ctx) const {
         return fmt::formatter<std::string>::format(value.to_string(), ctx);
     }
 };

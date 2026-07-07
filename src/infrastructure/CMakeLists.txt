@@ -63,11 +63,13 @@ if (NOT GLOBAL_BUILD)
 endif()
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  find_package(Boost COMPONENTS program_options REQUIRED)
+  # Boost.Program_options is gone — the CLI is now built on CLI11.
   find_package(Boost COMPONENTS thread REQUIRED)
 else()
   find_package(Boost REQUIRED)
 endif()
+
+find_package(CLI11 REQUIRED)
 
 find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
@@ -244,9 +246,6 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   set(kth_sources_just_legacy
     ${kth_sources_just_legacy}
 
-    src/config/parameter.cpp
-    src/config/printer.cpp
-
     src/utility/deadline.cpp
     src/utility/socket.cpp
 
@@ -312,8 +311,6 @@ set(kth_headers
     include/kth/infrastructure/config/endpoint.hpp
     include/kth/infrastructure/config/hash160.hpp
     include/kth/infrastructure/config/hash256.hpp
-    include/kth/infrastructure/config/parameter.hpp
-    include/kth/infrastructure/config/printer.hpp
     include/kth/infrastructure/config/sodium.hpp
 
     include/kth/infrastructure/formats/base_10.hpp
@@ -575,7 +572,6 @@ endif()
 target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${Boost_INCLUDE_DIR})
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  target_link_libraries(${PROJECT_NAME} PUBLIC Boost::program_options)
   target_link_libraries(${PROJECT_NAME} PUBLIC Boost::thread)
 else()
   target_compile_options(${PROJECT_NAME} PUBLIC "-pthread")
@@ -590,6 +586,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC spdlog::spdlog_header_only)
 target_link_libraries(${PROJECT_NAME} PUBLIC secp256k1::secp256k1)
 target_link_libraries(${PROJECT_NAME} PUBLIC ctre::ctre)
 target_link_libraries(${PROJECT_NAME} PUBLIC gmp::gmp)
+target_link_libraries(${PROJECT_NAME} PUBLIC CLI11::CLI11)
 
 # Link simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
@@ -688,8 +685,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     set(kth_test_sources
       ${kth_test_sources}
-      test/config/parameter.cpp
-      test/config/printer.cpp
       test/utility/pseudo_random_broken_do_not_use.cpp
     )
   endif()

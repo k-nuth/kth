@@ -2,76 +2,71 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-
-//TODO(fernando): use Boost.URL
-
 #ifndef KTH_WALLET_BITCOIN_URI_HPP
 #define KTH_WALLET_BITCOIN_URI_HPP
 
 #include <cstdint>
-#include <iostream>
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
 #include <kth/domain/wallet/stealth_address.hpp>
-// #include <kth/domain/wallet/uri_reader.hpp>
 
 namespace kth::domain::wallet {
 
-/// A bitcoin URI corresponding to BIP 21 and BIP 72.
-/// The object is not constant, setters can change state after construction.
-// class KD_API bitcoin_uri : public uri_reader {
+/**
+ * BIP21 / BIP72 bitcoin URI (`bitcoin:address?params`).
+ *
+ * Builder-style API: default-construct then populate via setters, or
+ * consume a serialized URI via `parse_from` which returns
+ * `expect<bitcoin_uri>`. Use `valid()` to test whether any field has
+ * been populated.
+ */
 struct KD_API bitcoin_uri {
-    /// Constructors.
+    /// Parse a URI string. Returns `error::illegal_value` on malformed
+    /// input.
+    [[nodiscard]] static
+    expect<bitcoin_uri> parse_from(std::string_view uri, bool strict = true);
+
+    /// Explicit so the C-API generator binds it as `construct_default`.
+    /// The builder-style setters expect this empty starting point.
     bitcoin_uri() = default;
-    bitcoin_uri(std::string const& uri, bool strict = true);
 
-    bitcoin_uri(bitcoin_uri const& x) = default;
-    bitcoin_uri& operator=(bitcoin_uri const& x) = default;
-
-    /// Operators.
-    bool operator==(bitcoin_uri const& x) const;
-    bool operator!=(bitcoin_uri const& x) const;
-
-    bool operator<(bitcoin_uri const& x) const;
-
-    friend std::istream& operator>>(std::istream& in, bitcoin_uri& to);
-    friend std::ostream& operator<<(std::ostream& out, bitcoin_uri const& from);
-
-    /// Test whether the URI has been initialized.
-    operator bool() const;
-
-    /// Get the serialized URI representation.
     [[nodiscard]]
-    std::string encoded() const;
+    friend bool operator==(bitcoin_uri const&, bitcoin_uri const&) = default;
+
+    /// Provide the full comparison suite (`<`, `<=`, `>`, `>=`) via the
+    /// spaceship operator so callers don't have to remember which single
+    /// ordering operator we defined.
+    [[nodiscard]]
+    friend auto operator<=>(bitcoin_uri const& a, bitcoin_uri const& b) {
+        return a.to_string() <=> b.to_string();
+    }
+
+    /// True when at least one field has been populated.
+    [[nodiscard]]
+    bool valid() const;
+
+    /// Serialized URI. Used by `fmt::formatter<bitcoin_uri>`.
+    [[nodiscard]]
+    std::string to_string() const;
+
+    [[nodiscard]]
+    std::string encoded() const { return to_string(); }
 
     /// Property getters.
-    [[nodiscard]]
-    uint64_t amount() const;
-
-    [[nodiscard]]
-    std::string label() const;
-
-    [[nodiscard]]
-    std::string message() const;
-
-    [[nodiscard]]
-    std::string r() const;
-
-    [[nodiscard]]
-    std::string address() const;
-
-    [[nodiscard]]
-    payment_address payment() const;
-
-    [[nodiscard]]
-    stealth_address stealth() const;
-
-    [[nodiscard]]
-    std::string parameter(std::string const& key) const;
+    [[nodiscard]] uint64_t        amount() const;
+    [[nodiscard]] std::string     label() const;
+    [[nodiscard]] std::string     message() const;
+    [[nodiscard]] std::string     r() const;
+    [[nodiscard]] std::string     address() const;
+    [[nodiscard]] payment_address payment() const;
+    [[nodiscard]] stealth_address stealth() const;
+    [[nodiscard]] std::string     parameter(std::string const& key) const;
 
     /// Property setters.
     void set_amount(uint64_t satoshis);
@@ -91,10 +86,8 @@ struct KD_API bitcoin_uri {
     bool set_parameter(std::string const& key, std::string const& value);
 
 private:
-    /// Private helpers.
     bool set_amount(std::string const& satoshis);
 
-    /// Member state.
     bool strict_{true};
     std::string scheme_;
     std::string address_;

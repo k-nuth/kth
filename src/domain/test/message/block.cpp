@@ -12,12 +12,12 @@ using namespace kth::domain::message;
 
 // Start Test Suite: message block tests
 
-TEST_CASE("block  constructor 1  always invalid", "[message block]") {
+TEST_CASE("block constructor 1 always invalid", "[message block]") {
     block instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("block  constructor 2  always  equals params", "[message block]") {
+TEST_CASE("block constructor 2 always equals params", "[message block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -36,7 +36,7 @@ TEST_CASE("block  constructor 2  always  equals params", "[message block]") {
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("block  constructor 3  always  equals params", "[message block]") {
+TEST_CASE("block constructor 3 always equals params", "[message block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -57,7 +57,7 @@ TEST_CASE("block  constructor 3  always  equals params", "[message block]") {
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("block  constructor 4  always  equals params", "[message block]") {
+TEST_CASE("block constructor 4 always equals params", "[message block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -78,7 +78,7 @@ TEST_CASE("block  constructor 4  always  equals params", "[message block]") {
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("block  constructor 5  always  equals params", "[message block]") {
+TEST_CASE("block constructor 5 always equals params", "[message block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -98,7 +98,7 @@ TEST_CASE("block  constructor 5  always  equals params", "[message block]") {
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("block  constructor 6  always  equals params", "[message block]") {
+TEST_CASE("block constructor 6 always equals params", "[message block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -119,7 +119,7 @@ TEST_CASE("block  constructor 6  always  equals params", "[message block]") {
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("block  constructor 7  always  equals params", "[message block]") {
+TEST_CASE("block constructor 7 always equals params", "[message block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -139,7 +139,7 @@ TEST_CASE("block  constructor 7  always  equals params", "[message block]") {
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("block  factory data 1  genesis mainnet  success", "[message block]") {
+TEST_CASE("block factory data 1 genesis mainnet success", "[message block]") {
     auto const genesis = chain::block::genesis_mainnet();
     REQUIRE(genesis.serialized_size() == 285u);
     REQUIRE(genesis.header().serialized_size() == 80u);
@@ -167,7 +167,7 @@ TEST_CASE("block  factory data 1  genesis mainnet  success", "[message block]") 
 
 
 
-TEST_CASE("block  operator assign equals 1  always  matches equivalent", "[message block]") {
+TEST_CASE("block operator assign equals 1 always matches equivalent", "[message block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -192,7 +192,7 @@ TEST_CASE("block  operator assign equals 1  always  matches equivalent", "[messa
     REQUIRE(instance.transactions() == transactions);
 }
 
-TEST_CASE("block  operator assign equals 2  always  matches equivalent", "[message block]") {
+TEST_CASE("block operator assign equals 2 always matches equivalent", "[message block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                                "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -218,7 +218,7 @@ TEST_CASE("block  operator assign equals 2  always  matches equivalent", "[messa
     REQUIRE(instance.transactions() == transactions);
 }
 
-TEST_CASE("block  operator boolean equals 1  duplicates  returns true", "[message block]") {
+TEST_CASE("block operator boolean equals 1 duplicates returns true", "[message block]") {
     const chain::block expected(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -234,7 +234,7 @@ TEST_CASE("block  operator boolean equals 1  duplicates  returns true", "[messag
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("block  operator boolean equals 1  differs  returns false", "[message block]") {
+TEST_CASE("block operator boolean equals 1 differs returns false", "[message block]") {
     const chain::block expected(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -250,7 +250,7 @@ TEST_CASE("block  operator boolean equals 1  differs  returns false", "[message 
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("block  operator boolean not equals 1  duplicates  returns false", "[message block]") {
+TEST_CASE("block operator boolean not equals 1 duplicates returns false", "[message block]") {
     const chain::block expected(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -266,7 +266,7 @@ TEST_CASE("block  operator boolean not equals 1  duplicates  returns false", "[m
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("block  operator boolean not equals 1  differs  returns true", "[message block]") {
+TEST_CASE("block operator boolean not equals 1 differs returns true", "[message block]") {
     const chain::block expected(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -282,7 +282,7 @@ TEST_CASE("block  operator boolean not equals 1  differs  returns true", "[messa
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("block  operator boolean equals 2  duplicates  returns true", "[message block]") {
+TEST_CASE("block operator boolean equals 2 duplicates returns true", "[message block]") {
     const message::block expected(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -298,7 +298,7 @@ TEST_CASE("block  operator boolean equals 2  duplicates  returns true", "[messag
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("block  operator boolean equals 2  differs  returns false", "[message block]") {
+TEST_CASE("block operator boolean equals 2 differs returns false", "[message block]") {
     const message::block expected(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -314,7 +314,7 @@ TEST_CASE("block  operator boolean equals 2  differs  returns false", "[message 
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("block  operator boolean not equals 2  duplicates  returns false", "[message block]") {
+TEST_CASE("block operator boolean not equals 2 duplicates returns false", "[message block]") {
     const message::block expected(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -330,7 +330,7 @@ TEST_CASE("block  operator boolean not equals 2  duplicates  returns false", "[m
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("block  operator boolean not equals 2  differs  returns true", "[message block]") {
+TEST_CASE("block operator boolean not equals 2 differs returns true", "[message block]") {
     const message::block expected(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,

@@ -15,17 +15,17 @@ using namespace kd;
 // cast_add
 //-----------------------------------------------------------------------------
 
-TEST_CASE("limits cast add  uint32 to int64 0  returns 0", "[limits]") {
+TEST_CASE("limits cast add uint32 to int64 0 returns 0", "[limits]") {
     static int64_t const expected = 0;
     REQUIRE(cast_add<int64_t>(0u, 0u) == expected);
 }
 
-TEST_CASE("limits cast add  uint32 to int64 maximum plus 0  returns maximum", "[limits]") {
+TEST_CASE("limits cast add uint32 to int64 maximum plus 0 returns maximum", "[limits]") {
     static int64_t const expected = max_uint32;
     REQUIRE(cast_add<int64_t>(max_uint32, uint32_t{0}) == expected);
 }
 
-TEST_CASE("limits cast add  uint32 to int64 maximum plus maximum returns twice maximum", "[limits]") {
+TEST_CASE("limits cast add uint32 to int64 maximum plus maximum returns twice maximum", "[limits]") {
     static int64_t const expected = 2 * int64_t(max_uint32);
     REQUIRE(cast_add<int64_t>(max_uint32, max_uint32) == expected);
 }
@@ -33,17 +33,17 @@ TEST_CASE("limits cast add  uint32 to int64 maximum plus maximum returns twice m
 // cast_subtract
 //-----------------------------------------------------------------------------
 
-TEST_CASE("limits cast subtract  uint32 to int64 0  returns 0", "[limits]") {
+TEST_CASE("limits cast subtract uint32 to int64 0 returns 0", "[limits]") {
     static int64_t const expected = 0;
     REQUIRE(cast_subtract<int64_t>(0u, 0u) == expected);
 }
 
-TEST_CASE("limits cast subtract  uint32 to int64 0 minus maximum returns negtive maximum", "[limits]") {
+TEST_CASE("limits cast subtract uint32 to int64 0 minus maximum returns negtive maximum", "[limits]") {
     static int64_t const expected = -1 * int64_t(max_uint32);
     REQUIRE(cast_subtract<int64_t>(uint32_t{0}, max_uint32) == expected);
 }
 
-TEST_CASE("limits cast subtract  uint32 to int64 maximum minus maximum returns 0", "[limits]") {
+TEST_CASE("limits cast subtract uint32 to int64 maximum minus maximum returns 0", "[limits]") {
     static int64_t const expected = 0;
     REQUIRE(cast_subtract<int64_t>(max_uint32, max_uint32) == expected);
 }
@@ -120,7 +120,7 @@ TEST_CASE("limits ceiling add max uint32 plus min uint32 max uint32", "[limits]"
     REQUIRE(ceiling_add(max_uint32, min_uint32) == max_uint32);
 }
 
-TEST_CASE("limits ceiling add  half uint32 plus max uint32 max uint32", "[limits]") {
+TEST_CASE("limits ceiling add half uint32 plus max uint32 max uint32", "[limits]") {
     REQUIRE(ceiling_add(half_uint32, max_uint32) == max_uint32);
 }
 
@@ -143,7 +143,7 @@ TEST_CASE("limits floor subtract min uint32 minus max uint32 min uint32", "[limi
     REQUIRE(floor_subtract(min_uint32, max_uint32) == min_uint32);
 }
 
-TEST_CASE("limits floor subtract  half uint32 minus max uint32 min uint32", "[limits]") {
+TEST_CASE("limits floor subtract half uint32 minus max uint32 min uint32", "[limits]") {
     REQUIRE(floor_subtract(half_uint32, max_uint32) == min_uint32);
 }
 
@@ -169,7 +169,7 @@ TEST_CASE("limits ceiling add max uint64 plus min uint64 max uint64", "[limits]"
     REQUIRE(ceiling_add(max_uint64, min_uint64) == max_uint64);
 }
 
-TEST_CASE("limits ceiling add  half uint64 plus max uint64 max uint64", "[limits]") {
+TEST_CASE("limits ceiling add half uint64 plus max uint64 max uint64", "[limits]") {
     REQUIRE(ceiling_add(half_uint64, max_uint64) == max_uint64);
 }
 
@@ -192,7 +192,7 @@ TEST_CASE("limits floor subtract min uint64 minus max uint64 min uint64", "[limi
     REQUIRE(floor_subtract(min_uint64, max_uint64) == min_uint64);
 }
 
-TEST_CASE("limits floor subtract  half uint64 minus max uint64 min uint64", "[limits]") {
+TEST_CASE("limits floor subtract half uint64 minus max uint64 min uint64", "[limits]") {
     REQUIRE(floor_subtract(half_uint64, max_uint64) == min_uint64);
 }
 
@@ -260,7 +260,7 @@ TEST_CASE("limits safe subtract size_t half minus maximum returns underflow", "[
 //     REQUIRE(value == expected);
 // }
 
-// TEST_CASE("limits safe increment size_t half  expected", "[limits]") {
+// TEST_CASE("limits safe increment size_t half expected", "[limits]") {
 //     auto value = half;
 //     static auto const expected = half + 1u;
 //     safe_increment(value);
@@ -282,7 +282,7 @@ TEST_CASE("limits safe subtract size_t half minus maximum returns underflow", "[
 //     REQUIRE(value == expected);
 // }
 
-// TEST_CASE("limits safe decrement size_t half  expected", "[limits]") {
+// TEST_CASE("limits safe decrement size_t half expected", "[limits]") {
 //     auto value = half;
 //     static auto const expected = half - 1u;
 //     safe_decrement(value);
@@ -305,7 +305,7 @@ TEST_CASE("limits safe signed max int32 to int32 max int32", "[limits]") {
     REQUIRE(safe_signed<int32_t>(max_int32) == max_int32);
 }
 
-TEST_CASE("limits safe signed min int64 to int32  returns range", "[limits]") {
+TEST_CASE("limits safe signed min int64 to int32 returns range", "[limits]") {
     auto const expr = safe_signed<int32_t>(min_int64);
     REQUIRE( ! expr.has_value());
     REQUIRE(expr.error() == error::out_of_range);

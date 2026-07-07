@@ -16,7 +16,7 @@ TEST_CASE("output constructor 1 always returns default initialized", "[output]")
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("output constructor 2  valid input  returns input initialized", "[output]") {
+TEST_CASE("output constructor 2 valid input returns input initialized", "[output]") {
     uint64_t value = 643u;
     auto const data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(data);
@@ -31,7 +31,7 @@ TEST_CASE("output constructor 2  valid input  returns input initialized", "[outp
     REQUIRE( ! instance.token_data().has_value());
 }
 
-TEST_CASE("output constructor 3  valid input  returns input initialized", "[output]") {
+TEST_CASE("output constructor 3 valid input returns input initialized", "[output]") {
     uint64_t value = 643u;
     auto const data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(data);
@@ -50,7 +50,7 @@ TEST_CASE("output constructor 3  valid input  returns input initialized", "[outp
     REQUIRE( ! instance.token_data().has_value());
 }
 
-TEST_CASE("output constructor 4  valid input  returns input initialized", "[output]") {
+TEST_CASE("output constructor 4 valid input returns input initialized", "[output]") {
     byte_reader reader(valid_raw_output);
     auto const expected_result = chain::output::from_data(reader);
     REQUIRE(expected_result);
@@ -63,7 +63,7 @@ TEST_CASE("output constructor 4  valid input  returns input initialized", "[outp
     REQUIRE( ! instance.token_data().has_value());
 }
 
-TEST_CASE("output constructor 5  valid input  returns input initialized", "[output]") {
+TEST_CASE("output constructor 5 valid input returns input initialized", "[output]") {
     // This must be non-const.
     byte_reader reader(valid_raw_output);
     auto expected_result = chain::output::from_data(reader);
@@ -75,14 +75,14 @@ TEST_CASE("output constructor 5  valid input  returns input initialized", "[outp
     REQUIRE( ! instance.token_data().has_value());
 }
 
-TEST_CASE("output from data  insufficient bytes  failure", "[output]") {
+TEST_CASE("output from data insufficient bytes failure", "[output]") {
     data_chunk data(2);
     byte_reader reader(data);
     auto const result = chain::output::from_data(reader);
     REQUIRE( ! result);
 }
 
-TEST_CASE("output from data  valid input success", "[output]") {
+TEST_CASE("output from data valid input success", "[output]") {
     byte_reader reader(valid_raw_output);
     auto const result = chain::output::from_data(reader);
     REQUIRE(result);
@@ -97,7 +97,7 @@ TEST_CASE("output from data  valid input success", "[output]") {
     REQUIRE(resave == valid_raw_output);
 }
 
-TEST_CASE("output factory from data 2  valid input success", "[output]") {
+TEST_CASE("output factory from data 2 valid input success", "[output]") {
     byte_reader reader(valid_raw_output);
     auto const result = chain::output::from_data(reader);
     REQUIRE(result);
@@ -112,7 +112,7 @@ TEST_CASE("output factory from data 2  valid input success", "[output]") {
     REQUIRE(resave == valid_raw_output);
 }
 
-TEST_CASE("output factory from data 3  valid input success", "[output]") {
+TEST_CASE("output factory from data 3 valid input success", "[output]") {
     byte_reader reader(valid_raw_output);
     auto const result = chain::output::from_data(reader);
     REQUIRE(result);
@@ -127,13 +127,13 @@ TEST_CASE("output factory from data 3  valid input success", "[output]") {
     REQUIRE(resave == valid_raw_output);
 }
 
-TEST_CASE("output signature operations  always  returns script sigops false", "[output]") {
+TEST_CASE("output signature operations always returns script sigops false", "[output]") {
     chain::output instance;
     REQUIRE(instance.script().sigops(false) == instance.signature_operations(false));
     REQUIRE( ! instance.token_data().has_value());
 }
 
-TEST_CASE("output value  roundtrip  success", "[output]") {
+TEST_CASE("output value roundtrip success", "[output]") {
     uint64_t expected = 523542u;
     chain::output instance;
     REQUIRE(expected != instance.value());
@@ -143,7 +143,7 @@ TEST_CASE("output value  roundtrip  success", "[output]") {
     REQUIRE( ! instance.token_data().has_value());
 }
 
-TEST_CASE("output script setter 1  roundtrip  success", "[output]") {
+TEST_CASE("output script setter 1 roundtrip success", "[output]") {
     auto const data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(data);
     auto const value_result = chain::script::from_data(reader, false);
@@ -160,7 +160,7 @@ TEST_CASE("output script setter 1  roundtrip  success", "[output]") {
     REQUIRE(value == instance.script());
 }
 
-TEST_CASE("output script setter 2  roundtrip  success", "[output]") {
+TEST_CASE("output script setter 2 roundtrip success", "[output]") {
     chain::script value;
     auto const data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(data);
@@ -181,7 +181,7 @@ TEST_CASE("output script setter 2  roundtrip  success", "[output]") {
     REQUIRE(value == instance.script());
 }
 
-TEST_CASE("output operator assign equals 1  always  matches equivalent", "[output]") {
+TEST_CASE("output operator assign equals 1 always matches equivalent", "[output]") {
     byte_reader reader(valid_raw_output);
     auto result = chain::output::from_data(reader);
     REQUIRE(result);
@@ -193,7 +193,7 @@ TEST_CASE("output operator assign equals 1  always  matches equivalent", "[outpu
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("output operator assign equals 2  always  matches equivalent", "[output]") {
+TEST_CASE("output operator assign equals 2 always matches equivalent", "[output]") {
     byte_reader reader(valid_raw_output);
     auto result = chain::output::from_data(reader);
     REQUIRE(result);
@@ -203,7 +203,7 @@ TEST_CASE("output operator assign equals 2  always  matches equivalent", "[outpu
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("output operator boolean equals  duplicates  returns true", "[output]") {
+TEST_CASE("output operator boolean equals duplicates returns true", "[output]") {
     chain::output alpha;
     chain::output beta;
     byte_reader reader(valid_raw_output);
@@ -217,7 +217,7 @@ TEST_CASE("output operator boolean equals  duplicates  returns true", "[output]"
     REQUIRE(alpha == beta);
 }
 
-TEST_CASE("output operator boolean equals  differs  returns false", "[output]") {
+TEST_CASE("output operator boolean equals differs returns false", "[output]") {
     chain::output alpha;
     chain::output beta;
     byte_reader reader(valid_raw_output);
@@ -227,7 +227,7 @@ TEST_CASE("output operator boolean equals  differs  returns false", "[output]") 
     REQUIRE(alpha != beta);
 }
 
-TEST_CASE("output operator boolean not equals  duplicates  returns false", "[output]") {
+TEST_CASE("output operator boolean not equals duplicates returns false", "[output]") {
     chain::output alpha;
     chain::output beta;
     byte_reader reader(valid_raw_output);
@@ -241,7 +241,7 @@ TEST_CASE("output operator boolean not equals  duplicates  returns false", "[out
     REQUIRE(alpha == beta);
 }
 
-TEST_CASE("output operator boolean not equals  differs  returns true", "[output]") {
+TEST_CASE("output operator boolean not equals differs returns true", "[output]") {
     chain::output alpha;
     chain::output beta;
     byte_reader reader(valid_raw_output);

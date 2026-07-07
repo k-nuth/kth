@@ -951,7 +951,7 @@ TEST_CASE("async_connect with authority", "[peer_session][helpers]") {
     });
 
     // Create authority
-    infrastructure::config::authority auth("127.0.0.1", port);
+    auto auth = infrastructure::config::authority::parse_from("127.0.0.1", port).value();
 
     ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
         result = co_await async_connect(

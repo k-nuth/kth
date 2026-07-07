@@ -12,7 +12,7 @@ data_chunk valid_raw_input = to_chunk("54b755c39207d443fd96a8d12c94446a1c6f66e39
 
 // Start Test Suite: input tests
 
-TEST_CASE("input  constructor 2  valid input  returns input initialized", "[input]") {
+TEST_CASE("input constructor 2 valid input returns input initialized", "[input]") {
     output_point const previous_output{null_hash, 5434u};
     auto script_data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(script_data);
@@ -28,7 +28,7 @@ TEST_CASE("input  constructor 2  valid input  returns input initialized", "[inpu
     REQUIRE(sequence == instance.sequence());
 }
 
-TEST_CASE("input  constructor 3  valid input  returns input initialized", "[input]") {
+TEST_CASE("input constructor 3 valid input returns input initialized", "[input]") {
     output_point const previous_output{null_hash, 5434u};
     auto script_data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(script_data);
@@ -46,7 +46,7 @@ TEST_CASE("input  constructor 3  valid input  returns input initialized", "[inpu
     REQUIRE(sequence == instance.sequence());
 }
 
-TEST_CASE("input  constructor 4  valid input  returns input initialized", "[input]") {
+TEST_CASE("input constructor 4 valid input returns input initialized", "[input]") {
     byte_reader reader(valid_raw_input);
     auto expected_result = input::from_data(reader, true);
     REQUIRE(expected_result);
@@ -56,7 +56,7 @@ TEST_CASE("input  constructor 4  valid input  returns input initialized", "[inpu
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("input  constructor 5  valid input  returns input initialized", "[input]") {
+TEST_CASE("input constructor 5 valid input returns input initialized", "[input]") {
     byte_reader reader(valid_raw_input);
     auto expected_result = input::from_data(reader, true);
     REQUIRE(expected_result);
@@ -65,7 +65,7 @@ TEST_CASE("input  constructor 5  valid input  returns input initialized", "[inpu
     input instance(std::move(expected));
 }
 
-TEST_CASE("input from data insufficient data  failure", "[input]") {
+TEST_CASE("input from data insufficient data failure", "[input]") {
     data_chunk data(2);
 
     byte_reader reader(data);
@@ -73,7 +73,7 @@ TEST_CASE("input from data insufficient data  failure", "[input]") {
     REQUIRE(!result);
 }
 
-TEST_CASE("input from data valid data  success", "[input]") {
+TEST_CASE("input from data valid data success", "[input]") {
     auto const junk = "000000000000005739943a9c29a1955dfae2b3f37de547005bfb9535192e5fb0000000000000005739943a9c29a1955dfae2b3f37de547005bfb9535192e5fb0"_base16;
 
     byte_reader reader(junk);
@@ -81,7 +81,7 @@ TEST_CASE("input from data valid data  success", "[input]") {
     REQUIRE(result);
 }
 
-TEST_CASE("input from data valid input  success", "[input]") {
+TEST_CASE("input from data valid input success", "[input]") {
     byte_reader reader(valid_raw_input);
     auto result = input::from_data(reader, true);
     REQUIRE(result);
@@ -94,7 +94,7 @@ TEST_CASE("input from data valid input  success", "[input]") {
     REQUIRE(resave == valid_raw_input);
 }
 
-TEST_CASE("input  factory from data 2  valid input  success", "[input]") {
+TEST_CASE("input factory from data 2 valid input success", "[input]") {
     byte_reader reader(valid_raw_input);
     auto result = input::from_data(reader, true);
     REQUIRE(result);
@@ -107,7 +107,7 @@ TEST_CASE("input  factory from data 2  valid input  success", "[input]") {
     REQUIRE(resave == valid_raw_input);
 }
 
-TEST_CASE("input  factory from data 3  valid input  success", "[input]") {
+TEST_CASE("input factory from data 3 valid input success", "[input]") {
     byte_reader reader(valid_raw_input);
     auto result = input::from_data(reader, true);
     REQUIRE(result);
@@ -120,17 +120,17 @@ TEST_CASE("input  factory from data 3  valid input  success", "[input]") {
     REQUIRE(resave == valid_raw_input);
 }
 
-TEST_CASE("input  is final  max input sequence  true", "[input]") {
+TEST_CASE("input is final max input sequence true", "[input]") {
     input const instance({}, {}, max_input_sequence);
     REQUIRE(instance.is_final());
 }
 
-TEST_CASE("input  is final  sequence zero  false", "[input]") {
+TEST_CASE("input is final sequence zero false", "[input]") {
     input const instance({}, {}, 0);
     REQUIRE( ! instance.is_final());
 }
 
-TEST_CASE("input  is locked  enabled block type sequence age equals minimum  false", "[input]") {
+TEST_CASE("input is locked enabled block type sequence age equals minimum false", "[input]") {
     static auto const age = 7u;
     static auto const sequence_enabled_block_type_minimum = age;
     input instance({}, {}, sequence_enabled_block_type_minimum);
@@ -139,7 +139,7 @@ TEST_CASE("input  is locked  enabled block type sequence age equals minimum  fal
     REQUIRE( ! instance.is_locked(prevout.height + age, 0));
 }
 
-TEST_CASE("input  is locked  enabled block type sequence age above minimum  false", "[input]") {
+TEST_CASE("input is locked enabled block type sequence age above minimum false", "[input]") {
     static auto const age = 7u;
     static auto const sequence_enabled_block_type_minimum = age - 1;
     input instance({}, {}, sequence_enabled_block_type_minimum);
@@ -148,7 +148,7 @@ TEST_CASE("input  is locked  enabled block type sequence age above minimum  fals
     REQUIRE( ! instance.is_locked(prevout.height + age, 0));
 }
 
-TEST_CASE("input  is locked  enabled block type sequence age below minimum  true", "[input]") {
+TEST_CASE("input is locked enabled block type sequence age below minimum true", "[input]") {
     static auto const age = 7u;
     static auto const sequence_enabled_block_type_minimum = age + 1;
     input instance({}, {}, sequence_enabled_block_type_minimum);
@@ -157,7 +157,7 @@ TEST_CASE("input  is locked  enabled block type sequence age below minimum  true
     REQUIRE(instance.is_locked(prevout.height + age, 0));
 }
 
-TEST_CASE("input  is locked  disabled block type sequence age below minimum  false", "[input]") {
+TEST_CASE("input is locked disabled block type sequence age below minimum false", "[input]") {
     static auto const age = 7u;
     static auto const sequence_disabled_block_type_minimum = relative_locktime_disabled | (age + 1);
     input instance({}, {}, sequence_disabled_block_type_minimum);
@@ -166,7 +166,7 @@ TEST_CASE("input  is locked  disabled block type sequence age below minimum  fal
     REQUIRE( ! instance.is_locked(prevout.height + age, 0));
 }
 
-TEST_CASE("input  is locked  enabled time type sequence age equals minimum  false", "[input]") {
+TEST_CASE("input is locked enabled time type sequence age equals minimum false", "[input]") {
     static auto const age = 7u;
     static auto const age_seconds = 7u << relative_locktime_seconds_shift;
     static auto const sequence_enabled_time_type_minimum = relative_locktime_time_locked | age;
@@ -176,7 +176,7 @@ TEST_CASE("input  is locked  enabled time type sequence age equals minimum  fals
     REQUIRE( ! instance.is_locked(0, prevout.median_time_past + age_seconds));
 }
 
-TEST_CASE("input  is locked  enabled time type sequence age above minimum  false", "[input]") {
+TEST_CASE("input is locked enabled time type sequence age above minimum false", "[input]") {
     static auto const age = 7u;
     static auto const age_seconds = 7u << relative_locktime_seconds_shift;
     static auto const sequence_enabled_time_type_minimum = relative_locktime_time_locked | (age - 1);
@@ -186,7 +186,7 @@ TEST_CASE("input  is locked  enabled time type sequence age above minimum  false
     REQUIRE( ! instance.is_locked(0, prevout.median_time_past + age_seconds));
 }
 
-TEST_CASE("input  is locked  enabled time type sequence age below minimum  true", "[input]") {
+TEST_CASE("input is locked enabled time type sequence age below minimum true", "[input]") {
     static auto const age = 7u;
     static auto const age_seconds = 7u << relative_locktime_seconds_shift;
     static auto const sequence_enabled_time_type_minimum = relative_locktime_time_locked | (age + 1);
@@ -196,7 +196,7 @@ TEST_CASE("input  is locked  enabled time type sequence age below minimum  true"
     REQUIRE(instance.is_locked(0, prevout.median_time_past + age_seconds));
 }
 
-TEST_CASE("input  is locked  disabled time type sequence age below minimum  false", "[input]") {
+TEST_CASE("input is locked disabled time type sequence age below minimum false", "[input]") {
     static auto const age = 7u;
     static auto const age_seconds = 7u << relative_locktime_seconds_shift;
     static auto const sequence_disabled_time_type_minimum = relative_locktime_disabled | relative_locktime_time_locked | (age + 1);
@@ -206,7 +206,7 @@ TEST_CASE("input  is locked  disabled time type sequence age below minimum  fals
     REQUIRE( ! instance.is_locked(0, prevout.median_time_past + age_seconds));
 }
 
-TEST_CASE("input  signature operations  bip16 inactive  returns script sigops", "[input]") {
+TEST_CASE("input signature operations bip16 inactive returns script sigops", "[input]") {
     auto const raw_script = to_chunk("02acad"_base16);
     byte_reader reader(raw_script);
     auto result = script::from_data(reader, true);
@@ -217,7 +217,7 @@ TEST_CASE("input  signature operations  bip16 inactive  returns script sigops", 
     REQUIRE(script.sigops(false) == instance.signature_operations(false, false));
 }
 
-TEST_CASE("input  signature operations  bip16 active cache empty  returns script sigops", "[input]") {
+TEST_CASE("input signature operations bip16 active cache empty returns script sigops", "[input]") {
     auto const raw_script = to_chunk("02acad"_base16);
     byte_reader reader(raw_script);
     auto result = script::from_data(reader, true);
@@ -228,7 +228,7 @@ TEST_CASE("input  signature operations  bip16 active cache empty  returns script
     REQUIRE(script.sigops(false) == instance.signature_operations(true, false));
 }
 
-TEST_CASE("input  previous output setter 1  roundtrip  success", "[input]") {
+TEST_CASE("input previous output setter 1 roundtrip success", "[input]") {
     output_point const value{
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
         5434u};
@@ -241,7 +241,7 @@ TEST_CASE("input  previous output setter 1  roundtrip  success", "[input]") {
     REQUIRE(value == restricted.previous_output());
 }
 
-TEST_CASE("input  previous output setter 2  roundtrip  success", "[input]") {
+TEST_CASE("input previous output setter 2 roundtrip success", "[input]") {
     output_point const value{
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
         5434u};
@@ -256,7 +256,7 @@ TEST_CASE("input  previous output setter 2  roundtrip  success", "[input]") {
     REQUIRE(value == restricted.previous_output());
 }
 
-TEST_CASE("input  script setter 1  roundtrip  success", "[input]") {
+TEST_CASE("input script setter 1 roundtrip success", "[input]") {
     auto const data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(data);
     auto result = script::from_data(reader, false);
@@ -271,7 +271,7 @@ TEST_CASE("input  script setter 1  roundtrip  success", "[input]") {
     REQUIRE(value == restricted.script());
 }
 
-TEST_CASE("input  script setter 2  roundtrip  success", "[input]") {
+TEST_CASE("input script setter 2 roundtrip success", "[input]") {
     auto const data = to_chunk("ece424a6bb6ddf4db592c0faed60685047a361b1"_base16);
     byte_reader reader(data);
     auto result = script::from_data(reader, false);
@@ -287,7 +287,7 @@ TEST_CASE("input  script setter 2  roundtrip  success", "[input]") {
     REQUIRE(value == restricted.script());
 }
 
-TEST_CASE("input  sequence  roundtrip  success", "[input]") {
+TEST_CASE("input sequence roundtrip success", "[input]") {
     uint32_t value = 1254u;
     input instance{output_point{null_hash, 0u}, chain::script{}, 0u};
     REQUIRE(value != instance.sequence());
@@ -295,7 +295,7 @@ TEST_CASE("input  sequence  roundtrip  success", "[input]") {
     REQUIRE(value == instance.sequence());
 }
 
-TEST_CASE("input  operator assign equals 1  always  matches equivalent", "[input]") {
+TEST_CASE("input operator assign equals 1 always matches equivalent", "[input]") {
     byte_reader reader1(valid_raw_input);
     auto result1 = input::from_data(reader1, true);
     REQUIRE(result1);
@@ -308,7 +308,7 @@ TEST_CASE("input  operator assign equals 1  always  matches equivalent", "[input
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("input  operator assign equals 2  always  matches equivalent", "[input]") {
+TEST_CASE("input operator assign equals 2 always matches equivalent", "[input]") {
     byte_reader reader(valid_raw_input);
     auto result = input::from_data(reader, true);
     REQUIRE(result);
@@ -318,7 +318,7 @@ TEST_CASE("input  operator assign equals 2  always  matches equivalent", "[input
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("input  operator boolean equals  duplicates  returns true", "[input]") {
+TEST_CASE("input operator boolean equals duplicates returns true", "[input]") {
     input alpha{output_point{null_hash, 0u}, chain::script{}, 0u};
     input beta{output_point{null_hash, 0u}, chain::script{}, 0u};
     byte_reader reader(valid_raw_input);
@@ -332,7 +332,7 @@ TEST_CASE("input  operator boolean equals  duplicates  returns true", "[input]")
     REQUIRE(alpha == beta);
 }
 
-TEST_CASE("input  operator boolean equals  differs  returns false", "[input]") {
+TEST_CASE("input operator boolean equals differs returns false", "[input]") {
     input alpha{output_point{null_hash, 0u}, chain::script{}, 0u};
     input beta{output_point{null_hash, 0u}, chain::script{}, 0u};
     byte_reader reader(valid_raw_input);
@@ -342,7 +342,7 @@ TEST_CASE("input  operator boolean equals  differs  returns false", "[input]") {
     REQUIRE(alpha != beta);
 }
 
-TEST_CASE("input  operator boolean not equals  duplicates  returns false", "[input]") {
+TEST_CASE("input operator boolean not equals duplicates returns false", "[input]") {
     input alpha{output_point{null_hash, 0u}, chain::script{}, 0u};
     input beta{output_point{null_hash, 0u}, chain::script{}, 0u};
     byte_reader reader(valid_raw_input);
@@ -356,7 +356,7 @@ TEST_CASE("input  operator boolean not equals  duplicates  returns false", "[inp
     REQUIRE(alpha == beta);
 }
 
-TEST_CASE("input  operator boolean not equals  differs  returns true", "[input]") {
+TEST_CASE("input operator boolean not equals differs returns true", "[input]") {
     input alpha{output_point{null_hash, 0u}, chain::script{}, 0u};
     input beta{output_point{null_hash, 0u}, chain::script{}, 0u};
     byte_reader reader(valid_raw_input);

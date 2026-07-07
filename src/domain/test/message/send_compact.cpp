@@ -9,12 +9,12 @@ using namespace kd;
 
 // Start Test Suite: send compact tests
 
-TEST_CASE("send compact  constructor 1  always invalid", "[send compact]") {
+TEST_CASE("send compact constructor 1 always invalid", "[send compact]") {
     message::send_compact instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("send compact  constructor 2  always  equals params", "[send compact]") {
+TEST_CASE("send compact constructor 2 always equals params", "[send compact]") {
     bool mode = true;
     uint64_t version = 1245436u;
     message::send_compact instance(mode, version);
@@ -22,13 +22,13 @@ TEST_CASE("send compact  constructor 2  always  equals params", "[send compact]"
     REQUIRE(version == instance.version());
 }
 
-TEST_CASE("send compact  constructor 3  always  equals params", "[send compact]") {
+TEST_CASE("send compact constructor 3 always equals params", "[send compact]") {
     const message::send_compact expected(true, 1245436u);
     message::send_compact instance(expected);
     REQUIRE(expected == instance);
 }
 
-TEST_CASE("send compact  constructor 4  always  equals params", "[send compact]") {
+TEST_CASE("send compact constructor 4 always equals params", "[send compact]") {
     bool mode = true;
     uint64_t version = 1245436u;
     message::send_compact expected(mode, version);
@@ -40,7 +40,7 @@ TEST_CASE("send compact  constructor 4  always  equals params", "[send compact]"
     REQUIRE(version == instance.version());
 }
 
-TEST_CASE("send compact from data valid input  success", "[send compact]") {
+TEST_CASE("send compact from data valid input success", "[send compact]") {
     const message::send_compact expected{true, 164};
     auto const data = kth::to_data_chunk(expected, message::send_compact::version_minimum);
     byte_reader reader(data);
@@ -55,7 +55,7 @@ TEST_CASE("send compact from data valid input  success", "[send compact]") {
 
 
 
-TEST_CASE("send compact  from data 1  invalid mode byte  failure", "[send compact]") {
+TEST_CASE("send compact from data 1 invalid mode byte failure", "[send compact]") {
     data_chunk raw_data{0x0f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
     message::send_compact msg;
     byte_reader reader(raw_data);
@@ -65,7 +65,7 @@ TEST_CASE("send compact  from data 1  invalid mode byte  failure", "[send compac
     REQUIRE( ! result);
 }
 
-TEST_CASE("send compact  from data 1  insufficient version  failure", "[send compact]") {
+TEST_CASE("send compact from data 1 insufficient version failure", "[send compact]") {
     const message::send_compact expected{true, 257};
     data_chunk raw_data = kth::to_data_chunk(expected, message::send_compact::version_minimum);
     message::send_compact msg;
@@ -76,13 +76,13 @@ TEST_CASE("send compact  from data 1  insufficient version  failure", "[send com
     REQUIRE( ! result);
 }
 
-TEST_CASE("send compact  high bandwidth mode accessor  always  returns initialized value", "[send compact]") {
+TEST_CASE("send compact high bandwidth mode accessor always returns initialized value", "[send compact]") {
     bool const expected = true;
     const message::send_compact instance(expected, 210u);
     REQUIRE(expected == instance.high_bandwidth_mode());
 }
 
-TEST_CASE("send compact  high bandwidth mode setter  roundtrip  success", "[send compact]") {
+TEST_CASE("send compact high bandwidth mode setter roundtrip success", "[send compact]") {
     bool const expected = true;
     message::send_compact instance;
     REQUIRE(expected != instance.high_bandwidth_mode());
@@ -90,13 +90,13 @@ TEST_CASE("send compact  high bandwidth mode setter  roundtrip  success", "[send
     REQUIRE(expected == instance.high_bandwidth_mode());
 }
 
-TEST_CASE("send compact  version accessor  always  returns initialized value", "[send compact]") {
+TEST_CASE("send compact version accessor always returns initialized value", "[send compact]") {
     uint64_t const expected = 6548u;
     const message::send_compact instance(false, expected);
     REQUIRE(expected == instance.version());
 }
 
-TEST_CASE("send compact  version setter  roundtrip  success", "[send compact]") {
+TEST_CASE("send compact version setter roundtrip success", "[send compact]") {
     uint64_t const expected = 6548u;
     message::send_compact instance;
     REQUIRE(expected != instance.version());
@@ -104,7 +104,7 @@ TEST_CASE("send compact  version setter  roundtrip  success", "[send compact]") 
     REQUIRE(expected == instance.version());
 }
 
-TEST_CASE("send compact  operator assign equals  always  matches equivalent", "[send compact]") {
+TEST_CASE("send compact operator assign equals always matches equivalent", "[send compact]") {
     bool mode = false;
     uint64_t version = 210u;
     message::send_compact value(mode, version);
@@ -117,25 +117,25 @@ TEST_CASE("send compact  operator assign equals  always  matches equivalent", "[
     REQUIRE(version == instance.version());
 }
 
-TEST_CASE("send compact  operator boolean equals  duplicates  returns true", "[send compact]") {
+TEST_CASE("send compact operator boolean equals duplicates returns true", "[send compact]") {
     const message::send_compact expected(false, 15234u);
     message::send_compact instance(expected);
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("send compact  operator boolean equals  differs  returns false", "[send compact]") {
+TEST_CASE("send compact operator boolean equals differs returns false", "[send compact]") {
     const message::send_compact expected(true, 979797u);
     message::send_compact instance;
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("send compact  operator boolean not equals  duplicates  returns false", "[send compact]") {
+TEST_CASE("send compact operator boolean not equals duplicates returns false", "[send compact]") {
     const message::send_compact expected(true, 734678u);
     message::send_compact instance(expected);
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("send compact  operator boolean not equals  differs  returns true", "[send compact]") {
+TEST_CASE("send compact operator boolean not equals differs returns true", "[send compact]") {
     const message::send_compact expected(false, 5357534u);
     message::send_compact instance;
     REQUIRE(instance != expected);

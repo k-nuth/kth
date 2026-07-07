@@ -5,53 +5,57 @@
 #ifndef KTH_WALLET_EK_PRIVATE_HPP
 #define KTH_WALLET_EK_PRIVATE_HPP
 
-#include <iostream>
 #include <string>
+#include <string_view>
 
 #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
 #include <kth/domain/wallet/encrypted_keys.hpp>
 
 namespace kth::domain::wallet {
 
-/// Use to pass an encrypted private key.
+/**
+ * Encrypted private key (BIP38).
+ *
+ * Default-constructible so the C-API generator can hand out an "empty"
+ * handle; string parsing goes through `parse_from` which returns
+ * `expect<ek_private>`.
+ */
 struct KD_API ek_private {
-    /// Constructors.
-    ek_private();
-    ek_private(std::string const& encoded);
-    ek_private(encrypted_private const& value);
-    ek_private(ek_private const& x) = default;
-
-    ek_private& operator=(ek_private const& x) = default;
-
-    /// Operators.
-    bool operator==(ek_private const& x) const;
-    bool operator!=(ek_private const& x) const;
-    bool operator<(ek_private const& x) const;
-
-    friend std::istream& operator>>(std::istream& in, ek_private& to);
-    friend std::ostream& operator<<(std::ostream& out, ek_private const& of);
-
-    /// Cast operators.
-    operator bool() const;
-    operator encrypted_private const&() const;
-
-    /// Serializer.
     [[nodiscard]]
-    std::string encoded() const;
+    static
+    expect<ek_private> parse_from(std::string_view encoded);
 
-    /// Accessors.
+    ek_private() = default;
+
+    explicit
+    ek_private(encrypted_private const& value)
+        : valid_(true), private_(value) {}
+
     [[nodiscard]]
-    encrypted_private const& private_key() const;
+    friend bool operator==(ek_private const&, ek_private const&) = default;
+
+    [[nodiscard]]
+    friend auto operator<=>(ek_private const& a, ek_private const& b) {
+        return a.to_string() <=> b.to_string();
+    }
+
+    [[nodiscard]]
+    bool valid() const noexcept { return valid_; }
+
+    [[nodiscard]]
+    encrypted_private const& value() const noexcept { return private_; }
+
+    [[nodiscard]]
+    encrypted_private const& private_key() const noexcept { return private_; }
+
+    /// Base58 encoding used by `fmt::formatter<ek_private>`.
+    [[nodiscard]]
+    std::string to_string() const;
 
 private:
-    /// Factories.
-    static
-    ek_private from_string(std::string const& encoded);
-
-    /// Members.
-    /// These should be const, apart from the need to implement assignment.
     bool valid_{false};
-    encrypted_private private_;
+    encrypted_private private_{};
 };
 
 } // namespace kth::domain::wallet

@@ -6,10 +6,11 @@
 #define KTH_DOMAIN_WALLET_EC_PRIVATE_HPP
 
 #include <cstdint>
-#include <iostream>
 #include <string>
+#include <string_view>
 
 #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
 #include <kth/domain/wallet/ec_public.hpp>
 #include <kth/infrastructure/compat.hpp>
 #include <kth/infrastructure/math/checksum.hpp>
@@ -31,32 +32,27 @@ size_t wif_compressed_size = wif_uncompressed_size + 1U;
 
 using wif_compressed = byte_array<wif_compressed_size>;
 
-/// Use to pass an ec secret with compresson and version information.
+/**
+ * EC secret with WIF version and compression metadata.
+ *
+ * Default-constructible (invalid state) so the C-API generator can
+ * hand out an "empty" handle; fallible construction goes through
+ * `parse_from` / `from_compressed` / `from_uncompressed`, each
+ * returning `expect<ec_private>`.
+ */
 struct KD_API ec_private {
-    static
-    uint8_t const compressed_sentinel;
+    static uint8_t const compressed_sentinel;
 
     // WIF carries a compression flag for payment address generation but
     // assumes a mapping to payment address version. This is insufficient
-    // as a parameterized mapping is required, so we use the same technique as
-    // with hd keys, merging the two necessary values into one version.
-    static
-    uint8_t const mainnet_wif;
-
-    static
-    uint8_t const mainnet_p2kh;
-
-    static
-    uint16_t const mainnet;
-
-    static
-    uint8_t const testnet_wif;
-
-    static
-    uint8_t const testnet_p2kh;
-
-    static
-    uint16_t const testnet;
+    // as a parameterized mapping is required, so we use the same technique
+    // as with hd keys, merging the two necessary values into one version.
+    static uint8_t  const mainnet_wif;
+    static uint8_t  const mainnet_p2kh;
+    static uint16_t const mainnet;
+    static uint8_t  const testnet_wif;
+    static uint8_t  const testnet_p2kh;
+    static uint16_t const testnet;
 
     static
     uint8_t to_address_prefix(uint16_t version) {
@@ -74,59 +70,61 @@ struct KD_API ec_private {
         return uint16_t(wif) << 8 | address;
     }
 
-    /// Constructors.
+    /// Parse a WIF-encoded private key. `error::illegal_value` on
+    /// malformed input.
+    [[nodiscard]]
+    static
+    expect<ec_private> parse_from(std::string_view wif, uint8_t version);
+
+    [[nodiscard]]
+    static
+    expect<ec_private> from_compressed(wif_compressed const& wif, uint8_t address_version);
+
+    [[nodiscard]]
+    static
+    expect<ec_private> from_uncompressed(wif_uncompressed const& wif, uint8_t address_version);
+
     ec_private() = default;
-    
+
+    /// The version is 16 bits. The most significant byte is the WIF prefix
+    /// and the least significant byte is the address prefix.
     explicit
-    ec_private(std::string const& wif, uint8_t version = mainnet_p2kh);
-
-    explicit
-    ec_private(wif_compressed const& wif_compressed, uint8_t version = mainnet_p2kh);
-
-    explicit
-    ec_private(wif_uncompressed const& wif_uncompressed, uint8_t version = mainnet_p2kh);
-
-    /// The version is 16 bits. The most significant byte is the WIF prefix and
-    /// the least significant byte is the address perfix. 0x8000 by default.
-    explicit
-    ec_private(ec_secret const& secret, uint16_t version = mainnet, bool compress = true);
-
-    ec_private(ec_private const& x) = default;
-    ec_private& operator=(ec_private const& x) = default;
-
-    /// Operators.
-    bool operator==(ec_private const& x) const;
-    bool operator!=(ec_private const& x) const;
-    bool operator<(ec_private const& x) const;
-
-    friend std::istream& operator>>(std::istream& in, ec_private& to);
-    friend std::ostream& operator<<(std::ostream& out, ec_private const& of);
-
-    /// Cast operators.
-    operator bool() const;
-    operator ec_secret const&() const;
-
-    /// Serializer.
-    [[nodiscard]]
-    std::string encoded() const;
-
-    /// Accessors.
-    [[nodiscard]]
-    ec_secret const& secret() const;
+    ec_private(ec_secret const& secret, uint16_t version = mainnet, bool compress = true) noexcept
+        : valid_(true), compress_(compress), version_(version), secret_(secret) {}
 
     [[nodiscard]]
-    uint16_t version() const;
+    bool valid() const noexcept { return valid_; }
 
     [[nodiscard]]
-    uint8_t payment_version() const;
+    friend bool operator==(ec_private const&, ec_private const&) = default;
 
     [[nodiscard]]
-    uint8_t wif_version() const;
+    friend auto operator<=>(ec_private const& a, ec_private const& b) {
+        return a.to_string() <=> b.to_string();
+    }
 
     [[nodiscard]]
-    bool compressed() const;
+    ec_secret const& value() const noexcept { return secret_; }
 
-    /// Methods.
+    [[nodiscard]]
+    ec_secret const& secret() const noexcept { return secret_; }
+
+    [[nodiscard]]
+    uint16_t version() const noexcept { return version_; }
+
+    [[nodiscard]]
+    uint8_t payment_version() const noexcept { return to_address_prefix(version_); }
+
+    [[nodiscard]]
+    uint8_t wif_version() const noexcept { return to_wif_prefix(version_); }
+
+    [[nodiscard]]
+    bool compressed() const noexcept { return compress_; }
+
+    /// WIF encoding used by `fmt::formatter<ec_private>`.
+    [[nodiscard]]
+    std::string to_string() const;
+
     [[nodiscard]]
     ec_public to_public() const;
 
@@ -134,25 +132,12 @@ struct KD_API ec_private {
     payment_address to_payment_address() const;
 
 private:
-    /// Validators.
     static
     bool is_wif(byte_span decoded);
 
-    /// Factories.
-    static
-    ec_private from_string(std::string const& wif, uint8_t version);
-
-    static
-    ec_private from_compressed(wif_compressed const& wif, uint8_t address_version);
-
-    static
-    ec_private from_uncompressed(wif_uncompressed const& wif, uint8_t address_version);
-
-    /// Members.
-    /// These should be const, apart from the need to implement assignment.
-    bool valid_{false};
-    bool compress_{true};
-    uint16_t version_{0};
+    bool      valid_{false};
+    bool      compress_{true};
+    uint16_t  version_{0};
     ec_secret secret_{null_hash};
 };
 

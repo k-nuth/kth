@@ -10,12 +10,12 @@ using namespace kth::domain::message;
 
 // Start Test Suite: inventory tests
 
-TEST_CASE("inventory  constructor 1  always invalid", "[inventory]") {
+TEST_CASE("inventory constructor 1 always invalid", "[inventory]") {
     message::inventory instance;
     REQUIRE( ! instance.is_valid());
 }
 
-TEST_CASE("inventory  constructor 2  always  equals params", "[inventory]") {
+TEST_CASE("inventory constructor 2 always equals params", "[inventory]") {
     const message::inventory_vector::list values =
         {
             message::inventory_vector(
@@ -30,7 +30,7 @@ TEST_CASE("inventory  constructor 2  always  equals params", "[inventory]") {
     REQUIRE(values == instance.inventories());
 }
 
-TEST_CASE("inventory  constructor 3  always  equals params", "[inventory]") {
+TEST_CASE("inventory constructor 3 always equals params", "[inventory]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
     auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::inventory_vector::list values =
@@ -45,7 +45,7 @@ TEST_CASE("inventory  constructor 3  always  equals params", "[inventory]") {
     REQUIRE(hash == inventories[0].hash());
 }
 
-TEST_CASE("inventory  constructor 4  always  equals params", "[inventory]") {
+TEST_CASE("inventory constructor 4 always equals params", "[inventory]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
     auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     hash_list const hashes = {hash};
@@ -58,7 +58,7 @@ TEST_CASE("inventory  constructor 4  always  equals params", "[inventory]") {
     REQUIRE(hash == inventories[0].hash());
 }
 
-TEST_CASE("inventory  constructor 5  always  equals params", "[inventory]") {
+TEST_CASE("inventory constructor 5 always equals params", "[inventory]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
     auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
@@ -70,7 +70,7 @@ TEST_CASE("inventory  constructor 5  always  equals params", "[inventory]") {
     REQUIRE(hash == inventories[0].hash());
 }
 
-TEST_CASE("inventory  constructor 6  always  equals params", "[inventory]") {
+TEST_CASE("inventory constructor 6 always equals params", "[inventory]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
     auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
@@ -84,7 +84,7 @@ TEST_CASE("inventory  constructor 6  always  equals params", "[inventory]") {
     REQUIRE(value == instance);
 }
 
-TEST_CASE("inventory  constructor 7  always  equals params", "[inventory]") {
+TEST_CASE("inventory constructor 7 always equals params", "[inventory]") {
     message::inventory_vector::type_id type = message::inventory_vector::type_id::error;
     auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
@@ -97,7 +97,7 @@ TEST_CASE("inventory  constructor 7  always  equals params", "[inventory]") {
     REQUIRE(hash == inventories[0].hash());
 }
 
-TEST_CASE("inventory from data insufficient bytes  failure", "[inventory]") {
+TEST_CASE("inventory from data insufficient bytes failure", "[inventory]") {
     static auto const version = version::level::minimum;
     static data_chunk const raw{0xab, 0xcd};
     inventory instance;
@@ -106,7 +106,7 @@ TEST_CASE("inventory from data insufficient bytes  failure", "[inventory]") {
     REQUIRE( ! result);
 }
 
-TEST_CASE("inventory from data valid input  success", "[inventory]") {
+TEST_CASE("inventory from data valid input success", "[inventory]") {
     static inventory const expected{
         {{inventory::type_id::error,
           {{0x44, 0x9a, 0x0d, 0x24, 0x9a, 0xd5, 0x39, 0x89,
@@ -128,7 +128,7 @@ TEST_CASE("inventory from data valid input  success", "[inventory]") {
 
 
 
-TEST_CASE("inventory  inventories accessor 1  always  returns initialized value", "[inventory]") {
+TEST_CASE("inventory inventories accessor 1 always returns initialized value", "[inventory]") {
     const message::inventory_vector::list values =
         {
             message::inventory_vector(message::inventory_vector::type_id::error,
@@ -138,7 +138,7 @@ TEST_CASE("inventory  inventories accessor 1  always  returns initialized value"
     REQUIRE(values == instance.inventories());
 }
 
-TEST_CASE("inventory  inventories accessor 2  always  returns initialized value", "[inventory]") {
+TEST_CASE("inventory inventories accessor 2 always returns initialized value", "[inventory]") {
     const message::inventory_vector::list values =
         {
             message::inventory_vector(message::inventory_vector::type_id::error,
@@ -148,7 +148,7 @@ TEST_CASE("inventory  inventories accessor 2  always  returns initialized value"
     REQUIRE(values == instance.inventories());
 }
 
-TEST_CASE("inventory  inventories setter 1  roundtrip  success", "[inventory]") {
+TEST_CASE("inventory inventories setter 1 roundtrip success", "[inventory]") {
     const message::inventory_vector::list values =
         {
             message::inventory_vector(message::inventory_vector::type_id::error,
@@ -160,7 +160,7 @@ TEST_CASE("inventory  inventories setter 1  roundtrip  success", "[inventory]") 
     REQUIRE(values == instance.inventories());
 }
 
-TEST_CASE("inventory  inventories setter 2  roundtrip  success", "[inventory]") {
+TEST_CASE("inventory inventories setter 2 roundtrip success", "[inventory]") {
     message::inventory_vector::list values =
         {
             message::inventory_vector(message::inventory_vector::type_id::error,
@@ -172,7 +172,7 @@ TEST_CASE("inventory  inventories setter 2  roundtrip  success", "[inventory]") 
     REQUIRE(1u == instance.inventories().size());
 }
 
-TEST_CASE("inventory  operator assign equals  always  matches equivalent", "[inventory]") {
+TEST_CASE("inventory operator assign equals always matches equivalent", "[inventory]") {
     const message::inventory_vector::list elements =
         {
             message::inventory_vector(message::inventory_vector::type_id::error,
@@ -186,7 +186,7 @@ TEST_CASE("inventory  operator assign equals  always  matches equivalent", "[inv
     REQUIRE(elements == instance.inventories());
 }
 
-TEST_CASE("inventory  operator boolean equals  duplicates  returns true", "[inventory]") {
+TEST_CASE("inventory operator boolean equals duplicates returns true", "[inventory]") {
     const message::inventory expected(
         {message::inventory_vector(message::inventory_vector::type_id::error,
                                    "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
@@ -195,7 +195,7 @@ TEST_CASE("inventory  operator boolean equals  duplicates  returns true", "[inve
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("inventory  operator boolean equals  differs  returns false", "[inventory]") {
+TEST_CASE("inventory operator boolean equals differs returns false", "[inventory]") {
     const message::inventory expected(
         {message::inventory_vector(message::inventory_vector::type_id::error,
                                    "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
@@ -204,7 +204,7 @@ TEST_CASE("inventory  operator boolean equals  differs  returns false", "[invent
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("inventory  operator boolean not equals  duplicates  returns false", "[inventory]") {
+TEST_CASE("inventory operator boolean not equals duplicates returns false", "[inventory]") {
     const message::inventory expected(
         {message::inventory_vector(message::inventory_vector::type_id::error,
                                    "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
@@ -213,7 +213,7 @@ TEST_CASE("inventory  operator boolean not equals  duplicates  returns false", "
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("inventory  operator boolean not equals  differs  returns true", "[inventory]") {
+TEST_CASE("inventory operator boolean not equals differs returns true", "[inventory]") {
     const message::inventory expected(
         {message::inventory_vector(message::inventory_vector::type_id::error,
                                    "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
@@ -222,7 +222,7 @@ TEST_CASE("inventory  operator boolean not equals  differs  returns true", "[inv
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("inventory  count  no matching type  returns zero", "[inventory]") {
+TEST_CASE("inventory count no matching type returns zero", "[inventory]") {
     message::inventory instance(
         {message::inventory_vector(message::inventory_vector::type_id::error,
                                    "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)});
@@ -230,7 +230,7 @@ TEST_CASE("inventory  count  no matching type  returns zero", "[inventory]") {
     REQUIRE(0u == instance.count(message::inventory_vector::type_id::block));
 }
 
-TEST_CASE("inventory  count  matching type  returns count", "[inventory]") {
+TEST_CASE("inventory count matching type returns count", "[inventory]") {
     message::inventory instance(
         {message::inventory_vector(message::inventory_vector::type_id::error,
                                    "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash),
@@ -244,7 +244,7 @@ TEST_CASE("inventory  count  matching type  returns count", "[inventory]") {
     REQUIRE(3u == instance.count(message::inventory_vector::type_id::error));
 }
 
-TEST_CASE("inventory  to hashes  matching type  returns empty list", "[inventory]") {
+TEST_CASE("inventory to hashes matching type returns empty list", "[inventory]") {
     hash_list const hashes = {};
 
     message::inventory instance(
@@ -262,7 +262,7 @@ TEST_CASE("inventory  to hashes  matching type  returns empty list", "[inventory
     REQUIRE(hashes == result);
 }
 
-TEST_CASE("inventory  to hashes  matching type  returns hashes", "[inventory]") {
+TEST_CASE("inventory to hashes matching type returns hashes", "[inventory]") {
     hash_list const hashes = {
         "1111111111111111111111111111111111111111111111111111111111111111"_hash,
         "2222222222222222222222222222222222222222222222222222222222222222"_hash,
@@ -283,7 +283,7 @@ TEST_CASE("inventory  to hashes  matching type  returns hashes", "[inventory]") 
     REQUIRE(hashes == result);
 }
 
-TEST_CASE("inventory  reduce  matching type  returns empty list", "[inventory]") {
+TEST_CASE("inventory reduce matching type returns empty list", "[inventory]") {
     const message::inventory_vector::list expected = {};
 
     message::inventory instance(
@@ -301,7 +301,7 @@ TEST_CASE("inventory  reduce  matching type  returns empty list", "[inventory]")
     REQUIRE(expected == result);
 }
 
-TEST_CASE("inventory  reduce  matching type  returns matches", "[inventory]") {
+TEST_CASE("inventory reduce matching type returns matches", "[inventory]") {
     const message::inventory_vector::list expected = {
         message::inventory_vector(message::inventory_vector::type_id::error,
                                   "1111111111111111111111111111111111111111111111111111111111111111"_hash),

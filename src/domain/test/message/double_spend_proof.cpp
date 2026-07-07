@@ -47,7 +47,7 @@ static chain::output_point make_out_point() {
 // Lifecycle / predicates
 // ---------------------------------------------------------------------------
 
-TEST_CASE("double_spend_proof::spender  default construct  is invalid", "[double_spend_proof::spender]") {
+TEST_CASE("double_spend_proof::spender default construct is invalid", "[double_spend_proof::spender]") {
     message::double_spend_proof::spender s;
     REQUIRE(s.version == 0u);
     REQUIRE(s.out_sequence == 0u);
@@ -58,7 +58,7 @@ TEST_CASE("double_spend_proof::spender  default construct  is invalid", "[double
     REQUIRE(s.push_data.empty());
 }
 
-TEST_CASE("double_spend_proof::spender  any nonzero field  is valid", "[double_spend_proof::spender]") {
+TEST_CASE("double_spend_proof::spender any nonzero field is valid", "[double_spend_proof::spender]") {
     {
         message::double_spend_proof::spender s;
         s.version = 1;
@@ -85,7 +85,7 @@ TEST_CASE("double_spend_proof::spender  any nonzero field  is valid", "[double_s
     }
 }
 
-TEST_CASE("double_spend_proof::spender  reset  zeroes all fields", "[double_spend_proof::spender]") {
+TEST_CASE("double_spend_proof::spender reset zeroes all fields", "[double_spend_proof::spender]") {
     auto s = make_spender();
     s.push_data = data_chunk{1, 2, 3};
     s.reset();
@@ -102,7 +102,7 @@ TEST_CASE("double_spend_proof::spender  reset  zeroes all fields", "[double_spen
 // Equality
 // ---------------------------------------------------------------------------
 
-TEST_CASE("double_spend_proof::spender  equality  reflexive and diverges under mutation", "[double_spend_proof::spender]") {
+TEST_CASE("double_spend_proof::spender equality reflexive and diverges under mutation", "[double_spend_proof::spender]") {
     auto a = make_spender();
     auto b = make_spender();
     REQUIRE(a == b);
@@ -117,25 +117,25 @@ TEST_CASE("double_spend_proof::spender  equality  reflexive and diverges under m
 // Serialization
 // ---------------------------------------------------------------------------
 
-TEST_CASE("double_spend_proof::spender  serialized_size  is 108 with empty push_data", "[double_spend_proof::spender]") {
+TEST_CASE("double_spend_proof::spender serialized_size is 108 with empty push_data", "[double_spend_proof::spender]") {
     auto const s = make_spender();
     REQUIRE(s.serialized_size() == 108u);
 }
 
-TEST_CASE("double_spend_proof::spender  serialized_size  grows with push_data", "[double_spend_proof::spender]") {
+TEST_CASE("double_spend_proof::spender serialized_size grows with push_data", "[double_spend_proof::spender]") {
     auto s = make_spender();
     s.push_data = data_chunk{1, 2, 3, 4, 5};
     REQUIRE(s.serialized_size() == 113u);
 }
 
-TEST_CASE("double_spend_proof::spender  from_data insufficient bytes  failure", "[double_spend_proof::spender]") {
+TEST_CASE("double_spend_proof::spender from_data insufficient bytes failure", "[double_spend_proof::spender]") {
     data_chunk raw{0x00, 0x01, 0x02};
     byte_reader reader(raw);
     auto result = message::double_spend_proof::spender::from_data(reader, 0u);
     REQUIRE( ! result);
 }
 
-TEST_CASE("double_spend_proof::spender  round-trip with empty push_data  preserves fields", "[double_spend_proof::spender]") {
+TEST_CASE("double_spend_proof::spender round-trip with empty push_data preserves fields", "[double_spend_proof::spender]") {
     auto const expected = make_spender();
 
     // Spender does not expose a public stand-alone to_data(), only the
@@ -180,11 +180,11 @@ TEST_CASE("double_spend_proof::spender  round-trip with empty push_data  preserv
 // Constructors / predicates
 // ---------------------------------------------------------------------------
 
-TEST_CASE("double_spend_proof  default construct  is invalid", "[double_spend_proof]") {
+TEST_CASE("double_spend_proof default construct is invalid", "[double_spend_proof]") {
     message::double_spend_proof dsp;
 }
 
-TEST_CASE("double_spend_proof  three-arg construct  preserves fields", "[double_spend_proof]") {
+TEST_CASE("double_spend_proof three-arg construct preserves fields", "[double_spend_proof]") {
     auto const out_point = make_out_point();
     auto const s1 = make_spender(1);
     auto const s2 = make_spender(2);
@@ -206,7 +206,7 @@ TEST_CASE("double_spend_proof  three-arg construct  preserves fields", "[double_
 // Setters
 // ---------------------------------------------------------------------------
 
-TEST_CASE("double_spend_proof  setters  replace fields", "[double_spend_proof]") {
+TEST_CASE("double_spend_proof setters replace fields", "[double_spend_proof]") {
     message::double_spend_proof dsp;
 
     auto const op = make_out_point();
@@ -226,7 +226,7 @@ TEST_CASE("double_spend_proof  setters  replace fields", "[double_spend_proof]")
 // Equality
 // ---------------------------------------------------------------------------
 
-TEST_CASE("double_spend_proof  equality  reflexive and diverges under mutation", "[double_spend_proof]") {
+TEST_CASE("double_spend_proof equality reflexive and diverges under mutation", "[double_spend_proof]") {
     message::double_spend_proof a(make_out_point(), make_spender(1), make_spender(2));
     message::double_spend_proof b(make_out_point(), make_spender(1), make_spender(2));
 
@@ -242,7 +242,7 @@ TEST_CASE("double_spend_proof  equality  reflexive and diverges under mutation",
 // Serialization
 // ---------------------------------------------------------------------------
 
-TEST_CASE("double_spend_proof  serialized_size  matches to_data length", "[double_spend_proof]") {
+TEST_CASE("double_spend_proof serialized_size matches to_data length", "[double_spend_proof]") {
     message::double_spend_proof dsp(make_out_point(), make_spender(1), make_spender(2));
 
     auto const size = dsp.serialized_size(0);
@@ -253,7 +253,7 @@ TEST_CASE("double_spend_proof  serialized_size  matches to_data length", "[doubl
     REQUIRE(raw.size() == size);
 }
 
-TEST_CASE("double_spend_proof  from_data insufficient bytes  failure", "[double_spend_proof]") {
+TEST_CASE("double_spend_proof from_data insufficient bytes failure", "[double_spend_proof]") {
     data_chunk const raw{0xab, 0xcd, 0xef};
     byte_reader reader(raw);
     auto result = message::double_spend_proof::from_data(reader, 0u);
@@ -264,7 +264,7 @@ TEST_CASE("double_spend_proof  from_data insufficient bytes  failure", "[double_
 // Hash
 // ---------------------------------------------------------------------------
 
-TEST_CASE("double_spend_proof  hash  is deterministic", "[double_spend_proof]") {
+TEST_CASE("double_spend_proof hash is deterministic", "[double_spend_proof]") {
     message::double_spend_proof dsp(make_out_point(), make_spender(1), make_spender(2));
 
     auto const h1 = dsp.hash();
@@ -276,7 +276,7 @@ TEST_CASE("double_spend_proof  hash  is deterministic", "[double_spend_proof]") 
     REQUIRE(message::hash(dsp) == h1);
 }
 
-TEST_CASE("double_spend_proof  hash  changes under mutation", "[double_spend_proof]") {
+TEST_CASE("double_spend_proof hash changes under mutation", "[double_spend_proof]") {
     message::double_spend_proof dsp(make_out_point(), make_spender(1), make_spender(2));
     auto const h1 = dsp.hash();
 
@@ -285,7 +285,7 @@ TEST_CASE("double_spend_proof  hash  changes under mutation", "[double_spend_pro
     REQUIRE(h1 != h2);
 }
 
-TEST_CASE("double_spend_proof  hash  differs between distinct proofs", "[double_spend_proof]") {
+TEST_CASE("double_spend_proof hash differs between distinct proofs", "[double_spend_proof]") {
     message::double_spend_proof a(make_out_point(), make_spender(1), make_spender(2));
     message::double_spend_proof b(chain::output_point(k_hash_b, 7u), make_spender(1), make_spender(2));
     REQUIRE(a.hash() != b.hash());
@@ -295,6 +295,6 @@ TEST_CASE("double_spend_proof  hash  differs between distinct proofs", "[double_
 // Static metadata
 // ---------------------------------------------------------------------------
 
-TEST_CASE("double_spend_proof  command  is dsproof-beta", "[double_spend_proof]") {
+TEST_CASE("double_spend_proof command is dsproof-beta", "[double_spend_proof]") {
     REQUIRE(message::double_spend_proof::command == "dsproof-beta");
 }

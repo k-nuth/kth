@@ -100,7 +100,7 @@ TEST_CASE("inventory vector constructor 5 always equals params", "[inventory vec
     REQUIRE(hash == instance.hash());
 }
 
-TEST_CASE("inventory vector from data  insufficient bytes  failure", "[inventory vector]") {
+TEST_CASE("inventory vector from data insufficient bytes failure", "[inventory vector]") {
     static data_chunk const raw{1};
     inventory_vector instance;
     byte_reader reader(raw);
@@ -108,7 +108,7 @@ TEST_CASE("inventory vector from data  insufficient bytes  failure", "[inventory
     REQUIRE( ! result);
 }
 
-TEST_CASE("inventory vector from data  valid input  success", "[inventory vector]") {
+TEST_CASE("inventory vector from data valid input success", "[inventory vector]") {
     static inventory_vector const expected{
         inventory_vector::type_id::error,
         {{0x44, 0x9a, 0x0d, 0x24, 0x9a, 0xd5, 0x39, 0x89,
@@ -179,7 +179,7 @@ TEST_CASE("inventory vector type accessor always returns initialized value", "[i
     REQUIRE(type == instance.type());
 }
 
-TEST_CASE("inventory vector type setter  roundtrip  success", "[inventory vector]") {
+TEST_CASE("inventory vector type setter roundtrip success", "[inventory vector]") {
     inventory_vector::type_id type = inventory_vector::type_id::transaction;
     inventory_vector instance;
     REQUIRE(type != instance.type());
@@ -194,7 +194,7 @@ TEST_CASE("inventory vector hash accessor always returns initialized value", "[i
     REQUIRE(hash == instance.hash());
 }
 
-TEST_CASE("inventory vector hash setter 1  roundtrip  success", "[inventory vector]") {
+TEST_CASE("inventory vector hash setter 1 roundtrip success", "[inventory vector]") {
     hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     inventory_vector instance;
     REQUIRE(hash != instance.hash());
@@ -202,7 +202,7 @@ TEST_CASE("inventory vector hash setter 1  roundtrip  success", "[inventory vect
     REQUIRE(hash == instance.hash());
 }
 
-TEST_CASE("inventory vector hash setter 2  roundtrip  success", "[inventory vector]") {
+TEST_CASE("inventory vector hash setter 2 roundtrip success", "[inventory vector]") {
     hash_digest duplicate = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     inventory_vector instance;
@@ -258,7 +258,7 @@ TEST_CASE("inventory vector operator boolean equals differs returns false", "[in
     REQUIRE(instance != expected);
 }
 
-TEST_CASE("inventory vector - reject  operator boolean not equals duplicates returns false", "[inventory vector]") {
+TEST_CASE("inventory vector - reject operator boolean not equals duplicates returns false", "[inventory vector]") {
     inventory_vector const expected(
         inventory_vector::type_id::filtered_block,
         "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
@@ -267,7 +267,7 @@ TEST_CASE("inventory vector - reject  operator boolean not equals duplicates ret
     REQUIRE(instance == expected);
 }
 
-TEST_CASE("inventory vector - reject  operator boolean not equals differs returns true", "[inventory vector]") {
+TEST_CASE("inventory vector - reject operator boolean not equals differs returns true", "[inventory vector]") {
     inventory_vector const expected(
         inventory_vector::type_id::filtered_block,
         "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);

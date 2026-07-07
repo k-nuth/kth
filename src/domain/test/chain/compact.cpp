@@ -28,17 +28,17 @@ static uint32_t factory(int32_t logical_exponent, bool negative, uint32_t mantis
     return exponent << 24 | (negative ? 1 : 0) << 23 | mantissa;
 }
 
-TEST_CASE("compact  constructor1  proof of work limit  normalizes unchanged", "[compact]") {
+TEST_CASE("compact constructor1 proof of work limit normalizes unchanged", "[compact]") {
     REQUIRE(compact(retarget_proof_of_work_limit).normal() == retarget_proof_of_work_limit);
 }
 
-TEST_CASE("compact  constructor1  no retarget proof of work limit  normalizes unchanged", "[compact]") {
+TEST_CASE("compact constructor1 no retarget proof of work limit normalizes unchanged", "[compact]") {
     REQUIRE(compact(no_retarget_proof_of_work_limit).normal() == no_retarget_proof_of_work_limit);
 }
 
 // constructor1/normal
 
-TEST_CASE("compact  constructor1  negative3 exponent  normalizes as expected", "[compact]") {
+TEST_CASE("compact constructor1 negative3 exponent normalizes as expected", "[compact]") {
     // negative, always zero
     REQUIRE(compact(factory(-3, true, 0)).normal() == 0x00000000);
     REQUIRE(compact(factory(-3, true, 0xff)).normal() == 0x00000000);
@@ -52,7 +52,7 @@ TEST_CASE("compact  constructor1  negative3 exponent  normalizes as expected", "
     REQUIRE(compact(factory(-3, false, 0x7fffff)).normal() == 0x00000000);
 }
 
-TEST_CASE("compact  constructor1  negative2 exponent  normalizes as expected", "[compact]") {
+TEST_CASE("compact constructor1 negative2 exponent normalizes as expected", "[compact]") {
     // negative, always zero
     REQUIRE(compact(factory(-2, true, 0)).normal() == 0x00000000);
     REQUIRE(compact(factory(-2, true, 0xff)).normal() == 0x00000000);
@@ -66,7 +66,7 @@ TEST_CASE("compact  constructor1  negative2 exponent  normalizes as expected", "
     REQUIRE(compact(factory(-2, false, 0x7fffff)).normal() == 0x017f0000);
 }
 
-TEST_CASE("compact  constructor1  negative1 exponent normalizes as expected", "[compact]") {
+TEST_CASE("compact constructor1 negative1 exponent normalizes as expected", "[compact]") {
     // negative, always zero
     REQUIRE(compact(factory(-1, true, 0)).normal() == 0x00000000);
     REQUIRE(compact(factory(-1, true, 0xff)).normal() == 0x00000000);
@@ -80,7 +80,7 @@ TEST_CASE("compact  constructor1  negative1 exponent normalizes as expected", "[
     REQUIRE(compact(factory(-1, false, 0x7fffff)).normal() == 0x027fff00);
 }
 
-TEST_CASE("compact  constructor1  zero exponent  normalizes as expected", "[compact]") {
+TEST_CASE("compact constructor1 zero exponent normalizes as expected", "[compact]") {
     // negative, always zero
     REQUIRE(compact(factory(0, true, 0)).normal() == 0x00000000);
     REQUIRE(compact(factory(0, true, 0xff)).normal() == 0x00000000);
@@ -94,7 +94,7 @@ TEST_CASE("compact  constructor1  zero exponent  normalizes as expected", "[comp
     REQUIRE(compact(factory(0, false, 0x7fffff)).normal() == 0x037fffff);
 }
 
-TEST_CASE("compact  constructor1  positive1 exponent  normalizes as expected", "[compact]") {
+TEST_CASE("compact constructor1 positive1 exponent normalizes as expected", "[compact]") {
     // negative, always zero
     REQUIRE(compact(factory(1, true, 0)).normal() == 0x00000000);
     REQUIRE(compact(factory(1, true, 0xff)).normal() == 0x00000000);
@@ -108,7 +108,7 @@ TEST_CASE("compact  constructor1  positive1 exponent  normalizes as expected", "
     REQUIRE(compact(factory(1, false, 0x7fffff)).normal() == 0x047fffff);
 }
 
-TEST_CASE("compact  constructor1  positive29 exponent  normalizes as expected", "[compact]") {
+TEST_CASE("compact constructor1 positive29 exponent normalizes as expected", "[compact]") {
     // negative, always zero
     REQUIRE(compact(factory(29, true, 0)).normal() == 0x00000000);
     REQUIRE(compact(factory(29, true, 0xff)).normal() == 0x00000000);
@@ -122,7 +122,7 @@ TEST_CASE("compact  constructor1  positive29 exponent  normalizes as expected", 
     REQUIRE(compact(factory(29, false, 0x7fffff)).normal() == 0x207fffff);
 }
 
-TEST_CASE("compact  constructor1  positive30 exponent  normalizes as expected", "[compact]") {
+TEST_CASE("compact constructor1 positive30 exponent normalizes as expected", "[compact]") {
     // negative, always zero
     REQUIRE(compact(factory(30, true, 0)).normal() == 0x00000000);
     REQUIRE(compact(factory(30, true, 0xff)).normal() == 0x00000000);
@@ -136,7 +136,7 @@ TEST_CASE("compact  constructor1  positive30 exponent  normalizes as expected", 
     REQUIRE(compact(factory(30, false, 0x7fffff)).normal() == 0x00000000);
 }
 
-TEST_CASE("compact  constructor1  positive31 exponent  normalizes as expected", "[compact]") {
+TEST_CASE("compact constructor1 positive31 exponent normalizes as expected", "[compact]") {
     // negative, always zero
     REQUIRE(compact(factory(31, true, 0)).normal() == 0x00000000);
     REQUIRE(compact(factory(31, true, 0xff)).normal() == 0x00000000);
@@ -150,7 +150,7 @@ TEST_CASE("compact  constructor1  positive31 exponent  normalizes as expected", 
     REQUIRE(compact(factory(31, false, 0x7fffff)).normal() == 0x00000000);
 }
 
-TEST_CASE("compact  constructor1  positive32 exponent  normalizes as expected", "[compact]") {
+TEST_CASE("compact constructor1 positive32 exponent normalizes as expected", "[compact]") {
     // negative, always zero
     REQUIRE(compact(factory(32, true, 0)).normal() == 0x00000000);
     REQUIRE(compact(factory(32, true, 0xff)).normal() == 0x00000000);
@@ -164,7 +164,7 @@ TEST_CASE("compact  constructor1  positive32 exponent  normalizes as expected", 
     REQUIRE(compact(factory(32, false, 0x7fffff)).normal() == 0x00000000);
 }
 
-TEST_CASE("compact  constructor1  positive252 exponent  normalizes as expected", "[compact]") {
+TEST_CASE("compact constructor1 positive252 exponent normalizes as expected", "[compact]") {
     // negative, always zero
     REQUIRE(compact(factory(252, true, 0)).normal() == 0x00000000);
     REQUIRE(compact(factory(252, true, 0xff)).normal() == 0x00000000);
@@ -180,15 +180,15 @@ TEST_CASE("compact  constructor1  positive252 exponent  normalizes as expected",
 
 // constructor2/uint256_t
 
-TEST_CASE("compact  constructor2  zero  round trips", "[compact]") {
+TEST_CASE("compact constructor2 zero round trips", "[compact]") {
     REQUIRE(uint256_t(0) == compact(uint256_t(0)));
 }
 
-TEST_CASE("compact  constructor2  big value  round trips", "[compact]") {
+TEST_CASE("compact constructor2 big value round trips", "[compact]") {
     REQUIRE(uint256_t(42) == compact(uint256_t(42)));
 }
 
-TEST_CASE("compact  constructor2  hash  round trips", "[compact]") {
+TEST_CASE("compact constructor2 hash round trips", "[compact]") {
     REQUIRE(to_uint256(primes) == compact(to_uint256(primes)));
 }
 

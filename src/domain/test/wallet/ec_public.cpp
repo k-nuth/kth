@@ -10,7 +10,7 @@ using namespace kth::domain::wallet;
 
 // Start Test Suite: ec public tests
 
-// TEST_CASE("ec public  todo", "[None]") {
+// TEST_CASE("ec public todo", "[None]") {
 //}
 
 // End Test Suite
