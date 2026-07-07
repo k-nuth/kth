@@ -29,20 +29,20 @@ namespace kth::domain::wallet {
 
 // static
 expect<hd_public> hd_public::parse_from(std::string_view encoded) {
-    hd_key key;
-    if ( ! decode_base58(key, std::string{encoded})) {
+    auto const key = decode_base58<hd_key_size>(encoded);
+    if ( ! key) {
         return std::unexpected(kth::error::illegal_value);
     }
-    return from_hd_key(key);
+    return from_hd_key(*key);
 }
 
 // static
 expect<hd_public> hd_public::parse_from_with_prefix(std::string_view encoded, uint32_t prefix) {
-    hd_key key;
-    if ( ! decode_base58(key, std::string{encoded})) {
+    auto const key = decode_base58<hd_key_size>(encoded);
+    if ( ! key) {
         return std::unexpected(kth::error::illegal_value);
     }
-    return from_hd_key_with_prefix(key, prefix);
+    return from_hd_key_with_prefix(*key, prefix);
 }
 
 // static

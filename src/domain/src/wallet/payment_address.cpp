@@ -182,12 +182,12 @@ expect<payment_address> payment_address::from_string_cashaddr(std::string const&
 
 // static
 expect<payment_address> payment_address::parse_from(std::string_view address) {
-    std::string const s{address};
-    payment decoded;
-    if (decode_base58(decoded, s) && is_address(decoded)) {
-        return from_payment(decoded);
+    auto const decoded = decode_base58<payment_size>(address);
+    if (decoded && is_address(*decoded)) {
+        return from_payment(*decoded);
     }
 #if defined(KTH_CURRENCY_BCH)
+    std::string const s{address};
     auto const net = detect_cashaddr_network(s);
     if (net) {
         return from_string_cashaddr(s, *net);
@@ -198,13 +198,12 @@ expect<payment_address> payment_address::parse_from(std::string_view address) {
 
 // static
 expect<payment_address> payment_address::parse_from(std::string_view address, config::network net) {
-    std::string const s{address};
-    payment decoded;
-    if (decode_base58(decoded, s) && is_address(decoded)) {
-        return from_payment(decoded);
+    auto const decoded = decode_base58<payment_size>(address);
+    if (decoded && is_address(*decoded)) {
+        return from_payment(*decoded);
     }
 #if defined(KTH_CURRENCY_BCH)
-    return from_string_cashaddr(s, net);
+    return from_string_cashaddr(std::string{address}, net);
 #else
     (void)net;
     return std::unexpected(kth::error::illegal_value);

@@ -17,20 +17,16 @@ namespace kth::infrastructure::config {
 
 // static
 std::expected<sodium, kth::code> sodium::parse_from(std::string_view base85) {
-    data_chunk decoded;
-    if ( ! decode_base85(decoded, std::string{base85}) || decoded.size() != hash_size) {
+    auto const decoded = decode_base85<hash_size>(base85);
+    if ( ! decoded) {
         return std::unexpected(kth::error::illegal_value);
     }
-    hash_digest value;
-    std::copy_n(decoded.begin(), hash_size, value.begin());
-    return sodium{value};
+    return sodium{*decoded};
 }
 
 std::string sodium::to_string() const {
-    std::string decoded;
     // Z85 requires four-byte alignment (hash_digest is 32 → always OK).
-    (void)encode_base85(decoded, value_);
-    return decoded;
+    return encode_base85(value_).value_or(std::string{});
 }
 
 } // namespace kth::infrastructure::config

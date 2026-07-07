@@ -53,11 +53,11 @@ size_t const stealth_address::max_filter_bits = sizeof(uint32_t) * byte_bits;
 
 // static
 expect<stealth_address> stealth_address::parse_from(std::string_view encoded) {
-    data_chunk decoded;
-    if ( ! decode_base58(decoded, std::string{encoded})) {
+    auto const decoded = decode_base58(encoded);
+    if ( ! decoded) {
         return std::unexpected(kth::error::illegal_value);
     }
-    return from_data(decoded);
+    return from_data(*decoded);
 }
 
 // static

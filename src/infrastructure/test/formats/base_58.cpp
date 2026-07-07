@@ -13,9 +13,9 @@ void encdec_test(std::string const& hex, std::string const& encoded) {
     auto const data = decode_base16(hex);
     REQUIRE(data);
     REQUIRE(encode_base58(*data) == encoded);
-    data_chunk decoded;
-    REQUIRE(decode_base58(decoded, encoded));
-    REQUIRE(decoded == *data);
+    auto const decoded = decode_base58(encoded);
+    REQUIRE(decoded);
+    REQUIRE(*decoded == *data);
 }
 
 TEST_CASE("infrastructure base58 encode and decode various test vectors", "[infrastructure][base58]") {
@@ -45,9 +45,9 @@ TEST_CASE("infrastructure base58 encode and decode bitcoin address", "[infrastru
     };
     std::string const address = "19TbMSWwHvnxAKy12iNm3KdbGfzfaMFViT";
     REQUIRE(encode_base58(pubkey) == address);
-    data_chunk decoded;
-    REQUIRE(decode_base58(decoded, address));
-    REQUIRE(decoded == pubkey);
+    auto const decoded = decode_base58(address);
+    REQUIRE(decoded);
+    REQUIRE(*decoded == pubkey);
 }
 
 TEST_CASE("infrastructure base58 character validation", "[infrastructure][base58]") {
@@ -72,8 +72,8 @@ TEST_CASE("infrastructure base58 character validation", "[infrastructure][base58
 }
 
 TEST_CASE("infrastructure base58 decode to fixed size array", "[infrastructure][base58]") {
-    byte_array<25> converted;
-    REQUIRE(decode_base58(converted, "19TbMSWwHvnxAKy12iNm3KdbGfzfaMFViT"));
+    auto const converted = decode_base58<25>("19TbMSWwHvnxAKy12iNm3KdbGfzfaMFViT");
+    REQUIRE(converted);
     const byte_array<25> expected
     {
         {
@@ -83,7 +83,7 @@ TEST_CASE("infrastructure base58 decode to fixed size array", "[infrastructure][
             0x64
         }
     };
-    REQUIRE(converted == expected);
+    REQUIRE(*converted == expected);
 }
 
 // End Test Suite

@@ -5,7 +5,9 @@
 #ifndef KTH_INFRASTUCTURE_BASE_16_HPP
 #define KTH_INFRASTUCTURE_BASE_16_HPP
 
+#include <cstddef>
 #include <expected>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -15,8 +17,9 @@
 namespace kth {
 
 enum class base16_errc {
-    odd_length,
-    invalid_character
+    odd_length,           // input has an odd number of characters
+    invalid_character,    // input contains a non-hex character
+    size_mismatch,        // caller-provided buffer size doesn't match `in.size() / 2`
 };
 
 /**
@@ -32,12 +35,24 @@ bool is_base16(char c);
 KI_API std::string encode_base16(byte_span data);
 
 /**
- * Convert a hex string into bytes.
+ * Decode base16 into a caller-provided buffer.
+ * Zero allocation.
+ * @return the number of bytes written, or an error code.
+ *   `odd_length`        — input length is odd.
+ *   `size_mismatch`     — `in.size() / 2 != out.size()`.
+ *   `invalid_character` — input contains a non-hex character.
+ */
+[[nodiscard]] constexpr std::expected<size_t, base16_errc>
+decode_base16(std::string_view in, std::span<uint8_t> out);
+
+/**
+ * Convert a hex string into a freshly-allocated `data_chunk`.
  */
 [[nodiscard]] constexpr std::expected<data_chunk, base16_errc> decode_base16(std::string_view in);
 
 /**
- * Converts a hex string to a number of bytes.
+ * Convert a hex string into a fixed-size `byte_array<Size>`.
+ * Zero allocation.
  */
 template <size_t Size>
 [[nodiscard]] constexpr std::expected<byte_array<Size>, base16_errc> decode_base16(std::string_view in);
