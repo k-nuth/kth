@@ -81,6 +81,7 @@
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/deadline.hpp>
 #include <kth/infrastructure/utility/decorator.hpp>
+#include <kth/infrastructure/utility/duration_jitter.hpp>
 #include <kth/infrastructure/utility/enable_shared_from_base.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
 #include <kth/infrastructure/utility/exceptions.hpp>
