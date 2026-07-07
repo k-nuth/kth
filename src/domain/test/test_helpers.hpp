@@ -5,7 +5,7 @@
 #ifndef KTH_DOMAIN_TEST_HELPERS_HPP
 #define KTH_DOMAIN_TEST_HELPERS_HPP
 
-#include <ostream>
+#include <string>
 
 // Include infrastructure helpers (domain depends on infrastructure)
 #include "../../infrastructure/test/test_helpers.hpp"
@@ -15,50 +15,52 @@
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/message/network_address.hpp>
 
-// Pretty printing operators for domain-specific types. All print via
+// Pretty printing for domain-specific types via Catch2's StringMaker
+// customization point. All specializations print via
 // `kth::to_data_chunk(x, args...)` so they stay in sync with the
 // byte_writer-based serialization API.
-namespace kth::infrastructure::message {
+namespace Catch {
 
-inline
-std::ostream& operator<<(std::ostream& os, network_address const& x) {
-    os << encode_base16(kth::to_data_chunk(x, kth::domain::message::version::level::minimum, false));
-    return os;
-}
+template <>
+struct StringMaker<kth::infrastructure::message::network_address> {
+    static
+    std::string convert(kth::infrastructure::message::network_address const& x) {
+        return kth::encode_base16(kth::to_data_chunk(x, kth::domain::message::version::level::minimum, false));
+    }
+};
 
-} // namespace kth::infrastructure::message
+template <>
+struct StringMaker<kth::domain::chain::input> {
+    static
+    std::string convert(kth::domain::chain::input const& x) {
+        return kth::encode_base16(kth::to_data_chunk(x, true));
+    }
+};
 
-namespace kth::domain::chain {
+template <>
+struct StringMaker<kth::domain::chain::output> {
+    static
+    std::string convert(kth::domain::chain::output const& x) {
+        return kth::encode_base16(kth::to_data_chunk(x, true));
+    }
+};
 
-inline
-std::ostream& operator<<(std::ostream& os, input const& x) {
-    os << encode_base16(kth::to_data_chunk(x, true));
-    return os;
-}
+template <>
+struct StringMaker<kth::domain::chain::transaction> {
+    static
+    std::string convert(kth::domain::chain::transaction const& x) {
+        return kth::encode_base16(kth::to_data_chunk(x, true));
+    }
+};
 
-inline
-std::ostream& operator<<(std::ostream& os, output const& x) {
-    os << encode_base16(kth::to_data_chunk(x, true));
-    return os;
-}
+template <>
+struct StringMaker<kth::domain::message::prefilled_transaction> {
+    static
+    std::string convert(kth::domain::message::prefilled_transaction const& x) {
+        return kth::encode_base16(kth::to_data_chunk(x, kth::domain::message::version::level::minimum));
+    }
+};
 
-inline
-std::ostream& operator<<(std::ostream& os, transaction const& x) {
-    os << encode_base16(kth::to_data_chunk(x, true));
-    return os;
-}
-
-} // namespace kth::domain::chain
-
-namespace kth::domain::message {
-
-inline
-std::ostream& operator<<(std::ostream& os, prefilled_transaction const& x) {
-    os << encode_base16(kth::to_data_chunk(x, version::level::minimum));
-    return os;
-}
-
-} // namespace kth::domain::message
-
+} // namespace Catch
 
 #endif // KTH_DOMAIN_TEST_HELPERS_HPP

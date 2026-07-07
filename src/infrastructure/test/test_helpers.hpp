@@ -5,10 +5,11 @@
 #ifndef KTH_INFRASTRUCTURE_TEST_HELPERS_HPP
 #define KTH_INFRASTRUCTURE_TEST_HELPERS_HPP
 
-#include <ostream>
+#include <string>
 #include <type_traits>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_tostring.hpp>
 
 #include <kth/infrastructure/hash_define.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
@@ -19,15 +20,19 @@
 #define CHECK_MESSAGE(cond, msg) do { INFO(msg); CHECK(cond); } while((void)0, 0)
 #define REQUIRE_MESSAGE(cond, msg) do { INFO(msg); REQUIRE(cond); } while((void)0, 0)
 
-// Pretty printing for infrastructure types
-namespace kth {
+// Pretty printing for infrastructure types via Catch2's StringMaker
+// customization point (the idiomatic Catch2 form; avoids ADL-visible
+// operator<< overloads).
+namespace Catch {
 
-inline
-std::ostream& operator<<(std::ostream& os, hash_digest const& x) {
-    os << encode_hash(x);
-    return os;
-}
+template <>
+struct StringMaker<kth::hash_digest> {
+    static
+    std::string convert(kth::hash_digest const& x) {
+        return kth::encode_hash(x);
+    }
+};
 
-} // namespace kth
+} // namespace Catch
 
 #endif // KTH_INFRASTRUCTURE_TEST_HELPERS_HPP
