@@ -44,14 +44,6 @@ inventory_vector::inventory_vector(type_id type, hash_digest const& hash)
     : type_(type), hash_(hash)
 {}
 
-bool inventory_vector::operator==(inventory_vector const& x) const {
-    return (hash_ == x.hash_) && (type_ == x.type_);
-}
-
-bool inventory_vector::operator!=(inventory_vector const& x) const {
-    return !(*this == x);
-}
-
 bool inventory_vector::is_valid() const {
     return (type_ != type_id::error) || (hash_ != null_hash);
 }

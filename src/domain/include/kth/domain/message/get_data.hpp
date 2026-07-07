@@ -36,8 +36,8 @@ public:
         : inventory(std::move(inv))
     {}
 
-    bool operator==(get_data const& x) const;
-    bool operator!=(get_data const& x) const;
+    [[nodiscard]]
+    friend bool operator==(get_data const&, get_data const&) = default;
 
     static
     expect<get_data> from_data(byte_reader& reader, uint32_t version);

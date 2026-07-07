@@ -30,15 +30,6 @@ get_block_transactions::get_block_transactions(hash_digest const& block_hash, st
     , indexes_(std::move(indexes))
 {}
 
-bool get_block_transactions::operator==(get_block_transactions const& x) const {
-    return (block_hash_ == x.block_hash_) && (indexes_ == x.indexes_);
-}
-
-bool get_block_transactions::operator!=(get_block_transactions const& x) const {
-    return !(*this == x);
-}
-
-
 bool get_block_transactions::is_valid() const {
     return (block_hash_ != null_hash);
 }

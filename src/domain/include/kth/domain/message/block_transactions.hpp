@@ -31,8 +31,8 @@ struct KD_API block_transactions {
     // block_transactions& operator=(block_transactions&& x) = default;
     // block_transactions& operator=(block_transactions const&) = default;
 
-    bool operator==(block_transactions const& x) const;
-    bool operator!=(block_transactions const& x) const;
+    [[nodiscard]]
+    friend bool operator==(block_transactions const&, block_transactions const&) = default;
 
 
     hash_digest& block_hash();

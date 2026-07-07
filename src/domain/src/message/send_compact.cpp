@@ -22,15 +22,6 @@ send_compact::send_compact(bool high_bandwidth_mode, uint64_t version)
       version_(version) {
 }
 
-bool send_compact::operator==(send_compact const& x) const {
-    return (high_bandwidth_mode_ == x.high_bandwidth_mode_) &&
-           (version_ == x.version_);
-}
-
-bool send_compact::operator!=(send_compact const& x) const {
-    return !(*this == x);
-}
-
 bool send_compact::is_valid() const {
     return (version_ != 0);
 }

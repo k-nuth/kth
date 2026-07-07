@@ -22,14 +22,6 @@ get_headers::get_headers(hash_list&& start, hash_digest const& stop)
     : get_headers(start, stop)
 {}
 
-bool get_headers::operator==(get_headers const& x) const {
-    return (static_cast<get_blocks const&>(*this) == static_cast<get_blocks const&>(x));
-}
-
-bool get_headers::operator!=(get_headers const& x) const {
-    return !(*this == x);
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

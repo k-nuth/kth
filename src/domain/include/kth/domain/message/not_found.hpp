@@ -37,8 +37,8 @@ public:
         : inventory(std::move(inv))
     {}
 
-    bool operator==(not_found const& x) const;
-    bool operator!=(not_found const& x) const;
+    [[nodiscard]]
+    friend bool operator==(not_found const&, not_found const&) = default;
 
     static
     expect<not_found> from_data(byte_reader& reader, uint32_t version);

@@ -26,8 +26,8 @@ struct KD_API filter_load {
     filter_load(data_chunk const& filter, uint32_t hash_functions, uint32_t tweak, uint8_t flags);
     filter_load(data_chunk&& filter, uint32_t hash_functions, uint32_t tweak, uint8_t flags);
 
-    bool operator==(filter_load const& x) const;
-    bool operator!=(filter_load const& x) const;
+    [[nodiscard]]
+    friend bool operator==(filter_load const&, filter_load const&) = default;
 
     data_chunk& filter();
 

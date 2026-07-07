@@ -52,8 +52,8 @@ struct KD_API inventory_vector {
     inventory_vector& operator=(inventory_vector&& x) = default;
     inventory_vector& operator=(inventory_vector const& x) = default;
 
-    bool operator==(inventory_vector const& x) const;
-    bool operator!=(inventory_vector const& x) const;
+    [[nodiscard]]
+    friend bool operator==(inventory_vector const&, inventory_vector const&) = default;
 
 
     [[nodiscard]]

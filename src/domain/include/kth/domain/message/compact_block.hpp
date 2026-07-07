@@ -34,8 +34,8 @@ struct KD_API compact_block {
     compact_block(chain::header const& header, uint64_t nonce, short_id_list const& short_ids, prefilled_transaction::list const& transactions);
     compact_block(chain::header const& header, uint64_t nonce, short_id_list&& short_ids, prefilled_transaction::list&& transactions);
 
-    bool operator==(compact_block const& x) const;
-    bool operator!=(compact_block const& x) const;
+    [[nodiscard]]
+    friend bool operator==(compact_block const&, compact_block const&) = default;
 
     chain::header& header();
 

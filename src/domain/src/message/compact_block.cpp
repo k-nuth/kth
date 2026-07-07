@@ -57,14 +57,6 @@ compact_block::compact_block(chain::header const& header, uint64_t nonce, short_
 //     return *this;
 // }
 
-bool compact_block::operator==(compact_block const& x) const {
-    return (header_ == x.header_) && (nonce_ == x.nonce_) && (short_ids_ == x.short_ids_) && (transactions_ == x.transactions_);
-}
-
-bool compact_block::operator!=(compact_block const& x) const {
-    return !(*this == x);
-}
-
 bool compact_block::is_valid() const {
     //std::println("compact_block::is_valid");
 

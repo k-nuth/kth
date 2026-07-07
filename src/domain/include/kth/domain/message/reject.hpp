@@ -60,8 +60,8 @@ struct KD_API reject {
     reject(reason_code code, std::string const& message, std::string const& reason, hash_digest const& data);
     reject(reason_code code, std::string&& message, std::string&& reason, hash_digest const& data);
 
-    bool operator==(reject const& x) const;
-    bool operator!=(reject const& x) const;
+    [[nodiscard]]
+    friend bool operator==(reject const&, reject const&) = default;
 
 
     [[nodiscard]]

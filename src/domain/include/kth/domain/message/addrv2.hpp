@@ -37,6 +37,9 @@ struct KD_API addrv2_entry {
     data_chunk addr;  // Variable length based on network type
     uint16_t port{0};
 
+    [[nodiscard]]
+    friend bool operator==(addrv2_entry const&, addrv2_entry const&) = default;
+
     /// Check if this entry is valid
     [[nodiscard]]
     bool is_valid() const;
@@ -65,8 +68,8 @@ struct KD_API addrv2 {
     addrv2(entry_list const& addresses);
     addrv2(entry_list&& addresses);
 
-    bool operator==(addrv2 const& x) const;
-    bool operator!=(addrv2 const& x) const;
+    [[nodiscard]]
+    friend bool operator==(addrv2 const&, addrv2 const&) = default;
 
     entry_list& addresses();
 

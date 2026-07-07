@@ -35,14 +35,6 @@ get_data::get_data(std::initializer_list<inventory_vector> const& values)
     : inventory(values) {
 }
 
-bool get_data::operator==(get_data const& x) const {
-    return (static_cast<inventory>(*this) == static_cast<inventory>(x));
-}
-
-bool get_data::operator!=(get_data const& x) const {
-    return (static_cast<inventory>(*this) != static_cast<inventory>(x));
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

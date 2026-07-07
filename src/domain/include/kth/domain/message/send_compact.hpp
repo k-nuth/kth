@@ -27,8 +27,8 @@ struct KD_API send_compact {
     send_compact() = default;
     send_compact(bool high_bandwidth_mode, uint64_t version);
 
-    bool operator==(send_compact const& x) const;
-    bool operator!=(send_compact const& x) const;
+    [[nodiscard]]
+    friend bool operator==(send_compact const&, send_compact const&) = default;
 
 
     [[nodiscard]]

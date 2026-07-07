@@ -59,15 +59,6 @@ reject::reject(reason_code code, std::string&& message, std::string&& reason, ha
 //     return *this;
 // }
 
-bool reject::operator==(reject const& x) const {
-    return (code_ == x.code_) && (reason_ == x.reason_) && (message_ == x.message_) && (data_ == x.data_);
-}
-
-bool reject::operator!=(reject const& x) const {
-    return !(*this == x);
-}
-
-
 bool reject::is_valid() const {
     return !message_.empty() || (code_ != reason_code::undefined) || !reason_.empty() || (data_ != null_hash);
 }

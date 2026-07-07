@@ -25,8 +25,8 @@ struct KD_API alert {
     alert(data_chunk const& payload, data_chunk const& signature);
     alert(data_chunk&& payload, data_chunk&& signature);
 
-    bool operator==(alert const& x) const;
-    bool operator!=(alert const& x) const;
+    [[nodiscard]]
+    friend bool operator==(alert const&, alert const&) = default;
 
     data_chunk& payload();
 

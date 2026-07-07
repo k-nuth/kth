@@ -127,14 +127,6 @@ alert_payload::alert_payload(
 //     return *this;
 // }
 
-bool alert_payload::operator==(alert_payload const& x) const {
-    return (version_ == x.version_) && (relay_until_ == x.relay_until_) && (expiration_ == x.expiration_) && (id_ == x.id_) && (cancel_ == x.cancel_) && (set_cancel_ == x.set_cancel_) && (min_version_ == x.min_version_) && (max_version_ == x.max_version_) && (set_sub_version_ == x.set_sub_version_) && (priority_ == x.priority_) && (comment_ == x.comment_) && (status_bar_ == x.status_bar_) && (reserved_ == x.reserved_);
-}
-
-bool alert_payload::operator!=(alert_payload const& x) const {
-    return !(*this == x);
-}
-
 bool alert_payload::is_valid() const {
     return (version_ != 0) || (relay_until_ != 0) || (expiration_ != 0) || (id_ != 0) || (cancel_ != 0) || !set_cancel_.empty() || (min_version_ != 0) || (max_version_ != 0) || !set_sub_version_.empty() || (priority_ != 0) || !comment_.empty() || !status_bar_.empty() || !reserved_.empty();
 }

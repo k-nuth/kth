@@ -31,8 +31,8 @@ struct KD_API get_blocks {
     get_blocks(hash_list const& start, hash_digest const& stop);
     get_blocks(hash_list&& start, hash_digest const& stop);
 
-    bool operator==(get_blocks const& x) const;
-    bool operator!=(get_blocks const& x) const;
+    [[nodiscard]]
+    friend bool operator==(get_blocks const&, get_blocks const&) = default;
 
     hash_list& start_hashes();
 

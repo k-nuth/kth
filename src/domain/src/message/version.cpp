@@ -21,19 +21,6 @@ version::version(uint32_t value, uint64_t services, uint64_t timestamp, network_
     : value_(value), services_(services), timestamp_(timestamp), address_receiver_(address_receiver), address_sender_(address_sender), nonce_(nonce), user_agent_(std::move(user_agent)), start_height_(start_height), relay_(relay) {
 }
 
-bool version::operator==(version const& x) const {
-    return (value_ == x.value_) && (services_ == x.services_) &&
-           (timestamp_ == x.timestamp_) &&
-           (address_receiver_ == x.address_receiver_) &&
-           (address_sender_ == x.address_sender_) &&
-           (nonce_ == x.nonce_) && (user_agent_ == x.user_agent_) &&
-           (start_height_ == x.start_height_) && (relay_ == x.relay_);
-}
-
-bool version::operator!=(version const& x) const {
-    return !(*this == x);
-}
-
 bool version::is_valid() const {
     return value_ != 0
         || services_ != 0

@@ -23,14 +23,6 @@ alert::alert(data_chunk&& payload, data_chunk&& signature)
     : payload_(std::move(payload)), signature_(std::move(signature)) {
 }
 
-bool alert::operator==(alert const& x) const {
-    return (payload_ == x.payload_) && (signature_ == x.signature_);
-}
-
-bool alert::operator!=(alert const& x) const {
-    return !(*this == x);
-}
-
 bool alert::is_valid() const {
     return !payload_.empty() || !signature_.empty();
 }

@@ -26,8 +26,8 @@ struct KD_API filter_add {
     filter_add(data_chunk const& data);
     filter_add(data_chunk&& data);
 
-    bool operator==(filter_add const& x) const;
-    bool operator!=(filter_add const& x) const;
+    [[nodiscard]]
+    friend bool operator==(filter_add const&, filter_add const&) = default;
 
     data_chunk& data();
 

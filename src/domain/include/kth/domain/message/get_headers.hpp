@@ -25,8 +25,8 @@ public:
     get_headers(hash_list const& start, hash_digest const& stop);
     get_headers(hash_list&& start, hash_digest const& stop);
 
-    bool operator==(get_headers const& x) const;
-    bool operator!=(get_headers const& x) const;
+    [[nodiscard]]
+    friend bool operator==(get_headers const&, get_headers const&) = default;
 
     static
     expect<get_headers> from_data(byte_reader& reader, uint32_t version);
