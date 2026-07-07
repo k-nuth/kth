@@ -25,8 +25,8 @@ class payment_address;
 /**
  * Elliptic-curve public key, either compressed or uncompressed.
  *
- * Default-constructible (invalid state) so the C-API generator can
- * hand out an "empty" handle; the fallible construction paths return
+ * Fallible construction goes through the `parse_from` / `from_data` /
+ * `from_private` / `from_point` factories, each returning
  * `expect<ec_public>`.
  */
 struct KD_API ec_public {
@@ -56,8 +56,6 @@ struct KD_API ec_public {
     [[nodiscard]]
     static
     expect<ec_public> from_point(ec_uncompressed const& point, bool compress);
-
-    ec_public() = default;
 
     /// Wrap an already-compressed EC point.
     explicit
@@ -98,7 +96,7 @@ struct KD_API ec_public {
     std::expected<ec_uncompressed, std::error_code> to_uncompressed() const;
 
     [[nodiscard]]
-    payment_address to_payment_address(uint8_t version = mainnet_p2kh) const;
+    expect<payment_address> to_payment_address(uint8_t version = mainnet_p2kh) const;
 
 private:
     static

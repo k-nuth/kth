@@ -17,16 +17,13 @@ namespace kth::domain::wallet {
 /**
  * Encrypted public key (BIP38).
  *
- * Default-constructible so the C-API generator can hand out an "empty"
- * handle; string parsing goes through `parse_from` which returns
+ * Fallible construction goes through `parse_from` which returns
  * `expect<ek_public>`.
  */
 struct KD_API ek_public {
     [[nodiscard]]
     static
     expect<ek_public> parse_from(std::string_view encoded);
-
-    ek_public() = default;
 
     explicit
     ek_public(encrypted_public const& value)

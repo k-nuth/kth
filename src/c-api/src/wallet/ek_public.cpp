@@ -22,10 +22,6 @@ extern "C" {
 
 // Constructors
 
-kth_ek_public_mut_t kth_wallet_ek_public_construct_default(void) {
-    return kth::leak<cpp_t>();
-}
-
 kth_ek_public_mut_t kth_wallet_ek_public_construct(kth_encrypted_public_t const* value) {
     KTH_PRECONDITION(value != nullptr);
     auto const value_cpp = kth::encrypted_public_to_cpp(value->data);
@@ -36,6 +32,17 @@ kth_ek_public_mut_t kth_wallet_ek_public_construct_unsafe(uint8_t const* value) 
     KTH_PRECONDITION(value != nullptr);
     auto const value_cpp = kth::encrypted_public_to_cpp(value);
     return kth::leak_if_valid(cpp_t(value_cpp));
+}
+
+kth_error_code_t kth_wallet_ek_public_parse_from(char const* encoded, KTH_OUT_OWNED kth_ek_public_mut_t* out) {
+    KTH_PRECONDITION(encoded != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const encoded_cpp = std::string_view(encoded);
+    auto result = cpp_t::parse_from(encoded_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
 
@@ -117,20 +124,6 @@ char* kth_wallet_ek_public_to_string(kth_ek_public_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     auto const s = kth::cpp_ref<cpp_t>(self).to_string();
     return kth::create_c_str(s);
-}
-
-
-// Static utilities
-
-kth_error_code_t kth_wallet_ek_public_parse_from(char const* encoded, KTH_OUT_OWNED kth_ek_public_mut_t* out) {
-    KTH_PRECONDITION(encoded != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const encoded_cpp = std::string_view(encoded);
-    auto result = cpp_t::parse_from(encoded_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
-    return kth_ec_success;
 }
 
 } // extern "C"

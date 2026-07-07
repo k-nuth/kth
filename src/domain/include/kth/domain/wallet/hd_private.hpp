@@ -25,10 +25,13 @@ uint64_t to_prefixes(uint32_t private_prefix, uint32_t public_prefix) {
 /**
  * BIP32 extended private key.
  *
- * Derives from `hd_public`. Default-constructible so callers that hold
- * an `hd_private` as a struct member can fill it later via assignment;
- * fallible construction goes through the `parse_from`-family static
- * factories, which return `expect<hd_private>`.
+ * Derives from `hd_public`. Fallible construction goes through the
+ * `parse_from`-family static factories, which return
+ * `expect<hd_private>`. Failure of the private `from_seed`, `from_key`,
+ * and `derive_private` internal factories is signalled by a
+ * default-constructed invalid instance whose `.valid()` returns false;
+ * the default ctor is kept `private` so this sentinel only exists
+ * inside the class.
  */
 struct KD_API hd_private : hd_public {
     static constexpr uint64_t mainnet = to_prefixes(76066276, hd_public::mainnet);
@@ -57,7 +60,6 @@ struct KD_API hd_private : hd_public {
     static
     expect<hd_private> parse_from_with_prefixes(std::string_view encoded, uint64_t prefixes);
 
-    hd_private() = default;
     hd_private& operator=(hd_private x);
 
     explicit
@@ -100,7 +102,17 @@ struct KD_API hd_private : hd_public {
     [[nodiscard]]
     hd_public derive_public(uint32_t index) const;
 
+    /// Reset every field to the default zero state. Used by
+    /// wallet_manager to overwrite the intermediate derivation keys
+    /// once the leaf public key has been captured.
+    void wipe() noexcept;
+
 private:
+    // Sentinel default ctor: internal-only. Factories that can fail
+    // (from_seed / from_key / derive_private) return an invalid
+    // instance built via this, which `.valid()` reports as false.
+    hd_private() = default;
+
     static hd_private from_seed(byte_span seed, uint64_t prefixes);
     static hd_private from_key(hd_key const& decoded);
     static hd_private from_key(hd_key const& key, uint32_t public_prefix);

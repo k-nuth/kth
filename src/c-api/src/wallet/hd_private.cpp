@@ -22,10 +22,6 @@ extern "C" {
 
 // Constructors
 
-kth_hd_private_mut_t kth_wallet_hd_private_construct_default(void) {
-    return kth::leak<cpp_t>();
-}
-
 kth_hd_private_mut_t kth_wallet_hd_private_construct_from_seed_prefixes(uint8_t const* seed, kth_size_t n, uint64_t prefixes) {
     KTH_PRECONDITION(seed != nullptr || n == 0);
     auto const seed_cpp = n != 0 ? kth::data_chunk(seed, seed + n) : kth::data_chunk{};
@@ -72,6 +68,39 @@ kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefix_uns
     auto private_key_cpp = kth::hd_key_to_cpp(private_key);
     kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
     return kth::leak_if_valid(cpp_t(private_key_cpp, prefix));
+}
+
+kth_error_code_t kth_wallet_hd_private_parse_from(char const* encoded, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
+    KTH_PRECONDITION(encoded != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const encoded_cpp = std::string_view(encoded);
+    auto result = cpp_t::parse_from(encoded_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
+kth_error_code_t kth_wallet_hd_private_parse_from_with_public_prefix(char const* encoded, uint32_t public_prefix, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
+    KTH_PRECONDITION(encoded != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const encoded_cpp = std::string_view(encoded);
+    auto result = cpp_t::parse_from_with_public_prefix(encoded_cpp, public_prefix);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
+kth_error_code_t kth_wallet_hd_private_parse_from_with_prefixes(char const* encoded, uint64_t prefixes, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
+    KTH_PRECONDITION(encoded != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const encoded_cpp = std::string_view(encoded);
+    auto result = cpp_t::parse_from_with_prefixes(encoded_cpp, prefixes);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
 
@@ -193,39 +222,6 @@ kth_hd_public_mut_t kth_wallet_hd_private_derive_public(kth_hd_private_const_t s
 
 uint32_t kth_wallet_hd_private_to_prefix(uint64_t prefixes) {
     return cpp_t::to_prefix(prefixes);
-}
-
-kth_error_code_t kth_wallet_hd_private_parse_from(char const* encoded, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
-    KTH_PRECONDITION(encoded != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const encoded_cpp = std::string_view(encoded);
-    auto result = cpp_t::parse_from(encoded_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
-    return kth_ec_success;
-}
-
-kth_error_code_t kth_wallet_hd_private_parse_from_with_public_prefix(char const* encoded, uint32_t public_prefix, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
-    KTH_PRECONDITION(encoded != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const encoded_cpp = std::string_view(encoded);
-    auto result = cpp_t::parse_from_with_public_prefix(encoded_cpp, public_prefix);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
-    return kth_ec_success;
-}
-
-kth_error_code_t kth_wallet_hd_private_parse_from_with_prefixes(char const* encoded, uint64_t prefixes, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
-    KTH_PRECONDITION(encoded != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const encoded_cpp = std::string_view(encoded);
-    auto result = cpp_t::parse_from_with_prefixes(encoded_cpp, prefixes);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
-    return kth_ec_success;
 }
 
 } // extern "C"

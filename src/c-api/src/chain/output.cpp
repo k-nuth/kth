@@ -69,6 +69,12 @@ kth_bool_t kth_chain_output_equals(kth_output_const_t self, kth_output_const_t o
     return kth::eq<cpp_t>(self, other);
 }
 
+kth_bool_t kth_chain_output_not_equal(kth_output_const_t self, kth_output_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::ne<cpp_t>(self, other);
+}
+
 
 // Serialization
 
@@ -141,15 +147,25 @@ kth_bool_t kth_chain_output_is_dust(kth_output_const_t self, uint64_t minimum_ou
 
 // Operations
 
-kth_payment_address_mut_t kth_chain_output_address_simple(kth_output_const_t self, kth_bool_t testnet) {
+kth_error_code_t kth_chain_output_address_simple(kth_output_const_t self, kth_bool_t testnet, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto const testnet_cpp = kth::int_to_bool(testnet);
-    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).address(testnet_cpp));
+    auto result = kth::cpp_ref<cpp_t>(self).address(testnet_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_payment_address_mut_t kth_chain_output_address(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version) {
+kth_error_code_t kth_chain_output_address(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).address(p2kh_version, p2sh_version));
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto result = kth::cpp_ref<cpp_t>(self).address(p2kh_version, p2sh_version);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
 kth_payment_address_list_mut_t kth_chain_output_addresses(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version) {

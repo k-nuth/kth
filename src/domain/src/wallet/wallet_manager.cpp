@@ -31,12 +31,6 @@ hash_digest derive_key(std::string const& password, std::array<uint8_t, default_
     return key;
 }
 
-template <typename T>
-void clear_hd(T& hd) {
-    using std::swap;
-    T tmp;
-    swap(hd, tmp);
-}
 
 std::expected<wallet_data, std::error_code>
 create(
@@ -72,11 +66,11 @@ create(
     hd_private m44h145h0h = m44h145h.derive_private(0 + hd_first_hardened_key);
     hd_public pub = m44h145h0h.to_public();
 
-    // erase all the intermediate hd_private and hd_public objects
-    clear_hd(m);
-    clear_hd(m44h);
-    clear_hd(m44h145h);
-    clear_hd(m44h145h0h);
+    // erase all the intermediate hd_private objects
+    m.wipe();
+    m44h.wipe();
+    m44h145h.wipe();
+    m44h145h0h.wipe();
 
     auto const salt = generate_salt();
     auto const iv = generate_salt<default_iv_size>();

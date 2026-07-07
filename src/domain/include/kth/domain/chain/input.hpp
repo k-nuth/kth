@@ -82,7 +82,7 @@ struct KD_API input {
     /// The first payment address extracted (may be invalid).
     /// NOTE: not cached — recomputed on every call.
     [[nodiscard]]
-    wallet::payment_address address() const;
+    kth::expect<wallet::payment_address> address() const;
 
     /// The payment addresses extracted from this input as a standard script.
     /// NOTE: not cached — caller owns any caching it needs.

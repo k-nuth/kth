@@ -31,8 +31,8 @@ struct KD_API stealth_receiver {
     const wallet::stealth_address& stealth_address() const;
 
     /// Derive a payment address to compare against the blockchain.
-    bool derive_address(payment_address& out_address,
-                        ec_compressed const& ephemeral_public) const;
+    [[nodiscard]]
+    expect<payment_address> derive_address(ec_compressed const& ephemeral_public) const;
 
     /// Once address is discovered, derive the private spend key.
     bool derive_private(ec_secret& out_private,

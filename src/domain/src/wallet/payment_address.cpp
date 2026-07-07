@@ -227,7 +227,11 @@ expect<payment_address> payment_address::from_ec_private(ec_private const& secre
     if ( ! secret.valid()) {
         return std::unexpected(kth::error::illegal_value);
     }
-    return from_ec_public(secret.to_public(), secret.payment_version());
+    auto const point = secret.to_public();
+    if ( ! point) {
+        return std::unexpected(point.error());
+    }
+    return from_ec_public(*point, secret.payment_version());
 }
 
 // static

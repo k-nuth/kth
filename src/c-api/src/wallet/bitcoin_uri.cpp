@@ -26,6 +26,18 @@ kth_bitcoin_uri_mut_t kth_wallet_bitcoin_uri_construct_default(void) {
     return kth::leak<cpp_t>();
 }
 
+kth_error_code_t kth_wallet_bitcoin_uri_parse_from(char const* uri, kth_bool_t strict, KTH_OUT_OWNED kth_bitcoin_uri_mut_t* out) {
+    KTH_PRECONDITION(uri != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const uri_cpp = std::string_view(uri);
+    auto const strict_cpp = kth::int_to_bool(strict);
+    auto result = cpp_t::parse_from(uri_cpp, strict_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
 
 // Destructor
 
@@ -126,9 +138,14 @@ char* kth_wallet_bitcoin_uri_address(kth_bitcoin_uri_const_t self) {
     return kth::create_c_str(s);
 }
 
-kth_payment_address_mut_t kth_wallet_bitcoin_uri_payment(kth_bitcoin_uri_const_t self) {
+kth_error_code_t kth_wallet_bitcoin_uri_payment(kth_bitcoin_uri_const_t self, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).payment());
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto result = kth::cpp_ref<cpp_t>(self).payment();
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
 kth_stealth_address_mut_t kth_wallet_bitcoin_uri_stealth(kth_bitcoin_uri_const_t self) {
@@ -244,21 +261,6 @@ char* kth_wallet_bitcoin_uri_parameter(kth_bitcoin_uri_const_t self, char const*
     auto const key_cpp = std::string(key);
     auto const s = kth::cpp_ref<cpp_t>(self).parameter(key_cpp);
     return kth::create_c_str(s);
-}
-
-
-// Static utilities
-
-kth_error_code_t kth_wallet_bitcoin_uri_parse_from(char const* uri, kth_bool_t strict, KTH_OUT_OWNED kth_bitcoin_uri_mut_t* out) {
-    KTH_PRECONDITION(uri != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const uri_cpp = std::string_view(uri);
-    auto const strict_cpp = kth::int_to_bool(strict);
-    auto result = cpp_t::parse_from(uri_cpp, strict_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
-    return kth_ec_success;
 }
 
 } // extern "C"

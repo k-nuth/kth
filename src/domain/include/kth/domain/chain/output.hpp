@@ -101,11 +101,11 @@ struct KD_API output {
     /// The payment address extracted from this output as a standard script.
     /// NOTE: not cached — calling this in a hot loop recomputes each time.
     [[nodiscard]]
-    wallet::payment_address address(bool testnet = false) const;
+    kth::expect<wallet::payment_address> address(bool testnet = false) const;
 
     /// The first payment address extracted (may be invalid).
     [[nodiscard]]
-    wallet::payment_address address(uint8_t p2kh_version, uint8_t p2sh_version) const;
+    kth::expect<wallet::payment_address> address(uint8_t p2kh_version, uint8_t p2sh_version) const;
 
     /// The payment addresses extracted from this output as a standard script.
     /// NOTE: not cached — caller owns any caching it needs.

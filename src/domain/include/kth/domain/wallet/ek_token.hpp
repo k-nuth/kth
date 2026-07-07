@@ -17,16 +17,13 @@ namespace kth::domain::wallet {
 /**
  * BIP38 intermediate passphrase token.
  *
- * Default-constructible so the C-API generator can hand out an "empty"
- * handle; string parsing goes through `parse_from` which returns
+ * Fallible construction goes through `parse_from` which returns
  * `expect<ek_token>`.
  */
 struct KD_API ek_token {
     [[nodiscard]]
     static
     expect<ek_token> parse_from(std::string_view encoded);
-
-    ek_token() = default;
 
     explicit
     ek_token(encrypted_token const& value)

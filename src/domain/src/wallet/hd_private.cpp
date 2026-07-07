@@ -227,6 +227,11 @@ hd_public hd_private::derive_public(uint32_t index) const {
     return derive_private(index).to_public();
 }
 
+void hd_private::wipe() noexcept {
+    hd_private tmp;
+    swap(*this, tmp);
+}
+
 // Operators.
 // ----------------------------------------------------------------------------
 

@@ -35,17 +35,6 @@ static char const* const kEncryptedOther =
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::ek_private - default construct is invalid",
-          "[C-API WalletEkPrivate][lifecycle]") {
-    // Matches the domain default ctor: no payload, `valid_ == false`.
-    // The handle itself is non-null (the allocation succeeded), but
-    // `valid()` returns 0 so callers know not to trust the state.
-    kth_ek_private_mut_t a = kth_wallet_ek_private_construct_default();
-    REQUIRE(a != NULL);
-    REQUIRE(kth_wallet_ek_private_valid(a) == 0);
-    kth_wallet_ek_private_destruct(a);
-}
-
 TEST_CASE("C-API wallet::ek_private - destruct(NULL) is a no-op",
           "[C-API WalletEkPrivate][lifecycle]") {
     kth_wallet_ek_private_destruct(NULL);

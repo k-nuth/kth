@@ -215,16 +215,17 @@ void output::set_token_data(chain::token_data_opt&& x) {
     token_data_ = std::move(x);
 }
 
-payment_address output::address(bool testnet /*= false*/) const {
+kth::expect<payment_address> output::address(bool testnet /*= false*/) const {
     if (testnet) {
         return address(wallet::payment_address::testnet_p2kh, wallet::payment_address::testnet_p2sh);
     }
     return address(wallet::payment_address::mainnet_p2kh, wallet::payment_address::mainnet_p2sh);
 }
 
-payment_address output::address(uint8_t p2kh_version, uint8_t p2sh_version) const {
+kth::expect<payment_address> output::address(uint8_t p2kh_version, uint8_t p2sh_version) const {
     auto const value = addresses(p2kh_version, p2sh_version);
-    return value.empty() ? payment_address{} : value.front();
+    if (value.empty()) return std::unexpected(kth::error::illegal_value);
+    return value.front();
 }
 
 payment_address::list output::addresses(uint8_t p2kh_version, uint8_t p2sh_version) const {

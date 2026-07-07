@@ -36,14 +36,6 @@ static char const* const kEncryptedOther =
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::ek_token - default construct is invalid",
-          "[C-API WalletEkToken][lifecycle]") {
-    kth_ek_token_mut_t a = kth_wallet_ek_token_construct_default();
-    REQUIRE(a != NULL);
-    REQUIRE(kth_wallet_ek_token_valid(a) == 0);
-    kth_wallet_ek_token_destruct(a);
-}
-
 TEST_CASE("C-API wallet::ek_token - destruct(NULL) is a no-op",
           "[C-API WalletEkToken][lifecycle]") {
     kth_wallet_ek_token_destruct(NULL);

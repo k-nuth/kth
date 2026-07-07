@@ -259,13 +259,12 @@ TEST_CASE("C-API wallet::stealth - sender.payment_address matches receiver.deriv
     REQUIRE(kth_wallet_secret_to_public(&ephemeral_public,
                                         *(kth_ec_secret_t const*)&kEphemeralPrivate) != 0);
 
-    // Pre-construct an empty payment_address the derive_address
-    // function will mutate in place (opaque out-param by ref).
-    kth_payment_address_mut_t derived = kth_wallet_payment_address_construct_default();
-    REQUIRE(derived != NULL);
-
+    // derive_address returns an owned payment_address handle through
+    // the OUT param.
+    kth_payment_address_mut_t derived = NULL;
     REQUIRE(kth_wallet_stealth_receiver_derive_address(
-        r, derived, &ephemeral_public) != 0);
+        r, &ephemeral_public, &derived) == kth_ec_success);
+    REQUIRE(derived != NULL);
 
     char* derived_encoded = kth_wallet_payment_address_encoded_legacy(derived);
     REQUIRE(derived_encoded != NULL);

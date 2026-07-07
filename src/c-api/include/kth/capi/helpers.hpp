@@ -8,6 +8,7 @@
 #include <array>
 #include <cstddef>
 #include <cstring>
+#include <expected>
 #include <memory>
 #include <optional>
 #include <concepts>
@@ -744,6 +745,23 @@ template <typename T>
 std::decay_t<T>* leak_if_valid(T&& x) {
     if ( ! check_valid(&x)) return nullptr;
     return new std::decay_t<T>(std::forward<T>(x));
+}
+
+// `expect<T>` overload: unwraps the expected before leaking so the
+// caller receives a `T*` (not a `std::expected<T, code>*` disguised
+// as `void*`, which the opaque-handle typedef would silently allow).
+// Selected over the generic template because it takes the concrete
+// `std::expected<T, E>` by value rather than a forwarding reference.
+template <typename T, typename E>
+T* leak_if_valid(std::expected<T, E>&& x) {
+    if ( ! x) return nullptr;
+    return new T(std::move(*x));
+}
+
+template <typename T, typename E>
+T* leak_if_valid(std::expected<T, E> const& x) {
+    if ( ! x) return nullptr;
+    return new T(*x);
 }
 
 

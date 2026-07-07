@@ -57,12 +57,6 @@ constexpr char uninitialized_address[] = "1111111111111111111114oLvT2";
 
 // negative tests:
 
-TEST_CASE("payment_address construct default invalid", "[payment_address]") {
-    payment_address const address;
-    REQUIRE( ! address.valid());
-    REQUIRE(address.encoded_legacy() == uninitialized_address);
-}
-
 TEST_CASE("payment_address construct string invalid invalid", "[payment_address]") {
     REQUIRE( ! payment_address::parse_from("bogus"));
 }

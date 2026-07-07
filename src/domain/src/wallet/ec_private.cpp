@@ -115,20 +115,19 @@ std::string ec_private::to_string() const {
 // Methods.
 // ----------------------------------------------------------------------------
 
-// A valid secret always produces a valid public point.
-ec_public ec_private::to_public() const {
-    if ( ! valid_) {
-        return ec_public{};
-    }
+// A valid secret always produces a valid public point (the failure paths
+// are only reachable for a secret that isn't a valid EC scalar, which
+// shouldn't happen for anything constructed via the parse_from factories).
+expect<ec_public> ec_private::to_public() const {
     ec_compressed point;
     if ( ! secret_to_public(point, secret_)) {
-        return ec_public{};
+        return std::unexpected(kth::error::illegal_value);
     }
     return ec_public{point, compressed()};
 }
 
-payment_address ec_private::to_payment_address() const {
-    return payment_address::from_ec_private(*this).value_or(payment_address{});
+expect<payment_address> ec_private::to_payment_address() const {
+    return payment_address::from_ec_private(*this);
 }
 
 } // namespace kth::domain::wallet

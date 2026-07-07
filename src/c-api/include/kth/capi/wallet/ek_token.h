@@ -17,10 +17,6 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_ek_token_mut_t`. Caller must release with `kth_wallet_ek_token_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_ek_token_mut_t kth_wallet_ek_token_construct_default(void);
-
 /**
  * @return Owned `kth_ek_token_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ek_token_destruct`.
  * @param value Borrowed input; must be non-null. Copied into the resulting object; ownership of `value` stays with the caller.
@@ -34,6 +30,10 @@ kth_ek_token_mut_t kth_wallet_ek_token_construct(kth_encrypted_token_t const* va
  */
 KTH_EXPORT KTH_OWNED
 kth_ek_token_mut_t kth_wallet_ek_token_construct_unsafe(uint8_t const* value);
+
+/** @param[out] out Must point to a null `kth_ek_token_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_ek_token_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_ek_token_parse_from(char const* encoded, KTH_OUT_OWNED kth_ek_token_mut_t* out);
 
 
 // Destructor
@@ -88,13 +88,6 @@ kth_encrypted_token_t kth_wallet_ek_token_value(kth_ek_token_const_t self);
 /** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
 KTH_EXPORT KTH_OWNED
 char* kth_wallet_ek_token_to_string(kth_ek_token_const_t self);
-
-
-// Static utilities
-
-/** @param[out] out Must point to a null `kth_ek_token_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_ek_token_destruct`. Untouched on error. */
-KTH_EXPORT
-kth_error_code_t kth_wallet_ek_token_parse_from(char const* encoded, KTH_OUT_OWNED kth_ek_token_mut_t* out);
 
 #ifdef __cplusplus
 } // extern "C"

@@ -32,12 +32,6 @@ static uint8_t const kSeed[16] = {
 // Constructors / lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API HdPrivate - default construct is invalid", "[C-API HdPrivate]") {
-    kth_hd_private_mut_t key = kth_wallet_hd_private_construct_default();
-    REQUIRE(kth_wallet_hd_private_valid(key) == 0);
-    kth_wallet_hd_private_destruct(key);
-}
-
 TEST_CASE("C-API HdPrivate - construct from seed is valid", "[C-API HdPrivate]") {
     kth_hd_private_mut_t key = kth_wallet_hd_private_construct_from_seed_prefixes(
         kSeed, sizeof(kSeed), 0x0488ADE40488B21Eull);  // mainnet prefixes

@@ -52,6 +52,9 @@ kth_output_mut_t kth_chain_output_copy(kth_output_const_t self);
 KTH_EXPORT
 kth_bool_t kth_chain_output_equals(kth_output_const_t self, kth_output_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_chain_output_not_equal(kth_output_const_t self, kth_output_const_t other);
+
 
 // Serialization
 
@@ -102,13 +105,13 @@ kth_bool_t kth_chain_output_is_dust(kth_output_const_t self, uint64_t minimum_ou
 
 // Operations
 
-/** @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_chain_output_address_simple(kth_output_const_t self, kth_bool_t testnet);
+/** @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_chain_output_address_simple(kth_output_const_t self, kth_bool_t testnet, KTH_OUT_OWNED kth_payment_address_mut_t* out);
 
-/** @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_chain_output_address(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version);
+/** @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_chain_output_address(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version, KTH_OUT_OWNED kth_payment_address_mut_t* out);
 
 /** @return Owned `kth_payment_address_list_mut_t`. Caller must release with `kth_wallet_payment_address_list_destruct`. */
 KTH_EXPORT KTH_OWNED

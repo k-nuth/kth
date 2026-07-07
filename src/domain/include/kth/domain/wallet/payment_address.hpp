@@ -34,11 +34,11 @@ using payment = byte_array<payment_size>;
 /**
  * Non-stealth payment address (P2PKH, P2SH, or 32-byte hash variants).
  *
- * Default-constructible so callers that hold `payment_address` as a
- * struct member (e.g. `stealth_sender::address_`,
- * `cashtoken_minting::*::destination`) can fill it later via
- * assignment; fallible construction goes through the `parse_from`
- * / `from_*` named factories, each returning `expect<payment_address>`.
+ * Fallible construction goes through the `parse_from` / `from_*`
+ * named factories, each returning `expect<payment_address>`. Callers
+ * that need to hold a payment_address as a struct member before its
+ * value is known should wrap it in `std::optional` — the type has no
+ * default-constructed invalid state.
  */
 struct KD_API payment_address {
 
@@ -107,8 +107,6 @@ struct KD_API payment_address {
     [[nodiscard]]
     static
     expect<payment_address> from_pay_public_key_hash_script(chain::script const& script, uint8_t version);
-
-    payment_address() = default;
 
     /// Wrap a 20-byte hash160 payload directly. Infallible.
     payment_address(short_hash const& short_hash, uint8_t version);

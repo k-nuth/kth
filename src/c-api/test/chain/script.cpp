@@ -277,14 +277,20 @@ TEST_CASE("C-API Script - to_pay_public_key_hash_pattern_unlocking valid pubkey 
     kth_wallet_ec_public_destruct(pub);
 }
 
-TEST_CASE("C-API Script - to_pay_public_key_hash_pattern_unlocking invalid pubkey returns NULL",
+TEST_CASE("C-API Script - to_pay_public_key_hash_pattern_unlocking with a "
+          "semantically-broken pubkey returns NULL",
           "[C-API Script]") {
-    // Default-constructed ec_public has valid_ == false, so its
-    // to_data() returns an error and the C++ factory yields an empty
-    // unlocking list that we turn into NULL.
-    kth_ec_public_mut_t pub = kth_wallet_ec_public_construct_default();
+    // `construct_unsafe` bypasses the on-curve check, so a blob of
+    // 0xFF bytes yields a handle that is "typed-valid" but stores a
+    // non-point. Building it with compress=false forces `to_data()`
+    // to route through `to_uncompressed()`, which fails on the
+    // decompression step. That failure surfaces as an empty list from
+    // the unlocking-pattern factory, which the C-API turns into NULL.
+    uint8_t garbage[33];
+    memset(garbage, 0xFF, sizeof(garbage));
+    kth_ec_public_mut_t pub =
+        kth_wallet_ec_public_construct_unsafe(garbage, /*compress=*/0);
     REQUIRE(pub != NULL);
-    REQUIRE(kth_wallet_ec_public_valid(pub) == 0);
 
     uint8_t endorsement[71];
     memset(endorsement, 0x30, sizeof(endorsement));

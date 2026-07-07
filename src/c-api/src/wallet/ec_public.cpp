@@ -24,10 +24,6 @@ extern "C" {
 
 // Constructors
 
-kth_ec_public_mut_t kth_wallet_ec_public_construct_default(void) {
-    return kth::leak<cpp_t>();
-}
-
 kth_error_code_t kth_wallet_ec_public_construct_from_data(uint8_t const* decoded, kth_size_t n, KTH_OUT_OWNED kth_ec_public_mut_t* out) {
     KTH_PRECONDITION(decoded != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
@@ -51,6 +47,52 @@ kth_ec_public_mut_t kth_wallet_ec_public_construct_unsafe(uint8_t const* compres
     auto const compressed_point_cpp = kth::ec_compressed_to_cpp(compressed_point);
     auto const compress_cpp = kth::int_to_bool(compress);
     return kth::leak_if_valid(cpp_t(compressed_point_cpp, compress_cpp));
+}
+
+kth_error_code_t kth_wallet_ec_public_parse_from(char const* base16, KTH_OUT_OWNED kth_ec_public_mut_t* out) {
+    KTH_PRECONDITION(base16 != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const base16_cpp = std::string_view(base16);
+    auto result = cpp_t::parse_from(base16_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
+kth_error_code_t kth_wallet_ec_public_from_private(kth_ec_private_const_t secret, KTH_OUT_OWNED kth_ec_public_mut_t* out) {
+    KTH_PRECONDITION(secret != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const& secret_cpp = kth::cpp_ref<kth::domain::wallet::ec_private>(secret);
+    auto result = cpp_t::from_private(secret_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
+kth_error_code_t kth_wallet_ec_public_from_point(kth_ec_uncompressed_t const* point, kth_bool_t compress, KTH_OUT_OWNED kth_ec_public_mut_t* out) {
+    KTH_PRECONDITION(point != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const point_cpp = kth::ec_uncompressed_to_cpp(point->data);
+    auto const compress_cpp = kth::int_to_bool(compress);
+    auto result = cpp_t::from_point(point_cpp, compress_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
+kth_error_code_t kth_wallet_ec_public_from_point_unsafe(uint8_t const* point, kth_bool_t compress, KTH_OUT_OWNED kth_ec_public_mut_t* out) {
+    KTH_PRECONDITION(point != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const point_cpp = kth::ec_uncompressed_to_cpp(point);
+    auto const compress_cpp = kth::int_to_bool(compress);
+    auto result = cpp_t::from_point(point_cpp, compress_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
 
@@ -172,55 +214,11 @@ char* kth_wallet_ec_public_to_string(kth_ec_public_const_t self) {
 
 // Operations
 
-kth_payment_address_mut_t kth_wallet_ec_public_to_payment_address(kth_ec_public_const_t self, uint8_t version) {
+kth_error_code_t kth_wallet_ec_public_to_payment_address(kth_ec_public_const_t self, uint8_t version, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).to_payment_address(version));
-}
-
-
-// Static utilities
-
-kth_error_code_t kth_wallet_ec_public_parse_from(char const* base16, KTH_OUT_OWNED kth_ec_public_mut_t* out) {
-    KTH_PRECONDITION(base16 != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const base16_cpp = std::string_view(base16);
-    auto result = cpp_t::parse_from(base16_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
-    return kth_ec_success;
-}
-
-kth_error_code_t kth_wallet_ec_public_from_private(kth_ec_private_const_t secret, KTH_OUT_OWNED kth_ec_public_mut_t* out) {
-    KTH_PRECONDITION(secret != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const& secret_cpp = kth::cpp_ref<kth::domain::wallet::ec_private>(secret);
-    auto result = cpp_t::from_private(secret_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
-    return kth_ec_success;
-}
-
-kth_error_code_t kth_wallet_ec_public_from_point(kth_ec_uncompressed_t const* point, kth_bool_t compress, KTH_OUT_OWNED kth_ec_public_mut_t* out) {
-    KTH_PRECONDITION(point != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const point_cpp = kth::ec_uncompressed_to_cpp(point->data);
-    auto const compress_cpp = kth::int_to_bool(compress);
-    auto result = cpp_t::from_point(point_cpp, compress_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
-    return kth_ec_success;
-}
-
-kth_error_code_t kth_wallet_ec_public_from_point_unsafe(uint8_t const* point, kth_bool_t compress, KTH_OUT_OWNED kth_ec_public_mut_t* out) {
-    KTH_PRECONDITION(point != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const point_cpp = kth::ec_uncompressed_to_cpp(point);
-    auto const compress_cpp = kth::int_to_bool(compress);
-    auto result = cpp_t::from_point(point_cpp, compress_cpp);
+    auto result = kth::cpp_ref<cpp_t>(self).to_payment_address(version);
     if ( ! result) return kth::to_c_err(result.error());
     *out = kth::leak(std::move(*result));
     return kth_ec_success;

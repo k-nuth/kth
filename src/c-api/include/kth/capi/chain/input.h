@@ -48,6 +48,9 @@ kth_input_mut_t kth_chain_input_copy(kth_input_const_t self);
 KTH_EXPORT
 kth_bool_t kth_chain_input_equals(kth_input_const_t self, kth_input_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_chain_input_not_equal(kth_input_const_t self, kth_input_const_t other);
+
 
 // Serialization
 
@@ -72,9 +75,9 @@ kth_script_const_t kth_chain_input_script(kth_input_const_t self);
 KTH_EXPORT
 uint32_t kth_chain_input_sequence(kth_input_const_t self);
 
-/** @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_chain_input_address(kth_input_const_t self);
+/** @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_chain_input_address(kth_input_const_t self, KTH_OUT_OWNED kth_payment_address_mut_t* out);
 
 /** @return Owned `kth_payment_address_list_mut_t`. Caller must release with `kth_wallet_payment_address_list_destruct`. */
 KTH_EXPORT KTH_OWNED

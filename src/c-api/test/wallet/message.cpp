@@ -105,7 +105,8 @@ TEST_CASE("C-API wallet::message - sign(ec_private) + verify round-trip",
         &kSecret, /*version=*/0x8000u, /*compress=*/1);
     REQUIRE(secret != NULL);
 
-    kth_payment_address_mut_t address = kth_wallet_ec_private_to_payment_address(secret);
+    kth_payment_address_mut_t address = NULL;
+    REQUIRE(kth_wallet_ec_private_to_payment_address(secret, &address) == kth_ec_success);
     REQUIRE(address != NULL);
 
     kth_message_signature_t sig;
@@ -131,7 +132,8 @@ TEST_CASE("C-API wallet::message - verify rejects a tampered message",
           "[C-API WalletMessage][verify]") {
     kth_ec_private_mut_t secret = kth_wallet_ec_private_construct(
         &kSecret, 0x8000u, 1);
-    kth_payment_address_mut_t address = kth_wallet_ec_private_to_payment_address(secret);
+    kth_payment_address_mut_t address = NULL;
+    REQUIRE(kth_wallet_ec_private_to_payment_address(secret, &address) == kth_ec_success);
 
     kth_message_signature_t sig;
     memset(&sig, 0, sizeof(sig));

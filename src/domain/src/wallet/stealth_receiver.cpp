@@ -9,6 +9,7 @@
 #include <kth/domain/math/stealth.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
 #include <kth/domain/wallet/stealth_address.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/utility/binary.hpp>
 
@@ -36,20 +37,13 @@ const wallet::stealth_address& stealth_receiver::stealth_address() const {
     return address_;
 }
 
-bool stealth_receiver::derive_address(payment_address& out_address,
-                                      ec_compressed const& ephemeral_public) const {
+expect<payment_address> stealth_receiver::derive_address(ec_compressed const& ephemeral_public) const {
     ec_compressed receiver_public;
     if ( ! uncover_stealth(receiver_public, ephemeral_public, scan_private_,
                          spend_public_)) {
-        return false;
+        return std::unexpected(kth::error::illegal_value);
     }
-
-    auto result = payment_address::from_ec_public(ec_public{receiver_public}, version_);
-    if ( ! result) {
-        return false;
-    }
-    out_address = *result;
-    return true;
+    return payment_address::from_ec_public(ec_public{receiver_public}, version_);
 }
 
 bool stealth_receiver::derive_private(ec_secret& out_private,

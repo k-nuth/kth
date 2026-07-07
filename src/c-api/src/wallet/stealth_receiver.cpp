@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <cstring>
+#include <utility>
 
 #include <kth/capi/wallet/stealth_receiver.h>
 
@@ -76,22 +77,28 @@ kth_stealth_address_const_t kth_wallet_stealth_receiver_stealth_address(kth_stea
 
 // Operations
 
-kth_bool_t kth_wallet_stealth_receiver_derive_address(kth_stealth_receiver_const_t self, kth_payment_address_mut_t out_address, kth_ec_compressed_t const* ephemeral_public) {
+kth_error_code_t kth_wallet_stealth_receiver_derive_address(kth_stealth_receiver_const_t self, kth_ec_compressed_t const* ephemeral_public, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(out_address != nullptr);
     KTH_PRECONDITION(ephemeral_public != nullptr);
-    auto& out_address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(out_address);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto const ephemeral_public_cpp = kth::ec_compressed_to_cpp(ephemeral_public->data);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).derive_address(out_address_cpp, ephemeral_public_cpp));
+    auto result = kth::cpp_ref<cpp_t>(self).derive_address(ephemeral_public_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_bool_t kth_wallet_stealth_receiver_derive_address_unsafe(kth_stealth_receiver_const_t self, kth_payment_address_mut_t out_address, uint8_t const* ephemeral_public) {
+kth_error_code_t kth_wallet_stealth_receiver_derive_address_unsafe(kth_stealth_receiver_const_t self, uint8_t const* ephemeral_public, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(out_address != nullptr);
     KTH_PRECONDITION(ephemeral_public != nullptr);
-    auto& out_address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(out_address);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto const ephemeral_public_cpp = kth::ec_compressed_to_cpp(ephemeral_public);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).derive_address(out_address_cpp, ephemeral_public_cpp));
+    auto result = kth::cpp_ref<cpp_t>(self).derive_address(ephemeral_public_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
 kth_bool_t kth_wallet_stealth_receiver_derive_private(kth_stealth_receiver_const_t self, kth_hash_t* out_private, kth_ec_compressed_t const* ephemeral_public) {

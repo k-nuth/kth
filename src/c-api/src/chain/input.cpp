@@ -66,6 +66,12 @@ kth_bool_t kth_chain_input_equals(kth_input_const_t self, kth_input_const_t othe
     return kth::eq<cpp_t>(self, other);
 }
 
+kth_bool_t kth_chain_input_not_equal(kth_input_const_t self, kth_input_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::ne<cpp_t>(self, other);
+}
+
 
 // Serialization
 
@@ -100,9 +106,14 @@ uint32_t kth_chain_input_sequence(kth_input_const_t self) {
     return kth::cpp_ref<cpp_t>(self).sequence();
 }
 
-kth_payment_address_mut_t kth_chain_input_address(kth_input_const_t self) {
+kth_error_code_t kth_chain_input_address(kth_input_const_t self, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).address());
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto result = kth::cpp_ref<cpp_t>(self).address();
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
 kth_payment_address_list_mut_t kth_chain_input_addresses(kth_input_const_t self) {

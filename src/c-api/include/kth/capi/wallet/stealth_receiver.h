@@ -63,13 +63,19 @@ kth_stealth_address_const_t kth_wallet_stealth_receiver_stealth_address(kth_stea
 
 // Operations
 
-/** @param ephemeral_public Borrowed input; must be non-null. Read during the call; ownership of `ephemeral_public` stays with the caller. */
+/**
+ * @param ephemeral_public Borrowed input; must be non-null. Read during the call; ownership of `ephemeral_public` stays with the caller.
+ * @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error.
+ */
 KTH_EXPORT
-kth_bool_t kth_wallet_stealth_receiver_derive_address(kth_stealth_receiver_const_t self, kth_payment_address_mut_t out_address, kth_ec_compressed_t const* ephemeral_public);
+kth_error_code_t kth_wallet_stealth_receiver_derive_address(kth_stealth_receiver_const_t self, kth_ec_compressed_t const* ephemeral_public, KTH_OUT_OWNED kth_payment_address_mut_t* out);
 
-/** @warning `ephemeral_public` MUST point to a buffer of at least 33 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_ec_compressed_t`. */
+/**
+ * @warning `ephemeral_public` MUST point to a buffer of at least 33 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_ec_compressed_t`.
+ * @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error.
+ */
 KTH_EXPORT
-kth_bool_t kth_wallet_stealth_receiver_derive_address_unsafe(kth_stealth_receiver_const_t self, kth_payment_address_mut_t out_address, uint8_t const* ephemeral_public);
+kth_error_code_t kth_wallet_stealth_receiver_derive_address_unsafe(kth_stealth_receiver_const_t self, uint8_t const* ephemeral_public, KTH_OUT_OWNED kth_payment_address_mut_t* out);
 
 /** @param ephemeral_public Borrowed input; must be non-null. Read during the call; ownership of `ephemeral_public` stays with the caller. */
 KTH_EXPORT

@@ -164,7 +164,7 @@ struct KD_API nft_spec {
 
 // Describes one NFT to mint from an existing minting NFT.
 struct KD_API nft_mint_request {
-    payment_address destination;
+    std::optional<payment_address> destination;
     data_chunk commitment;
     chain::capability_t capability = chain::capability_t::none;
     uint64_t satoshis = 1000;
@@ -182,8 +182,8 @@ struct KD_API nft_mint_request {
 // ---------------------------------------------------------------------------
 
 struct KD_API prepare_genesis_params {
-    chain::utxo utxo;                // any spendable UTXO
-    payment_address destination;     // recipient of the new output 0
+    chain::utxo utxo;                             // any spendable UTXO
+    std::optional<payment_address> destination;   // recipient of the new output 0
 
     // Default sized to comfortably cover the fee of the subsequent
     // genesis transaction (1 genesis input + 1 token output + 1 BCH
@@ -226,7 +226,7 @@ prepare_genesis_utxo(prepare_genesis_params const& params);
 
 struct KD_API token_genesis_params {
     chain::utxo genesis_utxo;             // outpoint.index() MUST be 0
-    payment_address destination;
+    std::optional<payment_address> destination;
 
     std::optional<uint64_t> ft_amount;
     std::optional<nft_spec> nft;
@@ -300,7 +300,7 @@ create_token_mint(token_mint_params const& params);
 
 struct KD_API token_transfer_params {
     std::vector<chain::utxo> token_utxos;
-    payment_address destination;
+    std::optional<payment_address> destination;
 
     std::optional<uint64_t> ft_amount;
     std::optional<nft_spec> nft;
@@ -335,7 +335,7 @@ struct KD_API token_burn_params {
     bool burn_nft = false;
     std::optional<std::string> message;     // attached as OP_RETURN
 
-    payment_address destination;
+    std::optional<payment_address> destination;
     std::vector<chain::utxo> fee_utxos;
     std::optional<payment_address> change_address;
     uint64_t satoshis = 1000;
@@ -356,7 +356,7 @@ create_token_burn(token_burn_params const& params);
 // category later.
 struct KD_API ft_params {
     chain::utxo genesis_utxo;
-    payment_address destination;
+    std::optional<payment_address> destination;
     uint64_t total_supply;
     bool with_minting_nft = false;
 
@@ -390,7 +390,7 @@ struct KD_API nft_collection_item {
 struct KD_API nft_collection_params {
     chain::utxo genesis_utxo;
     std::vector<nft_collection_item> nfts;
-    payment_address creator_address;
+    std::optional<payment_address> creator_address;
     bool keep_minting_token = false;              // false → burn at end
     std::optional<uint64_t> ft_amount;            // optional FT side-supply
     std::vector<chain::utxo> fee_utxos;

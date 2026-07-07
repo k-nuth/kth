@@ -35,10 +35,8 @@ using wif_compressed = byte_array<wif_compressed_size>;
 /**
  * EC secret with WIF version and compression metadata.
  *
- * Default-constructible (invalid state) so the C-API generator can
- * hand out an "empty" handle; fallible construction goes through
- * `parse_from` / `from_compressed` / `from_uncompressed`, each
- * returning `expect<ec_private>`.
+ * Fallible construction goes through `parse_from` / `from_compressed`
+ * / `from_uncompressed`, each returning `expect<ec_private>`.
  */
 struct KD_API ec_private {
     static uint8_t const compressed_sentinel;
@@ -84,8 +82,6 @@ struct KD_API ec_private {
     static
     expect<ec_private> from_uncompressed(wif_uncompressed const& wif, uint8_t address_version);
 
-    ec_private() = default;
-
     /// The version is 16 bits. The most significant byte is the WIF prefix
     /// and the least significant byte is the address prefix.
     explicit
@@ -126,10 +122,10 @@ struct KD_API ec_private {
     std::string to_string() const;
 
     [[nodiscard]]
-    ec_public to_public() const;
+    expect<ec_public> to_public() const;
 
     [[nodiscard]]
-    payment_address to_payment_address() const;
+    expect<payment_address> to_payment_address() const;
 
 private:
     static
