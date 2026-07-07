@@ -75,8 +75,8 @@ struct KI_API authority {
     [[nodiscard]] std::string           to_string() const;
     [[nodiscard]] message::network_address to_network_address() const;
 
-    [[nodiscard]] bool operator==(authority const& x) const;
-    [[nodiscard]] bool operator!=(authority const& x) const;
+    [[nodiscard]]
+    friend bool operator==(authority const&, authority const&) = default;
 
 private:
     // Private "wrap only" ctor used by `parse_from`.
