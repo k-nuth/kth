@@ -216,12 +216,4 @@ std::string authority::to_string() const {
     return to_authority(to_hostname(), port());
 }
 
-bool authority::operator==(authority const& x) const {
-    return port() == x.port() && ip() == x.ip();
-}
-
-bool authority::operator!=(authority const& x) const {
-    return ! (*this == x);
-}
-
 } // namespace kth::infrastructure::config
