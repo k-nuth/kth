@@ -51,9 +51,10 @@ KI_API std::string encode_hash(hash_digest hash);
 /**
  * Convert a string into a bitcoin_hash.
  * The bitcoin_hash format is like base16, but with the bytes reversed.
- * @return false if the input is malformed.
+ * @return the decoded hash, or an error code if the input is malformed.
  */
-KI_API bool decode_hash(hash_digest& out, std::string_view in);
+[[nodiscard]]
+KI_API std::expected<hash_digest, base16_errc> decode_hash(std::string_view in);
 
 } // namespace kth
 

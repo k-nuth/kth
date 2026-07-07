@@ -16,11 +16,11 @@ namespace kth::infrastructure::config {
 
 // static
 std::expected<hash256, kth::code> hash256::parse_from(std::string_view hexcode) {
-    hash_digest decoded;
-    if ( ! decode_hash(decoded, hexcode)) {
+    auto decoded = decode_hash(hexcode);
+    if ( ! decoded) {
         return std::unexpected(kth::error::illegal_value);
     }
-    return hash256{decoded};
+    return hash256{*decoded};
 }
 
 std::string hash256::to_string() const {

@@ -52,10 +52,10 @@ TEST_CASE("seed to wallet compressed test", "[transaction functions]") {
 TEST_CASE("create transaction test", "[transaction functions]") {
     // List of inputs (outputs_to_spend)
     std::vector<chain::input_point> outputs_to_spend;
-    kth::hash_digest hash_to_spend;
-    kth::decode_hash(hash_to_spend, "980de6ce12c29698d54323c6b0f358e1a9ae867598b840ee0094b9df22b07393");
+    auto const hash_to_spend = kth::decode_hash("980de6ce12c29698d54323c6b0f358e1a9ae867598b840ee0094b9df22b07393");
+    REQUIRE(hash_to_spend);
     uint32_t const index_to_spend = 1;
-    outputs_to_spend.push_back({hash_to_spend, index_to_spend});
+    outputs_to_spend.push_back({*hash_to_spend, index_to_spend});
 
     // List of outputs
     std::vector<std::pair<payment_address, uint64_t>> outputs;

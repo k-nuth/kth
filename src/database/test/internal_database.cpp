@@ -221,8 +221,7 @@ void print_db_entries_count(KTH_DB_env* env_, KTH_DB_dbi& dbi ) {
 void check_reorg_output(KTH_DB_env* env_, KTH_DB_dbi& dbi_reorg_pool_, std::string txid_enc, uint32_t pos, std::string output_enc) {
     KTH_DB_txn* db_txn;
 
-    hash_digest txid;
-    REQUIRE(decode_hash(txid, txid_enc));
+    auto const txid = decode_hash(txid_enc).value();
     output_point point{txid, pos};
     auto keyarr = point.to_data(false);
     auto key = kth_db_make_value(keyarr.size(), keyarr.data());
@@ -244,8 +243,7 @@ void check_reorg_output(KTH_DB_env* env_, KTH_DB_dbi& dbi_reorg_pool_, std::stri
 void check_reorg_output_just_existence(KTH_DB_env* env_, KTH_DB_dbi& dbi_reorg_pool_, std::string txid_enc, uint32_t pos) {
     KTH_DB_txn* db_txn;
 
-    hash_digest txid;
-    REQUIRE(decode_hash(txid, txid_enc));
+    auto const txid = decode_hash(txid_enc).value();
     output_point point{txid, pos};
     auto keyarr = point.to_data(false);
     auto key = kth_db_make_value(keyarr.size(), keyarr.data());
@@ -259,8 +257,7 @@ void check_reorg_output_just_existence(KTH_DB_env* env_, KTH_DB_dbi& dbi_reorg_p
 void check_reorg_output_doesnt_exists(KTH_DB_env* env_, KTH_DB_dbi& dbi_reorg_pool_, std::string txid_enc, uint32_t pos) {
     KTH_DB_txn* db_txn;
 
-    hash_digest txid;
-    REQUIRE(decode_hash(txid, txid_enc));
+    auto const txid = decode_hash(txid_enc).value();
     output_point point{txid, pos};
     auto keyarr = point.to_data(false);
     auto key = kth_db_make_value(keyarr.size(), keyarr.data());
@@ -435,8 +432,7 @@ void check_reorg_index(KTH_DB_env* env_, KTH_DB_dbi& dbi_reorg_index_, std::stri
     REQUIRE(point_indexed_res);
     auto point_indexed = *point_indexed_res;
 
-    hash_digest txid;
-    REQUIRE(decode_hash(txid, txid_enc));
+    auto const txid = decode_hash(txid_enc).value();
     output_point point{txid, pos};
 
     REQUIRE(point == point_indexed);
@@ -660,9 +656,8 @@ TEST_CASE("internal database insert genesis", "[None]") {
 
     REQUIRE(db.get_block(0).header().hash() == genesis.hash());
 
-    hash_digest txid;
     std::string txid_enc = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b";
-    REQUIRE(decode_hash(txid, txid_enc));
+    auto const txid = decode_hash(txid_enc).value();
 
     auto entry = db.get_utxo(output_point{txid, 0});
     REQUIRE(entry.is_valid());
@@ -761,9 +756,8 @@ TEST_CASE("internal database insert block genesis and get transaction", "[None]"
 
 
 
-    hash_digest txid;
     auto txid_enc = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b";
-    REQUIRE(decode_hash(txid, txid_enc));
+    auto const txid = decode_hash(txid_enc).value();
 
     auto const tx2 = db.get_transaction(txid,max_size_t);
     REQUIRE(tx2.is_valid() == true);
@@ -846,9 +840,8 @@ TEST_CASE("internal database spend", "[None]") {
     REQUIRE(db.open());
     REQUIRE(db.push_block(orig, 0, 1) == result_code::success);
 
-    hash_digest txid;
     std::string txid_enc = "f5d8ee39a430901c91a5917b9f2dc19d6d1a0e9cea205b009ca73dd04470b9a6";
-    REQUIRE(decode_hash(txid, txid_enc));
+    auto txid = decode_hash(txid_enc).value();
     auto entry = db.get_utxo(output_point{txid, 0});
     REQUIRE(entry.is_valid());
 
@@ -872,7 +865,7 @@ TEST_CASE("internal database spend", "[None]") {
     REQUIRE( !  output.is_valid());
 
     txid_enc = "c06fbab289f723c6261d3030ddb6be121f7d2508d77862bb1e484f5cd7f92b25";
-    REQUIRE(decode_hash(txid, txid_enc));
+    txid = decode_hash(txid_enc).value();
     entry = db.get_utxo(output_point{txid, 0});
     REQUIRE(entry.is_valid());
     REQUIRE(entry.height() == 1);
@@ -885,7 +878,7 @@ TEST_CASE("internal database spend", "[None]") {
     REQUIRE(encode_base16(output.to_data(true)) == output_enc);
 
     txid_enc = "5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2";
-    REQUIRE(decode_hash(txid, txid_enc));
+    txid = decode_hash(txid_enc).value();
     entry = db.get_utxo(output_point{txid, 0});
     REQUIRE(entry.is_valid());
     REQUIRE(entry.height() == 1);
@@ -1455,12 +1448,9 @@ TEST_CASE("internal database reorg 0", "[None]") {
 
     using my_clock = dummy_clock<1284613427>;
 
-    hash_digest txid;
-    hash_digest txid2;
-    hash_digest txid3;
-    REQUIRE(decode_hash(txid, "f5d8ee39a430901c91a5917b9f2dc19d6d1a0e9cea205b009ca73dd04470b9a6"));
-    REQUIRE(decode_hash(txid2, "c06fbab289f723c6261d3030ddb6be121f7d2508d77862bb1e484f5cd7f92b25"));
-    REQUIRE(decode_hash(txid3, "5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2"));
+    auto const txid = decode_hash("f5d8ee39a430901c91a5917b9f2dc19d6d1a0e9cea205b009ca73dd04470b9a6").value();
+    auto const txid2 = decode_hash("c06fbab289f723c6261d3030ddb6be121f7d2508d77862bb1e484f5cd7f92b25").value();
+    auto const txid3 = decode_hash("5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2").value();
 
     KTH_DB_env* env_;
     KTH_DB_dbi dbi_utxo_;
@@ -1497,9 +1487,8 @@ TEST_CASE("internal database reorg 0", "[None]") {
 
         auto history_item = history_list[0];
 
-        hash_digest txid;
         std::string txid_enc = "f5d8ee39a430901c91a5917b9f2dc19d6d1a0e9cea205b009ca73dd04470b9a6";
-        REQUIRE(decode_hash(txid, txid_enc));
+        auto const txid = decode_hash(txid_enc).value();
 
         REQUIRE(history_item.kind == point_kind::output);
         REQUIRE(history_item.point.hash() == txid);
@@ -1587,9 +1576,8 @@ TEST_CASE("internal database reorg 0", "[None]") {
 
         auto history_item = history_list[0];
 
-        hash_digest txid;
         std::string txid_enc = "f5d8ee39a430901c91a5917b9f2dc19d6d1a0e9cea205b009ca73dd04470b9a6";
-        REQUIRE(decode_hash(txid, txid_enc));
+        auto txid = decode_hash(txid_enc).value();
 
         REQUIRE(history_item.kind == point_kind::output);
         REQUIRE(history_item.point.hash() == txid);
@@ -1599,9 +1587,8 @@ TEST_CASE("internal database reorg 0", "[None]") {
 
         history_item = history_list[1];
 
-        hash_digest txid2;
         std::string txid_enc2 = "5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2";
-        REQUIRE(decode_hash(txid2, txid_enc2));
+        auto const txid2 = decode_hash(txid_enc2).value();
 
         auto const& tx_entry = db.get_transaction(txid,max_uint32);
         REQUIRE(tx_entry.is_valid());
@@ -1623,7 +1610,7 @@ TEST_CASE("internal database reorg 0", "[None]") {
 
         history_item = history_list[0];
 
-        REQUIRE(decode_hash(txid, txid_enc));
+        txid = decode_hash(txid_enc).value();
 
         REQUIRE(history_item.kind == point_kind::output);
         REQUIRE(history_item.point.hash() == txid2);
@@ -1823,9 +1810,8 @@ TEST_CASE("internal database reorg 0", "[None]") {
 
         auto history_item = history_list[0];
 
-        hash_digest txid;
         std::string txid_enc = "f5d8ee39a430901c91a5917b9f2dc19d6d1a0e9cea205b009ca73dd04470b9a6";
-        REQUIRE(decode_hash(txid, txid_enc));
+        auto txid = decode_hash(txid_enc).value();
 
         REQUIRE(history_item.kind == point_kind::output);
         REQUIRE(history_item.point.hash() == txid);
@@ -1835,9 +1821,8 @@ TEST_CASE("internal database reorg 0", "[None]") {
 
         history_item = history_list[1];
 
-        hash_digest txid2;
         std::string txid_enc2 = "5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2";
-        REQUIRE(decode_hash(txid2, txid_enc2));
+        auto const txid2 = decode_hash(txid_enc2).value();
 
         auto const& tx_entry = db.get_transaction(txid, max_uint32);
         REQUIRE(tx_entry.is_valid());
@@ -1861,7 +1846,7 @@ TEST_CASE("internal database reorg 0", "[None]") {
 
         history_item = history_list[0];
 
-        REQUIRE(decode_hash(txid, txid_enc));
+        txid = decode_hash(txid_enc).value();
 
         REQUIRE(history_item.kind == point_kind::output);
         REQUIRE(history_item.point.hash() == txid2);
@@ -1935,12 +1920,9 @@ TEST_CASE("internal database reorg 1", "[None]") {
 
     using my_clock = dummy_clock<1284613427 + 600>;
 
-    hash_digest txid;
-    hash_digest txid2;
-    hash_digest txid3;
-    REQUIRE(decode_hash(txid, "f5d8ee39a430901c91a5917b9f2dc19d6d1a0e9cea205b009ca73dd04470b9a6"));
-    REQUIRE(decode_hash(txid2, "c06fbab289f723c6261d3030ddb6be121f7d2508d77862bb1e484f5cd7f92b25"));
-    REQUIRE(decode_hash(txid3, "5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2"));
+    auto const txid = decode_hash("f5d8ee39a430901c91a5917b9f2dc19d6d1a0e9cea205b009ca73dd04470b9a6").value();
+    auto const txid2 = decode_hash("c06fbab289f723c6261d3030ddb6be121f7d2508d77862bb1e484f5cd7f92b25").value();
+    auto const txid3 = decode_hash("5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2").value();
 
 
     KTH_DB_env* env_;
@@ -2154,8 +2136,7 @@ TEST_CASE("internal database prune", "[None]") {
     spender80000b.header().set_timestamp(spender80000b.header().timestamp() + 600 * 1);
     spender80000b.transactions()[0].set_version(2); //To change the coinbase tx hash
     {
-        hash_digest txid;
-        REQUIRE(decode_hash(txid, "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"));
+        auto const txid = decode_hash("0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098").value();
         spender80000b.transactions()[1].inputs()[0].previous_output().set_hash(txid);
     }
     // std::println("src/database/test/internal_database.cpp", encode_hash(spender80000b.transactions()[1].inputs()[0].previous_output().hash()));
@@ -2165,8 +2146,7 @@ TEST_CASE("internal database prune", "[None]") {
     spender80000c.header().set_timestamp(spender80000b.header().timestamp() + 600 * 2);
     spender80000c.transactions()[0].set_version(3);
     {
-        hash_digest txid;
-        REQUIRE(decode_hash(txid, "9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5"));
+        auto const txid = decode_hash("9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5").value();
         spender80000c.transactions()[1].inputs()[0].previous_output().set_hash(txid);
     }
     // std::println("src/database/test/internal_database.cpp", encode_hash(spender80000c.transactions()[1].inputs()[0].previous_output().hash()));
@@ -2176,8 +2156,7 @@ TEST_CASE("internal database prune", "[None]") {
     spender80000d.header().set_timestamp(spender80000b.header().timestamp() + 600 * 3);
     spender80000d.transactions()[0].set_version(4);
     {
-        hash_digest txid;
-        REQUIRE(decode_hash(txid, "999e1c837c76a1b7fbb7e57baf87b309960f5ffefbf2a9b95dd890602272f644"));
+        auto const txid = decode_hash("999e1c837c76a1b7fbb7e57baf87b309960f5ffefbf2a9b95dd890602272f644").value();
         spender80000d.transactions()[1].inputs()[0].previous_output().set_hash(txid);
     }
     // std::println("src/database/test/internal_database.cpp", encode_hash(spender80000d.transactions()[1].inputs()[0].previous_output().hash()));
@@ -2187,8 +2166,7 @@ TEST_CASE("internal database prune", "[None]") {
     spender80000e.header().set_timestamp(spender80000b.header().timestamp() + 600 * 4);
     spender80000e.transactions()[0].set_version(5);
     {
-        hash_digest txid;
-        REQUIRE(decode_hash(txid, "df2b060fa2e5e9c8ed5eaf6a45c13753ec8c63282b2688322eba40cd98ea067a"));
+        auto const txid = decode_hash("df2b060fa2e5e9c8ed5eaf6a45c13753ec8c63282b2688322eba40cd98ea067a").value();
         spender80000e.transactions()[1].inputs()[0].previous_output().set_hash(txid);
     }
     // std::println("src/database/test/internal_database.cpp", encode_hash(spender80000e.transactions()[1].inputs()[0].previous_output().hash()));
@@ -2849,14 +2827,13 @@ TEST_CASE("internal database prune 2", "[None]") {
         spender80000b.transactions()[1].inputs().push_back(spender80000b.transactions()[1].inputs()[0]);
         spender80000b.transactions()[1].inputs().push_back(spender80000b.transactions()[1].inputs()[0]);
 
-        hash_digest txid;
-        REQUIRE(decode_hash(txid, "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"));
+        auto txid = decode_hash("0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098").value();
         spender80000b.transactions()[1].inputs()[0].previous_output().set_hash(txid);
-        REQUIRE(decode_hash(txid, "9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5"));
+        txid = decode_hash("9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5").value();
         spender80000b.transactions()[1].inputs()[1].previous_output().set_hash(txid);
-        REQUIRE(decode_hash(txid, "999e1c837c76a1b7fbb7e57baf87b309960f5ffefbf2a9b95dd890602272f644"));
+        txid = decode_hash("999e1c837c76a1b7fbb7e57baf87b309960f5ffefbf2a9b95dd890602272f644").value();
         spender80000b.transactions()[1].inputs()[2].previous_output().set_hash(txid);
-        REQUIRE(decode_hash(txid, "df2b060fa2e5e9c8ed5eaf6a45c13753ec8c63282b2688322eba40cd98ea067a"));
+        txid = decode_hash("df2b060fa2e5e9c8ed5eaf6a45c13753ec8c63282b2688322eba40cd98ea067a").value();
         spender80000b.transactions()[1].inputs()[3].previous_output().set_hash(txid);
 
     }
@@ -3434,14 +3411,13 @@ TEST_CASE("internal database prune 3", "[None]") {
         spender80000b.transactions()[1].inputs().push_back(spender80000b.transactions()[1].inputs()[0]);
         spender80000b.transactions()[1].inputs().push_back(spender80000b.transactions()[1].inputs()[0]);
 
-        hash_digest txid;
-        REQUIRE(decode_hash(txid, "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"));
+        auto txid = decode_hash("0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098").value();
         spender80000b.transactions()[1].inputs()[0].previous_output().set_hash(txid);
-        REQUIRE(decode_hash(txid, "9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5"));
+        txid = decode_hash("9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5").value();
         spender80000b.transactions()[1].inputs()[1].previous_output().set_hash(txid);
-        REQUIRE(decode_hash(txid, "999e1c837c76a1b7fbb7e57baf87b309960f5ffefbf2a9b95dd890602272f644"));
+        txid = decode_hash("999e1c837c76a1b7fbb7e57baf87b309960f5ffefbf2a9b95dd890602272f644").value();
         spender80000b.transactions()[1].inputs()[2].previous_output().set_hash(txid);
-        REQUIRE(decode_hash(txid, "df2b060fa2e5e9c8ed5eaf6a45c13753ec8c63282b2688322eba40cd98ea067a"));
+        txid = decode_hash("df2b060fa2e5e9c8ed5eaf6a45c13753ec8c63282b2688322eba40cd98ea067a").value();
         spender80000b.transactions()[1].inputs()[3].previous_output().set_hash(txid);
 
     }
@@ -3785,10 +3761,9 @@ TEST_CASE("internal database prune empty reorg pool 3", "[None]") {
         spender80000b.header().set_timestamp(spender80000b.header().timestamp() + 600 * 1);
         spender80000b.transactions()[0].set_version(2); //To change the coinbase tx hash
         spender80000b.transactions()[1].inputs().push_back(spender80000b.transactions()[1].inputs()[0]);
-        hash_digest txid;
-        REQUIRE(decode_hash(txid, "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        auto txid = decode_hash("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b").value();
         spender80000b.transactions()[1].inputs()[0].previous_output().set_hash(txid);
-        REQUIRE(decode_hash(txid, "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"));
+        txid = decode_hash("0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098").value();
         spender80000b.transactions()[1].inputs()[1].previous_output().set_hash(txid);
 
         REQUIRE(db.push_block(spender80000b, 2, 1) == result_code::success);
