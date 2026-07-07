@@ -4,7 +4,9 @@
 
 #include <kth/blockchain/settings.hpp>
 
+#include <algorithm>
 #include <cstdint>
+#include <ranges>
 
 //TODO(fernando): Avoid this dependency
 #if defined(KTH_WITH_MEMPOOL)
@@ -72,7 +74,8 @@ settings::settings(domain::config::network net) {
     checkpoints = domain::config::default_checkpoints(net);
 
     // Pre-compute sorted list and max height
-    checkpoints_sorted = infrastructure::config::checkpoint::sort(checkpoints);
+    checkpoints_sorted = checkpoints;
+    std::ranges::sort(checkpoints_sorted);
     if (!checkpoints_sorted.empty()) {
         max_checkpoint_height = checkpoints_sorted.back().height();
     }

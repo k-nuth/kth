@@ -47,13 +47,7 @@ struct KI_API checkpoint {
      */
     constexpr
     checkpoint(hash_digest const& hash, size_t height) noexcept
-        : hash_(hash), height_(height) {}
-
-    /**
-     * Sorted copy of a checkpoint list (by height ascending).
-     */
-    [[nodiscard]] static
-    list sort(list const& checks);
+        : height_(height), hash_(hash) {}
 
     /**
      * True when `height` is at-or-below the last (highest) checkpoint.
@@ -79,12 +73,16 @@ struct KI_API checkpoint {
     [[nodiscard]]
     std::string to_string() const;
 
-    [[nodiscard]] friend
-    auto operator<=>(checkpoint const&, checkpoint const&) = default;
+    // Ordering is (height, hash) — the field declaration order below
+    // is chosen so the defaulted `<=>` compares that way for free.
+    // No padding cost: `size_t` (8/align 8) + `hash_digest` (32/align 1)
+    // total 40 bytes with alignment 8, same as the reverse order.
+    [[nodiscard]]
+    friend auto operator<=>(checkpoint const&, checkpoint const&) = default;
 
 private:
-    hash_digest hash_;
     size_t      height_;
+    hash_digest hash_;
 };
 
 } // namespace kth::infrastructure::config
