@@ -98,7 +98,7 @@ TEST_CASE("C-API StealthAddress - scan-only variant preserves version",
 // Chunk round-trip (decoded bytes)
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API StealthAddress - to_chunk / construct_from_decoded round-trips",
+TEST_CASE("C-API StealthAddress - to_chunk / construct_from_data round-trips",
           "[C-API StealthAddress][encode]") {
     kth_stealth_address_mut_t orig = NULL;
     REQUIRE(kth_wallet_stealth_address_parse_from(kScanMainnet, &orig) == kth_ec_success);
@@ -110,7 +110,8 @@ TEST_CASE("C-API StealthAddress - to_chunk / construct_from_decoded round-trips"
     REQUIRE(chunk != NULL);
     REQUIRE(size > 0);
 
-    kth_stealth_address_mut_t parsed = kth_wallet_stealth_address_construct_from_decoded(chunk, size);
+    kth_stealth_address_mut_t parsed = NULL;
+    REQUIRE(kth_wallet_stealth_address_construct_from_data(chunk, size, &parsed) == kth_ec_success);
     REQUIRE(parsed != NULL);
     REQUIRE(kth_wallet_stealth_address_valid(parsed) != 0);
     REQUIRE(kth_wallet_stealth_address_equals(orig, parsed) != 0);

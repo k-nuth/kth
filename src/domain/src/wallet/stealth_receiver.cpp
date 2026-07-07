@@ -23,7 +23,7 @@ stealth_receiver::stealth_receiver(ec_secret const& scan_private,
     ec_compressed scan_public;
     if (secret_to_public(scan_public, scan_private_) &&
         secret_to_public(spend_public_, spend_private_)) {
-        address_ = {filter, scan_public, {spend_public_}};
+        address_ = {filter, scan_public, {spend_public_}, uint8_t{0}, stealth_address::mainnet_p2kh};
     }
 }
 

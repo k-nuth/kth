@@ -21,9 +21,9 @@ extern "C" {
 KTH_EXPORT KTH_OWNED
 kth_stealth_address_mut_t kth_wallet_stealth_address_construct_default(void);
 
-/** @return Owned `kth_stealth_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_stealth_address_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_stealth_address_mut_t kth_wallet_stealth_address_construct_from_decoded(uint8_t const* decoded, kth_size_t n);
+/** @param[out] out Must point to a null `kth_stealth_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_stealth_address_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_stealth_address_construct_from_data(uint8_t const* decoded, kth_size_t n, KTH_OUT_OWNED kth_stealth_address_mut_t* out);
 
 /**
  * @return Owned `kth_stealth_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_stealth_address_destruct`.

@@ -52,10 +52,6 @@ stealth_address::stealth_address()
     : scan_key_(null_compressed_point)
 {}
 
-stealth_address::stealth_address(data_chunk const& decoded)
-    : stealth_address(from_stealth(decoded))
-{}
-
 stealth_address::stealth_address(binary const& filter,
                                  ec_compressed const& scan_key,
                                  point_list const& spend_keys,
@@ -77,6 +73,11 @@ expect<stealth_address> stealth_address::parse_from(std::string_view encoded) {
     if ( ! decode_base58(decoded, std::string{encoded})) {
         return std::unexpected(kth::error::illegal_value);
     }
+    return from_data(decoded);
+}
+
+// static
+expect<stealth_address> stealth_address::from_data(data_chunk const& decoded) {
     stealth_address out = from_stealth(decoded);
     if ( ! out.valid()) {
         return std::unexpected(kth::error::illegal_value);

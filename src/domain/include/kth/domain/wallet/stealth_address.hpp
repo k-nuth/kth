@@ -45,12 +45,19 @@ struct KD_API stealth_address {
     static
     expect<stealth_address> parse_from(std::string_view encoded);
 
+    /// Wrap an already-decoded stealth-address chunk.
+    /// Returns `error::illegal_value` if `decoded` does not parse.
+    [[nodiscard]]
+    static
+    expect<stealth_address> from_data(data_chunk const& decoded);
+
     stealth_address();
 
-    explicit
-    stealth_address(data_chunk const& decoded);
-
-    stealth_address(binary const& filter, ec_compressed const& scan_key, point_list const& spend_keys, uint8_t signatures = 0, uint8_t version = mainnet_p2kh);
+    stealth_address(binary const& filter,
+                    ec_compressed const& scan_key,
+                    point_list const& spend_keys,
+                    uint8_t signatures,
+                    uint8_t version);
 
     [[nodiscard]]
     friend bool operator==(stealth_address const&, stealth_address const&) = default;
