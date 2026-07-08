@@ -30,9 +30,9 @@ TEST_CASE("checkpoint::parse_from defaults height to zero when omitted", "[check
 }
 
 TEST_CASE("checkpoint constructor accepts a hash_digest and height", "[checkpoint]") {
-    hash_digest digest;
-    kth::decode_hash(digest, checkpoint_hash_a);
-    checkpoint const genesis{digest, 42};
+    auto const digest = kth::decode_hash(checkpoint_hash_a);
+    REQUIRE(digest);
+    checkpoint const genesis{*digest, 42};
     REQUIRE(genesis.height() == 42u);
     REQUIRE(encode_hash(genesis.hash()) == checkpoint_hash_a);
 }

@@ -37,19 +37,19 @@ std::string encode_hash(hash_digest hash) {
     return encode_base16(hash);
 }
 
-bool decode_hash(hash_digest& out, std::string_view in) {
+std::expected<hash_digest, base16_errc> decode_hash(std::string_view in) {
     if (in.size() != 2 * hash_size) {
-        return false;
+        return std::unexpected(base16_errc::odd_length);
     }
 
     hash_digest result;
     if ( ! detail::decode_base16(result.data(), result.size(), in.data())) {
-        return false;
+        return std::unexpected(base16_errc::invalid_character);
     }
 
     // Reverse:
-    std::reverse_copy(result.begin(), result.end(), out.begin());
-    return true;
+    std::reverse(result.begin(), result.end());
+    return result;
 }
 
 } // namespace kth

@@ -372,8 +372,7 @@ void benchmark_bitcoin_operations() {
 
     Bench().title("Bitcoin Hash Decode").relative(true)
         .run("decode_hash (TX ID)", [&] {
-            hash_digest result;
-            ankerl::nanobench::doNotOptimizeAway(decode_hash(result, encoded_hash));
+            ankerl::nanobench::doNotOptimizeAway(decode_hash(encoded_hash));
         });
 
     // Bitcoin address encoding (Base58Check)

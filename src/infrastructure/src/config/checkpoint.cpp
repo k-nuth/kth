@@ -29,9 +29,9 @@ std::expected<checkpoint, kth::code> checkpoint::parse_from(std::string_view val
         return std::unexpected(kth::error::illegal_value);
     }
 
-    hash_digest hash;
     auto const hash_sv = match.get<1>().to_view();
-    if ( ! decode_hash(hash, std::string{hash_sv})) {
+    auto hash = decode_hash(hash_sv);
+    if ( ! hash) {
         return std::unexpected(kth::error::illegal_value);
     }
 
@@ -45,17 +45,17 @@ std::expected<checkpoint, kth::code> checkpoint::parse_from(std::string_view val
         }
     }
 
-    return checkpoint{hash, height};
+    return checkpoint{*hash, height};
 }
 
 // static
 std::expected<checkpoint, kth::code> checkpoint::parse_from(std::string_view hash,
                                                             size_t height) {
-    hash_digest decoded;
-    if ( ! decode_hash(decoded, std::string{hash})) {
+    auto decoded = decode_hash(hash);
+    if ( ! decoded) {
         return std::unexpected(kth::error::illegal_value);
     }
-    return checkpoint{decoded, height};
+    return checkpoint{*decoded, height};
 }
 
 std::string checkpoint::to_string() const {
