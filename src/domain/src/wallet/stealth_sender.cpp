@@ -5,76 +5,78 @@
 #include <kth/domain/wallet/stealth_sender.hpp>
 
 #include <cstdint>
+#include <utility>
 
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/math/stealth.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/utility/binary.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
 namespace kth::domain::wallet {
 
-stealth_sender::stealth_sender(stealth_address const& address,
-                               data_chunk const& seed,
-                               binary const& filter,
-                               uint8_t version)
-    : version_(version) {
+stealth_sender::stealth_sender(uint8_t version,
+                               chain::script script,
+                               wallet::payment_address address)
+    : version_(version)
+    , script_(std::move(script))
+    , address_(std::move(address))
+{}
+
+// static
+expect<stealth_sender> stealth_sender::from_stealth_address(stealth_address const& address,
+                                                            data_chunk const& seed,
+                                                            binary const& filter,
+                                                            uint8_t version) {
     ec_secret ephemeral_private;
-    if (create_ephemeral_key(ephemeral_private, seed)) {
-        initialize(ephemeral_private, address, seed, filter);
+    if ( ! create_ephemeral_key(ephemeral_private, seed)) {
+        return std::unexpected(kth::error::illegal_value);
     }
+    return from_ephemeral(ephemeral_private, address, seed, filter, version);
 }
 
-stealth_sender::stealth_sender(ec_secret const& ephemeral_private,
-                               stealth_address const& address,
-                               data_chunk const& seed,
-                               binary const& filter,
-                               uint8_t version)
-    : version_(version) {
-    initialize(ephemeral_private, address, seed, filter);
-}
-
-stealth_sender::operator bool() const {
-    return address_.has_value();
-}
-
-// private
-// TODO(legacy): convert to factory and make script_ and address_ const.
-void stealth_sender::initialize(ec_secret const& ephemeral_private,
-                                stealth_address const& address,
-                                data_chunk const& seed,
-                                binary const& filter) {
+// static
+expect<stealth_sender> stealth_sender::from_ephemeral(ec_secret const& ephemeral_private,
+                                                     stealth_address const& address,
+                                                     data_chunk const& seed,
+                                                     binary const& filter,
+                                                     uint8_t version) {
     ec_compressed ephemeral_public;
     if ( ! secret_to_public(ephemeral_public, ephemeral_private)) {
-        return;
+        return std::unexpected(kth::error::illegal_value);
     }
 
     auto const& spend_keys = address.spend_keys();
     if (spend_keys.size() != 1) {
-        return;
+        return std::unexpected(kth::error::illegal_value);
     }
 
     ec_compressed sender_public;
     if ( ! uncover_stealth(sender_public, address.scan_key(), ephemeral_private, spend_keys.front())) {
-        return;
+        return std::unexpected(kth::error::illegal_value);
     }
 
-    if (create_stealth_script(script_, ephemeral_private, filter, seed)) {
-        auto address_result = wallet::payment_address::from_ec_public(ec_public::from_verified_point(sender_public, true), version_);
-        if (address_result) {
-            address_ = *address_result;
-        }
+    chain::script script;
+    if ( ! create_stealth_script(script, ephemeral_private, filter, seed)) {
+        return std::unexpected(kth::error::illegal_value);
     }
+
+    auto payment = wallet::payment_address::from_ec_public(
+        ec_public::from_verified_point(sender_public, true), version);
+    if ( ! payment) {
+        return std::unexpected(payment.error());
+    }
+
+    return stealth_sender(version, std::move(script), std::move(*payment));
 }
 
-// Will be invalid if construct fails.
-chain::script const& stealth_sender::stealth_script() const {
+chain::script const& stealth_sender::stealth_script() const noexcept {
     return script_;
 }
 
-// Precondition: `operator bool()` returned true.
-const wallet::payment_address& stealth_sender::payment_address() const {
-    return *address_;
+wallet::payment_address const& stealth_sender::payment_address() const noexcept {
+    return address_;
 }
 
 } // namespace kth::domain::wallet
