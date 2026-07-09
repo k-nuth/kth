@@ -162,14 +162,9 @@ TEST_CASE("C-API prepare_genesis_utxo - happy path produces a result",
     kth_payment_address_mut_t dest = make_addr();
     kth_utxo_mut_t u = make_bch_utxo(kParentTxA, 3u, 50000u);
 
-    kth_cashtoken_prepare_genesis_params_mut_t p =
-        kth_wallet_cashtoken_prepare_genesis_params_construct_default();
-    kth_wallet_cashtoken_prepare_genesis_params_set_utxo(p, u);
-    kth_wallet_cashtoken_prepare_genesis_params_set_destination(p, dest);
-    kth_wallet_cashtoken_prepare_genesis_params_set_satoshis(p, 10000u);
-
     kth_cashtoken_prepare_genesis_result_mut_t res = NULL;
-    kth_error_code_t ec = kth_wallet_cashtoken_prepare_genesis_utxo(p, &res);
+    kth_error_code_t ec = kth_wallet_cashtoken_prepare_genesis_utxo(
+        u, dest, 10000u, /*change_address=*/NULL, &res);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(res != NULL);
 
@@ -177,7 +172,6 @@ TEST_CASE("C-API prepare_genesis_utxo - happy path produces a result",
     REQUIRE(kth_wallet_cashtoken_prepare_genesis_result_signing_index_nth(res, 0) == 0u);
 
     kth_wallet_cashtoken_prepare_genesis_result_destruct(res);
-    kth_wallet_cashtoken_prepare_genesis_params_destruct(p);
     kth_chain_utxo_destruct(u);
     kth_wallet_payment_address_destruct(dest);
 }
@@ -187,18 +181,12 @@ TEST_CASE("C-API prepare_genesis_utxo - rejects dust-level satoshis",
     kth_payment_address_mut_t dest = make_addr();
     kth_utxo_mut_t u = make_bch_utxo(kParentTxA, 0u, 50000u);
 
-    kth_cashtoken_prepare_genesis_params_mut_t p =
-        kth_wallet_cashtoken_prepare_genesis_params_construct_default();
-    kth_wallet_cashtoken_prepare_genesis_params_set_utxo(p, u);
-    kth_wallet_cashtoken_prepare_genesis_params_set_destination(p, dest);
-    kth_wallet_cashtoken_prepare_genesis_params_set_satoshis(p, 100u); // below dust
-
     kth_cashtoken_prepare_genesis_result_mut_t res = NULL;
-    kth_error_code_t ec = kth_wallet_cashtoken_prepare_genesis_utxo(p, &res);
+    kth_error_code_t ec = kth_wallet_cashtoken_prepare_genesis_utxo(
+        u, dest, /*satoshis=*/100u /* below dust */, NULL, &res);
     REQUIRE(ec != kth_ec_success);
     REQUIRE(res == NULL);
 
-    kth_wallet_cashtoken_prepare_genesis_params_destruct(p);
     kth_chain_utxo_destruct(u);
     kth_wallet_payment_address_destruct(dest);
 }
@@ -212,15 +200,16 @@ TEST_CASE("C-API create_token_genesis - FT-only returns category_id = parent txi
     kth_payment_address_mut_t dest = make_addr();
     kth_utxo_mut_t u = make_bch_utxo(kParentTxA, 0u, 50000u);
 
-    kth_cashtoken_token_genesis_params_mut_t p =
-        kth_wallet_cashtoken_token_genesis_params_construct_default();
-    kth_wallet_cashtoken_token_genesis_params_set_genesis_utxo(p, u);
-    kth_wallet_cashtoken_token_genesis_params_set_destination(p, dest);
-    kth_wallet_cashtoken_token_genesis_params_set_ft_amount(p, 1, 1000000u);
-    kth_wallet_cashtoken_token_genesis_params_set_script_flags(p, 0u);
-
     kth_cashtoken_token_genesis_result_mut_t res = NULL;
-    kth_error_code_t ec = kth_wallet_cashtoken_create_token_genesis(p, &res);
+    kth_error_code_t ec = kth_wallet_cashtoken_create_token_genesis(
+        u, dest,
+        /*has_ft_amount=*/1, /*ft_amount=*/1000000u,
+        /*nft=*/NULL,
+        /*satoshis=*/1000u,
+        /*fee_utxos=*/NULL,
+        /*change_address=*/NULL,
+        /*script_flags=*/0u,
+        &res);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(res != NULL);
 
@@ -229,7 +218,6 @@ TEST_CASE("C-API create_token_genesis - FT-only returns category_id = parent txi
     REQUIRE(memcmp(cat, kParentTxA, 32) == 0);
 
     kth_wallet_cashtoken_token_genesis_result_destruct(res);
-    kth_wallet_cashtoken_token_genesis_params_destruct(p);
     kth_chain_utxo_destruct(u);
     kth_wallet_payment_address_destruct(dest);
 }
@@ -239,19 +227,19 @@ TEST_CASE("C-API create_token_genesis - rejects outpoint.index != 0",
     kth_payment_address_mut_t dest = make_addr();
     kth_utxo_mut_t u = make_bch_utxo(kParentTxA, 3u, 50000u); // index != 0
 
-    kth_cashtoken_token_genesis_params_mut_t p =
-        kth_wallet_cashtoken_token_genesis_params_construct_default();
-    kth_wallet_cashtoken_token_genesis_params_set_genesis_utxo(p, u);
-    kth_wallet_cashtoken_token_genesis_params_set_destination(p, dest);
-    kth_wallet_cashtoken_token_genesis_params_set_ft_amount(p, 1, 1000u);
-    kth_wallet_cashtoken_token_genesis_params_set_script_flags(p, 0u);
-
     kth_cashtoken_token_genesis_result_mut_t res = NULL;
-    kth_error_code_t ec = kth_wallet_cashtoken_create_token_genesis(p, &res);
+    kth_error_code_t ec = kth_wallet_cashtoken_create_token_genesis(
+        u, dest,
+        /*has_ft_amount=*/1, /*ft_amount=*/1000u,
+        /*nft=*/NULL,
+        /*satoshis=*/1000u,
+        /*fee_utxos=*/NULL,
+        /*change_address=*/NULL,
+        /*script_flags=*/0u,
+        &res);
     REQUIRE(ec != kth_ec_success);
     REQUIRE(res == NULL);
 
-    kth_wallet_cashtoken_token_genesis_params_destruct(p);
     kth_chain_utxo_destruct(u);
     kth_wallet_payment_address_destruct(dest);
 }
@@ -276,23 +264,23 @@ TEST_CASE("C-API create_nft_collection - partitions into batches",
         kth_wallet_cashtoken_nft_collection_item_destruct(item);
     }
 
-    kth_cashtoken_nft_collection_params_mut_t p =
-        kth_wallet_cashtoken_nft_collection_params_construct_default();
-    kth_wallet_cashtoken_nft_collection_params_set_genesis_utxo(p, u);
-    kth_wallet_cashtoken_nft_collection_params_set_nfts(p, items);
-    kth_wallet_cashtoken_nft_collection_params_set_creator_address(p, creator);
-    kth_wallet_cashtoken_nft_collection_params_set_batch_size(p, 5u);
-    kth_wallet_cashtoken_nft_collection_params_set_script_flags(p, 0u);
-
     kth_cashtoken_nft_collection_result_mut_t res = NULL;
-    kth_error_code_t ec = kth_wallet_cashtoken_create_nft_collection(p, &res);
+    kth_error_code_t ec = kth_wallet_cashtoken_create_nft_collection(
+        u, items, creator,
+        /*keep_minting_token=*/0,
+        /*has_ft_amount=*/0, /*ft_amount=*/0u,
+        /*fee_utxos=*/NULL,
+        /*change_address=*/NULL,
+        /*batch_size=*/5u,
+        /*script_flags=*/0u,
+        &res);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(res != NULL);
 
     // 12 / batch_size=5 -> 3 batches (5 + 5 + 2)
     REQUIRE(kth_wallet_cashtoken_nft_collection_result_batches_count(res) == 3u);
 
-    // `final_burn` defaults to true (keep_minting_token == false).
+    // `final_burn` defaults to true (keep_minting_token == 0).
     REQUIRE(kth_wallet_cashtoken_nft_collection_result_final_burn(res) != 0);
 
     // The category id equals `kParentTxA`.
@@ -310,7 +298,6 @@ TEST_CASE("C-API create_nft_collection - partitions into batches",
     REQUIRE(kth_wallet_cashtoken_nft_mint_request_list_count(b2) == 2u);
 
     kth_wallet_cashtoken_nft_collection_result_destruct(res);
-    kth_wallet_cashtoken_nft_collection_params_destruct(p);
     kth_wallet_cashtoken_nft_collection_item_list_destruct(items);
     kth_chain_utxo_destruct(u);
     kth_wallet_payment_address_destruct(creator);

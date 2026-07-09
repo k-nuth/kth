@@ -5,7 +5,10 @@
 #include <kth/capi/wallet/cashtoken_minting.h>
 
 #include <cstring>
+#include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
@@ -17,6 +20,46 @@
 #include <kth/infrastructure/error.hpp>
 
 namespace ct = kth::domain::wallet::cashtoken;
+
+namespace {
+
+// Shared helper to turn a (ptr, size) commitment pair into data_chunk.
+//
+// `(data == nullptr, n == 0)` is valid and means "empty commitment".
+// `(data == nullptr, n >  0)` is a caller bug — silently folding it to
+// an empty commitment would produce a valid-looking TX with the wrong
+// NFT commitment, so we trip the precondition instead of dropping the
+// bytes.
+kth::data_chunk commitment_from(uint8_t const* data, kth_size_t n) {
+    if (n == 0) return kth::data_chunk{};
+    KTH_PRECONDITION(data != nullptr);
+    return kth::data_chunk(data, data + kth::sz(n));
+}
+
+// Copies a `kth_utxo_list_const_t` handle into a fresh C++ vector.
+// NULL is interpreted as "empty list" — the only way the C caller
+// can express "no fee UTXOs" at this ABI.
+std::vector<kth::domain::chain::utxo>
+copy_utxo_list(kth_utxo_list_const_t list) {
+    if (list == nullptr) return {};
+    return kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(list);
+}
+
+// Wraps a nullable address handle in `std::optional`. NULL → nullopt.
+std::optional<kth::domain::wallet::payment_address>
+optional_addr(kth_payment_address_const_t addr) {
+    if (addr == nullptr) return std::nullopt;
+    return kth::cpp_ref<kth::domain::wallet::payment_address>(addr);
+}
+
+// Wraps a nullable nft_spec handle in `std::optional`. NULL → nullopt.
+std::optional<ct::nft_spec>
+optional_nft_spec(kth_cashtoken_nft_spec_const_t spec) {
+    if (spec == nullptr) return std::nullopt;
+    return kth::cpp_ref<ct::nft_spec>(spec);
+}
+
+} // namespace
 
 extern "C" {
 
@@ -37,42 +80,10 @@ kth_error_code_t kth_wallet_cashtoken_encode_nft_number(
     return kth_ec_success;
 }
 
+
 // ---------------------------------------------------------------------------
 // Output factories
 // ---------------------------------------------------------------------------
-
-namespace {
-
-// Shared helper to turn a (ptr, size) commitment pair into data_chunk.
-//
-// `(data == nullptr, n == 0)` is valid and means "empty commitment".
-// `(data == nullptr, n >  0)` is a caller bug — silently folding it to
-// an empty commitment would produce a valid-looking TX with the wrong
-// NFT commitment, so we trip the precondition instead of dropping the
-// bytes.
-kth::data_chunk commitment_from(uint8_t const* data, kth_size_t n) {
-    if (n == 0) return kth::data_chunk{};
-    KTH_PRECONDITION(data != nullptr);
-    return kth::data_chunk(data, data + kth::sz(n));
-}
-
-// Copies a kth_utxo_list_const_t handle into a fresh C++ vector. NULL
-// list is interpreted as "empty vector" — the only way the C caller
-// can express "no fee UTXOs" at this ABI.
-std::vector<kth::domain::chain::utxo>
-copy_utxo_list(kth_utxo_list_const_t list) {
-    if (list == nullptr) return {};
-    return kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(list);
-}
-
-// Wraps a nullable address handle in std::optional. NULL → nullopt.
-std::optional<kth::domain::wallet::payment_address>
-optional_addr(kth_payment_address_const_t addr) {
-    if (addr == nullptr) return std::nullopt;
-    return kth::cpp_ref<kth::domain::wallet::payment_address>(addr);
-}
-
-} // namespace
 
 kth_output_mut_t kth_wallet_cashtoken_create_ft_output(
     kth_payment_address_const_t destination,
@@ -126,6 +137,7 @@ kth_output_mut_t kth_wallet_cashtoken_create_combined_token_output(
         satoshis));
 }
 
+
 // ---------------------------------------------------------------------------
 // nft_spec
 // ---------------------------------------------------------------------------
@@ -135,18 +147,19 @@ kth_cashtoken_nft_spec_mut_t kth_wallet_cashtoken_nft_spec_construct(
     uint8_t const* commitment,
     kth_size_t commitment_n
 ) {
-    ct::nft_spec s;
-    s.capability = static_cast<kth::domain::chain::capability_t>(capability);
-    s.commitment = commitment_from(commitment, commitment_n);
-    return kth::leak(std::move(s));
+    return kth::leak(ct::nft_spec{
+        .capability = static_cast<kth::domain::chain::capability_t>(capability),
+        .commitment = commitment_from(commitment, commitment_n),
+    });
 }
 
 void kth_wallet_cashtoken_nft_spec_destruct(kth_cashtoken_nft_spec_mut_t self) {
     kth::del<ct::nft_spec>(self);
 }
 
+
 // ---------------------------------------------------------------------------
-// nft_mint_request
+// nft_mint_request (single element + list)
 // ---------------------------------------------------------------------------
 
 kth_cashtoken_nft_mint_request_mut_t kth_wallet_cashtoken_nft_mint_request_construct(
@@ -157,12 +170,12 @@ kth_cashtoken_nft_mint_request_mut_t kth_wallet_cashtoken_nft_mint_request_const
     uint64_t satoshis
 ) {
     KTH_PRECONDITION(destination != nullptr);
-    ct::nft_mint_request r;
-    r.destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination);
-    r.commitment = commitment_from(commitment, commitment_n);
-    r.capability = static_cast<kth::domain::chain::capability_t>(capability);
-    r.satoshis = satoshis;
-    return kth::leak(std::move(r));
+    return kth::leak(ct::nft_mint_request{
+        .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
+        .commitment = commitment_from(commitment, commitment_n),
+        .capability = static_cast<kth::domain::chain::capability_t>(capability),
+        .satoshis = satoshis,
+    });
 }
 
 void kth_wallet_cashtoken_nft_mint_request_destruct(
@@ -170,8 +183,6 @@ void kth_wallet_cashtoken_nft_mint_request_destruct(
 ) {
     kth::del<ct::nft_mint_request>(self);
 }
-
-// --- list ---
 
 kth_cashtoken_nft_mint_request_list_mut_t
 kth_wallet_cashtoken_nft_mint_request_list_construct_default(void) {
@@ -210,8 +221,9 @@ kth_cashtoken_nft_mint_request_const_t kth_wallet_cashtoken_nft_mint_request_lis
     return &l[kth::sz(index)];
 }
 
+
 // ---------------------------------------------------------------------------
-// nft_collection_item
+// nft_collection_item (single element + list)
 // ---------------------------------------------------------------------------
 
 kth_cashtoken_nft_collection_item_mut_t kth_wallet_cashtoken_nft_collection_item_construct(
@@ -219,12 +231,10 @@ kth_cashtoken_nft_collection_item_mut_t kth_wallet_cashtoken_nft_collection_item
     kth_size_t commitment_n,
     kth_payment_address_const_t destination
 ) {
-    ct::nft_collection_item item;
-    item.commitment = commitment_from(commitment, commitment_n);
-    if (destination != nullptr) {
-        item.destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination);
-    }
-    return kth::leak(std::move(item));
+    return kth::leak(ct::nft_collection_item{
+        .commitment = commitment_from(commitment, commitment_n),
+        .destination = optional_addr(destination),
+    });
 }
 
 void kth_wallet_cashtoken_nft_collection_item_destruct(
@@ -232,8 +242,6 @@ void kth_wallet_cashtoken_nft_collection_item_destruct(
 ) {
     kth::del<ct::nft_collection_item>(self);
 }
-
-// --- list ---
 
 kth_cashtoken_nft_collection_item_list_mut_t
 kth_wallet_cashtoken_nft_collection_item_list_construct_default(void) {
@@ -272,61 +280,29 @@ kth_cashtoken_nft_collection_item_const_t kth_wallet_cashtoken_nft_collection_it
     return &l[kth::sz(index)];
 }
 
+
 // ---------------------------------------------------------------------------
-// prepare_genesis_params / prepare_genesis_result
+// prepare_genesis_utxo
 // ---------------------------------------------------------------------------
-
-kth_cashtoken_prepare_genesis_params_mut_t
-kth_wallet_cashtoken_prepare_genesis_params_construct_default(void) {
-    return kth::leak<ct::prepare_genesis_params>();
-}
-
-void kth_wallet_cashtoken_prepare_genesis_params_destruct(
-    kth_cashtoken_prepare_genesis_params_mut_t self
-) {
-    kth::del<ct::prepare_genesis_params>(self);
-}
-
-void kth_wallet_cashtoken_prepare_genesis_params_set_utxo(
-    kth_cashtoken_prepare_genesis_params_mut_t self, kth_utxo_const_t utxo
-) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(utxo != nullptr);
-    kth::cpp_ref<ct::prepare_genesis_params>(self).utxo =
-        kth::cpp_ref<kth::domain::chain::utxo>(utxo);
-}
-
-void kth_wallet_cashtoken_prepare_genesis_params_set_destination(
-    kth_cashtoken_prepare_genesis_params_mut_t self, kth_payment_address_const_t destination
-) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(destination != nullptr);
-    kth::cpp_ref<ct::prepare_genesis_params>(self).destination =
-        kth::cpp_ref<kth::domain::wallet::payment_address>(destination);
-}
-
-void kth_wallet_cashtoken_prepare_genesis_params_set_satoshis(
-    kth_cashtoken_prepare_genesis_params_mut_t self, uint64_t satoshis
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::prepare_genesis_params>(self).satoshis = satoshis;
-}
-
-void kth_wallet_cashtoken_prepare_genesis_params_set_change_address(
-    kth_cashtoken_prepare_genesis_params_mut_t self, kth_payment_address_const_t change_address
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::prepare_genesis_params>(self).change_address = optional_addr(change_address);
-}
 
 kth_error_code_t kth_wallet_cashtoken_prepare_genesis_utxo(
-    kth_cashtoken_prepare_genesis_params_const_t params,
+    kth_utxo_const_t utxo,
+    kth_payment_address_const_t destination,
+    uint64_t satoshis,
+    kth_payment_address_const_t change_address,
     KTH_OUT_OWNED kth_cashtoken_prepare_genesis_result_mut_t* out
 ) {
-    KTH_PRECONDITION(params != nullptr);
+    KTH_PRECONDITION(utxo != nullptr);
+    KTH_PRECONDITION(destination != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto r = ct::prepare_genesis_utxo(kth::cpp_ref<ct::prepare_genesis_params>(params));
+
+    auto r = ct::prepare_genesis_utxo(ct::prepare_genesis_params{
+        .utxo = kth::cpp_ref<kth::domain::chain::utxo>(utxo),
+        .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
+        .satoshis = satoshis,
+        .change_address = optional_addr(change_address),
+    });
     if ( ! r.has_value()) return kth::to_c_err(r.error());
     *out = kth::leak(std::move(*r));
     return kth_ec_success;
@@ -361,93 +337,37 @@ uint32_t kth_wallet_cashtoken_prepare_genesis_result_signing_index_nth(
     return v[kth::sz(index)];
 }
 
+
 // ---------------------------------------------------------------------------
-// token_genesis_params / token_genesis_result / create_token_genesis
+// create_token_genesis
 // ---------------------------------------------------------------------------
-
-kth_cashtoken_token_genesis_params_mut_t
-kth_wallet_cashtoken_token_genesis_params_construct_default(void) {
-    return kth::leak<ct::token_genesis_params>();
-}
-
-void kth_wallet_cashtoken_token_genesis_params_destruct(
-    kth_cashtoken_token_genesis_params_mut_t self
-) {
-    kth::del<ct::token_genesis_params>(self);
-}
-
-void kth_wallet_cashtoken_token_genesis_params_set_genesis_utxo(
-    kth_cashtoken_token_genesis_params_mut_t self, kth_utxo_const_t genesis_utxo
-) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(genesis_utxo != nullptr);
-    kth::cpp_ref<ct::token_genesis_params>(self).genesis_utxo =
-        kth::cpp_ref<kth::domain::chain::utxo>(genesis_utxo);
-}
-
-void kth_wallet_cashtoken_token_genesis_params_set_destination(
-    kth_cashtoken_token_genesis_params_mut_t self, kth_payment_address_const_t destination
-) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(destination != nullptr);
-    kth::cpp_ref<ct::token_genesis_params>(self).destination =
-        kth::cpp_ref<kth::domain::wallet::payment_address>(destination);
-}
-
-void kth_wallet_cashtoken_token_genesis_params_set_ft_amount(
-    kth_cashtoken_token_genesis_params_mut_t self, kth_bool_t has_value, uint64_t ft_amount
-) {
-    KTH_PRECONDITION(self != nullptr);
-    auto& p = kth::cpp_ref<ct::token_genesis_params>(self);
-    p.ft_amount = kth::int_to_bool(has_value) ? std::optional<uint64_t>(ft_amount) : std::nullopt;
-}
-
-void kth_wallet_cashtoken_token_genesis_params_set_nft(
-    kth_cashtoken_token_genesis_params_mut_t self, kth_cashtoken_nft_spec_const_t nft
-) {
-    KTH_PRECONDITION(self != nullptr);
-    auto& p = kth::cpp_ref<ct::token_genesis_params>(self);
-    p.nft = nft == nullptr
-        ? std::nullopt
-        : std::optional<ct::nft_spec>(kth::cpp_ref<ct::nft_spec>(nft));
-}
-
-void kth_wallet_cashtoken_token_genesis_params_set_satoshis(
-    kth_cashtoken_token_genesis_params_mut_t self, uint64_t satoshis
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_genesis_params>(self).satoshis = satoshis;
-}
-
-void kth_wallet_cashtoken_token_genesis_params_set_fee_utxos(
-    kth_cashtoken_token_genesis_params_mut_t self, kth_utxo_list_const_t fee_utxos
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_genesis_params>(self).fee_utxos = copy_utxo_list(fee_utxos);
-}
-
-void kth_wallet_cashtoken_token_genesis_params_set_change_address(
-    kth_cashtoken_token_genesis_params_mut_t self, kth_payment_address_const_t change_address
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_genesis_params>(self).change_address = optional_addr(change_address);
-}
-
-void kth_wallet_cashtoken_token_genesis_params_set_script_flags(
-    kth_cashtoken_token_genesis_params_mut_t self, uint64_t script_flags
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_genesis_params>(self).script_flags = script_flags;
-}
 
 kth_error_code_t kth_wallet_cashtoken_create_token_genesis(
-    kth_cashtoken_token_genesis_params_const_t params,
+    kth_utxo_const_t genesis_utxo,
+    kth_payment_address_const_t destination,
+    kth_bool_t has_ft_amount, uint64_t ft_amount,
+    kth_cashtoken_nft_spec_const_t nft,
+    uint64_t satoshis,
+    kth_utxo_list_const_t fee_utxos,
+    kth_payment_address_const_t change_address,
+    uint64_t script_flags,
     KTH_OUT_OWNED kth_cashtoken_token_genesis_result_mut_t* out
 ) {
-    KTH_PRECONDITION(params != nullptr);
+    KTH_PRECONDITION(genesis_utxo != nullptr);
+    KTH_PRECONDITION(destination != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto r = ct::create_token_genesis(kth::cpp_ref<ct::token_genesis_params>(params));
+
+    auto r = ct::create_token_genesis(ct::token_genesis_params{
+        .genesis_utxo = kth::cpp_ref<kth::domain::chain::utxo>(genesis_utxo),
+        .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
+        .ft_amount = kth::int_to_bool(has_ft_amount) ? std::optional<uint64_t>(ft_amount) : std::nullopt,
+        .nft = optional_nft_spec(nft),
+        .satoshis = satoshis,
+        .fee_utxos = copy_utxo_list(fee_utxos),
+        .change_address = optional_addr(change_address),
+        .script_flags = script_flags,
+    });
     if ( ! r.has_value()) return kth::to_c_err(r.error());
     *out = kth::leak(std::move(*r));
     return kth_ec_success;
@@ -491,92 +411,40 @@ uint32_t kth_wallet_cashtoken_token_genesis_result_signing_index_nth(
     return v[kth::sz(index)];
 }
 
+
 // ---------------------------------------------------------------------------
-// token_mint_params / token_mint_result / create_token_mint
+// create_token_mint
 // ---------------------------------------------------------------------------
-
-kth_cashtoken_token_mint_params_mut_t
-kth_wallet_cashtoken_token_mint_params_construct_default(void) {
-    return kth::leak<ct::token_mint_params>();
-}
-
-void kth_wallet_cashtoken_token_mint_params_destruct(
-    kth_cashtoken_token_mint_params_mut_t self
-) {
-    kth::del<ct::token_mint_params>(self);
-}
-
-void kth_wallet_cashtoken_token_mint_params_set_minting_utxo(
-    kth_cashtoken_token_mint_params_mut_t self, kth_utxo_const_t minting_utxo
-) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(minting_utxo != nullptr);
-    kth::cpp_ref<ct::token_mint_params>(self).minting_utxo =
-        kth::cpp_ref<kth::domain::chain::utxo>(minting_utxo);
-}
-
-void kth_wallet_cashtoken_token_mint_params_set_nfts(
-    kth_cashtoken_token_mint_params_mut_t self,
-    kth_cashtoken_nft_mint_request_list_const_t nfts
-) {
-    KTH_PRECONDITION(self != nullptr);
-    auto& p = kth::cpp_ref<ct::token_mint_params>(self);
-    p.nfts = nfts == nullptr
-        ? std::vector<ct::nft_mint_request>{}
-        : kth::cpp_ref<std::vector<ct::nft_mint_request>>(nfts);
-}
-
-void kth_wallet_cashtoken_token_mint_params_set_new_minting_commitment(
-    kth_cashtoken_token_mint_params_mut_t self,
-    uint8_t const* commitment, kth_size_t commitment_n
-) {
-    KTH_PRECONDITION(self != nullptr);
-    auto& p = kth::cpp_ref<ct::token_mint_params>(self);
-    p.new_minting_commitment = commitment == nullptr
-        ? std::nullopt
-        : std::optional<kth::data_chunk>(commitment_from(commitment, commitment_n));
-}
-
-void kth_wallet_cashtoken_token_mint_params_set_minting_destination(
-    kth_cashtoken_token_mint_params_mut_t self,
-    kth_payment_address_const_t minting_destination
-) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(minting_destination != nullptr);
-    kth::cpp_ref<ct::token_mint_params>(self).minting_destination =
-        kth::cpp_ref<kth::domain::wallet::payment_address>(minting_destination);
-}
-
-void kth_wallet_cashtoken_token_mint_params_set_fee_utxos(
-    kth_cashtoken_token_mint_params_mut_t self, kth_utxo_list_const_t fee_utxos
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_mint_params>(self).fee_utxos = copy_utxo_list(fee_utxos);
-}
-
-void kth_wallet_cashtoken_token_mint_params_set_change_address(
-    kth_cashtoken_token_mint_params_mut_t self,
-    kth_payment_address_const_t change_address
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_mint_params>(self).change_address = optional_addr(change_address);
-}
-
-void kth_wallet_cashtoken_token_mint_params_set_script_flags(
-    kth_cashtoken_token_mint_params_mut_t self, uint64_t script_flags
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_mint_params>(self).script_flags = script_flags;
-}
 
 kth_error_code_t kth_wallet_cashtoken_create_token_mint(
-    kth_cashtoken_token_mint_params_const_t params,
+    kth_utxo_const_t minting_utxo,
+    kth_cashtoken_nft_mint_request_list_const_t nfts,
+    uint8_t const* new_minting_commitment,
+    kth_size_t new_minting_commitment_n,
+    kth_payment_address_const_t minting_destination,
+    kth_utxo_list_const_t fee_utxos,
+    kth_payment_address_const_t change_address,
+    uint64_t script_flags,
     KTH_OUT_OWNED kth_cashtoken_token_mint_result_mut_t* out
 ) {
-    KTH_PRECONDITION(params != nullptr);
+    KTH_PRECONDITION(minting_utxo != nullptr);
+    KTH_PRECONDITION(nfts != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto r = ct::create_token_mint(kth::cpp_ref<ct::token_mint_params>(params));
+
+    auto const new_commit_opt = new_minting_commitment == nullptr
+        ? std::optional<kth::data_chunk>(std::nullopt)
+        : std::optional<kth::data_chunk>(commitment_from(new_minting_commitment, new_minting_commitment_n));
+
+    auto r = ct::create_token_mint(ct::token_mint_params{
+        .minting_utxo = kth::cpp_ref<kth::domain::chain::utxo>(minting_utxo),
+        .nfts = kth::cpp_ref<std::vector<ct::nft_mint_request>>(nfts),
+        .new_minting_commitment = new_commit_opt,
+        .minting_destination = optional_addr(minting_destination),
+        .fee_utxos = copy_utxo_list(fee_utxos),
+        .change_address = optional_addr(change_address),
+        .script_flags = script_flags,
+    });
     if ( ! r.has_value()) return kth::to_c_err(r.error());
     *out = kth::leak(std::move(*r));
     return kth_ec_success;
@@ -627,190 +495,80 @@ uint32_t kth_wallet_cashtoken_token_mint_result_minted_output_index_nth(
     return v[kth::sz(index)];
 }
 
+
 // ---------------------------------------------------------------------------
-// token_transfer_params / create_token_transfer
+// create_token_transfer
 // ---------------------------------------------------------------------------
-
-kth_cashtoken_token_transfer_params_mut_t
-kth_wallet_cashtoken_token_transfer_params_construct_default(void) {
-    return kth::leak<ct::token_transfer_params>();
-}
-
-void kth_wallet_cashtoken_token_transfer_params_destruct(
-    kth_cashtoken_token_transfer_params_mut_t self
-) {
-    kth::del<ct::token_transfer_params>(self);
-}
-
-void kth_wallet_cashtoken_token_transfer_params_set_token_utxos(
-    kth_cashtoken_token_transfer_params_mut_t self, kth_utxo_list_const_t token_utxos
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_transfer_params>(self).token_utxos = copy_utxo_list(token_utxos);
-}
-
-void kth_wallet_cashtoken_token_transfer_params_set_destination(
-    kth_cashtoken_token_transfer_params_mut_t self, kth_payment_address_const_t destination
-) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(destination != nullptr);
-    kth::cpp_ref<ct::token_transfer_params>(self).destination =
-        kth::cpp_ref<kth::domain::wallet::payment_address>(destination);
-}
-
-void kth_wallet_cashtoken_token_transfer_params_set_ft_amount(
-    kth_cashtoken_token_transfer_params_mut_t self, kth_bool_t has_value, uint64_t ft_amount
-) {
-    KTH_PRECONDITION(self != nullptr);
-    auto& p = kth::cpp_ref<ct::token_transfer_params>(self);
-    p.ft_amount = kth::int_to_bool(has_value) ? std::optional<uint64_t>(ft_amount) : std::nullopt;
-}
-
-void kth_wallet_cashtoken_token_transfer_params_set_nft(
-    kth_cashtoken_token_transfer_params_mut_t self, kth_cashtoken_nft_spec_const_t nft
-) {
-    KTH_PRECONDITION(self != nullptr);
-    auto& p = kth::cpp_ref<ct::token_transfer_params>(self);
-    p.nft = nft == nullptr
-        ? std::nullopt
-        : std::optional<ct::nft_spec>(kth::cpp_ref<ct::nft_spec>(nft));
-}
-
-void kth_wallet_cashtoken_token_transfer_params_set_fee_utxos(
-    kth_cashtoken_token_transfer_params_mut_t self, kth_utxo_list_const_t fee_utxos
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_transfer_params>(self).fee_utxos = copy_utxo_list(fee_utxos);
-}
-
-void kth_wallet_cashtoken_token_transfer_params_set_token_change_address(
-    kth_cashtoken_token_transfer_params_mut_t self, kth_payment_address_const_t addr
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_transfer_params>(self).token_change_address = optional_addr(addr);
-}
-
-void kth_wallet_cashtoken_token_transfer_params_set_bch_change_address(
-    kth_cashtoken_token_transfer_params_mut_t self, kth_payment_address_const_t addr
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_transfer_params>(self).bch_change_address = optional_addr(addr);
-}
-
-void kth_wallet_cashtoken_token_transfer_params_set_satoshis(
-    kth_cashtoken_token_transfer_params_mut_t self, uint64_t satoshis
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_transfer_params>(self).satoshis = satoshis;
-}
 
 kth_error_code_t kth_wallet_cashtoken_create_token_transfer(
-    kth_cashtoken_token_transfer_params_const_t params,
+    kth_utxo_list_const_t token_utxos,
+    kth_payment_address_const_t destination,
+    kth_bool_t has_ft_amount, uint64_t ft_amount,
+    kth_cashtoken_nft_spec_const_t nft,
+    kth_utxo_list_const_t fee_utxos,
+    kth_payment_address_const_t token_change_address,
+    kth_payment_address_const_t bch_change_address,
+    uint64_t satoshis,
     KTH_OUT_OWNED kth_cashtoken_token_tx_result_mut_t* out
 ) {
-    KTH_PRECONDITION(params != nullptr);
+    KTH_PRECONDITION(destination != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto r = ct::create_token_transfer(kth::cpp_ref<ct::token_transfer_params>(params));
+
+    auto r = ct::create_token_transfer(ct::token_transfer_params{
+        .token_utxos = copy_utxo_list(token_utxos),
+        .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
+        .ft_amount = kth::int_to_bool(has_ft_amount) ? std::optional<uint64_t>(ft_amount) : std::nullopt,
+        .nft = optional_nft_spec(nft),
+        .fee_utxos = copy_utxo_list(fee_utxos),
+        .token_change_address = optional_addr(token_change_address),
+        .bch_change_address = optional_addr(bch_change_address),
+        .satoshis = satoshis,
+    });
     if ( ! r.has_value()) return kth::to_c_err(r.error());
     *out = kth::leak(std::move(*r));
     return kth_ec_success;
 }
 
+
 // ---------------------------------------------------------------------------
-// token_burn_params / create_token_burn
+// create_token_burn
 // ---------------------------------------------------------------------------
-
-kth_cashtoken_token_burn_params_mut_t
-kth_wallet_cashtoken_token_burn_params_construct_default(void) {
-    return kth::leak<ct::token_burn_params>();
-}
-
-void kth_wallet_cashtoken_token_burn_params_destruct(
-    kth_cashtoken_token_burn_params_mut_t self
-) {
-    kth::del<ct::token_burn_params>(self);
-}
-
-void kth_wallet_cashtoken_token_burn_params_set_token_utxo(
-    kth_cashtoken_token_burn_params_mut_t self, kth_utxo_const_t token_utxo
-) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(token_utxo != nullptr);
-    kth::cpp_ref<ct::token_burn_params>(self).token_utxo =
-        kth::cpp_ref<kth::domain::chain::utxo>(token_utxo);
-}
-
-void kth_wallet_cashtoken_token_burn_params_set_burn_ft_amount(
-    kth_cashtoken_token_burn_params_mut_t self, kth_bool_t has_value, uint64_t burn_ft_amount
-) {
-    KTH_PRECONDITION(self != nullptr);
-    auto& p = kth::cpp_ref<ct::token_burn_params>(self);
-    p.burn_ft_amount = kth::int_to_bool(has_value)
-        ? std::optional<uint64_t>(burn_ft_amount)
-        : std::nullopt;
-}
-
-void kth_wallet_cashtoken_token_burn_params_set_burn_nft(
-    kth_cashtoken_token_burn_params_mut_t self, kth_bool_t burn_nft
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_burn_params>(self).burn_nft = kth::int_to_bool(burn_nft);
-}
-
-void kth_wallet_cashtoken_token_burn_params_set_message(
-    kth_cashtoken_token_burn_params_mut_t self, char const* message
-) {
-    KTH_PRECONDITION(self != nullptr);
-    auto& p = kth::cpp_ref<ct::token_burn_params>(self);
-    p.message = message == nullptr ? std::nullopt : std::optional<std::string>(message);
-}
-
-void kth_wallet_cashtoken_token_burn_params_set_destination(
-    kth_cashtoken_token_burn_params_mut_t self, kth_payment_address_const_t destination
-) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(destination != nullptr);
-    kth::cpp_ref<ct::token_burn_params>(self).destination =
-        kth::cpp_ref<kth::domain::wallet::payment_address>(destination);
-}
-
-void kth_wallet_cashtoken_token_burn_params_set_fee_utxos(
-    kth_cashtoken_token_burn_params_mut_t self, kth_utxo_list_const_t fee_utxos
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_burn_params>(self).fee_utxos = copy_utxo_list(fee_utxos);
-}
-
-void kth_wallet_cashtoken_token_burn_params_set_change_address(
-    kth_cashtoken_token_burn_params_mut_t self, kth_payment_address_const_t change_address
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_burn_params>(self).change_address = optional_addr(change_address);
-}
-
-void kth_wallet_cashtoken_token_burn_params_set_satoshis(
-    kth_cashtoken_token_burn_params_mut_t self, uint64_t satoshis
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::token_burn_params>(self).satoshis = satoshis;
-}
 
 kth_error_code_t kth_wallet_cashtoken_create_token_burn(
-    kth_cashtoken_token_burn_params_const_t params,
+    kth_utxo_const_t token_utxo,
+    kth_bool_t has_burn_ft_amount, uint64_t burn_ft_amount,
+    kth_bool_t burn_nft,
+    char const* message,
+    kth_payment_address_const_t destination,
+    kth_utxo_list_const_t fee_utxos,
+    kth_payment_address_const_t change_address,
+    uint64_t satoshis,
     KTH_OUT_OWNED kth_cashtoken_token_tx_result_mut_t* out
 ) {
-    KTH_PRECONDITION(params != nullptr);
+    KTH_PRECONDITION(token_utxo != nullptr);
+    KTH_PRECONDITION(destination != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto r = ct::create_token_burn(kth::cpp_ref<ct::token_burn_params>(params));
+
+    auto r = ct::create_token_burn(ct::token_burn_params{
+        .token_utxo = kth::cpp_ref<kth::domain::chain::utxo>(token_utxo),
+        .burn_ft_amount = kth::int_to_bool(has_burn_ft_amount) ? std::optional<uint64_t>(burn_ft_amount) : std::nullopt,
+        .burn_nft = kth::int_to_bool(burn_nft),
+        .message = message == nullptr ? std::optional<std::string>(std::nullopt) : std::optional<std::string>(message),
+        .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
+        .fee_utxos = copy_utxo_list(fee_utxos),
+        .change_address = optional_addr(change_address),
+        .satoshis = satoshis,
+    });
     if ( ! r.has_value()) return kth::to_c_err(r.error());
     *out = kth::leak(std::move(*r));
     return kth_ec_success;
 }
 
+
 // ---------------------------------------------------------------------------
-// token_tx_result (shared by transfer / burn)
+// token_tx_result — shared by transfer / burn
 // ---------------------------------------------------------------------------
 
 void kth_wallet_cashtoken_token_tx_result_destruct(
@@ -842,180 +600,74 @@ uint32_t kth_wallet_cashtoken_token_tx_result_signing_index_nth(
     return v[kth::sz(index)];
 }
 
+
 // ---------------------------------------------------------------------------
-// ft_params / create_ft
+// create_ft
 // ---------------------------------------------------------------------------
-
-kth_cashtoken_ft_params_mut_t kth_wallet_cashtoken_ft_params_construct_default(void) {
-    return kth::leak<ct::ft_params>();
-}
-
-void kth_wallet_cashtoken_ft_params_destruct(kth_cashtoken_ft_params_mut_t self) {
-    kth::del<ct::ft_params>(self);
-}
-
-void kth_wallet_cashtoken_ft_params_set_genesis_utxo(
-    kth_cashtoken_ft_params_mut_t self, kth_utxo_const_t genesis_utxo
-) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(genesis_utxo != nullptr);
-    kth::cpp_ref<ct::ft_params>(self).genesis_utxo =
-        kth::cpp_ref<kth::domain::chain::utxo>(genesis_utxo);
-}
-
-void kth_wallet_cashtoken_ft_params_set_destination(
-    kth_cashtoken_ft_params_mut_t self, kth_payment_address_const_t destination
-) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(destination != nullptr);
-    kth::cpp_ref<ct::ft_params>(self).destination =
-        kth::cpp_ref<kth::domain::wallet::payment_address>(destination);
-}
-
-void kth_wallet_cashtoken_ft_params_set_total_supply(
-    kth_cashtoken_ft_params_mut_t self, uint64_t total_supply
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::ft_params>(self).total_supply = total_supply;
-}
-
-void kth_wallet_cashtoken_ft_params_set_with_minting_nft(
-    kth_cashtoken_ft_params_mut_t self, kth_bool_t with_minting_nft
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::ft_params>(self).with_minting_nft = kth::int_to_bool(with_minting_nft);
-}
-
-void kth_wallet_cashtoken_ft_params_set_fee_utxos(
-    kth_cashtoken_ft_params_mut_t self, kth_utxo_list_const_t fee_utxos
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::ft_params>(self).fee_utxos = copy_utxo_list(fee_utxos);
-}
-
-void kth_wallet_cashtoken_ft_params_set_change_address(
-    kth_cashtoken_ft_params_mut_t self, kth_payment_address_const_t change_address
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::ft_params>(self).change_address = optional_addr(change_address);
-}
-
-void kth_wallet_cashtoken_ft_params_set_script_flags(
-    kth_cashtoken_ft_params_mut_t self, uint64_t script_flags
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::ft_params>(self).script_flags = script_flags;
-}
 
 kth_error_code_t kth_wallet_cashtoken_create_ft(
-    kth_cashtoken_ft_params_const_t params,
+    kth_utxo_const_t genesis_utxo,
+    kth_payment_address_const_t destination,
+    uint64_t total_supply,
+    kth_bool_t with_minting_nft,
+    kth_utxo_list_const_t fee_utxos,
+    kth_payment_address_const_t change_address,
+    uint64_t script_flags,
     KTH_OUT_OWNED kth_cashtoken_token_genesis_result_mut_t* out
 ) {
-    KTH_PRECONDITION(params != nullptr);
+    KTH_PRECONDITION(genesis_utxo != nullptr);
+    KTH_PRECONDITION(destination != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto r = ct::create_ft(kth::cpp_ref<ct::ft_params>(params));
+
+    auto r = ct::create_ft(ct::ft_params{
+        .genesis_utxo = kth::cpp_ref<kth::domain::chain::utxo>(genesis_utxo),
+        .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
+        .total_supply = total_supply,
+        .with_minting_nft = kth::int_to_bool(with_minting_nft),
+        .fee_utxos = copy_utxo_list(fee_utxos),
+        .change_address = optional_addr(change_address),
+        .script_flags = script_flags,
+    });
     if ( ! r.has_value()) return kth::to_c_err(r.error());
     *out = kth::leak(std::move(*r));
     return kth_ec_success;
 }
 
+
 // ---------------------------------------------------------------------------
-// nft_collection_params / nft_collection_result / create_nft_collection
+// create_nft_collection
 // ---------------------------------------------------------------------------
-
-kth_cashtoken_nft_collection_params_mut_t
-kth_wallet_cashtoken_nft_collection_params_construct_default(void) {
-    return kth::leak<ct::nft_collection_params>();
-}
-
-void kth_wallet_cashtoken_nft_collection_params_destruct(
-    kth_cashtoken_nft_collection_params_mut_t self
-) {
-    kth::del<ct::nft_collection_params>(self);
-}
-
-void kth_wallet_cashtoken_nft_collection_params_set_genesis_utxo(
-    kth_cashtoken_nft_collection_params_mut_t self, kth_utxo_const_t genesis_utxo
-) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(genesis_utxo != nullptr);
-    kth::cpp_ref<ct::nft_collection_params>(self).genesis_utxo =
-        kth::cpp_ref<kth::domain::chain::utxo>(genesis_utxo);
-}
-
-void kth_wallet_cashtoken_nft_collection_params_set_nfts(
-    kth_cashtoken_nft_collection_params_mut_t self,
-    kth_cashtoken_nft_collection_item_list_const_t nfts
-) {
-    KTH_PRECONDITION(self != nullptr);
-    auto& p = kth::cpp_ref<ct::nft_collection_params>(self);
-    p.nfts = nfts == nullptr
-        ? std::vector<ct::nft_collection_item>{}
-        : kth::cpp_ref<std::vector<ct::nft_collection_item>>(nfts);
-}
-
-void kth_wallet_cashtoken_nft_collection_params_set_creator_address(
-    kth_cashtoken_nft_collection_params_mut_t self, kth_payment_address_const_t creator_address
-) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(creator_address != nullptr);
-    kth::cpp_ref<ct::nft_collection_params>(self).creator_address =
-        kth::cpp_ref<kth::domain::wallet::payment_address>(creator_address);
-}
-
-void kth_wallet_cashtoken_nft_collection_params_set_keep_minting_token(
-    kth_cashtoken_nft_collection_params_mut_t self, kth_bool_t keep_minting_token
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::nft_collection_params>(self).keep_minting_token =
-        kth::int_to_bool(keep_minting_token);
-}
-
-void kth_wallet_cashtoken_nft_collection_params_set_ft_amount(
-    kth_cashtoken_nft_collection_params_mut_t self, kth_bool_t has_value, uint64_t ft_amount
-) {
-    KTH_PRECONDITION(self != nullptr);
-    auto& p = kth::cpp_ref<ct::nft_collection_params>(self);
-    p.ft_amount = kth::int_to_bool(has_value) ? std::optional<uint64_t>(ft_amount) : std::nullopt;
-}
-
-void kth_wallet_cashtoken_nft_collection_params_set_fee_utxos(
-    kth_cashtoken_nft_collection_params_mut_t self, kth_utxo_list_const_t fee_utxos
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::nft_collection_params>(self).fee_utxos = copy_utxo_list(fee_utxos);
-}
-
-void kth_wallet_cashtoken_nft_collection_params_set_change_address(
-    kth_cashtoken_nft_collection_params_mut_t self, kth_payment_address_const_t change_address
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::nft_collection_params>(self).change_address = optional_addr(change_address);
-}
-
-void kth_wallet_cashtoken_nft_collection_params_set_batch_size(
-    kth_cashtoken_nft_collection_params_mut_t self, kth_size_t batch_size
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::nft_collection_params>(self).batch_size = kth::sz(batch_size);
-}
-
-void kth_wallet_cashtoken_nft_collection_params_set_script_flags(
-    kth_cashtoken_nft_collection_params_mut_t self, uint64_t script_flags
-) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<ct::nft_collection_params>(self).script_flags = script_flags;
-}
 
 kth_error_code_t kth_wallet_cashtoken_create_nft_collection(
-    kth_cashtoken_nft_collection_params_const_t params,
+    kth_utxo_const_t genesis_utxo,
+    kth_cashtoken_nft_collection_item_list_const_t nfts,
+    kth_payment_address_const_t creator_address,
+    kth_bool_t keep_minting_token,
+    kth_bool_t has_ft_amount, uint64_t ft_amount,
+    kth_utxo_list_const_t fee_utxos,
+    kth_payment_address_const_t change_address,
+    kth_size_t batch_size,
+    uint64_t script_flags,
     KTH_OUT_OWNED kth_cashtoken_nft_collection_result_mut_t* out
 ) {
-    KTH_PRECONDITION(params != nullptr);
+    KTH_PRECONDITION(genesis_utxo != nullptr);
+    KTH_PRECONDITION(nfts != nullptr);
+    KTH_PRECONDITION(creator_address != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto r = ct::create_nft_collection(kth::cpp_ref<ct::nft_collection_params>(params));
+
+    auto r = ct::create_nft_collection(ct::nft_collection_params{
+        .genesis_utxo = kth::cpp_ref<kth::domain::chain::utxo>(genesis_utxo),
+        .nfts = kth::cpp_ref<std::vector<ct::nft_collection_item>>(nfts),
+        .creator_address = kth::cpp_ref<kth::domain::wallet::payment_address>(creator_address),
+        .keep_minting_token = kth::int_to_bool(keep_minting_token),
+        .ft_amount = kth::int_to_bool(has_ft_amount) ? std::optional<uint64_t>(ft_amount) : std::nullopt,
+        .fee_utxos = copy_utxo_list(fee_utxos),
+        .change_address = optional_addr(change_address),
+        .batch_size = kth::sz(batch_size),
+        .script_flags = script_flags,
+    });
     if ( ! r.has_value()) return kth::to_c_err(r.error());
     *out = kth::leak(std::move(*r));
     return kth_ec_success;

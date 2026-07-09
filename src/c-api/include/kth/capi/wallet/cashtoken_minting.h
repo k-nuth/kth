@@ -16,54 +16,46 @@ extern "C" {
 #endif
 
 // ---------------------------------------------------------------------------
-// Opaque handles — one per C++ params/result struct.
+// Opaque handles
 // ---------------------------------------------------------------------------
 //
-// C mirrors the `kth::domain::wallet::cashtoken` C++ API. Each C++ struct
-// maps to an opaque handle (`kth_cashtoken_<type>_mut_t`) with
-// `construct_default` / `destruct` lifecycle functions plus per-field
-// setters/getters. Builders take a params handle and return either a
-// result handle via out-parameter or an error code.
+// This module deliberately does NOT expose the domain `*_params` structs
+// via handles. Those structs contain required `payment_address` members
+// which are not default-constructible under the current domain shape;
+// exposing them would either need sentinel state (dropped project-wide)
+// or a parallel C-API-side "holder" struct that would drift over time.
 //
-// Type aliases (all `void*` at the ABI level, see helpers.hpp):
-typedef void*       kth_cashtoken_prepare_genesis_params_mut_t;
-typedef void const* kth_cashtoken_prepare_genesis_params_const_t;
-typedef void*       kth_cashtoken_prepare_genesis_result_mut_t;
-typedef void const* kth_cashtoken_prepare_genesis_result_const_t;
+// Instead, each transaction-builder is a single `create_*` function that
+// takes every field as an argument. Optional fields use the same NULL /
+// has_value conventions used elsewhere in the C-API. Only the value
+// types that are useful to marshal individually (nft_spec, the list
+// element types, and the result types) keep a handle.
 
 typedef void*       kth_cashtoken_nft_spec_mut_t;
 typedef void const* kth_cashtoken_nft_spec_const_t;
+
 typedef void*       kth_cashtoken_nft_mint_request_mut_t;
 typedef void const* kth_cashtoken_nft_mint_request_const_t;
 typedef void*       kth_cashtoken_nft_mint_request_list_mut_t;
 typedef void const* kth_cashtoken_nft_mint_request_list_const_t;
+
 typedef void*       kth_cashtoken_nft_collection_item_mut_t;
 typedef void const* kth_cashtoken_nft_collection_item_const_t;
 typedef void*       kth_cashtoken_nft_collection_item_list_mut_t;
 typedef void const* kth_cashtoken_nft_collection_item_list_const_t;
 
-typedef void*       kth_cashtoken_token_genesis_params_mut_t;
-typedef void const* kth_cashtoken_token_genesis_params_const_t;
+typedef void*       kth_cashtoken_prepare_genesis_result_mut_t;
+typedef void const* kth_cashtoken_prepare_genesis_result_const_t;
+
 typedef void*       kth_cashtoken_token_genesis_result_mut_t;
 typedef void const* kth_cashtoken_token_genesis_result_const_t;
 
-typedef void*       kth_cashtoken_token_mint_params_mut_t;
-typedef void const* kth_cashtoken_token_mint_params_const_t;
 typedef void*       kth_cashtoken_token_mint_result_mut_t;
 typedef void const* kth_cashtoken_token_mint_result_const_t;
 
-typedef void*       kth_cashtoken_token_transfer_params_mut_t;
-typedef void const* kth_cashtoken_token_transfer_params_const_t;
-typedef void*       kth_cashtoken_token_burn_params_mut_t;
-typedef void const* kth_cashtoken_token_burn_params_const_t;
 typedef void*       kth_cashtoken_token_tx_result_mut_t;
 typedef void const* kth_cashtoken_token_tx_result_const_t;
 
-typedef void*       kth_cashtoken_ft_params_mut_t;
-typedef void const* kth_cashtoken_ft_params_const_t;
-
-typedef void*       kth_cashtoken_nft_collection_params_mut_t;
-typedef void const* kth_cashtoken_nft_collection_params_const_t;
 typedef void*       kth_cashtoken_nft_collection_result_mut_t;
 typedef void const* kth_cashtoken_nft_collection_result_const_t;
 
@@ -140,7 +132,7 @@ void kth_wallet_cashtoken_nft_spec_destruct(kth_cashtoken_nft_spec_mut_t self);
 
 
 // ---------------------------------------------------------------------------
-// nft_mint_request
+// nft_mint_request (single element + list)
 // ---------------------------------------------------------------------------
 
 KTH_EXPORT KTH_OWNED
@@ -155,10 +147,9 @@ KTH_EXPORT
 void kth_wallet_cashtoken_nft_mint_request_destruct(
     kth_cashtoken_nft_mint_request_mut_t self);
 
-// --- list ---
-
 KTH_EXPORT KTH_OWNED
-kth_cashtoken_nft_mint_request_list_mut_t kth_wallet_cashtoken_nft_mint_request_list_construct_default(void);
+kth_cashtoken_nft_mint_request_list_mut_t
+kth_wallet_cashtoken_nft_mint_request_list_construct_default(void);
 
 KTH_EXPORT
 void kth_wallet_cashtoken_nft_mint_request_list_push_back(
@@ -179,12 +170,12 @@ kth_cashtoken_nft_mint_request_const_t kth_wallet_cashtoken_nft_mint_request_lis
 
 
 // ---------------------------------------------------------------------------
-// nft_collection_item
+// nft_collection_item (single element + list)
 // ---------------------------------------------------------------------------
 
 /**
  * @param destination Optional — pass NULL to default to
- *                    `nft_collection_params::creator_address`.
+ *                    `create_nft_collection`'s `creator_address`.
  */
 KTH_EXPORT KTH_OWNED
 kth_cashtoken_nft_collection_item_mut_t kth_wallet_cashtoken_nft_collection_item_construct(
@@ -196,10 +187,9 @@ KTH_EXPORT
 void kth_wallet_cashtoken_nft_collection_item_destruct(
     kth_cashtoken_nft_collection_item_mut_t self);
 
-// --- list ---
-
 KTH_EXPORT KTH_OWNED
-kth_cashtoken_nft_collection_item_list_mut_t kth_wallet_cashtoken_nft_collection_item_list_construct_default(void);
+kth_cashtoken_nft_collection_item_list_mut_t
+kth_wallet_cashtoken_nft_collection_item_list_construct_default(void);
 
 KTH_EXPORT
 void kth_wallet_cashtoken_nft_collection_item_list_push_back(
@@ -214,56 +204,44 @@ KTH_EXPORT
 kth_size_t kth_wallet_cashtoken_nft_collection_item_list_count(
     kth_cashtoken_nft_collection_item_list_const_t list);
 
-/** @return Borrowed `kth_cashtoken_nft_collection_item_const_t` view into `list`. Do not destruct. */
+/** @return Borrowed `kth_cashtoken_nft_collection_item_const_t`. Do not destruct. */
 KTH_EXPORT
 kth_cashtoken_nft_collection_item_const_t kth_wallet_cashtoken_nft_collection_item_list_nth(
     kth_cashtoken_nft_collection_item_list_const_t list, kth_size_t index);
 
 
 // ---------------------------------------------------------------------------
-// prepare_genesis_params / prepare_genesis_result / prepare_genesis_utxo
+// prepare_genesis_utxo
 // ---------------------------------------------------------------------------
 
-KTH_EXPORT KTH_OWNED
-kth_cashtoken_prepare_genesis_params_mut_t kth_wallet_cashtoken_prepare_genesis_params_construct_default(void);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_prepare_genesis_params_destruct(
-    kth_cashtoken_prepare_genesis_params_mut_t self);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_prepare_genesis_params_set_utxo(
-    kth_cashtoken_prepare_genesis_params_mut_t self, kth_utxo_const_t utxo);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_prepare_genesis_params_set_destination(
-    kth_cashtoken_prepare_genesis_params_mut_t self, kth_payment_address_const_t destination);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_prepare_genesis_params_set_satoshis(
-    kth_cashtoken_prepare_genesis_params_mut_t self, uint64_t satoshis);
-
-/** @param change_address Optional — pass NULL for "no explicit change address". */
-KTH_EXPORT
-void kth_wallet_cashtoken_prepare_genesis_params_set_change_address(
-    kth_cashtoken_prepare_genesis_params_mut_t self, kth_payment_address_const_t change_address);
-
-/** @param[out] out Must point to a null `kth_cashtoken_prepare_genesis_result_mut_t` slot. */
+/**
+ * Build the "carrier" transaction that produces a UTXO at output 0
+ * suitable for a subsequent token genesis input.
+ *
+ * @param utxo             Required. A spendable UTXO to fund the carrier tx.
+ * @param destination      Required. Recipient of the new output 0.
+ * @param satoshis         Value carried by the new output 0.
+ * @param change_address   Optional — pass NULL for "no explicit change address".
+ * @param[out] out         Must point to a null slot. On success, populated
+ *                         with an owned handle. Untouched on error.
+ */
 KTH_EXPORT
 kth_error_code_t kth_wallet_cashtoken_prepare_genesis_utxo(
-    kth_cashtoken_prepare_genesis_params_const_t params,
+    kth_utxo_const_t utxo,
+    kth_payment_address_const_t destination,
+    uint64_t satoshis,
+    kth_payment_address_const_t change_address,
     KTH_OUT_OWNED kth_cashtoken_prepare_genesis_result_mut_t* out);
 
 KTH_EXPORT
 void kth_wallet_cashtoken_prepare_genesis_result_destruct(
     kth_cashtoken_prepare_genesis_result_mut_t self);
 
-/** @return Borrowed `kth_transaction_const_t` view; do not destruct. */
+/** @return Borrowed `kth_transaction_const_t` view. Do not destruct. */
 KTH_EXPORT
 kth_transaction_const_t kth_wallet_cashtoken_prepare_genesis_result_transaction(
     kth_cashtoken_prepare_genesis_result_const_t self);
 
-/** @return Number of signing indices. */
 KTH_EXPORT
 kth_size_t kth_wallet_cashtoken_prepare_genesis_result_signing_indices_count(
     kth_cashtoken_prepare_genesis_result_const_t self);
@@ -274,54 +252,32 @@ uint32_t kth_wallet_cashtoken_prepare_genesis_result_signing_index_nth(
 
 
 // ---------------------------------------------------------------------------
-// token_genesis_params / token_genesis_result / create_token_genesis
+// create_token_genesis
 // ---------------------------------------------------------------------------
 
-KTH_EXPORT KTH_OWNED
-kth_cashtoken_token_genesis_params_mut_t kth_wallet_cashtoken_token_genesis_params_construct_default(void);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_genesis_params_destruct(
-    kth_cashtoken_token_genesis_params_mut_t self);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_genesis_params_set_genesis_utxo(
-    kth_cashtoken_token_genesis_params_mut_t self, kth_utxo_const_t genesis_utxo);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_genesis_params_set_destination(
-    kth_cashtoken_token_genesis_params_mut_t self, kth_payment_address_const_t destination);
-
-/** Sets the optional FT supply. `has_value == 0` clears the optional. */
-KTH_EXPORT
-void kth_wallet_cashtoken_token_genesis_params_set_ft_amount(
-    kth_cashtoken_token_genesis_params_mut_t self, kth_bool_t has_value, uint64_t ft_amount);
-
-/** @param nft Optional — pass NULL to clear the NFT spec. */
-KTH_EXPORT
-void kth_wallet_cashtoken_token_genesis_params_set_nft(
-    kth_cashtoken_token_genesis_params_mut_t self, kth_cashtoken_nft_spec_const_t nft);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_genesis_params_set_satoshis(
-    kth_cashtoken_token_genesis_params_mut_t self, uint64_t satoshis);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_genesis_params_set_fee_utxos(
-    kth_cashtoken_token_genesis_params_mut_t self, kth_utxo_list_const_t fee_utxos);
-
-/** @param change_address Optional — pass NULL for no explicit change address. */
-KTH_EXPORT
-void kth_wallet_cashtoken_token_genesis_params_set_change_address(
-    kth_cashtoken_token_genesis_params_mut_t self, kth_payment_address_const_t change_address);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_genesis_params_set_script_flags(
-    kth_cashtoken_token_genesis_params_mut_t self, uint64_t script_flags);
-
+/**
+ * @param genesis_utxo     Required. Must have `outpoint.index() == 0`.
+ * @param destination      Required.
+ * @param has_ft_amount    Non-zero if `ft_amount` should be set.
+ * @param ft_amount        Read only when `has_ft_amount != 0`.
+ * @param nft              Optional — pass NULL for no NFT.
+ * @param satoshis         BCH satoshis carried by the token output.
+ * @param fee_utxos        Optional — pass NULL for "no fee UTXOs".
+ * @param change_address   Optional — pass NULL for no explicit change address.
+ * @param script_flags     Active script flags for commitment-size validation.
+ * @param[out] out         Must point to a null slot. Populated on success;
+ *                         untouched on error.
+ */
 KTH_EXPORT
 kth_error_code_t kth_wallet_cashtoken_create_token_genesis(
-    kth_cashtoken_token_genesis_params_const_t params,
+    kth_utxo_const_t genesis_utxo,
+    kth_payment_address_const_t destination,
+    kth_bool_t has_ft_amount, uint64_t ft_amount,
+    kth_cashtoken_nft_spec_const_t nft,
+    uint64_t satoshis,
+    kth_utxo_list_const_t fee_utxos,
+    kth_payment_address_const_t change_address,
+    uint64_t script_flags,
     KTH_OUT_OWNED kth_cashtoken_token_genesis_result_mut_t* out);
 
 KTH_EXPORT
@@ -347,56 +303,30 @@ uint32_t kth_wallet_cashtoken_token_genesis_result_signing_index_nth(
 
 
 // ---------------------------------------------------------------------------
-// token_mint_params / token_mint_result / create_token_mint
+// create_token_mint
 // ---------------------------------------------------------------------------
 
-KTH_EXPORT KTH_OWNED
-kth_cashtoken_token_mint_params_mut_t kth_wallet_cashtoken_token_mint_params_construct_default(void);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_mint_params_destruct(
-    kth_cashtoken_token_mint_params_mut_t self);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_mint_params_set_minting_utxo(
-    kth_cashtoken_token_mint_params_mut_t self, kth_utxo_const_t minting_utxo);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_mint_params_set_nfts(
-    kth_cashtoken_token_mint_params_mut_t self,
-    kth_cashtoken_nft_mint_request_list_const_t nfts);
-
 /**
- * Sets the optional preserved-minting commitment. `commitment == NULL`
- * clears the optional.
+ * @param minting_utxo             Required. Must hold an NFT with capability == minting.
+ * @param nfts                     Required. NFTs to mint.
+ * @param new_minting_commitment   Optional — pass NULL for no commitment replacement.
+ * @param new_minting_commitment_n Ignored when `new_minting_commitment == NULL`.
+ * @param minting_destination      Required by the domain builder. Passing NULL
+ *                                 surfaces as `error::illegal_value`.
+ * @param fee_utxos                Optional — pass NULL for no fee UTXOs.
+ * @param change_address           Optional — pass NULL for no explicit change address.
+ * @param script_flags             Active script flags for commitment-size validation.
  */
 KTH_EXPORT
-void kth_wallet_cashtoken_token_mint_params_set_new_minting_commitment(
-    kth_cashtoken_token_mint_params_mut_t self,
-    uint8_t const* commitment, kth_size_t commitment_n);
-
-/** Required — pass the address explicitly; no fallback to change_address. */
-KTH_EXPORT
-void kth_wallet_cashtoken_token_mint_params_set_minting_destination(
-    kth_cashtoken_token_mint_params_mut_t self,
-    kth_payment_address_const_t minting_destination);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_mint_params_set_fee_utxos(
-    kth_cashtoken_token_mint_params_mut_t self, kth_utxo_list_const_t fee_utxos);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_mint_params_set_change_address(
-    kth_cashtoken_token_mint_params_mut_t self,
-    kth_payment_address_const_t change_address);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_mint_params_set_script_flags(
-    kth_cashtoken_token_mint_params_mut_t self, uint64_t script_flags);
-
-KTH_EXPORT
 kth_error_code_t kth_wallet_cashtoken_create_token_mint(
-    kth_cashtoken_token_mint_params_const_t params,
+    kth_utxo_const_t minting_utxo,
+    kth_cashtoken_nft_mint_request_list_const_t nfts,
+    uint8_t const* new_minting_commitment,
+    kth_size_t new_minting_commitment_n,
+    kth_payment_address_const_t minting_destination,
+    kth_utxo_list_const_t fee_utxos,
+    kth_payment_address_const_t change_address,
+    uint64_t script_flags,
     KTH_OUT_OWNED kth_cashtoken_token_mint_result_mut_t* out);
 
 KTH_EXPORT
@@ -425,103 +355,53 @@ uint32_t kth_wallet_cashtoken_token_mint_result_minted_output_index_nth(
 
 
 // ---------------------------------------------------------------------------
-// token_transfer_params / create_token_transfer
+// create_token_transfer
 // ---------------------------------------------------------------------------
 
-KTH_EXPORT KTH_OWNED
-kth_cashtoken_token_transfer_params_mut_t kth_wallet_cashtoken_token_transfer_params_construct_default(void);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_transfer_params_destruct(
-    kth_cashtoken_token_transfer_params_mut_t self);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_transfer_params_set_token_utxos(
-    kth_cashtoken_token_transfer_params_mut_t self, kth_utxo_list_const_t token_utxos);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_transfer_params_set_destination(
-    kth_cashtoken_token_transfer_params_mut_t self, kth_payment_address_const_t destination);
-
-/** `has_value == 0` clears the optional. */
-KTH_EXPORT
-void kth_wallet_cashtoken_token_transfer_params_set_ft_amount(
-    kth_cashtoken_token_transfer_params_mut_t self, kth_bool_t has_value, uint64_t ft_amount);
-
-/** @param nft Optional — pass NULL to clear. */
-KTH_EXPORT
-void kth_wallet_cashtoken_token_transfer_params_set_nft(
-    kth_cashtoken_token_transfer_params_mut_t self, kth_cashtoken_nft_spec_const_t nft);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_transfer_params_set_fee_utxos(
-    kth_cashtoken_token_transfer_params_mut_t self, kth_utxo_list_const_t fee_utxos);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_transfer_params_set_token_change_address(
-    kth_cashtoken_token_transfer_params_mut_t self, kth_payment_address_const_t addr);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_transfer_params_set_bch_change_address(
-    kth_cashtoken_token_transfer_params_mut_t self, kth_payment_address_const_t addr);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_transfer_params_set_satoshis(
-    kth_cashtoken_token_transfer_params_mut_t self, uint64_t satoshis);
-
+/**
+ * @param token_utxos                Optional — pass NULL for no token UTXOs.
+ * @param destination                Required.
+ * @param has_ft_amount              Non-zero if `ft_amount` should be set.
+ * @param nft                        Optional — pass NULL for no NFT spec.
+ * @param fee_utxos                  Optional — pass NULL for no fee UTXOs.
+ * @param token_change_address       Optional — pass NULL.
+ * @param bch_change_address         Optional — pass NULL.
+ */
 KTH_EXPORT
 kth_error_code_t kth_wallet_cashtoken_create_token_transfer(
-    kth_cashtoken_token_transfer_params_const_t params,
+    kth_utxo_list_const_t token_utxos,
+    kth_payment_address_const_t destination,
+    kth_bool_t has_ft_amount, uint64_t ft_amount,
+    kth_cashtoken_nft_spec_const_t nft,
+    kth_utxo_list_const_t fee_utxos,
+    kth_payment_address_const_t token_change_address,
+    kth_payment_address_const_t bch_change_address,
+    uint64_t satoshis,
     KTH_OUT_OWNED kth_cashtoken_token_tx_result_mut_t* out);
 
 
 // ---------------------------------------------------------------------------
-// token_burn_params / create_token_burn
+// create_token_burn
 // ---------------------------------------------------------------------------
 
-KTH_EXPORT KTH_OWNED
-kth_cashtoken_token_burn_params_mut_t kth_wallet_cashtoken_token_burn_params_construct_default(void);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_burn_params_destruct(
-    kth_cashtoken_token_burn_params_mut_t self);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_burn_params_set_token_utxo(
-    kth_cashtoken_token_burn_params_mut_t self, kth_utxo_const_t token_utxo);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_burn_params_set_burn_ft_amount(
-    kth_cashtoken_token_burn_params_mut_t self, kth_bool_t has_value, uint64_t burn_ft_amount);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_burn_params_set_burn_nft(
-    kth_cashtoken_token_burn_params_mut_t self, kth_bool_t burn_nft);
-
-/** @param message Optional UTF-8 null-terminated string; NULL clears. */
-KTH_EXPORT
-void kth_wallet_cashtoken_token_burn_params_set_message(
-    kth_cashtoken_token_burn_params_mut_t self, char const* message);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_burn_params_set_destination(
-    kth_cashtoken_token_burn_params_mut_t self, kth_payment_address_const_t destination);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_burn_params_set_fee_utxos(
-    kth_cashtoken_token_burn_params_mut_t self, kth_utxo_list_const_t fee_utxos);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_burn_params_set_change_address(
-    kth_cashtoken_token_burn_params_mut_t self, kth_payment_address_const_t change_address);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_token_burn_params_set_satoshis(
-    kth_cashtoken_token_burn_params_mut_t self, uint64_t satoshis);
-
+/**
+ * @param token_utxo         Required.
+ * @param has_burn_ft_amount Non-zero if `burn_ft_amount` should be set.
+ * @param message            Optional UTF-8 null-terminated string; NULL clears.
+ * @param destination        Required.
+ * @param fee_utxos          Optional — pass NULL for no fee UTXOs.
+ * @param change_address     Optional — pass NULL.
+ */
 KTH_EXPORT
 kth_error_code_t kth_wallet_cashtoken_create_token_burn(
-    kth_cashtoken_token_burn_params_const_t params,
+    kth_utxo_const_t token_utxo,
+    kth_bool_t has_burn_ft_amount, uint64_t burn_ft_amount,
+    kth_bool_t burn_nft,
+    char const* message,
+    kth_payment_address_const_t destination,
+    kth_utxo_list_const_t fee_utxos,
+    kth_payment_address_const_t change_address,
+    uint64_t satoshis,
     KTH_OUT_OWNED kth_cashtoken_token_tx_result_mut_t* out);
 
 
@@ -547,101 +427,53 @@ uint32_t kth_wallet_cashtoken_token_tx_result_signing_index_nth(
 
 
 // ---------------------------------------------------------------------------
-// ft_params / create_ft — high-level fungible token genesis
+// create_ft — high-level fungible token genesis
 // ---------------------------------------------------------------------------
 
-KTH_EXPORT KTH_OWNED
-kth_cashtoken_ft_params_mut_t kth_wallet_cashtoken_ft_params_construct_default(void);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_ft_params_destruct(
-    kth_cashtoken_ft_params_mut_t self);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_ft_params_set_genesis_utxo(
-    kth_cashtoken_ft_params_mut_t self, kth_utxo_const_t genesis_utxo);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_ft_params_set_destination(
-    kth_cashtoken_ft_params_mut_t self, kth_payment_address_const_t destination);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_ft_params_set_total_supply(
-    kth_cashtoken_ft_params_mut_t self, uint64_t total_supply);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_ft_params_set_with_minting_nft(
-    kth_cashtoken_ft_params_mut_t self, kth_bool_t with_minting_nft);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_ft_params_set_fee_utxos(
-    kth_cashtoken_ft_params_mut_t self, kth_utxo_list_const_t fee_utxos);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_ft_params_set_change_address(
-    kth_cashtoken_ft_params_mut_t self, kth_payment_address_const_t change_address);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_ft_params_set_script_flags(
-    kth_cashtoken_ft_params_mut_t self, uint64_t script_flags);
-
+/**
+ * @param genesis_utxo     Required.
+ * @param destination      Required.
+ * @param fee_utxos        Optional — pass NULL for no fee UTXOs.
+ * @param change_address   Optional — pass NULL.
+ * @param script_flags     Only relevant when `with_minting_nft != 0`.
+ */
 KTH_EXPORT
 kth_error_code_t kth_wallet_cashtoken_create_ft(
-    kth_cashtoken_ft_params_const_t params,
+    kth_utxo_const_t genesis_utxo,
+    kth_payment_address_const_t destination,
+    uint64_t total_supply,
+    kth_bool_t with_minting_nft,
+    kth_utxo_list_const_t fee_utxos,
+    kth_payment_address_const_t change_address,
+    uint64_t script_flags,
     KTH_OUT_OWNED kth_cashtoken_token_genesis_result_mut_t* out);
 
 
 // ---------------------------------------------------------------------------
-// nft_collection_params / nft_collection_result / create_nft_collection
+// create_nft_collection
 // ---------------------------------------------------------------------------
 
-KTH_EXPORT KTH_OWNED
-kth_cashtoken_nft_collection_params_mut_t kth_wallet_cashtoken_nft_collection_params_construct_default(void);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_nft_collection_params_destruct(
-    kth_cashtoken_nft_collection_params_mut_t self);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_nft_collection_params_set_genesis_utxo(
-    kth_cashtoken_nft_collection_params_mut_t self, kth_utxo_const_t genesis_utxo);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_nft_collection_params_set_nfts(
-    kth_cashtoken_nft_collection_params_mut_t self,
-    kth_cashtoken_nft_collection_item_list_const_t nfts);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_nft_collection_params_set_creator_address(
-    kth_cashtoken_nft_collection_params_mut_t self, kth_payment_address_const_t creator_address);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_nft_collection_params_set_keep_minting_token(
-    kth_cashtoken_nft_collection_params_mut_t self, kth_bool_t keep_minting_token);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_nft_collection_params_set_ft_amount(
-    kth_cashtoken_nft_collection_params_mut_t self, kth_bool_t has_value, uint64_t ft_amount);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_nft_collection_params_set_fee_utxos(
-    kth_cashtoken_nft_collection_params_mut_t self, kth_utxo_list_const_t fee_utxos);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_nft_collection_params_set_change_address(
-    kth_cashtoken_nft_collection_params_mut_t self, kth_payment_address_const_t change_address);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_nft_collection_params_set_batch_size(
-    kth_cashtoken_nft_collection_params_mut_t self, kth_size_t batch_size);
-
-KTH_EXPORT
-void kth_wallet_cashtoken_nft_collection_params_set_script_flags(
-    kth_cashtoken_nft_collection_params_mut_t self, uint64_t script_flags);
-
+/**
+ * @param genesis_utxo         Required.
+ * @param nfts                 Required. Collection items.
+ * @param creator_address      Required. Default destination for items without one.
+ * @param has_ft_amount        Non-zero if `ft_amount` should be set.
+ * @param fee_utxos            Optional — pass NULL for no fee UTXOs.
+ * @param change_address       Optional — pass NULL.
+ * @param batch_size           NFTs per mint TX; must be > 0.
+ * @param script_flags         Active script flags for commitment-size validation.
+ */
 KTH_EXPORT
 kth_error_code_t kth_wallet_cashtoken_create_nft_collection(
-    kth_cashtoken_nft_collection_params_const_t params,
+    kth_utxo_const_t genesis_utxo,
+    kth_cashtoken_nft_collection_item_list_const_t nfts,
+    kth_payment_address_const_t creator_address,
+    kth_bool_t keep_minting_token,
+    kth_bool_t has_ft_amount, uint64_t ft_amount,
+    kth_utxo_list_const_t fee_utxos,
+    kth_payment_address_const_t change_address,
+    kth_size_t batch_size,
+    uint64_t script_flags,
     KTH_OUT_OWNED kth_cashtoken_nft_collection_result_mut_t* out);
 
 KTH_EXPORT
@@ -674,9 +506,8 @@ kth_size_t kth_wallet_cashtoken_nft_collection_result_batches_count(
     kth_cashtoken_nft_collection_result_const_t self);
 
 /**
- * Returns a borrowed view of a batch's mint-requests list. Caller must
- * NOT destruct this list — it's owned by the parent result handle and
- * invalidated when the result is destructed.
+ * @return Borrowed view of a batch's mint-requests list. Caller must NOT
+ *         destruct — owned by the parent result handle.
  */
 KTH_EXPORT
 kth_cashtoken_nft_mint_request_list_const_t kth_wallet_cashtoken_nft_collection_result_batch_mint_requests(
