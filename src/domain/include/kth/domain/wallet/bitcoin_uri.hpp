@@ -5,11 +5,13 @@
 #ifndef KTH_WALLET_BITCOIN_URI_HPP
 #define KTH_WALLET_BITCOIN_URI_HPP
 
+#include <cstddef>
 #include <cstdint>
-#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
+
+#include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/domain/define.hpp>
 #include <kth/domain/deserialization.hpp>
@@ -18,80 +20,70 @@
 
 namespace kth::domain::wallet {
 
-/**
- * BIP21 / BIP72 bitcoin URI (`bitcoin:address?params`).
- *
- * Builder-style API: default-construct then populate via setters, or
- * consume a serialized URI via `parse_from` which returns
- * `expect<bitcoin_uri>`. Use `valid()` to test whether any field has
- * been populated.
- */
+/// BIP21 / BIP72 bitcoin URI (`bitcoin:address?params`).
+///
+/// Immutable value type. Every reachable instance came from
+/// `parse_from(...)` or `from_parts(...)`, both returning `expect<>`;
+/// there's no default ctor and no post-construction mutation.
+///
+/// To build a URI programmatically, populate a `bitcoin_uri::parts`
+/// and hand it to `from_parts`:
+///
+///     auto uri = bitcoin_uri::from_parts({
+///         .address = payment.to_string(),
+///         .amount  = 10'000'000,
+///         .label   = "coffee",
+///     });
 struct KD_API bitcoin_uri {
+    /// Caller-populated parts used by `from_parts`. Field-order-only
+    /// aggregate init; all fields are optional except the address
+    /// (an empty address string produces a `bitcoin:` URI with no
+    /// path, which is a legal BIP21 form for "params only" URIs).
+    struct parts {
+        std::string address;
+        std::optional<uint64_t> amount;
+        std::optional<std::string> label;
+        std::optional<std::string> message;
+        std::optional<std::string> r;
+    };
+
     /// Parse a URI string. Returns `error::illegal_value` on malformed
     /// input.
     [[nodiscard]] static
-    expect<bitcoin_uri> parse_from(std::string_view uri, bool strict = true);
+    expect<bitcoin_uri> parse_from(std::string_view uri, bool strict);
 
-    /// Explicit so the C-API generator binds it as `construct_default`.
-    /// The builder-style setters expect this empty starting point.
-    bitcoin_uri() = default;
+    /// Build a URI value from caller-populated parts. Fails when the
+    /// address is non-empty but decodes neither as a `payment_address`
+    /// nor a `stealth_address`.
+    [[nodiscard]] static
+    expect<bitcoin_uri> from_parts(parts values);
 
+    // Equality only — no meaningful total order over URIs. `!=` is
+    // auto-synthesized by C++20 from `==`.
     [[nodiscard]]
     friend bool operator==(bitcoin_uri const&, bitcoin_uri const&) = default;
-
-    /// Provide the full comparison suite (`<`, `<=`, `>`, `>=`) via the
-    /// spaceship operator so callers don't have to remember which single
-    /// ordering operator we defined.
-    [[nodiscard]]
-    friend auto operator<=>(bitcoin_uri const& a, bitcoin_uri const& b) {
-        return a.to_string() <=> b.to_string();
-    }
-
-    /// True when at least one field has been populated.
-    [[nodiscard]]
-    bool valid() const;
 
     /// Serialized URI. Used by `fmt::formatter<bitcoin_uri>`.
     [[nodiscard]]
     std::string to_string() const;
 
-    [[nodiscard]]
-    std::string encoded() const { return to_string(); }
-
     /// Property getters.
-    [[nodiscard]] uint64_t        amount() const;
-    [[nodiscard]] std::string     label() const;
-    [[nodiscard]] std::string     message() const;
-    [[nodiscard]] std::string     r() const;
-    [[nodiscard]] std::string     address() const;
+    [[nodiscard]] uint64_t                amount() const;
+    [[nodiscard]] std::string             label() const;
+    [[nodiscard]] std::string             message() const;
+    [[nodiscard]] std::string             r() const;
+    [[nodiscard]] std::string const&      address() const noexcept { return address_; }
     [[nodiscard]] expect<payment_address> payment() const;
     [[nodiscard]] expect<stealth_address> stealth() const;
-    [[nodiscard]] std::string     parameter(std::string const& key) const;
-
-    /// Property setters.
-    void set_amount(uint64_t satoshis);
-    void set_label(std::string const& label);
-    void set_message(std::string const& message);
-    void set_r(std::string const& r);
-    bool set_address(std::string const& address);
-    void set_address(payment_address const& payment);
-    void set_address(stealth_address const& stealth);
-
-    /// uri_reader implementation.
-    void set_strict(bool strict);
-    bool set_scheme(std::string const& scheme);
-    bool set_authority(std::string const& authority);
-    bool set_path(std::string const& path);
-    bool set_fragment(std::string const& fragment);
-    bool set_parameter(std::string const& key, std::string const& value);
+    [[nodiscard]] std::string             parameter(std::string const& key) const;
 
 private:
-    bool set_amount(std::string const& satoshis);
+    using query_map = boost::unordered_flat_map<std::string, std::string>;
 
-    bool strict_{true};
-    std::string scheme_;
-    std::string address_;
-    std::map<std::string, std::string> query_;
+    bitcoin_uri(std::string address, query_map query);
+
+    std::string const address_;
+    query_map const query_;
 };
 
 } // namespace kth::domain::wallet
