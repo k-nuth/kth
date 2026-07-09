@@ -131,7 +131,7 @@ void bitcoin_uri::set_address(payment_address const& payment) {
 }
 
 void bitcoin_uri::set_address(stealth_address const& stealth) {
-    address_ = stealth.encoded();
+    address_ = stealth.to_string();
 }
 
 bool bitcoin_uri::set_amount(std::string const& satoshis) {
