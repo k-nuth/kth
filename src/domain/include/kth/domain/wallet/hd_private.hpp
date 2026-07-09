@@ -58,6 +58,12 @@ struct KD_API hd_private : hd_public {
     static
     expect<hd_private> from_seed(data_chunk const& seed, uint64_t prefixes);
 
+    /// Wrap an already-decoded 82-byte hd key using the default
+    /// mainnet public prefix. Parallel to `parse_from(string_view)`.
+    [[nodiscard]]
+    static
+    expect<hd_private> from_hd_key(hd_key const& private_key);
+
     /// Wrap an already-decoded 82-byte hd key, reading its private
     /// prefix off the wire and pairing it with a caller-supplied
     /// public prefix. Named distinctly from `from_hd_key_with_prefixes`
@@ -94,6 +100,10 @@ struct KD_API hd_private : hd_public {
 
     [[nodiscard]]
     expect<hd_public> derive_public(uint32_t index) const;
+
+    /// Overwrite every field (including `secret_`) with zero for
+    /// security-sensitive teardown. Extends `hd_public::wipe()`.
+    void wipe() noexcept;
 
 private:
     static expect<hd_private> from_seed_impl(byte_span seed, uint64_t prefixes);

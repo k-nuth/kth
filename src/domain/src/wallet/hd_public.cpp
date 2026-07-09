@@ -178,6 +178,12 @@ expect<hd_public> hd_public::derive_public(uint32_t index) const {
     return hd_public(combined, intermediate.right, lineage);
 }
 
+void hd_public::wipe() noexcept {
+    chain_.fill(0);
+    lineage_ = {0, 0, 0, 0};
+    point_.fill(0);
+}
+
 // Helpers.
 // ----------------------------------------------------------------------------
 
