@@ -109,7 +109,7 @@ TEST_CASE("message magic to recovery id invalid false", "[message recovery magic
 
 TEST_CASE("message sign message compressed expected", "[message sign message]") {
     auto const compressed = true;
-    auto const address = payment_address::from_ec_private(ec_private{secret, 0x00, compressed}).value();
+    auto const address = payment_address::from_ec_private(ec_private::from_verified_secret(secret, 0x00, compressed)).value();
     auto const message = to_chunk(std::string("Compressed"));
     message_signature out_signature;
     REQUIRE(sign_message(out_signature, message, secret, compressed));
@@ -118,7 +118,7 @@ TEST_CASE("message sign message compressed expected", "[message sign message]") 
 
 TEST_CASE("message sign message uncompressed expected", "[message sign message]") {
     auto const compressed = false;
-    auto const address = payment_address::from_ec_private(ec_private{secret, 0x00, compressed}).value();
+    auto const address = payment_address::from_ec_private(ec_private::from_verified_secret(secret, 0x00, compressed)).value();
     auto const message = to_chunk(std::string("Uncompressed"));
     message_signature out_signature;
     REQUIRE(sign_message(out_signature, message, secret, compressed));
@@ -157,13 +157,13 @@ TEST_CASE("message sign message wif uncompressed expected", "[message sign messa
 // Start Test Suite: message verify message
 
 TEST_CASE("message verify message compressed expected", "[message verify message]") {
-    auto const address = payment_address::from_ec_private(ec_private{secret}).value();
+    auto const address = payment_address::from_ec_private(ec_private::from_verified_secret(secret, ec_private::mainnet, true)).value();
     auto const message = to_chunk(std::string("Compressed"));
     REQUIRE(verify_message(message, address, signature_compressed));
 }
 
 TEST_CASE("message verify message uncompressed expected", "[message verify message]") {
-    auto const address = payment_address::from_ec_private(ec_private{secret, 0x00, false}).value();
+    auto const address = payment_address::from_ec_private(ec_private::from_verified_secret(secret, 0x00, false)).value();
     auto const message = to_chunk(std::string("Uncompressed"));
     REQUIRE(verify_message(message, address, signature_uncompressed));
 }

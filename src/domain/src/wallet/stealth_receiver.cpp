@@ -44,7 +44,7 @@ bool stealth_receiver::derive_address(payment_address& out_address,
         return false;
     }
 
-    auto result = payment_address::from_ec_public(ec_public{receiver_public}, version_);
+    auto result = payment_address::from_ec_public(ec_public::from_verified_point(receiver_public, true), version_);
     if ( ! result) {
         return false;
     }

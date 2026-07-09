@@ -32,14 +32,10 @@ size_t wif_compressed_size = wif_uncompressed_size + 1U;
 
 using wif_compressed = byte_array<wif_compressed_size>;
 
-/**
- * EC secret with WIF version and compression metadata.
- *
- * Default-constructible (invalid state) so the C-API generator can
- * hand out an "empty" handle; fallible construction goes through
- * `parse_from` / `from_compressed` / `from_uncompressed`, each
- * returning `expect<ec_private>`.
- */
+/// EC secret with WIF version and compression metadata.
+/// Valid-by-construction: every reachable instance came from a factory
+/// that validated the underlying `ec_secret` lies in the curve's
+/// scalar range, so `to_public()` never fails.
 struct KD_API ec_private {
     static uint8_t const compressed_sentinel;
 
@@ -71,7 +67,7 @@ struct KD_API ec_private {
     }
 
     /// Parse a WIF-encoded private key. `error::illegal_value` on
-    /// malformed input.
+    /// malformed input or a secret outside the curve's scalar range.
     [[nodiscard]]
     static
     expect<ec_private> parse_from(std::string_view wif, uint8_t version);
@@ -84,24 +80,20 @@ struct KD_API ec_private {
     static
     expect<ec_private> from_uncompressed(wif_uncompressed const& wif, uint8_t address_version);
 
-    ec_private() = default;
+    /// Validate `secret` lies in the curve's scalar range and wrap it.
+    [[nodiscard]]
+    static
+    expect<ec_private> from_secret(ec_secret const& secret, uint16_t version, bool compress);
 
-    /// The version is 16 bits. The most significant byte is the WIF prefix
-    /// and the least significant byte is the address prefix.
-    explicit
-    ec_private(ec_secret const& secret, uint16_t version = mainnet, bool compress = true) noexcept
-        : valid_(true), compress_(compress), version_(version), secret_(secret) {}
+    /// Wrap a secret that the caller has already verified lies in the
+    /// curve's scalar range (or produced by an internal derivation step
+    /// that guarantees it). No range check is performed here.
+    [[nodiscard]]
+    static
+    ec_private from_verified_secret(ec_secret const& secret, uint16_t version, bool compress);
 
     [[nodiscard]]
-    bool valid() const noexcept { return valid_; }
-
-    [[nodiscard]]
-    friend bool operator==(ec_private const&, ec_private const&) = default;
-
-    [[nodiscard]]
-    friend auto operator<=>(ec_private const& a, ec_private const& b) {
-        return a.to_string() <=> b.to_string();
-    }
+    friend auto operator<=>(ec_private const&, ec_private const&) = default;
 
     [[nodiscard]]
     ec_secret const& value() const noexcept { return secret_; }
@@ -132,10 +124,12 @@ struct KD_API ec_private {
     expect<payment_address> to_payment_address() const;
 
 private:
+    ec_private(ec_secret const& secret, uint16_t version, bool compress) noexcept
+        : compress_(compress), version_(version), secret_(secret) {}
+
     static
     bool is_wif(byte_span decoded);
 
-    bool      valid_{false};
     bool      compress_{true};
     uint16_t  version_{0};
     ec_secret secret_{null_hash};

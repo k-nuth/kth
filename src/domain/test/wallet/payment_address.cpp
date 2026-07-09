@@ -57,7 +57,7 @@ TEST_CASE("payment_address construct string invalid invalid", "[payment_address]
 TEST_CASE("payment_address construct secret valid expected", "[payment_address]") {
     auto const secret = decode_base16<ec_secret_size>(secret_hex);
     REQUIRE(secret);
-    payment_address const address = payment_address::from_ec_private(ec_private{*secret}).value();
+    payment_address const address = payment_address::from_ec_private(ec_private::from_verified_secret(*secret, ec_private::mainnet, true)).value();
     REQUIRE(address.encoded_legacy() == address_compressed);
 }
 
@@ -67,14 +67,14 @@ TEST_CASE("payment_address construct secret testnet valid expected", "[payment_a
 
     // MSVC CTP loses the MSB (WIF prefix) byte of the literal version when
     // using this initializer, but the MSB isn't used by payment_address.
-    payment_address const address = payment_address::from_ec_private(ec_private{*secret, 0x806f}).value();
+    payment_address const address = payment_address::from_ec_private(ec_private::from_verified_secret(*secret, 0x806f, true)).value();
     REQUIRE(address.encoded_legacy() == address_compressed_testnet);
 }
 
 TEST_CASE("payment_address construct secret mainnet uncompressed valid expected", "[payment_address]") {
     auto const secret = decode_base16<ec_secret_size>(secret_hex);
     REQUIRE(secret);
-    payment_address const address = payment_address::from_ec_private(ec_private{*secret, payment_address::mainnet_p2kh, false}).value();
+    payment_address const address = payment_address::from_ec_private(ec_private::from_verified_secret(*secret, payment_address::mainnet_p2kh, false)).value();
     REQUIRE(address.encoded_legacy() == address_uncompressed);
 }
 
@@ -84,7 +84,7 @@ TEST_CASE("payment_address construct secret testnet uncompressed valid expected"
 
     // MSVC CTP loses the MSB (WIF prefix) byte of the literal version when
     // using this initializer, but the MSB isn't used by payment_address.
-    payment_address const address = payment_address::from_ec_private(ec_private{*secret, 0x806f, false}).value();
+    payment_address const address = payment_address::from_ec_private(ec_private::from_verified_secret(*secret, 0x806f, false)).value();
     REQUIRE(address.encoded_legacy() == address_uncompressed_testnet);
 }
 
@@ -122,7 +122,7 @@ TEST_CASE("payment_address construct public compressed from uncompressed testnet
 TEST_CASE("payment_address construct public uncompressed from compressed testnet valid expected", "[payment_address]") {
     auto const point = decode_base16<ec_compressed_size>(compressed_pubkey);
     REQUIRE(point);
-    payment_address const address = payment_address::from_ec_public(ec_public{*point, false}, 0x6f).value();
+    payment_address const address = payment_address::from_ec_public(ec_public::from_verified_point(*point, false), 0x6f).value();
     REQUIRE(address.encoded_legacy() == address_uncompressed_testnet);
 }
 

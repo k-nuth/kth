@@ -14,6 +14,7 @@
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/math/hash.hpp>
+#include <kth/infrastructure/utility/assert.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
 namespace kth::domain::wallet {
@@ -38,28 +39,30 @@ bool ec_public::is_point(byte_span decoded) {
 // ----------------------------------------------------------------------------
 
 // static
+ec_public ec_public::from_verified_point(ec_compressed const& point, bool compress) {
+    return ec_public(point, compress);
+}
+
+// static
 expect<ec_public> ec_public::from_data(data_chunk const& decoded) {
     if ( ! is_point(decoded)) {
         return std::unexpected(kth::error::illegal_value);
     }
 
     if (decoded.size() == ec_compressed_size) {
-        return ec_public{to_array<ec_compressed_size>(decoded), true};
+        return ec_public(to_array<ec_compressed_size>(decoded), true);
     }
 
     ec_compressed compressed;
     if ( ! kth::compress(compressed, to_array<ec_uncompressed_size>(decoded))) {
         return std::unexpected(kth::error::illegal_value);
     }
-    return ec_public{compressed, false};
+    return ec_public(compressed, false);
 }
 
 // static
-expect<ec_public> ec_public::from_private(ec_private const& secret) {
-    if ( ! secret.valid()) {
-        return std::unexpected(kth::error::illegal_value);
-    }
-    return ec_public{secret.to_public()};
+ec_public ec_public::from_private(ec_private const& secret) {
+    return secret.to_public();
 }
 
 // static
@@ -72,7 +75,7 @@ expect<ec_public> ec_public::from_point(ec_uncompressed const& point, bool compr
     if ( ! kth::compress(compressed, point)) {
         return std::unexpected(kth::error::illegal_value);
     }
-    return ec_public{compressed, compress};
+    return ec_public(compressed, compress);
 }
 
 // static
@@ -91,38 +94,28 @@ std::string ec_public::to_string() const {
     if (compressed()) {
         return encode_base16(point_);
     }
-
-    // A well-formed point always decompresses.
-    auto const uncompressed = to_uncompressed();
-    return encode_base16(uncompressed ? *uncompressed : null_uncompressed_point);
+    return encode_base16(to_uncompressed());
 }
 
 // Methods.
 // ----------------------------------------------------------------------------
 
-std::expected<data_chunk, std::error_code> ec_public::to_data() const {
-    if ( ! valid_) {
-        return std::unexpected(error::pubkey_type);
-    }
+data_chunk ec_public::to_data() const {
     if (compressed()) {
         return data_chunk(point_.begin(), point_.begin() + ec_compressed_size);
     }
-
     auto const uncompressed = to_uncompressed();
-    if ( ! uncompressed) {
-        return std::unexpected(uncompressed.error());
-    }
-    return data_chunk(uncompressed->begin(), uncompressed->end());
+    return data_chunk(uncompressed.begin(), uncompressed.end());
 }
 
-std::expected<ec_uncompressed, std::error_code> ec_public::to_uncompressed() const {
-    if ( ! valid_) {
-        return std::unexpected(error::pubkey_type);
-    }
+ec_uncompressed ec_public::to_uncompressed() const {
+    // A valid compressed point always decompresses; the factories that
+    // produce `ec_public` all validate on-curve first. Assert catches
+    // the only invariant-breaking path: `from_verified_point` called
+    // with an off-curve point.
     ec_uncompressed out;
-    if ( ! kth::decompress(out, to_array<ec_compressed_size>(point_))) {
-        return std::unexpected(error::pubkey_type);
-    }
+    DEBUG_ONLY(auto const ok =) kth::decompress(out, to_array<ec_compressed_size>(point_));
+    KTH_ASSERT_MSG(ok, "decompress failed — from_verified_point called with an off-curve point");
     return out;
 }
 

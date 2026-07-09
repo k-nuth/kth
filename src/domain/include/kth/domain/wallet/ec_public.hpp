@@ -6,10 +6,8 @@
 #define KTH_DOMAIN_WALLET_EC_PUBLIC_HPP
 
 #include <cstdint>
-#include <expected>
 #include <string>
 #include <string_view>
-#include <system_error>
 
 #include <kth/domain/define.hpp>
 #include <kth/domain/deserialization.hpp>
@@ -22,13 +20,10 @@ namespace kth::domain::wallet {
 class ec_private;
 class payment_address;
 
-/**
- * Elliptic-curve public key, either compressed or uncompressed.
- *
- * Default-constructible (invalid state) so the C-API generator can
- * hand out an "empty" handle; the fallible construction paths return
- * `expect<ec_public>`.
- */
+/// Elliptic-curve public key, either compressed or uncompressed on the
+/// wire. Valid-by-construction: every reachable instance came from a
+/// factory that validated its input, so accessors and serializers are
+/// always meaningful.
 struct KD_API ec_public {
     static uint8_t const compressed_even;
     static uint8_t const compressed_odd;
@@ -49,7 +44,7 @@ struct KD_API ec_public {
     /// Derive from a validated `ec_private`.
     [[nodiscard]]
     static
-    expect<ec_public> from_private(ec_private const& secret);
+    ec_public from_private(ec_private const& secret);
 
     /// Wrap an uncompressed EC point, keeping the compressed/uncompressed
     /// wire form as requested.
@@ -57,23 +52,15 @@ struct KD_API ec_public {
     static
     expect<ec_public> from_point(ec_uncompressed const& point, bool compress);
 
-    ec_public() = default;
-
-    /// Wrap an already-compressed EC point.
-    explicit
-    ec_public(ec_compressed const& compressed_point, bool compress = true) noexcept
-        : valid_(true), compress_(compress), point_(compressed_point) {}
+    /// Wrap an already-compressed EC point that the caller has verified
+    /// lies on the curve (or produced by an internal derivation step
+    /// that guarantees it). No on-curve check is performed here.
+    [[nodiscard]]
+    static
+    ec_public from_verified_point(ec_compressed const& point, bool compress);
 
     [[nodiscard]]
-    friend bool operator==(ec_public const&, ec_public const&) = default;
-
-    [[nodiscard]]
-    friend auto operator<=>(ec_public const& a, ec_public const& b) {
-        return a.to_string() <=> b.to_string();
-    }
-
-    [[nodiscard]]
-    bool valid() const noexcept { return valid_; }
+    friend auto operator<=>(ec_public const&, ec_public const&) = default;
 
     [[nodiscard]]
     ec_compressed const& value() const noexcept { return point_; }
@@ -92,19 +79,21 @@ struct KD_API ec_public {
     std::string encoded() const { return to_string(); }
 
     [[nodiscard]]
-    std::expected<data_chunk, std::error_code> to_data() const;
+    data_chunk to_data() const;
 
     [[nodiscard]]
-    std::expected<ec_uncompressed, std::error_code> to_uncompressed() const;
+    ec_uncompressed to_uncompressed() const;
 
     [[nodiscard]]
     expect<payment_address> to_payment_address(uint8_t version = mainnet_p2kh) const;
 
 private:
+    ec_public(ec_compressed const& point, bool compress) noexcept
+        : compress_(compress), point_(point) {}
+
     static
     bool is_point(byte_span decoded);
 
-    bool valid_{false};
     bool compress_{true};
     ec_compressed point_ = null_compressed_point;
 };
