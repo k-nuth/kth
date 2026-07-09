@@ -190,9 +190,8 @@ TEST_CASE("create_combined_token_output carries both FT and NFT in one output", 
 // ===========================================================================
 
 TEST_CASE("prepare_genesis_utxo produces a TX with output 0 at the requested amount", "[cashtoken_minting]") {
-    prepare_genesis_params params{};
+    prepare_genesis_params params{.destination = make_addr(0x11)};
     params.utxo = make_bch_utxo(parent_tx_a, 3, 50000);
-    params.destination = make_addr(0x11);
     params.satoshis = 10000;
 
     auto result = prepare_genesis_utxo(params);
@@ -207,9 +206,8 @@ TEST_CASE("prepare_genesis_utxo produces a TX with output 0 at the requested amo
 }
 
 TEST_CASE("prepare_genesis_utxo rejects dust-level requested amount", "[cashtoken_minting]") {
-    prepare_genesis_params params{};
+    prepare_genesis_params params{.destination = make_addr(0x11)};
     params.utxo = make_bch_utxo(parent_tx_a, 0, 50000);
-    params.destination = make_addr(0x11);
     params.satoshis = 100;                // below bch_dust_limit
 
     auto result = prepare_genesis_utxo(params);
@@ -217,9 +215,8 @@ TEST_CASE("prepare_genesis_utxo rejects dust-level requested amount", "[cashtoke
 }
 
 TEST_CASE("prepare_genesis_utxo rejects insufficient input funds", "[cashtoken_minting]") {
-    prepare_genesis_params params{};
+    prepare_genesis_params params{.destination = make_addr(0x11)};
     params.utxo = make_bch_utxo(parent_tx_a, 0, 1000);   // barely above the request
-    params.destination = make_addr(0x11);
     params.satoshis = 10000;
 
     auto result = prepare_genesis_utxo(params);
@@ -231,9 +228,8 @@ TEST_CASE("prepare_genesis_utxo rejects insufficient input funds", "[cashtoken_m
 // ===========================================================================
 
 TEST_CASE("create_token_genesis requires the genesis UTXO to spend output index 0", "[cashtoken_minting]") {
-    token_genesis_params params{};
+    token_genesis_params params{.destination = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, /*index=*/3, 50000);
-    params.destination = make_addr(0x11);
     params.ft_amount = 1000;
 
     auto result = create_token_genesis(params);
@@ -242,9 +238,8 @@ TEST_CASE("create_token_genesis requires the genesis UTXO to spend output index 
 }
 
 TEST_CASE("create_token_genesis requires at least one payload kind", "[cashtoken_minting]") {
-    token_genesis_params params{};
+    token_genesis_params params{.destination = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, 0, 50000);
-    params.destination = make_addr(0x11);
     // neither ft_amount nor nft set
 
     auto result = create_token_genesis(params);
@@ -252,9 +247,8 @@ TEST_CASE("create_token_genesis requires at least one payload kind", "[cashtoken
 }
 
 TEST_CASE("create_token_genesis creates a pure-fungible genesis output", "[cashtoken_minting]") {
-    token_genesis_params params{};
+    token_genesis_params params{.destination = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, 0, 50000);
-    params.destination = make_addr(0x11);
     params.ft_amount = 1'000'000;
 
     auto result = create_token_genesis(params);
@@ -271,9 +265,8 @@ TEST_CASE("create_token_genesis creates a pure-fungible genesis output", "[casht
 }
 
 TEST_CASE("create_token_genesis creates a minting NFT (nft-only, minting capability)", "[cashtoken_minting]") {
-    token_genesis_params params{};
+    token_genesis_params params{.destination = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, 0, 50000);
-    params.destination = make_addr(0x11);
     params.nft = nft_spec{capability_t::minting, data_chunk{0x00}};
 
     auto result = create_token_genesis(params);
@@ -284,9 +277,8 @@ TEST_CASE("create_token_genesis creates a minting NFT (nft-only, minting capabil
 }
 
 TEST_CASE("create_token_genesis creates FT + minting NFT combined output", "[cashtoken_minting]") {
-    token_genesis_params params{};
+    token_genesis_params params{.destination = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, 0, 50000);
-    params.destination = make_addr(0x11);
     params.ft_amount = 1000;
     params.nft = nft_spec{capability_t::minting, data_chunk{0x00}};
 
@@ -299,9 +291,8 @@ TEST_CASE("create_token_genesis creates FT + minting NFT combined output", "[cas
 }
 
 TEST_CASE("create_token_genesis rejects oversized NFT commitment (>40 bytes)", "[cashtoken_minting]") {
-    token_genesis_params params{};
+    token_genesis_params params{.destination = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, 0, 50000);
-    params.destination = make_addr(0x11);
     params.nft = nft_spec{
         capability_t::none,
         data_chunk(41, 0xAB)
@@ -313,9 +304,8 @@ TEST_CASE("create_token_genesis rejects oversized NFT commitment (>40 bytes)", "
 }
 
 TEST_CASE("create_token_genesis rejects zero fungible amount", "[cashtoken_minting]") {
-    token_genesis_params params{};
+    token_genesis_params params{.destination = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, 0, 50000);
-    params.destination = make_addr(0x11);
     params.ft_amount = 0;
 
     auto result = create_token_genesis(params);
@@ -324,9 +314,8 @@ TEST_CASE("create_token_genesis rejects zero fungible amount", "[cashtoken_minti
 }
 
 TEST_CASE("create_token_genesis rejects fungible amount above INT64_MAX", "[cashtoken_minting]") {
-    token_genesis_params params{};
+    token_genesis_params params{.destination = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, 0, 50000);
-    params.destination = make_addr(0x11);
     params.ft_amount = static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1;
 
     auto result = create_token_genesis(params);
@@ -430,10 +419,9 @@ TEST_CASE("create_token_mint updates the minting NFT commitment when requested",
 // ===========================================================================
 
 TEST_CASE("create_token_transfer sends a fungible amount and emits token change", "[cashtoken_minting]") {
-    token_transfer_params params{};
+    token_transfer_params params{.destination = make_addr(0x22)};
     params.token_utxos.push_back(make_ft_utxo(parent_tx_a, 0, category_a, 1000, 800));
     params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
-    params.destination = make_addr(0x22);
     params.ft_amount = 300;
     params.token_change_address = make_addr(0x11);
     params.bch_change_address = make_addr(0x11);
@@ -451,10 +439,9 @@ TEST_CASE("create_token_transfer sends a fungible amount and emits token change"
 }
 
 TEST_CASE("create_token_transfer rejects insufficient fungible supply", "[cashtoken_minting]") {
-    token_transfer_params params{};
+    token_transfer_params params{.destination = make_addr(0x22)};
     params.token_utxos.push_back(make_ft_utxo(parent_tx_a, 0, category_a, 100));
     params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
-    params.destination = make_addr(0x22);
     params.ft_amount = 1000;
     params.token_change_address = make_addr(0x11);
 
@@ -464,10 +451,9 @@ TEST_CASE("create_token_transfer rejects insufficient fungible supply", "[cashto
 }
 
 TEST_CASE("create_token_transfer rejects zero fungible amount", "[cashtoken_minting]") {
-    token_transfer_params params{};
+    token_transfer_params params{.destination = make_addr(0x22)};
     params.token_utxos.push_back(make_ft_utxo(parent_tx_a, 0, category_a, 1000));
     params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
-    params.destination = make_addr(0x22);
     params.ft_amount = 0;
     params.token_change_address = make_addr(0x11);
 
@@ -483,10 +469,9 @@ TEST_CASE("create_token_transfer rejects fungible amount above INT64_MAX", "[cas
     // validation — returning a clear API error here is the difference
     // between a loud compile-time-quality rejection and a silent
     // unrelayable TX handed back to the caller.
-    token_transfer_params params{};
+    token_transfer_params params{.destination = make_addr(0x22)};
     params.token_utxos.push_back(make_ft_utxo(parent_tx_a, 0, category_a, 1000));
     params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
-    params.destination = make_addr(0x22);
     params.ft_amount = static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1;
     params.token_change_address = make_addr(0x11);
 
@@ -499,11 +484,10 @@ TEST_CASE("create_token_transfer rejects UTXOs from different categories", "[cas
     hash_digest category_b = {{0xBB, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02}};
 
-    token_transfer_params params{};
+    token_transfer_params params{.destination = make_addr(0x22)};
     params.token_utxos.push_back(make_ft_utxo(parent_tx_a, 0, category_a, 100));
     params.token_utxos.push_back(make_ft_utxo(parent_tx_a, 1, category_b, 100));
     params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
-    params.destination = make_addr(0x22);
     params.ft_amount = 50;
     params.token_change_address = make_addr(0x11);
 
@@ -514,11 +498,10 @@ TEST_CASE("create_token_transfer rejects UTXOs from different categories", "[cas
 
 TEST_CASE("create_token_transfer transfers an NFT identified by commitment", "[cashtoken_minting]") {
     data_chunk target{0xDE, 0xAD};
-    token_transfer_params params{};
+    token_transfer_params params{.destination = make_addr(0x22)};
     params.token_utxos.push_back(make_nft_utxo(
         parent_tx_a, 0, category_a, capability_t::none, target));
     params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
-    params.destination = make_addr(0x22);
     params.nft = nft_spec{capability_t::none, target};
 
     auto result = create_token_transfer(params);
@@ -529,11 +512,10 @@ TEST_CASE("create_token_transfer transfers an NFT identified by commitment", "[c
 }
 
 TEST_CASE("create_token_transfer rejects NFT not present in inputs", "[cashtoken_minting]") {
-    token_transfer_params params{};
+    token_transfer_params params{.destination = make_addr(0x22)};
     params.token_utxos.push_back(make_nft_utxo(
         parent_tx_a, 0, category_a, capability_t::none, data_chunk{0x01}));
     params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
-    params.destination = make_addr(0x22);
     params.nft = nft_spec{capability_t::none, data_chunk{0xFF}};
 
     auto result = create_token_transfer(params);
@@ -545,10 +527,9 @@ TEST_CASE("create_token_transfer rejects NFT not present in inputs", "[cashtoken
 // ===========================================================================
 
 TEST_CASE("create_token_burn destroys all fungible tokens when amount == balance", "[cashtoken_minting]") {
-    token_burn_params params{};
+    token_burn_params params{.destination = make_addr(0x22)};
     params.token_utxo = make_ft_utxo(parent_tx_a, 0, category_a, 1000, 800);
     params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
-    params.destination = make_addr(0x22);
     params.burn_ft_amount = 1000;
 
     auto result = create_token_burn(params);
@@ -559,10 +540,9 @@ TEST_CASE("create_token_burn destroys all fungible tokens when amount == balance
 }
 
 TEST_CASE("create_token_burn destroys part of the FT supply and keeps the rest", "[cashtoken_minting]") {
-    token_burn_params params{};
+    token_burn_params params{.destination = make_addr(0x22)};
     params.token_utxo = make_ft_utxo(parent_tx_a, 0, category_a, 1000, 800);
     params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
-    params.destination = make_addr(0x22);
     params.burn_ft_amount = 300;
 
     auto result = create_token_burn(params);
@@ -573,10 +553,9 @@ TEST_CASE("create_token_burn destroys part of the FT supply and keeps the rest",
 }
 
 TEST_CASE("create_token_burn refuses to burn more FT than the UTXO holds", "[cashtoken_minting]") {
-    token_burn_params params{};
+    token_burn_params params{.destination = make_addr(0x22)};
     params.token_utxo = make_ft_utxo(parent_tx_a, 0, category_a, 100, 800);
     params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
-    params.destination = make_addr(0x22);
     params.burn_ft_amount = 1000;
 
     auto result = create_token_burn(params);
@@ -585,12 +564,11 @@ TEST_CASE("create_token_burn refuses to burn more FT than the UTXO holds", "[cas
 }
 
 TEST_CASE("create_token_burn burns the NFT while keeping the FT side of a both-kinds UTXO", "[cashtoken_minting]") {
-    token_burn_params params{};
+    token_burn_params params{.destination = make_addr(0x22)};
     params.token_utxo = make_both_utxo(
         parent_tx_a, 0, category_a, 500,
         capability_t::minting, data_chunk{0x00}, 10000);
     params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
-    params.destination = make_addr(0x22);
     params.burn_nft = true;
 
     auto result = create_token_burn(params);
@@ -603,9 +581,8 @@ TEST_CASE("create_token_burn burns the NFT while keeping the FT side of a both-k
 }
 
 TEST_CASE("create_token_burn refuses a no-op burn request", "[cashtoken_minting]") {
-    token_burn_params params{};
+    token_burn_params params{.destination = make_addr(0x22)};
     params.token_utxo = make_ft_utxo(parent_tx_a, 0, category_a, 1000, 800);
-    params.destination = make_addr(0x22);
     // neither burn_ft_amount nor burn_nft
 
     auto result = create_token_burn(params);
@@ -613,10 +590,9 @@ TEST_CASE("create_token_burn refuses a no-op burn request", "[cashtoken_minting]
 }
 
 TEST_CASE("create_token_burn attaches an OP_RETURN message when provided", "[cashtoken_minting]") {
-    token_burn_params params{};
+    token_burn_params params{.destination = make_addr(0x22)};
     params.token_utxo = make_ft_utxo(parent_tx_a, 0, category_a, 1000, 800);
     params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
-    params.destination = make_addr(0x22);
     params.burn_ft_amount = 1000;
     params.message = std::string{"final supply close"};
 
@@ -633,9 +609,8 @@ TEST_CASE("create_token_burn attaches an OP_RETURN message when provided", "[cas
 // ===========================================================================
 
 TEST_CASE("create_ft builds a simple FT genesis", "[cashtoken_minting]") {
-    ft_params params{};
+    ft_params params{.destination = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, 0, 50000);
-    params.destination = make_addr(0x11);
     params.total_supply = 21'000'000;
 
     auto result = create_ft(params);
@@ -646,9 +621,8 @@ TEST_CASE("create_ft builds a simple FT genesis", "[cashtoken_minting]") {
 }
 
 TEST_CASE("create_ft with_minting_nft produces both FT and minting NFT", "[cashtoken_minting]") {
-    ft_params params{};
+    ft_params params{.destination = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, 0, 50000);
-    params.destination = make_addr(0x11);
     params.total_supply = 1'000'000;
     params.with_minting_nft = true;
 
@@ -664,9 +638,8 @@ TEST_CASE("create_ft with_minting_nft produces both FT and minting NFT", "[casht
 // ===========================================================================
 
 TEST_CASE("create_nft_collection partitions NFTs into batches and returns a plan", "[cashtoken_minting]") {
-    nft_collection_params params{};
+    nft_collection_params params{.creator_address = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, 0, 1'000'000);
-    params.creator_address = make_addr(0x11);
     for (uint8_t i = 0; i < 12; ++i) {
         params.nfts.push_back({data_chunk{uint8_t(i + 1)}, std::nullopt});
     }
@@ -684,9 +657,8 @@ TEST_CASE("create_nft_collection partitions NFTs into batches and returns a plan
 }
 
 TEST_CASE("create_nft_collection honours keep_minting_token", "[cashtoken_minting]") {
-    nft_collection_params params{};
+    nft_collection_params params{.creator_address = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, 0, 1'000'000);
-    params.creator_address = make_addr(0x11);
     params.nfts.push_back({data_chunk{0x01}, std::nullopt});
     params.keep_minting_token = true;
 
@@ -696,9 +668,8 @@ TEST_CASE("create_nft_collection honours keep_minting_token", "[cashtoken_mintin
 }
 
 TEST_CASE("create_nft_collection rejects oversized commitments upfront", "[cashtoken_minting]") {
-    nft_collection_params params{};
+    nft_collection_params params{.creator_address = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, 0, 1'000'000);
-    params.creator_address = make_addr(0x11);
     // second NFT has an oversized commitment; the whole plan must be rejected.
     params.nfts.push_back({data_chunk{0x01}, std::nullopt});
     params.nfts.push_back({data_chunk(41, 0xAB), std::nullopt});
@@ -709,9 +680,8 @@ TEST_CASE("create_nft_collection rejects oversized commitments upfront", "[casht
 }
 
 TEST_CASE("create_nft_collection rejects an empty NFT list", "[cashtoken_minting]") {
-    nft_collection_params params{};
+    nft_collection_params params{.creator_address = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, 0, 1'000'000);
-    params.creator_address = make_addr(0x11);
 
     auto result = create_nft_collection(params);
     REQUIRE( ! result.has_value());
@@ -721,20 +691,9 @@ TEST_CASE("create_nft_collection rejects an empty NFT list", "[cashtoken_minting
 // Safety guards added in response to review feedback
 // ===========================================================================
 
-TEST_CASE("prepare_genesis_utxo rejects a default-constructed destination", "[cashtoken_minting]") {
-    prepare_genesis_params params{};
-    params.utxo = make_bch_utxo(parent_tx_a, 0, 50000);
-    // params.destination intentionally default-constructed
-    params.satoshis = 10000;
-
-    auto result = prepare_genesis_utxo(params);
-    REQUIRE( ! result.has_value());
-}
-
 TEST_CASE("create_token_genesis rejects token-carrying fee UTXOs (would burn tokens)", "[cashtoken_minting]") {
-    token_genesis_params params{};
+    token_genesis_params params{.destination = make_addr(0x11)};
     params.genesis_utxo = make_bch_utxo(parent_tx_a, 0, 50000);
-    params.destination = make_addr(0x11);
     params.ft_amount = 1000;
     // A token-bearing UTXO in fee_utxos would be silently burned.
     params.fee_utxos.push_back(make_ft_utxo(parent_tx_b, 1, category_a, 500));
@@ -794,10 +753,9 @@ TEST_CASE("create_token_mint rejects a minting UTXO below the token dust limit",
 }
 
 TEST_CASE("create_token_burn rejects a message above the OP_RETURN standardness limit", "[cashtoken_minting]") {
-    token_burn_params params{};
+    token_burn_params params{.destination = make_addr(0x22)};
     params.token_utxo = make_ft_utxo(parent_tx_a, 0, category_a, 1000, 800);
     params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
-    params.destination = make_addr(0x22);
     params.burn_ft_amount = 1000;
     params.message = std::string(max_op_return_payload_size + 1, 'X');
 
@@ -806,10 +764,9 @@ TEST_CASE("create_token_burn rejects a message above the OP_RETURN standardness 
 }
 
 TEST_CASE("create_token_burn accepts a message at the OP_RETURN standardness boundary", "[cashtoken_minting]") {
-    token_burn_params params{};
+    token_burn_params params{.destination = make_addr(0x22)};
     params.token_utxo = make_ft_utxo(parent_tx_a, 0, category_a, 1000, 800);
     params.fee_utxos.push_back(make_bch_utxo(parent_tx_b, 0, 50000));
-    params.destination = make_addr(0x22);
     params.burn_ft_amount = 1000;
     params.message = std::string(max_op_return_payload_size, 'X');
 

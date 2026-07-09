@@ -6,6 +6,7 @@
 #define KTH_WALLET_STEALTH_SENDER_HPP
 
 #include <cstdint>
+#include <optional>
 
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/define.hpp>
@@ -49,7 +50,7 @@ private:
 
     uint8_t const version_;
     chain::script script_;
-    wallet::payment_address address_;
+    std::optional<wallet::payment_address> address_;
 };
 
 } // namespace kth::domain::wallet

@@ -1493,7 +1493,7 @@ std::vector<mempool_transaction_summary> block_chain::get_mempool_transactions(
             auto const tx_addresses = kth::domain::wallet::payment_address::extract(
                 output.script(), encoding_p2kh, encoding_p2sh);
             for (auto const tx_address : tx_addresses) {
-                if (tx_address.valid() && addrs.find(tx_address) != addrs.end()) {
+                if (addrs.find(tx_address) != addrs.end()) {
                     ret.push_back(mempool_transaction_summary(
                         tx_address.encoded_cashaddr(false), kth::encode_hash(tx.hash()), "",
                         "", std::to_string(output.value()), i, tx_res.arrival_time()));
@@ -1507,7 +1507,7 @@ std::vector<mempool_transaction_summary> block_chain::get_mempool_transactions(
             auto const tx_addresses = kth::domain::wallet::payment_address::extract(
                 input.script(), encoding_p2kh, encoding_p2sh);
             for (auto const tx_address : tx_addresses) {
-                if (tx_address.valid() && addrs.find(tx_address) != addrs.end()) {
+                if (addrs.find(tx_address) != addrs.end()) {
                     auto const prev_tx = database_.internal_db().get_transaction(
                         input.previous_output().hash(), max_size_t);
                     if (prev_tx) {
