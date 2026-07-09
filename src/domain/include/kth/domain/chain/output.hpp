@@ -98,14 +98,17 @@ struct KD_API output {
     void set_token_data(token_data_opt const& value);
     void set_token_data(token_data_opt&& value);
 
-    /// The payment address extracted from this output as a standard script.
-    /// NOTE: not cached — calling this in a hot loop recomputes each time.
+    /// The first payment address extracted from this output as a
+    /// standard script, or `nullopt` if the script has no recognised
+    /// pattern. NOTE: not cached — calling this in a hot loop
+    /// recomputes each time.
     [[nodiscard]]
-    wallet::payment_address address(bool testnet = false) const;
+    std::optional<wallet::payment_address> address(bool testnet = false) const;
 
-    /// The first payment address extracted (may be invalid).
+    /// The first payment address extracted, or `nullopt` if the
+    /// script has no recognised pattern.
     [[nodiscard]]
-    wallet::payment_address address(uint8_t p2kh_version, uint8_t p2sh_version) const;
+    std::optional<wallet::payment_address> address(uint8_t p2kh_version, uint8_t p2sh_version) const;
 
     /// The payment addresses extracted from this output as a standard script.
     /// NOTE: not cached — caller owns any caching it needs.

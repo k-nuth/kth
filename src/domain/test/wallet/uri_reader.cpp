@@ -94,7 +94,7 @@ private:
 TEST_CASE("uri reader parse typical uri test", "[uri reader]") {
     auto const uri = parse("bitcoin:113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD?amount=0.1");
     REQUIRE(uri.valid());
-    REQUIRE(uri.payment().encoded_legacy() == "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD");
+    REQUIRE(uri.payment()->encoded_legacy() == "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD");
     REQUIRE(uri.amount() == 10000000u);
     REQUIRE(uri.label().empty());
     REQUIRE(uri.message().empty());
@@ -142,7 +142,7 @@ TEST_CASE("uri reader parse negative unknown required parameter test", "[uri rea
 TEST_CASE("uri reader parse address test", "[uri reader]") {
     auto const uri = parse("bitcoin:113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD");
     REQUIRE(uri.valid());
-    REQUIRE(uri.payment().encoded_legacy() == "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD");
+    REQUIRE(uri.payment()->encoded_legacy() == "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD");
     REQUIRE(uri.amount() == 0);
     REQUIRE(uri.label().empty());
     REQUIRE(uri.message().empty());
@@ -152,7 +152,7 @@ TEST_CASE("uri reader parse address test", "[uri reader]") {
 TEST_CASE("uri reader parse uri encoded address test", "[uri reader]") {
     auto const uri = parse("bitcoin:%3113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD");
     REQUIRE(uri.valid());
-    REQUIRE(uri.payment().encoded_legacy() == "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD");
+    REQUIRE(uri.payment()->encoded_legacy() == "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD");
 }
 
 TEST_CASE("uri reader parse negative address test", "[uri reader]") {
@@ -164,7 +164,7 @@ TEST_CASE("uri reader parse negative address test", "[uri reader]") {
 TEST_CASE("uri reader parse amount only test", "[uri reader]") {
     auto const uri = parse("bitcoin:?amount=4.2");
     REQUIRE(uri.valid());
-    REQUIRE( ! uri.payment().valid());
+    REQUIRE( ! uri.payment());
     REQUIRE(uri.amount() == 420000000u);
     REQUIRE(uri.label().empty());
     REQUIRE(uri.message().empty());
@@ -185,7 +185,7 @@ TEST_CASE("uri reader parse invalid amount test", "[uri reader]") {
 TEST_CASE("uri reader parse label only test", "[uri reader]") {
     auto const uri = parse("bitcoin:?label=test");
     REQUIRE(uri.valid());
-    REQUIRE( ! uri.payment().valid());
+    REQUIRE( ! uri.payment());
     REQUIRE(uri.amount() == 0);
     REQUIRE(uri.label() == "test");
     REQUIRE(uri.message().empty());
@@ -218,7 +218,7 @@ TEST_CASE("uri reader parse negative strict encoded multibyte utf8 with unencode
 
 TEST_CASE("uri reader parse message only test", "[uri reader]") {
     auto const uri = parse("bitcoin:?message=Hi%20Alice");
-    REQUIRE( ! uri.payment().valid());
+    REQUIRE( ! uri.payment());
     REQUIRE(uri.amount() == 0);
     REQUIRE(uri.label().empty());
     REQUIRE(uri.message() == "Hi Alice");
@@ -227,7 +227,7 @@ TEST_CASE("uri reader parse message only test", "[uri reader]") {
 
 TEST_CASE("uri reader parse payment protocol only test", "[uri reader]") {
     auto const uri = parse("bitcoin:?r=http://www.example.com?purchase%3Dshoes");
-    REQUIRE( ! uri.payment().valid());
+    REQUIRE( ! uri.payment());
     REQUIRE(uri.amount() == 0);
     REQUIRE(uri.label().empty());
     REQUIRE(uri.message().empty());

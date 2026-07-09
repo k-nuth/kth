@@ -98,7 +98,7 @@ struct KD_API ec_public {
     std::expected<ec_uncompressed, std::error_code> to_uncompressed() const;
 
     [[nodiscard]]
-    payment_address to_payment_address(uint8_t version = mainnet_p2kh) const;
+    expect<payment_address> to_payment_address(uint8_t version = mainnet_p2kh) const;
 
 private:
     static

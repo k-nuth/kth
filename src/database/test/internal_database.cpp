@@ -1407,7 +1407,9 @@ REQUIRE(tx1.is_valid());
 
 for (auto const& i : tx1.inputs()) {
 
-    std::println("address HHHHHHHHHHHHHHHHH:{}", i.address());
+    if (auto const addr = i.address()) {
+        std::println("address HHHHHHHHHHHHHHHHH:{}", *addr);
+    }
 
     auto const& script = i.script();
 

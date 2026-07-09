@@ -79,10 +79,11 @@ struct KD_API input {
 
     void set_sequence(uint32_t value);
 
-    /// The first payment address extracted (may be invalid).
-    /// NOTE: not cached — recomputed on every call.
+    /// The first payment address extracted from this input as a
+    /// standard script, or `nullopt` if the script has no recognised
+    /// pattern. NOTE: not cached — recomputed on every call.
     [[nodiscard]]
-    wallet::payment_address address() const;
+    std::optional<wallet::payment_address> address() const;
 
     /// The payment addresses extracted from this input as a standard script.
     /// NOTE: not cached — caller owns any caching it needs.

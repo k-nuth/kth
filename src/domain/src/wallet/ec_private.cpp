@@ -127,8 +127,8 @@ ec_public ec_private::to_public() const {
     return ec_public{point, compressed()};
 }
 
-payment_address ec_private::to_payment_address() const {
-    return payment_address::from_ec_private(*this).value_or(payment_address{});
+expect<payment_address> ec_private::to_payment_address() const {
+    return payment_address::from_ec_private(*this);
 }
 
 } // namespace kth::domain::wallet

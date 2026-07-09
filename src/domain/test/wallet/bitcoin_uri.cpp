@@ -186,7 +186,7 @@ TEST_CASE("bitcoin uri payment valid expected", "[bitcoin uri]") {
     auto const expected_uri = std::string("bitcoin:") + expected_payment;
     auto const uri = bitcoin_uri::parse_from(expected_uri);
     REQUIRE(uri);
-    REQUIRE(uri->payment().encoded_legacy() == expected_payment);
+    REQUIRE(uri->payment()->encoded_legacy() == expected_payment);
 }
 
 TEST_CASE("bitcoin uri stealth valid expected", "[bitcoin uri]") {
@@ -194,7 +194,7 @@ TEST_CASE("bitcoin uri stealth valid expected", "[bitcoin uri]") {
     auto const expected_uri = std::string("bitcoin:") + expected_stealth;
     auto const uri = bitcoin_uri::parse_from(expected_uri);
     REQUIRE(uri);
-    REQUIRE(uri->stealth().encoded() == expected_stealth);
+    REQUIRE(uri->stealth()->encoded() == expected_stealth);
 }
 
 TEST_CASE("bitcoin uri address payment expected", "[bitcoin uri]") {
