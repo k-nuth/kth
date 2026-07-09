@@ -17,8 +17,7 @@ namespace kth::domain::wallet {
 /**
  * BIP38 intermediate passphrase token.
  *
- * Default-constructible so the C-API generator can hand out an "empty"
- * handle; string parsing goes through `parse_from` which returns
+ * Fallible construction goes through `parse_from` which returns
  * `expect<ek_token>`.
  */
 struct KD_API ek_token {
@@ -26,25 +25,12 @@ struct KD_API ek_token {
     static
     expect<ek_token> parse_from(std::string_view encoded);
 
-    ek_token() = default;
-
     explicit
     ek_token(encrypted_token const& value)
-        : valid_(true), token_(value) {}
+        : token_(value) {}
 
     [[nodiscard]]
-    friend bool operator==(ek_token const&, ek_token const&) = default;
-
-    [[nodiscard]]
-    friend auto operator<=>(ek_token const& a, ek_token const& b) {
-        return a.to_string() <=> b.to_string();
-    }
-
-    [[nodiscard]]
-    bool valid() const noexcept { return valid_; }
-
-    [[nodiscard]]
-    encrypted_token const& value() const noexcept { return token_; }
+    friend auto operator<=>(ek_token const& a, ek_token const& b) = default;
 
     [[nodiscard]]
     encrypted_token const& token() const noexcept { return token_; }
@@ -53,8 +39,7 @@ struct KD_API ek_token {
     std::string to_string() const;
 
 private:
-    bool valid_{false};
-    encrypted_token token_{};
+    encrypted_token token_;
 };
 
 } // namespace kth::domain::wallet
