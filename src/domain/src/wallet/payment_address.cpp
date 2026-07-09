@@ -222,22 +222,12 @@ expect<payment_address> payment_address::from_payment(payment const& decoded) {
 
 // static
 expect<payment_address> payment_address::from_ec_private(ec_private const& secret) {
-    if ( ! secret.valid()) {
-        return std::unexpected(kth::error::illegal_value);
-    }
     return from_ec_public(secret.to_public(), secret.payment_version());
 }
 
 // static
 expect<payment_address> payment_address::from_ec_public(ec_public const& point, uint8_t version) {
-    if ( ! point.valid()) {
-        return std::unexpected(kth::error::illegal_value);
-    }
-    auto const data = point.to_data();
-    if ( ! data) {
-        return std::unexpected(kth::error::illegal_value);
-    }
-    return payment_address{bitcoin_short_hash(*data), version};
+    return payment_address{bitcoin_short_hash(point.to_data()), version};
 }
 
 // static

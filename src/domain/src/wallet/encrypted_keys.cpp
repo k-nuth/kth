@@ -54,13 +54,13 @@ bool address_salt(ek_salt& salt, payment_address const& address) {
 
 static
 bool address_salt(ek_salt& salt, ec_compressed const& point, uint8_t version, bool compressed) {
-    auto address = payment_address::from_ec_public(ec_public{point, compressed}, version);
+    auto address = payment_address::from_ec_public(ec_public::from_verified_point(point, compressed), version);
     return address ? address_salt(salt, *address) : false;
 }
 
 static
 bool address_salt(ek_salt& salt, ec_secret const& secret, uint8_t version, bool compressed) {
-    auto address = payment_address::from_ec_private(ec_private{secret, version, compressed});
+    auto address = payment_address::from_ec_private(ec_private::from_verified_secret(secret, version, compressed));
     return address ? address_salt(salt, *address) : false;
 }
 
@@ -72,13 +72,13 @@ bool address_validate(ek_salt const& salt, payment_address const& address) {
 
 static
 bool address_validate(ek_salt const& salt, ec_compressed const& point, uint8_t version, bool compressed) {
-    auto address = payment_address::from_ec_public(ec_public{point, compressed}, version);
+    auto address = payment_address::from_ec_public(ec_public::from_verified_point(point, compressed), version);
     return address ? address_validate(salt, *address) : false;
 }
 
 static
 bool address_validate(ek_salt const& salt, ec_secret const& secret, uint8_t version, bool compressed) {
-    auto address = payment_address::from_ec_private(ec_private{secret, version, compressed});
+    auto address = payment_address::from_ec_private(ec_private::from_verified_secret(secret, version, compressed));
     return address ? address_validate(salt, *address) : false;
 }
 

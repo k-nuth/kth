@@ -29,11 +29,11 @@ TEST_CASE("ec private uncompressed wif not compressed test", "[ec private]") {
 }
 
 TEST_CASE("ec private encode wif compressed test", "[ec private]") {
-    REQUIRE(ec_private(secret).to_string() == wif_compressed_str);
+    REQUIRE(ec_private::from_verified_secret(secret, ec_private::mainnet, true).to_string() == wif_compressed_str);
 }
 
 TEST_CASE("ec private encode wif uncompressed test", "[ec private]") {
-    REQUIRE(ec_private(secret, 0x8000, false).to_string() == wif_uncompressed_str);
+    REQUIRE(ec_private::from_verified_secret(secret, 0x8000, false).to_string() == wif_uncompressed_str);
 }
 
 TEST_CASE("ec private decode wif compressed test", "[ec private]") {

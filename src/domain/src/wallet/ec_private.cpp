@@ -57,6 +57,19 @@ bool ec_private::is_wif(byte_span decoded) {
 // ----------------------------------------------------------------------------
 
 // static
+expect<ec_private> ec_private::from_secret(ec_secret const& secret, uint16_t version, bool compress) {
+    if ( ! kth::verify(secret)) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return ec_private(secret, version, compress);
+}
+
+// static
+ec_private ec_private::from_verified_secret(ec_secret const& secret, uint16_t version, bool compress) {
+    return ec_private(secret, version, compress);
+}
+
+// static
 expect<ec_private> ec_private::parse_from(std::string_view wif, uint8_t version) {
     data_chunk decoded;
     if ( ! decode_base58(decoded, std::string{wif}) || ! is_wif(decoded)) {
@@ -77,8 +90,7 @@ expect<ec_private> ec_private::from_compressed(wif_compressed const& wif, uint8_
 
     uint16_t const version = to_version(address_version, wif.front());
     auto const secret = slice<1, ec_secret_size + 1>(wif);
-    ec_private out{secret, version, true};
-    return out;
+    return from_secret(secret, version, true);
 }
 
 // static
@@ -89,8 +101,7 @@ expect<ec_private> ec_private::from_uncompressed(wif_uncompressed const& wif, ui
 
     uint16_t const version = to_version(address_version, wif.front());
     auto const secret = slice<1, ec_secret_size + 1>(wif);
-    ec_private out{secret, version, false};
-    return out;
+    return from_secret(secret, version, false);
 }
 
 // Serializer.
@@ -115,16 +126,15 @@ std::string ec_private::to_string() const {
 // Methods.
 // ----------------------------------------------------------------------------
 
-// A valid secret always produces a valid public point.
+// A valid secret always produces a valid public point; factories that
+// build an `ec_private` verify the scalar's range up front. Assert
+// catches the only invariant-breaking path: `from_verified_secret`
+// called with a secret outside `[1, n-1]`.
 ec_public ec_private::to_public() const {
-    if ( ! valid_) {
-        return ec_public{};
-    }
     ec_compressed point;
-    if ( ! secret_to_public(point, secret_)) {
-        return ec_public{};
-    }
-    return ec_public{point, compressed()};
+    DEBUG_ONLY(auto const ok =) secret_to_public(point, secret_);
+    KTH_ASSERT_MSG(ok, "secret_to_public failed — from_verified_secret called with an out-of-range scalar");
+    return ec_public::from_verified_point(point, compressed());
 }
 
 expect<payment_address> ec_private::to_payment_address() const {

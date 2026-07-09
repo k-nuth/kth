@@ -809,14 +809,10 @@ operation::list script::to_pay_public_key_hash_pattern(short_hash const& hash) {
 }
 
 operation::list script::to_pay_public_key_hash_pattern_unlocking(endorsement const& end, wallet::ec_public const& pubkey) {
-    auto pubkey_data = pubkey.to_data();
-    if ( ! pubkey_data) {
-        return operation::list {};
-    }
     return operation::list {
         operation(opcode::push_size_0),
         operation(end),
-        operation(std::move(*pubkey_data))
+        operation(pubkey.to_data())
     };
 }
 

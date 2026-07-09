@@ -60,7 +60,7 @@ void stealth_sender::initialize(ec_secret const& ephemeral_private,
     }
 
     if (create_stealth_script(script_, ephemeral_private, filter, seed)) {
-        auto address_result = wallet::payment_address::from_ec_public(ec_public{sender_public}, version_);
+        auto address_result = wallet::payment_address::from_ec_public(ec_public::from_verified_point(sender_public, true), version_);
         if (address_result) {
             address_ = *address_result;
         }
