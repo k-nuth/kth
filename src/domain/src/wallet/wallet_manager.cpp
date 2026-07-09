@@ -31,13 +31,6 @@ hash_digest derive_key(std::string const& password, std::array<uint8_t, default_
     return key;
 }
 
-template <typename T>
-void clear_hd(T& hd) {
-    using std::swap;
-    T tmp;
-    swap(hd, tmp);
-}
-
 std::expected<wallet_data, std::error_code>
 create(
     std::string const& password,
@@ -65,18 +58,20 @@ create(
 
     data_chunk seed_chunk(seed.begin(), seed.end());
 
-    hd_private m(seed_chunk, hd_private::mainnet);
+    auto m = hd_private::from_seed(seed_chunk, hd_private::mainnet);
     std::fill(seed_chunk.begin(), seed_chunk.end(), 0);
-    hd_private m44h = m.derive_private(44 + hd_first_hardened_key);
-    hd_private m44h145h = m44h.derive_private(145 + hd_first_hardened_key);
-    hd_private m44h145h0h = m44h145h.derive_private(0 + hd_first_hardened_key);
-    hd_public pub = m44h145h0h.to_public();
+    if ( ! m) return std::unexpected(m.error());
 
-    // erase all the intermediate hd_private and hd_public objects
-    clear_hd(m);
-    clear_hd(m44h);
-    clear_hd(m44h145h);
-    clear_hd(m44h145h0h);
+    auto m44h = m->derive_private(44 + hd_first_hardened_key);
+    if ( ! m44h) return std::unexpected(m44h.error());
+
+    auto m44h145h = m44h->derive_private(145 + hd_first_hardened_key);
+    if ( ! m44h145h) return std::unexpected(m44h145h.error());
+
+    auto m44h145h0h = m44h145h->derive_private(0 + hd_first_hardened_key);
+    if ( ! m44h145h0h) return std::unexpected(m44h145h0h.error());
+
+    hd_public pub = m44h145h0h->to_public();
 
     auto const salt = generate_salt();
     auto const iv = generate_salt<default_iv_size>();

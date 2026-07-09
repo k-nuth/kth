@@ -24,28 +24,8 @@
 
 namespace kth::domain::wallet {
 
-// const uint32_t hd_public::mainnet = 76067358;
-// const uint32_t hd_public::testnet = 70617039;
-
 // hd_public
 // ----------------------------------------------------------------------------
-
-hd_public::hd_public()
-    : chain_(null_hash), lineage_({0, 0, 0, 0})
-    , point_(null_compressed_point)
-{}
-
-// This cannot validate the version.
-hd_public::hd_public(hd_key const& public_key)
-    : hd_public(from_key(public_key))
-{}
-
-// This validates the version.
-hd_public::hd_public(hd_key const& public_key, uint32_t prefix)
-    : hd_public(from_key(public_key, prefix))
-{}
-
-
 
 // static
 expect<hd_public> hd_public::parse_from(std::string_view encoded) {
@@ -53,11 +33,7 @@ expect<hd_public> hd_public::parse_from(std::string_view encoded) {
     if ( ! decode_base58(key, std::string{encoded})) {
         return std::unexpected(kth::error::illegal_value);
     }
-    auto out = from_key(key);
-    if ( ! out.valid()) {
-        return std::unexpected(kth::error::illegal_value);
-    }
-    return out;
+    return from_hd_key(key);
 }
 
 // static
@@ -66,61 +42,73 @@ expect<hd_public> hd_public::parse_from_with_prefix(std::string_view encoded, ui
     if ( ! decode_base58(key, std::string{encoded})) {
         return std::unexpected(kth::error::illegal_value);
     }
-    auto out = from_key(key, prefix);
-    if ( ! out.valid()) {
-        return std::unexpected(kth::error::illegal_value);
-    }
-    return out;
+    return from_hd_key_with_prefix(key, prefix);
+}
+
+// static
+expect<hd_public> hd_public::from_hd_key(hd_key const& key) {
+    return from_key_impl(key);
+}
+
+// static
+expect<hd_public> hd_public::from_hd_key_with_prefix(hd_key const& key, uint32_t prefix) {
+    return from_key_impl(key, prefix);
 }
 
 hd_public::hd_public(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage)
-    : valid_(true), point_(point), chain_(chain_code), lineage_(lineage)
+    : chain_(chain_code), lineage_(lineage), point_(point)
 {}
 
 // Factories.
 // ----------------------------------------------------------------------------
 
-hd_public hd_public::from_secret(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage) {
+// static
+expect<hd_public> hd_public::from_secret(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage) {
     ec_compressed point;
-    return secret_to_public(point, secret) ? hd_public(point, chain_code, lineage) : hd_public{};
+    if ( ! secret_to_public(point, secret)) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return hd_public(point, chain_code, lineage);
 }
 
-hd_public hd_public::from_key(hd_key const& key) {
+// static
+expect<hd_public> hd_public::from_key_impl(hd_key const& key) {
     auto const prefix = from_big_endian_unsafe<uint32_t>(key);
-    return from_key(key, prefix);
+    return from_key_impl(key, prefix);
 }
 
-hd_public hd_public::from_key(hd_key const& key, uint32_t prefix) {
+// static
+expect<hd_public> hd_public::from_key_impl(hd_key const& key, uint32_t prefix) {
     byte_reader reader(key);
 
     auto const actual_prefix = reader.read_big_endian<uint32_t>();
     if ( ! actual_prefix || *actual_prefix != prefix) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     auto const depth = reader.read_byte();
     if ( ! depth) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     auto const parent = reader.read_big_endian<uint32_t>();
     if ( ! parent) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     auto const child = reader.read_big_endian<uint32_t>();
     if ( ! child) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     auto const chain = reader.read_packed<hd_chain_code>();
     if ( ! chain) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     auto const point = reader.read_packed<ec_compressed>();
     if ( ! point) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     // The private prefix will be zero'd here, but there's no way to access it.
@@ -162,9 +150,9 @@ hd_key hd_public::to_hd_key() const {
     return out;
 }
 
-hd_public hd_public::derive_public(uint32_t index) const {
+expect<hd_public> hd_public::derive_public(uint32_t index) const {
     if (index >= hd_first_hardened_key) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     auto const data = splice(point_, to_big_endian(index));
@@ -173,11 +161,11 @@ hd_public hd_public::derive_public(uint32_t index) const {
     // The returned child key Ki is point(parse256(IL)) + Kpar.
     auto combined = point_;
     if ( ! ec_add(combined, intermediate.left)) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     if (lineage_.depth == max_uint8) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     hd_lineage const lineage {
