@@ -86,7 +86,7 @@ TEST_CASE("hd private derive public short seed expected", "[hd private tests]") 
     auto const m0h12h2 = m0h12h.derive_private(2).value();
     auto const m0h12h2x = m0h12h2.derive_private(1000000000).value();
 
-    hd_public m_pub = *m;
+    hd_public m_pub = m->to_public();
     auto const m0h_pub = m->derive_public(hd_first_hardened_key).value();
     auto const m0h1_pub = m0h.derive_public(1).value();
     auto const m0h12h_pub = m0h1.derive_public(2 + hd_first_hardened_key).value();
@@ -133,7 +133,7 @@ TEST_CASE("hd private derive public long seed expected", "[hd private tests]") {
     auto const m0xH1yH = m0xH1.derive_private(2147483646 + hd_first_hardened_key).value();
     auto const m0xH1yH2 = m0xH1yH.derive_private(2).value();
 
-    hd_public m_pub = *m;
+    hd_public m_pub = m->to_public();
     auto const m0_pub = m->derive_public(0).value();
     auto const m0xH_pub = m0.derive_public(2147483647 + hd_first_hardened_key).value();
     auto const m0xH1_pub = m0xH.derive_public(1).value();

@@ -23,7 +23,7 @@ TEST_CASE("hd public derive public invalid false", "[hd public tests]") {
 
     auto const m = hd_private::from_seed(*seed, hd_private::mainnet);
     REQUIRE(m);
-    hd_public const m_pub = *m;
+    hd_public const m_pub = m->to_public();
     REQUIRE( ! m_pub.derive_public(hd_first_hardened_key));
 }
 
@@ -43,7 +43,7 @@ TEST_CASE("hd public derive public short seed expected", "[hd public tests]") {
     auto const m0h = m->derive_private(hd_first_hardened_key).value();
     auto const m0h1 = m0h.derive_private(1).value();
 
-    hd_public const m_pub = *m;
+    hd_public const m_pub = m->to_public();
     auto const m0h_pub = m->derive_public(hd_first_hardened_key).value();
     auto const m0h1_pub = m0h_pub.derive_public(1).value();
     auto const m0h12h_pub = m0h1.derive_public(2 + hd_first_hardened_key).value();
@@ -68,7 +68,7 @@ TEST_CASE("hd public derive public long seed expected", "[hd public tests]") {
     auto const m0xH = m0.derive_private(2147483647 + hd_first_hardened_key).value();
     auto const m0xH1 = m0xH.derive_private(1).value();
 
-    hd_public const m_pub = *m;
+    hd_public const m_pub = m->to_public();
     auto const m0_pub = m_pub.derive_public(0).value();
     auto const m0xH_pub = m0.derive_public(2147483647 + hd_first_hardened_key).value();
     auto const m0xH1_pub = m0xH_pub.derive_public(1).value();

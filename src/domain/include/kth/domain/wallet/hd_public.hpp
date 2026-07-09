@@ -28,14 +28,10 @@ using hd_chain_code = byte_array<hd_chain_code_size>;
 static constexpr size_t hd_key_size = 82;
 using hd_key = byte_array<hd_key_size>;
 
-class hd_private;
-
 /// BIP32 extended public key. Valid-by-construction: every reachable
 /// instance was produced by a factory that validated its inputs, so
 /// accessors and serializers are always meaningful.
 struct KD_API hd_public {
-    friend class hd_private;
-
     static constexpr uint32_t mainnet = 76067358;
     static constexpr uint32_t testnet = 70617039;
 
@@ -64,6 +60,21 @@ struct KD_API hd_public {
     static
     expect<hd_public> from_hd_key_with_prefix(hd_key const& key, uint32_t prefix);
 
+    /// Derive the public counterpart of an ec_secret and wrap it
+    /// with a caller-supplied chain code / lineage. Fails when
+    /// `secret` cannot be lifted to the curve.
+    [[nodiscard]]
+    static
+    expect<hd_public> from_secret(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage);
+
+    /// Package a triple that has already been validated (or produced
+    /// by an internal derivation step) into an `hd_public`. Caller is
+    /// responsible for the on-curve invariant of `point`; no checks
+    /// are performed here.
+    [[nodiscard]]
+    static
+    hd_public from_verified_components(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage);
+
     [[nodiscard]]
     friend auto operator<=>(hd_public const& a, hd_public const& b) = default;
 
@@ -86,30 +97,29 @@ struct KD_API hd_public {
     [[nodiscard]]
     expect<hd_public> derive_public(uint32_t index) const;
 
+    /// Fingerprint of this key: leading 4 bytes of `HASH160(point)`.
+    /// Used as `parent_fingerprint` when this key acts as a parent
+    /// in BIP32 derivation.
+    uint32_t fingerprint() const;
+
     /// Overwrite every field with zero for security-sensitive
     /// teardown (before scope exit). After `wipe()` the accessors
     /// return well-formed but semantically meaningless data; further
     /// use of the object is a caller error.
     void wipe() noexcept;
 
-protected:
+private:
     hd_public(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage);
 
-    static
-    expect<hd_public> from_secret(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage);
-
-    uint32_t fingerprint() const;
-
-    hd_chain_code chain_;
-    hd_lineage lineage_;
-    ec_compressed point_;
-
-private:
     static
     expect<hd_public> from_key_impl(hd_key const& key);
 
     static
     expect<hd_public> from_key_impl(hd_key const& key, uint32_t prefix);
+
+    hd_chain_code chain_;
+    hd_lineage lineage_;
+    ec_compressed point_;
 };
 
 } // namespace kth::domain::wallet

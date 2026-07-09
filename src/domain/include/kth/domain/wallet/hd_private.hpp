@@ -23,9 +23,13 @@ uint64_t to_prefixes(uint32_t private_prefix, uint32_t public_prefix) {
 }
 
 /// BIP32 extended private key. Valid-by-construction: every reachable
-/// instance was produced by a factory that validated its inputs, so
-/// accessors and derivations are always meaningful.
-struct KD_API hd_private : hd_public {
+/// instance was produced by a factory that validated its inputs.
+///
+/// Holds an `hd_public` by composition (not inheritance); the base
+/// hd_public carries the derived `point`, `chain_code`, and packed
+/// `lineage` (private-side prefix in the high 32 bits, public-side
+/// in the low 32 bits — see `to_public()`).
+struct KD_API hd_private {
     static constexpr uint64_t mainnet = to_prefixes(76066276, hd_public::mainnet);
     static constexpr uint64_t testnet = to_prefixes(70615956, hd_public::testnet);
 
@@ -85,6 +89,22 @@ struct KD_API hd_private : hd_public {
     [[nodiscard]]
     ec_secret const& secret() const noexcept { return secret_; }
 
+    /// Read-only view of the composed public-side key. Note that its
+    /// `lineage().prefixes` still carries the private+public pair
+    /// packed together; use `to_public()` to obtain a peer with the
+    /// prefix rewritten to the public-only view.
+    [[nodiscard]]
+    hd_public const& public_key() const noexcept { return public_; }
+
+    [[nodiscard]]
+    hd_chain_code const& chain_code() const noexcept { return public_.chain_code(); }
+
+    [[nodiscard]]
+    hd_lineage const& lineage() const noexcept { return public_.lineage(); }
+
+    [[nodiscard]]
+    ec_compressed const& point() const noexcept { return public_.point(); }
+
     /// Base58 encoding used by `fmt::formatter<hd_private>`.
     [[nodiscard]]
     std::string to_string() const;
@@ -92,6 +112,9 @@ struct KD_API hd_private : hd_public {
     [[nodiscard]]
     hd_key to_hd_key() const;
 
+    /// Peer `hd_public` — same point / chain / depth / fingerprint,
+    /// with the packed lineage prefix collapsed to just the public
+    /// half. Infallible.
     [[nodiscard]]
     hd_public to_public() const;
 
@@ -101,8 +124,9 @@ struct KD_API hd_private : hd_public {
     [[nodiscard]]
     expect<hd_public> derive_public(uint32_t index) const;
 
-    /// Overwrite every field (including `secret_`) with zero for
-    /// security-sensitive teardown. Extends `hd_public::wipe()`.
+    /// Overwrite the composed public part and the private `secret_`
+    /// with zero for security-sensitive teardown. Wraps
+    /// `hd_public::wipe()`.
     void wipe() noexcept;
 
 private:
@@ -114,6 +138,7 @@ private:
 
     hd_private(hd_public base, ec_secret const& secret);
 
+    hd_public public_;
     ec_secret secret_ {null_hash};
 };
 

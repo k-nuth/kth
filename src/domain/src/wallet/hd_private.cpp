@@ -25,7 +25,7 @@
 namespace kth::domain::wallet {
 
 hd_private::hd_private(hd_public base, ec_secret const& secret)
-    : hd_public(std::move(base))
+    : public_(std::move(base))
     , secret_(secret)
 {}
 
@@ -176,14 +176,16 @@ std::string hd_private::to_string() const {
 hd_key hd_private::to_hd_key() const {
     static constexpr uint8_t private_key_padding = 0x00;
 
+    auto const& lineage = public_.lineage();
+
     hd_key out;
     build_checked_array(out,
     {
-        to_big_endian(to_prefix(lineage_.prefixes)),
-        to_array(lineage_.depth),
-        to_big_endian(lineage_.parent_fingerprint),
-        to_big_endian(lineage_.child_number),
-        chain_,
+        to_big_endian(to_prefix(lineage.prefixes)),
+        to_array(lineage.depth),
+        to_big_endian(lineage.parent_fingerprint),
+        to_big_endian(lineage.child_number),
+        public_.chain_code(),
         to_array(private_key_padding),
         secret_
     });
@@ -192,22 +194,23 @@ hd_key hd_private::to_hd_key() const {
 }
 
 hd_public hd_private::to_public() const {
-    // Swap the private-side prefix out for the public-side prefix
-    // stored in the low 32 bits, then build directly from the
-    // already-derived point (no serialization round-trip).
-    hd_lineage adjusted = lineage_;
-    adjusted.prefixes = hd_public::to_prefix(lineage_.prefixes);
-    return hd_public(point_, chain_, adjusted);
+    // Rewrite the packed private+public prefix pair down to just the
+    // public half; the point and chain are already the derived ones.
+    hd_lineage adjusted = public_.lineage();
+    adjusted.prefixes = hd_public::to_prefix(adjusted.prefixes);
+    return hd_public::from_verified_components(public_.point(), public_.chain_code(), adjusted);
 }
 
 expect<hd_private> hd_private::derive_private(uint32_t index) const {
     constexpr uint8_t depth = 0;
 
+    auto const& lineage = public_.lineage();
+
     auto const data = (index >= hd_first_hardened_key) ?
         splice(to_array(depth), secret_, to_big_endian(index)) :
-        splice(point_, to_big_endian(index));
+        splice(public_.point(), to_big_endian(index));
 
-    auto const intermediate = split(hmac_sha512_hash(data, chain_));
+    auto const intermediate = split(hmac_sha512_hash(data, public_.chain_code()));
 
     // The child key ki is (parse256(IL) + kpar) mod n:
     auto child = secret_;
@@ -215,18 +218,18 @@ expect<hd_private> hd_private::derive_private(uint32_t index) const {
         return std::unexpected(kth::error::illegal_value);
     }
 
-    if (lineage_.depth == max_uint8) {
+    if (lineage.depth == max_uint8) {
         return std::unexpected(kth::error::illegal_value);
     }
 
-    hd_lineage const lineage {
-        lineage_.prefixes,
-        uint8_t(lineage_.depth + 1),
-        fingerprint(),
+    hd_lineage const child_lineage {
+        lineage.prefixes,
+        uint8_t(lineage.depth + 1),
+        public_.fingerprint(),
         index
     };
 
-    return from_verified_secret(child, intermediate.right, lineage);
+    return from_verified_secret(child, intermediate.right, child_lineage);
 }
 
 expect<hd_public> hd_private::derive_public(uint32_t index) const {
@@ -238,7 +241,7 @@ expect<hd_public> hd_private::derive_public(uint32_t index) const {
 }
 
 void hd_private::wipe() noexcept {
-    hd_public::wipe();
+    public_.wipe();
     secret_.fill(0);
 }
 
