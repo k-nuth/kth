@@ -23,17 +23,21 @@ stealth_receiver::stealth_receiver(ec_secret const& scan_private,
     ec_compressed scan_public;
     if (secret_to_public(scan_public, scan_private_) &&
         secret_to_public(spend_public_, spend_private_)) {
-        address_ = {filter, scan_public, {spend_public_}};
+        auto built = stealth_address::from_components(
+            filter, scan_public, {spend_public_}, 0, stealth_address::mainnet_p2kh);
+        if (built) {
+            address_ = std::move(*built);
+        }
     }
 }
 
 stealth_receiver::operator bool() const {
-    return address_.valid();
+    return address_.has_value();
 }
 
-// Will be invalid if construct fails.
+// Precondition: `operator bool()` returned true.
 const wallet::stealth_address& stealth_receiver::stealth_address() const {
-    return address_;
+    return *address_;
 }
 
 bool stealth_receiver::derive_address(payment_address& out_address,

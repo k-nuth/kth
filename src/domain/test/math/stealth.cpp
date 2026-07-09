@@ -81,7 +81,7 @@ TEST_CASE("stealth round trip", "[stealth]") {
 
 TEST_CASE("verify string constructor", "[stealth]") {
     std::string const value = "01100110000";
-    binary prefix(value);
+    binary prefix = binary::parse_from(value).value();
     REQUIRE(value.size() == prefix.size());
     for (size_t i = 0; i < value.size(); ++i) {
         auto const comparison = value[i] == '1';

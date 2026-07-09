@@ -20,14 +20,8 @@
 
 namespace kth::domain::wallet {
 
-/**
- * Stealth payment address.
- *
- * Default-constructible so callers that hold a `stealth_address` as a
- * struct member (e.g. `stealth_receiver::address_`) can fill it later
- * via assignment. Fallible construction goes through `parse_from`,
- * which returns `expect<stealth_address>`.
- */
+/// Stealth payment address. Valid-by-construction: every reachable
+/// instance was produced by a factory that validated its inputs.
 struct KD_API stealth_address {
     /// DEPRECATED: we intend to make p2kh same as payment address versions.
     static uint8_t const mainnet_p2kh;
@@ -45,30 +39,30 @@ struct KD_API stealth_address {
     static
     expect<stealth_address> parse_from(std::string_view encoded);
 
-    stealth_address();
+    /// Parse the wire encoding
+    /// (`[version][options][scan_pubkey][N][spend_pubkeys][sigs][filter_bits][filter][checksum]`).
+    [[nodiscard]]
+    static
+    expect<stealth_address> from_data(data_chunk const& decoded);
 
-    explicit
-    stealth_address(data_chunk const& decoded);
-
-    stealth_address(binary const& filter, ec_compressed const& scan_key, point_list const& spend_keys, uint8_t signatures = 0, uint8_t version = mainnet_p2kh);
+    /// Wrap a caller-supplied component tuple. Coerces `signatures` to
+    /// a valid range and folds `scan_key` into `spend_keys` if the
+    /// list is empty (matches the historical constructor's behaviour).
+    /// Fails on too-many spend keys (>255) or an over-long filter.
+    [[nodiscard]]
+    static
+    expect<stealth_address> from_components(binary const& filter,
+                                            ec_compressed const& scan_key,
+                                            point_list const& spend_keys,
+                                            uint8_t signatures,
+                                            uint8_t version);
 
     [[nodiscard]]
-    friend bool operator==(stealth_address const&, stealth_address const&) = default;
-
-    [[nodiscard]]
-    friend auto operator<=>(stealth_address const& a, stealth_address const& b) {
-        return a.encoded() <=> b.encoded();
-    }
-
-    [[nodiscard]]
-    bool valid() const noexcept { return valid_; }
+    friend auto operator<=>(stealth_address const&, stealth_address const&) = default;
 
     /// Base58 encoding used by `fmt::formatter<stealth_address>`.
     [[nodiscard]]
-    std::string encoded() const;
-
-    [[nodiscard]]
-    std::string to_string() const { return encoded(); }
+    std::string to_string() const;
 
     [[nodiscard]]
     uint8_t version() const noexcept { return version_; }
@@ -89,18 +83,17 @@ struct KD_API stealth_address {
     data_chunk to_chunk() const;
 
 private:
-    static
-    stealth_address from_stealth(data_chunk const& decoded);
-
-    static
-    stealth_address from_stealth(binary const& filter,
-                                 ec_compressed const& scan_key,
-                                 point_list const& spend_keys,
-                                 uint8_t signatures,
-                                 uint8_t version);
-
-    /// Parameter order is used to change the constructor signature.
-    stealth_address(uint8_t version, binary const& filter, ec_compressed const& scan_key, point_list const& spend_keys, uint8_t signatures);
+    stealth_address(uint8_t version,
+                    binary const& filter,
+                    ec_compressed const& scan_key,
+                    point_list const& spend_keys,
+                    uint8_t signatures)
+        : version_(version)
+        , scan_key_(scan_key)
+        , spend_keys_(spend_keys)
+        , signatures_(signatures)
+        , filter_(filter)
+    {}
 
     [[nodiscard]]
     bool reuse_key() const;
@@ -108,8 +101,6 @@ private:
     [[nodiscard]]
     uint8_t options() const;
 
-    // These should be const, apart from the need to implement assignment.
-    bool          valid_{false};
     uint8_t       version_{0};
     ec_compressed scan_key_;
     point_list    spend_keys_;

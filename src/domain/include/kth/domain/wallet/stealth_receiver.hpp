@@ -6,6 +6,7 @@
 #define KTH_WALLET_STEALTH_RECEIVER_HPP
 
 #include <cstdint>
+#include <optional>
 
 #include <kth/domain/define.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
@@ -43,7 +44,7 @@ private:
     ec_secret const scan_private_;
     ec_secret const spend_private_;
     ec_compressed spend_public_;
-    wallet::stealth_address address_;
+    std::optional<wallet::stealth_address> address_;
 };
 
 } // namespace kth::domain::wallet
