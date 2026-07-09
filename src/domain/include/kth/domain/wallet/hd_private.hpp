@@ -22,14 +22,9 @@ uint64_t to_prefixes(uint32_t private_prefix, uint32_t public_prefix) {
     return uint64_t(private_prefix) << 32 | public_prefix;
 }
 
-/**
- * BIP32 extended private key.
- *
- * Derives from `hd_public`. Default-constructible so callers that hold
- * an `hd_private` as a struct member can fill it later via assignment;
- * fallible construction goes through the `parse_from`-family static
- * factories, which return `expect<hd_private>`.
- */
+/// BIP32 extended private key. Valid-by-construction: every reachable
+/// instance was produced by a factory that validated its inputs, so
+/// accessors and derivations are always meaningful.
 struct KD_API hd_private : hd_public {
     static constexpr uint64_t mainnet = to_prefixes(76066276, hd_public::mainnet);
     static constexpr uint64_t testnet = to_prefixes(70615956, hd_public::testnet);
@@ -57,29 +52,29 @@ struct KD_API hd_private : hd_public {
     static
     expect<hd_private> parse_from_with_prefixes(std::string_view encoded, uint64_t prefixes);
 
-    hd_private() = default;
-    hd_private& operator=(hd_private x);
+    /// Derive a master key from a seed against a caller-supplied
+    /// prefix pair (packed as `to_prefixes(private, public)`).
+    [[nodiscard]]
+    static
+    expect<hd_private> from_seed(data_chunk const& seed, uint64_t prefixes);
 
-    explicit
-    hd_private(data_chunk const& seed, uint64_t prefixes = mainnet);
+    /// Wrap an already-decoded 82-byte hd key, reading its private
+    /// prefix off the wire and pairing it with a caller-supplied
+    /// public prefix. Named distinctly from `from_hd_key_with_prefixes`
+    /// so the `uint32_t` / `uint64_t` overloads can't collide via
+    /// implicit promotion at the call site.
+    [[nodiscard]]
+    static
+    expect<hd_private> from_hd_key_with_public_prefix(hd_key const& private_key, uint32_t public_prefix);
 
-    explicit
-    hd_private(hd_key const& private_key);
-
-    hd_private(hd_key const& private_key, uint64_t prefixes);
-    hd_private(hd_key const& private_key, uint32_t prefix);
+    /// Wrap an already-decoded 82-byte hd key against a caller-
+    /// supplied prefix pair.
+    [[nodiscard]]
+    static
+    expect<hd_private> from_hd_key_with_prefixes(hd_key const& private_key, uint64_t prefixes);
 
     [[nodiscard]]
-    friend bool operator==(hd_private const&, hd_private const&) = default;
-
-    [[nodiscard]]
-    friend auto operator<=>(hd_private const& a, hd_private const& b) {
-        return a.to_string() <=> b.to_string();
-    }
-
-    // Swap implementation required to properly handle base class.
-    friend
-    void swap(hd_private& left, hd_private& right);
+    friend auto operator<=>(hd_private const&, hd_private const&) = default;
 
     [[nodiscard]]
     ec_secret const& secret() const noexcept { return secret_; }
@@ -95,18 +90,19 @@ struct KD_API hd_private : hd_public {
     hd_public to_public() const;
 
     [[nodiscard]]
-    hd_private derive_private(uint32_t index) const;
+    expect<hd_private> derive_private(uint32_t index) const;
 
     [[nodiscard]]
-    hd_public derive_public(uint32_t index) const;
+    expect<hd_public> derive_public(uint32_t index) const;
 
 private:
-    static hd_private from_seed(byte_span seed, uint64_t prefixes);
-    static hd_private from_key(hd_key const& decoded);
-    static hd_private from_key(hd_key const& key, uint32_t public_prefix);
-    static hd_private from_key(hd_key const& key, uint64_t prefixes);
+    static expect<hd_private> from_seed_impl(byte_span seed, uint64_t prefixes);
+    static expect<hd_private> from_key_impl(hd_key const& key, uint32_t public_prefix);
+    static expect<hd_private> from_key_impl(hd_key const& key, uint64_t prefixes);
 
-    hd_private(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage);
+    static expect<hd_private> from_verified_secret(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage);
+
+    hd_private(hd_public base, ec_secret const& secret);
 
     ec_secret secret_ {null_hash};
 };

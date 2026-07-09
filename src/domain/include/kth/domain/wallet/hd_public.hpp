@@ -30,15 +30,12 @@ using hd_key = byte_array<hd_key_size>;
 
 class hd_private;
 
-/**
- * BIP32 extended public key.
- *
- * Default-constructible (invalid state) so callers that hold an
- * `hd_public` as a struct member can fill it later via assignment.
- * Fallible construction goes through `parse_from` /
- * `parse_from_with_prefix` which return `expect<hd_public>`.
- */
+/// BIP32 extended public key. Valid-by-construction: every reachable
+/// instance was produced by a factory that validated its inputs, so
+/// accessors and serializers are always meaningful.
 struct KD_API hd_public {
+    friend class hd_private;
+
     static constexpr uint32_t mainnet = 76067358;
     static constexpr uint32_t testnet = 70617039;
 
@@ -55,23 +52,20 @@ struct KD_API hd_public {
     static
     expect<hd_public> parse_from_with_prefix(std::string_view encoded, uint32_t prefix);
 
-    hd_public();
+    /// Wrap an already-decoded 82-byte hd key, reading its version
+    /// prefix straight off the wire.
+    [[nodiscard]]
+    static
+    expect<hd_public> from_hd_key(hd_key const& key);
 
-    explicit
-    hd_public(hd_key const& public_key);
-
-    hd_public(hd_key const& public_key, uint32_t prefix);
+    /// Wrap an already-decoded 82-byte hd key against a caller-
+    /// supplied version prefix. Mismatched prefix returns an error.
+    [[nodiscard]]
+    static
+    expect<hd_public> from_hd_key_with_prefix(hd_key const& key, uint32_t prefix);
 
     [[nodiscard]]
-    friend bool operator==(hd_public const&, hd_public const&) = default;
-
-    [[nodiscard]]
-    friend auto operator<=>(hd_public const& a, hd_public const& b) {
-        return a.to_string() <=> b.to_string();
-    }
-
-    [[nodiscard]]
-    bool valid() const noexcept { return valid_; }
+    friend auto operator<=>(hd_public const& a, hd_public const& b) = default;
 
     /// Base58 encoding used by `fmt::formatter<hd_public>`.
     [[nodiscard]]
@@ -90,28 +84,26 @@ struct KD_API hd_public {
     hd_key to_hd_key() const;
 
     [[nodiscard]]
-    hd_public derive_public(uint32_t index) const;
+    expect<hd_public> derive_public(uint32_t index) const;
 
 protected:
+    hd_public(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage);
+
     static
-    hd_public from_secret(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage);
+    expect<hd_public> from_secret(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage);
 
     uint32_t fingerprint() const;
 
-    // These should be const, apart from the need to implement assignment.
-    bool valid_{false};
     hd_chain_code chain_;
     hd_lineage lineage_;
     ec_compressed point_;
 
 private:
     static
-    hd_public from_key(hd_key const& key);
+    expect<hd_public> from_key_impl(hd_key const& key);
 
     static
-    hd_public from_key(hd_key const& key, uint32_t prefix);
-
-    hd_public(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage);
+    expect<hd_public> from_key_impl(hd_key const& key, uint32_t prefix);
 };
 
 } // namespace kth::domain::wallet
