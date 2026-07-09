@@ -24,9 +24,10 @@ constexpr char complete_tx[] = "01000000019373b022dfb99400ee40b8987586aea9e158f3
 
 kth::ec_secret create_secret_from_seed(std::string const& seed_str) {
     auto seed = kth::decode_base16(seed_str);
-    hd_private const key(*seed);
+    auto const key = hd_private::from_seed(*seed, hd_private::mainnet);
+    REQUIRE(key);
     // Secret key
-    kth::ec_secret secret_key(key.secret());
+    kth::ec_secret secret_key(key->secret());
     return secret_key;
 }
 

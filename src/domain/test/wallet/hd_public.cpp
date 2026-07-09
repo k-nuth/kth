@@ -21,9 +21,11 @@ TEST_CASE("hd public derive public invalid false", "[hd public tests]") {
     auto const seed = decode_base16(short_seed);
     REQUIRE(seed);
 
-    hd_private const m(*seed, hd_private::mainnet);
+    auto const m_r = hd_private::from_seed(*seed, hd_private::mainnet);
+    REQUIRE(m_r);
+    auto const& m = *m_r;
     hd_public const m_pub = m;
-    REQUIRE( ! m_pub.derive_public(hd_first_hardened_key).valid());
+    REQUIRE( ! m_pub.derive_public(hd_first_hardened_key));
 }
 
 TEST_CASE("hd public encoded round trip expected", "[hd public tests]") {
@@ -37,16 +39,18 @@ TEST_CASE("hd public derive public short seed expected", "[hd public tests]") {
     auto const seed = decode_base16(short_seed);
     REQUIRE(seed);
 
-    hd_private const m(*seed, hd_private::mainnet);
-    auto const m0h = m.derive_private(hd_first_hardened_key);
-    auto const m0h1 = m0h.derive_private(1);
+    auto const m_r = hd_private::from_seed(*seed, hd_private::mainnet);
+    REQUIRE(m_r);
+    auto const& m = *m_r;
+    auto const m0h = m.derive_private(hd_first_hardened_key).value();
+    auto const m0h1 = m0h.derive_private(1).value();
 
     hd_public const m_pub = m;
-    auto const m0h_pub = m.derive_public(hd_first_hardened_key);
-    auto const m0h1_pub = m0h_pub.derive_public(1);
-    auto const m0h12h_pub = m0h1.derive_public(2 + hd_first_hardened_key);
-    auto const m0h12h2_pub = m0h12h_pub.derive_public(2);
-    auto const m0h12h2x_pub = m0h12h2_pub.derive_public(1000000000);
+    auto const m0h_pub = m.derive_public(hd_first_hardened_key).value();
+    auto const m0h1_pub = m0h_pub.derive_public(1).value();
+    auto const m0h12h_pub = m0h1.derive_public(2 + hd_first_hardened_key).value();
+    auto const m0h12h2_pub = m0h12h_pub.derive_public(2).value();
+    auto const m0h12h2x_pub = m0h12h2_pub.derive_public(1000000000).value();
 
     REQUIRE(m_pub.to_string() == "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8");
     REQUIRE(m0h_pub.to_string() == "xpub68Gmy5EdvgibQVfPdqkBBCHxA5htiqg55crXYuXoQRKfDBFA1WEjWgP6LHhwBZeNK1VTsfTFUHCdrfp1bgwQ9xv5ski8PX9rL2dZXvgGDnw");
@@ -60,17 +64,19 @@ TEST_CASE("hd public derive public long seed expected", "[hd public tests]") {
     auto const seed = decode_base16(long_seed);
     REQUIRE(seed);
 
-    hd_private const m(*seed, hd_private::mainnet);
-    auto const m0 = m.derive_private(0);
-    auto const m0xH = m0.derive_private(2147483647 + hd_first_hardened_key);
-    auto const m0xH1 = m0xH.derive_private(1);
+    auto const m_r = hd_private::from_seed(*seed, hd_private::mainnet);
+    REQUIRE(m_r);
+    auto const& m = *m_r;
+    auto const m0 = m.derive_private(0).value();
+    auto const m0xH = m0.derive_private(2147483647 + hd_first_hardened_key).value();
+    auto const m0xH1 = m0xH.derive_private(1).value();
 
     hd_public const m_pub = m;
-    auto const m0_pub = m_pub.derive_public(0);
-    auto const m0xH_pub = m0.derive_public(2147483647 + hd_first_hardened_key);
-    auto const m0xH1_pub = m0xH_pub.derive_public(1);
-    auto const m0xH1yH_pub = m0xH1.derive_public(2147483646 + hd_first_hardened_key);
-    auto const m0xH1yH2_pub = m0xH1yH_pub.derive_public(2);
+    auto const m0_pub = m_pub.derive_public(0).value();
+    auto const m0xH_pub = m0.derive_public(2147483647 + hd_first_hardened_key).value();
+    auto const m0xH1_pub = m0xH_pub.derive_public(1).value();
+    auto const m0xH1yH_pub = m0xH1.derive_public(2147483646 + hd_first_hardened_key).value();
+    auto const m0xH1yH2_pub = m0xH1yH_pub.derive_public(2).value();
 
     REQUIRE(m_pub.to_string() == "xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB");
     REQUIRE(m0_pub.to_string() == "xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH");

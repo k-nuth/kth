@@ -162,9 +162,9 @@ hd_key hd_public::to_hd_key() const {
     return out;
 }
 
-hd_public hd_public::derive_public(uint32_t index) const {
+expect<hd_public> hd_public::derive_public(uint32_t index) const {
     if (index >= hd_first_hardened_key) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     auto const data = splice(point_, to_big_endian(index));
@@ -173,11 +173,11 @@ hd_public hd_public::derive_public(uint32_t index) const {
     // The returned child key Ki is point(parse256(IL)) + Kpar.
     auto combined = point_;
     if ( ! ec_add(combined, intermediate.left)) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     if (lineage_.depth == max_uint8) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     hd_lineage const lineage {

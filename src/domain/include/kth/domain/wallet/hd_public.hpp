@@ -63,12 +63,7 @@ struct KD_API hd_public {
     hd_public(hd_key const& public_key, uint32_t prefix);
 
     [[nodiscard]]
-    friend bool operator==(hd_public const&, hd_public const&) = default;
-
-    [[nodiscard]]
-    friend auto operator<=>(hd_public const& a, hd_public const& b) {
-        return a.to_string() <=> b.to_string();
-    }
+    friend auto operator<=>(hd_public const& a, hd_public const& b) = default;
 
     [[nodiscard]]
     bool valid() const noexcept { return valid_; }
@@ -90,7 +85,7 @@ struct KD_API hd_public {
     hd_key to_hd_key() const;
 
     [[nodiscard]]
-    hd_public derive_public(uint32_t index) const;
+    expect<hd_public> derive_public(uint32_t index) const;
 
 protected:
     static

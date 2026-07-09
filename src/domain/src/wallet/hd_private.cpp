@@ -24,23 +24,6 @@
 
 namespace kth::domain::wallet {
 
-hd_private::hd_private(data_chunk const& seed, uint64_t prefixes)
-    : hd_private(from_seed(seed, prefixes))
-{}
-
-// This reads the private version and sets the public to mainnet.
-hd_private::hd_private(hd_key const& private_key)
-    : hd_private(from_key(private_key, hd_public::mainnet))
-{}
-
-hd_private::hd_private(hd_key const& private_key, uint32_t prefix)
-    : hd_private(from_key(private_key, prefix))
-{}
-
-hd_private::hd_private(hd_key const& private_key, uint64_t prefixes)
-    : hd_private(from_key(private_key, prefixes))
-{}
-
 hd_private::hd_private(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage)
     : hd_public(from_secret(secret, chain_code, lineage))
     , secret_(secret)
@@ -62,12 +45,7 @@ expect<hd_private> hd_private::parse_from_with_public_prefix(std::string_view en
     if ( ! decode_base58(key, std::string{encoded})) {
         return std::unexpected(kth::error::illegal_value);
     }
-
-    hd_private out = from_key(key, public_prefix);
-    if ( ! out.valid()) {
-        return std::unexpected(kth::error::illegal_value);
-    }
-    return out;
+    return from_hd_key_with_public_prefix(key, public_prefix);
 }
 
 // static
@@ -76,15 +54,42 @@ expect<hd_private> hd_private::parse_from_with_prefixes(std::string_view encoded
     if ( ! decode_base58(key, std::string{encoded})) {
         return std::unexpected(kth::error::illegal_value);
     }
+    return from_hd_key_with_prefixes(key, prefixes);
+}
 
-    hd_private out{key, prefixes};
+// static
+expect<hd_private> hd_private::from_seed(data_chunk const& seed, uint64_t prefixes) {
+    hd_private out = from_seed_impl(seed, prefixes);
     if ( ! out.valid()) {
         return std::unexpected(kth::error::illegal_value);
     }
     return out;
 }
 
-hd_private hd_private::from_seed(byte_span seed, uint64_t prefixes) {
+// static
+expect<hd_private> hd_private::from_hd_key(hd_key const& key) {
+    return from_hd_key_with_public_prefix(key, hd_public::mainnet);
+}
+
+// static
+expect<hd_private> hd_private::from_hd_key_with_public_prefix(hd_key const& key, uint32_t public_prefix) {
+    hd_private out = from_hd_key_impl(key, public_prefix);
+    if ( ! out.valid()) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return out;
+}
+
+// static
+expect<hd_private> hd_private::from_hd_key_with_prefixes(hd_key const& key, uint64_t prefixes) {
+    hd_private out = from_hd_key_impl(key, prefixes);
+    if ( ! out.valid()) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return out;
+}
+
+hd_private hd_private::from_seed_impl(byte_span seed, uint64_t prefixes) {
     // This is a magic constant from BIP32.
     static data_chunk const magic(to_chunk("Bitcoin seed"));
 
@@ -105,12 +110,12 @@ hd_private hd_private::from_seed(byte_span seed, uint64_t prefixes) {
     return hd_private(intermediate.left, intermediate.right, master);
 }
 
-hd_private hd_private::from_key(hd_key const& key, uint32_t public_prefix) {
+hd_private hd_private::from_hd_key_impl(hd_key const& key, uint32_t public_prefix) {
     auto const prefix = from_big_endian_unsafe<uint32_t>(key);
-    return from_key(key, to_prefixes(prefix, public_prefix));
+    return from_hd_key_impl(key, to_prefixes(prefix, public_prefix));
 }
 
-hd_private hd_private::from_key(hd_key const& key, uint64_t prefixes) {
+hd_private hd_private::from_hd_key_impl(hd_key const& key, uint64_t prefixes) {
     byte_reader reader(key);
 
     auto const prefix = reader.read_big_endian<uint32_t>();
@@ -194,7 +199,7 @@ hd_public hd_private::to_public() const {
         hd_public::to_prefix(lineage_.prefixes));
 }
 
-hd_private hd_private::derive_private(uint32_t index) const {
+expect<hd_private> hd_private::derive_private(uint32_t index) const {
     constexpr uint8_t depth = 0;
 
     auto const data = (index >= hd_first_hardened_key) ?
@@ -206,11 +211,11 @@ hd_private hd_private::derive_private(uint32_t index) const {
     // The child key ki is (parse256(IL) + kpar) mod n:
     auto child = secret_;
     if ( ! ec_add(child, intermediate.left)) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     if (lineage_.depth == max_uint8) {
-        return {};
+        return std::unexpected(kth::error::illegal_value);
     }
 
     hd_lineage const lineage {
@@ -223,25 +228,16 @@ hd_private hd_private::derive_private(uint32_t index) const {
     return hd_private(child, intermediate.right, lineage);
 }
 
-hd_public hd_private::derive_public(uint32_t index) const {
-    return derive_private(index).to_public();
+expect<hd_public> hd_private::derive_public(uint32_t index) const {
+    auto child = derive_private(index);
+    if ( ! child) {
+        return std::unexpected(child.error());
+    }
+    return child->to_public();
 }
 
-// Operators.
-// ----------------------------------------------------------------------------
-
-hd_private& hd_private::operator=(hd_private x) {
-    swap(*this, x);
-    return *this;
-}
-
-// friend function, see: stackoverflow.com/a/5695855/1172329
-void swap(hd_private& left, hd_private& right) {
-    using std::swap;
-
-    // Must be unqualified (no std namespace).
-    swap(static_cast<hd_public&>(left), static_cast<hd_public&>(right));
-    swap(left.secret_, right.secret_);
+void hd_private::wipe() noexcept {
+    *this = hd_private{};
 }
 
 } // namespace kth::domain::wallet
