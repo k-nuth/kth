@@ -80,8 +80,8 @@ TEST_CASE("stealth round trip", "[stealth]") {
 }
 
 TEST_CASE("verify string constructor", "[stealth]") {
-    std::string const value = "01100110000";
-    binary prefix = binary::parse_from(value).value();
+    constexpr std::string_view value = "01100110000";
+    auto const prefix = binary::parse_from(value).value();
     REQUIRE(value.size() == prefix.size());
     for (size_t i = 0; i < value.size(); ++i) {
         auto const comparison = value[i] == '1';
@@ -91,15 +91,15 @@ TEST_CASE("verify string constructor", "[stealth]") {
 
 // Binary as a value on the left, padded with zeros to the y.
 TEST_CASE("compare constructor results", "[stealth]") {
-    std::string value = "01100111000";
-    binary prefix = binary::parse_from(value).value();
+    constexpr std::string_view value = "01100111000";
+    auto const prefix = binary::parse_from(value).value();
     data_chunk blocks{{0x67, 0x00}};
     binary prefix2(value.size(), blocks);
     REQUIRE(prefix == prefix2);
 }
 
 TEST_CASE("bitfield test1", "[stealth]") {
-    binary prefix = binary::parse_from("01100111001").value();
+    auto const prefix = binary::parse_from("01100111001").value();
     data_chunk raw_bitfield{{0x67, 0x20, 0x00, 0x0}};
     REQUIRE(raw_bitfield.size() * 8 >= prefix.size());
     binary compare(prefix.size(), raw_bitfield);
