@@ -31,15 +31,13 @@ size_t payment_size = 1U + short_hash_size + checksum_size;  // 1 + 20 + sizeof(
 
 using payment = byte_array<payment_size>;
 
-/**
- * Non-stealth payment address (P2PKH, P2SH, or 32-byte hash variants).
- *
- * Default-constructible so callers that hold `payment_address` as a
- * struct member (e.g. `stealth_sender::address_`,
- * `cashtoken_minting::*::destination`) can fill it later via
- * assignment; fallible construction goes through the `parse_from`
- * / `from_*` named factories, each returning `expect<payment_address>`.
- */
+/// Non-stealth payment address (P2PKH, P2SH, or 32-byte hash variants).
+/// Valid-by-construction: every reachable instance was produced by a
+/// factory returning `expect<>` or an infallible ctor over already-
+/// validated components. Callers that hold `payment_address` as a
+/// struct member and fill it later wrap it in `std::optional<>`
+/// (see e.g. `stealth_sender::address_` and the `cashtoken_minting`
+/// param structs).
 struct KD_API payment_address {
 
 #if defined(KTH_CURRENCY_LTC)
@@ -108,8 +106,6 @@ struct KD_API payment_address {
     static
     expect<payment_address> from_pay_public_key_hash_script(chain::script const& script, uint8_t version);
 
-    payment_address() = default;
-
     /// Wrap a 20-byte hash160 payload directly. Infallible.
     payment_address(short_hash const& short_hash, uint8_t version);
 
@@ -117,17 +113,7 @@ struct KD_API payment_address {
     payment_address(hash_digest const& hash, uint8_t version);
 
     [[nodiscard]]
-    friend bool operator==(payment_address const&, payment_address const&) = default;
-
-    /// Canonical order matches the canonical `to_string()`: cashaddr
-    /// (token-unaware) under BCH, legacy base58 otherwise.
-    [[nodiscard]]
-    friend auto operator<=>(payment_address const& a, payment_address const& b) {
-        return a.to_string() <=> b.to_string();
-    }
-
-    [[nodiscard]]
-    bool valid() const noexcept { return valid_; }
+    friend auto operator<=>(payment_address const&, payment_address const&) = default;
 
     /// Canonical string form. Used by `fmt::formatter<payment_address>`.
     /// Cashaddr (token-unaware) under BCH; legacy base58 otherwise.
@@ -199,7 +185,6 @@ private:
     std::optional<config::network> detect_cashaddr_network(std::string const& address);
 #endif  //KTH_CURRENCY_BCH
 
-    bool valid_{false};
     uint8_t version_{0};
     hash_digest hash_data_{null_hash};
     size_t hash_size_{0};

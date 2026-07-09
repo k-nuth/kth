@@ -114,15 +114,7 @@ chain::output create_combined_token_output(
 
 std::expected<prepare_genesis_result, std::error_code>
 prepare_genesis_utxo(prepare_genesis_params const& params) {
-    if ( ! params.destination.valid()) {
-        return std::unexpected(kth::error::operation_failed);
-    }
 
-    // An explicit `change_address`, if set, must be a valid address —
-    // otherwise the optional BCH change output would be unspendable.
-    if (params.change_address.has_value() && ! params.change_address->valid()) {
-        return std::unexpected(kth::error::invalid_change);
-    }
 
     // The funding UTXO is spent for its BCH only; a token-bearing
     // input here would be consumed without re-emitting its tokens,
@@ -216,17 +208,6 @@ prepare_genesis_utxo(prepare_genesis_params const& params) {
 
 std::expected<token_genesis_result, std::error_code>
 create_token_genesis(token_genesis_params const& params) {
-    // Destination address must be valid — silently building a TX with a
-    // default-constructed address would produce an unspendable output.
-    if ( ! params.destination.valid()) {
-        return std::unexpected(kth::error::operation_failed);
-    }
-
-    // An explicit `change_address`, if set, must also be valid.
-    if (params.change_address.has_value() && ! params.change_address->valid()) {
-        return std::unexpected(kth::error::invalid_change);
-    }
-
     // CashTokens CHIP: the token genesis input MUST spend output index 0
     // of its parent transaction. The resulting category ID equals the
     // hash of that parent transaction.
@@ -407,13 +388,6 @@ create_token_mint(token_mint_params const& params) {
         return std::unexpected(kth::error::operation_failed);
     }
 
-    // Destinations (one per requested NFT) must all be valid addresses.
-    for (auto const& req : params.nfts) {
-        if ( ! req.destination.valid()) {
-            return std::unexpected(kth::error::operation_failed);
-        }
-    }
-
     // Each request's capability byte must be one of the three valid
     // values (none/mut/minting). `capability_t` can hold any `uint8_t`
     // via casts, so this is the first line of defence before the
@@ -424,10 +398,6 @@ create_token_mint(token_mint_params const& params) {
         }
     }
 
-    // An explicit `change_address`, if set, must be a valid address.
-    if (params.change_address.has_value() && ! params.change_address->valid()) {
-        return std::unexpected(kth::error::invalid_change);
-    }
 
     // Validate each NFT commitment against the cap that applies under
     // the active script flags.
@@ -590,9 +560,6 @@ create_token_mint(token_mint_params const& params) {
         return std::unexpected(kth::error::operation_failed);
     }
     payment_address const minting_dest = *params.minting_destination;
-    if ( ! minting_dest.valid()) {
-        return std::unexpected(kth::error::operation_failed);
-    }
 
     // Assemble outputs: 1 preserved + N minted + optional BCH change.
     chain::output::list outputs;
@@ -659,9 +626,6 @@ create_token_mint(token_mint_params const& params) {
 
 std::expected<token_tx_result, std::error_code>
 create_token_transfer(token_transfer_params const& params) {
-    if ( ! params.destination.valid()) {
-        return std::unexpected(kth::error::operation_failed);
-    }
 
     // Exactly one of ft_amount / nft must be requested. Requesting both
     // would ambiguate whether the same output carries them together or
@@ -792,15 +756,12 @@ create_token_transfer(token_transfer_params const& params) {
     // be valid — an optional wrapping a default-constructed address
     // would otherwise slip past `has_value()` and produce unspendable
     // token-carrying outputs, permanently burning those tokens.
-    payment_address token_change_addr;
+    std::optional<payment_address> token_change_addr;
     if (emit_ft_change || n_carried_nft_outs > 0) {
         if ( ! params.token_change_address.has_value()) {
             return std::unexpected(kth::error::invalid_change);
         }
-        token_change_addr = *params.token_change_address;
-        if ( ! token_change_addr.valid()) {
-            return std::unexpected(kth::error::invalid_change);
-        }
+        token_change_addr = params.token_change_address;
     }
 
     // ---------------------------------------------------------------
@@ -873,18 +834,17 @@ create_token_transfer(token_transfer_params const& params) {
     // Prefer an explicit BCH change address; fall back to the token
     // change address if any, and ultimately to the destination as a
     // safe default so a valid transfer never fails on missing change
-    // metadata. The resolved address must be valid for the same reason
-    // explained above (avoid burning change to an unspendable output).
-    payment_address bch_change_addr;
+    // metadata.
+    std::optional<payment_address> bch_change_addr;
     if (emit_bch_change) {
         if (params.bch_change_address.has_value()) {
-            bch_change_addr = *params.bch_change_address;
+            bch_change_addr = params.bch_change_address;
         } else if (params.token_change_address.has_value()) {
-            bch_change_addr = *params.token_change_address;
+            bch_change_addr = params.token_change_address;
         } else {
             bch_change_addr = params.destination;
         }
-        if ( ! bch_change_addr.valid()) {
+        if ( ! bch_change_addr.has_value()) {
             return std::unexpected(kth::error::invalid_change);
         }
     }
@@ -924,7 +884,7 @@ create_token_transfer(token_transfer_params const& params) {
     if (emit_ft_change) {
         outputs.emplace_back(
             per_token_output_sats,
-            p2pkh(token_change_addr),
+            p2pkh(*token_change_addr),
             chain::token_data_opt{chain::make_fungible(category_id, ft_change)}
         );
     }
@@ -934,7 +894,7 @@ create_token_transfer(token_transfer_params const& params) {
     for (auto const& nft : carried_nfts) {
         outputs.emplace_back(
             per_token_output_sats,
-            p2pkh(token_change_addr),
+            p2pkh(*token_change_addr),
             chain::token_data_opt{chain::make_non_fungible(
                 category_id,
                 nft.capability,
@@ -947,7 +907,7 @@ create_token_transfer(token_transfer_params const& params) {
     if (emit_bch_change) {
         outputs.emplace_back(
             bch_change,
-            p2pkh(bch_change_addr),
+            p2pkh(*bch_change_addr),
             chain::token_data_opt{}
         );
     }
@@ -982,16 +942,9 @@ create_token_transfer(token_transfer_params const& params) {
 
 std::expected<token_tx_result, std::error_code>
 create_token_burn(token_burn_params const& params) {
-    if ( ! params.destination.valid()) {
-        return std::unexpected(kth::error::operation_failed);
-    }
 
-    // An explicit `change_address`, if set, must be a valid address —
     // otherwise `value_or(destination)` would happily emit BCH change
     // to an unspendable output.
-    if (params.change_address.has_value() && ! params.change_address->valid()) {
-        return std::unexpected(kth::error::invalid_change);
-    }
 
     if ( ! params.token_utxo.token_data().has_value()) {
         return std::unexpected(kth::error::token_invalid_category);
@@ -1194,19 +1147,20 @@ create_ft(ft_params const& params) {
     // for the two most common flows — creating a pure FT with fixed
     // supply, or a FT paired with a minting NFT so the creator can
     // later mint NFTs of the same category.
-    token_genesis_params gp{};
-    gp.genesis_utxo = params.genesis_utxo;
-    gp.destination = params.destination;
-    gp.ft_amount = params.total_supply;
+    token_genesis_params gp{
+        .genesis_utxo = params.genesis_utxo,
+        .destination = params.destination,
+        .ft_amount = params.total_supply,
+        .fee_utxos = params.fee_utxos,
+        .change_address = params.change_address,
+        .script_flags = params.script_flags,
+    };
     if (params.with_minting_nft) {
         gp.nft = nft_spec{
             chain::capability_t::minting,
             data_chunk{0x00}
         };
     }
-    gp.fee_utxos = params.fee_utxos;
-    gp.change_address = params.change_address;
-    gp.script_flags = params.script_flags;
     return create_token_genesis(gp);
 }
 
@@ -1219,45 +1173,32 @@ create_nft_collection(nft_collection_params const& params) {
         return std::unexpected(kth::error::operation_failed);
     }
 
-    // Validate every NFT commitment and destination up front — under
-    // the active script flags' cap — so a later batch failure doesn't
-    // leave the caller with a half-executed plan on-chain. Destinations
-    // are checked for the same reason: an explicit optional wrapping a
-    // default-constructed address would pass `has_value()`, survive
-    // `value_or`, and only blow up inside `create_token_mint` for that
-    // batch — after earlier batches may have been broadcast.
+    // Validate every NFT commitment up front — under the active script
+    // flags' cap — so a later batch failure doesn't leave the caller
+    // with a half-executed plan on-chain.
     size_t const commitment_cap = chain::max_token_commitment_length(params.script_flags);
     for (auto const& item : params.nfts) {
         if (item.commitment.size() > commitment_cap) {
             return std::unexpected(kth::error::token_commitment_oversized);
         }
-        if (item.destination.has_value() && ! item.destination->valid()) {
-            return std::unexpected(kth::error::operation_failed);
-        }
-    }
-    // The fallback for per-item destinations is `creator_address`; if
-    // any item omits its destination, `creator_address` must be valid
-    // so it produces spendable mint outputs. (Also re-validated by
-    // `create_token_genesis` below for its own use.)
-    if ( ! params.creator_address.valid()) {
-        return std::unexpected(kth::error::operation_failed);
     }
 
     // Step 1: build the genesis TX. The minting NFT starts with
     // commitment `{0x00}` which doubles as a "next NFT index = 0"
     // counter — callers who want a meaningful counter can reinterpret
     // the commitment in subsequent mints via `new_minting_commitment`.
-    token_genesis_params gp{};
-    gp.genesis_utxo = params.genesis_utxo;
-    gp.destination = params.creator_address;
-    gp.ft_amount = params.ft_amount;
-    gp.nft = nft_spec{
-        chain::capability_t::minting,
-        data_chunk{0x00}
+    token_genesis_params gp{
+        .genesis_utxo = params.genesis_utxo,
+        .destination = params.creator_address,
+        .ft_amount = params.ft_amount,
+        .nft = nft_spec{
+            chain::capability_t::minting,
+            data_chunk{0x00}
+        },
+        .fee_utxos = params.fee_utxos,
+        .change_address = params.change_address,
+        .script_flags = params.script_flags,
     };
-    gp.fee_utxos = params.fee_utxos;
-    gp.change_address = params.change_address;
-    gp.script_flags = params.script_flags;
 
     auto genesis = create_token_genesis(gp);
     if ( ! genesis.has_value()) {
@@ -1274,12 +1215,11 @@ create_nft_collection(nft_collection_params const& params) {
         nft_collection_batch batch{};
         batch.mint_requests.reserve(end - i);
         for (size_t j = i; j < end; ++j) {
-            nft_mint_request req{};
-            req.destination = params.nfts[j].destination.value_or(params.creator_address);
-            req.commitment = params.nfts[j].commitment;
-            req.capability = chain::capability_t::none;   // minted NFTs are immutable
-            req.satoshis = token_dust_limit;
-            batch.mint_requests.push_back(std::move(req));
+            batch.mint_requests.emplace_back(
+                params.nfts[j].destination.value_or(params.creator_address),
+                params.nfts[j].commitment,
+                chain::capability_t::none,   // minted NFTs are immutable
+                token_dust_limit);
         }
         batches.push_back(std::move(batch));
     }

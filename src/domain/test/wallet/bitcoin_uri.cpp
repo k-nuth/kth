@@ -92,7 +92,6 @@ TEST_CASE("bitcoin uri set path reset stealth after payment expected encoding", 
 
     bitcoin_uri uri;
     auto const payment = payment_address::parse_from("113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD").value();
-    REQUIRE(payment.valid());
     uri.set_address(payment);
     auto const stealth = stealth_address::parse_from(expected_stealth);
     REQUIRE(stealth);

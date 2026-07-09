@@ -35,7 +35,7 @@ stealth_sender::stealth_sender(ec_secret const& ephemeral_private,
 }
 
 stealth_sender::operator bool() const {
-    return address_.valid();
+    return address_.has_value();
 }
 
 // private
@@ -72,9 +72,9 @@ chain::script const& stealth_sender::stealth_script() const {
     return script_;
 }
 
-// Will be invalid if construct fails.
+// Precondition: `operator bool()` returned true.
 const wallet::payment_address& stealth_sender::payment_address() const {
-    return address_;
+    return *address_;
 }
 
 } // namespace kth::domain::wallet
