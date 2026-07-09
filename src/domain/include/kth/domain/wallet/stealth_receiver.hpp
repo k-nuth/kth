@@ -5,10 +5,11 @@
 #ifndef KTH_WALLET_STEALTH_RECEIVER_HPP
 #define KTH_WALLET_STEALTH_RECEIVER_HPP
 
+#include <cstddef>
 #include <cstdint>
-#include <optional>
 
 #include <kth/domain/define.hpp>
+#include <kth/domain/deserialization.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
 #include <kth/domain/wallet/stealth_address.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
@@ -16,35 +17,49 @@
 
 namespace kth::domain::wallet {
 
+/// Stealth-address receiver. Valid-by-construction: every reachable
+/// instance came from `from_secrets`, which verifies both private
+/// keys lift to points and the resulting `stealth_address` is well-
+/// formed; accessors and derivations are always meaningful.
+///
 /// This class does not support multisignature stealth addresses.
 struct KD_API stealth_receiver {
-    /// Constructors.
-    stealth_receiver(ec_secret const& scan_private,
-                     ec_secret const& spend_private,
-                     binary const& filter,
-                     uint8_t version = payment_address::mainnet_p2kh);
-
-    /// Caller must test after construct.
-    operator bool() const;
-
-    /// Get the stealth address.
+    /// Build a receiver from a scan / spend private-key pair against
+    /// a caller-supplied bloom filter and payment-address version.
+    /// Fails if either private key is off-curve or if the derived
+    /// stealth address is malformed.
     [[nodiscard]]
-    const wallet::stealth_address& stealth_address() const;
+    static
+    expect<stealth_receiver> from_secrets(ec_secret const& scan_private,
+                                          ec_secret const& spend_private,
+                                          binary const& filter,
+                                          uint8_t version);
+
+    /// Peer stealth address for this receiver.
+    [[nodiscard]]
+    wallet::stealth_address const& stealth_address() const noexcept;
 
     /// Derive a payment address to compare against the blockchain.
-    bool derive_address(payment_address& out_address,
-                        ec_compressed const& ephemeral_public) const;
+    [[nodiscard]]
+    expect<payment_address> derive_address(ec_compressed const& ephemeral_public) const;
 
-    /// Once address is discovered, derive the private spend key.
-    bool derive_private(ec_secret& out_private,
-                        ec_compressed const& ephemeral_public) const;
+    /// Once the address is discovered, derive the private spend key
+    /// for the corresponding output.
+    [[nodiscard]]
+    expect<ec_secret> derive_private(ec_compressed const& ephemeral_public) const;
 
 private:
+    stealth_receiver(uint8_t version,
+                     ec_secret const& scan_private,
+                     ec_secret const& spend_private,
+                     ec_compressed const& spend_public,
+                     wallet::stealth_address address);
+
     uint8_t const version_;
     ec_secret const scan_private_;
     ec_secret const spend_private_;
-    ec_compressed spend_public_;
-    std::optional<wallet::stealth_address> address_;
+    ec_compressed const spend_public_;
+    wallet::stealth_address const address_;
 };
 
 } // namespace kth::domain::wallet

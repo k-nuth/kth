@@ -5,61 +5,74 @@
 #include <kth/domain/wallet/stealth_receiver.hpp>
 
 #include <cstdint>
+#include <utility>
 
 #include <kth/domain/math/stealth.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
 #include <kth/domain/wallet/stealth_address.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/utility/binary.hpp>
 
 namespace kth::domain::wallet {
 
-// TODO(legacy): use to factory and make address_ and spend_public_ const.
-stealth_receiver::stealth_receiver(ec_secret const& scan_private,
+stealth_receiver::stealth_receiver(uint8_t version,
+                                   ec_secret const& scan_private,
                                    ec_secret const& spend_private,
-                                   binary const& filter,
-                                   uint8_t version)
-    : version_(version), scan_private_(scan_private), spend_private_(spend_private) {
+                                   ec_compressed const& spend_public,
+                                   wallet::stealth_address address)
+    : version_(version)
+    , scan_private_(scan_private)
+    , spend_private_(spend_private)
+    , spend_public_(spend_public)
+    , address_(std::move(address))
+{}
+
+// static
+expect<stealth_receiver> stealth_receiver::from_secrets(ec_secret const& scan_private,
+                                                       ec_secret const& spend_private,
+                                                       binary const& filter,
+                                                       uint8_t version) {
     ec_compressed scan_public;
-    if (secret_to_public(scan_public, scan_private_) &&
-        secret_to_public(spend_public_, spend_private_)) {
-        auto built = stealth_address::from_components(
-            filter, scan_public, {spend_public_}, 0, stealth_address::mainnet_p2kh);
-        if (built) {
-            address_ = std::move(*built);
-        }
+    if ( ! secret_to_public(scan_public, scan_private)) {
+        return std::unexpected(kth::error::illegal_value);
     }
+
+    ec_compressed spend_public;
+    if ( ! secret_to_public(spend_public, spend_private)) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+
+    auto address = stealth_address::from_components(
+        filter, scan_public, {spend_public}, 0, stealth_address::mainnet_p2kh);
+    if ( ! address) {
+        return std::unexpected(address.error());
+    }
+
+    return stealth_receiver(version, scan_private, spend_private,
+                            spend_public, std::move(*address));
 }
 
-stealth_receiver::operator bool() const {
-    return address_.has_value();
+wallet::stealth_address const& stealth_receiver::stealth_address() const noexcept {
+    return address_;
 }
 
-// Precondition: `operator bool()` returned true.
-const wallet::stealth_address& stealth_receiver::stealth_address() const {
-    return *address_;
-}
-
-bool stealth_receiver::derive_address(payment_address& out_address,
-                                      ec_compressed const& ephemeral_public) const {
+expect<payment_address> stealth_receiver::derive_address(ec_compressed const& ephemeral_public) const {
     ec_compressed receiver_public;
-    if ( ! uncover_stealth(receiver_public, ephemeral_public, scan_private_,
-                         spend_public_)) {
-        return false;
+    if ( ! uncover_stealth(receiver_public, ephemeral_public, scan_private_, spend_public_)) {
+        return std::unexpected(kth::error::illegal_value);
     }
 
-    auto result = payment_address::from_ec_public(ec_public::from_verified_point(receiver_public, true), version_);
-    if ( ! result) {
-        return false;
-    }
-    out_address = *result;
-    return true;
+    return payment_address::from_ec_public(
+        ec_public::from_verified_point(receiver_public, true), version_);
 }
 
-bool stealth_receiver::derive_private(ec_secret& out_private,
-                                      ec_compressed const& ephemeral_public) const {
-    return uncover_stealth(out_private, ephemeral_public, scan_private_,
-                           spend_private_);
+expect<ec_secret> stealth_receiver::derive_private(ec_compressed const& ephemeral_public) const {
+    ec_secret out;
+    if ( ! uncover_stealth(out, ephemeral_public, scan_private_, spend_private_)) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+    return out;
 }
 
 } // namespace kth::domain::wallet
