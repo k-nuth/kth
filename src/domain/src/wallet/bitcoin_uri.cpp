@@ -75,12 +75,12 @@ std::string bitcoin_uri::r() const {
     return parameter(parameter_r);
 }
 
-payment_address bitcoin_uri::payment() const {
-    return payment_address::parse_from(address_).value_or(payment_address{});
+expect<payment_address> bitcoin_uri::payment() const {
+    return payment_address::parse_from(address_);
 }
 
-stealth_address bitcoin_uri::stealth() const {
-    return stealth_address::parse_from(address_).value_or(stealth_address{});
+expect<stealth_address> bitcoin_uri::stealth() const {
+    return stealth_address::parse_from(address_);
 }
 
 std::string bitcoin_uri::parameter(std::string const& key) const {

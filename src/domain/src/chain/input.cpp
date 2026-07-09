@@ -113,9 +113,12 @@ void input::set_sequence(uint32_t value) {
     sequence_ = value;
 }
 
-payment_address input::address() const {
+std::optional<payment_address> input::address() const {
     auto const value = addresses();
-    return value.empty() ? payment_address{} : value.front();
+    if (value.empty()) {
+        return std::nullopt;
+    }
+    return value.front();
 }
 
 payment_address::list input::addresses() const {

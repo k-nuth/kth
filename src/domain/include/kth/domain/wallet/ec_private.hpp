@@ -129,7 +129,7 @@ struct KD_API ec_private {
     ec_public to_public() const;
 
     [[nodiscard]]
-    payment_address to_payment_address() const;
+    expect<payment_address> to_payment_address() const;
 
 private:
     static

@@ -126,8 +126,8 @@ std::expected<ec_uncompressed, std::error_code> ec_public::to_uncompressed() con
     return out;
 }
 
-payment_address ec_public::to_payment_address(uint8_t version) const {
-    return payment_address::from_ec_public(*this, version).value_or(payment_address{});
+expect<payment_address> ec_public::to_payment_address(uint8_t version) const {
+    return payment_address::from_ec_public(*this, version);
 }
 
 } // namespace kth::domain::wallet
