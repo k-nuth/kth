@@ -14,16 +14,16 @@ using namespace kth;
 TEST_CASE("infrastructure binary encoded 32 bits from data chunk", "[infrastructure][binary]") {
     data_chunk const blocks{ { 0xba, 0xad, 0xf0, 0x0d } };
     binary const prefix(32, blocks);
-    REQUIRE(prefix.encoded() == "10111010101011011111000000001101");
+    REQUIRE(prefix.to_string() == "10111010101011011111000000001101");
 }
 
 TEST_CASE("infrastructure binary encoded 32 bits from unsigned integer", "[infrastructure][binary]") {
     binary const prefix(32, uint32_t(0x0df0adba));
-    REQUIRE(prefix.encoded() == "10111010101011011111000000001101");
+    REQUIRE(prefix.to_string() == "10111010101011011111000000001101");
 }
 TEST_CASE("infrastructure binary encoded 8 bits from unsigned integer", "[infrastructure][binary]") {
     binary const prefix(8, uint32_t(0x0df0adba));
-    REQUIRE(prefix.encoded() == "10111010");
+    REQUIRE(prefix.to_string() == "10111010");
 }
 
 // End Test Suite
@@ -33,7 +33,7 @@ TEST_CASE("infrastructure binary encoded 8 bits from unsigned integer", "[infras
 TEST_CASE("infrastructure binary encoded string", "[infrastructure][binary]") {
     data_chunk const blocks{ { 0xba, 0xad, 0xf0, 0x0d } };
     binary const prefix(32, blocks);
-    REQUIRE(prefix.encoded() == "10111010101011011111000000001101");
+    REQUIRE(prefix.to_string() == "10111010101011011111000000001101");
 }
 
 // End Test Suite
@@ -316,11 +316,11 @@ TEST_CASE("substring request exceeds string", "[binary substring]") {
     REQUIRE(expected == result);
 }
 
-TEST_CASE("substring implicit length", "[binary substring]") {
+TEST_CASE("substring trailing tail", "[binary substring]") {
     binary instance(20, data_chunk{ 0xAA, 0xBB, 0xCC });
     binary::size_type start = 10;
     binary expected(10, data_chunk{ 0xEF, 0x00 });
-    binary result = instance.substring(start);
+    binary result = instance.substring(start, instance.size() - start);
     REQUIRE(expected == result);
 }
 
@@ -330,7 +330,7 @@ TEST_CASE("substring implicit length", "[binary substring]") {
 
 TEST_CASE("string to prefix 32 bits expected value", "[binary blocks]") {
     data_chunk const blocks{ { 0xba, 0xad, 0xf0, 0x0d } };
-    binary const prefix("10111010101011011111000000001101");
+    binary const prefix = binary::parse_from("10111010101011011111000000001101").value();
     REQUIRE(prefix.blocks() == blocks);
 }
 
@@ -345,7 +345,7 @@ TEST_CASE("bytes to prefix zero bits round trips", "[binary blocks]") {
     binary const prefix(0, bytes);
     REQUIRE(prefix.size() == 0u);
     REQUIRE(prefix.blocks().size() == 0u);
-    REQUIRE(prefix.encoded().empty());
+    REQUIRE(prefix.to_string().empty());
 }
 
 TEST_CASE("prefix to bytes zero bits round trips", "[binary blocks]") {
@@ -355,13 +355,13 @@ TEST_CASE("prefix to bytes zero bits round trips", "[binary blocks]") {
     REQUIRE(prefix.size() == 0u);
     REQUIRE(prefix.blocks().size() == 0u);
     REQUIRE(bytes.size() == 0u);
-    REQUIRE(prefix.encoded().empty());
+    REQUIRE(prefix.to_string().empty());
 }
 
 TEST_CASE("bytes to prefix one bit round trips", "[binary blocks]") {
     data_chunk bytes{ { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF } };
     auto prefix = binary(1, bytes);
-    auto const encoded = prefix.encoded();
+    auto const encoded = prefix.to_string();
     REQUIRE(prefix.size() == 1u);
     REQUIRE(prefix.blocks().size() == 1u);
     REQUIRE(encoded == "1");
@@ -371,7 +371,7 @@ TEST_CASE("prefix to bytes one bit round trips", "[binary blocks]") {
     data_chunk const blocks{ { 0xff, 0xff, 0xff, 0xff } };
     binary const prefix(1, blocks);
     auto const bytes = prefix.blocks();
-    auto const encoded = prefix.encoded();
+    auto const encoded = prefix.to_string();
     REQUIRE(prefix.size() == 1u);
     REQUIRE(prefix.blocks().size() == 1u);
     REQUIRE(bytes.size() == 1u);
@@ -381,7 +381,7 @@ TEST_CASE("prefix to bytes one bit round trips", "[binary blocks]") {
 TEST_CASE("bytes to prefix two bits leading zero round trips", "[binary blocks]") {
     data_chunk const bytes{ { 0x01, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42 } };
     auto const prefix = binary(2, bytes);
-    auto const encoded = prefix.encoded();
+    auto const encoded = prefix.to_string();
     REQUIRE(prefix.size() == 2u);
     REQUIRE(prefix.blocks().size() == 1u);
     REQUIRE(encoded == "00");
@@ -391,7 +391,7 @@ TEST_CASE("prefix to bytes two bits leading zero round trips", "[binary blocks]"
     data_chunk const blocks{ { 0x42, 0x42, 0x42, 0x01 } };
     binary const prefix(2, blocks);
     auto bytes = prefix.blocks();
-    auto const encoded = prefix.encoded();
+    auto const encoded = prefix.to_string();
     REQUIRE(prefix.size() == 2u);
     REQUIRE(prefix.blocks().size() == 1u);
     REQUIRE(bytes.size() == 1u);
@@ -401,7 +401,7 @@ TEST_CASE("prefix to bytes two bits leading zero round trips", "[binary blocks]"
 TEST_CASE("bytes to prefix two bytes leading null byte round trips", "[binary blocks]") {
     data_chunk const bytes{ { 0xFF, 0x00 } };
     auto const prefix = binary(16, bytes);
-    auto const encoded = prefix.encoded();
+    auto const encoded = prefix.to_string();
     REQUIRE(prefix.size() == 16u);
     REQUIRE(prefix.blocks().size() == 2u);
     REQUIRE(encoded == "1111111100000000");
@@ -411,7 +411,7 @@ TEST_CASE("prefix to bytes two bytes leading null byte round trips", "[binary bl
     data_chunk const blocks{ { 0x00, 0x00 } };
     binary const prefix(16, blocks);
     auto bytes = prefix.blocks();
-    auto const encoded = prefix.encoded();
+    auto const encoded = prefix.to_string();
     REQUIRE(prefix.size() == 16u);
     REQUIRE(prefix.blocks().size() == 2u);
     REQUIRE(bytes.size() == 2u);

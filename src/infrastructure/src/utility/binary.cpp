@@ -22,18 +22,17 @@ bool binary::is_base2(std::string_view text) noexcept {
     return true;
 }
 
-binary::binary(std::string_view bit_string)
-    : binary()
-{
+// static
+std::expected<binary, kth::code> binary::parse_from(std::string_view bit_string) {
+    if ( ! is_base2(bit_string)) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+
+    binary out;
     uint8_t block = 0;
     auto bit_iterator = binary::bits_per_block;
 
     for (char const representation : bit_string) {
-        if (representation != '0' && representation != '1') {
-            blocks_.clear();
-            return;
-        }
-
         if (representation == '1') {
             uint8_t const bitmask = 1 << (bit_iterator - 1);
             block |= bitmask;
@@ -42,17 +41,18 @@ binary::binary(std::string_view bit_string)
         --bit_iterator;
 
         if (bit_iterator == 0) {
-            blocks_.push_back(block);
+            out.blocks_.push_back(block);
             block = 0;
             bit_iterator = binary::bits_per_block;
         }
     }
 
     if (bit_iterator != binary::bits_per_block) {
-        blocks_.push_back(block);
+        out.blocks_.push_back(block);
     }
 
-    resize(bit_string.size());
+    out.resize(bit_string.size());
+    return out;
 }
 
 binary::binary(size_type size, uint32_t number)
@@ -109,7 +109,7 @@ data_chunk const& binary::blocks() const noexcept {
     return blocks_;
 }
 
-std::string binary::encoded() const {
+std::string binary::to_string() const {
     // Walk blocks (bytes), not bits: divisions by 8 in `operator[]`
     // dominate the naive per-bit form. Uninitialized-then-write is
     // faster than push_back — we know the exact size.
@@ -246,31 +246,5 @@ bool binary::is_prefix_of(byte_span field) const {
     binary const truncated_prefix(size(), field);
     return *this == truncated_prefix;
 }
-
-bool binary::operator<(binary const& x) const {
-    return encoded() < x.encoded();
-}
-
-bool binary::operator==(binary const& x) const {
-    if (size() != x.size()) {
-        return false;
-    }
-
-    auto const self = *this;
-
-    for (binary::size_type i = 0; i < size(); ++i) {
-        if (self[i] != x[i]) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool binary::operator!=(binary const& x) const {
-    return !(*this == x);
-}
-
-binary& binary::operator=(binary const& x) = default;
 
 } // namespace kth

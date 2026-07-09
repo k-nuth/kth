@@ -7,11 +7,13 @@
 
 #include <bit>
 #include <cstdint>
+#include <expected>
 #include <string>
 #include <string_view>
 #include <utility>
 
 #include <kth/infrastructure/constants.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
 namespace kth {
@@ -28,13 +30,12 @@ struct KI_API binary {
         return bit_size == 0 ? 0 : (bit_size - 1) / bits_per_block + 1;
     }
 
+    /// Parse a base2 string (each character `'0'` or `'1'` is one bit).
+    /// Returns `error::illegal_value` on any other character.
     [[nodiscard]] static
-    bool is_base2(std::string_view text) noexcept;
+    std::expected<binary, kth::code> parse_from(std::string_view bit_string);
 
     binary() = default;
-
-    explicit
-    binary(std::string_view bit_string);
 
     binary(size_type size, uint32_t number);
     binary(size_type size, byte_span blocks);
@@ -42,7 +43,9 @@ struct KI_API binary {
     void resize(size_type size);
     [[nodiscard]] bool operator[](size_type index) const;
     [[nodiscard]] data_chunk const& blocks() const noexcept;
-    [[nodiscard]] std::string encoded() const;
+
+    /// Base2 encoding used by `fmt::formatter<binary>`.
+    [[nodiscard]] std::string to_string() const;
 
     /// size in bits
     [[nodiscard]] size_type size() const noexcept;
@@ -50,18 +53,35 @@ struct KI_API binary {
     void prepend(binary const& prior);
     void shift_left(size_type distance);
     void shift_right(size_type distance);
-    [[nodiscard]] binary substring(size_type start, size_type length=max_size_t) const;
+    [[nodiscard]] binary substring(size_type start, size_type length) const;
 
     [[nodiscard]] bool is_prefix_of(byte_span field) const;
     [[nodiscard]] bool is_prefix_of(uint32_t field) const;
     [[nodiscard]] bool is_prefix_of(binary const& field) const;
 
-    binary& operator=(binary const& x);
-    [[nodiscard]] bool operator==(binary const& x) const;
-    [[nodiscard]] bool operator!=(binary const& x) const;
-    [[nodiscard]] bool operator<(binary const& x) const;
+    binary& operator=(binary const& x) = default;
+
+    /// Byte-lex over (`blocks_`, `final_block_excess_`). The class
+    /// invariant guarantees unused trailing bits are zero (every
+    /// mutator ends in `resize()`, which masks them), so member-wise
+    /// equality matches the bit-level equality the previous manual
+    /// `operator==` computed. The strong ordering `<=>` produces is
+    /// canonical and consistent with `==`, but it is NOT the same as
+    /// the previous string-lex order via `encoded()`: two values with
+    /// the same block bytes but different bit-length (e.g. `"1"` and
+    /// `"10000000"` both blocks `{0x80}` with `final_block_excess_`
+    /// 7 and 0) are ordered by their excess field, so the shorter
+    /// one is greater under the new order and less under the old.
+    /// No caller in-tree relies on the specific pre-refactor order —
+    /// map / set keys and sorted output only need a total order
+    /// consistent with equality, which this satisfies.
+    [[nodiscard]]
+    friend auto operator<=>(binary const&, binary const&) = default;
 
 private:
+    static
+    bool is_base2(std::string_view text) noexcept;
+
     static
     uint8_t shift_block_right(uint8_t next, uint8_t current, uint8_t prior, size_type original_offset, size_type intended_offset);
 
@@ -76,7 +96,14 @@ namespace std {
 template <>
 struct hash<kth::binary> {
     size_t operator()(kth::binary const& x) const {
-        return std::hash<std::string>()(x.encoded());
+        // Hash raw blocks + trailing-bit metadata directly — no
+        // base2 string allocation. Under the class invariant unused
+        // bits are zero, so equivalent values hash the same.
+        auto const& blocks = x.blocks();
+        auto h = std::hash<std::string_view>()(
+            std::string_view(reinterpret_cast<char const*>(blocks.data()), blocks.size()));
+        h ^= std::hash<size_t>()(x.size()) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+        return h;
     }
 };
 
