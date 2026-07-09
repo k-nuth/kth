@@ -3,7 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <concepts>
-#include <optional>
+#include <string>
 
 #include <test_helpers.hpp>
 
@@ -24,122 +24,84 @@ static_assert(
         { a == b } -> std::same_as<bool>;
     });
 
-// Constructors
+// parse_from
 // ----------------------------------------------------------------------------
 
-TEST_CASE("bitcoin uri default invalid", "[bitcoin uri]") {
-    REQUIRE( ! bitcoin_uri().valid());
-}
-
 TEST_CASE("bitcoin uri parse from bitcoin scheme valid", "[bitcoin uri]") {
-    REQUIRE(bitcoin_uri::parse_from("bitcoin:"));
+    REQUIRE(bitcoin_uri::parse_from("bitcoin:", true));
 }
 
 TEST_CASE("bitcoin uri parse from scheme mixed case normalized", "[bitcoin uri]") {
-    auto const uri = bitcoin_uri::parse_from("bitcOin:");
+    auto const uri = bitcoin_uri::parse_from("bitcOin:", true);
     REQUIRE(uri);
-    REQUIRE(uri->encoded() == "bitcoin:");
+    REQUIRE(uri->to_string() == "bitcoin:");
 }
 
 TEST_CASE("bitcoin uri parse from invalid scheme error", "[bitcoin uri]") {
-    REQUIRE( ! bitcoin_uri::parse_from("fedcoin:"));
+    REQUIRE( ! bitcoin_uri::parse_from("fedcoin:", true));
 }
 
 TEST_CASE("bitcoin uri parse from payment address only error", "[bitcoin uri]") {
-    REQUIRE( ! bitcoin_uri::parse_from("113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD"));
+    REQUIRE( ! bitcoin_uri::parse_from("113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD", true));
 }
 
 TEST_CASE("bitcoin uri parse from stealth address only error", "[bitcoin uri]") {
-    REQUIRE( ! bitcoin_uri::parse_from("hfFGUXFPKkQ5M6LC6aEUKMsURdhw93bUdYdacEtBA8XttLv7evZkira2i"));
+    REQUIRE( ! bitcoin_uri::parse_from("hfFGUXFPKkQ5M6LC6aEUKMsURdhw93bUdYdacEtBA8XttLv7evZkira2i", true));
 }
 
 TEST_CASE("bitcoin uri parse from fragment error", "[bitcoin uri]") {
-    REQUIRE( ! bitcoin_uri::parse_from("bitcoin:#satoshi"));
+    REQUIRE( ! bitcoin_uri::parse_from("bitcoin:#satoshi", true));
 }
 
 TEST_CASE("bitcoin uri parse from strict reject non ascii", "[bitcoin uri]") {
-    REQUIRE( ! bitcoin_uri::parse_from("bitcoin:?label=Some テスト"));
+    REQUIRE( ! bitcoin_uri::parse_from("bitcoin:?label=Some テスト", true));
 }
 
 TEST_CASE("bitcoin uri parse from non strict accept non ascii", "[bitcoin uri]") {
     REQUIRE(bitcoin_uri::parse_from("bitcoin:?label=Some テスト", false));
 }
 
-// Setters
+// from_parts
 // ----------------------------------------------------------------------------
 
-TEST_CASE("bitcoin uri set path payment address expected encoding", "[bitcoin uri]") {
-    auto const expected_payment = "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD";
-    auto const expected_uri = std::string("bitcoin:") + expected_payment;
-
-    bitcoin_uri uri;
-    REQUIRE(uri.set_path(expected_payment));
-    REQUIRE(uri.encoded() == expected_uri);
+TEST_CASE("bitcoin uri from parts empty is bitcoin scheme only", "[bitcoin uri]") {
+    auto const uri = bitcoin_uri::from_parts({});
+    REQUIRE(uri);
+    REQUIRE(uri->to_string() == "bitcoin:");
 }
 
-TEST_CASE("bitcoin uri set path stealth address expected encoding", "[bitcoin uri]") {
-    auto const expected_payment = "hfFGUXFPKkQ5M6LC6aEUKMsURdhw93bUdYdacEtBA8XttLv7evZkira2i";
-    auto const expected_uri = std::string("bitcoin:") + expected_payment;
-
-    bitcoin_uri uri;
-    REQUIRE(uri.set_path(expected_payment));
-    REQUIRE(uri.encoded() == expected_uri);
+TEST_CASE("bitcoin uri from parts payment address expected encoding", "[bitcoin uri]") {
+    auto const uri = bitcoin_uri::from_parts({.address = "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD"});
+    REQUIRE(uri);
+    REQUIRE(uri->to_string() == "bitcoin:113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD");
 }
 
-TEST_CASE("bitcoin uri set path reset stealth after payment expected encoding", "[bitcoin uri]") {
-    auto const expected_stealth = "hfFGUXFPKkQ5M6LC6aEUKMsURdhw93bUdYdacEtBA8XttLv7evZkira2i";
-    auto const expected_uri = std::string("bitcoin:") + expected_stealth;
-
-    bitcoin_uri uri;
-    auto const payment = payment_address::parse_from("113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD").value();
-    uri.set_address(payment);
-    auto const stealth = stealth_address::parse_from(expected_stealth);
-    REQUIRE(stealth);
-    uri.set_address(*stealth);
-    REQUIRE(uri.encoded() == expected_uri);
+TEST_CASE("bitcoin uri from parts stealth address expected encoding", "[bitcoin uri]") {
+    auto const uri = bitcoin_uri::from_parts({.address = "hfFGUXFPKkQ5M6LC6aEUKMsURdhw93bUdYdacEtBA8XttLv7evZkira2i"});
+    REQUIRE(uri);
+    REQUIRE(uri->to_string() == "bitcoin:hfFGUXFPKkQ5M6LC6aEUKMsURdhw93bUdYdacEtBA8XttLv7evZkira2i");
 }
 
-TEST_CASE("bitcoin uri set path reset payment after stealth expected encoding", "[bitcoin uri]") {
-    auto const expected_payment = "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD";
-    auto const expected_uri = std::string("bitcoin:") + expected_payment;
-
-    bitcoin_uri uri;
-    auto const stealth = stealth_address::parse_from("hfFGUXFPKkQ5M6LC6aEUKMsURdhw93bUdYdacEtBA8XttLv7evZkira2i");
-    REQUIRE(stealth);
-    uri.set_address(*stealth);
-    uri.set_address(payment_address::parse_from(expected_payment).value());
-    REQUIRE(uri.encoded() == expected_uri);
+TEST_CASE("bitcoin uri from parts invalid address error", "[bitcoin uri]") {
+    REQUIRE( ! bitcoin_uri::from_parts({.address = "not-a-real-address"}));
 }
 
-TEST_CASE("bitcoin uri set path reset path false", "[bitcoin uri]") {
-    auto const expected_payment = "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD";
-    auto const expected_uri = std::string("bitcoin:") + expected_payment;
-
-    bitcoin_uri uri;
-    auto const stealth = stealth_address::parse_from("hfFGUXFPKkQ5M6LC6aEUKMsURdhw93bUdYdacEtBA8XttLv7evZkira2i");
-    REQUIRE(stealth);
-    uri.set_address(*stealth);
-
-    // The set_path will not reset a path. This is necessary to catch failures in non-strict parsing.
-    REQUIRE( ! uri.set_path(expected_payment));
+TEST_CASE("bitcoin uri from parts amount encoded", "[bitcoin uri]") {
+    auto const uri = bitcoin_uri::from_parts({.amount = 120000});
+    REQUIRE(uri);
+    REQUIRE(uri->to_string() == "bitcoin:?amount=0.0012");
 }
 
-TEST_CASE("bitcoin uri set amount reset amount latter amount", "[bitcoin uri]") {
-    bitcoin_uri uri;
-    uri.set_amount(10000000000);
-    uri.set_amount(120000);
-    REQUIRE(uri.encoded() == "bitcoin:?amount=0.0012");
-}
-
-TEST_CASE("bitcoin uri all setters complex uri expected encoding", "[bitcoin uri]") {
-    bitcoin_uri uri;
-    uri.set_path("113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD");
-    uri.set_amount(120000);
-    uri.set_label("&=\n");
-    uri.set_message("hello bitcoin");
-    uri.set_r("http://example.com?purchase=shoes&user=bob");
-
-    REQUIRE(uri.encoded() ==
+TEST_CASE("bitcoin uri from parts all fields expected encoding", "[bitcoin uri]") {
+    auto const uri = bitcoin_uri::from_parts({
+        .address = "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD",
+        .amount = 120000,
+        .label = std::string("&=\n"),
+        .message = std::string("hello bitcoin"),
+        .r = std::string("http://example.com?purchase=shoes&user=bob"),
+    });
+    REQUIRE(uri);
+    REQUIRE(uri->to_string() ==
                 "bitcoin:113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD?"
                 "amount=0.0012&"
                 "label=%26%3D%0A&"
@@ -147,35 +109,29 @@ TEST_CASE("bitcoin uri all setters complex uri expected encoding", "[bitcoin uri
                 "r=http://example.com?purchase%3Dshoes%26user%3Dbob");
 }
 
-TEST_CASE("bitcoin uri set parameter amount denormalized normalized", "[bitcoin uri]") {
-    bitcoin_uri uri;
-    REQUIRE(uri.set_parameter("amount", ".0012"));
-    REQUIRE(uri.encoded() == "bitcoin:?amount=0.0012");
-}
-
 // Getters
 // ----------------------------------------------------------------------------
 
 TEST_CASE("bitcoin uri amount set expected", "[bitcoin uri]") {
-    auto const uri = bitcoin_uri::parse_from("bitcoin:?amount=0.0012");
+    auto const uri = bitcoin_uri::parse_from("bitcoin:?amount=0.0012", true);
     REQUIRE(uri);
     REQUIRE(uri->amount() == 120000u);
 }
 
 TEST_CASE("bitcoin uri label escaped expected", "[bitcoin uri]") {
-    auto const uri = bitcoin_uri::parse_from("bitcoin:?label=%26%3D%0A");
+    auto const uri = bitcoin_uri::parse_from("bitcoin:?label=%26%3D%0A", true);
     REQUIRE(uri);
     REQUIRE(uri->label() == "&=\n");
 }
 
 TEST_CASE("bitcoin uri message escaped expected", "[bitcoin uri]") {
-    auto const uri = bitcoin_uri::parse_from("bitcoin:?message=hello%20bitcoin");
+    auto const uri = bitcoin_uri::parse_from("bitcoin:?message=hello%20bitcoin", true);
     REQUIRE(uri);
     REQUIRE(uri->message() == "hello bitcoin");
 }
 
 TEST_CASE("bitcoin uri r escaped expected", "[bitcoin uri]") {
-    auto const uri = bitcoin_uri::parse_from("bitcoin:?r=http://example.com?purchase%3Dshoes%26user%3Dbob");
+    auto const uri = bitcoin_uri::parse_from("bitcoin:?r=http://example.com?purchase%3Dshoes%26user%3Dbob", true);
     REQUIRE(uri);
     REQUIRE(uri->r() == "http://example.com?purchase=shoes&user=bob");
 }
@@ -183,7 +139,7 @@ TEST_CASE("bitcoin uri r escaped expected", "[bitcoin uri]") {
 TEST_CASE("bitcoin uri payment valid expected", "[bitcoin uri]") {
     auto const expected_payment = "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD";
     auto const expected_uri = std::string("bitcoin:") + expected_payment;
-    auto const uri = bitcoin_uri::parse_from(expected_uri);
+    auto const uri = bitcoin_uri::parse_from(expected_uri, true);
     REQUIRE(uri);
     REQUIRE(uri->payment()->encoded_legacy() == expected_payment);
 }
@@ -191,7 +147,7 @@ TEST_CASE("bitcoin uri payment valid expected", "[bitcoin uri]") {
 TEST_CASE("bitcoin uri stealth valid expected", "[bitcoin uri]") {
     auto const expected_stealth = "hfFGUXFPKkQ5M6LC6aEUKMsURdhw93bUdYdacEtBA8XttLv7evZkira2i";
     auto const expected_uri = std::string("bitcoin:") + expected_stealth;
-    auto const uri = bitcoin_uri::parse_from(expected_uri);
+    auto const uri = bitcoin_uri::parse_from(expected_uri, true);
     REQUIRE(uri);
     REQUIRE(uri->stealth()->to_string() == expected_stealth);
 }
@@ -199,7 +155,7 @@ TEST_CASE("bitcoin uri stealth valid expected", "[bitcoin uri]") {
 TEST_CASE("bitcoin uri address payment expected", "[bitcoin uri]") {
     auto const expected_payment = "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD";
     auto const expected_uri = std::string("bitcoin:") + expected_payment;
-    auto const uri = bitcoin_uri::parse_from(expected_uri);
+    auto const uri = bitcoin_uri::parse_from(expected_uri, true);
     REQUIRE(uri);
     REQUIRE(uri->address() == expected_payment);
 }
@@ -207,13 +163,13 @@ TEST_CASE("bitcoin uri address payment expected", "[bitcoin uri]") {
 TEST_CASE("bitcoin uri address stealth expected", "[bitcoin uri]") {
     auto const expected_stealth = "hfFGUXFPKkQ5M6LC6aEUKMsURdhw93bUdYdacEtBA8XttLv7evZkira2i";
     auto const expected_uri = std::string("bitcoin:") + expected_stealth;
-    auto const uri = bitcoin_uri::parse_from(expected_uri);
+    auto const uri = bitcoin_uri::parse_from(expected_uri, true);
     REQUIRE(uri);
     REQUIRE(uri->address() == expected_stealth);
 }
 
 TEST_CASE("bitcoin uri parameter amount denormalized normalized", "[bitcoin uri]") {
-    auto const uri = bitcoin_uri::parse_from("bitcoin:?amount=.0012");
+    auto const uri = bitcoin_uri::parse_from("bitcoin:?amount=.0012", true);
     REQUIRE(uri);
     REQUIRE(uri->parameter("amount") == "0.0012");
 }
@@ -224,7 +180,7 @@ TEST_CASE("bitcoin uri parameters all complex uri expected", "[bitcoin uri]") {
         "amount=0.0012&"
         "label=%26%3D%0A&"
         "message=hello%20bitcoin&"
-        "r=http://example.com?purchase%3Dshoes%26user%3Dbob");
+        "r=http://example.com?purchase%3Dshoes%26user%3Dbob", true);
     REQUIRE(uri);
 
     REQUIRE(uri->address() == "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD");
@@ -238,8 +194,8 @@ TEST_CASE("bitcoin uri parameters all complex uri expected", "[bitcoin uri]") {
 // ----------------------------------------------------------------------------
 
 TEST_CASE("bitcoin uri equality same value equal", "[bitcoin uri]") {
-    auto const a = bitcoin_uri::parse_from("bitcoin:?amount=0.001");
-    auto const b = bitcoin_uri::parse_from("bitcoin:?amount=0.001");
+    auto const a = bitcoin_uri::parse_from("bitcoin:?amount=0.001", true);
+    auto const b = bitcoin_uri::parse_from("bitcoin:?amount=0.001", true);
     REQUIRE(a);
     REQUIRE(b);
     REQUIRE(*a == *b);
@@ -247,8 +203,8 @@ TEST_CASE("bitcoin uri equality same value equal", "[bitcoin uri]") {
 }
 
 TEST_CASE("bitcoin uri inequality different amount not equal", "[bitcoin uri]") {
-    auto const a = bitcoin_uri::parse_from("bitcoin:?amount=0.001");
-    auto const b = bitcoin_uri::parse_from("bitcoin:?amount=0.002");
+    auto const a = bitcoin_uri::parse_from("bitcoin:?amount=0.001", true);
+    auto const b = bitcoin_uri::parse_from("bitcoin:?amount=0.002", true);
     REQUIRE(a);
     REQUIRE(b);
     REQUIRE(*a != *b);
