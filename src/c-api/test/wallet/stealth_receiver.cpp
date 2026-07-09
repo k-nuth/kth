@@ -52,16 +52,16 @@ static uint8_t const kMainnetP2KH = 0x00u;
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::stealth_receiver - construct + valid + destruct",
+TEST_CASE("C-API wallet::stealth_receiver - from_secrets happy path",
           "[C-API WalletStealthReceiver][lifecycle]") {
     // Empty binary filter: the receiver accepts every prefix. The
-    // stealth_address factory inside the C++ ctor scans the curve for
-    // a valid prefix match; an empty filter makes this trivial.
+    // stealth_address factory inside the C++ factory scans the curve
+    // for a valid prefix match; an empty filter makes this trivial.
     kth_binary_mut_t filter = kth_core_binary_construct_default();
-    kth_stealth_receiver_mut_t r = kth_wallet_stealth_receiver_construct(
-        &kScanPrivate, &kSpendPrivate, filter, kMainnetP2KH);
+    kth_stealth_receiver_mut_t r = NULL;
+    REQUIRE(kth_wallet_stealth_receiver_from_secrets(
+        &kScanPrivate, &kSpendPrivate, filter, kMainnetP2KH, &r) == kth_ec_success);
     REQUIRE(r != NULL);
-    REQUIRE(kth_wallet_stealth_receiver_valid(r) != 0);
 
     kth_wallet_stealth_receiver_destruct(r);
     kth_core_binary_destruct(filter);
@@ -76,19 +76,24 @@ TEST_CASE("C-API wallet::stealth_receiver - destruct(NULL) is a no-op",
 // stealth_address accessor
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::stealth_receiver - stealth_address returns a valid handle",
+TEST_CASE("C-API wallet::stealth_receiver - stealth_address returns a borrowed handle",
           "[C-API WalletStealthReceiver][accessor]") {
     // Accessor returns a borrowed view into `self`. It must be
-    // non-null and the returned stealth_address must be in a valid
-    // state (the ctor otherwise short-circuits to NULL).
+    // non-null; the factory short-circuits to a non-success error code
+    // otherwise, so if the factory succeeded, the address is present.
     kth_binary_mut_t filter = kth_core_binary_construct_default();
-    kth_stealth_receiver_mut_t r = kth_wallet_stealth_receiver_construct(
-        &kScanPrivate, &kSpendPrivate, filter, kMainnetP2KH);
+    kth_stealth_receiver_mut_t r = NULL;
+    REQUIRE(kth_wallet_stealth_receiver_from_secrets(
+        &kScanPrivate, &kSpendPrivate, filter, kMainnetP2KH, &r) == kth_ec_success);
     REQUIRE(r != NULL);
 
     kth_stealth_address_const_t addr = kth_wallet_stealth_receiver_stealth_address(r);
     REQUIRE(addr != NULL);
-    REQUIRE(kth_wallet_stealth_address_valid(addr) != 0);
+    // Sanity — a version accessor round-trip. The exact value is a
+    // stealth-mainnet magic byte set by the domain layer, not the
+    // payment-address version passed to `from_secrets`, so pin only
+    // that it isn't zero to catch a broken-borrow regression.
+    REQUIRE(kth_wallet_stealth_address_version(addr) != 0);
 
     kth_wallet_stealth_receiver_destruct(r);
     kth_core_binary_destruct(filter);
@@ -98,17 +103,17 @@ TEST_CASE("C-API wallet::stealth_receiver - stealth_address returns a valid hand
 // Copy
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::stealth_receiver - copy yields a distinct, valid handle",
+TEST_CASE("C-API wallet::stealth_receiver - copy yields a distinct handle",
           "[C-API WalletStealthReceiver][value]") {
     kth_binary_mut_t filter = kth_core_binary_construct_default();
-    kth_stealth_receiver_mut_t a = kth_wallet_stealth_receiver_construct(
-        &kScanPrivate, &kSpendPrivate, filter, kMainnetP2KH);
+    kth_stealth_receiver_mut_t a = NULL;
+    REQUIRE(kth_wallet_stealth_receiver_from_secrets(
+        &kScanPrivate, &kSpendPrivate, filter, kMainnetP2KH, &a) == kth_ec_success);
     REQUIRE(a != NULL);
 
     kth_stealth_receiver_mut_t b = kth_wallet_stealth_receiver_copy(a);
     REQUIRE(b != NULL);
     REQUIRE(b != a);
-    REQUIRE(kth_wallet_stealth_receiver_valid(b) != 0);
 
     kth_wallet_stealth_receiver_destruct(b);
     kth_wallet_stealth_receiver_destruct(a);
@@ -119,31 +124,29 @@ TEST_CASE("C-API wallet::stealth_receiver - copy yields a distinct, valid handle
 // Preconditions
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::stealth_receiver - construct(NULL scan_private) aborts",
+TEST_CASE("C-API wallet::stealth_receiver - from_secrets(NULL scan_private) aborts",
           "[C-API WalletStealthReceiver][precondition]") {
     kth_binary_mut_t filter = kth_core_binary_construct_default();
-    KTH_EXPECT_ABORT(kth_wallet_stealth_receiver_construct(
-        NULL, &kSpendPrivate, filter, kMainnetP2KH));
+    kth_stealth_receiver_mut_t r = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_stealth_receiver_from_secrets(
+        NULL, &kSpendPrivate, filter, kMainnetP2KH, &r));
     kth_core_binary_destruct(filter);
 }
 
-TEST_CASE("C-API wallet::stealth_receiver - construct(NULL spend_private) aborts",
+TEST_CASE("C-API wallet::stealth_receiver - from_secrets(NULL spend_private) aborts",
           "[C-API WalletStealthReceiver][precondition]") {
     kth_binary_mut_t filter = kth_core_binary_construct_default();
-    KTH_EXPECT_ABORT(kth_wallet_stealth_receiver_construct(
-        &kScanPrivate, NULL, filter, kMainnetP2KH));
+    kth_stealth_receiver_mut_t r = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_stealth_receiver_from_secrets(
+        &kScanPrivate, NULL, filter, kMainnetP2KH, &r));
     kth_core_binary_destruct(filter);
 }
 
-TEST_CASE("C-API wallet::stealth_receiver - construct(NULL filter) aborts",
+TEST_CASE("C-API wallet::stealth_receiver - from_secrets(NULL filter) aborts",
           "[C-API WalletStealthReceiver][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_stealth_receiver_construct(
-        &kScanPrivate, &kSpendPrivate, NULL, kMainnetP2KH));
-}
-
-TEST_CASE("C-API wallet::stealth_receiver - valid(NULL) aborts",
-          "[C-API WalletStealthReceiver][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_stealth_receiver_valid(NULL));
+    kth_stealth_receiver_mut_t r = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_stealth_receiver_from_secrets(
+        &kScanPrivate, &kSpendPrivate, NULL, kMainnetP2KH, &r));
 }
 
 TEST_CASE("C-API wallet::stealth_receiver - stealth_address(NULL) aborts",

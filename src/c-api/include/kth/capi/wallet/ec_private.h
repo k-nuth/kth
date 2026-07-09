@@ -17,23 +17,65 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_ec_private_mut_t`. Caller must release with `kth_wallet_ec_private_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_ec_private_mut_t kth_wallet_ec_private_construct_default(void);
+/** @param[out] out Must point to a null `kth_ec_private_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_ec_private_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_ec_private_parse_from(char const* wif, uint8_t version, KTH_OUT_OWNED kth_ec_private_mut_t* out);
 
 /**
- * @return Owned `kth_ec_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_private_destruct`.
- * @param secret Borrowed input; must be non-null. Copied into the resulting object; ownership of `secret` stays with the caller.
+ * @param wif Borrowed input; must be non-null. Read during the call; ownership of `wif` stays with the caller.
+ * @param[out] out Must point to a null `kth_ec_private_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_ec_private_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_wallet_ec_private_from_compressed(kth_wif_compressed_t const* wif, uint8_t address_version, KTH_OUT_OWNED kth_ec_private_mut_t* out);
+
+/**
+ * @warning `wif` MUST point to a buffer of at least 38 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_wif_compressed_t`.
+ * @param[out] out Must point to a null `kth_ec_private_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_ec_private_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_wallet_ec_private_from_compressed_unsafe(uint8_t const* wif, uint8_t address_version, KTH_OUT_OWNED kth_ec_private_mut_t* out);
+
+/**
+ * @param wif Borrowed input; must be non-null. Read during the call; ownership of `wif` stays with the caller.
+ * @param[out] out Must point to a null `kth_ec_private_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_ec_private_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_wallet_ec_private_from_uncompressed(kth_wif_uncompressed_t const* wif, uint8_t address_version, KTH_OUT_OWNED kth_ec_private_mut_t* out);
+
+/**
+ * @warning `wif` MUST point to a buffer of at least 37 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_wif_uncompressed_t`.
+ * @param[out] out Must point to a null `kth_ec_private_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_ec_private_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_wallet_ec_private_from_uncompressed_unsafe(uint8_t const* wif, uint8_t address_version, KTH_OUT_OWNED kth_ec_private_mut_t* out);
+
+/**
+ * @param secret Borrowed input; must be non-null. Read during the call; ownership of `secret` stays with the caller.
+ * @param[out] out Must point to a null `kth_ec_private_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_ec_private_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_wallet_ec_private_from_secret(kth_hash_t const* secret, uint16_t version, kth_bool_t compress, KTH_OUT_OWNED kth_ec_private_mut_t* out);
+
+/**
+ * @warning `secret` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
+ * @param[out] out Must point to a null `kth_ec_private_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_ec_private_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_wallet_ec_private_from_secret_unsafe(uint8_t const* secret, uint16_t version, kth_bool_t compress, KTH_OUT_OWNED kth_ec_private_mut_t* out);
+
+/**
+ * @return Owned `kth_ec_private_mut_t`. Caller must release with `kth_wallet_ec_private_destruct`.
+ * @param secret Borrowed input; must be non-null. Read during the call; ownership of `secret` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
-kth_ec_private_mut_t kth_wallet_ec_private_construct(kth_hash_t const* secret, uint16_t version, kth_bool_t compress);
+kth_ec_private_mut_t kth_wallet_ec_private_from_verified_secret(kth_hash_t const* secret, uint16_t version, kth_bool_t compress);
 
 /**
- * @return Owned `kth_ec_private_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_private_destruct`.
+ * @return Owned `kth_ec_private_mut_t`. Caller must release with `kth_wallet_ec_private_destruct`.
  * @warning `secret` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
-kth_ec_private_mut_t kth_wallet_ec_private_construct_unsafe(uint8_t const* secret, uint16_t version, kth_bool_t compress);
+kth_ec_private_mut_t kth_wallet_ec_private_from_verified_secret_unsafe(uint8_t const* secret, uint16_t version, kth_bool_t compress);
 
 
 // Destructor
@@ -77,9 +119,6 @@ kth_bool_t kth_wallet_ec_private_greater_or_equal(kth_ec_private_const_t self, k
 // Getters
 
 KTH_EXPORT
-kth_bool_t kth_wallet_ec_private_valid(kth_ec_private_const_t self);
-
-KTH_EXPORT
 kth_hash_t kth_wallet_ec_private_secret(kth_ec_private_const_t self);
 
 KTH_EXPORT
@@ -94,13 +133,13 @@ uint8_t kth_wallet_ec_private_wif_version(kth_ec_private_const_t self);
 KTH_EXPORT
 kth_bool_t kth_wallet_ec_private_compressed(kth_ec_private_const_t self);
 
-/** @return Owned `kth_ec_public_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_ec_public_destruct`. */
+/** @return Owned `kth_ec_public_mut_t`. Caller must release with `kth_wallet_ec_public_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_ec_public_mut_t kth_wallet_ec_private_to_public(kth_ec_private_const_t self);
 
-/** @return Owned `kth_payment_address_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_payment_address_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_ec_private_to_payment_address(kth_ec_private_const_t self);
+/** @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_ec_private_to_payment_address(kth_ec_private_const_t self, KTH_OUT_OWNED kth_payment_address_mut_t* out);
 
 KTH_EXPORT
 kth_hash_t kth_wallet_ec_private_value(kth_ec_private_const_t self);
@@ -120,38 +159,6 @@ uint8_t kth_wallet_ec_private_to_wif_prefix(uint16_t version);
 
 KTH_EXPORT
 uint16_t kth_wallet_ec_private_to_version(uint8_t address, uint8_t wif);
-
-/** @param[out] out Must point to a null `kth_ec_private_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_ec_private_destruct`. Untouched on error. */
-KTH_EXPORT
-kth_error_code_t kth_wallet_ec_private_parse_from(char const* wif, uint8_t version, KTH_OUT_OWNED kth_ec_private_mut_t* out);
-
-/**
- * @param wif Borrowed input; must be non-null. Read during the call; ownership of `wif` stays with the caller.
- * @param[out] out Must point to a null `kth_ec_private_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_ec_private_destruct`. Untouched on error.
- */
-KTH_EXPORT
-kth_error_code_t kth_wallet_ec_private_from_compressed(kth_wif_compressed_t const* wif, uint8_t address_version, KTH_OUT_OWNED kth_ec_private_mut_t* out);
-
-/**
- * @warning `wif` MUST point to a buffer of at least 38 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_wif_compressed_t`.
- * @param[out] out Must point to a null `kth_ec_private_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_ec_private_destruct`. Untouched on error.
- */
-KTH_EXPORT
-kth_error_code_t kth_wallet_ec_private_from_compressed_unsafe(uint8_t const* wif, uint8_t address_version, KTH_OUT_OWNED kth_ec_private_mut_t* out);
-
-/**
- * @param wif Borrowed input; must be non-null. Read during the call; ownership of `wif` stays with the caller.
- * @param[out] out Must point to a null `kth_ec_private_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_ec_private_destruct`. Untouched on error.
- */
-KTH_EXPORT
-kth_error_code_t kth_wallet_ec_private_from_uncompressed(kth_wif_uncompressed_t const* wif, uint8_t address_version, KTH_OUT_OWNED kth_ec_private_mut_t* out);
-
-/**
- * @warning `wif` MUST point to a buffer of at least 37 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_wif_uncompressed_t`.
- * @param[out] out Must point to a null `kth_ec_private_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_ec_private_destruct`. Untouched on error.
- */
-KTH_EXPORT
-kth_error_code_t kth_wallet_ec_private_from_uncompressed_unsafe(uint8_t const* wif, uint8_t address_version, KTH_OUT_OWNED kth_ec_private_mut_t* out);
 
 #ifdef __cplusplus
 } // extern "C"

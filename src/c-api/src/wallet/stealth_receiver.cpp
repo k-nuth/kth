@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <cstring>
+#include <utility>
 
 #include <kth/capi/wallet/stealth_receiver.h>
 
@@ -21,28 +22,38 @@ extern "C" {
 
 // Constructors
 
-kth_stealth_receiver_mut_t kth_wallet_stealth_receiver_construct(kth_hash_t const* scan_private, kth_hash_t const* spend_private, kth_binary_const_t filter, uint8_t version) {
+kth_error_code_t kth_wallet_stealth_receiver_from_secrets(kth_hash_t const* scan_private, kth_hash_t const* spend_private, kth_binary_const_t filter, uint8_t version, KTH_OUT_OWNED kth_stealth_receiver_mut_t* out) {
     KTH_PRECONDITION(scan_private != nullptr);
     KTH_PRECONDITION(spend_private != nullptr);
     KTH_PRECONDITION(filter != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto scan_private_cpp = kth::hash_to_cpp(scan_private->hash);
     kth::secure_scrub scan_private_cpp_scrub{&scan_private_cpp, sizeof(scan_private_cpp)};
     auto spend_private_cpp = kth::hash_to_cpp(spend_private->hash);
     kth::secure_scrub spend_private_cpp_scrub{&spend_private_cpp, sizeof(spend_private_cpp)};
     auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
-    return kth::leak_if_valid(cpp_t(scan_private_cpp, spend_private_cpp, filter_cpp, version));
+    auto result = cpp_t::from_secrets(scan_private_cpp, spend_private_cpp, filter_cpp, version);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_stealth_receiver_mut_t kth_wallet_stealth_receiver_construct_unsafe(uint8_t const* scan_private, uint8_t const* spend_private, kth_binary_const_t filter, uint8_t version) {
+kth_error_code_t kth_wallet_stealth_receiver_from_secrets_unsafe(uint8_t const* scan_private, uint8_t const* spend_private, kth_binary_const_t filter, uint8_t version, KTH_OUT_OWNED kth_stealth_receiver_mut_t* out) {
     KTH_PRECONDITION(scan_private != nullptr);
     KTH_PRECONDITION(spend_private != nullptr);
     KTH_PRECONDITION(filter != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto scan_private_cpp = kth::hash_to_cpp(scan_private);
     kth::secure_scrub scan_private_cpp_scrub{&scan_private_cpp, sizeof(scan_private_cpp)};
     auto spend_private_cpp = kth::hash_to_cpp(spend_private);
     kth::secure_scrub spend_private_cpp_scrub{&spend_private_cpp, sizeof(spend_private_cpp)};
     auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
-    return kth::leak_if_valid(cpp_t(scan_private_cpp, spend_private_cpp, filter_cpp, version));
+    auto result = cpp_t::from_secrets(scan_private_cpp, spend_private_cpp, filter_cpp, version);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
 
@@ -63,11 +74,6 @@ kth_stealth_receiver_mut_t kth_wallet_stealth_receiver_copy(kth_stealth_receiver
 
 // Getters
 
-kth_bool_t kth_wallet_stealth_receiver_valid(kth_stealth_receiver_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(static_cast<bool>(kth::cpp_ref<cpp_t>(self)));
-}
-
 kth_stealth_address_const_t kth_wallet_stealth_receiver_stealth_address(kth_stealth_receiver_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return &(kth::cpp_ref<cpp_t>(self).stealth_address());
@@ -76,50 +82,52 @@ kth_stealth_address_const_t kth_wallet_stealth_receiver_stealth_address(kth_stea
 
 // Operations
 
-kth_bool_t kth_wallet_stealth_receiver_derive_address(kth_stealth_receiver_const_t self, kth_payment_address_mut_t out_address, kth_ec_compressed_t const* ephemeral_public) {
+kth_error_code_t kth_wallet_stealth_receiver_derive_address(kth_stealth_receiver_const_t self, kth_ec_compressed_t const* ephemeral_public, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(out_address != nullptr);
     KTH_PRECONDITION(ephemeral_public != nullptr);
-    auto& out_address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(out_address);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto const ephemeral_public_cpp = kth::ec_compressed_to_cpp(ephemeral_public->data);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).derive_address(out_address_cpp, ephemeral_public_cpp));
+    auto result = kth::cpp_ref<cpp_t>(self).derive_address(ephemeral_public_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_bool_t kth_wallet_stealth_receiver_derive_address_unsafe(kth_stealth_receiver_const_t self, kth_payment_address_mut_t out_address, uint8_t const* ephemeral_public) {
+kth_error_code_t kth_wallet_stealth_receiver_derive_address_unsafe(kth_stealth_receiver_const_t self, uint8_t const* ephemeral_public, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(out_address != nullptr);
     KTH_PRECONDITION(ephemeral_public != nullptr);
-    auto& out_address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(out_address);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto const ephemeral_public_cpp = kth::ec_compressed_to_cpp(ephemeral_public);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).derive_address(out_address_cpp, ephemeral_public_cpp));
+    auto result = kth::cpp_ref<cpp_t>(self).derive_address(ephemeral_public_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_bool_t kth_wallet_stealth_receiver_derive_private(kth_stealth_receiver_const_t self, kth_hash_t* out_private, kth_ec_compressed_t const* ephemeral_public) {
+kth_error_code_t kth_wallet_stealth_receiver_derive_private(kth_stealth_receiver_const_t self, kth_ec_compressed_t const* ephemeral_public, uint8_t* out, kth_size_t n) {
     KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(out_private != nullptr);
     KTH_PRECONDITION(ephemeral_public != nullptr);
-    kth::hash_digest out_private_cpp;
-    kth::secure_scrub out_private_cpp_scrub{&out_private_cpp, sizeof(out_private_cpp)};
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(n >= 32);
     auto const ephemeral_public_cpp = kth::ec_compressed_to_cpp(ephemeral_public->data);
-    auto const cpp_result = kth::cpp_ref<cpp_t>(self).derive_private(out_private_cpp, ephemeral_public_cpp);
-    if (cpp_result) {
-        std::memcpy(out_private->hash, out_private_cpp.data(), out_private_cpp.size());
-    }
-    return kth::bool_to_int(cpp_result);
+    auto const result = kth::cpp_ref<cpp_t>(self).derive_private(ephemeral_public_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    std::memcpy(out, result->data(), result->size());
+    return kth_ec_success;
 }
 
-kth_bool_t kth_wallet_stealth_receiver_derive_private_unsafe(kth_stealth_receiver_const_t self, kth_hash_t* out_private, uint8_t const* ephemeral_public) {
+kth_error_code_t kth_wallet_stealth_receiver_derive_private_unsafe(kth_stealth_receiver_const_t self, uint8_t const* ephemeral_public, uint8_t* out, kth_size_t n) {
     KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(out_private != nullptr);
     KTH_PRECONDITION(ephemeral_public != nullptr);
-    kth::hash_digest out_private_cpp;
-    kth::secure_scrub out_private_cpp_scrub{&out_private_cpp, sizeof(out_private_cpp)};
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(n >= 32);
     auto const ephemeral_public_cpp = kth::ec_compressed_to_cpp(ephemeral_public);
-    auto const cpp_result = kth::cpp_ref<cpp_t>(self).derive_private(out_private_cpp, ephemeral_public_cpp);
-    if (cpp_result) {
-        std::memcpy(out_private->hash, out_private_cpp.data(), out_private_cpp.size());
-    }
-    return kth::bool_to_int(cpp_result);
+    auto const result = kth::cpp_ref<cpp_t>(self).derive_private(ephemeral_public_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    std::memcpy(out, result->data(), result->size());
+    return kth_ec_success;
 }
 
 } // extern "C"

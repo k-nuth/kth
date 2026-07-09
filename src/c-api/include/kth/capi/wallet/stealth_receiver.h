@@ -18,22 +18,20 @@ extern "C" {
 // Constructors
 
 /**
- * @return Owned `kth_stealth_receiver_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_stealth_receiver_destruct`.
- * @param filter Borrowed input. Copied by value into the resulting object; ownership of `filter` stays with the caller.
- * @param scan_private Borrowed input; must be non-null. Copied into the resulting object; ownership of `scan_private` stays with the caller.
- * @param spend_private Borrowed input; must be non-null. Copied into the resulting object; ownership of `spend_private` stays with the caller.
+ * @param scan_private Borrowed input; must be non-null. Read during the call; ownership of `scan_private` stays with the caller.
+ * @param spend_private Borrowed input; must be non-null. Read during the call; ownership of `spend_private` stays with the caller.
+ * @param[out] out Must point to a null `kth_stealth_receiver_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_stealth_receiver_destruct`. Untouched on error.
  */
-KTH_EXPORT KTH_OWNED
-kth_stealth_receiver_mut_t kth_wallet_stealth_receiver_construct(kth_hash_t const* scan_private, kth_hash_t const* spend_private, kth_binary_const_t filter, uint8_t version);
+KTH_EXPORT
+kth_error_code_t kth_wallet_stealth_receiver_from_secrets(kth_hash_t const* scan_private, kth_hash_t const* spend_private, kth_binary_const_t filter, uint8_t version, KTH_OUT_OWNED kth_stealth_receiver_mut_t* out);
 
 /**
- * @return Owned `kth_stealth_receiver_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_stealth_receiver_destruct`.
- * @param filter Borrowed input. Copied by value into the resulting object; ownership of `filter` stays with the caller.
  * @warning `scan_private` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  * @warning `spend_private` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
+ * @param[out] out Must point to a null `kth_stealth_receiver_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_stealth_receiver_destruct`. Untouched on error.
  */
-KTH_EXPORT KTH_OWNED
-kth_stealth_receiver_mut_t kth_wallet_stealth_receiver_construct_unsafe(uint8_t const* scan_private, uint8_t const* spend_private, kth_binary_const_t filter, uint8_t version);
+KTH_EXPORT
+kth_error_code_t kth_wallet_stealth_receiver_from_secrets_unsafe(uint8_t const* scan_private, uint8_t const* spend_private, kth_binary_const_t filter, uint8_t version, KTH_OUT_OWNED kth_stealth_receiver_mut_t* out);
 
 
 // Destructor
@@ -52,10 +50,6 @@ kth_stealth_receiver_mut_t kth_wallet_stealth_receiver_copy(kth_stealth_receiver
 
 // Getters
 
-/** @return Non-zero if `self` is in a valid state, zero otherwise. */
-KTH_EXPORT
-kth_bool_t kth_wallet_stealth_receiver_valid(kth_stealth_receiver_const_t self);
-
 /** @return Borrowed `kth_stealth_address_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_stealth_address_const_t kth_wallet_stealth_receiver_stealth_address(kth_stealth_receiver_const_t self);
@@ -63,21 +57,33 @@ kth_stealth_address_const_t kth_wallet_stealth_receiver_stealth_address(kth_stea
 
 // Operations
 
-/** @param ephemeral_public Borrowed input; must be non-null. Read during the call; ownership of `ephemeral_public` stays with the caller. */
+/**
+ * @param ephemeral_public Borrowed input; must be non-null. Read during the call; ownership of `ephemeral_public` stays with the caller.
+ * @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error.
+ */
 KTH_EXPORT
-kth_bool_t kth_wallet_stealth_receiver_derive_address(kth_stealth_receiver_const_t self, kth_payment_address_mut_t out_address, kth_ec_compressed_t const* ephemeral_public);
+kth_error_code_t kth_wallet_stealth_receiver_derive_address(kth_stealth_receiver_const_t self, kth_ec_compressed_t const* ephemeral_public, KTH_OUT_OWNED kth_payment_address_mut_t* out);
 
-/** @warning `ephemeral_public` MUST point to a buffer of at least 33 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_ec_compressed_t`. */
+/**
+ * @warning `ephemeral_public` MUST point to a buffer of at least 33 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_ec_compressed_t`.
+ * @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error.
+ */
 KTH_EXPORT
-kth_bool_t kth_wallet_stealth_receiver_derive_address_unsafe(kth_stealth_receiver_const_t self, kth_payment_address_mut_t out_address, uint8_t const* ephemeral_public);
+kth_error_code_t kth_wallet_stealth_receiver_derive_address_unsafe(kth_stealth_receiver_const_t self, uint8_t const* ephemeral_public, KTH_OUT_OWNED kth_payment_address_mut_t* out);
 
-/** @param ephemeral_public Borrowed input; must be non-null. Read during the call; ownership of `ephemeral_public` stays with the caller. */
+/**
+ * @param ephemeral_public Borrowed input; must be non-null. Read during the call; ownership of `ephemeral_public` stays with the caller.
+ * @warning `out` MUST point to a buffer of at least 32 bytes; `n` MUST be `>= 32`. Passing a shorter buffer aborts via the precondition check.
+ */
 KTH_EXPORT
-kth_bool_t kth_wallet_stealth_receiver_derive_private(kth_stealth_receiver_const_t self, kth_hash_t* out_private, kth_ec_compressed_t const* ephemeral_public);
+kth_error_code_t kth_wallet_stealth_receiver_derive_private(kth_stealth_receiver_const_t self, kth_ec_compressed_t const* ephemeral_public, uint8_t* out, kth_size_t n);
 
-/** @warning `ephemeral_public` MUST point to a buffer of at least 33 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_ec_compressed_t`. */
+/**
+ * @warning `ephemeral_public` MUST point to a buffer of at least 33 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_ec_compressed_t`.
+ * @warning `out` MUST point to a buffer of at least 32 bytes; `n` MUST be `>= 32`. Passing a shorter buffer aborts via the precondition check.
+ */
 KTH_EXPORT
-kth_bool_t kth_wallet_stealth_receiver_derive_private_unsafe(kth_stealth_receiver_const_t self, kth_hash_t* out_private, uint8_t const* ephemeral_public);
+kth_error_code_t kth_wallet_stealth_receiver_derive_private_unsafe(kth_stealth_receiver_const_t self, uint8_t const* ephemeral_public, uint8_t* out, kth_size_t n);
 
 #ifdef __cplusplus
 } // extern "C"

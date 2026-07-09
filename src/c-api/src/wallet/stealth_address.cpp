@@ -9,6 +9,7 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
+#include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/wallet/stealth_address.hpp>
 
 // File-local alias so `kth::cpp_ref<T>(...)` and friends don't
@@ -22,34 +23,56 @@ extern "C" {
 
 // Constructors
 
-kth_stealth_address_mut_t kth_wallet_stealth_address_construct_default(void) {
-    return kth::leak<cpp_t>();
-}
-
-kth_stealth_address_mut_t kth_wallet_stealth_address_construct_from_decoded(uint8_t const* decoded, kth_size_t n) {
+kth_error_code_t kth_wallet_stealth_address_construct_from_data(uint8_t const* decoded, kth_size_t n, KTH_OUT_OWNED kth_stealth_address_mut_t* out) {
     KTH_PRECONDITION(decoded != nullptr || n == 0);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto const decoded_cpp = n != 0 ? kth::data_chunk(decoded, decoded + n) : kth::data_chunk{};
-    return kth::leak_if_valid(cpp_t(decoded_cpp));
+    auto result = cpp_t::from_data(decoded_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_stealth_address_mut_t kth_wallet_stealth_address_construct_from_binary_scan_key_spend_keys_signatures_version(kth_binary_const_t filter, kth_ec_compressed_t const* scan_key, kth_ec_compressed_list_const_t spend_keys, uint8_t signatures, uint8_t version) {
+kth_error_code_t kth_wallet_stealth_address_parse_from(char const* encoded, KTH_OUT_OWNED kth_stealth_address_mut_t* out) {
+    KTH_PRECONDITION(encoded != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const encoded_cpp = std::string_view(encoded);
+    auto result = cpp_t::parse_from(encoded_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
+kth_error_code_t kth_wallet_stealth_address_from_components(kth_binary_const_t filter, kth_ec_compressed_t const* scan_key, kth_ec_compressed_list_const_t spend_keys, uint8_t signatures, uint8_t version, KTH_OUT_OWNED kth_stealth_address_mut_t* out) {
     KTH_PRECONDITION(filter != nullptr);
     KTH_PRECONDITION(scan_key != nullptr);
     KTH_PRECONDITION(spend_keys != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
     auto const scan_key_cpp = kth::ec_compressed_to_cpp(scan_key->data);
     auto const& spend_keys_cpp = kth::cpp_ref<kth::point_list>(spend_keys);
-    return kth::leak_if_valid(cpp_t(filter_cpp, scan_key_cpp, spend_keys_cpp, signatures, version));
+    auto result = cpp_t::from_components(filter_cpp, scan_key_cpp, spend_keys_cpp, signatures, version);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_stealth_address_mut_t kth_wallet_stealth_address_construct_from_binary_scan_key_spend_keys_signatures_version_unsafe(kth_binary_const_t filter, uint8_t const* scan_key, kth_ec_compressed_list_const_t spend_keys, uint8_t signatures, uint8_t version) {
+kth_error_code_t kth_wallet_stealth_address_from_components_unsafe(kth_binary_const_t filter, uint8_t const* scan_key, kth_ec_compressed_list_const_t spend_keys, uint8_t signatures, uint8_t version, KTH_OUT_OWNED kth_stealth_address_mut_t* out) {
     KTH_PRECONDITION(filter != nullptr);
     KTH_PRECONDITION(scan_key != nullptr);
     KTH_PRECONDITION(spend_keys != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
     auto const scan_key_cpp = kth::ec_compressed_to_cpp(scan_key);
     auto const& spend_keys_cpp = kth::cpp_ref<kth::point_list>(spend_keys);
-    return kth::leak_if_valid(cpp_t(filter_cpp, scan_key_cpp, spend_keys_cpp, signatures, version));
+    auto result = cpp_t::from_components(filter_cpp, scan_key_cpp, spend_keys_cpp, signatures, version);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
 
@@ -112,17 +135,6 @@ kth_bool_t kth_wallet_stealth_address_greater_or_equal(kth_stealth_address_const
 
 // Getters
 
-kth_bool_t kth_wallet_stealth_address_valid(kth_stealth_address_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).valid());
-}
-
-char* kth_wallet_stealth_address_encoded(kth_stealth_address_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    auto const s = kth::cpp_ref<cpp_t>(self).encoded();
-    return kth::create_c_str(s);
-}
-
 uint8_t kth_wallet_stealth_address_version(kth_stealth_address_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::cpp_ref<cpp_t>(self).version();
@@ -159,20 +171,6 @@ char* kth_wallet_stealth_address_to_string(kth_stealth_address_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     auto const s = kth::cpp_ref<cpp_t>(self).to_string();
     return kth::create_c_str(s);
-}
-
-
-// Static utilities
-
-kth_error_code_t kth_wallet_stealth_address_parse_from(char const* encoded, KTH_OUT_OWNED kth_stealth_address_mut_t* out) {
-    KTH_PRECONDITION(encoded != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const encoded_cpp = std::string_view(encoded);
-    auto result = cpp_t::parse_from(encoded_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
-    return kth_ec_success;
 }
 
 } // extern "C"

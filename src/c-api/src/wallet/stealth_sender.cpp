@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <utility>
+
 #include <kth/capi/wallet/stealth_sender.h>
 
 #include <kth/capi/conversions.hpp>
@@ -19,40 +21,55 @@ extern "C" {
 
 // Constructors
 
-kth_stealth_sender_mut_t kth_wallet_stealth_sender_construct_from_stealth_address_seed_binary_version(kth_stealth_address_const_t address, uint8_t const* seed, kth_size_t n, kth_binary_const_t filter, uint8_t version) {
+kth_error_code_t kth_wallet_stealth_sender_from_stealth_address(kth_stealth_address_const_t address, uint8_t const* seed, kth_size_t n, kth_binary_const_t filter, uint8_t version, KTH_OUT_OWNED kth_stealth_sender_mut_t* out) {
     KTH_PRECONDITION(address != nullptr);
     KTH_PRECONDITION(seed != nullptr || n == 0);
     KTH_PRECONDITION(filter != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto const& address_cpp = kth::cpp_ref<kth::domain::wallet::stealth_address>(address);
     auto const seed_cpp = n != 0 ? kth::data_chunk(seed, seed + n) : kth::data_chunk{};
     auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
-    return kth::leak_if_valid(cpp_t(address_cpp, seed_cpp, filter_cpp, version));
+    auto result = cpp_t::from_stealth_address(address_cpp, seed_cpp, filter_cpp, version);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_stealth_sender_mut_t kth_wallet_stealth_sender_construct_from_ephemeral_private_stealth_address_seed_binary_version(kth_hash_t const* ephemeral_private, kth_stealth_address_const_t address, uint8_t const* seed, kth_size_t n, kth_binary_const_t filter, uint8_t version) {
+kth_error_code_t kth_wallet_stealth_sender_from_ephemeral(kth_hash_t const* ephemeral_private, kth_stealth_address_const_t address, uint8_t const* seed, kth_size_t n, kth_binary_const_t filter, uint8_t version, KTH_OUT_OWNED kth_stealth_sender_mut_t* out) {
     KTH_PRECONDITION(ephemeral_private != nullptr);
     KTH_PRECONDITION(address != nullptr);
     KTH_PRECONDITION(seed != nullptr || n == 0);
     KTH_PRECONDITION(filter != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto ephemeral_private_cpp = kth::hash_to_cpp(ephemeral_private->hash);
     kth::secure_scrub ephemeral_private_cpp_scrub{&ephemeral_private_cpp, sizeof(ephemeral_private_cpp)};
     auto const& address_cpp = kth::cpp_ref<kth::domain::wallet::stealth_address>(address);
     auto const seed_cpp = n != 0 ? kth::data_chunk(seed, seed + n) : kth::data_chunk{};
     auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
-    return kth::leak_if_valid(cpp_t(ephemeral_private_cpp, address_cpp, seed_cpp, filter_cpp, version));
+    auto result = cpp_t::from_ephemeral(ephemeral_private_cpp, address_cpp, seed_cpp, filter_cpp, version);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_stealth_sender_mut_t kth_wallet_stealth_sender_construct_from_ephemeral_private_stealth_address_seed_binary_version_unsafe(uint8_t const* ephemeral_private, kth_stealth_address_const_t address, uint8_t const* seed, kth_size_t n, kth_binary_const_t filter, uint8_t version) {
+kth_error_code_t kth_wallet_stealth_sender_from_ephemeral_unsafe(uint8_t const* ephemeral_private, kth_stealth_address_const_t address, uint8_t const* seed, kth_size_t n, kth_binary_const_t filter, uint8_t version, KTH_OUT_OWNED kth_stealth_sender_mut_t* out) {
     KTH_PRECONDITION(ephemeral_private != nullptr);
     KTH_PRECONDITION(address != nullptr);
     KTH_PRECONDITION(seed != nullptr || n == 0);
     KTH_PRECONDITION(filter != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto ephemeral_private_cpp = kth::hash_to_cpp(ephemeral_private);
     kth::secure_scrub ephemeral_private_cpp_scrub{&ephemeral_private_cpp, sizeof(ephemeral_private_cpp)};
     auto const& address_cpp = kth::cpp_ref<kth::domain::wallet::stealth_address>(address);
     auto const seed_cpp = n != 0 ? kth::data_chunk(seed, seed + n) : kth::data_chunk{};
     auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
-    return kth::leak_if_valid(cpp_t(ephemeral_private_cpp, address_cpp, seed_cpp, filter_cpp, version));
+    auto result = cpp_t::from_ephemeral(ephemeral_private_cpp, address_cpp, seed_cpp, filter_cpp, version);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
 
@@ -72,11 +89,6 @@ kth_stealth_sender_mut_t kth_wallet_stealth_sender_copy(kth_stealth_sender_const
 
 
 // Getters
-
-kth_bool_t kth_wallet_stealth_sender_valid(kth_stealth_sender_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(static_cast<bool>(kth::cpp_ref<cpp_t>(self)));
-}
 
 kth_script_const_t kth_wallet_stealth_sender_stealth_script(kth_stealth_sender_const_t self) {
     KTH_PRECONDITION(self != nullptr);

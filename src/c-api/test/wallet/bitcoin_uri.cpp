@@ -35,18 +35,6 @@ static char const* const kFullUri =
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API BitcoinURI - default construct is invalid-but-queryable",
-          "[C-API BitcoinURI][lifecycle]") {
-    // A default URI carries no scheme / address / parameters — its
-    // `operator bool` (surfaced as `valid`) reports false until a
-    // scheme is set.
-    kth_bitcoin_uri_mut_t u = kth_wallet_bitcoin_uri_construct_default();
-    REQUIRE(u != NULL);
-    REQUIRE(kth_wallet_bitcoin_uri_valid(u) == 0);
-    REQUIRE(kth_wallet_bitcoin_uri_amount(u) == 0u);
-    kth_wallet_bitcoin_uri_destruct(u);
-}
-
 TEST_CASE("C-API BitcoinURI - destruct(NULL) is a no-op",
           "[C-API BitcoinURI][lifecycle]") {
     kth_wallet_bitcoin_uri_destruct(NULL);
@@ -63,7 +51,6 @@ TEST_CASE("C-API BitcoinURI - parses amount / label / message / r",
     kth_bitcoin_uri_mut_t u = NULL;
     REQUIRE(kth_wallet_bitcoin_uri_parse_from(kFullUri, 1, &u) == kth_ec_success);
     REQUIRE(u != NULL);
-    REQUIRE(kth_wallet_bitcoin_uri_valid(u) != 0);
 
     // amount=0.001 BTC → 100_000 satoshis. BIP21 fixed-point parsing
     // lives in the URI layer, so a regression there surfaces here.
@@ -104,30 +91,36 @@ TEST_CASE("C-API BitcoinURI - strict mode rejects a malformed scheme",
     REQUIRE(u == NULL);
 }
 
+TEST_CASE("C-API BitcoinURI - bare scheme parses",
+          "[C-API BitcoinURI][parse]") {
+    // BIP21 allows an empty payload — `bitcoin:` alone is a legal URI.
+    kth_bitcoin_uri_mut_t u = NULL;
+    REQUIRE(kth_wallet_bitcoin_uri_parse_from("bitcoin:", 1, &u) == kth_ec_success);
+    REQUIRE(u != NULL);
+    REQUIRE(kth_wallet_bitcoin_uri_amount(u) == 0u);
+    kth_wallet_bitcoin_uri_destruct(u);
+}
+
 // ---------------------------------------------------------------------------
-// Encoded round-trip
+// to_string round-trip
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API BitcoinURI - encoded round-trips through construct",
+TEST_CASE("C-API BitcoinURI - to_string round-trips through parse_from",
           "[C-API BitcoinURI][encode]") {
-    // Parse → encode → parse again yields an equal URI. The exact byte
-    // spelling can vary (query-param ordering isn't canonicalised), so
-    // compare via equals on the re-parsed handles rather than strcmp.
-    // Guard every handle / owned string explicitly — the getters abort
-    // on NULL, and we'd rather a parse regression surface as a REQUIRE
-    // failure than a SIGABRT during the test run.
+    // Parse → serialize → parse again yields an equal URI. Query-param
+    // ordering is stable (lexicographic in the current impl) so we can
+    // compare via `equals` on the re-parsed handles.
     kth_bitcoin_uri_mut_t u = NULL;
     REQUIRE(kth_wallet_bitcoin_uri_parse_from(kFullUri, 1, &u) == kth_ec_success);
     REQUIRE(u != NULL);
-    char* encoded = kth_wallet_bitcoin_uri_encoded(u);
+
+    char* encoded = kth_wallet_bitcoin_uri_to_string(u);
     REQUIRE(encoded != NULL);
 
     kth_bitcoin_uri_mut_t reparsed = NULL;
     REQUIRE(kth_wallet_bitcoin_uri_parse_from(encoded, 1, &reparsed) == kth_ec_success);
     REQUIRE(reparsed != NULL);
-    REQUIRE(kth_wallet_bitcoin_uri_valid(reparsed) != 0);
-    REQUIRE(kth_wallet_bitcoin_uri_amount(reparsed)
-            == kth_wallet_bitcoin_uri_amount(u));
+    REQUIRE(kth_wallet_bitcoin_uri_equals(u, reparsed) != 0);
 
     kth_wallet_bitcoin_uri_destruct(reparsed);
     kth_core_destruct_string(encoded);
@@ -135,37 +128,64 @@ TEST_CASE("C-API BitcoinURI - encoded round-trips through construct",
 }
 
 // ---------------------------------------------------------------------------
-// Setters — build a URI from scratch
+// Address extraction
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API BitcoinURI - setters compose a fresh URI",
-          "[C-API BitcoinURI][build]") {
-    kth_bitcoin_uri_mut_t u = kth_wallet_bitcoin_uri_construct_default();
+TEST_CASE("C-API BitcoinURI - payment extracts a valid handle from a P2PKH path",
+          "[C-API BitcoinURI][address]") {
+    kth_bitcoin_uri_mut_t u = NULL;
+    REQUIRE(kth_wallet_bitcoin_uri_parse_from(kFullUri, 1, &u) == kth_ec_success);
     REQUIRE(u != NULL);
-    REQUIRE(kth_wallet_bitcoin_uri_set_scheme(u, "bitcoin") != 0);
-    REQUIRE(kth_wallet_bitcoin_uri_set_address_string(
-        u, "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD") != 0);
-    kth_wallet_bitcoin_uri_set_amount(u, 250000ull);   // 0.0025 BTC
-    kth_wallet_bitcoin_uri_set_label(u, "Coffee");
-    kth_wallet_bitcoin_uri_set_message(u, "thx");
 
-    REQUIRE(kth_wallet_bitcoin_uri_valid(u) != 0);
-    REQUIRE(kth_wallet_bitcoin_uri_amount(u) == 250000ull);
-
-    char* encoded = kth_wallet_bitcoin_uri_encoded(u);
-    REQUIRE(encoded != NULL);
-    // The address-and-query portion is present; exact parameter order
-    // isn't pinned, so only assert on substrings that MUST appear in
-    // the output. `0.0025` pins the BIP21 fixed-point amount encoding
-    // (250000 sats ÷ 10⁸), catching any regression in the satoshi →
-    // decimal path independent of the `amount()` getter's model-level
-    // round-trip.
-    REQUIRE(strstr(encoded, "bitcoin:") == encoded);
-    REQUIRE(strstr(encoded, "113Pfw4sFqN1T5kXUnKbqZHMJHN9oyjtgD") != NULL);
-    REQUIRE(strstr(encoded, "0.0025") != NULL);
-    kth_core_destruct_string(encoded);
+    kth_payment_address_mut_t pa = NULL;
+    REQUIRE(kth_wallet_bitcoin_uri_payment(u, &pa) == kth_ec_success);
+    REQUIRE(pa != NULL);
+    kth_wallet_payment_address_destruct(pa);
 
     kth_wallet_bitcoin_uri_destruct(u);
+}
+
+TEST_CASE("C-API BitcoinURI - payment on params-only URI is an error",
+          "[C-API BitcoinURI][address]") {
+    // No address in the path → `payment()` can't build a payment_address.
+    // The OUT handle stays NULL, error code is non-success.
+    kth_bitcoin_uri_mut_t u = NULL;
+    REQUIRE(kth_wallet_bitcoin_uri_parse_from("bitcoin:?amount=0.001", 1, &u) == kth_ec_success);
+    REQUIRE(u != NULL);
+
+    kth_payment_address_mut_t pa = NULL;
+    REQUIRE(kth_wallet_bitcoin_uri_payment(u, &pa) != kth_ec_success);
+    REQUIRE(pa == NULL);
+
+    kth_wallet_bitcoin_uri_destruct(u);
+}
+
+// ---------------------------------------------------------------------------
+// Equality
+// ---------------------------------------------------------------------------
+
+TEST_CASE("C-API BitcoinURI - equals two identically-parsed URIs",
+          "[C-API BitcoinURI][equality]") {
+    kth_bitcoin_uri_mut_t a = NULL;
+    kth_bitcoin_uri_mut_t b = NULL;
+    REQUIRE(kth_wallet_bitcoin_uri_parse_from(kFullUri, 1, &a) == kth_ec_success);
+    REQUIRE(kth_wallet_bitcoin_uri_parse_from(kFullUri, 1, &b) == kth_ec_success);
+    REQUIRE(kth_wallet_bitcoin_uri_equals(a, b) != 0);
+    REQUIRE(kth_wallet_bitcoin_uri_not_equal(a, b) == 0);
+    kth_wallet_bitcoin_uri_destruct(b);
+    kth_wallet_bitcoin_uri_destruct(a);
+}
+
+TEST_CASE("C-API BitcoinURI - differing amounts compare unequal",
+          "[C-API BitcoinURI][equality]") {
+    kth_bitcoin_uri_mut_t a = NULL;
+    kth_bitcoin_uri_mut_t b = NULL;
+    REQUIRE(kth_wallet_bitcoin_uri_parse_from("bitcoin:?amount=0.001", 1, &a) == kth_ec_success);
+    REQUIRE(kth_wallet_bitcoin_uri_parse_from("bitcoin:?amount=0.002", 1, &b) == kth_ec_success);
+    REQUIRE(kth_wallet_bitcoin_uri_equals(a, b) == 0);
+    REQUIRE(kth_wallet_bitcoin_uri_not_equal(a, b) != 0);
+    kth_wallet_bitcoin_uri_destruct(b);
+    kth_wallet_bitcoin_uri_destruct(a);
 }
 
 // ---------------------------------------------------------------------------
@@ -175,9 +195,4 @@ TEST_CASE("C-API BitcoinURI - setters compose a fresh URI",
 TEST_CASE("C-API BitcoinURI - copy null aborts",
           "[C-API BitcoinURI][precondition]") {
     KTH_EXPECT_ABORT(kth_wallet_bitcoin_uri_copy(NULL));
-}
-
-TEST_CASE("C-API BitcoinURI - valid null aborts",
-          "[C-API BitcoinURI][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_bitcoin_uri_valid(NULL));
 }

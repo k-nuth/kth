@@ -17,31 +17,23 @@ extern "C" {
 
 // Constructors
 
-/**
- * @return Owned `kth_stealth_sender_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_stealth_sender_destruct`.
- * @param address Borrowed input. Copied by value into the resulting object; ownership of `address` stays with the caller.
- * @param filter Borrowed input. Copied by value into the resulting object; ownership of `filter` stays with the caller.
- */
-KTH_EXPORT KTH_OWNED
-kth_stealth_sender_mut_t kth_wallet_stealth_sender_construct_from_stealth_address_seed_binary_version(kth_stealth_address_const_t address, uint8_t const* seed, kth_size_t n, kth_binary_const_t filter, uint8_t version);
+/** @param[out] out Must point to a null `kth_stealth_sender_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_stealth_sender_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_stealth_sender_from_stealth_address(kth_stealth_address_const_t address, uint8_t const* seed, kth_size_t n, kth_binary_const_t filter, uint8_t version, KTH_OUT_OWNED kth_stealth_sender_mut_t* out);
 
 /**
- * @return Owned `kth_stealth_sender_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_stealth_sender_destruct`.
- * @param address Borrowed input. Copied by value into the resulting object; ownership of `address` stays with the caller.
- * @param filter Borrowed input. Copied by value into the resulting object; ownership of `filter` stays with the caller.
- * @param ephemeral_private Borrowed input; must be non-null. Copied into the resulting object; ownership of `ephemeral_private` stays with the caller.
+ * @param ephemeral_private Borrowed input; must be non-null. Read during the call; ownership of `ephemeral_private` stays with the caller.
+ * @param[out] out Must point to a null `kth_stealth_sender_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_stealth_sender_destruct`. Untouched on error.
  */
-KTH_EXPORT KTH_OWNED
-kth_stealth_sender_mut_t kth_wallet_stealth_sender_construct_from_ephemeral_private_stealth_address_seed_binary_version(kth_hash_t const* ephemeral_private, kth_stealth_address_const_t address, uint8_t const* seed, kth_size_t n, kth_binary_const_t filter, uint8_t version);
+KTH_EXPORT
+kth_error_code_t kth_wallet_stealth_sender_from_ephemeral(kth_hash_t const* ephemeral_private, kth_stealth_address_const_t address, uint8_t const* seed, kth_size_t n, kth_binary_const_t filter, uint8_t version, KTH_OUT_OWNED kth_stealth_sender_mut_t* out);
 
 /**
- * @return Owned `kth_stealth_sender_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_wallet_stealth_sender_destruct`.
- * @param address Borrowed input. Copied by value into the resulting object; ownership of `address` stays with the caller.
- * @param filter Borrowed input. Copied by value into the resulting object; ownership of `filter` stays with the caller.
  * @warning `ephemeral_private` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
+ * @param[out] out Must point to a null `kth_stealth_sender_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_stealth_sender_destruct`. Untouched on error.
  */
-KTH_EXPORT KTH_OWNED
-kth_stealth_sender_mut_t kth_wallet_stealth_sender_construct_from_ephemeral_private_stealth_address_seed_binary_version_unsafe(uint8_t const* ephemeral_private, kth_stealth_address_const_t address, uint8_t const* seed, kth_size_t n, kth_binary_const_t filter, uint8_t version);
+KTH_EXPORT
+kth_error_code_t kth_wallet_stealth_sender_from_ephemeral_unsafe(uint8_t const* ephemeral_private, kth_stealth_address_const_t address, uint8_t const* seed, kth_size_t n, kth_binary_const_t filter, uint8_t version, KTH_OUT_OWNED kth_stealth_sender_mut_t* out);
 
 
 // Destructor
@@ -59,10 +51,6 @@ kth_stealth_sender_mut_t kth_wallet_stealth_sender_copy(kth_stealth_sender_const
 
 
 // Getters
-
-/** @return Non-zero if `self` is in a valid state, zero otherwise. */
-KTH_EXPORT
-kth_bool_t kth_wallet_stealth_sender_valid(kth_stealth_sender_const_t self);
 
 /** @return Borrowed `kth_script_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT

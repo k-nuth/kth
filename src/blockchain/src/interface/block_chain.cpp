@@ -1557,12 +1557,10 @@ std::vector<domain::chain::transaction> block_chain::get_mempool_transactions_fr
 
             for (auto iter_addr = tx_addresses.begin();
                  iter_addr != tx_addresses.end() && !inserted; ++iter_addr) {
-                if (iter_addr->valid()) {
-                    auto it = std::find(payment_addresses.begin(), payment_addresses.end(), *iter_addr);
-                    if (it != payment_addresses.end()) {
-                        ret.push_back(tx);
-                        inserted = true;
-                    }
+                auto it = std::find(payment_addresses.begin(), payment_addresses.end(), *iter_addr);
+                if (it != payment_addresses.end()) {
+                    ret.push_back(tx);
+                    inserted = true;
                 }
             }
         }
@@ -1575,12 +1573,10 @@ std::vector<domain::chain::transaction> block_chain::get_mempool_transactions_fr
 
             for (auto iter_addr = tx_addresses.begin();
                  iter_addr != tx_addresses.end() && !inserted; ++iter_addr) {
-                if (iter_addr->valid()) {
-                    auto it = std::find(payment_addresses.begin(), payment_addresses.end(), *iter_addr);
-                    if (it != payment_addresses.end()) {
-                        ret.push_back(tx);
-                        inserted = true;
-                    }
+                auto it = std::find(payment_addresses.begin(), payment_addresses.end(), *iter_addr);
+                if (it != payment_addresses.end()) {
+                    ret.push_back(tx);
+                    inserted = true;
                 }
             }
         }

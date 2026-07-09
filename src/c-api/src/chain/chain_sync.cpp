@@ -311,14 +311,12 @@ kth_error_code_t kth_chain_sync_confirmed_transactions(kth_chain_t chain, kth_pa
 // ------------------------------------------------------------------
 
 kth_mempool_transaction_list_t kth_chain_sync_mempool_transactions(kth_chain_t chain, kth_payment_address_t address, kth_bool_t use_testnet_rules) {
+    // `address` is an opaque handle; if the caller managed to get one,
+    // it's a valid payment_address by construction. Empty-payload
+    // legacy branch dropped along with `.valid()`.
     auto const& address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(address);
-    if (address_cpp.valid()) {
-        auto txs = safe_chain(chain).get_mempool_transactions(address_cpp.encoded_cashaddr(false), kth::int_to_bool(use_testnet_rules));
-        auto ret_txs = kth::leak(txs);
-        return static_cast<kth_mempool_transaction_list_t>(ret_txs);
-    }
-    auto ret_txs = new std::vector<kth::blockchain::mempool_transaction_summary>();
-    return static_cast<kth_mempool_transaction_list_t>(ret_txs);
+    auto txs = safe_chain(chain).get_mempool_transactions(address_cpp.encoded_cashaddr(false), kth::int_to_bool(use_testnet_rules));
+    return kth::leak(std::move(txs));
 }
 
 kth_transaction_list_mut_t kth_chain_sync_mempool_transactions_from_wallets(kth_chain_t chain, kth_payment_address_list_t addresses, kth_bool_t use_testnet_rules) {

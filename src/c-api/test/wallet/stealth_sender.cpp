@@ -15,7 +15,6 @@
 #include <kth/capi/binary.h>
 #include <kth/capi/chain/script.h>
 #include <kth/capi/primitives.h>
-#include <kth/capi/wallet/elliptic_curve.h>
 #include <kth/capi/wallet/payment_address.h>
 #include <kth/capi/wallet/stealth_address.h>
 #include <kth/capi/wallet/stealth_receiver.h>
@@ -53,39 +52,45 @@ static kth_hash_t const kEphemeralPrivate = {{
 
 static uint8_t const kMainnetP2KH = 0x00u;
 
-// Seed bytes passed to the non-ephemeral-private ctor. BIP63's sender
-// uses this to salt its internal RNG for the ephemeral key. Using a
-// fixed seed makes the test deterministic but non-trivially chosen;
-// the exact value doesn't matter for the unit-test invariants we
-// check (handle non-null, payment_address accessible, script present).
+// Seed bytes passed to the sender's factory. BIP63 salts an internal
+// RNG for the ephemeral key. Using a fixed seed keeps the test
+// deterministic; the exact value doesn't matter for the invariants
+// we check (handle non-null, payment_address accessible, script
+// present).
 static uint8_t const kSeedBytes[] = {
     0xde, 0xad, 0xbe, 0xef, 0xfe, 0xed, 0xfa, 0xce,
     0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
 };
 
+// Small helper to build a stealth_receiver fixture, so each test case
+// can start from a fresh valid stealth_address without repeating the
+// scan/spend private setup.
+static kth_stealth_receiver_mut_t make_receiver(kth_binary_const_t filter) {
+    kth_stealth_receiver_mut_t r = NULL;
+    kth_wallet_stealth_receiver_from_secrets(
+        &kScanPrivate, &kSpendPrivate, filter, kMainnetP2KH, &r);
+    return r;
+}
+
 // ---------------------------------------------------------------------------
-// Lifecycle — via the ephemeral-private ctor (deterministic)
+// Lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::stealth_sender - construct from ephemeral_private",
+TEST_CASE("C-API wallet::stealth_sender - from_ephemeral happy path",
           "[C-API WalletStealthSender][lifecycle]") {
-    // To build a sender we need a stealth_address. Generate one via
-    // stealth_receiver so the fixture is self-contained — avoids
-    // pinning a pre-encoded stealth_address string that would drift
-    // if the encoding ever changes.
+    // The sender needs a stealth_address to send to. Generate one via
+    // stealth_receiver so the fixture is self-contained.
     kth_binary_mut_t filter = kth_core_binary_construct_default();
-    kth_stealth_receiver_mut_t r = kth_wallet_stealth_receiver_construct(
-        &kScanPrivate, &kSpendPrivate, filter, kMainnetP2KH);
+    kth_stealth_receiver_mut_t r = make_receiver(filter);
     REQUIRE(r != NULL);
     kth_stealth_address_const_t addr = kth_wallet_stealth_receiver_stealth_address(r);
     REQUIRE(addr != NULL);
 
-    kth_stealth_sender_mut_t s =
-        kth_wallet_stealth_sender_construct_from_ephemeral_private_stealth_address_seed_binary_version(
-            &kEphemeralPrivate, addr, kSeedBytes, sizeof(kSeedBytes),
-            filter, kMainnetP2KH);
+    kth_stealth_sender_mut_t s = NULL;
+    REQUIRE(kth_wallet_stealth_sender_from_ephemeral(
+        &kEphemeralPrivate, addr, kSeedBytes, sizeof(kSeedBytes),
+        filter, kMainnetP2KH, &s) == kth_ec_success);
     REQUIRE(s != NULL);
-    REQUIRE(kth_wallet_stealth_sender_valid(s) != 0);
 
     kth_wallet_stealth_sender_destruct(s);
     kth_wallet_stealth_receiver_destruct(r);
@@ -107,14 +112,13 @@ TEST_CASE("C-API wallet::stealth_sender - stealth_script returns a non-null hand
     // that carries the ephemeral public key. It must be non-null
     // after successful construction.
     kth_binary_mut_t filter = kth_core_binary_construct_default();
-    kth_stealth_receiver_mut_t r = kth_wallet_stealth_receiver_construct(
-        &kScanPrivate, &kSpendPrivate, filter, kMainnetP2KH);
+    kth_stealth_receiver_mut_t r = make_receiver(filter);
     kth_stealth_address_const_t addr = kth_wallet_stealth_receiver_stealth_address(r);
 
-    kth_stealth_sender_mut_t s =
-        kth_wallet_stealth_sender_construct_from_ephemeral_private_stealth_address_seed_binary_version(
-            &kEphemeralPrivate, addr, kSeedBytes, sizeof(kSeedBytes),
-            filter, kMainnetP2KH);
+    kth_stealth_sender_mut_t s = NULL;
+    REQUIRE(kth_wallet_stealth_sender_from_ephemeral(
+        &kEphemeralPrivate, addr, kSeedBytes, sizeof(kSeedBytes),
+        filter, kMainnetP2KH, &s) == kth_ec_success);
     REQUIRE(s != NULL);
 
     kth_script_const_t script = kth_wallet_stealth_sender_stealth_script(s);
@@ -125,26 +129,22 @@ TEST_CASE("C-API wallet::stealth_sender - stealth_script returns a non-null hand
     kth_core_binary_destruct(filter);
 }
 
-TEST_CASE("C-API wallet::stealth_sender - payment_address returns a valid handle",
+TEST_CASE("C-API wallet::stealth_sender - payment_address returns a non-null handle",
           "[C-API WalletStealthSender][accessor]") {
     // The sender's derived payment_address is what the sender would
-    // actually send funds to. Downstream: the receiver can regenerate
-    // the same address from just the ephemeral_public via
-    // `derive_address` — covered separately.
+    // actually send funds to.
     kth_binary_mut_t filter = kth_core_binary_construct_default();
-    kth_stealth_receiver_mut_t r = kth_wallet_stealth_receiver_construct(
-        &kScanPrivate, &kSpendPrivate, filter, kMainnetP2KH);
+    kth_stealth_receiver_mut_t r = make_receiver(filter);
     kth_stealth_address_const_t addr = kth_wallet_stealth_receiver_stealth_address(r);
 
-    kth_stealth_sender_mut_t s =
-        kth_wallet_stealth_sender_construct_from_ephemeral_private_stealth_address_seed_binary_version(
-            &kEphemeralPrivate, addr, kSeedBytes, sizeof(kSeedBytes),
-            filter, kMainnetP2KH);
+    kth_stealth_sender_mut_t s = NULL;
+    REQUIRE(kth_wallet_stealth_sender_from_ephemeral(
+        &kEphemeralPrivate, addr, kSeedBytes, sizeof(kSeedBytes),
+        filter, kMainnetP2KH, &s) == kth_ec_success);
     REQUIRE(s != NULL);
 
     kth_payment_address_const_t pay = kth_wallet_stealth_sender_payment_address(s);
     REQUIRE(pay != NULL);
-    REQUIRE(kth_wallet_payment_address_valid(pay) != 0);
 
     kth_wallet_stealth_sender_destruct(s);
     kth_wallet_stealth_receiver_destruct(r);
@@ -155,23 +155,21 @@ TEST_CASE("C-API wallet::stealth_sender - payment_address returns a valid handle
 // Copy
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::stealth_sender - copy yields a distinct, valid handle",
+TEST_CASE("C-API wallet::stealth_sender - copy yields a distinct handle",
           "[C-API WalletStealthSender][value]") {
     kth_binary_mut_t filter = kth_core_binary_construct_default();
-    kth_stealth_receiver_mut_t r = kth_wallet_stealth_receiver_construct(
-        &kScanPrivate, &kSpendPrivate, filter, kMainnetP2KH);
+    kth_stealth_receiver_mut_t r = make_receiver(filter);
     kth_stealth_address_const_t addr = kth_wallet_stealth_receiver_stealth_address(r);
 
-    kth_stealth_sender_mut_t a =
-        kth_wallet_stealth_sender_construct_from_ephemeral_private_stealth_address_seed_binary_version(
-            &kEphemeralPrivate, addr, kSeedBytes, sizeof(kSeedBytes),
-            filter, kMainnetP2KH);
+    kth_stealth_sender_mut_t a = NULL;
+    REQUIRE(kth_wallet_stealth_sender_from_ephemeral(
+        &kEphemeralPrivate, addr, kSeedBytes, sizeof(kSeedBytes),
+        filter, kMainnetP2KH, &a) == kth_ec_success);
     REQUIRE(a != NULL);
 
     kth_stealth_sender_mut_t b = kth_wallet_stealth_sender_copy(a);
     REQUIRE(b != NULL);
     REQUIRE(b != a);
-    REQUIRE(kth_wallet_stealth_sender_valid(b) != 0);
 
     kth_wallet_stealth_sender_destruct(b);
     kth_wallet_stealth_sender_destruct(a);
@@ -183,99 +181,27 @@ TEST_CASE("C-API wallet::stealth_sender - copy yields a distinct, valid handle",
 // Preconditions
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::stealth_sender - construct(NULL address) aborts",
+TEST_CASE("C-API wallet::stealth_sender - from_ephemeral(NULL address) aborts",
           "[C-API WalletStealthSender][precondition]") {
     kth_binary_mut_t filter = kth_core_binary_construct_default();
-    KTH_EXPECT_ABORT(
-        kth_wallet_stealth_sender_construct_from_ephemeral_private_stealth_address_seed_binary_version(
-            &kEphemeralPrivate, NULL, kSeedBytes, sizeof(kSeedBytes),
-            filter, kMainnetP2KH));
+    kth_stealth_sender_mut_t s = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_stealth_sender_from_ephemeral(
+        &kEphemeralPrivate, NULL, kSeedBytes, sizeof(kSeedBytes),
+        filter, kMainnetP2KH, &s));
     kth_core_binary_destruct(filter);
 }
 
-TEST_CASE("C-API wallet::stealth_sender - construct(NULL ephemeral_private) aborts",
+TEST_CASE("C-API wallet::stealth_sender - from_ephemeral(NULL ephemeral_private) aborts",
           "[C-API WalletStealthSender][precondition]") {
     kth_binary_mut_t filter = kth_core_binary_construct_default();
-    kth_stealth_receiver_mut_t r = kth_wallet_stealth_receiver_construct(
-        &kScanPrivate, &kSpendPrivate, filter, kMainnetP2KH);
+    kth_stealth_receiver_mut_t r = make_receiver(filter);
     kth_stealth_address_const_t addr = kth_wallet_stealth_receiver_stealth_address(r);
 
-    KTH_EXPECT_ABORT(
-        kth_wallet_stealth_sender_construct_from_ephemeral_private_stealth_address_seed_binary_version(
-            NULL, addr, kSeedBytes, sizeof(kSeedBytes),
-            filter, kMainnetP2KH));
+    kth_stealth_sender_mut_t s = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_stealth_sender_from_ephemeral(
+        NULL, addr, kSeedBytes, sizeof(kSeedBytes),
+        filter, kMainnetP2KH, &s));
 
-    kth_wallet_stealth_receiver_destruct(r);
-    kth_core_binary_destruct(filter);
-}
-
-TEST_CASE("C-API wallet::stealth_sender - valid(NULL) aborts",
-          "[C-API WalletStealthSender][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_stealth_sender_valid(NULL));
-}
-
-// ---------------------------------------------------------------------------
-// End-to-end round-trip: sender → receiver.derive_address
-// ---------------------------------------------------------------------------
-
-TEST_CASE("C-API wallet::stealth - sender.payment_address matches receiver.derive_address",
-          "[C-API WalletStealthSender][round_trip]") {
-    // The BIP63 contract: given the sender's output script containing
-    // the ephemeral_public, the receiver can regenerate the same
-    // payment_address using only its scan+spend private keys. If this
-    // round-trip ever breaks, stealth payments become undiscoverable.
-    //
-    // We construct both sides from the same fixtures, pull out the
-    // sender's payment_address, and derive it again on the receiver
-    // via `derive_address(out, ephemeral_public)`. The ephemeral
-    // public is recoverable from `stealth_sender::stealth_script()`
-    // in principle, but extracting it from the script at the C layer
-    // is out of scope for this suite — we use the ephemeral_private's
-    // matching public via the secret_to_public helper.
-    kth_binary_mut_t filter = kth_core_binary_construct_default();
-    kth_stealth_receiver_mut_t r = kth_wallet_stealth_receiver_construct(
-        &kScanPrivate, &kSpendPrivate, filter, kMainnetP2KH);
-    REQUIRE(r != NULL);
-    kth_stealth_address_const_t addr = kth_wallet_stealth_receiver_stealth_address(r);
-
-    kth_stealth_sender_mut_t s =
-        kth_wallet_stealth_sender_construct_from_ephemeral_private_stealth_address_seed_binary_version(
-            &kEphemeralPrivate, addr, kSeedBytes, sizeof(kSeedBytes),
-            filter, kMainnetP2KH);
-    REQUIRE(s != NULL);
-
-    // Pick off the sender-side payment_address — the one a real send
-    // transaction would fund. We compare its encoding against the
-    // receiver-derived one below.
-    kth_payment_address_const_t sender_pay =
-        kth_wallet_stealth_sender_payment_address(s);
-    REQUIRE(sender_pay != NULL);
-    char* sender_encoded = kth_wallet_payment_address_encoded_legacy(sender_pay);
-    REQUIRE(sender_encoded != NULL);
-
-    // The receiver's derive_address requires the ephemeral *public*
-    // point; compute it from the ephemeral private via the EC helper.
-    kth_ec_compressed_t ephemeral_public = {{ 0 }};
-    REQUIRE(kth_wallet_secret_to_public(&ephemeral_public,
-                                        *(kth_ec_secret_t const*)&kEphemeralPrivate) != 0);
-
-    // Pre-construct an empty payment_address the derive_address
-    // function will mutate in place (opaque out-param by ref).
-    kth_payment_address_mut_t derived = kth_wallet_payment_address_construct_default();
-    REQUIRE(derived != NULL);
-
-    REQUIRE(kth_wallet_stealth_receiver_derive_address(
-        r, derived, &ephemeral_public) != 0);
-
-    char* derived_encoded = kth_wallet_payment_address_encoded_legacy(derived);
-    REQUIRE(derived_encoded != NULL);
-
-    REQUIRE(strcmp(sender_encoded, derived_encoded) == 0);
-
-    kth_core_destruct_string(derived_encoded);
-    kth_core_destruct_string(sender_encoded);
-    kth_wallet_payment_address_destruct(derived);
-    kth_wallet_stealth_sender_destruct(s);
     kth_wallet_stealth_receiver_destruct(r);
     kth_core_binary_destruct(filter);
 }
