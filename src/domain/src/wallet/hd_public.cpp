@@ -63,6 +63,11 @@ hd_public::hd_public(ec_compressed const& point, hd_chain_code const& chain_code
 // ----------------------------------------------------------------------------
 
 // static
+hd_public hd_public::from_verified_components(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage) {
+    return hd_public(point, chain_code, lineage);
+}
+
+// static
 expect<hd_public> hd_public::from_secret(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage) {
     ec_compressed point;
     if ( ! secret_to_public(point, secret)) {
