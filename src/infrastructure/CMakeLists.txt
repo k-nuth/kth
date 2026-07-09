@@ -221,7 +221,6 @@ set(kth_sources_just_legacy
         src/unicode/unicode_ostream.cpp
         src/unicode/unicode_streambuf.cpp
 
-        src/utility/binary.cpp
         src/utility/conditional_lock.cpp
         src/utility/flush_lock.cpp
         src/utility/interprocess_lock.cpp

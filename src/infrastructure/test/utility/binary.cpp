@@ -9,6 +9,18 @@ using namespace kth;
 
 // Start Test Suite: binary tests
 
+// Compile-time checks that `parse_from`, `size`, and `is_prefix_of`
+// are actually usable in constexpr contexts (the whole class is
+// header-only + constexpr since the modernization pass). The error
+// path of `parse_from` is not constant-evaluable because
+// `std::error_code`'s enum-taking ctor is not constexpr in
+// libstdc++, so only the success path is exercised here.
+static_assert(binary::parse_from("01100111001").value().size() == 11);
+static_assert(binary::parse_from("").value().size() == 0);
+static_assert(
+    binary::parse_from("10111010").value().is_prefix_of(
+        binary::parse_from("10111010101011011111000000001101").value()));
+
 // Start Test Suite: binary  encoded
 
 TEST_CASE("infrastructure binary encoded 32 bits from data chunk", "[infrastructure][binary]") {
@@ -330,7 +342,7 @@ TEST_CASE("substring trailing tail", "[binary substring]") {
 
 TEST_CASE("string to prefix 32 bits expected value", "[binary blocks]") {
     data_chunk const blocks{ { 0xba, 0xad, 0xf0, 0x0d } };
-    binary const prefix = binary::parse_from("10111010101011011111000000001101").value();
+    auto const prefix = binary::parse_from("10111010101011011111000000001101").value();
     REQUIRE(prefix.blocks() == blocks);
 }
 
