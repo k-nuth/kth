@@ -86,6 +86,12 @@ struct KD_API hd_public {
     [[nodiscard]]
     expect<hd_public> derive_public(uint32_t index) const;
 
+    /// Overwrite every field with zero for security-sensitive
+    /// teardown (before scope exit). After `wipe()` the accessors
+    /// return well-formed but semantically meaningless data; further
+    /// use of the object is a caller error.
+    void wipe() noexcept;
+
 protected:
     hd_public(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage);
 

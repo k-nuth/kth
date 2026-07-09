@@ -73,6 +73,11 @@ create(
 
     hd_public pub = m44h145h0h->to_public();
 
+    m->wipe();
+    m44h->wipe();
+    m44h145h->wipe();
+    m44h145h0h->wipe();
+
     auto const salt = generate_salt();
     auto const iv = generate_salt<default_iv_size>();
     auto aes_key = derive_key(password, salt);

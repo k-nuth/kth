@@ -24,6 +24,36 @@ TEST_CASE("hd private encoded round trip expected", "[hd private tests]") {
     REQUIRE(key->to_string() == encoded);
 }
 
+TEST_CASE("hd private from_hd_key mainnet round trip expected", "[hd private tests]") {
+    static auto const encoded = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
+    auto const parsed = hd_private::parse_from(encoded);
+    REQUIRE(parsed);
+    auto const rewrapped = hd_private::from_hd_key(parsed->to_hd_key());
+    REQUIRE(rewrapped);
+    REQUIRE(rewrapped->to_string() == encoded);
+}
+
+TEST_CASE("hd private wipe zeroes every field", "[hd private tests]") {
+    auto const seed = decode_base16(short_seed);
+    REQUIRE(seed);
+
+    auto m = hd_private::from_seed(*seed, hd_private::mainnet);
+    REQUIRE(m);
+
+    m->wipe();
+
+    hd_chain_code const zero_chain {};
+    ec_compressed const zero_point {};
+    ec_secret const zero_secret {};
+    REQUIRE(m->chain_code() == zero_chain);
+    REQUIRE(m->point() == zero_point);
+    REQUIRE(m->secret() == zero_secret);
+    REQUIRE(m->lineage().prefixes == 0);
+    REQUIRE(m->lineage().depth == 0);
+    REQUIRE(m->lineage().parent_fingerprint == 0);
+    REQUIRE(m->lineage().child_number == 0);
+}
+
 TEST_CASE("hd private derive private short seed expected", "[hd private tests]") {
     auto const seed = decode_base16(short_seed);
     REQUIRE(seed);

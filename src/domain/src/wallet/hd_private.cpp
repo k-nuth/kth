@@ -61,6 +61,11 @@ expect<hd_private> hd_private::from_seed(data_chunk const& seed, uint64_t prefix
 }
 
 // static
+expect<hd_private> hd_private::from_hd_key(hd_key const& private_key) {
+    return from_key_impl(private_key, hd_public::mainnet);
+}
+
+// static
 expect<hd_private> hd_private::from_hd_key_with_public_prefix(hd_key const& private_key, uint32_t public_prefix) {
     return from_key_impl(private_key, public_prefix);
 }
@@ -230,6 +235,11 @@ expect<hd_public> hd_private::derive_public(uint32_t index) const {
         return std::unexpected(priv.error());
     }
     return priv->to_public();
+}
+
+void hd_private::wipe() noexcept {
+    hd_public::wipe();
+    secret_.fill(0);
 }
 
 } // namespace kth::domain::wallet
