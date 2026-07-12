@@ -107,7 +107,15 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: ~/.conan2
-          key: ${{ runner.os }}-conan2-${{ hashFiles('**/conan.lock') }}
+          # Two disjoint cache families: 'sanitizers' and 'clean'. The
+          # sanitizer flags leak into dep builds via `CXXFLAGS`/`LDFLAGS`
+          # env vars but are NOT reflected in Conan's package hash, so a
+          # sanitizer-instrumented dep (`libutxoz.a` with references to
+          # `__asan_report_*`) would end up under the same cache key as
+          # its clean counterpart and get restored into a later clean
+          # build — the link then fails on undefined sanitizer-runtime
+          # references. The split matches the sibling ccache key.
+          key: ${{ runner.os }}-conan2-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ hashFiles('**/conan.lock') }}
       # - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
       #   with:
       #     path: ~/.cache/pip
