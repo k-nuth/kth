@@ -63,16 +63,6 @@ std::string checkpoint::to_string() const {
 }
 
 // static
-checkpoint::list checkpoint::sort(list const& checks) {
-    auto copy = checks;
-    std::sort(copy.begin(), copy.end(),
-        [](checkpoint const& l, checkpoint const& r) {
-            return l.height() < r.height();
-        });
-    return copy;
-}
-
-// static
 bool checkpoint::covered(size_t height, list const& checks) {
     return ! checks.empty() && height <= checks.back().height();
 }
