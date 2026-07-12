@@ -34,14 +34,6 @@ headers::headers(std::initializer_list<header> const& values)
     : elements_(values) {
 }
 
-bool headers::operator==(headers const& x) const {
-    return elements_ == x.elements_;
-}
-
-bool headers::operator!=(headers const& x) const {
-    return !(*this == x);
-}
-
 bool headers::is_valid() const {
     return !elements_.empty();
 }

@@ -72,8 +72,8 @@ struct KD_API heading {
     heading(uint32_t magic, std::string const& command, uint32_t payload_size, uint32_t checksum);
     heading(uint32_t magic, std::string&& command, uint32_t payload_size, uint32_t checksum);
 
-    bool operator==(heading const& x) const;
-    bool operator!=(heading const& x) const;
+    [[nodiscard]]
+    friend bool operator==(heading const&, heading const&) = default;
 
     [[nodiscard]]
     uint32_t magic() const;

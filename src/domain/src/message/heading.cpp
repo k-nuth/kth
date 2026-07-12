@@ -55,14 +55,6 @@ heading::heading(uint32_t magic, std::string&& command, uint32_t payload_size, u
     : magic_(magic), command_(std::move(command)), payload_size_(payload_size), checksum_(checksum) {
 }
 
-bool heading::operator==(heading const& x) const {
-    return (magic_ == x.magic_) && (command_ == x.command_) && (payload_size_ == x.payload_size_) && (checksum_ == x.checksum_);
-}
-
-bool heading::operator!=(heading const& x) const {
-    return !(*this == x);
-}
-
 bool heading::is_valid() const {
     return (magic_ != 0) || (payload_size_ != 0) || (checksum_ != 0) || !command_.empty();
 }

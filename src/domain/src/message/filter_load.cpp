@@ -22,14 +22,6 @@ filter_load::filter_load(data_chunk&& filter, uint32_t hash_functions, uint32_t 
     : filter_(std::move(filter)), hash_functions_(hash_functions), tweak_(tweak), flags_(flags) {
 }
 
-bool filter_load::operator==(filter_load const& x) const {
-    return (filter_ == x.filter_) && (hash_functions_ == x.hash_functions_) && (tweak_ == x.tweak_) && (flags_ == x.flags_);
-}
-
-bool filter_load::operator!=(filter_load const& x) const {
-    return !(*this == x);
-}
-
 bool filter_load::is_valid() const {
     return !filter_.empty() || (hash_functions_ != 0) || (tweak_ != 0) || (flags_ != 0x00);
 }

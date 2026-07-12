@@ -32,8 +32,8 @@ struct KD_API headers {
     headers(header::list&& values);
     headers(std::initializer_list<header> const& values);
 
-    bool operator==(headers const& x) const;
-    bool operator!=(headers const& x) const;
+    [[nodiscard]]
+    friend bool operator==(headers const&, headers const&) = default;
 
     header::list& elements();
 

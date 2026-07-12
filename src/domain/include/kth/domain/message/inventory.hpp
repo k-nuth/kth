@@ -34,8 +34,8 @@ struct KD_API inventory {
     inventory(hash_list const& hashes, type_id type);
     inventory(std::initializer_list<inventory_vector> const& values);
 
-    bool operator==(inventory const& x) const;
-    bool operator!=(inventory const& x) const;
+    [[nodiscard]]
+    friend bool operator==(inventory const&, inventory const&) = default;
 
     inventory_vector::list& inventories();
 

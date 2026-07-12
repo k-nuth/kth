@@ -23,14 +23,6 @@ filter_add::filter_add(data_chunk&& data)
     : data_(std::move(data)) {
 }
 
-bool filter_add::operator==(filter_add const& x) const {
-    return (data_ == x.data_);
-}
-
-bool filter_add::operator!=(filter_add const& x) const {
-    return !(*this == x);
-}
-
 bool filter_add::is_valid() const {
     return !data_.empty();
 }

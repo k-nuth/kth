@@ -22,8 +22,8 @@ struct KD_API alert_payload {
     alert_payload(uint32_t version, uint64_t relay_until, uint64_t expiration, uint32_t id, uint32_t cancel, std::vector<uint32_t> const& set_cancel, uint32_t min_version, uint32_t max_version, std::vector<std::string> const& set_sub_version, uint32_t priority, std::string const& comment, std::string const& status_bar, std::string const& reserved);
     alert_payload(uint32_t version, uint64_t relay_until, uint64_t expiration, uint32_t id, uint32_t cancel, std::vector<uint32_t>&& set_cancel, uint32_t min_version, uint32_t max_version, std::vector<std::string>&& set_sub_version, uint32_t priority, std::string&& comment, std::string&& status_bar, std::string&& reserved);
 
-    bool operator==(alert_payload const& x) const;
-    bool operator!=(alert_payload const& x) const;
+    [[nodiscard]]
+    friend bool operator==(alert_payload const&, alert_payload const&) = default;
 
     [[nodiscard]]
     uint32_t version() const;

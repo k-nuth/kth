@@ -41,14 +41,6 @@ inventory::inventory(std::initializer_list<inventory_vector> const& values)
     : inventories_(values)
 {}
 
-bool inventory::operator==(inventory const& x) const {
-    return (inventories_ == x.inventories_);
-}
-
-bool inventory::operator!=(inventory const& x) const {
-    return !(*this == x);
-}
-
 bool inventory::is_valid() const {
     return !inventories_.empty();
 }

@@ -129,26 +129,6 @@ addrv2::addrv2(entry_list&& addresses)
     : addresses_(std::move(addresses))
 {}
 
-bool addrv2::operator==(addrv2 const& x) const {
-    if (addresses_.size() != x.addresses_.size()) {
-        return false;
-    }
-    for (size_t i = 0; i < addresses_.size(); ++i) {
-        if (addresses_[i].time != x.addresses_[i].time ||
-            addresses_[i].services != x.addresses_[i].services ||
-            addresses_[i].network != x.addresses_[i].network ||
-            addresses_[i].addr != x.addresses_[i].addr ||
-            addresses_[i].port != x.addresses_[i].port) {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool addrv2::operator!=(addrv2 const& x) const {
-    return !(*this == x);
-}
-
 bool addrv2::is_valid() const {
     return !addresses_.empty();
 }

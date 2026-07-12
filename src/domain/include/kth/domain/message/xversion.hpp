@@ -29,8 +29,8 @@ struct KD_API xversion {
 
     xversion() = default;
 
-    bool operator==(xversion const& x) const;
-    bool operator!=(xversion const& x) const;
+    [[nodiscard]]
+    friend bool operator==(xversion const&, xversion const&) = default;
 
     static
     expect<xversion> from_data(byte_reader& reader, uint32_t version);

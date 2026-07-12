@@ -27,8 +27,8 @@ struct KD_API address {
     address(infrastructure::message::network_address::list const& addresses);
     address(infrastructure::message::network_address::list&& addresses);
 
-    bool operator==(address const& x) const;
-    bool operator!=(address const& x) const;
+    [[nodiscard]]
+    friend bool operator==(address const&, address const&) = default;
 
     infrastructure::message::network_address::list& addresses();
 

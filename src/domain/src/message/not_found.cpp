@@ -32,14 +32,6 @@ not_found::not_found(std::initializer_list<inventory_vector> const& values)
     : inventory(values) {
 }
 
-bool not_found::operator==(not_found const& x) const {
-    return (static_cast<inventory>(*this) == static_cast<inventory>(x));
-}
-
-bool not_found::operator!=(not_found const& x) const {
-    return (static_cast<inventory>(*this) != static_cast<inventory>(x));
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

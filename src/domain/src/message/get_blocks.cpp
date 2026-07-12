@@ -25,21 +25,6 @@ get_blocks::get_blocks(hash_list&& start, hash_digest const& stop)
     : start_hashes_(std::move(start)), stop_hash_(stop) {
 }
 
-bool get_blocks::operator==(get_blocks const& x) const {
-    auto result = (start_hashes_.size() == x.start_hashes_.size()) &&
-                  (stop_hash_ == x.stop_hash_);
-
-    for (size_t i = 0; i < start_hashes_.size() && result; i++) {
-        result = (start_hashes_[i] == x.start_hashes_[i]);
-    }
-
-    return result;
-}
-
-bool get_blocks::operator!=(get_blocks const& x) const {
-    return !(*this == x);
-}
-
 bool get_blocks::is_valid() const {
     return !start_hashes_.empty() || (stop_hash_ != null_hash);
 }

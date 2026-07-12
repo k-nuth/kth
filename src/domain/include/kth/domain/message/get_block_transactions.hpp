@@ -27,8 +27,8 @@ struct KD_API get_block_transactions {
     get_block_transactions(hash_digest const& block_hash, std::vector<uint64_t> const& indexes);
     get_block_transactions(hash_digest const& block_hash, std::vector<uint64_t>&& indexes);
 
-    bool operator==(get_block_transactions const& x) const;
-    bool operator!=(get_block_transactions const& x) const;
+    [[nodiscard]]
+    friend bool operator==(get_block_transactions const&, get_block_transactions const&) = default;
 
     hash_digest& block_hash();
 

@@ -158,8 +158,8 @@ struct KD_API version {
     version(uint32_t value, uint64_t services, uint64_t timestamp, network_address const& address_receiver, network_address const& address_sender, uint64_t nonce, std::string const& user_agent, uint32_t start_height, bool relay);
     version(uint32_t value, uint64_t services, uint64_t timestamp, network_address const& address_receiver, network_address const& address_sender, uint64_t nonce, std::string&& user_agent, uint32_t start_height, bool relay);
 
-    bool operator==(version const& x) const;
-    bool operator!=(version const& x) const;
+    [[nodiscard]]
+    friend bool operator==(version const&, version const&) = default;
 
     [[nodiscard]]
     uint32_t value() const;

@@ -27,13 +27,6 @@ prefilled_transaction::prefilled_transaction(uint64_t index, chain::transaction&
     : index_(index), transaction_(std::move(tx)) {
 }
 
-bool prefilled_transaction::operator==(prefilled_transaction const& x) const {
-    return (index_ == x.index_) && (transaction_ == x.transaction_);
-}
-
-bool prefilled_transaction::operator!=(prefilled_transaction const& x) const {
-    return !(*this == x);
-}
 bool prefilled_transaction::is_valid() const {
     return (index_ < max_index) && transaction_.is_valid();
 }

@@ -30,8 +30,8 @@ struct KD_API prefilled_transaction {
     prefilled_transaction& operator=(prefilled_transaction&& x) = default;
     prefilled_transaction& operator=(prefilled_transaction const& x) = default;
 
-    bool operator==(prefilled_transaction const& x) const;
-    bool operator!=(prefilled_transaction const& x) const;
+    [[nodiscard]]
+    friend bool operator==(prefilled_transaction const&, prefilled_transaction const&) = default;
 
 
     [[nodiscard]]

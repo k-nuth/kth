@@ -22,15 +22,6 @@ address::address(infrastructure::message::network_address::list&& addresses)
     : addresses_(std::move(addresses))
 {}
 
-bool address::operator==(address const& x) const {
-    return (addresses_ == x.addresses_);
-}
-
-bool address::operator!=(address const& x) const {
-    return !(*this == x);
-}
-
-
 bool address::is_valid() const {
     return !addresses_.empty();
 }

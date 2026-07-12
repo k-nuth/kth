@@ -56,22 +56,8 @@ struct KD_API double_spend_proof {
             push_data.clear();
         }
 
-        //TODO: use <=> operator
-        friend
-        bool operator==(spender const& x, spender const& y) {
-            return x.version == y.version &&
-                   x.out_sequence == y.out_sequence &&
-                   x.locktime == y.locktime &&
-                   x.prev_outs_hash == y.prev_outs_hash &&
-                   x.sequence_hash == y.sequence_hash &&
-                   x.outputs_hash == y.outputs_hash &&
-                   x.push_data == y.push_data;
-        }
-
-        friend
-        bool operator!=(spender const& x, spender const& y) {
-            return !(x == y);
-        }
+        [[nodiscard]]
+        friend bool operator==(spender const&, spender const&) = default;
 
         [[nodiscard]]
         size_t serialized_size() const {
@@ -102,17 +88,8 @@ struct KD_API double_spend_proof {
     double_spend_proof() = default;
     double_spend_proof(chain::output_point const& out_point, spender const& spender1, spender const& spender2);
 
-    friend
-    bool operator==(double_spend_proof const& x, double_spend_proof const& y) {
-        return x.out_point_ == y.out_point_ &&
-            x.spender1_ == y.spender1_ &&
-            x.spender2_ == y.spender2_;
-    }
-
-    friend
-    bool operator!=(double_spend_proof const& x, double_spend_proof const& y) {
-        return !(x == y);
-    }
+    [[nodiscard]]
+    friend bool operator==(double_spend_proof const&, double_spend_proof const&) = default;
 
     [[nodiscard]]
     chain::output_point const& out_point() const;

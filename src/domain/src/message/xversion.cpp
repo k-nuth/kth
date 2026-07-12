@@ -12,14 +12,6 @@ std::string const xversion::command = "xversion";
 uint32_t const message::xversion::version_minimum = version::level::minimum;
 uint32_t const message::xversion::version_maximum = version::level::maximum;
 
-bool xversion::operator==(xversion const& x) const {
-    return true;
-}
-
-bool xversion::operator!=(xversion const& x) const {
-    return !(*this == x);
-}
-
 bool xversion::is_valid() const {
     return true;
 }

@@ -29,14 +29,6 @@ block_transactions::block_transactions(hash_digest const& block_hash, chain::tra
     , transactions_(std::move(transactions))
 {}
 
-bool block_transactions::operator==(block_transactions const& x) const {
-    return (block_hash_ == x.block_hash_) && (transactions_ == x.transactions_);
-}
-
-bool block_transactions::operator!=(block_transactions const& x) const {
-    return !(*this == x);
-}
-
 bool block_transactions::is_valid() const {
     return (block_hash_ != null_hash);
 }
