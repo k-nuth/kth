@@ -25,14 +25,14 @@ struct KD_API ek_public {
     static
     expect<ek_public> parse_from(std::string_view encoded);
 
-    explicit
-    ek_public(encrypted_public const& value)
+    explicit constexpr
+    ek_public(encrypted_public const& value) noexcept
         : public_(value) {}
 
     [[nodiscard]]
     friend auto operator<=>(ek_public const& a, ek_public const& b) = default;
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     encrypted_public const& public_key() const noexcept { return public_; }
 
     [[nodiscard]]

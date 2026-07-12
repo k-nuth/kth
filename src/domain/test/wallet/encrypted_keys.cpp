@@ -8,11 +8,37 @@
 
 #include <test_helpers.hpp>
 
+#include <kth/domain/wallet/ek_private.hpp>
+#include <kth/domain/wallet/ek_public.hpp>
+#include <kth/domain/wallet/ek_token.hpp>
 #include <kth/infrastructure/formats/base_58.hpp>
 
 using namespace kth;
 using namespace kd;
 using namespace kth::domain::wallet;
+
+// Compile-time verification that the ek_* wrappers can be built in a
+// constant expression from a caller-supplied `encrypted_*` payload —
+// a regression that made the wrapping ctor / accessor runtime-only
+// would surface as a compile error here.
+namespace {
+
+constexpr encrypted_private kSamplePriv{};
+constexpr ek_private kEkPriv{kSamplePriv};
+static_assert(kEkPriv.private_key() == kSamplePriv);
+static_assert(kEkPriv == kEkPriv);
+
+constexpr encrypted_public kSamplePub{};
+constexpr ek_public kEkPub{kSamplePub};
+static_assert(kEkPub.public_key() == kSamplePub);
+static_assert(kEkPub == kEkPub);
+
+constexpr encrypted_token kSampleTok{};
+constexpr ek_token kEkTok{kSampleTok};
+static_assert(kEkTok.token() == kSampleTok);
+static_assert(kEkTok == kEkTok);
+
+} // namespace
 
 // Start Test Suite: encrypted tests
 

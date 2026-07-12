@@ -25,14 +25,14 @@ struct KD_API ek_token {
     static
     expect<ek_token> parse_from(std::string_view encoded);
 
-    explicit
-    ek_token(encrypted_token const& value)
+    explicit constexpr
+    ek_token(encrypted_token const& value) noexcept
         : token_(value) {}
 
     [[nodiscard]]
     friend auto operator<=>(ek_token const& a, ek_token const& b) = default;
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     encrypted_token const& token() const noexcept { return token_; }
 
     [[nodiscard]]
