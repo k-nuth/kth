@@ -14,6 +14,47 @@ using namespace kth::domain::wallet;
 
 // TODO: test altchain
 
+// Compile-time verification that `from_verified_components`, the
+// private ctor it wraps, and the three accessors are usable in a
+// constant expression. A regression that made any of them
+// runtime-only would surface as a compile error here.
+namespace {
+
+constexpr ec_compressed kSamplePoint = {{
+    0x02, 0x50, 0x86, 0x3a, 0xd6, 0x4a, 0x87, 0xae,
+    0x8a, 0x2f, 0xe8, 0x3c, 0x1a, 0xf1, 0xa8, 0x40,
+    0x3c, 0xb5, 0x3f, 0x53, 0xe4, 0x86, 0xd8, 0x51,
+    0x1d, 0xad, 0x8a, 0x04, 0x88, 0x7e, 0x5b, 0x23,
+    0x52,
+}};
+
+constexpr hd_chain_code kSampleChain = {{
+    0x87, 0x3d, 0xff, 0x81, 0xc0, 0x2f, 0x52, 0x56,
+    0x23, 0xfd, 0x1f, 0xe5, 0x16, 0x7e, 0xac, 0x3a,
+    0x55, 0xa0, 0x49, 0xde, 0x3d, 0x31, 0x4b, 0xb4,
+    0x2e, 0xe2, 0x27, 0xff, 0xed, 0x37, 0xd5, 0x08,
+}};
+
+constexpr hd_lineage kSampleLineage{
+    .prefixes = hd_public::mainnet,
+    .depth = 0,
+    .parent_fingerprint = 0,
+    .child_number = 0,
+};
+
+constexpr auto kSample = hd_public::from_verified_components(
+    kSamplePoint, kSampleChain, kSampleLineage);
+
+static_assert(kSample.point() == kSamplePoint);
+static_assert(kSample.chain_code() == kSampleChain);
+static_assert(kSample.lineage() == kSampleLineage);
+static_assert(kSample == kSample);
+static_assert(hd_public::mainnet == 76067358);
+static_assert(hd_public::testnet == 70617039);
+static_assert(hd_public::to_prefix(0x1122334455667788ULL) == 0x55667788);
+
+} // namespace
+
 constexpr char short_seed[] = "000102030405060708090a0b0c0d0e0f";
 constexpr char long_seed[] = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542";
 
