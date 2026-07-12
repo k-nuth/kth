@@ -21,21 +21,6 @@
 
 namespace kth::domain::wallet {
 
-uint8_t const ec_private::compressed_sentinel = 0x01;
-#if defined(KTH_CURRENCY_LTC)
-uint8_t const ec_private::mainnet_wif  = 0xb0;
-uint8_t const ec_private::mainnet_p2kh = 0x30;
-#else
-uint8_t const ec_private::mainnet_wif  = 0x80;
-uint8_t const ec_private::mainnet_p2kh = 0x00;
-#endif
-
-uint16_t const ec_private::mainnet = to_version(mainnet_p2kh, mainnet_wif);
-
-uint8_t  const ec_private::testnet_wif  = 0xef;
-uint8_t  const ec_private::testnet_p2kh = 0x6f;
-uint16_t const ec_private::testnet      = to_version(testnet_p2kh, testnet_wif);
-
 // Validators.
 // ----------------------------------------------------------------------------
 
@@ -61,11 +46,6 @@ expect<ec_private> ec_private::from_secret(ec_secret const& secret, uint16_t ver
     if ( ! kth::verify(secret)) {
         return std::unexpected(kth::error::illegal_value);
     }
-    return ec_private(secret, version, compress);
-}
-
-// static
-ec_private ec_private::from_verified_secret(ec_secret const& secret, uint16_t version, bool compress) {
     return ec_private(secret, version, compress);
 }
 
