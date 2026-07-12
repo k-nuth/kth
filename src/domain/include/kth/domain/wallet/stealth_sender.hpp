@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/define.hpp>
@@ -47,18 +48,35 @@ struct KD_API stealth_sender {
                                           binary const& filter,
                                           uint8_t version);
 
+    /// Package an already-derived `(script, address)` pair into a
+    /// `stealth_sender`. Caller is responsible for the invariants
+    /// (`script` is the stealth OP_RETURN with the ephemeral public
+    /// key, `address` derives from the receiver's spend key + the
+    /// ephemeral private key); no checks are performed here.
+    [[nodiscard]] static constexpr
+    stealth_sender from_verified_parts(uint8_t version,
+                                       chain::script script,
+                                       wallet::payment_address address) noexcept {
+        return stealth_sender(version, std::move(script), std::move(address));
+    }
+
     /// Attach this script to the output before the send output.
-    [[nodiscard]]
-    chain::script const& stealth_script() const noexcept;
+    [[nodiscard]] constexpr
+    chain::script const& stealth_script() const noexcept { return script_; }
 
     /// The bitcoin payment address to which the payment will be made.
-    [[nodiscard]]
-    wallet::payment_address const& payment_address() const noexcept;
+    [[nodiscard]] constexpr
+    wallet::payment_address const& payment_address() const noexcept { return address_; }
 
 private:
+    constexpr
     stealth_sender(uint8_t version,
                    chain::script script,
-                   wallet::payment_address address);
+                   wallet::payment_address address) noexcept
+        : version_(version)
+        , script_(std::move(script))
+        , address_(std::move(address))
+    {}
 
     uint8_t const version_;
     chain::script const script_;

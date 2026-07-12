@@ -16,18 +16,6 @@
 
 namespace kth::domain::wallet {
 
-stealth_receiver::stealth_receiver(uint8_t version,
-                                   ec_secret const& scan_private,
-                                   ec_secret const& spend_private,
-                                   ec_compressed const& spend_public,
-                                   wallet::stealth_address address)
-    : version_(version)
-    , scan_private_(scan_private)
-    , spend_private_(spend_private)
-    , spend_public_(spend_public)
-    , address_(std::move(address))
-{}
-
 // static
 expect<stealth_receiver> stealth_receiver::from_secrets(ec_secret const& scan_private,
                                                        ec_secret const& spend_private,
@@ -51,10 +39,6 @@ expect<stealth_receiver> stealth_receiver::from_secrets(ec_secret const& scan_pr
 
     return stealth_receiver(version, scan_private, spend_private,
                             spend_public, std::move(*address));
-}
-
-wallet::stealth_address const& stealth_receiver::stealth_address() const noexcept {
-    return address_;
 }
 
 expect<payment_address> stealth_receiver::derive_address(ec_compressed const& ephemeral_public) const {

@@ -16,14 +16,6 @@
 
 namespace kth::domain::wallet {
 
-stealth_sender::stealth_sender(uint8_t version,
-                               chain::script script,
-                               wallet::payment_address address)
-    : version_(version)
-    , script_(std::move(script))
-    , address_(std::move(address))
-{}
-
 // static
 expect<stealth_sender> stealth_sender::from_stealth_address(stealth_address const& address,
                                                             data_chunk const& seed,
@@ -69,14 +61,6 @@ expect<stealth_sender> stealth_sender::from_ephemeral(ec_secret const& ephemeral
     }
 
     return stealth_sender(version, std::move(script), std::move(*payment));
-}
-
-chain::script const& stealth_sender::stealth_script() const noexcept {
-    return script_;
-}
-
-wallet::payment_address const& stealth_sender::payment_address() const noexcept {
-    return address_;
 }
 
 } // namespace kth::domain::wallet
