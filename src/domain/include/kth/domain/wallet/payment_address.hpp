@@ -5,6 +5,8 @@
 #ifndef KTH_DOMAIN_WALLET_PAYMENT_ADDRESS_HPP
 #define KTH_DOMAIN_WALLET_PAYMENT_ADDRESS_HPP
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -107,10 +109,21 @@ struct KD_API payment_address {
     expect<payment_address> from_pay_public_key_hash_script(chain::script const& script, uint8_t version);
 
     /// Wrap a 20-byte hash160 payload directly. Infallible.
-    payment_address(short_hash const& short_hash, uint8_t version);
+    constexpr
+    payment_address(short_hash const& short_hash, uint8_t version) noexcept
+        : version_(version)
+        , hash_size_(short_hash.size())
+    {
+        std::copy_n(short_hash.begin(), short_hash.size(), hash_data_.begin());
+    }
 
     /// Wrap a 32-byte hash payload directly. Infallible.
-    payment_address(hash_digest const& hash, uint8_t version);
+    constexpr
+    payment_address(hash_digest const& hash, uint8_t version) noexcept
+        : version_(version)
+        , hash_data_(hash)
+        , hash_size_(hash.size())
+    {}
 
     [[nodiscard]]
     friend auto operator<=>(payment_address const&, payment_address const&) = default;
@@ -137,21 +150,35 @@ struct KD_API payment_address {
     std::string encoded_token() const;
 #endif  //KTH_CURRENCY_BCH
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     uint8_t version() const noexcept { return version_; }
 
-    [[nodiscard]]
-    byte_span hash_span() const;
+    [[nodiscard]] constexpr
+    byte_span hash_span() const noexcept {
+        return {hash_data_.begin(), hash_size_};
+    }
 
     /// 20-byte hash accessor. Only valid for 20-byte addresses
     /// (P2KH, P2SH). Returns `null_short_hash` when the address
     /// carries a 32-byte hash — use `hash32()` for 32-byte payloads
     /// or `hash_span()` for the size-agnostic path.
-    [[nodiscard]]
-    short_hash hash20() const;
+    [[nodiscard]] constexpr
+    short_hash hash20() const noexcept {
+        // `pay_script_hash_32` (BCH 2025 Leibniz) addresses store a
+        // 32-byte hash that doesn't fit in a `short_hash`. Returning
+        // the first 20 bytes would be silent truncation. Surface that
+        // as the zero sentinel so callers can detect "no 20-byte
+        // hash available".
+        if (hash_size_ > short_hash_size) {
+            return null_short_hash;
+        }
+        short_hash hash{};
+        std::copy_n(hash_data_.begin(), hash.size(), hash.begin());
+        return hash;
+    }
 
-    [[nodiscard]]
-    hash_digest const& hash32() const;
+    [[nodiscard]] constexpr
+    hash_digest const& hash32() const noexcept { return hash_data_; }
 
     /// 25-byte `<version><20-byte hash><checksum>` payment layout.
     /// Only valid for 20-byte addresses. Returns a zero-initialised

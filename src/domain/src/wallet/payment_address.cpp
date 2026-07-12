@@ -33,19 +33,6 @@ using namespace kth::domain::wallet;
 
 namespace kth::domain::wallet {
 
-payment_address::payment_address(short_hash const& short_hash, uint8_t version)
-    : version_(version)
-    , hash_size_(short_hash.size())
-{
-    std::copy_n(short_hash.begin(), short_hash.size(), hash_data_.begin());
-}
-
-payment_address::payment_address(hash_digest const& hash, uint8_t version)
-    : version_(version)
-    , hash_data_(hash)
-    , hash_size_(hash.size())
-{}
-
 // Validators.
 // ----------------------------------------------------------------------------
 
@@ -348,28 +335,6 @@ std::string payment_address::encoded_token() const {
 
 // Accessors.
 // ----------------------------------------------------------------------------
-
-kth::byte_span payment_address::hash_span() const {
-    return {hash_data_.begin(), hash_size_};
-}
-
-short_hash payment_address::hash20() const {
-    // `pay_script_hash_32` (BCH 2025 Leibniz) addresses store a
-    // 32-byte hash that doesn't fit in a `short_hash`. Returning
-    // the first 20 bytes would be silent truncation. Surface that
-    // as the zero sentinel so callers can detect "no 20-byte hash
-    // available".
-    if (hash_size_ > short_hash_size) {
-        return null_short_hash;
-    }
-    short_hash hash;
-    std::copy_n(hash_data_.begin(), hash.size(), hash.begin());
-    return hash;
-}
-
-hash_digest const& payment_address::hash32() const {
-    return hash_data_;
-}
 
 payment payment_address::to_payment() const {
     // `payment` is the fixed 25-byte (`version` + 20-byte hash +
