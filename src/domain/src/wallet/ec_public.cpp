@@ -19,15 +19,6 @@
 
 namespace kth::domain::wallet {
 
-uint8_t const ec_public::compressed_even = 0x02;
-uint8_t const ec_public::compressed_odd  = 0x03;
-uint8_t const ec_public::uncompressed    = 0x04;
-#if defined(KTH_CURRENCY_LTC)
-uint8_t const ec_public::mainnet_p2kh = 0x30;
-#else
-uint8_t const ec_public::mainnet_p2kh = 0x00;
-#endif
-
 // Validators.
 // ----------------------------------------------------------------------------
 
@@ -37,11 +28,6 @@ bool ec_public::is_point(byte_span decoded) {
 
 // Factories.
 // ----------------------------------------------------------------------------
-
-// static
-ec_public ec_public::from_verified_point(ec_compressed const& point, bool compress) {
-    return ec_public(point, compress);
-}
 
 // static
 expect<ec_public> ec_public::from_data(data_chunk const& decoded) {
