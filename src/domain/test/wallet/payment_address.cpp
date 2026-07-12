@@ -12,6 +12,39 @@ using namespace kth::domain::wallet;
 
 // Start Test Suite: payment_address tests
 
+// Compile-time verification that both wrapping ctors and the
+// hash / version accessors are usable in a constant expression. A
+// regression that made any of the newly-constexpr pieces runtime-
+// only would surface as a compile error here, closer to the type
+// than a downstream call site.
+namespace {
+
+constexpr short_hash kShort = {{
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+    0x11, 0x12, 0x13, 0x14,
+}};
+
+constexpr hash_digest kFull = {{
+    0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+    0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+}};
+
+constexpr payment_address kP2kh{kShort, payment_address::mainnet_p2kh};
+static_assert(kP2kh.version() == payment_address::mainnet_p2kh);
+static_assert(kP2kh.hash20() == kShort);
+static_assert(kP2kh == kP2kh);
+
+constexpr payment_address kFullHash{kFull, payment_address::mainnet_p2kh};
+static_assert(kFullHash.hash32() == kFull);
+// 32-byte hash carriers have no legal 20-byte representation — the
+// accessor surfaces `null_short_hash` sentinel rather than truncating.
+static_assert(kFullHash.hash20() == null_short_hash);
+
+} // namespace
+
 // $ bx base16-encode "Satoshi" | bx sha256
 constexpr char secret_hex[] = "002688cc350a5333a87fa622eacec626c3d1c0ebf9f3793de3885fa254d7e393";
 constexpr char script_text[] = "dup hash160 [18c0bd8d1818f1bf99cb1df2269c645318ef7b73] equalverify checksig";
