@@ -39,7 +39,7 @@ KTH_EXPORT
 kth_ec_public_t kth_wallet_ec_to_public(kth_ec_secret_t secret, kth_bool_t uncompressed);
 
 KTH_EXPORT
-kth_payment_address_t kth_wallet_ec_to_address(kth_ec_public_t point, uint32_t version);
+kth_payment_address_t kth_wallet_ec_to_address(kth_ec_public_t point, uint8_t version);
 
 
 // KTH_EXPORT

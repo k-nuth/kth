@@ -105,9 +105,9 @@ kth_ec_public_t kth_wallet_ec_to_public(kth_ec_secret_t secret, kth_bool_t uncom
     return kth::leak(kth::domain::wallet::ec_public::from_verified_point(point, !uncompressed_cpp));
 }
 
-kth_payment_address_t kth_wallet_ec_to_address(kth_ec_public_t point, uint32_t version) {
+kth_payment_address_t kth_wallet_ec_to_address(kth_ec_public_t point, uint8_t version) {
     kth::domain::wallet::ec_public const& point_cpp = *static_cast<kth::domain::wallet::ec_public const*>(point);
-    auto result = kth::domain::wallet::payment_address::from_ec_public(point_cpp, static_cast<uint8_t>(version));
+    auto result = kth::domain::wallet::payment_address::from_ec_public(point_cpp, version);
     if ( ! result) {
         return nullptr;
     }
