@@ -84,7 +84,14 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: ~/.conan2
-          key: ${{ runner.os }}-conan2-${{ hashFiles('**/conan.lock') }}
+          # Split sanitizer / clean cache families. See the matching
+          # comment in `build-with-container.yml` — sanitizer flags
+          # leak into dep builds via env but don't factor into Conan's
+          # package hash, so a shared cache produces broken links
+          # (missing `__asan_report_*` / `__ubsan_handle_*` runtime
+          # symbols) when a sanitizer-built dep gets restored into a
+          # non-sanitizer build.
+          key: ${{ runner.os }}-conan2-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ hashFiles('**/conan.lock') }}
       # - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
       #   with:
       #     path: ~/.cache/pip
