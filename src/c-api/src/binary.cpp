@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <string_view>
+#include <utility>
 
 #include <kth/capi/binary.h>
 
@@ -25,12 +26,6 @@ kth_binary_mut_t kth_core_binary_construct_default(void) {
     return kth::leak<cpp_t>();
 }
 
-kth_binary_mut_t kth_core_binary_construct_from_bit_string(char const* bit_string) {
-    KTH_PRECONDITION(bit_string != nullptr);
-    auto const bit_string_cpp = std::string_view(bit_string);
-    return kth::leak<cpp_t>(bit_string_cpp);
-}
-
 kth_binary_mut_t kth_core_binary_construct_from_size_number(kth_size_t size, uint32_t number) {
     auto const size_cpp = kth::sz(size);
     return kth::leak<cpp_t>(size_cpp, number);
@@ -41,6 +36,17 @@ kth_binary_mut_t kth_core_binary_construct_from_size_blocks(kth_size_t size, uin
     auto const size_cpp = kth::sz(size);
     auto const blocks_cpp = kth::byte_span(blocks, kth::sz(n));
     return kth::leak<cpp_t>(size_cpp, blocks_cpp);
+}
+
+kth_error_code_t kth_core_binary_parse_from(char const* bit_string, KTH_OUT_OWNED kth_binary_mut_t* out) {
+    KTH_PRECONDITION(bit_string != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const bit_string_cpp = std::string_view(bit_string);
+    auto result = cpp_t::parse_from(bit_string_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
 
@@ -67,6 +73,39 @@ kth_bool_t kth_core_binary_equals(kth_binary_const_t self, kth_binary_const_t ot
     return kth::eq<cpp_t>(self, other);
 }
 
+kth_bool_t kth_core_binary_not_equal(kth_binary_const_t self, kth_binary_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::ne<cpp_t>(self, other);
+}
+
+
+// Ordering
+
+kth_bool_t kth_core_binary_less(kth_binary_const_t self, kth_binary_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    return kth::lt<cpp_t>(self, x);
+}
+
+kth_bool_t kth_core_binary_greater(kth_binary_const_t self, kth_binary_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    return kth::gt<cpp_t>(self, x);
+}
+
+kth_bool_t kth_core_binary_less_or_equal(kth_binary_const_t self, kth_binary_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    return kth::le<cpp_t>(self, x);
+}
+
+kth_bool_t kth_core_binary_greater_or_equal(kth_binary_const_t self, kth_binary_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    return kth::ge<cpp_t>(self, x);
+}
+
 
 // Getters
 
@@ -77,9 +116,9 @@ uint8_t* kth_core_binary_blocks(kth_binary_const_t self, kth_size_t* out_size) {
     return kth::create_c_array(data, *out_size);
 }
 
-char* kth_core_binary_encoded(kth_binary_const_t self) {
+char* kth_core_binary_to_string(kth_binary_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    auto const s = kth::cpp_ref<cpp_t>(self).encoded();
+    auto const s = kth::cpp_ref<cpp_t>(self).to_string();
     return kth::create_c_str(s);
 }
 
@@ -90,12 +129,6 @@ kth_size_t kth_core_binary_size(kth_binary_const_t self) {
 
 
 // Predicates
-
-kth_bool_t kth_core_binary_is_base2(char const* text) {
-    KTH_PRECONDITION(text != nullptr);
-    auto const text_cpp = std::string_view(text);
-    return kth::bool_to_int(cpp_t::is_base2(text_cpp));
-}
 
 kth_bool_t kth_core_binary_is_prefix_of_span(kth_binary_const_t self, uint8_t const* field, kth_size_t n) {
     KTH_PRECONDITION(self != nullptr);
@@ -163,12 +196,6 @@ kth_binary_mut_t kth_core_binary_substring(kth_binary_const_t self, kth_size_t s
     auto const start_cpp = kth::sz(start);
     auto const length_cpp = kth::sz(length);
     return kth::leak(kth::cpp_ref<cpp_t>(self).substring(start_cpp, length_cpp));
-}
-
-kth_bool_t kth_core_binary_less(kth_binary_const_t self, kth_binary_const_t x) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(x != nullptr);
-    return kth::lt<cpp_t>(self, x);
 }
 
 

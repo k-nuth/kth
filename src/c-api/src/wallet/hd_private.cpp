@@ -22,56 +22,120 @@ extern "C" {
 
 // Constructors
 
-kth_hd_private_mut_t kth_wallet_hd_private_construct_default(void) {
-    return kth::leak<cpp_t>();
+kth_error_code_t kth_wallet_hd_private_parse_from(char const* encoded, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
+    KTH_PRECONDITION(encoded != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const encoded_cpp = std::string_view(encoded);
+    auto result = cpp_t::parse_from(encoded_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_hd_private_mut_t kth_wallet_hd_private_construct_from_seed_prefixes(uint8_t const* seed, kth_size_t n, uint64_t prefixes) {
+kth_error_code_t kth_wallet_hd_private_parse_from_with_public_prefix(char const* encoded, uint32_t public_prefix, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
+    KTH_PRECONDITION(encoded != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const encoded_cpp = std::string_view(encoded);
+    auto result = cpp_t::parse_from_with_public_prefix(encoded_cpp, public_prefix);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
+kth_error_code_t kth_wallet_hd_private_parse_from_with_prefixes(char const* encoded, uint64_t prefixes, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
+    KTH_PRECONDITION(encoded != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const encoded_cpp = std::string_view(encoded);
+    auto result = cpp_t::parse_from_with_prefixes(encoded_cpp, prefixes);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
+kth_error_code_t kth_wallet_hd_private_from_seed(uint8_t const* seed, kth_size_t n, uint64_t prefixes, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
     KTH_PRECONDITION(seed != nullptr || n == 0);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto const seed_cpp = n != 0 ? kth::data_chunk(seed, seed + n) : kth::data_chunk{};
-    return kth::leak_if_valid(cpp_t(seed_cpp, prefixes));
+    auto result = cpp_t::from_seed(seed_cpp, prefixes);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key(kth_hd_key_t const* private_key) {
+kth_error_code_t kth_wallet_hd_private_from_hd_key(kth_hd_key_t const* private_key, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
     KTH_PRECONDITION(private_key != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto private_key_cpp = kth::hd_key_to_cpp(private_key->data);
     kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
-    return kth::leak_if_valid(cpp_t(private_key_cpp));
+    auto result = cpp_t::from_hd_key(private_key_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_unsafe(uint8_t const* private_key) {
+kth_error_code_t kth_wallet_hd_private_from_hd_key_unsafe(uint8_t const* private_key, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
     KTH_PRECONDITION(private_key != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto private_key_cpp = kth::hd_key_to_cpp(private_key);
     kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
-    return kth::leak_if_valid(cpp_t(private_key_cpp));
+    auto result = cpp_t::from_hd_key(private_key_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefixes(kth_hd_key_t const* private_key, uint64_t prefixes) {
+kth_error_code_t kth_wallet_hd_private_from_hd_key_with_public_prefix(kth_hd_key_t const* private_key, uint32_t public_prefix, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
     KTH_PRECONDITION(private_key != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto private_key_cpp = kth::hd_key_to_cpp(private_key->data);
     kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
-    return kth::leak_if_valid(cpp_t(private_key_cpp, prefixes));
+    auto result = cpp_t::from_hd_key_with_public_prefix(private_key_cpp, public_prefix);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefixes_unsafe(uint8_t const* private_key, uint64_t prefixes) {
+kth_error_code_t kth_wallet_hd_private_from_hd_key_with_public_prefix_unsafe(uint8_t const* private_key, uint32_t public_prefix, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
     KTH_PRECONDITION(private_key != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto private_key_cpp = kth::hd_key_to_cpp(private_key);
     kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
-    return kth::leak_if_valid(cpp_t(private_key_cpp, prefixes));
+    auto result = cpp_t::from_hd_key_with_public_prefix(private_key_cpp, public_prefix);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefix(kth_hd_key_t const* private_key, uint32_t prefix) {
+kth_error_code_t kth_wallet_hd_private_from_hd_key_with_prefixes(kth_hd_key_t const* private_key, uint64_t prefixes, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
     KTH_PRECONDITION(private_key != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto private_key_cpp = kth::hd_key_to_cpp(private_key->data);
     kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
-    return kth::leak_if_valid(cpp_t(private_key_cpp, prefix));
+    auto result = cpp_t::from_hd_key_with_prefixes(private_key_cpp, prefixes);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_hd_private_mut_t kth_wallet_hd_private_construct_from_private_key_prefix_unsafe(uint8_t const* private_key, uint32_t prefix) {
+kth_error_code_t kth_wallet_hd_private_from_hd_key_with_prefixes_unsafe(uint8_t const* private_key, uint64_t prefixes, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
     KTH_PRECONDITION(private_key != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto private_key_cpp = kth::hd_key_to_cpp(private_key);
     kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
-    return kth::leak_if_valid(cpp_t(private_key_cpp, prefix));
+    auto result = cpp_t::from_hd_key_with_prefixes(private_key_cpp, prefixes);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
 
@@ -146,12 +210,7 @@ kth_hd_key_t kth_wallet_hd_private_to_hd_key(kth_hd_private_const_t self) {
 
 kth_hd_public_mut_t kth_wallet_hd_private_to_public(kth_hd_private_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).to_public());
-}
-
-kth_bool_t kth_wallet_hd_private_valid(kth_hd_private_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).valid());
+    return kth::leak(kth::cpp_ref<cpp_t>(self).to_public());
 }
 
 kth_hash_t kth_wallet_hd_private_chain_code(kth_hd_private_const_t self) {
@@ -175,17 +234,37 @@ char* kth_wallet_hd_private_to_string(kth_hd_private_const_t self) {
     return kth::create_c_str(s);
 }
 
+kth_hd_public_const_t kth_wallet_hd_private_public_key(kth_hd_private_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return &(kth::cpp_ref<cpp_t>(self).public_key());
+}
+
 
 // Operations
 
-kth_hd_private_mut_t kth_wallet_hd_private_derive_private(kth_hd_private_const_t self, uint32_t index) {
+kth_error_code_t kth_wallet_hd_private_derive_private(kth_hd_private_const_t self, uint32_t index, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).derive_private(index));
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto result = kth::cpp_ref<cpp_t>(self).derive_private(index);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
-kth_hd_public_mut_t kth_wallet_hd_private_derive_public(kth_hd_private_const_t self, uint32_t index) {
+kth_error_code_t kth_wallet_hd_private_derive_public(kth_hd_private_const_t self, uint32_t index, KTH_OUT_OWNED kth_hd_public_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_if_valid(kth::cpp_ref<cpp_t>(self).derive_public(index));
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto result = kth::cpp_ref<cpp_t>(self).derive_public(index);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
+void kth_wallet_hd_private_wipe(kth_hd_private_mut_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    kth::cpp_ref<cpp_t>(self).wipe();
 }
 
 
@@ -193,39 +272,6 @@ kth_hd_public_mut_t kth_wallet_hd_private_derive_public(kth_hd_private_const_t s
 
 uint32_t kth_wallet_hd_private_to_prefix(uint64_t prefixes) {
     return cpp_t::to_prefix(prefixes);
-}
-
-kth_error_code_t kth_wallet_hd_private_parse_from(char const* encoded, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
-    KTH_PRECONDITION(encoded != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const encoded_cpp = std::string_view(encoded);
-    auto result = cpp_t::parse_from(encoded_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
-    return kth_ec_success;
-}
-
-kth_error_code_t kth_wallet_hd_private_parse_from_with_public_prefix(char const* encoded, uint32_t public_prefix, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
-    KTH_PRECONDITION(encoded != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const encoded_cpp = std::string_view(encoded);
-    auto result = cpp_t::parse_from_with_public_prefix(encoded_cpp, public_prefix);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
-    return kth_ec_success;
-}
-
-kth_error_code_t kth_wallet_hd_private_parse_from_with_prefixes(char const* encoded, uint64_t prefixes, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
-    KTH_PRECONDITION(encoded != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const encoded_cpp = std::string_view(encoded);
-    auto result = cpp_t::parse_from_with_prefixes(encoded_cpp, prefixes);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
-    return kth_ec_success;
 }
 
 } // extern "C"

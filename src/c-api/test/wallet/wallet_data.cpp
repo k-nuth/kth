@@ -50,10 +50,11 @@ TEST_CASE("C-API WalletData - create with English default returns a handle",
     REQUIRE(kth_core_string_list_count(mnemonics) == 24u);
     kth_core_string_list_destruct(mnemonics);
 
-    // xpub: a non-null borrowed view.
+    // xpub: a non-null borrowed view. Valid-by-construction now, so
+    // the fact that `create_simple` succeeded is enough — we no longer
+    // interrogate `.valid()` on the borrowed view.
     kth_hd_public_const_t xpub = kth_wallet_wallet_data_xpub(wd);
     REQUIRE(xpub != NULL);
-    REQUIRE(kth_wallet_hd_public_valid(xpub) != 0);
 
     // encrypted_seed: fixed 96-byte struct (salt + iv + encrypted long_hash).
     kth_encrypted_seed_t seed = kth_wallet_wallet_data_encrypted_seed(wd);
@@ -84,7 +85,7 @@ TEST_CASE("C-API WalletData - copy preserves mnemonics count and xpub validity",
     kth_core_string_list_destruct(copy_mnemonics);
     kth_core_string_list_destruct(orig_mnemonics);
 
-    REQUIRE(kth_wallet_hd_public_valid(kth_wallet_wallet_data_xpub(copy)) != 0);
+    REQUIRE(kth_wallet_wallet_data_xpub(copy) != NULL);
 
     kth_wallet_wallet_data_destruct(copy);
     kth_wallet_wallet_data_destruct(original);

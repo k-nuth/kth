@@ -36,14 +36,6 @@ static char const* const kEncryptedOther =
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::ek_token - default construct is invalid",
-          "[C-API WalletEkToken][lifecycle]") {
-    kth_ek_token_mut_t a = kth_wallet_ek_token_construct_default();
-    REQUIRE(a != NULL);
-    REQUIRE(kth_wallet_ek_token_valid(a) == 0);
-    kth_wallet_ek_token_destruct(a);
-}
-
 TEST_CASE("C-API wallet::ek_token - destruct(NULL) is a no-op",
           "[C-API WalletEkToken][lifecycle]") {
     kth_wallet_ek_token_destruct(NULL);
@@ -58,7 +50,6 @@ TEST_CASE("C-API wallet::ek_token - encoded round-trips through parse_from",
     kth_ek_token_mut_t a = NULL;
     REQUIRE(kth_wallet_ek_token_parse_from(kEncrypted, &a) == kth_ec_success);
     REQUIRE(a != NULL);
-    REQUIRE(kth_wallet_ek_token_valid(a) != 0);
 
     char* back = kth_wallet_ek_token_to_string(a);
     REQUIRE(back != NULL);
@@ -81,7 +72,7 @@ TEST_CASE("C-API wallet::ek_token - invalid encoded string fails to parse",
 
 TEST_CASE("C-API wallet::ek_token - token byte payload round-trip",
           "[C-API WalletEkToken][encode]") {
-    // Exercises both directions of the `kth_encrypted_token_t` ↔
+    // Exercises both directions of the `kth_encrypted_token_t` <->
     // `encrypted_token` value-struct bridge (53-byte payload).
     kth_ek_token_mut_t orig = NULL;
     REQUIRE(kth_wallet_ek_token_parse_from(kEncrypted, &orig) == kth_ec_success);
@@ -90,7 +81,6 @@ TEST_CASE("C-API wallet::ek_token - token byte payload round-trip",
 
     kth_ek_token_mut_t rebuilt = kth_wallet_ek_token_construct(&bytes);
     REQUIRE(rebuilt != NULL);
-    REQUIRE(kth_wallet_ek_token_valid(rebuilt) != 0);
 
     char* back = kth_wallet_ek_token_to_string(rebuilt);
     REQUIRE(back != NULL);
@@ -128,6 +118,7 @@ TEST_CASE("C-API wallet::ek_token - copy preserves value equality",
     kth_ek_token_mut_t b = kth_wallet_ek_token_copy(a);
     REQUIRE(b != NULL);
     REQUIRE(kth_wallet_ek_token_equals(a, b) != 0);
+    REQUIRE(kth_wallet_ek_token_not_equal(a, b) == 0);
     kth_wallet_ek_token_destruct(b);
     kth_wallet_ek_token_destruct(a);
 }
@@ -163,7 +154,7 @@ TEST_CASE("C-API wallet::ek_token - construct(NULL) aborts",
     KTH_EXPECT_ABORT(kth_wallet_ek_token_construct(NULL));
 }
 
-TEST_CASE("C-API wallet::ek_token - valid(NULL) aborts",
+TEST_CASE("C-API wallet::ek_token - copy(NULL) aborts",
           "[C-API WalletEkToken][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_ek_token_valid(NULL));
+    KTH_EXPECT_ABORT(kth_wallet_ek_token_copy(NULL));
 }

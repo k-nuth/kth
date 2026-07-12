@@ -35,17 +35,6 @@ static char const* const kEncryptedOther =
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API wallet::ek_private - default construct is invalid",
-          "[C-API WalletEkPrivate][lifecycle]") {
-    // Matches the domain default ctor: no payload, `valid_ == false`.
-    // The handle itself is non-null (the allocation succeeded), but
-    // `valid()` returns 0 so callers know not to trust the state.
-    kth_ek_private_mut_t a = kth_wallet_ek_private_construct_default();
-    REQUIRE(a != NULL);
-    REQUIRE(kth_wallet_ek_private_valid(a) == 0);
-    kth_wallet_ek_private_destruct(a);
-}
-
 TEST_CASE("C-API wallet::ek_private - destruct(NULL) is a no-op",
           "[C-API WalletEkPrivate][lifecycle]") {
     kth_wallet_ek_private_destruct(NULL);
@@ -63,7 +52,6 @@ TEST_CASE("C-API wallet::ek_private - encoded round-trips through parse_from",
     kth_ek_private_mut_t a = NULL;
     REQUIRE(kth_wallet_ek_private_parse_from(kEncrypted, &a) == kth_ec_success);
     REQUIRE(a != NULL);
-    REQUIRE(kth_wallet_ek_private_valid(a) != 0);
 
     char* back = kth_wallet_ek_private_to_string(a);
     REQUIRE(back != NULL);
@@ -89,9 +77,9 @@ TEST_CASE("C-API wallet::ek_private - invalid encoded string fails to parse",
 
 TEST_CASE("C-API wallet::ek_private - private_key byte payload round-trip",
           "[C-API WalletEkPrivate][encode]") {
-    // encoded → ek_private → raw 43-byte payload → new ek_private →
+    // encoded -> ek_private -> raw 43-byte payload -> new ek_private ->
     // encoded. This exercises both directions of the value-struct
-    // bridge (`kth_encrypted_private_t` ↔ `encrypted_private`).
+    // bridge (`kth_encrypted_private_t` <-> `encrypted_private`).
     kth_ek_private_mut_t orig = NULL;
     REQUIRE(kth_wallet_ek_private_parse_from(kEncrypted, &orig) == kth_ec_success);
     REQUIRE(orig != NULL);
@@ -99,7 +87,6 @@ TEST_CASE("C-API wallet::ek_private - private_key byte payload round-trip",
 
     kth_ek_private_mut_t rebuilt = kth_wallet_ek_private_construct(&bytes);
     REQUIRE(rebuilt != NULL);
-    REQUIRE(kth_wallet_ek_private_valid(rebuilt) != 0);
 
     char* back = kth_wallet_ek_private_to_string(rebuilt);
     REQUIRE(back != NULL);
@@ -140,6 +127,7 @@ TEST_CASE("C-API wallet::ek_private - copy preserves value equality",
     kth_ek_private_mut_t b = kth_wallet_ek_private_copy(a);
     REQUIRE(b != NULL);
     REQUIRE(kth_wallet_ek_private_equals(a, b) != 0);
+    REQUIRE(kth_wallet_ek_private_not_equal(a, b) == 0);
     kth_wallet_ek_private_destruct(b);
     kth_wallet_ek_private_destruct(a);
 }
@@ -171,7 +159,7 @@ TEST_CASE("C-API wallet::ek_private - construct(NULL) aborts",
     KTH_EXPECT_ABORT(kth_wallet_ek_private_construct(NULL));
 }
 
-TEST_CASE("C-API wallet::ek_private - valid(NULL) aborts",
+TEST_CASE("C-API wallet::ek_private - copy(NULL) aborts",
           "[C-API WalletEkPrivate][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_ek_private_valid(NULL));
+    KTH_EXPECT_ABORT(kth_wallet_ek_private_copy(NULL));
 }

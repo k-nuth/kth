@@ -15,9 +15,24 @@
 #include <stdlib.h>
 
 #include <kth/capi/binary.h>
+#include <kth/capi/error.h>
 #include <kth/capi/primitives.h>
 
 #include "test_helpers.hpp"
+
+// ---------------------------------------------------------------------------
+// Helper: build a binary from a bit string, aborting the test on parse
+// failure. The two-line dance repeats in every test body, so we hoist it
+// here to keep the intent readable. Returns an owned handle the caller
+// must release with `kth_core_binary_destruct`.
+// ---------------------------------------------------------------------------
+
+static kth_binary_mut_t parse_bits(char const* bit_string) {
+    kth_binary_mut_t b = NULL;
+    REQUIRE(kth_core_binary_parse_from(bit_string, &b) == kth_ec_success);
+    REQUIRE(b != NULL);
+    return b;
+}
 
 // ---------------------------------------------------------------------------
 // Constructors / lifecycle
@@ -29,9 +44,9 @@ TEST_CASE("C-API Binary - default construct is empty", "[C-API Binary]") {
     kth_core_binary_destruct(b);
 }
 
-TEST_CASE("C-API Binary - construct from bit string preserves length",
+TEST_CASE("C-API Binary - parse_from bit string preserves length",
           "[C-API Binary]") {
-    kth_binary_mut_t b = kth_core_binary_construct_from_bit_string("10110100");
+    kth_binary_mut_t b = parse_bits("10110100");
     REQUIRE(kth_core_binary_size(b) == 8u);
     kth_core_binary_destruct(b);
 }
@@ -68,10 +83,10 @@ TEST_CASE("C-API Binary - destruct null is safe", "[C-API Binary]") {
 // Getters
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Binary - encoded returns the bit string",
+TEST_CASE("C-API Binary - to_string returns the bit string",
           "[C-API Binary]") {
-    kth_binary_mut_t b = kth_core_binary_construct_from_bit_string("10110100");
-    char* encoded = kth_core_binary_encoded(b);
+    kth_binary_mut_t b = parse_bits("10110100");
+    char* encoded = kth_core_binary_to_string(b);
     REQUIRE(encoded != NULL);
     REQUIRE(strcmp(encoded, "10110100") == 0);
     kth_core_destruct_string(encoded);
@@ -87,13 +102,39 @@ TEST_CASE("C-API Binary - size reports bits, not bytes",
 }
 
 // ---------------------------------------------------------------------------
+// parse_from — success / failure
+// ---------------------------------------------------------------------------
+
+TEST_CASE("C-API Binary - parse_from empty is a valid empty binary",
+          "[C-API Binary][parse]") {
+    kth_binary_mut_t b = NULL;
+    REQUIRE(kth_core_binary_parse_from("", &b) == kth_ec_success);
+    REQUIRE(b != NULL);
+    REQUIRE(kth_core_binary_size(b) == 0u);
+    kth_core_binary_destruct(b);
+}
+
+TEST_CASE("C-API Binary - parse_from non-base2 string fails",
+          "[C-API Binary][parse]") {
+    // Anything containing digits other than 0/1 must fail; the OUT
+    // handle stays untouched (still NULL).
+    kth_binary_mut_t b = NULL;
+    REQUIRE(kth_core_binary_parse_from("102", &b) != kth_ec_success);
+    REQUIRE(b == NULL);
+
+    b = NULL;
+    REQUIRE(kth_core_binary_parse_from("abc", &b) != kth_ec_success);
+    REQUIRE(b == NULL);
+}
+
+// ---------------------------------------------------------------------------
 // operator[] (renamed to `at`) — bit accessor
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API Binary - at() returns individual bits",
           "[C-API Binary]") {
     // 10110100
-    kth_binary_mut_t b = kth_core_binary_construct_from_bit_string("10110100");
+    kth_binary_mut_t b = parse_bits("10110100");
     REQUIRE(kth_core_binary_at(b, 0) != 0);  // '1'
     REQUIRE(kth_core_binary_at(b, 1) == 0);  // '0'
     REQUIRE(kth_core_binary_at(b, 2) != 0);  // '1'
@@ -108,8 +149,8 @@ TEST_CASE("C-API Binary - at() returns individual bits",
 
 TEST_CASE("C-API Binary - is_prefix_of_binary true case",
           "[C-API Binary]") {
-    kth_binary_mut_t whole  = kth_core_binary_construct_from_bit_string("10110100");
-    kth_binary_mut_t prefix = kth_core_binary_construct_from_bit_string("101");
+    kth_binary_mut_t whole  = parse_bits("10110100");
+    kth_binary_mut_t prefix = parse_bits("101");
     REQUIRE(kth_core_binary_is_prefix_of_binary(prefix, whole) != 0);
     kth_core_binary_destruct(whole);
     kth_core_binary_destruct(prefix);
@@ -117,8 +158,8 @@ TEST_CASE("C-API Binary - is_prefix_of_binary true case",
 
 TEST_CASE("C-API Binary - is_prefix_of_binary false case",
           "[C-API Binary]") {
-    kth_binary_mut_t whole  = kth_core_binary_construct_from_bit_string("10110100");
-    kth_binary_mut_t prefix = kth_core_binary_construct_from_bit_string("110");
+    kth_binary_mut_t whole  = parse_bits("10110100");
+    kth_binary_mut_t prefix = parse_bits("110");
     REQUIRE(kth_core_binary_is_prefix_of_binary(prefix, whole) == 0);
     kth_core_binary_destruct(whole);
     kth_core_binary_destruct(prefix);
@@ -128,7 +169,7 @@ TEST_CASE("C-API Binary - is_prefix_of_span matches raw byte span",
           "[C-API Binary]") {
     // "10100101 11000011" is the byte span 0xA5 0xC3.
     uint8_t const span[2] = { 0xA5, 0xC3 };
-    kth_binary_mut_t prefix = kth_core_binary_construct_from_bit_string("1010");
+    kth_binary_mut_t prefix = parse_bits("1010");
     REQUIRE(kth_core_binary_is_prefix_of_span(prefix, span, sizeof(span)) != 0);
     kth_core_binary_destruct(prefix);
 }
@@ -139,7 +180,7 @@ TEST_CASE("C-API Binary - is_prefix_of_uint32 matches leading bits",
     // bytes, so the prefix compares against the low byte first. 0xA5 is
     // 10100101 — the first 4 bits are "1010".
     uint32_t const value = 0x000000A5u;
-    kth_binary_mut_t prefix = kth_core_binary_construct_from_bit_string("1010");
+    kth_binary_mut_t prefix = parse_bits("1010");
     REQUIRE(kth_core_binary_is_prefix_of_uint32(prefix, value) != 0);
     kth_core_binary_destruct(prefix);
 }
@@ -150,7 +191,7 @@ TEST_CASE("C-API Binary - is_prefix_of_uint32 matches leading bits",
 
 TEST_CASE("C-API Binary - copy preserves contents",
           "[C-API Binary]") {
-    kth_binary_mut_t original = kth_core_binary_construct_from_bit_string("10110100");
+    kth_binary_mut_t original = parse_bits("10110100");
     kth_binary_mut_t copy     = kth_core_binary_copy(original);
     REQUIRE(kth_core_binary_equals(original, copy) != 0);
     REQUIRE(kth_core_binary_size(copy) == kth_core_binary_size(original));
@@ -160,9 +201,9 @@ TEST_CASE("C-API Binary - copy preserves contents",
 
 TEST_CASE("C-API Binary - equals identical is true, different is false",
           "[C-API Binary]") {
-    kth_binary_mut_t a = kth_core_binary_construct_from_bit_string("10110100");
-    kth_binary_mut_t b = kth_core_binary_construct_from_bit_string("10110100");
-    kth_binary_mut_t c = kth_core_binary_construct_from_bit_string("11110000");
+    kth_binary_mut_t a = parse_bits("10110100");
+    kth_binary_mut_t b = parse_bits("10110100");
+    kth_binary_mut_t c = parse_bits("11110000");
     REQUIRE(kth_core_binary_equals(a, b) != 0);
     REQUIRE(kth_core_binary_equals(a, c) == 0);
     kth_core_binary_destruct(a);
@@ -172,8 +213,8 @@ TEST_CASE("C-API Binary - equals identical is true, different is false",
 
 TEST_CASE("C-API Binary - less gives a total order",
           "[C-API Binary]") {
-    kth_binary_mut_t a = kth_core_binary_construct_from_bit_string("1010");
-    kth_binary_mut_t b = kth_core_binary_construct_from_bit_string("1011");
+    kth_binary_mut_t a = parse_bits("1010");
+    kth_binary_mut_t b = parse_bits("1011");
     REQUIRE(kth_core_binary_less(a, b) != 0);
     REQUIRE(kth_core_binary_less(b, a) == 0);
     kth_core_binary_destruct(a);
@@ -186,7 +227,7 @@ TEST_CASE("C-API Binary - less gives a total order",
 
 TEST_CASE("C-API Binary - resize changes the bit count",
           "[C-API Binary]") {
-    kth_binary_mut_t b = kth_core_binary_construct_from_bit_string("10110100");
+    kth_binary_mut_t b = parse_bits("10110100");
     kth_core_binary_resize(b, 4u);
     REQUIRE(kth_core_binary_size(b) == 4u);
     kth_core_binary_destruct(b);
@@ -194,8 +235,8 @@ TEST_CASE("C-API Binary - resize changes the bit count",
 
 TEST_CASE("C-API Binary - append grows the size",
           "[C-API Binary]") {
-    kth_binary_mut_t a = kth_core_binary_construct_from_bit_string("1010");
-    kth_binary_mut_t b = kth_core_binary_construct_from_bit_string("0101");
+    kth_binary_mut_t a = parse_bits("1010");
+    kth_binary_mut_t b = parse_bits("0101");
     kth_core_binary_append(a, b);
     REQUIRE(kth_core_binary_size(a) == 8u);
     kth_core_binary_destruct(a);
@@ -204,8 +245,8 @@ TEST_CASE("C-API Binary - append grows the size",
 
 TEST_CASE("C-API Binary - prepend grows the size",
           "[C-API Binary]") {
-    kth_binary_mut_t a = kth_core_binary_construct_from_bit_string("1010");
-    kth_binary_mut_t b = kth_core_binary_construct_from_bit_string("0101");
+    kth_binary_mut_t a = parse_bits("1010");
+    kth_binary_mut_t b = parse_bits("0101");
     kth_core_binary_prepend(a, b);
     REQUIRE(kth_core_binary_size(a) == 8u);
     kth_core_binary_destruct(a);
@@ -214,7 +255,7 @@ TEST_CASE("C-API Binary - prepend grows the size",
 
 TEST_CASE("C-API Binary - substring returns a new binary",
           "[C-API Binary]") {
-    kth_binary_mut_t whole = kth_core_binary_construct_from_bit_string("10110100");
+    kth_binary_mut_t whole = parse_bits("10110100");
     kth_binary_mut_t sub   = kth_core_binary_substring(whole, 2u, 4u);
     REQUIRE(kth_core_binary_size(sub) == 4u);
     kth_core_binary_destruct(sub);
@@ -226,8 +267,8 @@ TEST_CASE("C-API Binary - shift_left drops leading bits",
     // kth::binary::shift_left(n) makes the binary `n` bits shorter
     // by dropping the `n` leading bits. "10110100" shifted left by 2
     // becomes "110100" (6 bits).
-    kth_binary_mut_t b        = kth_core_binary_construct_from_bit_string("10110100");
-    kth_binary_mut_t expected = kth_core_binary_construct_from_bit_string("110100");
+    kth_binary_mut_t b        = parse_bits("10110100");
+    kth_binary_mut_t expected = parse_bits("110100");
     kth_core_binary_shift_left(b, 2u);
     REQUIRE(kth_core_binary_equals(b, expected) != 0);
     kth_core_binary_destruct(expected);
@@ -239,8 +280,8 @@ TEST_CASE("C-API Binary - shift_right prepends zeros",
     // kth::binary::shift_right(n) is NOT the inverse of shift_left:
     // it grows the binary by `n` bits, prepending zeros. "10110100"
     // shifted right by 2 becomes "0010110100" (10 bits).
-    kth_binary_mut_t b        = kth_core_binary_construct_from_bit_string("10110100");
-    kth_binary_mut_t expected = kth_core_binary_construct_from_bit_string("0010110100");
+    kth_binary_mut_t b        = parse_bits("10110100");
+    kth_binary_mut_t expected = parse_bits("0010110100");
     kth_core_binary_shift_right(b, 2u);
     REQUIRE(kth_core_binary_equals(b, expected) != 0);
     kth_core_binary_destruct(expected);
@@ -261,21 +302,13 @@ TEST_CASE("C-API Binary - blocks_size rounds up to full bytes",
     REQUIRE(kth_core_binary_blocks_size(17u) == 3u);
 }
 
-TEST_CASE("C-API Binary - is_base2 accepts 0/1 strings",
-          "[C-API Binary]") {
-    REQUIRE(kth_core_binary_is_base2("10110100") != 0);
-    REQUIRE(kth_core_binary_is_base2("") != 0);
-    REQUIRE(kth_core_binary_is_base2("102") == 0);
-    REQUIRE(kth_core_binary_is_base2("abc") == 0);
-}
-
 // ---------------------------------------------------------------------------
 // Preconditions (death tests via fork)
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API Binary - at() out of bounds aborts",
           "[C-API Binary][precondition]") {
-    kth_binary_mut_t b = kth_core_binary_construct_from_bit_string("1010");
+    kth_binary_mut_t b = parse_bits("1010");
     KTH_EXPECT_ABORT(kth_core_binary_at(b, 4));
     kth_core_binary_destruct(b);
 }

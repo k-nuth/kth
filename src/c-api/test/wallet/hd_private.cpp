@@ -32,25 +32,18 @@ static uint8_t const kSeed[16] = {
 // Constructors / lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API HdPrivate - default construct is invalid", "[C-API HdPrivate]") {
-    kth_hd_private_mut_t key = kth_wallet_hd_private_construct_default();
-    REQUIRE(kth_wallet_hd_private_valid(key) == 0);
-    kth_wallet_hd_private_destruct(key);
-}
-
-TEST_CASE("C-API HdPrivate - construct from seed is valid", "[C-API HdPrivate]") {
-    kth_hd_private_mut_t key = kth_wallet_hd_private_construct_from_seed_prefixes(
-        kSeed, sizeof(kSeed), 0x0488ADE40488B21Eull);  // mainnet prefixes
+TEST_CASE("C-API HdPrivate - from_seed produces a handle", "[C-API HdPrivate]") {
+    kth_hd_private_mut_t key = NULL;
+    REQUIRE(kth_wallet_hd_private_from_seed(
+        kSeed, sizeof(kSeed), 0x0488ADE40488B21Eull, &key) == kth_ec_success);  // mainnet prefixes
     REQUIRE(key != NULL);
-    REQUIRE(kth_wallet_hd_private_valid(key) != 0);
     kth_wallet_hd_private_destruct(key);
 }
 
-TEST_CASE("C-API HdPrivate - parse_from is valid", "[C-API HdPrivate]") {
+TEST_CASE("C-API HdPrivate - parse_from produces a handle", "[C-API HdPrivate]") {
     kth_hd_private_mut_t key = NULL;
     REQUIRE(kth_wallet_hd_private_parse_from(kXprv, &key) == kth_ec_success);
     REQUIRE(key != NULL);
-    REQUIRE(kth_wallet_hd_private_valid(key) != 0);
     kth_wallet_hd_private_destruct(key);
 }
 
@@ -100,7 +93,8 @@ TEST_CASE("C-API HdPrivate - to_hd_key round-trips", "[C-API HdPrivate]") {
     REQUIRE(original != NULL);
 
     kth_hd_key_t hd_key = kth_wallet_hd_private_to_hd_key(original);
-    kth_hd_private_mut_t reconstructed = kth_wallet_hd_private_construct_from_private_key(&hd_key);
+    kth_hd_private_mut_t reconstructed = NULL;
+    REQUIRE(kth_wallet_hd_private_from_hd_key(&hd_key, &reconstructed) == kth_ec_success);
     REQUIRE(reconstructed != NULL);
     REQUIRE(kth_wallet_hd_private_equals(original, reconstructed) != 0);
 
@@ -136,7 +130,6 @@ TEST_CASE("C-API HdPrivate - to_public produces matching xpub", "[C-API HdPrivat
 
     kth_hd_public_mut_t pub = kth_wallet_hd_private_to_public(priv);
     REQUIRE(pub != NULL);
-    REQUIRE(kth_wallet_hd_public_valid(pub) != 0);
 
     char* pub_encoded = kth_wallet_hd_public_to_string(pub);
     REQUIRE(strcmp(pub_encoded, kXpub) == 0);
@@ -153,9 +146,9 @@ TEST_CASE("C-API HdPrivate - derive_private produces BIP32 vector 1 child m/0h",
     REQUIRE(parent != NULL);
 
     // BIP32 vector 1: m/0' (hardened child 0)
-    kth_hd_private_mut_t child = kth_wallet_hd_private_derive_private(parent, 0x80000000u);
+    kth_hd_private_mut_t child = NULL;
+    REQUIRE(kth_wallet_hd_private_derive_private(parent, 0x80000000u, &child) == kth_ec_success);
     REQUIRE(child != NULL);
-    REQUIRE(kth_wallet_hd_private_valid(child) != 0);
 
     kth_hd_lineage_t lineage = kth_wallet_hd_private_lineage(child);
     REQUIRE(lineage.depth == 1);
@@ -169,14 +162,14 @@ TEST_CASE("C-API HdPrivate - derive_private produces BIP32 vector 1 child m/0h",
     kth_wallet_hd_private_destruct(parent);
 }
 
-TEST_CASE("C-API HdPrivate - derive_public produces valid child", "[C-API HdPrivate]") {
+TEST_CASE("C-API HdPrivate - derive_public produces a child", "[C-API HdPrivate]") {
     kth_hd_private_mut_t parent = NULL;
     REQUIRE(kth_wallet_hd_private_parse_from(kXprv, &parent) == kth_ec_success);
     REQUIRE(parent != NULL);
 
-    kth_hd_public_mut_t child = kth_wallet_hd_private_derive_public(parent, 0);
+    kth_hd_public_mut_t child = NULL;
+    REQUIRE(kth_wallet_hd_private_derive_public(parent, 0, &child) == kth_ec_success);
     REQUIRE(child != NULL);
-    REQUIRE(kth_wallet_hd_public_valid(child) != 0);
 
     kth_wallet_hd_public_destruct(child);
     kth_wallet_hd_private_destruct(parent);
@@ -197,22 +190,26 @@ TEST_CASE("C-API HdPrivate - copy null aborts",
     KTH_EXPECT_ABORT(kth_wallet_hd_private_copy(NULL));
 }
 
-TEST_CASE("C-API HdPrivate - construct_from_seed null data with non-zero size aborts",
+TEST_CASE("C-API HdPrivate - from_seed null data with non-zero size aborts",
           "[C-API HdPrivate][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_hd_private_construct_from_seed_prefixes(NULL, 16, 0));
+    kth_hd_private_mut_t out = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_hd_private_from_seed(NULL, 16, 0, &out));
 }
 
-TEST_CASE("C-API HdPrivate - construct_from_private_key null aborts",
+TEST_CASE("C-API HdPrivate - from_hd_key null aborts",
           "[C-API HdPrivate][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_hd_private_construct_from_private_key(NULL));
+    kth_hd_private_mut_t out = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_hd_private_from_hd_key(NULL, &out));
 }
 
-TEST_CASE("C-API HdPrivate - construct_from_private_key_prefixes null aborts",
+TEST_CASE("C-API HdPrivate - from_hd_key_with_prefixes null aborts",
           "[C-API HdPrivate][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_hd_private_construct_from_private_key_prefixes(NULL, 0));
+    kth_hd_private_mut_t out = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_hd_private_from_hd_key_with_prefixes(NULL, 0, &out));
 }
 
-TEST_CASE("C-API HdPrivate - construct_from_private_key_prefix null aborts",
+TEST_CASE("C-API HdPrivate - from_hd_key_with_public_prefix null aborts",
           "[C-API HdPrivate][precondition]") {
-    KTH_EXPECT_ABORT(kth_wallet_hd_private_construct_from_private_key_prefix(NULL, 0));
+    kth_hd_private_mut_t out = NULL;
+    KTH_EXPECT_ABORT(kth_wallet_hd_private_from_hd_key_with_public_prefix(NULL, 0, &out));
 }

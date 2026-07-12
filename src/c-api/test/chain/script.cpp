@@ -277,25 +277,12 @@ TEST_CASE("C-API Script - to_pay_public_key_hash_pattern_unlocking valid pubkey 
     kth_wallet_ec_public_destruct(pub);
 }
 
-TEST_CASE("C-API Script - to_pay_public_key_hash_pattern_unlocking invalid pubkey returns NULL",
-          "[C-API Script]") {
-    // Default-constructed ec_public has valid_ == false, so its
-    // to_data() returns an error and the C++ factory yields an empty
-    // unlocking list that we turn into NULL.
-    kth_ec_public_mut_t pub = kth_wallet_ec_public_construct_default();
-    REQUIRE(pub != NULL);
-    REQUIRE(kth_wallet_ec_public_valid(pub) == 0);
-
-    uint8_t endorsement[71];
-    memset(endorsement, 0x30, sizeof(endorsement));
-
-    kth_operation_list_mut_t ops =
-        kth_chain_script_to_pay_public_key_hash_pattern_unlocking(
-            endorsement, sizeof(endorsement), pub);
-    REQUIRE(ops == NULL);
-
-    kth_wallet_ec_public_destruct(pub);
-}
+// The old "invalid pubkey returns NULL" test relied on a
+// default-constructed ec_public with `valid_ == false` — a state that
+// no longer exists now that ec_public is valid-by-construction. There
+// is no way to hand `to_pay_public_key_hash_pattern_unlocking` an
+// ec_public whose `to_data()` fails, so the C++ empty-list failure
+// path is unreachable from the C-API surface and the test is dropped.
 
 TEST_CASE("C-API Script - to_pay_public_key_hash_pattern always returns a list",
           "[C-API Script]") {

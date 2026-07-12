@@ -37,14 +37,6 @@ static char const* const kScanPubOnlyMainnet =
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API StealthAddress - default construct is invalid",
-          "[C-API StealthAddress][lifecycle]") {
-    kth_stealth_address_mut_t a = kth_wallet_stealth_address_construct_default();
-    REQUIRE(a != NULL);
-    REQUIRE(kth_wallet_stealth_address_valid(a) == 0);
-    kth_wallet_stealth_address_destruct(a);
-}
-
 TEST_CASE("C-API StealthAddress - destruct(NULL) is a no-op",
           "[C-API StealthAddress][lifecycle]") {
     kth_wallet_stealth_address_destruct(NULL);
@@ -54,15 +46,14 @@ TEST_CASE("C-API StealthAddress - destruct(NULL) is a no-op",
 // Encoded string round-trip
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API StealthAddress - encoded round-trips through parse_from (mainnet)",
+TEST_CASE("C-API StealthAddress - to_string round-trips through parse_from (mainnet)",
           "[C-API StealthAddress][encode]") {
     kth_stealth_address_mut_t a = NULL;
     REQUIRE(kth_wallet_stealth_address_parse_from(kScanMainnet, &a) == kth_ec_success);
     REQUIRE(a != NULL);
-    REQUIRE(kth_wallet_stealth_address_valid(a) != 0);
     REQUIRE(kth_wallet_stealth_address_version(a) == 42u);
 
-    char* back = kth_wallet_stealth_address_encoded(a);
+    char* back = kth_wallet_stealth_address_to_string(a);
     REQUIRE(back != NULL);
     REQUIRE(strcmp(back, kScanMainnet) == 0);
     kth_core_destruct_string(back);
@@ -70,7 +61,7 @@ TEST_CASE("C-API StealthAddress - encoded round-trips through parse_from (mainne
     kth_wallet_stealth_address_destruct(a);
 }
 
-TEST_CASE("C-API StealthAddress - encoded round-trips through parse_from (testnet)",
+TEST_CASE("C-API StealthAddress - to_string round-trips through parse_from (testnet)",
           "[C-API StealthAddress][encode]") {
     // Testnet addresses carry version 43, separating them from the 42
     // of mainnet — exercise both so a future regression that hardcodes
@@ -78,7 +69,6 @@ TEST_CASE("C-API StealthAddress - encoded round-trips through parse_from (testne
     kth_stealth_address_mut_t a = NULL;
     REQUIRE(kth_wallet_stealth_address_parse_from(kScanTestnet, &a) == kth_ec_success);
     REQUIRE(a != NULL);
-    REQUIRE(kth_wallet_stealth_address_valid(a) != 0);
     REQUIRE(kth_wallet_stealth_address_version(a) == 43u);
     kth_wallet_stealth_address_destruct(a);
 }
@@ -89,7 +79,6 @@ TEST_CASE("C-API StealthAddress - scan-only variant preserves version",
     kth_stealth_address_mut_t a = NULL;
     REQUIRE(kth_wallet_stealth_address_parse_from(kScanPubOnlyMainnet, &a) == kth_ec_success);
     REQUIRE(a != NULL);
-    REQUIRE(kth_wallet_stealth_address_valid(a) != 0);
     REQUIRE(kth_wallet_stealth_address_version(a) == 42u);
     kth_wallet_stealth_address_destruct(a);
 }
@@ -98,21 +87,20 @@ TEST_CASE("C-API StealthAddress - scan-only variant preserves version",
 // Chunk round-trip (decoded bytes)
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API StealthAddress - to_chunk / construct_from_decoded round-trips",
+TEST_CASE("C-API StealthAddress - to_chunk / construct_from_data round-trips",
           "[C-API StealthAddress][encode]") {
     kth_stealth_address_mut_t orig = NULL;
     REQUIRE(kth_wallet_stealth_address_parse_from(kScanMainnet, &orig) == kth_ec_success);
     REQUIRE(orig != NULL);
-    REQUIRE(kth_wallet_stealth_address_valid(orig) != 0);
 
     kth_size_t size = 0;
     uint8_t* chunk = kth_wallet_stealth_address_to_chunk(orig, &size);
     REQUIRE(chunk != NULL);
     REQUIRE(size > 0);
 
-    kth_stealth_address_mut_t parsed = kth_wallet_stealth_address_construct_from_decoded(chunk, size);
+    kth_stealth_address_mut_t parsed = NULL;
+    REQUIRE(kth_wallet_stealth_address_construct_from_data(chunk, size, &parsed) == kth_ec_success);
     REQUIRE(parsed != NULL);
-    REQUIRE(kth_wallet_stealth_address_valid(parsed) != 0);
     REQUIRE(kth_wallet_stealth_address_equals(orig, parsed) != 0);
 
     kth_wallet_stealth_address_destruct(parsed);
@@ -135,7 +123,10 @@ TEST_CASE("C-API StealthAddress - copy produces an equal-but-independent handle"
     REQUIRE(kth_wallet_stealth_address_equals(a, b) != 0);
 
     kth_wallet_stealth_address_destruct(b);
-    REQUIRE(kth_wallet_stealth_address_valid(a) != 0);  // source survives copy destruct
+    // Source survives the copy's destruct — a subsequent accessor on
+    // `a` still returns the correct version, catching any regression
+    // where the copy shared owned state.
+    REQUIRE(kth_wallet_stealth_address_version(a) == 42u);
 
     kth_wallet_stealth_address_destruct(a);
 }
