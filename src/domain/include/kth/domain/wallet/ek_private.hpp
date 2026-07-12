@@ -25,14 +25,14 @@ struct KD_API ek_private {
     static
     expect<ek_private> parse_from(std::string_view encoded);
 
-    explicit
-    ek_private(encrypted_private const& value)
+    explicit constexpr
+    ek_private(encrypted_private const& value) noexcept
         : private_(value) {}
 
     [[nodiscard]]
     friend auto operator<=>(ek_private const& a, ek_private const& b) = default;
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     encrypted_private const& private_key() const noexcept { return private_; }
 
     /// Base58 encoding used by `fmt::formatter<ek_private>`.
