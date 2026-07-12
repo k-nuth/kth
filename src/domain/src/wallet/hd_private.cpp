@@ -24,11 +24,6 @@
 
 namespace kth::domain::wallet {
 
-hd_private::hd_private(hd_public base, ec_secret const& secret)
-    : public_(std::move(base))
-    , secret_(secret)
-{}
-
 // Factories.
 // ----------------------------------------------------------------------------
 
