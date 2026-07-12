@@ -53,6 +53,26 @@ static_assert(hd_public::mainnet == 76067358);
 static_assert(hd_public::testnet == 70617039);
 static_assert(hd_public::to_prefix(0x1122334455667788ULL) == 0x55667788);
 
+// hd_private: `from_verified_parts(hd_public, ec_secret)` mirrors
+// hd_public's `from_verified_components` — takes an already-validated
+// pair and wraps it. Constexpr all the way through.
+constexpr ec_secret kSampleSecret = {{
+    0xa2, 0xbc, 0xa8, 0x37, 0x27, 0x86, 0x7f, 0x39,
+    0x76, 0x7e, 0x18, 0x0c, 0x7e, 0x9f, 0xd4, 0x84,
+    0xef, 0x99, 0x6e, 0xe3, 0x37, 0x9a, 0xf3, 0x4b,
+    0xd2, 0x8f, 0x60, 0xe1, 0xa6, 0x36, 0x93, 0x8c,
+}};
+
+constexpr auto kSamplePriv = hd_private::from_verified_parts(kSample, kSampleSecret);
+static_assert(kSamplePriv.secret() == kSampleSecret);
+static_assert(kSamplePriv.public_key() == kSample);
+static_assert(kSamplePriv.point() == kSamplePoint);
+static_assert(kSamplePriv.chain_code() == kSampleChain);
+static_assert(kSamplePriv.lineage() == kSampleLineage);
+static_assert(kSamplePriv == kSamplePriv);
+static_assert(hd_private::mainnet == to_prefixes(76066276, hd_public::mainnet));
+static_assert(hd_private::to_prefix(0x1122334455667788ULL) == 0x11223344);
+
 } // namespace
 
 constexpr char short_seed[] = "000102030405060708090a0b0c0d0e0f";

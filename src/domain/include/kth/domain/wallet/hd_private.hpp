@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include <kth/domain/define.hpp>
 #include <kth/domain/deserialization.hpp>
@@ -83,26 +84,36 @@ struct KD_API hd_private {
     static
     expect<hd_private> from_hd_key_with_prefixes(hd_key const& private_key, uint64_t prefixes);
 
+    /// Package a matching `hd_public` / `ec_secret` pair into an
+    /// `hd_private`. Caller is responsible for the "matches" invariant
+    /// (i.e. `public_.point()` derives from `secret`); no on-curve or
+    /// consistency check is performed here. Mirrors
+    /// `hd_public::from_verified_components`.
+    [[nodiscard]] static constexpr
+    hd_private from_verified_parts(hd_public base, ec_secret const& secret) noexcept {
+        return hd_private(std::move(base), secret);
+    }
+
     [[nodiscard]]
     friend auto operator<=>(hd_private const&, hd_private const&) = default;
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     ec_secret const& secret() const noexcept { return secret_; }
 
     /// Read-only view of the composed public-side key. Note that its
     /// `lineage().prefixes` still carries the private+public pair
     /// packed together; use `to_public()` to obtain a peer with the
     /// prefix rewritten to the public-only view.
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     hd_public const& public_key() const noexcept { return public_; }
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     hd_chain_code const& chain_code() const noexcept { return public_.chain_code(); }
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     hd_lineage const& lineage() const noexcept { return public_.lineage(); }
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     ec_compressed const& point() const noexcept { return public_.point(); }
 
     /// Base58 encoding used by `fmt::formatter<hd_private>`.
@@ -136,7 +147,9 @@ private:
 
     static expect<hd_private> from_verified_secret(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage);
 
-    hd_private(hd_public base, ec_secret const& secret);
+    constexpr
+    hd_private(hd_public base, ec_secret const& secret) noexcept
+        : public_(std::move(base)), secret_(secret) {}
 
     hd_public public_;
     ec_secret secret_ {null_hash};
