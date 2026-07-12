@@ -74,70 +74,84 @@ static uint8_t decoder[96] =
 };
 
 // Accepts only byte arrays bounded to 4 bytes.
-bool encode_base85(std::string& out, byte_span in)
+std::expected<std::string, base85_errc> encode_base85(byte_span in)
 {
     size_t const size = in.size();
     if (size % 4 != 0) {
-        return false;
-}
+        return std::unexpected(base85_errc::invalid_length);
+    }
 
     size_t const encoded_size = size * 5 / 4;
     std::string encoded;
-    encoded.reserve(encoded_size + 1);
+    encoded.reserve(encoded_size);
     size_t byte_index = 0;
     uint32_t accumulator = 0;
 
-    for (uint8_t const unencoded_byte: in) {
+    for (uint8_t const unencoded_byte : in) {
         accumulator = accumulator * 256 + unencoded_byte;
-        if (++byte_index % 4 == 0)
-        {
+        if (++byte_index % 4 == 0) {
             for (uint32_t divise = 85 * 85 * 85 * 85; divise > 0; divise /= 85) {
                 encoded.push_back(encoder[accumulator / divise % 85]);
-}
-
+            }
             accumulator = 0;
         }
     }
 
-    out.assign(encoded.begin(), encoded.end());
-    KTH_ASSERT(out.size() == encoded_size);
-    return true;
+    KTH_ASSERT(encoded.size() == encoded_size);
+    return encoded;
 }
 
 // Accepts only strings bounded to 5 characters.
-bool decode_base85(data_chunk& out, std::string_view in)
-{
+// Span-based primary — zero allocation.
+std::expected<size_t, base85_errc>
+decode_base85(std::string_view in, std::span<uint8_t> out) {
     size_t const length = in.size();
     if (length % 5 != 0) {
-        return false;
-}
+        return std::unexpected(base85_errc::invalid_length);
+    }
 
     size_t const decoded_size = length * 4 / 5;
-    data_chunk decoded;
-    decoded.reserve(decoded_size);
+    if (out.size() < decoded_size) {
+        return std::unexpected(base85_errc::invalid_length);
+    }
+
+    size_t write_index = 0;
     size_t char_index = 0;
     uint32_t accumulator = 0;
 
-    for (uint8_t const encoded_character: in) {
+    for (uint8_t const encoded_character : in) {
         auto const position = encoded_character - 32;
-        if (position < 0 || position > 96) {
-            return false;
-}
+        // `decoder` has 96 entries (indices 0..95). `position == 96`
+        // (input byte 128) previously slipped through and read OOB.
+        if (position < 0 || position >= 96) {
+            return std::unexpected(base85_errc::invalid_character);
+        }
 
         accumulator = accumulator * 85 + decoder[position];
-        if (++char_index % 5 == 0)
-        {
+        if (++char_index % 5 == 0) {
             for (uint32_t divise = 256 * 256 * 256; divise > 0; divise /= 256) {
-                decoded.push_back(accumulator / divise % 256);
-}
-
+                out[write_index++] = accumulator / divise % 256;
+            }
             accumulator = 0;
         }
     }
 
-    out.assign(decoded.begin(), decoded.end());
-    KTH_ASSERT(out.size() == decoded_size);
-    return true;
+    KTH_ASSERT(write_index == decoded_size);
+    return decoded_size;
+}
+
+// Allocating overload — delegates to the span form.
+std::expected<data_chunk, base85_errc> decode_base85(std::string_view in) {
+    size_t const length = in.size();
+    if (length % 5 != 0) {
+        return std::unexpected(base85_errc::invalid_length);
+    }
+    data_chunk out(length * 4 / 5);
+    auto const written = decode_base85(in, out);
+    if ( ! written) {
+        return std::unexpected(written.error());
+    }
+    return out;
 }
 
 } // namespace kth

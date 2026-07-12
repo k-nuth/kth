@@ -4,48 +4,50 @@
 
 #include <kth/infrastructure/formats/base_58.hpp>
 
+#include <algorithm>
+#include <cstring>
+
 #include <boost/algorithm/string.hpp>
 
 #include <kth/infrastructure/utility/assert.hpp>
 
 namespace kth {
 
-std::string const base58_chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-
 bool is_base58(char ch) {
-    // This works because the base58 characters happen to be in sorted order
-    return std::binary_search(base58_chars.begin(), base58_chars.end(), ch);
+    return base58_decode_table[static_cast<uint8_t>(ch)] != 0xff;
 }
 
 bool is_base58(std::string_view text) {
-    auto const test = [](char ch) {
-        return is_base58(ch);
-    };
-
-    return std::all_of(text.begin(), text.end(), test);
+    return std::all_of(text.begin(), text.end(),
+        [](char ch) { return is_base58(ch); });
 }
 
+namespace {
+
 template <typename Data>
-auto search_first_nonzero(const Data& data) -> decltype(data.cbegin()) {
+auto search_first_nonzero(Data const& data) {
     auto first_nonzero = data.cbegin();
     while (first_nonzero != data.end() && *first_nonzero == 0) {
         ++first_nonzero;
     }
-
     return first_nonzero;
 }
 
-size_t count_leading_zeros(byte_span unencoded) {
-    // Skip and count leading '1's.
+size_t count_leading_zero_bytes(byte_span unencoded) {
     size_t leading_zeros = 0;
-    for (uint8_t const byte: unencoded) {
-        if (byte != 0) {
-            break;
-        }
-
+    for (uint8_t const byte : unencoded) {
+        if (byte != 0) break;
         ++leading_zeros;
     }
+    return leading_zeros;
+}
 
+size_t count_leading_ones(std::string_view encoded) {
+    size_t leading_zeros = 0;
+    for (char const c : encoded) {
+        if (c != base58_alphabet[0]) break;
+        ++leading_zeros;
+    }
     return leading_zeros;
 }
 
@@ -56,113 +58,109 @@ void pack_value(data_chunk& indexes, size_t carry) {
         *it = carry % 58;
         carry /= 58;
     }
-
     KTH_ASSERT(carry == 0);
 }
 
+} // namespace
+
 std::string encode_base58(byte_span unencoded) {
-    size_t leading_zeros = count_leading_zeros(unencoded);
+    size_t const leading_zeros = count_leading_zero_bytes(unencoded);
 
     // size = log(256) / log(58), rounded up.
     size_t const number_nonzero = unencoded.size() - leading_zeros;
     size_t const indexes_size = number_nonzero * 138 / 100 + 1;
 
-    // Allocate enough space in big-endian base58 representation.
     data_chunk indexes(indexes_size);
-
-    // Process the bytes.
     for (auto it = unencoded.begin() + leading_zeros; it != unencoded.end(); ++it) {
         pack_value(indexes, *it);
     }
 
-    // Skip leading zeroes in base58 result.
     auto first_nonzero = search_first_nonzero(indexes);
 
-    // Translate the result into a string.
     std::string encoded;
     size_t const estimated_size = leading_zeros + (indexes.end() - first_nonzero);
     encoded.reserve(estimated_size);
-    encoded.assign(leading_zeros, '1');
-
-    // Set actual main bytes.
+    encoded.assign(leading_zeros, base58_alphabet[0]);
     for (auto it = first_nonzero; it != indexes.end(); ++it) {
-        size_t const index = *it;
-        encoded += base58_chars[index];
+        encoded += base58_alphabet[*it];
     }
-
     return encoded;
 }
 
-size_t count_leading_zeros(std::string_view encoded) {
-    // Skip and count leading '1's.
-    size_t leading_zeros = 0;
-    for (uint8_t const digit: encoded) {
-        if (digit != base58_chars[0]) {
-            break;
+// Zero-allocation decode into a caller-supplied buffer.
+//
+// The base256 conversion is done in-place on the tail of `out` (used
+// as scratch), then the payload is compacted to sit right after the
+// leading-zero prefix. Caller must provide at least
+// `leading_zeros + (in.size() - leading_zeros) * 733/1000 + 1` bytes;
+// otherwise the decode surfaces `size_mismatch`.
+std::expected<size_t, base58_errc>
+decode_base58(std::string_view in, std::span<uint8_t> out) {
+    size_t const leading_zeros = count_leading_ones(in);
+    size_t const payload_capacity = (in.size() - leading_zeros) * 733 / 1000 + 1;
+
+    if (out.size() < leading_zeros + payload_capacity) {
+        return std::unexpected(base58_errc::size_mismatch);
     }
 
-        ++leading_zeros;
-    }
+    // Use the tail of `out` (skipping the reserved leading-zero slots)
+    // as the big-endian base256 scratch. Zero it first — subsequent
+    // multiply-add writes accumulate into it.
+    auto scratch = out.subspan(leading_zeros, payload_capacity);
+    std::fill(scratch.begin(), scratch.end(), 0);
 
-    return leading_zeros;
-}
-
-void unpack_char(data_chunk& data, size_t carry) {
-    for (auto it = data.rbegin(); it != data.rend(); it++) {
-        carry += 58 * (*it);
-        *it = carry % 256;
-        carry /= 256;
-    }
-
-    KTH_ASSERT(carry == 0);
-}
-
-bool decode_base58(data_chunk& out, std::string_view in) {
-    // Trim spaces and newlines around the string.
-    auto const leading_zeros = count_leading_zeros(in);
-
-    // log(58) / log(256), rounded up.
-    size_t const data_size = in.size() * 733 / 1000 + 1;
-
-    // Allocate enough space in big-endian base256 representation.
-    data_chunk data(data_size);
-
-    // Process the characters.
     for (auto it = in.begin() + leading_zeros; it != in.end(); ++it) {
-        auto const carry = base58_chars.find(*it);
-        if (carry == std::string::npos) {
-            return false;
+        auto const digit = base58_decode_table[static_cast<uint8_t>(*it)];
+        if (digit == 0xff) {
+            return std::unexpected(base58_errc::invalid_character);
         }
-
-        unpack_char(data, carry);
+        // In-place base256 multiply-add: scratch = scratch * 58 + digit.
+        size_t carry = digit;
+        for (auto sit = scratch.rbegin(); sit != scratch.rend(); ++sit) {
+            carry += 58 * (*sit);
+            *sit = carry % 256;
+            carry /= 256;
+        }
+        // The `payload_capacity = ceil(N * log(58)/log(256))` sizing
+        // above is a strict upper bound, so `carry == 0` at loop end
+        // holds for every valid input. Return an error instead of a
+        // Release-silent `KTH_ASSERT` so any future sizing regression
+        // surfaces as a decode failure, not a truncated result.
+        if (carry != 0) {
+            return std::unexpected(base58_errc::size_mismatch);
+        }
     }
 
-    // Skip leading zeroes in data.
-    auto first_nonzero = search_first_nonzero(data);
+    // First nonzero in scratch marks the start of the actual payload.
+    size_t skip = 0;
+    while (skip < scratch.size() && scratch[skip] == 0) {
+        ++skip;
+    }
+    size_t const payload_size = scratch.size() - skip;
 
-    // Copy result into output vector.
-    data_chunk decoded;
-    size_t const estimated_size = leading_zeros + (data.end() - first_nonzero);
-    decoded.reserve(estimated_size);
-    decoded.assign(leading_zeros, 0x00);
-    decoded.insert(decoded.end(), first_nonzero, data.cend());
+    if (skip > 0) {
+        std::memmove(out.data() + leading_zeros,
+                     out.data() + leading_zeros + skip,
+                     payload_size);
+    }
+    std::fill(out.begin(), out.begin() + leading_zeros, 0);
 
-    out = decoded;
-    return true;
+    return leading_zeros + payload_size;
 }
 
-// For support of template implementation only, do not call directly.
-bool decode_base58_private(uint8_t* out, size_t out_size, char const* in) {
-    data_chunk buffer;
-    if ( ! decode_base58(buffer, in) || buffer.size() != out_size) {
-        return false;
-    }
+// Allocating overload — sizes `out` for the worst case, delegates to
+// the span form, then trims. One heap allocation, no intermediate copy.
+std::expected<data_chunk, base58_errc> decode_base58(std::string_view in) {
+    size_t const leading_zeros = count_leading_ones(in);
+    size_t const payload_capacity = (in.size() - leading_zeros) * 733 / 1000 + 1;
 
-    for (size_t i = 0; i < out_size; ++i) {
-        out[i] = buffer[i];
+    data_chunk out(leading_zeros + payload_capacity);
+    auto const written = decode_base58(in, out);
+    if ( ! written) {
+        return std::unexpected(written.error());
     }
-
-    return true;
+    out.resize(*written);
+    return out;
 }
 
 } // namespace kth

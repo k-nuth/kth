@@ -39,20 +39,20 @@ expect<hd_private> hd_private::parse_from(std::string_view encoded) {
 
 // static
 expect<hd_private> hd_private::parse_from_with_public_prefix(std::string_view encoded, uint32_t public_prefix) {
-    hd_key key;
-    if ( ! decode_base58(key, std::string{encoded})) {
+    auto const key = decode_base58<hd_key_size>(encoded);
+    if ( ! key) {
         return std::unexpected(kth::error::illegal_value);
     }
-    return from_key_impl(key, public_prefix);
+    return from_key_impl(*key, public_prefix);
 }
 
 // static
 expect<hd_private> hd_private::parse_from_with_prefixes(std::string_view encoded, uint64_t prefixes) {
-    hd_key key;
-    if ( ! decode_base58(key, std::string{encoded})) {
+    auto const key = decode_base58<hd_key_size>(encoded);
+    if ( ! key) {
         return std::unexpected(kth::error::illegal_value);
     }
-    return from_key_impl(key, prefixes);
+    return from_key_impl(*key, prefixes);
 }
 
 // static

@@ -61,6 +61,20 @@ constexpr bool decode_base16(uint8_t* out, size_t out_size, char const* in) {
 
 } // namespace detail
 
+constexpr std::expected<size_t, base16_errc>
+decode_base16(std::string_view in, std::span<uint8_t> out) {
+    if (in.size() % 2 != 0) {
+        return std::unexpected(base16_errc::odd_length);
+    }
+    if (in.size() / 2 != out.size()) {
+        return std::unexpected(base16_errc::size_mismatch);
+    }
+    if ( ! detail::decode_base16(out.data(), out.size(), in.data())) {
+        return std::unexpected(base16_errc::invalid_character);
+    }
+    return out.size();
+}
+
 constexpr std::expected<data_chunk, base16_errc> decode_base16(std::string_view in) {
     if (in.size() % 2 != 0) {
         return std::unexpected(base16_errc::odd_length);

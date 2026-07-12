@@ -35,11 +35,11 @@ byte_span base58::as_span() const noexcept {
 }
 
 std::expected<base58, std::error_code> base58::from_string(std::string_view text) noexcept {
-    data_chunk value;
-    if ( ! decode_base58(value, text)) {
+    auto value = decode_base58(text);
+    if ( ! value) {
         return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
-    return base58(std::move(value));
+    return base58(std::move(*value));
 }
 
 std::string base58::to_string() const {

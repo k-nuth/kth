@@ -16,11 +16,11 @@ namespace kth::domain::wallet {
 
 // static
 expect<ek_private> ek_private::parse_from(std::string_view encoded) {
-    encrypted_private key;
-    if ( ! decode_base58(key, std::string{encoded}) || ! verify_checksum(key)) {
+    auto const key = decode_base58<ek_private_decoded_size>(encoded);
+    if ( ! key || ! verify_checksum(*key)) {
         return std::unexpected(kth::error::illegal_value);
     }
-    return ek_private{key};
+    return ek_private{*key};
 }
 
 std::string ek_private::to_string() const {

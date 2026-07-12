@@ -71,15 +71,15 @@ ec_private ec_private::from_verified_secret(ec_secret const& secret, uint16_t ve
 
 // static
 expect<ec_private> ec_private::parse_from(std::string_view wif, uint8_t version) {
-    data_chunk decoded;
-    if ( ! decode_base58(decoded, std::string{wif}) || ! is_wif(decoded)) {
+    auto decoded = decode_base58(wif);
+    if ( ! decoded || ! is_wif(*decoded)) {
         return std::unexpected(kth::error::illegal_value);
     }
 
-    if (decoded.size() == wif_compressed_size) {
-        return from_compressed(to_array<wif_compressed_size>(decoded), version);
+    if (decoded->size() == wif_compressed_size) {
+        return from_compressed(to_array<wif_compressed_size>(*decoded), version);
     }
-    return from_uncompressed(to_array<wif_uncompressed_size>(decoded), version);
+    return from_uncompressed(to_array<wif_uncompressed_size>(*decoded), version);
 }
 
 // static

@@ -23,55 +23,55 @@ using namespace kth;
 }
 
 TEST_CASE("encode base85 empty test", "[base 85 tests]") {
-    std::string encoded;
-    REQUIRE(encode_base85(encoded, data_chunk()));
-    REQUIRE(encoded.empty());
+    auto const result = encode_base85(data_chunk());
+    REQUIRE(result);
+    REQUIRE(result->empty());
 }
 
 TEST_CASE("decode base85 empty test", "[base 85 tests]") {
-    data_chunk result;
-    REQUIRE(decode_base85(result, ""));
-    REQUIRE(result.empty());
+    auto const result = decode_base85("");
+    REQUIRE(result);
+    REQUIRE(result->empty());
 }
 
 TEST_CASE("encode base85 valid test", "[base 85 tests]") {
-    std::string encoded;
     data_chunk decoded(BASE85_DECODED);
-    REQUIRE(encode_base85(encoded, decoded));
-    REQUIRE(encoded == BASE85_ENCODED);
+    auto const result = encode_base85(decoded);
+    REQUIRE(result);
+    REQUIRE(*result == BASE85_ENCODED);
 }
 
 TEST_CASE("encode base85 invalid test", "[base 85 tests]") {
-    std::string encoded;
     data_chunk decoded(BASE85_DECODED_INVALID);
-    REQUIRE( ! encode_base85(encoded, decoded));
-    REQUIRE(encoded.empty());
+    auto const result = encode_base85(decoded);
+    REQUIRE( ! result);
+    REQUIRE(result.error() == base85_errc::invalid_length);
 }
 
 TEST_CASE("decode base85 valid test", "[base 85 tests]") {
-    data_chunk result;
-    REQUIRE(decode_base85(result, BASE85_ENCODED));
-    REQUIRE(result == data_chunk(BASE85_DECODED));
+    auto const result = decode_base85(BASE85_ENCODED);
+    REQUIRE(result);
+    REQUIRE(*result == data_chunk(BASE85_DECODED));
 }
 
 TEST_CASE("decode base85 invalid char test", "[base 85 tests]") {
-    data_chunk result;
-    REQUIRE( ! decode_base85(result, BASE85_ENCODED_INVALID_CHAR));
-    REQUIRE(result.empty());
+    auto const result = decode_base85(BASE85_ENCODED_INVALID_CHAR);
+    REQUIRE( ! result);
+    REQUIRE(result.error() == base85_errc::invalid_character);
 }
 
 TEST_CASE("decode base85 invalid length test", "[base 85 tests]") {
-    data_chunk result;
-    REQUIRE( ! decode_base85(result, BASE85_ENCODED_INVALID_LENGTH));
-    REQUIRE(result.empty());
+    auto const result = decode_base85(BASE85_ENCODED_INVALID_LENGTH);
+    REQUIRE( ! result);
+    REQUIRE(result.error() == base85_errc::invalid_length);
 }
 
 // The semicolon is not in the Z85 alphabet, and such characters are treated as
 // valid but with zero value in the reference implementation.
 TEST_CASE("decode base85 outside alphabet test", "[base 85 tests]") {
-    data_chunk result;
-    REQUIRE(decode_base85(result, ";;;;;"));
-    REQUIRE(result == data_chunk({ 0, 0, 0, 0 }));
+    auto const result = decode_base85(";;;;;");
+    REQUIRE(result);
+    REQUIRE(*result == data_chunk({ 0, 0, 0, 0 }));
 }
 
 // End Test Suite
