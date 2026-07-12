@@ -25,10 +25,14 @@ class payment_address;
 /// factory that validated its input, so accessors and serializers are
 /// always meaningful.
 struct KD_API ec_public {
-    static uint8_t const compressed_even;
-    static uint8_t const compressed_odd;
-    static uint8_t const uncompressed;
-    static uint8_t const mainnet_p2kh;
+    static constexpr uint8_t compressed_even = 0x02;
+    static constexpr uint8_t compressed_odd  = 0x03;
+    static constexpr uint8_t uncompressed    = 0x04;
+#if defined(KTH_CURRENCY_LTC)
+    static constexpr uint8_t mainnet_p2kh    = 0x30;
+#else
+    static constexpr uint8_t mainnet_p2kh    = 0x00;
+#endif
 
     /// Parse a base16-encoded key. `error::illegal_value` on malformed
     /// input or a value that fails EC curve verification.
@@ -55,20 +59,21 @@ struct KD_API ec_public {
     /// Wrap an already-compressed EC point that the caller has verified
     /// lies on the curve (or produced by an internal derivation step
     /// that guarantees it). No on-curve check is performed here.
-    [[nodiscard]]
-    static
-    ec_public from_verified_point(ec_compressed const& point, bool compress);
+    [[nodiscard]] static constexpr
+    ec_public from_verified_point(ec_compressed const& point, bool compress) noexcept {
+        return ec_public(point, compress);
+    }
 
     [[nodiscard]]
     friend auto operator<=>(ec_public const&, ec_public const&) = default;
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     ec_compressed const& value() const noexcept { return point_; }
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     ec_compressed const& point() const noexcept { return point_; }
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     bool compressed() const noexcept { return compress_; }
 
     /// Base16 encoding used by `fmt::formatter<ec_public>`.
@@ -88,6 +93,7 @@ struct KD_API ec_public {
     expect<payment_address> to_payment_address(uint8_t version = mainnet_p2kh) const;
 
 private:
+    constexpr
     ec_public(ec_compressed const& point, bool compress) noexcept
         : compress_(compress), point_(point) {}
 
