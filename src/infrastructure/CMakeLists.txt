@@ -248,6 +248,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/utility/deadline.cpp
     src/utility/socket.cpp
 
+    src/utility/duration_jitter.cpp
     src/utility/pseudo_random_broken_do_not_use.cpp
   )
 endif()
@@ -376,6 +377,7 @@ set(kth_headers
     include/kth/infrastructure/utility/pending.hpp
     include/kth/infrastructure/utility/prioritized_mutex.hpp
 
+    include/kth/infrastructure/utility/duration_jitter.hpp
     include/kth/infrastructure/utility/pseudo_random.hpp
     include/kth/infrastructure/utility/pseudo_random_broken_do_not_use.hpp
 
@@ -684,7 +686,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     set(kth_test_sources
       ${kth_test_sources}
-      test/utility/pseudo_random_broken_do_not_use.cpp
+      test/utility/duration_jitter.cpp
     )
   endif()
 

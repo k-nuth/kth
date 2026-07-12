@@ -10,11 +10,15 @@
 
 #include <kth/infrastructure/constants.hpp>
 #include <kth/infrastructure/define.hpp>
-#include <kth/infrastructure/utility/asio.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
 namespace kth {
 
+// WARNING: everything in this file is a non-CSPRNG built on a
+// thread-local Mersenne Twister seeded from a wall-clock reading. It is
+// unsuitable for nonces, keys, or any value whose secrecy or
+// unpredictability matters. Use it only for tests and diagnostics until
+// the callers are migrated to a real CSPRNG.
 struct KI_API pseudo_random_broken_do_not_use {
     template <typename Container>
     static void fill(Container& out) {
@@ -49,16 +53,6 @@ struct KI_API pseudo_random_broken_do_not_use {
      */
     static uint64_t next(uint64_t begin, uint64_t end);
 
-    /**
-     * Convert a time duration to a value in the range [max/ratio, max].
-     * @param[in]  maximum  The maximum value to return.
-     * @param[in]  ratio    The determinant of the minimum duration as the inverse
-     *                      portion of the maximum duration.
-     * @return              The randomized duration.
-     */
-    static asio::duration duration(asio::duration const& expiration,
-        uint8_t ratio=2);
-
 private:
     static std::mt19937& _get_twister_broken_do_not_use();
 };
@@ -82,16 +76,6 @@ KI_API uint64_t pseudo_random_broken_do_not_use(uint64_t begin, uint64_t end);
  * Fill a buffer with randomness using the default random engine.
  */
 KI_API void pseudo_random_broken_do_not_use_fill(data_chunk& out);
-
-/**
- * DEPRECATED
- * Convert a time duration to a value in the range [max/ratio, max].
- * @param[in]  maximum  The maximum value to return.
- * @param[in]  ratio    The determinant of the minimum duration as the inverse
- *                      portion of the maximum duration.
- * @return              The randomized duration.
- */
-KI_API asio::duration pseudo_randomize(asio::duration const& expiration, uint8_t ratio=2);
 
 } // namespace kth
 
