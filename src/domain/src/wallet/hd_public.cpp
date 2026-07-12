@@ -55,17 +55,8 @@ expect<hd_public> hd_public::from_hd_key_with_prefix(hd_key const& key, uint32_t
     return from_key_impl(key, prefix);
 }
 
-hd_public::hd_public(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage)
-    : chain_(chain_code), lineage_(lineage), point_(point)
-{}
-
 // Factories.
 // ----------------------------------------------------------------------------
-
-// static
-hd_public hd_public::from_verified_components(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage) {
-    return hd_public(point, chain_code, lineage);
-}
 
 // static
 expect<hd_public> hd_public::from_secret(ec_secret const& secret, hd_chain_code const& chain_code, hd_lineage const& lineage) {

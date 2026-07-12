@@ -71,9 +71,10 @@ struct KD_API hd_public {
     /// by an internal derivation step) into an `hd_public`. Caller is
     /// responsible for the on-curve invariant of `point`; no checks
     /// are performed here.
-    [[nodiscard]]
-    static
-    hd_public from_verified_components(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage);
+    [[nodiscard]] static constexpr
+    hd_public from_verified_components(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage) noexcept {
+        return hd_public(point, chain_code, lineage);
+    }
 
     [[nodiscard]]
     friend auto operator<=>(hd_public const& a, hd_public const& b) = default;
@@ -82,13 +83,13 @@ struct KD_API hd_public {
     [[nodiscard]]
     std::string to_string() const;
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     hd_chain_code const& chain_code() const noexcept { return chain_; }
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     hd_lineage const& lineage() const noexcept { return lineage_; }
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     ec_compressed const& point() const noexcept { return point_; }
 
     [[nodiscard]]
@@ -109,7 +110,9 @@ struct KD_API hd_public {
     void wipe() noexcept;
 
 private:
-    hd_public(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage);
+    constexpr
+    hd_public(ec_compressed const& point, hd_chain_code const& chain_code, hd_lineage const& lineage) noexcept
+        : chain_(chain_code), lineage_(lineage), point_(point) {}
 
     static
     expect<hd_public> from_key_impl(hd_key const& key);
