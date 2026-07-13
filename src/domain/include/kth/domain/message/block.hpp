@@ -32,13 +32,14 @@ public:
     using const_ptr_list_ptr = std::shared_ptr<const_ptr_list>;
     using const_ptr_list_const_ptr = std::shared_ptr<const const_ptr_list>;
 
-    block() = default;
-
+    // Wrapping an already-constructed (hence valid) chain::block.
     block(chain::block const& x);
     block(chain::block&& x);
 
-    block(chain::header const& header, chain::transaction::list&& transactions);
-    block(chain::header const& header, chain::transaction::list const& transactions);
+    /// Build from parts. Mirrors `chain::block::create`: returns
+    /// `error::block_construction_empty` for the empty sentinel.
+    static
+    expect<block> create(chain::header header, chain::transaction::list transactions);
 
     block& operator=(chain::block&& x);
 

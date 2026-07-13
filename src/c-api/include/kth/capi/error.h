@@ -252,6 +252,11 @@ typedef enum kth_error_code {
     kth_ec_bad_merkle_block_count,
     kth_ec_illegal_value,
 
+    // Valid-by-construction guard: `block::create` was given parts that would
+    // be the empty sentinel (no transactions and an all-zero header). Distinct
+    // from the consensus `empty_block` check performed during validation.
+    kth_ec_block_construction_empty,
+
     // Database cache
     kth_ec_height_not_found,
     kth_ec_hash_not_found,

@@ -22,10 +22,6 @@ extern "C" {
 
 // Constructors
 
-kth_block_mut_t kth_chain_block_construct_default(void) {
-    return kth::leak<cpp_t>();
-}
-
 kth_error_code_t kth_chain_block_construct_from_data(uint8_t const* data, kth_size_t n, KTH_OUT_OWNED kth_block_mut_t* out) {
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
@@ -36,17 +32,6 @@ kth_error_code_t kth_chain_block_construct_from_data(uint8_t const* data, kth_si
     *out = kth::leak(std::move(*result));
     return kth_ec_success;
 }
-
-kth_block_mut_t kth_chain_block_construct(kth_header_const_t header, kth_transaction_list_const_t transactions) {
-    KTH_PRECONDITION(header != nullptr);
-    KTH_PRECONDITION(transactions != nullptr);
-    auto const& header_cpp = kth::cpp_ref<kth::domain::chain::header>(header);
-    auto const& transactions_cpp = kth::cpp_ref<kth::domain::chain::transaction::list>(transactions);
-    return kth::leak<cpp_t>(header_cpp, transactions_cpp);
-}
-
-
-// Static factories
 
 kth_block_mut_t kth_chain_block_genesis_mainnet(void) {
     return kth::leak(cpp_t::genesis_mainnet());
@@ -72,6 +57,19 @@ kth_block_mut_t kth_chain_block_genesis_chipnet(void) {
     return kth::leak(cpp_t::genesis_chipnet());
 }
 
+kth_error_code_t kth_chain_block_create(kth_header_const_t header, kth_transaction_list_const_t transactions, KTH_OUT_OWNED kth_block_mut_t* out) {
+    KTH_PRECONDITION(header != nullptr);
+    KTH_PRECONDITION(transactions != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto const& header_cpp = kth::cpp_ref<kth::domain::chain::header>(header);
+    auto const& transactions_cpp = kth::cpp_ref<kth::domain::chain::transaction::list>(transactions);
+    auto result = cpp_t::create(header_cpp, transactions_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
+}
+
 
 // Destructor
 
@@ -94,6 +92,12 @@ kth_bool_t kth_chain_block_equals(kth_block_const_t self, kth_block_const_t othe
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
     return kth::eq<cpp_t>(self, other);
+}
+
+kth_bool_t kth_chain_block_not_equal(kth_block_const_t self, kth_block_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::ne<cpp_t>(self, other);
 }
 
 
@@ -183,20 +187,8 @@ void kth_chain_block_set_transactions(kth_block_mut_t self, kth_transaction_list
     kth::cpp_ref<cpp_t>(self).set_transactions(value_cpp);
 }
 
-void kth_chain_block_set_header(kth_block_mut_t self, kth_header_const_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth::cpp_ref<kth::domain::chain::header>(value);
-    kth::cpp_ref<cpp_t>(self).set_header(value_cpp);
-}
-
 
 // Predicates
-
-kth_bool_t kth_chain_block_is_valid(kth_block_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid());
-}
 
 kth_bool_t kth_chain_block_is_extra_coinbases(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
@@ -266,11 +258,6 @@ kth_size_t kth_chain_block_signature_operations(kth_block_const_t self, kth_bool
     auto const bip16_cpp = kth::int_to_bool(bip16);
     auto const bip141_cpp = kth::int_to_bool(bip141);
     return kth::cpp_ref<cpp_t>(self).signature_operations(bip16_cpp, bip141_cpp);
-}
-
-void kth_chain_block_reset(kth_block_mut_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).reset();
 }
 
 

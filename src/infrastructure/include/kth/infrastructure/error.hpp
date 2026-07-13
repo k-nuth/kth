@@ -283,6 +283,11 @@ enum error_code_t {
     bad_merkle_block_count,
     illegal_value,
 
+    // Valid-by-construction guard: `block::create` was given parts that would
+    // be the empty sentinel (no transactions and an all-zero header). Distinct
+    // from the consensus `empty_block` check performed during validation.
+    block_construction_empty,
+
     // Database cache
     height_not_found,
     hash_not_found,
