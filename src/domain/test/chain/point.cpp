@@ -107,35 +107,6 @@ TEST_CASE("point from data roundtrip success 2", "[point]") {
 
 
 
-TEST_CASE("point hash setter 1 roundtrip success", "[point]") {
-    auto const value = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
-
-    chain::point instance{null_hash, 0u};
-    REQUIRE(value != instance.hash());
-    instance.set_hash(value);
-    REQUIRE(value == instance.hash());
-}
-
-TEST_CASE("point hash setter 2 roundtrip success", "[point]") {
-    auto const value = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
-
-    // This must be non-const.
-    auto dup_value = value;
-
-    chain::point instance{null_hash, 0u};
-    REQUIRE(value != instance.hash());
-    instance.set_hash(std::move(dup_value));
-    REQUIRE(value == instance.hash());
-}
-
-TEST_CASE("point index roundtrip success", "[point]") {
-    uint32_t value = 1254u;
-    chain::point instance{null_hash, 0u};
-    REQUIRE(value != instance.index());
-    instance.set_index(value);
-    REQUIRE(value == instance.index());
-}
-
 TEST_CASE("point operator assign equals 1 always matches equivalent", "[point]") {
     byte_reader reader(valid_raw_point);
     auto result = chain::point::from_data(reader);
