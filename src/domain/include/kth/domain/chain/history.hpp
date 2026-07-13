@@ -43,6 +43,9 @@ struct KD_API history_compact {
         /// checksum from the output row with spend_checksum(row.point)
         uint64_t previous_checksum;
     };
+
+    friend
+    auto operator<=>(history_compact const&, history_compact const&) = default;
 };
 
 /// This structure is used between client and API callers in v3.
@@ -68,6 +71,9 @@ struct KD_API history {
         /// During expansion this value temporarily doubles as a checksum.
         uint64_t temporary_checksum;
     };
+
+    friend
+    auto operator<=>(history const&, history const&) = default;
 };
 
 } // namespace kth::domain::chain

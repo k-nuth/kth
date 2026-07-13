@@ -22,6 +22,9 @@ struct KD_API stealth_compact {
     hash_digest ephemeral_public_key_hash;
     short_hash public_key_hash;
     hash_digest transaction_hash;
+
+    friend
+    auto operator<=>(stealth_compact const&, stealth_compact const&) = default;
 };
 
 /// This structure is used between client and API callers in v2/v3.
@@ -32,6 +35,9 @@ struct KD_API stealth {
     ec_compressed ephemeral_public_key;
     short_hash public_key_hash;
     hash_digest transaction_hash;
+
+    friend
+    auto operator<=>(stealth const&, stealth const&) = default;
 };
 
 } // namespace kth::domain::chain
