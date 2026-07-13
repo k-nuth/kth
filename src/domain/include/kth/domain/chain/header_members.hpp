@@ -95,15 +95,6 @@ public:
         return writer.write_little_endian<uint32_t>(nonce_);
     }
 
-    [[nodiscard]]
-    constexpr bool is_valid() const {
-        return version_ != 0 ||
-               previous_block_hash_ != null_hash ||
-               merkle_ != null_hash ||
-               timestamp_ != 0 ||
-               bits_ != 0 ||
-               nonce_ != 0;
-    }
 
     // Properties (size).
     //-------------------------------------------------------------------------

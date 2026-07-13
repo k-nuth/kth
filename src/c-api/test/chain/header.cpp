@@ -46,9 +46,9 @@ static kth_hash_t const kMerkle = {{
     0x3a, 0x9f, 0xb8, 0xaa, 0x4b, 0x1e, 0x5e, 0x4a
 }};
 
-// The all-zero header is the `is_valid() == false` sentinel. There is no
-// default constructor (the domain type is valid-by-construction), so build it
-// explicitly from zero fields.
+// A header with all-zero fields, used where a test needs a header distinct
+// from a populated one. There is no default constructor (the domain type is
+// valid-by-construction), so build it explicitly from zero fields.
 static kth_hash_t const kZeroHash = {{ 0 }};
 
 static kth_header_mut_t make_zero_header(void) {
@@ -59,17 +59,10 @@ static kth_header_mut_t make_zero_header(void) {
 // Constructors
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Header - all-zero header is invalid", "[C-API Header]") {
-    kth_header_mut_t header = make_zero_header();
-    REQUIRE(kth_chain_header_is_valid(header) == 0);
-    kth_chain_header_destruct(header);
-}
-
 TEST_CASE("C-API Header - field constructor preserves all fields", "[C-API Header]") {
     kth_header_mut_t header = kth_chain_header_construct(
         kVersion, &kPrevHash, &kMerkle, kTimestamp, kBits, kNonce);
 
-    REQUIRE(kth_chain_header_is_valid(header) != 0);
     REQUIRE(kth_chain_header_version(header)   == kVersion);
     REQUIRE(kth_chain_header_timestamp(header) == kTimestamp);
     REQUIRE(kth_chain_header_bits(header)      == kBits);
@@ -111,7 +104,6 @@ TEST_CASE("C-API Header - to_data / from_data roundtrip", "[C-API Header]") {
     REQUIRE(ec == kth_ec_success);
     REQUIRE(parsed != NULL);
 
-    REQUIRE(kth_chain_header_is_valid(parsed) != 0);
     REQUIRE(kth_chain_header_equals(expected, parsed) != 0);
 
     kth_core_destruct_array(raw);
@@ -158,7 +150,6 @@ TEST_CASE("C-API Header - copy preserves all fields", "[C-API Header]") {
         kVersion, &kPrevHash, &kMerkle, kTimestamp, kBits, kNonce);
     kth_header_mut_t copy = kth_chain_header_copy(original);
 
-    REQUIRE(kth_chain_header_is_valid(copy) != 0);
     REQUIRE(kth_chain_header_equals(original, copy) != 0);
     REQUIRE(kth_chain_header_version(copy)   == kVersion);
     REQUIRE(kth_chain_header_timestamp(copy) == kTimestamp);

@@ -1664,7 +1664,7 @@ void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const
 
     for (auto it = inventories.begin(); it != inventories.end();) {
         auto const header = internal_db.get_header(it->hash());
-        if (it->is_block_type() && header && header->first.is_valid()) {
+        if (it->is_block_type() && header) {
             it = inventories.erase(it);
         } else {
             ++it;

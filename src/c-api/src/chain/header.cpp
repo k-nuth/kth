@@ -137,11 +137,6 @@ kth_hash_t kth_chain_header_hash(kth_header_const_t self) {
 
 // Predicates
 
-kth_bool_t kth_chain_header_is_valid(kth_header_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid());
-}
-
 kth_bool_t kth_chain_header_is_valid_timestamp(kth_header_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid_timestamp());

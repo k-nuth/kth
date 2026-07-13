@@ -32,11 +32,9 @@ constexpr hash_digest ct_merkle = {{
     0x3a, 0x9f, 0xb8, 0xaa, 0x4b, 0x1e, 0x5e, 0x4a
 }};
 
-// Test: the all-zero header (is_valid() == false sentinel) is constexpr.
-// There is no default constructor (header is valid-by-construction); build the
-// sentinel explicitly from zero fields.
+// Test: the all-zero header is constexpr-constructible. There is no default
+// constructor (header is valid-by-construction); build it from zero fields.
 constexpr chain::header ct_default_header{0u, hash_digest{}, hash_digest{}, 0u, 0u, 0u};
-static_assert( ! ct_default_header.is_valid(), "all-zero header should be invalid");
 static_assert(ct_default_header.version() == 0, "default version should be 0");
 static_assert(ct_default_header.timestamp() == 0, "default timestamp should be 0");
 static_assert(ct_default_header.bits() == 0, "default bits should be 0");
@@ -52,7 +50,6 @@ constexpr chain::header ct_header_from_fields{
     0x1d00ffffu,  // bits
     2083236893u   // nonce
 };
-static_assert(ct_header_from_fields.is_valid(), "constructed header should be valid");
 static_assert(ct_header_from_fields.version() == 1u, "version mismatch");
 static_assert(ct_header_from_fields.timestamp() == 1231006505u, "timestamp mismatch");
 static_assert(ct_header_from_fields.bits() == 0x1d00ffffu, "bits mismatch");
@@ -169,11 +166,6 @@ static_assert(ct_lambda_header.version() == 42u, "lambda header version");
 
 // Start Test Suite: chain header tests
 
-TEST_CASE("chain header constructor 1 always initialized invalid", "[chain header]") {
-    chain::header instance{0u, null_hash, null_hash, 0u, 0u, 0u};
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("chain header constructor 2 always equals params", "[chain header]") {
     uint32_t const version = 10u;
     auto const previous = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
@@ -183,7 +175,6 @@ TEST_CASE("chain header constructor 2 always equals params", "[chain header]") {
     uint32_t const nonce = 68644u;
 
     chain::header instance(version, previous, merkle, timestamp, bits, nonce);
-    REQUIRE(instance.is_valid());
     REQUIRE(version == instance.version());
     REQUIRE(timestamp == instance.timestamp());
     REQUIRE(bits == instance.bits());
@@ -203,7 +194,6 @@ TEST_CASE("chain header constructor 3 always equals params", "[chain header]") {
     auto merkle = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     chain::header instance(version, std::move(previous), std::move(merkle), timestamp, bits, nonce);
-    REQUIRE(instance.is_valid());
     REQUIRE(version == instance.version());
     REQUIRE(timestamp == instance.timestamp());
     REQUIRE(bits == instance.bits());
@@ -222,7 +212,6 @@ TEST_CASE("chain header constructor 4 always equals params", "[chain header]") {
         68644u);
 
     chain::header instance(expected);
-    REQUIRE(instance.is_valid());
     REQUIRE(expected == instance);
 }
 
@@ -237,7 +226,6 @@ TEST_CASE("chain header constructor 5 always equals params", "[chain header]") {
         68644u);
 
     chain::header instance(std::move(expected));
-    REQUIRE(instance.is_valid());
     REQUIRE(expected == instance);
 }
 
@@ -264,7 +252,6 @@ TEST_CASE("chain header from data valid input success", "[chain header]") {
     REQUIRE(result_exp);
     auto const& result = *result_exp;
 
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
 }
 
@@ -283,7 +270,6 @@ TEST_CASE("chain header factory from data 2 valid input success", "[chain header
     REQUIRE(result_exp);
     auto const& result = *result_exp;
 
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
 }
 
@@ -302,7 +288,6 @@ TEST_CASE("chain header factory from data 3 valid input success", "[chain header
     REQUIRE(result_exp);
     auto const& result = *result_exp;
 
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
 }
 
@@ -470,13 +455,10 @@ TEST_CASE("chain header operator assign equals always matches equivalent", "[cha
         6523454u,
         68644u);
 
-    REQUIRE(value.is_valid());
 
     chain::header instance{0u, null_hash, null_hash, 0u, 0u, 0u};
-    REQUIRE( ! instance.is_valid());
 
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
 }
 
 TEST_CASE("chain header operator boolean equals duplicates returns true", "[chain header]") {

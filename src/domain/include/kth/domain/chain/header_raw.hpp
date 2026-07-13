@@ -240,13 +240,6 @@ public:
         return writer.write_bytes(std::span<uint8_t const>{data_.data(), serialized_size_wire});
     }
 
-    [[nodiscard]]
-    constexpr bool is_valid() const {
-        // Check if any field is non-zero (header has been set).
-        constexpr std::array<uint8_t, serialized_size_wire> zero_data{};
-        return data_ != zero_data;
-    }
-
     // Properties (size).
     //-------------------------------------------------------------------------
 
