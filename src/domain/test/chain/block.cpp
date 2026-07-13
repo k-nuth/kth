@@ -665,8 +665,9 @@ TEST_CASE("validate block is distinct tx set partialy distinct not adjacent by v
 #if defined(KTH_CURRENCY_BCH)
 TEST_CASE("validate block is cash pow valid true", "[block is distinct transaction set]") {
     constexpr uint32_t old_bits = 402736949;
-    domain::chain::compact const bits(old_bits);
-    uint256_t const target(bits);
+    auto const bits = domain::chain::compact::from_compact(old_bits);
+    REQUIRE(bits);
+    uint256_t const target(bits->big());
     REQUIRE(domain::chain::compact(domain::chain::chain_state::difficulty_adjustment_cash(target)).normal() == 402757890);
 }
 #endif  //KTH_CURRENCY_BCH

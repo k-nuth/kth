@@ -6,6 +6,7 @@
 
 #include <cstdint>
 
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 
@@ -85,18 +86,17 @@ size_t logical_size(uint256_t value) {
 // Constructors
 //-----------------------------------------------------------------------------
 
-compact::compact(uint32_t compact) {
-    overflowed_ = !from_compact(big_, compact);
-    normal_ = from_big(big_);
-}
-
 compact::compact(uint256_t const& big)
-    : big_(big), overflowed_(false) {
-    normal_ = from_big(big_);
-}
+    : big_(big), normal_(from_big(big_))
+{}
 
-bool compact::is_overflowed() const {
-    return overflowed_;
+// static
+expect<compact> compact::from_compact(uint32_t compact) {
+    uint256_t big;
+    if ( ! expand(big, compact)) {
+        return std::unexpected(error::overflow);
+    }
+    return chain::compact(big);
 }
 
 uint32_t compact::normal() const {
@@ -112,7 +112,7 @@ uint256_t const& compact::big() const {
 }
 
 // Returns false on overflow, negatives are converted to zero.
-bool compact::from_compact(uint256_t& out, uint32_t compact) {
+bool compact::expand(uint256_t& out, uint32_t compact) {
     //*************************************************************************
     // CONSENSUS: The sign bit is not honored and it instead produces zero.
     // This results from having used a signed data structure for unsigned data.

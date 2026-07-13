@@ -114,13 +114,13 @@ hash_digest hash(header const& hdr) {
 //-----------------------------------------------------------------------------
 
 uint256_t header::proof(uint32_t bits) {
-    compact const header_bits(bits);
+    auto const header_bits = compact::from_compact(bits);
 
-    if (header_bits.is_overflowed()) {
+    if ( ! header_bits) {
         return 0;
     }
 
-    uint256_t const& target = header_bits.big();
+    uint256_t const& target = header_bits->big();
 
     //*************************************************************************
     // CONSENSUS: satoshi will throw division by zero in the case where the
@@ -154,14 +154,17 @@ bool header::is_valid_timestamp() const {
 
 // [CheckProofOfWork]
 bool header::is_valid_proof_of_work(hash_digest const& hash, bool retarget) const {
-    compact const compact_bits(bits_);
-    static uint256_t const pow_limit(compact{work_limit(retarget)});
+    auto const compact_bits = compact::from_compact(bits_);
+    // `work_limit()` returns a consensus pow-limit constant (0x1d00ffff /
+    // 0x207fffff), which is a valid compact encoding by definition, so
+    // `from_compact` never fails here and `.value()` cannot throw.
+    static uint256_t const pow_limit(compact::from_compact(work_limit(retarget)).value());
 
-    if (compact_bits.is_overflowed()) {
+    if ( ! compact_bits) {
         return false;
     }
 
-    uint256_t const& target = compact_bits.big();
+    uint256_t const& target = compact_bits->big();
 
     // Ensure claimed work is within limits.
     if (target < 1 || target > pow_limit) {

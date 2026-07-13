@@ -960,16 +960,34 @@ auto select_1_3_unstable(T&& a, U&& b, V&& c, R r) {
 
 // DAA/aserti3-2d: 2020-Nov-15 Hard fork
 uint32_t chain_state::daa_aserti3_2d(data const& values, assert_anchor_block_info_t const& assert_anchor_block_info, uint32_t half_life) {
-    //TODO(fernando): pre and postconditions!
+    // Preconditions (checked in debug only; matches BCHN
+    // GetNextASERTWorkRequired):
+    //  - The ASERT anchor is an ancestor of the block being evaluated, so the
+    //    height difference is non-negative (`values.height` and the anchor
+    //    height are unsigned; a smaller `values.height` would underflow).
+    //  - `half_life` is a positive network constant; it is the divisor inside
+    //    `shifts_frac`, so zero would be a division by zero.
+    KTH_ASSERT(values.height >= assert_anchor_block_info.height);
+    KTH_ASSERT(half_life > 0);
 
-    static uint256_t const pow_limit(compact{retarget_proof_of_work_limit});
+    // `retarget_proof_of_work_limit` is a consensus constant and a valid
+    // compact encoding, so `from_compact` never fails and `.value()` cannot
+    // throw. Same rationale for every pow-limit `.value()` below.
+    static uint256_t const pow_limit(compact::from_compact(retarget_proof_of_work_limit).value());
 
     auto const time_diff = timestamp_high(values) - assert_anchor_block_info.ancestor_timestamp;
     auto const height_diff = values.height - assert_anchor_block_info.height;
 
-    uint256_t const anchor_target(compact{assert_anchor_block_info.bits});
+    // The ASERT anchor bits come from a fixed consensus checkpoint, so the
+    // compact is valid by definition and `.value()` cannot throw.
+    uint256_t const anchor_target(compact::from_compact(assert_anchor_block_info.bits).value());
 
     auto next_target = daa::aserti3_2d(anchor_target, target_spacing_seconds, time_diff, height_diff, pow_limit, half_life);
+
+    // Postcondition (matches BCHN): `aserti3_2d` clamps the target to
+    // [1, pow_limit] — a zero target is floored to 1 and anything above the
+    // limit is capped — so the result is always a valid, in-range target.
+    KTH_ASSERT(next_target >= uint256_t(1) && next_target <= pow_limit);
     return compact(next_target).normal();
 }
 
@@ -1012,7 +1030,8 @@ uint32_t chain_state::daa_cw144(data const& values) {
 
     work /= actual_timespan;
     auto next_target = (-1 * work) / work;  //Compute target result
-    uint256_t pow_limit(compact{retarget_proof_of_work_limit});
+    // Consensus pow-limit constant: valid compact, `.value()` cannot throw.
+    uint256_t pow_limit(compact::from_compact(retarget_proof_of_work_limit).value());
 
     if (next_target.compare(pow_limit) == 1) {
         return retarget_proof_of_work_limit;
@@ -1098,20 +1117,25 @@ uint32_t chain_state::work_required(data const& values, config::network network,
 
 #if defined(KTH_CURRENCY_BCH)
 uint32_t chain_state::work_required_adjust_cash(data const& values) {
-    compact const bits(bits_high(values));
-    uint256_t target(bits);
+    // Previous-block bits were already validated (non-overflowing) at block
+    // accept time, so the compact is known-good here and `.value()` cannot
+    // throw.
+    auto const bits = compact::from_compact(bits_high(values));
+    uint256_t target(bits.value());
     target = difficulty_adjustment_cash(target);  //target += (target >> 2);
-    static uint256_t const pow_limit(compact{retarget_proof_of_work_limit});
+    // Consensus pow-limit constant: valid compact, `.value()` cannot throw.
+    static uint256_t const pow_limit(compact::from_compact(retarget_proof_of_work_limit).value());
     return target > pow_limit ? retarget_proof_of_work_limit : compact(target).normal();
 }
 #endif  //KTH_CURRENCY_BCH
 
 // [CalculateNextWorkRequired]
 uint32_t chain_state::work_required_retarget(data const& values) {
-    compact const bits(bits_high(values));
+    // Previous-block bits were validated (non-overflowing) at accept time.
+    auto const bits = compact::from_compact(bits_high(values));
 
 #if defined(KTH_CURRENCY_LTC)
-    uint256_t target(bits);
+    uint256_t target(bits.value());
     static uint256_t const pow_limit("0x00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
     // hash_number retarget_new;
     // retarget_new.set_compact(bits_high(values));
@@ -1139,10 +1163,11 @@ uint32_t chain_state::work_required_retarget(data const& values) {
     return target > pow_limit ? retarget_proof_of_work_limit : compact(target).normal();
 
 #else   //KTH_CURRENCY_LTC
-    static uint256_t const pow_limit(compact{retarget_proof_of_work_limit});
-    KTH_ASSERT_MSG( ! bits.is_overflowed(), "previous block has bad bits");
+    // Consensus pow-limit constant: valid compact, `.value()` cannot throw.
+    static uint256_t const pow_limit(compact::from_compact(retarget_proof_of_work_limit).value());
+    KTH_ASSERT_MSG(bits.has_value(), "previous block has bad bits");
 
-    uint256_t target(bits);
+    uint256_t target(bits.value());
     target *= retarget_timespan(values);
     target /= target_timespan_seconds;
 
