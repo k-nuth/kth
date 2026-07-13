@@ -94,7 +94,8 @@ static kth_merkle_block_mut_t make_fixture(void) {
 
 TEST_CASE("C-API MerkleBlock - create rejects the empty sentinel",
           "[C-API MerkleBlock]") {
-    kth_header_mut_t header = kth_chain_header_construct_default();
+    kth_hash_t const zero = {{ 0 }};
+    kth_header_mut_t header = kth_chain_header_construct(0u, &zero, &zero, 0u, 0u, 0u);
     kth_hash_list_mut_t hashes = kth_core_hash_list_construct_default();
     kth_merkle_block_mut_t mb = NULL;
     kth_error_code_t ec = kth_chain_merkle_block_create(

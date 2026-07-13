@@ -46,12 +46,21 @@ static kth_hash_t const kMerkle = {{
     0x3a, 0x9f, 0xb8, 0xaa, 0x4b, 0x1e, 0x5e, 0x4a
 }};
 
+// The all-zero header is the `is_valid() == false` sentinel. There is no
+// default constructor (the domain type is valid-by-construction), so build it
+// explicitly from zero fields.
+static kth_hash_t const kZeroHash = {{ 0 }};
+
+static kth_header_mut_t make_zero_header(void) {
+    return kth_chain_header_construct(0u, &kZeroHash, &kZeroHash, 0u, 0u, 0u);
+}
+
 // ---------------------------------------------------------------------------
 // Constructors
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Header - default construct is invalid", "[C-API Header]") {
-    kth_header_mut_t header = kth_chain_header_construct_default();
+TEST_CASE("C-API Header - all-zero header is invalid", "[C-API Header]") {
+    kth_header_mut_t header = make_zero_header();
     REQUIRE(kth_chain_header_is_valid(header) == 0);
     kth_chain_header_destruct(header);
 }
@@ -165,7 +174,7 @@ TEST_CASE("C-API Header - equals duplicates", "[C-API Header]") {
         kVersion, &kPrevHash, &kMerkle, kTimestamp, kBits, kNonce);
     kth_header_mut_t b = kth_chain_header_construct(
         kVersion, &kPrevHash, &kMerkle, kTimestamp, kBits, kNonce);
-    kth_header_mut_t c = kth_chain_header_construct_default();
+    kth_header_mut_t c = make_zero_header();
 
     REQUIRE(kth_chain_header_equals(a, b) != 0);
     REQUIRE(kth_chain_header_equals(a, c) == 0);
@@ -239,7 +248,8 @@ TEST_CASE("C-API Header - construct_unsafe null merkle aborts",
 
 TEST_CASE("C-API Header - to_data null out_size aborts",
           "[C-API Header][precondition]") {
-    kth_header_mut_t header = kth_chain_header_construct_default();
+    kth_header_mut_t header = kth_chain_header_construct(
+        kVersion, &kPrevHash, &kMerkle, kTimestamp, kBits, kNonce);
     KTH_EXPECT_ABORT(kth_chain_header_to_data(header, 1, NULL));
     kth_chain_header_destruct(header);
 }

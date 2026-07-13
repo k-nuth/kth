@@ -16,10 +16,6 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_header_mut_t`. Caller must release with `kth_chain_header_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_header_mut_t kth_chain_header_construct_default(void);
-
 /** @param[out] out Must point to a null `kth_header_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_header_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_chain_header_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_header_mut_t* out);
@@ -59,6 +55,9 @@ kth_header_mut_t kth_chain_header_copy(kth_header_const_t self);
 
 KTH_EXPORT
 kth_bool_t kth_chain_header_equals(kth_header_const_t self, kth_header_const_t other);
+
+KTH_EXPORT
+kth_bool_t kth_chain_header_not_equal(kth_header_const_t self, kth_header_const_t other);
 
 
 // Serialization

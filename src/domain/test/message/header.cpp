@@ -7,10 +7,19 @@
 using namespace kth;
 using namespace kd;
 
+namespace {
+// The all-zero header is the `is_valid() == false` sentinel; there is no
+// default constructor (header is valid-by-construction), so build it from zero
+// fields.
+message::header make_zero_header() {
+    return message::header{0u, null_hash, null_hash, 0u, 0u, 0u};
+}
+} // namespace
+
 // Start Test Suite: message header tests
 
 TEST_CASE("message header constructor 1 always initialized invalid", "[message header]") {
-    message::header instance;
+    auto instance = make_zero_header();
     REQUIRE( ! instance.is_valid());
 }
 
@@ -108,11 +117,9 @@ TEST_CASE("message header constructor 7 always equals params", "[message header]
 
 TEST_CASE("message header from data insufficient bytes failure", "[message header]") {
     data_chunk data(10);
-    message::header header;
     byte_reader reader(data);
     auto result = message::header::from_data(reader, message::header::version_maximum);
     REQUIRE( ! result);
-    REQUIRE( ! header.is_valid());
 }
 
 TEST_CASE("message header from data valid input canonical version no transaction count", "[message header]") {
@@ -174,7 +181,7 @@ TEST_CASE("message header operator assign equals 1 always matches equivalent", "
 
     REQUIRE(value.is_valid());
 
-    message::header instance;
+    auto instance = make_zero_header();
     REQUIRE( ! instance.is_valid());
 
     instance = std::move(value);
@@ -193,7 +200,7 @@ TEST_CASE("message header operator assign equals 2 always matches equivalent", "
 
     REQUIRE(value.is_valid());
 
-    message::header instance;
+    auto instance = make_zero_header();
     REQUIRE( ! instance.is_valid());
 
     instance = std::move(value);
@@ -223,7 +230,7 @@ TEST_CASE("message header operator boolean equals 1 differs returns false", "[me
         68644u,
         4453u);
 
-    message::header instance;
+    auto instance = make_zero_header();
     REQUIRE(instance != expected);
 }
 
@@ -249,7 +256,7 @@ TEST_CASE("message header operator boolean not equals 1 differs returns true", "
         68644u,
         47476u);
 
-    message::header instance;
+    auto instance = make_zero_header();
     REQUIRE(instance != expected);
 }
 
@@ -275,7 +282,7 @@ TEST_CASE("message header operator boolean equals 2 differs returns false", "[me
         6523454u,
         68644u);
 
-    message::header instance;
+    auto instance = make_zero_header();
     REQUIRE(instance != expected);
 }
 
@@ -301,7 +308,7 @@ TEST_CASE("message header operator boolean not equals 2 differs returns true", "
         6523454u,
         68644u);
 
-    message::header instance;
+    auto instance = make_zero_header();
     REQUIRE(instance != expected);
 }
 

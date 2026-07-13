@@ -22,10 +22,6 @@ extern "C" {
 
 // Constructors
 
-kth_header_mut_t kth_chain_header_construct_default(void) {
-    return kth::leak<cpp_t>();
-}
-
 kth_error_code_t kth_chain_header_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_header_mut_t* out) {
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
@@ -76,6 +72,12 @@ kth_bool_t kth_chain_header_equals(kth_header_const_t self, kth_header_const_t o
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
     return kth::eq<cpp_t>(self, other);
+}
+
+kth_bool_t kth_chain_header_not_equal(kth_header_const_t self, kth_header_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::ne<cpp_t>(self, other);
 }
 
 

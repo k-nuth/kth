@@ -90,8 +90,6 @@ public:
     // Constructors.
     //-------------------------------------------------------------------------
 
-    constexpr header() = default;
-
     // Construct from raw bytes (must be exactly 80 bytes).
     explicit constexpr header(std::span<uint8_t const, serialized_size_wire> raw_data)
         : data_{}
@@ -227,13 +225,6 @@ public:
     [[nodiscard]]
     constexpr std::span<uint8_t const, serialized_size_wire> raw_data() const {
         return std::span<uint8_t const, serialized_size_wire>(data_);
-    }
-
-    // Mutable raw data access (for direct deserialization).
-    // Use with caution - allows modifying internal state.
-    [[nodiscard]]
-    constexpr std::array<uint8_t, serialized_size_wire>& raw_data_mutable() {
-        return data_;
     }
 
     // Serialization.

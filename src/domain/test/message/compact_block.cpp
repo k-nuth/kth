@@ -43,7 +43,7 @@ message::compact_block make_compact_block(uint64_t nonce = 453245u) {
 // Start Test Suite: compact block tests
 
 TEST_CASE("compact block create rejects empty sentinel", "[compact block]") {
-    auto const result = message::compact_block::create(chain::header{}, 0u, {}, {});
+    auto const result = message::compact_block::create(chain::header{0u, null_hash, null_hash, 0u, 0u, 0u}, 0u, {}, {});
     REQUIRE( ! result);
     REQUIRE(result.error() == error::compact_block_construction_empty);
 }
