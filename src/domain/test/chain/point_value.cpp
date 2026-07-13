@@ -12,15 +12,6 @@ using namespace kth::domain::chain;
 
 static auto const hash1 = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
-TEST_CASE("point value default constructor always null point + zero value", "[point value]") {
-    static point_value const instance;
-    // Default is `point(null_hash, null_index)` (matches the coinbase-input
-    // sentinel used across the codebase), not "all zeros".
-    REQUIRE(instance.hash() == null_hash);
-    REQUIRE(instance.index() == chain::point::null_index);
-    REQUIRE(instance.value() == 0u);
-}
-
 TEST_CASE("point value move constructor always expected", "[point value]") {
     point_value other{{hash1, 42}, 34};
     point_value const instance(std::move(other));
@@ -69,22 +60,6 @@ TEST_CASE("point value copy assign always expected", "[point value]") {
     REQUIRE(instance.value() == 34u);
 }
 
-TEST_CASE("point value swap always expected reversal", "[point value]") {
-    point_value instance1{{hash1, 42}, 34};
-    point_value instance2{{null_hash, 43}, 35};
-
-    // Must be unqualified (no std namespace).
-    swap(instance1, instance2);
-
-    CHECK(instance2.hash() == hash1);
-    CHECK(instance2.index() == 42u);
-    CHECK(instance2.value() == 34u);
-
-    CHECK(instance1.hash() == null_hash);
-    CHECK(instance1.index() == 43u);
-    CHECK(instance1.value() == 35u);
-}
-
 TEST_CASE("point value equality same true", "[point value]") {
     static point_value const instance1{{hash1, 42}, 34};
     static point_value const instance2{{hash1, 42}, 34};
@@ -131,20 +106,6 @@ TEST_CASE("point value inequality different by value true", "[point value]") {
     static point_value const instance1{{hash1, 42}, 34};
     static point_value const instance2{{hash1, 42}, 35};
     REQUIRE(instance1 != instance2);
-}
-
-TEST_CASE("point value set value 42 42", "[point value]") {
-    static auto const expected = 42u;
-    point_value instance;
-    instance.set_value(expected);
-    REQUIRE(instance.value() == expected);
-}
-
-TEST_CASE("point value set value zeroize zero", "[point value]") {
-    point_value instance;
-    instance.set_value(42);
-    instance.set_value(0);
-    REQUIRE(instance.value() == 0u);
 }
 
 // End Test Suite

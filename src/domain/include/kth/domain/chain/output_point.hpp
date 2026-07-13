@@ -80,19 +80,10 @@ public:
     // Operators.
     //-------------------------------------------------------------------------
 
-    // NOTE: `==` is not `= default` because `validation` is tracing/cache
-    // metadata — equality is defined over the (hash, index) base, ignoring
-    // it. Self-self `!=` is defaulted (delegates to `!(==)`); cross-type
-    // pairs cannot be defaulted (the standard requires identical parameter
-    // types), so they are hand-written.
-    friend bool operator==(output_point const& x, point const& y);
-    friend bool operator!=(output_point const& x, point const& y);
-
-    friend bool operator==(point const& x, output_point const& y);
-    friend bool operator!=(point const& x, output_point const& y);
-
-    friend bool operator==(output_point const& x, output_point const& y);
-    friend bool operator!=(output_point const& x, output_point const& y) = default;
+    // Comparison operators are inherited from `point` (which has
+    // `<=> = default` synthesising `==` / `!=` / `<` / `>` / `<=` / `>=`).
+    // `validation` is not a base-class member, so slicing to `point`
+    // naturally excludes it from comparisons.
 
     // Validation.
     //-------------------------------------------------------------------------

@@ -119,11 +119,7 @@ expect<light_block> light_block::from_data(byte_reader& reader, bool wire) {
     auto const raw_span = reader.buffer().subspan(start_pos, reader.position() - start_pos);
     data_chunk raw(raw_span.begin(), raw_span.end());
 
-    light_block result;
-    result.header_ = std::move(*hdr);
-    result.raw_data_ = std::move(raw);
-    result.tx_offsets_ = std::move(offsets);
-    return result;
+    return light_block{std::move(*hdr), std::move(raw), std::move(offsets)};
 }
 
 uint32_t light_block::tx_length(size_t index) const {

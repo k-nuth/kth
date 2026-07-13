@@ -38,26 +38,6 @@ output_point& output_point::operator=(point const& x) {
     return *this;
 }
 
-bool operator==(output_point const& x, point const& y) {
-    return static_cast<point const&>(x) == y;
-}
-
-bool operator!=(output_point const& x, point const& y) {
-    return !(x == y);
-}
-
-bool operator==(point const& x, output_point const& y) {
-    return x == static_cast<point const&>(y);
-}
-
-bool operator!=(point const& x, output_point const& y) {
-    return !(x == y);
-}
-
-bool operator==(output_point const& x, output_point const& y) {
-    return static_cast<point const&>(x) == static_cast<point const&>(y);
-}
-
 // Validation.
 //-----------------------------------------------------------------------------
 
