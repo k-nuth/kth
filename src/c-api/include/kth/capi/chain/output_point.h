@@ -45,9 +45,6 @@ kth_output_point_mut_t kth_chain_output_point_construct_from_hash_index_unsafe(u
 KTH_EXPORT KTH_OWNED
 kth_output_point_mut_t kth_chain_output_point_construct_from_point(kth_point_const_t x);
 
-
-// Static factories
-
 /** @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_output_point_mut_t kth_chain_output_point_null(void);
@@ -72,6 +69,24 @@ kth_output_point_mut_t kth_chain_output_point_copy(kth_output_point_const_t self
 KTH_EXPORT
 kth_bool_t kth_chain_output_point_equals(kth_output_point_const_t self, kth_output_point_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_chain_output_point_not_equal(kth_output_point_const_t self, kth_output_point_const_t other);
+
+
+// Ordering
+
+KTH_EXPORT
+kth_bool_t kth_chain_output_point_less(kth_output_point_const_t self, kth_output_point_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_chain_output_point_greater(kth_output_point_const_t self, kth_output_point_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_chain_output_point_less_or_equal(kth_output_point_const_t self, kth_output_point_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_chain_output_point_greater_or_equal(kth_output_point_const_t self, kth_output_point_const_t x);
+
 
 // Serialization
 
@@ -93,20 +108,6 @@ uint32_t kth_chain_output_point_index(kth_output_point_const_t self);
 
 KTH_EXPORT
 uint64_t kth_chain_output_point_checksum(kth_output_point_const_t self);
-
-
-// Setters
-
-/** @param value Borrowed input; must be non-null. Copied into the resulting object; ownership of `value` stays with the caller. */
-KTH_EXPORT
-void kth_chain_output_point_set_hash(kth_output_point_mut_t self, kth_hash_t const* value);
-
-/** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
-KTH_EXPORT
-void kth_chain_output_point_set_hash_unsafe(kth_output_point_mut_t self, uint8_t const* value);
-
-KTH_EXPORT
-void kth_chain_output_point_set_index(kth_output_point_mut_t self, uint32_t value);
 
 
 // Predicates

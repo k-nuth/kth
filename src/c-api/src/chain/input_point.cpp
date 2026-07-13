@@ -46,9 +46,6 @@ kth_input_point_mut_t kth_chain_input_point_construct_unsafe(uint8_t const* hash
     return kth::leak<cpp_t>(hash_cpp, index);
 }
 
-
-// Static factories
-
 kth_input_point_mut_t kth_chain_input_point_null(void) {
     return kth::leak(cpp_t::null());
 }
@@ -75,6 +72,39 @@ kth_bool_t kth_chain_input_point_equals(kth_input_point_const_t self, kth_input_
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
     return kth::eq<cpp_t>(self, other);
+}
+
+kth_bool_t kth_chain_input_point_not_equal(kth_input_point_const_t self, kth_input_point_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::ne<cpp_t>(self, other);
+}
+
+
+// Ordering
+
+kth_bool_t kth_chain_input_point_less(kth_input_point_const_t self, kth_input_point_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    return kth::lt<cpp_t>(self, x);
+}
+
+kth_bool_t kth_chain_input_point_greater(kth_input_point_const_t self, kth_input_point_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    return kth::gt<cpp_t>(self, x);
+}
+
+kth_bool_t kth_chain_input_point_less_or_equal(kth_input_point_const_t self, kth_input_point_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    return kth::le<cpp_t>(self, x);
+}
+
+kth_bool_t kth_chain_input_point_greater_or_equal(kth_input_point_const_t self, kth_input_point_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    return kth::ge<cpp_t>(self, x);
 }
 
 
@@ -109,28 +139,6 @@ uint32_t kth_chain_input_point_index(kth_input_point_const_t self) {
 uint64_t kth_chain_input_point_checksum(kth_input_point_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::cpp_ref<cpp_t>(self).checksum();
-}
-
-
-// Setters
-
-void kth_chain_input_point_set_hash(kth_input_point_mut_t self, kth_hash_t const* value) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(value != nullptr);
-    auto const value_cpp = kth::hash_to_cpp(value->hash);
-    kth::cpp_ref<cpp_t>(self).set_hash(value_cpp);
-}
-
-void kth_chain_input_point_set_hash_unsafe(kth_input_point_mut_t self, uint8_t const* value) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(value != nullptr);
-    auto const value_cpp = kth::hash_to_cpp(value);
-    kth::cpp_ref<cpp_t>(self).set_hash(value_cpp);
-}
-
-void kth_chain_input_point_set_index(kth_input_point_mut_t self, uint32_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).set_index(value);
 }
 
 

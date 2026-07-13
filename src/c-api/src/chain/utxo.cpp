@@ -54,6 +54,39 @@ kth_bool_t kth_chain_utxo_equals(kth_utxo_const_t self, kth_utxo_const_t other) 
     return kth::eq<cpp_t>(self, other);
 }
 
+kth_bool_t kth_chain_utxo_not_equal(kth_utxo_const_t self, kth_utxo_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::ne<cpp_t>(self, other);
+}
+
+
+// Ordering
+
+kth_bool_t kth_chain_utxo_less(kth_utxo_const_t self, kth_utxo_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    return kth::lt<cpp_t>(self, x);
+}
+
+kth_bool_t kth_chain_utxo_greater(kth_utxo_const_t self, kth_utxo_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    return kth::gt<cpp_t>(self, x);
+}
+
+kth_bool_t kth_chain_utxo_less_or_equal(kth_utxo_const_t self, kth_utxo_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    return kth::le<cpp_t>(self, x);
+}
+
+kth_bool_t kth_chain_utxo_greater_or_equal(kth_utxo_const_t self, kth_utxo_const_t x) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(x != nullptr);
+    return kth::ge<cpp_t>(self, x);
+}
+
 
 // Getters
 
@@ -76,32 +109,6 @@ kth_token_data_const_t kth_chain_utxo_token_data(kth_utxo_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     auto const& opt = kth::cpp_ref<cpp_t>(self).token_data();
     return opt.has_value() ? &(*opt) : nullptr;
-}
-
-
-// Setters
-
-void kth_chain_utxo_set_height(kth_utxo_mut_t self, uint32_t height) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).set_height(height);
-}
-
-void kth_chain_utxo_set_point(kth_utxo_mut_t self, kth_output_point_const_t point) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(point != nullptr);
-    auto const& point_cpp = kth::cpp_ref<kth::domain::chain::output_point>(point);
-    kth::cpp_ref<cpp_t>(self).set_point(point_cpp);
-}
-
-void kth_chain_utxo_set_amount(kth_utxo_mut_t self, uint64_t amount) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).set_amount(amount);
-}
-
-void kth_chain_utxo_set_token_data(kth_utxo_mut_t self, kth_token_data_const_t token_data) {
-    KTH_PRECONDITION(self != nullptr);
-    auto const token_data_cpp = kth::optional_cpp_ref<kth::domain::chain::token_data_t>(token_data);
-    kth::cpp_ref<cpp_t>(self).set_token_data(token_data_cpp);
 }
 
 } // extern "C"
