@@ -109,17 +109,9 @@ static kth_transaction_mut_t make_tx(void) {
 // Constructors / lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Transaction - default construct is invalid",
-          "[C-API Transaction]") {
-    kth_transaction_mut_t tx = kth_chain_transaction_construct_default();
-    REQUIRE(kth_chain_transaction_is_valid(tx) == 0);
-    kth_chain_transaction_destruct(tx);
-}
-
 TEST_CASE("C-API Transaction - field constructor preserves version & locktime",
           "[C-API Transaction]") {
     kth_transaction_mut_t tx = make_tx();
-    REQUIRE(kth_chain_transaction_is_valid(tx) != 0);
     REQUIRE(kth_chain_transaction_version(tx) == kVersion);
     REQUIRE(kth_chain_transaction_locktime(tx) == kLocktime);
     kth_chain_transaction_destruct(tx);
@@ -158,7 +150,6 @@ TEST_CASE("C-API Transaction - to_data / from_data roundtrip",
     kth_error_code_t ec = kth_chain_transaction_construct_from_data(raw, size, 1, &parsed);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(parsed != NULL);
-    REQUIRE(kth_chain_transaction_is_valid(parsed) != 0);
     REQUIRE(kth_chain_transaction_version(parsed) == kVersion);
     REQUIRE(kth_chain_transaction_locktime(parsed) == kLocktime);
     REQUIRE(kth_chain_transaction_equals(expected, parsed) != 0);
@@ -172,30 +163,36 @@ TEST_CASE("C-API Transaction - to_data / from_data roundtrip",
 // Getters / setters
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Transaction - version setter roundtrip",
+TEST_CASE("C-API Transaction - constructor sets version",
           "[C-API Transaction]") {
-    kth_transaction_mut_t tx = kth_chain_transaction_construct_default();
-    REQUIRE(kth_chain_transaction_version(tx) != kVersion);
-    kth_chain_transaction_set_version(tx, kVersion);
+    kth_input_list_mut_t ins = kth_chain_input_list_construct_default();
+    kth_output_list_mut_t outs = kth_chain_output_list_construct_default();
+    kth_transaction_mut_t tx = kth_chain_transaction_construct(kVersion, 0u, ins, outs);
     REQUIRE(kth_chain_transaction_version(tx) == kVersion);
     kth_chain_transaction_destruct(tx);
+    kth_chain_input_list_destruct(ins);
+    kth_chain_output_list_destruct(outs);
 }
 
-TEST_CASE("C-API Transaction - locktime setter roundtrip",
+TEST_CASE("C-API Transaction - constructor sets locktime",
           "[C-API Transaction]") {
-    kth_transaction_mut_t tx = kth_chain_transaction_construct_default();
-    kth_chain_transaction_set_locktime(tx, 12345u);
+    kth_input_list_mut_t ins = kth_chain_input_list_construct_default();
+    kth_output_list_mut_t outs = kth_chain_output_list_construct_default();
+    kth_transaction_mut_t tx = kth_chain_transaction_construct(0u, 12345u, ins, outs);
     REQUIRE(kth_chain_transaction_locktime(tx) == 12345u);
     kth_chain_transaction_destruct(tx);
+    kth_chain_input_list_destruct(ins);
+    kth_chain_output_list_destruct(outs);
 }
 
-TEST_CASE("C-API Transaction - inputs setter roundtrip",
+TEST_CASE("C-API Transaction - constructor deep-copies inputs",
           "[C-API Transaction]") {
-    kth_transaction_mut_t tx = kth_chain_transaction_construct_default();
     kth_input_list_mut_t ins = make_inputs();
-    kth_chain_transaction_set_inputs(tx, ins);
-    // Destroy the source list first to prove the setter deep-copied.
-    // An aliasing setter would leave a dangling view after this point.
+    kth_output_list_mut_t empty_outs = kth_chain_output_list_construct_default();
+    kth_transaction_mut_t tx = kth_chain_transaction_construct(0u, 0u, ins, empty_outs);
+    kth_chain_output_list_destruct(empty_outs);
+    // Destroy the source list first to prove the constructor deep-copied.
+    // An aliasing constructor would leave a dangling view after this point.
     kth_chain_input_list_destruct(ins);
     kth_input_list_const_t view = kth_chain_transaction_inputs(tx);
     REQUIRE(view != NULL);
@@ -203,11 +200,12 @@ TEST_CASE("C-API Transaction - inputs setter roundtrip",
     kth_chain_transaction_destruct(tx);
 }
 
-TEST_CASE("C-API Transaction - outputs setter roundtrip",
+TEST_CASE("C-API Transaction - constructor deep-copies outputs",
           "[C-API Transaction]") {
-    kth_transaction_mut_t tx = kth_chain_transaction_construct_default();
     kth_output_list_mut_t outs = make_outputs();
-    kth_chain_transaction_set_outputs(tx, outs);
+    kth_input_list_mut_t empty_ins = kth_chain_input_list_construct_default();
+    kth_transaction_mut_t tx = kth_chain_transaction_construct(0u, 0u, empty_ins, outs);
+    kth_chain_input_list_destruct(empty_ins);
     kth_chain_output_list_destruct(outs);
     kth_output_list_const_t view = kth_chain_transaction_outputs(tx);
     REQUIRE(view != NULL);
@@ -255,7 +253,6 @@ TEST_CASE("C-API Transaction - copy preserves fields",
     kth_transaction_mut_t original = make_tx();
     kth_transaction_mut_t copy = kth_chain_transaction_copy(original);
 
-    REQUIRE(kth_chain_transaction_is_valid(copy) != 0);
     REQUIRE(kth_chain_transaction_equals(original, copy) != 0);
     REQUIRE(kth_chain_transaction_version(copy) == kVersion);
     REQUIRE(kth_chain_transaction_locktime(copy) == kLocktime);
@@ -272,12 +269,16 @@ TEST_CASE("C-API Transaction - equals identical txs is true, different is false"
 
     // `mutated` differs from `a` only in the locktime — this would catch
     // an `equals()` impl that ignores fields.
-    kth_transaction_mut_t mutated = make_tx();
-    kth_chain_transaction_set_locktime(mutated, kLocktime + 1u);
+    kth_input_list_mut_t mut_ins = make_inputs();
+    kth_output_list_mut_t mut_outs = make_outputs();
+    kth_transaction_mut_t mutated = kth_chain_transaction_construct(
+        kVersion, kLocktime + 1u, mut_ins, mut_outs);
+    kth_chain_input_list_destruct(mut_ins);
+    kth_chain_output_list_destruct(mut_outs);
     // No recompute_hash needed — the new transaction value type has no
     // internal hash cache; `hash()` always reflects the current fields.
 
-    // `c` is a default (invalid) tx, structurally distinct from `a`.
+    // `c` is a default tx, structurally distinct from `a`.
     kth_transaction_mut_t c = kth_chain_transaction_construct_default();
 
     REQUIRE(kth_chain_transaction_equals(a, b) != 0);

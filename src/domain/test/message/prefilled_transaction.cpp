@@ -26,11 +26,9 @@ TEST_CASE("prefilled transaction constructor 2 always equals params", "[prefille
 TEST_CASE("prefilled transaction constructor 3 always equals params", "[prefilled transaction]") {
     uint64_t index = 125u;
     chain::transaction tx(1, 0, {}, {});
-    REQUIRE(tx.is_valid());
     message::prefilled_transaction instance(index, std::move(tx));
     REQUIRE(instance.is_valid());
     REQUIRE(index == instance.index());
-    REQUIRE(instance.transaction().is_valid());
 }
 
 TEST_CASE("prefilled transaction constructor 4 always equals params", "[prefilled transaction]") {

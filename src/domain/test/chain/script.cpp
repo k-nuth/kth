@@ -594,7 +594,6 @@ TEST_CASE("script bip16 valid", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are valid prior to and after BIP16 activation.
         // Use all_rules minus bch_mersenne (pre-MINIMALDATA) since some scripts use non-minimal push encodings.
@@ -610,7 +609,6 @@ TEST_CASE("script bip16 invalid", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are invalid prior to and after BIP16 activation.
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) != error::success, name);
@@ -625,7 +623,6 @@ TEST_CASE("script bip16 invalidated", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are valid prior to BIP16 activation and invalid after.
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) == error::success, name);
@@ -642,7 +639,6 @@ TEST_CASE("script bip65 valid", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are valid prior to and after BIP65 activation.
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) == error::success, name);
@@ -657,7 +653,6 @@ TEST_CASE("script bip65 invalid", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are invalid prior to and after BIP65 activation.
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) != error::success, name);
@@ -672,7 +667,6 @@ TEST_CASE("script bip65 invalidated", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are valid prior to BIP65 activation and invalid after.
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) == error::success, name);
@@ -688,7 +682,6 @@ TEST_CASE("script bip112 valid", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are valid prior to and after BIP112 activation.
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) == error::success, name);
@@ -706,7 +699,6 @@ TEST_CASE("script bip112 invalid", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are invalid prior to and after BIP112 activation.
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) != error::success, name);
@@ -721,7 +713,6 @@ TEST_CASE("script bip112 invalidated", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are valid prior to BIP112 activation and invalid after.
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) == error::success, name);
@@ -737,7 +728,6 @@ TEST_CASE("script multisig valid", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are always valid.
         // These are scripts potentially affected by bip66 (but should not be).
@@ -753,7 +743,6 @@ TEST_CASE("script multisig invalid", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are always invalid.
         // These are scripts potentially affected by bip66 (but should not be).
@@ -775,7 +764,6 @@ TEST_CASE("script context free valid", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are always valid (pre-MINIMALDATA, since some use non-minimal push encodings).
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) == error::success, name);
@@ -795,7 +783,6 @@ TEST_CASE("script context free invalid", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are always invalid.
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) != error::success, name);
@@ -812,7 +799,6 @@ TEST_CASE("script bch_pythagoras invalidated", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are valid before bch_pythagoras activation
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) == error::success, name);
@@ -830,7 +816,6 @@ TEST_CASE("script bch_pythagoras validated", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // Note: these checks assumed div/mod/and/or/xor are gated by bch_reactivated_opcodes,
         //   but BCHN has no flag for these opcodes (they are always enabled). Our interpreter now
@@ -854,7 +839,6 @@ TEST_CASE("script bch_gauss invalidated", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are valid before bch_gauss activation (context-free hash256).
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) == error::success, name);
@@ -876,7 +860,6 @@ TEST_CASE("script bch_gauss validated", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are invalid before bch_gauss activation (32-bit arithmetic limits).
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) != error::success, name);
@@ -897,7 +880,6 @@ TEST_CASE("script bch_galois invalidated", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are valid before bch_galois activation (context-free hash256).
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) == error::success, name);
@@ -915,7 +897,6 @@ TEST_CASE("script bch_galois validated", "[script]") {
         auto const tx_exp = new_tx(test);
         REQUIRE(tx_exp);
         auto const& tx = *tx_exp;
-        REQUIRE_MESSAGE(tx.is_valid(), name);
 
         // These are invalid before bch_galois activation (32-bit arithmetic limits).
         CHECK_MESSAGE(verify(tx, 0, script_flags::no_rules) != error::success, name);
@@ -1325,7 +1306,6 @@ void run_bchn_test(bchn_script_test const& test) {
     REQUIRE_MESSAGE(bool(tx_exp), name);
 
     auto const& tx = *tx_exp;
-    REQUIRE_MESSAGE(tx.is_valid(), name);
 
     auto const actual = verify(tx, 0, test.flags);
     if (actual != test.expected_error) {

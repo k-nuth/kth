@@ -52,7 +52,6 @@ static auto const raw_tx2_hash = "8a6d9302fbe24f0ec756a94ecfc837eaffe16c43d1e68c
 
 TEST_CASE("message transaction constructor 1 always initialized invalid", "[message transaction]") {
     transaction instance;
-    REQUIRE( ! instance.is_valid());
 }
 
 TEST_CASE("message transaction constructor 2 always equals transaction", "[message transaction]") {
@@ -64,7 +63,6 @@ TEST_CASE("message transaction constructor 2 always equals transaction", "[messa
     REQUIRE(result);
     tx = std::move(*result);
     transaction instance(tx);
-    REQUIRE(instance.is_valid());
     REQUIRE(instance == tx);
 }
 
@@ -77,11 +75,9 @@ TEST_CASE("message transaction constructor 3 always equals param", "[message tra
     REQUIRE(result);
     tx = std::move(*result);
     transaction alpha(tx);
-    REQUIRE(alpha.is_valid());
     REQUIRE(alpha == tx);
 
     transaction beta(alpha);
-    REQUIRE(beta.is_valid());
     REQUIRE(beta == alpha);
 }
 
@@ -96,7 +92,6 @@ TEST_CASE("message transaction constructor 4 always equals equivalent tx", "[mes
     auto const inputs = tx.inputs();
     auto const outputs = tx.outputs();
     transaction instance(tx.version(), tx.locktime(), inputs, outputs);
-    REQUIRE(instance.is_valid());
     REQUIRE(instance == tx);
 }
 
@@ -114,7 +109,6 @@ TEST_CASE("message transaction constructor 5 always equals equivalent tx", "[mes
     REQUIRE(result_exp);
     auto instance = std::move(*result_exp);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(instance == tx);
 }
 
@@ -132,7 +126,6 @@ TEST_CASE("message transaction constructor 6 always equals equivalent tx", "[mes
     REQUIRE(result);
     tx = std::move(*result);
     transaction instance(std::move(value));
-    REQUIRE(instance.is_valid());
     REQUIRE(instance == tx);
 }
 
@@ -145,7 +138,6 @@ TEST_CASE("message transaction constructor 7 always equals equivalent tx", "[mes
     transaction instance(15u, 1234u,
         chain::input::list{empty_in, empty_in},
         chain::output::list{empty_out, empty_out, empty_out});
-    REQUIRE(instance.is_valid());
     REQUIRE(instance.version() == 15u);
     REQUIRE(instance.locktime() == 1234u);
     REQUIRE(instance.inputs().size() == 2);
@@ -158,7 +150,6 @@ TEST_CASE("message transaction from data insufficient data failure", "[message t
     byte_reader reader(data);
     auto result = transaction::from_data(reader, version::level::minimum);
     REQUIRE( ! result);
-    REQUIRE( ! instance.is_valid());
 }
 
 TEST_CASE("message transaction from data valid junk success", "[message transaction]") {
@@ -178,7 +169,6 @@ TEST_CASE("message transaction from data case 1 valid data success", "[message t
     auto const result_exp = transaction::from_data(reader, version::level::minimum);
     REQUIRE(result_exp);
     auto const tx = std::move(*result_exp);
-    REQUIRE(tx.is_valid());
     REQUIRE(tx.serialized_size(version::level::minimum) == 225u);
     REQUIRE(tx.hash() == tx_hash);
 
@@ -197,7 +187,6 @@ TEST_CASE("message transaction from data case 2 valid data success", "[message t
     auto const result_exp = transaction::from_data(reader, version::level::minimum);
     REQUIRE(result_exp);
     auto const tx = std::move(*result_exp);
-    REQUIRE(tx.is_valid());
     REQUIRE(tx.hash() == tx_hash);
 
     // Re-save tx and compare against original.

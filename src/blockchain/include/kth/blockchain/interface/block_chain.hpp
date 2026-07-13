@@ -412,7 +412,7 @@ struct KB_API block_chain {
             auto const tx_result = database_.internal_db().get_transaction(hash, max_size_t);
 
             if ( ! tx_result) {
-                handler(error::transaction_lookup_failed, 0, domain::chain::transaction{});
+                handler(error::transaction_lookup_failed, 0, domain::chain::transaction::null());
                 return;
             }
             KTH_ASSERT(tx_result->height() == height);
@@ -426,7 +426,7 @@ struct KB_API block_chain {
         while (f != l) {
             auto const& tx = *f;
             if ( ! tx.is_valid()) {
-                handler(error::transaction_lookup_failed, 0, domain::chain::transaction{});
+                handler(error::transaction_lookup_failed, 0, domain::chain::transaction::null());
                 return;
             }
             handler(error::success, height, tx);

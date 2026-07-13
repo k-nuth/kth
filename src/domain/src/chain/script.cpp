@@ -355,8 +355,7 @@ std::pair<hash_digest, size_t> sign_all(transaction const& tx, uint32_t input_in
         ins[input_index].set_script(script_code);
     }
 
-    transaction out(tx.version(), tx.locktime(), input::list{}, tx.outputs());
-    out.set_inputs(std::move(ins));
+    transaction const out(tx.version(), tx.locktime(), std::move(ins), tx.outputs());
     return signature_hash(out, sighash_type);
 }
 

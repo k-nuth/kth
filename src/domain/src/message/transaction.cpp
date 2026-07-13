@@ -35,7 +35,6 @@ transaction::transaction(uint32_t version, uint32_t locktime, const chain::input
 }
 
 transaction& transaction::operator=(chain::transaction&& x) {
-    reset();
     chain::transaction::operator=(std::move(x));
     return *this;
 }

@@ -15,8 +15,6 @@ bool all_valid(chain::transaction::list const& transactions) {
     auto valid = true;
 
     for (auto const& tx : transactions) {
-        valid = valid && tx.is_valid();
-
         for (auto const& input : tx.inputs()) {
             valid = valid && input.script().is_valid();
         }

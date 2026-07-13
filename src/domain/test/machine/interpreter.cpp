@@ -431,8 +431,9 @@ TEST_CASE("OP_CHECKLOCKTIMEVERIFY propagates top_number parse error",
     // Empty stack → top_number() returns insufficient_main_stack.
     // Needs a transaction context with at least one input (CLTV
     // reads tx.inputs()[input_index]).
-    chain::transaction tx;
-    tx.inputs().emplace_back(chain::output_point{}, chain::script{}, 0u);
+    chain::input::list tx_inputs;
+    tx_inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
+    chain::transaction const tx(0, 0, std::move(tx_inputs), {});
     auto scr = script_of({operation(opcode::checklocktimeverify)});
     program prog(scr, tx, 0, script_flags::bip65_rule, 0);
     auto const result = interpreter::run(prog);
@@ -449,8 +450,9 @@ TEST_CASE("OP_CHECKSEQUENCEVERIFY propagates top_number parse error",
     // `invalid_operand_size`. Run without `bch_minimaldata` so the
     // pre-check at the top of `op_check_sequence_verify` doesn't
     // preempt with its own error.
-    chain::transaction tx;
-    tx.inputs().emplace_back(chain::output_point{}, chain::script{}, 0u);
+    chain::input::list tx_inputs;
+    tx_inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
+    chain::transaction const tx(0, 0, std::move(tx_inputs), {});
     auto scr = script_of({
         operation(data_chunk{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}),
         operation(opcode::checksequenceverify),
