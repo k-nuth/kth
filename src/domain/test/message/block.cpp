@@ -11,13 +11,16 @@ using namespace kd;
 using namespace kth::domain::message;
 
 namespace {
-// Valid blocks (non-zero header, no transactions) for fixtures that only need
-// "some block" — `create` rejects the empty sentinel.
+// Blocks for fixtures that only need "some block". A block always has at least
+// one transaction; `create` rejects an empty transaction list.
+chain::transaction::list one_tx() {
+    return {chain::transaction(1, 0, {}, {})};
+}
 chain::block make_chain_block() {
-    return chain::block::create(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, {}).value();
+    return chain::block::create(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, one_tx()).value();
 }
 message::block make_msg_block() {
-    return message::block::create(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, {}).value();
+    return message::block::create(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, one_tx()).value();
 }
 } // anonymous namespace
 

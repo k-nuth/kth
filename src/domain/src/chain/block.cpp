@@ -187,9 +187,10 @@ block::block(chain::header const& header, transaction::list&& transactions)
 
 // static
 expect<block> block::create(chain::header header, transaction::list transactions) {
-    // Reject the empty sentinel (what the old `is_valid()` guarded against):
-    // a block with no transactions and an all-zero header is not a block.
-    if (transactions.empty() && ! header.is_valid()) {
+    // A block always carries at least a coinbase, so no transactions is never
+    // a real block. (Consensus validity beyond this — merkle root, sigops,
+    // etc. — is validation's concern, not construction's.)
+    if (transactions.empty()) {
         return std::unexpected(error::block_construction_empty);
     }
     return block{header, std::move(transactions)};

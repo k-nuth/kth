@@ -36,8 +36,8 @@ merkle_block::merkle_block(chain::block const& block)
 
 // static
 expect<merkle_block> merkle_block::create(chain::header header, size_t total_transactions, hash_list hashes, data_chunk flags) {
-    // Reject the all-default sentinel (what the old `is_valid()` guarded).
-    if (hashes.empty() && flags.empty() && ! header.is_valid()) {
+    // Reject the fully-empty payload; a merkle block always describes a tree.
+    if (hashes.empty() && flags.empty()) {
         return std::unexpected(error::merkle_block_construction_empty);
     }
     return merkle_block{header, total_transactions, std::move(hashes), std::move(flags)};

@@ -74,14 +74,6 @@ TEST_CASE("light_block tx_count returns correct count", "[chain light_block]") {
     REQUIRE(result->tx_count() == 3);
 }
 
-TEST_CASE("light_block header is valid", "[chain light_block]") {
-    auto const raw_block = get_raw_block();
-    byte_reader reader(raw_block);
-    auto const result = chain::light_block::from_data(reader, true);
-    REQUIRE(result.has_value());
-    REQUIRE(result->header().is_valid());
-}
-
 TEST_CASE("light_block header hash matches full block", "[chain light_block]") {
     auto const raw_block = get_raw_block();
 

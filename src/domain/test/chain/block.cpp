@@ -30,9 +30,10 @@ bool all_valid(chain::transaction::list const& transactions) {
     return valid;
 }
 
-// A block with a non-zero header (so `create` accepts it) and the given
-// transactions. Replaces the old default-construct-then-set idiom.
-chain::block make_block(chain::transaction::list txs = {}) {
+// A block with a non-zero header and the given transactions. Defaults to a
+// single (coinbase-stand-in) transaction because a block always has at least
+// one; `create` rejects an empty transaction list.
+chain::block make_block(chain::transaction::list txs = {chain::transaction(1, 0, {}, {})}) {
     return chain::block::create(
         chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, std::move(txs)).value();
 }
@@ -178,13 +179,8 @@ TEST_CASE("block move 5 always equals params", "[chain block]") {
 }
 
 TEST_CASE("block hash always returns header hash", "[chain block]") {
-    auto const instance = chain::block::create(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, {}).value();
-    REQUIRE(chain::hash(instance.header()) == instance.hash());
-}
-
-TEST_CASE("block is valid merkle root uninitialized returns true", "[chain block]") {
     auto const instance = make_block();
-    REQUIRE(instance.is_valid_merkle_root());
+    REQUIRE(chain::hash(instance.header()) == instance.hash());
 }
 
 TEST_CASE("block is valid merkle root non empty tx invalid block returns false", "[chain block]") {
@@ -352,11 +348,6 @@ TEST_CASE("block factory from data 3 genesis mainnet success", "[block serializa
 
 // Start Test Suite: block generate merkle root tests
 
-TEST_CASE("block generate merkle root block with zero transactions matches null hash", "[block generate merkle root]") {
-    auto const empty = make_block();
-    REQUIRE(empty.generate_merkle_root() == null_hash);
-}
-
 TEST_CASE("block generate merkle root block with multiple transactions matches historic data", "[block generate merkle root]") {
     // encodes the 100,000 block data.
     data_chunk const raw = to_chunk(
@@ -428,7 +419,7 @@ TEST_CASE("block construct exposes header", "[block generate merkle root]") {
         68644u
     };
 
-    auto instance = chain::block::create(header, chain::transaction::list{}).value();
+    auto instance = chain::block::create(header, {chain::transaction(1, 0, {}, {})}).value();
     REQUIRE(header == instance.header());
 }
 

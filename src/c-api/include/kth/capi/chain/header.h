@@ -97,9 +97,6 @@ kth_hash_t kth_chain_header_hash(kth_header_const_t self);
 // Predicates
 
 KTH_EXPORT
-kth_bool_t kth_chain_header_is_valid(kth_header_const_t self);
-
-KTH_EXPORT
 kth_bool_t kth_chain_header_is_valid_timestamp(kth_header_const_t self);
 
 /** @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller. */
