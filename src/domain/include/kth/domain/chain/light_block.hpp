@@ -39,7 +39,10 @@ struct light_block {
 
     static inline std::atomic<int64_t> live_instances{0};
 
-    light_block() { live_instances.fetch_add(1, std::memory_order_relaxed); }
+    light_block(chain::header header, data_chunk raw_data, std::vector<uint32_t> tx_offsets)
+        : header_(std::move(header)), raw_data_(std::move(raw_data)), tx_offsets_(std::move(tx_offsets))
+    { live_instances.fetch_add(1, std::memory_order_relaxed); }
+
     ~light_block() { live_instances.fetch_sub(1, std::memory_order_relaxed); }
 
     light_block(light_block const& o)

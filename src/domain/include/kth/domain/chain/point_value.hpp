@@ -21,32 +21,26 @@ public:
     // Constructors.
     //-------------------------------------------------------------------------
 
-    point_value() : point(null_hash, null_index) {}
-    point_value(point const& p, uint64_t value);
-
-    // point_value(point_value const& x) = default;
-    // point_value& operator=(point_value const& x) = default;
+    constexpr point_value(point const& p, uint64_t value)
+        : point(p), value_(value)
+    {}
 
     // Operators.
     //-------------------------------------------------------------------------
 
     friend
-    bool operator==(point_value const&, point_value const&) = default;
-
-    // Swap implementation required to properly handle base class.
-    friend
-    void swap(point_value& x, point_value& y);
+    auto operator<=>(point_value const&, point_value const&) = default;
 
     // Properties (accessors).
     //-------------------------------------------------------------------------
 
     [[nodiscard]]
-    uint64_t value() const;
-
-    void set_value(uint64_t value);
+    constexpr uint64_t value() const noexcept {
+        return value_;
+    }
 
 private:
-    uint64_t value_{0};
+    uint64_t value_;
 };
 
 } // namespace kth::domain::chain

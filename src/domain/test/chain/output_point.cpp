@@ -324,4 +324,51 @@ TEST_CASE("output point operator boolean not equals 2 differs returns true", "[o
     REQUIRE(alpha != beta);
 }
 
+// Comparison operators come from the base `point` (defaulted `<=>`) via
+// derived-to-base slicing. The `validation` metadata is intentionally
+// excluded. This test suite exercises every operator for both same-type
+// (output_point vs output_point) and cross-type (output_point vs point)
+// combinations.
+TEST_CASE("output point comparison operators cover all six", "[output point]") {
+    auto const h_lo = "0000000000000000000000000000000000000000000000000000000000000001"_hash;
+    auto const h_hi = "0000000000000000000000000000000000000000000000000000000000000002"_hash;
+
+    // Ordering: `point`'s defaulted `<=>` walks (index_, hash_) in member
+    // declaration order, so a smaller index sorts before a larger one
+    // regardless of the hashes.
+    chain::output_point lo{h_hi, 0u};    // (index=0, hash=h_hi)
+    chain::output_point hi{h_lo, 1u};    // (index=1, hash=h_lo)
+    chain::output_point eq{h_hi, 0u};    // duplicate of `lo`
+
+    // Populate `validation` on one side to prove it is *not* part of the
+    // comparison (would otherwise make `lo != eq`).
+    lo.validation.spent = true;
+    lo.validation.confirmed = true;
+    eq.validation = {};
+
+    // Same-type: output_point vs output_point.
+    REQUIRE(lo == eq);
+    REQUIRE(  ! (lo == hi));
+    REQUIRE(lo != hi);
+    REQUIRE(  ! (lo != eq));
+    REQUIRE(lo < hi);
+    REQUIRE(hi > lo);
+    REQUIRE(lo <= eq);
+    REQUIRE(lo <= hi);
+    REQUIRE(hi >= eq);
+    REQUIRE(hi >= lo);
+
+    // Cross-type: output_point vs point (slicing).
+    chain::point plo{h_hi, 0u};
+    chain::point phi{h_lo, 1u};
+    REQUIRE(lo == plo);
+    REQUIRE(plo == lo);
+    REQUIRE(lo != phi);
+    REQUIRE(phi != lo);
+    REQUIRE(lo < phi);
+    REQUIRE(phi > lo);
+    REQUIRE(plo <= lo);
+    REQUIRE(lo >= plo);
+}
+
 // End Test Suite

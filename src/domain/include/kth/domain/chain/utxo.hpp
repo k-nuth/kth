@@ -19,6 +19,9 @@ namespace kth::domain::chain {
 struct KD_API utxo {
     using list = std::vector<utxo>;
 
+    // Default state is a null utxo (coinbase-null prevout + zero amount
+    // + no token). Analogous to `output_point::null()`: a well-defined
+    // domain sentinel, not an "invalid" value.
     utxo() = default;
 
     utxo(output_point const& point, uint64_t amount,
@@ -27,19 +30,19 @@ struct KD_API utxo {
          std::optional<token_data_t> token_data = std::nullopt);
 
     friend
-    bool operator==(utxo const&, utxo const&) = default;
+    auto operator<=>(utxo const&, utxo const&) = default;
 
-    uint32_t height() const;
-    output_point& point();
-    output_point const& point() const;
-    uint64_t amount() const;
-    std::optional<token_data_t>& token_data();
-    std::optional<token_data_t> const& token_data() const;
+    [[nodiscard]]
+    constexpr uint32_t height() const noexcept { return height_; }
 
-    void set_height(uint32_t height);
-    void set_point(output_point const& point);
-    void set_amount(uint64_t amount);
-    void set_token_data(std::optional<token_data_t> token_data);
+    [[nodiscard]]
+    constexpr output_point const& point() const noexcept { return point_; }
+
+    [[nodiscard]]
+    constexpr uint64_t amount() const noexcept { return amount_; }
+
+    [[nodiscard]]
+    constexpr std::optional<token_data_t> const& token_data() const noexcept { return token_data_; }
 
 private:
     uint32_t height_ = 0;
