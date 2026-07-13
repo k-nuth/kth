@@ -48,6 +48,24 @@ kth_utxo_mut_t kth_chain_utxo_copy(kth_utxo_const_t self);
 KTH_EXPORT
 kth_bool_t kth_chain_utxo_equals(kth_utxo_const_t self, kth_utxo_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_chain_utxo_not_equal(kth_utxo_const_t self, kth_utxo_const_t other);
+
+
+// Ordering
+
+KTH_EXPORT
+kth_bool_t kth_chain_utxo_less(kth_utxo_const_t self, kth_utxo_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_chain_utxo_greater(kth_utxo_const_t self, kth_utxo_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_chain_utxo_less_or_equal(kth_utxo_const_t self, kth_utxo_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_chain_utxo_greater_or_equal(kth_utxo_const_t self, kth_utxo_const_t x);
+
 
 // Getters
 
@@ -64,23 +82,6 @@ uint64_t kth_chain_utxo_amount(kth_utxo_const_t self);
 /** @return Borrowed `kth_token_data_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_token_data_const_t kth_chain_utxo_token_data(kth_utxo_const_t self);
-
-
-// Setters
-
-KTH_EXPORT
-void kth_chain_utxo_set_height(kth_utxo_mut_t self, uint32_t height);
-
-/** @param point Borrowed input. Copied by value into the resulting object; ownership of `point` stays with the caller. */
-KTH_EXPORT
-void kth_chain_utxo_set_point(kth_utxo_mut_t self, kth_output_point_const_t point);
-
-KTH_EXPORT
-void kth_chain_utxo_set_amount(kth_utxo_mut_t self, uint64_t amount);
-
-/** @param token_data Borrowed input. Copied by value into the resulting object; ownership of `token_data` stays with the caller. */
-KTH_EXPORT
-void kth_chain_utxo_set_token_data(kth_utxo_mut_t self, kth_token_data_const_t token_data);
 
 #ifdef __cplusplus
 } // extern "C"

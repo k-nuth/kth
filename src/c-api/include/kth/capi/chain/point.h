@@ -34,9 +34,6 @@ kth_point_mut_t kth_chain_point_construct(kth_hash_t const* hash, uint32_t index
 KTH_EXPORT KTH_OWNED
 kth_point_mut_t kth_chain_point_construct_unsafe(uint8_t const* hash, uint32_t index);
 
-
-// Static factories
-
 /** @return Owned `kth_point_mut_t`. Caller must release with `kth_chain_point_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_point_mut_t kth_chain_point_null(void);
@@ -61,6 +58,24 @@ kth_point_mut_t kth_chain_point_copy(kth_point_const_t self);
 KTH_EXPORT
 kth_bool_t kth_chain_point_equals(kth_point_const_t self, kth_point_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_chain_point_not_equal(kth_point_const_t self, kth_point_const_t other);
+
+
+// Ordering
+
+KTH_EXPORT
+kth_bool_t kth_chain_point_less(kth_point_const_t self, kth_point_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_chain_point_greater(kth_point_const_t self, kth_point_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_chain_point_less_or_equal(kth_point_const_t self, kth_point_const_t x);
+
+KTH_EXPORT
+kth_bool_t kth_chain_point_greater_or_equal(kth_point_const_t self, kth_point_const_t x);
+
 
 // Serialization
 
@@ -82,20 +97,6 @@ uint32_t kth_chain_point_index(kth_point_const_t self);
 
 KTH_EXPORT
 uint64_t kth_chain_point_checksum(kth_point_const_t self);
-
-
-// Setters
-
-/** @param value Borrowed input; must be non-null. Copied into the resulting object; ownership of `value` stays with the caller. */
-KTH_EXPORT
-void kth_chain_point_set_hash(kth_point_mut_t self, kth_hash_t const* value);
-
-/** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
-KTH_EXPORT
-void kth_chain_point_set_hash_unsafe(kth_point_mut_t self, uint8_t const* value);
-
-KTH_EXPORT
-void kth_chain_point_set_index(kth_point_mut_t self, uint32_t value);
 
 
 // Predicates

@@ -150,23 +150,17 @@ TEST_CASE("C-API OutputPoint - to_data fixed-size payload", "[C-API OutputPoint]
 }
 
 // ---------------------------------------------------------------------------
-// Getters / setters
+// Getters
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API OutputPoint - hash setter roundtrip", "[C-API OutputPoint]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_default();
-    REQUIRE(kth_hash_is_null(kth_chain_output_point_hash(op)) != 0);
-
-    kth_chain_output_point_set_hash(op, &kHash);
+TEST_CASE("C-API OutputPoint - construct exposes hash", "[C-API OutputPoint]") {
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHash, 0u);
     REQUIRE(kth_hash_equal(kth_chain_output_point_hash(op), kHash) != 0);
-
     kth_chain_output_point_destruct(op);
 }
 
-TEST_CASE("C-API OutputPoint - index setter roundtrip", "[C-API OutputPoint]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_default();
-    REQUIRE(kth_chain_output_point_index(op) != 9999u);
-    kth_chain_output_point_set_index(op, 9999u);
+TEST_CASE("C-API OutputPoint - construct exposes index", "[C-API OutputPoint]") {
+    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHash, 9999u);
     REQUIRE(kth_chain_output_point_index(op) == 9999u);
     kth_chain_output_point_destruct(op);
 }
@@ -291,19 +285,6 @@ TEST_CASE("C-API OutputPoint - copy null self aborts",
     KTH_EXPECT_ABORT(kth_chain_output_point_copy(NULL));
 }
 
-TEST_CASE("C-API OutputPoint - set_hash null aborts",
-          "[C-API OutputPoint][precondition]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_default();
-    KTH_EXPECT_ABORT(kth_chain_output_point_set_hash(op, NULL));
-    kth_chain_output_point_destruct(op);
-}
-
-TEST_CASE("C-API OutputPoint - set_hash_unsafe null aborts",
-          "[C-API OutputPoint][precondition]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_default();
-    KTH_EXPECT_ABORT(kth_chain_output_point_set_hash_unsafe(op, NULL));
-    kth_chain_output_point_destruct(op);
-}
 
 TEST_CASE("C-API OutputPoint - equals null self aborts",
           "[C-API OutputPoint][precondition]") {

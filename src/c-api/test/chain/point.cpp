@@ -90,22 +90,17 @@ TEST_CASE("C-API Point - to_data / from_data roundtrip", "[C-API Point]") {
 }
 
 // ---------------------------------------------------------------------------
-// Getters / setters
+// Getters
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Point - hash setter roundtrip", "[C-API Point]") {
-    kth_point_mut_t point = kth_chain_point_null();
-    REQUIRE(kth_hash_is_null(kth_chain_point_hash(point)) != 0);
-
-    kth_chain_point_set_hash(point, &kHash);
+TEST_CASE("C-API Point - construct exposes hash", "[C-API Point]") {
+    kth_point_mut_t point = kth_chain_point_construct(&kHash, 0u);
     REQUIRE(kth_hash_equal(kth_chain_point_hash(point), kHash) != 0);
-
     kth_chain_point_destruct(point);
 }
 
-TEST_CASE("C-API Point - index setter roundtrip", "[C-API Point]") {
-    kth_point_mut_t point = kth_chain_point_null();
-    kth_chain_point_set_index(point, 1254u);
+TEST_CASE("C-API Point - construct exposes index", "[C-API Point]") {
+    kth_point_mut_t point = kth_chain_point_construct(&kHash, 1254u);
     REQUIRE(kth_chain_point_index(point) == 1254u);
     kth_chain_point_destruct(point);
 }
@@ -222,20 +217,6 @@ TEST_CASE("C-API Point - to_data null out_size aborts",
 TEST_CASE("C-API Point - copy null self aborts",
           "[C-API Point][precondition]") {
     KTH_EXPECT_ABORT(kth_chain_point_copy(NULL));
-}
-
-TEST_CASE("C-API Point - set_hash null aborts",
-          "[C-API Point][precondition]") {
-    kth_point_mut_t point = kth_chain_point_null();
-    KTH_EXPECT_ABORT(kth_chain_point_set_hash(point, NULL));
-    kth_chain_point_destruct(point);
-}
-
-TEST_CASE("C-API Point - set_hash_unsafe null aborts",
-          "[C-API Point][precondition]") {
-    kth_point_mut_t point = kth_chain_point_null();
-    KTH_EXPECT_ABORT(kth_chain_point_set_hash_unsafe(point, NULL));
-    kth_chain_point_destruct(point);
 }
 
 TEST_CASE("C-API Point - equals null self aborts",
