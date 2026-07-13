@@ -25,52 +25,35 @@ struct KD_API merkle_block {
     using ptr = std::shared_ptr<merkle_block>;
     using const_ptr = std::shared_ptr<const merkle_block>;
 
-    merkle_block() = default;
-    merkle_block(chain::header const& header, size_t total_transactions, hash_list const& hashes, data_chunk const& flags);
-    merkle_block(chain::header const& header, size_t total_transactions, hash_list&& hashes, data_chunk&& flags);
+    /// Build from parts. Returns `error::merkle_block_construction_empty` for
+    /// the all-default sentinel (an empty header with no hashes or flags), so
+    /// a constructed `merkle_block` is always a real one.
+    static
+    expect<merkle_block> create(chain::header header, size_t total_transactions, hash_list hashes, data_chunk flags);
+
+    /// Wrap an already-constructed (hence valid) block.
     merkle_block(chain::block const& block);
 
-    bool operator==(merkle_block const& x) const;
-    bool operator!=(merkle_block const& x) const;
-
-    chain::header& header();
+    [[nodiscard]]
+    friend bool operator==(merkle_block const&, merkle_block const&) = default;
 
     [[nodiscard]]
     chain::header const& header() const;
 
-    void set_header(chain::header const& value);
-
     [[nodiscard]]
     size_t total_transactions() const;
-
-    void set_total_transactions(size_t value);
-
-    hash_list& hashes();
 
     [[nodiscard]]
     hash_list const& hashes() const;
 
-    void set_hashes(hash_list const& value);
-    void set_hashes(hash_list&& value);
-
-    data_chunk& flags();
-
     [[nodiscard]]
     data_chunk const& flags() const;
-
-    void set_flags(data_chunk const& value);
-    void set_flags(data_chunk&& value);
 
     static
     expect<merkle_block> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, uint32_t version) const;
-
-    [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
 
     [[nodiscard]]
     size_t serialized_size(uint32_t version) const;
@@ -87,6 +70,11 @@ struct KD_API merkle_block {
 
 
 private:
+    // Construction goes through `create` / `from_data` / the block-wrapping
+    // ctor, which guarantee a non-sentinel value.
+    merkle_block(chain::header const& header, size_t total_transactions, hash_list&& hashes, data_chunk&& flags);
+    merkle_block(chain::header const& header, size_t total_transactions, hash_list const& hashes, data_chunk const& flags);
+
     chain::header header_;
     size_t total_transactions_{0};
     hash_list hashes_;

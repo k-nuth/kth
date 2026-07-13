@@ -27,56 +27,35 @@ struct KD_API compact_block {
     using short_id = uint64_t;
     using short_id_list = std::vector<short_id>;
 
+    /// Derive a compact block from an (already valid) block.
     static
     compact_block factory_from_block(message::block const& blk);
 
-    compact_block() = default;
-    compact_block(chain::header const& header, uint64_t nonce, short_id_list const& short_ids, prefilled_transaction::list const& transactions);
-    compact_block(chain::header const& header, uint64_t nonce, short_id_list&& short_ids, prefilled_transaction::list&& transactions);
+    /// Build from parts. Returns `error::compact_block_construction_empty` for
+    /// the all-default sentinel (an empty header with no payload).
+    static
+    expect<compact_block> create(chain::header header, uint64_t nonce, short_id_list short_ids, prefilled_transaction::list transactions);
 
     [[nodiscard]]
     friend bool operator==(compact_block const&, compact_block const&) = default;
 
-    chain::header& header();
-
     [[nodiscard]]
     chain::header const& header() const;
-
-    void set_header(chain::header const& value);
 
     [[nodiscard]]
     uint64_t nonce() const;
 
-    void set_nonce(uint64_t value);
-
-    short_id_list& short_ids();
-
     [[nodiscard]]
     short_id_list const& short_ids() const;
-
-    void set_short_ids(short_id_list const& value);
-    void set_short_ids(short_id_list&& value);
-
-    prefilled_transaction::list& transactions();
 
     [[nodiscard]]
     prefilled_transaction::list const& transactions() const;
 
-    void set_transactions(prefilled_transaction::list const& value);
-    void set_transactions(prefilled_transaction::list&& value);
-
     static
     expect<compact_block> from_data(byte_reader& reader, uint32_t version);
 
-    bool from_block(message::block const& block);
-
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, uint32_t version) const;
-
-    [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
 
     [[nodiscard]]
     size_t serialized_size(uint32_t version) const;
@@ -91,6 +70,11 @@ struct KD_API compact_block {
     uint32_t const version_maximum;
 
 private:
+    // Construction goes through `create` / `from_data` / `factory_from_block`,
+    // which guarantee a non-sentinel value.
+    compact_block(chain::header const& header, uint64_t nonce, short_id_list const& short_ids, prefilled_transaction::list const& transactions);
+    compact_block(chain::header const& header, uint64_t nonce, short_id_list&& short_ids, prefilled_transaction::list&& transactions);
+
     chain::header header_;
     uint64_t nonce_{0};
     short_id_list short_ids_;

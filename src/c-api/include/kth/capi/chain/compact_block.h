@@ -16,22 +16,13 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_compact_block_mut_t`. Caller must release with `kth_chain_compact_block_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_compact_block_mut_t kth_chain_compact_block_construct_default(void);
-
 /** @param[out] out Must point to a null `kth_compact_block_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_compact_block_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_chain_compact_block_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_compact_block_mut_t* out);
 
-/**
- * @return Owned `kth_compact_block_mut_t`. Caller must release with `kth_chain_compact_block_destruct`.
- * @param header Borrowed input. Copied by value into the resulting object; ownership of `header` stays with the caller.
- * @param short_ids Borrowed input. Copied by value into the resulting object; ownership of `short_ids` stays with the caller.
- * @param transactions Borrowed input. Copied by value into the resulting object; ownership of `transactions` stays with the caller.
- */
-KTH_EXPORT KTH_OWNED
-kth_compact_block_mut_t kth_chain_compact_block_construct(kth_header_const_t header, uint64_t nonce, kth_u64_list_const_t short_ids, kth_prefilled_transaction_list_const_t transactions);
+/** @param[out] out Must point to a null `kth_compact_block_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_compact_block_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_chain_compact_block_create(kth_header_const_t header, uint64_t nonce, kth_u64_list_const_t short_ids, kth_prefilled_transaction_list_const_t transactions, KTH_OUT_OWNED kth_compact_block_mut_t* out);
 
 
 // Destructor
@@ -52,6 +43,9 @@ kth_compact_block_mut_t kth_chain_compact_block_copy(kth_compact_block_const_t s
 
 KTH_EXPORT
 kth_bool_t kth_chain_compact_block_equals(kth_compact_block_const_t self, kth_compact_block_const_t other);
+
+KTH_EXPORT
+kth_bool_t kth_chain_compact_block_not_equal(kth_compact_block_const_t self, kth_compact_block_const_t other);
 
 
 // Serialization
@@ -80,36 +74,6 @@ kth_u64_list_mut_t kth_chain_compact_block_short_ids(kth_compact_block_const_t s
 /** @return Borrowed `kth_prefilled_transaction_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_prefilled_transaction_list_const_t kth_chain_compact_block_transactions(kth_compact_block_const_t self);
-
-
-// Setters
-
-/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
-KTH_EXPORT
-void kth_chain_compact_block_set_header(kth_compact_block_mut_t self, kth_header_const_t value);
-
-KTH_EXPORT
-void kth_chain_compact_block_set_nonce(kth_compact_block_mut_t self, uint64_t value);
-
-/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
-KTH_EXPORT
-void kth_chain_compact_block_set_short_ids(kth_compact_block_mut_t self, kth_u64_list_const_t value);
-
-/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
-KTH_EXPORT
-void kth_chain_compact_block_set_transactions(kth_compact_block_mut_t self, kth_prefilled_transaction_list_const_t value);
-
-
-// Predicates
-
-KTH_EXPORT
-kth_bool_t kth_chain_compact_block_is_valid(kth_compact_block_const_t self);
-
-
-// Operations
-
-KTH_EXPORT
-void kth_chain_compact_block_reset(kth_compact_block_mut_t self);
 
 #ifdef __cplusplus
 } // extern "C"

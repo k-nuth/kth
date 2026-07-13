@@ -12,7 +12,7 @@
 #include <kth/infrastructure/math/sip_hash.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
-#include <kth/infrastructure/utility/pseudo_random_broken_do_not_use.hpp>
+#include <kth/infrastructure/utility/pseudo_random.hpp>
 
 namespace kth::domain::message {
 
@@ -20,10 +20,39 @@ std::string const compact_block::command = "cmpctblock";
 uint32_t const compact_block::version_minimum = version::level::bip152;
 uint32_t const compact_block::version_maximum = version::level::bip152;
 
-compact_block compact_block::factory_from_block(message::block const& blk) {
-    compact_block instance;
-    instance.from_block(blk);
-    return instance;
+// static
+compact_block compact_block::factory_from_block(message::block const& block) {
+    // BIP152: the nonce salts the SipHash short-id computation, so it must be
+    // unpredictable to an adversary (otherwise short-id collisions can be
+    // ground out to force block-reconstruction failures). Use the CSPRNG.
+    uint64_t nonce = 0;
+    pseudo_random::fill(reinterpret_cast<uint8_t*>(&nonce), sizeof(nonce));
+
+    prefilled_transaction::list prefilled_list{prefilled_transaction{0, block.transactions()[0]}};
+
+    auto header_hash = hash(block, nonce);
+    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash);
+    auto k1 = from_little_endian_unsafe<uint64_t>(std::span{header_hash}.subspan(sizeof(uint64_t)));
+
+    compact_block::short_id_list short_ids_list;
+    short_ids_list.reserve(block.transactions().size() - 1);
+    for (size_t i = 1; i < block.transactions().size(); ++i) {
+        uint64_t shortid = sip_hash_uint256(k0, k1, block.transactions()[i].hash()) & uint64_t(0xffffffffffff);
+        short_ids_list.push_back(shortid);
+    }
+
+    // A block always carries a valid header and a coinbase, so the result is
+    // never the empty sentinel.
+    return compact_block{block.header(), nonce, std::move(short_ids_list), std::move(prefilled_list)};
+}
+
+// static
+expect<compact_block> compact_block::create(chain::header header, uint64_t nonce, short_id_list short_ids, prefilled_transaction::list transactions) {
+    // Reject the all-default sentinel (what the old `is_valid()` guarded).
+    if ( ! header.is_valid() && short_ids.empty() && transactions.empty()) {
+        return std::unexpected(error::compact_block_construction_empty);
+    }
+    return compact_block{header, nonce, std::move(short_ids), std::move(transactions)};
 }
 
 compact_block::compact_block(chain::header const& header, uint64_t nonce, short_id_list const& short_ids, prefilled_transaction::list const& transactions)
@@ -56,51 +85,6 @@ compact_block::compact_block(chain::header const& header, uint64_t nonce, short_
 //     transactions_ = std::move(x.transactions_);
 //     return *this;
 // }
-
-bool compact_block::is_valid() const {
-    //std::println("compact_block::is_valid");
-
-    return header_.is_valid()
-        && ! short_ids_.empty()
-        && ! transactions_.empty();
-}
-
-void compact_block::reset() {
-    //std::println("compact_block::reset");
-
-    header_ = chain::header{};
-    nonce_ = 0;
-    short_ids_.clear();
-    short_ids_.shrink_to_fit();
-    transactions_.clear();
-    transactions_.shrink_to_fit();
-}
-
-bool compact_block::from_block(message::block const& block) {
-    reset();
-
-    header_ = block.header();
-    nonce_ = pseudo_random_broken_do_not_use(1, max_uint64);
-
-    prefilled_transaction::list prefilled_list{prefilled_transaction{0, block.transactions()[0]}};
-
-    auto header_hash = hash(block, nonce_);
-
-    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash);
-    auto k1 = from_little_endian_unsafe<uint64_t>(std::span{header_hash}.subspan(sizeof(uint64_t)));
-
-    compact_block::short_id_list short_ids_list;
-    short_ids_list.reserve(block.transactions().size() - 1);
-    for (size_t i = 1; i < block.transactions().size(); ++i) {
-        uint64_t shortid = sip_hash_uint256(k0, k1, block.transactions()[i].hash()) & uint64_t(0xffffffffffff);
-        short_ids_list.push_back(shortid);
-    }
-
-    short_ids_ = std::move(short_ids_list);
-    transactions_ = std::move(prefilled_list);
-
-    return true;
-}
 
 // Deserialization.
 //-----------------------------------------------------------------------------
@@ -149,7 +133,7 @@ expect<compact_block> compact_block::from_data(byte_reader& reader, uint32_t ver
         return std::unexpected(error::version_too_low);
     }
 
-    return compact_block(*header, *nonce, std::move(short_ids), std::move(*txs));
+    return create(*header, *nonce, std::move(short_ids), std::move(*txs));
 }
 
 // Serialization.
@@ -173,67 +157,20 @@ size_t compact_block::serialized_size(uint32_t version) const {
     return size;
 }
 
-chain::header& compact_block::header() {
-    //std::println("compact_block::header");
-
-    return header_;
-}
-
 chain::header const& compact_block::header() const {
-    //std::println("compact_block::header 2");
-
     return header_;
-}
-
-void compact_block::set_header(chain::header const& value) {
-    //std::println("compact_block::set_header");
-
-    header_ = value;
 }
 
 uint64_t compact_block::nonce() const {
-    //std::println("compact_block::nonce");
-
     return nonce_;
 }
 
-void compact_block::set_nonce(uint64_t value) {
-    //std::println("compact_block::set_nonce");
-    nonce_ = value;
-}
-
-compact_block::short_id_list& compact_block::short_ids() {
-    //std::println("compact_block::short_ids");
-    return short_ids_;
-}
-
 compact_block::short_id_list const& compact_block::short_ids() const {
-    //std::println("compact_block::short_ids 2");
     return short_ids_;
-}
-
-void compact_block::set_short_ids(short_id_list const& value) {
-    short_ids_ = value;
-}
-
-void compact_block::set_short_ids(short_id_list&& value) {
-    short_ids_ = std::move(value);
-}
-
-prefilled_transaction::list& compact_block::transactions() {
-    return transactions_;
 }
 
 prefilled_transaction::list const& compact_block::transactions() const {
     return transactions_;
-}
-
-void compact_block::set_transactions(prefilled_transaction::list const& value) {
-    transactions_ = value;
-}
-
-void compact_block::set_transactions(prefilled_transaction::list&& value) {
-    transactions_ = std::move(value);
 }
 
 hash_digest hash(compact_block const& block) {

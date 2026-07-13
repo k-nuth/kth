@@ -34,38 +34,13 @@ merkle_block::merkle_block(chain::block const& block)
                    {}) {
 }
 
-bool merkle_block::operator==(merkle_block const& x) const {
-    auto result = (header_ == x.header_) &&
-                  (hashes_.size() == x.hashes_.size()) &&
-                  (flags_.size() == x.flags_.size());
-
-    for (size_t i = 0; i < hashes_.size() && result; i++) {
-        result = (hashes_[i] == x.hashes_[i]);
+// static
+expect<merkle_block> merkle_block::create(chain::header header, size_t total_transactions, hash_list hashes, data_chunk flags) {
+    // Reject the all-default sentinel (what the old `is_valid()` guarded).
+    if (hashes.empty() && flags.empty() && ! header.is_valid()) {
+        return std::unexpected(error::merkle_block_construction_empty);
     }
-
-    for (size_t i = 0; i < flags_.size() && result; i++) {
-        result = (flags_[i] == x.flags_[i]);
-    }
-
-    return result;
-}
-
-bool merkle_block::operator!=(merkle_block const& x) const {
-    return !(*this == x);
-}
-
-
-bool merkle_block::is_valid() const {
-    return !hashes_.empty() || !flags_.empty() || header_.is_valid();
-}
-
-void merkle_block::reset() {
-    header_ = chain::header{};
-    total_transactions_ = 0;
-    hashes_.clear();
-    hashes_.shrink_to_fit();
-    flags_.clear();
-    flags_.shrink_to_fit();
+    return merkle_block{header, total_transactions, std::move(hashes), std::move(flags)};
 }
 
 // Deserialization.
@@ -116,7 +91,7 @@ expect<merkle_block> merkle_block::from_data(byte_reader& reader, uint32_t versi
         return std::unexpected(error::unsupported_version);
     }
 
-    return merkle_block(
+    return create(
         *header,
         *total_transactions,
         std::move(hashes),
@@ -135,56 +110,20 @@ size_t merkle_block::serialized_size(uint32_t /*version*/) const {
            infrastructure::message::variable_uint_size(flags_.size()) + flags_.size();
 }
 
-chain::header& merkle_block::header() {
-    return header_;
-}
-
 chain::header const& merkle_block::header() const {
     return header_;
-}
-
-void merkle_block::set_header(chain::header const& value) {
-    header_ = value;
 }
 
 size_t merkle_block::total_transactions() const {
     return total_transactions_;
 }
 
-void merkle_block::set_total_transactions(size_t value) {
-    total_transactions_ = value;
-}
-
-hash_list& merkle_block::hashes() {
-    return hashes_;
-}
-
 hash_list const& merkle_block::hashes() const {
     return hashes_;
 }
 
-void merkle_block::set_hashes(hash_list const& value) {
-    hashes_ = value;
-}
-
-void merkle_block::set_hashes(hash_list&& value) {
-    hashes_ = std::move(value);
-}
-
-data_chunk& merkle_block::flags() {
-    return flags_;
-}
-
 data_chunk const& merkle_block::flags() const {
     return flags_;
-}
-
-void merkle_block::set_flags(data_chunk const& value) {
-    flags_ = value;
-}
-
-void merkle_block::set_flags(data_chunk&& value) {
-    flags_ = std::move(value);
 }
 
 expect<void> merkle_block::to_data(byte_writer& writer, uint32_t version) const {
