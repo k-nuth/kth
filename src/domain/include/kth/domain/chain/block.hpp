@@ -63,9 +63,11 @@ public:
     // Constructors.
     //-------------------------------------------------------------------------
 
-    block() = default;
-    block(chain::header const& header, transaction::list&& transactions);
-    block(chain::header const& header, transaction::list const& transactions);
+    /// The only way to build a block from parts. Returns `error::empty_block`
+    /// when the result would be the empty sentinel (no transactions and an
+    /// all-zero header), so a constructed `block` is always a real block.
+    static
+    expect<block> create(chain::header header, transaction::list transactions);
 
     // Operators.
     //-------------------------------------------------------------------------
@@ -92,12 +94,8 @@ public:
     // Properties (accessors).
     //-------------------------------------------------------------------------
 
-    chain::header& header();
-
     [[nodiscard]]
     chain::header const& header() const;
-
-    void set_header(chain::header const& value);
 
     transaction::list& transactions();
 
@@ -144,9 +142,6 @@ public:
 
     // Validation.
     //-------------------------------------------------------------------------
-
-    [[nodiscard]]
-    bool is_valid() const;
 
     static
     uint64_t subsidy(size_t height, bool retarget);
@@ -217,13 +212,15 @@ public:
     // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
     mutable validation_t validation{};
 
-// protected:
-    void reset();
-
     [[nodiscard]]
     size_t non_coinbase_input_count() const;
 
 private:
+    // Construction goes through `create` / `from_data` / `genesis_*`, which
+    // guarantee a non-sentinel block; these do the actual member init.
+    block(chain::header const& header, transaction::list&& transactions);
+    block(chain::header const& header, transaction::list const& transactions);
+
     chain::header header_;
     transaction::list transactions_;
 };

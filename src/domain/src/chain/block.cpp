@@ -185,6 +185,16 @@ block::block(chain::header const& header, transaction::list&& transactions)
     , transactions_(std::move(transactions))
 {}
 
+// static
+expect<block> block::create(chain::header header, transaction::list transactions) {
+    // Reject the empty sentinel (what the old `is_valid()` guarded against):
+    // a block with no transactions and an all-zero header is not a block.
+    if (transactions.empty() && ! header.is_valid()) {
+        return std::unexpected(error::block_construction_empty);
+    }
+    return block{header, std::move(transactions)};
+}
+
 // Operators.
 //-----------------------------------------------------------------------------
 
@@ -207,9 +217,12 @@ expect<block> block::from_data(byte_reader& reader) {
         return std::unexpected(txs.error());
     }
     auto const end_deserialize = asio::steady_clock::now();
-    block res {*hdr, std::move(*txs)};
-    res.validation.start_deserialize = start_deserialize;
-    res.validation.end_deserialize = end_deserialize;
+    auto res = create(*hdr, std::move(*txs));
+    if ( ! res) {
+        return std::unexpected(res.error());
+    }
+    res->validation.start_deserialize = start_deserialize;
+    res->validation.end_deserialize = end_deserialize;
     return res;
 }
 
@@ -220,16 +233,6 @@ expect<void> block::to_data(byte_writer& writer) const {
         if (auto r = tx.to_data(writer, true); ! r) return r;
     }
     return {};
-}
-
-void block::reset() {
-    header_ = chain::header{};
-    transactions_.clear();
-    transactions_.shrink_to_fit();
-}
-
-bool block::is_valid() const {
-    return !transactions_.empty() || header_.is_valid();
 }
 
 hash_list block::to_hashes() const {
@@ -252,19 +255,8 @@ size_t block::serialized_size() const {
     return chain::serialized_size(*this);
 }
 
-chain::header& block::header() {
-    return header_;
-}
-
 chain::header const& block::header() const {
     return header_;
-}
-
-// TODO(legacy): must call header.set_merkle(generate_merkle_root()) though this may
-// be very suboptimal if the block is being constructed. First verify that all
-// current uses will not be impacted and if so change them to use constructor.
-void block::set_header(chain::header const& value) {
-    header_ = value;
 }
 
 transaction::list& block::transactions() {
@@ -299,7 +291,6 @@ chain::block genesis_generic(std::string const& raw_data) {
     auto genesis = block::from_data(reader);
 
     KTH_ASSERT(genesis);
-    KTH_ASSERT(genesis->is_valid());
     KTH_ASSERT(genesis->transactions().size() == 1);
     KTH_ASSERT(genesis->generate_merkle_root() == genesis->header().merkle());
 

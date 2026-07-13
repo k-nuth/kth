@@ -16,24 +16,9 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_block_mut_t kth_chain_block_construct_default(void);
-
 /** @param[out] out Must point to a null `kth_block_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_block_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_chain_block_construct_from_data(uint8_t const* data, kth_size_t n, KTH_OUT_OWNED kth_block_mut_t* out);
-
-/**
- * @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`.
- * @param header Borrowed input. Copied by value into the resulting object; ownership of `header` stays with the caller.
- * @param transactions Borrowed input. Copied by value into the resulting object; ownership of `transactions` stays with the caller.
- */
-KTH_EXPORT KTH_OWNED
-kth_block_mut_t kth_chain_block_construct(kth_header_const_t header, kth_transaction_list_const_t transactions);
-
-
-// Static factories
 
 /** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
 KTH_EXPORT KTH_OWNED
@@ -59,6 +44,10 @@ kth_block_mut_t kth_chain_block_genesis_scalenet(void);
 KTH_EXPORT KTH_OWNED
 kth_block_mut_t kth_chain_block_genesis_chipnet(void);
 
+/** @param[out] out Must point to a null `kth_block_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_block_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_chain_block_create(kth_header_const_t header, kth_transaction_list_const_t transactions, KTH_OUT_OWNED kth_block_mut_t* out);
+
 
 // Destructor
 
@@ -78,6 +67,9 @@ kth_block_mut_t kth_chain_block_copy(kth_block_const_t self);
 
 KTH_EXPORT
 kth_bool_t kth_chain_block_equals(kth_block_const_t self, kth_block_const_t other);
+
+KTH_EXPORT
+kth_bool_t kth_chain_block_not_equal(kth_block_const_t self, kth_block_const_t other);
 
 
 // Serialization
@@ -138,15 +130,8 @@ kth_size_t kth_chain_block_non_coinbase_input_count(kth_block_const_t self);
 KTH_EXPORT
 void kth_chain_block_set_transactions(kth_block_mut_t self, kth_transaction_list_const_t value);
 
-/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
-KTH_EXPORT
-void kth_chain_block_set_header(kth_block_mut_t self, kth_header_const_t value);
-
 
 // Predicates
-
-KTH_EXPORT
-kth_bool_t kth_chain_block_is_valid(kth_block_const_t self);
 
 KTH_EXPORT
 kth_bool_t kth_chain_block_is_extra_coinbases(kth_block_const_t self);
@@ -186,9 +171,6 @@ uint64_t kth_chain_block_reward(kth_block_const_t self, kth_size_t height);
 
 KTH_EXPORT
 kth_size_t kth_chain_block_signature_operations(kth_block_const_t self, kth_bool_t bip16, kth_bool_t bip141);
-
-KTH_EXPORT
-void kth_chain_block_reset(kth_block_mut_t self);
 
 
 // Static utilities

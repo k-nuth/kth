@@ -21,32 +21,28 @@
 #include <kth/capi/primitives.h>
 
 #include "../test_helpers.hpp"
-
-// ---------------------------------------------------------------------------
-// Helpers — use genesis_mainnet as the canonical test block.
-// ---------------------------------------------------------------------------
-
-static kth_block_mut_t make_block(void) {
-    kth_block_mut_t blk = kth_chain_block_genesis_mainnet();
-    REQUIRE(blk != NULL);
-    return blk;
-}
+#include "block_fixtures.hpp"
 
 // ---------------------------------------------------------------------------
 // Constructors / lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Block - default construct is invalid",
+TEST_CASE("C-API Block - create rejects the empty sentinel",
           "[C-API Block]") {
-    kth_block_mut_t blk = kth_chain_block_construct_default();
-    REQUIRE(kth_chain_block_is_valid(blk) == 0);
-    kth_chain_block_destruct(blk);
+    kth_header_mut_t h = kth_chain_header_construct_default();
+    kth_transaction_list_mut_t txs = kth_chain_transaction_list_construct_default();
+    kth_block_mut_t blk = NULL;
+    kth_error_code_t ec = kth_chain_block_create(h, txs, &blk);
+    REQUIRE(ec != kth_ec_success);
+    REQUIRE(blk == NULL);
+    kth_chain_header_destruct(h);
+    kth_chain_transaction_list_destruct(txs);
 }
 
 TEST_CASE("C-API Block - genesis mainnet is valid",
           "[C-API Block]") {
     kth_block_mut_t blk = make_block();
-    REQUIRE(kth_chain_block_is_valid(blk) != 0);
+    REQUIRE(kth_chain_block_is_valid_merkle_root(blk) != 0);
     kth_chain_block_destruct(blk);
 }
 
@@ -83,7 +79,6 @@ TEST_CASE("C-API Block - to_data / from_data roundtrip",
     kth_error_code_t ec = kth_chain_block_construct_from_data(raw, size, &parsed);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(parsed != NULL);
-    REQUIRE(kth_chain_block_is_valid(parsed) != 0);
     REQUIRE(kth_chain_block_equals(expected, parsed) != 0);
 
     kth_core_destruct_array(raw);
@@ -147,7 +142,7 @@ TEST_CASE("C-API Block - genesis has valid merkle root",
 
 TEST_CASE("C-API Block - default is not extra coinbases",
           "[C-API Block]") {
-    kth_block_mut_t blk = kth_chain_block_construct_default();
+    kth_block_mut_t blk = make_minimal_block();
     REQUIRE(kth_chain_block_is_extra_coinbases(blk) == 0);
     kth_chain_block_destruct(blk);
 }
@@ -161,7 +156,6 @@ TEST_CASE("C-API Block - copy preserves fields",
     kth_block_mut_t original = make_block();
     kth_block_mut_t copy = kth_chain_block_copy(original);
 
-    REQUIRE(kth_chain_block_is_valid(copy) != 0);
     REQUIRE(kth_chain_block_equals(original, copy) != 0);
 
     kth_chain_block_destruct(copy);
@@ -172,7 +166,7 @@ TEST_CASE("C-API Block - equals identical blocks is true, different is false",
           "[C-API Block]") {
     kth_block_mut_t a = make_block();
     kth_block_mut_t b = make_block();
-    kth_block_mut_t c = kth_chain_block_construct_default();
+    kth_block_mut_t c = make_minimal_block();
 
     REQUIRE(kth_chain_block_equals(a, b) != 0);
     REQUIRE(kth_chain_block_equals(a, c) == 0);
@@ -208,7 +202,7 @@ TEST_CASE("C-API Block - copy null self aborts",
 
 TEST_CASE("C-API Block - to_data_simple null out_size aborts",
           "[C-API Block][precondition]") {
-    kth_block_mut_t blk = kth_chain_block_construct_default();
+    kth_block_mut_t blk = make_minimal_block();
     KTH_EXPECT_ABORT(kth_chain_block_to_data(blk, NULL));
     kth_chain_block_destruct(blk);
 }

@@ -30,6 +30,13 @@ bool all_valid(chain::transaction::list const& transactions) {
     return valid;
 }
 
+// A block with a non-zero header (so `create` accepts it) and the given
+// transactions. Replaces the old default-construct-then-set idiom.
+chain::block make_block(chain::transaction::list txs = {}) {
+    return chain::block::create(
+        chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, std::move(txs)).value();
+}
+
 } // anonymous namespace
 
 // Start Test Suite: chain block tests
@@ -69,12 +76,13 @@ TEST_CASE("block locator heights positive backoff returns top plus log offset to
     REQUIRE(expected == result);
 }
 
-TEST_CASE("block constructor 1 always invalid", "[chain block]") {
-    chain::block const instance;
-    REQUIRE( ! instance.is_valid());
+TEST_CASE("block create rejects the empty sentinel", "[chain block]") {
+    // No transactions and an all-zero header is not a block.
+    REQUIRE( ! chain::block::create(chain::header{}, {}));
+    REQUIRE(chain::block::create(chain::header{}, {}).error() == error::block_construction_empty);
 }
 
-TEST_CASE("block constructor 2 always equals params", "[chain block]") {
+TEST_CASE("block create 2 always equals params", "[chain block]") {
     chain::header const header {
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -90,13 +98,12 @@ TEST_CASE("block constructor 2 always equals params", "[chain block]") {
         chain::transaction(4, 16, {}, {})
     };
 
-    chain::block const instance(header, transactions);
-    REQUIRE(instance.is_valid());
+    auto const instance = chain::block::create(header, transactions).value();
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("block constructor 3 always equals params", "[chain block]") {
+TEST_CASE("block create 3 always equals params", "[chain block]") {
     chain::header const header {
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -116,17 +123,13 @@ TEST_CASE("block constructor 3 always equals params", "[chain block]") {
     chain::header dup_header(header);
     chain::transaction::list dup_transactions(transactions);
 
-    chain::block const instance {
-        std::move(dup_header), 
-        std::move(dup_transactions)
-    };
+    auto const instance = chain::block::create(std::move(dup_header), std::move(dup_transactions)).value();
 
-    REQUIRE(instance.is_valid());
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("block constructor 4 always equals params", "[chain block]") {
+TEST_CASE("block copy 4 always equals params", "[chain block]") {
     chain::header const header {
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -142,15 +145,14 @@ TEST_CASE("block constructor 4 always equals params", "[chain block]") {
         chain::transaction(4, 16, {}, {})
     };
 
-    chain::block const value(header, transactions);
+    auto const value = chain::block::create(header, transactions).value();
     chain::block const instance(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(value == instance);
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
 }
 
-TEST_CASE("block constructor 5 always equals params", "[chain block]") {
+TEST_CASE("block move 5 always equals params", "[chain block]") {
     chain::header const header {
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -167,27 +169,26 @@ TEST_CASE("block constructor 5 always equals params", "[chain block]") {
     };
 
     // This must be non-const.
-    chain::block value(header, transactions);
+    auto value = chain::block::create(header, transactions).value();
 
     chain::block const instance(std::move(value));
 
-    REQUIRE(instance.is_valid());
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
 }
 
 TEST_CASE("block hash always returns header hash", "[chain block]") {
-    chain::block const instance;
+    auto const instance = chain::block::create(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, {}).value();
     REQUIRE(chain::hash(instance.header()) == instance.hash());
 }
 
 TEST_CASE("block is valid merkle root uninitialized returns true", "[chain block]") {
-    chain::block const instance;
+    auto const instance = make_block();
     REQUIRE(instance.is_valid_merkle_root());
 }
 
 TEST_CASE("block is valid merkle root non empty tx invalid block returns false", "[chain block]") {
-    chain::block instance;
+    auto instance = make_block();
     instance.set_transactions(chain::transaction::list{chain::transaction{}});
     REQUIRE( ! instance.is_valid_merkle_root());
 }
@@ -247,21 +248,18 @@ TEST_CASE("block from data insufficient transaction bytes failure", "[block seri
 
 TEST_CASE("block genesis mainnet valid structure", "[block serialization]") {
     auto const genesis = chain::block::genesis_mainnet();
-    REQUIRE(genesis.is_valid());
     REQUIRE(genesis.transactions().size() == 1u);
     REQUIRE(genesis.header().merkle() == genesis.generate_merkle_root());
 }
 
 TEST_CASE("block genesis testnet valid structure", "[block serialization]") {
     auto const genesis = chain::block::genesis_testnet();
-    REQUIRE(genesis.is_valid());
     REQUIRE(genesis.transactions().size() == 1u);
     REQUIRE(genesis.header().merkle() == genesis.generate_merkle_root());
 }
 
 TEST_CASE("block genesis regtest valid structure", "[block serialization]") {
     auto const genesis = chain::block::genesis_regtest();
-    REQUIRE(genesis.is_valid());
     REQUIRE(genesis.transactions().size() == 1u);
     REQUIRE(genesis.header().merkle() == genesis.generate_merkle_root());
 }
@@ -269,21 +267,18 @@ TEST_CASE("block genesis regtest valid structure", "[block serialization]") {
 #if defined(KTH_CURRENCY_BCH)
 TEST_CASE("block genesis testnet4 valid structure", "[block serialization]") {
     auto const genesis = chain::block::genesis_testnet4();
-    REQUIRE(genesis.is_valid());
     REQUIRE(genesis.transactions().size() == 1u);
     REQUIRE(genesis.header().merkle() == genesis.generate_merkle_root());
 }
 
 TEST_CASE("block genesis scalenet valid structure", "[block serialization]") {
     auto const genesis = chain::block::genesis_scalenet();
-    REQUIRE(genesis.is_valid());
     REQUIRE(genesis.transactions().size() == 1u);
     REQUIRE(genesis.header().merkle() == genesis.generate_merkle_root());
 }
 
 TEST_CASE("block genesis chipnet valid structure", "[block serialization]") {
     auto const genesis = chain::block::genesis_chipnet();
-    REQUIRE(genesis.is_valid());
     REQUIRE(genesis.transactions().size() == 1u);
     REQUIRE(genesis.header().merkle() == genesis.generate_merkle_root());
 }
@@ -305,7 +300,6 @@ TEST_CASE("block from data genesis mainnet success", "[block serialization]") {
     REQUIRE(result);
     auto const& block = *result;
 
-    REQUIRE(block.is_valid());
     REQUIRE(genesis.header() == block.header());
 
     // Verify merkle root from transactions.
@@ -327,7 +321,6 @@ TEST_CASE("block factory from data 2 genesis mainnet success", "[block serializa
     REQUIRE(result);
     auto const& block = *result;
 
-    REQUIRE(block.is_valid());
     REQUIRE(genesis.header() == block.header());
 
     // Verify merkle root from transactions.
@@ -349,7 +342,6 @@ TEST_CASE("block factory from data 3 genesis mainnet success", "[block serializa
     REQUIRE(result);
     auto const& block = *result;
 
-    REQUIRE(block.is_valid());
     REQUIRE(genesis.header() == block.header());
 
     // Verify merkle root from transactions.
@@ -361,7 +353,7 @@ TEST_CASE("block factory from data 3 genesis mainnet success", "[block serializa
 // Start Test Suite: block generate merkle root tests
 
 TEST_CASE("block generate merkle root block with zero transactions matches null hash", "[block generate merkle root]") {
-    chain::block const empty;
+    auto const empty = make_block();
     REQUIRE(empty.generate_merkle_root() == null_hash);
 }
 
@@ -396,7 +388,6 @@ TEST_CASE("block generate merkle root block with multiple transactions matches h
     auto const result = chain::block::from_data(reader);
     REQUIRE(result);
     auto const& block100k = *result;
-    REQUIRE(block100k.is_valid());
 
     auto const serial = kth::to_data_chunk(block100k);
     REQUIRE(raw == serial);
@@ -423,11 +414,11 @@ TEST_CASE("block header accessor always returns initialized value", "[block gene
         chain::transaction(4, 16, {}, {})
     };
 
-    chain::block const instance(header, transactions);
+    auto const instance = chain::block::create(header, transactions).value();
     REQUIRE(header == instance.header());
 }
 
-TEST_CASE("block header setter 1 roundtrip success", "[block generate merkle root]") {
+TEST_CASE("block construct exposes header", "[block generate merkle root]") {
     chain::header const header {
         10u,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -437,28 +428,7 @@ TEST_CASE("block header setter 1 roundtrip success", "[block generate merkle roo
         68644u
     };
 
-    chain::block instance;
-    REQUIRE(header != instance.header());
-    instance.set_header(header);
-    REQUIRE(header == instance.header());
-}
-
-TEST_CASE("block header setter 2 roundtrip success", "[block generate merkle root]") {
-    chain::header const header {
-        10u,
-        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
-        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
-        531234u,
-        6523454u,
-        68644u
-    };
-
-    // This must be non-const.
-    chain::header dup_header(header);
-
-    chain::block instance;
-    REQUIRE(header != instance.header());
-    instance.set_header(std::move(dup_header));
+    auto instance = chain::block::create(header, chain::transaction::list{}).value();
     REQUIRE(header == instance.header());
 }
 
@@ -478,7 +448,7 @@ TEST_CASE("block transactions accessor always returns initialized value", "[bloc
         chain::transaction(4, 16, {}, {})
     };
 
-    chain::block const instance(header, transactions);
+    auto const instance = chain::block::create(header, transactions).value();
     REQUIRE(transactions == instance.transactions());
 }
 
@@ -489,7 +459,7 @@ TEST_CASE("block transactions setter 1 roundtrip success", "[block generate merk
         chain::transaction(4, 16, {}, {})
     };
 
-    chain::block instance;
+    auto instance = make_block();
     REQUIRE(transactions != instance.transactions());
     instance.set_transactions(transactions);
     REQUIRE(transactions == instance.transactions());
@@ -505,7 +475,7 @@ TEST_CASE("block transactions setter 2 roundtrip success", "[block generate merk
     // This must be non-const.
     chain::transaction::list dup_transactions(transactions);
 
-    chain::block instance;
+    auto instance = make_block();
     REQUIRE(transactions != instance.transactions());
     instance.set_transactions(std::move(dup_transactions));
     REQUIRE(transactions == instance.transactions());
@@ -528,19 +498,16 @@ TEST_CASE("block operator assign equals always matches equivalent", "[block gene
     };
 
     // This must be non-const.
-    chain::block value(header, transactions);
+    auto value = chain::block::create(header, transactions).value();
 
-    REQUIRE(value.is_valid());
-    chain::block instance;
-    REQUIRE( ! instance.is_valid());
+    auto instance = make_block();
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
 }
 
 TEST_CASE("block operator boolean equals duplicates returns true", "[block generate merkle root]") {
-    chain::block const expected(
+    auto const expected = chain::block::create(
         chain::header {
             10u,
             "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -554,14 +521,14 @@ TEST_CASE("block operator boolean equals duplicates returns true", "[block gener
             chain::transaction(2, 32, {}, {}),
             chain::transaction(4, 16, {}, {})
         }
-    );
+    ).value();
 
     chain::block const instance(expected);
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("block operator boolean equals differs returns false", "[block generate merkle root]") {
-    chain::block const expected(
+    auto const expected = chain::block::create(
         chain::header {
             10u,
             "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -575,14 +542,14 @@ TEST_CASE("block operator boolean equals differs returns false", "[block generat
             chain::transaction(2, 32, {}, {}),
             chain::transaction(4, 16, {}, {})
         }
-    );
+    ).value();
 
-    chain::block const instance;
+    auto const instance = make_block();
     REQUIRE( ! (instance == expected));
 }
 
 TEST_CASE("block operator boolean not equals duplicates returns false", "[block generate merkle root]") {
-    chain::block const expected {
+    auto const expected = chain::block::create(
         chain::header {
             10u,
             "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -596,14 +563,14 @@ TEST_CASE("block operator boolean not equals duplicates returns false", "[block 
             chain::transaction(2, 32, {}, {}),
             chain::transaction(4, 16, {}, {})
         }
-    };
+    ).value();
 
     chain::block const instance(expected);
     REQUIRE( ! (instance != expected));
 }
 
 TEST_CASE("block operator boolean not equals differs returns true", "[block generate merkle root]") {
-    chain::block const expected(
+    auto const expected = chain::block::create(
         chain::header {
             10u,
             "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -617,9 +584,9 @@ TEST_CASE("block operator boolean not equals differs returns true", "[block gene
             chain::transaction(2, 32, {}, {}),
             chain::transaction(4, 16, {}, {})
         }
-    );
+    ).value();
 
-    chain::block const instance;
+    auto const instance = make_block();
     REQUIRE(instance != expected);
 }
 
@@ -628,36 +595,36 @@ TEST_CASE("block operator boolean not equals differs returns true", "[block gene
 // Start Test Suite: block is distinct transaction set tests
 
 TEST_CASE("block distinct transactions empty true", "[block is distinct transaction set]") {
-    chain::block const value;
+    auto const value = make_block();
     REQUIRE(value.is_distinct_transaction_set());
 }
 
 TEST_CASE("validate block is distinct tx set single true", "[block is distinct transaction set]") {
-    chain::block value;
+    auto value = make_block();
     value.set_transactions({{1, 0, {}, {}}});
     REQUIRE(value.is_distinct_transaction_set());
 }
 
 TEST_CASE("validate block is distinct tx set duplicate false", "[block is distinct transaction set]") {
-    chain::block value;
+    auto value = make_block();
     value.set_transactions({{1, 0, {}, {}}, {1, 0, {}, {}}});
     REQUIRE( ! value.is_distinct_transaction_set());
 }
 
 TEST_CASE("validate block is distinct tx set distinct by version true", "[block is distinct transaction set]") {
-    chain::block value;
+    auto value = make_block();
     value.set_transactions({{1, 0, {}, {}}, {2, 0, {}, {}}, {3, 0, {}, {}}});
     REQUIRE(value.is_distinct_transaction_set());
 }
 
 TEST_CASE("validate block is distinct tx set partialy distinct by version false", "[block is distinct transaction set]") {
-    chain::block value;
+    auto value = make_block();
     value.set_transactions({{1, 0, {}, {}}, {2, 0, {}, {}}, {2, 0, {}, {}}});
     REQUIRE( ! value.is_distinct_transaction_set());
 }
 
 TEST_CASE("validate block is distinct tx set partialy distinct not adjacent by version false", "[block is distinct transaction set]") {
-    chain::block value;
+    auto value = make_block();
     value.set_transactions({{1, 0, {}, {}}, {2, 0, {}, {}}, {1, 0, {}, {}}});
     REQUIRE( ! value.is_distinct_transaction_set());
 }
@@ -677,12 +644,12 @@ TEST_CASE("validate block is cash pow valid true", "[block is distinct transacti
 // Start Test Suite: block is forward reference tests
 
 TEST_CASE("block is forward reference no transactions false", "[block is forward reference]") {
-    chain::block const value;
+    auto const value = make_block();
     REQUIRE( ! value.is_forward_reference());
 }
 
 TEST_CASE("block is forward reference multiple empty transactions false", "[block is forward reference]") {
-    chain::block value;
+    auto value = make_block();
     value.set_transactions({{1, 0, {}, {}}, {2, 0, {}, {}}});
     REQUIRE( ! value.is_forward_reference());
 }
@@ -690,20 +657,20 @@ TEST_CASE("block is forward reference multiple empty transactions false", "[bloc
 TEST_CASE("block is forward reference backward reference false", "[block is forward reference]") {
     chain::transaction const before{2, 0, {}, {}};
     chain::transaction const after{1, 0, {{{before.hash(), 0}, {}, 0}}, {}};
-    chain::block value;
+    auto value = make_block();
     value.set_transactions({before, after});
     REQUIRE( ! value.is_forward_reference());
 }
 
 TEST_CASE("block is forward reference duplicate transactions false", "[block is forward reference]") {
-    chain::block value;
+    auto value = make_block();
     value.set_transactions({{1, 0, {}, {}}, {1, 0, {}, {}}});
     REQUIRE( ! value.is_forward_reference());
 }
 
 TEST_CASE("block is forward reference coinbase and multiple empty transactions false", "[block is forward reference]") {
     chain::transaction const coinbase{1, 0, {{{null_hash, chain::point::null_index}, {}, 0}}, {}};
-    chain::block value;
+    auto value = make_block();
     value.set_transactions({coinbase, {2, 0, {}, {}}, {3, 0, {}, {}}});
     REQUIRE( ! value.is_forward_reference());
 }
@@ -711,7 +678,7 @@ TEST_CASE("block is forward reference coinbase and multiple empty transactions f
 TEST_CASE("block is forward reference forward reference true", "[block is forward reference]") {
     chain::transaction const after{2, 0, {}, {}};
     chain::transaction const before{1, 0, {{{after.hash(), 0}, {}, 0}}, {}};
-    chain::block value;
+    auto value = make_block();
     value.set_transactions({before, after});
     REQUIRE(value.is_forward_reference());
 }

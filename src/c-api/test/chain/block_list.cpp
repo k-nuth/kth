@@ -9,15 +9,12 @@
 
 #include <kth/capi/chain/block.h>
 #include <kth/capi/chain/block_list.h>
+#include <kth/capi/chain/header.h>
+#include <kth/capi/chain/transaction_list.h>
 #include <kth/capi/primitives.h>
 
 #include "../test_helpers.hpp"
-
-static kth_block_mut_t make_block(void) {
-    kth_block_mut_t blk = kth_chain_block_genesis_mainnet();
-    REQUIRE(blk != NULL);
-    return blk;
-}
+#include "block_fixtures.hpp"
 
 // ---------------------------------------------------------------------------
 // Lifecycle
@@ -64,7 +61,7 @@ TEST_CASE("C-API BlockList - nth returns borrowed element",
 
     kth_block_const_t elem = kth_chain_block_list_nth(list, 0);
     REQUIRE(elem != NULL);
-    REQUIRE(kth_chain_block_is_valid(elem) != 0);
+    REQUIRE(kth_chain_block_is_valid_merkle_root(elem) != 0);
 
     kth_chain_block_list_destruct(list);
 }
@@ -77,13 +74,13 @@ TEST_CASE("C-API BlockList - assign_at replaces element",
           "[C-API BlockList]") {
     kth_block_list_mut_t list = kth_chain_block_list_construct_default();
     kth_block_mut_t blk = make_block();
-    kth_block_mut_t def = kth_chain_block_construct_default();
+    kth_block_mut_t def = make_minimal_block();
 
     kth_chain_block_list_push_back(list, def);
-    REQUIRE(kth_chain_block_is_valid(kth_chain_block_list_nth(list, 0)) == 0);
+    REQUIRE(kth_chain_block_equals(kth_chain_block_list_nth(list, 0), blk) == 0);
 
     kth_chain_block_list_assign_at(list, 0, blk);
-    REQUIRE(kth_chain_block_is_valid(kth_chain_block_list_nth(list, 0)) != 0);
+    REQUIRE(kth_chain_block_equals(kth_chain_block_list_nth(list, 0), blk) != 0);
 
     kth_chain_block_destruct(def);
     kth_chain_block_destruct(blk);
