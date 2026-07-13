@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 #include <kth/domain/define.hpp>
 #include <kth/domain/deserialization.hpp>
@@ -35,9 +36,24 @@ struct KD_API stealth_receiver {
                                           binary const& filter,
                                           uint8_t version);
 
+    /// Package an already-validated tuple into a `stealth_receiver`.
+    /// Caller is responsible for the invariants (both privates on
+    /// the curve, `spend_public = secret_to_public(spend_private)`,
+    /// `address` derives from `scan_private` + `spend_private`); no
+    /// checks are performed here.
+    [[nodiscard]] static constexpr
+    stealth_receiver from_verified_parts(uint8_t version,
+                                         ec_secret const& scan_private,
+                                         ec_secret const& spend_private,
+                                         ec_compressed const& spend_public,
+                                         wallet::stealth_address address) noexcept {
+        return stealth_receiver(version, scan_private, spend_private,
+                                spend_public, std::move(address));
+    }
+
     /// Peer stealth address for this receiver.
-    [[nodiscard]]
-    wallet::stealth_address const& stealth_address() const noexcept;
+    [[nodiscard]] constexpr
+    wallet::stealth_address const& stealth_address() const noexcept { return address_; }
 
     /// Derive a payment address to compare against the blockchain.
     [[nodiscard]]
@@ -49,11 +65,18 @@ struct KD_API stealth_receiver {
     expect<ec_secret> derive_private(ec_compressed const& ephemeral_public) const;
 
 private:
+    constexpr
     stealth_receiver(uint8_t version,
                      ec_secret const& scan_private,
                      ec_secret const& spend_private,
                      ec_compressed const& spend_public,
-                     wallet::stealth_address address);
+                     wallet::stealth_address address) noexcept
+        : version_(version)
+        , scan_private_(scan_private)
+        , spend_private_(spend_private)
+        , spend_public_(spend_public)
+        , address_(std::move(address))
+    {}
 
     uint8_t const version_;
     ec_secret const scan_private_;

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <kth/domain/chain/script.hpp>
@@ -24,16 +25,16 @@ namespace kth::domain::wallet {
 /// instance was produced by a factory that validated its inputs.
 struct KD_API stealth_address {
     /// DEPRECATED: we intend to make p2kh same as payment address versions.
-    static uint8_t const mainnet_p2kh;
+    static constexpr uint8_t mainnet_p2kh = 0x2a;
 
     /// If set and the spend_keys contains the scan_key then the key is reused.
-    static uint8_t const reuse_key_flag;
+    static constexpr uint8_t reuse_key_flag = 1U << 0U;
 
     /// This is advisory in nature and likely to be enforced by a server.
-    static size_t const min_filter_bits;
+    static constexpr size_t min_filter_bits = 1 * byte_bits;
 
     /// This is the protocol limit to the size of a stealth prefix filter.
-    static size_t const max_filter_bits;
+    static constexpr size_t max_filter_bits = sizeof(uint32_t) * byte_bits;
 
     [[nodiscard]]
     static
@@ -57,6 +58,23 @@ struct KD_API stealth_address {
                                             uint8_t signatures,
                                             uint8_t version);
 
+    /// Package an already-validated component tuple into a
+    /// `stealth_address`. Caller is responsible for the invariants
+    /// (signatures in range, spend_keys non-empty, filter within
+    /// protocol limits); no coercion or checks are performed here.
+    [[nodiscard]] static constexpr
+    stealth_address from_verified_components(binary filter,
+                                             ec_compressed const& scan_key,
+                                             point_list spend_keys,
+                                             uint8_t signatures,
+                                             uint8_t version) noexcept {
+        return stealth_address(version,
+                               std::move(filter),
+                               scan_key,
+                               std::move(spend_keys),
+                               signatures);
+    }
+
     [[nodiscard]]
     friend auto operator<=>(stealth_address const&, stealth_address const&) = default;
 
@@ -64,35 +82,36 @@ struct KD_API stealth_address {
     [[nodiscard]]
     std::string to_string() const;
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     uint8_t version() const noexcept { return version_; }
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     ec_compressed const& scan_key() const noexcept { return scan_key_; }
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     point_list const& spend_keys() const noexcept { return spend_keys_; }
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     uint8_t signatures() const noexcept { return signatures_; }
 
-    [[nodiscard]]
+    [[nodiscard]] constexpr
     binary const& filter() const noexcept { return filter_; }
 
     [[nodiscard]]
     data_chunk to_chunk() const;
 
 private:
+    constexpr
     stealth_address(uint8_t version,
-                    binary const& filter,
+                    binary filter,
                     ec_compressed const& scan_key,
-                    point_list const& spend_keys,
-                    uint8_t signatures)
+                    point_list spend_keys,
+                    uint8_t signatures) noexcept
         : version_(version)
         , scan_key_(scan_key)
-        , spend_keys_(spend_keys)
+        , spend_keys_(std::move(spend_keys))
         , signatures_(signatures)
-        , filter_(filter)
+        , filter_(std::move(filter))
     {}
 
     [[nodiscard]]

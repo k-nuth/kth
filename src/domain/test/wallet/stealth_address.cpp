@@ -10,6 +10,15 @@ using namespace kth::domain::wallet;
 
 // Start Test Suite: stealth address tests
 
+// Compile-time verification that the four `static constexpr` byte /
+// size constants can be evaluated in a constant expression. A
+// regression that pushed them back into the `.cpp` (as pre-#NNN
+// definitions) would surface as a compile error here.
+static_assert(stealth_address::mainnet_p2kh == 0x2a);
+static_assert(stealth_address::reuse_key_flag == 1U);
+static_assert(stealth_address::min_filter_bits == byte_bits);
+static_assert(stealth_address::max_filter_bits == sizeof(uint32_t) * byte_bits);
+
 constexpr char scan_key[] = "03d9e876028f4fc062c19f7097762e4affc2ce4edfffa7d42e3c17cd157ec6d1bc";
 constexpr char spend_key1[] = "0215a49b55a2ed2a02569cb6c018644211d408caab3aca86d2cc7d6a9e5789b1d2";
 constexpr char stealth_address_encoded[] = "vJmzLu29obZcUGXXgotapfQLUpz7dfnZpbr4xg1R75qctf8xaXAteRdi3ZUk3T2ZMSad5KyPbve7uyH6eswYAxLHRVSbWgNUeoGuXp";

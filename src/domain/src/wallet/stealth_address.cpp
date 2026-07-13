@@ -43,10 +43,6 @@ constexpr size_t min_address_size = version_size + options_size +
 static_assert(binary::bits_per_block == byte_bits,
               "The stealth prefix must use an 8 bit block size.");
 
-uint8_t const stealth_address::mainnet_p2kh = 0x2a;
-uint8_t const stealth_address::reuse_key_flag = 1U << 0U;
-size_t const stealth_address::min_filter_bits = 1 * byte_bits;
-size_t const stealth_address::max_filter_bits = sizeof(uint32_t) * byte_bits;
 
 // Factories.
 // ----------------------------------------------------------------------------

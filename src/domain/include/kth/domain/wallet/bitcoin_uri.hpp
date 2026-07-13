@@ -72,7 +72,8 @@ struct KD_API bitcoin_uri {
     [[nodiscard]] std::string             label() const;
     [[nodiscard]] std::string             message() const;
     [[nodiscard]] std::string             r() const;
-    [[nodiscard]] std::string const&      address() const noexcept { return address_; }
+    [[nodiscard]] constexpr
+    std::string const&      address() const noexcept { return address_; }
     [[nodiscard]] expect<payment_address> payment() const;
     [[nodiscard]] expect<stealth_address> stealth() const;
     [[nodiscard]] std::string             parameter(std::string const& key) const;
