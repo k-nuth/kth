@@ -113,7 +113,8 @@ static kth_compact_block_mut_t make_fixture(void) {
 
 TEST_CASE("C-API CompactBlock - create rejects the empty sentinel",
           "[C-API CompactBlock]") {
-    kth_header_mut_t header = kth_chain_header_construct_default();
+    kth_hash_t const zero = {{ 0 }};
+    kth_header_mut_t header = kth_chain_header_construct(0u, &zero, &zero, 0u, 0u, 0u);
     kth_u64_list_mut_t short_ids = kth_core_u64_list_construct_default();
     kth_prefilled_transaction_list_mut_t txs =
         kth_chain_prefilled_transaction_list_construct_default();

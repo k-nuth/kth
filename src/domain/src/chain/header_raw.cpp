@@ -36,12 +36,12 @@ using wall_clock = std::chrono::system_clock;
 
 //TODO: qué hacemos con el parametro wire?
 expect<header> header::from_data(byte_reader& reader, bool _wire) {
-    header res;
-    auto const read = reader.read_bytes_to(std::span<uint8_t>{res.raw_data_mutable()});
+    std::array<uint8_t, serialized_size_wire> data{};
+    auto const read = reader.read_bytes_to(std::span<uint8_t>{data});
     if ( ! read) {
         return std::unexpected(read.error());
     }
-    return res;
+    return header{data};
 }
 
 // expect<header> header::from_data(byte_reader& reader, bool /*wire*/) {

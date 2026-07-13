@@ -32,9 +32,11 @@ constexpr hash_digest ct_merkle = {{
     0x3a, 0x9f, 0xb8, 0xaa, 0x4b, 0x1e, 0x5e, 0x4a
 }};
 
-// Test: Default constructor is constexpr
-constexpr chain::header ct_default_header{};
-static_assert( ! ct_default_header.is_valid(), "default header should be invalid");
+// Test: the all-zero header (is_valid() == false sentinel) is constexpr.
+// There is no default constructor (header is valid-by-construction); build the
+// sentinel explicitly from zero fields.
+constexpr chain::header ct_default_header{0u, hash_digest{}, hash_digest{}, 0u, 0u, 0u};
+static_assert( ! ct_default_header.is_valid(), "all-zero header should be invalid");
 static_assert(ct_default_header.version() == 0, "default version should be 0");
 static_assert(ct_default_header.timestamp() == 0, "default timestamp should be 0");
 static_assert(ct_default_header.bits() == 0, "default bits should be 0");
@@ -168,7 +170,7 @@ static_assert(ct_lambda_header.version() == 42u, "lambda header version");
 // Start Test Suite: chain header tests
 
 TEST_CASE("chain header constructor 1 always initialized invalid", "[chain header]") {
-    chain::header instance;
+    chain::header instance{0u, null_hash, null_hash, 0u, 0u, 0u};
     REQUIRE( ! instance.is_valid());
 }
 
@@ -470,7 +472,7 @@ TEST_CASE("chain header operator assign equals always matches equivalent", "[cha
 
     REQUIRE(value.is_valid());
 
-    chain::header instance;
+    chain::header instance{0u, null_hash, null_hash, 0u, 0u, 0u};
     REQUIRE( ! instance.is_valid());
 
     instance = std::move(value);
@@ -499,7 +501,7 @@ TEST_CASE("chain header operator boolean equals differs returns false", "[chain 
         6523454u,
         68644u);
 
-    chain::header instance;
+    chain::header instance{0u, null_hash, null_hash, 0u, 0u, 0u};
     REQUIRE(instance != expected);
 }
 
@@ -525,7 +527,7 @@ TEST_CASE("chain header operator boolean not equals differs returns true", "[cha
         6523454u,
         68644u);
 
-    chain::header instance;
+    chain::header instance{0u, null_hash, null_hash, 0u, 0u, 0u};
     REQUIRE(instance != expected);
 }
 

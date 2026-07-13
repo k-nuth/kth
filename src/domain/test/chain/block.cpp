@@ -78,8 +78,8 @@ TEST_CASE("block locator heights positive backoff returns top plus log offset to
 
 TEST_CASE("block create rejects the empty sentinel", "[chain block]") {
     // No transactions and an all-zero header is not a block.
-    REQUIRE( ! chain::block::create(chain::header{}, {}));
-    REQUIRE(chain::block::create(chain::header{}, {}).error() == error::block_construction_empty);
+    REQUIRE( ! chain::block::create(chain::header{0u, null_hash, null_hash, 0u, 0u, 0u}, {}));
+    REQUIRE(chain::block::create(chain::header{0u, null_hash, null_hash, 0u, 0u, 0u}, {}).error() == error::block_construction_empty);
 }
 
 TEST_CASE("block create 2 always equals params", "[chain block]") {

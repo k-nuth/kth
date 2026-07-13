@@ -34,7 +34,7 @@ message::merkle_block make_merkle_block(size_t count = 1234u) {
 // Start Test Suite: merkle block tests
 
 TEST_CASE("merkle block create rejects empty sentinel", "[merkle block]") {
-    auto const result = message::merkle_block::create(chain::header{}, 0u, {}, {});
+    auto const result = message::merkle_block::create(chain::header{0u, null_hash, null_hash, 0u, 0u, 0u}, 0u, {}, {});
     REQUIRE( ! result);
     REQUIRE(result.error() == error::merkle_block_construction_empty);
 }

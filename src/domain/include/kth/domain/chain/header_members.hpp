@@ -46,8 +46,6 @@ public:
     // Constructors.
     //-------------------------------------------------------------------------
 
-    constexpr header() = default;
-
     constexpr header(uint32_t version, hash_digest const& previous_block_hash,
                      hash_digest const& merkle, uint32_t timestamp,
                      uint32_t bits, uint32_t nonce)

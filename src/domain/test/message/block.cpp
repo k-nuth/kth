@@ -24,7 +24,7 @@ message::block make_msg_block() {
 // Start Test Suite: message block tests
 
 TEST_CASE("block create rejects the empty sentinel", "[message block]") {
-    REQUIRE( ! block::create(chain::header{}, {}));
+    REQUIRE( ! block::create(chain::header{0u, null_hash, null_hash, 0u, 0u, 0u}, {}));
 }
 
 TEST_CASE("block constructor 2 always equals params", "[message block]") {
