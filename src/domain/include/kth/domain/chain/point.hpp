@@ -87,30 +87,17 @@ struct KD_API point {
     [[nodiscard]]
     point_iterator end() const;
 
-    // Properties (accessors, cache).
+    // Properties (accessors).
     //-------------------------------------------------------------------------
 
-    // deprecated (unsafe)
-    constexpr hash_digest& hash() {
+    [[nodiscard]]
+    constexpr hash_digest const& hash() const noexcept {
         return hash_;
     }
 
     [[nodiscard]]
-    constexpr hash_digest const& hash() const {
-        return hash_;
-    }
-
-    constexpr void set_hash(hash_digest const& value) {
-        hash_ = value;
-    }
-
-    [[nodiscard]]
-    constexpr uint32_t index() const {
+    constexpr uint32_t index() const noexcept {
         return index_;
-    }
-
-    constexpr void set_index(uint32_t value) {
-        index_ = value;
     }
 
     // Utilities.

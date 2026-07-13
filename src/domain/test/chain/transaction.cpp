@@ -570,9 +570,7 @@ TEST_CASE("chain transaction is oversized coinbase non coinbase tx returns false
 
 TEST_CASE("chain transaction is oversized coinbase script size below min returns true", "[chain transaction]") {
     chain::transaction instance;
-    instance.inputs().emplace_back(chain::output_point{null_hash, 0u}, chain::script{}, 0u);
-    instance.inputs().back().previous_output().set_index(chain::point::null_index);
-    instance.inputs().back().previous_output().set_hash(null_hash);
+    instance.inputs().emplace_back(chain::output_point::null(), chain::script{}, 0u);
     REQUIRE(instance.is_coinbase());
     REQUIRE(instance.inputs().back().script().serialized_size(false) < min_coinbase_size);
     REQUIRE(instance.is_oversized_coinbase());
@@ -581,10 +579,8 @@ TEST_CASE("chain transaction is oversized coinbase script size below min returns
 TEST_CASE("chain transaction is oversized coinbase script size above max returns true", "[chain transaction]") {
     chain::transaction instance;
     auto& inputs = instance.inputs();
-    inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
-    inputs.back().previous_output().set_index(chain::point::null_index);
-    inputs.back().previous_output().set_hash(null_hash);
-    
+    inputs.emplace_back(chain::output_point::null(), chain::script{}, 0u);
+
     data_chunk oversized_script(max_coinbase_size + 10);
     byte_reader reader(oversized_script);
     auto result = chain::script::from_data(reader, false);
@@ -599,9 +595,7 @@ TEST_CASE("chain transaction is oversized coinbase script size above max returns
 TEST_CASE("chain transaction is oversized coinbase script size within bounds returns false", "[chain transaction]") {
     chain::transaction instance;
     auto& inputs = instance.inputs();
-    inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
-    inputs.back().previous_output().set_index(chain::point::null_index);
-    inputs.back().previous_output().set_hash(null_hash);
+    inputs.emplace_back(chain::output_point::null(), chain::script{}, 0u);
 
     data_chunk valid_script(50);
     byte_reader reader(valid_script);
@@ -632,10 +626,8 @@ TEST_CASE("chain transaction is null non coinbase no null input prevout returns 
 TEST_CASE("chain transaction is null non coinbase null input prevout returns true", "[chain transaction]") {
     chain::transaction instance;
     auto& inputs = instance.inputs();
-    inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
-    inputs.emplace_back(chain::output_point{}, chain::script{}, 0u);
-    inputs.back().previous_output().set_index(chain::point::null_index);
-    inputs.back().previous_output().set_hash(null_hash);
+    inputs.emplace_back(chain::output_point{null_hash, 0u}, chain::script{}, 0u);
+    inputs.emplace_back(chain::output_point::null(), chain::script{}, 0u);
     REQUIRE( ! instance.is_coinbase());
     REQUIRE(instance.inputs().back().previous_output().is_null());
     REQUIRE(instance.is_null_non_coinbase());

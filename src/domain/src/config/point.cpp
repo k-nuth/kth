@@ -35,12 +35,10 @@ expect<point> point::parse_from(std::string_view text) {
         return std::unexpected(kth::error::illegal_value);
     }
 
-    chain::output_point op;
-    hash_digest const& txhash = digest_res->value();
-    std::copy(txhash.begin(), txhash.end(), op.hash().begin());
-    op.set_index(deserialize<uint32_t>(tokens[1], true));
-
-    return point{op};
+    return point{chain::output_point{
+        digest_res->value(),
+        deserialize<uint32_t>(tokens[1], true),
+    }};
 }
 
 std::string point::to_string() const {
