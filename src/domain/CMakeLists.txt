@@ -561,6 +561,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/chain_state.cpp
         test/chain/compact.cpp
         test/chain/header.cpp
+        test/chain/history.cpp
         test/chain/input.cpp
         test/chain/light_block.cpp
         test/chain/output.cpp
