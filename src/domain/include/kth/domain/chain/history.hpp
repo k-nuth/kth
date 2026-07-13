@@ -44,8 +44,27 @@ struct KD_API history_compact {
         uint64_t previous_checksum;
     };
 
+    // Hand-written rather than `= default`: a defaulted comparison on a
+    // class with an anonymous union member is defined as deleted (per
+    // [class.compare.default]). Both union alternatives are `uint64_t`
+    // occupying the same bytes, so reading either one compares the same
+    // value regardless of which is "active". `==` is provided alongside
+    // because a user-defined `<=>` does not synthesize it.
     friend
-    auto operator<=>(history_compact const&, history_compact const&) = default;
+    auto operator<=>(history_compact const& x, history_compact const& y) {
+        if (auto c = x.kind <=> y.kind; c != 0) return c;
+        if (auto c = x.point <=> y.point; c != 0) return c;
+        if (auto c = x.height <=> y.height; c != 0) return c;
+        return x.value <=> y.value;
+    }
+
+    friend
+    bool operator==(history_compact const& x, history_compact const& y) {
+        return x.kind == y.kind
+            && x.point == y.point
+            && x.height == y.height
+            && x.value == y.value;
+    }
 };
 
 /// This structure is used between client and API callers in v3.
@@ -72,8 +91,26 @@ struct KD_API history {
         uint64_t temporary_checksum;
     };
 
+    // See the note on `history_compact` — hand-written for the same
+    // reason (anonymous union deletes the defaulted comparison). Both
+    // union alternatives are `uint64_t`.
     friend
-    auto operator<=>(history const&, history const&) = default;
+    auto operator<=>(history const& x, history const& y) {
+        if (auto c = x.output <=> y.output; c != 0) return c;
+        if (auto c = x.output_height <=> y.output_height; c != 0) return c;
+        if (auto c = x.value <=> y.value; c != 0) return c;
+        if (auto c = x.spend <=> y.spend; c != 0) return c;
+        return x.spend_height <=> y.spend_height;
+    }
+
+    friend
+    bool operator==(history const& x, history const& y) {
+        return x.output == y.output
+            && x.output_height == y.output_height
+            && x.value == y.value
+            && x.spend == y.spend
+            && x.spend_height == y.spend_height;
+    }
 };
 
 } // namespace kth::domain::chain
