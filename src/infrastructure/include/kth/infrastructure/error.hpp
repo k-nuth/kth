@@ -288,6 +288,12 @@ enum error_code_t {
     // from the consensus `empty_block` check performed during validation.
     block_construction_empty,
 
+    // Valid-by-construction guards for the message wrappers: `create` was
+    // given parts that would be the all-default sentinel (an all-zero header
+    // and no payload).
+    merkle_block_construction_empty,
+    compact_block_construction_empty,
+
     // Database cache
     height_not_found,
     hash_not_found,

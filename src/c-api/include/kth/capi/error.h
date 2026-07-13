@@ -257,6 +257,12 @@ typedef enum kth_error_code {
     // from the consensus `empty_block` check performed during validation.
     kth_ec_block_construction_empty,
 
+    // Valid-by-construction guards for the message wrappers: `create` was
+    // given parts that would be the all-default sentinel (an all-zero header
+    // and no payload).
+    kth_ec_merkle_block_construction_empty,
+    kth_ec_compact_block_construction_empty,
+
     // Database cache
     kth_ec_height_not_found,
     kth_ec_hash_not_found,

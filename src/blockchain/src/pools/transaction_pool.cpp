@@ -25,9 +25,7 @@ transaction_pool::transaction_pool(settings const& /*settings*/)
 // TODO(legacy): implement block template discovery.
 awaitable_expected<std::pair<merkle_block_ptr, size_t>>
 transaction_pool::fetch_template() const {
-    size_t const height = max_size_t;
-    auto const block = std::make_shared<domain::message::merkle_block>();
-    co_return std::pair{block, height};
+    co_return std::unexpected(error::not_implemented);
 }
 
 // TODO(legacy): implement mempool message payload discovery.

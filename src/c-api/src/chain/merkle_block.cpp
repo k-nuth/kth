@@ -22,10 +22,6 @@ extern "C" {
 
 // Constructors
 
-kth_merkle_block_mut_t kth_chain_merkle_block_construct_default(void) {
-    return kth::leak<cpp_t>();
-}
-
 kth_error_code_t kth_chain_merkle_block_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_merkle_block_mut_t* out) {
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
@@ -37,21 +33,26 @@ kth_error_code_t kth_chain_merkle_block_construct_from_data(uint8_t const* data,
     return kth_ec_success;
 }
 
-kth_merkle_block_mut_t kth_chain_merkle_block_construct_from_header_total_transactions_hashes_flags(kth_header_const_t header, kth_size_t total_transactions, kth_hash_list_const_t hashes, uint8_t const* flags, kth_size_t n) {
+kth_merkle_block_mut_t kth_chain_merkle_block_construct(kth_block_const_t block) {
+    KTH_PRECONDITION(block != nullptr);
+    auto const& block_cpp = kth::cpp_ref<kth::domain::chain::block>(block);
+    return kth::leak<cpp_t>(block_cpp);
+}
+
+kth_error_code_t kth_chain_merkle_block_create(kth_header_const_t header, kth_size_t total_transactions, kth_hash_list_const_t hashes, uint8_t const* flags, kth_size_t n, KTH_OUT_OWNED kth_merkle_block_mut_t* out) {
     KTH_PRECONDITION(header != nullptr);
     KTH_PRECONDITION(hashes != nullptr);
     KTH_PRECONDITION(flags != nullptr || n == 0);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
     auto const& header_cpp = kth::cpp_ref<kth::domain::chain::header>(header);
     auto const total_transactions_cpp = kth::sz(total_transactions);
     auto const& hashes_cpp = kth::cpp_ref<kth::hash_list>(hashes);
     auto const flags_cpp = n != 0 ? kth::data_chunk(flags, flags + n) : kth::data_chunk{};
-    return kth::leak<cpp_t>(header_cpp, total_transactions_cpp, hashes_cpp, flags_cpp);
-}
-
-kth_merkle_block_mut_t kth_chain_merkle_block_construct_from_block(kth_block_const_t block) {
-    KTH_PRECONDITION(block != nullptr);
-    auto const& block_cpp = kth::cpp_ref<kth::domain::chain::block>(block);
-    return kth::leak<cpp_t>(block_cpp);
+    auto result = cpp_t::create(header_cpp, total_transactions_cpp, hashes_cpp, flags_cpp);
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::leak(std::move(*result));
+    return kth_ec_success;
 }
 
 
@@ -76,6 +77,12 @@ kth_bool_t kth_chain_merkle_block_equals(kth_merkle_block_const_t self, kth_merk
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
     return kth::eq<cpp_t>(self, other);
+}
+
+kth_bool_t kth_chain_merkle_block_not_equal(kth_merkle_block_const_t self, kth_merkle_block_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::ne<cpp_t>(self, other);
 }
 
 
@@ -115,52 +122,6 @@ uint8_t* kth_chain_merkle_block_flags(kth_merkle_block_const_t self, kth_size_t*
     KTH_PRECONDITION(out_size != nullptr);
     auto const& data = kth::cpp_ref<cpp_t>(self).flags();
     return kth::create_c_array(data, *out_size);
-}
-
-
-// Setters
-
-void kth_chain_merkle_block_set_header(kth_merkle_block_mut_t self, kth_header_const_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth::cpp_ref<kth::domain::chain::header>(value);
-    kth::cpp_ref<cpp_t>(self).set_header(value_cpp);
-}
-
-void kth_chain_merkle_block_set_total_transactions(kth_merkle_block_mut_t self, kth_size_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    auto const value_cpp = kth::sz(value);
-    kth::cpp_ref<cpp_t>(self).set_total_transactions(value_cpp);
-}
-
-void kth_chain_merkle_block_set_hashes(kth_merkle_block_mut_t self, kth_hash_list_const_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth::cpp_ref<kth::hash_list>(value);
-    kth::cpp_ref<cpp_t>(self).set_hashes(value_cpp);
-}
-
-void kth_chain_merkle_block_set_flags(kth_merkle_block_mut_t self, uint8_t const* value, kth_size_t n) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(value != nullptr || n == 0);
-    auto const value_cpp = n != 0 ? kth::data_chunk(value, value + n) : kth::data_chunk{};
-    kth::cpp_ref<cpp_t>(self).set_flags(value_cpp);
-}
-
-
-// Predicates
-
-kth_bool_t kth_chain_merkle_block_is_valid(kth_merkle_block_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid());
-}
-
-
-// Operations
-
-void kth_chain_merkle_block_reset(kth_merkle_block_mut_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).reset();
 }
 
 } // extern "C"

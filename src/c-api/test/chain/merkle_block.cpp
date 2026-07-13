@@ -78,9 +78,11 @@ static kth_hash_list_mut_t make_two_hashes(void) {
 static kth_merkle_block_mut_t make_fixture(void) {
     kth_header_mut_t header = make_header();
     kth_hash_list_mut_t hashes = make_two_hashes();
-    kth_merkle_block_mut_t mb =
-        kth_chain_merkle_block_construct_from_header_total_transactions_hashes_flags(
-            header, 2u, hashes, kFlags, sizeof(kFlags));
+    kth_merkle_block_mut_t mb = NULL;
+    kth_error_code_t ec = kth_chain_merkle_block_create(
+        header, 2u, hashes, kFlags, sizeof(kFlags), &mb);
+    REQUIRE(ec == kth_ec_success);
+    REQUIRE(mb != NULL);
     kth_core_hash_list_destruct(hashes);
     kth_chain_header_destruct(header);
     return mb;
@@ -90,18 +92,23 @@ static kth_merkle_block_mut_t make_fixture(void) {
 // Constructors / lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API MerkleBlock - default construct is invalid",
+TEST_CASE("C-API MerkleBlock - create rejects the empty sentinel",
           "[C-API MerkleBlock]") {
-    kth_merkle_block_mut_t mb = kth_chain_merkle_block_construct_default();
-    REQUIRE(kth_chain_merkle_block_is_valid(mb) == 0);
-    kth_chain_merkle_block_destruct(mb);
+    kth_header_mut_t header = kth_chain_header_construct_default();
+    kth_hash_list_mut_t hashes = kth_core_hash_list_construct_default();
+    kth_merkle_block_mut_t mb = NULL;
+    kth_error_code_t ec = kth_chain_merkle_block_create(
+        header, 0u, hashes, NULL, 0, &mb);
+    REQUIRE(ec != kth_ec_success);
+    REQUIRE(mb == NULL);
+    kth_core_hash_list_destruct(hashes);
+    kth_chain_header_destruct(header);
 }
 
 TEST_CASE("C-API MerkleBlock - field constructor preserves fields",
           "[C-API MerkleBlock]") {
     kth_merkle_block_mut_t mb = make_fixture();
     REQUIRE(mb != NULL);
-    REQUIRE(kth_chain_merkle_block_is_valid(mb) != 0);
     REQUIRE(kth_chain_merkle_block_total_transactions(mb) == 2u);
     kth_chain_merkle_block_destruct(mb);
 }
@@ -130,7 +137,6 @@ TEST_CASE("C-API MerkleBlock - to_data / from_data round-trip",
         raw, out_size, kProtoVersion, &decoded);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(decoded != NULL);
-    REQUIRE(kth_chain_merkle_block_is_valid(decoded) != 0);
     REQUIRE(kth_chain_merkle_block_equals(original, decoded) != 0);
 
     kth_core_destruct_array(raw);
@@ -168,17 +174,8 @@ TEST_CASE("C-API MerkleBlock - copy preserves equality",
     kth_chain_merkle_block_destruct(original);
 }
 
-TEST_CASE("C-API MerkleBlock - equals distinguishes different instances",
-          "[C-API MerkleBlock]") {
-    kth_merkle_block_mut_t a = make_fixture();
-    kth_merkle_block_mut_t b = kth_chain_merkle_block_construct_default();
-    REQUIRE(kth_chain_merkle_block_equals(a, b) == 0);
-    kth_chain_merkle_block_destruct(a);
-    kth_chain_merkle_block_destruct(b);
-}
-
 // ---------------------------------------------------------------------------
-// Getters / setters
+// Getters
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API MerkleBlock - header getter returns borrowed view",
@@ -219,64 +216,6 @@ TEST_CASE("C-API MerkleBlock - flags round-trip", "[C-API MerkleBlock]") {
     kth_chain_merkle_block_destruct(mb);
 }
 
-TEST_CASE("C-API MerkleBlock - set_total_transactions updates field",
-          "[C-API MerkleBlock]") {
-    kth_merkle_block_mut_t mb = kth_chain_merkle_block_construct_default();
-    kth_chain_merkle_block_set_total_transactions(mb, 42u);
-    REQUIRE(kth_chain_merkle_block_total_transactions(mb) == 42u);
-    kth_chain_merkle_block_destruct(mb);
-}
-
-TEST_CASE("C-API MerkleBlock - set_hashes updates list",
-          "[C-API MerkleBlock]") {
-    kth_merkle_block_mut_t mb = kth_chain_merkle_block_construct_default();
-    kth_hash_list_mut_t hashes = make_two_hashes();
-    kth_chain_merkle_block_set_hashes(mb, hashes);
-
-    kth_hash_list_const_t view = kth_chain_merkle_block_hashes(mb);
-    REQUIRE(kth_core_hash_list_count(view) == 2u);
-
-    kth_core_hash_list_destruct(hashes);
-    kth_chain_merkle_block_destruct(mb);
-}
-
-TEST_CASE("C-API MerkleBlock - set_flags updates byte buffer",
-          "[C-API MerkleBlock]") {
-    kth_merkle_block_mut_t mb = kth_chain_merkle_block_construct_default();
-    uint8_t const bytes[2] = { 0xAA, 0xBB };
-    kth_chain_merkle_block_set_flags(mb, bytes, sizeof(bytes));
-
-    kth_size_t out_size = 0;
-    uint8_t* raw = kth_chain_merkle_block_flags(mb, &out_size);
-    REQUIRE(raw != NULL);
-    REQUIRE(out_size == 2u);
-    REQUIRE(raw[0] == 0xAA);
-    REQUIRE(raw[1] == 0xBB);
-
-    kth_core_destruct_array(raw);
-    kth_chain_merkle_block_destruct(mb);
-}
-
-// ---------------------------------------------------------------------------
-// Operations
-// ---------------------------------------------------------------------------
-
-TEST_CASE("C-API MerkleBlock - reset clears the object",
-          "[C-API MerkleBlock]") {
-    kth_merkle_block_mut_t mb = make_fixture();
-    kth_chain_merkle_block_reset(mb);
-    REQUIRE(kth_chain_merkle_block_is_valid(mb) == 0);
-    REQUIRE(kth_chain_merkle_block_total_transactions(mb) == 0u);
-    REQUIRE(kth_core_hash_list_count(kth_chain_merkle_block_hashes(mb)) == 0u);
-
-    kth_size_t flags_size = 0;
-    uint8_t* flags = kth_chain_merkle_block_flags(mb, &flags_size);
-    REQUIRE(flags_size == 0u);
-    kth_core_destruct_array(flags);
-
-    kth_chain_merkle_block_destruct(mb);
-}
-
 // ---------------------------------------------------------------------------
 // Preconditions (death tests via fork)
 // ---------------------------------------------------------------------------
@@ -302,29 +241,29 @@ TEST_CASE("C-API MerkleBlock - construct_from_data non-null out slot aborts",
     // fresh slot. Overwriting a slot that already owns a handle would
     // silently leak the previous object, so the contract rejects it.
     uint8_t data[2] = { 0x00, 0x00 };
-    kth_merkle_block_mut_t out = kth_chain_merkle_block_construct_default();
+    kth_merkle_block_mut_t out = make_fixture();
     KTH_EXPECT_ABORT(kth_chain_merkle_block_construct_from_data(
         data, 2, kProtoVersion, &out));
     kth_chain_merkle_block_destruct(out);
 }
 
-TEST_CASE("C-API MerkleBlock - construct_from_header null header aborts",
+TEST_CASE("C-API MerkleBlock - create null header aborts",
           "[C-API MerkleBlock][precondition]") {
     kth_hash_list_mut_t hashes = make_two_hashes();
-    KTH_EXPECT_ABORT(
-        kth_chain_merkle_block_construct_from_header_total_transactions_hashes_flags(
-            NULL, 2u, hashes, kFlags, sizeof(kFlags)));
+    kth_merkle_block_mut_t out = NULL;
+    KTH_EXPECT_ABORT(kth_chain_merkle_block_create(
+        NULL, 2u, hashes, kFlags, sizeof(kFlags), &out));
     kth_core_hash_list_destruct(hashes);
 }
 
-TEST_CASE("C-API MerkleBlock - construct_from_block null block aborts",
+TEST_CASE("C-API MerkleBlock - construct null block aborts",
           "[C-API MerkleBlock][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_merkle_block_construct_from_block(NULL));
+    KTH_EXPECT_ABORT(kth_chain_merkle_block_construct(NULL));
 }
 
 TEST_CASE("C-API MerkleBlock - to_data null out_size aborts",
           "[C-API MerkleBlock][precondition]") {
-    kth_merkle_block_mut_t mb = kth_chain_merkle_block_construct_default();
+    kth_merkle_block_mut_t mb = make_fixture();
     KTH_EXPECT_ABORT(kth_chain_merkle_block_to_data(mb, kProtoVersion, NULL));
     kth_chain_merkle_block_destruct(mb);
 }
@@ -336,38 +275,12 @@ TEST_CASE("C-API MerkleBlock - copy null aborts",
 
 TEST_CASE("C-API MerkleBlock - equals null aborts",
           "[C-API MerkleBlock][precondition]") {
-    kth_merkle_block_mut_t other = kth_chain_merkle_block_construct_default();
+    kth_merkle_block_mut_t other = make_fixture();
     KTH_EXPECT_ABORT(kth_chain_merkle_block_equals(NULL, other));
     kth_chain_merkle_block_destruct(other);
-}
-
-TEST_CASE("C-API MerkleBlock - is_valid null aborts",
-          "[C-API MerkleBlock][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_merkle_block_is_valid(NULL));
 }
 
 TEST_CASE("C-API MerkleBlock - header getter null aborts",
           "[C-API MerkleBlock][precondition]") {
     KTH_EXPECT_ABORT(kth_chain_merkle_block_header(NULL));
-}
-
-TEST_CASE("C-API MerkleBlock - set_header null value aborts",
-          "[C-API MerkleBlock][precondition]") {
-    kth_merkle_block_mut_t mb = kth_chain_merkle_block_construct_default();
-    KTH_EXPECT_ABORT(kth_chain_merkle_block_set_header(mb, NULL));
-    kth_chain_merkle_block_destruct(mb);
-}
-
-TEST_CASE("C-API MerkleBlock - set_hashes null value aborts",
-          "[C-API MerkleBlock][precondition]") {
-    kth_merkle_block_mut_t mb = kth_chain_merkle_block_construct_default();
-    KTH_EXPECT_ABORT(kth_chain_merkle_block_set_hashes(mb, NULL));
-    kth_chain_merkle_block_destruct(mb);
-}
-
-TEST_CASE("C-API MerkleBlock - set_flags null with non-zero size aborts",
-          "[C-API MerkleBlock][precondition]") {
-    kth_merkle_block_mut_t mb = kth_chain_merkle_block_construct_default();
-    KTH_EXPECT_ABORT(kth_chain_merkle_block_set_flags(mb, NULL, 1));
-    kth_chain_merkle_block_destruct(mb);
 }

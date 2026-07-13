@@ -16,28 +16,20 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_merkle_block_mut_t`. Caller must release with `kth_chain_merkle_block_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_merkle_block_mut_t kth_chain_merkle_block_construct_default(void);
-
 /** @param[out] out Must point to a null `kth_merkle_block_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_merkle_block_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_chain_merkle_block_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_merkle_block_mut_t* out);
 
 /**
  * @return Owned `kth_merkle_block_mut_t`. Caller must release with `kth_chain_merkle_block_destruct`.
- * @param header Borrowed input. Copied by value into the resulting object; ownership of `header` stays with the caller.
- * @param hashes Borrowed input. Copied by value into the resulting object; ownership of `hashes` stays with the caller.
- */
-KTH_EXPORT KTH_OWNED
-kth_merkle_block_mut_t kth_chain_merkle_block_construct_from_header_total_transactions_hashes_flags(kth_header_const_t header, kth_size_t total_transactions, kth_hash_list_const_t hashes, uint8_t const* flags, kth_size_t n);
-
-/**
- * @return Owned `kth_merkle_block_mut_t`. Caller must release with `kth_chain_merkle_block_destruct`.
  * @param block Borrowed input. Copied by value into the resulting object; ownership of `block` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
-kth_merkle_block_mut_t kth_chain_merkle_block_construct_from_block(kth_block_const_t block);
+kth_merkle_block_mut_t kth_chain_merkle_block_construct(kth_block_const_t block);
+
+/** @param[out] out Must point to a null `kth_merkle_block_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_merkle_block_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_chain_merkle_block_create(kth_header_const_t header, kth_size_t total_transactions, kth_hash_list_const_t hashes, uint8_t const* flags, kth_size_t n, KTH_OUT_OWNED kth_merkle_block_mut_t* out);
 
 
 // Destructor
@@ -58,6 +50,9 @@ kth_merkle_block_mut_t kth_chain_merkle_block_copy(kth_merkle_block_const_t self
 
 KTH_EXPORT
 kth_bool_t kth_chain_merkle_block_equals(kth_merkle_block_const_t self, kth_merkle_block_const_t other);
+
+KTH_EXPORT
+kth_bool_t kth_chain_merkle_block_not_equal(kth_merkle_block_const_t self, kth_merkle_block_const_t other);
 
 
 // Serialization
@@ -86,35 +81,6 @@ kth_hash_list_const_t kth_chain_merkle_block_hashes(kth_merkle_block_const_t sel
 /** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
 KTH_EXPORT KTH_OWNED
 uint8_t* kth_chain_merkle_block_flags(kth_merkle_block_const_t self, kth_size_t* out_size);
-
-
-// Setters
-
-/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
-KTH_EXPORT
-void kth_chain_merkle_block_set_header(kth_merkle_block_mut_t self, kth_header_const_t value);
-
-KTH_EXPORT
-void kth_chain_merkle_block_set_total_transactions(kth_merkle_block_mut_t self, kth_size_t value);
-
-/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
-KTH_EXPORT
-void kth_chain_merkle_block_set_hashes(kth_merkle_block_mut_t self, kth_hash_list_const_t value);
-
-KTH_EXPORT
-void kth_chain_merkle_block_set_flags(kth_merkle_block_mut_t self, uint8_t const* value, kth_size_t n);
-
-
-// Predicates
-
-KTH_EXPORT
-kth_bool_t kth_chain_merkle_block_is_valid(kth_merkle_block_const_t self);
-
-
-// Operations
-
-KTH_EXPORT
-void kth_chain_merkle_block_reset(kth_merkle_block_mut_t self);
 
 #ifdef __cplusplus
 } // extern "C"
