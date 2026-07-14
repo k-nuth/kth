@@ -15,27 +15,17 @@ constexpr size_t max_index = max_uint32;
 constexpr size_t max_index = max_uint16;
 #endif
 
-prefilled_transaction::prefilled_transaction()
-    : index_(max_index)
-{}
-
-prefilled_transaction::prefilled_transaction(uint64_t index, chain::transaction const& tx)
-    : index_(index), transaction_(tx) {
-}
-
-prefilled_transaction::prefilled_transaction(uint64_t index, chain::transaction&& tx)
+prefilled_transaction::prefilled_transaction(uint64_t index, chain::transaction tx)
     : index_(index), transaction_(std::move(tx)) {
 }
 
-bool prefilled_transaction::is_valid() const {
-    // A transaction is always syntactically valid, so only the index sentinel
-    // is left to check here.
-    return index_ < max_index;
-}
-
-void prefilled_transaction::reset() {
-    index_ = max_index;
-    transaction_ = chain::transaction::null();
+// static
+expect<prefilled_transaction> prefilled_transaction::create(uint64_t index, chain::transaction tx) {
+    // BIP152 caps the prefilled index; anything above it cannot be encoded.
+    if (index >= max_index) {
+        return std::unexpected(error::invalid_compact_block);
+    }
+    return prefilled_transaction(index, std::move(tx));
 }
 
 // Deserialization.
@@ -51,7 +41,7 @@ expect<prefilled_transaction> prefilled_transaction::from_data(byte_reader& read
     if ( ! transaction) {
         return std::unexpected(transaction.error());
     }
-    return prefilled_transaction(*index, std::move(*transaction));
+    return create(*index, std::move(*transaction));
 }
 
 // Serialization.
@@ -68,24 +58,8 @@ uint64_t prefilled_transaction::index() const {
     return index_;
 }
 
-void prefilled_transaction::set_index(uint64_t value) {
-    index_ = value;
-}
-
-chain::transaction& prefilled_transaction::transaction() {
-    return transaction_;
-}
-
 chain::transaction const& prefilled_transaction::transaction() const {
     return transaction_;
-}
-
-void prefilled_transaction::set_transaction(chain::transaction const& tx) {
-    transaction_ = tx;
-}
-
-void prefilled_transaction::set_transaction(chain::transaction&& tx) {
-    transaction_ = std::move(tx);
 }
 
 expect<void> prefilled_transaction::to_data(byte_writer& writer, uint32_t version) const {

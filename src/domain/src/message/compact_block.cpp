@@ -28,7 +28,9 @@ compact_block compact_block::factory_from_block(message::block const& block) {
     uint64_t nonce = 0;
     pseudo_random::fill(reinterpret_cast<uint8_t*>(&nonce), sizeof(nonce));
 
-    prefilled_transaction::list prefilled_list{prefilled_transaction{0, block.transactions()[0]}};
+    // Index 0 (the coinbase) is always in range, so `create` cannot fail here.
+    prefilled_transaction::list prefilled_list{
+        prefilled_transaction::create(0, block.transactions()[0]).value()};
 
     auto header_hash = hash(block, nonce);
     auto k0 = from_little_endian_unsafe<uint64_t>(header_hash);
