@@ -16,20 +16,13 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_prefilled_transaction_mut_t`. Caller must release with `kth_chain_prefilled_transaction_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_prefilled_transaction_mut_t kth_chain_prefilled_transaction_construct_default(void);
-
 /** @param[out] out Must point to a null `kth_prefilled_transaction_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_prefilled_transaction_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_chain_prefilled_transaction_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_prefilled_transaction_mut_t* out);
 
-/**
- * @return Owned `kth_prefilled_transaction_mut_t`. Caller must release with `kth_chain_prefilled_transaction_destruct`.
- * @param tx Borrowed input. Copied by value into the resulting object; ownership of `tx` stays with the caller.
- */
-KTH_EXPORT KTH_OWNED
-kth_prefilled_transaction_mut_t kth_chain_prefilled_transaction_construct(uint64_t index, kth_transaction_const_t tx);
+/** @param[out] out Must point to a null `kth_prefilled_transaction_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_prefilled_transaction_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_chain_prefilled_transaction_create(uint64_t index, kth_transaction_const_t tx, KTH_OUT_OWNED kth_prefilled_transaction_mut_t* out);
 
 
 // Destructor
@@ -51,6 +44,9 @@ kth_prefilled_transaction_mut_t kth_chain_prefilled_transaction_copy(kth_prefill
 KTH_EXPORT
 kth_bool_t kth_chain_prefilled_transaction_equals(kth_prefilled_transaction_const_t self, kth_prefilled_transaction_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_chain_prefilled_transaction_not_equal(kth_prefilled_transaction_const_t self, kth_prefilled_transaction_const_t other);
+
 
 // Serialization
 
@@ -70,28 +66,6 @@ uint64_t kth_chain_prefilled_transaction_index(kth_prefilled_transaction_const_t
 /** @return Borrowed `kth_transaction_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_transaction_const_t kth_chain_prefilled_transaction_transaction(kth_prefilled_transaction_const_t self);
-
-
-// Setters
-
-KTH_EXPORT
-void kth_chain_prefilled_transaction_set_index(kth_prefilled_transaction_mut_t self, uint64_t value);
-
-/** @param tx Borrowed input. Copied by value into the resulting object; ownership of `tx` stays with the caller. */
-KTH_EXPORT
-void kth_chain_prefilled_transaction_set_transaction(kth_prefilled_transaction_mut_t self, kth_transaction_const_t tx);
-
-
-// Predicates
-
-KTH_EXPORT
-kth_bool_t kth_chain_prefilled_transaction_is_valid(kth_prefilled_transaction_const_t self);
-
-
-// Operations
-
-KTH_EXPORT
-void kth_chain_prefilled_transaction_reset(kth_prefilled_transaction_mut_t self);
 
 #ifdef __cplusplus
 } // extern "C"

@@ -21,9 +21,14 @@ struct KD_API prefilled_transaction {
     using list = std::vector<prefilled_transaction>;
     using const_ptr = std::shared_ptr<const prefilled_transaction>;
 
-    prefilled_transaction();
-    prefilled_transaction(uint64_t index, chain::transaction const& tx);
-    prefilled_transaction(uint64_t index, chain::transaction&& tx);
+    /// Build from parts. Unlike most domain types, construction here *can*
+    /// yield a syntactically invalid object: BIP152 caps the prefilled index,
+    /// and nothing else constrains the caller. Returns
+    /// `error::invalid_compact_block` when `index` is out of range, so a
+    /// constructed `prefilled_transaction` always carries a usable index.
+    static
+    expect<prefilled_transaction> create(uint64_t index, chain::transaction tx);
+
     prefilled_transaction(prefilled_transaction const& x) = default;
     prefilled_transaction(prefilled_transaction&& x) = default;
 
@@ -37,15 +42,8 @@ struct KD_API prefilled_transaction {
     [[nodiscard]]
     uint64_t index() const;
 
-    void set_index(uint64_t value);
-
-    chain::transaction& transaction();
-
     [[nodiscard]]
     chain::transaction const& transaction() const;
-
-    void set_transaction(chain::transaction const& tx);
-    void set_transaction(chain::transaction&& tx);
 
     static
     expect<prefilled_transaction> from_data(byte_reader& reader, uint32_t version);
@@ -54,15 +52,14 @@ struct KD_API prefilled_transaction {
     expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
     [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
-
-    [[nodiscard]]
     size_t serialized_size(uint32_t version) const;
 
 
 private:
+    // Construction goes through `create` / `from_data`, which guarantee an
+    // in-range index.
+    prefilled_transaction(uint64_t index, chain::transaction tx);
+
     uint64_t index_;
     chain::transaction transaction_;
 };

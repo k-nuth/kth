@@ -81,8 +81,8 @@ static kth_prefilled_transaction_list_mut_t
 make_prefilled_list(kth_transaction_const_t tx) {
     kth_prefilled_transaction_list_mut_t list =
         kth_chain_prefilled_transaction_list_construct_default();
-    kth_prefilled_transaction_mut_t pt =
-        kth_chain_prefilled_transaction_construct(0u, tx);
+    kth_prefilled_transaction_mut_t pt = NULL;
+    REQUIRE(kth_chain_prefilled_transaction_create(0u, tx, &pt) == kth_ec_success);
     kth_chain_prefilled_transaction_list_push_back(list, pt);
     kth_chain_prefilled_transaction_destruct(pt);
     return list;

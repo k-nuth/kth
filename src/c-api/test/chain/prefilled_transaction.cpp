@@ -44,27 +44,38 @@ static kth_transaction_mut_t make_tx(void) {
     return tx;
 }
 
+// BIP152 caps the prefilled index; mirrors the domain's own limit.
+static uint64_t const kMaxIndex = 0xffffffffu;
+
+static kth_prefilled_transaction_mut_t make_prefilled(uint64_t index) {
+    kth_transaction_mut_t tx = make_tx();
+    kth_prefilled_transaction_mut_t pt = NULL;
+    kth_error_code_t ec = kth_chain_prefilled_transaction_create(index, tx, &pt);
+    REQUIRE(ec == kth_ec_success);
+    REQUIRE(pt != NULL);
+    kth_chain_transaction_destruct(tx);
+    return pt;
+}
+
 // ---------------------------------------------------------------------------
 // Constructors / lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API PrefilledTransaction - default construct is invalid",
-          "[C-API PrefilledTransaction]") {
-    kth_prefilled_transaction_mut_t pt =
-        kth_chain_prefilled_transaction_construct_default();
-    REQUIRE(kth_chain_prefilled_transaction_is_valid(pt) == 0);
-    kth_chain_prefilled_transaction_destruct(pt);
-}
-
-TEST_CASE("C-API PrefilledTransaction - field constructor preserves index",
+TEST_CASE("C-API PrefilledTransaction - create rejects an out of range index",
           "[C-API PrefilledTransaction]") {
     kth_transaction_mut_t tx = make_tx();
-    kth_prefilled_transaction_mut_t pt =
-        kth_chain_prefilled_transaction_construct(7u, tx);
-    REQUIRE(pt != NULL);
+    kth_prefilled_transaction_mut_t pt = NULL;
+    kth_error_code_t ec = kth_chain_prefilled_transaction_create(kMaxIndex, tx, &pt);
+    REQUIRE(ec != kth_ec_success);
+    REQUIRE(pt == NULL);
+    kth_chain_transaction_destruct(tx);
+}
+
+TEST_CASE("C-API PrefilledTransaction - create preserves index",
+          "[C-API PrefilledTransaction]") {
+    kth_prefilled_transaction_mut_t pt = make_prefilled(7u);
     REQUIRE(kth_chain_prefilled_transaction_index(pt) == 7u);
     kth_chain_prefilled_transaction_destruct(pt);
-    kth_chain_transaction_destruct(tx);
 }
 
 TEST_CASE("C-API PrefilledTransaction - destruct null is safe",
@@ -78,9 +89,7 @@ TEST_CASE("C-API PrefilledTransaction - destruct null is safe",
 
 TEST_CASE("C-API PrefilledTransaction - to_data / from_data round-trip",
           "[C-API PrefilledTransaction]") {
-    kth_transaction_mut_t tx = make_tx();
-    kth_prefilled_transaction_mut_t original =
-        kth_chain_prefilled_transaction_construct(3u, tx);
+    kth_prefilled_transaction_mut_t original = make_prefilled(3u);
 
     kth_size_t out_size = 0;
     uint8_t* raw = kth_chain_prefilled_transaction_to_data(
@@ -98,14 +107,11 @@ TEST_CASE("C-API PrefilledTransaction - to_data / from_data round-trip",
     kth_core_destruct_array(raw);
     kth_chain_prefilled_transaction_destruct(decoded);
     kth_chain_prefilled_transaction_destruct(original);
-    kth_chain_transaction_destruct(tx);
 }
 
 TEST_CASE("C-API PrefilledTransaction - serialized_size matches to_data length",
           "[C-API PrefilledTransaction]") {
-    kth_transaction_mut_t tx = make_tx();
-    kth_prefilled_transaction_mut_t pt =
-        kth_chain_prefilled_transaction_construct(0u, tx);
+    kth_prefilled_transaction_mut_t pt = make_prefilled(0u);
 
     kth_size_t expected =
         kth_chain_prefilled_transaction_serialized_size(pt, kProtoVersion);
@@ -117,7 +123,6 @@ TEST_CASE("C-API PrefilledTransaction - serialized_size matches to_data length",
 
     kth_core_destruct_array(raw);
     kth_chain_prefilled_transaction_destruct(pt);
-    kth_chain_transaction_destruct(tx);
 }
 
 // ---------------------------------------------------------------------------
@@ -126,9 +131,7 @@ TEST_CASE("C-API PrefilledTransaction - serialized_size matches to_data length",
 
 TEST_CASE("C-API PrefilledTransaction - copy preserves equality",
           "[C-API PrefilledTransaction]") {
-    kth_transaction_mut_t tx = make_tx();
-    kth_prefilled_transaction_mut_t original =
-        kth_chain_prefilled_transaction_construct(5u, tx);
+    kth_prefilled_transaction_mut_t original = make_prefilled(5u);
 
     kth_prefilled_transaction_mut_t copy =
         kth_chain_prefilled_transaction_copy(original);
@@ -137,62 +140,38 @@ TEST_CASE("C-API PrefilledTransaction - copy preserves equality",
 
     kth_chain_prefilled_transaction_destruct(copy);
     kth_chain_prefilled_transaction_destruct(original);
-    kth_chain_transaction_destruct(tx);
 }
 
 // ---------------------------------------------------------------------------
 // Getters / setters
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API PrefilledTransaction - set_index round-trips",
+TEST_CASE("C-API PrefilledTransaction - create sets index",
           "[C-API PrefilledTransaction]") {
-    kth_prefilled_transaction_mut_t pt =
-        kth_chain_prefilled_transaction_construct_default();
-    kth_chain_prefilled_transaction_set_index(pt, 42u);
+    kth_prefilled_transaction_mut_t pt = make_prefilled(42u);
     REQUIRE(kth_chain_prefilled_transaction_index(pt) == 42u);
     kth_chain_prefilled_transaction_destruct(pt);
 }
 
 TEST_CASE("C-API PrefilledTransaction - transaction getter returns borrowed view",
           "[C-API PrefilledTransaction]") {
-    kth_transaction_mut_t tx = make_tx();
-    kth_prefilled_transaction_mut_t pt =
-        kth_chain_prefilled_transaction_construct(1u, tx);
+    kth_prefilled_transaction_mut_t pt = make_prefilled(1u);
 
     kth_transaction_const_t inner = kth_chain_prefilled_transaction_transaction(pt);
     REQUIRE(inner != NULL);
     // Do NOT destruct `inner` — it is borrowed.
 
     kth_chain_prefilled_transaction_destruct(pt);
-    kth_chain_transaction_destruct(tx);
-}
-
-// ---------------------------------------------------------------------------
-// Operations
-// ---------------------------------------------------------------------------
-
-TEST_CASE("C-API PrefilledTransaction - reset invalidates the object",
-          "[C-API PrefilledTransaction]") {
-    // C++ `reset()` sets index_ to a sentinel value (max_uint32) and
-    // clears the transaction, so is_valid() flips to false. The numeric
-    // value of index after reset is an implementation detail, but the
-    // validity flip is the observable contract.
-    kth_transaction_mut_t tx = make_tx();
-    kth_prefilled_transaction_mut_t pt =
-        kth_chain_prefilled_transaction_construct(9u, tx);
-    kth_chain_prefilled_transaction_reset(pt);
-    REQUIRE(kth_chain_prefilled_transaction_is_valid(pt) == 0);
-    kth_chain_prefilled_transaction_destruct(pt);
-    kth_chain_transaction_destruct(tx);
 }
 
 // ---------------------------------------------------------------------------
 // Preconditions (death tests via fork)
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API PrefilledTransaction - construct null tx aborts",
+TEST_CASE("C-API PrefilledTransaction - create null tx aborts",
           "[C-API PrefilledTransaction][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_prefilled_transaction_construct(0u, NULL));
+    kth_prefilled_transaction_mut_t out = NULL;
+    KTH_EXPECT_ABORT(kth_chain_prefilled_transaction_create(0u, NULL, &out));
 }
 
 TEST_CASE("C-API PrefilledTransaction - construct_from_data null data with non-zero size aborts",
@@ -213,8 +192,7 @@ TEST_CASE("C-API PrefilledTransaction - construct_from_data null out aborts",
 
 TEST_CASE("C-API PrefilledTransaction - to_data null out_size aborts",
           "[C-API PrefilledTransaction][precondition]") {
-    kth_prefilled_transaction_mut_t pt =
-        kth_chain_prefilled_transaction_construct_default();
+    kth_prefilled_transaction_mut_t pt = make_prefilled(0u);
     KTH_EXPECT_ABORT(kth_chain_prefilled_transaction_to_data(
         pt, kProtoVersion, NULL));
     kth_chain_prefilled_transaction_destruct(pt);
@@ -227,8 +205,7 @@ TEST_CASE("C-API PrefilledTransaction - copy null aborts",
 
 TEST_CASE("C-API PrefilledTransaction - equals null aborts",
           "[C-API PrefilledTransaction][precondition]") {
-    kth_prefilled_transaction_mut_t other =
-        kth_chain_prefilled_transaction_construct_default();
+    kth_prefilled_transaction_mut_t other = make_prefilled(0u);
     KTH_EXPECT_ABORT(kth_chain_prefilled_transaction_equals(NULL, other));
     kth_chain_prefilled_transaction_destruct(other);
 }
@@ -238,10 +215,3 @@ TEST_CASE("C-API PrefilledTransaction - transaction getter null aborts",
     KTH_EXPECT_ABORT(kth_chain_prefilled_transaction_transaction(NULL));
 }
 
-TEST_CASE("C-API PrefilledTransaction - set_transaction null value aborts",
-          "[C-API PrefilledTransaction][precondition]") {
-    kth_prefilled_transaction_mut_t pt =
-        kth_chain_prefilled_transaction_construct_default();
-    KTH_EXPECT_ABORT(kth_chain_prefilled_transaction_set_transaction(pt, NULL));
-    kth_chain_prefilled_transaction_destruct(pt);
-}

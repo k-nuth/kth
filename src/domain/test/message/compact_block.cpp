@@ -30,9 +30,9 @@ message::compact_block::short_id_list const test_short_ids{
     convert_to_uint64t("f0f0f0f0f0f0")};
 
 message::prefilled_transaction::list const test_transactions{
-    message::prefilled_transaction(10, chain::transaction(1, 48, {}, {})),
-    message::prefilled_transaction(20, chain::transaction(2, 32, {}, {})),
-    message::prefilled_transaction(30, chain::transaction(4, 16, {}, {}))};
+    message::prefilled_transaction::create(10, chain::transaction(1, 48, {}, {})).value(),
+    message::prefilled_transaction::create(20, chain::transaction(2, 32, {}, {})).value(),
+    message::prefilled_transaction::create(30, chain::transaction(4, 16, {}, {})).value()};
 
 message::compact_block make_compact_block(uint64_t nonce = 453245u) {
     return message::compact_block(test_header, nonce, test_short_ids, test_transactions);
