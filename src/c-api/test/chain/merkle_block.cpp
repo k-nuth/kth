@@ -78,10 +78,8 @@ static kth_hash_list_mut_t make_two_hashes(void) {
 static kth_merkle_block_mut_t make_fixture(void) {
     kth_header_mut_t header = make_header();
     kth_hash_list_mut_t hashes = make_two_hashes();
-    kth_merkle_block_mut_t mb = NULL;
-    kth_error_code_t ec = kth_chain_merkle_block_create(
-        header, 2u, hashes, kFlags, sizeof(kFlags), &mb);
-    REQUIRE(ec == kth_ec_success);
+    kth_merkle_block_mut_t mb = kth_chain_merkle_block_create(
+        header, 2u, hashes, kFlags, sizeof(kFlags));
     REQUIRE(mb != NULL);
     kth_core_hash_list_destruct(hashes);
     kth_chain_header_destruct(header);
@@ -92,16 +90,16 @@ static kth_merkle_block_mut_t make_fixture(void) {
 // Constructors / lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API MerkleBlock - create rejects the empty sentinel",
+TEST_CASE("C-API MerkleBlock - create accepts an empty payload",
           "[C-API MerkleBlock]") {
+    // A domain merkle_block does no consensus checks; construction cannot fail.
     kth_hash_t const zero = {{ 0 }};
     kth_header_mut_t header = kth_chain_header_construct(0u, &zero, &zero, 0u, 0u, 0u);
     kth_hash_list_mut_t hashes = kth_core_hash_list_construct_default();
-    kth_merkle_block_mut_t mb = NULL;
-    kth_error_code_t ec = kth_chain_merkle_block_create(
-        header, 0u, hashes, NULL, 0, &mb);
-    REQUIRE(ec != kth_ec_success);
-    REQUIRE(mb == NULL);
+    kth_merkle_block_mut_t mb = kth_chain_merkle_block_create(
+        header, 0u, hashes, NULL, 0);
+    REQUIRE(mb != NULL);
+    kth_chain_merkle_block_destruct(mb);
     kth_core_hash_list_destruct(hashes);
     kth_chain_header_destruct(header);
 }
@@ -251,9 +249,8 @@ TEST_CASE("C-API MerkleBlock - construct_from_data non-null out slot aborts",
 TEST_CASE("C-API MerkleBlock - create null header aborts",
           "[C-API MerkleBlock][precondition]") {
     kth_hash_list_mut_t hashes = make_two_hashes();
-    kth_merkle_block_mut_t out = NULL;
     KTH_EXPECT_ABORT(kth_chain_merkle_block_create(
-        NULL, 2u, hashes, kFlags, sizeof(kFlags), &out));
+        NULL, 2u, hashes, kFlags, sizeof(kFlags)));
     kth_core_hash_list_destruct(hashes);
 }
 

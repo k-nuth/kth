@@ -63,11 +63,12 @@ public:
     // Constructors.
     //-------------------------------------------------------------------------
 
-    /// The only way to build a block from parts. Returns `error::empty_block`
-    /// when the result would be the empty sentinel (no transactions and an
-    /// all-zero header), so a constructed `block` is always a real block.
+    /// Build a block from parts. Construction cannot fail: a domain block is a
+    /// pure structural aggregate of a header and its transactions and performs
+    /// no consensus checks. An empty block is syntactically valid; consensus
+    /// validity (empty block, merkle root, etc.) is validation's concern.
     static
-    expect<block> create(chain::header header, transaction::list transactions);
+    block create(chain::header header, transaction::list transactions);
 
     // Operators.
     //-------------------------------------------------------------------------

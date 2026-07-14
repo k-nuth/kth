@@ -94,10 +94,8 @@ static kth_compact_block_mut_t make_fixture(void) {
     kth_transaction_mut_t tx = make_tx();
     kth_prefilled_transaction_list_mut_t txs = make_prefilled_list(tx);
 
-    kth_compact_block_mut_t cb = NULL;
-    kth_error_code_t ec = kth_chain_compact_block_create(
-        header, 0xCAFEBABEu, short_ids, txs, &cb);
-    REQUIRE(ec == kth_ec_success);
+    kth_compact_block_mut_t cb = kth_chain_compact_block_create(
+        header, 0xCAFEBABEu, short_ids, txs);
     REQUIRE(cb != NULL);
 
     kth_chain_prefilled_transaction_list_destruct(txs);
@@ -111,18 +109,18 @@ static kth_compact_block_mut_t make_fixture(void) {
 // Constructors / lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API CompactBlock - create rejects the empty sentinel",
+TEST_CASE("C-API CompactBlock - create accepts an empty payload",
           "[C-API CompactBlock]") {
+    // A domain compact_block does no consensus checks; construction cannot fail.
     kth_hash_t const zero = {{ 0 }};
     kth_header_mut_t header = kth_chain_header_construct(0u, &zero, &zero, 0u, 0u, 0u);
     kth_u64_list_mut_t short_ids = kth_core_u64_list_construct_default();
     kth_prefilled_transaction_list_mut_t txs =
         kth_chain_prefilled_transaction_list_construct_default();
-    kth_compact_block_mut_t cb = NULL;
-    kth_error_code_t ec = kth_chain_compact_block_create(
-        header, 0u, short_ids, txs, &cb);
-    REQUIRE(ec != kth_ec_success);
-    REQUIRE(cb == NULL);
+    kth_compact_block_mut_t cb = kth_chain_compact_block_create(
+        header, 0u, short_ids, txs);
+    REQUIRE(cb != NULL);
+    kth_chain_compact_block_destruct(cb);
     kth_chain_prefilled_transaction_list_destruct(txs);
     kth_core_u64_list_destruct(short_ids);
     kth_chain_header_destruct(header);
@@ -251,9 +249,8 @@ TEST_CASE("C-API CompactBlock - create null header aborts",
     kth_u64_list_mut_t short_ids = make_short_ids();
     kth_transaction_mut_t tx = make_tx();
     kth_prefilled_transaction_list_mut_t txs = make_prefilled_list(tx);
-    kth_compact_block_mut_t out = NULL;
     KTH_EXPECT_ABORT(
-        kth_chain_compact_block_create(NULL, 0u, short_ids, txs, &out));
+        kth_chain_compact_block_create(NULL, 0u, short_ids, txs));
     kth_chain_prefilled_transaction_list_destruct(txs);
     kth_chain_transaction_destruct(tx);
     kth_core_u64_list_destruct(short_ids);
@@ -264,9 +261,8 @@ TEST_CASE("C-API CompactBlock - create null short_ids aborts",
     kth_header_mut_t header = make_header();
     kth_transaction_mut_t tx = make_tx();
     kth_prefilled_transaction_list_mut_t txs = make_prefilled_list(tx);
-    kth_compact_block_mut_t out = NULL;
     KTH_EXPECT_ABORT(
-        kth_chain_compact_block_create(header, 0u, NULL, txs, &out));
+        kth_chain_compact_block_create(header, 0u, NULL, txs));
     kth_chain_prefilled_transaction_list_destruct(txs);
     kth_chain_transaction_destruct(tx);
     kth_chain_header_destruct(header);
@@ -276,9 +272,8 @@ TEST_CASE("C-API CompactBlock - create null transactions aborts",
           "[C-API CompactBlock][precondition]") {
     kth_header_mut_t header = make_header();
     kth_u64_list_mut_t short_ids = make_short_ids();
-    kth_compact_block_mut_t out = NULL;
     KTH_EXPECT_ABORT(
-        kth_chain_compact_block_create(header, 0u, short_ids, NULL, &out));
+        kth_chain_compact_block_create(header, 0u, short_ids, NULL));
     kth_core_u64_list_destruct(short_ids);
     kth_chain_header_destruct(header);
 }

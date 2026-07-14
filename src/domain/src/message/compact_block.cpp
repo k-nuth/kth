@@ -47,12 +47,7 @@ compact_block compact_block::factory_from_block(message::block const& block) {
 }
 
 // static
-expect<compact_block> compact_block::create(chain::header header, uint64_t nonce, short_id_list short_ids, prefilled_transaction::list transactions) {
-    // Reject the fully-empty payload; a compact block always prefills at least
-    // the coinbase.
-    if (short_ids.empty() && transactions.empty()) {
-        return std::unexpected(error::compact_block_construction_empty);
-    }
+compact_block compact_block::create(chain::header header, uint64_t nonce, short_id_list short_ids, prefilled_transaction::list transactions) {
     return compact_block{header, nonce, std::move(short_ids), std::move(transactions)};
 }
 

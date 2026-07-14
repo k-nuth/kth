@@ -17,18 +17,14 @@ chain::transaction::list one_tx() {
     return {chain::transaction(1, 0, {}, {})};
 }
 chain::block make_chain_block() {
-    return chain::block::create(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, one_tx()).value();
+    return chain::block::create(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, one_tx());
 }
 message::block make_msg_block() {
-    return message::block::create(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, one_tx()).value();
+    return message::block::create(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, one_tx());
 }
 } // anonymous namespace
 
 // Start Test Suite: message block tests
-
-TEST_CASE("block create rejects the empty sentinel", "[message block]") {
-    REQUIRE( ! block::create(chain::header{0u, null_hash, null_hash, 0u, 0u, 0u}, {}));
-}
 
 TEST_CASE("block constructor 2 always equals params", "[message block]") {
     chain::header const header(10u,
@@ -43,7 +39,7 @@ TEST_CASE("block constructor 2 always equals params", "[message block]") {
         chain::transaction(2, 32, {}, {}),
         chain::transaction(4, 16, {}, {})};
 
-    auto instance = block::create(header, transactions).value();
+    auto instance = block::create(header, transactions);
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
 }
@@ -63,7 +59,7 @@ TEST_CASE("block constructor 3 always equals params", "[message block]") {
 
     chain::header dup_header(header);
     chain::transaction::list dup_transactions = transactions;
-    auto instance = block::create(std::move(dup_header), std::move(dup_transactions)).value();
+    auto instance = block::create(std::move(dup_header), std::move(dup_transactions));
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
 }
@@ -81,7 +77,7 @@ TEST_CASE("block constructor 4 always equals params", "[message block]") {
         chain::transaction(2, 32, {}, {}),
         chain::transaction(4, 16, {}, {})};
 
-    auto value = chain::block::create(header, transactions).value();
+    auto value = chain::block::create(header, transactions);
     block instance(value);
     REQUIRE(instance == value);
     REQUIRE(header == instance.header());
@@ -101,7 +97,7 @@ TEST_CASE("block constructor 5 always equals params", "[message block]") {
         chain::transaction(2, 32, {}, {}),
         chain::transaction(4, 16, {}, {})};
 
-    auto value = chain::block::create(header, transactions).value();
+    auto value = chain::block::create(header, transactions);
     block instance(std::move(value));
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
@@ -120,7 +116,7 @@ TEST_CASE("block constructor 6 always equals params", "[message block]") {
         chain::transaction(2, 32, {}, {}),
         chain::transaction(4, 16, {}, {})};
 
-    auto value = block::create(header, transactions).value();
+    auto value = block::create(header, transactions);
     block instance(value);
     REQUIRE(value == instance);
     REQUIRE(header == instance.header());
@@ -140,7 +136,7 @@ TEST_CASE("block constructor 7 always equals params", "[message block]") {
         chain::transaction(2, 32, {}, {}),
         chain::transaction(4, 16, {}, {})};
 
-    auto value = block::create(header, transactions).value();
+    auto value = block::create(header, transactions);
     block instance(std::move(value));
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
@@ -186,7 +182,7 @@ TEST_CASE("block operator assign equals 1 always matches equivalent", "[message 
         chain::transaction(2, 32, {}, {}),
         chain::transaction(4, 16, {}, {})};
 
-    auto value = chain::block::create(header, transactions).value();
+    auto value = chain::block::create(header, transactions);
 
     auto instance = make_msg_block();
 
@@ -208,7 +204,7 @@ TEST_CASE("block operator assign equals 2 always matches equivalent", "[message 
         chain::transaction(2, 32, {}, {}),
         chain::transaction(4, 16, {}, {})};
 
-    auto value = message::block::create(header, transactions).value();
+    auto value = message::block::create(header, transactions);
 
 
     auto instance = make_msg_block();
@@ -228,7 +224,7 @@ TEST_CASE("block operator boolean equals 1 duplicates returns true", "[message b
                       68644u),
         {chain::transaction(1, 48, {}, {}),
          chain::transaction(2, 32, {}, {}),
-         chain::transaction(4, 16, {}, {})}).value();
+         chain::transaction(4, 16, {}, {})});
 
     message::block instance(expected);
     REQUIRE(instance == expected);
@@ -244,7 +240,7 @@ TEST_CASE("block operator boolean equals 1 differs returns false", "[message blo
                       68644u),
         {chain::transaction(1, 48, {}, {}),
          chain::transaction(2, 32, {}, {}),
-         chain::transaction(4, 16, {}, {})}).value();
+         chain::transaction(4, 16, {}, {})});
 
     auto instance = make_msg_block();
     REQUIRE(instance != expected);
@@ -260,7 +256,7 @@ TEST_CASE("block operator boolean not equals 1 duplicates returns false", "[mess
                       68644u),
         {chain::transaction(1, 48, {}, {}),
          chain::transaction(2, 32, {}, {}),
-         chain::transaction(4, 16, {}, {})}).value();
+         chain::transaction(4, 16, {}, {})});
 
     message::block instance(expected);
     REQUIRE(instance == expected);
@@ -276,7 +272,7 @@ TEST_CASE("block operator boolean not equals 1 differs returns true", "[message 
                       68644u),
         {chain::transaction(1, 48, {}, {}),
          chain::transaction(2, 32, {}, {}),
-         chain::transaction(4, 16, {}, {})}).value();
+         chain::transaction(4, 16, {}, {})});
 
     auto instance = make_chain_block();
     REQUIRE(instance != expected);
@@ -292,7 +288,7 @@ TEST_CASE("block operator boolean equals 2 duplicates returns true", "[message b
                       68644u),
         {chain::transaction(1, 48, {}, {}),
          chain::transaction(2, 32, {}, {}),
-         chain::transaction(4, 16, {}, {})}).value();
+         chain::transaction(4, 16, {}, {})});
 
     message::block instance(expected);
     REQUIRE(instance == expected);
@@ -308,7 +304,7 @@ TEST_CASE("block operator boolean equals 2 differs returns false", "[message blo
                       68644u),
         {chain::transaction(1, 48, {}, {}),
          chain::transaction(2, 32, {}, {}),
-         chain::transaction(4, 16, {}, {})}).value();
+         chain::transaction(4, 16, {}, {})});
 
     auto instance = make_msg_block();
     REQUIRE(instance != expected);
@@ -324,7 +320,7 @@ TEST_CASE("block operator boolean not equals 2 duplicates returns false", "[mess
                       68644u),
         {chain::transaction(1, 48, {}, {}),
          chain::transaction(2, 32, {}, {}),
-         chain::transaction(4, 16, {}, {})}).value();
+         chain::transaction(4, 16, {}, {})});
 
     message::block instance(expected);
     REQUIRE(instance == expected);
@@ -340,7 +336,7 @@ TEST_CASE("block operator boolean not equals 2 differs returns true", "[message 
                       68644u),
         {chain::transaction(1, 48, {}, {}),
          chain::transaction(2, 32, {}, {}),
-         chain::transaction(4, 16, {}, {})}).value();
+         chain::transaction(4, 16, {}, {})});
 
     auto instance = make_msg_block();
     REQUIRE(instance != expected);

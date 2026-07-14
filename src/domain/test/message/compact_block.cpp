@@ -35,22 +35,16 @@ message::prefilled_transaction::list const test_transactions{
     message::prefilled_transaction(30, chain::transaction(4, 16, {}, {}))};
 
 message::compact_block make_compact_block(uint64_t nonce = 453245u) {
-    return message::compact_block::create(test_header, nonce, test_short_ids, test_transactions).value();
+    return message::compact_block::create(test_header, nonce, test_short_ids, test_transactions);
 }
 
 } // namespace
 
 // Start Test Suite: compact block tests
 
-TEST_CASE("compact block create rejects empty sentinel", "[compact block]") {
-    auto const result = message::compact_block::create(chain::header{0u, null_hash, null_hash, 0u, 0u, 0u}, 0u, {}, {});
-    REQUIRE( ! result);
-    REQUIRE(result.error() == error::compact_block_construction_empty);
-}
-
 TEST_CASE("compact block create always equals params", "[compact block]") {
     uint64_t const nonce = 453245u;
-    auto const instance = message::compact_block::create(test_header, nonce, test_short_ids, test_transactions).value();
+    auto const instance = message::compact_block::create(test_header, nonce, test_short_ids, test_transactions);
     REQUIRE(test_header == instance.header());
     REQUIRE(nonce == instance.nonce());
     REQUIRE(test_short_ids == instance.short_ids());
@@ -147,7 +141,7 @@ TEST_CASE("compact block operator boolean equals duplicates returns true", "[com
 
 TEST_CASE("compact block operator boolean equals differs returns false", "[compact block]") {
     auto const expected = make_compact_block(12334u);
-    auto const instance = message::compact_block::create(test_header, 99999u, test_short_ids, test_transactions).value();
+    auto const instance = message::compact_block::create(test_header, 99999u, test_short_ids, test_transactions);
     REQUIRE(instance != expected);
 }
 
@@ -159,7 +153,7 @@ TEST_CASE("compact block operator boolean not equals duplicates returns false", 
 
 TEST_CASE("compact block operator boolean not equals differs returns true", "[compact block]") {
     auto const expected = make_compact_block(12334u);
-    auto const instance = message::compact_block::create(test_header, 99999u, test_short_ids, test_transactions).value();
+    auto const instance = message::compact_block::create(test_header, 99999u, test_short_ids, test_transactions);
     REQUIRE(instance != expected);
 }
 

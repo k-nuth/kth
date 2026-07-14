@@ -25,11 +25,9 @@ struct KD_API merkle_block {
     using ptr = std::shared_ptr<merkle_block>;
     using const_ptr = std::shared_ptr<const merkle_block>;
 
-    /// Build from parts. Returns `error::merkle_block_construction_empty` for
-    /// the all-default sentinel (an empty header with no hashes or flags), so
-    /// a constructed `merkle_block` is always a real one.
+    /// Build from parts. Construction cannot fail (no consensus checks).
     static
-    expect<merkle_block> create(chain::header header, size_t total_transactions, hash_list hashes, data_chunk flags);
+    merkle_block create(chain::header header, size_t total_transactions, hash_list hashes, data_chunk flags);
 
     /// Wrap an already-constructed (hence valid) block.
     merkle_block(chain::block const& block);

@@ -29,12 +29,8 @@ block::block(chain::block const& x)
 {}
 
 // static
-expect<block> block::create(chain::header header, chain::transaction::list transactions) {
-    auto base = chain::block::create(std::move(header), std::move(transactions));
-    if ( ! base) {
-        return std::unexpected(base.error());
-    }
-    return block{std::move(*base)};
+block block::create(chain::header header, chain::transaction::list transactions) {
+    return block{chain::block::create(std::move(header), std::move(transactions))};
 }
 
 // block::block(block&& x) noexcept

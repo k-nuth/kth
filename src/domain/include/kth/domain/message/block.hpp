@@ -36,10 +36,10 @@ public:
     block(chain::block const& x);
     block(chain::block&& x);
 
-    /// Build from parts. Mirrors `chain::block::create`: returns
-    /// `error::block_construction_empty` for the empty sentinel.
+    /// Build from parts. Mirrors `chain::block::create`; construction cannot
+    /// fail (a domain block does no consensus checks).
     static
-    expect<block> create(chain::header header, chain::transaction::list transactions);
+    block create(chain::header header, chain::transaction::list transactions);
 
     block& operator=(chain::block&& x);
 

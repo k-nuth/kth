@@ -186,13 +186,7 @@ block::block(chain::header const& header, transaction::list&& transactions)
 {}
 
 // static
-expect<block> block::create(chain::header header, transaction::list transactions) {
-    // A block always carries at least a coinbase, so no transactions is never
-    // a real block. (Consensus validity beyond this — merkle root, sigops,
-    // etc. — is validation's concern, not construction's.)
-    if (transactions.empty()) {
-        return std::unexpected(error::block_construction_empty);
-    }
+block block::create(chain::header header, transaction::list transactions) {
     return block{header, std::move(transactions)};
 }
 
@@ -219,11 +213,8 @@ expect<block> block::from_data(byte_reader& reader) {
     }
     auto const end_deserialize = asio::steady_clock::now();
     auto res = create(*hdr, std::move(*txs));
-    if ( ! res) {
-        return std::unexpected(res.error());
-    }
-    res->validation.start_deserialize = start_deserialize;
-    res->validation.end_deserialize = end_deserialize;
+    res.validation.start_deserialize = start_deserialize;
+    res.validation.end_deserialize = end_deserialize;
     return res;
 }
 
