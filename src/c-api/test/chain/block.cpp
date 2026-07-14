@@ -27,15 +27,16 @@
 // Constructors / lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Block - create rejects the empty sentinel",
+TEST_CASE("C-API Block - create accepts a block with no transactions",
           "[C-API Block]") {
+    // A domain block does no consensus checks: an empty block is syntactically
+    // valid and construction cannot fail.
     kth_hash_t const zero = {{ 0 }};
     kth_header_mut_t h = kth_chain_header_construct(0u, &zero, &zero, 0u, 0u, 0u);
     kth_transaction_list_mut_t txs = kth_chain_transaction_list_construct_default();
-    kth_block_mut_t blk = NULL;
-    kth_error_code_t ec = kth_chain_block_create(h, txs, &blk);
-    REQUIRE(ec != kth_ec_success);
-    REQUIRE(blk == NULL);
+    kth_block_mut_t blk = kth_chain_block_create(h, txs);
+    REQUIRE(blk != NULL);
+    kth_chain_block_destruct(blk);
     kth_chain_header_destruct(h);
     kth_chain_transaction_list_destruct(txs);
 }

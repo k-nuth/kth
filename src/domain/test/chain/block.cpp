@@ -35,7 +35,7 @@ bool all_valid(chain::transaction::list const& transactions) {
 // one; `create` rejects an empty transaction list.
 chain::block make_block(chain::transaction::list txs = {chain::transaction(1, 0, {}, {})}) {
     return chain::block::create(
-        chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, std::move(txs)).value();
+        chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, std::move(txs));
 }
 
 } // anonymous namespace
@@ -77,12 +77,6 @@ TEST_CASE("block locator heights positive backoff returns top plus log offset to
     REQUIRE(expected == result);
 }
 
-TEST_CASE("block create rejects the empty sentinel", "[chain block]") {
-    // No transactions and an all-zero header is not a block.
-    REQUIRE( ! chain::block::create(chain::header{0u, null_hash, null_hash, 0u, 0u, 0u}, {}));
-    REQUIRE(chain::block::create(chain::header{0u, null_hash, null_hash, 0u, 0u, 0u}, {}).error() == error::block_construction_empty);
-}
-
 TEST_CASE("block create 2 always equals params", "[chain block]") {
     chain::header const header {
         10u,
@@ -99,7 +93,7 @@ TEST_CASE("block create 2 always equals params", "[chain block]") {
         chain::transaction(4, 16, {}, {})
     };
 
-    auto const instance = chain::block::create(header, transactions).value();
+    auto const instance = chain::block::create(header, transactions);
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
 }
@@ -124,7 +118,7 @@ TEST_CASE("block create 3 always equals params", "[chain block]") {
     chain::header dup_header(header);
     chain::transaction::list dup_transactions(transactions);
 
-    auto const instance = chain::block::create(std::move(dup_header), std::move(dup_transactions)).value();
+    auto const instance = chain::block::create(std::move(dup_header), std::move(dup_transactions));
 
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
@@ -146,7 +140,7 @@ TEST_CASE("block copy 4 always equals params", "[chain block]") {
         chain::transaction(4, 16, {}, {})
     };
 
-    auto const value = chain::block::create(header, transactions).value();
+    auto const value = chain::block::create(header, transactions);
     chain::block const instance(value);
     REQUIRE(value == instance);
     REQUIRE(header == instance.header());
@@ -170,7 +164,7 @@ TEST_CASE("block move 5 always equals params", "[chain block]") {
     };
 
     // This must be non-const.
-    auto value = chain::block::create(header, transactions).value();
+    auto value = chain::block::create(header, transactions);
 
     chain::block const instance(std::move(value));
 
@@ -405,7 +399,7 @@ TEST_CASE("block header accessor always returns initialized value", "[block gene
         chain::transaction(4, 16, {}, {})
     };
 
-    auto const instance = chain::block::create(header, transactions).value();
+    auto const instance = chain::block::create(header, transactions);
     REQUIRE(header == instance.header());
 }
 
@@ -419,7 +413,7 @@ TEST_CASE("block construct exposes header", "[block generate merkle root]") {
         68644u
     };
 
-    auto instance = chain::block::create(header, {chain::transaction(1, 0, {}, {})}).value();
+    auto instance = chain::block::create(header, {chain::transaction(1, 0, {}, {})});
     REQUIRE(header == instance.header());
 }
 
@@ -439,7 +433,7 @@ TEST_CASE("block transactions accessor always returns initialized value", "[bloc
         chain::transaction(4, 16, {}, {})
     };
 
-    auto const instance = chain::block::create(header, transactions).value();
+    auto const instance = chain::block::create(header, transactions);
     REQUIRE(transactions == instance.transactions());
 }
 
@@ -489,7 +483,7 @@ TEST_CASE("block operator assign equals always matches equivalent", "[block gene
     };
 
     // This must be non-const.
-    auto value = chain::block::create(header, transactions).value();
+    auto value = chain::block::create(header, transactions);
 
     auto instance = make_block();
     instance = std::move(value);
@@ -512,7 +506,7 @@ TEST_CASE("block operator boolean equals duplicates returns true", "[block gener
             chain::transaction(2, 32, {}, {}),
             chain::transaction(4, 16, {}, {})
         }
-    ).value();
+    );
 
     chain::block const instance(expected);
     REQUIRE(instance == expected);
@@ -533,7 +527,7 @@ TEST_CASE("block operator boolean equals differs returns false", "[block generat
             chain::transaction(2, 32, {}, {}),
             chain::transaction(4, 16, {}, {})
         }
-    ).value();
+    );
 
     auto const instance = make_block();
     REQUIRE( ! (instance == expected));
@@ -554,7 +548,7 @@ TEST_CASE("block operator boolean not equals duplicates returns false", "[block 
             chain::transaction(2, 32, {}, {}),
             chain::transaction(4, 16, {}, {})
         }
-    ).value();
+    );
 
     chain::block const instance(expected);
     REQUIRE( ! (instance != expected));
@@ -575,7 +569,7 @@ TEST_CASE("block operator boolean not equals differs returns true", "[block gene
             chain::transaction(2, 32, {}, {}),
             chain::transaction(4, 16, {}, {})
         }
-    ).value();
+    );
 
     auto const instance = make_block();
     REQUIRE(instance != expected);

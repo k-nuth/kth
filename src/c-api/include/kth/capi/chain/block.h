@@ -44,9 +44,9 @@ kth_block_mut_t kth_chain_block_genesis_scalenet(void);
 KTH_EXPORT KTH_OWNED
 kth_block_mut_t kth_chain_block_genesis_chipnet(void);
 
-/** @param[out] out Must point to a null `kth_block_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_block_destruct`. Untouched on error. */
-KTH_EXPORT
-kth_error_code_t kth_chain_block_create(kth_header_const_t header, kth_transaction_list_const_t transactions, KTH_OUT_OWNED kth_block_mut_t* out);
+/** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_block_mut_t kth_chain_block_create(kth_header_const_t header, kth_transaction_list_const_t transactions);
 
 
 // Destructor

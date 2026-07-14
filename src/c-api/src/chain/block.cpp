@@ -57,17 +57,12 @@ kth_block_mut_t kth_chain_block_genesis_chipnet(void) {
     return kth::leak(cpp_t::genesis_chipnet());
 }
 
-kth_error_code_t kth_chain_block_create(kth_header_const_t header, kth_transaction_list_const_t transactions, KTH_OUT_OWNED kth_block_mut_t* out) {
+kth_block_mut_t kth_chain_block_create(kth_header_const_t header, kth_transaction_list_const_t transactions) {
     KTH_PRECONDITION(header != nullptr);
     KTH_PRECONDITION(transactions != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
     auto const& header_cpp = kth::cpp_ref<kth::domain::chain::header>(header);
     auto const& transactions_cpp = kth::cpp_ref<kth::domain::chain::transaction::list>(transactions);
-    auto result = cpp_t::create(header_cpp, transactions_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
-    return kth_ec_success;
+    return kth::leak(cpp_t::create(header_cpp, transactions_cpp));
 }
 
 

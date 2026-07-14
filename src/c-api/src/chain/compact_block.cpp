@@ -33,19 +33,14 @@ kth_error_code_t kth_chain_compact_block_construct_from_data(uint8_t const* data
     return kth_ec_success;
 }
 
-kth_error_code_t kth_chain_compact_block_create(kth_header_const_t header, uint64_t nonce, kth_u64_list_const_t short_ids, kth_prefilled_transaction_list_const_t transactions, KTH_OUT_OWNED kth_compact_block_mut_t* out) {
+kth_compact_block_mut_t kth_chain_compact_block_create(kth_header_const_t header, uint64_t nonce, kth_u64_list_const_t short_ids, kth_prefilled_transaction_list_const_t transactions) {
     KTH_PRECONDITION(header != nullptr);
     KTH_PRECONDITION(short_ids != nullptr);
     KTH_PRECONDITION(transactions != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
     auto const& header_cpp = kth::cpp_ref<kth::domain::chain::header>(header);
     auto const& short_ids_cpp = kth::cpp_ref<std::vector<uint64_t>>(short_ids);
     auto const& transactions_cpp = kth::cpp_ref<kth::domain::message::prefilled_transaction::list>(transactions);
-    auto result = cpp_t::create(header_cpp, nonce, short_ids_cpp, transactions_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
-    return kth_ec_success;
+    return kth::leak(cpp_t::create(header_cpp, nonce, short_ids_cpp, transactions_cpp));
 }
 
 

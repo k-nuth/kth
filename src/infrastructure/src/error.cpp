@@ -261,11 +261,6 @@ std::string error_category_impl::message(int ev) const noexcept {
         { error::read_past_end_of_buffer, "read past end of buffer" },
         { error::skip_past_end_of_buffer, "skip past end of buffer" },
         { error::write_past_end_of_buffer, "write past end of buffer" },
-
-        // Valid-by-construction
-        { error::block_construction_empty, "cannot construct a block with no transactions and an empty header" },
-        { error::merkle_block_construction_empty, "cannot construct a merkle_block from an empty header with no payload" },
-        { error::compact_block_construction_empty, "cannot construct a compact_block from an empty header with no payload" }
     };
 
     auto const message = messages.find(ev);

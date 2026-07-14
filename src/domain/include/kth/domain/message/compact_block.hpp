@@ -31,10 +31,9 @@ struct KD_API compact_block {
     static
     compact_block factory_from_block(message::block const& blk);
 
-    /// Build from parts. Returns `error::compact_block_construction_empty` for
-    /// the all-default sentinel (an empty header with no payload).
+    /// Build from parts. Construction cannot fail (no consensus checks).
     static
-    expect<compact_block> create(chain::header header, uint64_t nonce, short_id_list short_ids, prefilled_transaction::list transactions);
+    compact_block create(chain::header header, uint64_t nonce, short_id_list short_ids, prefilled_transaction::list transactions);
 
     [[nodiscard]]
     friend bool operator==(compact_block const&, compact_block const&) = default;
