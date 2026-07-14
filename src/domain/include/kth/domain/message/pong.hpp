@@ -6,7 +6,6 @@
 #define KTH_DOMAIN_MESSAGE_PONG_HPP
 
 #include <cstdint>
-#include <istream>
 #include <memory>
 #include <string>
 
@@ -22,20 +21,25 @@ struct KD_API pong {
     using ptr = std::shared_ptr<pong>;
     using const_ptr = std::shared_ptr<const pong>;
 
-    static
-    size_t satoshi_fixed_size(uint32_t version);
+    static constexpr
+    size_t satoshi_fixed_size(uint32_t /*version*/) {
+        return sizeof(nonce_);
+    }
 
     pong() = default;
-    pong(uint64_t nonce);
-
-    bool operator==(pong const& x) const;
-    bool operator!=(pong const& x) const;
-
+    constexpr
+    pong(uint64_t nonce)
+        : nonce_(nonce)
+    {}
 
     [[nodiscard]]
-    uint64_t nonce() const;
+    friend bool operator==(pong const&, pong const&) = default;
 
-    void set_nonce(uint64_t value);
+    [[nodiscard]]
+    constexpr
+    uint64_t nonce() const {
+        return nonce_;
+    }
 
     static
     expect<pong> from_data(byte_reader& reader, uint32_t version);
@@ -44,13 +48,10 @@ struct KD_API pong {
     expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
     [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
-
-    [[nodiscard]]
-    size_t serialized_size(uint32_t version) const;
-
+    constexpr
+    size_t serialized_size(uint32_t version) const {
+        return satoshi_fixed_size(version);
+    }
 
     static
     std::string const command;
@@ -61,10 +62,8 @@ struct KD_API pong {
     static
     uint32_t const version_maximum;
 
-
 private:
     uint64_t nonce_{0};
-    bool valid_{false};
 };
 
 } // namespace kth::domain::message

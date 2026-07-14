@@ -11,24 +11,6 @@ std::string const send_headers::command = "sendheaders";
 uint32_t const send_headers::version_minimum = version::level::bip130;
 uint32_t const send_headers::version_maximum = version::level::maximum;
 
-size_t send_headers::satoshi_fixed_size(uint32_t /*version*/) {
-    return 0;
-}
-
-// protected
-send_headers::send_headers(bool insufficient_version)
-    : insufficient_version_(insufficient_version) {
-}
-
-bool send_headers::is_valid() const {
-    return !insufficient_version_;
-}
-
-// This is again a default instance so is invalid.
-void send_headers::reset() {
-    insufficient_version_ = true;
-}
-
 // Serialization.
 //-----------------------------------------------------------------------------
 
@@ -37,16 +19,11 @@ expect<send_headers> send_headers::from_data(byte_reader& reader, uint32_t versi
     if (version < send_headers::version_minimum) {
         return std::unexpected(error::version_too_low);
     }
-    auto const insufficient_version = false;
-    return send_headers(insufficient_version);
+    return send_headers();
 }
 
 expect<void> send_headers::to_data(byte_writer& /*writer*/, uint32_t /*version*/) const {
     return {};
-}
-
-size_t send_headers::serialized_size(uint32_t version) const {
-    return send_headers::satoshi_fixed_size(version);
 }
 
 } // namespace kth::domain::message

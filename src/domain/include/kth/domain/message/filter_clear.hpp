@@ -5,7 +5,6 @@
 #ifndef KTH_DOMAIN_MESSAGE_FILTER_CLEAR_HPP
 #define KTH_DOMAIN_MESSAGE_FILTER_CLEAR_HPP
 
-#include <istream>
 #include <memory>
 #include <string>
 
@@ -13,7 +12,6 @@
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-
 
 #include <kth/domain/concepts.hpp>
 
@@ -23,20 +21,17 @@ struct KD_API filter_clear {
     using ptr = std::shared_ptr<filter_clear>;
     using const_ptr = std::shared_ptr<const filter_clear>;
 
-    static
-    size_t satoshi_fixed_size(uint32_t version);
+    [[nodiscard]]
+    friend bool operator==(filter_clear const&, filter_clear const&) = default;
 
-    // This is a default instance so is invalid.
-    // The only way to make this valid is to deserialize it :/.
-    filter_clear() = default;
-    filter_clear(filter_clear const& x) = default;
-    filter_clear(filter_clear&& x) = default;
+    static constexpr
+    size_t satoshi_fixed_size(uint32_t /*version*/) {
+        // `filter_clear` has an empty payload.
+        return 0;
+    }
 
     static
     expect<filter_clear> from_data(byte_reader& reader, uint32_t version);
-
-    [[nodiscard]]
-    data_chunk to_data(uint32_t version) const;
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& /*writer*/, uint32_t /*version*/) const {
@@ -45,12 +40,10 @@ struct KD_API filter_clear {
     }
 
     [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
-
-    [[nodiscard]]
-    size_t serialized_size(uint32_t version) const;
+    constexpr
+    size_t serialized_size(uint32_t version) const {
+        return satoshi_fixed_size(version);
+    }
 
     static
     std::string const command;
@@ -60,12 +53,6 @@ struct KD_API filter_clear {
 
     static
     uint32_t const version_maximum;
-
-protected:
-    filter_clear(bool insufficient_version);
-
-private:
-    bool insufficient_version_{true};
 };
 
 } // namespace kth::domain::message

@@ -5,7 +5,6 @@
 #ifndef KTH_DOMAIN_MESSAGE_SEND_ADDRV2_HPP
 #define KTH_DOMAIN_MESSAGE_SEND_ADDRV2_HPP
 
-#include <istream>
 #include <memory>
 #include <string>
 
@@ -24,25 +23,26 @@ struct KD_API send_addrv2 {
     using ptr = std::shared_ptr<send_addrv2>;
     using const_ptr = std::shared_ptr<const send_addrv2>;
 
-    static
-    size_t satoshi_fixed_size(uint32_t version);
+    [[nodiscard]]
+    friend bool operator==(send_addrv2 const&, send_addrv2 const&) = default;
 
-    send_addrv2() = default;
-    send_addrv2(send_addrv2 const& x) = default;
-    send_addrv2(send_addrv2&& x) = default;
+    static constexpr
+    size_t satoshi_fixed_size(uint32_t /*version*/) {
+        // `send_addrv2` has an empty payload.
+        return 0;
+    }
 
     static
     expect<send_addrv2> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, uint32_t version) const;
-    [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
 
     [[nodiscard]]
-    size_t serialized_size(uint32_t version) const;
+    constexpr
+    size_t serialized_size(uint32_t version) const {
+        return satoshi_fixed_size(version);
+    }
 
     static
     std::string const command;
@@ -52,12 +52,6 @@ struct KD_API send_addrv2 {
 
     static
     uint32_t const version_maximum;
-
-protected:
-    send_addrv2(bool insufficient_version);
-
-private:
-    bool insufficient_version_{true};
 };
 
 } // namespace kth::domain::message

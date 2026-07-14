@@ -11,21 +11,17 @@ using namespace kd;
 
 TEST_CASE("ping constructor 1 always invalid", "[ping]") {
     message::ping instance;
-    REQUIRE( ! instance.is_valid());
 }
 
 TEST_CASE("ping constructor 2 always equals params", "[ping]") {
     uint64_t nonce = 462434u;
     message::ping instance(nonce);
-    REQUIRE(instance.is_valid());
     REQUIRE(nonce == instance.nonce());
 }
 
 TEST_CASE("ping constructor 3 always equals params", "[ping]") {
     message::ping expected(24235u);
-    REQUIRE(expected.is_valid());
     message::ping instance(expected);
-    REQUIRE(instance.is_valid());
     REQUIRE(expected == instance);
 }
 
@@ -50,7 +46,6 @@ TEST_CASE("ping from data minimum version empty data valid", "[ping]") {
     auto const result_exp = message::ping::from_data(reader, version);
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
-    REQUIRE(result.is_valid());
 }
 
 TEST_CASE("ping from data 1 minimum version success zero nonce", "[ping]") {
@@ -66,7 +61,6 @@ TEST_CASE("ping from data 1 minimum version success zero nonce", "[ping]") {
     auto result = message::ping::from_data(reader, message::ping::version_minimum);
     REQUIRE(result);
     instance = std::move(*result);
-    REQUIRE(instance.is_valid());
     REQUIRE(instance.nonce() == 0u);
 }
 
@@ -80,7 +74,6 @@ TEST_CASE("ping from data minimum version round trip zero nonce", "[ping]") {
     auto const result_exp = message::ping::from_data(reader, version);
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
-    REQUIRE(result.is_valid());
     REQUIRE(result.nonce() == 0u);
 }
 
@@ -100,7 +93,6 @@ TEST_CASE("ping from data 1 maximum version success expected nonce", "[ping]") {
     auto result = message::ping::from_data(reader, message::ping::version_maximum);
     REQUIRE(result);
     instance = std::move(*result);
-    REQUIRE(instance.is_valid());
     REQUIRE(instance == expected);
 }
 
@@ -114,7 +106,6 @@ TEST_CASE("ping from data bip31 version round trip expected nonce", "[ping]") {
     auto const result_exp = message::ping::from_data(reader, version);
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
-    REQUIRE(result.is_valid());
     REQUIRE(result == expected);
 }
 
@@ -126,21 +117,16 @@ TEST_CASE("ping nonce accessor always returns initialized value", "[ping]") {
     REQUIRE(value == instance.nonce());
 }
 
-TEST_CASE("ping nonce setter roundtrip success", "[ping]") {
+TEST_CASE("ping constructor sets nonce", "[ping]") {
     uint64_t value = 43564u;
-    message::ping instance;
-    REQUIRE(value != instance.nonce());
-    instance.set_nonce(value);
+    message::ping const instance(value);
     REQUIRE(value == instance.nonce());
 }
 
 TEST_CASE("ping operator assign equals always matches equivalent", "[ping]") {
     message::ping value(356234u);
-    REQUIRE(value.is_valid());
     message::ping instance;
-    REQUIRE( ! instance.is_valid());
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
 }
 
 TEST_CASE("ping operator boolean equals duplicates returns true", "[ping]") {
@@ -165,6 +151,15 @@ TEST_CASE("ping operator boolean not equals differs returns true", "[ping]") {
     const message::ping expected(89764u);
     message::ping instance;
     REQUIRE(instance != expected);
+}
+
+TEST_CASE("ping is usable in a constant expression", "[ping]") {
+    static_assert(message::ping{7u}.nonce() == 7u);
+    static_assert(message::ping{1u} == message::ping{1u});
+    // Before BIP31 a ping is a bare marker; from BIP31 on it carries the nonce.
+    static_assert(message::ping{}.serialized_size(message::version::level::bip31 - 1u) == 0u);
+    static_assert(message::ping{}.serialized_size(message::version::level::bip31) == 8u);
+    REQUIRE(true);
 }
 
 // End Test Suite

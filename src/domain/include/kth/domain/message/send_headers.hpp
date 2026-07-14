@@ -5,7 +5,6 @@
 #ifndef KTH_DOMAIN_MESSAGE_SEND_HEADERS_HPP
 #define KTH_DOMAIN_MESSAGE_SEND_HEADERS_HPP
 
-#include <istream>
 #include <memory>
 #include <string>
 
@@ -21,25 +20,26 @@ struct KD_API send_headers {
     using ptr = std::shared_ptr<send_headers>;
     using const_ptr = std::shared_ptr<const send_headers>;
 
-    static
-    size_t satoshi_fixed_size(uint32_t version);
+    [[nodiscard]]
+    friend bool operator==(send_headers const&, send_headers const&) = default;
 
-    send_headers() = default;
-    send_headers(send_headers const& x) = default;
-    send_headers(send_headers&& x) = default;
+    static constexpr
+    size_t satoshi_fixed_size(uint32_t /*version*/) {
+        // `send_headers` has an empty payload.
+        return 0;
+    }
 
     static
     expect<send_headers> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, uint32_t version) const;
-    [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
 
     [[nodiscard]]
-    size_t serialized_size(uint32_t version) const;
+    constexpr
+    size_t serialized_size(uint32_t version) const {
+        return satoshi_fixed_size(version);
+    }
 
     static
     std::string const command;
@@ -49,13 +49,6 @@ struct KD_API send_headers {
 
     static
     uint32_t const version_maximum;
-
-
-protected:
-    send_headers(bool insufficient_version);
-
-private:
-    bool insufficient_version_{true};
 };
 
 } // namespace kth::domain::message

@@ -5,7 +5,6 @@
 #ifndef KTH_DOMAIN_MESSAGE_MEMORY_POOL_HPP
 #define KTH_DOMAIN_MESSAGE_MEMORY_POOL_HPP
 
-#include <istream>
 #include <memory>
 #include <string>
 
@@ -13,7 +12,6 @@
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-
 
 #include <kth/domain/concepts.hpp>
 
@@ -23,14 +21,14 @@ struct KD_API memory_pool {
     using ptr = std::shared_ptr<memory_pool>;
     using const_ptr = std::shared_ptr<const memory_pool>;
 
-    static
-    size_t satoshi_fixed_size(uint32_t version);
+    [[nodiscard]]
+    friend bool operator==(memory_pool const&, memory_pool const&) = default;
 
-    // This is a default instance so is invalid.
-    // The only way to make this valid is to deserialize it :/.
-    memory_pool() = default;
-    memory_pool(memory_pool const& x) = default;
-    memory_pool(memory_pool&& x) = default;
+    static constexpr
+    size_t satoshi_fixed_size(uint32_t /*version*/) {
+        // `memory_pool` has an empty payload.
+        return 0;
+    }
 
     static
     expect<memory_pool> from_data(byte_reader& reader, uint32_t version);
@@ -41,12 +39,10 @@ struct KD_API memory_pool {
     }
 
     [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
-
-    [[nodiscard]]
-    size_t serialized_size(uint32_t version) const;
+    constexpr
+    size_t serialized_size(uint32_t version) const {
+        return satoshi_fixed_size(version);
+    }
 
     static
     std::string const command;
@@ -56,13 +52,6 @@ struct KD_API memory_pool {
 
     static
     uint32_t const version_maximum;
-
-
-protected:
-    memory_pool(bool insufficient_version);
-
-private:
-    bool insufficient_version_{true};
 };
 
 } // namespace kth::domain::message

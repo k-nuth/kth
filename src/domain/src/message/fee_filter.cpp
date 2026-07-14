@@ -12,31 +12,6 @@ std::string const fee_filter::command = "feefilter";
 uint32_t const fee_filter::version_minimum = version::level::bip133;
 uint32_t const fee_filter::version_maximum = version::level::bip133;
 
-// static
-constexpr
-size_t fee_filter::satoshi_fixed_size(uint32_t /*version*/) {
-    return sizeof(minimum_fee_);
-}
-
-// This is not a default instance so is valid.
-fee_filter::fee_filter(uint64_t minimum)
-    : minimum_fee_(minimum), insufficient_version_(false) {
-}
-
-// protected
-fee_filter::fee_filter(uint64_t minimum, bool insufficient_version)
-    : minimum_fee_(minimum), insufficient_version_(insufficient_version) {
-}
-
-//TODO(fernando): it does not compare all the data members, is it OK?
-bool fee_filter::operator==(fee_filter const& x) const {
-    return (minimum_fee_ == x.minimum_fee_);
-}
-
-bool fee_filter::operator!=(fee_filter const& x) const {
-    return !(*this == x);
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 
@@ -49,41 +24,13 @@ expect<fee_filter> fee_filter::from_data(byte_reader& reader, uint32_t version) 
     if (version < version_minimum) {
         return std::unexpected(error::version_too_low);
     }
-    auto const insufficient_version = false;
-    return fee_filter(*minimum, insufficient_version);
+    return fee_filter(*minimum);
 }
 
 // Serialization.
 //-----------------------------------------------------------------------------
 
-
-
-bool fee_filter::is_valid() const {
-    // return !insufficient_version_;
-    return !insufficient_version_ || (minimum_fee_ > 0);
-}
-
 // This is again a default instance so is invalid.
-void fee_filter::reset() {
-    insufficient_version_ = true;
-    minimum_fee_ = 0;
-}
-
-size_t fee_filter::serialized_size(uint32_t version) const {
-    return satoshi_fixed_size(version);
-}
-
-uint64_t fee_filter::minimum_fee() const {
-    return minimum_fee_;
-}
-
-void fee_filter::set_minimum_fee(uint64_t value) {
-    minimum_fee_ = value;
-
-    // This is no longer a default instance, so is valid.
-    insufficient_version_ = false;
-}
-
 expect<void> fee_filter::to_data(byte_writer& writer, uint32_t version) const {
         if (auto r = writer.write_little_endian<uint64_t>(minimum_fee_); ! r) return r;
         return {};

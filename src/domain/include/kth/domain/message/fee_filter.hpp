@@ -6,7 +6,6 @@
 #define KTH_DOMAIN_MESSAGE_FEE_FILTER_HPP
 
 #include <cstdint>
-#include <istream>
 #include <memory>
 #include <string>
 
@@ -22,18 +21,24 @@ struct KD_API fee_filter {
     using const_ptr = std::shared_ptr<const fee_filter>;
 
     static constexpr
-    size_t satoshi_fixed_size(uint32_t version);
+    size_t satoshi_fixed_size(uint32_t /*version*/) {
+        return sizeof(minimum_fee_);
+    }
 
     fee_filter() = default;
-    fee_filter(uint64_t minimum);
-
-    bool operator==(fee_filter const& x) const;
-    bool operator!=(fee_filter const& x) const;
+    constexpr
+    fee_filter(uint64_t minimum)
+        : minimum_fee_(minimum)
+    {}
 
     [[nodiscard]]
-    uint64_t minimum_fee() const;
+    friend bool operator==(fee_filter const&, fee_filter const&) = default;
 
-    void set_minimum_fee(uint64_t value);
+    [[nodiscard]]
+    constexpr
+    uint64_t minimum_fee() const {
+        return minimum_fee_;
+    }
 
     static
     expect<fee_filter> from_data(byte_reader& reader, uint32_t version);
@@ -41,15 +46,11 @@ struct KD_API fee_filter {
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
-
     [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
-
-    [[nodiscard]]
-    size_t serialized_size(uint32_t version) const;
-
+    constexpr
+    size_t serialized_size(uint32_t version) const {
+        return satoshi_fixed_size(version);
+    }
 
     static
     std::string const command;
@@ -60,12 +61,8 @@ struct KD_API fee_filter {
     static
     uint32_t const version_maximum;
 
-protected:
-    fee_filter(uint64_t minimum, bool insufficient_version);
-
 private:
     uint64_t minimum_fee_{0};
-    bool insufficient_version_{true};
 };
 
 } // namespace kth::domain::message

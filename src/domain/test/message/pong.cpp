@@ -11,21 +11,17 @@ using namespace kd;
 
 TEST_CASE("pong constructor 1 always invalid", "[pong]") {
     message::pong instance;
-    REQUIRE( ! instance.is_valid());
 }
 
 TEST_CASE("pong constructor 2 always equals params", "[pong]") {
     uint64_t nonce = 462434u;
     message::pong instance(nonce);
-    REQUIRE(instance.is_valid());
     REQUIRE(nonce == instance.nonce());
 }
 
 TEST_CASE("pong constructor 3 always equals params", "[pong]") {
     message::pong expected(24235u);
-    REQUIRE(expected.is_valid());
     message::pong instance(expected);
-    REQUIRE(instance.is_valid());
     REQUIRE(expected == instance);
 }
 
@@ -52,7 +48,6 @@ TEST_CASE("pong from data round trip expected", "[pong]") {
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
 
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(version));
     REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
@@ -66,21 +61,16 @@ TEST_CASE("pong nonce accessor always returns initialized value", "[pong]") {
     REQUIRE(value == instance.nonce());
 }
 
-TEST_CASE("pong nonce setter roundtrip success", "[pong]") {
+TEST_CASE("pong constructor sets nonce", "[pong]") {
     uint64_t value = 43564u;
-    message::pong instance;
-    REQUIRE(value != instance.nonce());
-    instance.set_nonce(value);
+    message::pong const instance(value);
     REQUIRE(value == instance.nonce());
 }
 
 TEST_CASE("pong operator assign equals always matches equivalent", "[pong]") {
     message::pong value(356234u);
-    REQUIRE(value.is_valid());
     message::pong instance;
-    REQUIRE( ! instance.is_valid());
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
 }
 
 TEST_CASE("pong operator boolean equals duplicates returns true", "[pong]") {
@@ -105,6 +95,13 @@ TEST_CASE("pong operator boolean not equals differs returns true", "[pong]") {
     const message::pong expected(89764u);
     message::pong instance;
     REQUIRE(instance != expected);
+}
+
+TEST_CASE("pong is usable in a constant expression", "[pong]") {
+    static_assert(message::pong{7u}.nonce() == 7u);
+    static_assert(message::pong{1u} == message::pong{1u});
+    static_assert(message::pong{}.serialized_size(message::version::level::maximum) == 8u);
+    REQUIRE(true);
 }
 
 // End Test Suite

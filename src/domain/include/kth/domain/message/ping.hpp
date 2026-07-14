@@ -6,7 +6,6 @@
 #define KTH_DOMAIN_MESSAGE_PING_HPP
 
 #include <cstdint>
-#include <istream>
 #include <memory>
 #include <string>
 
@@ -23,19 +22,26 @@ struct KD_API ping {
     using ptr = std::shared_ptr<ping>;
     using const_ptr = std::shared_ptr<const ping>;
 
-    static
-    size_t satoshi_fixed_size(uint32_t version);
+    static constexpr
+    size_t satoshi_fixed_size(uint32_t version) {
+        // Before BIP31 a ping carries no nonce.
+        return version < version::level::bip31 ? 0 : sizeof(nonce_);
+    }
 
     ping() = default;
-    ping(uint64_t nonce, bool nonceless = false);
-
-    bool operator==(ping const& x) const;
-    bool operator!=(ping const& x) const;
+    constexpr
+    ping(uint64_t nonce)
+        : nonce_(nonce)
+    {}
 
     [[nodiscard]]
-    uint64_t nonce() const;
+    friend bool operator==(ping const&, ping const&) = default;
 
-    void set_nonce(uint64_t value);
+    [[nodiscard]]
+    constexpr
+    uint64_t nonce() const {
+        return nonce_;
+    }
 
     static
     expect<ping> from_data(byte_reader& reader, uint32_t version);
@@ -43,12 +49,10 @@ struct KD_API ping {
     expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
     [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
-
-    [[nodiscard]]
-    size_t serialized_size(uint32_t version) const;
+    constexpr
+    size_t serialized_size(uint32_t version) const {
+        return satoshi_fixed_size(version);
+    }
 
     static
     std::string const command;
@@ -59,11 +63,8 @@ struct KD_API ping {
     static
     uint32_t const version_maximum;
 
-
 private:
     uint64_t nonce_{0};
-    bool nonceless_{false};
-    bool valid_{false};
 };
 
 } // namespace kth::domain::message
