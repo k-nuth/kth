@@ -1279,27 +1279,12 @@ uint64_t p2p_node::generate_ping_nonce() {
     // peer_session tracks the in-flight ping in `pending_ping_nonce_`, using
     // zero to mean "none in flight" (see record_pong_received). A zero nonce
     // would therefore make the peer's own echo look unsolicited and drop the
-    // latency sample, so never hand one out. BCHN guards the same sentinel the
-    // same way (net_processing.cpp: `while (nonce == 0) GetRandBytes(...)`).
-    uint64_t nonce = 0;
-    while (nonce == 0) {
-        nonce = pseudo_random::generate<uint64_t>();
-    }
-    return nonce;
-}
-
-// static
-uint64_t p2p_node::generate_ping_nonce() {
-    // peer_session tracks the in-flight ping in `pending_ping_nonce_`, using
-    // zero to mean "none in flight" (see record_pong_received). A zero nonce
-    // would therefore make the peer's own echo look unsolicited and drop the
-    // latency sample, so never hand one out. BCHN guards the same sentinel the
-    // same way (net_processing.cpp: `while (nonce == 0) GetRandBytes(...)`).
-    uint64_t nonce = 0;
-    while (nonce == 0) {
-        pseudo_random::fill(reinterpret_cast<uint8_t*>(&nonce), sizeof(nonce));
-    }
-    return nonce;
+    // latency sample, so never hand one out.
+    //
+    // Drawing over [1, max] says that directly. BCHN spells the same thing as a
+    // retry loop (`while (nonce == 0) GetRandBytes(...)`) for want of a bounded
+    // draw; ours rejects the same single value, just inside generate().
+    return pseudo_random::generate<uint64_t>(1, max_uint64);
 }
 
 } // namespace kth::network

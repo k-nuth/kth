@@ -5,14 +5,18 @@
 #ifndef KTH_INFRASTRUCTURE_PSEUDO_RANDOM_HPP
 #define KTH_INFRASTRUCTURE_PSEUDO_RANDOM_HPP
 
+#include <algorithm>
 #include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
+#include <limits>
 #include <ranges>
 #include <span>
 #include <type_traits>
 
+#include <kth/infrastructure/utility/assert.hpp>
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/error.hpp>
 
@@ -116,6 +120,52 @@ struct KI_API pseudo_random {
         return value;
     }
 
+    /// Draw a random value uniformly over the closed interval [lo, hi].
+    ///
+    /// Rejection-sampled rather than `generate<T>() % span`, which is only
+    /// uniform when the span happens to divide 2^bits: otherwise the low end of
+    /// the interval is over-represented, by up to a factor of two as the span
+    /// approaches the width of the type.
+    template <randomizable T>
+    [[nodiscard]]
+    static
+    T generate(T lo, T hi) {
+        KTH_CONTRACT(lo <= hi);
+        using unsigned_t = std::make_unsigned_t<T>;
+        constexpr auto max = std::numeric_limits<unsigned_t>::max();
+
+        // Offsets are computed unsigned: hi - lo overflows for a signed T
+        // spanning both halves of its range.
+        auto const range = unsigned_t(unsigned_t(hi) - unsigned_t(lo));
+        if (range == max) {
+            return T(generate<unsigned_t>());   // whole width; nothing to reject
+        }
+
+        auto const span = unsigned_t(range + 1u);
+
+        // Discard the first (2^bits % span) values, leaving a count that the
+        // span divides exactly, so every residue is equally likely.
+        auto const floor = unsigned_t(unsigned_t(max - span + 1u) % span);
+        unsigned_t draw;
+        do {
+            draw = generate<unsigned_t>();
+        } while (draw < floor);
+
+        return T(unsigned_t(unsigned_t(lo) + unsigned_t(draw % span)));
+    }
+
+    /// Shuffle a range.
+    ///
+    /// Buffered: a std::shuffle asks its generator once per element, so an
+    /// unbuffered CSPRNG would cost one syscall per element.
+    template <std::ranges::random_access_range R>
+        requires std::permutable<std::ranges::iterator_t<R>>
+    static
+    void shuffle(R&& out) {
+        buffered_engine engine;
+        std::ranges::shuffle(out, engine);
+    }
+
     /// Overwrite a byte span with zeros, and actually do it.
     ///
     /// `std::fill(p, p + n, 0)` or `arr.fill(0)` over memory nothing reads
@@ -139,6 +189,33 @@ struct KI_API pseudo_random {
     void wipe(R&& out) noexcept {
         wipe_bytes(std::as_writable_bytes(std::span{out}));
     }
+
+private:
+    /// UniformRandomBitGenerator over the CSPRNG, refilled a block at a time.
+    struct buffered_engine {
+        using result_type = uint64_t;
+
+        static constexpr result_type min() { return 0; }
+        static constexpr result_type max() { return std::numeric_limits<result_type>::max(); }
+
+        ~buffered_engine() {
+            // Leftover entropy is not secret in itself, but it is entropy the
+            // process is done with; do not leave it on the stack.
+            wipe(buffer_);
+        }
+
+        result_type operator()() {
+            if (next_ == buffer_.size()) {
+                fill(buffer_);
+                next_ = 0;
+            }
+            return buffer_[next_++];
+        }
+
+    private:
+        std::array<result_type, 64> buffer_{};
+        size_t next_{buffer_.size()};   // empty, so the first call refills
+    };
 };
 
 } // namespace kth
