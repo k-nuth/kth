@@ -46,6 +46,10 @@ kth_transaction_mut_t kth_chain_transaction_construct(uint32_t version, uint32_t
     return kth::leak<cpp_t>(version, locktime, inputs_cpp, outputs_cpp);
 }
 
+kth_transaction_mut_t kth_chain_transaction_null(void) {
+    return kth::leak(cpp_t::null());
+}
+
 
 // Destructor
 
@@ -68,6 +72,12 @@ kth_bool_t kth_chain_transaction_equals(kth_transaction_const_t self, kth_transa
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
     return kth::eq<cpp_t>(self, other);
+}
+
+kth_bool_t kth_chain_transaction_not_equal(kth_transaction_const_t self, kth_transaction_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::ne<cpp_t>(self, other);
 }
 
 
@@ -175,39 +185,7 @@ kth_error_code_t kth_chain_transaction_connect_simple(kth_transaction_const_t se
 }
 
 
-// Setters
-
-void kth_chain_transaction_set_version(kth_transaction_mut_t self, uint32_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).set_version(value);
-}
-
-void kth_chain_transaction_set_locktime(kth_transaction_mut_t self, uint32_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).set_locktime(value);
-}
-
-void kth_chain_transaction_set_inputs(kth_transaction_mut_t self, kth_input_list_const_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth::cpp_ref<kth::domain::chain::input::list>(value);
-    kth::cpp_ref<cpp_t>(self).set_inputs(value_cpp);
-}
-
-void kth_chain_transaction_set_outputs(kth_transaction_mut_t self, kth_output_list_const_t value) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(value != nullptr);
-    auto const& value_cpp = kth::cpp_ref<kth::domain::chain::output::list>(value);
-    kth::cpp_ref<cpp_t>(self).set_outputs(value_cpp);
-}
-
-
 // Predicates
-
-kth_bool_t kth_chain_transaction_is_valid(kth_transaction_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid());
-}
 
 kth_bool_t kth_chain_transaction_is_coinbase(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
@@ -283,6 +261,11 @@ kth_bool_t kth_chain_transaction_is_standard(kth_transaction_const_t self, kth_s
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_standard(flags));
 }
 
+kth_bool_t kth_chain_transaction_is_null(kth_transaction_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_null());
+}
+
 
 // Operations
 
@@ -328,11 +311,6 @@ kth_error_code_t kth_chain_transaction_connect_input(kth_transaction_const_t sel
     auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
     auto const input_index_cpp = kth::sz(input_index);
     return kth::to_c_err(kth::cpp_ref<cpp_t>(self).connect_input(state_cpp, input_index_cpp));
-}
-
-void kth_chain_transaction_reset(kth_transaction_mut_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).reset();
 }
 
 } // extern "C"

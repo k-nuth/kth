@@ -28,12 +28,14 @@ prefilled_transaction::prefilled_transaction(uint64_t index, chain::transaction&
 }
 
 bool prefilled_transaction::is_valid() const {
-    return (index_ < max_index) && transaction_.is_valid();
+    // A transaction is always syntactically valid, so only the index sentinel
+    // is left to check here.
+    return index_ < max_index;
 }
 
 void prefilled_transaction::reset() {
     index_ = max_index;
-    transaction_ = chain::transaction{};
+    transaction_ = chain::transaction::null();
 }
 
 // Deserialization.

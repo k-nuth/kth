@@ -1640,8 +1640,11 @@ void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const
                 have_txn[idit->second] = true;
                 ++mempool_count;
             } else {
-                if (txn_available[idit->second].is_valid()) {
-                    txn_available[idit->second] = domain::chain::transaction{};
+                // A second transaction maps to the same short id, so the slot
+                // is ambiguous and gets cleared. A cleared slot holds the null
+                // transaction, so clear (and decrement) only once.
+                if ( ! txn_available[idit->second].is_null()) {
+                    txn_available[idit->second] = domain::chain::transaction::null();
                     --mempool_count;
                 }
             }

@@ -33,6 +33,10 @@ kth_error_code_t kth_chain_transaction_construct_from_data(uint8_t const* data, 
 KTH_EXPORT KTH_OWNED
 kth_transaction_mut_t kth_chain_transaction_construct(uint32_t version, uint32_t locktime, kth_input_list_const_t inputs, kth_output_list_const_t outputs);
 
+/** @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_transaction_mut_t kth_chain_transaction_null(void);
+
 
 // Destructor
 
@@ -52,6 +56,9 @@ kth_transaction_mut_t kth_chain_transaction_copy(kth_transaction_const_t self);
 
 KTH_EXPORT
 kth_bool_t kth_chain_transaction_equals(kth_transaction_const_t self, kth_transaction_const_t other);
+
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_not_equal(kth_transaction_const_t self, kth_transaction_const_t other);
 
 
 // Serialization
@@ -123,27 +130,7 @@ KTH_EXPORT
 kth_error_code_t kth_chain_transaction_connect_simple(kth_transaction_const_t self);
 
 
-// Setters
-
-KTH_EXPORT
-void kth_chain_transaction_set_version(kth_transaction_mut_t self, uint32_t value);
-
-KTH_EXPORT
-void kth_chain_transaction_set_locktime(kth_transaction_mut_t self, uint32_t value);
-
-/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
-KTH_EXPORT
-void kth_chain_transaction_set_inputs(kth_transaction_mut_t self, kth_input_list_const_t value);
-
-/** @param value Borrowed input. Copied by value into the resulting object; ownership of `value` stays with the caller. */
-KTH_EXPORT
-void kth_chain_transaction_set_outputs(kth_transaction_mut_t self, kth_output_list_const_t value);
-
-
 // Predicates
-
-KTH_EXPORT
-kth_bool_t kth_chain_transaction_is_valid(kth_transaction_const_t self);
 
 KTH_EXPORT
 kth_bool_t kth_chain_transaction_is_coinbase(kth_transaction_const_t self);
@@ -187,6 +174,9 @@ kth_bool_t kth_chain_transaction_is_standard_simple(kth_transaction_const_t self
 KTH_EXPORT
 kth_bool_t kth_chain_transaction_is_standard(kth_transaction_const_t self, kth_script_flags_t flags);
 
+KTH_EXPORT
+kth_bool_t kth_chain_transaction_is_null(kth_transaction_const_t self);
+
 
 // Operations
 
@@ -207,9 +197,6 @@ kth_error_code_t kth_chain_transaction_connect(kth_transaction_const_t self, kth
 
 KTH_EXPORT
 kth_error_code_t kth_chain_transaction_connect_input(kth_transaction_const_t self, kth_chain_state_const_t state, kth_size_t input_index);
-
-KTH_EXPORT
-void kth_chain_transaction_reset(kth_transaction_mut_t self);
 
 #ifdef __cplusplus
 } // extern "C"

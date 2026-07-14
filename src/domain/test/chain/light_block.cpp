@@ -113,7 +113,6 @@ TEST_CASE("light_block tx_bytes returns correct data", "[chain light_block]") {
     byte_reader tx_reader(tx0_bytes);
     auto const tx_result = chain::transaction::from_data(tx_reader, true);
     REQUIRE(tx_result.has_value());
-    REQUIRE(tx_result->is_valid());
 }
 
 TEST_CASE("light_block from_data insufficient bytes returns error", "[chain light_block]") {

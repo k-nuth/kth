@@ -42,7 +42,7 @@ uint32_t transaction_entry::position() const {
 
 // private
 void transaction_entry::reset() {
-    transaction_ = domain::chain::transaction{};
+    transaction_ = domain::chain::transaction::null();
     height_ = max_uint32;
     median_time_past_ = max_uint32;
     position_ = position_max;
@@ -50,7 +50,9 @@ void transaction_entry::reset() {
 
 // Empty scripts are valid, validation relies on not_found only.
 bool transaction_entry::is_valid() const {
-    return transaction_.is_valid() && height_ != kth::max_uint32 && median_time_past_ != max_uint32 && position_ != position_max;
+    // A transaction is always syntactically valid, so only this entry's own
+    // sentinels are left to check.
+    return height_ != kth::max_uint32 && median_time_past_ != max_uint32 && position_ != position_max;
 }
 
 // Size.

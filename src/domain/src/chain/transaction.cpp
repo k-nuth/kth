@@ -47,19 +47,24 @@ namespace kth::domain::chain {
 // Constructors.
 //-----------------------------------------------------------------------------
 
-transaction::transaction(uint32_t version, uint32_t locktime, input::list const& inputs, output::list const& outputs)
-    : version_(version)
-    , locktime_(locktime)
-    , inputs_(inputs)
-    , outputs_(outputs)
-{}
-
-transaction::transaction(uint32_t version, uint32_t locktime, input::list&& inputs, output::list&& outputs)
+transaction::transaction(uint32_t version, uint32_t locktime, input::list inputs, output::list outputs)
     : version_(version)
     , locktime_(locktime)
     , inputs_(std::move(inputs))
     , outputs_(std::move(outputs))
 {}
+
+// static
+transaction transaction::null() {
+    return transaction{};
+}
+
+bool transaction::is_null() const {
+    return version_ == 0
+        && locktime_ == 0
+        && inputs_.empty()
+        && outputs_.empty();
+}
 
 // Operators.
 //-----------------------------------------------------------------------------
@@ -69,19 +74,6 @@ bool transaction::operator==(transaction const& x) const {
         && locktime_ == x.locktime_
         && inputs_ == x.inputs_
         && outputs_ == x.outputs_;
-}
-
-void transaction::reset() {
-    version_ = 0;
-    locktime_ = 0;
-    inputs_.clear();
-    inputs_.shrink_to_fit();
-    outputs_.clear();
-    outputs_.shrink_to_fit();
-}
-
-bool transaction::is_valid() const {
-    return (version_ != 0) || (locktime_ != 0) || !inputs_.empty() || !outputs_.empty();
 }
 
 // Serialization.
@@ -184,19 +176,9 @@ size_t transaction::serialized_size(bool wire) const {
 //-----------------------------------------------------------------------------
 
 uint32_t transaction::version() const { return version_; }
-void transaction::set_version(uint32_t value) { version_ = value; }
 uint32_t transaction::locktime() const { return locktime_; }
-void transaction::set_locktime(uint32_t value) { locktime_ = value; }
-
-input::list& transaction::inputs() { return inputs_; }
 input::list const& transaction::inputs() const { return inputs_; }
-void transaction::set_inputs(input::list const& value) { inputs_ = value; }
-void transaction::set_inputs(input::list&& value) { inputs_ = std::move(value); }
-
-output::list& transaction::outputs() { return outputs_; }
 output::list const& transaction::outputs() const { return outputs_; }
-void transaction::set_outputs(output::list const& value) { outputs_ = value; }
-void transaction::set_outputs(output::list&& value) { outputs_ = std::move(value); }
 
 // Hashes — recomputed on every call (no cache).
 //-----------------------------------------------------------------------------

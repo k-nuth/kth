@@ -102,9 +102,23 @@ struct KD_API transaction {
     // Constructors.
     //-----------------------------------------------------------------------------
 
+    // A transaction is a pure structural aggregate and does no consensus
+    // checks, so construction cannot fail and every state is syntactically
+    // valid — including the all-default one and the partial transactions the
+    // sighash algorithm builds (empty inputs or outputs). Consensus validity
+    // (`empty_transaction`, etc.) is validation's concern.
     transaction() = default;
-    transaction(uint32_t version, uint32_t locktime, ins const& inputs, outs const& outputs);
-    transaction(uint32_t version, uint32_t locktime, ins&& inputs, outs&& outputs);
+    transaction(uint32_t version, uint32_t locktime, ins inputs, outs outputs);
+
+    /// Returns the null transaction: the all-default value, used as an "empty
+    /// slot" marker (e.g. compact block reconstruction). It is a perfectly
+    /// valid transaction value — "null" here is structural, not a validity
+    /// claim.
+    [[nodiscard]]
+    static transaction null();
+
+    [[nodiscard]]
+    bool is_null() const;
 
     // Operators.
     //-----------------------------------------------------------------------------
@@ -133,29 +147,15 @@ struct KD_API transaction {
 
     [[nodiscard]]
     uint32_t version() const;
-    void set_version(uint32_t value);
 
     [[nodiscard]]
     uint32_t locktime() const;
-    void set_locktime(uint32_t value);
-
-    // [[deprecated]] // unsafe
-    ins& inputs();
 
     [[nodiscard]]
     ins const& inputs() const;
 
-    void set_inputs(ins const& value);
-    void set_inputs(ins&& value);
-
-    // [[deprecated]] // unsafe
-    outs& outputs();
-
     [[nodiscard]]
     outs const& outputs() const;
-
-    void set_outputs(outs const& value);
-    void set_outputs(outs&& value);
 
     // Hashes — recomputed on every call (no cache).
     //-----------------------------------------------------------------------------
@@ -177,9 +177,6 @@ struct KD_API transaction {
 
     // Validation.
     //-----------------------------------------------------------------------------
-
-    [[nodiscard]]
-    bool is_valid() const;
 
     [[nodiscard]]
     uint64_t fees() const;
@@ -282,8 +279,6 @@ struct KD_API transaction {
     /// passed flags only on the scriptPubKey side.
     [[nodiscard]]
     bool is_standard(script_flags_t flags) const;
-
-    void reset();
 
     // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
     mutable validation_t validation{};

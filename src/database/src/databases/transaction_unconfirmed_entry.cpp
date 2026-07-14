@@ -29,14 +29,16 @@ uint32_t transaction_unconfirmed_entry::height() const {
 
 // private
 void transaction_unconfirmed_entry::reset() {
-    transaction_ = domain::chain::transaction{};
+    transaction_ = domain::chain::transaction::null();
     arrival_time_ = max_uint32;
     height_ = max_uint32;
 }
 
 // Empty scripts are valid, validation relies on not_found only.
 bool transaction_unconfirmed_entry::is_valid() const {
-    return transaction_.is_valid() && arrival_time_ != kth::max_uint32  && height_ != kth::max_uint32;
+    // A transaction is always syntactically valid, so only this entry's own
+    // sentinels are left to check.
+    return arrival_time_ != kth::max_uint32 && height_ != kth::max_uint32;
 }
 
 // Size.
