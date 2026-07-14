@@ -47,18 +47,9 @@ compact_block compact_block::factory_from_block(message::block const& block) {
 }
 
 // static
-compact_block compact_block::create(chain::header header, uint64_t nonce, short_id_list short_ids, prefilled_transaction::list transactions) {
-    return compact_block{header, nonce, std::move(short_ids), std::move(transactions)};
-}
 
-compact_block::compact_block(chain::header const& header, uint64_t nonce, short_id_list const& short_ids, prefilled_transaction::list const& transactions)
-    : header_(header)
-    , nonce_(nonce)
-    , short_ids_(short_ids)
-    , transactions_(transactions)
-{}
 
-compact_block::compact_block(chain::header const& header, uint64_t nonce, short_id_list&& short_ids, prefilled_transaction::list&& transactions)
+compact_block::compact_block(chain::header header, uint64_t nonce, short_id_list short_ids, prefilled_transaction::list transactions)
     : header_(header)
     , nonce_(nonce)
     , short_ids_(std::move(short_ids))
@@ -129,7 +120,7 @@ expect<compact_block> compact_block::from_data(byte_reader& reader, uint32_t ver
         return std::unexpected(error::version_too_low);
     }
 
-    return create(*header, *nonce, std::move(short_ids), std::move(*txs));
+    return compact_block(*header, *nonce, std::move(short_ids), std::move(*txs));
 }
 
 // Serialization.

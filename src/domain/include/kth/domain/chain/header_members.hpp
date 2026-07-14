@@ -46,6 +46,10 @@ public:
     // Constructors.
     //-------------------------------------------------------------------------
 
+    // Every field combination is a syntactically valid header, so the
+    // all-default state is a valid value.
+    constexpr header() = default;
+
     constexpr header(uint32_t version, hash_digest const& previous_block_hash,
                      hash_digest const& merkle, uint32_t timestamp,
                      uint32_t bits, uint32_t nonce)

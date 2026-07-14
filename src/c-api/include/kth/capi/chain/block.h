@@ -22,6 +22,18 @@ kth_error_code_t kth_chain_block_construct_from_data(uint8_t const* data, kth_si
 
 /** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
 KTH_EXPORT KTH_OWNED
+kth_block_mut_t kth_chain_block_construct_default(void);
+
+/**
+ * @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`.
+ * @param header Borrowed input. Copied by value into the resulting object; ownership of `header` stays with the caller.
+ * @param transactions Borrowed input. Copied by value into the resulting object; ownership of `transactions` stays with the caller.
+ */
+KTH_EXPORT KTH_OWNED
+kth_block_mut_t kth_chain_block_construct(kth_header_const_t header, kth_transaction_list_const_t transactions);
+
+/** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
+KTH_EXPORT KTH_OWNED
 kth_block_mut_t kth_chain_block_genesis_mainnet(void);
 
 /** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
@@ -43,10 +55,6 @@ kth_block_mut_t kth_chain_block_genesis_scalenet(void);
 /** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_block_mut_t kth_chain_block_genesis_chipnet(void);
-
-/** @return Owned `kth_block_mut_t`. Caller must release with `kth_chain_block_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_block_mut_t kth_chain_block_create(kth_header_const_t header, kth_transaction_list_const_t transactions);
 
 
 // Destructor

@@ -17,11 +17,7 @@ std::string const merkle_block::command = "merkleblock";
 uint32_t const merkle_block::version_minimum = version::level::bip37;
 uint32_t const merkle_block::version_maximum = version::level::maximum;
 
-merkle_block::merkle_block(chain::header const& header, size_t total_transactions, hash_list const& hashes, data_chunk const& flags)
-    : header_(header), total_transactions_(total_transactions), hashes_(hashes), flags_(flags) {
-}
-
-merkle_block::merkle_block(chain::header const& header, size_t total_transactions, hash_list&& hashes, data_chunk&& flags)
+merkle_block::merkle_block(chain::header header, size_t total_transactions, hash_list hashes, data_chunk flags)
     : header_(header), total_transactions_(total_transactions), hashes_(std::move(hashes)), flags_(std::move(flags)) {
 }
 
@@ -35,9 +31,7 @@ merkle_block::merkle_block(chain::block const& block)
 }
 
 // static
-merkle_block merkle_block::create(chain::header header, size_t total_transactions, hash_list hashes, data_chunk flags) {
-    return merkle_block{header, total_transactions, std::move(hashes), std::move(flags)};
-}
+
 
 // Deserialization.
 //-----------------------------------------------------------------------------
@@ -87,7 +81,7 @@ expect<merkle_block> merkle_block::from_data(byte_reader& reader, uint32_t versi
         return std::unexpected(error::unsupported_version);
     }
 
-    return create(
+    return merkle_block(
         *header,
         *total_transactions,
         std::move(hashes),

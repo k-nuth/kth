@@ -90,6 +90,11 @@ public:
     // Constructors.
     //-------------------------------------------------------------------------
 
+    // Every field combination is a syntactically valid header (the genesis
+    // header even carries an all-zero previous-block hash), so construction
+    // cannot fail and the all-default state is a valid value.
+    constexpr header() = default;
+
     // Construct from raw bytes (must be exactly 80 bytes).
     explicit constexpr header(std::span<uint8_t const, serialized_size_wire> raw_data)
         : data_{}

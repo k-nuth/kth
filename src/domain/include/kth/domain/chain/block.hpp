@@ -63,12 +63,12 @@ public:
     // Constructors.
     //-------------------------------------------------------------------------
 
-    /// Build a block from parts. Construction cannot fail: a domain block is a
-    /// pure structural aggregate of a header and its transactions and performs
-    /// no consensus checks. An empty block is syntactically valid; consensus
-    /// validity (empty block, merkle root, etc.) is validation's concern.
-    static
-    block create(chain::header header, transaction::list transactions);
+    // A block is a pure structural aggregate of a header and its transactions
+    // and performs no consensus checks, so construction cannot fail and every
+    // state is syntactically valid — including the all-default one and the
+    // empty block. Consensus validity is validation's concern.
+    block() = default;
+    block(chain::header header, transaction::list transactions);
 
     // Operators.
     //-------------------------------------------------------------------------
@@ -217,11 +217,6 @@ public:
     size_t non_coinbase_input_count() const;
 
 private:
-    // Construction goes through `create` / `from_data` / `genesis_*`, which
-    // guarantee a non-sentinel block; these do the actual member init.
-    block(chain::header const& header, transaction::list&& transactions);
-    block(chain::header const& header, transaction::list const& transactions);
-
     chain::header header_;
     transaction::list transactions_;
 };

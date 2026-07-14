@@ -17,10 +17,10 @@ chain::transaction::list one_tx() {
     return {chain::transaction(1, 0, {}, {})};
 }
 chain::block make_chain_block() {
-    return chain::block::create(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, one_tx());
+    return chain::block(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, one_tx());
 }
 message::block make_msg_block() {
-    return message::block::create(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, one_tx());
+    return message::block(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, one_tx());
 }
 } // anonymous namespace
 
@@ -39,7 +39,7 @@ TEST_CASE("block constructor 2 always equals params", "[message block]") {
         chain::transaction(2, 32, {}, {}),
         chain::transaction(4, 16, {}, {})};
 
-    auto instance = block::create(header, transactions);
+    auto instance = block(header, transactions);
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
 }
@@ -59,7 +59,7 @@ TEST_CASE("block constructor 3 always equals params", "[message block]") {
 
     chain::header dup_header(header);
     chain::transaction::list dup_transactions = transactions;
-    auto instance = block::create(std::move(dup_header), std::move(dup_transactions));
+    auto instance = block(std::move(dup_header), std::move(dup_transactions));
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
 }
@@ -77,7 +77,7 @@ TEST_CASE("block constructor 4 always equals params", "[message block]") {
         chain::transaction(2, 32, {}, {}),
         chain::transaction(4, 16, {}, {})};
 
-    auto value = chain::block::create(header, transactions);
+    auto value = chain::block(header, transactions);
     block instance(value);
     REQUIRE(instance == value);
     REQUIRE(header == instance.header());
@@ -97,7 +97,7 @@ TEST_CASE("block constructor 5 always equals params", "[message block]") {
         chain::transaction(2, 32, {}, {}),
         chain::transaction(4, 16, {}, {})};
 
-    auto value = chain::block::create(header, transactions);
+    auto value = chain::block(header, transactions);
     block instance(std::move(value));
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
@@ -116,7 +116,7 @@ TEST_CASE("block constructor 6 always equals params", "[message block]") {
         chain::transaction(2, 32, {}, {}),
         chain::transaction(4, 16, {}, {})};
 
-    auto value = block::create(header, transactions);
+    auto value = block(header, transactions);
     block instance(value);
     REQUIRE(value == instance);
     REQUIRE(header == instance.header());
@@ -136,7 +136,7 @@ TEST_CASE("block constructor 7 always equals params", "[message block]") {
         chain::transaction(2, 32, {}, {}),
         chain::transaction(4, 16, {}, {})};
 
-    auto value = block::create(header, transactions);
+    auto value = block(header, transactions);
     block instance(std::move(value));
     REQUIRE(header == instance.header());
     REQUIRE(transactions == instance.transactions());
@@ -182,7 +182,7 @@ TEST_CASE("block operator assign equals 1 always matches equivalent", "[message 
         chain::transaction(2, 32, {}, {}),
         chain::transaction(4, 16, {}, {})};
 
-    auto value = chain::block::create(header, transactions);
+    auto value = chain::block(header, transactions);
 
     auto instance = make_msg_block();
 
@@ -204,7 +204,7 @@ TEST_CASE("block operator assign equals 2 always matches equivalent", "[message 
         chain::transaction(2, 32, {}, {}),
         chain::transaction(4, 16, {}, {})};
 
-    auto value = message::block::create(header, transactions);
+    auto value = message::block(header, transactions);
 
 
     auto instance = make_msg_block();
@@ -215,7 +215,7 @@ TEST_CASE("block operator assign equals 2 always matches equivalent", "[message 
 }
 
 TEST_CASE("block operator boolean equals 1 duplicates returns true", "[message block]") {
-    auto const expected = chain::block::create(
+    auto const expected = chain::block(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                       "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -231,7 +231,7 @@ TEST_CASE("block operator boolean equals 1 duplicates returns true", "[message b
 }
 
 TEST_CASE("block operator boolean equals 1 differs returns false", "[message block]") {
-    auto const expected = chain::block::create(
+    auto const expected = chain::block(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                       "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -247,7 +247,7 @@ TEST_CASE("block operator boolean equals 1 differs returns false", "[message blo
 }
 
 TEST_CASE("block operator boolean not equals 1 duplicates returns false", "[message block]") {
-    auto const expected = chain::block::create(
+    auto const expected = chain::block(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                       "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -263,7 +263,7 @@ TEST_CASE("block operator boolean not equals 1 duplicates returns false", "[mess
 }
 
 TEST_CASE("block operator boolean not equals 1 differs returns true", "[message block]") {
-    auto const expected = chain::block::create(
+    auto const expected = chain::block(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                       "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -279,7 +279,7 @@ TEST_CASE("block operator boolean not equals 1 differs returns true", "[message 
 }
 
 TEST_CASE("block operator boolean equals 2 duplicates returns true", "[message block]") {
-    auto const expected = message::block::create(
+    auto const expected = message::block(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                       "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -295,7 +295,7 @@ TEST_CASE("block operator boolean equals 2 duplicates returns true", "[message b
 }
 
 TEST_CASE("block operator boolean equals 2 differs returns false", "[message block]") {
-    auto const expected = message::block::create(
+    auto const expected = message::block(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                       "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -311,7 +311,7 @@ TEST_CASE("block operator boolean equals 2 differs returns false", "[message blo
 }
 
 TEST_CASE("block operator boolean not equals 2 duplicates returns false", "[message block]") {
-    auto const expected = message::block::create(
+    auto const expected = message::block(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                       "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,
@@ -327,7 +327,7 @@ TEST_CASE("block operator boolean not equals 2 duplicates returns false", "[mess
 }
 
 TEST_CASE("block operator boolean not equals 2 differs returns true", "[message block]") {
-    auto const expected = message::block::create(
+    auto const expected = message::block(
         chain::header(10u,
                       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
                       "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash,

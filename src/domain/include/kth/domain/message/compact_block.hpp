@@ -31,9 +31,10 @@ struct KD_API compact_block {
     static
     compact_block factory_from_block(message::block const& blk);
 
-    /// Build from parts. Construction cannot fail (no consensus checks).
-    static
-    compact_block create(chain::header header, uint64_t nonce, short_id_list short_ids, prefilled_transaction::list transactions);
+    // Construction cannot fail (no consensus checks); every state, including
+    // the all-default one, is syntactically valid.
+    compact_block() = default;
+    compact_block(chain::header header, uint64_t nonce, short_id_list short_ids, prefilled_transaction::list transactions);
 
     [[nodiscard]]
     friend bool operator==(compact_block const&, compact_block const&) = default;
@@ -69,11 +70,6 @@ struct KD_API compact_block {
     uint32_t const version_maximum;
 
 private:
-    // Construction goes through `create` / `from_data` / `factory_from_block`,
-    // which guarantee a non-sentinel value.
-    compact_block(chain::header const& header, uint64_t nonce, short_id_list const& short_ids, prefilled_transaction::list const& transactions);
-    compact_block(chain::header const& header, uint64_t nonce, short_id_list&& short_ids, prefilled_transaction::list&& transactions);
-
     chain::header header_;
     uint64_t nonce_{0};
     short_id_list short_ids_;

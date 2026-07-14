@@ -78,7 +78,7 @@ static kth_hash_list_mut_t make_two_hashes(void) {
 static kth_merkle_block_mut_t make_fixture(void) {
     kth_header_mut_t header = make_header();
     kth_hash_list_mut_t hashes = make_two_hashes();
-    kth_merkle_block_mut_t mb = kth_chain_merkle_block_create(
+    kth_merkle_block_mut_t mb = kth_chain_merkle_block_construct_from_header_total_transactions_hashes_flags(
         header, 2u, hashes, kFlags, sizeof(kFlags));
     REQUIRE(mb != NULL);
     kth_core_hash_list_destruct(hashes);
@@ -96,7 +96,7 @@ TEST_CASE("C-API MerkleBlock - create accepts an empty payload",
     kth_hash_t const zero = {{ 0 }};
     kth_header_mut_t header = kth_chain_header_construct(0u, &zero, &zero, 0u, 0u, 0u);
     kth_hash_list_mut_t hashes = kth_core_hash_list_construct_default();
-    kth_merkle_block_mut_t mb = kth_chain_merkle_block_create(
+    kth_merkle_block_mut_t mb = kth_chain_merkle_block_construct_from_header_total_transactions_hashes_flags(
         header, 0u, hashes, NULL, 0);
     REQUIRE(mb != NULL);
     kth_chain_merkle_block_destruct(mb);
@@ -249,14 +249,14 @@ TEST_CASE("C-API MerkleBlock - construct_from_data non-null out slot aborts",
 TEST_CASE("C-API MerkleBlock - create null header aborts",
           "[C-API MerkleBlock][precondition]") {
     kth_hash_list_mut_t hashes = make_two_hashes();
-    KTH_EXPECT_ABORT(kth_chain_merkle_block_create(
+    KTH_EXPECT_ABORT(kth_chain_merkle_block_construct_from_header_total_transactions_hashes_flags(
         NULL, 2u, hashes, kFlags, sizeof(kFlags)));
     kth_core_hash_list_destruct(hashes);
 }
 
 TEST_CASE("C-API MerkleBlock - construct null block aborts",
           "[C-API MerkleBlock][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_merkle_block_construct(NULL));
+    KTH_EXPECT_ABORT(kth_chain_merkle_block_construct_from_block(NULL));
 }
 
 TEST_CASE("C-API MerkleBlock - to_data null out_size aborts",

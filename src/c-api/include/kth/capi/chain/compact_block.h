@@ -22,7 +22,16 @@ kth_error_code_t kth_chain_compact_block_construct_from_data(uint8_t const* data
 
 /** @return Owned `kth_compact_block_mut_t`. Caller must release with `kth_chain_compact_block_destruct`. */
 KTH_EXPORT KTH_OWNED
-kth_compact_block_mut_t kth_chain_compact_block_create(kth_header_const_t header, uint64_t nonce, kth_u64_list_const_t short_ids, kth_prefilled_transaction_list_const_t transactions);
+kth_compact_block_mut_t kth_chain_compact_block_construct_default(void);
+
+/**
+ * @return Owned `kth_compact_block_mut_t`. Caller must release with `kth_chain_compact_block_destruct`.
+ * @param header Borrowed input. Copied by value into the resulting object; ownership of `header` stays with the caller.
+ * @param short_ids Borrowed input. Copied by value into the resulting object; ownership of `short_ids` stays with the caller.
+ * @param transactions Borrowed input. Copied by value into the resulting object; ownership of `transactions` stays with the caller.
+ */
+KTH_EXPORT KTH_OWNED
+kth_compact_block_mut_t kth_chain_compact_block_construct(kth_header_const_t header, uint64_t nonce, kth_u64_list_const_t short_ids, kth_prefilled_transaction_list_const_t transactions);
 
 
 // Destructor
