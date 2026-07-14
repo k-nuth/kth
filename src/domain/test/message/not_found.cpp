@@ -9,12 +9,6 @@ using namespace kd;
 using namespace kth::domain::message;
 
 // Start Test Suite: not found tests
-
-TEST_CASE("not found constructor 1 always invalid", "[not found]") {
-    message::not_found instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("not found constructor 2 always equals params", "[not found]") {
     const message::inventory_vector::list values =
         {
@@ -26,7 +20,6 @@ TEST_CASE("not found constructor 2 always equals params", "[not found]") {
                   0x37, 0xc0, 0xb0, 0x32, 0xf0, 0xd6, 0x6e, 0xdf}})};
 
     message::not_found instance(values);
-    REQUIRE(instance.is_valid());
     REQUIRE(values == instance.inventories());
 }
 
@@ -38,7 +31,6 @@ TEST_CASE("not found constructor 3 always equals params", "[not found]") {
             message::inventory_vector(type, hash)};
 
     message::not_found instance(std::move(values));
-    REQUIRE(instance.is_valid());
     auto inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
     REQUIRE(type == inventories[0].type());
@@ -51,7 +43,6 @@ TEST_CASE("not found constructor 4 always equals params", "[not found]") {
     hash_list const hashes = {hash};
 
     message::not_found instance(hashes, type);
-    REQUIRE(instance.is_valid());
     auto inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
     REQUIRE(type == inventories[0].type());
@@ -63,7 +54,6 @@ TEST_CASE("not found constructor 5 always equals params", "[not found]") {
     auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::not_found instance{{type, hash}};
-    REQUIRE(instance.is_valid());
     auto inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
     REQUIRE(type == inventories[0].type());
@@ -75,7 +65,6 @@ TEST_CASE("not found constructor 6 always equals params", "[not found]") {
     auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     const message::not_found value{{type, hash}};
-    REQUIRE(value.is_valid());
     message::not_found instance(value);
     auto inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
@@ -89,7 +78,6 @@ TEST_CASE("not found constructor 7 always equals params", "[not found]") {
     auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::not_found value{{type, hash}};
-    REQUIRE(value.is_valid());
     message::not_found instance(std::move(value));
     auto inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
@@ -119,7 +107,6 @@ TEST_CASE("not found from data insufficient version failure", "[not found]") {
     byte_reader reader(raw);
     auto result = not_found::from_data(reader, not_found::version_minimum - 1);
     REQUIRE( ! result);
-    REQUIRE( ! instance.is_valid());
 }
 
 TEST_CASE("not found from data valid input success", "[not found]") {
@@ -136,13 +123,10 @@ TEST_CASE("not found from data valid input success", "[not found]") {
     auto const result_exp = not_found::from_data(reader, version);
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(version));
     REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
 }
-
-
 
 TEST_CASE("not found operator assign equals always matches equivalent", "[not found]") {
     const message::inventory_vector::list elements =
@@ -151,13 +135,10 @@ TEST_CASE("not found operator assign equals always matches equivalent", "[not fo
                                       "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)};
 
     message::not_found value(elements);
-    REQUIRE(value.is_valid());
 
     message::not_found instance;
-    REQUIRE( ! instance.is_valid());
 
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(elements == instance.inventories());
 }
 

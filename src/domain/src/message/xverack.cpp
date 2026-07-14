@@ -11,13 +11,6 @@ std::string const xverack::command = "xverack";
 uint32_t const xverack::version_minimum = version::level::minimum;
 uint32_t const xverack::version_maximum = version::level::maximum;
 
-bool xverack::is_valid() const {
-    return true;
-}
-
-void xverack::reset() {
-}
-
 // Serialization.
 //-----------------------------------------------------------------------------
 

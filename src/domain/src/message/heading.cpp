@@ -55,18 +55,6 @@ heading::heading(uint32_t magic, std::string&& command, uint32_t payload_size, u
     : magic_(magic), command_(std::move(command)), payload_size_(payload_size), checksum_(checksum) {
 }
 
-bool heading::is_valid() const {
-    return (magic_ != 0) || (payload_size_ != 0) || (checksum_ != 0) || !command_.empty();
-}
-
-void heading::reset() {
-    magic_ = 0;
-    command_.clear();
-    command_.shrink_to_fit();
-    payload_size_ = 0;
-    checksum_ = 0;
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

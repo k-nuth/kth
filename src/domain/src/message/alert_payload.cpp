@@ -127,33 +127,6 @@ alert_payload::alert_payload(
 //     return *this;
 // }
 
-bool alert_payload::is_valid() const {
-    return (version_ != 0) || (relay_until_ != 0) || (expiration_ != 0) || (id_ != 0) || (cancel_ != 0) || !set_cancel_.empty() || (min_version_ != 0) || (max_version_ != 0) || !set_sub_version_.empty() || (priority_ != 0) || !comment_.empty() || !status_bar_.empty() || !reserved_.empty();
-}
-
-void alert_payload::reset() {
-    version_ = 0;
-    relay_until_ = 0;
-    expiration_ = 0;
-    id_ = 0;
-    cancel_ = 0;
-    set_cancel_.clear();
-    set_cancel_.shrink_to_fit();
-    min_version_ = 0;
-    max_version_ = 0;
-    set_sub_version_.clear();
-    set_sub_version_.shrink_to_fit();
-    priority_ = 0;
-    comment_.clear();
-    comment_.shrink_to_fit();
-    status_bar_.clear();
-    status_bar_.shrink_to_fit();
-    reserved_.clear();
-    reserved_.shrink_to_fit();
-}
-
-
-
 size_t alert_payload::serialized_size(uint32_t /*version*/) const {
     size_t size = 40u +
                   infrastructure::message::variable_uint_size(comment_.size()) + comment_.size() +

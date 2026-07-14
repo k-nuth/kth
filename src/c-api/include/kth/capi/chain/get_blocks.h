@@ -60,6 +60,9 @@ kth_get_blocks_mut_t kth_chain_get_blocks_copy(kth_get_blocks_const_t self);
 KTH_EXPORT
 kth_bool_t kth_chain_get_blocks_equals(kth_get_blocks_const_t self, kth_get_blocks_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_chain_get_blocks_not_equal(kth_get_blocks_const_t self, kth_get_blocks_const_t other);
+
 
 // Serialization
 
@@ -94,18 +97,6 @@ void kth_chain_get_blocks_set_stop_hash(kth_get_blocks_mut_t self, kth_hash_t co
 /** @warning `value` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
 KTH_EXPORT
 void kth_chain_get_blocks_set_stop_hash_unsafe(kth_get_blocks_mut_t self, uint8_t const* value);
-
-
-// Predicates
-
-KTH_EXPORT
-kth_bool_t kth_chain_get_blocks_is_valid(kth_get_blocks_const_t self);
-
-
-// Operations
-
-KTH_EXPORT
-void kth_chain_get_blocks_reset(kth_get_blocks_mut_t self);
 
 #ifdef __cplusplus
 } // extern "C"

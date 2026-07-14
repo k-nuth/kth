@@ -62,17 +62,10 @@ static kth_hash_list_mut_t make_hash_list_of_two(void) {
 // Constructors / lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API GetBlocks - default construct is invalid", "[C-API GetBlocks]") {
-    kth_get_blocks_mut_t gb = kth_chain_get_blocks_construct_default();
-    REQUIRE(kth_chain_get_blocks_is_valid(gb) == 0);
-    kth_chain_get_blocks_destruct(gb);
-}
-
-TEST_CASE("C-API GetBlocks - field constructor is valid", "[C-API GetBlocks]") {
+TEST_CASE("C-API GetBlocks - field constructor returns a handle", "[C-API GetBlocks]") {
     kth_hash_list_mut_t starts = make_hash_list_of_two();
     kth_get_blocks_mut_t gb = kth_chain_get_blocks_construct(starts, &kStopHash);
     REQUIRE(gb != NULL);
-    REQUIRE(kth_chain_get_blocks_is_valid(gb) != 0);
     kth_chain_get_blocks_destruct(gb);
     kth_core_hash_list_destruct(starts);
 }
@@ -90,6 +83,21 @@ TEST_CASE("C-API GetBlocks - construct_unsafe matches safe variant",
 
     kth_chain_get_blocks_destruct(safe);
     kth_chain_get_blocks_destruct(unsafe);
+    kth_core_hash_list_destruct(starts);
+}
+
+TEST_CASE("C-API GetBlocks - not_equal is the negation of equals", "[C-API GetBlocks]") {
+    kth_hash_list_mut_t starts = make_hash_list_of_two();
+    kth_get_blocks_mut_t gb = kth_chain_get_blocks_construct(starts, &kStopHash);
+    kth_get_blocks_mut_t same = kth_chain_get_blocks_copy(gb);
+    kth_get_blocks_mut_t other = kth_chain_get_blocks_construct_default();
+
+    REQUIRE(kth_chain_get_blocks_not_equal(gb, same) == 0);
+    REQUIRE(kth_chain_get_blocks_not_equal(gb, other) != 0);
+
+    kth_chain_get_blocks_destruct(other);
+    kth_chain_get_blocks_destruct(same);
+    kth_chain_get_blocks_destruct(gb);
     kth_core_hash_list_destruct(starts);
 }
 
@@ -118,7 +126,6 @@ TEST_CASE("C-API GetBlocks - to_data / from_data round-trip",
         raw, out_size, kProtoVersion, &decoded);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(decoded != NULL);
-    REQUIRE(kth_chain_get_blocks_is_valid(decoded) != 0);
 
     REQUIRE(kth_chain_get_blocks_equals(original, decoded) != 0);
 
@@ -229,20 +236,6 @@ TEST_CASE("C-API GetBlocks - start_hashes count reflects input list",
 // Operations
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API GetBlocks - reset clears the object", "[C-API GetBlocks]") {
-    kth_hash_list_mut_t starts = make_hash_list_of_two();
-    kth_get_blocks_mut_t gb =
-        kth_chain_get_blocks_construct(starts, &kStopHash);
-
-    kth_chain_get_blocks_reset(gb);
-
-    kth_hash_list_const_t view = kth_chain_get_blocks_start_hashes(gb);
-    REQUIRE(kth_core_hash_list_count(view) == 0u);
-
-    kth_chain_get_blocks_destruct(gb);
-    kth_core_hash_list_destruct(starts);
-}
-
 // ---------------------------------------------------------------------------
 // Preconditions (death tests via fork)
 // ---------------------------------------------------------------------------
@@ -298,11 +291,6 @@ TEST_CASE("C-API GetBlocks - equals null self aborts",
     kth_get_blocks_mut_t other = kth_chain_get_blocks_construct_default();
     KTH_EXPECT_ABORT(kth_chain_get_blocks_equals(NULL, other));
     kth_chain_get_blocks_destruct(other);
-}
-
-TEST_CASE("C-API GetBlocks - is_valid null aborts",
-          "[C-API GetBlocks][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_get_blocks_is_valid(NULL));
 }
 
 TEST_CASE("C-API GetBlocks - start_hashes null aborts",

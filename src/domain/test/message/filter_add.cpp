@@ -8,16 +8,9 @@ using namespace kth;
 using namespace kd;
 
 // Start Test Suite: filter add tests
-
-TEST_CASE("filter add constructor 1 always invalid", "[filter add]") {
-    message::filter_add instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("filter add constructor 2 always equals params", "[filter add]") {
     data_chunk const data = {0x0f, 0xf0, 0x55, 0xaa};
     message::filter_add instance(data);
-    REQUIRE(instance.is_valid());
     REQUIRE(data == instance.data());
 }
 
@@ -25,7 +18,6 @@ TEST_CASE("filter add constructor 3 always equals params", "[filter add]") {
     data_chunk const data = {0x0f, 0xf0, 0x55, 0xaa};
     auto dup = data;
     message::filter_add instance(std::move(dup));
-    REQUIRE(instance.is_valid());
     REQUIRE(data == instance.data());
 }
 
@@ -33,7 +25,6 @@ TEST_CASE("filter add constructor 4 always equals params", "[filter add]") {
     data_chunk const data = {0x0f, 0xf0, 0x55, 0xaa};
     const message::filter_add value(data);
     message::filter_add instance(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(value == instance);
     REQUIRE(data == instance.data());
 }
@@ -42,7 +33,6 @@ TEST_CASE("filter add constructor 5 always equals params", "[filter add]") {
     data_chunk const data = {0x0f, 0xf0, 0x55, 0xaa};
     message::filter_add value(data);
     message::filter_add instance(std::move(value));
-    REQUIRE(instance.is_valid());
     REQUIRE(data == instance.data());
 }
 
@@ -82,14 +72,11 @@ TEST_CASE("filter add from data valid input success", "[filter add]") {
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
 
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(message::version::level::maximum));
     REQUIRE(expected.serialized_size(message::version::level::maximum) ==
                         result.serialized_size(message::version::level::maximum));
 }
-
-
 
 TEST_CASE("filter add data accessor 1 always returns initialized value", "[filter add]") {
     data_chunk const value = {0x0f, 0xf0, 0x55, 0xaa};
@@ -123,11 +110,8 @@ TEST_CASE("filter add data setter 2 roundtrip success", "[filter add]") {
 TEST_CASE("filter add operator assign equals always matches equivalent", "[filter add]") {
     data_chunk const data = {0x0f, 0xf0, 0x55, 0xaa};
     message::filter_add value(data);
-    REQUIRE(value.is_valid());
     message::filter_add instance;
-    REQUIRE( ! instance.is_valid());
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(data == instance.data());
 }
 

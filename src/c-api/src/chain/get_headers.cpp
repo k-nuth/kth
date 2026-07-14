@@ -77,6 +77,12 @@ kth_bool_t kth_chain_get_headers_equals(kth_get_headers_const_t self, kth_get_he
     return kth::eq<cpp_t>(self, other);
 }
 
+kth_bool_t kth_chain_get_headers_not_equal(kth_get_headers_const_t self, kth_get_headers_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::ne<cpp_t>(self, other);
+}
+
 
 // Serialization
 
@@ -126,22 +132,6 @@ void kth_chain_get_headers_set_stop_hash_unsafe(kth_get_headers_mut_t self, uint
     KTH_PRECONDITION(value != nullptr);
     auto const value_cpp = kth::hash_to_cpp(value);
     kth::cpp_ref<cpp_t>(self).set_stop_hash(value_cpp);
-}
-
-
-// Predicates
-
-kth_bool_t kth_chain_get_headers_is_valid(kth_get_headers_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid());
-}
-
-
-// Operations
-
-void kth_chain_get_headers_reset(kth_get_headers_mut_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).reset();
 }
 
 } // extern "C"

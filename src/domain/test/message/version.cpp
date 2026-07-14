@@ -35,7 +35,6 @@ TEST_CASE("version factory therealbitcoin dot org valid", "[version]") {
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const version = std::move(*result_exp);
-    REQUIRE(version.is_valid());
 }
 
 TEST_CASE("version factory anarchistprime1 valid", "[version]") {
@@ -45,7 +44,6 @@ TEST_CASE("version factory anarchistprime1 valid", "[version]") {
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const version = std::move(*result_exp);
-    REQUIRE(version.is_valid());
 }
 
 TEST_CASE("version factory anarchistprime2 valid", "[version]") {
@@ -55,7 +53,6 @@ TEST_CASE("version factory anarchistprime2 valid", "[version]") {
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const version = std::move(*result_exp);
-    REQUIRE(version.is_valid());
 }
 
 TEST_CASE("version factory falcon1 valid", "[version]") {
@@ -65,7 +62,6 @@ TEST_CASE("version factory falcon1 valid", "[version]") {
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const version = std::move(*result_exp);
-    REQUIRE(version.is_valid());
 }
 
 TEST_CASE("version factory falcon2 valid", "[version]") {
@@ -75,7 +71,6 @@ TEST_CASE("version factory falcon2 valid", "[version]") {
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const version = std::move(*result_exp);
-    REQUIRE(version.is_valid());
 }
 
 TEST_CASE("version factory satoshi1 valid", "[version]") {
@@ -85,12 +80,10 @@ TEST_CASE("version factory satoshi1 valid", "[version]") {
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const version = std::move(*result_exp);
-    REQUIRE(version.is_valid());
 }
 
 TEST_CASE("version constructor 1 always invalid", "[version]") {
     message::version instance;
-    REQUIRE( ! instance.is_valid());
     REQUIRE( ! instance.address_receiver().is_valid());
     REQUIRE( ! instance.address_sender().is_valid());
 }
@@ -121,7 +114,6 @@ TEST_CASE("version constructor 2 always equals params", "[version]") {
 
     message::version instance(value, services, timestamp, receiver, sender, nonce, agent, height, relay);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(value == instance.value());
     REQUIRE(services == instance.services());
     REQUIRE(timestamp == instance.timestamp());
@@ -162,7 +154,6 @@ TEST_CASE("version constructor 3 always equals params", "[version]") {
 
     message::version instance(value, services, timestamp, std::move(receiver), std::move(sender), nonce, agent, height, relay);
 
-    REQUIRE(instance.is_valid());
 }
 
 TEST_CASE("version constructor 4 always equals params", "[version]") {
@@ -193,7 +184,6 @@ TEST_CASE("version constructor 4 always equals params", "[version]") {
     REQUIRE(sender.is_valid());
 
     message::version alpha(value, services, timestamp, receiver, sender, nonce, agent, height, relay);
-    REQUIRE(alpha.is_valid());
 
     message::version beta(alpha);
     REQUIRE(beta == alpha);
@@ -227,10 +217,8 @@ TEST_CASE("version constructor 5 always equals params", "[version]") {
     REQUIRE(sender.is_valid());
 
     message::version alpha(value, services, timestamp, receiver, sender, nonce, agent, height, relay);
-    REQUIRE(alpha.is_valid());
 
     message::version beta(std::move(alpha));
-    REQUIRE(beta.is_valid());
     REQUIRE(value == beta.value());
     REQUIRE(services == beta.services());
     REQUIRE(timestamp == beta.timestamp());
@@ -281,7 +269,6 @@ TEST_CASE("version from data mismatched sender services invalid", "[version]") {
     auto const result = std::move(*result_exp);
 
     // HACK: disabled check due to inconsistent node implementation.
-    REQUIRE(/*!*/ result.is_valid());
 }
 
 TEST_CASE("version from data version meets bip37 success", "[version]") {
@@ -310,7 +297,6 @@ TEST_CASE("version from data version meets bip37 success", "[version]") {
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
-    REQUIRE(result.is_valid());
 }
 
 TEST_CASE("version from data valid input success", "[version]") {
@@ -339,7 +325,6 @@ TEST_CASE("version from data valid input success", "[version]") {
     auto const result_exp = message::version::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
-    REQUIRE(result.is_valid());
     REQUIRE(data.size() == result.serialized_size(version_maximum));
     REQUIRE(expected.serialized_size(version_maximum) == result.serialized_size(version_maximum));
     REQUIRE(expected == result);
@@ -721,35 +706,6 @@ TEST_CASE("version relay setter roundtrip success", "[version]") {
     message::version instance;
     instance.set_relay(expected);
     REQUIRE(expected == instance.relay());
-}
-
-TEST_CASE("version operator assign equals always matches equivalent", "[version]") {
-    message::version value(
-        210u,
-        15234u,
-        979797u,
-        message::network_address{
-            734678u,
-            5357534u,
-            {{0x47, 0x81, 0x6a, 0x40, 0xbb, 0x92, 0xbd, 0xb4,
-              0xe0, 0xb8, 0x25, 0x68, 0x61, 0xf9, 0x6a, 0x55}},
-            123u},
-        message::network_address{
-            46324u,
-            57835u,
-            {{0xab, 0xcd, 0x6a, 0x40, 0x33, 0x92, 0x77, 0xb4,
-              0xe0, 0xb8, 0xda, 0x43, 0x61, 0x66, 0x6a, 0x88}},
-            351u},
-        13626u,
-        "my agent",
-        100u,
-        false);
-
-    REQUIRE(value.is_valid());
-
-    message::version instance;
-    instance = std::move(value);
-    REQUIRE(instance.is_valid());
 }
 
 TEST_CASE("version operator boolean equals duplicates returns true", "[version]") {

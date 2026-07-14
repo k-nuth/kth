@@ -84,11 +84,6 @@ struct KD_API inventory_vector {
     expect<void> to_data(byte_writer& writer, uint32_t version) const;
 
     [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
-
-    [[nodiscard]]
     size_t serialized_size(uint32_t version) const;
 
 private:

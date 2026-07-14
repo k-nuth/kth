@@ -29,16 +29,6 @@ block_transactions::block_transactions(hash_digest const& block_hash, chain::tra
     , transactions_(std::move(transactions))
 {}
 
-bool block_transactions::is_valid() const {
-    return (block_hash_ != null_hash);
-}
-
-void block_transactions::reset() {
-    block_hash_ = null_hash;
-    transactions_.clear();
-    transactions_.shrink_to_fit();
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

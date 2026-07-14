@@ -34,16 +34,6 @@ headers::headers(std::initializer_list<header> const& values)
     : elements_(values) {
 }
 
-bool headers::is_valid() const {
-    return !elements_.empty();
-}
-
-void headers::reset() {
-    elements_.clear();
-    elements_.shrink_to_fit();
-}
-
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

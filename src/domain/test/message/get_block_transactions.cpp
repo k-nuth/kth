@@ -8,18 +8,11 @@ using namespace kth;
 using namespace kd;
 
 // Start Test Suite: get block transactions tests
-
-TEST_CASE("get block transactions constructor 1 always invalid", "[get block transactions]") {
-    message::get_block_transactions instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("get block transactions constructor 2 always equals params", "[get block transactions]") {
     hash_digest const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     const std::vector<uint64_t> indexes = {1u, 3454u, 4234u, 75123u, 455323u};
 
     message::get_block_transactions instance(hash, indexes);
-    REQUIRE(instance.is_valid());
     REQUIRE(hash == instance.block_hash());
     REQUIRE(indexes == instance.indexes());
 }
@@ -31,7 +24,6 @@ TEST_CASE("get block transactions constructor 3 always equals params", "[get blo
     auto indexes_dup = indexes;
 
     message::get_block_transactions instance(std::move(hash_dup), std::move(indexes_dup));
-    REQUIRE(instance.is_valid());
     REQUIRE(hash == instance.block_hash());
     REQUIRE(indexes == instance.indexes());
 }
@@ -42,7 +34,6 @@ TEST_CASE("get block transactions constructor 4 always equals params", "[get blo
         {1u, 3454u, 4234u, 75123u, 455323u});
 
     message::get_block_transactions instance(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(value == instance);
 }
 
@@ -52,7 +43,6 @@ TEST_CASE("get block transactions constructor 5 always equals params", "[get blo
 
     message::get_block_transactions value(hash, indexes);
     message::get_block_transactions instance(std::move(value));
-    REQUIRE(instance.is_valid());
     REQUIRE(hash == instance.block_hash());
     REQUIRE(indexes == instance.indexes());
 }
@@ -80,13 +70,10 @@ TEST_CASE("get block transactions from data valid input success", "[get block tr
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
 
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(message::version::level::minimum));
     REQUIRE(expected.serialized_size(message::version::level::minimum) == result.serialized_size(message::version::level::minimum));
 }
-
-
 
 TEST_CASE("get block transactions block hash accessor 1 always returns initialized value", "[get block transactions]") {
     hash_digest const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
@@ -155,13 +142,10 @@ TEST_CASE("get block transactions operator assign equals always matches equivale
     const std::vector<uint64_t> indexes = {1u, 3454u, 4234u, 75123u, 455323u};
     message::get_block_transactions value(hash, indexes);
 
-    REQUIRE(value.is_valid());
 
     message::get_block_transactions instance;
-    REQUIRE( ! instance.is_valid());
 
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(hash == instance.block_hash());
     REQUIRE(indexes == instance.indexes());
 }

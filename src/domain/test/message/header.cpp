@@ -155,8 +155,6 @@ TEST_CASE("message header from data valid input success", "[message header]") {
     REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
 }
 
-
-
 TEST_CASE("message header operator assign equals 1 always matches equivalent", "[message header]") {
     chain::header value(
         10u,

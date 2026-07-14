@@ -44,15 +44,6 @@ inventory_vector::inventory_vector(type_id type, hash_digest const& hash)
     : type_(type), hash_(hash)
 {}
 
-bool inventory_vector::is_valid() const {
-    return (type_ != type_id::error) || (hash_ != null_hash);
-}
-
-void inventory_vector::reset() {
-    type_ = type_id::error;
-    hash_.fill(0);
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

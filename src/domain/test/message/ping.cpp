@@ -84,8 +84,6 @@ TEST_CASE("ping from data minimum version round trip zero nonce", "[ping]") {
     REQUIRE(result.nonce() == 0u);
 }
 
-
-
 TEST_CASE("ping from data 1 maximum version success expected nonce", "[ping]") {
     static const message::ping expected{
         213153u};
@@ -117,8 +115,6 @@ TEST_CASE("ping from data bip31 version round trip expected nonce", "[ping]") {
     REQUIRE(result.is_valid());
     REQUIRE(result == expected);
 }
-
-
 
 TEST_CASE("ping nonce accessor always returns initialized value", "[ping]") {
     uint64_t value = 43564u;

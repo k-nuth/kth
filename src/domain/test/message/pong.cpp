@@ -58,8 +58,6 @@ TEST_CASE("pong from data round trip expected", "[pong]") {
     REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
 }
 
-
-
 TEST_CASE("pong nonce accessor always returns initialized value", "[pong]") {
     uint64_t value = 43564u;
     message::pong instance(value);

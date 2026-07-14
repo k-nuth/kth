@@ -25,16 +25,6 @@ get_blocks::get_blocks(hash_list&& start, hash_digest const& stop)
     : start_hashes_(std::move(start)), stop_hash_(stop) {
 }
 
-bool get_blocks::is_valid() const {
-    return !start_hashes_.empty() || (stop_hash_ != null_hash);
-}
-
-void get_blocks::reset() {
-    start_hashes_.clear();
-    start_hashes_.shrink_to_fit();
-    stop_hash_.fill(0);
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

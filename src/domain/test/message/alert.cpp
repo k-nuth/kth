@@ -8,19 +8,12 @@ using namespace kth;
 using namespace kd;
 
 // Start Test Suite: alert tests
-
-TEST_CASE("alert constructor 1 always invalid", "[alert]") {
-    message::alert instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("alert constructor 2 always equals params", "[alert]") {
     data_chunk const payload = to_chunk("0123456789abcdef"_base16);
     data_chunk const signature = to_chunk("fedcba9876543210"_base16);
 
     message::alert instance(payload, signature);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(payload == instance.payload());
     REQUIRE(signature == instance.signature());
 }
@@ -33,7 +26,6 @@ TEST_CASE("alert constructor 3 always equals params", "[alert]") {
 
     message::alert instance(std::move(dup_payload), std::move(dup_signature));
 
-    REQUIRE(instance.is_valid());
     REQUIRE(payload == instance.payload());
     REQUIRE(signature == instance.signature());
 }
@@ -45,7 +37,6 @@ TEST_CASE("alert constructor 4 always equals params", "[alert]") {
     message::alert value(payload, signature);
     message::alert instance(value);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(value == instance);
     REQUIRE(payload == instance.payload());
     REQUIRE(signature == instance.signature());
@@ -58,7 +49,6 @@ TEST_CASE("alert constructor 5 always equals params", "[alert]") {
     message::alert value(payload, signature);
     message::alert instance(std::move(value));
 
-    REQUIRE(instance.is_valid());
     REQUIRE(payload == instance.payload());
     REQUIRE(signature == instance.signature());
 }
@@ -70,7 +60,6 @@ TEST_CASE("alert from data insufficient bytes failure", "[alert]") {
     byte_reader reader(raw);
     auto result = message::alert::from_data(reader, message::version::level::minimum);
     REQUIRE( ! result);
-    REQUIRE( ! instance.is_valid());
 }
 
 TEST_CASE("alert from data wiki sample success", "[alert]") {
@@ -125,7 +114,6 @@ TEST_CASE("alert from data wiki sample success", "[alert]") {
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
 
-    REQUIRE(result.is_valid());
     REQUIRE(raw.size() == result.serialized_size(message::version::level::minimum));
     REQUIRE(result == expected);
 
@@ -146,13 +134,10 @@ TEST_CASE("alert from data roundtrip success", "[alert]") {
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
 
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(message::version::level::minimum));
     REQUIRE(expected.serialized_size(message::version::level::minimum) == result.serialized_size(message::version::level::minimum));
 }
-
-
 
 TEST_CASE("alert payload accessor 1 always returns initialized", "[alert]") {
     data_chunk const payload = to_chunk("0123456789abcdef"_base16);
@@ -226,13 +211,10 @@ TEST_CASE("alert operator assign equals always matches equivalent", "[alert]") {
 
     message::alert value(payload, signature);
 
-    REQUIRE(value.is_valid());
 
     message::alert instance;
-    REQUIRE( ! instance.is_valid());
 
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(payload == instance.payload());
     REQUIRE(signature == instance.signature());
 }

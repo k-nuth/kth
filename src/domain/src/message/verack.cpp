@@ -11,12 +11,6 @@ std::string const verack::command = "verack";
 uint32_t const verack::version_minimum = version::level::minimum;
 uint32_t const verack::version_maximum = version::level::maximum;
 
-bool verack::is_valid() const {
-    return true;
-}
-
-void verack::reset() {}
-
 // Serialization.
 //-----------------------------------------------------------------------------
 

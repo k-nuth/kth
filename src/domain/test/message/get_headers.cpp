@@ -8,12 +8,6 @@ using namespace kth;
 using namespace kd;
 
 // Start Test Suite: get headers tests
-
-TEST_CASE("get headers constructor 1 always invalid", "[get headers]") {
-    message::get_headers instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("get headers constructor 2 always equals params", "[get headers]") {
     hash_list starts = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
@@ -23,7 +17,6 @@ TEST_CASE("get headers constructor 2 always equals params", "[get headers]") {
     hash_digest stop = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::get_headers instance(starts, stop);
-    REQUIRE(instance.is_valid());
     REQUIRE(starts == instance.start_hashes());
     REQUIRE(stop == instance.stop_hash());
 }
@@ -38,7 +31,6 @@ TEST_CASE("get headers constructor 3 always equals params", "[get headers]") {
     hash_digest stop = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::get_headers instance(std::move(starts_duplicate), std::move(stop));
-    REQUIRE(instance.is_valid());
     REQUIRE(starts == instance.start_hashes());
     REQUIRE(stop == instance.stop_hash());
 }
@@ -53,7 +45,6 @@ TEST_CASE("get headers constructor 4 always equals params", "[get headers]") {
 
     const message::get_headers expected(starts, stop);
     message::get_headers instance(expected);
-    REQUIRE(instance.is_valid());
     REQUIRE(expected == instance);
     REQUIRE(starts == instance.start_hashes());
     REQUIRE(stop == instance.stop_hash());
@@ -69,7 +60,6 @@ TEST_CASE("get headers constructor 5 always equals params", "[get headers]") {
 
     message::get_headers expected(starts, stop);
     message::get_headers instance(std::move(expected));
-    REQUIRE(instance.is_valid());
     REQUIRE(starts == instance.start_hashes());
     REQUIRE(stop == instance.stop_hash());
 }
@@ -119,15 +109,12 @@ TEST_CASE("get headers from data valid input success", "[get headers]") {
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
 
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(message::get_headers::version_minimum));
     REQUIRE(
         expected.serialized_size(message::get_headers::version_minimum) ==
         result.serialized_size(message::get_headers::version_minimum));
 }
-
-
 
 TEST_CASE("get headers operator assign equals always matches equivalent", "[get headers]") {
     hash_list const start = {
@@ -142,13 +129,10 @@ TEST_CASE("get headers operator assign equals always matches equivalent", "[get 
 
     message::get_headers value{start, stop};
 
-    REQUIRE(value.is_valid());
 
     message::get_headers instance;
-    REQUIRE( ! instance.is_valid());
 
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(start == instance.start_hashes());
     REQUIRE(stop == instance.stop_hash());
 }

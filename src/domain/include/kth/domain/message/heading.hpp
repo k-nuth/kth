@@ -119,11 +119,6 @@ struct KD_API heading {
         return satoshi_fixed_size();
     }
 
-    [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
-
 
 private:
     uint32_t magic_{0};

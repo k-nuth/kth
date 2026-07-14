@@ -8,12 +8,6 @@ using namespace kth;
 using namespace kd;
 
 // Start Test Suite: get blocks tests
-
-TEST_CASE("get blocks constructor 1 always invalid", "[get blocks]") {
-    message::get_blocks instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("get blocks constructor 2 always equals params", "[get blocks]") {
     hash_list const starts = {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"_hash,
@@ -23,7 +17,6 @@ TEST_CASE("get blocks constructor 2 always equals params", "[get blocks]") {
     hash_digest stop = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::get_blocks instance(starts, stop);
-    REQUIRE(instance.is_valid());
     REQUIRE(starts == instance.start_hashes());
     REQUIRE(stop == instance.stop_hash());
 }
@@ -38,7 +31,6 @@ TEST_CASE("get blocks constructor 3 always equals params", "[get blocks]") {
     hash_digest stop = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::get_blocks instance(std::move(starts_duplicate), std::move(stop));
-    REQUIRE(instance.is_valid());
     REQUIRE(starts == instance.start_hashes());
     REQUIRE(stop == instance.stop_hash());
 }
@@ -53,7 +45,6 @@ TEST_CASE("get blocks constructor 4 always equals params", "[get blocks]") {
 
     const message::get_blocks expected(starts, stop);
     message::get_blocks instance(expected);
-    REQUIRE(instance.is_valid());
     REQUIRE(expected == instance);
     REQUIRE(starts == instance.start_hashes());
     REQUIRE(stop == instance.stop_hash());
@@ -69,7 +60,6 @@ TEST_CASE("get blocks constructor 5 always equals params", "[get blocks]") {
 
     message::get_blocks expected(starts, stop);
     message::get_blocks instance(std::move(expected));
-    REQUIRE(instance.is_valid());
     REQUIRE(starts == instance.start_hashes());
     REQUIRE(stop == instance.stop_hash());
 }
@@ -98,13 +88,10 @@ TEST_CASE("get blocks from data valid input success", "[get blocks]") {
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
 
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(message::version::level::minimum));
     REQUIRE(expected.serialized_size(message::version::level::minimum) == result.serialized_size(message::version::level::minimum));
 }
-
-
 
 TEST_CASE("get blocks start hashes accessor 1 always returns initialized value", "[get blocks]") {
     hash_list expected = {
@@ -222,13 +209,10 @@ TEST_CASE("get blocks operator assign equals always matches equivalent", "[get b
 
     message::get_blocks value{start, stop};
 
-    REQUIRE(value.is_valid());
 
     message::get_blocks instance;
-    REQUIRE( ! instance.is_valid());
 
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(start == instance.start_hashes());
     REQUIRE(stop == instance.stop_hash());
 }

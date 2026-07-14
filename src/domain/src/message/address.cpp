@@ -22,15 +22,6 @@ address::address(infrastructure::message::network_address::list&& addresses)
     : addresses_(std::move(addresses))
 {}
 
-bool address::is_valid() const {
-    return !addresses_.empty();
-}
-
-void address::reset() {
-    addresses_.clear();
-    addresses_.shrink_to_fit();
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

@@ -22,12 +22,6 @@ bool equal(address const& x, address const& y) {
 }
 
 // Start Test Suite: address tests
-
-TEST_CASE("address constructor 1 always invalid", "[address]") {
-    address instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("address constructor 2 always equals params", "[address]") {
     infrastructure::message::network_address::list const addresses{
         network_address(
@@ -48,7 +42,6 @@ TEST_CASE("address constructor 2 always equals params", "[address]") {
 
     address instance(addresses);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(addresses == instance.addresses());
 }
 
@@ -74,7 +67,6 @@ TEST_CASE("address constructor 3 always equals params", "[address]") {
 
     address instance(std::move(dup_addresses));
 
-    REQUIRE(instance.is_valid());
     REQUIRE(addresses == instance.addresses());
 }
 
@@ -99,7 +91,6 @@ TEST_CASE("address constructor 4 always equals params", "[address]") {
     address value(addresses);
     address instance(value);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(value == instance);
     REQUIRE(addresses == instance.addresses());
 }
@@ -125,7 +116,6 @@ TEST_CASE("address constructor 5 always equals params", "[address]") {
     address value(addresses);
     address instance(std::move(value));
 
-    REQUIRE(instance.is_valid());
     REQUIRE(addresses == instance.addresses());
 }
 
@@ -151,14 +141,11 @@ TEST_CASE("address from data roundtrip success", "[address]") {
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
 
-    REQUIRE(result.is_valid());
     REQUIRE(equal(expected, result));
     auto const serialized_size = result.serialized_size(version::level::minimum);
     REQUIRE(data.size() == serialized_size);
     REQUIRE(expected.serialized_size(version::level::minimum) == serialized_size);
 }
-
-
 
 TEST_CASE("address addresses setter 1 roundtrip success", "[address]") {
     infrastructure::message::network_address::list const value{
@@ -229,13 +216,10 @@ TEST_CASE("address operator assign equals always matches equivalent", "[address]
 
     address value(addresses);
 
-    REQUIRE(value.is_valid());
 
     address instance;
-    REQUIRE( ! instance.is_valid());
 
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(addresses == instance.addresses());
 }
 

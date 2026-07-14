@@ -49,11 +49,6 @@ constexpr auto raw_tx2 =
 static auto const raw_tx2_hash = "8a6d9302fbe24f0ec756a94ecfc837eaffe16c43d1e68c62dfe980d99eea556f"_hash;
 
 // Start Test Suite: message transaction tests
-
-TEST_CASE("message transaction constructor 1 always initialized invalid", "[message transaction]") {
-    transaction instance;
-}
-
 TEST_CASE("message transaction constructor 2 always equals transaction", "[message transaction]") {
     data_chunk raw_tx = to_chunk(raw_tx1);
 

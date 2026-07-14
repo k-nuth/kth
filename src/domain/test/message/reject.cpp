@@ -33,12 +33,6 @@ TEST_CASE("reject factory from data tx nonstandard empty data valid", "[reject]"
     auto const result_exp = message::reject::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const reject = std::move(*result_exp);
-    REQUIRE(reject.is_valid());
-}
-
-TEST_CASE("reject constructor 1 always invalid", "[reject]") {
-    message::reject instance;
-    REQUIRE( ! instance.is_valid());
 }
 
 TEST_CASE("reject constructor 2 always equals params", "[reject]") {
@@ -47,20 +41,10 @@ TEST_CASE("reject constructor 2 always equals params", "[reject]") {
     std::string reason = "Gamma Delta";
     hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject instance(code, message, reason, data);
-    REQUIRE(instance.is_valid());
     REQUIRE(code == instance.code());
     REQUIRE(message == instance.message());
     REQUIRE(reason == instance.reason());
     REQUIRE(data == instance.data());
-}
-
-TEST_CASE("reject constructor 3 always equals params", "[reject]") {
-    auto code = message::reject::reason_code::nonstandard;
-    std::string message = "sadfasdgd";
-    std::string reason = "jgfghkggfsr";
-    hash_digest data = "ce8f4b713ffdd2658900845251890f30371856be201cd1f5b3d970f793634333"_hash;
-    message::reject instance(code, std::move(message), std::move(reason), std::move(data));
-    REQUIRE(instance.is_valid());
 }
 
 TEST_CASE("reject constructor 4 always equals params", "[reject]") {
@@ -70,7 +54,6 @@ TEST_CASE("reject constructor 4 always equals params", "[reject]") {
     hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject expected(code, message, reason, data);
     message::reject instance(expected);
-    REQUIRE(instance.is_valid());
     REQUIRE(expected == instance);
     REQUIRE(code == instance.code());
     REQUIRE(message == instance.message());
@@ -85,7 +68,6 @@ TEST_CASE("reject constructor 5 always equals params", "[reject]") {
     hash_digest data = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     message::reject expected(code, message, reason, data);
     message::reject instance(std::move(expected));
-    REQUIRE(instance.is_valid());
     REQUIRE(code == instance.code());
     REQUIRE(message == instance.message());
     REQUIRE(reason == instance.reason());
@@ -273,13 +255,10 @@ TEST_CASE("reject from data valid input success", "[reject]") {
     auto const result_exp = message::reject::from_data(reader, version_maximum);
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(version_maximum));
     REQUIRE(expected.serialized_size(version_maximum) == result.serialized_size(version_maximum));
 }
-
-
 
 TEST_CASE("reject code accessor always returns initialized value", "[reject]") {
     auto code = message::reject::reason_code::nonstandard;
@@ -404,22 +383,6 @@ TEST_CASE("reject data setter 2 roundtrip success", "[reject]") {
     REQUIRE(duplicate != instance.data());
     instance.set_data(std::move(data));
     REQUIRE(duplicate == instance.data());
-}
-
-TEST_CASE("reject operator assign equals always matches equivalent", "[reject]") {
-    message::reject value(
-        message::reject::reason_code::dust,
-        "My Message",
-        "My Reason",
-        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
-
-    REQUIRE(value.is_valid());
-
-    message::reject instance;
-    REQUIRE( ! instance.is_valid());
-
-    instance = std::move(value);
-    REQUIRE(instance.is_valid());
 }
 
 TEST_CASE("reject operator boolean equals duplicates returns true", "[reject]") {

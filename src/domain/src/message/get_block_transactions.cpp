@@ -30,16 +30,6 @@ get_block_transactions::get_block_transactions(hash_digest const& block_hash, st
     , indexes_(std::move(indexes))
 {}
 
-bool get_block_transactions::is_valid() const {
-    return (block_hash_ != null_hash);
-}
-
-void get_block_transactions::reset() {
-    block_hash_ = null_hash;
-    indexes_.clear();
-    indexes_.shrink_to_fit();
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 
