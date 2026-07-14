@@ -32,6 +32,8 @@ struct KD_API header : chain::header {
     // Inherit constructors
     using chain::header::header;
 
+    header() = default;
+
     header(chain::header const& x)
         : chain::header(x)
     {}

@@ -29,9 +29,9 @@ block::block(chain::block const& x)
 {}
 
 // static
-block block::create(chain::header header, chain::transaction::list transactions) {
-    return block{chain::block::create(std::move(header), std::move(transactions))};
-}
+block::block(chain::header header, chain::transaction::list transactions)
+    : chain::block(std::move(header), std::move(transactions))
+{}
 
 // block::block(block&& x) noexcept
 //     : chain::block(std::move(x))

@@ -26,7 +26,7 @@ hash_list const test_hashes{
 data_chunk const test_flags{0xae, 0x56, 0x0f};
 
 message::merkle_block make_merkle_block(size_t count = 1234u) {
-    return message::merkle_block::create(test_header, count, test_hashes, test_flags);
+    return message::merkle_block(test_header, count, test_hashes, test_flags);
 }
 
 } // namespace
@@ -35,7 +35,7 @@ message::merkle_block make_merkle_block(size_t count = 1234u) {
 
 TEST_CASE("merkle block create always equals params", "[merkle block]") {
     size_t const count = 1234u;
-    auto const instance = message::merkle_block::create(test_header, count, test_hashes, test_flags);
+    auto const instance = message::merkle_block(test_header, count, test_hashes, test_flags);
     REQUIRE(test_header == instance.header());
     REQUIRE(instance.total_transactions() == count);
     REQUIRE(test_hashes == instance.hashes());
@@ -57,7 +57,7 @@ TEST_CASE("from data insufficient data fails", "[merkle block]") {
 }
 
 TEST_CASE("from data insufficient version fails", "[merkle block]") {
-    auto const expected = message::merkle_block::create(
+    auto const expected = message::merkle_block(
         test_header,
         34523u,
         {"4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash},
@@ -71,7 +71,7 @@ TEST_CASE("from data insufficient version fails", "[merkle block]") {
 }
 
 TEST_CASE("merkle block - roundtrip to data factory from data chunk", "[merkle block]") {
-    auto const expected = message::merkle_block::create(
+    auto const expected = message::merkle_block(
         test_header,
         45633u,
         {"4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash},
@@ -109,7 +109,7 @@ TEST_CASE("merkle block operator boolean equals duplicates returns true", "[merk
 
 TEST_CASE("merkle block operator boolean equals differs returns false", "[merkle block]") {
     auto const expected = make_merkle_block(1469u);
-    auto const instance = message::merkle_block::create(test_header, 1470u, {}, test_flags);
+    auto const instance = message::merkle_block(test_header, 1470u, {}, test_flags);
     REQUIRE( ! (instance == expected));
 }
 
@@ -121,7 +121,7 @@ TEST_CASE("merkle block operator boolean not equals duplicates returns false", "
 
 TEST_CASE("merkle block operator boolean not equals differs returns true", "[merkle block]") {
     auto const expected = make_merkle_block(8642u);
-    auto const instance = message::merkle_block::create(test_header, 8642u, {}, test_flags);
+    auto const instance = message::merkle_block(test_header, 8642u, {}, test_flags);
     REQUIRE(instance != expected);
 }
 

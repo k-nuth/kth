@@ -27,7 +27,7 @@ inline kth_block_mut_t make_minimal_block(void) {
     static kth_hash_t const zero_hash = {{0}};
     kth_header_mut_t h = kth_chain_header_construct(1u, &zero_hash, &zero_hash, 0u, 0u, 0u);
     kth_transaction_list_mut_t txs = kth_chain_transaction_list_construct_default();
-    kth_block_mut_t blk = kth_chain_block_create(h, txs);
+    kth_block_mut_t blk = kth_chain_block_construct(h, txs);
     REQUIRE(blk != NULL);
     kth_chain_header_destruct(h);
     kth_chain_transaction_list_destruct(txs);

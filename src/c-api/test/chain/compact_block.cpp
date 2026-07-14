@@ -94,7 +94,7 @@ static kth_compact_block_mut_t make_fixture(void) {
     kth_transaction_mut_t tx = make_tx();
     kth_prefilled_transaction_list_mut_t txs = make_prefilled_list(tx);
 
-    kth_compact_block_mut_t cb = kth_chain_compact_block_create(
+    kth_compact_block_mut_t cb = kth_chain_compact_block_construct(
         header, 0xCAFEBABEu, short_ids, txs);
     REQUIRE(cb != NULL);
 
@@ -117,7 +117,7 @@ TEST_CASE("C-API CompactBlock - create accepts an empty payload",
     kth_u64_list_mut_t short_ids = kth_core_u64_list_construct_default();
     kth_prefilled_transaction_list_mut_t txs =
         kth_chain_prefilled_transaction_list_construct_default();
-    kth_compact_block_mut_t cb = kth_chain_compact_block_create(
+    kth_compact_block_mut_t cb = kth_chain_compact_block_construct(
         header, 0u, short_ids, txs);
     REQUIRE(cb != NULL);
     kth_chain_compact_block_destruct(cb);
@@ -250,7 +250,7 @@ TEST_CASE("C-API CompactBlock - create null header aborts",
     kth_transaction_mut_t tx = make_tx();
     kth_prefilled_transaction_list_mut_t txs = make_prefilled_list(tx);
     KTH_EXPECT_ABORT(
-        kth_chain_compact_block_create(NULL, 0u, short_ids, txs));
+        kth_chain_compact_block_construct(NULL, 0u, short_ids, txs));
     kth_chain_prefilled_transaction_list_destruct(txs);
     kth_chain_transaction_destruct(tx);
     kth_core_u64_list_destruct(short_ids);
@@ -262,7 +262,7 @@ TEST_CASE("C-API CompactBlock - create null short_ids aborts",
     kth_transaction_mut_t tx = make_tx();
     kth_prefilled_transaction_list_mut_t txs = make_prefilled_list(tx);
     KTH_EXPECT_ABORT(
-        kth_chain_compact_block_create(header, 0u, NULL, txs));
+        kth_chain_compact_block_construct(header, 0u, NULL, txs));
     kth_chain_prefilled_transaction_list_destruct(txs);
     kth_chain_transaction_destruct(tx);
     kth_chain_header_destruct(header);
@@ -273,7 +273,7 @@ TEST_CASE("C-API CompactBlock - create null transactions aborts",
     kth_header_mut_t header = make_header();
     kth_u64_list_mut_t short_ids = make_short_ids();
     KTH_EXPECT_ABORT(
-        kth_chain_compact_block_create(header, 0u, short_ids, NULL));
+        kth_chain_compact_block_construct(header, 0u, short_ids, NULL));
     kth_core_u64_list_destruct(short_ids);
     kth_chain_header_destruct(header);
 }

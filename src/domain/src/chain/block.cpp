@@ -174,21 +174,11 @@ std::string const encoded_regtest_genesis_block =
 //-----------------------------------------------------------------------------
 
 // TODO(legacy): deal with possibility of inconsistent merkle root in relation to txs.
-block::block(chain::header const& header, transaction::list const& transactions)
-    : header_(header)
-    , transactions_(transactions)
-{}
-
-// TODO(legacy): deal with possibility of inconsistent merkle root in relation to txs.
-block::block(chain::header const& header, transaction::list&& transactions)
+block::block(chain::header header, transaction::list transactions)
     : header_(header)
     , transactions_(std::move(transactions))
 {}
 
-// static
-block block::create(chain::header header, transaction::list transactions) {
-    return block{header, std::move(transactions)};
-}
 
 // Operators.
 //-----------------------------------------------------------------------------
@@ -212,7 +202,7 @@ expect<block> block::from_data(byte_reader& reader) {
         return std::unexpected(txs.error());
     }
     auto const end_deserialize = asio::steady_clock::now();
-    auto res = create(*hdr, std::move(*txs));
+    auto res = block(*hdr, std::move(*txs));
     res.validation.start_deserialize = start_deserialize;
     res.validation.end_deserialize = end_deserialize;
     return res;

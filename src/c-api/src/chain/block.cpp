@@ -33,6 +33,18 @@ kth_error_code_t kth_chain_block_construct_from_data(uint8_t const* data, kth_si
     return kth_ec_success;
 }
 
+kth_block_mut_t kth_chain_block_construct_default(void) {
+    return kth::leak<cpp_t>();
+}
+
+kth_block_mut_t kth_chain_block_construct(kth_header_const_t header, kth_transaction_list_const_t transactions) {
+    KTH_PRECONDITION(header != nullptr);
+    KTH_PRECONDITION(transactions != nullptr);
+    auto const& header_cpp = kth::cpp_ref<kth::domain::chain::header>(header);
+    auto const& transactions_cpp = kth::cpp_ref<kth::domain::chain::transaction::list>(transactions);
+    return kth::leak<cpp_t>(header_cpp, transactions_cpp);
+}
+
 kth_block_mut_t kth_chain_block_genesis_mainnet(void) {
     return kth::leak(cpp_t::genesis_mainnet());
 }
@@ -55,14 +67,6 @@ kth_block_mut_t kth_chain_block_genesis_scalenet(void) {
 
 kth_block_mut_t kth_chain_block_genesis_chipnet(void) {
     return kth::leak(cpp_t::genesis_chipnet());
-}
-
-kth_block_mut_t kth_chain_block_create(kth_header_const_t header, kth_transaction_list_const_t transactions) {
-    KTH_PRECONDITION(header != nullptr);
-    KTH_PRECONDITION(transactions != nullptr);
-    auto const& header_cpp = kth::cpp_ref<kth::domain::chain::header>(header);
-    auto const& transactions_cpp = kth::cpp_ref<kth::domain::chain::transaction::list>(transactions);
-    return kth::leak(cpp_t::create(header_cpp, transactions_cpp));
 }
 
 

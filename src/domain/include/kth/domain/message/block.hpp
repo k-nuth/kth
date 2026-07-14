@@ -32,14 +32,14 @@ public:
     using const_ptr_list_ptr = std::shared_ptr<const_ptr_list>;
     using const_ptr_list_const_ptr = std::shared_ptr<const const_ptr_list>;
 
-    // Wrapping an already-constructed (hence valid) chain::block.
+    block() = default;
+
+    // Wrapping an already-constructed chain::block.
     block(chain::block const& x);
     block(chain::block&& x);
 
-    /// Build from parts. Mirrors `chain::block::create`; construction cannot
-    /// fail (a domain block does no consensus checks).
-    static
-    block create(chain::header header, chain::transaction::list transactions);
+    // Construction cannot fail (a domain block does no consensus checks).
+    block(chain::header header, chain::transaction::list transactions);
 
     block& operator=(chain::block&& x);
 

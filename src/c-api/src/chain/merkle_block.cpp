@@ -33,13 +33,11 @@ kth_error_code_t kth_chain_merkle_block_construct_from_data(uint8_t const* data,
     return kth_ec_success;
 }
 
-kth_merkle_block_mut_t kth_chain_merkle_block_construct(kth_block_const_t block) {
-    KTH_PRECONDITION(block != nullptr);
-    auto const& block_cpp = kth::cpp_ref<kth::domain::chain::block>(block);
-    return kth::leak<cpp_t>(block_cpp);
+kth_merkle_block_mut_t kth_chain_merkle_block_construct_default(void) {
+    return kth::leak<cpp_t>();
 }
 
-kth_merkle_block_mut_t kth_chain_merkle_block_create(kth_header_const_t header, kth_size_t total_transactions, kth_hash_list_const_t hashes, uint8_t const* flags, kth_size_t n) {
+kth_merkle_block_mut_t kth_chain_merkle_block_construct_from_header_total_transactions_hashes_flags(kth_header_const_t header, kth_size_t total_transactions, kth_hash_list_const_t hashes, uint8_t const* flags, kth_size_t n) {
     KTH_PRECONDITION(header != nullptr);
     KTH_PRECONDITION(hashes != nullptr);
     KTH_PRECONDITION(flags != nullptr || n == 0);
@@ -47,7 +45,13 @@ kth_merkle_block_mut_t kth_chain_merkle_block_create(kth_header_const_t header, 
     auto const total_transactions_cpp = kth::sz(total_transactions);
     auto const& hashes_cpp = kth::cpp_ref<kth::hash_list>(hashes);
     auto const flags_cpp = n != 0 ? kth::data_chunk(flags, flags + n) : kth::data_chunk{};
-    return kth::leak(cpp_t::create(header_cpp, total_transactions_cpp, hashes_cpp, flags_cpp));
+    return kth::leak<cpp_t>(header_cpp, total_transactions_cpp, hashes_cpp, flags_cpp);
+}
+
+kth_merkle_block_mut_t kth_chain_merkle_block_construct_from_block(kth_block_const_t block) {
+    KTH_PRECONDITION(block != nullptr);
+    auto const& block_cpp = kth::cpp_ref<kth::domain::chain::block>(block);
+    return kth::leak<cpp_t>(block_cpp);
 }
 
 

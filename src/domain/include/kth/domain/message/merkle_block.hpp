@@ -25,9 +25,10 @@ struct KD_API merkle_block {
     using ptr = std::shared_ptr<merkle_block>;
     using const_ptr = std::shared_ptr<const merkle_block>;
 
-    /// Build from parts. Construction cannot fail (no consensus checks).
-    static
-    merkle_block create(chain::header header, size_t total_transactions, hash_list hashes, data_chunk flags);
+    // Construction cannot fail (no consensus checks); every state, including
+    // the all-default one, is syntactically valid.
+    merkle_block() = default;
+    merkle_block(chain::header header, size_t total_transactions, hash_list hashes, data_chunk flags);
 
     /// Wrap an already-constructed (hence valid) block.
     merkle_block(chain::block const& block);
@@ -68,11 +69,6 @@ struct KD_API merkle_block {
 
 
 private:
-    // Construction goes through `create` / `from_data` / the block-wrapping
-    // ctor, which guarantee a non-sentinel value.
-    merkle_block(chain::header const& header, size_t total_transactions, hash_list&& hashes, data_chunk&& flags);
-    merkle_block(chain::header const& header, size_t total_transactions, hash_list const& hashes, data_chunk const& flags);
-
     chain::header header_;
     size_t total_transactions_{0};
     hash_list hashes_;
