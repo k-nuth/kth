@@ -25,8 +25,7 @@ compact_block compact_block::factory_from_block(message::block const& block) {
     // BIP152: the nonce salts the SipHash short-id computation, so it must be
     // unpredictable to an adversary (otherwise short-id collisions can be
     // ground out to force block-reconstruction failures). Use the CSPRNG.
-    uint64_t nonce = 0;
-    pseudo_random::fill(reinterpret_cast<uint8_t*>(&nonce), sizeof(nonce));
+    auto const nonce = pseudo_random::generate<uint64_t>();
 
     // Index 0 (the coinbase) is always in range, so `create` cannot fail here.
     prefilled_transaction::list prefilled_list{

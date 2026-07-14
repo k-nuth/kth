@@ -668,6 +668,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/data.cpp
     test/utility/endian.cpp
     test/utility/operators.cpp
+    test/utility/pseudo_random.cpp
     test/utility/serializer.cpp
     test/utility/byte_reader.cpp
     test/utility/byte_writer.cpp
@@ -738,6 +739,21 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         --compiler ${CMAKE_CXX_COMPILER}
         --include-dir ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
+  endif()
+
+  # Forced-CSPRNG-failure test. Proves pseudo_random::check_available() detects a
+  # missing system CSPRNG, and that a draw aborts rather than returning bytes
+  # that are not random -- neither of which can be observed on a machine whose
+  # CSPRNG works, so the test takes it away with LD_PRELOAD interposition.
+  # Linux/glibc only; it exits 77 (skip) wherever interposition cannot take hold.
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_test(
+      NAME kth_infrastructure_no_csprng_test
+      COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/utility/no_csprng/run.sh
+              $<TARGET_FILE:kth_infrastructure_test>
+    )
+    set_tests_properties(kth_infrastructure_no_csprng_test
+      PROPERTIES SKIP_RETURN_CODE 77)
   endif()
 
   # Benchmark executable (separate from tests)

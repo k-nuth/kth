@@ -1271,9 +1271,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 }
 
 uint64_t p2p_node::generate_nonce() {
-    uint64_t nonce = 0;
-    pseudo_random::fill(reinterpret_cast<uint8_t*>(&nonce), sizeof(nonce));
-    return nonce;
+    return pseudo_random::generate<uint64_t>();
 }
 
 // static
@@ -1285,7 +1283,7 @@ uint64_t p2p_node::generate_ping_nonce() {
     // same way (net_processing.cpp: `while (nonce == 0) GetRandBytes(...)`).
     uint64_t nonce = 0;
     while (nonce == 0) {
-        pseudo_random::fill(reinterpret_cast<uint8_t*>(&nonce), sizeof(nonce));
+        nonce = pseudo_random::generate<uint64_t>();
     }
     return nonce;
 }

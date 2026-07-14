@@ -141,6 +141,19 @@ void executor::start_async(start_handler handler) {
     spdlog::info("[node] Press CTRL-C to stop the node.");
     spdlog::info("[node] Please wait while the node is starting...");
 
+    // Probe the system CSPRNG before anything can need it. Whether it works is
+    // a constant for the life of the process, so this is the one point where an
+    // unusable one is both detectable and actionable: past here, every draw is
+    // infallible and no caller carries an error path for it.
+    if (auto const ec = pseudo_random::check_available()) {
+        spdlog::error("[node] System CSPRNG is unavailable: '{}'. "
+            "The node cannot generate keys, nonces or salts without it.", ec.message());
+        if (handler) {
+            handler(ec);
+        }
+        return;
+    }
+
 #if ! defined(KTH_DB_READONLY)
     auto ec = init_directory_if_necessary();
     if (ec != error::success) {
