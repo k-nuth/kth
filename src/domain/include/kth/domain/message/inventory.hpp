@@ -55,11 +55,6 @@ struct KD_API inventory {
     void reduce(inventory_vector::list& out, type_id type) const;
 
     [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
-
-    [[nodiscard]]
     size_t serialized_size(uint32_t version) const;
 
     [[nodiscard]]

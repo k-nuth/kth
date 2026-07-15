@@ -9,12 +9,6 @@ using namespace kd;
 using namespace kth::domain::message;
 
 // Start Test Suite: inventory tests
-
-TEST_CASE("inventory constructor 1 always invalid", "[inventory]") {
-    message::inventory instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("inventory constructor 2 always equals params", "[inventory]") {
     const message::inventory_vector::list values =
         {
@@ -26,7 +20,6 @@ TEST_CASE("inventory constructor 2 always equals params", "[inventory]") {
                   0x37, 0xc0, 0xb0, 0x32, 0xf0, 0xd6, 0x6e, 0xdf}})};
 
     message::inventory instance(values);
-    REQUIRE(instance.is_valid());
     REQUIRE(values == instance.inventories());
 }
 
@@ -38,7 +31,6 @@ TEST_CASE("inventory constructor 3 always equals params", "[inventory]") {
             message::inventory_vector(type, hash)};
 
     message::inventory instance(std::move(values));
-    REQUIRE(instance.is_valid());
     auto inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
     REQUIRE(type == inventories[0].type());
@@ -51,7 +43,6 @@ TEST_CASE("inventory constructor 4 always equals params", "[inventory]") {
     hash_list const hashes = {hash};
 
     message::inventory instance(hashes, type);
-    REQUIRE(instance.is_valid());
     auto inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
     REQUIRE(type == inventories[0].type());
@@ -63,7 +54,6 @@ TEST_CASE("inventory constructor 5 always equals params", "[inventory]") {
     auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::inventory instance{{type, hash}};
-    REQUIRE(instance.is_valid());
     auto inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
     REQUIRE(type == inventories[0].type());
@@ -75,7 +65,6 @@ TEST_CASE("inventory constructor 6 always equals params", "[inventory]") {
     auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     const message::inventory value{{type, hash}};
-    REQUIRE(value.is_valid());
     message::inventory instance(value);
     auto inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
@@ -89,7 +78,6 @@ TEST_CASE("inventory constructor 7 always equals params", "[inventory]") {
     auto hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     message::inventory value{{type, hash}};
-    REQUIRE(value.is_valid());
     message::inventory instance(std::move(value));
     auto inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
@@ -120,13 +108,10 @@ TEST_CASE("inventory from data valid input success", "[inventory]") {
     auto const result_exp = inventory::from_data(reader, version);
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(version));
     REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
 }
-
-
 
 TEST_CASE("inventory inventories accessor 1 always returns initialized value", "[inventory]") {
     const message::inventory_vector::list values =
@@ -179,10 +164,8 @@ TEST_CASE("inventory operator assign equals always matches equivalent", "[invent
                                       "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash)};
 
     message::inventory instance;
-    REQUIRE( ! instance.is_valid());
 
     instance = message::inventory(elements);
-    REQUIRE(instance.is_valid());
     REQUIRE(elements == instance.inventories());
 }
 

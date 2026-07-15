@@ -22,15 +22,6 @@ send_compact::send_compact(bool high_bandwidth_mode, uint64_t version)
       version_(version) {
 }
 
-bool send_compact::is_valid() const {
-    return (version_ != 0);
-}
-
-void send_compact::reset() {
-    high_bandwidth_mode_ = false;
-    version_ = 0;
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

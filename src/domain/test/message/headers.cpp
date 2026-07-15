@@ -9,12 +9,6 @@ using namespace kd;
 using namespace kth::domain::message;
 
 // Start Test Suite: headers tests
-
-TEST_CASE("headers constructor 1 always initialized invalid", "[headers]") {
-    headers instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("headers constructor 2 always equals params", "[headers]") {
     header::list const expected{
         header(
@@ -33,7 +27,6 @@ TEST_CASE("headers constructor 2 always equals params", "[headers]") {
             34564u)};
 
     headers instance(expected);
-    REQUIRE(instance.is_valid());
     REQUIRE(instance.elements() == expected);
 }
 
@@ -55,7 +48,6 @@ TEST_CASE("headers constructor 3 always equals params", "[headers]") {
             34564u)};
 
     headers instance(std::move(expected));
-    REQUIRE(instance.is_valid());
     REQUIRE(instance.elements().size() == 2u);
 }
 
@@ -76,7 +68,6 @@ TEST_CASE("headers constructor 4 always equals params", "[headers]") {
              4356344u,
              34564u)});
 
-    REQUIRE(instance.is_valid());
     REQUIRE(instance.elements().size() == 2u);
 }
 
@@ -161,13 +152,10 @@ TEST_CASE("headers from data valid input success", "[headers]") {
     auto const result_exp = headers::from_data(reader, version);
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
-    REQUIRE(result.is_valid());
     REQUIRE(result == expected);
     REQUIRE(result.serialized_size(version) == data.size());
     REQUIRE(result.serialized_size(version) == expected.serialized_size(version));
 }
-
-
 
 TEST_CASE("headers elements accessor 1 always returns initialized value", "[headers]") {
     header::list const expected{
@@ -255,37 +243,6 @@ TEST_CASE("headers command setter 2 roundtrip success", "[headers]") {
     REQUIRE(instance.elements().empty());
     instance.set_elements(std::move(values));
     REQUIRE(instance.elements().size() == 2u);
-}
-
-TEST_CASE("headers operator assign equals always matches equivalent", "[headers]") {
-    message::headers value(
-        {header{
-             1u,
-             "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"_hash,
-             "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"_hash,
-             10u,
-             100u,
-             1000u},
-         header{
-             2u,
-             "abababababababababababababababababababababababababababababababab"_hash,
-             "babababababababababababababababababababababababababababababababa"_hash,
-             20u,
-             200u,
-             2000u},
-         header{
-             3u,
-             "e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"_hash,
-             "7373737373737373737373737373737373737373737373737373737373737373"_hash,
-             30u,
-             300u,
-             3000u}});
-
-    REQUIRE(value.is_valid());
-    message::headers instance;
-    REQUIRE( ! instance.is_valid());
-    instance = std::move(value);
-    REQUIRE(instance.is_valid());
 }
 
 TEST_CASE("headers operator boolean equals duplicates returns true", "[headers]") {

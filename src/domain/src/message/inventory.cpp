@@ -41,15 +41,6 @@ inventory::inventory(std::initializer_list<inventory_vector> const& values)
     : inventories_(values)
 {}
 
-bool inventory::is_valid() const {
-    return !inventories_.empty();
-}
-
-void inventory::reset() {
-    inventories_.clear();
-    inventories_.shrink_to_fit();
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

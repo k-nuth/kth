@@ -11,12 +11,6 @@ std::string const get_address::command = "getaddr";
 uint32_t const get_address::version_minimum = version::level::minimum;
 uint32_t const get_address::version_maximum = version::level::maximum;
 
-bool get_address::is_valid() const {
-    return true;
-}
-
-void get_address::reset() {}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

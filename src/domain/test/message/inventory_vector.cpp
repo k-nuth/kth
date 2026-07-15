@@ -58,34 +58,19 @@ TEST_CASE("inventory vector to type 0x94a0 returns double spend proofs", "[inven
     REQUIRE(inventory_vector::type_id::double_spend_proof == inventory_vector::to_type(0x94a0));
 }
 
-TEST_CASE("inventory vector constructor 1 always invalid", "[inventory vector]") {
-    inventory_vector instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("inventory vector constructor 2 always equals params", "[inventory vector]") {
     inventory_vector::type_id type = inventory_vector::type_id::block;
     hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     inventory_vector instance(type, hash);
-    REQUIRE(instance.is_valid());
     REQUIRE(type == instance.type());
     REQUIRE(hash == instance.hash());
-}
-
-TEST_CASE("inventory vector constructor 3 always equals params", "[inventory vector]") {
-    inventory_vector::type_id type = inventory_vector::type_id::block;
-    hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
-    inventory_vector instance(type, std::move(hash));
-    REQUIRE(instance.is_valid());
 }
 
 TEST_CASE("inventory vector constructor 4 always equals params", "[inventory vector]") {
     inventory_vector::type_id type = inventory_vector::type_id::block;
     hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     inventory_vector const expected(type, hash);
-    REQUIRE(expected.is_valid());
     inventory_vector instance(expected);
-    REQUIRE(instance.is_valid());
     REQUIRE(expected == instance);
 }
 
@@ -93,9 +78,7 @@ TEST_CASE("inventory vector constructor 5 always equals params", "[inventory vec
     inventory_vector::type_id type = inventory_vector::type_id::block;
     hash_digest hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
     inventory_vector expected(type, hash);
-    REQUIRE(expected.is_valid());
     inventory_vector instance(std::move(expected));
-    REQUIRE(instance.is_valid());
     REQUIRE(type == instance.type());
     REQUIRE(hash == instance.hash());
 }
@@ -122,13 +105,10 @@ TEST_CASE("inventory vector from data valid input success", "[inventory vector]"
     auto const result_exp = inventory_vector::from_data(reader, version);
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(version));
     REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
 }
-
-
 
 TEST_CASE("inventory vector is block type block returns true", "[inventory vector]") {
     inventory_vector instance;
@@ -211,32 +191,15 @@ TEST_CASE("inventory vector hash setter 2 roundtrip success", "[inventory vector
     REQUIRE(duplicate == instance.hash());
 }
 
-TEST_CASE("inventory vector operator assign equals 1 always matches equivalent", "[inventory vector]") {
-    inventory_vector value(
-        inventory_vector::type_id::compact_block,
-        "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
-
-    REQUIRE(value.is_valid());
-
-    inventory_vector instance;
-    REQUIRE( ! instance.is_valid());
-
-    instance = std::move(value);
-    REQUIRE(instance.is_valid());
-}
-
 TEST_CASE("inventory vector operator assign equals 2 always matches equivalent", "[inventory vector]") {
     inventory_vector value(
         inventory_vector::type_id::compact_block,
         "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash);
 
-    REQUIRE(value.is_valid());
 
     inventory_vector instance;
-    REQUIRE( ! instance.is_valid());
 
     instance = value;
-    REQUIRE(instance.is_valid());
     REQUIRE(value == instance);
 }
 

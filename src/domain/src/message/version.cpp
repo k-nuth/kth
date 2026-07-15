@@ -21,31 +21,6 @@ version::version(uint32_t value, uint64_t services, uint64_t timestamp, network_
     : value_(value), services_(services), timestamp_(timestamp), address_receiver_(address_receiver), address_sender_(address_sender), nonce_(nonce), user_agent_(std::move(user_agent)), start_height_(start_height), relay_(relay) {
 }
 
-bool version::is_valid() const {
-    return value_ != 0
-        || services_ != 0
-        || timestamp_ != 0
-        || address_receiver_.is_valid()
-        || address_sender_.is_valid()
-        || nonce_ != 0
-        || ! user_agent_.empty()
-        || start_height_ != 0
-        || relay_;
-}
-
-void version::reset() {
-    value_ = 0;
-    services_ = 0;
-    timestamp_ = 0;
-    address_receiver_.reset();
-    address_sender_.reset();
-    nonce_ = 0;
-    user_agent_.clear();
-    user_agent_.shrink_to_fit();
-    start_height_ = 0;
-    relay_ = false;
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

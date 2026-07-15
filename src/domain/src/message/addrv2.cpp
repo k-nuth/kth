@@ -129,15 +129,6 @@ addrv2::addrv2(entry_list&& addresses)
     : addresses_(std::move(addresses))
 {}
 
-bool addrv2::is_valid() const {
-    return !addresses_.empty();
-}
-
-void addrv2::reset() {
-    addresses_.clear();
-    addresses_.shrink_to_fit();
-}
-
 addrv2::entry_list& addrv2::addresses() {
     return addresses_;
 }

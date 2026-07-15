@@ -8,12 +8,6 @@ using namespace kth;
 using namespace kd;
 
 // Start Test Suite: send compact tests
-
-TEST_CASE("send compact constructor 1 always invalid", "[send compact]") {
-    message::send_compact instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("send compact constructor 2 always equals params", "[send compact]") {
     bool mode = true;
     uint64_t version = 1245436u;
@@ -32,10 +26,8 @@ TEST_CASE("send compact constructor 4 always equals params", "[send compact]") {
     bool mode = true;
     uint64_t version = 1245436u;
     message::send_compact expected(mode, version);
-    REQUIRE(expected.is_valid());
 
     message::send_compact instance(std::move(expected));
-    REQUIRE(instance.is_valid());
     REQUIRE(mode == instance.high_bandwidth_mode());
     REQUIRE(version == instance.version());
 }
@@ -49,11 +41,8 @@ TEST_CASE("send compact from data valid input success", "[send compact]") {
     auto const result = std::move(*result_exp);
 
     REQUIRE(message::send_compact::satoshi_fixed_size(message::send_compact::version_minimum) == data.size());
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
 }
-
-
 
 TEST_CASE("send compact from data 1 invalid mode byte failure", "[send compact]") {
     data_chunk raw_data{0x0f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
@@ -108,11 +97,9 @@ TEST_CASE("send compact operator assign equals always matches equivalent", "[sen
     bool mode = false;
     uint64_t version = 210u;
     message::send_compact value(mode, version);
-    REQUIRE(value.is_valid());
 
     message::send_compact instance;
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(mode == instance.high_bandwidth_mode());
     REQUIRE(version == instance.version());
 }

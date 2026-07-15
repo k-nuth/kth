@@ -167,8 +167,6 @@ TEST_CASE("block factory data 1 genesis mainnet success", "[message block]") {
     REQUIRE(raw_reserialization.size() == block.serialized_size(version::level::minimum));
 }
 
-
-
 TEST_CASE("block operator assign equals 1 always matches equivalent", "[message block]") {
     chain::header const header(10u,
                                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,

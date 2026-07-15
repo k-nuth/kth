@@ -8,12 +8,6 @@ using namespace kth;
 using namespace kd;
 
 // Start Test Suite: block transactions tests
-
-TEST_CASE("block transactions constructor 1 always invalid", "[block transactions]") {
-    message::block_transactions instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("block transactions constructor 2 always equals params", "[block transactions]") {
     hash_digest const hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
 
@@ -23,7 +17,6 @@ TEST_CASE("block transactions constructor 2 always equals params", "[block trans
         chain::transaction(4, 16, {}, {})};
 
     message::block_transactions instance(hash, transactions);
-    REQUIRE(instance.is_valid());
     REQUIRE(hash == instance.block_hash());
     REQUIRE(transactions == instance.transactions());
 }
@@ -41,7 +34,6 @@ TEST_CASE("block transactions constructor 3 always equals params", "[block trans
     message::block_transactions instance(std::move(dup_hash),
                                          std::move(dup_transactions));
 
-    REQUIRE(instance.is_valid());
     REQUIRE(hash == instance.block_hash());
     REQUIRE(transactions == instance.transactions());
 }
@@ -57,7 +49,6 @@ TEST_CASE("block transactions constructor 4 always equals params", "[block trans
     message::block_transactions value(hash, transactions);
     message::block_transactions instance(value);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(value == instance);
     REQUIRE(hash == instance.block_hash());
     REQUIRE(transactions == instance.transactions());
@@ -74,7 +65,6 @@ TEST_CASE("block transactions constructor 5 always equals params", "[block trans
     message::block_transactions value(hash, transactions);
     message::block_transactions instance(std::move(value));
 
-    REQUIRE(instance.is_valid());
     REQUIRE(hash == instance.block_hash());
     REQUIRE(transactions == instance.transactions());
 }
@@ -207,7 +197,6 @@ TEST_CASE("block transactions from data valid input success", "[block transactio
     REQUIRE(result_exp2);
     auto const result = std::move(*result_exp2);
 
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(message::block_transactions::version_minimum));
     REQUIRE(expected.serialized_size(message::block_transactions::version_minimum) == result.serialized_size(message::block_transactions::version_minimum));
@@ -314,11 +303,8 @@ TEST_CASE("block transactions operator assign equals always matches equivalent",
         chain::transaction(4, 16, {}, {})};
 
     message::block_transactions value(hash, transactions);
-    REQUIRE(value.is_valid());
     message::block_transactions instance;
-    REQUIRE( ! instance.is_valid());
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(hash == instance.block_hash());
     REQUIRE(transactions == instance.transactions());
 }

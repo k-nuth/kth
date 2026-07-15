@@ -39,11 +39,6 @@ struct KD_API get_address {
     }
 
     [[nodiscard]]
-    bool is_valid() const;
-
-    void reset();
-
-    [[nodiscard]]
     size_t serialized_size(uint32_t version) const;
 
     static

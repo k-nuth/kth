@@ -8,12 +8,6 @@ using namespace kth;
 using namespace kd;
 
 // Start Test Suite: alert payload tests
-
-TEST_CASE("alert payload constructor 1 always invalid", "[alert payload]") {
-    message::alert_payload instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("alert payload constructor 2 always equals params", "[alert payload]") {
     uint32_t const version = 3452u;
     uint64_t const relay_until = 64556u;
@@ -33,7 +27,6 @@ TEST_CASE("alert payload constructor 2 always equals params", "[alert payload]")
                                     cancel, set_cancel, min_version, max_version, set_sub_version,
                                     priority, comment, status_bar, reserved);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(version == instance.version());
     REQUIRE(relay_until == instance.relay_until());
     REQUIRE(expiration == instance.expiration());
@@ -75,7 +68,6 @@ TEST_CASE("alert payload constructor 3 always equals params", "[alert payload]")
                                     std::move(dup_set_sub_version), priority, std::move(dup_comment),
                                     std::move(dup_status_bar), std::move(dup_reserved));
 
-    REQUIRE(instance.is_valid());
     REQUIRE(version == instance.version());
     REQUIRE(relay_until == instance.relay_until());
     REQUIRE(expiration == instance.expiration());
@@ -112,7 +104,6 @@ TEST_CASE("alert payload constructor 4 always equals params", "[alert payload]")
 
     message::alert_payload instance(value);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(version == instance.version());
     REQUIRE(relay_until == instance.relay_until());
     REQUIRE(expiration == instance.expiration());
@@ -149,7 +140,6 @@ TEST_CASE("alert payload constructor 5 always equals params", "[alert payload]")
 
     message::alert_payload instance(std::move(value));
 
-    REQUIRE(instance.is_valid());
     REQUIRE(version == instance.version());
     REQUIRE(relay_until == instance.relay_until());
     REQUIRE(expiration == instance.expiration());
@@ -172,7 +162,6 @@ TEST_CASE("alert payload from data insufficient bytes failure", "[alert payload]
     byte_reader reader(raw);
     auto result = message::alert_payload::from_data(reader, message::version::level::minimum);
     REQUIRE( ! result);
-    REQUIRE( ! instance.is_valid());
 }
 
 TEST_CASE("alert payload from data wiki sample test success", "[alert payload]") {
@@ -210,7 +199,6 @@ TEST_CASE("alert payload from data wiki sample test success", "[alert payload]")
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
 
-    REQUIRE(result.is_valid());
     REQUIRE(raw.size() == result.serialized_size(message::version::level::minimum));
     REQUIRE(result == expected);
 
@@ -242,13 +230,10 @@ TEST_CASE("alert payload from data roundtrip success", "[alert payload]") {
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
 
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(message::version::level::minimum));
     REQUIRE(expected.serialized_size(message::version::level::minimum) == result.serialized_size(message::version::level::minimum));
 }
-
-
 
 TEST_CASE("alert payload version roundtrip success", "[alert payload]") {
     uint32_t value = 1234u;
@@ -309,7 +294,6 @@ TEST_CASE("alert payload set cancel accessor 1 always returns initialized", "[al
                                     cancel, set_cancel, min_version, max_version, set_sub_version,
                                     priority, comment, status_bar, reserved);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(set_cancel == instance.set_cancel());
 }
 
@@ -332,7 +316,6 @@ TEST_CASE("alert payload set cancel accessor 2 always returns initialized", "[al
                                           cancel, set_cancel, min_version, max_version, set_sub_version,
                                           priority, comment, status_bar, reserved);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(set_cancel == instance.set_cancel());
 }
 
@@ -388,7 +371,6 @@ TEST_CASE("alert payload set sub version accessor 1 always returns initialized",
                                     cancel, set_cancel, min_version, max_version, set_sub_version,
                                     priority, comment, status_bar, reserved);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(set_sub_version == instance.set_sub_version());
 }
 
@@ -411,7 +393,6 @@ TEST_CASE("alert payload set sub version accessor 2 always returns initialized",
                                           cancel, set_cancel, min_version, max_version, set_sub_version,
                                           priority, comment, status_bar, reserved);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(set_sub_version == instance.set_sub_version());
 }
 
@@ -459,7 +440,6 @@ TEST_CASE("alert payload comment accessor 1 always returns initialized", "[alert
                                     cancel, set_cancel, min_version, max_version, set_sub_version,
                                     priority, comment, status_bar, reserved);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(comment == instance.comment());
 }
 
@@ -482,7 +462,6 @@ TEST_CASE("alert payload comment accessor 2 always returns initialized", "[alert
                                           cancel, set_cancel, min_version, max_version, set_sub_version,
                                           priority, comment, status_bar, reserved);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(comment == instance.comment());
 }
 
@@ -522,7 +501,6 @@ TEST_CASE("alert payload status bar accessor 1 always returns initialized", "[al
                                     cancel, set_cancel, min_version, max_version, set_sub_version,
                                     priority, comment, status_bar, reserved);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(status_bar == instance.status_bar());
 }
 
@@ -545,7 +523,6 @@ TEST_CASE("alert payload status bar accessor 2 always returns initialized", "[al
                                           cancel, set_cancel, min_version, max_version, set_sub_version,
                                           priority, comment, status_bar, reserved);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(status_bar == instance.status_bar());
 }
 
@@ -585,7 +562,6 @@ TEST_CASE("alert payload reserved accessor 1 always returns initialized", "[aler
                                     cancel, set_cancel, min_version, max_version, set_sub_version,
                                     priority, comment, status_bar, reserved);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(reserved == instance.reserved());
 }
 
@@ -608,7 +584,6 @@ TEST_CASE("alert payload reserved accessor 2 always returns initialized", "[aler
                                           cancel, set_cancel, min_version, max_version, set_sub_version,
                                           priority, comment, status_bar, reserved);
 
-    REQUIRE(instance.is_valid());
     REQUIRE(reserved == instance.reserved());
 }
 
@@ -648,13 +623,10 @@ TEST_CASE("alert payload operator assign equals always matches equivalent", "[al
                                  cancel, set_cancel, min_version, max_version, set_sub_version,
                                  priority, comment, status_bar, reserved);
 
-    REQUIRE(value.is_valid());
 
     message::alert_payload instance;
-    REQUIRE( ! instance.is_valid());
 
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(version == instance.version());
     REQUIRE(relay_until == instance.relay_until());
     REQUIRE(expiration == instance.expiration());

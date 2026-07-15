@@ -59,19 +59,6 @@ reject::reject(reason_code code, std::string&& message, std::string&& reason, ha
 //     return *this;
 // }
 
-bool reject::is_valid() const {
-    return !message_.empty() || (code_ != reason_code::undefined) || !reason_.empty() || (data_ != null_hash);
-}
-
-void reject::reset() {
-    message_.clear();
-    message_.shrink_to_fit();
-    code_ = reason_code::undefined;
-    reason_.clear();
-    reason_.shrink_to_fit();
-    data_.fill(0);
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

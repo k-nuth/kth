@@ -9,12 +9,6 @@ using namespace kd;
 using namespace kth::domain::message;
 
 // Start Test Suite: get data tests
-
-TEST_CASE("get data constructor 1 always invalid", "[get data]") {
-    get_data const instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("get data constructor 2 always equals params", "[get data]") {
     static inventory_vector::list const values =
         {
@@ -26,7 +20,6 @@ TEST_CASE("get data constructor 2 always equals params", "[get data]") {
                   0x37, 0xc0, 0xb0, 0x32, 0xf0, 0xd6, 0x6e, 0xdf}}}};
 
     get_data const instance(values);
-    REQUIRE(instance.is_valid());
     REQUIRE(values == instance.inventories());
 }
 
@@ -37,7 +30,6 @@ TEST_CASE("get data constructor 3 always equals params", "[get data]") {
         inventory_vector(type, hash)};
 
     get_data const instance(std::move(values));
-    REQUIRE(instance.is_valid());
     auto const inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
     REQUIRE(type == inventories[0].type());
@@ -50,7 +42,6 @@ TEST_CASE("get data constructor 4 always equals params", "[get data]") {
     static hash_list const hashes{hash};
 
     get_data const instance(hashes, type);
-    REQUIRE(instance.is_valid());
     auto inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
     REQUIRE(type == inventories[0].type());
@@ -62,7 +53,6 @@ TEST_CASE("get data constructor 5 always equals params", "[get data]") {
     static auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     get_data const instance{{type, hash}};
-    REQUIRE(instance.is_valid());
     auto inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
     REQUIRE(type == inventories[0].type());
@@ -74,7 +64,6 @@ TEST_CASE("get data constructor 6 always equals params", "[get data]") {
     static auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     get_data const value{{type, hash}};
-    REQUIRE(value.is_valid());
     get_data const instance(value);
     auto const inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
@@ -88,7 +77,6 @@ TEST_CASE("get data constructor 7 always equals params", "[get data]") {
     static auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
 
     get_data const value{{type, hash}};
-    REQUIRE(value.is_valid());
     get_data const instance(std::move(value));
     auto const inventories = instance.inventories();
     REQUIRE(1u == inventories.size());
@@ -127,13 +115,10 @@ TEST_CASE("get data from data valid input success", "[get data]") {
     auto const result_exp = get_data::from_data(reader, version);
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(version));
     REQUIRE(expected.serialized_size(version) == result.serialized_size(version));
 }
-
-
 
 TEST_CASE("get data operator assign equals always matches equivalent", "[get data]") {
     static auto const hash = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
@@ -141,13 +126,10 @@ TEST_CASE("get data operator assign equals always matches equivalent", "[get dat
         inventory_vector(inventory_vector::type_id::error, hash)};
 
     get_data value(elements);
-    REQUIRE(value.is_valid());
 
     get_data instance;
-    REQUIRE( ! instance.is_valid());
 
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(elements == instance.inventories());
 }
 

@@ -18,7 +18,6 @@ TEST_CASE("get address - roundtrip to data factory from data chunk", "[get addre
     auto const result = std::move(*result_exp);
 
     REQUIRE(0u == data.size());
-    REQUIRE(result.is_valid());
     REQUIRE(0u == result.serialized_size(message::version::level::minimum));
 }
 

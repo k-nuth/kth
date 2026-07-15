@@ -23,15 +23,6 @@ filter_add::filter_add(data_chunk&& data)
     : data_(std::move(data)) {
 }
 
-bool filter_add::is_valid() const {
-    return !data_.empty();
-}
-
-void filter_add::reset() {
-    data_.clear();
-    data_.shrink_to_fit();
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

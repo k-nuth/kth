@@ -22,18 +22,6 @@ filter_load::filter_load(data_chunk&& filter, uint32_t hash_functions, uint32_t 
     : filter_(std::move(filter)), hash_functions_(hash_functions), tweak_(tweak), flags_(flags) {
 }
 
-bool filter_load::is_valid() const {
-    return !filter_.empty() || (hash_functions_ != 0) || (tweak_ != 0) || (flags_ != 0x00);
-}
-
-void filter_load::reset() {
-    filter_.clear();
-    filter_.shrink_to_fit();
-    hash_functions_ = 0;
-    tweak_ = 0;
-    flags_ = 0x00;
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

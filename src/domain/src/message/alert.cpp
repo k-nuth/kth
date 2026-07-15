@@ -23,17 +23,6 @@ alert::alert(data_chunk&& payload, data_chunk&& signature)
     : payload_(std::move(payload)), signature_(std::move(signature)) {
 }
 
-bool alert::is_valid() const {
-    return !payload_.empty() || !signature_.empty();
-}
-
-void alert::reset() {
-    payload_.clear();
-    payload_.shrink_to_fit();
-    signature_.clear();
-    signature_.shrink_to_fit();
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

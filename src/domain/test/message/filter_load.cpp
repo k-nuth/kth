@@ -8,12 +8,6 @@ using namespace kth;
 using namespace kd;
 
 // Start Test Suite: filter load tests
-
-TEST_CASE("filter load constructor 1 always invalid", "[filter load]") {
-    message::filter_load instance;
-    REQUIRE( ! instance.is_valid());
-}
-
 TEST_CASE("filter load constructor 2 always equals params", "[filter load]") {
     data_chunk const filter = {0x0f, 0xf0, 0x55, 0xaa};
     uint32_t hash_functions = 48u;
@@ -21,7 +15,6 @@ TEST_CASE("filter load constructor 2 always equals params", "[filter load]") {
     uint8_t flags = 0xae;
 
     message::filter_load instance(filter, hash_functions, tweak, flags);
-    REQUIRE(instance.is_valid());
     REQUIRE(filter == instance.filter());
     REQUIRE(hash_functions == instance.hash_functions());
     REQUIRE(tweak == instance.tweak());
@@ -36,7 +29,6 @@ TEST_CASE("filter load constructor 3 always equals params", "[filter load]") {
     uint8_t flags = 0xae;
 
     message::filter_load instance(std::move(dup_filter), hash_functions, tweak, flags);
-    REQUIRE(instance.is_valid());
     REQUIRE(filter == instance.filter());
     REQUIRE(hash_functions == instance.hash_functions());
     REQUIRE(tweak == instance.tweak());
@@ -51,7 +43,6 @@ TEST_CASE("filter load constructor 4 always equals params", "[filter load]") {
 
     const message::filter_load value(filter, hash_functions, tweak, flags);
     message::filter_load instance(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(value == instance);
     REQUIRE(filter == instance.filter());
     REQUIRE(hash_functions == instance.hash_functions());
@@ -67,7 +58,6 @@ TEST_CASE("filter load constructor 5 always equals params", "[filter load]") {
 
     message::filter_load value(filter, hash_functions, tweak, flags);
     message::filter_load instance(std::move(value));
-    REQUIRE(instance.is_valid());
     REQUIRE(filter == instance.filter());
     REQUIRE(hash_functions == instance.hash_functions());
     REQUIRE(tweak == instance.tweak());
@@ -111,14 +101,11 @@ TEST_CASE("filter load from data valid input success", "[filter load]") {
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
 
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
     REQUIRE(data.size() == result.serialized_size(message::version::level::maximum));
     REQUIRE(expected.serialized_size(message::version::level::maximum) ==
                         result.serialized_size(message::version::level::maximum));
 }
-
-
 
 TEST_CASE("filter load filter accessor 1 always returns initialized value", "[filter load]") {
     data_chunk const filter = {0x0f, 0xf0, 0x55, 0xaa};
@@ -219,13 +206,10 @@ TEST_CASE("filter load operator assign equals always matches equivalent", "[filt
     uint8_t flags = 0xae;
     message::filter_load value(filter, hash_functions, tweak, flags);
 
-    REQUIRE(value.is_valid());
 
     message::filter_load instance;
-    REQUIRE( ! instance.is_valid());
 
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(filter == instance.filter());
     REQUIRE(hash_functions == instance.hash_functions());
     REQUIRE(tweak == instance.tweak());

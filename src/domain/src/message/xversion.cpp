@@ -12,13 +12,6 @@ std::string const xversion::command = "xversion";
 uint32_t const message::xversion::version_minimum = version::level::minimum;
 uint32_t const message::xversion::version_maximum = version::level::maximum;
 
-bool xversion::is_valid() const {
-    return true;
-}
-
-void xversion::reset() {}
-
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 

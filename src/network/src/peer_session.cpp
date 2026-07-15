@@ -632,11 +632,6 @@ awaitable_expected<raw_message> peer_session::read_message() {
 
     auto const& head = *head_result;
 
-    if (!head.is_valid()) {
-        spdlog::warn("[peer_session] Invalid heading from [{}]", authority());
-        co_return std::unexpected(error::bad_stream);
-    }
-
     if (head.magic() != protocol_magic_) {
         spdlog::debug("[peer_session] Invalid magic ({}) from [{}]", head.magic(), authority());
         co_return std::unexpected(error::bad_stream);

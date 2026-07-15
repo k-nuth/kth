@@ -58,33 +58,6 @@ TEST_CASE("double_spend_proof::spender default construct is invalid", "[double_s
     REQUIRE(s.push_data.empty());
 }
 
-TEST_CASE("double_spend_proof::spender any nonzero field is valid", "[double_spend_proof::spender]") {
-    {
-        message::double_spend_proof::spender s;
-        s.version = 1;
-    }
-    {
-        message::double_spend_proof::spender s;
-        s.out_sequence = 1;
-    }
-    {
-        message::double_spend_proof::spender s;
-        s.locktime = 1;
-    }
-    {
-        message::double_spend_proof::spender s;
-        s.prev_outs_hash = k_hash_a;
-    }
-    {
-        message::double_spend_proof::spender s;
-        s.sequence_hash = k_hash_a;
-    }
-    {
-        message::double_spend_proof::spender s;
-        s.outputs_hash = k_hash_a;
-    }
-}
-
 TEST_CASE("double_spend_proof::spender reset zeroes all fields", "[double_spend_proof::spender]") {
     auto s = make_spender();
     s.push_data = data_chunk{1, 2, 3};
@@ -179,11 +152,6 @@ TEST_CASE("double_spend_proof::spender round-trip with empty push_data preserves
 // ---------------------------------------------------------------------------
 // Constructors / predicates
 // ---------------------------------------------------------------------------
-
-TEST_CASE("double_spend_proof default construct is invalid", "[double_spend_proof]") {
-    message::double_spend_proof dsp;
-}
-
 TEST_CASE("double_spend_proof three-arg construct preserves fields", "[double_spend_proof]") {
     auto const out_point = make_out_point();
     auto const s1 = make_spender(1);
