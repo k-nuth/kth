@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <numeric>
 #include <set>
 #include <vector>
 
@@ -140,6 +141,92 @@ TEST_CASE("pseudo random wipe zeroes a range", "[pseudo random]") {
 TEST_CASE("pseudo random wipe handles an empty range", "[pseudo random]") {
     data_chunk empty;
     REQUIRE_NOTHROW(pseudo_random::wipe(empty));
+}
+
+TEST_CASE("pseudo random bounded draw stays in range", "[pseudo random]") {
+    for (size_t i = 0; i < 2000; ++i) {
+        auto const v = pseudo_random::generate<uint64_t>(10, 20);
+        REQUIRE(v >= 10);
+        REQUIRE(v <= 20);
+    }
+    // Degenerate interval.
+    REQUIRE(pseudo_random::generate<uint64_t>(7, 7) == 7u);
+    // [1, max]: the whole width bar one value. p2p_node draws ping nonces this
+    // way, where zero is a reserved sentinel, so the exclusion has to hold.
+    for (size_t i = 0; i < 2000; ++i) {
+        REQUIRE(pseudo_random::generate<uint64_t>(1, max_uint64) != 0u);
+    }
+    // Full width: the branch that rejects nothing.
+    (void)pseudo_random::generate<uint64_t>(0, max_uint64);
+    // Signed, spanning both halves -- hi - lo overflows if computed signed.
+    for (size_t i = 0; i < 500; ++i) {
+        auto const v = pseudo_random::generate<int32_t>(
+            std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max());
+        REQUIRE(v >= std::numeric_limits<int32_t>::min());
+    }
+}
+
+TEST_CASE("pseudo random bounded draw is not modulo-biased", "[pseudo random]") {
+    // Sized so a regression to `generate<uint8_t>() % span` is unmistakable.
+    // 256 % 201 == 55, so modulo would hand values 0..54 two residues each and
+    // 55..200 only one -- they would come up twice as often.
+    //
+    //   correct: P(v < 55) = 55/201  = 0.2736  ->  ~5473 of 20000
+    //   modulo:  P(v < 55) = 110/256 = 0.4297  ->  ~8594 of 20000
+    //
+    // A near-uniform span (say 0..5, where 256 % 6 == 4) would NOT do: the bias
+    // is only 43/42 there, and 20k draws cannot separate it from noise.
+    constexpr uint8_t hi = 200;
+    constexpr uint8_t doubled_below = 55;   // 256 % 201
+    constexpr size_t draws = 20000;
+
+    size_t low = 0;
+    for (size_t i = 0; i < draws; ++i) {
+        auto const v = pseudo_random::generate<uint8_t>(0, hi);
+        REQUIRE(v <= hi);
+        if (v < doubled_below) {
+            ++low;
+        }
+    }
+
+    // Correct is 5473 with a standard deviation of ~63, so this sits 16 sigma
+    // above the truth and 33 sigma below what modulo would produce.
+    INFO("low = " << low << " of " << draws << " (uniform ~5473, modulo ~8594)");
+    REQUIRE(low > 4500);
+    REQUIRE(low < 6500);
+}
+
+TEST_CASE("pseudo random shuffle permutes without losing elements", "[pseudo random]") {
+    std::vector<int> const original = [] {
+        std::vector<int> v(256);
+        std::iota(v.begin(), v.end(), 0);
+        return v;
+    }();
+
+    auto shuffled = original;
+    pseudo_random::shuffle(shuffled);
+
+    // A permutation: same multiset, different order. (Same order has odds 1/256!.)
+    REQUIRE(shuffled != original);
+    std::ranges::sort(shuffled);
+    REQUIRE(shuffled == original);
+
+    // Buffered engine: refills mid-shuffle, so exercise a range past one block.
+    std::vector<int> big(5000);
+    std::iota(big.begin(), big.end(), 0);
+    auto const before = big;
+    pseudo_random::shuffle(big);
+    REQUIRE(big != before);
+    std::ranges::sort(big);
+    REQUIRE(big == before);
+}
+
+TEST_CASE("pseudo random shuffle handles trivial ranges", "[pseudo random]") {
+    std::vector<int> empty;
+    REQUIRE_NOTHROW(pseudo_random::shuffle(empty));
+    std::vector<int> one{42};
+    REQUIRE_NOTHROW(pseudo_random::shuffle(one));
+    REQUIRE(one == std::vector<int>{42});
 }
 
 // End Test Suite

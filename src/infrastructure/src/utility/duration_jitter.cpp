@@ -8,7 +8,7 @@
 #include <cstdint>
 
 #include <kth/infrastructure/utility/asio.hpp>
-#include <kth/infrastructure/utility/pseudo_random_broken_do_not_use.hpp>
+#include <kth/infrastructure/utility/pseudo_random.hpp>
 
 namespace kth {
 
@@ -33,7 +33,7 @@ asio::duration jitter_duration(asio::duration const& expiration, uint8_t ratio) 
     }
 
     // [0..2^64) % 2500 => [0..2500]
-    auto const random_offset = int(pseudo_random_broken_do_not_use::next(0, limit));
+    auto const random_offset = int(pseudo_random::generate<uint64_t>(0, limit));
 
     // (10000 - [0..2500]) => [7500..10000]
     auto const expires = max_expire - random_offset;

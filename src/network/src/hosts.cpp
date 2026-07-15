@@ -103,7 +103,7 @@ code hosts::fetch(address& out) const {
     }
 
     // Select a random index
-    auto const random_index = pseudo_random_broken_do_not_use::next(0, size - 1);
+    auto const random_index = pseudo_random::generate<size_t>(0, size - 1);
 
     // Visit elements to find the one at random_index
     size_t current = 0;
@@ -140,7 +140,7 @@ code hosts::fetch(address::list& out, size_t requested_count) const {
     });
 
     // Shuffle and take requested count
-    pseudo_random_broken_do_not_use::shuffle(all);
+    pseudo_random::shuffle(all);
 
     auto const take_count = std::min(requested_count, all.size());
     out.reserve(take_count);
