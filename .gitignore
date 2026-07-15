@@ -20,13 +20,13 @@ hosts.cache
 other-nodes/
 src/domain/test/chain/script_vm_auto/
 src/domain/test/chain/script_vm_auto_summary.txt
-bchn/
-blockchain/
+/bchn/
+/blockchain/
 peers.dat
 build_asan/
 Testing/
 utxo-z/
-blockchain-old/
+/blockchain-old/
 
 # Local working notes (not for upstream)
 TODO.md
