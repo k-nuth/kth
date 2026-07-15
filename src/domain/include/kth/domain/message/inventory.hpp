@@ -5,10 +5,10 @@
 #ifndef KTH_DOMAIN_MESSAGE_INVENTORY_HPP
 #define KTH_DOMAIN_MESSAGE_INVENTORY_HPP
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
-#include <istream>
 #include <memory>
 #include <string>
 
@@ -29,27 +29,34 @@ struct KD_API inventory {
     using type_id = inventory_vector::type_id;
 
     inventory() = default;
-    inventory(inventory_vector::list const& values);
-    inventory(inventory_vector::list&& values);
-    inventory(hash_list const& hashes, type_id type);
-    inventory(std::initializer_list<inventory_vector> const& values);
+
+    /// Fails with error::bad_inventory_count over max_inventory entries.
+    static
+    expect<inventory> create(inventory_vector::list inventories);
+
+    /// One vector per hash, all of `type`. Same cap.
+    static
+    expect<inventory> create(hash_list const& hashes, type_id type);
 
     [[nodiscard]]
     friend bool operator==(inventory const&, inventory const&) = default;
 
-    inventory_vector::list& inventories();
-
     [[nodiscard]]
     inventory_vector::list const& inventories() const;
 
-    void set_inventories(inventory_vector::list const& value);
-    void set_inventories(inventory_vector::list&& value);
 
     static
     expect<inventory> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, uint32_t version) const;
+
+    /// Drop the vectors matching `pred`. Safe where a mutable accessor is not:
+    /// removing entries cannot exceed a maximum.
+    template <typename Predicate>
+    void erase_if(Predicate pred) {
+        std::erase_if(inventories_, pred);
+    }
 
     void to_hashes(hash_list& out, type_id type) const;
     void reduce(inventory_vector::list& out, type_id type) const;
@@ -71,6 +78,8 @@ struct KD_API inventory {
 
 
 private:
+    inventory(inventory_vector::list inventories);
+
     inventory_vector::list inventories_;
 };
 

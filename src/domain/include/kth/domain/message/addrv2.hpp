@@ -5,7 +5,6 @@
 #ifndef KTH_DOMAIN_MESSAGE_ADDRV2_HPP
 #define KTH_DOMAIN_MESSAGE_ADDRV2_HPP
 
-#include <istream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -65,19 +64,17 @@ struct KD_API addrv2 {
     using entry_list = std::vector<addrv2_entry>;
 
     addrv2() = default;
-    addrv2(entry_list const& addresses);
-    addrv2(entry_list&& addresses);
+
+    /// Fails with error::invalid_address_count over max_addresses entries.
+    static
+    expect<addrv2> create(entry_list addresses);
 
     [[nodiscard]]
     friend bool operator==(addrv2 const&, addrv2 const&) = default;
 
-    entry_list& addresses();
-
     [[nodiscard]]
     entry_list const& addresses() const;
 
-    void set_addresses(entry_list const& value);
-    void set_addresses(entry_list&& value);
 
     /// Convert to legacy network_address list (IPv4/IPv6 only)
     [[nodiscard]]
@@ -108,6 +105,8 @@ struct KD_API addrv2 {
     static constexpr size_t max_addr_size = 512;
 
 private:
+    addrv2(entry_list addresses);
+
     entry_list addresses_;
 };
 

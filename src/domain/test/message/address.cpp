@@ -40,7 +40,7 @@ TEST_CASE("address constructor 2 always equals params", "[address]") {
             "19573257168426842319857321595126"_base16,
             159u)};
 
-    address instance(addresses);
+    auto const instance = address::create(addresses).value();
 
     REQUIRE(addresses == instance.addresses());
 }
@@ -65,7 +65,7 @@ TEST_CASE("address constructor 3 always equals params", "[address]") {
 
     auto dup_addresses = addresses;
 
-    address instance(std::move(dup_addresses));
+    auto const instance = address::create(std::move(dup_addresses)).value();
 
     REQUIRE(addresses == instance.addresses());
 }
@@ -88,7 +88,7 @@ TEST_CASE("address constructor 4 always equals params", "[address]") {
             "19573257168426842319857321595126"_base16,
             159u)};
 
-    address value(addresses);
+    auto value = address::create(addresses).value();
     address instance(value);
 
     REQUIRE(value == instance);
@@ -113,7 +113,7 @@ TEST_CASE("address constructor 5 always equals params", "[address]") {
             "19573257168426842319857321595126"_base16,
             159u)};
 
-    address value(addresses);
+    auto value = address::create(addresses).value();
     address instance(std::move(value));
 
     REQUIRE(addresses == instance.addresses());
@@ -129,11 +129,11 @@ TEST_CASE("address from data insufficient bytes failure", "[address]") {
 }
 
 TEST_CASE("address from data roundtrip success", "[address]") {
-    address const expected(
+    auto const expected = address::create(
         {{734678u,
           5357534u,
           "47816a40bb92bdb4e0b8256861f96a55"_base16,
-          123u}});
+          123u}}).value();
 
     auto const data = kth::to_data_chunk(expected, version::level::minimum);
     byte_reader reader(data);
@@ -147,7 +147,7 @@ TEST_CASE("address from data roundtrip success", "[address]") {
     REQUIRE(expected.serialized_size(version::level::minimum) == serialized_size);
 }
 
-TEST_CASE("address addresses setter 1 roundtrip success", "[address]") {
+TEST_CASE("address addresses are set at construction", "[address]") {
     infrastructure::message::network_address::list const value{
         network_address(
             734678u,
@@ -165,13 +165,14 @@ TEST_CASE("address addresses setter 1 roundtrip success", "[address]") {
             "19573257168426842319857321595126"_base16,
             159u)};
 
-    address instance;
-    REQUIRE(instance.addresses() != value);
-    instance.set_addresses(value);
+    address const empty;
+    REQUIRE(empty.addresses() != value);
+
+    auto const instance = address::create(value).value();
     REQUIRE(value == instance.addresses());
 }
 
-TEST_CASE("address addresses setter 2 roundtrip success", "[address]") {
+TEST_CASE("address addresses are set at construction, by move", "[address]") {
     infrastructure::message::network_address::list const value{
         network_address(
             734678u,
@@ -190,9 +191,10 @@ TEST_CASE("address addresses setter 2 roundtrip success", "[address]") {
             159u)};
 
     auto dup_value = value;
-    address instance;
-    REQUIRE(instance.addresses() != value);
-    instance.set_addresses(std::move(dup_value));
+    address const empty;
+    REQUIRE(empty.addresses() != value);
+
+    auto const instance = address::create(std::move(dup_value)).value();
     REQUIRE(value == instance.addresses());
 }
 
@@ -214,7 +216,7 @@ TEST_CASE("address operator assign equals always matches equivalent", "[address]
             "19573257168426842319857321595126"_base16,
             159u)};
 
-    address value(addresses);
+    auto value = address::create(addresses).value();
 
 
     address instance;
@@ -224,7 +226,7 @@ TEST_CASE("address operator assign equals always matches equivalent", "[address]
 }
 
 TEST_CASE("address operator boolean equals duplicates returns true", "[address]") {
-    address const expected(
+    auto const expected = address::create(
         {network_address(
              734678u,
              5357534u,
@@ -239,14 +241,14 @@ TEST_CASE("address operator boolean equals duplicates returns true", "[address]"
              265453u,
              2115325u,
              "19573257168426842319857321595126"_base16,
-             159u)});
+             159u)}).value();
 
     address instance(expected);
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("address operator boolean equals differs returns false", "[address]") {
-    address const expected(
+    auto const expected = address::create(
         {network_address(
              734678u,
              5357534u,
@@ -261,14 +263,14 @@ TEST_CASE("address operator boolean equals differs returns false", "[address]") 
              265453u,
              2115325u,
              "19573257168426842319857321595126"_base16,
-             159u)});
+             159u)}).value();
 
     address instance;
     REQUIRE(instance != expected);
 }
 
 TEST_CASE("address operator boolean not equals duplicates returns false", "[address]") {
-    address const expected(
+    auto const expected = address::create(
         {network_address(
              734678u,
              5357534u,
@@ -283,14 +285,14 @@ TEST_CASE("address operator boolean not equals duplicates returns false", "[addr
              265453u,
              2115325u,
              "19573257168426842319857321595126"_base16,
-             159u)});
+             159u)}).value();
 
     address instance(expected);
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("address operator boolean not equals differs returns true", "[address]") {
-    address const expected(
+    auto const expected = address::create(
         {network_address(
              734678u,
              5357534u,
@@ -305,10 +307,20 @@ TEST_CASE("address operator boolean not equals differs returns true", "[address]
              265453u,
              2115325u,
              "19573257168426842319857321595126"_base16,
-             159u)});
+             159u)}).value();
 
     address instance;
     REQUIRE(instance != expected);
+}
+
+TEST_CASE("address create rejects more entries than the protocol allows", "[address]") {
+    infrastructure::message::network_address::list at_cap(max_address);
+    REQUIRE(address::create(at_cap));
+
+    infrastructure::message::network_address::list over(max_address + 1);
+    auto const result = address::create(std::move(over));
+    REQUIRE( ! result);
+    REQUIRE(result.error() == error::invalid_address_count);
 }
 
 // End Test Suite

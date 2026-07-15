@@ -225,9 +225,7 @@ bool reservation::stopped() const {
 }
 
 // Obtain and clear the outstanding blocks request.
-domain::message::get_data reservation::request(bool new_channel) {
-    domain::message::get_data packet;
-
+expect<domain::message::get_data> reservation::request(bool new_channel) {
     // We are a new channel, clear history and rate data, next block starts.
     if (new_channel) {
         reset();
@@ -240,13 +238,16 @@ domain::message::get_data reservation::request(bool new_channel) {
     if ( ! new_channel && ! pending_) {
         hash_mutex_.unlock_upgrade();
         //---------------------------------------------------------------------
-        return packet;
+        return domain::message::get_data();
     }
 
     // Build get_blocks request message.
+    domain::message::inventory_vector::list inventories;
+    inventories.reserve(heights_.size());
+
     for (auto height = heights_.right.begin(); height != heights_.right.end(); ++height) {
         static auto const id = domain::message::inventory::type_id::block;
-        packet.inventories().emplace_back(id, height->second);
+        inventories.emplace_back(id, height->second);
     }
 
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -255,7 +256,7 @@ domain::message::get_data reservation::request(bool new_channel) {
     hash_mutex_.unlock();
     ///////////////////////////////////////////////////////////////////////////
 
-    return packet;
+    return domain::message::get_data::create(std::move(inventories));
 }
 
 void reservation::insert(hash_digest&& hash, size_t height) {

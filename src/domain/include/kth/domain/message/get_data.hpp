@@ -28,10 +28,12 @@ public:
     using const_ptr = std::shared_ptr<const get_data>;
 
     get_data() = default;
-    get_data(inventory_vector::list const& values);
-    get_data(inventory_vector::list&& values);
-    get_data(hash_list const& hashes, type_id type);
-    get_data(std::initializer_list<inventory_vector> const& values);
+
+    /// Same cap as the inventory it is.
+    static
+    expect<get_data> create(inventory_vector::list inventories);
+    static
+    expect<get_data> create(hash_list const& hashes, type_id type);
     get_data(inventory&& inv)
         : inventory(std::move(inv))
     {}

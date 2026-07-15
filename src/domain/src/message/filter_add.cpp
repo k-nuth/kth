@@ -15,12 +15,17 @@ std::string const filter_add::command = "filteradd";
 uint32_t const filter_add::version_minimum = version::level::bip37;
 uint32_t const filter_add::version_maximum = version::level::maximum;
 
-filter_add::filter_add(data_chunk const& data)
-    : data_(data) {
-}
+filter_add::filter_add(data_chunk data)
+    : data_(std::move(data))
+{}
 
-filter_add::filter_add(data_chunk&& data)
-    : data_(std::move(data)) {
+// static
+expect<filter_add> filter_add::create(data_chunk data) {
+    // BIP37 caps filteradd; anything above it cannot be encoded.
+    if (data.size() > max_filter_add) {
+        return std::unexpected(error::invalid_filter_add);
+    }
+    return filter_add(std::move(data));
 }
 
 // Deserialization.
@@ -36,6 +41,7 @@ expect<filter_add> filter_add::from_data(byte_reader& reader, uint32_t version) 
     if ( ! size) {
         return std::unexpected(size.error());
     }
+    // Checked before reading, so an oversized claim cannot make us allocate.
     if (*size > max_filter_add) {
         return std::unexpected(error::invalid_filter_add);
     }
@@ -44,7 +50,7 @@ expect<filter_add> filter_add::from_data(byte_reader& reader, uint32_t version) 
     if ( ! data) {
         return std::unexpected(data.error());
     }
-    return filter_add(data_chunk(data->begin(), data->end()));
+    return create(data_chunk(data->begin(), data->end()));
 }
 
 // Serialization.
@@ -56,20 +62,8 @@ size_t filter_add::serialized_size(uint32_t /*version*/) const {
     return infrastructure::message::variable_uint_size(data_.size()) + data_.size();
 }
 
-data_chunk& filter_add::data() {
-    return data_;
-}
-
 data_chunk const& filter_add::data() const {
     return data_;
-}
-
-void filter_add::set_data(data_chunk const& value) {
-    data_ = value;
-}
-
-void filter_add::set_data(data_chunk&& value) {
-    data_ = std::move(value);
 }
 
 expect<void> filter_add::to_data(byte_writer& writer, uint32_t version) const {

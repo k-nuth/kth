@@ -26,7 +26,7 @@ TEST_CASE("headers constructor 2 always equals params", "[headers]") {
             4356344u,
             34564u)};
 
-    headers instance(expected);
+    auto const instance = headers::create(expected).value();
     REQUIRE(instance.elements() == expected);
 }
 
@@ -47,7 +47,7 @@ TEST_CASE("headers constructor 3 always equals params", "[headers]") {
             4356344u,
             34564u)};
 
-    headers instance(std::move(expected));
+    auto const instance = headers::create(std::move(expected)).value();
     REQUIRE(instance.elements().size() == 2u);
 }
 
@@ -88,12 +88,12 @@ TEST_CASE("headers constructor 5 always equals params", "[headers]") {
              4356344u,
              34564u)});
 
-    headers instance(expected);
+    headers const instance(expected);
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("headers constructor 6 always equals params", "[headers]") {
-    headers expected(
+    auto expected = headers::create(
         {header(
              10u,
              "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,
@@ -107,9 +107,9 @@ TEST_CASE("headers constructor 6 always equals params", "[headers]") {
              "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"_hash,
              753234u,
              4356344u,
-             34564u)});
+             34564u)}).value();
 
-    headers instance(std::move(expected));
+    headers const instance(std::move(expected));
     REQUIRE(instance.elements().size() == 2u);
 }
 
@@ -174,7 +174,7 @@ TEST_CASE("headers elements accessor 1 always returns initialized value", "[head
             4356344u,
             34564u)};
 
-    message::headers instance(expected);
+    auto const instance = message::headers::create(expected).value();
     REQUIRE(instance.elements() == expected);
 }
 
@@ -195,7 +195,7 @@ TEST_CASE("headers elements accessor 2 always returns initialized value", "[head
             4356344u,
             34564u)};
 
-    const message::headers instance(expected);
+    auto const instance = message::headers::create(expected).value();
     REQUIRE(instance.elements() == expected);
 }
 
@@ -216,9 +216,10 @@ TEST_CASE("headers command setter 1 roundtrip success", "[headers]") {
             4356344u,
             34564u)};
 
-    message::headers instance;
-    REQUIRE(instance.elements() != expected);
-    instance.set_elements(expected);
+    message::headers const empty;
+    REQUIRE(empty.elements() != expected);
+
+    auto const instance = message::headers::create(expected).value();
     REQUIRE(instance.elements() == expected);
 }
 
@@ -239,9 +240,10 @@ TEST_CASE("headers command setter 2 roundtrip success", "[headers]") {
             4356344u,
             34564u)};
 
-    message::headers instance;
-    REQUIRE(instance.elements().empty());
-    instance.set_elements(std::move(values));
+    message::headers const empty;
+    REQUIRE(empty.elements().empty());
+
+    auto const instance = message::headers::create(std::move(values)).value();
     REQUIRE(instance.elements().size() == 2u);
 }
 
@@ -269,7 +271,7 @@ TEST_CASE("headers operator boolean equals duplicates returns true", "[headers]"
              300u,
              3000u}});
 
-    message::headers instance(expected);
+    message::headers const instance(expected);
     REQUIRE(instance == expected);
 }
 
@@ -325,7 +327,7 @@ TEST_CASE("headers operator boolean not equals duplicates returns false", "[head
              300u,
              3000u}});
 
-    message::headers instance(expected);
+    message::headers const instance(expected);
     REQUIRE(instance == expected);
 }
 

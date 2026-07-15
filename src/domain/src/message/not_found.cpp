@@ -16,20 +16,22 @@ std::string const not_found::command = "notfound";
 uint32_t const not_found::version_minimum = version::level::bip37;
 uint32_t const not_found::version_maximum = version::level::maximum;
 
-not_found::not_found(inventory_vector::list const& values)
-    : inventory(values) {
+// static
+expect<not_found> not_found::create(inventory_vector::list inventories) {
+    auto inv = inventory::create(std::move(inventories));
+    if ( ! inv) {
+        return std::unexpected(inv.error());
+    }
+    return not_found(std::move(*inv));
 }
 
-not_found::not_found(inventory_vector::list&& values)
-    : inventory(values) {
-}
-
-not_found::not_found(hash_list const& hashes, inventory::type_id type)
-    : inventory(hashes, type) {
-}
-
-not_found::not_found(std::initializer_list<inventory_vector> const& values)
-    : inventory(values) {
+// static
+expect<not_found> not_found::create(hash_list const& hashes, type_id type) {
+    auto inv = inventory::create(hashes, type);
+    if ( ! inv) {
+        return std::unexpected(inv.error());
+    }
+    return not_found(std::move(*inv));
 }
 
 // Deserialization.

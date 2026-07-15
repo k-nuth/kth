@@ -19,27 +19,27 @@ std::string const inventory::command = "inv";
 uint32_t const inventory::version_minimum = version::level::minimum;
 uint32_t const inventory::version_maximum = version::level::maximum;
 
-inventory::inventory(inventory_vector::list const& values)
-    : inventories_(values)
+inventory::inventory(inventory_vector::list inventories)
+    : inventories_(std::move(inventories))
 {}
 
-inventory::inventory(inventory_vector::list&& values)
-    : inventories_(std::move(values))
-{}
-
-inventory::inventory(hash_list const& hashes, type_id type) {
-    inventories_.clear();
-    inventories_.reserve(hashes.size());
-    auto const map = [type, this](hash_digest const& hash) {
-        inventories_.emplace_back(type, hash);
-    };
-
-    std::for_each(hashes.begin(), hashes.end(), map);
+// static
+expect<inventory> inventory::create(inventory_vector::list inventories) {
+    if (inventories.size() > max_inventory) {
+        return std::unexpected(error::bad_inventory_count);
+    }
+    return inventory(std::move(inventories));
 }
 
-inventory::inventory(std::initializer_list<inventory_vector> const& values)
-    : inventories_(values)
-{}
+// static
+expect<inventory> inventory::create(hash_list const& hashes, type_id type) {
+    inventory_vector::list inventories;
+    inventories.reserve(hashes.size());
+    for (auto const& hash : hashes) {
+        inventories.emplace_back(type, hash);
+    }
+    return create(std::move(inventories));
+}
 
 // Deserialization.
 //-----------------------------------------------------------------------------
@@ -63,13 +63,11 @@ expect<inventory> inventory::from_data(byte_reader& reader, uint32_t version) {
         }
         inventories.emplace_back(std::move(*inventory));
     }
-    return inventory(std::move(inventories));
+    return create(std::move(inventories));
 }
 
 // Serialization.
 //-----------------------------------------------------------------------------
-
-
 
 void inventory::to_hashes(hash_list& out, type_id type) const {
     out.reserve(inventories_.size());
@@ -107,20 +105,8 @@ size_t inventory::count(type_id type) const {
     return count_if(inventories_.begin(), inventories_.end(), is_type);
 }
 
-inventory_vector::list& inventory::inventories() {
-    return inventories_;
-}
-
 inventory_vector::list const& inventory::inventories() const {
     return inventories_;
-}
-
-void inventory::set_inventories(inventory_vector::list const& value) {
-    inventories_ = value;
-}
-
-void inventory::set_inventories(inventory_vector::list&& value) {
-    inventories_ = std::move(value);
 }
 
 expect<void> inventory::to_data(byte_writer& writer, uint32_t version) const {

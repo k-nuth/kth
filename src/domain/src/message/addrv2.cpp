@@ -121,28 +121,20 @@ std::string const addrv2::command = "addrv2";
 uint32_t const addrv2::version_minimum = version::level::feature_negotiation;
 uint32_t const addrv2::version_maximum = version::level::maximum;
 
-addrv2::addrv2(entry_list const& addresses)
-    : addresses_(addresses)
-{}
-
-addrv2::addrv2(entry_list&& addresses)
+addrv2::addrv2(entry_list addresses)
     : addresses_(std::move(addresses))
 {}
 
-addrv2::entry_list& addrv2::addresses() {
+// static
+expect<addrv2> addrv2::create(entry_list addresses) {
+    if (addresses.size() > max_addresses) {
+        return std::unexpected(error::invalid_address_count);
+    }
+    return addrv2(std::move(addresses));
+}
+
+addrv2::addrv2::entry_list const& addrv2::addresses() const {
     return addresses_;
-}
-
-addrv2::entry_list const& addrv2::addresses() const {
-    return addresses_;
-}
-
-void addrv2::set_addresses(entry_list const& value) {
-    addresses_ = value;
-}
-
-void addrv2::set_addresses(entry_list&& value) {
-    addresses_ = std::move(value);
 }
 
 infrastructure::message::network_address::list addrv2::to_network_addresses() const {
@@ -235,13 +227,11 @@ expect<addrv2> addrv2::from_data(byte_reader& reader, uint32_t version) {
         addresses.push_back(std::move(entry));
     }
 
-    return addrv2(std::move(addresses));
+    return create(std::move(addresses));
 }
 
 // Serialization.
 //-----------------------------------------------------------------------------
-
-
 
 size_t addrv2::serialized_size(uint32_t /*version*/) const {
     size_t size = infrastructure::message::variable_uint_size(addresses_.size());

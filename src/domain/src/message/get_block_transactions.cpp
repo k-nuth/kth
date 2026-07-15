@@ -20,15 +20,19 @@ get_block_transactions::get_block_transactions()
     : block_hash_(null_hash)
 {}
 
-get_block_transactions::get_block_transactions(hash_digest const& block_hash, std::vector<uint64_t> const& indexes)
-    : block_hash_(block_hash)
-    , indexes_(indexes)
-{}
-
-get_block_transactions::get_block_transactions(hash_digest const& block_hash, std::vector<uint64_t>&& indexes)
+get_block_transactions::get_block_transactions(hash_digest const& block_hash, std::vector<uint64_t> indexes)
     : block_hash_(block_hash)
     , indexes_(std::move(indexes))
 {}
+
+// static
+expect<get_block_transactions> get_block_transactions::create(hash_digest const& block_hash, std::vector<uint64_t> indexes) {
+    // More indexes than a block could hold describes no block.
+    if (indexes.size() > static_absolute_max_block_size()) {
+        return std::unexpected(error::invalid_size);
+    }
+    return get_block_transactions(block_hash, std::move(indexes));
+}
 
 // Deserialization.
 //-----------------------------------------------------------------------------
@@ -55,13 +59,11 @@ expect<get_block_transactions> get_block_transactions::from_data(byte_reader& re
         }
         indexes.push_back(*index);
     }
-    return get_block_transactions(*block_hash, std::move(indexes));
+    return create(*block_hash, std::move(indexes));
 }
 
 // Serialization.
 //-----------------------------------------------------------------------------
-
-
 
 size_t get_block_transactions::serialized_size(uint32_t /*version*/) const {
     auto size = hash_size + infrastructure::message::variable_uint_size(indexes_.size());
@@ -73,32 +75,12 @@ size_t get_block_transactions::serialized_size(uint32_t /*version*/) const {
     return size;
 }
 
-hash_digest& get_block_transactions::block_hash() {
-    return block_hash_;
-}
-
 hash_digest const& get_block_transactions::block_hash() const {
     return block_hash_;
 }
 
-void get_block_transactions::set_block_hash(hash_digest const& value) {
-    block_hash_ = value;
-}
-
-std::vector<uint64_t>& get_block_transactions::indexes() {
-    return indexes_;
-}
-
 std::vector<uint64_t> const& get_block_transactions::indexes() const {
     return indexes_;
-}
-
-void get_block_transactions::set_indexes(std::vector<uint64_t> const& values) {
-    indexes_ = values;
-}
-
-void get_block_transactions::set_indexes(std::vector<uint64_t>&& values) {
-    indexes_ = values;
 }
 
 expect<void> get_block_transactions::to_data(byte_writer& writer, uint32_t version) const {
