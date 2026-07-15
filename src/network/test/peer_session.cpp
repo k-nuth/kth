@@ -138,6 +138,32 @@ TEST_CASE("peer_session negotiated version get set", "[peer_session]") {
     REQUIRE(session->negotiated_version() == 31402);
 }
 
+TEST_CASE("peer_session ping tracker reserves zero for no ping in flight", "[peer_session]") {
+    ::asio::io_context ctx;
+    auto settings = make_test_settings();
+    auto [client, server] = make_connected_sockets(ctx);
+
+    auto session = std::make_shared<peer_session>(std::move(server), settings);
+
+    // Nothing sent yet, so any pong is unsolicited.
+    REQUIRE( ! session->record_pong_received(0));
+    REQUIRE( ! session->record_pong_received(42u));
+
+    // A real nonce round-trips, and only the matching one does.
+    session->record_ping_sent(42u);
+    REQUIRE( ! session->record_pong_received(43u));
+    REQUIRE(session->record_pong_received(42u));
+
+    // ...and is consumed: the echo only counts once.
+    REQUIRE( ! session->record_pong_received(42u));
+
+    // This is why p2p_node::generate_ping_nonce never hands out zero: recording
+    // a zero ping is indistinguishable from having sent nothing, so the peer's
+    // own echo comes back looking unsolicited and the latency sample is lost.
+    session->record_ping_sent(0);
+    REQUIRE( ! session->record_pong_received(0));
+}
+
 TEST_CASE("peer_session nonce get set", "[peer_session]") {
     ::asio::io_context ctx;
     auto settings = make_test_settings();

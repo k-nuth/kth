@@ -404,6 +404,8 @@ private:
     // Ping tracking (lock-free)
     // We store time as nanoseconds since steady_clock epoch for atomic access
     // Benign data races are acceptable for statistics
+    // Zero means "no ping in flight", so a ping must never carry a zero nonce
+    // (see p2p_node::generate_ping_nonce). A nonce we receive may be anything.
     std::atomic<uint64_t> pending_ping_nonce_{0};
     std::atomic<int64_t> pending_ping_time_ns_{0};
 

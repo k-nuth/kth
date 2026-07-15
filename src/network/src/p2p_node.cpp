@@ -786,8 +786,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
             // Check if it's time to send a ping
             auto now = std::chrono::steady_clock::now();
             if (now - last_ping >= ping_interval) {
-                uint64_t nonce = 0;
-                pseudo_random::fill(reinterpret_cast<uint8_t*>(&nonce), sizeof(nonce));
+                auto const nonce = generate_ping_nonce();
                 domain::message::ping ping_msg(nonce);
 
                 auto ec = co_await peer->send(ping_msg);
@@ -1180,8 +1179,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 
                         // Send initial ping to get latency data
                         {
-                            uint64_t ping_nonce = 0;
-                            pseudo_random::fill(reinterpret_cast<uint8_t*>(&ping_nonce), sizeof(ping_nonce));
+                            auto const ping_nonce = generate_ping_nonce();
                             domain::message::ping ping_msg(ping_nonce);
                             auto ec = co_await peer->send(ping_msg);
                             if (ec == error::success) {
@@ -1275,6 +1273,20 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 uint64_t p2p_node::generate_nonce() {
     uint64_t nonce = 0;
     pseudo_random::fill(reinterpret_cast<uint8_t*>(&nonce), sizeof(nonce));
+    return nonce;
+}
+
+// static
+uint64_t p2p_node::generate_ping_nonce() {
+    // peer_session tracks the in-flight ping in `pending_ping_nonce_`, using
+    // zero to mean "none in flight" (see record_pong_received). A zero nonce
+    // would therefore make the peer's own echo look unsolicited and drop the
+    // latency sample, so never hand one out. BCHN guards the same sentinel the
+    // same way (net_processing.cpp: `while (nonce == 0) GetRandBytes(...)`).
+    uint64_t nonce = 0;
+    while (nonce == 0) {
+        pseudo_random::fill(reinterpret_cast<uint8_t*>(&nonce), sizeof(nonce));
+    }
     return nonce;
 }
 

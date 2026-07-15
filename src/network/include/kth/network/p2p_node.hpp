@@ -345,6 +345,11 @@ private:
 
     uint64_t generate_nonce();
 
+    /// Draw a ping nonce. Never zero -- zero is peer_session's "no ping in
+    /// flight" sentinel.
+    static
+    uint64_t generate_ping_nonce();
+
     settings const& settings_;
     threadpool pool_;
     peer_manager manager_;
