@@ -20,18 +20,6 @@ using namespace std::chrono;
 // DO NOT USE srand() and rand() on MSVC as srand must be called per thread.
 // Values may be truly random depending on the underlying device.
 
-uint64_t pseudo_random_broken_do_not_use() {
-    return pseudo_random_broken_do_not_use::next();
-}
-
-uint64_t pseudo_random_broken_do_not_use(uint64_t begin, uint64_t end) {
-    return pseudo_random_broken_do_not_use::next(begin, end);
-}
-
-void pseudo_random_broken_do_not_use_fill(data_chunk& out) {
-    return pseudo_random_broken_do_not_use::fill<data_chunk>(out);
-}
-
 static
 uint32_t get_clock_seed() {
     auto const now = high_resolution_clock::now();

@@ -1271,8 +1271,20 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 }
 
 uint64_t p2p_node::generate_nonce() {
+    return pseudo_random::generate<uint64_t>();
+}
+
+// static
+uint64_t p2p_node::generate_ping_nonce() {
+    // peer_session tracks the in-flight ping in `pending_ping_nonce_`, using
+    // zero to mean "none in flight" (see record_pong_received). A zero nonce
+    // would therefore make the peer's own echo look unsolicited and drop the
+    // latency sample, so never hand one out. BCHN guards the same sentinel the
+    // same way (net_processing.cpp: `while (nonce == 0) GetRandBytes(...)`).
     uint64_t nonce = 0;
-    pseudo_random::fill(reinterpret_cast<uint8_t*>(&nonce), sizeof(nonce));
+    while (nonce == 0) {
+        nonce = pseudo_random::generate<uint64_t>();
+    }
     return nonce;
 }
 

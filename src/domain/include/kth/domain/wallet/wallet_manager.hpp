@@ -14,7 +14,7 @@
 
 #include <kth/domain/define.hpp>
 
-#include <kth/infrastructure/utility/random.hpp>
+#include <kth/infrastructure/utility/pseudo_random.hpp>
 #include <kth/domain/wallet/dictionary.hpp>
 #include <kth/domain/wallet/hd_public.hpp>
 #include <kth/domain/wallet/mnemonic.hpp>
@@ -44,12 +44,11 @@ static_assert(total_size == 96, "total_size must be equal to 96");
 
 using encrypted_seed_t = std::array<uint8_t, total_size>;
 
+// Not constexpr: this reads entropy from the system CSPRNG, which is a
+// syscall. The old `constexpr` here could never have been constant-evaluated.
 template <size_t N = default_salt_size>
-constexpr
 std::array<uint8_t, N> generate_salt() {
-    std::array<uint8_t, N> salt;
-    pseudo_random_fill(salt.data(), N);
-    return salt;
+    return pseudo_random::generate<std::array<uint8_t, N>>();
 }
 
 static_assert(encrypted_seed_size == std::tuple_size_v<long_hash>, "encrypted_seed_size must be equal to the size of long_hash");

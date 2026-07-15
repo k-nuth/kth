@@ -4,7 +4,7 @@
 
 #include <kth/domain/wallet/wallet_manager.hpp>
 
-#include <kth/infrastructure/utility/random.hpp>
+#include <kth/infrastructure/utility/pseudo_random.hpp>
 #include <kth/domain/wallet/dictionary.hpp>
 #include <kth/domain/wallet/mnemonic.hpp>
 
@@ -44,13 +44,17 @@ create(
     using kth::domain::wallet::hd_private;
     using kth::domain::wallet::hd_public;
 
-    data_chunk entropy(32); // 256 bits entropy
-    pseudo_random_fill(entropy);
+    // 256 bits of entropy, on the stack: a data_chunk would put the seed
+    // material on the heap, where a reallocation could strand a copy we never
+    // get to wipe.
+    auto entropy = pseudo_random::generate<byte_array<32>>();
 
     auto mnemonics = create_mnemonic(entropy, lexicon);
 
-    // entropy is a vector of 32 bytes, after using it, fill it with 0
-    std::fill(entropy.begin(), entropy.end(), 0);
+    // Erase the seed material. std::fill here compiled to nothing at -O2:
+    // nothing reads the buffer afterwards, so the store was dead and the
+    // optimizer dropped it.
+    pseudo_random::wipe(entropy);
 
     auto seed = normalized_passphrase.empty() ?
         decode_mnemonic(mnemonics) :

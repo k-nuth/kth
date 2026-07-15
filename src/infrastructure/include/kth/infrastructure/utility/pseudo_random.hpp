@@ -5,88 +5,141 @@
 #ifndef KTH_INFRASTRUCTURE_PSEUDO_RANDOM_HPP
 #define KTH_INFRASTRUCTURE_PSEUDO_RANDOM_HPP
 
+#include <array>
+#include <concepts>
+#include <cstddef>
 #include <cstdint>
-#include <random>
+#include <ranges>
+#include <span>
+#include <type_traits>
 
-#include <kth/infrastructure/constants.hpp>
 #include <kth/infrastructure/define.hpp>
-#include <kth/infrastructure/utility/asio.hpp>
-#include <kth/infrastructure/utility/data.hpp>
+#include <kth/infrastructure/error.hpp>
 
-// Apple and Emscripten
-#if defined(__EMSCRIPTEN__) || defined(__APPLE__)
-#include <unistd.h>
-#endif
-
-#ifndef __EMSCRIPTEN__
-#include <sys/random.h>
-#endif
 namespace kth {
 
+namespace detail {
+
+/// Trait behind `randomizable`. It is a trait rather than a plain concept so
+/// that the array case can recurse on the element type: concepts cannot be
+/// partially specialized, and "trivially copyable with no padding" is not a
+/// sufficient test on its own -- `std::array<bool, N>` passes it (bool is one
+/// byte, so the array has no padding) while still being undefined to fill.
+template <typename T>
+struct is_randomizable : std::bool_constant<
+    std::integral<T> &&
+    ! std::same_as<std::remove_cv_t<T>, bool> &&
+    std::has_unique_object_representations_v<T>> {};
+
+/// An array is drawable whole exactly when its element is, which composes:
+/// `std::array<std::array<uint8_t, 4>, 2>` follows, `std::array<bool, 4>` does
+/// not.
+template <typename T, size_t N>
+struct is_randomizable<std::array<T, N>> : is_randomizable<std::remove_cv_t<T>> {};
+
+} // namespace detail
+
+/// A type that can be drawn whole from random bytes: every bit pattern of its
+/// object representation has to be a value it can legitimately hold.
+///
+/// Integers qualify, and arrays of them. `bool` does not -- only 0 and 1 are
+/// valid, so a random byte is undefined behaviour -- and neither does anything
+/// carrying padding bits, whose padding would be filled with entropy that
+/// comparison never reads.
+template <typename T>
+concept randomizable = detail::is_randomizable<std::remove_cv_t<T>>::value;
+
+/// A range whose elements can be overwritten with random bytes in place.
+template <typename R>
+concept randomizable_range =
+    std::ranges::contiguous_range<R> &&
+    std::ranges::sized_range<R> &&
+    std::is_trivially_copyable_v<std::ranges::range_value_t<R>>;
+
+/// The system CSPRNG.
+///
+/// Nothing here reports an error, because for our usage there is no recoverable
+/// one. We ask the kernel with flags=0, which *blocks* rather than failing when
+/// the entropy pool is not ready yet. That leaves exactly three ways out:
+///
+///   EINTR   a signal hit us while blocking -- transient, so `fill_bytes` retries.
+///   EINVAL  bad flags. We pass 0. Reaching it means a bug here, not in the caller.
+///   ENOSYS  the kernel has no getrandom (< 3.17). Constant for the life of the
+///           process: if it works once it works always.
+///
+/// Only ENOSYS is environmental, and being constant it is answerable once, at
+/// startup, where refusing to boot is a real option -- see `check_available`.
+/// Past that point a draw cannot fail, so `generate` returns a plain value and
+/// callers need no error path for a condition none of them could act on.
 struct KI_API pseudo_random {
-    template <typename Container>
-        requires std::is_trivially_copyable<typename Container::value_type>::value
+    /// Probe the system CSPRNG. Call once, early, from the node's startup path:
+    /// this is the only place where an unusable CSPRNG is both detectable and
+    /// actionable. Returns the errno as a system_category code, or success.
+    [[nodiscard]]
     static
-    void fill(Container& out) {
-        using value_type = typename Container::value_type;
+    code check_available() noexcept;
 
-        size_t size_bytes = out.size() * sizeof(value_type);
-        if (size_bytes == 0) {
-            return;
-        }
+    /// Fill a byte span. This is the only primitive: everything below routes
+    /// through it, so the retry lives in exactly one place.
+    ///
+    /// PRECONDITION: `check_available()` has returned success in this process.
+    /// It is not asserted -- re-probing on every draw would cost a syscall to
+    /// re-answer a constant. When violated on a machine with no CSPRNG, this
+    /// aborts rather than returning bytes that are not random. That is the only
+    /// safe move: the callers are generating keys, nonces and salts, and every
+    /// one of them is worse off with predictable output than with a crash.
+    ///
+    /// It deliberately does NOT share a name with the overloads below.
+    /// `as_writable_bytes` on a fixed-extent span yields a fixed-extent span,
+    /// which binds to a `randomizable_range` template exactly while reaching
+    /// this signature only by conversion -- so an overload named `fill` here
+    /// would silently lose to the template and recurse forever.
+    static
+    void fill_bytes(std::span<std::byte> out) noexcept;
 
-        uint8_t* buffer_ptr = reinterpret_cast<uint8_t*>(out.data());
-        // memset(buffer_ptr, 0x12, size_bytes);
-#if defined(__EMSCRIPTEN__) || defined(__APPLE__)
-        if (getentropy(buffer_ptr, size_bytes) != 0) {
-            throw std::runtime_error("getentropy() failed in WASM");
-        }
-#else
-        size_t offset = 0;
-        while (offset < size_bytes) {
-            ssize_t ret = ::getrandom(buffer_ptr + offset, size_bytes - offset, 0);
-            if (ret < 0) {
-                throw std::runtime_error("getrandom() failed");
-            }
-            offset += ret;
-        }
-#endif
+    /// Fill a contiguous range in place.
+    template <randomizable_range R>
+    static
+    void fill(R&& out) {
+        fill_bytes(std::as_writable_bytes(std::span{out}));
     }
 
-    static void fill(uint8_t* out, size_t size_bytes) {
-        if (size_bytes == 0) {
-            return;
-        }
-        // memset(out, 0x12, size_bytes);
+    /// Draw a random value:
+    ///     auto const nonce = pseudo_random::generate<uint64_t>();
+    ///     auto const salt  = pseudo_random::generate<byte_array<16>>();
+    template <randomizable T>
+    [[nodiscard]]
+    static
+    T generate() {
+        T value;
+        fill_bytes(std::as_writable_bytes(std::span<T, 1>{&value, 1}));
+        return value;
+    }
 
-#if defined(__EMSCRIPTEN__) || defined(__APPLE__)
-        if (getentropy(out, size_bytes) != 0) {
-            throw std::runtime_error("getentropy() failed in WASM");
-        }
-#else
-        size_t offset = 0;
-        while (offset < size_bytes) {
-            ssize_t ret = ::getrandom(out + offset, size_bytes - offset, 0);
-            if (ret < 0) {
-                if (errno == EINTR) {
-                    continue;
-                }
-                //TODO: replace exceptions with std::expected
-                throw std::runtime_error("getrandom() failed, errno=" + std::to_string(errno));
-            }
-            offset += size_t(ret);
-        }
-#endif
+    /// Overwrite a byte span with zeros, and actually do it.
+    ///
+    /// `std::fill(p, p + n, 0)` or `arr.fill(0)` over memory nothing reads
+    /// again is dead-store elimination bait: the compiler is entitled to drop
+    /// the write, and at -O2 it does -- so the usual "erase the secret before
+    /// it goes out of scope" line compiles to nothing at all. This routes to a
+    /// libc primitive that is contractually not elidable, falling back to a
+    /// memset behind a barrier that makes the compiler assume something it
+    /// cannot see may read those bytes.
+    ///
+    /// Same naming rule as fill_bytes/fill, and for the same reason: a `wipe`
+    /// overload taking a span here would lose overload resolution to the
+    /// template below and recurse.
+    static
+    void wipe_bytes(std::span<std::byte> out) noexcept;
+
+    /// Overwrite a contiguous range with zeros:
+    ///     pseudo_random::wipe(secret);
+    template <randomizable_range R>
+    static
+    void wipe(R&& out) noexcept {
+        wipe_bytes(std::as_writable_bytes(std::span{out}));
     }
 };
-
-
-/**
- * Fill a buffer with randomness
- */
-KI_API void pseudo_random_fill(data_chunk& out);
-
-KI_API void pseudo_random_fill(uint8_t* out, size_t size);
 
 } // namespace kth
 

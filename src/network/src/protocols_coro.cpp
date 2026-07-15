@@ -435,7 +435,7 @@ handshake_config make_handshake_config(
             // Timer expired - send ping
             auto [timer_ec] = std::get<1>(result);
             if (!timer_ec) {
-                pseudo_random::fill(reinterpret_cast<uint8_t*>(&last_ping_nonce), sizeof(last_ping_nonce));
+                last_ping_nonce = pseudo_random::generate<uint64_t>();
                 domain::message::ping ping_msg(last_ping_nonce);
 
                 auto ec = co_await peer.send(ping_msg);
