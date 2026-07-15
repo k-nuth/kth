@@ -12,13 +12,11 @@ using namespace kth::domain::message;
 
 TEST_CASE("fee filter constructor 1 always invalid", "[fee filter]") {
     fee_filter const instance;
-    REQUIRE( ! instance.is_valid());
 }
 
 TEST_CASE("fee filter constructor 2 always equals params", "[fee filter]") {
     uint64_t const value = 6434u;
     fee_filter const instance(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(value == instance.minimum_fee());
 }
 
@@ -26,7 +24,6 @@ TEST_CASE("fee filter constructor 3 always equals params", "[fee filter]") {
     uint64_t const fee = 6434u;
     fee_filter const value(fee);
     fee_filter const instance(value);
-    REQUIRE(instance.is_valid());
     REQUIRE(fee == instance.minimum_fee());
     REQUIRE(value == instance);
 }
@@ -35,7 +32,6 @@ TEST_CASE("fee filter constructor 4 always equals params", "[fee filter]") {
     uint64_t const fee = 6434u;
     fee_filter const value(fee);
     fee_filter const instance(std::move(value));
-    REQUIRE(instance.is_valid());
     REQUIRE(fee == instance.minimum_fee());
 }
 
@@ -61,7 +57,6 @@ TEST_CASE("fee filter from data roundtrip success", "[fee filter]") {
     auto const result_exp = fee_filter::from_data(reader, fee_filter::version_maximum);
     REQUIRE(result_exp);
     auto const result = std::move(*result_exp);
-    REQUIRE(result.is_valid());
     REQUIRE(expected == result);
 
     auto const size = result.serialized_size(version::level::maximum);
@@ -69,24 +64,18 @@ TEST_CASE("fee filter from data roundtrip success", "[fee filter]") {
     REQUIRE(expected.serialized_size(version::level::maximum) == size);
 }
 
-TEST_CASE("fee filter minimum fee roundtrip success", "[fee filter]") {
+TEST_CASE("fee filter constructor sets minimum fee", "[fee filter]") {
     uint64_t const value = 42134u;
-    fee_filter instance;
-    REQUIRE(instance.minimum_fee() != value);
-
-    instance.set_minimum_fee(value);
+    fee_filter const instance(value);
     REQUIRE(value == instance.minimum_fee());
 }
 
 TEST_CASE("fee filter operator assign equals always matches equivalent", "[fee filter]") {
     fee_filter value(2453u);
-    REQUIRE(value.is_valid());
 
     fee_filter instance;
-    REQUIRE( ! instance.is_valid());
 
     instance = std::move(value);
-    REQUIRE(instance.is_valid());
 }
 
 TEST_CASE("fee filter operator boolean equals duplicates returns true", "[fee filter]") {
@@ -111,6 +100,15 @@ TEST_CASE("fee filter operator boolean not equals differs returns true", "[fee f
     fee_filter const expected(2453u);
     fee_filter instance;
     REQUIRE(instance != expected);
+}
+
+TEST_CASE("fee filter is usable in a constant expression", "[fee filter]") {
+    static_assert(message::fee_filter{42u}.minimum_fee() == 42u);
+    static_assert(message::fee_filter{}.minimum_fee() == 0u);
+    static_assert(message::fee_filter{1u} == message::fee_filter{1u});
+    static_assert(message::fee_filter{1u} != message::fee_filter{2u});
+    static_assert(message::fee_filter{}.serialized_size(message::version::level::maximum) == 8u);
+    REQUIRE(true);
 }
 
 // End Test Suite

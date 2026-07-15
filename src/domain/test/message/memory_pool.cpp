@@ -16,7 +16,6 @@ TEST_CASE("memory pool - from data insufficient version failure", "[memory pool]
     byte_reader reader(data);
     auto result = message::memory_pool::from_data(reader, message::memory_pool::version_minimum - 1);
     REQUIRE( ! result);
-    REQUIRE( ! instance.is_valid());
 }
 
 TEST_CASE("memory pool - roundtrip to data factory from data chunk", "[memory pool]") {
@@ -28,10 +27,31 @@ TEST_CASE("memory pool - roundtrip to data factory from data chunk", "[memory po
     auto const result = std::move(*result_exp);
 
     REQUIRE(0u == data.size());
-    REQUIRE(result.is_valid());
     REQUIRE(0u == result.serialized_size(message::version::level::maximum));
 }
 
 
+
+TEST_CASE("memory pool is a regular type", "[memory pool]") {
+    // An empty-payload marker still has to behave like a value: declaring the
+    // move constructor here would delete copy-assignment and suppress
+    // move-assignment, leaving the type unassignable.
+    static_assert(std::is_default_constructible_v<message::memory_pool>);
+    static_assert(std::is_copy_constructible_v<message::memory_pool>);
+    static_assert(std::is_move_constructible_v<message::memory_pool>);
+    static_assert(std::is_copy_assignable_v<message::memory_pool>);
+    static_assert(std::is_move_assignable_v<message::memory_pool>);
+
+    message::memory_pool a;
+    message::memory_pool b;
+    a = b;
+    b = std::move(a);
+}
+
+TEST_CASE("memory pool is usable in a constant expression", "[memory pool]") {
+    static_assert(message::memory_pool::satoshi_fixed_size(message::version::level::maximum) == 0);
+    static_assert(message::memory_pool{}.serialized_size(message::version::level::maximum) == 0);
+    REQUIRE(true);
+}
 
 // End Test Suite

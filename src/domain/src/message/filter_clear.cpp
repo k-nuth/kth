@@ -12,45 +12,18 @@ std::string const filter_clear::command = "filterclear";
 uint32_t const filter_clear::version_minimum = version::level::bip37;
 uint32_t const filter_clear::version_maximum = version::level::maximum;
 
-// protected
-filter_clear::filter_clear(bool insufficient_version)
-    : insufficient_version_(insufficient_version) {
-}
-
-bool filter_clear::is_valid() const {
-    return !insufficient_version_;
-}
-
-// This is again a default instance so is invalid.
-void filter_clear::reset() {
-    insufficient_version_ = true;
-}
-
 // Deserialization.
 //-----------------------------------------------------------------------------
 
 // static
 expect<filter_clear> filter_clear::from_data(byte_reader& reader, uint32_t version) {
-    auto const insufficient_version = false;
     if (version < filter_clear::version_minimum) {
         return std::unexpected(error::version_too_low);
     }
-    return filter_clear(insufficient_version);
+    return filter_clear();
 }
 
 // Serialization.
 //-----------------------------------------------------------------------------
-
-data_chunk filter_clear::to_data(uint32_t version) const {
-    return kth::to_data_chunk(*this, version);
-}
-
-size_t filter_clear::serialized_size(uint32_t version) const {
-    return filter_clear::satoshi_fixed_size(version);
-}
-
-size_t filter_clear::satoshi_fixed_size(uint32_t /*version*/) {
-    return 0;
-}
 
 } // namespace kth::domain::message
