@@ -106,26 +106,14 @@ chain::output_point const& double_spend_proof::out_point() const {
     return out_point_;
 }
 
-void double_spend_proof::set_out_point(chain::output_point const& x) {
-    out_point_ = x;
-}
-
 [[nodiscard]]
 double_spend_proof::spender const& double_spend_proof::spender1() const {
     return spender1_;
 }
 
-void double_spend_proof::set_spender1(double_spend_proof::spender const& x) {
-    spender1_ = x;
-}
-
 [[nodiscard]]
 double_spend_proof::spender const& double_spend_proof::spender2() const {
     return spender2_;
-}
-
-void double_spend_proof::set_spender2(double_spend_proof::spender const& x) {
-    spender2_ = x;
 }
 
 hash_digest hash(double_spend_proof const& x) {

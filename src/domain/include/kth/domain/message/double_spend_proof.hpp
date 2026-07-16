@@ -5,19 +5,13 @@
 #ifndef KTH_DOMAIN_MESSAGE_double_spend_proof_HPP
 #define KTH_DOMAIN_MESSAGE_double_spend_proof_HPP
 
-#include <istream>
-
 #include <kth/domain/chain/output_point.hpp>
+#include <kth/domain/concepts.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
-// #include <kth/domain/message/block.hpp>
-// #include <kth/domain/message/prefilled_transaction.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
-
-
-#include <kth/domain/concepts.hpp>
 
 namespace kth::domain::message {
 
@@ -35,26 +29,6 @@ struct KD_API double_spend_proof {
         hash_digest sequence_hash = null_hash;
         hash_digest outputs_hash = null_hash;
         data_chunk push_data;
-
-        [[nodiscard]]
-        bool is_valid() const {
-            return version != 0 ||
-                   out_sequence != 0 ||
-                   locktime != 0 ||
-                   prev_outs_hash != null_hash ||
-                   sequence_hash != null_hash ||
-                   outputs_hash != null_hash;
-        }
-
-        void reset() {
-            version = 0;
-            out_sequence = 0;
-            locktime = 0;
-            prev_outs_hash = null_hash;
-            sequence_hash = null_hash;
-            outputs_hash = null_hash;
-            push_data.clear();
-        }
 
         [[nodiscard]]
         friend bool operator==(spender const&, spender const&) = default;
@@ -93,15 +67,12 @@ struct KD_API double_spend_proof {
 
     [[nodiscard]]
     chain::output_point const& out_point() const;
-    void set_out_point(chain::output_point const& x);
 
     [[nodiscard]]
     spender const& spender1() const;
-    void set_spender1(spender const& x);
 
     [[nodiscard]]
     spender const& spender2() const;
-    void set_spender2(spender const& x);
 
     static
     expect<double_spend_proof> from_data(byte_reader& reader, uint32_t /*version*/);
