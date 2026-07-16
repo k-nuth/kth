@@ -38,6 +38,9 @@
 #include <boost/bimap.hpp>
 #include <boost/bimap/multiset_of.hpp>
 #include <boost/bimap/unordered_set_of.hpp>
+#include <boost/smart_ptr/atomic_shared_ptr.hpp>
+#include <boost/smart_ptr/make_shared.hpp>
+#include <boost/smart_ptr/shared_ptr.hpp>
 #include <boost/unordered/concurrent_flat_map.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 
@@ -200,13 +203,13 @@ class cow_pool {
 public:
     using store = boost::unordered_flat_map<hash_digest, value, hash_hasher>;
 
-    cow_pool() : blocks_(std::make_shared<store const>()) {}
+    cow_pool() : blocks_(boost::make_shared<store const>()) {}
 
     size_t size() const { return snapshot()->size(); }
 
     void add(hash_digest const& hash, size_t height) {
         std::lock_guard lock(write_mutex_);
-        auto next = std::make_shared<store>(*snapshot());
+        auto next = boost::make_shared<store>(*snapshot());
         next->emplace(hash, value{std::make_shared<int>(1), height, {}});
         blocks_.store(std::move(next));
     }
@@ -217,7 +220,7 @@ public:
 
     void remove(std::vector<hash_digest> const& hashes) {
         std::lock_guard lock(write_mutex_);
-        auto next = std::make_shared<store>(*snapshot());
+        auto next = boost::make_shared<store>(*snapshot());
         for (auto const& h : hashes) {
             next->erase(h);
         }
@@ -243,9 +246,12 @@ public:
     }
 
 private:
-    std::shared_ptr<store const> snapshot() const { return blocks_.load(); }
+    boost::shared_ptr<store const> snapshot() const { return blocks_.load(); }
 
-    std::atomic<std::shared_ptr<store const>> blocks_;
+    // std::atomic<std::shared_ptr<>> is not portable: libc++ (Apple clang)
+    // has no such specialisation and static_asserts on the primary template.
+    // boost::atomic_shared_ptr gives the same lock-free snapshot everywhere.
+    boost::atomic_shared_ptr<store const> blocks_;
     std::mutex write_mutex_;   // serialises writers against each other only
 };
 
