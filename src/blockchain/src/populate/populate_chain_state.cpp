@@ -394,9 +394,9 @@ chain_state::ptr populate_chain_state::populate(chain_state::ptr top) const {
     // Create pool state from top block chain state.
     auto const state = std::make_shared<chain_state>(*top);
 
-    // Invalidity is not possible unless next height is zero.
-    // This can only happen when the chain size overflows size_t.
-    KTH_ASSERT(state->is_valid());
+    // A null (zero-height) state can only happen when the chain size
+    // overflows size_t.
+    KTH_ASSERT( ! state->is_null());
 
     return state;
 }
