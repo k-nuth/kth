@@ -382,6 +382,13 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(Boost REQUIRED)
 
   # ==========================================================================
+  # 0. block_pool store: bimap + mutex vs concurrent_flat_map
+  # ==========================================================================
+  add_executable(kth_blockchain_bench_block_pool bench/block_pool/benchmarks.cpp)
+  target_link_libraries(kth_blockchain_bench_block_pool PRIVATE nanobench::nanobench)
+  target_link_libraries(kth_blockchain_bench_block_pool PRIVATE Boost::boost)
+
+  # ==========================================================================
   # 1. Thread-safety tests with TSan (debug, -O1)
   # ==========================================================================
   # ASan and TSan can't share a process: the target's hardcoded

@@ -162,11 +162,13 @@ void block_pool::prune(size_t top_height) {
     hash_list hashes;
     auto const minimum_height = floor_subtract(top_height, maximum_depth_);
 
-    // TODO(legacy): not using table sort here, should stop iterating once above min.
-    // Iterate over all root nodes with insufficient height.
-    for (auto it: blocks_.right) {
-        if (it.first != 0 && it.first < minimum_height) {
-            hashes.push_back(it.second.hash());
+    // The right view is ordered by height, so everything from the first entry
+    // at or above the minimum is out of range.
+    auto const end = blocks_.right.lower_bound(minimum_height);
+
+    for (auto it = blocks_.right.begin(); it != end; ++it) {
+        if (it->first != 0) {
+            hashes.push_back(it->second.hash());
         }
     }
 
