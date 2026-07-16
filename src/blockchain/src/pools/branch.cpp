@@ -53,9 +53,10 @@ local_utxo_set_t create_branch_utxo_set(branch::const_ptr const& branch) {
 
 
 // This will be eliminated once weak block headers are moved to the store.
-branch::branch(uint32_t height)
+branch::branch(uint32_t height, block_validation_store& block_validations)
     : height_(height)
     , blocks_(std::make_shared<block_const_ptr_list>())
+    , block_validations_(block_validations)
 {}
 
 void branch::set_height(uint32_t height) {
@@ -128,8 +129,10 @@ uint32_t branch::median_time_past_at(size_t index) const {
     // is now a pure value type, so we read it from the block's chain_state
     // (populated by the validator before the block reaches the branch).
     auto const& block = *(*blocks_)[index];
-    KTH_ASSERT(block.validation.state);
-    return block.validation.state->median_time_past();
+    domain::chain::chain_state::ptr state;
+    block_validations_.visit(block.hash(), [&](auto const& bv){ state = bv.state; });
+    KTH_ASSERT(state);
+    return state->median_time_past();
 }
 
 // TODO(legacy): absorb into the main chain for speed and code consolidation.

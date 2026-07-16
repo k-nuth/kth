@@ -37,6 +37,7 @@
 
 // Knuth block_pool (original implementation)
 #include <kth/blockchain/pools/block_pool.hpp>
+#include <kth/blockchain/validate/block_validation.hpp>
 
 using ankerl::nanobench::Bench;
 
@@ -85,10 +86,9 @@ kth::block_const_ptr create_kth_block(kth::hash_digest const& prev_hash, uint32_
         /*nonce*/     height,
     };
 
-    // The previous benchmark stamped height onto hdr.validation; block_pool
-    // now reads height from block.validation.state. This benchmark exercises
-    // the header_index path which does not consult block.validation.state,
-    // so no extra setup is needed here.
+    // block_pool reads a block's height from the validator's block_validation
+    // store; this benchmark exercises the header_index path, which does not
+    // consult that store, so no extra setup is needed here.
     auto block = std::make_shared<kth::domain::message::block>(
         hdr,
         kth::domain::chain::transaction::list{}
@@ -2560,7 +2560,8 @@ void benchmark_concurrent_insert() {
         })
         .run("Knuth block_pool (external mutex)", [&] {
             // Simulate real usage: block_organizer wraps block_pool with prioritized_mutex
-            kth::blockchain::block_pool pool(10000);
+            kth::blockchain::block_validation_store bvs;
+            kth::blockchain::block_pool pool(10000, bvs);
             std::mutex external_mutex;  // Like block_organizer's mutex_
             std::vector<std::thread> threads;
 
@@ -2728,7 +2729,8 @@ void benchmark_concurrent_read_write() {
         .run("Knuth block_pool (external mutex)", [&] {
             // Real usage: block_organizer uses prioritized_mutex for all operations
             // filter() is the only thread-safe read operation, but we use exists() for comparison
-            block_pool_fixture pool(10000);
+            kth::blockchain::block_validation_store bvs;
+            block_pool_fixture pool(10000, bvs);
             std::shared_mutex external_mutex;  // Allow concurrent reads
             std::atomic<bool> done{false};
             std::atomic<size_t> read_count{0};

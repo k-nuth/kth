@@ -13,6 +13,7 @@
 #include <kth/domain.hpp>
 
 #include <kth/blockchain/define.hpp>
+#include <kth/blockchain/validate/block_validation.hpp>
 
 namespace kth::blockchain {
 
@@ -24,8 +25,10 @@ struct KB_API branch {
     using ptr = std::shared_ptr<branch>;
     using const_ptr = std::shared_ptr<const branch>;
 
-    /// Establish a branch with the given parent height.
-    branch(uint32_t height = 0);
+    /// Establish a branch with the given parent height. The validation store
+    /// is validator-owned; the branch reads per-block chain_state from it
+    /// (e.g. for median-time-past) now that blocks no longer self-carry it.
+    branch(uint32_t height, block_validation_store& block_validations);
 
     /// Set the height of the parent of this branch (fork point).
     void set_height(uint32_t height);
@@ -92,6 +95,9 @@ private:
 
     /// The chain of blocks in the branch.
     block_const_ptr_list_ptr blocks_;
+
+    /// Validator-owned per-block validation state (not owned by the branch).
+    block_validation_store& block_validations_;
 };
 
 local_utxo_t create_local_utxo_set(domain::chain::block const& block);

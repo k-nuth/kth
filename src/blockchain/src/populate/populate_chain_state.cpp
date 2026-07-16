@@ -289,7 +289,7 @@ chain_state::ptr populate_chain_state::populate() const {
         data.abla_state.elastic_buffer_size = elastic_buffer_size;
     }
 
-    auto branch_ptr = std::make_shared<branch>(top);
+    auto branch_ptr = std::make_shared<branch>(top, chain_.block_validations());
 
     // Use an empty branch to represent the transaction pool.
     if ( ! populate_all(data, branch_ptr)) {

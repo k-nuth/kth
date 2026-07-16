@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <kth/blockchain.hpp>
+#include <kth/blockchain/validate/block_validation.hpp>
 
 using namespace kth;
 using namespace kd::message;
@@ -24,11 +25,24 @@ std::shared_ptr<block> make_test_block(uint32_t bits,
     });
 }
 
+// Owns a validation store so it outlives the branch base subobject.
+// Declared as a base initialized before `branch` (base init order = decl
+// order) so `store` is alive when the branch ctor captures a reference to it.
+struct branch_store_holder {
+    block_validation_store store;
+};
+
 // Access to protected members.
 class branch_fixture
-  : public branch
+  : public branch_store_holder
+  , public branch
 {
 public:
+    branch_fixture()
+      : branch_store_holder()
+      , branch(0, store)
+    {}
+
     size_t index_of(size_t height) const
     {
         return branch::index_of(height);
@@ -43,7 +57,8 @@ public:
 // hash
 
 TEST_CASE("branch hash default null hash", "[branch tests]") {
-    branch instance;
+    block_validation_store store;
+    branch instance(0, store);
     REQUIRE(instance.hash() == null_hash);
 }
 
@@ -52,13 +67,15 @@ TEST_CASE("branch hash one block only previous block hash", "[branch tests]") {
     auto const expected = block0->hash();
     auto const block1 = make_test_block(1u, expected);
 
-    branch instance;
+    block_validation_store store;
+    branch instance(0, store);
     REQUIRE(instance.push_front(block1));
     REQUIRE(instance.hash() == expected);
 }
 
 TEST_CASE("branch hash two blocks first previous block hash", "[branch tests]") {
-    branch instance;
+    block_validation_store store;
+    branch instance(0, store);
     auto const top42 = make_test_block(42u);
     auto const expected = top42->hash();
     auto const block0 = make_test_block(0u, expected);
@@ -72,13 +89,15 @@ TEST_CASE("branch hash two blocks first previous block hash", "[branch tests]") 
 // height/set_height
 
 TEST_CASE("branch height default zero", "[branch tests]") {
-    branch instance;
+    block_validation_store store;
+    branch instance(0, store);
     REQUIRE(instance.height() == 0);
 }
 
 TEST_CASE("branch set height round trip unchanged", "[branch tests]") {
     static size_t const expected = 42;
-    branch instance;
+    block_validation_store store;
+    branch instance(0, store);
     instance.set_height(expected);
     REQUIRE(instance.height() == expected);
 }
@@ -126,19 +145,22 @@ TEST_CASE("branch height at value expected", "[branch tests]") {
 // size
 
 TEST_CASE("branch size empty zero", "[branch tests]") {
-    branch instance;
+    block_validation_store store;
+    branch instance(0, store);
     REQUIRE(instance.size() == 0);
 }
 
 // empty
 
 TEST_CASE("branch empty default true", "[branch tests]") {
-    branch instance;
+    block_validation_store store;
+    branch instance(0, store);
     REQUIRE(instance.empty());
 }
 
 TEST_CASE("branch empty push one false", "[branch tests]") {
-    branch instance;
+    block_validation_store store;
+    branch instance(0, store);
     auto const block0 = make_test_block(0u);
     REQUIRE(instance.push_front(block0));
     REQUIRE( ! instance.empty());
@@ -147,12 +169,14 @@ TEST_CASE("branch empty push one false", "[branch tests]") {
 // blocks
 
 TEST_CASE("branch blocks default empty", "[branch tests]") {
-    branch instance;
+    block_validation_store store;
+    branch instance(0, store);
     REQUIRE(instance.blocks()->empty());
 }
 
 TEST_CASE("branch blocks one empty", "[branch tests]") {
-    branch instance;
+    block_validation_store store;
+    branch instance(0, store);
     auto const block0 = make_test_block(0u);
     REQUIRE(instance.push_front(block0));
     REQUIRE( ! instance.empty());
@@ -197,7 +221,8 @@ TEST_CASE("branch push front two unlinked link failure", "[branch tests]") {
 // top
 
 TEST_CASE("branch top default nullptr", "[branch tests]") {
-    branch instance;
+    block_validation_store store;
+    branch instance(0, store);
     REQUIRE( ! instance.top());
 }
 
@@ -215,7 +240,8 @@ TEST_CASE("branch top two blocks expected", "[branch tests]") {
 // top_height
 
 TEST_CASE("branch top height default 0", "[branch tests]") {
-    branch instance;
+    block_validation_store store;
+    branch instance(0, store);
     REQUIRE(instance.top_height() == 0u);
 }
 
@@ -236,12 +262,14 @@ TEST_CASE("branch top height two blocks expected", "[branch tests]") {
 // work
 
 TEST_CASE("branch work default zero", "[branch tests]") {
-    branch instance;
+    block_validation_store store;
+    branch instance(0, store);
     REQUIRE(instance.work() == 0);
 }
 
 TEST_CASE("branch work two blocks expected", "[branch tests]") {
-    branch instance;
+    block_validation_store store;
+    branch instance(0, store);
     auto const block0 = make_test_block(0u);
     auto const block1 = make_test_block(1u, block0->hash());
 

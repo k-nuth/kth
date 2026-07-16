@@ -9,11 +9,9 @@
 
 namespace kth::database {
 
-expect<void> to_data_with_abla_state(byte_writer& writer, domain::chain::block const& block) {
+expect<void> to_data_with_abla_state(byte_writer& writer, domain::chain::block const& block, domain::chain::abla::state const& abla_state) {
     if (auto r = block.header().to_data(writer, true); ! r) return r;
-    auto const a = block.validation.state
-        ? block.validation.state->abla_state()
-        : domain::chain::abla::state{};
+    auto const& a = abla_state;
     if (auto r = writer.write_little_endian<uint64_t>(a.block_size); ! r) return r;
     if (auto r = writer.write_little_endian<uint64_t>(a.control_block_size); ! r) return r;
     return writer.write_little_endian<uint64_t>(a.elastic_buffer_size);
@@ -35,11 +33,11 @@ expect<void> to_data_header_with_abla_state(byte_writer& writer, domain::chain::
     return writer.write_little_endian<uint64_t>(elastic_buffer_size);
 }
 
-data_chunk to_data_with_abla_state(domain::chain::block const& block) {
+data_chunk to_data_with_abla_state(domain::chain::block const& block, domain::chain::abla::state const& abla_state) {
     auto const size = block.header().serialized_size(true) + 8 + 8 + 8;
     data_chunk data(size);
     byte_writer writer(data);
-    auto const r = to_data_with_abla_state(writer, block);
+    auto const r = to_data_with_abla_state(writer, block, abla_state);
     KTH_ASSERT(r.has_value());
     return data;
 }

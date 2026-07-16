@@ -93,9 +93,6 @@ uint8_t* kth_chain_block_to_data(kth_block_const_t self, kth_size_t* out_size);
 // Getters
 
 KTH_EXPORT
-kth_size_t kth_chain_block_signature_operations_simple(kth_block_const_t self);
-
-KTH_EXPORT
 kth_error_code_t kth_chain_block_check(kth_block_const_t self);
 
 KTH_EXPORT

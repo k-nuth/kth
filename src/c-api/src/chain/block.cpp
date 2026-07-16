@@ -116,11 +116,6 @@ uint8_t* kth_chain_block_to_data(kth_block_const_t self, kth_size_t* out_size) {
 
 // Getters
 
-kth_size_t kth_chain_block_signature_operations_simple(kth_block_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::cpp_ref<cpp_t>(self).signature_operations();
-}
-
 kth_error_code_t kth_chain_block_check(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check());

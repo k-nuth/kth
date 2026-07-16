@@ -13,9 +13,11 @@ namespace kth::database {
 #if ! defined(KTH_DB_READONLY)
 
 template <typename Clock>
-result_code internal_database_basis<Clock>::push_block_header(domain::chain::block const& block, uint32_t height, KTH_DB_txn* db_txn) {
+result_code internal_database_basis<Clock>::push_block_header(domain::chain::block const& block, domain::chain::abla::state const& abla_state, uint32_t height, KTH_DB_txn* db_txn) {
 
-    auto valuearr = to_data_with_abla_state(block);             //TODO(fernando): podría estar afuera de la DBTx
+    // The block's ABLA/chain state is no longer carried on the block value; the
+    // caller (which has the block's chain_state during organize) supplies it.
+    auto valuearr = to_data_with_abla_state(block, abla_state);             //TODO(fernando): podría estar afuera de la DBTx
     auto key = kth_db_make_value(sizeof(height), &height);
     auto value = kth_db_make_value(valuearr.size(), valuearr.data());
 
