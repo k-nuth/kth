@@ -1,3 +1,16 @@
+# version 1.0.0
+
+You can install Knuth node version v1.0.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* feat: v1.0 — coroutine networking, UTXO-Z storage, fast full IBD by @fpelliccioni in https://github.com/k-nuth/kth/pull/151
+* docs: announce v1.x on master and v0.x maintenance branch by @fpelliccioni in https://github.com/k-nuth/kth/pull/361
+* release: 1.0.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/362
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.85.0...v1.0.0
+
+
 # version 0.85.0
 
 You can install Knuth node version v0.85.0 [using these instructions](https://kth.cash/#download).
