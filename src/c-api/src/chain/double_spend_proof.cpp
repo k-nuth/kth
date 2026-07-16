@@ -71,6 +71,12 @@ kth_bool_t kth_chain_double_spend_proof_equals(kth_double_spend_proof_const_t se
     return kth::eq<cpp_t>(self, other);
 }
 
+kth_bool_t kth_chain_double_spend_proof_not_equal(kth_double_spend_proof_const_t self, kth_double_spend_proof_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::ne<cpp_t>(self, other);
+}
+
 
 // Serialization
 
@@ -106,30 +112,6 @@ kth_double_spend_proof_spender_const_t kth_chain_double_spend_proof_spender2(kth
 kth_hash_t kth_chain_double_spend_proof_hash(kth_double_spend_proof_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::to_hash_t(kth::cpp_ref<cpp_t>(self).hash());
-}
-
-
-// Setters
-
-void kth_chain_double_spend_proof_set_out_point(kth_double_spend_proof_mut_t self, kth_output_point_const_t x) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(x != nullptr);
-    auto const& x_cpp = kth::cpp_ref<kth::domain::chain::output_point>(x);
-    kth::cpp_ref<cpp_t>(self).set_out_point(x_cpp);
-}
-
-void kth_chain_double_spend_proof_set_spender1(kth_double_spend_proof_mut_t self, kth_double_spend_proof_spender_const_t x) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(x != nullptr);
-    auto const& x_cpp = kth::cpp_ref<cpp_t::spender>(x);
-    kth::cpp_ref<cpp_t>(self).set_spender1(x_cpp);
-}
-
-void kth_chain_double_spend_proof_set_spender2(kth_double_spend_proof_mut_t self, kth_double_spend_proof_spender_const_t x) {
-    KTH_PRECONDITION(self != nullptr);
-    KTH_PRECONDITION(x != nullptr);
-    auto const& x_cpp = kth::cpp_ref<cpp_t::spender>(x);
-    kth::cpp_ref<cpp_t>(self).set_spender2(x_cpp);
 }
 
 } // extern "C"

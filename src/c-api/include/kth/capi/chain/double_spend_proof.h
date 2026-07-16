@@ -53,6 +53,9 @@ kth_double_spend_proof_mut_t kth_chain_double_spend_proof_copy(kth_double_spend_
 KTH_EXPORT
 kth_bool_t kth_chain_double_spend_proof_equals(kth_double_spend_proof_const_t self, kth_double_spend_proof_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_chain_double_spend_proof_not_equal(kth_double_spend_proof_const_t self, kth_double_spend_proof_const_t other);
+
 
 // Serialization
 
@@ -80,21 +83,6 @@ kth_double_spend_proof_spender_const_t kth_chain_double_spend_proof_spender2(kth
 
 KTH_EXPORT
 kth_hash_t kth_chain_double_spend_proof_hash(kth_double_spend_proof_const_t self);
-
-
-// Setters
-
-/** @param x Borrowed input. Copied by value into the resulting object; ownership of `x` stays with the caller. */
-KTH_EXPORT
-void kth_chain_double_spend_proof_set_out_point(kth_double_spend_proof_mut_t self, kth_output_point_const_t x);
-
-/** @param x Borrowed input. Copied by value into the resulting object; ownership of `x` stays with the caller. */
-KTH_EXPORT
-void kth_chain_double_spend_proof_set_spender1(kth_double_spend_proof_mut_t self, kth_double_spend_proof_spender_const_t x);
-
-/** @param x Borrowed input. Copied by value into the resulting object; ownership of `x` stays with the caller. */
-KTH_EXPORT
-void kth_chain_double_spend_proof_set_spender2(kth_double_spend_proof_mut_t self, kth_double_spend_proof_spender_const_t x);
 
 #ifdef __cplusplus
 } // extern "C"

@@ -57,12 +57,24 @@ kth_bool_t kth_chain_double_spend_proof_spender_equals(kth_double_spend_proof_sp
     return kth::eq<cpp_t>(self, other);
 }
 
+kth_bool_t kth_chain_double_spend_proof_spender_not_equal(kth_double_spend_proof_spender_const_t self, kth_double_spend_proof_spender_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::ne<cpp_t>(self, other);
+}
+
 
 // Serialization
 
 kth_size_t kth_chain_double_spend_proof_spender_serialized_size(kth_double_spend_proof_spender_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::cpp_ref<cpp_t>(self).serialized_size();
+}
+
+uint8_t* kth_chain_double_spend_proof_spender_to_data(kth_double_spend_proof_spender_const_t self, kth_size_t* out_size) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out_size != nullptr);
+    return kth::to_c_array_from(kth::cpp_ref<cpp_t>(self), *out_size);
 }
 
 
@@ -170,22 +182,6 @@ void kth_chain_double_spend_proof_spender_set_push_data(kth_double_spend_proof_s
     KTH_PRECONDITION(value != nullptr || n == 0);
     auto const value_cpp = n != 0 ? kth::data_chunk(value, value + n) : kth::data_chunk{};
     kth::cpp_ref<cpp_t>(self).push_data = value_cpp;
-}
-
-
-// Predicates
-
-kth_bool_t kth_chain_double_spend_proof_spender_is_valid(kth_double_spend_proof_spender_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid());
-}
-
-
-// Operations
-
-void kth_chain_double_spend_proof_spender_reset(kth_double_spend_proof_spender_mut_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).reset();
 }
 
 } // extern "C"
