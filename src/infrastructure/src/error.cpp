@@ -261,6 +261,28 @@ std::string error_category_impl::message(int ev) const noexcept {
         { error::read_past_end_of_buffer, "read past end of buffer" },
         { error::skip_past_end_of_buffer, "skip past end of buffer" },
         { error::write_past_end_of_buffer, "write past end of buffer" },
+        { error::invalid_size, "invalid size" },
+        { error::invalid_script_type, "invalid script type" },
+        { error::script_not_push_only, "script is not push-only" },
+        { error::script_invalid_size, "invalid script size" },
+        { error::invalid_address_count, "invalid address count" },
+        { error::invalid_address, "invalid address" },
+        { error::bad_inventory_count, "invalid inventory count" },
+        { error::invalid_headers_count, "invalid headers count" },
+        { error::version_too_low, "version too low" },
+        { error::version_too_new, "version too new" },
+        { error::invalid_compact_block, "invalid compact block" },
+        { error::unsupported_version, "unsupported version" },
+        { error::invalid_filter_add, "invalid filter add" },
+        { error::invalid_filter_load, "invalid filter load" },
+        { error::bad_merkle_block_count, "invalid merkle block count" },
+        { error::illegal_value, "illegal value" },
+
+        // Database cache
+        { error::height_not_found, "height not found" },
+        { error::hash_not_found, "hash not found" },
+        { error::empty_cache, "empty cache" },
+        { error::utxo_not_found, "utxo not found" },
     };
 
     auto const message = messages.find(ev);

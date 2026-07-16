@@ -30,20 +30,22 @@ enum class bip155_network : uint8_t {
 
 /// BIP155 address entry
 struct KD_API addrv2_entry {
-    uint32_t time{0};
-    uint64_t services{0};
-    bip155_network network{bip155_network::ipv4};
-    data_chunk addr;  // Variable length based on network type
-    uint16_t port{0};
+    /// Fails with error::invalid_address when the network id is unknown or the
+    /// address length does not match it (BIP155 fixes one length per network).
+    static
+    expect<addrv2_entry> create(uint32_t time, uint64_t services,
+        bip155_network network, data_chunk addr, uint16_t port);
 
     [[nodiscard]]
     friend bool operator==(addrv2_entry const&, addrv2_entry const&) = default;
 
-    /// Check if this entry is valid
-    [[nodiscard]]
-    bool is_valid() const;
+    [[nodiscard]] uint32_t time() const;
+    [[nodiscard]] uint64_t services() const;
+    [[nodiscard]] bip155_network network() const;
+    [[nodiscard]] data_chunk const& addr() const;
+    [[nodiscard]] uint16_t port() const;
 
-    /// Get the expected address size for a given network
+    /// The address length BIP155 fixes for a network id, or 0 if unknown.
     static
     size_t expected_addr_size(bip155_network net);
 
@@ -51,9 +53,19 @@ struct KD_API addrv2_entry {
     [[nodiscard]]
     std::optional<infrastructure::message::network_address> to_network_address() const;
 
-    /// Create from network_address
+    /// Create from network_address. IPv4/IPv6 always yield a valid entry.
     static
     addrv2_entry from_network_address(infrastructure::message::network_address const& addr);
+
+private:
+    addrv2_entry(uint32_t time, uint64_t services, bip155_network network,
+        data_chunk addr, uint16_t port);
+
+    uint32_t time_;
+    uint64_t services_;
+    bip155_network network_;
+    data_chunk addr_;
+    uint16_t port_;
 };
 
 /// BIP155: addrv2 message.

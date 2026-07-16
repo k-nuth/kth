@@ -273,6 +273,7 @@ enum error_code_t {
     script_not_push_only,
     script_invalid_size,
     invalid_address_count,
+    invalid_address,
     bad_inventory_count,
     invalid_headers_count,
     version_too_low,

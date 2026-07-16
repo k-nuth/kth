@@ -587,6 +587,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/math/stealth.cpp
 
         test/message/address.cpp
+        test/message/addrv2.cpp
         test/message/alert.cpp
         test/message/alert_payload.cpp
         test/message/block.cpp
