@@ -13,12 +13,13 @@
 
 #if defined(_WIN32)
 #include <windows.h>
-#elif defined(__EMSCRIPTEN__) || defined(__APPLE__)
-#include <unistd.h>
-#include <strings.h>
+#elif defined(__APPLE__)
+#include <sys/random.h>   // getentropy: on macOS it lives here, not <unistd.h>
+#elif defined(__EMSCRIPTEN__)
+#include <unistd.h>       // getentropy
 #else
-#include <sys/random.h>
-#include <strings.h>
+#include <sys/random.h>   // getrandom
+#include <strings.h>      // explicit_bzero
 #endif
 
 namespace kth {
@@ -77,15 +78,18 @@ void pseudo_random::wipe_bytes(std::span<std::byte> out) noexcept {
 #if defined(_WIN32)
     // Documented never to be optimized away.
     ::SecureZeroMemory(out.data(), out.size());
-#elif defined(__GLIBC__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
+#elif defined(__GLIBC__) || defined(__FreeBSD__) || defined(__OpenBSD__)
     // Same contract, and it is the libc's job to keep it.
     ::explicit_bzero(out.data(), out.size());
 #else
-    std::memset(out.data(), 0, out.size());
-    // No explicit_bzero here, so deny the optimizer the premise it needs to
-    // drop the store: the "memory" clobber says an unseen party may read or
+    // Everything else, macOS included -- it has no explicit_bzero, and
+    // memset_s needs __STDC_WANT_LIB_EXT1__ defined before any header pulls in
+    // <string.h>, which is too fragile to rely on. memset plus a barrier is
+    // what libsodium falls back to: deny the optimizer the premise it needs to
+    // drop the store. The "memory" clobber says an unseen party may read or
     // change these bytes, and passing the pointer as an input stops the buffer
     // itself from being reasoned about as dead.
+    std::memset(out.data(), 0, out.size());
     #if defined(__GNUC__) || defined(__clang__)
         asm volatile("" : : "r"(out.data()) : "memory");
     #else
