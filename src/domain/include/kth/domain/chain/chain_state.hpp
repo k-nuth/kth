@@ -235,9 +235,10 @@ struct KD_API chain_state {
 
 #endif  //KTH_CURRENCY_BCH
 
-    /// Construction with zero height or any empty array causes invalid state.
+    /// The null state (zero height), reachable only if the chain size
+    /// overflows size_t. A genuine chain state always has a non-zero height.
     [[nodiscard]]
-    bool is_valid() const;
+    bool is_null() const;
 
     /// Determine if the fork is set for this block.
     [[nodiscard]]

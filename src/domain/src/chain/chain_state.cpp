@@ -1058,7 +1058,7 @@ uint32_t chain_state::work_required(data const& values, config::network network,
                                     , uint32_t asert_half_life
 #endif
 ) {
-    // Invalid parameter via public interface, test is_valid for results.
+    // A zero height yields an empty map; the caller treats that as unusable.
     if (values.height == 0) {
         return {};
     }
@@ -1373,11 +1373,8 @@ chain_state::data chain_state::to_block(chain_state const& pool, block const& bl
     return data;
 }
 
-// Semantic invalidity can also arise from too many/few values in the arrays.
-// The same computations used to specify the ranges could detect such errors.
-// These are the conditions that would cause exception during execution.
-bool chain_state::is_valid() const {
-    return data_.height != 0;
+bool chain_state::is_null() const {
+    return data_.height == 0;
 }
 
 // Properties.
