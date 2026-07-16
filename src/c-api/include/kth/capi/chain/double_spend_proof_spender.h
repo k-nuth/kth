@@ -40,11 +40,18 @@ kth_double_spend_proof_spender_mut_t kth_chain_double_spend_proof_spender_copy(k
 KTH_EXPORT
 kth_bool_t kth_chain_double_spend_proof_spender_equals(kth_double_spend_proof_spender_const_t self, kth_double_spend_proof_spender_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_chain_double_spend_proof_spender_not_equal(kth_double_spend_proof_spender_const_t self, kth_double_spend_proof_spender_const_t other);
+
 
 // Serialization
 
 KTH_EXPORT
 kth_size_t kth_chain_double_spend_proof_spender_serialized_size(kth_double_spend_proof_spender_const_t self);
+
+/** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
+KTH_EXPORT KTH_OWNED
+uint8_t* kth_chain_double_spend_proof_spender_to_data(kth_double_spend_proof_spender_const_t self, kth_size_t* out_size);
 
 
 // Getters
@@ -109,18 +116,6 @@ void kth_chain_double_spend_proof_spender_set_outputs_hash_unsafe(kth_double_spe
 
 KTH_EXPORT
 void kth_chain_double_spend_proof_spender_set_push_data(kth_double_spend_proof_spender_mut_t self, uint8_t const* value, kth_size_t n);
-
-
-// Predicates
-
-KTH_EXPORT
-kth_bool_t kth_chain_double_spend_proof_spender_is_valid(kth_double_spend_proof_spender_const_t self);
-
-
-// Operations
-
-KTH_EXPORT
-void kth_chain_double_spend_proof_spender_reset(kth_double_spend_proof_spender_mut_t self);
 
 #ifdef __cplusplus
 } // extern "C"

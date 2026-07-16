@@ -99,7 +99,6 @@ TEST_CASE("C-API DspSpender - from_data wire layout populates all fields",
     REQUIRE(ec == kth_ec_success);
     REQUIRE(sp != NULL);
 
-    REQUIRE(kth_chain_double_spend_proof_spender_is_valid(sp) != 0);
     REQUIRE(kth_chain_double_spend_proof_spender_version(sp) == 1u);
     REQUIRE(kth_chain_double_spend_proof_spender_out_sequence(sp) == 2u);
     REQUIRE(kth_chain_double_spend_proof_spender_locktime(sp) == 3u);
@@ -259,30 +258,45 @@ TEST_CASE("C-API DspSpender - copy preserves equality",
     kth_chain_double_spend_proof_spender_destruct(original);
 }
 
+TEST_CASE("C-API DspSpender - not_equal is the negation of equals",
+          "[C-API DspSpender]") {
+    kth_double_spend_proof_spender_mut_t a = NULL;
+    kth_double_spend_proof_spender_mut_t b = NULL;
+    REQUIRE(kth_chain_double_spend_proof_spender_construct_from_data(
+                kSpenderWire, sizeof(kSpenderWire), 0u, &a) == kth_ec_success);
+    REQUIRE(kth_chain_double_spend_proof_spender_construct_from_data(
+                kSpenderWire, sizeof(kSpenderWire), 0u, &b) == kth_ec_success);
+
+    REQUIRE(kth_chain_double_spend_proof_spender_not_equal(a, b) == 0);
+    kth_chain_double_spend_proof_spender_set_version(b, 99u);
+    REQUIRE(kth_chain_double_spend_proof_spender_not_equal(a, b) != 0);
+
+    kth_chain_double_spend_proof_spender_destruct(b);
+    kth_chain_double_spend_proof_spender_destruct(a);
+}
+
 // ---------------------------------------------------------------------------
-// Reset
+// Serialization (to_data)
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API DspSpender - reset zeroes all fields",
+TEST_CASE("C-API DspSpender - to_data round-trips the wire bytes",
           "[C-API DspSpender]") {
     kth_double_spend_proof_spender_mut_t sp = NULL;
-    kth_error_code_t ec = kth_chain_double_spend_proof_spender_construct_from_data(
-        kSpenderWire, sizeof(kSpenderWire), 0u, &sp);
-    REQUIRE(ec == kth_ec_success);
-    REQUIRE(kth_chain_double_spend_proof_spender_is_valid(sp) != 0);
+    REQUIRE(kth_chain_double_spend_proof_spender_construct_from_data(
+                kSpenderWire, sizeof(kSpenderWire), 0u, &sp) == kth_ec_success);
 
-    kth_chain_double_spend_proof_spender_reset(sp);
+    kth_size_t out_size = 0;
+    uint8_t* raw = kth_chain_double_spend_proof_spender_to_data(sp, &out_size);
+    REQUIRE(raw != NULL);
+    REQUIRE(out_size == sizeof(kSpenderWire));
+    REQUIRE(memcmp(raw, kSpenderWire, sizeof(kSpenderWire)) == 0);
 
-    REQUIRE(kth_chain_double_spend_proof_spender_is_valid(sp) == 0);
-    REQUIRE(kth_chain_double_spend_proof_spender_version(sp) == 0u);
-    REQUIRE(kth_chain_double_spend_proof_spender_out_sequence(sp) == 0u);
-    REQUIRE(kth_chain_double_spend_proof_spender_locktime(sp) == 0u);
-    REQUIRE(kth_hash_is_null(kth_chain_double_spend_proof_spender_prev_outs_hash(sp)) != 0);
-    REQUIRE(kth_hash_is_null(kth_chain_double_spend_proof_spender_sequence_hash(sp)) != 0);
-    REQUIRE(kth_hash_is_null(kth_chain_double_spend_proof_spender_outputs_hash(sp)) != 0);
-
+    kth_core_destruct_array(raw);
     kth_chain_double_spend_proof_spender_destruct(sp);
 }
+
+// reset() and is_valid() were removed from the spender with the DSP
+// value-types refactor; a spender is now built via construct_from_data.
 
 // ---------------------------------------------------------------------------
 // Preconditions
@@ -352,12 +366,10 @@ TEST_CASE("C-API DspSpender - set_outputs_hash null aborts",
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Dsp - default construct produces invalid proof",
+TEST_CASE("C-API Dsp - default construct yields a usable handle",
           "[C-API Dsp]") {
     kth_double_spend_proof_mut_t dsp = kth_chain_double_spend_proof_construct_default();
     REQUIRE(dsp != NULL);
-    // A default-constructed DSP has a default out_point and zero-filled
-    // spenders — therefore is_valid() == false.
     kth_chain_double_spend_proof_destruct(dsp);
 }
 
@@ -432,28 +444,26 @@ TEST_CASE("C-API Dsp - serialized_size matches to_data length",
 }
 
 // ---------------------------------------------------------------------------
-// Setters
+// Construct
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Dsp - setters replace fields",
+TEST_CASE("C-API Dsp - construct populates fields",
           "[C-API Dsp]") {
-    kth_double_spend_proof_mut_t dsp = kth_chain_double_spend_proof_construct_default();
-    REQUIRE(dsp != NULL);
-
     kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHashB, 42u);
-    kth_chain_double_spend_proof_set_out_point(dsp, op);
-    kth_output_point_const_t op_view = kth_chain_double_spend_proof_out_point(dsp);
-    REQUIRE(kth_chain_output_point_index(op_view) == 42u);
-    REQUIRE(kth_hash_equal(kth_chain_output_point_hash(op_view), kHashB) != 0);
 
     kth_double_spend_proof_spender_mut_t sp = NULL;
     REQUIRE(kth_chain_double_spend_proof_spender_construct_from_data(
                 kSpenderWire, sizeof(kSpenderWire), 0u, &sp) == kth_ec_success);
 
-    kth_chain_double_spend_proof_set_spender1(dsp, sp);
-    kth_chain_double_spend_proof_set_spender2(dsp, sp);
+    kth_double_spend_proof_mut_t dsp = kth_chain_double_spend_proof_construct(op, sp, sp);
+    REQUIRE(dsp != NULL);
+
+    kth_output_point_const_t op_view = kth_chain_double_spend_proof_out_point(dsp);
+    REQUIRE(kth_chain_output_point_index(op_view) == 42u);
+    REQUIRE(kth_hash_equal(kth_chain_output_point_hash(op_view), kHashB) != 0);
     REQUIRE(kth_chain_double_spend_proof_spender_equals(kth_chain_double_spend_proof_spender1(dsp), sp) != 0);
     REQUIRE(kth_chain_double_spend_proof_spender_equals(kth_chain_double_spend_proof_spender2(dsp), sp) != 0);
+
     kth_chain_double_spend_proof_spender_destruct(sp);
     kth_chain_output_point_destruct(op);
     kth_chain_double_spend_proof_destruct(dsp);
@@ -463,7 +473,7 @@ TEST_CASE("C-API Dsp - setters replace fields",
 // Copy / equals
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Dsp - copy preserves equality and diverges after mutation",
+TEST_CASE("C-API Dsp - copy preserves equality; distinct proofs diverge",
           "[C-API Dsp]") {
     kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHashA, 7u);
     kth_double_spend_proof_spender_mut_t s1 = NULL;
@@ -479,11 +489,12 @@ TEST_CASE("C-API Dsp - copy preserves equality and diverges after mutation",
     REQUIRE(copy != NULL);
     REQUIRE(kth_chain_double_spend_proof_equals(original, copy) != 0);
 
-    // Mutate the copy — the two must diverge.
+    // The proof is immutable; a distinct out_point yields a distinct proof.
     kth_output_point_mut_t other_op = kth_chain_output_point_construct_from_hash_index(&kHashB, 99u);
-    kth_chain_double_spend_proof_set_out_point(copy, other_op);
-    REQUIRE(kth_chain_double_spend_proof_equals(original, copy) == 0);
+    kth_double_spend_proof_mut_t other = kth_chain_double_spend_proof_construct(other_op, s1, s2);
+    REQUIRE(kth_chain_double_spend_proof_equals(original, other) == 0);
 
+    kth_chain_double_spend_proof_destruct(other);
     kth_chain_output_point_destruct(other_op);
     kth_chain_double_spend_proof_destruct(copy);
     kth_chain_double_spend_proof_destruct(original);
@@ -501,22 +512,27 @@ TEST_CASE("C-API Dsp - copy preserves equality and diverges after mutation",
 // Reset
 // ---------------------------------------------------------------------------
 
-TEST_CASE("C-API Dsp - reset drops to invalid state",
+TEST_CASE("C-API Dsp - not_equal is the negation of equals",
           "[C-API Dsp]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kHashA, 7u);
-    kth_double_spend_proof_spender_mut_t s1 = NULL;
-    kth_double_spend_proof_spender_mut_t s2 = NULL;
+    kth_double_spend_proof_spender_mut_t sp = NULL;
     REQUIRE(kth_chain_double_spend_proof_spender_construct_from_data(
-                kSpenderWire, sizeof(kSpenderWire), 0u, &s1) == kth_ec_success);
-    REQUIRE(kth_chain_double_spend_proof_spender_construct_from_data(
-                kSpenderWire, sizeof(kSpenderWire), 0u, &s2) == kth_ec_success);
+                kSpenderWire, sizeof(kSpenderWire), 0u, &sp) == kth_ec_success);
 
-    kth_double_spend_proof_mut_t dsp = kth_chain_double_spend_proof_construct(op, s1, s2);
-    REQUIRE(dsp != NULL);
-    kth_chain_double_spend_proof_destruct(dsp);
-    kth_chain_double_spend_proof_spender_destruct(s2);
-    kth_chain_double_spend_proof_spender_destruct(s1);
-    kth_chain_output_point_destruct(op);
+    kth_output_point_mut_t op_a = kth_chain_output_point_construct_from_hash_index(&kHashA, 7u);
+    kth_output_point_mut_t op_b = kth_chain_output_point_construct_from_hash_index(&kHashB, 9u);
+    kth_double_spend_proof_mut_t a = kth_chain_double_spend_proof_construct(op_a, sp, sp);
+    kth_double_spend_proof_mut_t a2 = kth_chain_double_spend_proof_construct(op_a, sp, sp);
+    kth_double_spend_proof_mut_t b = kth_chain_double_spend_proof_construct(op_b, sp, sp);
+
+    REQUIRE(kth_chain_double_spend_proof_not_equal(a, a2) == 0);
+    REQUIRE(kth_chain_double_spend_proof_not_equal(a, b) != 0);
+
+    kth_chain_double_spend_proof_destruct(b);
+    kth_chain_double_spend_proof_destruct(a2);
+    kth_chain_double_spend_proof_destruct(a);
+    kth_chain_output_point_destruct(op_b);
+    kth_chain_output_point_destruct(op_a);
+    kth_chain_double_spend_proof_spender_destruct(sp);
 }
 
 // ---------------------------------------------------------------------------
