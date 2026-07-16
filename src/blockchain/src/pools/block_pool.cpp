@@ -177,27 +177,19 @@ void block_pool::prune(size_t top_height) {
 }
 
 void block_pool::filter(get_data_ptr message) const {
-    auto& inventories = message->inventories();
     auto const& left = blocks_.left;
 
-    for (auto it = inventories.begin(); it != inventories.end();) {
-        if ( ! it->is_block_type()) {
-            ++it;
-            continue;
-        }
+    ///////////////////////////////////////////////////////////////////////////
+    // Critical Section
+    mutex_.lock_shared();
 
-        block_entry const entry{ it->hash() };
+    message->erase_if([&left](auto const& inv) {
+        return inv.is_block_type() &&
+               left.find(block_entry{ inv.hash() }) != left.end();
+    });
 
-        ///////////////////////////////////////////////////////////////////////
-        // Critical Section
-        mutex_.lock_shared();
-        auto const found = (left.find(entry) != left.end());
-        mutex_.unlock_shared();
-        ///////////////////////////////////////////////////////////////////////
-
-        // TODO(legacy): optimize (prevent repeating vector moves).
-        it = found ? inventories.erase(it) : it + 1;
-    }
+    mutex_.unlock_shared();
+    ///////////////////////////////////////////////////////////////////////////
 }
 
 // protected

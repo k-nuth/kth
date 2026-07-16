@@ -19,20 +19,22 @@ std::string const get_data::command = "getdata";
 uint32_t const get_data::version_minimum = version::level::minimum;
 uint32_t const get_data::version_maximum = version::level::maximum;
 
-get_data::get_data(inventory_vector::list const& values)
-    : inventory(values) {
+// static
+expect<get_data> get_data::create(inventory_vector::list inventories) {
+    auto inv = inventory::create(std::move(inventories));
+    if ( ! inv) {
+        return std::unexpected(inv.error());
+    }
+    return get_data(std::move(*inv));
 }
 
-get_data::get_data(inventory_vector::list&& values)
-    : inventory(values) {
-}
-
-get_data::get_data(hash_list const& hashes, inventory::type_id type)
-    : inventory(hashes, type) {
-}
-
-get_data::get_data(std::initializer_list<inventory_vector> const& values)
-    : inventory(values) {
+// static
+expect<get_data> get_data::create(hash_list const& hashes, type_id type) {
+    auto inv = inventory::create(hashes, type);
+    if ( ! inv) {
+        return std::unexpected(inv.error());
+    }
+    return get_data(std::move(*inv));
 }
 
 // Deserialization.

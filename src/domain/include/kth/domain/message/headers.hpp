@@ -7,7 +7,6 @@
 
 #include <cstdint>
 #include <initializer_list>
-#include <istream>
 #include <memory>
 #include <string>
 
@@ -28,20 +27,18 @@ struct KD_API headers {
     using const_ptr = std::shared_ptr<const headers>;
 
     headers() = default;
-    headers(header::list const& values);
-    headers(header::list&& values);
+
+    /// Fails with error::invalid_headers_count over max_get_headers entries.
+    static
+    expect<headers> create(header::list elements);
     headers(std::initializer_list<header> const& values);
 
     [[nodiscard]]
     friend bool operator==(headers const&, headers const&) = default;
 
-    header::list& elements();
-
     [[nodiscard]]
     header::list const& elements() const;
 
-    void set_elements(header::list const& values);
-    void set_elements(header::list&& values);
 
     [[nodiscard]]
     bool is_sequential() const;
@@ -70,6 +67,8 @@ struct KD_API headers {
 
 
 private:
+    headers(header::list elements);
+
     header::list elements_;
 };
 

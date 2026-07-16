@@ -35,14 +35,17 @@ domain::message::headers::ptr message_factory(size_t count) {
 domain::message::headers::ptr message_factory(size_t count,
     hash_digest const& previous) {
     auto previous_hash = previous;
-    auto const headers = std::make_shared<domain::message::headers>();
-    auto& elements = headers->elements();
+    domain::message::header::list elements;
+    elements.reserve(count);
 
     for (size_t height = 0; height < count; ++height) {
         header const current_header{ 0, previous_hash, {}, 0, 0, 0 };
         elements.push_back(current_header);
         previous_hash = kth::domain::chain::hash(current_header);
     }
+
+    auto const headers = std::make_shared<domain::message::headers>(
+        domain::message::headers::create(std::move(elements)).value());
 
     return headers;
 }

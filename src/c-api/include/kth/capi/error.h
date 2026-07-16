@@ -243,6 +243,7 @@ typedef enum kth_error_code {
     kth_ec_script_invalid_size,
     kth_ec_invalid_address_count,
     kth_ec_bad_inventory_count,
+    kth_ec_invalid_headers_count,
     kth_ec_version_too_low,
     kth_ec_version_too_new,
     kth_ec_invalid_compact_block,

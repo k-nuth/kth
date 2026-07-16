@@ -5,7 +5,6 @@
 #ifndef KTH_DOMAIN_MESSAGE_FILTER_ADD_HPP
 #define KTH_DOMAIN_MESSAGE_FILTER_ADD_HPP
 
-#include <istream>
 #include <memory>
 #include <string>
 
@@ -23,26 +22,22 @@ struct KD_API filter_add {
     using const_ptr = std::shared_ptr<const filter_add>;
 
     filter_add() = default;
-    filter_add(data_chunk const& data);
-    filter_add(data_chunk&& data);
+
+    /// Fails with error::invalid_filter_add over max_filter_add bytes (BIP37).
+    static
+    expect<filter_add> create(data_chunk data);
 
     [[nodiscard]]
     friend bool operator==(filter_add const&, filter_add const&) = default;
 
-    data_chunk& data();
-
     [[nodiscard]]
     data_chunk const& data() const;
 
-    void set_data(data_chunk const& value);
-    void set_data(data_chunk&& value);
-
     static
-    expect<filter_add> from_data(byte_reader& reader, uint32_t /*version*/);
+    expect<filter_add> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, uint32_t version) const;
-
 
     [[nodiscard]]
     size_t serialized_size(uint32_t version) const;
@@ -57,6 +52,8 @@ struct KD_API filter_add {
     uint32_t const version_maximum;
 
 private:
+    filter_add(data_chunk data);
+
     data_chunk data_;
 };
 

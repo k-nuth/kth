@@ -5,7 +5,6 @@
 #ifndef KTH_DOMAIN_MESSAGE_ADDRESS_HPP
 #define KTH_DOMAIN_MESSAGE_ADDRESS_HPP
 
-#include <istream>
 #include <memory>
 #include <string>
 
@@ -24,19 +23,17 @@ struct KD_API address {
     using const_ptr = std::shared_ptr<const address>;
 
     address() = default;
-    address(infrastructure::message::network_address::list const& addresses);
-    address(infrastructure::message::network_address::list&& addresses);
+
+    /// Fails with error::invalid_address_count over max_address entries.
+    static
+    expect<address> create(infrastructure::message::network_address::list addresses);
 
     [[nodiscard]]
     friend bool operator==(address const&, address const&) = default;
 
-    infrastructure::message::network_address::list& addresses();
-
     [[nodiscard]]
     infrastructure::message::network_address::list const& addresses() const;
 
-    void set_addresses(infrastructure::message::network_address::list const& value);
-    void set_addresses(infrastructure::message::network_address::list&& value);
 
     static
     expect<address> from_data(byte_reader& reader, uint32_t version);
@@ -59,6 +56,8 @@ struct KD_API address {
     uint32_t const version_maximum;
 
 private:
+    address(infrastructure::message::network_address::list addresses);
+
     infrastructure::message::network_address::list addresses_;
 };
 

@@ -437,15 +437,14 @@ TEST_CASE("block pool filter matched blocks non blocks and mismatches remain", "
     const domain::message::inventory_vector expected1{ domain::message::inventory::type_id::error, block1->hash() };
     const domain::message::inventory_vector expected2{ domain::message::inventory::type_id::transaction, block3->hash() };
     const domain::message::inventory_vector expected3{ domain::message::inventory::type_id::block, block3->hash() };
-    domain::message::get_data data
-    {
+    auto data = domain::message::get_data::create({
         expected1,
         { domain::message::inventory::type_id::block, block1->hash() },
         expected2,
         { domain::message::inventory::type_id::block, block2->hash() },
         { domain::message::inventory::type_id::block, block2->hash() },
         expected3
-    };
+    }).value();
     auto const message = std::make_shared<domain::message::get_data>(std::move(data));
     instance.filter(message);
     REQUIRE(message->inventories().size() == 3u);

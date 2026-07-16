@@ -29,10 +29,12 @@ public:
     using const_ptr = std::shared_ptr<const not_found>;
 
     not_found() = default;
-    not_found(inventory_vector::list const& values);
-    not_found(inventory_vector::list&& values);
-    not_found(hash_list const& hashes, type_id type);
-    not_found(std::initializer_list<inventory_vector> const& values);
+
+    /// Same cap as the inventory it is.
+    static
+    expect<not_found> create(inventory_vector::list inventories);
+    static
+    expect<not_found> create(hash_list const& hashes, type_id type);
     not_found(inventory&& inv)
         : inventory(std::move(inv))
     {}

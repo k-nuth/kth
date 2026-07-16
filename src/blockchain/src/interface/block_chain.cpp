@@ -1289,20 +1289,25 @@ block_chain::fetch_locator_block_hashes(get_blocks_const_ptr locator,
         }
     }
 
-    auto hashes = std::make_shared<inventory>();
-    hashes->inventories().reserve(floor_subtract(end, begin));
+    inventory_vector::list inventories;
+    inventories.reserve(floor_subtract(end, begin));
 
     for (auto height = begin; height < end; ++height) {
         auto const result = database_.internal_db().get_header(height);
         if ( ! result) {
-            hashes->inventories().shrink_to_fit();
+            inventories.shrink_to_fit();
             break;
         }
         static auto const id = inventory::type_id::block;
-        hashes->inventories().emplace_back(id, domain::chain::hash(*result));
+        inventories.emplace_back(id, domain::chain::hash(*result));
     }
 
-    co_return hashes;
+    auto hashes = inventory::create(std::move(inventories));
+    if ( ! hashes) {
+        co_return std::unexpected(hashes.error());
+    }
+
+    co_return std::make_shared<inventory>(std::move(*hashes));
 }
 
 awaitable_expected<headers_ptr>
@@ -1339,19 +1344,24 @@ block_chain::fetch_locator_block_headers(get_headers_const_ptr locator,
         }
     }
 
-    auto message = std::make_shared<domain::message::headers>();
-    message->elements().reserve(floor_subtract(end, begin));
+    domain::message::header::list elements;
+    elements.reserve(floor_subtract(end, begin));
 
     for (auto height = begin; height < end; ++height) {
         auto const result = database_.internal_db().get_header(height);
         if ( ! result) {
-            message->elements().shrink_to_fit();
+            elements.shrink_to_fit();
             break;
         }
-        message->elements().push_back(*result);
+        elements.push_back(*result);
     }
 
-    co_return message;
+    auto message = domain::message::headers::create(std::move(elements));
+    if ( ! message) {
+        co_return std::unexpected(message.error());
+    }
+
+    co_return std::make_shared<domain::message::headers>(std::move(*message));
 }
 
 awaitable_expected<get_headers_ptr>
@@ -1662,17 +1672,11 @@ void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const
     }
 
     block_organizer_.filter(message);
-    auto& inventories = message->inventories();
     auto const& internal_db = database_.internal_db();
 
-    for (auto it = inventories.begin(); it != inventories.end();) {
-        auto const header = internal_db.get_header(it->hash());
-        if (it->is_block_type() && header) {
-            it = inventories.erase(it);
-        } else {
-            ++it;
-        }
-    }
+    message->erase_if([&internal_db](auto const& inv) {
+        return inv.is_block_type() && internal_db.get_header(inv.hash());
+    });
 
     co_return error::success;
 }
@@ -1682,8 +1686,6 @@ void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const
         co_return error::service_stopped;
     }
 
-    auto& inventories = message->inventories();
-
 #if defined(KTH_WITH_MEMPOOL)
     auto validated_txs = mempool_.get_validated_txs_low();
 
@@ -1691,23 +1693,15 @@ void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const
         co_return error::success;
     }
 
-    for (auto it = inventories.begin(); it != inventories.end();) {
-        auto found = validated_txs.find(it->hash());
-        if (it->is_transaction_type() && found != validated_txs.end()) {
-            it = inventories.erase(it);
-        } else {
-            ++it;
-        }
-    }
+    message->erase_if([&validated_txs](auto const& inv) {
+        return inv.is_transaction_type() &&
+               validated_txs.find(inv.hash()) != validated_txs.end();
+    });
 #else
-    for (auto it = inventories.begin(); it != inventories.end();) {
-        auto const pos = get_transaction_position(it->hash(), false);
-        if (it->is_transaction_type() && pos) {
-            it = inventories.erase(it);
-        } else {
-            ++it;
-        }
-    }
+    message->erase_if([this](auto const& inv) {
+        return inv.is_transaction_type() &&
+               get_transaction_position(inv.hash(), false);
+    });
 #endif
 
     co_return error::success;

@@ -5,7 +5,6 @@
 #ifndef KTH_DOMAIN_MESSAGE_GET_BLOCK_TRANSACTIONS_HPP
 #define KTH_DOMAIN_MESSAGE_GET_BLOCK_TRANSACTIONS_HPP
 
-#include <istream>
 #include <memory>
 
 #include <kth/domain/constants.hpp>
@@ -24,26 +23,21 @@ struct KD_API get_block_transactions {
     using const_ptr = std::shared_ptr<const get_block_transactions>;
 
     get_block_transactions();
-    get_block_transactions(hash_digest const& block_hash, std::vector<uint64_t> const& indexes);
-    get_block_transactions(hash_digest const& block_hash, std::vector<uint64_t>&& indexes);
+
+    /// Fails with error::invalid_size over the number of transactions a block
+    /// could hold.
+    static
+    expect<get_block_transactions> create(hash_digest const& block_hash, std::vector<uint64_t> indexes);
 
     [[nodiscard]]
     friend bool operator==(get_block_transactions const&, get_block_transactions const&) = default;
 
-    hash_digest& block_hash();
-
     [[nodiscard]]
     hash_digest const& block_hash() const;
-
-    void set_block_hash(hash_digest const& value);
-
-    std::vector<uint64_t>& indexes();
 
     [[nodiscard]]
     std::vector<uint64_t> const& indexes() const;
 
-    void set_indexes(std::vector<uint64_t> const& values);
-    void set_indexes(std::vector<uint64_t>&& values);
 
     static
     expect<get_block_transactions> from_data(byte_reader& reader, uint32_t /*version*/);
@@ -64,6 +58,8 @@ struct KD_API get_block_transactions {
     uint32_t const version_maximum;
 
 private:
+    get_block_transactions(hash_digest const& block_hash, std::vector<uint64_t> indexes);
+
     hash_digest block_hash_;
     std::vector<uint64_t> indexes_;
 };

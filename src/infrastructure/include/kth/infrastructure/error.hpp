@@ -274,6 +274,7 @@ enum error_code_t {
     script_invalid_size,
     invalid_address_count,
     bad_inventory_count,
+    invalid_headers_count,
     version_too_low,
     version_too_new,
     invalid_compact_block,

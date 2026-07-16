@@ -22,12 +22,16 @@ uint32_t const headers::version_minimum = version::level::headers;
 uint32_t const headers::version_maximum = version::level::maximum;
 
 // Uses headers copy assignment.
-headers::headers(header::list const& values)
-    : elements_(values) {
-}
+headers::headers(header::list elements)
+    : elements_(std::move(elements))
+{}
 
-headers::headers(header::list&& values)
-    : elements_(std::move(values)) {
+// static
+expect<headers> headers::create(header::list elements) {
+    if (elements.size() > max_get_headers) {
+        return std::unexpected(error::invalid_headers_count);
+    }
+    return headers(std::move(elements));
 }
 
 headers::headers(std::initializer_list<header> const& values)
@@ -59,13 +63,11 @@ expect<headers> headers::from_data(byte_reader& reader, uint32_t version) {
     if (version < headers::version_minimum) {
         return std::unexpected(error::version_too_new);
     }
-    return headers(std::move(elements));
+    return create(std::move(elements));
 }
 
 // Serialization.
 //-----------------------------------------------------------------------------
-
-
 
 bool headers::is_sequential() const {
     if (elements_.empty()) {
@@ -111,20 +113,8 @@ size_t headers::serialized_size(uint32_t version) const {
            (elements_.size() * header::satoshi_fixed_size(version));
 }
 
-header::list& headers::elements() {
-    return elements_;
-}
-
 header::list const& headers::elements() const {
     return elements_;
-}
-
-void headers::set_elements(header::list const& values) {
-    elements_ = values;
-}
-
-void headers::set_elements(header::list&& values) {
-    elements_ = std::move(values);
 }
 
 expect<void> headers::to_data(byte_writer& writer, uint32_t version) const {

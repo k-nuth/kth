@@ -63,7 +63,9 @@ public:
 
     /// The block data request message for the outstanding block hashes.
     /// Set new if the preceding request was unsuccessful or discarded.
-    domain::message::get_data request(bool new_channel);
+    /// Fails if the reserved heights outgrow the inv cap.
+    [[nodiscard]]
+    expect<domain::message::get_data> request(bool new_channel);
 
     /// Add the block hash to the reservation.
     void insert(hash_digest&& hash, size_t height);

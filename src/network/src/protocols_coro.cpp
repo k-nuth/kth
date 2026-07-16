@@ -536,7 +536,11 @@ awaitable_expected<domain::message::address> request_addresses(
         spdlog::debug("[protocol] Parsed addrv2 from [{}]: {} entries, {} convertible to legacy",
             peer.authority(), addrv2_result->addresses().size(), addresses.size());
 
-        co_return domain::message::address(std::move(addresses));
+        auto legacy = domain::message::address::create(std::move(addresses));
+        if ( ! legacy) {
+            co_return std::unexpected(legacy.error());
+        }
+        co_return std::move(*legacy);
     }
 
     // Parse as legacy addr
@@ -575,9 +579,17 @@ awaitable_expected<domain::message::address> request_addresses(
         for (auto const& addr : addresses) {
             entries.push_back(domain::message::addrv2_entry::from_network_address(addr));
         }
-        co_return co_await peer.send(domain::message::addrv2(std::move(entries)));
+        auto message = domain::message::addrv2::create(std::move(entries));
+        if ( ! message) {
+            co_return message.error();
+        }
+        co_return co_await peer.send(*message);
     } else {
-        co_return co_await peer.send(domain::message::address(addresses));
+        auto message = domain::message::address::create(addresses);
+        if ( ! message) {
+            co_return message.error();
+        }
+        co_return co_await peer.send(*message);
     }
 }
 
@@ -672,13 +684,18 @@ awaitable_expected<domain::message::headers> request_headers_from(
         inventories.emplace_back(domain::message::inventory_vector::type_id::block, hash);
     }
 
-    domain::message::get_data request(std::move(inventories));
+    auto request = domain::message::get_data::create(std::move(inventories));
+    if ( ! request) {
+        spdlog::warn("[protocol] Refusing to request {} blocks from [{}]: {}",
+            block_hashes.size(), peer.authority(), request.error().message());
+        co_return request.error();
+    }
 
     spdlog::debug("[protocol] Requesting {} blocks from [{}]",
         block_hashes.size(), peer.authority());
 
     // Send getdata - blocks will arrive asynchronously
-    co_return co_await peer.send(request);
+    co_return co_await peer.send(*request);
 }
 
 // awaitable_expected<domain::message::block> request_block(
@@ -775,7 +792,12 @@ awaitable_expected<std::vector<block_result<Mode>>> request_blocks_batch(
         inventories.emplace_back(domain::message::inventory_vector::type_id::block, hash);
     }
 
-    domain::message::get_data request(std::move(inventories));
+    auto request = domain::message::get_data::create(std::move(inventories));
+    if ( ! request) {
+        spdlog::warn("[protocol] Refusing to request {} blocks in batch from [{}]: {}",
+            blocks.size(), peer.authority(), request.error().message());
+        co_return std::unexpected(request.error());
+    }
 
     spdlog::debug("[protocol] Requesting {} blocks in batch from [{}] ({}-{})",
         blocks.size(), peer.authority(),
@@ -783,7 +805,7 @@ awaitable_expected<std::vector<block_result<Mode>>> request_blocks_batch(
 
     // Send ONE getdata with all block hashes - measure send time
     auto send_start = std::chrono::steady_clock::now();
-    auto ec = co_await peer.send(request);
+    auto ec = co_await peer.send(*request);
     auto send_us = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - send_start).count();
 

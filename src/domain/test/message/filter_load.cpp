@@ -14,7 +14,7 @@ TEST_CASE("filter load constructor 2 always equals params", "[filter load]") {
     uint32_t tweak = 36u;
     uint8_t flags = 0xae;
 
-    message::filter_load instance(filter, hash_functions, tweak, flags);
+    auto const instance = message::filter_load::create(filter, hash_functions, tweak, flags).value();
     REQUIRE(filter == instance.filter());
     REQUIRE(hash_functions == instance.hash_functions());
     REQUIRE(tweak == instance.tweak());
@@ -28,7 +28,7 @@ TEST_CASE("filter load constructor 3 always equals params", "[filter load]") {
     uint32_t tweak = 36u;
     uint8_t flags = 0xae;
 
-    message::filter_load instance(std::move(dup_filter), hash_functions, tweak, flags);
+    auto const instance = message::filter_load::create(std::move(dup_filter), hash_functions, tweak, flags).value();
     REQUIRE(filter == instance.filter());
     REQUIRE(hash_functions == instance.hash_functions());
     REQUIRE(tweak == instance.tweak());
@@ -41,7 +41,7 @@ TEST_CASE("filter load constructor 4 always equals params", "[filter load]") {
     uint32_t tweak = 36u;
     uint8_t flags = 0xae;
 
-    const message::filter_load value(filter, hash_functions, tweak, flags);
+    auto const value = message::filter_load::create(filter, hash_functions, tweak, flags).value();
     message::filter_load instance(value);
     REQUIRE(value == instance);
     REQUIRE(filter == instance.filter());
@@ -56,7 +56,7 @@ TEST_CASE("filter load constructor 5 always equals params", "[filter load]") {
     uint32_t tweak = 36u;
     uint8_t flags = 0xae;
 
-    message::filter_load value(filter, hash_functions, tweak, flags);
+    auto value = message::filter_load::create(filter, hash_functions, tweak, flags).value();
     message::filter_load instance(std::move(value));
     REQUIRE(filter == instance.filter());
     REQUIRE(hash_functions == instance.hash_functions());
@@ -74,12 +74,12 @@ TEST_CASE("filter load from data insufficient bytes failure", "[filter load]") {
 }
 
 TEST_CASE("filter load from data insufficient version failure", "[filter load]") {
-    const message::filter_load expected {
+    auto const expected = message::filter_load::create(
         {0x05, 0xaa, 0xbb, 0xcc, 0xdd, 0xee},
         25,
         10,
         0xab
-    };
+    ).value();
 
     data_chunk const data = kth::to_data_chunk(expected, message::version::level::maximum);
     
@@ -89,11 +89,11 @@ TEST_CASE("filter load from data insufficient version failure", "[filter load]")
 }
 
 TEST_CASE("filter load from data valid input success", "[filter load]") {
-    const message::filter_load expected{
+    auto const expected = message::filter_load::create(
         {0x05, 0xaa, 0xbb, 0xcc, 0xdd, 0xee},
         25,
         10,
-        0xab};
+        0xab).value();
 
     auto const data = kth::to_data_chunk(expected, message::version::level::maximum);
     byte_reader reader(data);
@@ -113,7 +113,7 @@ TEST_CASE("filter load filter accessor 1 always returns initialized value", "[fi
     uint32_t tweak = 36u;
     uint8_t flags = 0xae;
 
-    message::filter_load instance(filter, hash_functions, tweak, flags);
+    auto const instance = message::filter_load::create(filter, hash_functions, tweak, flags).value();
     REQUIRE(filter == instance.filter());
 }
 
@@ -123,25 +123,28 @@ TEST_CASE("filter load filter accessor 2 always returns initialized value", "[fi
     uint32_t tweak = 36u;
     uint8_t flags = 0xae;
 
-    const message::filter_load instance(filter, hash_functions, tweak, flags);
+    auto const instance = message::filter_load::create(filter, hash_functions, tweak, flags).value();
     REQUIRE(filter == instance.filter());
 }
 
-TEST_CASE("filter load filter setter 1 roundtrip success", "[filter load]") {
+TEST_CASE("filter load filter is set at construction", "[filter load]") {
     data_chunk const filter = {0x0f, 0xf0, 0x55, 0xaa};
-    message::filter_load instance;
-    REQUIRE(filter != instance.filter());
-    instance.set_filter(filter);
+
+    message::filter_load const empty;
+    REQUIRE(filter != empty.filter());
+
+    auto const instance = message::filter_load::create(filter, 0u, 0u, 0x00).value();
     REQUIRE(filter == instance.filter());
 }
 
-TEST_CASE("filter load filter setter 2 roundtrip success", "[filter load]") {
+TEST_CASE("filter load filter is set at construction, by move", "[filter load]") {
     data_chunk const filter = {0x0f, 0xf0, 0x55, 0xaa};
     data_chunk dup = filter;
 
-    message::filter_load instance;
-    REQUIRE(filter != instance.filter());
-    instance.set_filter(std::move(dup));
+    message::filter_load const empty;
+    REQUIRE(filter != empty.filter());
+
+    auto const instance = message::filter_load::create(std::move(dup), 0u, 0u, 0x00).value();
     REQUIRE(filter == instance.filter());
 }
 
@@ -151,15 +154,17 @@ TEST_CASE("filter load hash functions accessor always returns initialized value"
     uint32_t tweak = 36u;
     uint8_t flags = 0xae;
 
-    message::filter_load instance(filter, hash_functions, tweak, flags);
+    auto const instance = message::filter_load::create(filter, hash_functions, tweak, flags).value();
     REQUIRE(hash_functions == instance.hash_functions());
 }
 
-TEST_CASE("filter load hash functions setter roundtrip success", "[filter load]") {
+TEST_CASE("filter load hash functions are set at construction", "[filter load]") {
     uint32_t hash_functions = 48u;
-    message::filter_load instance;
-    REQUIRE(hash_functions != instance.hash_functions());
-    instance.set_hash_functions(hash_functions);
+
+    message::filter_load const empty;
+    REQUIRE(hash_functions != empty.hash_functions());
+
+    auto const instance = message::filter_load::create({}, hash_functions, 0u, 0x00).value();
     REQUIRE(hash_functions == instance.hash_functions());
 }
 
@@ -169,15 +174,17 @@ TEST_CASE("filter load tweak accessor always returns initialized value", "[filte
     uint32_t tweak = 36u;
     uint8_t flags = 0xae;
 
-    message::filter_load instance(filter, hash_functions, tweak, flags);
+    auto const instance = message::filter_load::create(filter, hash_functions, tweak, flags).value();
     REQUIRE(tweak == instance.tweak());
 }
 
-TEST_CASE("filter load tweak setter roundtrip success", "[filter load]") {
+TEST_CASE("filter load tweak is set at construction", "[filter load]") {
     uint32_t tweak = 36u;
-    message::filter_load instance;
-    REQUIRE(tweak != instance.tweak());
-    instance.set_tweak(tweak);
+
+    message::filter_load const empty;
+    REQUIRE(tweak != empty.tweak());
+
+    auto const instance = message::filter_load::create({}, 0u, tweak, 0x00).value();
     REQUIRE(tweak == instance.tweak());
 }
 
@@ -187,15 +194,17 @@ TEST_CASE("filter load flags accessor always returns initialized value", "[filte
     uint32_t tweak = 36u;
     uint8_t flags = 0xae;
 
-    message::filter_load instance(filter, hash_functions, tweak, flags);
+    auto const instance = message::filter_load::create(filter, hash_functions, tweak, flags).value();
     REQUIRE(flags == instance.flags());
 }
 
-TEST_CASE("filter load flags setter roundtrip success", "[filter load]") {
+TEST_CASE("filter load flags are set at construction", "[filter load]") {
     uint8_t flags = 0xae;
-    message::filter_load instance;
-    REQUIRE(flags != instance.flags());
-    instance.set_flags(flags);
+
+    message::filter_load const empty;
+    REQUIRE(flags != empty.flags());
+
+    auto const instance = message::filter_load::create({}, 0u, 0u, flags).value();
     REQUIRE(flags == instance.flags());
 }
 
@@ -204,7 +213,7 @@ TEST_CASE("filter load operator assign equals always matches equivalent", "[filt
     uint32_t hash_functions = 48u;
     uint32_t tweak = 36u;
     uint8_t flags = 0xae;
-    message::filter_load value(filter, hash_functions, tweak, flags);
+    auto value = message::filter_load::create(filter, hash_functions, tweak, flags).value();
 
 
     message::filter_load instance;
@@ -217,35 +226,53 @@ TEST_CASE("filter load operator assign equals always matches equivalent", "[filt
 }
 
 TEST_CASE("filter load operator boolean equals duplicates returns true", "[filter load]") {
-    const message::filter_load expected(
-        {0x0f, 0xf0, 0x55, 0xaa}, 643u, 575u, 0xaa);
+    auto const expected = message::filter_load::create(
+        {0x0f, 0xf0, 0x55, 0xaa}, 43u, 575u, 0xaa).value();
 
     message::filter_load instance(expected);
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("filter load operator boolean equals differs returns false", "[filter load]") {
-    const message::filter_load expected(
-        {0x0f, 0xf0, 0x55, 0xaa}, 643u, 575u, 0xaa);
+    auto const expected = message::filter_load::create(
+        {0x0f, 0xf0, 0x55, 0xaa}, 43u, 575u, 0xaa).value();
 
     message::filter_load instance;
     REQUIRE(instance != expected);
 }
 
 TEST_CASE("filter load operator boolean not equals duplicates returns false", "[filter load]") {
-    const message::filter_load expected(
-        {0x0f, 0xf0, 0x55, 0xaa}, 643u, 575u, 0xaa);
+    auto const expected = message::filter_load::create(
+        {0x0f, 0xf0, 0x55, 0xaa}, 43u, 575u, 0xaa).value();
 
     message::filter_load instance(expected);
     REQUIRE(instance == expected);
 }
 
 TEST_CASE("filter load operator boolean not equals differs returns true", "[filter load]") {
-    const message::filter_load expected(
-        {0x0f, 0xf0, 0x55, 0xaa}, 643u, 575u, 0xaa);
+    auto const expected = message::filter_load::create(
+        {0x0f, 0xf0, 0x55, 0xaa}, 43u, 575u, 0xaa).value();
 
     message::filter_load instance;
     REQUIRE(instance != expected);
+}
+
+TEST_CASE("filter load create rejects a filter over the BIP37 cap", "[filter load]") {
+    auto const at_cap = message::filter_load::create(data_chunk(max_filter_load, 0x00), 1u, 0u, 0x00);
+    REQUIRE(at_cap);
+
+    auto const over = message::filter_load::create(data_chunk(max_filter_load + 1, 0x00), 1u, 0u, 0x00);
+    REQUIRE( ! over);
+    REQUIRE(over.error() == error::invalid_filter_load);
+}
+
+TEST_CASE("filter load create rejects too many hash functions", "[filter load]") {
+    auto const at_cap = message::filter_load::create({0x00}, max_filter_functions, 0u, 0x00);
+    REQUIRE(at_cap);
+
+    auto const over = message::filter_load::create({0x00}, max_filter_functions + 1, 0u, 0x00);
+    REQUIRE( ! over);
+    REQUIRE(over.error() == error::invalid_filter_load);
 }
 
 // End Test Suite

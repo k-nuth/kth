@@ -14,13 +14,17 @@ std::string const address::command = "addr";
 uint32_t const address::version_minimum = version::level::minimum;
 uint32_t const address::version_maximum = version::level::maximum;
 
-address::address(infrastructure::message::network_address::list const& addresses)
-    : addresses_(addresses)
-{}
-
-address::address(infrastructure::message::network_address::list&& addresses)
+address::address(infrastructure::message::network_address::list addresses)
     : addresses_(std::move(addresses))
 {}
+
+// static
+expect<address> address::create(infrastructure::message::network_address::list addresses) {
+    if (addresses.size() > max_address) {
+        return std::unexpected(error::invalid_address_count);
+    }
+    return address(std::move(addresses));
+}
 
 // Deserialization.
 //-----------------------------------------------------------------------------
@@ -48,33 +52,19 @@ expect<address> address::from_data(byte_reader& reader, uint32_t version) {
         addresses.push_back(std::move(*address));
     }
 
-    return address(std::move(addresses));
+    return create(std::move(addresses));
 }
 
 // Serialization.
 //-----------------------------------------------------------------------------
-
-
 
 size_t address::serialized_size(uint32_t version) const {
     return infrastructure::message::variable_uint_size(addresses_.size()) +
            (addresses_.size() * infrastructure::message::network_address::satoshi_fixed_size(version, true));
 }
 
-infrastructure::message::network_address::list& address::addresses() {
-    return addresses_;
-}
-
 infrastructure::message::network_address::list const& address::addresses() const {
     return addresses_;
-}
-
-void address::set_addresses(infrastructure::message::network_address::list const& value) {
-    addresses_ = value;
-}
-
-void address::set_addresses(infrastructure::message::network_address::list&& value) {
-    addresses_ = std::move(value);
 }
 
 expect<void> address::to_data(byte_writer& writer, uint32_t version) const {

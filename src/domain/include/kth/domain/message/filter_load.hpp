@@ -5,7 +5,6 @@
 #ifndef KTH_DOMAIN_MESSAGE_FILTER_LOAD_HPP
 #define KTH_DOMAIN_MESSAGE_FILTER_LOAD_HPP
 
-#include <istream>
 #include <memory>
 #include <string>
 
@@ -23,34 +22,27 @@ struct KD_API filter_load {
     using const_ptr = std::shared_ptr<const filter_load>;
 
     filter_load() = default;
-    filter_load(data_chunk const& filter, uint32_t hash_functions, uint32_t tweak, uint8_t flags);
-    filter_load(data_chunk&& filter, uint32_t hash_functions, uint32_t tweak, uint8_t flags);
+
+    /// Fails with error::invalid_filter_load over max_filter_load bytes or
+    /// max_filter_functions hash functions (BIP37).
+    static
+    expect<filter_load> create(data_chunk filter, uint32_t hash_functions, uint32_t tweak, uint8_t flags);
 
     [[nodiscard]]
     friend bool operator==(filter_load const&, filter_load const&) = default;
 
-    data_chunk& filter();
-
     [[nodiscard]]
     data_chunk const& filter() const;
 
-    void set_filter(data_chunk const& value);
-    void set_filter(data_chunk&& value);
 
     [[nodiscard]]
     uint32_t hash_functions() const;
 
-    void set_hash_functions(uint32_t value);
-
     [[nodiscard]]
     uint32_t tweak() const;
 
-    void set_tweak(uint32_t value);
-
     [[nodiscard]]
     uint8_t flags() const;
-
-    void set_flags(uint8_t value);
 
     static
     expect<filter_load> from_data(byte_reader& reader, uint32_t version);
@@ -72,6 +64,8 @@ struct KD_API filter_load {
     uint32_t const version_maximum;
 
 private:
+    filter_load(data_chunk filter, uint32_t hash_functions, uint32_t tweak, uint8_t flags);
+
     data_chunk filter_;
     uint32_t hash_functions_{0};
     uint32_t tweak_{0};
