@@ -1,3 +1,79 @@
+# version 1.2.0
+
+You can install Knuth node version v1.2.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* refactor(domain): immutable value types for chain primitives by @fpelliccioni in https://github.com/k-nuth/kth/pull/387
+* refactor(domain): rewrite to_data with byte_writer, retire data_sink/ostream stack by @fpelliccioni in https://github.com/k-nuth/kth/pull/394
+* perf(ci): stop version.hpp from invalidating ccache on every commit by @fpelliccioni in https://github.com/k-nuth/kth/pull/405
+* ci: unstick ccache save (0% hit rate → real cache reuse) by @fpelliccioni in https://github.com/k-nuth/kth/pull/407
+* refactor(cli): replace Boost.Program_options with CLI11 + modernize config-type API by @fpelliccioni in https://github.com/k-nuth/kth/pull/410
+* refactor(infrastructure): default authority::operator== by @fpelliccioni in https://github.com/k-nuth/kth/pull/413
+* refactor(infrastructure): modernize decode_hash to std::expected by @fpelliccioni in https://github.com/k-nuth/kth/pull/419
+* refactor(wallet): tighten ek_private surface by @fpelliccioni in https://github.com/k-nuth/kth/pull/423
+* refactor(wallet): tighten ek_public surface by @fpelliccioni in https://github.com/k-nuth/kth/pull/424
+* refactor(wallet): tighten ek_token surface by @fpelliccioni in https://github.com/k-nuth/kth/pull/425
+* refactor(wallet): make hd_public + hd_private valid-by-construction by @fpelliccioni in https://github.com/k-nuth/kth/pull/427
+* refactor(wallet): add hd_private::from_hd_key + wipe() on both hd types by @fpelliccioni in https://github.com/k-nuth/kth/pull/428
+* refactor(wallet): drop hd_private inheritance, use composition by @fpelliccioni in https://github.com/k-nuth/kth/pull/429
+* refactor(wallet): make address-returning APIs explicit by @fpelliccioni in https://github.com/k-nuth/kth/pull/430
+* refactor(wallet): make payment_address valid-by-construction by @fpelliccioni in https://github.com/k-nuth/kth/pull/431
+* refactor(wallet): make ec_public + ec_private valid-by-construction by @fpelliccioni in https://github.com/k-nuth/kth/pull/432
+* refactor(infrastructure): modernize binary — factories, comparators, hash by @fpelliccioni in https://github.com/k-nuth/kth/pull/434
+* refactor(wallet): make stealth_address valid-by-construction by @fpelliccioni in https://github.com/k-nuth/kth/pull/433
+* refactor(infrastructure): make binary constexpr, header-only by @fpelliccioni in https://github.com/k-nuth/kth/pull/435
+* refactor(wallet): modernize stealth_receiver by @fpelliccioni in https://github.com/k-nuth/kth/pull/436
+* refactor(wallet): modernize stealth_sender by @fpelliccioni in https://github.com/k-nuth/kth/pull/437
+* refactor(wallet): make bitcoin_uri a functional value type by @fpelliccioni in https://github.com/k-nuth/kth/pull/438
+* refactor(c-api): redesign cashtoken to single-call create_* by @fpelliccioni in https://github.com/k-nuth/kth/pull/440
+* refactor(c-api): align wallet bindings with valid-by-construction sweep by @fpelliccioni in https://github.com/k-nuth/kth/pull/439
+* refactor(c-api): align kth_wallet_ec_to_address version with C++ by @fpelliccioni in https://github.com/k-nuth/kth/pull/415
+* refactor(test): use Catch2 StringMaker instead of ADL operator<< by @fpelliccioni in https://github.com/k-nuth/kth/pull/417
+* refactor(domain): default equality for value-only message types by @fpelliccioni in https://github.com/k-nuth/kth/pull/418
+* refactor(infrastructure): split timeout jitter from broken RNG by @fpelliccioni in https://github.com/k-nuth/kth/pull/414
+* refactor(infrastructure): order checkpoint by height, then hash by @fpelliccioni in https://github.com/k-nuth/kth/pull/420
+* refactor(infrastructure): modernize decode_base58/85 to std::expected by @fpelliccioni in https://github.com/k-nuth/kth/pull/416
+* refactor(wallet): make ec_public constexpr-usable by @fpelliccioni in https://github.com/k-nuth/kth/pull/441
+* ci: split Conan cache into sanitizer / clean families by @fpelliccioni in https://github.com/k-nuth/kth/pull/442
+* refactor(wallet): make ec_private constexpr-usable by @fpelliccioni in https://github.com/k-nuth/kth/pull/443
+* refactor(wallet): make ek_private / ek_public / ek_token constexpr-usable by @fpelliccioni in https://github.com/k-nuth/kth/pull/444
+* refactor(wallet): make payment_address constexpr-usable by @fpelliccioni in https://github.com/k-nuth/kth/pull/445
+* refactor(wallet): make hd_public constexpr-usable by @fpelliccioni in https://github.com/k-nuth/kth/pull/446
+* refactor(wallet): make hd_private constexpr-usable by @fpelliccioni in https://github.com/k-nuth/kth/pull/447
+* refactor(wallet): make stealth_{address,receiver,sender} + bitcoin_uri constexpr-usable by @fpelliccioni in https://github.com/k-nuth/kth/pull/448
+* refactor(domain/chain): apply valid-by-construction to point by @fpelliccioni in https://github.com/k-nuth/kth/pull/450
+* refactor(domain/chain): apply valid-by-construction to point_value, light_block, utxo by @fpelliccioni in https://github.com/k-nuth/kth/pull/451
+* refactor(domain/chain): add defaulted <=> to stealth, points_value, history by @fpelliccioni in https://github.com/k-nuth/kth/pull/453
+* fix(domain/chain): make history_compact / history comparison usable by @fpelliccioni in https://github.com/k-nuth/kth/pull/458
+* fix(c-api): update chain point / output_point / input_point / utxo bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/457
+* refactor(domain/chain): make compact valid-by-construction by @fpelliccioni in https://github.com/k-nuth/kth/pull/455
+* refactor(domain/chain): apply valid-by-construction to block by @fpelliccioni in https://github.com/k-nuth/kth/pull/459
+* refactor(domain/chain): valid-by-construction for merkle_block + compact_block by @fpelliccioni in https://github.com/k-nuth/kth/pull/460
+* refactor(domain/chain): drop header default constructor (valid-by-construction) by @fpelliccioni in https://github.com/k-nuth/kth/pull/463
+* refactor(domain/chain): remove header::is_valid(); construction validity via create() by @fpelliccioni in https://github.com/k-nuth/kth/pull/464
+* refactor(domain/chain): domain construction is syntactic-only, never fails by @fpelliccioni in https://github.com/k-nuth/kth/pull/465
+* refactor(domain/chain): restore public constructors; drop the create() factories by @fpelliccioni in https://github.com/k-nuth/kth/pull/466
+* refactor(domain/chain): transaction is a structural aggregate (no is_valid, immutable) by @fpelliccioni in https://github.com/k-nuth/kth/pull/467
+* refactor(domain/message): prefilled_transaction is valid-by-construction by @fpelliccioni in https://github.com/k-nuth/kth/pull/468
+* fix(network): never send a ping with a zero nonce by @fpelliccioni in https://github.com/k-nuth/kth/pull/471
+* refactor(infrastructure): give pseudo_random a typed interface by @fpelliccioni in https://github.com/k-nuth/kth/pull/472
+* refactor(infrastructure): use the CSPRNG for peer selection; drop the broken generator by @fpelliccioni in https://github.com/k-nuth/kth/pull/475
+* refactor(domain/message): drop the vestigial validity flags by @fpelliccioni in https://github.com/k-nuth/kth/pull/469
+* refactor(domain/message): drop the default-sentinel is_valid() by @fpelliccioni in https://github.com/k-nuth/kth/pull/470
+* refactor(domain/message): types with wire caps are valid-by-construction by @fpelliccioni in https://github.com/k-nuth/kth/pull/478
+* perf(blockchain): stop prune from scanning the whole pool; add a block_pool store benchmark by @fpelliccioni in https://github.com/k-nuth/kth/pull/479
+* fix(infrastructure): build pseudo_random on macOS by @fpelliccioni in https://github.com/k-nuth/kth/pull/480
+* refactor(domain/message): addrv2_entry is valid-by-construction by @fpelliccioni in https://github.com/k-nuth/kth/pull/481
+* refactor(domain/message): drop double_spend_proof sentinels and setters by @fpelliccioni in https://github.com/k-nuth/kth/pull/482
+* refactor(domain/chain): drop chain_state::is_valid sentinel by @fpelliccioni in https://github.com/k-nuth/kth/pull/483
+* fix(c-api): drop double_spend_proof wrappers removed from the domain type by @fpelliccioni in https://github.com/k-nuth/kth/pull/484
+* fix(blockchain/bench): use boost::atomic_shared_ptr for the COW block pool by @fpelliccioni in https://github.com/k-nuth/kth/pull/485
+* release: 1.2.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/486
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.1.0...v1.2.0
+
+
 # version 1.1.0
 
 You can install Knuth node version v1.1.0 [using these instructions](https://kth.cash/#download).
