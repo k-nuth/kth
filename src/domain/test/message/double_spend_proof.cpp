@@ -47,21 +47,8 @@ static chain::output_point make_out_point() {
 // Lifecycle / predicates
 // ---------------------------------------------------------------------------
 
-TEST_CASE("double_spend_proof::spender default construct is invalid", "[double_spend_proof::spender]") {
+TEST_CASE("double_spend_proof::spender default construct zeroes all fields", "[double_spend_proof::spender]") {
     message::double_spend_proof::spender s;
-    REQUIRE(s.version == 0u);
-    REQUIRE(s.out_sequence == 0u);
-    REQUIRE(s.locktime == 0u);
-    REQUIRE(s.prev_outs_hash == null_hash);
-    REQUIRE(s.sequence_hash == null_hash);
-    REQUIRE(s.outputs_hash == null_hash);
-    REQUIRE(s.push_data.empty());
-}
-
-TEST_CASE("double_spend_proof::spender reset zeroes all fields", "[double_spend_proof::spender]") {
-    auto s = make_spender();
-    s.push_data = data_chunk{1, 2, 3};
-    s.reset();
     REQUIRE(s.version == 0u);
     REQUIRE(s.out_sequence == 0u);
     REQUIRE(s.locktime == 0u);
@@ -163,47 +150,23 @@ TEST_CASE("double_spend_proof three-arg construct preserves fields", "[double_sp
     REQUIRE(dsp.spender2() == s2);
 }
 
-// `double_spend_proof::is_valid()` was removed with the value-types
-// refactor — the outer DSP is now valid-by-construction. Validity of
-// the inner `spender` sub-object stays covered by the spender tests.
-
-// `reset()` was removed along with `is_valid()`: DSP is now an
-// immutable value type built via a full ctor.
-
-// ---------------------------------------------------------------------------
-// Setters
-// ---------------------------------------------------------------------------
-
-TEST_CASE("double_spend_proof setters replace fields", "[double_spend_proof]") {
-    message::double_spend_proof dsp;
-
-    auto const op = make_out_point();
-    dsp.set_out_point(op);
-    REQUIRE(dsp.out_point() == op);
-
-    auto const s1 = make_spender(1);
-    dsp.set_spender1(s1);
-    REQUIRE(dsp.spender1() == s1);
-
-    auto const s2 = make_spender(2);
-    dsp.set_spender2(s2);
-    REQUIRE(dsp.spender2() == s2);
-}
+// A double_spend_proof is immutable and valid-by-construction: it exposes
+// no is_valid()/reset()/setters, only the full constructor and from_data.
 
 // ---------------------------------------------------------------------------
 // Equality
 // ---------------------------------------------------------------------------
 
-TEST_CASE("double_spend_proof equality reflexive and diverges under mutation", "[double_spend_proof]") {
+TEST_CASE("double_spend_proof equality reflexive and diverges by spender", "[double_spend_proof]") {
     message::double_spend_proof a(make_out_point(), make_spender(1), make_spender(2));
     message::double_spend_proof b(make_out_point(), make_spender(1), make_spender(2));
 
     REQUIRE(a == b);
     REQUIRE( ! (a != b));
 
-    b.set_spender1(make_spender(99));
-    REQUIRE(a != b);
-    REQUIRE( ! (a == b));
+    message::double_spend_proof c(make_out_point(), make_spender(99), make_spender(2));
+    REQUIRE(a != c);
+    REQUIRE( ! (a == c));
 }
 
 // ---------------------------------------------------------------------------
@@ -244,13 +207,10 @@ TEST_CASE("double_spend_proof hash is deterministic", "[double_spend_proof]") {
     REQUIRE(message::hash(dsp) == h1);
 }
 
-TEST_CASE("double_spend_proof hash changes under mutation", "[double_spend_proof]") {
-    message::double_spend_proof dsp(make_out_point(), make_spender(1), make_spender(2));
-    auto const h1 = dsp.hash();
-
-    dsp.set_spender1(make_spender(99));
-    auto const h2 = dsp.hash();
-    REQUIRE(h1 != h2);
+TEST_CASE("double_spend_proof hash changes with spender", "[double_spend_proof]") {
+    message::double_spend_proof const dsp(make_out_point(), make_spender(1), make_spender(2));
+    message::double_spend_proof const other(make_out_point(), make_spender(99), make_spender(2));
+    REQUIRE(dsp.hash() != other.hash());
 }
 
 TEST_CASE("double_spend_proof hash differs between distinct proofs", "[double_spend_proof]") {
