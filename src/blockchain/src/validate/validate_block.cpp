@@ -261,10 +261,15 @@ code validate_block::accept_transactions_bucket(block_const_ptr block, size_t bu
     auto const count = txs.size();
 
     // Run contextual tx non-script checks (not in tx order).
+    // Reads of the transaction_validation_store here are const and race-free:
+    // all writes to it were done in the serial populate pre-pass.
     for (auto tx = bucket; tx < count && !ec; tx = ceiling_add(tx, buckets)) {
         auto const& transaction = txs[tx];
-        if ( ! transaction.validation.validated) {
-            ec = transaction.accept(flags, height, mtp, max_sigops, under_checkpoint, false /*transaction_pool*/);
+        bool validated = false;
+        bool duplicate = false;
+        chain_.transaction_validations().visit(transaction.hash(), [&](auto const& tv){ validated = tv.validated; duplicate = tv.duplicate; });
+        if ( ! validated) {
+            ec = transaction.accept(flags, height, mtp, max_sigops, under_checkpoint, false /*transaction_pool*/, duplicate);
         }
         *sigops += transaction.signature_operations(bip16, bip141);
     }
@@ -340,13 +345,17 @@ code validate_block::connect_inputs_bucket(block_const_ptr block, size_t bucket,
 
     // Must skip coinbase here as it is already accounted for.
     for (auto tx = txs.begin() + 1; tx != txs.end(); ++tx) {
+        bool current = false;
+        bool validated = false;
+        chain_.transaction_validations().visit(tx->hash(), [&](auto const& tv){ current = tv.current; validated = tv.validated; });
+
         // The tx is pooled with current fork state so outputs are validated.
-        if (tx->validation.current) {
+        if (current) {
             continue;
         }
 
         // The tx was validated before its insertion in the mempool
-        if (tx->validation.validated) {
+        if (validated) {
             continue;
         }
 

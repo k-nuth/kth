@@ -39,7 +39,7 @@ node make_node(domain::chain::transaction const& tx) {
 #endif
                                   , tx.to_data(true, KTH_WITNESS_DEFAULT)
                                   , tx.fees()
-                                  , tx.signature_operations()
+                                  , tx.signature_operations(true /*bip16*/, false /*bip141*/)  // BCH: P2SH always active, no segwit.
                                   , tx.outputs().size())
                         );
 }

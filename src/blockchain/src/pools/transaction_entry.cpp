@@ -23,13 +23,14 @@ uint32_t cap(size_t value) {
     return domain_constrain<uint32_t>(value);
 }
 
-// TODO(legacy): implement size, sigops, and fees caching on domain::chain::transaction.
-// This requires the full population of transaction.validation metadata.
-transaction_entry::transaction_entry(transaction_const_ptr tx)
+// This entry IS the cache for a transaction's size, sigops and fees; the
+// domain::chain::transaction value type deliberately holds no such state
+// (validation metadata now lives in the validator, not on the value type).
+transaction_entry::transaction_entry(transaction_const_ptr tx, script_flags_t flags)
     : size_(cap(tx->serialized_size(domain::message::version::level::canonical)))
-    , sigops_(cap(tx->signature_operations()))
+    , sigops_(cap(tx->signature_operations(true /*bip16*/, false /*bip141*/)))  // BCH: P2SH always active, no segwit.
     , fees_(tx->fees())
-    , flags_(tx->validation.state->enabled_flags())
+    , flags_(flags)
     , hash_(tx->hash())
     , marked_(false)
 {}

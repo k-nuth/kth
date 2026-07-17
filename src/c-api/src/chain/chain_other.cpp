@@ -183,9 +183,11 @@ void kth_chain_transaction_validate_sequential(kth_chain_t chain, void* ctx, kth
     if (handler == nullptr) return;
 
     auto tx_cpp = tx_shared(tx);
-    tx_cpp->validation.simulate = true;
 
     auto& bc = safe_chain(chain);
+    // `simulate` moved off the transaction value type into the validator's
+    // per-tx store; set it there before organizing.
+    bc.transaction_validations().mutate(tx_cpp->hash(), [](auto& tv){ tv.simulate = true; });
     ::asio::co_spawn(bc.executor(), [&bc, tx_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
         auto ec = co_await bc.organize(tx_cpp);
         if (ec) {

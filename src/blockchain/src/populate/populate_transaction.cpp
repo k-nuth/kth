@@ -40,12 +40,13 @@ populate_transaction::populate_transaction(executor_type executor, size_t thread
 #endif
 
 ::asio::awaitable<code> populate_transaction::populate(transaction_const_ptr tx) const {
-    auto const state = tx->validation.state;
+    domain::chain::chain_state::ptr state;
+    chain_.transaction_validations().visit(tx->hash(), [&](auto const& tv){ state = tv.state; });
     KTH_ASSERT(state);
 
     // Chain state is for the next block, so always > 0.
-    KTH_ASSERT(tx->validation.state->height() > 0);
-    auto const chain_height = tx->validation.state->height() - 1u;
+    KTH_ASSERT(state->height() > 0);
+    auto const chain_height = state->height() - 1u;
 
     //*************************************************************************
     // CONSENSUS:
@@ -59,7 +60,9 @@ populate_transaction::populate_transaction(executor_type executor, size_t thread
 
     // Because txs include no proof of work we much short circuit here.
     // Otherwise a peer can flood us with repeat transactions to validate.
-    if (tx->validation.duplicate) {
+    bool duplicate = false;
+    chain_.transaction_validations().visit(tx->hash(), [&](auto const& tv){ duplicate = tv.duplicate; });
+    if (duplicate) {
         co_return error::unspent_duplicate;
     }
 

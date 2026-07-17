@@ -123,12 +123,6 @@ uint64_t kth_chain_transaction_total_input_value(kth_transaction_const_t self);
 KTH_EXPORT
 uint64_t kth_chain_transaction_total_output_value(kth_transaction_const_t self);
 
-KTH_EXPORT
-kth_size_t kth_chain_transaction_signature_operations_simple(kth_transaction_const_t self);
-
-KTH_EXPORT
-kth_error_code_t kth_chain_transaction_connect_simple(kth_transaction_const_t self);
-
 
 // Predicates
 
@@ -190,7 +184,7 @@ KTH_EXPORT
 kth_size_t kth_chain_transaction_min_tx_size(kth_transaction_const_t self, kth_script_flags_t flags);
 
 KTH_EXPORT
-kth_error_code_t kth_chain_transaction_accept(kth_transaction_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transaction_pool);
+kth_error_code_t kth_chain_transaction_accept(kth_transaction_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transaction_pool, kth_bool_t duplicate);
 
 KTH_EXPORT
 kth_error_code_t kth_chain_transaction_connect(kth_transaction_const_t self, kth_chain_state_const_t state);

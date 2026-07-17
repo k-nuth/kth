@@ -70,6 +70,32 @@ populate_block::populate_block(executor_type executor, size_t threads, block_cha
     auto validated_txs = mempool_.get_validated_txs_high();
 #endif
 
+    //-------------------------------------------------------------------------
+    // Serial pre-pass: all tx.validation flag writes.
+    //
+    // The transaction_validation_store is not concurrent, so every write to a
+    // transaction's validation entry (pooled/current/validated) must happen
+    // here, before the parallel buckets are dispatched. The buckets below only
+    // touch per-input output_point (prevout) validation, which is race-free.
+    // These flags are fully determined by mempool membership, known up front,
+    // so setting them serially is equivalent to the old per-bucket writes.
+    //-------------------------------------------------------------------------
+    {
+        auto const& txs = block->transactions();
+        // Skip the coinbase (index 0); it is handled by populate_coinbase.
+        for (size_t i = 1; i < txs.size(); ++i) {
+            auto const& tx = txs[i];
+            if (relay_transactions_) {
+                populate_base::populate_pooled(tx, state->height());
+            }
+#if defined(KTH_WITH_MEMPOOL)
+            if (validated_txs.find(tx.hash()) != validated_txs.end()) {
+                chain_.transaction_validations().mutate(tx.hash(), [](auto& tv){ tv.validated = true; });
+            }
+#endif
+        }
+    }
+
     // Use a channel to collect results from parallel tasks
     using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
     auto channel = std::make_shared<result_channel>(executor_, buckets);
@@ -194,38 +220,11 @@ code populate_block::populate_transactions_sync(branch::const_ptr branch, size_t
     auto const& txs = block->transactions();
     size_t input_position = 0;
 
-    domain::chain::chain_state::ptr state;
-    chain_.block_validations().visit(block->hash(), [&](auto const& bv){ state = bv.state; });
-    KTH_ASSERT(state);
-
-    // Must skip coinbase here as it is already accounted for.
-    auto const first = bucket == 0 ? buckets : bucket;
-
-    for (auto position = first; position < txs.size(); position = ceiling_add(position, buckets)) {
-        auto const& tx = txs[position];
-
-        //---------------------------------------------------------------------
-        // This prevents output validation and full tx deposit respectively.
-        // The tradeoff is a read per tx that may not be cached. This is
-        // bypassed by checkpoints. This will be optimized using the tx pool.
-        // Until that time this is a material population performance hit.
-        // However the hit is necessary in preventing store tx duplication
-        // unless tx relay is disabled. In that case duplication is unlikely.
-        //---------------------------------------------------------------------
-
-        if (relay_transactions_) {
-            populate_base::populate_pooled(tx, state->height());
-        }
-
-        //*********************************************************************
-        // CONSENSUS: Satoshi implemented allow collisions in Nov 2015. This is
-        // a network upgrade that destroys unspent outputs in case of hash collision.
-        //*********************************************************************
-        //Knuth: we are not validating tx duplicates.
-        // if ( ! collide) {
-        //     populate_base::populate_duplicate(branch->height(), tx, true);
-        // }
-    }
+    // Note: the tx.validation flag writes (pooled/current/validated) that used
+    // to live here were hoisted to a serial pre-pass in populate(), because the
+    // transaction_validation_store is not concurrent. This parallel path only
+    // populates per-input prevout (output_point) validation, which is race-free
+    // across buckets.
 
     size_t first_height = branch_height + 1u;
     size_t chain_top;
@@ -240,7 +239,6 @@ code populate_block::populate_transactions_sync(branch::const_ptr branch, size_t
             auto const& inputs = tx->inputs();
             populate_transaction_inputs(branch, inputs, bucket, buckets, input_position, branch_utxo, first_height, chain_top, reorg_subset);
         } else {
-            tx->validation.validated = true;
             auto const& tx_cached = it->second.second;
             for (size_t i = 0; i < tx_cached.inputs().size(); ++i) {
                 tx->inputs()[i].previous_output().validation = tx_cached.inputs()[i].previous_output().validation;

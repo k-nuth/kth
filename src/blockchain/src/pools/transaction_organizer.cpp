@@ -100,26 +100,38 @@ bool transaction_organizer::stop() {
     }
 
     // Checks that are dependent on chain state and prevouts.
+    // NOTE: this path (c-api single-tx validate) runs lock-free, so the store
+    // entry that validator_.accept creates is written off the validation mutex.
+    // That is safe only because this path is not run concurrently with block or
+    // mempool organization (same pre-existing assumption as the accept-time
+    // insert). Erase on every exit after the entry was created so the store does
+    // not accumulate one entry per validated tx (idempotent if none was made).
     ec = co_await validator_.accept(tx);
 
     if (stopped()) {
+        chain_.transaction_validations().erase(tx->hash());
         co_return error::service_stopped;
     }
 
     if (ec) {
+        chain_.transaction_validations().erase(tx->hash());
         co_return ec;
     }
 
     if (tx->fees() < price(tx)) {
+        chain_.transaction_validations().erase(tx->hash());
         co_return error::insufficient_fee;
     }
 
     if (tx->is_dusty(settings_.minimum_output_satoshis)) {
+        chain_.transaction_validations().erase(tx->hash());
         co_return error::dusty_transaction;
     }
 
     // Checks that include script validation.
     ec = co_await validator_.connect(tx);
+
+    chain_.transaction_validations().erase(tx->hash());
 
     if (stopped()) {
         co_return error::service_stopped;
@@ -180,25 +192,39 @@ bool transaction_organizer::stop() {
         co_return ec;
     }
 
+    // The tx-validation store entry created during validator_.accept below is
+    // in-flight validation scratch: nothing reads it once this coroutine
+    // returns (a mempool tx that is later mined has its entry recreated by the
+    // block populator, and mempool eviction — including mempool_v2's internal
+    // has_room_for drop — never needs it). So erase it on every exit after it
+    // was created. All erases run under the low-priority validation mutex.
+    auto const erase_tx_validation = [this, tx] {
+        chain_.transaction_validations().erase(tx->hash());
+    };
+
     // Checks that are dependent on chain state and prevouts.
     ec = co_await validator_.accept(tx);
 
     if (stopped()) {
+        erase_tx_validation();
         mutex_.unlock_low_priority();
         co_return error::service_stopped;
     }
 
     if (ec) {
+        erase_tx_validation();
         mutex_.unlock_low_priority();
         co_return ec;
     }
 
     if (tx->fees() < price(tx)) {
+        erase_tx_validation();
         mutex_.unlock_low_priority();
         co_return error::insufficient_fee;
     }
 
     if (tx->is_dusty(settings_.minimum_output_satoshis)) {
+        erase_tx_validation();
         mutex_.unlock_low_priority();
         co_return error::dusty_transaction;
     }
@@ -207,17 +233,25 @@ bool transaction_organizer::stop() {
     ec = co_await validator_.connect(tx);
 
     if (stopped()) {
+        erase_tx_validation();
         mutex_.unlock_low_priority();
         co_return error::service_stopped;
     }
 
     if (ec) {
+        erase_tx_validation();
         mutex_.unlock_low_priority();
         co_return ec;
     }
 
     // TODO: create a simulated validation path that does not block others.
-    if (tx->validation.simulate) {
+    bool simulate = false;
+    chain_.transaction_validations().visit(tx->hash(), [&](auto const& tv){ simulate = tv.simulate; });
+
+    // Last read of the store entry; safe to drop it now for every path below.
+    erase_tx_validation();
+
+    if (simulate) {
         mutex_.unlock_low_priority();
         co_return error::success;
     }
@@ -324,7 +358,8 @@ uint64_t transaction_organizer::price(transaction_const_ptr tx) const {
     // TODO: this is a second pass on size and sigops, implement cache.
     // This at least prevents uncached calls when zero fee is configured.
     auto byte = byte_fee > 0 ? byte_fee * tx->serialized_size(true) : 0;
-    auto sigop = sigop_fee > 0 ? sigop_fee * tx->signature_operations() : 0;
+    // BCH: P2SH always active, no segwit.
+    auto sigop = sigop_fee > 0 ? sigop_fee * tx->signature_operations(true /*bip16*/, false /*bip141*/) : 0;
 
     // Require at least one satoshi per tx if there are any fees configured.
     return std::max(uint64_t(1), uint64_t(byte + sigop));

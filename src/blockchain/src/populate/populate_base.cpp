@@ -26,23 +26,22 @@ populate_base::populate_base(executor_type executor, size_t threads, block_chain
 {}
 
 // This is the only necessary file system read in block/tx validation.
+// Must be called serially: it writes the tx's entry in the validator-owned
+// transaction_validation_store (non-concurrent).
 void populate_base::populate_duplicate(size_t branch_height, domain::chain::transaction const& tx, bool require_confirmed) const {
     //Knuth: We are not validating tx duplication
-    tx.validation.duplicate = false;
+    chain_.transaction_validations().mutate(tx.hash(), [](auto& tv){ tv.duplicate = false; });
 }
 
+// Must be called serially: it writes the tx's entry in the validator-owned
+// transaction_validation_store (non-concurrent).
 void populate_base::populate_pooled(domain::chain::transaction const& tx, uint32_t height) const {
-    tx.validation.pooled = false;
-    tx.validation.current = false;
+    bool current = false;
     auto const result = chain_.get_transaction_position(tx.hash(), false);
-    if ( ! result) {
-        return;
+    if (result && result->second == position_max) {
+        current = (result->first == height);
     }
-    if (result->second != position_max) {
-        return;
-    }
-    tx.validation.pooled = true;
-    tx.validation.current = (result->first == height);
+    chain_.transaction_validations().mutate(tx.hash(), [&](auto& tv){ tv.current = current; });
 }
 
 // Unspent outputs are cached by the store. If the cache is large enough this

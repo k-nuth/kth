@@ -20,35 +20,19 @@ hash_digest hash_one   {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 hash_digest hash_two   {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2};
 hash_digest hash_three {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3};
 
-static chain_state::data get_data() {
-    chain_state::data value;
-    value.height = 1;
-    value.bits = { 0, { 0 } };
-    value.version = { 1, { 0 } };
-    value.timestamp = { 0, 0, { 0 } };
-    return value;
-}
-
-void add_state(transaction& tx) {
-    tx.validation.state = std::make_shared<chain_state>(
-#if defined(KTH_CURRENCY_BCH)
-        chain_state{ get_data(), {}, 0, 0, 0 });
-#else
-        chain_state{ get_data(), {}, 0 });
-#endif //KTH_CURRENCY_BCH
-}
+// The tx.validation.state member was removed; the mempool does not read per-tx
+// chain state, so the old add_state()/get_data() helpers are gone. Sigops are
+// counted with BIP16 assumed active (see transaction::signature_operations()).
 
 transaction get_tx(std::string const& hex) {
     auto const data = decode_base16(hex);
     auto tx = transaction::factory_from_data(*data);
-    add_state(tx);
     return tx;
 }
 
 transaction get_tx_from_mempool(mining::mempool const& mp, std::unordered_map<domain::chain::point, domain::chain::output> const& internal_utxo, std::string const& hex) {
     auto const data = decode_base16(hex);
     auto tx = transaction::factory_from_data(*data);
-    add_state(tx);
 
     for (auto& i : tx.inputs()) {
         auto o = mp.get_utxo(i.previous_output());
@@ -226,17 +210,14 @@ TEST_CASE("[mempool] chained transactions") {
 TEST_CASE("[mempool] replace TX Candidate for a better one") {
 
     transaction coinbase0 {1, 1, {input{output_point{null_hash, point::null_index}, script{}, 1}}, {output{17, script{}}}};
-    add_state(coinbase0);
     REQUIRE(coinbase0.is_valid());
     REQUIRE(coinbase0.is_coinbase());
 
     transaction coinbase1 {1, 1, {input{output_point{null_hash, point::null_index}, script{}, 1}}, {output{34, script{}}}};
-    add_state(coinbase1);
     REQUIRE(coinbase1.is_valid());
     REQUIRE(coinbase1.is_coinbase());
 
     transaction spender0 {1, 1, {input{output_point{coinbase0.hash(), 0}, script{}, 1}}, {output{10, script{}}}};
-    add_state(spender0);
     spender0.inputs()[0].previous_output().validation.cache = coinbase0.outputs()[0];
     spender0.inputs()[0].previous_output().validation.from_mempool = false;
 
@@ -244,7 +225,6 @@ TEST_CASE("[mempool] replace TX Candidate for a better one") {
     REQUIRE(spender0.fees() == 7);
 
     transaction spender1 {1, 1, {input{output_point{coinbase1.hash(), 0}, script{}, 1}}, {output{10, script{}}}};
-    add_state(spender1);
     spender1.inputs()[0].previous_output().validation.cache = coinbase1.outputs()[0];
     spender1.inputs()[0].previous_output().validation.from_mempool = false;
 
@@ -275,17 +255,14 @@ TEST_CASE("[mempool] replace TX Candidate for a better one") {
 TEST_CASE("[mempool] Try to insert a Low Benefit Transaction") {
 
     transaction coinbase0 {1, 1, {input{output_point{null_hash, point::null_index}, script{}, 1}}, {output{17, script{}}}};
-    add_state(coinbase0);
     REQUIRE(coinbase0.is_valid());
     REQUIRE(coinbase0.is_coinbase());
 
     transaction coinbase1 {1, 1, {input{output_point{null_hash, point::null_index}, script{}, 1}}, {output{34, script{}}}};
-    add_state(coinbase1);
     REQUIRE(coinbase1.is_valid());
     REQUIRE(coinbase1.is_coinbase());
 
     transaction spender0 {1, 1, {input{output_point{coinbase0.hash(), 0}, script{}, 1}}, {output{10, script{}}}};
-    add_state(spender0);
     spender0.inputs()[0].previous_output().validation.cache = coinbase0.outputs()[0];
     spender0.inputs()[0].previous_output().validation.from_mempool = false;
 
@@ -293,7 +270,6 @@ TEST_CASE("[mempool] Try to insert a Low Benefit Transaction") {
     REQUIRE(spender0.fees() == 7);
 
     transaction spender1 {1, 1, {input{output_point{coinbase1.hash(), 0}, script{}, 1}}, {output{33, script{}}}};
-    add_state(spender1);
     spender1.inputs()[0].previous_output().validation.cache = coinbase1.outputs()[0];
     spender1.inputs()[0].previous_output().validation.from_mempool = false;
 
@@ -330,33 +306,28 @@ TEST_CASE("[mempool] Try to insert a Low Benefit Transaction") {
 TEST_CASE("[mempool] Dependencies 0") {
 
     transaction coinbase0 {1, 1, {input{output_point{null_hash, point::null_index}, script{}, 1}}, {output{50, script{}}}};
-    add_state(coinbase0);
     REQUIRE(coinbase0.is_valid());
     REQUIRE(coinbase0.is_coinbase());
 
     transaction a {1, 1, {input{output_point{coinbase0.hash(), 0}, script{}, 1}}, {output{40, script{}}}};
-    add_state(a);
     a.inputs()[0].previous_output().validation.cache = coinbase0.outputs()[0];
     a.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(a.is_valid());
     REQUIRE(a.fees() == 10);
 
     transaction b {1, 1, {input{output_point{a.hash(), 0}, script{}, 1}}, {output{31, script{}}}};
-    add_state(b);
     b.inputs()[0].previous_output().validation.cache = a.outputs()[0];
     b.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(b.is_valid());
     REQUIRE(b.fees() == 9);
 
     transaction c {1, 1, {input{output_point{b.hash(), 0}, script{}, 1}}, {output{23, script{}}}};
-    add_state(c);
     c.inputs()[0].previous_output().validation.cache = b.outputs()[0];
     c.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(c.is_valid());
     REQUIRE(c.fees() == 8);
 
     transaction d {1, 1, {input{output_point{c.hash(), 0}, script{}, 1}}, {output{16, script{}}}};
-    add_state(d);
     d.inputs()[0].previous_output().validation.cache = c.outputs()[0];
     d.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(d.is_valid());
@@ -396,33 +367,28 @@ TEST_CASE("[mempool] Dependencies 0") {
 TEST_CASE("[mempool] Dependencies 1") {
 
     transaction coinbase0 {1, 1, {input{output_point{null_hash, point::null_index}, script{}, 1}}, {output{50, script{}}}};
-    add_state(coinbase0);
     REQUIRE(coinbase0.is_valid());
     REQUIRE(coinbase0.is_coinbase());
 
     transaction a {1, 1, {input{output_point{coinbase0.hash(), 0}, script{}, 1}}, {output{43, script{}}}};
-    add_state(a);
     a.inputs()[0].previous_output().validation.cache = coinbase0.outputs()[0];
     a.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(a.is_valid());
     REQUIRE(a.fees() == 7);
 
     transaction b {1, 1, {input{output_point{a.hash(), 0}, script{}, 1}}, {output{35, script{}}}};
-    add_state(b);
     b.inputs()[0].previous_output().validation.cache = a.outputs()[0];
     b.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(b.is_valid());
     REQUIRE(b.fees() == 8);
 
     transaction c {1, 1, {input{output_point{b.hash(), 0}, script{}, 1}}, {output{26, script{}}}};
-    add_state(c);
     c.inputs()[0].previous_output().validation.cache = b.outputs()[0];
     c.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(c.is_valid());
     REQUIRE(c.fees() == 9);
 
     transaction d {1, 1, {input{output_point{c.hash(), 0}, script{}, 1}}, {output{16, script{}}}};
-    add_state(d);
     d.inputs()[0].previous_output().validation.cache = c.outputs()[0];
     d.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(d.is_valid());
@@ -464,33 +430,28 @@ TEST_CASE("[mempool] Dependencies 1") {
 TEST_CASE("[mempool] Dependencies 2") {
 
     transaction coinbase0 {1, 1, {input{output_point{null_hash, point::null_index}, script{}, 1}}, {output{50, script{}}}};
-    add_state(coinbase0);
     REQUIRE(coinbase0.is_valid());
     REQUIRE(coinbase0.is_coinbase());
 
     transaction a {1, 1, {input{output_point{coinbase0.hash(), 0}, script{}, 1}}, {output{43, script{}}}};
-    add_state(a);
     a.inputs()[0].previous_output().validation.cache = coinbase0.outputs()[0];
     a.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(a.is_valid());
     REQUIRE(a.fees() == 7);
 
     transaction b {1, 1, {input{output_point{a.hash(), 0}, script{}, 1}}, {output{35, script{}}}};
-    add_state(b);
     b.inputs()[0].previous_output().validation.cache = a.outputs()[0];
     b.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(b.is_valid());
     REQUIRE(b.fees() == 8);
 
     transaction c {1, 1, {input{output_point{b.hash(), 0}, script{}, 1}}, {output{26, script{}}}};
-    add_state(c);
     c.inputs()[0].previous_output().validation.cache = b.outputs()[0];
     c.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(c.is_valid());
     REQUIRE(c.fees() == 9);
 
     transaction d {1, 1, {input{output_point{c.hash(), 0}, script{}, 1}}, {output{16, script{}}}};
-    add_state(d);
     d.inputs()[0].previous_output().validation.cache = c.outputs()[0];
     d.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(d.is_valid());
@@ -515,7 +476,6 @@ TEST_CASE("[mempool] Dependencies 2") {
     }
 
     transaction e {1, 1, {input{output_point{null_hash, 0}, script{}, 1}}, {output{15, script{}}}};
-    add_state(e);
     e.inputs()[0].previous_output().validation.cache = output{26, script{}};
     e.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(e.is_valid());
@@ -554,19 +514,16 @@ TEST_CASE("[mempool] Dependencies 2") {
 TEST_CASE("[mempool] Dependencies 3") {
 
     transaction coinbase0 {1, 1, {input{output_point{null_hash, point::null_index}, script{}, 1}}, {output{50, script{}}}};
-    add_state(coinbase0);
     REQUIRE(coinbase0.is_valid());
     REQUIRE(coinbase0.is_coinbase());
 
     transaction a {1, 1, {input{output_point{coinbase0.hash(), 0}, script{}, 1}}, {output{43, script{}}}};
-    add_state(a);
     a.inputs()[0].previous_output().validation.cache = coinbase0.outputs()[0];
     a.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(a.is_valid());
     REQUIRE(a.fees() == 7);
 
     transaction b {1, 1, {input{output_point{a.hash(), 0}, script{}, 1}}, {output{35, script{}}}};
-    add_state(b);
     b.inputs()[0].previous_output().validation.cache = a.outputs()[0];
     b.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(b.is_valid());
@@ -588,7 +545,6 @@ TEST_CASE("[mempool] Dependencies 3") {
     }
 
     transaction z {1, 1, {input{output_point{null_hash, 0}, script{}, 1}}, {output{19, script{}}}};
-    add_state(z);
     z.inputs()[0].previous_output().validation.cache = output{26, script{}};
     z.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(z.is_valid());
@@ -607,7 +563,6 @@ TEST_CASE("[mempool] Dependencies 3") {
     }
 
     transaction c {1, 1, {input{output_point{b.hash(), 0}, script{}, 1}}, {output{34, script{}}}};
-    add_state(c);
     c.inputs()[0].previous_output().validation.cache = b.outputs()[0];
     c.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(c.is_valid());
@@ -638,21 +593,18 @@ TEST_CASE("[mempool] Dependencies 3") {
 TEST_CASE("[mempool] Dependencies 4") {
 
     transaction x {1, 1, {input{output_point{null_hash, 0}, script{}, 1}}, {output{48, script{}}}};
-    add_state(x);
     x.inputs()[0].previous_output().validation.cache = output{50, script{}};
     x.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(x.is_valid());
     REQUIRE(x.fees() == 2);
 
     transaction y {1, 1, {input{output_point{hash_one, 0}, script{}, 1}}, {output{49, script{}}}};
-    add_state(y);
     y.inputs()[0].previous_output().validation.cache = output{50, script{}};
     y.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(y.is_valid());
     REQUIRE(y.fees() == 1);
 
     transaction z {1, 1, {input{output_point{hash_two, 0}, script{}, 1}}, {output{47, script{}}}};
-    add_state(z);
     z.inputs()[0].previous_output().validation.cache = output{50, script{}};
     z.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(z.is_valid());
@@ -677,14 +629,12 @@ TEST_CASE("[mempool] Dependencies 4") {
 
 
     transaction a {1, 1, {input{output_point{hash_three, 0}, script{}, 1}}, {output{50, script{}}}};
-    add_state(a);
     a.inputs()[0].previous_output().validation.cache = output{50, script{}};
     a.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(a.is_valid());
     REQUIRE(a.fees() == 0);
 
     transaction b {1, 1, {input{output_point{a.hash(), 0}, script{}, 1}}, {output{50, script{}}}};
-    add_state(b);
     b.inputs()[0].previous_output().validation.cache = a.outputs()[0];
     b.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(b.is_valid());
@@ -712,7 +662,6 @@ TEST_CASE("[mempool] Dependencies 4") {
 
 
     transaction c {1, 1, {input{output_point{b.hash(), 0}, script{}, 1}}, {output{40, script{}}}};
-    add_state(c);
     c.inputs()[0].previous_output().validation.cache = b.outputs()[0];
     c.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(c.is_valid());
@@ -755,21 +704,18 @@ TEST_CASE("[mempool] Dependencies 4") {
 TEST_CASE("[mempool] Dependencies 4b") {
 
     transaction x {1, 1, {input{output_point{null_hash, 0}, script{}, 1}}, {output{48, script{}}}};
-    add_state(x);
     x.inputs()[0].previous_output().validation.cache = output{50, script{}};
     x.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(x.is_valid());
     REQUIRE(x.fees() == 2);
 
     transaction y {1, 1, {input{output_point{x.hash(), 0}, script{}, 1}}, {output{47, script{}}}};
-    add_state(y);
     y.inputs()[0].previous_output().validation.cache = x.outputs()[0];
     y.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(y.is_valid());
     REQUIRE(y.fees() == 1);
 
     transaction z {1, 1, {input{output_point{y.hash(), 0}, script{}, 1}}, {output{44, script{}}}};
-    add_state(z);
     z.inputs()[0].previous_output().validation.cache = y.outputs()[0];
     z.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(z.is_valid());
@@ -797,14 +743,12 @@ TEST_CASE("[mempool] Dependencies 4b") {
 
 
     transaction a {1, 1, {input{output_point{hash_one, 0}, script{}, 1}}, {output{50, script{}}}};
-    add_state(a);
     a.inputs()[0].previous_output().validation.cache = output{50, script{}};
     a.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(a.is_valid());
     REQUIRE(a.fees() == 0);
 
     transaction b {1, 1, {input{output_point{a.hash(), 0}, script{}, 1}}, {output{50, script{}}}};
-    add_state(b);
     b.inputs()[0].previous_output().validation.cache = a.outputs()[0];
     b.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(b.is_valid());
@@ -833,7 +777,6 @@ TEST_CASE("[mempool] Dependencies 4b") {
     // }
 
     transaction c {1, 1, {input{output_point{b.hash(), 0}, script{}, 1}}, {output{40, script{}}}};
-    add_state(c);
     c.inputs()[0].previous_output().validation.cache = b.outputs()[0];
     c.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(c.is_valid());
@@ -878,21 +821,18 @@ TEST_CASE("[mempool] Dependencies 4b") {
 TEST_CASE("[mempool] Dependencies 5") {
 
     transaction a {1, 1, {input{output_point{null_hash, 0}, script{}, 1}}, {output{40, script{}}}};
-    add_state(a);
     a.inputs()[0].previous_output().validation.cache = output{50, script{}};
     a.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(a.is_valid());
     REQUIRE(a.fees() == 10);
 
     transaction b {1, 1, {input{output_point{hash_one, 0}, script{}, 1}}, {output{41, script{}}}};
-    add_state(b);
     b.inputs()[0].previous_output().validation.cache = output{50, script{}};
     b.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(b.is_valid());
     REQUIRE(b.fees() == 9);
 
     transaction c {1, 1, {input{output_point{a.hash(), 0}, script{}, 1}}, {output{39, script{}}}};
-    add_state(c);
     c.inputs()[0].previous_output().validation.cache = a.outputs()[0];
     c.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(c.is_valid());
@@ -940,21 +880,18 @@ TEST_CASE("[mempool] Dependencies 5") {
 TEST_CASE("[mempool] Dependencies 6") {
 
     transaction a {1, 1, {input{output_point{null_hash, 0}, script{}, 1}}, {output{40, script{}}}};
-    add_state(a);
     a.inputs()[0].previous_output().validation.cache = output{50, script{}};
     a.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(a.is_valid());
     REQUIRE(a.fees() == 10);
 
     transaction b {1, 1, {input{output_point{hash_one, 0}, script{}, 1}}, {output{41, script{}}}};
-    add_state(b);
     b.inputs()[0].previous_output().validation.cache = output{50, script{}};
     b.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(b.is_valid());
     REQUIRE(b.fees() == 9);
 
     transaction c {1, 1, {input{output_point{a.hash(), 0}, script{}, 1}}, {output{39, script{}}}};
-    add_state(c);
     c.inputs()[0].previous_output().validation.cache = a.outputs()[0];
     c.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(c.is_valid());
@@ -1003,7 +940,6 @@ TEST_CASE("[mempool] Dependencies 7 - what_to_insert") {
     transaction a {1, 1, { input{output_point{null_hash, 0}, script{}, 1} },
                          { output{40, script{}}, output{30, script{}} }
                   };
-    add_state(a);
     a.inputs()[0].previous_output().validation.cache = output{90, script{}};
     a.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(a.is_valid());
@@ -1016,7 +952,6 @@ TEST_CASE("[mempool] Dependencies 7 - what_to_insert") {
     transaction b {1, 1, { input{output_point{a.hash(), 0}, script{}, 1} },
                          {output{30, script{}}}
                   };
-    add_state(b);
     b.inputs()[0].previous_output().validation.cache = a.outputs()[0];
     b.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(b.is_valid());
@@ -1029,7 +964,6 @@ TEST_CASE("[mempool] Dependencies 7 - what_to_insert") {
     transaction c {1, 1, { input{output_point{a.hash(), 1}, script{}, 1} },
                          { output{20, script{}} }
                   };
-    add_state(c);
     c.inputs()[0].previous_output().validation.cache = a.outputs()[1];
     c.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(c.is_valid());
@@ -1043,7 +977,6 @@ TEST_CASE("[mempool] Dependencies 7 - what_to_insert") {
                            input{output_point{c.hash(), 0}, script{}, 1} },
                          { output{20, script{}} }
                   };
-    add_state(d);
     d.inputs()[0].previous_output().validation.cache = b.outputs()[0];
     d.inputs()[0].previous_output().validation.from_mempool = true;
     d.inputs()[1].previous_output().validation.cache = c.outputs()[0];
@@ -1098,21 +1031,18 @@ TEST_CASE("[mempool] Dependencies 7 - what_to_insert") {
 TEST_CASE("[mempool] Double Spend Mempool") {
 
     transaction a {1, 1, {input{output_point{null_hash, 0}, script{}, 1}}, {output{40, script{}}}};
-    add_state(a);
     a.inputs()[0].previous_output().validation.cache = output{50, script{}};
     a.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(a.is_valid());
     REQUIRE(a.fees() == 10);
 
     transaction b {1, 1, {input{output_point{a.hash(), 0}, script{}, 1}}, {output{31, script{}}}};
-    add_state(b);
     b.inputs()[0].previous_output().validation.cache = a.outputs()[0];
     b.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(b.is_valid());
     REQUIRE(b.fees() == 9);
 
     transaction c {1, 1, {input{output_point{a.hash(), 0}, script{}, 1}}, {output{30, script{}}}};
-    add_state(c);
     c.inputs()[0].previous_output().validation.cache = a.outputs()[0];
     c.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(c.is_valid());
@@ -1136,14 +1066,12 @@ TEST_CASE("[mempool] Double Spend Mempool") {
 TEST_CASE("[mempool] Double Spend Blockchain") {
 
     transaction a {1, 1, {input{output_point{hash_one, 0}, script{}, 1}}, {output{40, script{}}}};
-    add_state(a);
     a.inputs()[0].previous_output().validation.cache = output{50, script{}};
     a.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(a.is_valid());
     REQUIRE(a.fees() == 10);
 
     transaction b {1, 1, {input{output_point{hash_one, 0}, script{}, 1}}, {output{41, script{}}}};
-    add_state(b);
     b.inputs()[0].previous_output().validation.cache = output{50, script{}};
     b.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(b.is_valid());
@@ -1209,21 +1137,18 @@ D       C
 
 TEST_CASE("[mempool] Remove Transactions 0") {
     transaction x {1, 1, {input{output_point{null_hash, 0}, script{}, 1}}, {output{48, script{}}}};
-    add_state(x);
     x.inputs()[0].previous_output().validation.cache = output{50, script{}};
     x.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(x.is_valid());
     REQUIRE(x.fees() == 2);
 
     transaction y {1, 1, {input{output_point{hash_one, 0}, script{}, 1}}, {output{49, script{}}}};
-    add_state(y);
     y.inputs()[0].previous_output().validation.cache = output{50, script{}};
     y.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(y.is_valid());
     REQUIRE(y.fees() == 1);
 
     transaction z {1, 1, {input{output_point{hash_two, 0}, script{}, 1}}, {output{47, script{}}}};
-    add_state(z);
     z.inputs()[0].previous_output().validation.cache = output{50, script{}};
     z.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(z.is_valid());
@@ -1264,21 +1189,18 @@ TEST_CASE("[mempool] Remove Transactions 0") {
 
 TEST_CASE("[mempool] Remove Transactions 1") {
     transaction x {1, 1, {input{output_point{null_hash, 0}, script{}, 1}}, {output{48, script{}}}};
-    add_state(x);
     x.inputs()[0].previous_output().validation.cache = output{50, script{}};
     x.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(x.is_valid());
     REQUIRE(x.fees() == 2);
 
     transaction y {1, 1, {input{output_point{hash_one, 0}, script{}, 1}}, {output{49, script{}}}};
-    add_state(y);
     y.inputs()[0].previous_output().validation.cache = output{50, script{}};
     y.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(y.is_valid());
     REQUIRE(y.fees() == 1);
 
     transaction z {1, 1, {input{output_point{hash_two, 0}, script{}, 1}}, {output{47, script{}}}};
-    add_state(z);
     z.inputs()[0].previous_output().validation.cache = output{50, script{}};
     z.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(z.is_valid());
@@ -1318,21 +1240,18 @@ TEST_CASE("[mempool] Remove Transactions 1") {
 
 TEST_CASE("[mempool] Remove Transactions 2") {
     transaction x {1, 1, {input{output_point{null_hash, 0}, script{}, 1}}, {output{48, script{}}}};
-    add_state(x);
     x.inputs()[0].previous_output().validation.cache = output{50, script{}};
     x.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(x.is_valid());
     REQUIRE(x.fees() == 2);
 
     transaction y {1, 1, {input{output_point{hash_one, 0}, script{}, 1}}, {output{49, script{}}}};
-    add_state(y);
     y.inputs()[0].previous_output().validation.cache = output{50, script{}};
     y.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(y.is_valid());
     REQUIRE(y.fees() == 1);
 
     transaction z {1, 1, {input{output_point{y.hash(), 0}, script{}, 1}}, {output{47, script{}}}};
-    add_state(z);
     z.inputs()[0].previous_output().validation.cache = y.outputs()[0];
     z.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(z.is_valid());
@@ -1356,7 +1275,6 @@ TEST_CASE("[mempool] Remove Transactions 2") {
 
 
     transaction w {1, 1, {input{output_point{y.hash(), 0}, script{}, 1}}, {output{46, script{}}}};
-    add_state(w);
     w.inputs()[0].previous_output().validation.cache = y.outputs()[0];
     w.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(w.is_valid());
@@ -2490,33 +2408,28 @@ TEST_CASE("[mempool] testnet case 3") {
 TEST_CASE("[mempool] GetBlockTemplate CTOR/LTOR") {
 
     transaction coinbase0 {1, 1, {input{output_point{null_hash, point::null_index}, script{}, 1}}, {output{50, script{}}}};
-    add_state(coinbase0);
     REQUIRE(coinbase0.is_valid());
     REQUIRE(coinbase0.is_coinbase());
 
     transaction a {1, 1, {input{output_point{coinbase0.hash(), 0}, script{}, 1}}, {output{40, script{}}}};
-    add_state(a);
     a.inputs()[0].previous_output().validation.cache = coinbase0.outputs()[0];
     a.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(a.is_valid());
     REQUIRE(a.fees() == 10);
 
     transaction b {1, 1, {input{output_point{a.hash(), 0}, script{}, 1}}, {output{15, script{}}}};
-    add_state(b);
     b.inputs()[0].previous_output().validation.cache = a.outputs()[0];
     b.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(b.is_valid());
     REQUIRE(b.fees() == 25);
 
     transaction c {1, 1, {input{output_point{b.hash(), 0}, script{}, 1}}, {output{14, script{}}}};
-    add_state(c);
     c.inputs()[0].previous_output().validation.cache = b.outputs()[0];
     c.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(c.is_valid());
     REQUIRE(c.fees() == 1);
 
     transaction d {1, 1, {input{output_point{c.hash(), 0}, script{}, 1}}, {output{7, script{}}}};
-    add_state(d);
     d.inputs()[0].previous_output().validation.cache = c.outputs()[0];
     d.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(d.is_valid());
@@ -2991,33 +2904,28 @@ TEST_CASE("[mempool] GetBlockTemplate CTOR/LTOR 2 - testnet case 2") {
 TEST_CASE("[mempool] GetBlockTemplate CTOR/LTOR 3 - Dependencies graph") {
 
     transaction coinbase0 {1, 1, {input{output_point{null_hash, point::null_index}, script{}, 1}}, {output{50, script{}}}};
-    add_state(coinbase0);
     REQUIRE(coinbase0.is_valid());
     REQUIRE(coinbase0.is_coinbase());
 
     transaction a {1, 1, {input{output_point{coinbase0.hash(), 0}, script{}, 1}}, { output{25, script{}}, output{15, script{}}} };
-    add_state(a);
     a.inputs()[0].previous_output().validation.cache = coinbase0.outputs()[0];
     a.inputs()[0].previous_output().validation.from_mempool = false;
     REQUIRE(a.is_valid());
     REQUIRE(a.fees() == 10);
 
     transaction b {1, 1, {input{output_point{a.hash(), 0}, script{}, 1}}, {output{10, script{}}, output{14, script{}}}};
-    add_state(b);
     b.inputs()[0].previous_output().validation.cache = a.outputs()[0];
     b.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(b.is_valid());
     REQUIRE(b.fees() == 1);
 
     transaction c {1, 1, {input{output_point{b.hash(), 0}, script{}, 1}}, {output{2, script{}}}};
-    add_state(c);
     c.inputs()[0].previous_output().validation.cache = b.outputs()[0];
     c.inputs()[0].previous_output().validation.from_mempool = true;
     REQUIRE(c.is_valid());
     REQUIRE(c.fees() == 8);
 
     transaction d {1, 1, {input{output_point{b.hash(), 1}, script{}, 1} ,input{output_point{c.hash(), 0}, script{}, 1}}, {output{11, script{}}}};
-    add_state(d);
     d.inputs()[0].previous_output().validation.cache = b.outputs()[1];
     d.inputs()[0].previous_output().validation.from_mempool = true;
     d.inputs()[1].previous_output().validation.cache = c.outputs()[0];
@@ -3026,7 +2934,6 @@ TEST_CASE("[mempool] GetBlockTemplate CTOR/LTOR 3 - Dependencies graph") {
     REQUIRE(d.fees() == 5);
 
     transaction e {1, 1, { input{output_point{a.hash(), 1}, script{}, 1}, input{output_point{d.hash(), 0}, script{}, 1}}, {output{1, script{}}}};
-    add_state(e);
     e.inputs()[0].previous_output().validation.cache = a.outputs()[1];
     e.inputs()[0].previous_output().validation.from_mempool = true;
     e.inputs()[1].previous_output().validation.cache = d.outputs()[0];

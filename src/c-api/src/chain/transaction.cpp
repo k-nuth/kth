@@ -174,16 +174,6 @@ uint64_t kth_chain_transaction_total_output_value(kth_transaction_const_t self) 
     return kth::cpp_ref<cpp_t>(self).total_output_value();
 }
 
-kth_size_t kth_chain_transaction_signature_operations_simple(kth_transaction_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::cpp_ref<cpp_t>(self).signature_operations();
-}
-
-kth_error_code_t kth_chain_transaction_connect_simple(kth_transaction_const_t self) {
-    KTH_PRECONDITION(self != nullptr);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).connect());
-}
-
 
 // Predicates
 
@@ -289,13 +279,14 @@ kth_size_t kth_chain_transaction_min_tx_size(kth_transaction_const_t self, kth_s
     return kth::cpp_ref<cpp_t>(self).min_tx_size(flags);
 }
 
-kth_error_code_t kth_chain_transaction_accept(kth_transaction_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transaction_pool) {
+kth_error_code_t kth_chain_transaction_accept(kth_transaction_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transaction_pool, kth_bool_t duplicate) {
     KTH_PRECONDITION(self != nullptr);
     auto const height_cpp = kth::sz(height);
     auto const max_sigops_cpp = kth::sz(max_sigops);
     auto const is_under_checkpoint_cpp = kth::int_to_bool(is_under_checkpoint);
     auto const transaction_pool_cpp = kth::int_to_bool(transaction_pool);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).accept(flags, height_cpp, median_time_past, max_sigops_cpp, is_under_checkpoint_cpp, transaction_pool_cpp));
+    auto const duplicate_cpp = kth::int_to_bool(duplicate);
+    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).accept(flags, height_cpp, median_time_past, max_sigops_cpp, is_under_checkpoint_cpp, transaction_pool_cpp, duplicate_cpp));
 }
 
 kth_error_code_t kth_chain_transaction_connect(kth_transaction_const_t self, kth_chain_state_const_t state) {

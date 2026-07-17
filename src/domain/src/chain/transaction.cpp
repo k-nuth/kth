@@ -69,13 +69,6 @@ bool transaction::is_null() const {
 // Operators.
 //-----------------------------------------------------------------------------
 
-bool transaction::operator==(transaction const& x) const {
-    return version_ == x.version_
-        && locktime_ == x.locktime_
-        && inputs_ == x.inputs_
-        && outputs_ == x.outputs_;
-}
-
 // Serialization.
 //-----------------------------------------------------------------------------
 
@@ -279,13 +272,6 @@ size_t transaction::signature_operations(bool bip16, bool bip141) const {
            std::accumulate(outputs_.begin(), outputs_.end(), size_t{0}, out);
 }
 
-size_t transaction::signature_operations() const {
-    auto const state = validation.state;
-    auto const bip16 = state ? state->is_enabled(kth::domain::machine::script_flags::bip16_rule) : true;
-    auto const bip141 = false;
-    return signature_operations(bip16, bip141);
-}
-
 bool transaction::is_missing_previous_outputs() const {
     auto const missing = [](input const& input) {
         auto const& prevout = input.previous_output();
@@ -442,7 +428,8 @@ code transaction::accept(
     uint32_t median_time_past,
     size_t max_sigops,
     bool is_under_checkpoint,
-    bool transaction_pool
+    bool transaction_pool,
+    bool duplicate
 ) const {
     auto const is_enabled = [](script_flags_t active, auto flag) {
         return script::is_enabled(active, flag);
@@ -474,7 +461,7 @@ code transaction::accept(
         return error::transaction_non_final;
     }
 
-    if (bip30 && ! revert_bip30 && validation.duplicate) {
+    if (bip30 && ! revert_bip30 && duplicate) {
         return error::unspent_duplicate;
     }
 
@@ -551,11 +538,6 @@ code transaction::connect_input(chain_state const& state, size_t input_index) co
     auto const index32 = uint32_t(input_index);
 
     return verify(*this, index32, flags);
-}
-
-code transaction::connect() const {
-    auto const state = validation.state;
-    return state ? connect(*state) : error::operation_failed;
 }
 
 code transaction::connect(chain_state const& state) const {
