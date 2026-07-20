@@ -26,7 +26,9 @@ struct KB_API transaction_entry {
     /// Construct an entry for the pool.
     /// Never store an invalid transaction in the pool except for the cases of:
     /// double spend and input invalid due to forks change (sentinel forks).
-    transaction_entry(transaction_const_ptr tx);
+    /// `flags` are the enabled fork flags for the next block (previously read
+    /// from the tx's now-removed `validation.state`); the caller supplies them.
+    transaction_entry(transaction_const_ptr tx, domain::script_flags_t flags);
 
     /// Use this construction only as a search key.
     transaction_entry(hash_digest const& hash);

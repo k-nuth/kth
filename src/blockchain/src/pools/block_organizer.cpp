@@ -139,16 +139,32 @@ bool block_organizer::stop() {
         co_return error::orphan_block;
     }
 
+    // The transaction_validation_store holds only in-flight validation scratch:
+    // a block's txs get entries (populated during accept below) that are dead
+    // once the block leaves this organize() call, whatever the outcome. Erasing
+    // runs under the high-priority validation mutex held across this whole
+    // coroutine (the only writer of the store), so it is race-free. If an erased
+    // block is later reorganized in, the populator recreates the entries it
+    // needs (a missing entry only forces harmless re-validation, never a wrong
+    // result). This is the primary fix for the per-block-tx IBD leak.
+    auto const erase_block_tx_validations = [this](block_const_ptr const& blk) {
+        for (auto const& tx : blk->transactions()) {
+            chain_.transaction_validations().erase(tx.hash());
+        }
+    };
+
     // Checks that are dependent on chain state and prevouts.
     // For headers-first sync, use accept_body() to skip header validation.
     ec = co_await validator_.accept(branch, headers_pre_validated);
 
     if (stopped()) {
+        erase_block_tx_validations(branch->top());
         mutex_.unlock_high_priority();
         co_return error::service_stopped;
     }
 
     if (ec) {
+        erase_block_tx_validations(branch->top());
         mutex_.unlock_high_priority();
         co_return ec;
     }
@@ -157,14 +173,23 @@ bool block_organizer::stop() {
     ec = co_await validator_.connect(branch);
 
     if (stopped()) {
+        erase_block_tx_validations(branch->top());
         mutex_.unlock_high_priority();
         co_return error::service_stopped;
     }
 
     if (ec) {
+        erase_block_tx_validations(branch->top());
         mutex_.unlock_high_priority();
         co_return ec;
     }
+
+    // Validation of branch->top() is complete; nothing below reads this block's
+    // tx-validation entries again (organize_mempool reads only the incoming tx
+    // hashes and writes fresh entries for outgoing/re-added txs). Drop them here
+    // so the store never accumulates across accepted/pooled blocks. Every mined
+    // mempool tx is cleaned by this same erase when its block is accepted.
+    erase_block_tx_validations(branch->top());
 
     auto const top_hash = branch->top()->hash();
     chain_.block_validations().mutate(top_hash, [](auto& bv){ bv.error = error::success; });
@@ -407,7 +432,9 @@ void block_organizer::organize_mempool(branch::const_ptr branch, block_const_ptr
                         });
 
                         if ( ! double_spend) {
-                            tx.validation.state = chain_.chain_state();
+                            // Serial reorg re-add path (under the validation
+                            // mutex): safe to write the non-concurrent store.
+                            chain_.transaction_validations().mutate(tx.hash(), [this](auto& tv){ tv.state = chain_.chain_state(); });
                             populate_transaction_inputs(branch, tx.inputs(), branch_utxo);
                             mempool_.add(tx);       //TODO(fernando): add bulk
                         }

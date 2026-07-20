@@ -28,6 +28,7 @@ namespace kth::blockchain {
 using namespace kd::chain;
 using namespace kd::machine;
 using namespace std::placeholders;
+using kd::script_flags_t;
 
 #define NAME "validate_transaction"
 
@@ -83,10 +84,15 @@ void validate_transaction::stop()
 
 ::asio::awaitable<code> validate_transaction::accept(transaction_const_ptr tx) const {
     // Populate chain state of the next block (tx pool).
-    tx->validation.state = chain_.chain_state();
-
-    if ( ! tx->validation.state) {
-        co_return error::transaction_validation_state_failed;
+    // NOTE: on the transaction_validate (c-api single-tx validate) path this
+    // store write happens off the organizer mutex, but the tx is private to
+    // the caller so no other worker touches this hash concurrently.
+    {
+        auto const state = chain_.chain_state();
+        chain_.transaction_validations().mutate(tx->hash(), [&](auto& tv){ tv.state = state; });
+        if ( ! state) {
+            co_return error::transaction_validation_state_failed;
+        }
     }
 
     auto const populate_ec = co_await transaction_populator_.populate(tx);
@@ -99,8 +105,11 @@ void validate_transaction::stop()
         co_return populate_ec;
     }
 
-    KTH_ASSERT(tx->validation.state);
-    auto const& state = *tx->validation.state;
+    domain::chain::chain_state::ptr state_ptr;
+    bool duplicate = false;
+    chain_.transaction_validations().visit(tx->hash(), [&](auto const& tv){ state_ptr = tv.state; duplicate = tv.duplicate; });
+    KTH_ASSERT(state_ptr);
+    auto const& state = *state_ptr;
 
     // Run contextual tx checks.
     co_return tx->accept(
@@ -111,7 +120,8 @@ void validate_transaction::stop()
             ? state.dynamic_max_block_sigops()
             : static_max_block_sigops(state.network()),
         state.is_under_checkpoint(),
-        true /*transaction_pool*/
+        true /*transaction_pool*/,
+        duplicate
     );
 }
 
@@ -120,7 +130,10 @@ void validate_transaction::stop()
 // These checks require chain state, block state and perform script validation.
 
 ::asio::awaitable<code> validate_transaction::connect(transaction_const_ptr tx) const {
-    KTH_ASSERT(tx->validation.state);
+    domain::chain::chain_state::ptr state_ptr;
+    chain_.transaction_validations().visit(tx->hash(), [&](auto const& tv){ state_ptr = tv.state; });
+    KTH_ASSERT(state_ptr);
+    auto const flags = state_ptr->enabled_flags();
     auto const total_inputs = tx->inputs().size();
 
     // Return if there are no inputs to validate (will fail later).
@@ -137,8 +150,8 @@ void validate_transaction::stop()
 
     // Launch parallel tasks
     for (size_t bucket = 0; bucket < buckets; ++bucket) {
-        ::asio::post(executor_, [this, tx, bucket, buckets, channel]() {
-            auto result = connect_inputs_sync(tx, bucket, buckets);
+        ::asio::post(executor_, [this, tx, flags, bucket, buckets, channel]() {
+            auto result = connect_inputs_sync(tx, flags, bucket, buckets);
             channel->try_send(std::error_code{}, result);
         });
     }
@@ -159,14 +172,13 @@ void validate_transaction::stop()
     co_return final_result;
 }
 
-code validate_transaction::connect_inputs_sync(transaction_const_ptr tx, size_t bucket, size_t buckets) const {
+code validate_transaction::connect_inputs_sync(transaction_const_ptr tx, script_flags_t flags, size_t bucket, size_t buckets) const {
     KTH_ASSERT(bucket < buckets);
 
 #if defined(KTH_CURRENCY_BCH)
     size_t tx_sigchecks = 0;
 #endif
 
-    auto const flags = tx->validation.state->enabled_flags();
     auto const& inputs = tx->inputs();
 
     for (auto input_index = bucket; input_index < inputs.size(); input_index = ceiling_add(input_index, buckets)) {

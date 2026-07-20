@@ -77,28 +77,6 @@ struct KD_API transaction {
     using outs = output::list;
     using list = std::vector<transaction>;
 
-    // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
-    struct validation_t {
-        uint64_t originator = 0;
-        code error = error::not_found;
-        chain_state::ptr state = nullptr;
-
-        // The transaction is an unspent duplicate.
-        bool duplicate = false;
-
-        // The unconfirmed tx exists in the store.
-        bool pooled = false;
-
-        // The unconfirmed tx is validated at the block's current fork state.
-        bool current = false;
-
-        // Similate organization and instead just validate the transaction.
-        bool simulate = false;
-
-        // The transaction was validated before its insertion in the mempool.
-        bool validated = false;
-    };
-
     // Constructors.
     //-----------------------------------------------------------------------------
 
@@ -123,11 +101,7 @@ struct KD_API transaction {
     // Operators.
     //-----------------------------------------------------------------------------
 
-    // NOTE: `==` is not `= default` because the `validation` member is
-    // tracing metadata, not part of the value's identity. `!=` is defaulted
-    // (delegates to `!(==)`) so callers that spell out the member call still
-    // resolve.
-    bool operator==(transaction const& x) const;
+    bool operator==(transaction const& x) const = default;
     bool operator!=(transaction const& x) const = default;
 
     // Serialization.
@@ -197,9 +171,6 @@ struct KD_API transaction {
     uint64_t total_output_value() const;
 
     [[nodiscard]]
-    size_t signature_operations() const;
-
-    [[nodiscard]]
     size_t signature_operations(bool bip16, bool bip141) const;
 
     [[nodiscard]]
@@ -255,11 +226,9 @@ struct KD_API transaction {
         uint32_t median_time_past,
         size_t max_sigops,
         bool is_under_checkpoint,
-        bool transaction_pool
+        bool transaction_pool,
+        bool duplicate
     ) const;
-
-    [[nodiscard]]
-    code connect() const;
 
     [[nodiscard]]
     code connect(chain_state const& state) const;
@@ -279,9 +248,6 @@ struct KD_API transaction {
     /// passed flags only on the scriptPubKey side.
     [[nodiscard]]
     bool is_standard(script_flags_t flags) const;
-
-    // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
-    mutable validation_t validation{};
 
 private:
     [[nodiscard]]

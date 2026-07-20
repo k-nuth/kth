@@ -55,7 +55,7 @@ protected:
     }
 
 private:
-    code connect_inputs_sync(transaction_const_ptr tx, size_t bucket, size_t buckets) const;
+    code connect_inputs_sync(transaction_const_ptr tx, domain::script_flags_t flags, size_t bucket, size_t buckets) const;
 
     // These are thread safe.
     std::atomic<bool> stopped_;

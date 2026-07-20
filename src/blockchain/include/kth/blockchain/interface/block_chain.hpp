@@ -34,6 +34,7 @@
 #include <kth/blockchain/populate/populate_chain_state.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/blockchain/validate/block_validation.hpp>
+#include <kth/blockchain/validate/transaction_validation.hpp>
 
 #include <asio/any_io_executor.hpp>
 #include <asio/awaitable.hpp>
@@ -213,6 +214,11 @@ struct KB_API block_chain {
     /// keyed by block hash. This replaces the old mutable `block::validation`
     /// member so the domain value type carries only consensus/wire data.
     block_validation_store& block_validations() const;
+
+    /// Validator-owned side store for transient per-transaction validation
+    /// state, keyed by transaction hash. Replaces the old mutable
+    /// `transaction::validation` member.
+    transaction_validation_store& transaction_validations() const;
 
     // =========================================================================
     // SUBSCRIPTIONS
@@ -475,6 +481,7 @@ private:
     // Must be declared before block_organizer_: the organizer's block_pool is
     // constructed with a reference to this store.
     mutable block_validation_store block_validations_;
+    mutable transaction_validation_store transaction_validations_;
 
     transaction_organizer transaction_organizer_;
     block_organizer block_organizer_;

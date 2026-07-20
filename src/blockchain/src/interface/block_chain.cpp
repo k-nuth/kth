@@ -718,6 +718,10 @@ block_validation_store& block_chain::block_validations() const {
     return block_validations_;
 }
 
+transaction_validation_store& block_chain::transaction_validations() const {
+    return transaction_validations_;
+}
+
 code block_chain::set_chain_state(domain::chain::chain_state::ptr previous) {
     unique_lock lock(pool_state_mutex_);
     pool_state_ = chain_state_populator_.populate(previous);

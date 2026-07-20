@@ -91,7 +91,7 @@ void run_vmb_test(vmb_test_case const& test) {
         // Use large height/mtp so sequence locks and finality checks don't reject valid transactions.
         ec = tx.accept(test.flags, 1'000'000 /*height*/, 1'700'000'000 /*median_time_past*/,
                        0 /*max_sigops*/, false /*is_under_checkpoint*/,
-                       false /*transaction_pool*/);
+                       false /*transaction_pool*/, false /*duplicate*/);
     }
 
     // Script verification for the specified input.

@@ -24,7 +24,7 @@ public:
 #endif
         , raw_(transaction_.to_data(true, KTH_WITNESS_DEFAULT))
         , fee_(transaction_.fees())
-        , sigops_(transaction_.signature_operations()) {}
+        , sigops_(transaction_.signature_operations(true /*bip16*/, false /*bip141*/)) {}  // BCH: P2SH always active, no segwit.
 
     transaction_element(domain::chain::transaction&& tx)
         : transaction_(std::move(tx))
@@ -34,7 +34,7 @@ public:
 #endif
         , raw_(transaction_.to_data(true, KTH_WITNESS_DEFAULT))
         , fee_(transaction_.fees())
-        , sigops_(transaction_.signature_operations()) {}
+        , sigops_(transaction_.signature_operations(true /*bip16*/, false /*bip141*/)) {}  // BCH: P2SH always active, no segwit.
 
     domain::chain::transaction const& transaction() const {
         return transaction_;
