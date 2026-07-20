@@ -115,7 +115,7 @@ bool transaction_organizer::stop() {
     }
 
     // Checks that include script validation.
-    ec = co_await validator_.connect(tx);
+    auto const connected = co_await validator_.connect(tx);
 
     chain_.transaction_validations().erase(tx->hash());
 
@@ -123,7 +123,7 @@ bool transaction_organizer::stop() {
         co_return error::service_stopped;
     }
 
-    co_return ec;
+    co_return connected ? error::success : connected.error();
 }
 
 // DSProof Organize sequence.
@@ -215,8 +215,8 @@ bool transaction_organizer::stop() {
         co_return error::dusty_transaction;
     }
 
-    // Checks that include script validation.
-    ec = co_await validator_.connect(tx);
+    // Checks that include script validation; on success yields the tx sigchecks.
+    auto const connected = co_await validator_.connect(tx);
 
     if (stopped()) {
         erase_tx_validation();
@@ -224,10 +224,10 @@ bool transaction_organizer::stop() {
         co_return error::service_stopped;
     }
 
-    if (ec) {
+    if ( ! connected) {
         erase_tx_validation();
         mutex_.unlock_low_priority();
-        co_return ec;
+        co_return connected.error();
     }
 
     // TODO: create a simulated validation path that does not block others.
@@ -253,7 +253,7 @@ bool transaction_organizer::stop() {
         tx,
         tx->fees(),
         static_cast<uint32_t>(tx->serialized_size(true)),
-        static_cast<uint32_t>(tx->signature_operations(true, false)),
+        static_cast<uint32_t>(*connected),
         seen});
     if ( ! admitted) {
         mutex_.unlock_low_priority();

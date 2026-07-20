@@ -7,18 +7,22 @@
 
 #include <atomic>
 #include <cstddef>
+#include <expected>
 
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/populate/populate_transaction.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/domain.hpp>
+#include <kth/infrastructure/handlers.hpp>
 
 #include <asio/any_io_executor.hpp>
 #include <asio/awaitable.hpp>
 
 
 namespace kth::blockchain {
+
+using kth::awaitable_expected;
 
 // Forward declaration
 struct block_chain;
@@ -38,8 +42,10 @@ struct KB_API validate_transaction {
     [[nodiscard]]
     ::asio::awaitable<code> accept(transaction_const_ptr tx) const;
 
+    // Runs script validation across all inputs; on success yields the tx's
+    // total sigchecks (BCH), which the organizer caches in the mempool entry.
     [[nodiscard]]
-    ::asio::awaitable<code> connect(transaction_const_ptr tx) const;
+    awaitable_expected<size_t> connect(transaction_const_ptr tx) const;
 
 protected:
     inline
@@ -48,7 +54,8 @@ protected:
     }
 
 private:
-    code connect_inputs_sync(transaction_const_ptr tx, domain::script_flags_t flags, size_t bucket, size_t buckets) const;
+    // Yields this bucket's sigchecks total, or the first script/validation error.
+    std::expected<size_t, code> connect_inputs_sync(transaction_const_ptr tx, domain::script_flags_t flags, size_t bucket, size_t buckets) const;
 
     // These are thread safe.
     std::atomic<bool> stopped_;
