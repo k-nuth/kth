@@ -88,7 +88,7 @@ mempool_entry entry_for(transaction_const_ptr const& tx, uint64_t tag) {
         tx,
         /*fee*/      1000u + tag,
         /*size*/     static_cast<uint32_t>(tx->serialized_size(true)),
-        /*sigops*/   1u,
+        /*sigchecks*/ 1u,
         /*time_seen*/ tag};
 }
 

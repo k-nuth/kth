@@ -8,8 +8,10 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <functional>
 #include <memory>
+#include <utility>
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/pools/branch.hpp>
@@ -121,7 +123,7 @@ void validate_transaction::stop()
 //-----------------------------------------------------------------------------
 // These checks require chain state, block state and perform script validation.
 
-::asio::awaitable<code> validate_transaction::connect(transaction_const_ptr tx) const {
+awaitable_expected<size_t> validate_transaction::connect(transaction_const_ptr tx) const {
     domain::chain::chain_state::ptr state_ptr;
     chain_.transaction_validations().visit(tx->hash(), [&](auto const& tv){ state_ptr = tv.state; });
     KTH_ASSERT(state_ptr);
@@ -130,73 +132,78 @@ void validate_transaction::stop()
 
     // Return if there are no inputs to validate (will fail later).
     if (total_inputs == 0) {
-        co_return error::success;
+        co_return 0u;
     }
 
     auto const buckets = std::min(threads_, total_inputs);
     KTH_ASSERT(buckets != 0);
 
-    // Use a channel to collect results from parallel tasks
-    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+    // Use a channel to collect each bucket's {sigchecks | error} result.
+    using bucket_result = std::expected<size_t, code>;
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, bucket_result)>;
     auto channel = std::make_shared<result_channel>(executor_, buckets);
 
     // Launch parallel tasks
     for (size_t bucket = 0; bucket < buckets; ++bucket) {
         ::asio::post(executor_, [this, tx, flags, bucket, buckets, channel]() {
-            auto result = connect_inputs_sync(tx, flags, bucket, buckets);
-            channel->try_send(std::error_code{}, result);
+            channel->try_send(std::error_code{}, connect_inputs_sync(tx, flags, bucket, buckets));
         });
     }
 
-    // Wait for all results - return first error or success if all succeed
+    // Wait for all results - return first error, or the summed sigchecks.
     code final_result = error::success;
+    size_t total_sigchecks = 0;
     for (size_t i = 0; i < buckets; ++i) {
         auto [ec, result] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
         if (ec) {
             // Channel error - shouldn't happen
-            co_return error::operation_failed;
+            co_return std::unexpected(error::operation_failed);
         }
-        if (result != error::success && final_result == error::success) {
-            final_result = result;
+        if ( ! result) {
+            if (final_result == error::success) {
+                final_result = result.error();
+            }
+        } else {
+            total_sigchecks += *result;
         }
     }
 
-    co_return final_result;
+    if (final_result != error::success) {
+        co_return std::unexpected(final_result);
+    }
+    co_return total_sigchecks;
 }
 
-code validate_transaction::connect_inputs_sync(transaction_const_ptr tx, script_flags_t flags, size_t bucket, size_t buckets) const {
+std::expected<size_t, code> validate_transaction::connect_inputs_sync(transaction_const_ptr tx, script_flags_t flags, size_t bucket, size_t buckets) const {
     KTH_ASSERT(bucket < buckets);
 
-#if defined(KTH_CURRENCY_BCH)
-    size_t tx_sigchecks = 0;
-#endif
-
+    size_t sigchecks = 0;
     auto const& inputs = tx->inputs();
 
     for (auto input_index = bucket; input_index < inputs.size(); input_index = ceiling_add(input_index, buckets)) {
         if (stopped()) {
-            return error::service_stopped;
+            return std::unexpected(error::service_stopped);
         }
 
         auto const& prevout = inputs[input_index].previous_output();
 
         if ( ! prevout.validation.cache.is_valid()) {
-            return error::missing_previous_output;
+            return std::unexpected(error::missing_previous_output);
         }
 
         auto res = validate_input::verify_script(*tx, input_index, flags);
         if (res.first != error::success) {
-            return res.first;
+            return std::unexpected(res.first);
         }
 
 #if defined(KTH_CURRENCY_BCH)
-        tx_sigchecks += res.second;
-        if (tx_sigchecks > max_tx_sigchecks) {
-            return error::transaction_sigchecks_limit;
+        sigchecks += res.second;
+        if (sigchecks > max_tx_sigchecks) {
+            return std::unexpected(error::transaction_sigchecks_limit);
         }
 #endif
     }
-    return error::success;
+    return sigchecks;
 }
 
 } // namespace kth::blockchain

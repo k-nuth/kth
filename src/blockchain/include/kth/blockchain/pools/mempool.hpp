@@ -27,7 +27,7 @@ struct mempool_entry {
     transaction_const_ptr tx;
     uint64_t fee;
     uint32_t size;
-    uint32_t sigops;
+    uint32_t sigchecks;
     uint64_t time_seen;
 };
 
