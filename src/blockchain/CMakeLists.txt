@@ -50,6 +50,21 @@ endif()
 
 message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 
+# Mempool backing map: cfm (boost::concurrent_flat_map) | parlay (ParlayHash).
+# Selects the mempool's concurrent hashmap implementation at compile time so the
+# two can be A/B measured on a running node.
+set(KTH_MEMPOOL_BACKEND "cfm" CACHE STRING "Mempool backing map (cfm|parlay).")
+
+if (${KTH_MEMPOOL_BACKEND} STREQUAL "cfm")
+  add_definitions(-DKTH_MEMPOOL_BACKEND_CFM)
+elseif (${KTH_MEMPOOL_BACKEND} STREQUAL "parlay")
+  add_definitions(-DKTH_MEMPOOL_BACKEND_PARLAY)
+else()
+  message(FATAL_ERROR "Invalid mempool backend: ${KTH_MEMPOOL_BACKEND} (expected cfm|parlay)")
+endif()
+
+message(STATUS "Knuth: Mempool backend: ${KTH_MEMPOOL_BACKEND}")
+
 # Header index capacity (number of headers for static array allocation)
 # Default: 1,179,648 headers (~2030, aligned to 2^16)
 if(NOT DEFINED KTH_HEADER_INDEX_CAPACITY)
@@ -205,6 +220,7 @@ set(kth_headers
   include/kth/blockchain/validate/validate_input.hpp
   include/kth/blockchain/validate/validate_transaction.hpp
   include/kth/blockchain/pools/block_entry.hpp
+  include/kth/blockchain/pools/mempool_config.hpp
   include/kth/blockchain/pools/mempool_transaction_summary.hpp
   include/kth/blockchain/pools/block_organizer.hpp
   include/kth/blockchain/pools/branch.hpp
