@@ -64,9 +64,6 @@ struct KB_API transaction_organizer {
     void unsubscribe_ds_proof(ds_proof_broadcaster::channel_ptr const& channel);
 
     [[nodiscard]]
-    awaitable_expected<std::pair<merkle_block_ptr, size_t>> fetch_template() const;
-
-    [[nodiscard]]
     awaitable_expected<inventory_ptr> fetch_mempool(size_t maximum) const;
 
     [[nodiscard]]

@@ -180,6 +180,7 @@ set(kth_sources_just_legacy
   src/pools/header_organizer.cpp
   src/pools/transaction_organizer.cpp
   src/pools/mempool.cpp
+  src/pools/block_template.cpp
   src/pools/mempool_transaction_summary.cpp
   src/populate/populate_base.cpp
   src/populate/populate_block.cpp
@@ -223,6 +224,7 @@ set(kth_headers
   include/kth/blockchain/validate/validate_input.hpp
   include/kth/blockchain/validate/validate_transaction.hpp
   include/kth/blockchain/pools/block_entry.hpp
+  include/kth/blockchain/pools/block_template.hpp
   include/kth/blockchain/pools/mempool.hpp
   include/kth/blockchain/pools/mempool_config.hpp
   include/kth/blockchain/pools/mempool_hashers.hpp
@@ -295,6 +297,7 @@ if (ENABLE_TEST)
         test/branch.cpp
         test/validate_transaction.cpp
         test/mempool_test.cpp
+        test/block_template_test.cpp
     )
 
     # Disabled until ported to v1.0 APIs:
