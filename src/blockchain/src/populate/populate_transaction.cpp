@@ -40,6 +40,7 @@ populate_transaction::populate_transaction(executor_type executor, size_t thread
     // Chain state is for the next block, so always > 0.
     KTH_ASSERT(state->height() > 0);
     auto const chain_height = state->height() - 1u;
+    auto const median_time_past = state->median_time_past();
 
     //*************************************************************************
     // CONSENSUS:
@@ -75,8 +76,8 @@ populate_transaction::populate_transaction(executor_type executor, size_t thread
 
     // Launch parallel tasks
     for (size_t bucket = 0; bucket < buckets; ++bucket) {
-        ::asio::post(executor_, [this, tx, chain_height, bucket, buckets, channel]() {
-            auto result = populate_inputs_sync(tx, chain_height, bucket, buckets);
+        ::asio::post(executor_, [this, tx, chain_height, median_time_past, bucket, buckets, channel]() {
+            auto result = populate_inputs_sync(tx, chain_height, median_time_past, bucket, buckets);
             channel->try_send(std::error_code{}, result);
         });
     }
@@ -97,14 +98,15 @@ populate_transaction::populate_transaction(executor_type executor, size_t thread
     co_return final_result;
 }
 
-code populate_transaction::populate_inputs_sync(transaction_const_ptr tx, size_t chain_height, size_t bucket, size_t buckets) const {
+code populate_transaction::populate_inputs_sync(transaction_const_ptr tx, size_t chain_height, uint32_t median_time_past, size_t bucket, size_t buckets) const {
     KTH_ASSERT(bucket < buckets);
     auto const& inputs = tx->inputs();
 
     for (auto input_index = bucket; input_index < inputs.size(); input_index = ceiling_add(input_index, buckets)) {
         auto const& input = inputs[input_index];
         auto const& prevout = input.previous_output();
-        populate_prevout(chain_height, prevout, false);
+        // Tx-validation path: allow unconfirmed (mempool) parents.
+        populate_prevout(chain_height, prevout, false, median_time_past);
 
 
     }

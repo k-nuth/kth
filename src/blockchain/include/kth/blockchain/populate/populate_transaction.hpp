@@ -30,7 +30,7 @@ public:
     ::asio::awaitable<code> populate(transaction_const_ptr tx) const;
 
 protected:
-    code populate_inputs_sync(transaction_const_ptr tx, size_t chain_height, size_t bucket, size_t buckets) const;
+    code populate_inputs_sync(transaction_const_ptr tx, size_t chain_height, uint32_t median_time_past, size_t bucket, size_t buckets) const;
 
 private:
 };

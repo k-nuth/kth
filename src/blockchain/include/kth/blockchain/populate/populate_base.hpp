@@ -28,7 +28,9 @@ protected:
 
     void populate_duplicate(size_t maximum_height, domain::chain::transaction const& tx, bool require_confirmed) const;
     void populate_pooled(domain::chain::transaction const& tx, uint32_t height) const;
-    void populate_prevout(size_t maximum_height, domain::chain::output_point const& outpoint, bool require_confirmed) const;
+    // median_time_past (tip's MTP) is used only for a prevout resolved from the
+    // mempool. Block validation (require_confirmed) never consults the mempool.
+    void populate_prevout(size_t maximum_height, domain::chain::output_point const& outpoint, bool require_confirmed, uint32_t median_time_past) const;
 
     // Thread pool executor for parallel operations
     executor_type executor_;
