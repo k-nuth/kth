@@ -714,6 +714,10 @@ domain::chain::chain_state::ptr block_chain::chain_state(branch::const_ptr branc
     return chain_state_populator_.populate(chain_state(), branch);
 }
 
+block_validation_store& block_chain::block_validations() const {
+    return block_validations_;
+}
+
 code block_chain::set_chain_state(domain::chain::chain_state::ptr previous) {
     unique_lock lock(pool_state_mutex_);
     pool_state_ = chain_state_populator_.populate(previous);
@@ -990,8 +994,12 @@ block_chain::fetch_block(size_t height) const {
     }
 
     auto const cached = last_block_.load();
-    if (cached && cached->validation.state && cached->validation.state->height() == height) {
-        co_return std::pair{cached, height};
+    if (cached) {
+        domain::chain::chain_state::ptr state;
+        block_validations().visit(cached->hash(), [&](auto const& bv){ state = bv.state; });
+        if (state && state->height() == height) {
+            co_return std::pair{cached, height};
+        }
     }
 
     // LMDB block storage removed - blocks now in flat files
@@ -1006,8 +1014,12 @@ block_chain::fetch_block(hash_digest const& hash) const {
     }
 
     auto const cached = last_block_.load();
-    if (cached && cached->validation.state && cached->hash() == hash) {
-        co_return std::pair{cached, cached->validation.state->height()};
+    if (cached) {
+        domain::chain::chain_state::ptr state;
+        block_validations().visit(cached->hash(), [&](auto const& bv){ state = bv.state; });
+        if (state && cached->hash() == hash) {
+            co_return std::pair{cached, state->height()};
+        }
     }
 
     // LMDB block storage removed - blocks now in flat files

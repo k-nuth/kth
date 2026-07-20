@@ -23,7 +23,7 @@ namespace kth::blockchain {
 /// The branch object contains chain query for new (leaf) block validation.
 /// All pool blocks are valid, lacking only sufficient work for reorganzation.
 struct KB_API block_pool {
-    block_pool(size_t maximum_depth);
+    block_pool(size_t maximum_depth, block_validation_store& block_validations);
 
     // The number of blocks in the pool.
     size_t size() const;
@@ -61,6 +61,11 @@ protected:
 
     // This is thread safe.
     size_t const maximum_depth_;
+
+    // Validator-owned per-block validation state (not owned by the pool);
+    // supplies each block's chain_state (e.g. height) and is threaded into
+    // the branches this pool creates.
+    block_validation_store& block_validations_;
 
     // This is guarded against filtering concurrent to writing.
     block_entries blocks_;

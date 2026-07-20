@@ -24,7 +24,6 @@
 
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/hash.hpp>
-#include <kth/infrastructure/utility/asio.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -34,31 +33,8 @@ namespace kth::domain::chain {
 using indexes = std::vector<size_t>;
 
 struct KD_API block {
-public:
     using list = std::vector<block>;
     using indexes = std::vector<size_t>;
-
-    // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
-    struct validation_t {
-        uint64_t originator = 0;
-        code error = error::not_found;
-        chain_state::ptr state = nullptr;
-
-        // Similate organization and instead just validate the block.
-        bool simulate = false;
-
-        asio::time_point start_deserialize;
-        asio::time_point end_deserialize;
-        asio::time_point start_check;
-        asio::time_point start_populate;
-        asio::time_point start_accept;
-        asio::time_point start_connect;
-        asio::time_point start_notify;
-        asio::time_point start_pop;
-        asio::time_point start_push;
-        asio::time_point end_push;
-        float cache_efficiency;
-    };
 
     // Constructors.
     //-------------------------------------------------------------------------
@@ -73,11 +49,7 @@ public:
     // Operators.
     //-------------------------------------------------------------------------
 
-    // NOTE: `==` is not `= default` because the `validation` member is
-    // tracing metadata, not part of the value's identity. `!=` is defaulted
-    // (delegates to `!(==)`) so callers that spell out the member call still
-    // resolve.
-    bool operator==(block const& x) const;
+    bool operator==(block const& x) const = default;
     bool operator!=(block const& x) const = default;
 
     // Serialization.
@@ -166,9 +138,6 @@ public:
     hash_digest generate_merkle_root() const;
 
     [[nodiscard]]
-    size_t signature_operations() const;
-
-    [[nodiscard]]
     size_t signature_operations(bool bip16, bool bip141) const;
 
     [[nodiscard]]
@@ -209,9 +178,6 @@ public:
 
     [[nodiscard]]
     code check_transactions() const;
-
-    // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
-    mutable validation_t validation{};
 
     [[nodiscard]]
     size_t non_coinbase_input_count() const;

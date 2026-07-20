@@ -18,8 +18,9 @@ namespace kth::blockchain {
 
 using namespace boost;
 
-block_pool::block_pool(size_t maximum_depth)
+block_pool::block_pool(size_t maximum_depth, block_validation_store& block_validations)
     : maximum_depth_(maximum_depth == 0 ? max_size_t : maximum_depth)
+    , block_validations_(block_validations)
 {}
 
 size_t block_pool::size() const {
@@ -36,9 +37,12 @@ void block_pool::add(block_const_ptr valid_block) {
     // which is populated by the validator before the block reaches the pool.
     // Fall back to 0 to preserve the legacy semantics when an unvalidated
     // block (no chain_state) is added — e.g. dedup-only test paths.
-    auto height = valid_block->validation.state
-        ? static_cast<size_t>(valid_block->validation.state->height())
-        : size_t{0};
+    size_t height = 0;
+    block_validations_.visit(valid_block->hash(), [&](auto const& bv){
+        if (bv.state) {
+            height = static_cast<size_t>(bv.state->height());
+        }
+    });
     auto const& left = blocks_.left;
 
     // Caller ensure the entry does not exist by using get_path, but
@@ -75,6 +79,11 @@ void block_pool::remove(block_const_ptr_list_const_ptr accepted_blocks) {
     auto& left = blocks_.left;
 
     for (auto block: *accepted_blocks) {
+        // The block is now on the accepted chain; its validation state is no
+        // longer needed. Evict regardless of pool membership (a block accepted
+        // straight onto the main chain has a store entry but no pool entry).
+        block_validations_.erase(block->hash());
+
         auto it = left.find(block_entry{ block->hash() });
 
         if (it == left.end()) continue;
@@ -99,8 +108,10 @@ void block_pool::remove(block_const_ptr_list_const_ptr accepted_blocks) {
 
         // Copy the entry so that it can be deleted and replanted with height.
         auto const copy = it->first;
-        KTH_ASSERT(copy.block()->validation.state);
-        auto const height = static_cast<size_t>(copy.block()->validation.state->height());
+        domain::chain::chain_state::ptr state;
+        block_validations_.visit(copy.block()->hash(), [&](auto const& bv){ state = bv.state; });
+        KTH_ASSERT(state);
+        auto const height = static_cast<size_t>(state->height());
         KTH_ASSERT(it->second == 0);
 
         // Critical Section
@@ -122,13 +133,16 @@ void block_pool::prune(hash_list const& hashes, size_t minimum_height) {
         auto const it = left.find(block_entry{ hash });
         KTH_ASSERT(it != left.end());
 
-        KTH_ASSERT(it->first.block()->validation.state);
-        auto const height = static_cast<size_t>(
-            it->first.block()->validation.state->height());
+        domain::chain::chain_state::ptr state;
+        block_validations_.visit(it->first.block()->hash(), [&](auto const& bv){ state = bv.state; });
+        KTH_ASSERT(state);
+        auto const height = static_cast<size_t>(state->height());
 
         // Delete all roots and expired non-roots and recurse their children.
         if (it->second != 0 || height < minimum_height) {
-            // delete
+            // delete -- the block leaves the pool, so drop its validation state.
+            block_validations_.erase(hash);
+
             auto const& children = it->first.children();
             std::for_each(children.begin(), children.end(), saver);
 
@@ -223,7 +237,7 @@ block_const_ptr block_pool::parent(block_const_ptr block) const {
 
 branch::ptr block_pool::get_path(block_const_ptr block) const {
     ////log_content();
-    auto const trace = std::make_shared<branch>();
+    auto const trace = std::make_shared<branch>(0, block_validations_);
 
     if (exists(block)) return trace;
 

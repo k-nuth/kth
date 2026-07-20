@@ -227,7 +227,7 @@ private:
     // template <typename I>
     // result_code push_transactions_non_coinbase(uint32_t height, data_chunk const& fixed_data, I f, I l, bool insert_reorg, KTH_DB_txn* db_txn);
 
-    result_code push_block_header(domain::chain::block const& block, uint32_t height, KTH_DB_txn* db_txn);
+    result_code push_block_header(domain::chain::block const& block, domain::chain::abla::state const& abla_state, uint32_t height, KTH_DB_txn* db_txn);
 
     // Headers-first sync: store header only (without block data)
     result_code push_header_only(domain::chain::header const& header, uint32_t height, KTH_DB_txn* db_txn);

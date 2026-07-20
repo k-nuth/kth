@@ -4,19 +4,57 @@
 
 #include <test_helpers.hpp>
 
+#include <memory>
 #include <utility>
 #include <kth/blockchain.hpp>
+#include <kth/blockchain/validate/block_validation.hpp>
+
+#include <catch2/catch_test_case_info.hpp>
+#include <catch2/reporters/catch_reporter_event_listener.hpp>
+#include <catch2/reporters/catch_reporter_registrars.hpp>
 
 using namespace kth;
 using namespace kth::blockchain;
 
 // Start Test Suite: block pool tests
 
+// The per-block chain_state used to live on `block::validation`; it now lives
+// in a validator-owned block_validation_store keyed by block hash. Tests seed
+// state via make_block() and the pools read it back, so both sides share this
+// one store. It is held behind a unique_ptr and swapped for a fresh instance
+// before every test case (see the listener below) so state does not leak
+// across tests — several tests build blocks with identical header hashes but
+// different heights, which would otherwise collide in a single shared store.
+static std::unique_ptr<block_validation_store>& test_store_holder() {
+    static std::unique_ptr<block_validation_store> holder =
+        std::make_unique<block_validation_store>();
+    return holder;
+}
+
+static block_validation_store& test_store() {
+    return *test_store_holder();
+}
+
+static void reset_test_store() {
+    test_store_holder() = std::make_unique<block_validation_store>();
+}
+
+namespace {
+struct test_store_reset_listener : Catch::EventListenerBase {
+    using Catch::EventListenerBase::EventListenerBase;
+    void testCaseStarting(Catch::TestCaseInfo const&) override {
+        reset_test_store();
+    }
+};
+} // namespace
+
+CATCH_REGISTER_LISTENER(test_store_reset_listener)
+
 // Access to protected members.
 class block_pool_fixture : public block_pool {
 public:
     block_pool_fixture(size_t maximum_depth)
-        : block_pool(maximum_depth) {}
+        : block_pool(maximum_depth, test_store()) {}
 
     void prune(size_t top_height) {
         block_pool::prune(top_height);
@@ -43,8 +81,10 @@ public:
 };
 
 // Height used to be stamped onto `header().validation.height`. The header
-// is now an immutable value type; `block_pool` reads height from
-// `block.validation.state->height()`, so the chain_state is wired here.
+// is now an immutable value type and per-block chain_state lives in the
+// validator-owned store; `block_pool` reads height from
+// `store.find(block->hash())->state->height()`, so the chain_state is wired
+// into the store here.
 //
 // `chain_state`'s constructor evaluates `median_time_past(data)` and
 // `work_required(data, ...)` eagerly. Both walk the `data.*.ordered`
@@ -88,7 +128,15 @@ block_const_ptr make_block(uint32_t id, size_t height,
         domain::chain::header{ id, parent, null_hash, 0, 0, 0 }, {}
     });
 
-    block->validation.state = make_state_at_height(height);
+    // First-writer-wins: the store is keyed by block hash, so two blocks with
+    // the same hash share one entry. That mirrors production (a hash is stored
+    // once) and matches the "same hash, first retained" pool semantics — the
+    // first block's chain_state is the one the pool reads back.
+    test_store().mutate(block->hash(), [&](auto& bv){
+        if (bv.state == nullptr) {
+            bv.state = make_state_at_height(height);
+        }
+    });
     return block;
 }
 
@@ -131,7 +179,7 @@ TEST_CASE("block pool add1 one single", "[block pool tests]") {
 }
 
 TEST_CASE("block pool add1 twice single", "[block pool tests]") {
-    block_pool instance(0);
+    block_pool instance(0, test_store());
     auto const block = std::make_shared<const domain::message::block>();
 
     instance.add(block);
@@ -183,7 +231,7 @@ TEST_CASE("block pool add1 two distinct hash two", "[block pool tests]") {
 // add2
 
 TEST_CASE("block pool add2 empty empty", "[block pool tests]") {
-    block_pool instance(0);
+    block_pool instance(0, test_store());
     instance.add(std::make_shared<block_const_ptr_list const>());
     REQUIRE(instance.size() == 0u);
 }
@@ -212,7 +260,7 @@ TEST_CASE("block pool add2 distinct expected", "[block pool tests]") {
 // remove
 
 TEST_CASE("block pool remove empty unchanged", "[block pool tests]") {
-    block_pool instance(0);
+    block_pool instance(0, test_store());
     auto const block1 = make_block(1, 42);
     instance.add(block1);
     REQUIRE(instance.size() == 1u);
@@ -236,7 +284,7 @@ TEST_CASE("block pool remove all distinct empty", "[block pool tests]") {
 }
 
 TEST_CASE("block pool remove all connected empty", "[block pool tests]") {
-    block_pool instance(0);
+    block_pool instance(0, test_store());
     auto const block1 = make_block(1, 42);
     auto const block2 = make_block(2, 43, block1);
     auto const block3 = make_block(3, 44, block2);
@@ -505,7 +553,7 @@ TEST_CASE("block pool parent match true", "[block pool tests]") {
 // get_path
 
 TEST_CASE("block pool get path empty self", "[block pool tests]") {
-    block_pool instance(0);
+    block_pool instance(0, test_store());
     auto const block1 = make_block(1, 42);
     auto const path = instance.get_path(block1);
     REQUIRE(path->size() == 1u);
@@ -513,7 +561,7 @@ TEST_CASE("block pool get path empty self", "[block pool tests]") {
 }
 
 TEST_CASE("block pool get path exists empty", "[block pool tests]") {
-    block_pool instance(0);
+    block_pool instance(0, test_store());
     auto const block1 = make_block(1, 42);
     instance.add(block1);
     auto const path = instance.get_path(block1);

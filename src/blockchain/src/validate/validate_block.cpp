@@ -44,8 +44,6 @@ validate_block::validate_block(executor_type executor, size_t threads, block_cha
     , network_(network)
     , executor_(std::move(executor))
     , threads_(threads)
-    , hits_(0)
-    , queries_(0)
 #if defined(KTH_WITH_MEMPOOL)
     , block_populator_(executor_, threads_, chain, relay_transactions, mp)
 #else
@@ -141,13 +139,11 @@ code validate_block::check_block_bucket(block_const_ptr block, size_t bucket, si
     auto const block = branch->top();
     KTH_ASSERT(block);
 
-    // The block has no population timer, so set externally.
-    block->validation.start_populate = asio::steady_clock::now();
-
     // Populate chain state for the next block.
-    block->validation.state = chain_.chain_state(branch);
+    auto const block_state = chain_.chain_state(branch);
+    chain_.block_validations().mutate(block->hash(), [&](auto& bv){ bv.state = block_state; });
 
-    if ( ! block->validation.state) {
+    if ( ! block_state) {
         co_return error::block_validation_state_failed;
     }
 
@@ -162,7 +158,7 @@ code validate_block::check_block_bucket(block_const_ptr block, size_t bucket, si
         co_return populate_ec;
     }
 
-    auto const& state = *block->validation.state;
+    auto const& state = *block_state;
 
     // Run contextual block non-tx checks (sets start time).
     // For headers-first sync, skip header validation since headers were
@@ -228,7 +224,7 @@ code validate_block::check_block_bucket(block_const_ptr block, size_t bucket, si
 
     // Check sigops limit
 #if defined(KTH_CURRENCY_BCH)
-    if (block->validation.state->is_fermat_enabled()) {
+    if (block_state->is_fermat_enabled()) {
         co_return error::success;
     }
 
@@ -250,7 +246,10 @@ code validate_block::accept_transactions_bucket(block_const_ptr block, size_t bu
     }
 
     code ec(error::success);
-    auto const& state = *block->validation.state;
+    domain::chain::chain_state::ptr state_ptr;
+    chain_.block_validations().visit(block->hash(), [&](auto const& bv){ state_ptr = bv.state; });
+    KTH_ASSERT(state_ptr);
+    auto const& state = *state_ptr;
     auto const flags = state.enabled_flags();
     auto const height = state.height();
     auto const mtp = state.median_time_past();
@@ -279,12 +278,12 @@ code validate_block::accept_transactions_bucket(block_const_ptr block, size_t bu
 
 ::asio::awaitable<code> validate_block::connect(branch::const_ptr branch) const {
     auto const block = branch->top();
-    KTH_ASSERT(block && block->validation.state);
+    KTH_ASSERT(block);
+    domain::chain::chain_state::ptr state_ptr;
+    chain_.block_validations().visit(block->hash(), [&](auto const& bv){ state_ptr = bv.state; });
+    KTH_ASSERT(state_ptr);
 
-    // We are reimplementing connect, so must set timer externally.
-    block->validation.start_connect = asio::steady_clock::now();
-
-    if (block->validation.state->is_under_checkpoint()) {
+    if (state_ptr->is_under_checkpoint()) {
         co_return error::success;
     }
 
@@ -294,10 +293,6 @@ code validate_block::accept_transactions_bucket(block_const_ptr block, size_t bu
     if (non_coinbase_inputs == 0) {
         co_return error::success;
     }
-
-    // Reset statistics for each block (treat coinbase as cached).
-    hits_ = 0;
-    queries_ = 0;
 
     auto const buckets = std::min(threads_, non_coinbase_inputs);
     KTH_ASSERT(buckets != 0);
@@ -326,14 +321,16 @@ code validate_block::accept_transactions_bucket(block_const_ptr block, size_t bu
         }
     }
 
-    block->validation.cache_efficiency = hit_rate();
     co_return connect_result;
 }
 
 code validate_block::connect_inputs_bucket(block_const_ptr block, size_t bucket, size_t buckets) const {
     KTH_ASSERT(bucket < buckets);
     code ec(error::success);
-    auto const flags = block->validation.state->enabled_flags();
+    domain::chain::chain_state::ptr state_ptr;
+    chain_.block_validations().visit(block->hash(), [&](auto const& bv){ state_ptr = bv.state; });
+    KTH_ASSERT(state_ptr);
+    auto const flags = state_ptr->enabled_flags();
     auto const& txs = block->transactions();
     size_t position = 0;
 
@@ -343,17 +340,13 @@ code validate_block::connect_inputs_bucket(block_const_ptr block, size_t bucket,
 
     // Must skip coinbase here as it is already accounted for.
     for (auto tx = txs.begin() + 1; tx != txs.end(); ++tx) {
-        ++queries_;
-
         // The tx is pooled with current fork state so outputs are validated.
         if (tx->validation.current) {
-            ++hits_;
             continue;
         }
 
         // The tx was validated before its insertion in the mempool
         if (tx->validation.validated) {
-            ++hits_;
             continue;
         }
 
@@ -384,7 +377,7 @@ code validate_block::connect_inputs_bucket(block_const_ptr block, size_t bucket,
 
 #if defined(KTH_CURRENCY_BCH)
             block_sigchecks += sigchecks;
-            if (block_sigchecks > block->validation.state->dynamic_max_block_sigchecks()) {
+            if (block_sigchecks > state_ptr->dynamic_max_block_sigchecks()) {
                 ec = error::block_sigchecks_limit;
                 break;
             }
@@ -392,19 +385,13 @@ code validate_block::connect_inputs_bucket(block_const_ptr block, size_t bucket,
         }
 
         if (ec) {
-            auto const height = block->validation.state->height();
+            auto const height = state_ptr->height();
             dump(ec, *tx, input_index, flags, height);
             break;
         }
     }
 
     return ec;
-}
-
-// The tx pool cache hit rate.
-float validate_block::hit_rate() const {
-    // These values could overflow or divide by zero, but that's okay.
-    return queries_ == 0 ? 0.0f : (hits_ * 1.0f / queries_);
 }
 
 // Utility.

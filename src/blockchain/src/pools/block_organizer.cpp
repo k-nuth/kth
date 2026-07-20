@@ -43,7 +43,7 @@ block_organizer::block_organizer(prioritized_mutex& mutex, executor_type executo
     , stopped_(true)
     , executor_(std::move(executor))
     , threads_(threads)
-    , block_pool_(settings.reorganization_limit)
+    , block_pool_(settings.reorganization_limit, chain_.block_validations())
 #if defined(KTH_WITH_MEMPOOL)
     , validator_(executor_, threads_, chain_, settings, network, relay_transactions, mp)
 #else
@@ -166,8 +166,10 @@ bool block_organizer::stop() {
         co_return ec;
     }
 
-    auto& top_block = branch->top()->validation;
-    top_block.error = error::success;
+    auto const top_hash = branch->top()->hash();
+    chain_.block_validations().mutate(top_hash, [](auto& bv){ bv.error = error::success; });
+    bool simulate = false;
+    chain_.block_validations().visit(top_hash, [&](auto const& bv){ simulate = bv.simulate; });
     // The header used to carry mutable validation.median_time_past /
     // .height stamped here. The header is now a pure value type; both
     // values are already available on the block's chain_state and the
@@ -175,7 +177,6 @@ bool block_organizer::stop() {
 
     auto const work = branch->work();
     auto const first_height = branch->height() + 1u;
-    top_block.start_notify = asio::steady_clock::now();
 
     // The chain query will stop if it reaches work level.
     auto const threshold = chain_.get_branch_work(work, first_height);
@@ -186,7 +187,7 @@ bool block_organizer::stop() {
 
     // TODO(legacy): consider relay of pooled blocks by modifying subscriber semantics.
     if (work <= *threshold) {
-        if ( ! top_block.simulate) {
+        if ( ! simulate) {
             block_pool_.add(branch->top());
         }
 
@@ -203,7 +204,7 @@ bool block_organizer::stop() {
     }
 
     // TODO(legacy): create a simulated validation path that does not block others.
-    if (top_block.simulate) {
+    if (simulate) {
         mutex_.unlock_high_priority();
         co_return error::success;
     }

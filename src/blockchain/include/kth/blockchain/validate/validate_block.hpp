@@ -73,9 +73,6 @@ protected:
         return stopped_;
     }
 
-    [[nodiscard]]
-    float hit_rate() const;
-
 private:
     using atomic_counter = std::atomic<size_t>;
     using atomic_counter_ptr = std::shared_ptr<atomic_counter>;
@@ -99,8 +96,6 @@ private:
     domain::config::network network_;
     executor_type executor_;
     size_t threads_;
-    mutable atomic_counter hits_;
-    mutable atomic_counter queries_;
 
     // Caller must not invoke accept/connect concurrently.
     populate_block block_populator_;

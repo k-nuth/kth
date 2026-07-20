@@ -42,7 +42,8 @@ populate_block::populate_block(executor_type executor, size_t threads, block_cha
     auto const block = branch->top();
     KTH_ASSERT(block);
 
-    auto const state = block->validation.state;
+    domain::chain::chain_state::ptr state;
+    chain_.block_validations().visit(block->hash(), [&](auto const& bv){ state = bv.state; });
     KTH_ASSERT(state);
 
     // Return if this blocks is under a checkpoint, block state not required.
@@ -107,7 +108,9 @@ populate_block::populate_block(executor_type executor, size_t threads, block_cha
 // Initialize the coinbase input for subsequent validation.
 void populate_block::populate_coinbase(branch::const_ptr branch, block_const_ptr block) const {
     auto const& txs = block->transactions();
-    auto const state = block->validation.state;
+    domain::chain::chain_state::ptr state;
+    chain_.block_validations().visit(block->hash(), [&](auto const& bv){ state = bv.state; });
+    KTH_ASSERT(state);
     KTH_ASSERT( ! txs.empty());
 
     auto const& coinbase = txs.front();
@@ -191,7 +194,9 @@ code populate_block::populate_transactions_sync(branch::const_ptr branch, size_t
     auto const& txs = block->transactions();
     size_t input_position = 0;
 
-    auto const state = block->validation.state;
+    domain::chain::chain_state::ptr state;
+    chain_.block_validations().visit(block->hash(), [&](auto const& bv){ state = bv.state; });
+    KTH_ASSERT(state);
 
     // Must skip coinbase here as it is already accounted for.
     auto const first = bucket == 0 ? buckets : bucket;

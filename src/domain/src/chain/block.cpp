@@ -33,7 +33,6 @@
 #include <kth/infrastructure/machine/number.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
-#include <kth/infrastructure/utility/asio.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
 
@@ -183,16 +182,11 @@ block::block(chain::header header, transaction::list transactions)
 // Operators.
 //-----------------------------------------------------------------------------
 
-bool block::operator==(block const& x) const {
-    return header_ == x.header_ && transactions_ == x.transactions_;
-}
-
 // Serialization.
 //-----------------------------------------------------------------------------
 
 // static
 expect<block> block::from_data(byte_reader& reader) {
-    auto const start_deserialize = asio::steady_clock::now();
     auto const hdr = chain::header::from_data(reader, true);
     if ( ! hdr) {
         return std::unexpected(hdr.error());
@@ -201,11 +195,7 @@ expect<block> block::from_data(byte_reader& reader) {
     if ( ! txs) {
         return std::unexpected(txs.error());
     }
-    auto const end_deserialize = asio::steady_clock::now();
-    auto res = block(*hdr, std::move(*txs));
-    res.validation.start_deserialize = start_deserialize;
-    res.validation.end_deserialize = end_deserialize;
-    return res;
+    return block(*hdr, std::move(*txs));
 }
 
 expect<void> block::to_data(byte_writer& writer) const {
@@ -382,15 +372,6 @@ size_t block::signature_operations(bool bip16, bool bip141) const {
     //*************************************************************************
     auto const& txs = transactions_;
     return std::accumulate(txs.begin(), txs.end(), size_t{0}, value);
-}
-
-// Returns max_size_t in case of overflow or unpopulated chain state.
-size_t block::signature_operations() const {
-    auto const state = validation.state;
-    auto const bip16 = state ? state->is_enabled(script_flags::bip16_rule) : true;
-    auto const bip141 = false;
-
-    return signature_operations(bip16, bip141);
 }
 
 size_t block::total_inputs(bool with_coinbase) const {
@@ -602,8 +583,6 @@ code block::check_transactions() const {
 
 // Structural validation — no context needed, no prevout cache needed.
 code block::check() const {
-    validation.start_check = asio::steady_clock::now();
-
     code ec;
     if ((ec = header_.check(chain::hash(header_), false))) {
         return ec;
@@ -614,8 +593,6 @@ code block::check() const {
 // Check block body only (skip header validation for headers-first sync).
 // Use this when headers have already been validated during header sync.
 code block::check_body() const {
-    validation.start_check = asio::steady_clock::now();
-
     if (serialized_size() > static_absolute_max_block_size()) {
         return error::block_size_limit;
     }

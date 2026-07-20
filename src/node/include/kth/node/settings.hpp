@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <kth/domain.hpp>
 #include <kth/infrastructure/display_mode.hpp>
+#include <kth/infrastructure/utility/asio.hpp>
 #include <kth/node/define.hpp>
 
 namespace kth::node {
