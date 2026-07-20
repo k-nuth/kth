@@ -5,7 +5,9 @@
 #include <kth/blockchain/pools/transaction_organizer.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <functional>
 #include <memory>
@@ -240,15 +242,24 @@ bool transaction_organizer::stop() {
         co_return error::success;
     }
 
-#if ! defined(KTH_DB_READONLY)
     //#########################################################################
-    auto push_ec = co_await chain_.push(tx);
-    if (push_ec) {
+    // Admit to the mempool. The tx is already validated (accept / fee / dust /
+    // connect above); this only records it. add() enforces first-seen: it
+    // returns false on a double-spend conflict with a pooled tx (or a duplicate).
+    auto const seen = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    auto const admitted = chain_.mempool_ref().add(mempool_entry{
+        tx,
+        tx->fees(),
+        static_cast<uint32_t>(tx->serialized_size(true)),
+        static_cast<uint32_t>(tx->signature_operations(true, false)),
+        seen});
+    if ( ! admitted) {
         mutex_.unlock_low_priority();
-        co_return push_ec;
+        co_return error::double_spend_mempool;
     }
     //#########################################################################
-#endif
 
     mutex_.unlock_low_priority();
     ///////////////////////////////////////////////////////////////////////////
