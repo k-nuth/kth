@@ -5,6 +5,7 @@
 #ifndef KTH_BLOCKCHAIN_POOLS_MEMPOOL_HPP
 #define KTH_BLOCKCHAIN_POOLS_MEMPOOL_HPP
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -74,6 +75,20 @@ struct mempool {
 
     bool contains(hash_digest const& txid) const;
     std::size_t size() const;
+
+    // Fetch a pooled transaction by id (null if absent).
+    transaction_const_ptr get(hash_digest const& txid) const;
+
+    // Visit every pooled entry. Snapshot-ish under concurrency (an entry added
+    // or removed during the walk may or may not be seen) — fine for the
+    // read-only listing/relay queries that use it.
+    template <typename Fn>
+        requires std::invocable<Fn, mempool_entry const&>
+    void for_each(Fn&& fn) const {
+        pool_.for_each([&](hash_digest const&, mempool_entry const& entry) {
+            fn(entry);
+        });
+    }
 
     mempool_stats const& stats() const { return stats_; }
 

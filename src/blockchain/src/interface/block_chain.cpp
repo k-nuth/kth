@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <expected>
 #include <functional>
 #include <latch>
@@ -1255,8 +1256,17 @@ block_chain::fetch_transaction_position(hash_digest const& hash, bool require_co
 }
 
 awaitable_expected<transaction_const_ptr>
-block_chain::fetch_unconfirmed_transaction(hash_digest const& /*hash*/) const {
-    mempool_not_implemented("block_chain::fetch_unconfirmed_transaction");
+block_chain::fetch_unconfirmed_transaction(hash_digest const& hash) const {
+    if (stopped()) {
+        co_return std::unexpected(error::service_stopped);
+    }
+
+    auto const tx = mempool_.get(hash);
+    if ( ! tx) {
+        co_return std::unexpected(error::not_found);
+    }
+
+    co_return tx;
 }
 
 // Modified to use get_header instead of get_block (blocks now in flat files)
@@ -1472,36 +1482,210 @@ block_chain::fetch_template() const {
 }
 
 awaitable_expected<inventory_ptr>
-block_chain::fetch_mempool(size_t /*count_limit*/, uint64_t /*minimum_fee*/) const {
-    mempool_not_implemented("block_chain::fetch_mempool");
+block_chain::fetch_mempool(size_t count_limit, uint64_t /*minimum_fee*/) const {
+    if (stopped()) {
+        co_return std::unexpected(error::service_stopped);
+    }
+
+    inventory_vector::list inventories;
+    mempool_.for_each([&](mempool_entry const& e) {
+        if (inventories.size() >= count_limit) {
+            return;
+        }
+        inventories.emplace_back(inventory_vector::type_id::transaction, e.tx->hash());
+    });
+
+    auto inv = domain::message::inventory::create(std::move(inventories));
+    if ( ! inv) {
+        co_return std::unexpected(inv.error());
+    }
+
+    co_return std::make_shared<domain::message::inventory>(std::move(*inv));
+}
+
+namespace {
+
+std::tuple<uint8_t, uint8_t> get_address_versions(bool use_testnet_rules) {
+    if (use_testnet_rules) {
+        return {
+            kth::domain::wallet::payment_address::testnet_p2kh,
+            kth::domain::wallet::payment_address::testnet_p2sh};
+    }
+    return {
+        kth::domain::wallet::payment_address::mainnet_p2kh,
+        kth::domain::wallet::payment_address::mainnet_p2sh};
+}
+
+} // anonymous namespace
+
+std::vector<mempool_transaction_summary> block_chain::get_mempool_transactions(
+    std::vector<std::string> const& payment_addresses, bool use_testnet_rules) const {
+
+    auto const [encoding_p2kh, encoding_p2sh] = get_address_versions(use_testnet_rules);
+
+    std::vector<mempool_transaction_summary> ret;
+
+    std::unordered_set<kth::domain::wallet::payment_address> addrs;
+    for (auto const& payment_address : payment_addresses) {
+        if (auto address = kth::domain::wallet::payment_address::parse_from(payment_address); address) {
+            addrs.insert(*address);
+        }
+    }
+
+    mempool_.for_each([&](mempool_entry const& e) {
+        auto const& tx = *e.tx;
+        size_t i = 0;
+
+        for (auto const& output : tx.outputs()) {
+            auto const tx_addresses = kth::domain::wallet::payment_address::extract(
+                output.script(), encoding_p2kh, encoding_p2sh);
+            for (auto const tx_address : tx_addresses) {
+                if (addrs.find(tx_address) != addrs.end()) {
+                    ret.push_back(mempool_transaction_summary(
+                        tx_address.encoded_cashaddr(false), kth::encode_hash(tx.hash()), "",
+                        "", std::to_string(output.value()), i, e.time_seen));
+                }
+            }
+            ++i;
+        }
+
+        i = 0;
+        for (auto const& input : tx.inputs()) {
+            auto const tx_addresses = kth::domain::wallet::payment_address::extract(
+                input.script(), encoding_p2kh, encoding_p2sh);
+            for (auto const tx_address : tx_addresses) {
+                if (addrs.find(tx_address) != addrs.end()) {
+                    auto const prev_tx = database_.internal_db().get_transaction(
+                        input.previous_output().hash(), max_size_t);
+                    if (prev_tx) {
+                        ret.push_back(mempool_transaction_summary(
+                            tx_address.encoded_cashaddr(false),
+                            kth::encode_hash(tx.hash()),
+                            kth::encode_hash(input.previous_output().hash()),
+                            std::to_string(input.previous_output().index()),
+                            "-" + std::to_string(prev_tx->transaction().outputs()[input.previous_output().index()].value()),
+                            i, e.time_seen));
+                    }
+                }
+            }
+            ++i;
+        }
+    });
+
+    return ret;
 }
 
 std::vector<mempool_transaction_summary> block_chain::get_mempool_transactions(
-    std::vector<std::string> const& /*payment_addresses*/, bool /*use_testnet_rules*/) const {
-    mempool_not_implemented("block_chain::get_mempool_transactions");
-}
-
-std::vector<mempool_transaction_summary> block_chain::get_mempool_transactions(
-    std::string const& /*payment_address*/, bool /*use_testnet_rules*/) const {
-    mempool_not_implemented("block_chain::get_mempool_transactions");
+    std::string const& payment_address, bool use_testnet_rules) const {
+    return get_mempool_transactions(std::vector<std::string>{payment_address}, use_testnet_rules);
 }
 
 std::vector<domain::chain::transaction> block_chain::get_mempool_transactions_from_wallets(
-    std::vector<domain::wallet::payment_address> const& /*payment_addresses*/,
-    bool /*use_testnet_rules*/) const {
-    mempool_not_implemented("block_chain::get_mempool_transactions_from_wallets");
+    std::vector<domain::wallet::payment_address> const& payment_addresses,
+    bool use_testnet_rules) const {
+
+    auto const [encoding_p2kh, encoding_p2sh] = get_address_versions(use_testnet_rules);
+
+    std::vector<domain::chain::transaction> ret;
+
+    mempool_.for_each([&](mempool_entry const& e) {
+        auto const& tx = *e.tx;
+        bool inserted = false;
+
+        for (auto iter_output = tx.outputs().begin();
+             iter_output != tx.outputs().end() && !inserted; ++iter_output) {
+
+            auto const tx_addresses = kth::domain::wallet::payment_address::extract(
+                iter_output->script(), encoding_p2kh, encoding_p2sh);
+
+            for (auto iter_addr = tx_addresses.begin();
+                 iter_addr != tx_addresses.end() && !inserted; ++iter_addr) {
+                auto it = std::find(payment_addresses.begin(), payment_addresses.end(), *iter_addr);
+                if (it != payment_addresses.end()) {
+                    ret.push_back(tx);
+                    inserted = true;
+                }
+            }
+        }
+
+        for (auto iter_input = tx.inputs().begin();
+             iter_input != tx.inputs().end() && !inserted; ++iter_input) {
+
+            auto const tx_addresses = kth::domain::wallet::payment_address::extract(
+                iter_input->script(), encoding_p2kh, encoding_p2sh);
+
+            for (auto iter_addr = tx_addresses.begin();
+                 iter_addr != tx_addresses.end() && !inserted; ++iter_addr) {
+                auto it = std::find(payment_addresses.begin(), payment_addresses.end(), *iter_addr);
+                if (it != payment_addresses.end()) {
+                    ret.push_back(tx);
+                    inserted = true;
+                }
+            }
+        }
+    });
+
+    return ret;
 }
 
 block_chain::mempool_mini_hash_map block_chain::get_mempool_mini_hash_map(
-    domain::message::compact_block const& /*block*/) const {
-    mempool_not_implemented("block_chain::get_mempool_mini_hash_map");
+    domain::message::compact_block const& block) const {
+
+    if (stopped()) {
+        return mempool_mini_hash_map();
+    }
+
+    auto header_hash = hash(block);
+    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash);
+    auto k1 = from_little_endian_unsafe<uint64_t>(std::span{header_hash}.subspan(sizeof(uint64_t)));
+
+    mempool_mini_hash_map mempool;
+
+    mempool_.for_each([&](mempool_entry const& e) {
+        auto const& tx = *e.tx;
+        // BIP-152 short id: the low 6 bytes (little-endian) of the SipHash.
+        auto const sh = sip_hash_uint256(k0, k1, tx.hash());
+        mini_hash short_id;
+        std::memcpy(short_id.data(), &sh, short_id.size());
+        mempool.emplace(short_id, tx);
+    });
+
+    return mempool;
 }
 
-void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const& /*block*/,
-                                            size_t& /*mempool_count*/,
-                                            std::vector<domain::chain::transaction>& /*txn_available*/,
-                                            std::unordered_map<uint64_t, uint16_t> const& /*shorttxids*/) const {
-    mempool_not_implemented("block_chain::fill_tx_list_from_mempool");
+void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const& block,
+                                            size_t& mempool_count,
+                                            std::vector<domain::chain::transaction>& txn_available,
+                                            std::unordered_map<uint64_t, uint16_t> const& shorttxids) const {
+
+    std::vector<bool> have_txn(txn_available.size());
+
+    auto header_hash = hash(block);
+    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash);
+    auto k1 = from_little_endian_unsafe<uint64_t>(std::span{header_hash}.subspan(sizeof(uint64_t)));
+
+    mempool_.for_each([&](mempool_entry const& e) {
+        auto const& tx = *e.tx;
+
+        uint64_t shortid = sip_hash_uint256(k0, k1, tx.hash()) & uint64_t(0xffffffffffff);
+
+        auto idit = shorttxids.find(shortid);
+        if (idit != shorttxids.end()) {
+            if ( ! have_txn[idit->second]) {
+                txn_available[idit->second] = tx;
+                have_txn[idit->second] = true;
+                ++mempool_count;
+            } else {
+                // A second transaction maps to the same short id, so the slot
+                // is ambiguous and gets cleared. A cleared slot holds the null
+                // transaction, so clear (and decrement) only once.
+                if ( ! txn_available[idit->second].is_null()) {
+                    txn_available[idit->second] = domain::chain::transaction::null();
+                    --mempool_count;
+                }
+            }
+        }
+    });
 }
 
 // =============================================================================

@@ -185,6 +185,14 @@ bool mempool::contains(hash_digest const& txid) const {
     return pool_.visit(txid, [](mempool_entry const&) {});
 }
 
+transaction_const_ptr mempool::get(hash_digest const& txid) const {
+    transaction_const_ptr tx;
+    pool_.visit(txid, [&](mempool_entry const& e) {
+        tx = e.tx;
+    });
+    return tx;
+}
+
 std::size_t mempool::size() const {
     return pool_.size();
 }
