@@ -47,7 +47,7 @@ void populate_base::populate_pooled(domain::chain::transaction const& tx, uint32
 // Unspent outputs are cached by the store. If the cache is large enough this
 // may never hit the file system. However on high RAM systems the file system
 // is faster than the cache due to reduced paging of the memory-mapped file.
-void populate_base::populate_prevout(size_t branch_height, output_point const& outpoint, bool require_confirmed) const {
+void populate_base::populate_prevout(size_t branch_height, output_point const& outpoint, bool require_confirmed, uint32_t median_time_past) const {
     // The previous output will be cached on the input's outpoint.
     auto& prevout = outpoint.validation;
 
@@ -61,9 +61,25 @@ void populate_base::populate_prevout(size_t branch_height, output_point const& o
         return;
     }
 
-    //TODO(fernando): check the value of the parameters: branch_height and require_confirmed
+    // branch_height is the validation height; get_utxo bounds the prevout to one
+    // created at/below it (used by the spend check below too). require_confirmed
+    // = confirmed-only (blocks) vs also-mempool (tx, handled in the miss branch).
     auto const utxo = chain_.get_utxo(outpoint, branch_height);
     if ( ! utxo) {
+        // Chained tx: the prevout may be an unconfirmed parent's output in the
+        // mempool (tx-validation path only). Model the mempool coin as "confirms
+        // next block" (BCHN MEMPOOL_HEIGHT): height = branch_height + 1 and the
+        // tip's MTP make is_locked's relative age == 0. spent stays false —
+        // first-seen is enforced at admission (spent_by_).
+        if ( ! require_confirmed) {
+            if (auto out = chain_.mempool_ref().resolve(outpoint)) {
+                prevout.cache = std::move(*out);
+                prevout.height = branch_height + 1u;
+                prevout.median_time_past = median_time_past;
+                prevout.coinbase = false;
+                prevout.from_mempool = true;
+            }
+        }
         return;
     }
     prevout.cache = utxo->output;

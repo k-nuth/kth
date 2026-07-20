@@ -178,7 +178,7 @@ void populate_block::populate_transaction_inputs(branch::const_ptr branch, domai
 
         auto const& input = inputs[input_index];
         auto const& prevout = input.previous_output();
-        populate_base::populate_prevout(branch_height, prevout, true);  //Populate from Database
+        populate_base::populate_prevout(branch_height, prevout, true, 0);  //Populate from Database (no mempool consult during block validation)
         populate_prevout(branch, prevout, branch_utxo);                 //Populate from the Blocks in the Branch
 
         if (first_height <= chain_top) {
