@@ -22,6 +22,20 @@ endif()
 
 message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 
+# Mempool backing map: cfm (boost::concurrent_flat_map) | parlay (ParlayHash).
+# Set at the root so the define (and, for parlay, the vendored include) reach
+# every module that includes block_chain.hpp — not only blockchain.
+set(KTH_MEMPOOL_BACKEND "cfm" CACHE STRING "Mempool backing map (cfm|parlay).")
+if (${KTH_MEMPOOL_BACKEND} STREQUAL "cfm")
+    add_definitions(-DKTH_MEMPOOL_BACKEND_CFM)
+elseif (${KTH_MEMPOOL_BACKEND} STREQUAL "parlay")
+    add_definitions(-DKTH_MEMPOOL_BACKEND_PARLAY)
+    include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/third_party/parlayhash/include)
+else()
+    message(FATAL_ERROR "Invalid mempool backend: ${KTH_MEMPOOL_BACKEND} (expected cfm|parlay)")
+endif()
+message(STATUS "Knuth: Mempool backend: ${KTH_MEMPOOL_BACKEND}")
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 

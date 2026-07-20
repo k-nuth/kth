@@ -29,6 +29,7 @@
 #include <kth/blockchain/header_index.hpp>
 #include <kth/blockchain/pools/block_organizer.hpp>
 #include <kth/blockchain/pools/branch.hpp>
+#include <kth/blockchain/pools/mempool.hpp>
 #include <kth/blockchain/pools/mempool_transaction_summary.hpp>
 #include <kth/blockchain/pools/transaction_organizer.hpp>
 #include <kth/blockchain/populate/populate_chain_state.hpp>
@@ -216,6 +217,11 @@ struct KB_API block_chain {
     /// state, keyed by transaction hash. Replaces the old mutable
     /// `transaction::validation` member.
     transaction_validation_store& transaction_validations() const;
+
+    /// The unconfirmed-transaction mempool. Owned here; the organizers admit to
+    /// it (tx accept) and evict from it (block connect / reorg).
+    blockchain::mempool& mempool_ref();
+    blockchain::mempool const& mempool_ref() const;
 
     // =========================================================================
     // SUBSCRIPTIONS
@@ -473,6 +479,8 @@ private:
     // constructed with a reference to this store.
     mutable block_validation_store block_validations_;
     mutable transaction_validation_store transaction_validations_;
+
+    blockchain::mempool mempool_;
 
     transaction_organizer transaction_organizer_;
     block_organizer block_organizer_;

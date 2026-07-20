@@ -241,6 +241,12 @@ bool block_organizer::stop() {
     block_pool_.prune(branch->top_height());
     block_pool_.add(out_blocks);
 
+    // Update the mempool for the reorganization: evict the newly-confirmed
+    // (incoming) transactions and their conflicts; re-admit of the disconnected
+    // (outgoing) transactions is tracked in #498. Common case: a single new
+    // block extending the tip (out_blocks empty) => plain removal.
+    chain_.mempool_ref().update_for_reorg(out_blocks, branch->blocks());
+
 
     // v3 reorg block order is reverse of v2, branch.back() is the new top.
     notify(branch->height(), branch->blocks(), out_blocks);

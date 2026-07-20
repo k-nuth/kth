@@ -736,6 +736,14 @@ transaction_validation_store& block_chain::transaction_validations() const {
     return transaction_validations_;
 }
 
+blockchain::mempool& block_chain::mempool_ref() {
+    return mempool_;
+}
+
+blockchain::mempool const& block_chain::mempool_ref() const {
+    return mempool_;
+}
+
 code block_chain::set_chain_state(domain::chain::chain_state::ptr previous) {
     unique_lock lock(pool_state_mutex_);
     pool_state_ = chain_state_populator_.populate(previous);
