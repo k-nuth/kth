@@ -14,18 +14,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(ENABLE_SHARED "" OFF)
 option(ENABLE_POSITION_INDEPENDENT_CODE "Enable POSITION_INDEPENDENT_CODE property" ON)
 option(WITH_TOOLS "Compile with tools." OFF)
-option(WITH_MEMPOOL "Mempool enabled." OFF)
 option(DB_READONLY_MODE "Readonly DB mode enabled." OFF)
 option(JUST_KTH_SOURCES "Just Knuth source code to be linted." OFF)
 
 option(GLOBAL_BUILD "" ON)
 option(ENABLE_TSAN_TESTS "Build TSAN tests" ON)
 
-
-if (WITH_MEMPOOL)
-  message(STATUS "Knuth: Mempool enabled")
-  add_definitions(-DKTH_WITH_MEMPOOL)
-endif()
 
 if (DB_READONLY_MODE)
   message(STATUS "Knuth: Readonly DB mode enabled")
@@ -167,9 +161,7 @@ set(kth_sources_just_legacy
   src/pools/block_pool.cpp
   src/pools/branch.cpp
   src/pools/header_organizer.cpp
-  src/pools/transaction_entry.cpp
   src/pools/transaction_organizer.cpp
-  src/pools/transaction_pool.cpp
   src/pools/mempool_transaction_summary.cpp
   src/populate/populate_base.cpp
   src/populate/populate_block.cpp
@@ -213,23 +205,12 @@ set(kth_headers
   include/kth/blockchain/validate/validate_input.hpp
   include/kth/blockchain/validate/validate_transaction.hpp
   include/kth/blockchain/pools/block_entry.hpp
-  include/kth/blockchain/pools/transaction_pool.hpp
-  include/kth/blockchain/pools/transaction_entry.hpp
   include/kth/blockchain/pools/mempool_transaction_summary.hpp
   include/kth/blockchain/pools/block_organizer.hpp
   include/kth/blockchain/pools/branch.hpp
   include/kth/blockchain/pools/block_pool.hpp
   include/kth/blockchain/pools/header_organizer.hpp
   include/kth/blockchain/pools/transaction_organizer.hpp
-  include/kth/blockchain/mining/prioritizer.hpp
-  include/kth/blockchain/mining/transaction_element.1.hpp
-  include/kth/blockchain/mining/node_v2.hpp
-  include/kth/blockchain/mining/transaction_element.hpp
-  include/kth/blockchain/mining/mempool.hpp
-  include/kth/blockchain/mining/common.hpp
-  include/kth/blockchain/mining/partially_indexed.hpp
-  include/kth/blockchain/mining/mempool_v2.hpp
-  include/kth/blockchain/mining/partially_indexed_node.hpp
   include/kth/blockchain/settings.hpp
 )
 
@@ -289,8 +270,6 @@ if (ENABLE_TEST)
         test/block_entry.cpp
         test/block_pool.cpp
         test/branch.cpp
-        test/transaction_entry.cpp
-        test/transaction_pool.cpp
         test/validate_transaction.cpp
     )
 
@@ -303,13 +282,6 @@ if (ENABLE_TEST)
     # test/block_chain.cpp
     # test/utxo.cpp
     # test/validate_block.cpp
-
-    if (WITH_MEMPOOL)
-        set(kth_blockchain_test_sources
-            ${kth_blockchain_test_sources}
-            test/mempool_tests.cpp
-        )
-    endif()
 
     add_executable(kth_blockchain_test
         ${kth_blockchain_test_sources}

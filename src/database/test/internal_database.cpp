@@ -103,7 +103,6 @@ void close_everything(KTH_DB_env* e, KTH_DB_dbi& db0, KTH_DB_dbi& db1, KTH_DB_db
 , KTH_DB_dbi& db8
 , KTH_DB_dbi& db9
 , KTH_DB_dbi& db10
-, KTH_DB_dbi& db11
 ) {
     kth_db_dbi_close(e, db0);
     kth_db_dbi_close(e, db1);
@@ -116,13 +115,11 @@ void close_everything(KTH_DB_env* e, KTH_DB_dbi& db0, KTH_DB_dbi& db1, KTH_DB_db
     kth_db_dbi_close(e, db8);
     kth_db_dbi_close(e, db9);
     kth_db_dbi_close(e, db10);
-    kth_db_dbi_close(e, db11);
 
     kth_db_env_close(e);
 }
 
 std::tuple<KTH_DB_env*, KTH_DB_dbi, KTH_DB_dbi, KTH_DB_dbi, KTH_DB_dbi, KTH_DB_dbi, KTH_DB_dbi
-, KTH_DB_dbi
 , KTH_DB_dbi
 , KTH_DB_dbi
 , KTH_DB_dbi
@@ -144,7 +141,6 @@ std::tuple<KTH_DB_env*, KTH_DB_dbi, KTH_DB_dbi, KTH_DB_dbi, KTH_DB_dbi, KTH_DB_d
     KTH_DB_dbi dbi_history_db_;
     KTH_DB_dbi dbi_spend_db_;
     KTH_DB_dbi dbi_transaction_hash_db_;
-    KTH_DB_dbi dbi_transaction_unconfirmed_db_;
 
     KTH_DB_txn* db_txn;
 
@@ -161,7 +157,6 @@ std::tuple<KTH_DB_env*, KTH_DB_dbi, KTH_DB_dbi, KTH_DB_dbi, KTH_DB_dbi, KTH_DB_d
 
     char transaction_db_name[] = "transactions";
     char transaction_hash_db_name[] = "transactions_hash";
-    char transaction_unconfirmed_db_name[] = "transactions_unconfirmed";
     char history_db_name[] = "history";
     char spend_db_name[] = "spend";
 
@@ -193,12 +188,11 @@ std::tuple<KTH_DB_env*, KTH_DB_dbi, KTH_DB_dbi, KTH_DB_dbi, KTH_DB_dbi, KTH_DB_d
     REQUIRE(kth_db_dbi_open(db_txn, transaction_hash_db_name, KTH_DB_CONDITIONAL_CREATE, &dbi_transaction_hash_db_)== KTH_DB_SUCCESS);
     REQUIRE(kth_db_dbi_open(db_txn, history_db_name, KTH_DB_CONDITIONAL_CREATE | KTH_DB_DUPSORT | KTH_DB_DUPFIXED, &dbi_history_db_)== KTH_DB_SUCCESS);
     REQUIRE(kth_db_dbi_open(db_txn, spend_db_name, KTH_DB_CONDITIONAL_CREATE, &dbi_spend_db_)== KTH_DB_SUCCESS);
-    REQUIRE(kth_db_dbi_open(db_txn, transaction_unconfirmed_db_name, KTH_DB_CONDITIONAL_CREATE, &dbi_transaction_unconfirmed_db_) == KTH_DB_SUCCESS);
 
     REQUIRE(kth_db_txn_commit(db_txn) == KTH_DB_SUCCESS);
 
 
-    return {env_, dbi_utxo_, dbi_reorg_pool_, dbi_reorg_index_, dbi_block_header_, dbi_block_header_by_hash_, dbi_reorg_block_, dbi_block_db_, dbi_transaction_db_, dbi_history_db_,dbi_spend_db_, dbi_transaction_hash_db_, dbi_transaction_unconfirmed_db_ };
+    return {env_, dbi_utxo_, dbi_reorg_pool_, dbi_reorg_index_, dbi_block_header_, dbi_block_header_by_hash_, dbi_reorg_block_, dbi_block_db_, dbi_transaction_db_, dbi_history_db_,dbi_spend_db_, dbi_transaction_hash_db_ };
 }
 
 void print_db_entries_count(KTH_DB_env* env_, KTH_DB_dbi& dbi ) {
@@ -634,12 +628,6 @@ TEST_CASE("internal database open", "[None]") {
 }
 
 
-TEST_CASE("internal database test get all transaction unconfirmed", "[None]") {
-    internal_database db(db_path, db_mode_type::full, 10000000, db_size, true);
-    db.open();
-    auto ret = db.get_all_transaction_unconfirmed();
-}
-
 TEST_CASE("internal database insert genesis", "[None]") {
     auto const genesis = get_genesis();
 
@@ -918,7 +906,6 @@ TEST_CASE("internal database reorg", "[None]") {
     KTH_DB_dbi dbi_block_db_;
     KTH_DB_dbi dbi_transaction_db_;
     KTH_DB_dbi dbi_transaction_hash_db_;
-    KTH_DB_dbi dbi_transaction_unconfirmed_db_;
     KTH_DB_dbi dbi_history_db_;
     KTH_DB_dbi dbi_spend_db_;
 
@@ -930,7 +917,6 @@ TEST_CASE("internal database reorg", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     check_reorg_output(env_, dbi_reorg_pool_, "f5d8ee39a430901c91a5917b9f2dc19d6d1a0e9cea205b009ca73dd04470b9a6", 0, "00f2052a01000000434104283338ffd784c198147f99aed2cc16709c90b1522e3b3637b312a6f9130e0eda7081e373a96d36be319710cd5c134aaffba81ff08650d7de8af332fe4d8cde20ac");
@@ -952,7 +938,6 @@ TEST_CASE("internal database reorg", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-        , dbi_transaction_unconfirmed_db_
     );
 }
 
@@ -989,7 +974,6 @@ TEST_CASE("internal database old blocks 0", "[None]") {
     KTH_DB_dbi dbi_block_db_;
     KTH_DB_dbi dbi_transaction_db_;
     KTH_DB_dbi dbi_transaction_hash_db_;
-    KTH_DB_dbi dbi_transaction_unconfirmed_db_;
     KTH_DB_dbi dbi_history_db_;
     KTH_DB_dbi dbi_spend_db_;
 
@@ -1000,7 +984,6 @@ TEST_CASE("internal database old blocks 0", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     check_reorg_output(env_, dbi_reorg_pool_, "f5d8ee39a430901c91a5917b9f2dc19d6d1a0e9cea205b009ca73dd04470b9a6", 0, "00f2052a01000000434104283338ffd784c198147f99aed2cc16709c90b1522e3b3637b312a6f9130e0eda7081e373a96d36be319710cd5c134aaffba81ff08650d7de8af332fe4d8cde20ac");
@@ -1019,7 +1002,6 @@ TEST_CASE("internal database old blocks 0", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-        , dbi_transaction_unconfirmed_db_
     );
 }
 
@@ -1055,7 +1037,6 @@ TEST_CASE("internal database old blocks 1", "[None]") {
     KTH_DB_dbi dbi_block_db_;
     KTH_DB_dbi dbi_transaction_db_;
     KTH_DB_dbi dbi_transaction_hash_db_;
-    KTH_DB_dbi dbi_transaction_unconfirmed_db_;
     KTH_DB_dbi dbi_history_db_;
     KTH_DB_dbi dbi_spend_db_;
 
@@ -1066,7 +1047,6 @@ TEST_CASE("internal database old blocks 1", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     check_reorg_output(env_, dbi_reorg_pool_, "f5d8ee39a430901c91a5917b9f2dc19d6d1a0e9cea205b009ca73dd04470b9a6", 0, "00f2052a01000000434104283338ffd784c198147f99aed2cc16709c90b1522e3b3637b312a6f9130e0eda7081e373a96d36be319710cd5c134aaffba81ff08650d7de8af332fe4d8cde20ac");
@@ -1087,7 +1067,6 @@ TEST_CASE("internal database old blocks 1", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-        , dbi_transaction_unconfirmed_db_
     );
 }
 
@@ -1124,7 +1103,6 @@ TEST_CASE("internal database old blocks 2", "[None]") {
     KTH_DB_dbi dbi_block_db_;
     KTH_DB_dbi dbi_transaction_db_;
     KTH_DB_dbi dbi_transaction_hash_db_;
-    KTH_DB_dbi dbi_transaction_unconfirmed_db_;
     KTH_DB_dbi dbi_history_db_;
     KTH_DB_dbi dbi_spend_db_;
 
@@ -1135,7 +1113,6 @@ TEST_CASE("internal database old blocks 2", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     check_reorg_output_doesnt_exists(env_, dbi_reorg_pool_, "f5d8ee39a430901c91a5917b9f2dc19d6d1a0e9cea205b009ca73dd04470b9a6", 0);
@@ -1156,7 +1133,6 @@ TEST_CASE("internal database old blocks 2", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 }
 
@@ -1206,7 +1182,6 @@ TEST_CASE("internal database reorg index", "[None]") {
     KTH_DB_dbi dbi_block_db_;
     KTH_DB_dbi dbi_transaction_db_;
     KTH_DB_dbi dbi_transaction_hash_db_;
-    KTH_DB_dbi dbi_transaction_unconfirmed_db_;
     KTH_DB_dbi dbi_history_db_;
     KTH_DB_dbi dbi_spend_db_;
 
@@ -1217,7 +1192,6 @@ TEST_CASE("internal database reorg index", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     check_reorg_output_just_existence(env_, dbi_reorg_pool_, "3c5e48964a781208739ee27a9f78098930884d63f366f6e420983eb8bdbdda65", 0);
@@ -1248,7 +1222,6 @@ TEST_CASE("internal database reorg index", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-        , dbi_transaction_unconfirmed_db_
     );
 }
 
@@ -1336,7 +1309,6 @@ TEST_CASE("internal database reorg index2", "[None]") {
 
     KTH_DB_dbi dbi_transaction_db_;
     KTH_DB_dbi dbi_transaction_hash_db_;
-    KTH_DB_dbi dbi_transaction_unconfirmed_db_;
     KTH_DB_dbi dbi_history_db_;
     KTH_DB_dbi dbi_spend_db_;
 
@@ -1349,7 +1321,6 @@ TEST_CASE("internal database reorg index2", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     check_reorg_output_just_existence(env_, dbi_reorg_pool_, "3c5e48964a781208739ee27a9f78098930884d63f366f6e420983eb8bdbdda65", 0);
@@ -1389,7 +1360,6 @@ TEST_CASE("internal database reorg index2", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 }
 
@@ -1464,7 +1434,6 @@ TEST_CASE("internal database reorg 0", "[None]") {
     KTH_DB_dbi dbi_block_db_;
     KTH_DB_dbi dbi_transaction_db_;
     KTH_DB_dbi dbi_transaction_hash_db_;
-    KTH_DB_dbi dbi_transaction_unconfirmed_db_;
     KTH_DB_dbi dbi_history_db_;
     KTH_DB_dbi dbi_spend_db_;
 
@@ -1508,7 +1477,6 @@ TEST_CASE("internal database reorg 0", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
 
@@ -1536,7 +1504,6 @@ TEST_CASE("internal database reorg 0", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     // Insert the Spender Block
@@ -1634,7 +1601,6 @@ TEST_CASE("internal database reorg 0", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 1);
@@ -1670,7 +1636,6 @@ TEST_CASE("internal database reorg 0", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     // Remove the Spender Block
@@ -1743,7 +1708,6 @@ TEST_CASE("internal database reorg 0", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 0);
@@ -1770,7 +1734,6 @@ TEST_CASE("internal database reorg 0", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-        , dbi_transaction_unconfirmed_db_
     );
 
     // Insert the Spender Block, again
@@ -1870,7 +1833,6 @@ TEST_CASE("internal database reorg 0", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
 
@@ -1903,7 +1865,6 @@ TEST_CASE("internal database reorg 0", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-        , dbi_transaction_unconfirmed_db_
     );
 }
 
@@ -1942,7 +1903,6 @@ TEST_CASE("internal database reorg 1", "[None]") {
 
     KTH_DB_dbi dbi_transaction_db_;
     KTH_DB_dbi dbi_transaction_hash_db_;
-    KTH_DB_dbi dbi_transaction_unconfirmed_db_;
     KTH_DB_dbi dbi_history_db_;
     KTH_DB_dbi dbi_spend_db_;
 
@@ -1966,7 +1926,6 @@ TEST_CASE("internal database reorg 1", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
 
@@ -1986,7 +1945,6 @@ TEST_CASE("internal database reorg 1", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-        , dbi_transaction_unconfirmed_db_
     );
 
     // Insert the Spender Block
@@ -2028,7 +1986,6 @@ TEST_CASE("internal database reorg 1", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 0);
@@ -2052,7 +2009,6 @@ TEST_CASE("internal database reorg 1", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     // Remove the Spender Block
@@ -2073,7 +2029,6 @@ TEST_CASE("internal database reorg 1", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
 
@@ -2090,7 +2045,6 @@ TEST_CASE("internal database reorg 1", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-        , dbi_transaction_unconfirmed_db_
     );
 
 
@@ -2191,7 +2145,6 @@ TEST_CASE("internal database prune", "[None]") {
 
     KTH_DB_dbi dbi_transaction_db_;
     KTH_DB_dbi dbi_transaction_hash_db_;
-    KTH_DB_dbi dbi_transaction_unconfirmed_db_;
     KTH_DB_dbi dbi_history_db_;
     KTH_DB_dbi dbi_spend_db_;
 
@@ -2219,7 +2172,6 @@ TEST_CASE("internal database prune", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 0);
@@ -2248,7 +2200,6 @@ TEST_CASE("internal database prune", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     // ------------------------------------------------------------------------------------
@@ -2268,7 +2219,6 @@ TEST_CASE("internal database prune", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 1);
@@ -2297,7 +2247,6 @@ TEST_CASE("internal database prune", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     // ------------------------------------------------------------------------------------
@@ -2317,7 +2266,6 @@ TEST_CASE("internal database prune", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 2);
@@ -2347,7 +2295,6 @@ TEST_CASE("internal database prune", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-        , dbi_transaction_unconfirmed_db_
     );
 
 
@@ -2368,7 +2315,6 @@ TEST_CASE("internal database prune", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 3);
@@ -2399,7 +2345,6 @@ TEST_CASE("internal database prune", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-        , dbi_transaction_unconfirmed_db_
     );
 
 
@@ -2420,7 +2365,6 @@ TEST_CASE("internal database prune", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 4);
@@ -2451,7 +2395,6 @@ TEST_CASE("internal database prune", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
 
@@ -2472,7 +2415,6 @@ TEST_CASE("internal database prune", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 5);
@@ -2504,7 +2446,6 @@ TEST_CASE("internal database prune", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     {
@@ -2521,7 +2462,6 @@ TEST_CASE("internal database prune", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 5);
@@ -2551,7 +2491,6 @@ TEST_CASE("internal database prune", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     {
@@ -2568,7 +2507,6 @@ TEST_CASE("internal database prune", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 5);
@@ -2596,7 +2534,6 @@ TEST_CASE("internal database prune", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     {
@@ -2613,7 +2550,6 @@ TEST_CASE("internal database prune", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 5);
@@ -2641,7 +2577,6 @@ TEST_CASE("internal database prune", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-        , dbi_transaction_unconfirmed_db_
     );
 
     {
@@ -2658,7 +2593,6 @@ TEST_CASE("internal database prune", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 5);
@@ -2686,7 +2620,6 @@ TEST_CASE("internal database prune", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     {
@@ -2703,7 +2636,6 @@ TEST_CASE("internal database prune", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 4);
@@ -2732,7 +2664,6 @@ TEST_CASE("internal database prune", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     {
@@ -2749,7 +2680,6 @@ TEST_CASE("internal database prune", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 0);
@@ -2777,7 +2707,6 @@ TEST_CASE("internal database prune", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
 }
@@ -2858,7 +2787,6 @@ TEST_CASE("internal database prune 2", "[None]") {
 
     KTH_DB_dbi dbi_transaction_db_;
     KTH_DB_dbi dbi_transaction_hash_db_;
-    KTH_DB_dbi dbi_transaction_unconfirmed_db_;
     KTH_DB_dbi dbi_history_db_;
     KTH_DB_dbi dbi_spend_db_;
 
@@ -2886,7 +2814,6 @@ TEST_CASE("internal database prune 2", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 0);
@@ -2915,7 +2842,6 @@ TEST_CASE("internal database prune 2", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-        , dbi_transaction_unconfirmed_db_
     );
 
 
@@ -2938,7 +2864,6 @@ TEST_CASE("internal database prune 2", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 1);
@@ -2970,7 +2895,6 @@ TEST_CASE("internal database prune 2", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-        , dbi_transaction_unconfirmed_db_
     );
 
 
@@ -2991,7 +2915,6 @@ TEST_CASE("internal database prune 2", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 5);
@@ -3024,7 +2947,6 @@ TEST_CASE("internal database prune 2", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
 
@@ -3047,7 +2969,6 @@ TEST_CASE("internal database prune 2", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 5);
@@ -3077,7 +2998,6 @@ TEST_CASE("internal database prune 2", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     {
@@ -3094,7 +3014,6 @@ TEST_CASE("internal database prune 2", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 5);
@@ -3124,7 +3043,6 @@ TEST_CASE("internal database prune 2", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     {
@@ -3141,7 +3059,6 @@ TEST_CASE("internal database prune 2", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 5);
@@ -3171,7 +3088,6 @@ TEST_CASE("internal database prune 2", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     {
@@ -3188,7 +3104,6 @@ TEST_CASE("internal database prune 2", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 5);
@@ -3217,7 +3132,6 @@ TEST_CASE("internal database prune 2", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     {
@@ -3234,7 +3148,6 @@ TEST_CASE("internal database prune 2", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 5);
@@ -3265,7 +3178,6 @@ TEST_CASE("internal database prune 2", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     {
@@ -3282,7 +3194,6 @@ TEST_CASE("internal database prune 2", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 4);
@@ -3313,7 +3224,6 @@ TEST_CASE("internal database prune 2", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
 
@@ -3331,7 +3241,6 @@ TEST_CASE("internal database prune 2", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 0);
@@ -3363,7 +3272,6 @@ TEST_CASE("internal database prune 2", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
 }
@@ -3442,7 +3350,6 @@ TEST_CASE("internal database prune 3", "[None]") {
 
     KTH_DB_dbi dbi_transaction_db_;
     KTH_DB_dbi dbi_transaction_hash_db_;
-    KTH_DB_dbi dbi_transaction_unconfirmed_db_;
     KTH_DB_dbi dbi_history_db_;
     KTH_DB_dbi dbi_spend_db_;
 
@@ -3470,7 +3377,6 @@ TEST_CASE("internal database prune 3", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 0);
@@ -3499,7 +3405,6 @@ TEST_CASE("internal database prune 3", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
 
@@ -3520,7 +3425,6 @@ TEST_CASE("internal database prune 3", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 4);
@@ -3552,7 +3456,6 @@ TEST_CASE("internal database prune 3", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
 
@@ -3573,7 +3476,6 @@ TEST_CASE("internal database prune 3", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 5);
@@ -3607,7 +3509,6 @@ TEST_CASE("internal database prune 3", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     // ------------------------------------------------------------------------------------
@@ -3628,7 +3529,6 @@ TEST_CASE("internal database prune 3", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 1);
@@ -3658,7 +3558,6 @@ TEST_CASE("internal database prune 3", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
 
@@ -3676,7 +3575,6 @@ TEST_CASE("internal database prune 3", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 0);
@@ -3708,7 +3606,6 @@ TEST_CASE("internal database prune 3", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
 }
@@ -3786,7 +3683,6 @@ TEST_CASE("internal database prune empty reorg pool 3", "[None]") {
 
     KTH_DB_dbi dbi_transaction_db_;
     KTH_DB_dbi dbi_transaction_hash_db_;
-    KTH_DB_dbi dbi_transaction_unconfirmed_db_;
     KTH_DB_dbi dbi_history_db_;
     KTH_DB_dbi dbi_spend_db_;
 
@@ -3799,7 +3695,6 @@ TEST_CASE("internal database prune empty reorg pool 3", "[None]") {
     , dbi_history_db_
     , dbi_spend_db_
     , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     ) = open_dbs();
 
     REQUIRE(db_count_items(env_, dbi_reorg_pool_) == 2);
@@ -3820,7 +3715,6 @@ TEST_CASE("internal database prune empty reorg pool 3", "[None]") {
         , dbi_history_db_
         , dbi_spend_db_
         , dbi_transaction_hash_db_
-    , dbi_transaction_unconfirmed_db_
     );
 
     {

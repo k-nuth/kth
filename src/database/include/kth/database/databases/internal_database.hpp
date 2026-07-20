@@ -21,7 +21,6 @@
 #include <kth/database/databases/result_code.hpp>
 #include <kth/database/databases/tools.hpp>
 #include <kth/database/databases/transaction_entry.hpp>
-#include <kth/database/databases/transaction_unconfirmed_entry.hpp>
 #include <kth/database/databases/utxo_entry.hpp>
 #include <kth/database/define.hpp>
 #include <kth/domain.hpp>
@@ -83,7 +82,6 @@ struct KD_API internal_database_basis {
     constexpr static char transaction_hash_db_name[] = "transactions_hash";
     constexpr static char history_db_name[] = "history";
     constexpr static char spend_db_name[] = "spend";
-    constexpr static char transaction_unconfirmed_db_name[] = "transaction_unconfirmed";
 
     internal_database_basis(path const& db_dir, db_mode_type mode, uint32_t reorg_pool_limit, uint64_t db_max_size, bool safe_mode);
     ~internal_database_basis();
@@ -170,14 +168,6 @@ struct KD_API internal_database_basis {
     std::expected<std::vector<hash_digest>, result_code> get_history_txns(short_hash const& key, size_t limit, size_t from_height) const;
 
     std::expected<domain::chain::input_point, result_code> get_spend(domain::chain::output_point const& point) const;
-
-    std::expected<std::vector<transaction_unconfirmed_entry>, result_code> get_all_transaction_unconfirmed() const;
-
-    std::expected<transaction_unconfirmed_entry, result_code> get_transaction_unconfirmed(hash_digest const& hash) const;
-
-#if ! defined(KTH_DB_READONLY)
-    result_code push_transaction_unconfirmed(domain::chain::transaction const& tx, uint32_t height);
-#endif // ! defined(KTH_DB_READONLY)
 
 private:
 
@@ -333,13 +323,7 @@ private:
     result_code remove_spend(domain::chain::output_point const& out_point, KTH_DB_txn* db_txn);
 
     result_code remove_transaction_spend_db(domain::chain::transaction const& tx, KTH_DB_txn* db_txn);
-
-    result_code insert_transaction_unconfirmed(domain::chain::transaction const& tx, uint32_t height, KTH_DB_txn* db_txn);
-
-    result_code remove_transaction_unconfirmed(hash_digest const& tx_id,  KTH_DB_txn* db_txn);
 #endif
-
-    transaction_unconfirmed_entry get_transaction_unconfirmed(hash_digest const& hash, KTH_DB_txn* db_txn) const;
 
 
 #if ! defined(KTH_DB_READONLY)
@@ -349,8 +333,6 @@ private:
 
     result_code set_unspend(domain::chain::output_point const& point, KTH_DB_txn* db_txn);
 #endif // ! defined(KTH_DB_READONLY)
-
-    uint32_t get_clock_now() const;
 
     uint64_t get_tx_count(KTH_DB_txn* db_txn) const;
 
@@ -397,7 +379,6 @@ private:
     KTH_DB_dbi dbi_transaction_hash_db_;
     KTH_DB_dbi dbi_history_db_;
     KTH_DB_dbi dbi_spend_db_;
-    KTH_DB_dbi dbi_transaction_unconfirmed_db_;
 };
 
 template <typename Clock>
@@ -436,9 +417,6 @@ constexpr char internal_database_basis<Clock>::history_db_name[];            //k
 template <typename Clock>
 constexpr char internal_database_basis<Clock>::spend_db_name[];            //key: output_point, value: input_point
 
-template <typename Clock>
-constexpr char internal_database_basis<Clock>::transaction_unconfirmed_db_name[];     //key: tx hash, value: tx
-
 using internal_database = internal_database_basis<std::chrono::system_clock>;
 
 } // namespace kth::database
@@ -448,7 +426,6 @@ using internal_database = internal_database_basis<std::chrono::system_clock>;
 #include <kth/database/databases/header_database.ipp>
 #include <kth/database/databases/history_database.ipp>
 #include <kth/database/databases/spend_database.ipp>
-#include <kth/database/databases/transaction_unconfirmed_database.ipp>
 #include <kth/database/databases/internal_database.ipp>
 #include <kth/database/databases/reorg_database.ipp>
 #include <kth/database/databases/transaction_database.ipp>

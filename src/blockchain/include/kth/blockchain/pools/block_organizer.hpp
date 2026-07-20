@@ -40,11 +40,7 @@ struct KB_API block_organizer {
     using block_broadcaster = broadcaster<size_t, block_const_ptr_list_const_ptr, block_const_ptr_list_const_ptr>;
 
     /// Construct an instance.
-#if defined(KTH_WITH_MEMPOOL)
-    block_organizer(prioritized_mutex& mutex, executor_type executor, size_t threads, threadpool& thread_pool, block_chain& chain, settings const& settings, domain::config::network network, bool relay_transactions, mining::mempool& mp);
-#else
     block_organizer(prioritized_mutex& mutex, executor_type executor, size_t threads, threadpool& thread_pool, block_chain& chain, settings const& settings, domain::config::network network, bool relay_transactions);
-#endif
 
     bool start();
     bool stop();
@@ -72,13 +68,6 @@ private:
     ::asio::awaitable<code> handle_reorganized(branch::const_ptr branch, block_const_ptr_list_ptr outgoing);
 #endif
 
-#if defined(KTH_WITH_MEMPOOL)
-    void populate_prevout_1(branch::const_ptr branch, domain::chain::output_point const& outpoint, bool require_confirmed) const;
-    void populate_prevout_2(branch::const_ptr branch, domain::chain::output_point const& outpoint, local_utxo_set_t const& branch_utxo) const;
-    void populate_transaction_inputs(branch::const_ptr branch, domain::chain::input::list const& inputs, local_utxo_set_t const& branch_utxo) const;
-    void populate_transactions(branch::const_ptr branch, domain::chain::block const& block, local_utxo_set_t const& branch_utxo) const;
-    void organize_mempool(branch::const_ptr branch, block_const_ptr_list_const_ptr const& incoming_blocks, block_const_ptr_list_ptr const& outgoing_blocks);
-#endif
 
     bool is_branch_double_spend(branch::ptr const& branch) const;
 
@@ -97,9 +86,6 @@ private:
     validate_block validator_;
     block_broadcaster broadcaster_;
 
-#if defined(KTH_WITH_MEMPOOL)
-    mining::mempool& mempool_;
-#endif
 };
 
 } // namespace kth::blockchain

@@ -9,9 +9,6 @@
 #include <ranges>
 
 //TODO(fernando): Avoid this dependency
-#if defined(KTH_WITH_MEMPOOL)
-#include <kth/mining/mempool.hpp>
-#endif
 
 namespace kth::blockchain {
 

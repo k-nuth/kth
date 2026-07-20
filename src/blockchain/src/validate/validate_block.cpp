@@ -34,21 +34,13 @@ using kd::script_flags_t;
 // block: { bits, version, timestamp }
 // transaction: { exists, height, output }
 
-#if defined(KTH_WITH_MEMPOOL)
-validate_block::validate_block(executor_type executor, size_t threads, block_chain const& chain, settings const& settings, domain::config::network network, bool relay_transactions, mining::mempool const& mp)
-#else
 validate_block::validate_block(executor_type executor, size_t threads, block_chain const& chain, settings const& settings, domain::config::network network, bool relay_transactions)
-#endif
     : stopped_(true)
     , chain_(chain)
     , network_(network)
     , executor_(std::move(executor))
     , threads_(threads)
-#if defined(KTH_WITH_MEMPOOL)
-    , block_populator_(executor_, threads_, chain, relay_transactions, mp)
-#else
     , block_populator_(executor_, threads_, chain, relay_transactions)
-#endif
 {}
 
 // Start/stop sequences.

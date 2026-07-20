@@ -13,17 +13,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(ENABLE_SHARED "" OFF)
 option(ENABLE_POSITION_INDEPENDENT_CODE "Enable POSITION_INDEPENDENT_CODE property" ON)
-option(WITH_MEMPOOL "Mempool enabled." OFF)
 option(DB_READONLY_MODE "Readonly DB mode enabled." OFF)
 option(JUST_KTH_SOURCES "Just Knuth source code to be linted." OFF)
 option(STATISTICS "Collect statistics." OFF)
 
 option(GLOBAL_BUILD "" ON)
-
-if (WITH_MEMPOOL)
-  message(STATUS "Knuth: Mempool enabled")
-  add_definitions(-DKTH_WITH_MEMPOOL)
-endif()
 
 if (DB_READONLY_MODE)
   message(STATUS "Knuth: Readonly DB mode enabled")

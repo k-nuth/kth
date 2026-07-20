@@ -39,9 +39,6 @@
 #include <asio/any_io_executor.hpp>
 #include <asio/awaitable.hpp>
 
-#if defined(KTH_WITH_MEMPOOL)
-#include <kth/mining/mempool.hpp>
-#endif
 
 namespace kth::blockchain {
 
@@ -262,9 +259,6 @@ struct KB_API block_chain {
     [[nodiscard]] header_index& headers() { return header_index_; }
     [[nodiscard]] header_index const& headers() const { return header_index_; }
 
-#if defined(KTH_WITH_MEMPOOL)
-    std::pair<std::vector<kth::mining::transaction_element>, uint64_t> get_block_template() const;
-#endif
 
     // =========================================================================
     // DATABASE READERS (Low-level, NOT thread safe)
@@ -474,9 +468,6 @@ private:
     mutable prioritized_mutex validation_mutex_;
     mutable threadpool priority_pool_;
 
-#if defined(KTH_WITH_MEMPOOL)
-    mining::mempool mempool_;
-#endif
 
     // Must be declared before block_organizer_: the organizer's block_pool is
     // constructed with a reference to this store.

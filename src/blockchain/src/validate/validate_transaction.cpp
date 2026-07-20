@@ -37,21 +37,13 @@ using kd::script_flags_t;
 // transaction: { exists, height, output }
 
 
-#if defined(KTH_WITH_MEMPOOL)
-validate_transaction::validate_transaction(executor_type executor, size_t threads, block_chain const& chain, settings const& settings, mining::mempool const& mp)
-#else
 validate_transaction::validate_transaction(executor_type executor, size_t threads, block_chain const& chain, settings const& settings)
-#endif
   : stopped_(true),
     retarget_(settings.retarget),
     executor_(std::move(executor)),
     threads_(threads),
 
-#if defined(KTH_WITH_MEMPOOL)
-    transaction_populator_(executor_, threads_, chain, mp),
-#else
     transaction_populator_(executor_, threads_, chain),
-#endif
     chain_(chain)
 {
 }

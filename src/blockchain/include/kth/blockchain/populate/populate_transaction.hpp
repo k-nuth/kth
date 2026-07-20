@@ -13,9 +13,6 @@
 
 #include <asio/awaitable.hpp>
 
-#if defined(KTH_WITH_MEMPOOL)
-#include <kth/mining/mempool.hpp>
-#endif
 
 namespace kth::blockchain {
 
@@ -26,11 +23,7 @@ struct block_chain;
 struct KB_API populate_transaction : populate_base {
 public:
 
-#if defined(KTH_WITH_MEMPOOL)
-    populate_transaction(executor_type executor, size_t threads, block_chain const& chain, mining::mempool const& mp);
-#else
     populate_transaction(executor_type executor, size_t threads, block_chain const& chain);
-#endif
 
     /// Populate validation state for the transaction.
     [[nodiscard]]
@@ -40,9 +33,6 @@ protected:
     code populate_inputs_sync(transaction_const_ptr tx, size_t chain_height, size_t bucket, size_t buckets) const;
 
 private:
-#if defined(KTH_WITH_MEMPOOL)
-    mining::mempool const& mempool_;
-#endif
 };
 
 } // namespace kth::blockchain

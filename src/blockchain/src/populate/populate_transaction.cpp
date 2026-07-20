@@ -28,16 +28,9 @@ using namespace std::placeholders;
 
 // Database access is limited to calling populate_base.
 
-#if defined(KTH_WITH_MEMPOOL)
-populate_transaction::populate_transaction(executor_type executor, size_t threads, block_chain const& chain, mining::mempool const& mp)
-    : populate_base(std::move(executor), threads, chain)
-    , mempool_(mp)
-{}
-#else
 populate_transaction::populate_transaction(executor_type executor, size_t threads, block_chain const& chain)
     : populate_base(std::move(executor), threads, chain)
 {}
-#endif
 
 ::asio::awaitable<code> populate_transaction::populate(transaction_const_ptr tx) const {
     domain::chain::chain_state::ptr state;
@@ -113,15 +106,6 @@ code populate_transaction::populate_inputs_sync(transaction_const_ptr tx, size_t
         auto const& prevout = input.previous_output();
         populate_prevout(chain_height, prevout, false);
 
-#if defined(KTH_WITH_MEMPOOL)
-        if ( ! prevout.validation.cache.is_valid()) {
-            // BUSCAR EN UTXO DEL MEMPOOL y marcar
-            prevout.validation.cache = mempool_.get_utxo(prevout);
-            if (prevout.validation.cache.is_valid()) {
-                prevout.validation.from_mempool = true;
-            }
-        }
-#endif
 
     }
 

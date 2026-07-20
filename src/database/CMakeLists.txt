@@ -121,7 +121,6 @@ set(kth_sources_just_kth
     src/databases/utxoz_database.cpp
     src/databases/history_entry.cpp
     src/databases/transaction_entry.cpp
-    src/databases/transaction_unconfirmed_entry.cpp
 
     # Flat file block storage
     src/flat_file_seq.cpp
@@ -150,7 +149,6 @@ set(kth_headers
   include/kth/database/databases/internal_database.ipp
   include/kth/database/databases/reorg_database.ipp
   include/kth/database/databases/internal_database.hpp
-  include/kth/database/databases/transaction_unconfirmed_database.ipp
   include/kth/database/databases/transaction_entry.hpp
   include/kth/database/databases/history_database.ipp
   include/kth/database/databases/history_entry.hpp
@@ -159,7 +157,6 @@ set(kth_headers
   include/kth/database/databases/tools.hpp
   include/kth/database/databases/lmdb_helper.hpp
   include/kth/database/databases/result_code.hpp
-  include/kth/database/databases/transaction_unconfirmed_entry.hpp
   include/kth/database/databases/header_abla_entry.hpp
   include/kth/database/databases/utxo_entry.hpp
   include/kth/database/databases/utxoz_database.hpp

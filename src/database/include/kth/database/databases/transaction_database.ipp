@@ -51,13 +51,6 @@ result_code internal_database_basis<Clock>::insert_transactions(I f, I l, uint32
             return res;
         }
 
-        //remove unconfirmed transaction if exists
-        //TODO (Mario): don't recalculate tx.hash
-        res = remove_transaction_unconfirmed(tx.hash(), db_txn);
-        if (res != result_code::success && res != result_code::key_not_found) {
-            return res;
-        }
-
         ++f;
         ++pos;
         ++id;

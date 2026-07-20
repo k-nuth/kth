@@ -133,10 +133,6 @@ struct KB_API settings {
     bool bip147 = true;
 #endif //KTH_CURRENCY_BCH
 
-#if defined(KTH_WITH_MEMPOOL)
-    size_t mempool_max_template_size = mining::mempool::max_template_size_default;
-    size_t mempool_size_multiplier = mining::mempool::mempool_size_multiplier_default;
-#endif
 
 };
 

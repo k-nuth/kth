@@ -74,10 +74,6 @@ public:
     // code push(domain::chain::block const& block, size_t height);
     // code push_block_fast(domain::chain::block const& block, size_t height);
 
-    /// Add an unconfirmed tx to the store (without indexing).
-    /// Returns unspent_duplicate if existing unspent hash duplicate exists.
-    code push(domain::chain::transaction const& tx, uint32_t height);
-
     /// Push a header for headers-first sync (without full block data).
     /// Returns store_block_invalid_height if height is not the current top + 1.
     code push_header(domain::chain::header const& header, size_t height);

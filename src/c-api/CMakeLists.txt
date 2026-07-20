@@ -16,15 +16,9 @@ option(ENABLE_SHARED_CAPI "" ON)
 option(ENABLE_POSITION_INDEPENDENT_CODE "Enable POSITION_INDEPENDENT_CODE property" ON)
 option(WITH_CONSOLE "Compile console application." ON)
 option(WITH_CONSOLE_CAPI "Compile console application." ON)
-option(WITH_MEMPOOL "Mempool enabled." OFF)
 option(DB_READONLY_MODE "Readonly DB mode enabled." OFF)
 
 option(GLOBAL_BUILD "" ON)
-
-if (WITH_MEMPOOL)
-  message(STATUS "Knuth: Mempool enabled")
-  add_definitions(-DKTH_WITH_MEMPOOL)
-endif()
 
 if (DB_READONLY_MODE)
   message(STATUS "Knuth: Readonly DB mode enabled")

@@ -67,10 +67,6 @@ Target blockchain_settings_to_common(Source const& x) {
     res.bip147 = x.bip147;
 #endif //KTH_CURRENCY_BCH
 
-#if defined(KTH_WITH_MEMPOOL)
-    res.mempool_max_template_size = x.mempool_max_template_size;
-    res.mempool_size_multiplier = x.mempool_size_multiplier;
-#endif
 
     return res;
 }

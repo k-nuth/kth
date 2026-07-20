@@ -28,9 +28,7 @@
 #include <kth/blockchain/pools/block_pool.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/pools/header_organizer.hpp>
-#include <kth/blockchain/pools/transaction_entry.hpp>
 #include <kth/blockchain/pools/transaction_organizer.hpp>
-#include <kth/blockchain/pools/transaction_pool.hpp>
 #include <kth/blockchain/populate/populate_base.hpp>
 #include <kth/blockchain/populate/populate_block.hpp>
 #include <kth/blockchain/populate/populate_chain_state.hpp>
