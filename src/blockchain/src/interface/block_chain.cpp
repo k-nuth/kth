@@ -20,6 +20,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include <kth/blockchain/pools/mempool_config.hpp>
 #include <kth/blockchain/populate/populate_chain_state.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/database.hpp>
@@ -121,6 +122,7 @@ block_chain::block_chain(blockchain::settings const& chain_settings,
     , block_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings, network, relay_transactions)
 {
     spdlog::debug("[blockchain] block_chain constructor completed successfully");
+    spdlog::info("[blockchain] Mempool backend: {}", mempool_backend_name);
 }
 
 block_chain::~block_chain() {

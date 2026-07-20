@@ -59,6 +59,7 @@ class KthRecipe(KnuthConanFileV2):
         "march_id": ["ANY"],
         "march_strategy": ["download_if_possible", "optimized", "download_or_fail"],
         "currency": ['BCH', 'BTC', 'LTC'],
+        "mempool_backend": ['cfm', 'parlay'],
         "verbose": [True, False],
         "consensus": [True, False],
         "db": ['dynamic'],
@@ -103,6 +104,7 @@ class KthRecipe(KnuthConanFileV2):
         "console": False,
         "march_strategy": "download_if_possible",
         "currency": "BCH",
+        "mempool_backend": "cfm",
         "verbose": False,
         "consensus": True,
         "db": "dynamic",
@@ -326,6 +328,7 @@ class KthRecipe(KnuthConanFileV2):
         # Secp256k1 -------------------------------------------- (END)
 
         tc.variables["CURRENCY"] = self.options.currency
+        tc.variables["KTH_MEMPOOL_BACKEND"] = self.options.mempool_backend
 
         # Header index capacity based on compilation year
         header_capacity = _calculate_header_capacity(datetime.now().year)
@@ -363,6 +366,9 @@ class KthRecipe(KnuthConanFileV2):
 
         # Define currency macro based on option
         currency_define = f"KTH_CURRENCY_{self.options.currency}"
+
+        # Define mempool-backend macro based on option (cfm | parlay)
+        mempool_backend_define = f"KTH_MEMPOOL_BACKEND_{str(self.options.mempool_backend).upper()}"
 
         # Define STATIC macros when building static libraries
         static_defines = []
@@ -468,7 +474,7 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["blockchain"].libs = ["blockchain"]
         self.cpp_info.components["blockchain"].names["cmake_find_package"] = "blockchain"
         self.cpp_info.components["blockchain"].names["cmake_find_package_multi"] = "blockchain"
-        self.cpp_info.components["blockchain"].defines = [currency_define] + static_defines
+        self.cpp_info.components["blockchain"].defines = [currency_define, mempool_backend_define] + static_defines
         # Blockchain depends on database and optionally consensus
         blockchain_requires = ["database"]
         if self.options.consensus:
@@ -488,7 +494,7 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["node"].libs = ["node"]
         self.cpp_info.components["node"].names["cmake_find_package"] = "node"
         self.cpp_info.components["node"].names["cmake_find_package_multi"] = "node"
-        self.cpp_info.components["node"].defines = [currency_define] + static_defines
+        self.cpp_info.components["node"].defines = [currency_define, mempool_backend_define] + static_defines
         # Node depends on blockchain and optionally network (if not Emscripten).
         # ftxui is consumed by the node-exe TUI dashboard (executable, not a
         # library component); listing it here keeps Conan 2's strict
@@ -508,7 +514,7 @@ class KthRecipe(KnuthConanFileV2):
                 self.cpp_info.components["node-exe"].libs = node_exe_libs
                 self.cpp_info.components["node-exe"].names["cmake_find_package"] = "node-exe"
                 self.cpp_info.components["node-exe"].names["cmake_find_package_multi"] = "node-exe"
-                self.cpp_info.components["node-exe"].defines = [currency_define] + static_defines
+                self.cpp_info.components["node-exe"].defines = [currency_define, mempool_backend_define] + static_defines
                 self.cpp_info.components["node-exe"].requires = ["node"]
         except:
             # If collect_libs fails or node-exe is not built, skip it
@@ -522,7 +528,7 @@ class KthRecipe(KnuthConanFileV2):
                 self.cpp_info.components["c-api"].libs = c_api_libs
                 self.cpp_info.components["c-api"].names["cmake_find_package"] = "c-api"
                 self.cpp_info.components["c-api"].names["cmake_find_package_multi"] = "c-api"
-                self.cpp_info.components["c-api"].defines = [currency_define] + static_defines
+                self.cpp_info.components["c-api"].defines = [currency_define, mempool_backend_define] + static_defines
                 self.cpp_info.components["c-api"].requires = ["node"]
         except:
             # If collect_libs fails or c-api is not built, skip it
