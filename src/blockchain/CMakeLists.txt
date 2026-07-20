@@ -59,6 +59,8 @@ if (${KTH_MEMPOOL_BACKEND} STREQUAL "cfm")
   add_definitions(-DKTH_MEMPOOL_BACKEND_CFM)
 elseif (${KTH_MEMPOOL_BACKEND} STREQUAL "parlay")
   add_definitions(-DKTH_MEMPOOL_BACKEND_PARLAY)
+  # Vendored, header-only; SYSTEM so its deprecation warnings stay out of KTH.
+  include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/parlayhash/include)
 else()
   message(FATAL_ERROR "Invalid mempool backend: ${KTH_MEMPOOL_BACKEND} (expected cfm|parlay)")
 endif()
@@ -177,6 +179,7 @@ set(kth_sources_just_legacy
   src/pools/branch.cpp
   src/pools/header_organizer.cpp
   src/pools/transaction_organizer.cpp
+  src/pools/mempool.cpp
   src/pools/mempool_transaction_summary.cpp
   src/populate/populate_base.cpp
   src/populate/populate_block.cpp
@@ -220,7 +223,11 @@ set(kth_headers
   include/kth/blockchain/validate/validate_input.hpp
   include/kth/blockchain/validate/validate_transaction.hpp
   include/kth/blockchain/pools/block_entry.hpp
+  include/kth/blockchain/pools/mempool.hpp
   include/kth/blockchain/pools/mempool_config.hpp
+  include/kth/blockchain/pools/mempool_hashers.hpp
+  include/kth/blockchain/pools/mempool_map.hpp
+  include/kth/blockchain/pools/mempool_stats.hpp
   include/kth/blockchain/pools/mempool_transaction_summary.hpp
   include/kth/blockchain/pools/block_organizer.hpp
   include/kth/blockchain/pools/branch.hpp
@@ -287,6 +294,7 @@ if (ENABLE_TEST)
         test/block_pool.cpp
         test/branch.cpp
         test/validate_transaction.cpp
+        test/mempool_test.cpp
     )
 
     # Disabled until ported to v1.0 APIs:
