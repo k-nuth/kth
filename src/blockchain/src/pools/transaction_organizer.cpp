@@ -301,14 +301,6 @@ void transaction_organizer::unsubscribe_ds_proof(ds_proof_broadcaster::channel_p
 // Queries.
 //-----------------------------------------------------------------------------
 
-awaitable_expected<std::pair<merkle_block_ptr, size_t>>
-transaction_organizer::fetch_template() const {
-    // TODO(mempool): block-template assembly (GBT) needs the new mempool.
-    // The old transaction_pool stub was removed; wire this to the rebuilt
-    // fee-prioritized mempool once it lands.
-    co_return std::unexpected(error::not_implemented);
-}
-
 awaitable_expected<inventory_ptr>
 transaction_organizer::fetch_mempool(size_t maximum) const {
     // TODO(mempool): serve the P2P `mempool` message from the new mempool.

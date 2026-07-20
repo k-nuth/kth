@@ -29,6 +29,7 @@
 #include <kth/blockchain/header_index.hpp>
 #include <kth/blockchain/pools/block_organizer.hpp>
 #include <kth/blockchain/pools/branch.hpp>
+#include <kth/blockchain/pools/block_template.hpp>
 #include <kth/blockchain/pools/mempool.hpp>
 #include <kth/blockchain/pools/mempool_transaction_summary.hpp>
 #include <kth/blockchain/pools/transaction_organizer.hpp>
@@ -390,7 +391,7 @@ struct KB_API block_chain {
     // MEMPOOL / TRANSACTION POOL
     // =========================================================================
 
-    [[nodiscard]] awaitable_expected<std::pair<merkle_block_ptr, size_t>>
+    [[nodiscard]] awaitable_expected<blockchain::block_template>
     fetch_template() const;
 
     [[nodiscard]] awaitable_expected<inventory_ptr>

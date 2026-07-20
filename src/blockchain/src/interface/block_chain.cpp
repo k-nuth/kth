@@ -1476,9 +1476,22 @@ block_chain::fetch_ds_proof(hash_digest const& hash) const {
 // Tracked in issue #491.
 // ############################################################################
 
-awaitable_expected<std::pair<merkle_block_ptr, size_t>>
+awaitable_expected<blockchain::block_template>
 block_chain::fetch_template() const {
-    mempool_not_implemented("block_chain::fetch_template");
+    if (stopped()) {
+        co_return std::unexpected(error::service_stopped);
+    }
+
+    auto const state = chain_state();
+    if ( ! state) {
+        co_return std::unexpected(error::not_found);
+    }
+
+    co_return build_block_template(mempool_, block_template_context{
+        state->dynamic_max_block_size(),
+        state->dynamic_max_block_sigchecks(),
+        state->height(),
+        state->median_time_past()});
 }
 
 awaitable_expected<inventory_ptr>
