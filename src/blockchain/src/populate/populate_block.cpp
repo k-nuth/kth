@@ -26,16 +26,9 @@ using namespace kd::machine;
 
 // Database access is limited to calling populate_base.
 
-#if defined(KTH_WITH_MEMPOOL)
-populate_block::populate_block(executor_type executor, size_t threads, block_chain const& chain, bool relay_transactions, mining::mempool const& mp)
-#else
 populate_block::populate_block(executor_type executor, size_t threads, block_chain const& chain, bool relay_transactions)
-#endif
     : populate_base(std::move(executor), threads, chain)
     , relay_transactions_(relay_transactions)
-#if defined(KTH_WITH_MEMPOOL)
-    , mempool_(mp)
-#endif
 {}
 
 ::asio::awaitable<code> populate_block::populate(branch::const_ptr branch) const {
@@ -66,9 +59,6 @@ populate_block::populate_block(executor_type executor, size_t threads, block_cha
 
     auto branch_utxo = create_branch_utxo_set(branch);
 
-#if defined(KTH_WITH_MEMPOOL)
-    auto validated_txs = mempool_.get_validated_txs_high();
-#endif
 
     //-------------------------------------------------------------------------
     // Serial pre-pass: all tx.validation flag writes.
@@ -88,11 +78,6 @@ populate_block::populate_block(executor_type executor, size_t threads, block_cha
             if (relay_transactions_) {
                 populate_base::populate_pooled(tx, state->height());
             }
-#if defined(KTH_WITH_MEMPOOL)
-            if (validated_txs.find(tx.hash()) != validated_txs.end()) {
-                chain_.transaction_validations().mutate(tx.hash(), [](auto& tv){ tv.validated = true; });
-            }
-#endif
         }
     }
 
@@ -102,17 +87,10 @@ populate_block::populate_block(executor_type executor, size_t threads, block_cha
 
     // Launch parallel tasks
     for (size_t bucket = 0; bucket < buckets; ++bucket) {
-#if defined(KTH_WITH_MEMPOOL)
-        ::asio::post(executor_, [this, branch, bucket, buckets, branch_utxo, validated_txs, channel]() {
-            auto result = populate_transactions_sync(branch, bucket, buckets, branch_utxo, validated_txs);
-            channel->try_send(std::error_code{}, result);
-        });
-#else
         ::asio::post(executor_, [this, branch, bucket, buckets, branch_utxo, channel]() {
             auto result = populate_transactions_sync(branch, bucket, buckets, branch_utxo);
             channel->try_send(std::error_code{}, result);
         });
-#endif
     }
 
     // Wait for all results - return first error or success if all succeed
@@ -209,11 +187,7 @@ void populate_block::populate_transaction_inputs(branch::const_ptr branch, domai
     }
 }
 
-#if defined(KTH_WITH_MEMPOOL)
-code populate_block::populate_transactions_sync(branch::const_ptr branch, size_t bucket, size_t buckets, local_utxo_set_t const& branch_utxo, mining::mempool::hash_index_t const& validated_txs) const {
-#else
 code populate_block::populate_transactions_sync(branch::const_ptr branch, size_t bucket, size_t buckets, local_utxo_set_t const& branch_utxo) const {
-#endif
     KTH_ASSERT(bucket < buckets);
     auto const block = branch->top();
     auto const branch_height = branch->height();
@@ -233,21 +207,8 @@ code populate_block::populate_transactions_sync(branch::const_ptr branch, size_t
     // Must skip coinbase here as it is already accounted for.
     for (auto tx = txs.begin() + 1; tx != txs.end(); ++tx) {
 
-#if defined(KTH_WITH_MEMPOOL)
-        auto it = validated_txs.find(tx->hash());
-        if (it == validated_txs.end()) {
-            auto const& inputs = tx->inputs();
-            populate_transaction_inputs(branch, inputs, bucket, buckets, input_position, branch_utxo, first_height, chain_top, reorg_subset);
-        } else {
-            auto const& tx_cached = it->second.second;
-            for (size_t i = 0; i < tx_cached.inputs().size(); ++i) {
-                tx->inputs()[i].previous_output().validation = tx_cached.inputs()[i].previous_output().validation;
-            }
-        }
-#else
         auto const& inputs = tx->inputs();
         populate_transaction_inputs(branch, inputs, bucket, buckets, input_position, branch_utxo, first_height, chain_top, reorg_subset);
-#endif // defined(KTH_WITH_MEMPOOL)
     }
 
     return error::success;

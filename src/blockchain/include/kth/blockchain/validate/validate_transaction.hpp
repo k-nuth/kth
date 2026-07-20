@@ -17,9 +17,6 @@
 #include <asio/any_io_executor.hpp>
 #include <asio/awaitable.hpp>
 
-#if defined(KTH_WITH_MEMPOOL)
-#include <kth/mining/mempool.hpp>
-#endif
 
 namespace kth::blockchain {
 
@@ -30,11 +27,7 @@ struct block_chain;
 struct KB_API validate_transaction {
     using executor_type = ::asio::any_io_executor;
 
-#if defined(KTH_WITH_MEMPOOL)
-    validate_transaction(executor_type executor, size_t threads, block_chain const& chain, settings const& settings, mining::mempool const& mp);
-#else
     validate_transaction(executor_type executor, size_t threads, block_chain const& chain, settings const& settings);
-#endif
 
     void start();
     void stop();

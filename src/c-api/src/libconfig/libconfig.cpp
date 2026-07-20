@@ -20,11 +20,7 @@ kth_libconfig_t kth_libconfig_get() {
 
     res.currency = kth_node_settings_get_currency();
 
-#if defined(KTH_WITH_MEMPOOL)
-    res.mempool = 1;
-#else
     res.mempool = 0;
-#endif
 
 // #if defined(KTH_DB_NEW_FULL)
 //     res.db_mode = kth_libconfig_db_mode_full_indexed;

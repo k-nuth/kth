@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <expected>
 #include <functional>
 #include <latch>
@@ -70,11 +71,6 @@ struct hash<kth::blockchain::spent_value_type> {
 
 namespace kth {
 
-#if defined(KTH_WITH_MEMPOOL)
-namespace mining {
-mempool* mempool::candidate_index_t::parent_ = nullptr;
-} // namespace mining
-#endif
 
 namespace blockchain {
 
@@ -82,6 +78,25 @@ using namespace kd::config;
 using namespace kd::message;
 using namespace kth::database;
 using namespace std::placeholders;
+
+namespace {
+
+// TODO(mempool): KTH has no working mempool. The abandoned mining::mempool and
+// the LMDB "transaction unconfirmed" storage that used to back the mempool
+// queries and the tx sink have been removed to rebuild the mempool from
+// scratch (concurrent hashmap + on-disk persistence). Until it lands, every
+// mempool read/query and the tx sink abort loudly instead of silently
+// returning wrong (empty) results. Tracked in issue #491.
+[[noreturn]]
+void mempool_not_implemented(char const* fn) {
+    spdlog::critical(
+        "[blockchain] {} was called but the mempool is not implemented "
+        "(the LMDB unconfirmed-tx path was removed pending the new mempool; "
+        "see TODO / issue #491). Aborting.", fn);
+    std::abort();
+}
+
+} // anonymous namespace
 
 #define NAME "block_chain"
 
@@ -102,14 +117,8 @@ block_chain::block_chain(blockchain::settings const& chain_settings,
     , database_(database_settings)
     , validation_mutex_(relay_transactions)
     , priority_pool_("priority", std::min(size_t(8), thread_ceiling(chain_settings.cores)))
-#if defined(KTH_WITH_MEMPOOL)
-    , mempool_(chain_settings.mempool_max_template_size, chain_settings.mempool_size_multiplier)
-    , transaction_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings, mempool_)
-    , block_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings, network, relay_transactions, mempool_)
-#else
     , transaction_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings)
     , block_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings, network, relay_transactions)
-#endif
 {
     spdlog::debug("[blockchain] block_chain constructor completed successfully");
 }
@@ -632,8 +641,11 @@ awaitable_expected<block_const_ptr_list_ptr> block_chain::reorganize(
     co_return result;
 }
 
-code block_chain::push_sync(transaction_const_ptr tx) {
-    return database_.push(*tx, chain_state()->height());
+code block_chain::push_sync(transaction_const_ptr /*tx*/) {
+    // TODO(mempool): the tx sink used to write to the LMDB unconfirmed-tx
+    // store, which has been removed. Reimplement against the new mempool.
+    // See issue #491.
+    mempool_not_implemented("block_chain::push_sync");
 }
 
 bool block_chain::insert(block_const_ptr block, size_t height) {
@@ -803,11 +815,6 @@ std::filesystem::path block_chain::data_dir() const {
     return database_.internal_db_dir.parent_path();
 }
 
-#if defined(KTH_WITH_MEMPOOL)
-std::pair<std::vector<kth::mining::transaction_element>, uint64_t> block_chain::get_block_template() const {
-    return mempool_.get_block_template();
-}
-#endif
 
 // =============================================================================
 // DATABASE READERS (Low-level, NOT thread safe)
@@ -973,16 +980,11 @@ std::expected<std::pair<size_t, size_t>, database::result_code> block_chain::get
         return std::pair{result->height(), result->position()};
     }
 
-    if (require_confirmed) {
-        return std::unexpected(result.error());
-    }
-
-    auto const result2 = database_.internal_db().get_transaction_unconfirmed(hash);
-    if ( ! result2) {
-        return std::unexpected(result2.error());
-    }
-
-    return std::pair{result2->height(), position_max};
+    // No mempool: only confirmed transactions are stored, so an unconfirmed
+    // lookup can never succeed. TODO(mempool): consult the new mempool when
+    // require_confirmed is false. See issue #491.
+    (void)require_confirmed;
+    return std::unexpected(result.error());
 }
 
 // =============================================================================
@@ -1217,20 +1219,11 @@ block_chain::fetch_transaction(hash_digest const& hash, bool require_confirmed) 
         };
     }
 
-    if (require_confirmed) {
-        co_return std::unexpected(error::not_found);
-    }
-
-    auto const result2 = database_.internal_db().get_transaction_unconfirmed(hash);
-    if ( ! result2) {
-        co_return std::unexpected(error::not_found);
-    }
-
-    co_return std::tuple{
-        std::make_shared<const transaction>(result2->transaction()),
-        position_max,
-        result2->height()
-    };
+    // No mempool: unconfirmed transactions are not stored.
+    // TODO(mempool): consult the new mempool when require_confirmed is false.
+    // See issue #491.
+    (void)require_confirmed;
+    co_return std::unexpected(error::not_found);
 }
 
 awaitable_expected<std::pair<size_t, size_t>>
@@ -1244,30 +1237,16 @@ block_chain::fetch_transaction_position(hash_digest const& hash, bool require_co
         co_return std::pair{result->position(), result->height()};
     }
 
-    if (require_confirmed) {
-        co_return std::unexpected(error::not_found);
-    }
-
-    auto const result2 = database_.internal_db().get_transaction_unconfirmed(hash);
-    if ( ! result2) {
-        co_return std::unexpected(error::not_found);
-    }
-
-    co_return std::pair{position_max, result2->height()};
+    // No mempool: unconfirmed transactions are not stored.
+    // TODO(mempool): consult the new mempool when require_confirmed is false.
+    // See issue #491.
+    (void)require_confirmed;
+    co_return std::unexpected(error::not_found);
 }
 
 awaitable_expected<transaction_const_ptr>
-block_chain::fetch_unconfirmed_transaction(hash_digest const& hash) const {
-    if (stopped()) {
-        co_return std::unexpected(error::service_stopped);
-    }
-
-    auto const result = database_.internal_db().get_transaction_unconfirmed(hash);
-    if ( ! result) {
-        co_return std::unexpected(error::not_found);
-    }
-
-    co_return std::make_shared<const transaction>(result->transaction());
+block_chain::fetch_unconfirmed_transaction(hash_digest const& /*hash*/) const {
+    mempool_not_implemented("block_chain::fetch_unconfirmed_transaction");
 }
 
 // Modified to use get_header instead of get_block (blocks now in flat files)
@@ -1467,215 +1446,52 @@ block_chain::fetch_ds_proof(hash_digest const& hash) const {
 // MEMPOOL / TRANSACTION POOL
 // =============================================================================
 
+// ############################################################################
+// TODO(mempool): KTH has no working mempool. The abandoned mining::mempool and
+// the LMDB "transaction unconfirmed" storage that used to back these queries
+// have been removed to rebuild the mempool from scratch (concurrent hashmap +
+// on-disk persistence). Until the new mempool lands, every mempool read/query
+// and the tx sink abort loudly (via mempool_not_implemented, defined near the
+// top of this file) instead of silently returning wrong (empty) results.
+// Tracked in issue #491.
+// ############################################################################
+
 awaitable_expected<std::pair<merkle_block_ptr, size_t>>
 block_chain::fetch_template() const {
-    co_return co_await transaction_organizer_.fetch_template();
+    mempool_not_implemented("block_chain::fetch_template");
 }
 
 awaitable_expected<inventory_ptr>
-block_chain::fetch_mempool(size_t count_limit, uint64_t /*minimum_fee*/) const {
-    co_return co_await transaction_organizer_.fetch_mempool(count_limit);
-}
-
-namespace {
-
-std::tuple<uint8_t, uint8_t> get_address_versions(bool use_testnet_rules) {
-    if (use_testnet_rules) {
-        return {
-            kth::domain::wallet::payment_address::testnet_p2kh,
-            kth::domain::wallet::payment_address::testnet_p2sh};
-    }
-    return {
-        kth::domain::wallet::payment_address::mainnet_p2kh,
-        kth::domain::wallet::payment_address::mainnet_p2sh};
-}
-
-} // anonymous namespace
-
-std::vector<mempool_transaction_summary> block_chain::get_mempool_transactions(
-    std::vector<std::string> const& payment_addresses, bool use_testnet_rules) const {
-
-    auto const [encoding_p2kh, encoding_p2sh] = get_address_versions(use_testnet_rules);
-
-    std::vector<mempool_transaction_summary> ret;
-
-    std::unordered_set<kth::domain::wallet::payment_address> addrs;
-    for (auto const& payment_address : payment_addresses) {
-        if (auto address = kth::domain::wallet::payment_address::parse_from(payment_address); address) {
-            addrs.insert(*address);
-        }
-    }
-
-    auto const result = database_.internal_db().get_all_transaction_unconfirmed();
-    if ( ! result) {
-        return ret;
-    }
-
-    for (auto const& tx_res : *result) {
-        auto const& tx = tx_res.transaction();
-        size_t i = 0;
-
-        for (auto const& output : tx.outputs()) {
-            auto const tx_addresses = kth::domain::wallet::payment_address::extract(
-                output.script(), encoding_p2kh, encoding_p2sh);
-            for (auto const tx_address : tx_addresses) {
-                if (addrs.find(tx_address) != addrs.end()) {
-                    ret.push_back(mempool_transaction_summary(
-                        tx_address.encoded_cashaddr(false), kth::encode_hash(tx.hash()), "",
-                        "", std::to_string(output.value()), i, tx_res.arrival_time()));
-                }
-            }
-            ++i;
-        }
-
-        i = 0;
-        for (auto const& input : tx.inputs()) {
-            auto const tx_addresses = kth::domain::wallet::payment_address::extract(
-                input.script(), encoding_p2kh, encoding_p2sh);
-            for (auto const tx_address : tx_addresses) {
-                if (addrs.find(tx_address) != addrs.end()) {
-                    auto const prev_tx = database_.internal_db().get_transaction(
-                        input.previous_output().hash(), max_size_t);
-                    if (prev_tx) {
-                        ret.push_back(mempool_transaction_summary(
-                            tx_address.encoded_cashaddr(false),
-                            kth::encode_hash(tx.hash()),
-                            kth::encode_hash(input.previous_output().hash()),
-                            std::to_string(input.previous_output().index()),
-                            "-" + std::to_string(prev_tx->transaction().outputs()[input.previous_output().index()].value()),
-                            i, tx_res.arrival_time()));
-                    }
-                }
-            }
-            ++i;
-        }
-    }
-
-    return ret;
+block_chain::fetch_mempool(size_t /*count_limit*/, uint64_t /*minimum_fee*/) const {
+    mempool_not_implemented("block_chain::fetch_mempool");
 }
 
 std::vector<mempool_transaction_summary> block_chain::get_mempool_transactions(
-    std::string const& payment_address, bool use_testnet_rules) const {
-    return get_mempool_transactions(std::vector<std::string>{payment_address}, use_testnet_rules);
+    std::vector<std::string> const& /*payment_addresses*/, bool /*use_testnet_rules*/) const {
+    mempool_not_implemented("block_chain::get_mempool_transactions");
+}
+
+std::vector<mempool_transaction_summary> block_chain::get_mempool_transactions(
+    std::string const& /*payment_address*/, bool /*use_testnet_rules*/) const {
+    mempool_not_implemented("block_chain::get_mempool_transactions");
 }
 
 std::vector<domain::chain::transaction> block_chain::get_mempool_transactions_from_wallets(
-    std::vector<domain::wallet::payment_address> const& payment_addresses,
-    bool use_testnet_rules) const {
-
-    auto const [encoding_p2kh, encoding_p2sh] = get_address_versions(use_testnet_rules);
-
-    std::vector<domain::chain::transaction> ret;
-    auto const result = database_.internal_db().get_all_transaction_unconfirmed();
-    if ( ! result) {
-        return ret;
-    }
-
-    for (auto const& tx_res : *result) {
-        auto const& tx = tx_res.transaction();
-        bool inserted = false;
-
-        for (auto iter_output = tx.outputs().begin();
-             iter_output != tx.outputs().end() && !inserted; ++iter_output) {
-
-            auto const tx_addresses = kth::domain::wallet::payment_address::extract(
-                iter_output->script(), encoding_p2kh, encoding_p2sh);
-
-            for (auto iter_addr = tx_addresses.begin();
-                 iter_addr != tx_addresses.end() && !inserted; ++iter_addr) {
-                auto it = std::find(payment_addresses.begin(), payment_addresses.end(), *iter_addr);
-                if (it != payment_addresses.end()) {
-                    ret.push_back(tx);
-                    inserted = true;
-                }
-            }
-        }
-
-        for (auto iter_input = tx.inputs().begin();
-             iter_input != tx.inputs().end() && !inserted; ++iter_input) {
-
-            auto const tx_addresses = kth::domain::wallet::payment_address::extract(
-                iter_input->script(), encoding_p2kh, encoding_p2sh);
-
-            for (auto iter_addr = tx_addresses.begin();
-                 iter_addr != tx_addresses.end() && !inserted; ++iter_addr) {
-                auto it = std::find(payment_addresses.begin(), payment_addresses.end(), *iter_addr);
-                if (it != payment_addresses.end()) {
-                    ret.push_back(tx);
-                    inserted = true;
-                }
-            }
-        }
-    }
-
-    return ret;
+    std::vector<domain::wallet::payment_address> const& /*payment_addresses*/,
+    bool /*use_testnet_rules*/) const {
+    mempool_not_implemented("block_chain::get_mempool_transactions_from_wallets");
 }
 
 block_chain::mempool_mini_hash_map block_chain::get_mempool_mini_hash_map(
-    domain::message::compact_block const& block) const {
-
-    if (stopped()) {
-        return mempool_mini_hash_map();
-    }
-
-    auto header_hash = hash(block);
-    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash);
-    auto k1 = from_little_endian_unsafe<uint64_t>(std::span{header_hash}.subspan(sizeof(uint64_t)));
-
-    mempool_mini_hash_map mempool;
-    auto const result = database_.internal_db().get_all_transaction_unconfirmed();
-    if ( ! result) {
-        return mempool;
-    }
-
-    for (auto const& tx_res : *result) {
-        auto const& tx = tx_res.transaction();
-        auto sh = sip_hash_uint256(k0, k1, tx.hash());
-        mini_hash short_id;
-        mempool.emplace(short_id, tx);
-    }
-
-    return mempool;
+    domain::message::compact_block const& /*block*/) const {
+    mempool_not_implemented("block_chain::get_mempool_mini_hash_map");
 }
 
-void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const& block,
-                                            size_t& mempool_count,
-                                            std::vector<domain::chain::transaction>& txn_available,
-                                            std::unordered_map<uint64_t, uint16_t> const& shorttxids) const {
-
-    std::vector<bool> have_txn(txn_available.size());
-
-    auto header_hash = hash(block);
-    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash);
-    auto k1 = from_little_endian_unsafe<uint64_t>(std::span{header_hash}.subspan(sizeof(uint64_t)));
-
-    auto const result = database_.internal_db().get_all_transaction_unconfirmed();
-    if ( ! result) {
-        return;
-    }
-
-    for (auto const& tx_res : *result) {
-        auto const& tx = tx_res.transaction();
-
-        uint64_t shortid = sip_hash_uint256(k0, k1, tx.hash()) & uint64_t(0xffffffffffff);
-
-        auto idit = shorttxids.find(shortid);
-        if (idit != shorttxids.end()) {
-            if ( ! have_txn[idit->second]) {
-                txn_available[idit->second] = tx;
-                have_txn[idit->second] = true;
-                ++mempool_count;
-            } else {
-                // A second transaction maps to the same short id, so the slot
-                // is ambiguous and gets cleared. A cleared slot holds the null
-                // transaction, so clear (and decrement) only once.
-                if ( ! txn_available[idit->second].is_null()) {
-                    txn_available[idit->second] = domain::chain::transaction::null();
-                    --mempool_count;
-                }
-            }
-        }
-    }
+void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const& /*block*/,
+                                            size_t& /*mempool_count*/,
+                                            std::vector<domain::chain::transaction>& /*txn_available*/,
+                                            std::unordered_map<uint64_t, uint16_t> const& /*shorttxids*/) const {
+    mempool_not_implemented("block_chain::fill_tx_list_from_mempool");
 }
 
 // =============================================================================
@@ -1702,23 +1518,10 @@ void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const
         co_return error::service_stopped;
     }
 
-#if defined(KTH_WITH_MEMPOOL)
-    auto validated_txs = mempool_.get_validated_txs_low();
-
-    if (validated_txs.empty()) {
-        co_return error::success;
-    }
-
-    message->erase_if([&validated_txs](auto const& inv) {
-        return inv.is_transaction_type() &&
-               validated_txs.find(inv.hash()) != validated_txs.end();
-    });
-#else
     message->erase_if([this](auto const& inv) {
         return inv.is_transaction_type() &&
                get_transaction_position(inv.hash(), false);
     });
-#endif
 
     co_return error::success;
 }

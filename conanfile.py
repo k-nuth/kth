@@ -60,7 +60,6 @@ class KthRecipe(KnuthConanFileV2):
         "march_strategy": ["download_if_possible", "optimized", "download_or_fail"],
         "currency": ['BCH', 'BTC', 'LTC'],
         "verbose": [True, False],
-        "mempool": [True, False],
         "consensus": [True, False],
         "db": ['dynamic'],
         "db_readonly": [True, False],
@@ -105,7 +104,6 @@ class KthRecipe(KnuthConanFileV2):
         "march_strategy": "download_if_possible",
         "currency": "BCH",
         "verbose": False,
-        "mempool": False,
         "consensus": True,
         "db": "dynamic",
         "db_readonly": False,
@@ -265,9 +263,6 @@ class KthRecipe(KnuthConanFileV2):
         self.options["*"].db_readonly = self.options.db_readonly
         self.output.info("Compiling with read-only DB: %s" % (self.options.db_readonly,))
 
-        self.options["*"].mempool = self.options.mempool
-        self.output.info("Compiling with mempool: %s" % (self.options.mempool,))
-
     def package_id(self):
         KnuthConanFileV2.package_id(self)
 
@@ -289,7 +284,6 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["WITH_CONSOLE"] = option_on_off(self.options.console)
         tc.variables["WITH_CONSOLE_CAPI"] = option_on_off(self.options.console)
 
-        tc.variables["WITH_MEMPOOL"] = option_on_off(self.options.mempool)
         tc.variables["WITH_CONSENSUS"] = option_on_off(self.options.consensus)
         tc.variables["DB_READONLY_MODE"] = option_on_off(self.options.db_readonly)
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)

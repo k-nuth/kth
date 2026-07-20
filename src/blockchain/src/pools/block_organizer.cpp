@@ -33,27 +33,16 @@ using namespace kd::config;
 // block: { bits, version, timestamp }
 // transaction: { exists, height, output }
 
-#if defined(KTH_WITH_MEMPOOL)
-block_organizer::block_organizer(prioritized_mutex& mutex, executor_type executor, size_t threads, threadpool& thread_pool, block_chain& chain, settings const& settings, domain::config::network network, bool relay_transactions, mining::mempool& mp)
-#else
 block_organizer::block_organizer(prioritized_mutex& mutex, executor_type executor, size_t threads, threadpool& thread_pool, block_chain& chain, settings const& settings, domain::config::network network, bool relay_transactions)
-#endif
     : chain_(chain)
     , mutex_(mutex)
     , stopped_(true)
     , executor_(std::move(executor))
     , threads_(threads)
     , block_pool_(settings.reorganization_limit, chain_.block_validations())
-#if defined(KTH_WITH_MEMPOOL)
-    , validator_(executor_, threads_, chain_, settings, network, relay_transactions, mp)
-#else
     , validator_(executor_, threads_, chain_, settings, network, relay_transactions)
-#endif
     , broadcaster_(executor_)
 
-#if defined(KTH_WITH_MEMPOOL)
-    , mempool_(mp)
-#endif
 {}
 
 // Properties.
@@ -252,9 +241,6 @@ bool block_organizer::stop() {
     block_pool_.prune(branch->top_height());
     block_pool_.add(out_blocks);
 
-#if defined(KTH_WITH_MEMPOOL)
-    organize_mempool(branch, branch->blocks(), out_blocks);
-#endif
 
     // v3 reorg block order is reverse of v2, branch.back() is the new top.
     notify(branch->height(), branch->blocks(), out_blocks);
@@ -295,156 +281,6 @@ bool block_organizer::is_branch_double_spend(branch::ptr const& branch) const {
     return !distinct;
 }
 
-#if defined(KTH_WITH_MEMPOOL)
-
-//TODO(fernando): similar function in populate_block class
-void block_organizer::populate_prevout_1(branch::const_ptr branch, domain::chain::output_point const& outpoint, bool require_confirmed) const {
-    // The previous output will be cached on the input's outpoint.
-    auto& prevout = outpoint.validation;
-
-    auto const branch_height = branch->height();
-
-    prevout.spent = false;
-    prevout.confirmed = false;
-    prevout.cache = domain::chain::output{};
-    prevout.from_mempool = false;
-
-    // If the input is a coinbase there is no prevout to populate.
-    if (outpoint.is_null()) {
-        return;
-    }
-
-    //TODO(fernando): check the value of the parameters: branch_height and require_confirmed
-    auto const utxo = chain_.get_utxo(outpoint, branch_height);
-    if ( ! utxo) {
-        // std::println("{}", "outpoint not found in UTXO: " << encode_hash(outpoint.hash()) << " - " << outpoint.index());
-        return;
-    }
-    prevout.cache = utxo->output;
-    prevout.height = utxo->height;
-    prevout.median_time_past = utxo->median_time_past;
-    prevout.coinbase = utxo->coinbase;
-
-    // BUGBUG: Spends are not marked as spent by unconfirmed transactions.
-    // So tx pool transactions currently have no double spend limitation.
-    // The output is spent only if by a spend at or below the branch height.
-    auto const spend_height = prevout.cache.validation.spender_height;
-
-    // The previous output has already been spent (double spend).
-    if ((spend_height <= branch_height) && (spend_height != output::validation_t::not_spent)) {
-        prevout.spent = true;
-        prevout.confirmed = true;
-        prevout.cache = domain::chain::output{};
-    }
-}
-
-//TODO(fernando): similar function in populate_block class
-void block_organizer::populate_prevout_2(branch::const_ptr branch, output_point const& outpoint, local_utxo_set_t const& branch_utxo) const {
-    if ( ! outpoint.validation.spent) {
-        branch->populate_spent(outpoint);
-    }
-
-    // Populate the previous output even if it is spent.
-    if ( ! outpoint.validation.cache.is_valid()) {
-        branch->populate_prevout(outpoint, branch_utxo);
-    }
-}
-
-//TODO(fernando): similar function in populate_block class
-void block_organizer::populate_transaction_inputs(branch::const_ptr branch, domain::chain::input::list const& inputs, local_utxo_set_t const& branch_utxo) const {
-    // auto const branch_height = branch->height();
-
-    for (auto const& input : inputs) {
-        auto const& prevout = input.previous_output();
-        populate_prevout_1(branch, prevout, true);            //Populate from Database
-        populate_prevout_2(branch, prevout, branch_utxo);     //Populate from the Blocks in the Branch
-    }
-}
-
-//TODO(fernando): similar function in populate_block class
-void block_organizer::populate_transactions(branch::const_ptr branch, domain::chain::block const& block, local_utxo_set_t const& branch_utxo) const {
-
-    auto const& txs = block.transactions();
-
-    // Must skip coinbase here as it is already accounted for.
-    for (auto tx = txs.begin() + 1; tx != txs.end(); ++tx) {
-        auto const& inputs = tx->inputs();
-        populate_transaction_inputs(branch, inputs, branch_utxo);
-    }
-}
-
-local_utxo_set_t create_outgoing_utxo_set(block_const_ptr_list_ptr const& outgoing_blocks) {
-    local_utxo_set_t res;
-    res.reserve(outgoing_blocks->size());
-
-    for (auto const& block : *outgoing_blocks) {
-        // std::println("{}", "create_branch_utxo_set - block: {" << encode_hash(block->hash()) << "}");
-        res.push_back(create_local_utxo_set(*block));
-    }
-
-    return res;
-}
-
-void block_organizer::organize_mempool(branch::const_ptr branch, block_const_ptr_list_const_ptr const& incoming_blocks, block_const_ptr_list_ptr const& outgoing_blocks) {
-
-    std::unordered_set<hash_digest> txs_in;
-    std::unordered_set<domain::chain::point> prevouts_in;
-
-    for (auto const& block : *incoming_blocks) {
-        if (block->transactions().size() > 1) {
-
-            //TODO(fernando): Remove!!!!
-            // std::println("src/blockchain/src/pools/block_organizer.cpp", "Arrive Block -------------------------------------------------------------------");
-            // std::println("src/blockchain/src/pools/block_organizer.cpp", encode_hash(block->hash()));
-            // std::println("src/blockchain/src/pools/block_organizer.cpp", "--------------------------------------------------------------------------------");
-
-
-            mempool_.remove(block->transactions().begin() + 1, block->transactions().end(), block->non_coinbase_input_count());
-
-            if ( ! chain_.is_stale() && ! outgoing_blocks->empty()) {
-                std::for_each(block->transactions().begin() + 1, block->transactions().end(), [&txs_in, &prevouts_in](domain::chain::transaction const& tx){
-                    txs_in.insert(tx.hash());
-
-                    for (auto const& input : tx.inputs()) {
-                        prevouts_in.insert(input.previous_output());
-                    }
-                });
-            }
-        }
-    }
-
-    if ( ! chain_.is_stale() && ! outgoing_blocks->empty()) {
-        auto branch_utxo = create_outgoing_utxo_set(outgoing_blocks);
-
-        for (auto const& block : *outgoing_blocks) {
-
-            // std::println("{}", "Inserting Block in Mempool: " << encode_hash(block->hash()));
-
-            if (block->transactions().size() > 1) {
-                std::for_each(block->transactions().begin() + 1, block->transactions().end(),
-                [this, branch, &txs_in, &prevouts_in, &branch_utxo](domain::chain::transaction const& tx) {
-                    auto it = txs_in.find(tx.hash());
-                    if (it == txs_in.end()) {
-
-
-                        auto double_spend = std::any_of(tx.inputs().begin(), tx.inputs().end(), [this, &prevouts_in](domain::chain::input const& in) {
-                            return prevouts_in.find(in.previous_output()) != prevouts_in.end();
-                        });
-
-                        if ( ! double_spend) {
-                            // Serial reorg re-add path (under the validation
-                            // mutex): safe to write the non-concurrent store.
-                            chain_.transaction_validations().mutate(tx.hash(), [this](auto& tv){ tv.state = chain_.chain_state(); });
-                            populate_transaction_inputs(branch, tx.inputs(), branch_utxo);
-                            mempool_.add(tx);       //TODO(fernando): add bulk
-                        }
-                    }
-                });
-            }
-        }
-    }
-}
-#endif // defined(KTH_WITH_MEMPOOL)
 
 // Subscription.
 //-----------------------------------------------------------------------------

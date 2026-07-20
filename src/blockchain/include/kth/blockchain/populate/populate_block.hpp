@@ -15,9 +15,6 @@
 
 #include <asio/awaitable.hpp>
 
-#if defined(KTH_WITH_MEMPOOL)
-#include <kth/mining/mempool.hpp>
-#endif
 
 namespace kth::blockchain {
 
@@ -29,11 +26,7 @@ struct KB_API populate_block : populate_base {
 public:
     using utxo_pool_t = database::internal_database::utxo_pool_t;
 
-#if defined(KTH_WITH_MEMPOOL)
-    populate_block(executor_type executor, size_t threads, block_chain const& chain, bool relay_transactions, mining::mempool const& mp);
-#else
     populate_block(executor_type executor, size_t threads, block_chain const& chain, bool relay_transactions);
-#endif
 
     /// Populate validation state for the top block.
     [[nodiscard]]
@@ -48,20 +41,13 @@ protected:
     void populate_from_reorg_subset(domain::chain::output_point const& outpoint, utxo_pool_t const& reorg_subset) const;
     void populate_transaction_inputs(branch::const_ptr branch, domain::chain::input::list const& inputs, size_t bucket, size_t buckets, size_t input_position, local_utxo_set_t const& branch_utxo, size_t first_height, size_t chain_top, utxo_pool_t const& reorg_subset) const;
 
-#if defined(KTH_WITH_MEMPOOL)
-    code populate_transactions_sync(branch::const_ptr branch, size_t bucket, size_t buckets, local_utxo_set_t const& branch_utxo, mining::mempool::hash_index_t const& validated_txs) const;
-#else
     code populate_transactions_sync(branch::const_ptr branch, size_t bucket, size_t buckets, local_utxo_set_t const& branch_utxo) const;
-#endif
 
     void populate_prevout(branch_ptr branch, domain::chain::output_point const& outpoint, local_utxo_set_t const& branch_utxo) const;
 
 private:
     bool const relay_transactions_;
 
-#if defined(KTH_WITH_MEMPOOL)
-    mining::mempool const& mempool_;
-#endif
 
 };
 

@@ -11,17 +11,11 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-option(WITH_MEMPOOL "Mempool enabled." OFF)
 option(DB_READONLY_MODE "Readonly DB mode enabled." OFF)
 option(STATISTICS "Collect statistics." OFF)
 
 option(GLOBAL_BUILD "" ON)
 
-
-if (WITH_MEMPOOL)
-  message(STATUS "Knuth: Mempool enabled")
-  add_definitions(-DKTH_WITH_MEMPOOL)
-endif()
 
 if (DB_READONLY_MODE)
   message(STATUS "Knuth: Readonly DB mode enabled")

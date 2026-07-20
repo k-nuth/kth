@@ -250,10 +250,6 @@ void add_settings(CLI::App& app, configuration& cfg) {
         cfg.node.display, parse_display_mode,
         "Display mode (tui, log, daemon).");
 
-#if defined(KTH_WITH_MEMPOOL)
-    app.add_option("--node.mempool_max_template_size", cfg.chain.mempool_max_template_size);
-    app.add_option("--node.mempool_size_multiplier",   cfg.chain.mempool_size_multiplier);
-#endif
 }
 
 // Read KTH_* env vars once and, for the subset of names that map to CLI11

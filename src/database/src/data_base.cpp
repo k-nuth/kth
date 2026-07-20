@@ -211,21 +211,6 @@ code data_base::verify_push(block const& block, size_t height) const {
 // }
 // #endif //! defined(KTH_DB_READONLY)
 
-#if ! defined(KTH_DB_READONLY)
-
-// This is designed for write exclusivity and read concurrency.
-code data_base::push(domain::chain::transaction const& tx, uint32_t height) {
-    if (settings_.db_mode != db_mode_type::full) {
-        return error::success;
-    }
-
-    //We insert only in transaction unconfirmed here
-    internal_db_->push_transaction_unconfirmed(tx, height);
-    return error::success;  //TODO(fernando): store the transactions in a new mempool
-}
-
-#endif // ! defined(KTH_DB_READONLY)
-
 // #if ! defined(KTH_DB_READONLY)
 // // Add a block in order (creates no gaps, must be at top).
 // // This is designed for write exclusivity and read concurrency.

@@ -12,7 +12,6 @@
 #include <memory>
 
 #include <kth/blockchain/define.hpp>
-#include <kth/blockchain/pools/transaction_pool.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/blockchain/validate/validate_transaction.hpp>
 #include <kth/domain.hpp>
@@ -25,10 +24,6 @@
 #include <asio/awaitable.hpp>
 
 #include <kth/infrastructure/utility/broadcaster.hpp>
-
-#if defined(KTH_WITH_MEMPOOL)
-#include <kth/mining/mempool.hpp>
-#endif
 
 namespace kth::blockchain {
 
@@ -47,11 +42,7 @@ struct KB_API transaction_organizer {
     using transaction_broadcaster = broadcaster<transaction_const_ptr>;
     using ds_proof_broadcaster = broadcaster<double_spend_proof_const_ptr>;
 
-#if defined(KTH_WITH_MEMPOOL)
-    transaction_organizer(prioritized_mutex& mutex, executor_type executor, size_t threads, threadpool& thread_pool, block_chain& chain, settings const& settings, mining::mempool& mp);
-#else
     transaction_organizer(prioritized_mutex& mutex, executor_type executor, size_t threads, threadpool& thread_pool, block_chain& chain, settings const& settings);
-#endif
 
     bool start();
     bool stop();
@@ -99,14 +90,9 @@ private:
     settings const& settings_;
     executor_type executor_;
     size_t threads_;
-    transaction_pool transaction_pool_;
     validate_transaction validator_;
     transaction_broadcaster broadcaster_;
     ds_proof_broadcaster ds_proof_broadcaster_;
-
-#if defined(KTH_WITH_MEMPOOL)
-    mining::mempool& mempool_;
-#endif
 
     std::unordered_map<hash_digest, double_spend_proof_const_ptr> ds_proofs_;
 };

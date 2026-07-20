@@ -29,32 +29,16 @@ using namespace std::placeholders;
 
 // TODO(legacy): create priority pool at blockchain level and use in both organizers.
 
-#if defined(KTH_WITH_MEMPOOL)
-transaction_organizer::transaction_organizer(prioritized_mutex& mutex, executor_type executor, size_t threads, threadpool& thread_pool, block_chain& chain, settings const& settings, mining::mempool& mp)
-#else
 transaction_organizer::transaction_organizer(prioritized_mutex& mutex, executor_type executor, size_t threads, threadpool& thread_pool, block_chain& chain, settings const& settings)
-#endif
     : chain_(chain)
     , mutex_(mutex)
     , stopped_(true)
     , settings_(settings)
     , executor_(std::move(executor))
     , threads_(threads)
-    , transaction_pool_(settings)
-
-#if defined(KTH_WITH_MEMPOOL)
-    , validator_(executor_, threads_, chain_, settings, mp)
-#else
     , validator_(executor_, threads_, chain_, settings)
-#endif
-
     , broadcaster_(executor_)
     , ds_proof_broadcaster_(executor_)
-
-
-#if defined(KTH_WITH_MEMPOOL)
-    , mempool_(mp)
-#endif
 {}
 
 // Properties.
@@ -256,15 +240,6 @@ bool transaction_organizer::stop() {
         co_return error::success;
     }
 
-#if defined(KTH_WITH_MEMPOOL)
-    auto res = mempool_.add(*tx);
-    if (res == error::double_spend_mempool || res == error::double_spend_blockchain) {
-        mutex_.unlock_low_priority();
-        co_return res;
-    }
-    // spdlog::info("[blockchain] Transaction {} added to mempool.", encode_hash(tx->hash()));
-#endif
-
 #if ! defined(KTH_DB_READONLY)
     //#########################################################################
     auto push_ec = co_await chain_.push(tx);
@@ -317,12 +292,18 @@ void transaction_organizer::unsubscribe_ds_proof(ds_proof_broadcaster::channel_p
 
 awaitable_expected<std::pair<merkle_block_ptr, size_t>>
 transaction_organizer::fetch_template() const {
-    co_return co_await transaction_pool_.fetch_template();
+    // TODO(mempool): block-template assembly (GBT) needs the new mempool.
+    // The old transaction_pool stub was removed; wire this to the rebuilt
+    // fee-prioritized mempool once it lands.
+    co_return std::unexpected(error::not_implemented);
 }
 
 awaitable_expected<inventory_ptr>
 transaction_organizer::fetch_mempool(size_t maximum) const {
-    co_return co_await transaction_pool_.fetch_mempool(maximum);
+    // TODO(mempool): serve the P2P `mempool` message from the new mempool.
+    // The old transaction_pool stub was removed; wire this to the rebuilt
+    // mempool once it lands.
+    co_return std::unexpected(error::not_implemented);
 }
 
 awaitable_expected<double_spend_proof_const_ptr>

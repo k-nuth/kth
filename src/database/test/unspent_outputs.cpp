@@ -9,7 +9,7 @@
 using namespace kth::domain::chain;
 using namespace kth::database;
 
-// TODO: test with confirmed/unconfirmed.
+// TODO: test with confirmed.
 
 BOOST_AUTO_TEST_SUITE(unspent_outputs_tests)
 

@@ -85,10 +85,6 @@ typedef struct {
     kth_bool_t bip147;
 #endif //KTH_CURRENCY_BCH
 
-#if defined(KTH_WITH_MEMPOOL)
-    kth_size_t mempool_max_template_size;
-    kth_size_t mempool_size_multiplier;
-#endif
 } kth_blockchain_settings;
 
 KTH_EXPORT

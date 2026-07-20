@@ -317,7 +317,6 @@ bool internal_database_basis<Clock>::close() {
             kth_db_dbi_close(env_, dbi_transaction_hash_db_);
             kth_db_dbi_close(env_, dbi_history_db_);
             kth_db_dbi_close(env_, dbi_spend_db_);
-            kth_db_dbi_close(env_, dbi_transaction_unconfirmed_db_);
         }
 
         db_opened_ = false;
@@ -927,31 +926,6 @@ std::expected<utxo_pool_t, result_code> internal_database_basis<Clock>::get_utxo
     return pool;
 }
 
-#if ! defined(KTH_DB_READONLY)
-
-template <typename Clock>
-result_code internal_database_basis<Clock>::push_transaction_unconfirmed(domain::chain::transaction const& tx, uint32_t height) {
-
-    KTH_DB_txn* db_txn;
-    if (kth_db_txn_begin(env_, NULL, 0, &db_txn) != KTH_DB_SUCCESS) {
-        return result_code::other;
-    }
-
-    auto res = insert_transaction_unconfirmed(tx, height, db_txn);
-    if (res != result_code::success) {
-        kth_db_txn_abort(db_txn);
-        return res;
-    }
-
-    if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
-        return result_code::other;
-    }
-
-    return result_code::success;
-}
-
-#endif // ! defined(KTH_DB_READONLY)
-
 // Private functions
 // ------------------------------------------------------------------------------------------------------
 
@@ -1146,7 +1120,6 @@ bool internal_database_basis<Clock>::open_databases() {
         if ( ! open_db(transaction_hash_db_name, KTH_DB_CONDITIONAL_CREATE, &dbi_transaction_hash_db_)) return false;
         if ( ! open_db(history_db_name, KTH_DB_CONDITIONAL_CREATE | KTH_DB_DUPSORT | KTH_DB_DUPFIXED, &dbi_history_db_)) return false;
         if ( ! open_db(spend_db_name, KTH_DB_CONDITIONAL_CREATE, &dbi_spend_db_)) return false;
-        if ( ! open_db(transaction_unconfirmed_db_name, KTH_DB_CONDITIONAL_CREATE, &dbi_transaction_unconfirmed_db_)) return false;
 
         mdb_set_dupsort(db_txn, dbi_history_db_, compare_uint64);
     }
