@@ -169,57 +169,57 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "The address of the statistics collection server.");
     app.add_option("--log.verbose",          cfg.network.verbose);
 
-    // [network]
-    app.add_option("--network.threads",              cfg.network.threads);
-    app.add_option("--network.protocol_maximum",     cfg.network.protocol_maximum);
-    app.add_option("--network.protocol_minimum",     cfg.network.protocol_minimum);
-    app.add_option("--network.services",             cfg.network.services);
-    app.add_option("--network.invalid_services",     cfg.network.invalid_services);
-    app.add_option("--network.validate_checksum",    cfg.network.validate_checksum);
-    app.add_option("--network.identifier",           cfg.network.identifier);
-    app.add_option("--network.inbound_port",         cfg.network.inbound_port);
-    app.add_option("--network.inbound_connections",  cfg.network.inbound_connections);
-    app.add_option("--network.outbound_connections", cfg.network.outbound_connections);
-    app.add_option("--network.manual_attempt_limit", cfg.network.manual_attempt_limit);
-    app.add_option("--network.connect_batch_size",   cfg.network.connect_batch_size);
-    app.add_option("--network.connect_timeout_seconds", cfg.network.connect_timeout_seconds);
-    app.add_option("--network.channel_handshake_seconds", cfg.network.channel_handshake_seconds);
-    app.add_option("--network.channel_heartbeat_minutes", cfg.network.channel_heartbeat_minutes);
-    app.add_option("--network.channel_inactivity_minutes", cfg.network.channel_inactivity_minutes);
-    app.add_option("--network.channel_expiration_minutes", cfg.network.channel_expiration_minutes);
-    app.add_option("--network.channel_germination_seconds", cfg.network.channel_germination_seconds);
-    app.add_option("--network.host_pool_capacity",   cfg.network.host_pool_capacity);
-    app.add_option("--network.hosts_file",           cfg.network.peers_file);
-    add_parse_from_option(app, "--network.self", cfg.network.self,
+    // [net]
+    app.add_option("--net.threads",              cfg.network.threads);
+    app.add_option("--net.protocol_maximum",     cfg.network.protocol_maximum);
+    app.add_option("--net.protocol_minimum",     cfg.network.protocol_minimum);
+    app.add_option("--net.services",             cfg.network.services);
+    app.add_option("--net.invalid_services",     cfg.network.invalid_services);
+    app.add_option("--net.validate_checksum",    cfg.network.validate_checksum);
+    app.add_option("--net.identifier",           cfg.network.identifier);
+    app.add_option("--net.inbound_port",         cfg.network.inbound_port);
+    app.add_option("--net.inbound_connections",  cfg.network.inbound_connections);
+    app.add_option("--net.outbound_connections", cfg.network.outbound_connections);
+    app.add_option("--net.manual_attempt_limit", cfg.network.manual_attempt_limit);
+    app.add_option("--net.connect_batch_size",   cfg.network.connect_batch_size);
+    app.add_option("--net.connect_timeout_seconds", cfg.network.connect_timeout_seconds);
+    app.add_option("--net.channel_handshake_seconds", cfg.network.channel_handshake_seconds);
+    app.add_option("--net.channel_heartbeat_minutes", cfg.network.channel_heartbeat_minutes);
+    app.add_option("--net.channel_inactivity_minutes", cfg.network.channel_inactivity_minutes);
+    app.add_option("--net.channel_expiration_minutes", cfg.network.channel_expiration_minutes);
+    app.add_option("--net.channel_germination_seconds", cfg.network.channel_germination_seconds);
+    app.add_option("--net.host_pool_capacity",   cfg.network.host_pool_capacity);
+    app.add_option("--net.hosts_file",           cfg.network.peers_file);
+    add_parse_from_option(app, "--net.self", cfg.network.self,
         "The advertised public address of this node.");
-    add_parse_from_list(app, "--network.blacklist", cfg.network.blacklist,
+    add_parse_from_list(app, "--net.blacklist", cfg.network.blacklist,
         "IP addresses to disallow as peers.");
-    add_parse_from_list(app, "--network.peer", cfg.network.peers,
+    add_parse_from_list(app, "--net.peer", cfg.network.peers,
         "Persistent peer nodes.");
-    add_parse_from_list(app, "--network.seed", cfg.network.seeds,
+    add_parse_from_list(app, "--net.seed", cfg.network.seeds,
         "Seed nodes for initializing the host pool.");
-    app.add_option("--network.use_ipv6",             cfg.network.use_ipv6);
-    app.add_option("--network.user_agent_blacklist", cfg.network.user_agent_blacklist)
+    app.add_option("--net.use_ipv6",             cfg.network.use_ipv6);
+    app.add_option("--net.user_agent_blacklist", cfg.network.user_agent_blacklist)
         ->take_all();
 #endif
 
-    // [database]
-    add_enum_option(app, "--database.db_mode",
+    // [db]
+    add_enum_option(app, "--db.db_mode",
         cfg.database.db_mode, parse_db_mode_local,
         "The DB storage/indexation mode (pruned, blocks, full).");
-    app.add_option("--database.directory",        cfg.database.directory);
-    app.add_option("--database.reorg_pool_limit", cfg.database.reorg_pool_limit);
-    app.add_option("--database.db_max_size",      cfg.database.db_max_size);
-    app.add_option("--database.safe_mode",        cfg.database.safe_mode);
-    app.add_option("--database.cache_capacity",   cfg.database.cache_capacity);
+    app.add_option("--db.directory",        cfg.database.directory);
+    app.add_option("--db.reorg_pool_limit", cfg.database.reorg_pool_limit);
+    app.add_option("--db.db_max_size",      cfg.database.db_max_size);
+    app.add_option("--db.safe_mode",        cfg.database.safe_mode);
+    app.add_option("--db.cache_capacity",   cfg.database.cache_capacity);
 
-    // [blockchain]
-    app.add_option("--blockchain.cores",                cfg.chain.cores);
-    app.add_option("--blockchain.priority",             cfg.chain.priority);
-    app.add_option("--blockchain.reorganization_limit", cfg.chain.reorganization_limit);
-    add_parse_from_list(app, "--blockchain.checkpoint", cfg.chain.checkpoints,
+    // [chain]
+    app.add_option("--chain.cores",                cfg.chain.cores);
+    app.add_option("--chain.priority",             cfg.chain.priority);
+    app.add_option("--chain.reorganization_limit", cfg.chain.reorganization_limit);
+    add_parse_from_list(app, "--chain.checkpoint", cfg.chain.checkpoints,
         "A hash:height checkpoint.");
-    app.add_option("--blockchain.fix_checkpoints", cfg.chain.fix_checkpoints);
+    app.add_option("--chain.fix_checkpoints", cfg.chain.fix_checkpoints);
 
     // [fork]
     app.add_option("--fork.easy_blocks", cfg.chain.easy_blocks);
@@ -267,6 +267,20 @@ void apply_environment(configuration& cfg) {
             cfg.file = env_config;
         }
     }
+}
+
+// Load a config file into `app`. KTH config files use flat, dotted keys
+// (`network.inbound_port = 8433`) that map one-to-one to the options registered
+// by add_settings. CLI11 treats a `.` in a config key as subcommand nesting by
+// default, which would look for a non-existent `network` subcommand; we disable
+// that so the whole key binds to the matching `--network.inbound_port` option.
+// The loader option name is distinct from `--config,-c` (already registered by
+// add_command_options) to avoid an OptionAlreadyAdded clash.
+void set_flat_config(CLI::App& app, std::filesystem::path const& config_path) {
+    // '\x1f' (unit separator) never appears in an option name or value, so
+    // section splitting is effectively turned off.
+    app.get_config_formatter_base()->parentSeparator('\x1f');
+    app.set_config("--config_file_loader", config_path.string());
 }
 
 } // namespace
@@ -339,20 +353,17 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
                 return false;
             }
 
-            // Rebuild the app with the merged defaults and re-parse (config
-            // file only) so bindings pick up the freshly-defaulted settings.
+            // Rebuild the app with the merged defaults and load the config file
+            // so its settings override the freshly-defaulted values.
             CLI::App app2{"kth node"};
             app2.allow_config_extras();
             add_command_options(app2, configured);
             add_settings(app2, configured);
 
             try {
-                // Distinct name: `--config,-c` is already registered by
-                // add_command_options; set_config only needs an internal option
-                // to load the file (parsed with no argv, so it reads the path).
-                app2.set_config("--config_file_loader", config_path.string());
-                // Parse with a valid (program-name-only) argv: CLI11 dereferences
-                // argv[0], so a null argv segfaults. The config file is loaded via
+                set_flat_config(app2, config_path);
+                // Parse with a program-name-only argv: CLI11 dereferences
+                // argv[0], so a null argv segfaults. The config file loads via
                 // set_config regardless of command-line args.
                 char const* const app2_argv[] = {"kth"};
                 app2.parse(1, app2_argv);
@@ -394,6 +405,8 @@ std::string parser::settings_text() const {
     auto cfg_copy = configured;
     add_command_options(app, cfg_copy);
     add_settings(app, cfg_copy);
+    // Emit flat dotted keys (network.inbound_port=...) to match the loader.
+    app.get_config_formatter_base()->parentSeparator('\x1f');
     return app.config_to_str(true, true);
 }
 
@@ -412,8 +425,9 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
     add_settings(app, configured);
 
     try {
-        app.set_config("--" KTH_CONFIG_VARIABLE, config_path.string());
-        app.parse(0, static_cast<char const**>(nullptr));
+        set_flat_config(app, config_path);
+        char const* const app_argv[] = {"kth"};
+        app.parse(1, app_argv);
     } catch (CLI::ParseError const& e) {
         error << "Error: " << e.what() << std::endl;
         return e.get_exit_code() == 0;
