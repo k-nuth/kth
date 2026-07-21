@@ -101,6 +101,10 @@ full_node::~full_node() {
         co_return error::operation_failed;
     }
 
+    // Reload the persisted mempool (re-validated against the current tip) before
+    // the network comes up, so peers can be served from a warm mempool.
+    co_await chain_.load_mempool_from_disk();
+
 #if ! defined(__EMSCRIPTEN__)
     // Start the P2P network
     auto ec = co_await network_.start();
