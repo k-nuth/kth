@@ -13,11 +13,11 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <kth/capi/chain/compact_block.h>
-#include <kth/capi/chain/header.h>
-#include <kth/capi/chain/prefilled_transaction.h>
-#include <kth/capi/chain/prefilled_transaction_list.h>
-#include <kth/capi/chain/transaction.h>
+#include <kth/capi/domain/message/compact_block.h>
+#include <kth/capi/domain/chain/header.h>
+#include <kth/capi/domain/message/prefilled_transaction.h>
+#include <kth/capi/domain/message/prefilled_transaction_list.h>
+#include <kth/capi/domain/chain/transaction.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/u64_list.h>
@@ -58,13 +58,13 @@ static uint8_t const kMinimalTx[10] = {
 };
 
 static kth_header_mut_t make_header(void) {
-    return kth_chain_header_construct(
+    return kth_domain_chain_header_construct(
         kHdrVersion, &kPrevHash, &kMerkle, kHdrTimestamp, kHdrBits, kHdrNonce);
 }
 
 static kth_transaction_mut_t make_tx(void) {
     kth_transaction_mut_t tx = NULL;
-    kth_error_code_t ec = kth_chain_transaction_construct_from_data(
+    kth_error_code_t ec = kth_domain_chain_transaction_construct_from_data(
         kMinimalTx, sizeof(kMinimalTx), 1, &tx);
     REQUIRE(ec == kth_ec_success);
     return tx;
@@ -80,11 +80,11 @@ static kth_u64_list_mut_t make_short_ids(void) {
 static kth_prefilled_transaction_list_mut_t
 make_prefilled_list(kth_transaction_const_t tx) {
     kth_prefilled_transaction_list_mut_t list =
-        kth_chain_prefilled_transaction_list_construct_default();
+        kth_domain_message_prefilled_transaction_list_construct_default();
     kth_prefilled_transaction_mut_t pt = NULL;
-    REQUIRE(kth_chain_prefilled_transaction_create(0u, tx, &pt) == kth_ec_success);
-    kth_chain_prefilled_transaction_list_push_back(list, pt);
-    kth_chain_prefilled_transaction_destruct(pt);
+    REQUIRE(kth_domain_message_prefilled_transaction_create(0u, tx, &pt) == kth_ec_success);
+    kth_domain_message_prefilled_transaction_list_push_back(list, pt);
+    kth_domain_message_prefilled_transaction_destruct(pt);
     return list;
 }
 
@@ -94,14 +94,14 @@ static kth_compact_block_mut_t make_fixture(void) {
     kth_transaction_mut_t tx = make_tx();
     kth_prefilled_transaction_list_mut_t txs = make_prefilled_list(tx);
 
-    kth_compact_block_mut_t cb = kth_chain_compact_block_construct(
+    kth_compact_block_mut_t cb = kth_domain_message_compact_block_construct(
         header, 0xCAFEBABEu, short_ids, txs);
     REQUIRE(cb != NULL);
 
-    kth_chain_prefilled_transaction_list_destruct(txs);
-    kth_chain_transaction_destruct(tx);
+    kth_domain_message_prefilled_transaction_list_destruct(txs);
+    kth_domain_chain_transaction_destruct(tx);
     kth_core_u64_list_destruct(short_ids);
-    kth_chain_header_destruct(header);
+    kth_domain_chain_header_destruct(header);
     return cb;
 }
 
@@ -113,30 +113,30 @@ TEST_CASE("C-API CompactBlock - create accepts an empty payload",
           "[C-API CompactBlock]") {
     // A domain compact_block does no consensus checks; construction cannot fail.
     kth_hash_t const zero = {{ 0 }};
-    kth_header_mut_t header = kth_chain_header_construct(0u, &zero, &zero, 0u, 0u, 0u);
+    kth_header_mut_t header = kth_domain_chain_header_construct(0u, &zero, &zero, 0u, 0u, 0u);
     kth_u64_list_mut_t short_ids = kth_core_u64_list_construct_default();
     kth_prefilled_transaction_list_mut_t txs =
-        kth_chain_prefilled_transaction_list_construct_default();
-    kth_compact_block_mut_t cb = kth_chain_compact_block_construct(
+        kth_domain_message_prefilled_transaction_list_construct_default();
+    kth_compact_block_mut_t cb = kth_domain_message_compact_block_construct(
         header, 0u, short_ids, txs);
     REQUIRE(cb != NULL);
-    kth_chain_compact_block_destruct(cb);
-    kth_chain_prefilled_transaction_list_destruct(txs);
+    kth_domain_message_compact_block_destruct(cb);
+    kth_domain_message_prefilled_transaction_list_destruct(txs);
     kth_core_u64_list_destruct(short_ids);
-    kth_chain_header_destruct(header);
+    kth_domain_chain_header_destruct(header);
 }
 
 TEST_CASE("C-API CompactBlock - field constructor preserves fields",
           "[C-API CompactBlock]") {
     kth_compact_block_mut_t cb = make_fixture();
     REQUIRE(cb != NULL);
-    REQUIRE(kth_chain_compact_block_nonce(cb) == 0xCAFEBABEu);
-    kth_chain_compact_block_destruct(cb);
+    REQUIRE(kth_domain_message_compact_block_nonce(cb) == 0xCAFEBABEu);
+    kth_domain_message_compact_block_destruct(cb);
 }
 
 TEST_CASE("C-API CompactBlock - destruct null is safe",
           "[C-API CompactBlock]") {
-    kth_chain_compact_block_destruct(NULL);
+    kth_domain_message_compact_block_destruct(NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -149,20 +149,20 @@ TEST_CASE("C-API CompactBlock - to_data / from_data round-trip",
 
     kth_size_t out_size = 0;
     uint8_t* raw =
-        kth_chain_compact_block_to_data(original, kProtoVersion, &out_size);
+        kth_domain_message_compact_block_to_data(original, kProtoVersion, &out_size);
     REQUIRE(raw != NULL);
     REQUIRE(out_size > 0u);
 
     kth_compact_block_mut_t decoded = NULL;
-    kth_error_code_t ec = kth_chain_compact_block_construct_from_data(
+    kth_error_code_t ec = kth_domain_message_compact_block_construct_from_data(
         raw, out_size, kProtoVersion, &decoded);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(decoded != NULL);
-    REQUIRE(kth_chain_compact_block_equals(original, decoded) != 0);
+    REQUIRE(kth_domain_message_compact_block_equals(original, decoded) != 0);
 
     kth_core_destruct_array(raw);
-    kth_chain_compact_block_destruct(decoded);
-    kth_chain_compact_block_destruct(original);
+    kth_domain_message_compact_block_destruct(decoded);
+    kth_domain_message_compact_block_destruct(original);
 }
 
 TEST_CASE("C-API CompactBlock - serialized_size matches to_data length",
@@ -170,14 +170,14 @@ TEST_CASE("C-API CompactBlock - serialized_size matches to_data length",
     kth_compact_block_mut_t cb = make_fixture();
 
     kth_size_t expected =
-        kth_chain_compact_block_serialized_size(cb, kProtoVersion);
+        kth_domain_message_compact_block_serialized_size(cb, kProtoVersion);
     kth_size_t out_size = 0;
-    uint8_t* raw = kth_chain_compact_block_to_data(cb, kProtoVersion, &out_size);
+    uint8_t* raw = kth_domain_message_compact_block_to_data(cb, kProtoVersion, &out_size);
     REQUIRE(raw != NULL);
     REQUIRE(out_size == expected);
 
     kth_core_destruct_array(raw);
-    kth_chain_compact_block_destruct(cb);
+    kth_domain_message_compact_block_destruct(cb);
 }
 
 // ---------------------------------------------------------------------------
@@ -187,11 +187,11 @@ TEST_CASE("C-API CompactBlock - serialized_size matches to_data length",
 TEST_CASE("C-API CompactBlock - copy preserves equality",
           "[C-API CompactBlock]") {
     kth_compact_block_mut_t original = make_fixture();
-    kth_compact_block_mut_t copy = kth_chain_compact_block_copy(original);
+    kth_compact_block_mut_t copy = kth_domain_message_compact_block_copy(original);
     REQUIRE(copy != NULL);
-    REQUIRE(kth_chain_compact_block_equals(original, copy) != 0);
-    kth_chain_compact_block_destruct(copy);
-    kth_chain_compact_block_destruct(original);
+    REQUIRE(kth_domain_message_compact_block_equals(original, copy) != 0);
+    kth_domain_message_compact_block_destruct(copy);
+    kth_domain_message_compact_block_destruct(original);
 }
 
 // ---------------------------------------------------------------------------
@@ -201,43 +201,43 @@ TEST_CASE("C-API CompactBlock - copy preserves equality",
 TEST_CASE("C-API CompactBlock - header getter returns borrowed view",
           "[C-API CompactBlock]") {
     kth_compact_block_mut_t cb = make_fixture();
-    kth_header_const_t hdr = kth_chain_compact_block_header(cb);
+    kth_header_const_t hdr = kth_domain_message_compact_block_header(cb);
     REQUIRE(hdr != NULL);
-    REQUIRE(kth_chain_header_version(hdr) == kHdrVersion);
-    kth_chain_compact_block_destruct(cb);
+    REQUIRE(kth_domain_chain_header_version(hdr) == kHdrVersion);
+    kth_domain_message_compact_block_destruct(cb);
 }
 
 TEST_CASE("C-API CompactBlock - nonce getter reflects input",
           "[C-API CompactBlock]") {
     kth_compact_block_mut_t cb = make_fixture();
-    REQUIRE(kth_chain_compact_block_nonce(cb) == 0xCAFEBABEu);
-    kth_chain_compact_block_destruct(cb);
+    REQUIRE(kth_domain_message_compact_block_nonce(cb) == 0xCAFEBABEu);
+    kth_domain_message_compact_block_destruct(cb);
 }
 
 TEST_CASE("C-API CompactBlock - short_ids getter reflects input",
           "[C-API CompactBlock]") {
     kth_compact_block_mut_t cb = make_fixture();
-    // `kth_chain_compact_block_short_ids` returns an owned
+    // `kth_domain_message_compact_block_short_ids` returns an owned
     // `kth_u64_list_mut_t` (the parent doesn't keep it after the call),
     // so the test owns it and must release with
     // `kth_core_u64_list_destruct`.
-    kth_u64_list_mut_t ids = kth_chain_compact_block_short_ids(cb);
+    kth_u64_list_mut_t ids = kth_domain_message_compact_block_short_ids(cb);
     REQUIRE(ids != NULL);
     REQUIRE(kth_core_u64_list_count(ids) == 2u);
     REQUIRE(kth_core_u64_list_nth(ids, 0) == 0x010203040506ull);
     REQUIRE(kth_core_u64_list_nth(ids, 1) == 0x0a0b0c0d0e0full);
     kth_core_u64_list_destruct(ids);
-    kth_chain_compact_block_destruct(cb);
+    kth_domain_message_compact_block_destruct(cb);
 }
 
 TEST_CASE("C-API CompactBlock - transactions getter reflects input",
           "[C-API CompactBlock]") {
     kth_compact_block_mut_t cb = make_fixture();
     kth_prefilled_transaction_list_const_t view =
-        kth_chain_compact_block_transactions(cb);
+        kth_domain_message_compact_block_transactions(cb);
     REQUIRE(view != NULL);
-    REQUIRE(kth_chain_prefilled_transaction_list_count(view) == 1u);
-    kth_chain_compact_block_destruct(cb);
+    REQUIRE(kth_domain_message_prefilled_transaction_list_count(view) == 1u);
+    kth_domain_message_compact_block_destruct(cb);
 }
 
 // ---------------------------------------------------------------------------
@@ -250,9 +250,9 @@ TEST_CASE("C-API CompactBlock - create null header aborts",
     kth_transaction_mut_t tx = make_tx();
     kth_prefilled_transaction_list_mut_t txs = make_prefilled_list(tx);
     KTH_EXPECT_ABORT(
-        kth_chain_compact_block_construct(NULL, 0u, short_ids, txs));
-    kth_chain_prefilled_transaction_list_destruct(txs);
-    kth_chain_transaction_destruct(tx);
+        kth_domain_message_compact_block_construct(NULL, 0u, short_ids, txs));
+    kth_domain_message_prefilled_transaction_list_destruct(txs);
+    kth_domain_chain_transaction_destruct(tx);
     kth_core_u64_list_destruct(short_ids);
 }
 
@@ -262,10 +262,10 @@ TEST_CASE("C-API CompactBlock - create null short_ids aborts",
     kth_transaction_mut_t tx = make_tx();
     kth_prefilled_transaction_list_mut_t txs = make_prefilled_list(tx);
     KTH_EXPECT_ABORT(
-        kth_chain_compact_block_construct(header, 0u, NULL, txs));
-    kth_chain_prefilled_transaction_list_destruct(txs);
-    kth_chain_transaction_destruct(tx);
-    kth_chain_header_destruct(header);
+        kth_domain_message_compact_block_construct(header, 0u, NULL, txs));
+    kth_domain_message_prefilled_transaction_list_destruct(txs);
+    kth_domain_chain_transaction_destruct(tx);
+    kth_domain_chain_header_destruct(header);
 }
 
 TEST_CASE("C-API CompactBlock - create null transactions aborts",
@@ -273,16 +273,16 @@ TEST_CASE("C-API CompactBlock - create null transactions aborts",
     kth_header_mut_t header = make_header();
     kth_u64_list_mut_t short_ids = make_short_ids();
     KTH_EXPECT_ABORT(
-        kth_chain_compact_block_construct(header, 0u, short_ids, NULL));
+        kth_domain_message_compact_block_construct(header, 0u, short_ids, NULL));
     kth_core_u64_list_destruct(short_ids);
-    kth_chain_header_destruct(header);
+    kth_domain_chain_header_destruct(header);
 }
 
 TEST_CASE("C-API CompactBlock - construct_from_data null data with non-zero size aborts",
           "[C-API CompactBlock][precondition]") {
     KTH_EXPECT_ABORT({
         kth_compact_block_mut_t out = NULL;
-        kth_chain_compact_block_construct_from_data(
+        kth_domain_message_compact_block_construct_from_data(
             NULL, 1, kProtoVersion, &out);
     });
 }
@@ -290,25 +290,25 @@ TEST_CASE("C-API CompactBlock - construct_from_data null data with non-zero size
 TEST_CASE("C-API CompactBlock - construct_from_data null out aborts",
           "[C-API CompactBlock][precondition]") {
     uint8_t data[2] = { 0x00, 0x00 };
-    KTH_EXPECT_ABORT(kth_chain_compact_block_construct_from_data(
+    KTH_EXPECT_ABORT(kth_domain_message_compact_block_construct_from_data(
         data, 2, kProtoVersion, NULL));
 }
 
 TEST_CASE("C-API CompactBlock - to_data null out_size aborts",
           "[C-API CompactBlock][precondition]") {
     kth_compact_block_mut_t cb = make_fixture();
-    KTH_EXPECT_ABORT(kth_chain_compact_block_to_data(cb, kProtoVersion, NULL));
-    kth_chain_compact_block_destruct(cb);
+    KTH_EXPECT_ABORT(kth_domain_message_compact_block_to_data(cb, kProtoVersion, NULL));
+    kth_domain_message_compact_block_destruct(cb);
 }
 
 TEST_CASE("C-API CompactBlock - copy null aborts",
           "[C-API CompactBlock][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_compact_block_copy(NULL));
+    KTH_EXPECT_ABORT(kth_domain_message_compact_block_copy(NULL));
 }
 
 TEST_CASE("C-API CompactBlock - equals null aborts",
           "[C-API CompactBlock][precondition]") {
     kth_compact_block_mut_t other = make_fixture();
-    KTH_EXPECT_ABORT(kth_chain_compact_block_equals(NULL, other));
-    kth_chain_compact_block_destruct(other);
+    KTH_EXPECT_ABORT(kth_domain_message_compact_block_equals(NULL, other));
+    kth_domain_message_compact_block_destruct(other);
 }

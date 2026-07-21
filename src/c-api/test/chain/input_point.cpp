@@ -5,7 +5,7 @@
 // `input_point` is a typedef alias for `point` in the domain layer
 // (`using input_point = point;`), so the underlying behavior is fully
 // covered by `test/chain/point.cpp`. This file exercises the C-API
-// surface specific to the alias — primarily `kth_chain_input_point_destruct`,
+// surface specific to the alias — primarily `kth_domain_chain_input_point_destruct`,
 // which is the only owning operation a consumer of `kth_spend_fetch_handler_t`
 // can call to release the `kth_input_point_mut_t` handed to them — plus
 // enough smoke coverage on the rest of the alias-prefixed surface to
@@ -16,7 +16,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <kth/capi/chain/input_point.h>
+#include <kth/capi/domain/chain/input_point.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/primitives.h>
 
@@ -35,13 +35,13 @@ static kth_hash_t const kHash = {{
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API InputPoint - destruct null is a no-op", "[C-API InputPoint]") {
-    kth_chain_input_point_destruct(NULL);
+    kth_domain_chain_input_point_destruct(NULL);
 }
 
 TEST_CASE("C-API InputPoint - destruct frees an allocated handle", "[C-API InputPoint]") {
-    kth_input_point_mut_t ip = kth_chain_input_point_construct(&kHash, 7u);
+    kth_input_point_mut_t ip = kth_domain_chain_input_point_construct(&kHash, 7u);
     REQUIRE(ip != NULL);
-    kth_chain_input_point_destruct(ip);
+    kth_domain_chain_input_point_destruct(ip);
 }
 
 // ---------------------------------------------------------------------------
@@ -49,54 +49,54 @@ TEST_CASE("C-API InputPoint - destruct frees an allocated handle", "[C-API Input
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API InputPoint - null factory yields coinbase sentinel", "[C-API InputPoint]") {
-    kth_input_point_mut_t ip = kth_chain_input_point_null();
-    REQUIRE(kth_chain_input_point_is_null(ip) != 0);
-    kth_chain_input_point_destruct(ip);
+    kth_input_point_mut_t ip = kth_domain_chain_input_point_null();
+    REQUIRE(kth_domain_chain_input_point_is_null(ip) != 0);
+    kth_domain_chain_input_point_destruct(ip);
 }
 
 TEST_CASE("C-API InputPoint - field constructor preserves hash and index", "[C-API InputPoint]") {
-    kth_input_point_mut_t ip = kth_chain_input_point_construct(&kHash, 1234u);
-    REQUIRE(kth_chain_input_point_index(ip) == 1234u);
-    REQUIRE(kth_hash_equal(kth_chain_input_point_hash(ip), kHash) != 0);
-    kth_chain_input_point_destruct(ip);
+    kth_input_point_mut_t ip = kth_domain_chain_input_point_construct(&kHash, 1234u);
+    REQUIRE(kth_domain_chain_input_point_index(ip) == 1234u);
+    REQUIRE(kth_hash_equal(kth_domain_chain_input_point_hash(ip), kHash) != 0);
+    kth_domain_chain_input_point_destruct(ip);
 }
 
 TEST_CASE("C-API InputPoint - to_data / from_data roundtrip", "[C-API InputPoint]") {
-    kth_input_point_mut_t expected = kth_chain_input_point_construct(&kHash, 53213u);
+    kth_input_point_mut_t expected = kth_domain_chain_input_point_construct(&kHash, 53213u);
 
     kth_size_t size = 0;
-    uint8_t* raw = kth_chain_input_point_to_data(expected, 1, &size);
+    uint8_t* raw = kth_domain_chain_input_point_to_data(expected, 1, &size);
     REQUIRE(size == 36u);
     REQUIRE(raw != NULL);
 
     kth_input_point_mut_t parsed = NULL;
-    kth_error_code_t ec = kth_chain_input_point_construct_from_data(raw, size, 1, &parsed);
+    kth_error_code_t ec = kth_domain_chain_input_point_construct_from_data(raw, size, 1, &parsed);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(parsed != NULL);
-    REQUIRE(kth_chain_input_point_equals(expected, parsed) != 0);
+    REQUIRE(kth_domain_chain_input_point_equals(expected, parsed) != 0);
 
     kth_core_destruct_array(raw);
-    kth_chain_input_point_destruct(parsed);
-    kth_chain_input_point_destruct(expected);
+    kth_domain_chain_input_point_destruct(parsed);
+    kth_domain_chain_input_point_destruct(expected);
 }
 
 TEST_CASE("C-API InputPoint - copy preserves fields", "[C-API InputPoint]") {
-    kth_input_point_mut_t original = kth_chain_input_point_construct(&kHash, 524342u);
-    kth_input_point_mut_t copy = kth_chain_input_point_copy(original);
+    kth_input_point_mut_t original = kth_domain_chain_input_point_construct(&kHash, 524342u);
+    kth_input_point_mut_t copy = kth_domain_chain_input_point_copy(original);
 
-    REQUIRE(kth_chain_input_point_equals(original, copy) != 0);
-    REQUIRE(kth_chain_input_point_index(copy) == 524342u);
+    REQUIRE(kth_domain_chain_input_point_equals(original, copy) != 0);
+    REQUIRE(kth_domain_chain_input_point_index(copy) == 524342u);
 
-    kth_chain_input_point_destruct(copy);
-    kth_chain_input_point_destruct(original);
+    kth_domain_chain_input_point_destruct(copy);
+    kth_domain_chain_input_point_destruct(original);
 }
 
 TEST_CASE("C-API InputPoint - null factory is is_null", "[C-API InputPoint]") {
-    kth_input_point_mut_t ip = kth_chain_input_point_null();
-    REQUIRE(kth_chain_input_point_is_null(ip) != 0);
-    kth_chain_input_point_destruct(ip);
+    kth_input_point_mut_t ip = kth_domain_chain_input_point_null();
+    REQUIRE(kth_domain_chain_input_point_is_null(ip) != 0);
+    kth_domain_chain_input_point_destruct(ip);
 }
 
 TEST_CASE("C-API InputPoint - satoshi_fixed_size is 36", "[C-API InputPoint]") {
-    REQUIRE(kth_chain_input_point_satoshi_fixed_size() == 36u);
+    REQUIRE(kth_domain_chain_input_point_satoshi_fixed_size() == 36u);
 }

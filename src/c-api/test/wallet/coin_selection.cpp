@@ -12,12 +12,12 @@
 
 #include <stdint.h>
 
-#include <kth/capi/chain/output_point.h>
-#include <kth/capi/chain/output_point_list.h>
-#include <kth/capi/chain/token_data.h>
-#include <kth/capi/chain/transaction.h>
-#include <kth/capi/chain/utxo.h>
-#include <kth/capi/chain/utxo_list.h>
+#include <kth/capi/domain/chain/output_point.h>
+#include <kth/capi/domain/chain/output_point_list.h>
+#include <kth/capi/domain/chain/token_data.h>
+#include <kth/capi/domain/chain/transaction.h>
+#include <kth/capi/domain/chain/utxo.h>
+#include <kth/capi/domain/chain/utxo_list.h>
 #include <kth/capi/double_list.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/primitives.h>
@@ -56,16 +56,16 @@ static kth_hash_t const kPrevTxid = {{
 }};
 
 // Build a UTXO list of pure-BCH outputs. Caller owns the returned
-// list and must release with kth_chain_utxo_list_destruct.
+// list and must release with kth_domain_chain_utxo_list_destruct.
 static kth_utxo_list_mut_t make_bch_utxos(uint64_t const* amounts, int count) {
-    kth_utxo_list_mut_t list = kth_chain_utxo_list_construct_default();
+    kth_utxo_list_mut_t list = kth_domain_chain_utxo_list_construct_default();
     for (int i = 0; i < count; ++i) {
         kth_output_point_mut_t op =
-            kth_chain_output_point_construct_from_hash_index(&kPrevTxid, (uint32_t)i);
-        kth_utxo_mut_t u = kth_chain_utxo_construct(op, amounts[i], NULL);
-        kth_chain_utxo_list_push_back(list, u);
-        kth_chain_utxo_destruct(u);
-        kth_chain_output_point_destruct(op);
+            kth_domain_chain_output_point_construct_from_hash_index(&kPrevTxid, (uint32_t)i);
+        kth_utxo_mut_t u = kth_domain_chain_utxo_construct(op, amounts[i], NULL);
+        kth_domain_chain_utxo_list_push_back(list, u);
+        kth_domain_chain_utxo_destruct(u);
+        kth_domain_chain_output_point_destruct(op);
     }
     return list;
 }
@@ -104,7 +104,7 @@ TEST_CASE("C-API wallet::coin_selection - select_utxos picks enough BCH to cover
     REQUIRE(kth_wallet_coin_selection_result_estimated_size(out) > 0u);
 
     kth_wallet_coin_selection_result_destruct(out);
-    kth_chain_utxo_list_destruct(utxos);
+    kth_domain_chain_utxo_list_destruct(utxos);
 }
 
 TEST_CASE("C-API wallet::coin_selection - select_utxos fails when funds are insufficient",
@@ -121,7 +121,7 @@ TEST_CASE("C-API wallet::coin_selection - select_utxos fails when funds are insu
     REQUIRE(rc != kth_ec_success);
     REQUIRE(out == NULL);
 
-    kth_chain_utxo_list_destruct(utxos);
+    kth_domain_chain_utxo_list_destruct(utxos);
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ TEST_CASE("C-API wallet::coin_selection - send_all sums every matching UTXO",
     REQUIRE(kth_wallet_coin_selection_result_total_selected_bch(out) == 6000u);
 
     kth_wallet_coin_selection_result_destruct(out);
-    kth_chain_utxo_list_destruct(utxos);
+    kth_domain_chain_utxo_list_destruct(utxos);
 }
 
 // ---------------------------------------------------------------------------
@@ -168,7 +168,7 @@ TEST_CASE("C-API wallet::coin_selection - select_utxos_both fails when token abs
     REQUIRE(rc != kth_ec_success);
     REQUIRE(out == NULL);
 
-    kth_chain_utxo_list_destruct(utxos);
+    kth_domain_chain_utxo_list_destruct(utxos);
 }
 
 // ---------------------------------------------------------------------------
@@ -220,21 +220,21 @@ TEST_CASE("C-API wallet::coin_selection - select_utxos(NULL utxos) aborts",
 
 TEST_CASE("C-API wallet::coin_selection - select_utxos(NULL category) aborts",
           "[C-API WalletCoinSelection][precondition]") {
-    kth_utxo_list_mut_t utxos = kth_chain_utxo_list_construct_default();
+    kth_utxo_list_mut_t utxos = kth_domain_chain_utxo_list_construct_default();
     kth_coin_selection_result_mut_t out = NULL;
     KTH_EXPECT_ABORT(kth_wallet_coin_selection_select_utxos(
         utxos, 1u, 1u, NULL,
         kth_coin_selection_strategy_clean, &out));
-    kth_chain_utxo_list_destruct(utxos);
+    kth_domain_chain_utxo_list_destruct(utxos);
 }
 
 TEST_CASE("C-API wallet::coin_selection - select_utxos(NULL out) aborts",
           "[C-API WalletCoinSelection][precondition]") {
-    kth_utxo_list_mut_t utxos = kth_chain_utxo_list_construct_default();
+    kth_utxo_list_mut_t utxos = kth_domain_chain_utxo_list_construct_default();
     KTH_EXPECT_ABORT(kth_wallet_coin_selection_select_utxos(
         utxos, 1u, 1u, &kBchCategory,
         kth_coin_selection_strategy_clean, NULL));
-    kth_chain_utxo_list_destruct(utxos);
+    kth_domain_chain_utxo_list_destruct(utxos);
 }
 
 // ---------------------------------------------------------------------------
@@ -299,7 +299,7 @@ TEST_CASE("C-API wallet::coin_selection - create_tx_template builds a tx with ex
     // At least one input was selected to cover the 50000 sat target.
     REQUIRE(kth_core_u32_list_count(out_indices) >= 1u);
 
-    kth_chain_transaction_destruct(out_tx);
+    kth_domain_chain_transaction_destruct(out_tx);
     kth_core_u32_list_destruct(out_indices);
     kth_wallet_payment_address_list_destruct(out_addresses);
     kth_core_u64_list_destruct(out_amounts);
@@ -309,7 +309,7 @@ TEST_CASE("C-API wallet::coin_selection - create_tx_template builds a tx with ex
     kth_wallet_payment_address_destruct(change2);
     kth_wallet_payment_address_destruct(change1);
     kth_wallet_payment_address_destruct(dest);
-    kth_chain_utxo_list_destruct(utxos);
+    kth_domain_chain_utxo_list_destruct(utxos);
 }
 
 TEST_CASE("C-API wallet::coin_selection - create_tx_template_default_ratios builds a tx",
@@ -340,7 +340,7 @@ TEST_CASE("C-API wallet::coin_selection - create_tx_template_default_ratios buil
     REQUIRE(out_addresses != NULL);
     REQUIRE(out_amounts != NULL);
 
-    kth_chain_transaction_destruct(out_tx);
+    kth_domain_chain_transaction_destruct(out_tx);
     kth_core_u32_list_destruct(out_indices);
     kth_wallet_payment_address_list_destruct(out_addresses);
     kth_core_u64_list_destruct(out_amounts);
@@ -348,7 +348,7 @@ TEST_CASE("C-API wallet::coin_selection - create_tx_template_default_ratios buil
     kth_wallet_payment_address_list_destruct(change_addrs);
     kth_wallet_payment_address_destruct(change1);
     kth_wallet_payment_address_destruct(dest);
-    kth_chain_utxo_list_destruct(utxos);
+    kth_domain_chain_utxo_list_destruct(utxos);
 }
 
 TEST_CASE("C-API wallet::coin_selection - create_tx_template(NULL utxos) aborts",
@@ -388,7 +388,7 @@ TEST_CASE("C-API wallet::coin_selection - create_tx_template(NULL out_tx) aborts
     kth_core_double_list_destruct(ratios);
     kth_wallet_payment_address_list_destruct(change_addrs);
     kth_wallet_payment_address_destruct(dest);
-    kth_chain_utxo_list_destruct(utxos);
+    kth_domain_chain_utxo_list_destruct(utxos);
 }
 
 // ---------------------------------------------------------------------------
@@ -397,7 +397,7 @@ TEST_CASE("C-API wallet::coin_selection - create_tx_template(NULL out_tx) aborts
 
 TEST_CASE("C-API wallet::coin_selection - create_token_split_tx_template(NULL outpoints) aborts",
           "[C-API WalletCoinSelection][precondition]") {
-    kth_utxo_list_mut_t utxos = kth_chain_utxo_list_construct_default();
+    kth_utxo_list_mut_t utxos = kth_domain_chain_utxo_list_construct_default();
     kth_payment_address_mut_t dest = NULL;
     kth_wallet_payment_address_parse_from_simple(kAddrDest, &dest);
     kth_transaction_mut_t          out_tx        = NULL;
@@ -406,13 +406,13 @@ TEST_CASE("C-API wallet::coin_selection - create_token_split_tx_template(NULL ou
     KTH_EXPECT_ABORT(kth_wallet_coin_selection_create_token_split_tx_template(
         NULL, utxos, dest, &out_tx, &out_addresses, &out_amounts));
     kth_wallet_payment_address_destruct(dest);
-    kth_chain_utxo_list_destruct(utxos);
+    kth_domain_chain_utxo_list_destruct(utxos);
 }
 
 TEST_CASE("C-API wallet::coin_selection - create_token_split_tx_template(empty outpoints) returns error",
           "[C-API WalletCoinSelection][create_token_split]") {
-    kth_output_point_list_mut_t outpoints = kth_chain_output_point_list_construct_default();
-    kth_utxo_list_mut_t utxos = kth_chain_utxo_list_construct_default();
+    kth_output_point_list_mut_t outpoints = kth_domain_chain_output_point_list_construct_default();
+    kth_utxo_list_mut_t utxos = kth_domain_chain_utxo_list_construct_default();
     kth_payment_address_mut_t dest = NULL;
     kth_wallet_payment_address_parse_from_simple(kAddrDest, &dest);
     kth_transaction_mut_t          out_tx        = NULL;
@@ -429,6 +429,6 @@ TEST_CASE("C-API wallet::coin_selection - create_token_split_tx_template(empty o
     REQUIRE(out_amounts == NULL);
 
     kth_wallet_payment_address_destruct(dest);
-    kth_chain_utxo_list_destruct(utxos);
-    kth_chain_output_point_list_destruct(outpoints);
+    kth_domain_chain_utxo_list_destruct(utxos);
+    kth_domain_chain_output_point_list_destruct(outpoints);
 }

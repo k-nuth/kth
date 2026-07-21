@@ -181,16 +181,16 @@ set(kth_sources
 
 
   src/chain/opcode.cpp
-  src/chain/operation.cpp
-  src/chain/operation_list.cpp
-  src/chain/script.cpp
-  src/chain/transaction.cpp
-  src/chain/transaction_list.cpp
-  src/chain/utxo.cpp
-  src/chain/utxo_list.cpp
-  src/chain/abla.cpp
-  src/chain/abla_config.cpp
-  src/chain/abla_state.cpp
+  src/domain/machine/operation.cpp
+  src/domain/machine/operation_list.cpp
+  src/domain/chain/script.cpp
+  src/domain/chain/transaction.cpp
+  src/domain/chain/transaction_list.cpp
+  src/domain/chain/utxo.cpp
+  src/domain/chain/utxo_list.cpp
+  src/domain/chain/abla.cpp
+  src/domain/chain/abla_config.cpp
+  src/domain/chain/abla_state.cpp
 
 
   src/wallet/ec_private.cpp
@@ -250,39 +250,39 @@ set(kth_sources
         src/node.cpp
         src/platform.cpp
 
-        src/chain/block.cpp
-        src/chain/block_list.cpp
+        src/domain/chain/block.cpp
+        src/domain/chain/block_list.cpp
 
         src/chain/chain_async.cpp
         src/chain/chain_other.cpp
         src/chain/chain_sync.cpp
 
-        src/chain/compact_block.cpp
-        src/chain/double_spend_proof.cpp
-        src/chain/double_spend_proof_spender.cpp
-        src/chain/get_blocks.cpp
-        src/chain/get_headers.cpp
-        src/chain/header.cpp
-        src/chain/history_compact.cpp
-        src/chain/history_compact_list.cpp
-        src/chain/stealth_compact.cpp
-        src/chain/stealth_compact_list.cpp
-        src/chain/input.cpp
-        src/chain/input_list.cpp
-        src/chain/input_point.cpp
+        src/domain/message/compact_block.cpp
+        src/domain/message/double_spend_proof.cpp
+        src/domain/message/double_spend_proof_spender.cpp
+        src/domain/message/get_blocks.cpp
+        src/domain/message/get_headers.cpp
+        src/domain/chain/header.cpp
+        src/domain/chain/history_compact.cpp
+        src/domain/chain/history_compact_list.cpp
+        src/domain/chain/stealth_compact.cpp
+        src/domain/chain/stealth_compact_list.cpp
+        src/domain/chain/input.cpp
+        src/domain/chain/input_list.cpp
+        src/domain/chain/input_point.cpp
         src/chain/mempool_transaction_list.cpp
-        src/chain/merkle_block.cpp
-        src/chain/output.cpp
-        src/chain/output_list.cpp
-        src/chain/output_point.cpp
-        src/chain/point.cpp
-        src/chain/point_list.cpp
-        src/chain/output_point_list.cpp
+        src/domain/message/merkle_block.cpp
+        src/domain/chain/output.cpp
+        src/domain/chain/output_list.cpp
+        src/domain/chain/output_point.cpp
+        src/domain/chain/point.cpp
+        src/domain/chain/point_list.cpp
+        src/domain/chain/output_point_list.cpp
         src/chain/mempool_transaction.cpp
-        src/chain/prefilled_transaction.cpp
-        src/chain/prefilled_transaction_list.cpp
+        src/domain/message/prefilled_transaction.cpp
+        src/domain/message/prefilled_transaction_list.cpp
 
-        src/chain/token_data.cpp
+        src/domain/chain/token_data.cpp
 
         src/config/authority.cpp
         src/config/blockchain_settings.cpp
@@ -330,14 +330,14 @@ set(kth_headers
   include/kth/capi/u64_list.h
 
   include/kth/capi/chain/opcode.h
-  include/kth/capi/chain/operation_list.h
-  include/kth/capi/chain/operation.h
-  include/kth/capi/chain/script.h
+  include/kth/capi/domain/machine/operation_list.h
+  include/kth/capi/domain/machine/operation.h
+  include/kth/capi/domain/chain/script.h
   include/kth/capi/chain/script_version.h
-  include/kth/capi/chain/get_headers.h
-  include/kth/capi/chain/double_spend_proof.h
-  include/kth/capi/chain/transaction.h
-  include/kth/capi/chain/transaction_list.h
+  include/kth/capi/domain/message/get_headers.h
+  include/kth/capi/domain/message/double_spend_proof.h
+  include/kth/capi/domain/chain/transaction.h
+  include/kth/capi/domain/chain/transaction_list.h
 
   include/kth/capi/vm/program.h
 
@@ -416,47 +416,47 @@ set(kth_headers
   set(kth_headers
     ${kth_headers}
 
-    include/kth/capi/chain/block_list.h
+    include/kth/capi/domain/chain/block_list.h
     include/kth/capi/chain/mempool_transaction_list.h
-    include/kth/capi/chain/compact_block.h
+    include/kth/capi/domain/message/compact_block.h
     include/kth/capi/chain/token_capability.h
     include/kth/capi/chain/token_kind.h
-    include/kth/capi/chain/token_data.h
-    include/kth/capi/chain/input.h
-    include/kth/capi/chain/input_point.h
+    include/kth/capi/domain/chain/token_data.h
+    include/kth/capi/domain/chain/input.h
+    include/kth/capi/domain/chain/input_point.h
     include/kth/capi/chain/chain.h
     include/kth/capi/chain/chain_sync.h
     include/kth/capi/chain/chain_other.h
-    include/kth/capi/chain/stealth_compact.h
-    include/kth/capi/chain/history_compact_list.h
-    include/kth/capi/chain/stealth_compact_list.h
-    include/kth/capi/chain/output_point.h
-    include/kth/capi/chain/point_list.h
-    include/kth/capi/chain/header.h
+    include/kth/capi/domain/chain/stealth_compact.h
+    include/kth/capi/domain/chain/history_compact_list.h
+    include/kth/capi/domain/chain/stealth_compact_list.h
+    include/kth/capi/domain/chain/output_point.h
+    include/kth/capi/domain/chain/point_list.h
+    include/kth/capi/domain/chain/header.h
     include/kth/capi/chain/chain_async.h
-    include/kth/capi/chain/history_compact.h
-    include/kth/capi/chain/output.h
-    include/kth/capi/chain/output_list.h
-    include/kth/capi/chain/output_point_list.h
-    include/kth/capi/chain/get_blocks.h
-    include/kth/capi/chain/double_spend_proof_spender.h
-    include/kth/capi/chain/point.h
-    include/kth/capi/chain/merkle_block.h
-    include/kth/capi/chain/block.h
+    include/kth/capi/domain/chain/history_compact.h
+    include/kth/capi/domain/chain/output.h
+    include/kth/capi/domain/chain/output_list.h
+    include/kth/capi/domain/chain/output_point_list.h
+    include/kth/capi/domain/message/get_blocks.h
+    include/kth/capi/domain/message/double_spend_proof_spender.h
+    include/kth/capi/domain/chain/point.h
+    include/kth/capi/domain/message/merkle_block.h
+    include/kth/capi/domain/chain/block.h
     include/kth/capi/chain/mempool_transaction.h
-    include/kth/capi/chain/prefilled_transaction.h
-    include/kth/capi/chain/prefilled_transaction_list.h
+    include/kth/capi/domain/message/prefilled_transaction.h
+    include/kth/capi/domain/message/prefilled_transaction_list.h
     include/kth/capi/chain/script_flags.h
     include/kth/capi/chain/script_version.h
     include/kth/capi/chain/script_pattern.h
-    include/kth/capi/chain/get_headers.h
-    include/kth/capi/chain/double_spend_proof.h
-    include/kth/capi/chain/input_list.h
-    include/kth/capi/chain/utxo.h
-    include/kth/capi/chain/utxo_list.h
-    include/kth/capi/chain/abla.h
-    include/kth/capi/chain/abla_config.h
-    include/kth/capi/chain/abla_state.h
+    include/kth/capi/domain/message/get_headers.h
+    include/kth/capi/domain/message/double_spend_proof.h
+    include/kth/capi/domain/chain/input_list.h
+    include/kth/capi/domain/chain/utxo.h
+    include/kth/capi/domain/chain/utxo_list.h
+    include/kth/capi/domain/chain/abla.h
+    include/kth/capi/domain/chain/abla_config.h
+    include/kth/capi/domain/chain/abla_state.h
     include/kth/capi/chain/abla_config_validity.h
     include/kth/capi/chain/abla_state_validity.h
     include/kth/capi/platform.h

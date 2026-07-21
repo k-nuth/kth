@@ -14,7 +14,7 @@
 #include <string.h>
 #include <time.h>
 
-#include <kth/capi/chain/header.h>
+#include <kth/capi/domain/chain/header.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/primitives.h>
 
@@ -52,7 +52,7 @@ static kth_hash_t const kMerkle = {{
 static kth_hash_t const kZeroHash = {{ 0 }};
 
 static kth_header_mut_t make_zero_header(void) {
-    return kth_chain_header_construct(0u, &kZeroHash, &kZeroHash, 0u, 0u, 0u);
+    return kth_domain_chain_header_construct(0u, &kZeroHash, &kZeroHash, 0u, 0u, 0u);
 }
 
 // ---------------------------------------------------------------------------
@@ -60,21 +60,21 @@ static kth_header_mut_t make_zero_header(void) {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API Header - field constructor preserves all fields", "[C-API Header]") {
-    kth_header_mut_t header = kth_chain_header_construct(
+    kth_header_mut_t header = kth_domain_chain_header_construct(
         kVersion, &kPrevHash, &kMerkle, kTimestamp, kBits, kNonce);
 
-    REQUIRE(kth_chain_header_version(header)   == kVersion);
-    REQUIRE(kth_chain_header_timestamp(header) == kTimestamp);
-    REQUIRE(kth_chain_header_bits(header)      == kBits);
-    REQUIRE(kth_chain_header_nonce(header)     == kNonce);
+    REQUIRE(kth_domain_chain_header_version(header)   == kVersion);
+    REQUIRE(kth_domain_chain_header_timestamp(header) == kTimestamp);
+    REQUIRE(kth_domain_chain_header_bits(header)      == kBits);
+    REQUIRE(kth_domain_chain_header_nonce(header)     == kNonce);
 
-    kth_hash_t prev = kth_chain_header_previous_block_hash(header);
+    kth_hash_t prev = kth_domain_chain_header_previous_block_hash(header);
     REQUIRE(kth_hash_equal(prev, kPrevHash) != 0);
 
-    kth_hash_t merkle = kth_chain_header_merkle(header);
+    kth_hash_t merkle = kth_domain_chain_header_merkle(header);
     REQUIRE(kth_hash_equal(merkle, kMerkle) != 0);
 
-    kth_chain_header_destruct(header);
+    kth_domain_chain_header_destruct(header);
 }
 
 // ---------------------------------------------------------------------------
@@ -85,30 +85,30 @@ TEST_CASE("C-API Header - from_data insufficient bytes fails", "[C-API Header]")
     uint8_t data[10];
     memset(data, 0, sizeof(data));
     kth_header_mut_t out = NULL;
-    kth_error_code_t ec = kth_chain_header_construct_from_data(data, 10, 1, &out);
+    kth_error_code_t ec = kth_domain_chain_header_construct_from_data(data, 10, 1, &out);
     REQUIRE(ec != kth_ec_success);
     REQUIRE(out == NULL);
 }
 
 TEST_CASE("C-API Header - to_data / from_data roundtrip", "[C-API Header]") {
-    kth_header_mut_t expected = kth_chain_header_construct(
+    kth_header_mut_t expected = kth_domain_chain_header_construct(
         kVersion, &kPrevHash, &kMerkle, kTimestamp, kBits, kNonce);
 
     kth_size_t size = 0;
-    uint8_t* raw = kth_chain_header_to_data(expected, 1, &size);
+    uint8_t* raw = kth_domain_chain_header_to_data(expected, 1, &size);
     REQUIRE(size == 80u);
     REQUIRE(raw != NULL);
 
     kth_header_mut_t parsed = NULL;
-    kth_error_code_t ec = kth_chain_header_construct_from_data(raw, size, 1, &parsed);
+    kth_error_code_t ec = kth_domain_chain_header_construct_from_data(raw, size, 1, &parsed);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(parsed != NULL);
 
-    REQUIRE(kth_chain_header_equals(expected, parsed) != 0);
+    REQUIRE(kth_domain_chain_header_equals(expected, parsed) != 0);
 
     kth_core_destruct_array(raw);
-    kth_chain_header_destruct(parsed);
-    kth_chain_header_destruct(expected);
+    kth_domain_chain_header_destruct(parsed);
+    kth_domain_chain_header_destruct(expected);
 }
 
 // ---------------------------------------------------------------------------
@@ -117,28 +117,28 @@ TEST_CASE("C-API Header - to_data / from_data roundtrip", "[C-API Header]") {
 
 TEST_CASE("C-API Header - is_valid_timestamp now true", "[C-API Header]") {
     time_t now = time(NULL);
-    kth_header_mut_t header = kth_chain_header_construct(
+    kth_header_mut_t header = kth_domain_chain_header_construct(
         0u, &kPrevHash, &kMerkle, (uint32_t)now, 0u, 0u);
-    REQUIRE(kth_chain_header_is_valid_timestamp(header) != 0);
-    kth_chain_header_destruct(header);
+    REQUIRE(kth_domain_chain_header_is_valid_timestamp(header) != 0);
+    kth_domain_chain_header_destruct(header);
 }
 
 TEST_CASE("C-API Header - is_valid_timestamp 3h in future false", "[C-API Header]") {
     time_t future = time(NULL) + 3 * 60 * 60;
-    kth_header_mut_t header = kth_chain_header_construct(
+    kth_header_mut_t header = kth_domain_chain_header_construct(
         0u, &kPrevHash, &kMerkle, (uint32_t)future, 0u, 0u);
-    REQUIRE(kth_chain_header_is_valid_timestamp(header) == 0);
-    kth_chain_header_destruct(header);
+    REQUIRE(kth_domain_chain_header_is_valid_timestamp(header) == 0);
+    kth_domain_chain_header_destruct(header);
 }
 
 TEST_CASE("C-API Header - is_valid_proof_of_work bits exceed max false", "[C-API Header]") {
     // Any bits value above the proof-of-work limit should make the header
     // fail validation. Use a sentinel value larger than any plausible target.
-    kth_header_mut_t header = kth_chain_header_construct(
+    kth_header_mut_t header = kth_domain_chain_header_construct(
         0u, &kPrevHash, &kMerkle, 0u, 0xFFFFFFFFu, 0u);
-    kth_hash_t const hash = kth_chain_header_hash(header);
-    REQUIRE(kth_chain_header_is_valid_proof_of_work(header, &hash, 1) == 0);
-    kth_chain_header_destruct(header);
+    kth_hash_t const hash = kth_domain_chain_header_hash(header);
+    REQUIRE(kth_domain_chain_header_is_valid_proof_of_work(header, &hash, 1) == 0);
+    kth_domain_chain_header_destruct(header);
 }
 
 // ---------------------------------------------------------------------------
@@ -146,33 +146,33 @@ TEST_CASE("C-API Header - is_valid_proof_of_work bits exceed max false", "[C-API
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API Header - copy preserves all fields", "[C-API Header]") {
-    kth_header_mut_t original = kth_chain_header_construct(
+    kth_header_mut_t original = kth_domain_chain_header_construct(
         kVersion, &kPrevHash, &kMerkle, kTimestamp, kBits, kNonce);
-    kth_header_mut_t copy = kth_chain_header_copy(original);
+    kth_header_mut_t copy = kth_domain_chain_header_copy(original);
 
-    REQUIRE(kth_chain_header_equals(original, copy) != 0);
-    REQUIRE(kth_chain_header_version(copy)   == kVersion);
-    REQUIRE(kth_chain_header_timestamp(copy) == kTimestamp);
-    REQUIRE(kth_chain_header_bits(copy)      == kBits);
-    REQUIRE(kth_chain_header_nonce(copy)     == kNonce);
+    REQUIRE(kth_domain_chain_header_equals(original, copy) != 0);
+    REQUIRE(kth_domain_chain_header_version(copy)   == kVersion);
+    REQUIRE(kth_domain_chain_header_timestamp(copy) == kTimestamp);
+    REQUIRE(kth_domain_chain_header_bits(copy)      == kBits);
+    REQUIRE(kth_domain_chain_header_nonce(copy)     == kNonce);
 
-    kth_chain_header_destruct(copy);
-    kth_chain_header_destruct(original);
+    kth_domain_chain_header_destruct(copy);
+    kth_domain_chain_header_destruct(original);
 }
 
 TEST_CASE("C-API Header - equals duplicates", "[C-API Header]") {
-    kth_header_mut_t a = kth_chain_header_construct(
+    kth_header_mut_t a = kth_domain_chain_header_construct(
         kVersion, &kPrevHash, &kMerkle, kTimestamp, kBits, kNonce);
-    kth_header_mut_t b = kth_chain_header_construct(
+    kth_header_mut_t b = kth_domain_chain_header_construct(
         kVersion, &kPrevHash, &kMerkle, kTimestamp, kBits, kNonce);
     kth_header_mut_t c = make_zero_header();
 
-    REQUIRE(kth_chain_header_equals(a, b) != 0);
-    REQUIRE(kth_chain_header_equals(a, c) == 0);
+    REQUIRE(kth_domain_chain_header_equals(a, b) != 0);
+    REQUIRE(kth_domain_chain_header_equals(a, c) == 0);
 
-    kth_chain_header_destruct(a);
-    kth_chain_header_destruct(b);
-    kth_chain_header_destruct(c);
+    kth_domain_chain_header_destruct(a);
+    kth_domain_chain_header_destruct(b);
+    kth_domain_chain_header_destruct(c);
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +180,7 @@ TEST_CASE("C-API Header - equals duplicates", "[C-API Header]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API Header - satoshi_fixed_size is 80", "[C-API Header]") {
-    REQUIRE(kth_chain_header_satoshi_fixed_size() == 80u);
+    REQUIRE(kth_domain_chain_header_satoshi_fixed_size() == 80u);
 }
 
 // ---------------------------------------------------------------------------
@@ -191,7 +191,7 @@ TEST_CASE("C-API Header - construct_from_data null data with non-zero size abort
           "[C-API Header][precondition]") {
     KTH_EXPECT_ABORT({
         kth_header_mut_t out = NULL;
-        kth_chain_header_construct_from_data(NULL, 1, 1, &out);
+        kth_domain_chain_header_construct_from_data(NULL, 1, 1, &out);
     });
 }
 
@@ -201,46 +201,46 @@ TEST_CASE("C-API Header - construct_from_data NULL data with zero size returns e
     // header parser will fail because zero bytes are insufficient, but it
     // must do so gracefully via an error code.
     kth_header_mut_t out = NULL;
-    kth_error_code_t ec = kth_chain_header_construct_from_data(NULL, 0, 1, &out);
+    kth_error_code_t ec = kth_domain_chain_header_construct_from_data(NULL, 0, 1, &out);
     REQUIRE(ec != kth_ec_success);
     REQUIRE(out == NULL);
 }
 
-// Both `kth_chain_header_construct` (safe, takes `kth_hash_t const*`)
+// Both `kth_domain_chain_header_construct` (safe, takes `kth_hash_t const*`)
 // and its `_unsafe` companion (takes raw `uint8_t const*`) enforce the
 // same runtime precondition that the hash pointers are non-null.
 TEST_CASE("C-API Header - construct null previous_block_hash aborts",
           "[C-API Header][precondition]") {
     KTH_EXPECT_ABORT(
-        kth_chain_header_construct(kVersion, NULL, &kMerkle,
+        kth_domain_chain_header_construct(kVersion, NULL, &kMerkle,
                                    kTimestamp, kBits, kNonce));
 }
 
 TEST_CASE("C-API Header - construct null merkle aborts",
           "[C-API Header][precondition]") {
     KTH_EXPECT_ABORT(
-        kth_chain_header_construct(kVersion, &kPrevHash, NULL,
+        kth_domain_chain_header_construct(kVersion, &kPrevHash, NULL,
                                    kTimestamp, kBits, kNonce));
 }
 
 TEST_CASE("C-API Header - construct_unsafe null previous_block_hash aborts",
           "[C-API Header][precondition]") {
     KTH_EXPECT_ABORT(
-        kth_chain_header_construct_unsafe(kVersion, NULL, kMerkle.hash,
+        kth_domain_chain_header_construct_unsafe(kVersion, NULL, kMerkle.hash,
                                           kTimestamp, kBits, kNonce));
 }
 
 TEST_CASE("C-API Header - construct_unsafe null merkle aborts",
           "[C-API Header][precondition]") {
     KTH_EXPECT_ABORT(
-        kth_chain_header_construct_unsafe(kVersion, kPrevHash.hash, NULL,
+        kth_domain_chain_header_construct_unsafe(kVersion, kPrevHash.hash, NULL,
                                           kTimestamp, kBits, kNonce));
 }
 
 TEST_CASE("C-API Header - to_data null out_size aborts",
           "[C-API Header][precondition]") {
-    kth_header_mut_t header = kth_chain_header_construct(
+    kth_header_mut_t header = kth_domain_chain_header_construct(
         kVersion, &kPrevHash, &kMerkle, kTimestamp, kBits, kNonce);
-    KTH_EXPECT_ABORT(kth_chain_header_to_data(header, 1, NULL));
-    kth_chain_header_destruct(header);
+    KTH_EXPECT_ABORT(kth_domain_chain_header_to_data(header, 1, NULL));
+    kth_domain_chain_header_destruct(header);
 }

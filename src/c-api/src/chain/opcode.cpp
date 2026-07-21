@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <kth/capi/chain/operation.h>
+#include <kth/capi/domain/machine/operation.h>
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>

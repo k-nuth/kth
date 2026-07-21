@@ -12,13 +12,13 @@
 
 #include <stdint.h>
 
-#include <kth/capi/chain/input.h>
-#include <kth/capi/chain/input_list.h>
-#include <kth/capi/chain/output.h>
-#include <kth/capi/chain/output_list.h>
-#include <kth/capi/chain/output_point.h>
-#include <kth/capi/chain/script.h>
-#include <kth/capi/chain/transaction.h>
+#include <kth/capi/domain/chain/input.h>
+#include <kth/capi/domain/chain/input_list.h>
+#include <kth/capi/domain/chain/output.h>
+#include <kth/capi/domain/chain/output_list.h>
+#include <kth/capi/domain/chain/output_point.h>
+#include <kth/capi/domain/chain/script.h>
+#include <kth/capi/domain/chain/transaction.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/vm/program.h>
@@ -49,7 +49,7 @@ static uint8_t const kScriptBody[20] = {
 
 static kth_script_mut_t make_script(void) {
     kth_script_mut_t s = NULL;
-    kth_error_code_t ec = kth_chain_script_construct_from_data(
+    kth_error_code_t ec = kth_domain_chain_script_construct_from_data(
         kScriptBody, sizeof(kScriptBody), 0, &s);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(s != NULL);
@@ -57,35 +57,35 @@ static kth_script_mut_t make_script(void) {
 }
 
 static kth_input_list_mut_t make_inputs(void) {
-    kth_input_list_mut_t list = kth_chain_input_list_construct_default();
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kPrevHash, 0);
+    kth_input_list_mut_t list = kth_domain_chain_input_list_construct_default();
+    kth_output_point_mut_t op = kth_domain_chain_output_point_construct_from_hash_index(&kPrevHash, 0);
     kth_script_mut_t script = make_script();
-    kth_input_mut_t in = kth_chain_input_construct(op, script, 0xffffffffu);
-    kth_chain_input_list_push_back(list, in);
-    kth_chain_input_destruct(in);
-    kth_chain_script_destruct(script);
-    kth_chain_output_point_destruct(op);
+    kth_input_mut_t in = kth_domain_chain_input_construct(op, script, 0xffffffffu);
+    kth_domain_chain_input_list_push_back(list, in);
+    kth_domain_chain_input_destruct(in);
+    kth_domain_chain_script_destruct(script);
+    kth_domain_chain_output_point_destruct(op);
     return list;
 }
 
 static kth_output_list_mut_t make_outputs(void) {
-    kth_output_list_mut_t list = kth_chain_output_list_construct_default();
+    kth_output_list_mut_t list = kth_domain_chain_output_list_construct_default();
     kth_script_mut_t script = make_script();
-    kth_output_mut_t out = kth_chain_output_construct(50000ull, script, NULL);
-    kth_chain_output_list_push_back(list, out);
-    kth_chain_output_destruct(out);
-    kth_chain_script_destruct(script);
+    kth_output_mut_t out = kth_domain_chain_output_construct(50000ull, script, NULL);
+    kth_domain_chain_output_list_push_back(list, out);
+    kth_domain_chain_output_destruct(out);
+    kth_domain_chain_script_destruct(script);
     return list;
 }
 
 static kth_transaction_mut_t make_tx(void) {
     kth_input_list_mut_t ins = make_inputs();
     kth_output_list_mut_t outs = make_outputs();
-    kth_transaction_mut_t tx = kth_chain_transaction_construct(
+    kth_transaction_mut_t tx = kth_domain_chain_transaction_construct(
         kVersion, kLocktime, ins, outs);
     REQUIRE(tx != NULL);
-    kth_chain_input_list_destruct(ins);
-    kth_chain_output_list_destruct(outs);
+    kth_domain_chain_input_list_destruct(ins);
+    kth_domain_chain_output_list_destruct(outs);
     return tx;
 }
 
@@ -108,7 +108,7 @@ TEST_CASE("C-API ScriptExecutionContext - construct surfaces the input index and
     REQUIRE(kth_vm_script_execution_context_tx_locktime(ctx) == kLocktime);
 
     kth_vm_script_execution_context_destruct(ctx);
-    kth_chain_transaction_destruct(tx);
+    kth_domain_chain_transaction_destruct(tx);
 }
 
 TEST_CASE("C-API ScriptExecutionContext - destruct(NULL) is a no-op",
@@ -132,7 +132,7 @@ TEST_CASE("C-API ScriptExecutionContext - copy is an independent handle",
     REQUIRE(kth_vm_script_execution_context_input_index(orig) == 0u);
 
     kth_vm_script_execution_context_destruct(orig);
-    kth_chain_transaction_destruct(tx);
+    kth_domain_chain_transaction_destruct(tx);
 }
 
 // ---------------------------------------------------------------------------
@@ -150,12 +150,12 @@ TEST_CASE("C-API ScriptExecutionContext - transaction() returns a queryable borr
     // accessor hands back the actual object, not a detached copy.
     kth_transaction_const_t borrowed = kth_vm_script_execution_context_transaction(ctx);
     REQUIRE(borrowed != NULL);
-    REQUIRE(kth_chain_transaction_version(borrowed) == kVersion);
-    REQUIRE(kth_chain_transaction_locktime(borrowed) == kLocktime);
+    REQUIRE(kth_domain_chain_transaction_version(borrowed) == kVersion);
+    REQUIRE(kth_domain_chain_transaction_locktime(borrowed) == kLocktime);
 
     // Do NOT destruct `borrowed` — it's a non-owning view into the tx.
     kth_vm_script_execution_context_destruct(ctx);
-    kth_chain_transaction_destruct(tx);
+    kth_domain_chain_transaction_destruct(tx);
 }
 
 // ---------------------------------------------------------------------------
@@ -174,7 +174,7 @@ TEST_CASE("C-API ScriptExecutionContext - program without ctx reports no context
     REQUIRE(ctx == NULL);
 
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------

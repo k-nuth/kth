@@ -87,7 +87,7 @@ kth_error_code_t kth_wallet_cashtoken_encode_nft_number(
 // Output factories
 // ---------------------------------------------------------------------------
 
-/** @return Owned `kth_output_mut_t`. Caller must release with `kth_chain_output_destruct`. */
+/** @return Owned `kth_output_mut_t`. Caller must release with `kth_domain_chain_output_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_output_mut_t kth_wallet_cashtoken_create_ft_output(
     kth_payment_address_const_t destination,
@@ -95,7 +95,7 @@ kth_output_mut_t kth_wallet_cashtoken_create_ft_output(
     uint64_t ft_amount,
     uint64_t satoshis);
 
-/** @return Owned `kth_output_mut_t`. Caller must release with `kth_chain_output_destruct`. */
+/** @return Owned `kth_output_mut_t`. Caller must release with `kth_domain_chain_output_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_output_mut_t kth_wallet_cashtoken_create_nft_output(
     kth_payment_address_const_t destination,
@@ -105,7 +105,7 @@ kth_output_mut_t kth_wallet_cashtoken_create_nft_output(
     kth_size_t commitment_n,
     uint64_t satoshis);
 
-/** @return Owned `kth_output_mut_t`. Caller must release with `kth_chain_output_destruct`. */
+/** @return Owned `kth_output_mut_t`. Caller must release with `kth_domain_chain_output_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_output_mut_t kth_wallet_cashtoken_create_combined_token_output(
     kth_payment_address_const_t destination,

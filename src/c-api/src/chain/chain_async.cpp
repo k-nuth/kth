@@ -13,7 +13,7 @@
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 
-#include <kth/capi/chain/block_list.h>
+#include <kth/capi/domain/chain/block_list.h>
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
 

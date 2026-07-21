@@ -9,16 +9,16 @@
 #include <thread>
 
 #include <kth/capi/chain/chain.h>
-#include <kth/capi/chain/history_compact.h>
-#include <kth/capi/chain/history_compact_list.h>
-#include <kth/capi/chain/input.h>
-#include <kth/capi/chain/input_list.h>
-#include <kth/capi/chain/output.h>
-#include <kth/capi/chain/output_list.h>
-#include <kth/capi/chain/output_point.h>
-#include <kth/capi/chain/script.h>
-#include <kth/capi/chain/transaction.h>
-#include <kth/capi/chain/transaction_list.h>
+#include <kth/capi/domain/chain/history_compact.h>
+#include <kth/capi/domain/chain/history_compact_list.h>
+#include <kth/capi/domain/chain/input.h>
+#include <kth/capi/domain/chain/input_list.h>
+#include <kth/capi/domain/chain/output.h>
+#include <kth/capi/domain/chain/output_list.h>
+#include <kth/capi/domain/chain/output_point.h>
+#include <kth/capi/domain/chain/script.h>
+#include <kth/capi/domain/chain/transaction.h>
+#include <kth/capi/domain/chain/transaction_list.h>
 #include <kth/capi/node.h>
 #include <kth/capi/hash_list.h>
 #include <kth/capi/helpers.hpp>
@@ -33,7 +33,7 @@
 #include <kth/domain/wallet/hd_private.hpp>
 
 
-#include <kth/capi/chain/header.h>
+#include <kth/capi/domain/chain/header.h>
 
 void print_hex(uint8_t const* data, size_t n) {
     while (n != 0) {
@@ -69,31 +69,31 @@ int main(int argc, char* argv[]) {
     kth_header_t header;
     kth_size_t height;
     auto res = kth_chain_sync_block_header_by_height(chain, 2300, &header, &height);
-    kth_hash_t hash = kth_chain_header_hash(header);
+    kth_hash_t hash = kth_domain_chain_header_hash(header);
     print_hex(hash.hash, 32);
 
-    auto version = kth_chain_header_version(header);
-    auto previous_block_hash = kth_chain_header_previous_block_hash(header);
-    auto merkle = kth_chain_header_merkle(header);
-    auto timestamp = kth_chain_header_timestamp(header);
-    auto bits = kth_chain_header_bits(header);
-    auto nonce = kth_chain_header_nonce(header);
+    auto version = kth_domain_chain_header_version(header);
+    auto previous_block_hash = kth_domain_chain_header_previous_block_hash(header);
+    auto merkle = kth_domain_chain_header_merkle(header);
+    auto timestamp = kth_domain_chain_header_timestamp(header);
+    auto bits = kth_domain_chain_header_bits(header);
+    auto nonce = kth_domain_chain_header_nonce(header);
 
     print_hex(previous_block_hash.hash, 32);
     print_hex(merkle.hash, 32);
 
 
     kth_size_t datasize1;
-    auto* data1 = kth_chain_header_to_data(header, 0, &datasize1);
+    auto* data1 = kth_domain_chain_header_to_data(header, 0, &datasize1);
     print_hex(data1, datasize1);
 
-    kth_header_t new_header = kth_chain_header_construct(version, previous_block_hash, merkle, timestamp, bits, nonce);
-    kth_chain_header_destruct(header);
-    kth_hash_t new_hash = kth_chain_header_hash(new_header);
+    kth_header_t new_header = kth_domain_chain_header_construct(version, previous_block_hash, merkle, timestamp, bits, nonce);
+    kth_domain_chain_header_destruct(header);
+    kth_hash_t new_hash = kth_domain_chain_header_hash(new_header);
     print_hex(new_hash.hash, 32);
 
     kth_size_t datasize2;
-    auto* data2 = kth_chain_header_to_data(new_header, 0, &datasize2);
+    auto* data2 = kth_domain_chain_header_to_data(new_header, 0, &datasize2);
     print_hex(data2, datasize2);
 
 }

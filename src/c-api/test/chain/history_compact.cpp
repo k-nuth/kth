@@ -7,8 +7,8 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <kth/capi/chain/history_compact.h>
-#include <kth/capi/chain/history_compact_list.h>
+#include <kth/capi/domain/chain/history_compact.h>
+#include <kth/capi/domain/chain/history_compact_list.h>
 #include <kth/capi/primitives.h>
 
 #include "../test_helpers.hpp"
@@ -18,7 +18,7 @@
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API HistoryCompact - destruct null is safe", "[C-API HistoryCompact]") {
-    kth_chain_history_compact_destruct(NULL);
+    kth_domain_chain_history_compact_destruct(NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -27,12 +27,12 @@ TEST_CASE("C-API HistoryCompact - destruct null is safe", "[C-API HistoryCompact
 
 TEST_CASE("C-API HistoryCompact - copy null aborts",
           "[C-API HistoryCompact][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_history_compact_copy(NULL));
+    KTH_EXPECT_ABORT(kth_domain_chain_history_compact_copy(NULL));
 }
 
 TEST_CASE("C-API HistoryCompact - getter null aborts",
           "[C-API HistoryCompact][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_history_compact_kind(NULL));
+    KTH_EXPECT_ABORT(kth_domain_chain_history_compact_kind(NULL));
 }
 
 // ---------------------------------------------------------------------------
@@ -40,12 +40,12 @@ TEST_CASE("C-API HistoryCompact - getter null aborts",
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API HistoryCompactList - construct default is empty", "[C-API HistoryCompactList]") {
-    kth_history_compact_list_mut_t list = kth_chain_history_compact_list_construct_default();
+    kth_history_compact_list_mut_t list = kth_domain_chain_history_compact_list_construct_default();
     REQUIRE(list != NULL);
-    REQUIRE(kth_chain_history_compact_list_count(list) == 0);
-    kth_chain_history_compact_list_destruct(list);
+    REQUIRE(kth_domain_chain_history_compact_list_count(list) == 0);
+    kth_domain_chain_history_compact_list_destruct(list);
 }
 
 TEST_CASE("C-API HistoryCompactList - destruct null is safe", "[C-API HistoryCompactList]") {
-    kth_chain_history_compact_list_destruct(NULL);
+    kth_domain_chain_history_compact_list_destruct(NULL);
 }

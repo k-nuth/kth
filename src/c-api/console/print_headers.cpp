@@ -10,16 +10,16 @@
 #include <thread>
 
 #include <kth/capi/chain/chain.h>
-#include <kth/capi/chain/history_compact.h>
-#include <kth/capi/chain/history_compact_list.h>
-#include <kth/capi/chain/input.h>
-#include <kth/capi/chain/input_list.h>
-#include <kth/capi/chain/output.h>
-#include <kth/capi/chain/output_list.h>
-#include <kth/capi/chain/output_point.h>
-#include <kth/capi/chain/script.h>
-#include <kth/capi/chain/transaction.h>
-#include <kth/capi/chain/transaction_list.h>
+#include <kth/capi/domain/chain/history_compact.h>
+#include <kth/capi/domain/chain/history_compact_list.h>
+#include <kth/capi/domain/chain/input.h>
+#include <kth/capi/domain/chain/input_list.h>
+#include <kth/capi/domain/chain/output.h>
+#include <kth/capi/domain/chain/output_list.h>
+#include <kth/capi/domain/chain/output_point.h>
+#include <kth/capi/domain/chain/script.h>
+#include <kth/capi/domain/chain/transaction.h>
+#include <kth/capi/domain/chain/transaction_list.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/node.h>
 #include <kth/capi/hash_list.h>
@@ -130,7 +130,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
     // // kth_wallet_payment_address_destruct(addr2);
     // // kth_transaction_list_t txs = kth_chain_get_mempool_transactions_from_wallets(chain, addresses, 1);
     // // kth_wallet_payment_address_list_destruct(addresses);
-    // // auto tx_count = kth_chain_transaction_list_count(txs);
+    // // auto tx_count = kth_domain_chain_transaction_list_count(txs);
     // // printf("tx_count: %lu\n", tx_count);
     // // printf("**-- 1\n");
 
@@ -183,7 +183,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
     // // kth_wallet_payment_address_destruct(addr2);
     // // kth_transaction_list_t txs = kth_chain_sync_mempool_transactions_from_wallets(chain, addresses, 1);
     // // kth_wallet_payment_address_list_destruct(addresses);
-    // // auto tx_count = kth_chain_transaction_list_count(txs);
+    // // auto tx_count = kth_domain_chain_transaction_list_count(txs);
     // // printf("tx_count: %lu\n", tx_count);
 
     // kth_config_settings_destruct(settings);
@@ -365,27 +365,27 @@ int main(int /*argc*/, char* /*argv*/[]) {
 //     }
 
 
-//     auto inputs = kth_chain_input_list_construct_default();
+//     auto inputs = kth_domain_chain_input_list_construct_default();
 
-//     auto input0 = kth_chain_input_construct_default();
-//     auto input1 = kth_chain_input_construct_default();
-//     auto input2 = kth_chain_input_construct_default();
-//     kth_chain_input_list_push_back(inputs, input0);
-//     kth_chain_input_list_push_back(inputs, input1);
-//     kth_chain_input_list_push_back(inputs, input2);
-
-
-//     auto outputs = kth_chain_output_list_construct_default();
-//     auto output0 = kth_chain_output_construct_default();
-//     auto output1 = kth_chain_output_construct_default();
-//     auto output2 = kth_chain_output_construct_default();
-//     kth_chain_output_list_push_back(outputs, output0);
-//     kth_chain_output_list_push_back(outputs, output1);
-//     kth_chain_output_list_push_back(outputs, output2);
+//     auto input0 = kth_domain_chain_input_construct_default();
+//     auto input1 = kth_domain_chain_input_construct_default();
+//     auto input2 = kth_domain_chain_input_construct_default();
+//     kth_domain_chain_input_list_push_back(inputs, input0);
+//     kth_domain_chain_input_list_push_back(inputs, input1);
+//     kth_domain_chain_input_list_push_back(inputs, input2);
 
 
-//     auto tr = kth_chain_transaction_construct(1, 1, inputs, outputs);
-//     kth_chain_transaction_destruct(tr);
+//     auto outputs = kth_domain_chain_output_list_construct_default();
+//     auto output0 = kth_domain_chain_output_construct_default();
+//     auto output1 = kth_domain_chain_output_construct_default();
+//     auto output2 = kth_domain_chain_output_construct_default();
+//     kth_domain_chain_output_list_push_back(outputs, output0);
+//     kth_domain_chain_output_list_push_back(outputs, output1);
+//     kth_domain_chain_output_list_push_back(outputs, output2);
+
+
+//     auto tr = kth_domain_chain_transaction_construct(1, 1, inputs, outputs);
+//     kth_domain_chain_transaction_destruct(tr);
 
 //     kth_node_destruct(exec);
 
@@ -513,7 +513,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
     }
 
     kth_transaction_mut_t tx = NULL;
-    kth_chain_transaction_construct_from_data(chunk->data(), chunk->size(), 1, &tx);
+    kth_domain_chain_transaction_construct_from_data(chunk->data(), chunk->size(), 1, &tx);
 
 
     auto ret = kth_chain_organize_transaction_sync(chain,tx);

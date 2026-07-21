@@ -65,8 +65,8 @@ std::vector<kth_block_t> get_blocks(std::vector<bytes_t>& blocks_raw) {
     blocks.reserve(100000);
 
     for (auto& block_raw : blocks_raw) {
-        auto block_ptr = kth_chain_block_factory_from_data(1, block_raw.data(), std::size(block_raw));
-        auto valid = kth_chain_block_is_valid(block_ptr);
+        auto block_ptr = kth_domain_chain_block_factory_from_data(1, block_raw.data(), std::size(block_raw));
+        auto valid = kth_domain_chain_block_is_valid(block_ptr);
 
         if ( ! valid) {
             std::println("****** INVALID BLOCK ******");
@@ -74,13 +74,13 @@ std::vector<kth_block_t> get_blocks(std::vector<bytes_t>& blocks_raw) {
 
         blocks.push_back(block_ptr);
 
-        // auto fees = kth_chain_block_fees(block_ptr);
+        // auto fees = kth_domain_chain_block_fees(block_ptr);
         // std::println("fees: {} ...", fees);
-        // auto hash = kth_chain_block_hash(block_ptr);
+        // auto hash = kth_domain_chain_block_hash(block_ptr);
         // char* hash_str = kth_hash_to_str(hash);
         // std::println("hash: {} ...", hash_str);
 
-        // kth_chain_block_destruct(block_ptr);
+        // kth_domain_chain_block_destruct(block_ptr);
     }
 
     std::println("Deserialization OK.");
@@ -95,8 +95,8 @@ std::vector<kth_block_t> get_blocks_from_to(std::vector<bytes_t>& blocks_raw, si
 
     for (size_t i = 0; i < n; ++i) {
         auto& block_raw = blocks_raw[from + i];
-        auto block_ptr = kth_chain_block_factory_from_data(1, block_raw.data(), std::size(block_raw));
-        auto valid = kth_chain_block_is_valid(block_ptr);
+        auto block_ptr = kth_domain_chain_block_factory_from_data(1, block_raw.data(), std::size(block_raw));
+        auto valid = kth_domain_chain_block_is_valid(block_ptr);
 
         if ( ! valid) {
             std::println("****** INVALID BLOCK ******");
@@ -104,13 +104,13 @@ std::vector<kth_block_t> get_blocks_from_to(std::vector<bytes_t>& blocks_raw, si
 
         blocks.push_back(block_ptr);
 
-        // auto fees = kth_chain_block_fees(block_ptr);
+        // auto fees = kth_domain_chain_block_fees(block_ptr);
         // std::println("fees: {} ...", fees);
-        // auto hash = kth_chain_block_hash(block_ptr);
+        // auto hash = kth_domain_chain_block_hash(block_ptr);
         // char* hash_str = kth_hash_to_str(hash);
         // std::println("hash: {} ...", hash_str);
 
-        // kth_chain_block_destruct(block_ptr);
+        // kth_domain_chain_block_destruct(block_ptr);
     }
 
 
@@ -146,7 +146,7 @@ void process_0(kth_chain_t chain, std::string const& blocks_filename) {
         // kth_chain_sync_last_height(chain, &height);
         // std::println("height: {} ...", height);
 
-        // kth_chain_block_destruct(block_ptr);
+        // kth_domain_chain_block_destruct(block_ptr);
 
         if (block_h % 1000 == 0) {
             std::println("height: {} ...", block_h);
@@ -190,7 +190,7 @@ void process_1(kth_chain_t chain, std::string const& blocks_filename) {
             // kth_chain_sync_last_height(chain, &height);
             // std::println("height: {} ...", height);
 
-            // kth_chain_block_destruct(block_ptr);
+            // kth_domain_chain_block_destruct(block_ptr);
 
             if (block_h % 1000 == 0) {
                 std::println("height: {} ...", block_h);
@@ -207,7 +207,7 @@ void process_1(kth_chain_t chain, std::string const& blocks_filename) {
 
         std::println("Destructing blokcs ...");
         for (auto const& block_ptr : blocks) {
-            kth_chain_block_destruct(block_ptr);
+            kth_domain_chain_block_destruct(block_ptr);
         }
 
     }
@@ -262,7 +262,7 @@ void process_2(kth_chain_t chain, std::string const& blocks_filename) {
 
         std::println("Destructing blokcs ...");
         for (auto const& block_ptr : blocks) {
-            kth_chain_block_destruct(block_ptr);
+            kth_domain_chain_block_destruct(block_ptr);
         }
 
     }

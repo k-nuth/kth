@@ -122,7 +122,7 @@ kth_bool_t kth_vm_program_empty(kth_program_const_t self);
 KTH_EXPORT KTH_OWNED
 uint8_t* kth_vm_program_top(kth_program_const_t self, kth_size_t* out_size);
 
-/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_domain_machine_operation_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_vm_program_subscript(kth_program_const_t self);
 

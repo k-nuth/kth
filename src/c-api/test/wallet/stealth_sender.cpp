@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 #include <kth/capi/binary.h>
-#include <kth/capi/chain/script.h>
+#include <kth/capi/domain/chain/script.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/wallet/payment_address.h>
 #include <kth/capi/wallet/stealth_address.h>

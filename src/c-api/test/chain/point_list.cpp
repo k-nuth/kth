@@ -7,8 +7,8 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <kth/capi/chain/point.h>
-#include <kth/capi/chain/point_list.h>
+#include <kth/capi/domain/chain/point.h>
+#include <kth/capi/domain/chain/point_list.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/primitives.h>
 
@@ -22,55 +22,55 @@ static kth_hash_t const kHash = {{
 }};
 
 static kth_point_mut_t make_point(void) {
-    kth_point_mut_t pt = kth_chain_point_construct(&kHash, 42);
+    kth_point_mut_t pt = kth_domain_chain_point_construct(&kHash, 42);
     REQUIRE(pt != NULL);
     return pt;
 }
 
 TEST_CASE("C-API PointList - default construct is empty",
           "[C-API PointList]") {
-    kth_point_list_mut_t list = kth_chain_point_list_construct_default();
+    kth_point_list_mut_t list = kth_domain_chain_point_list_construct_default();
     REQUIRE(list != NULL);
-    REQUIRE(kth_chain_point_list_count(list) == 0u);
-    kth_chain_point_list_destruct(list);
+    REQUIRE(kth_domain_chain_point_list_count(list) == 0u);
+    kth_domain_chain_point_list_destruct(list);
 }
 
 TEST_CASE("C-API PointList - destruct null is safe",
           "[C-API PointList]") {
-    kth_chain_point_list_destruct(NULL);
+    kth_domain_chain_point_list_destruct(NULL);
 }
 
 TEST_CASE("C-API PointList - push_back / count / nth",
           "[C-API PointList]") {
-    kth_point_list_mut_t list = kth_chain_point_list_construct_default();
+    kth_point_list_mut_t list = kth_domain_chain_point_list_construct_default();
     kth_point_mut_t pt = make_point();
 
-    kth_chain_point_list_push_back(list, pt);
-    REQUIRE(kth_chain_point_list_count(list) == 1u);
+    kth_domain_chain_point_list_push_back(list, pt);
+    REQUIRE(kth_domain_chain_point_list_count(list) == 1u);
 
-    kth_point_const_t elem = kth_chain_point_list_nth(list, 0);
+    kth_point_const_t elem = kth_domain_chain_point_list_nth(list, 0);
     REQUIRE(elem != NULL);
 
-    kth_chain_point_destruct(pt);
-    kth_chain_point_list_destruct(list);
+    kth_domain_chain_point_destruct(pt);
+    kth_domain_chain_point_list_destruct(list);
 }
 
 TEST_CASE("C-API PointList - erase removes element",
           "[C-API PointList]") {
-    kth_point_list_mut_t list = kth_chain_point_list_construct_default();
+    kth_point_list_mut_t list = kth_domain_chain_point_list_construct_default();
     kth_point_mut_t pt = make_point();
-    kth_chain_point_list_push_back(list, pt);
-    kth_chain_point_list_push_back(list, pt);
-    REQUIRE(kth_chain_point_list_count(list) == 2u);
-    kth_chain_point_list_erase(list, 0);
-    REQUIRE(kth_chain_point_list_count(list) == 1u);
-    kth_chain_point_destruct(pt);
-    kth_chain_point_list_destruct(list);
+    kth_domain_chain_point_list_push_back(list, pt);
+    kth_domain_chain_point_list_push_back(list, pt);
+    REQUIRE(kth_domain_chain_point_list_count(list) == 2u);
+    kth_domain_chain_point_list_erase(list, 0);
+    REQUIRE(kth_domain_chain_point_list_count(list) == 1u);
+    kth_domain_chain_point_destruct(pt);
+    kth_domain_chain_point_list_destruct(list);
 }
 
 TEST_CASE("C-API PointList - nth out of bounds aborts",
           "[C-API PointList][precondition]") {
-    kth_point_list_mut_t list = kth_chain_point_list_construct_default();
-    KTH_EXPECT_ABORT(kth_chain_point_list_nth(list, 0));
-    kth_chain_point_list_destruct(list);
+    kth_point_list_mut_t list = kth_domain_chain_point_list_construct_default();
+    KTH_EXPECT_ABORT(kth_domain_chain_point_list_nth(list, 0));
+    kth_domain_chain_point_list_destruct(list);
 }
