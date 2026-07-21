@@ -297,6 +297,7 @@ if (ENABLE_TEST)
         test/branch.cpp
         test/validate_transaction.cpp
         test/mempool_test.cpp
+        test/mempool_persistence_test.cpp
         test/block_template_test.cpp
     )
 

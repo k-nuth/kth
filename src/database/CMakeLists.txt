@@ -126,6 +126,7 @@ set(kth_sources_just_kth
     src/flat_file_seq.cpp
     src/block_undo.cpp
     src/block_store.cpp
+    src/mempool_store.cpp
     src/header_index.cpp
 )
 
@@ -144,6 +145,7 @@ set(kth_headers
   include/kth/database/flat_file_seq.hpp
   include/kth/database/block_undo.hpp
   include/kth/database/block_store.hpp
+  include/kth/database/mempool_store.hpp
   include/kth/database/databases/block_database.ipp
   include/kth/database/databases/property_code.hpp
   include/kth/database/databases/internal_database.ipp

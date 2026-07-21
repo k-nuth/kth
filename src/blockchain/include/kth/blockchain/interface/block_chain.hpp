@@ -404,6 +404,15 @@ struct KB_API block_chain {
     mempool_mini_hash_map get_mempool_mini_hash_map(domain::message::compact_block const& block) const;
     void fill_tx_list_from_mempool(domain::message::compact_block const& block, size_t& mempool_count, std::vector<domain::chain::transaction>& txn_available, std::unordered_map<uint64_t, uint16_t> const& shorttxids) const;
 
+    // Persist the mempool to <datadir>/mempool.dat (called on shutdown; also
+    // backs a future savemempool). Returns false on I/O error.
+    bool dump_mempool_to_disk() const;
+
+    // Re-admit the persisted mempool through normal validation against the
+    // current tip (called on startup, after the chain is up). Now-invalid /
+    // confirmed / conflicting transactions are dropped. Returns the count admitted.
+    [[nodiscard]] ::asio::awaitable<size_t> load_mempool_from_disk();
+
     // =========================================================================
     // FILTERS
     // =========================================================================
@@ -457,6 +466,9 @@ private:
     bool finish_read(handle sequence, Handler handler, Args... args) const;
 
     code set_chain_state(domain::chain::chain_state::ptr previous);
+
+    // <datadir>/mempool.dat — sibling of the blocks/ and utxoz/ directories.
+    std::filesystem::path mempool_dat_path() const;
 
     // Thread safe members
     std::atomic<bool> stopped_;

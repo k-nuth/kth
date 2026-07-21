@@ -293,6 +293,9 @@ bool block_chain::stop() {
 
 bool block_chain::close() {
     auto const result = stop();
+    // Persist the mempool now that admission is quiesced and before the DB dir
+    // is torn down (the path is a plain sibling of the DB, still valid here).
+    dump_mempool_to_disk();
     priority_pool_.join();
     utxoz_db_.close();
     return result && database_.close();
@@ -1514,6 +1517,39 @@ block_chain::fetch_mempool(size_t count_limit, uint64_t /*minimum_fee*/) const {
     }
 
     co_return std::make_shared<domain::message::inventory>(std::move(*inv));
+}
+
+std::filesystem::path block_chain::mempool_dat_path() const {
+    return database_.internal_db_dir.parent_path() / "mempool.dat";
+}
+
+bool block_chain::dump_mempool_to_disk() const {
+    // Snapshot the pool; the database module owns the on-disk format.
+    std::vector<database::mempool_stored_tx> txs;
+    txs.reserve(mempool_.size());
+    mempool_.for_each([&](mempool_entry const& e) {
+        txs.push_back({e.tx, e.time_seen});
+    });
+    return database::store_mempool(mempool_dat_path(), std::move(txs));
+}
+
+::asio::awaitable<size_t> block_chain::load_mempool_from_disk() {
+    auto const persisted = database::load_mempool(mempool_dat_path());
+
+    size_t admitted = 0;
+    for (auto const& p : persisted) {
+        // Re-validate against the current tip and admit (recomputes fee/size/
+        // sigchecks, enforces first-seen). Now-invalid txs are simply dropped.
+        auto const ec = co_await organize(p.tx);
+        if ( ! ec) {
+            ++admitted;
+        }
+    }
+
+    if ( ! persisted.empty()) {
+        spdlog::info("[blockchain] Re-admitted {}/{} persisted mempool transactions", admitted, persisted.size());
+    }
+    co_return admitted;
 }
 
 namespace {
