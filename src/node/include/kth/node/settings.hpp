@@ -6,12 +6,32 @@
 #define KTH_NODE_SETTINGS_HPP
 
 #include <cstdint>
+#include <string>
+
 #include <kth/domain.hpp>
 #include <kth/infrastructure/display_mode.hpp>
 #include <kth/infrastructure/utility/asio.hpp>
 #include <kth/node/define.hpp>
 
 namespace kth::node {
+
+/// JSON-RPC server settings. Always present so config parsing is uniform; the
+/// server itself is only compiled when KTH_WITH_RPC is defined and only started
+/// when `enabled` is true.
+struct KND_API rpc_settings {
+    rpc_settings();
+
+    /// Runtime on/off switch (config: rpc.enabled).
+    bool enabled;
+    /// Address to bind the RPC listener to (default 127.0.0.1 — localhost only).
+    std::string bind;
+    /// TCP port for the RPC listener (default 8332).
+    uint16_t port;
+    /// HTTP Basic-Auth credentials. When both are empty the server falls back to
+    /// the auto-generated .cookie file (bitcoind-style).
+    std::string user;
+    std::string password;
+};
 
 /// Common database configuration settings, properties not thread safe.
 struct KND_API settings {

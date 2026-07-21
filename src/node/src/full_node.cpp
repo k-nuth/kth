@@ -49,6 +49,7 @@ full_node::full_node(configuration const& configuration)
         network_type_,
         configuration.network.relay_transactions
     )
+    , rpc_settings_(configuration.rpc)
 #else
     : node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
@@ -58,6 +59,7 @@ full_node::full_node(configuration const& configuration)
         configuration.database,
         network_type_
     )
+    , rpc_settings_(configuration.rpc)
 #endif
 {
 #if ! defined(__EMSCRIPTEN__)
@@ -124,6 +126,21 @@ full_node::~full_node() {
         spdlog::error("[node] Failure starting network: {}", ec.message());
         (void)chain_.stop();
         co_return ec;
+    }
+#endif
+
+#if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
+    if (rpc_settings_.enabled) {
+        auto rpc_executor = network_.thread_pool().get_executor();
+        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_);
+        ::asio::co_spawn(rpc_executor, rpc_server_->run(rpc_executor), ::asio::detached);
+    } else {
+        spdlog::info("[node] JSON-RPC server disabled (rpc.enabled=false).");
+    }
+#elif ! defined(__EMSCRIPTEN__)
+    if (rpc_settings_.enabled) {
+        spdlog::warn("[node] rpc.enabled=true but this build has no JSON-RPC support "
+            "(compile with the with_rpc option).");
     }
 #endif
 
