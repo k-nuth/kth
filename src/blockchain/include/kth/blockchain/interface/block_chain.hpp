@@ -414,13 +414,13 @@ struct KB_API block_chain {
     void fill_tx_list_from_mempool(domain::message::compact_block const& block, size_t& mempool_count, std::vector<domain::chain::transaction>& txn_available, std::unordered_map<uint64_t, uint16_t> const& shorttxids) const;
 
     // Mempool query readers, backing the typical BCH JSON-RPC mempool calls.
-    std::vector<hash_digest> get_mempool_txids() const;                                              // getrawmempool
+    hash_list get_mempool_txids() const;                                                             // getrawmempool
     blockchain::mempool_totals get_mempool_info() const;                                             // getmempoolinfo
     std::optional<mempool_entry_info> get_mempool_entry(hash_digest const& txid) const;              // getmempoolentry
-    std::vector<hash_digest> get_mempool_depends(hash_digest const& txid) const;                     // getmempoolentry.depends
-    std::vector<hash_digest> get_mempool_spentby(hash_digest const& txid) const;                     // getmempoolentry.spentby
-    std::vector<hash_digest> get_mempool_ancestors(hash_digest const& txid) const;                   // getmempoolancestors
-    std::vector<hash_digest> get_mempool_descendants(hash_digest const& txid) const;                 // getmempooldescendants
+    hash_list get_mempool_depends(hash_digest const& txid) const;                                    // getmempoolentry.depends
+    hash_list get_mempool_spentby(hash_digest const& txid) const;                                    // getmempoolentry.spentby
+    hash_list get_mempool_ancestors(hash_digest const& txid) const;                                  // getmempoolancestors
+    hash_list get_mempool_descendants(hash_digest const& txid) const;                                // getmempooldescendants
 
     // Persist the mempool to <datadir>/mempool.dat (called on shutdown; also
     // backs a future savemempool). Returns false on I/O error.
