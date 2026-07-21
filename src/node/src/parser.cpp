@@ -114,6 +114,10 @@ void add_enum_option(CLI::App& app,
 
 // Register command-line-only options (--help, --version, --network, ...).
 void add_command_options(CLI::App& app, configuration& cfg) {
+    // Remove CLI11's built-in -h/--help so our own `--help,-h` flag (below,
+    // rendered by do_help) can own that name without an OptionAlreadyAdded clash.
+    app.set_help_flag();
+
     add_enum_option(app, "--" KTH_NETWORK_VARIABLE ",-n",
         cfg.net, parse_network,
 #if defined(KTH_CURRENCY_BCH)
@@ -343,8 +347,15 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
             add_settings(app2, configured);
 
             try {
-                app2.set_config("--" KTH_CONFIG_VARIABLE, config_path.string());
-                app2.parse(0, static_cast<char const**>(nullptr));
+                // Distinct name: `--config,-c` is already registered by
+                // add_command_options; set_config only needs an internal option
+                // to load the file (parsed with no argv, so it reads the path).
+                app2.set_config("--config_file_loader", config_path.string());
+                // Parse with a valid (program-name-only) argv: CLI11 dereferences
+                // argv[0], so a null argv segfaults. The config file is loaded via
+                // set_config regardless of command-line args.
+                char const* const app2_argv[] = {"kth"};
+                app2.parse(1, app2_argv);
             } catch (CLI::ParseError const& e) {
                 error << "Error: " << e.what() << std::endl;
                 return e.get_exit_code() == 0;
