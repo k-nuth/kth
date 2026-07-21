@@ -4,14 +4,14 @@
 
 #include <kth/capi/p2p/p2p.h>
 
-#include <kth/network/p2p_node.hpp>
+#include <kth/node/p2p_node.hpp>
 #include <kth/capi/helpers.hpp>
 
 namespace {
 
 inline
-kth::network::p2p_node& p2p_cast(kth_p2p_t p2p) {
-    return *static_cast<kth::network::p2p_node*>(p2p);
+kth::node::p2p_node& p2p_cast(kth_p2p_t p2p) {
+    return *static_cast<kth::node::p2p_node*>(p2p);
 }
 
 } /* end of anonymous namespace */

@@ -2,12 +2,13 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <kth/network/handlers/pong.hpp>
+#include <kth/node/handlers/pong.hpp>
 
 #include <kth/domain.hpp>
-#include <kth/network/p2p_node.hpp>
+#include <kth/node/p2p_node.hpp>
 
-namespace kth::network::handlers::pong {
+namespace kth::node::handlers::pong {
+using namespace kth::network;
 
 ::asio::awaitable<message_result> handle(
     peer_session& peer,
@@ -24,4 +25,4 @@ namespace kth::network::handlers::pong {
     co_return message_result::handled;
 }
 
-} // namespace kth::network::handlers::pong
+} // namespace kth::node::handlers::pong

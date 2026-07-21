@@ -34,7 +34,8 @@
 #include <asio/steady_timer.hpp>
 #include <asio/thread_pool.hpp>
 
-namespace kth::network {
+namespace kth::node {
+using namespace kth::network;
 
 using kth::awaitable_expected;
 
@@ -393,6 +394,6 @@ private:
     std::unique_ptr<concurrent_channel<peer_notification>> peer_notification_channel_;
 };
 
-} // namespace kth::network
+} // namespace kth::node
 
 #endif // KTH_NETWORK_P2P_NODE_HPP

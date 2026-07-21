@@ -143,6 +143,12 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/full_node.cpp
     src/executor/executor.cpp
 
+    # P2P node orchestration (moved from the network module: it bridges
+    # networking and the blockchain, which only the node module depends on).
+    src/p2p_node.cpp
+    src/handlers/ping.cpp
+    src/handlers/pong.cpp
+
     src/utility/reservation.cpp
     src/utility/reservations.cpp
 
@@ -167,6 +173,9 @@ set(kth_sources
 
 set(kth_headers
   include/kth/node.hpp
+  include/kth/node/p2p_node.hpp
+  include/kth/node/handlers/ping.hpp
+  include/kth/node/handlers/pong.hpp
   include/kth/node/configuration.hpp
   include/kth/node/user_agent.hpp
   include/kth/node/executor/executor.hpp
@@ -240,6 +249,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/header_list.cpp
           test/main.cpp
           test/node.cpp
+          test/p2p_node.cpp
           test/performance.cpp
           test/reservation.cpp
           test/reservations.cpp

@@ -9,6 +9,7 @@
 #include <test_helpers.hpp>
 
 #include <kth/network.hpp>
+#include <kth/node/p2p_node.hpp>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
@@ -17,6 +18,7 @@
 
 using namespace kth;
 using namespace kth::network;
+using namespace kth::node;
 using namespace std::chrono_literals;
 
 // =============================================================================

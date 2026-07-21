@@ -22,7 +22,6 @@
 #include <kth/network/peer_manager.hpp>
 #include <kth/network/peer_session.hpp>
 #include <kth/network/protocols_coro.hpp>
-#include <kth/network/p2p_node.hpp>
 
 // Legacy networking - COMMENTED OUT (coroutine migration cleanup)
 // These are replaced by p2p_node + peer_session + peer_manager + protocols_coro

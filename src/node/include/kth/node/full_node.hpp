@@ -10,7 +10,7 @@
 // =============================================================================
 //
 // This class represents a complete Bitcoin full node that combines:
-// - P2P networking (via network::p2p_node composition) [non-WASM only]
+// - P2P networking (via kth::node::p2p_node composition) [non-WASM only]
 // - Blockchain storage and validation (via blockchain::block_chain)
 //
 // ARCHITECTURE:
@@ -128,7 +128,7 @@ public:
 #if ! defined(__EMSCRIPTEN__)
     /// P2P network node.
     [[nodiscard]]
-    kth::network::p2p_node& network();
+    kth::node::p2p_node& network();
 #endif
 
     // Thread pools
@@ -199,7 +199,7 @@ private:
     // Core components (composition, not inheritance)
 #if ! defined(__EMSCRIPTEN__)
     kth::network::settings network_settings_;  // Own copy, allows modification (e.g., user_agent)
-    kth::network::p2p_node network_;
+    kth::node::p2p_node network_;
 #endif
     blockchain::block_chain chain_;
 };
