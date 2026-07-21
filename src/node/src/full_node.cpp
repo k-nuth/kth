@@ -308,7 +308,7 @@ block_chain& full_node::chain_kth() {
 }
 
 #if ! defined(__EMSCRIPTEN__)
-kth::network::p2p_node& full_node::network() {
+kth::node::p2p_node& full_node::network() {
     return network_;
 }
 #endif

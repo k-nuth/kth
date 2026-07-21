@@ -8,7 +8,7 @@
 #include <asio/awaitable.hpp>
 
 #include <kth/blockchain.hpp>
-#include <kth/network/p2p_node.hpp>
+#include <kth/node/p2p_node.hpp>
 #include <kth/node/sync/messages.hpp>
 
 namespace kth::node::sync {
@@ -38,7 +38,7 @@ namespace kth::node::sync {
 ::asio::awaitable<void> sync_orchestrator(
     blockchain::block_chain& chain,
     blockchain::header_organizer& organizer,
-    network::p2p_node& network
+    kth::node::p2p_node& network
 );
 
 } // namespace kth::node::sync

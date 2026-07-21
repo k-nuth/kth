@@ -2,16 +2,17 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <kth/network/p2p_node.hpp>
+#include <kth/node/p2p_node.hpp>
 
-#include <kth/network/handlers/ping.hpp>
-#include <kth/network/handlers/pong.hpp>
+#include <kth/node/handlers/ping.hpp>
+#include <kth/node/handlers/pong.hpp>
 
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/use_awaitable.hpp>
 #include <fmt/format.h>
 
-namespace kth::network {
+namespace kth::node {
+using namespace kth::network;
 
 using namespace ::asio::experimental::awaitable_operators;
 using namespace std::chrono_literals;
@@ -1307,4 +1308,4 @@ uint64_t p2p_node::generate_ping_nonce() {
     return pseudo_random::generate<uint64_t>(1, max_uint64);
 }
 
-} // namespace kth::network
+} // namespace kth::node

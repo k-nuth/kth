@@ -11,7 +11,8 @@
 
 #include <asio/awaitable.hpp>
 
-namespace kth::network {
+namespace kth::node {
+using namespace kth::network;
 
 enum class message_result;
 
@@ -26,6 +27,6 @@ KN_API ::asio::awaitable<message_result> handle(
 
 } // namespace handlers::pong
 
-} // namespace kth::network
+} // namespace kth::node
 
 #endif // KTH_NETWORK_HANDLERS_PONG_HPP

@@ -99,15 +99,12 @@ set(kth_headers
   include/kth/network/peer_database.hpp
   include/kth/network/peer_session.hpp
   include/kth/network/peer_manager.hpp
-  include/kth/network/p2p_node.hpp
   include/kth/network/protocols_coro.hpp
   include/kth/network/settings.hpp
   include/kth/network.hpp
   include/kth/network/hosts.hpp  # Legacy - will be replaced by peer_database
 
   # Message handlers (one per message type)
-  include/kth/network/handlers/ping.hpp
-  include/kth/network/handlers/pong.hpp
 
   # =========================================================================
   # LEGACY FILES - MOVED TO deprecated/ FOLDER
@@ -146,7 +143,6 @@ set(kth_headers
 set(kth_sources
   src/banlist.cpp
   src/net_permissions.cpp
-  src/p2p_node.cpp
   src/peer_database.cpp
   src/peer_session.cpp
   src/peer_manager.cpp
@@ -155,8 +151,6 @@ set(kth_sources
   src/hosts.cpp  # Legacy - will be replaced by peer_database
 
   # Message handlers (one per message type)
-  src/handlers/ping.cpp
-  src/handlers/pong.cpp
 
   # =========================================================================
   # LEGACY FILES - MOVED TO deprecated/ FOLDER
@@ -228,7 +222,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(Catch2 3 REQUIRED)
 
   add_executable(kth_network_test
-    test/p2p_node.cpp
     test/peer_database.cpp
     test/peer_manager.cpp
     test/peer_session.cpp

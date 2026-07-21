@@ -127,7 +127,7 @@ static
 ::asio::awaitable<void> sync_orchestrator(
     blockchain::block_chain& chain,
     blockchain::header_organizer& organizer,
-    network::p2p_node& network
+    kth::node::p2p_node& network
 ) {
     auto executor = co_await ::asio::this_coro::executor;
 
@@ -226,7 +226,7 @@ static
                 }
 
                 // Demultiplex based on event type
-                if (notification.event == network::peer_event_type::connected) {
+                if (notification.event == kth::node::peer_event_type::connected) {
                     if (!peer_provider_input.try_send(std::error_code{}, new_peer{notification.peer})) {
                         spdlog::warn("[peer_bridge] Channel full, new_peer dropped for {}",
                             notification.peer->authority_with_agent());
