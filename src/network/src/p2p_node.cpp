@@ -836,6 +836,18 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
             if (!send_ec) {
                 continue;
             }
+        } else if (command == domain::message::get_address::command) {
+            // Serve `getaddr`: reply with our known good peers (addrv2 when the
+            // peer negotiated BIP-155, otherwise addr). Crawlers rely on this to
+            // discover the network, so a silent non-answer hurts discoverability.
+            auto const authorities = peer_db_.get_connectable(1000);
+            infrastructure::message::network_address::list addresses;
+            addresses.reserve(authorities.size());
+            for (auto const& authority : authorities) {
+                addresses.push_back(authority.to_network_address());
+            }
+            co_await send_addresses_auto(*peer, addresses);
+            continue;
         }
 
         // Dispatch message through handlers
@@ -1186,6 +1198,14 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
                                 peer->record_ping_sent(ping_nonce);
                             }
                         }
+
+                        // Announce our capabilities right after the handshake,
+                        // the way BCHN does: prefer header announcements, offer
+                        // compact blocks (BIP-152 v1), and advertise our relay
+                        // fee filter (1 sat/byte). Best-effort.
+                        co_await peer->send(domain::message::send_headers{});
+                        co_await peer->send(domain::message::send_compact(true, 1));
+                        co_await peer->send(domain::message::fee_filter{1000});
 
                         // Send success response to caller
                         if (response_channel) {
