@@ -105,6 +105,18 @@ full_node::~full_node() {
     // the network comes up, so peers can be served from a warm mempool.
     co_await chain_.load_mempool_from_disk();
 
+    // Serve BIP-35 `mempool` -> inv. The node is the bridge: it injects a
+    // chain-backed handler into the network layer, which stays chain-agnostic.
+    network_.register_message_handler<domain::message::memory_pool>(
+        [this](peer_session& peer, domain::message::memory_pool const&)
+            -> ::asio::awaitable<message_result> {
+            auto const inv = co_await chain_.fetch_mempool(50000, 0);
+            if (inv && *inv) {
+                co_await peer.send(**inv);
+            }
+            co_return message_result::handled;
+        });
+
 #if ! defined(__EMSCRIPTEN__)
     // Start the P2P network
     auto ec = co_await network_.start();

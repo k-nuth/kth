@@ -215,6 +215,15 @@ public:
     void set_top_block(infrastructure::config::checkpoint const& top);
     void set_top_block(infrastructure::config::checkpoint&& top);
 
+    /// Register a message handler injected by the node. This is how chain-backed
+    /// replies (e.g. the BIP-35 `mempool` -> inv) are served: the node owns the
+    /// bridge to the blockchain and supplies the handler, so p2p_node itself
+    /// stays chain-agnostic (the network layer must not know about the chain).
+    template <typename Message>
+    void register_message_handler(typed_message_handler_fn<Message> handler) {
+        dispatcher_.register_handler<Message>(std::move(handler));
+    }
+
     // Manual connections
     // -------------------------------------------------------------------------
 
