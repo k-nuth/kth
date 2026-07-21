@@ -6,6 +6,7 @@
 #define KTH_CAPI_CHAIN_CHAIN_H_
 
 #include <kth/capi/chain/chain_async.h>
+#include <kth/capi/chain/chain_mempool.h>
 #include <kth/capi/chain/chain_other.h>
 #include <kth/capi/chain/chain_sync.h>
 

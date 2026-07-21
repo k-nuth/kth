@@ -256,6 +256,7 @@ set(kth_sources
         src/chain/chain_async.cpp
         src/chain/chain_other.cpp
         src/chain/chain_sync.cpp
+        src/chain/chain_mempool.cpp
 
         src/domain/message/compact_block.cpp
         src/domain/message/double_spend_proof.cpp
@@ -427,6 +428,9 @@ set(kth_headers
     include/kth/capi/chain/chain.h
     include/kth/capi/chain/chain_sync.h
     include/kth/capi/chain/chain_other.h
+    include/kth/capi/chain/chain_mempool.h
+    include/kth/capi/chain/mempool_totals.h
+    include/kth/capi/chain/mempool_entry_info.h
     include/kth/capi/domain/chain/stealth_compact.h
     include/kth/capi/domain/chain/history_compact_list.h
     include/kth/capi/domain/chain/stealth_compact_list.h
@@ -631,6 +635,10 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # public symbol the snippet references drifts.
     add_executable(kth_readme_c_compile_check test/readme_c_compile_check.c)
     target_link_libraries(kth_readme_c_compile_check PRIVATE ${PROJECT_NAME})
+
+    # Chain-interface mempool readers — compile + link signature check.
+    add_executable(kth_chain_mempool_compile_check test/chain/chain_mempool_compile_check.c)
+    target_link_libraries(kth_chain_mempool_compile_check PRIVATE ${PROJECT_NAME})
 
     # README C snippet — runtime smoke. Same flow as the README but
     # adapted for CI: regtest network, fresh temp data dir, 16 MiB DB
