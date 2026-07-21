@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <functional>
 #include <expected>
+#include <optional>
 #include <vector>
 
 #include <kth/infrastructure/utility/atomic.hpp>
@@ -46,6 +47,14 @@ namespace kth::blockchain {
 
 using kth::awaitable_expected;
 using database::heights_t;
+
+// One pooled transaction's own metadata (== BCHN getmempoolentry scalars; its
+// depends / spentby are separate list queries).
+struct mempool_entry_info {
+    uint64_t fee;   // satoshis
+    uint32_t size;  // serialized bytes
+    uint64_t time;  // time first seen (unix seconds)
+};
 
 /// Unified blockchain interface.
 /// Thread safety: get_* methods are NOT thread safe, fetch_* methods are thread safe.
@@ -403,6 +412,15 @@ struct KB_API block_chain {
 
     mempool_mini_hash_map get_mempool_mini_hash_map(domain::message::compact_block const& block) const;
     void fill_tx_list_from_mempool(domain::message::compact_block const& block, size_t& mempool_count, std::vector<domain::chain::transaction>& txn_available, std::unordered_map<uint64_t, uint16_t> const& shorttxids) const;
+
+    // Mempool query readers, backing the typical BCH JSON-RPC mempool calls.
+    std::vector<hash_digest> get_mempool_txids() const;                                              // getrawmempool
+    blockchain::mempool_totals get_mempool_info() const;                                             // getmempoolinfo
+    std::optional<mempool_entry_info> get_mempool_entry(hash_digest const& txid) const;              // getmempoolentry
+    std::vector<hash_digest> get_mempool_depends(hash_digest const& txid) const;                     // getmempoolentry.depends
+    std::vector<hash_digest> get_mempool_spentby(hash_digest const& txid) const;                     // getmempoolentry.spentby
+    std::vector<hash_digest> get_mempool_ancestors(hash_digest const& txid) const;                   // getmempoolancestors
+    std::vector<hash_digest> get_mempool_descendants(hash_digest const& txid) const;                 // getmempooldescendants
 
     // Persist the mempool to <datadir>/mempool.dat (called on shutdown; also
     // backs a future savemempool). Returns false on I/O error.

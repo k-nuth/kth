@@ -4,11 +4,15 @@
 
 #include <kth/blockchain/pools/mempool.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <utility>
 #include <vector>
+
+#include <boost/unordered/unordered_flat_set.hpp>
 
 #include <kth/infrastructure/utility/pseudo_random.hpp>
 
@@ -195,6 +199,149 @@ transaction_const_ptr mempool::get(hash_digest const& txid) const {
 
 std::size_t mempool::size() const {
     return pool_.size();
+}
+
+std::optional<mempool_entry> mempool::entry(hash_digest const& txid) const {
+    KTH_STATS_INCREMENT(stats_, entry_calls);
+    KTH_STATS_TIME_START(entry);
+
+    std::optional<mempool_entry> result;
+    pool_.visit(txid, [&](mempool_entry const& e) {
+        result = e;
+    });
+
+    KTH_STATS_TIME_ADD(stats_, entry, entry_time_ns);
+    return result;
+}
+
+// Direct adjacency, un-instrumented (see header). Read pool_ / spent_by_ once
+// each; de-duplicate with a linear scan (input/output counts are small).
+std::vector<hash_digest> mempool::parents_of(hash_digest const& txid) const {
+    std::vector<hash_digest> result;
+    pool_.visit(txid, [&](mempool_entry const& e) {
+        for (auto const& in : e.tx->inputs()) {
+            auto const& p = in.previous_output().hash();
+            if (std::find(result.begin(), result.end(), p) == result.end() && contains(p)) {
+                result.push_back(p);
+            }
+        }
+    });
+    return result;
+}
+
+std::vector<hash_digest> mempool::children_of(hash_digest const& txid) const {
+    std::vector<hash_digest> result;
+    pool_.visit(txid, [&](mempool_entry const& e) {
+        auto const outputs = static_cast<uint32_t>(e.tx->outputs().size());
+        for (uint32_t index = 0; index < outputs; ++index) {
+            spent_by_.visit(outpoint_key{txid, index}, [&](hash_digest const& c) {
+                if (std::find(result.begin(), result.end(), c) == result.end()) {
+                    result.push_back(c);
+                }
+            });
+        }
+    });
+    return result;
+}
+
+std::vector<hash_digest> mempool::parents(hash_digest const& txid) const {
+    KTH_STATS_INCREMENT(stats_, parents_calls);
+    KTH_STATS_TIME_START(parents);
+    auto result = parents_of(txid);
+    KTH_STATS_TIME_ADD(stats_, parents, parents_time_ns);
+    return result;
+}
+
+std::vector<hash_digest> mempool::children(hash_digest const& txid) const {
+    KTH_STATS_INCREMENT(stats_, children_calls);
+    KTH_STATS_TIME_START(children);
+    auto result = children_of(txid);
+    KTH_STATS_TIME_ADD(stats_, children, children_time_ns);
+    return result;
+}
+
+namespace {
+// The txid is already a uniform digest; the low 8 bytes make a fine key hash.
+struct digest_hasher {
+    std::size_t operator()(hash_digest const& h) const {
+        std::size_t out;
+        std::memcpy(&out, h.data(), sizeof(out));
+        return out;
+    }
+};
+
+// Breadth-first transitive closure of `step` (parents_of / children_of) from
+// `txid`, excluding `txid`, de-duplicated. O(V+E) with O(1) hashed dedup — no
+// node is revisited, which bounds the walk even without a chain limit.
+template <typename Step>
+std::vector<hash_digest> closure(hash_digest const& txid, Step&& step) {
+    std::vector<hash_digest> result;
+    boost::unordered_flat_set<hash_digest, digest_hasher> seen;
+    auto stack = step(txid);
+    for (auto const& h : stack) {
+        seen.insert(h);
+    }
+    while ( ! stack.empty()) {
+        auto const cur = stack.back();
+        stack.pop_back();
+        result.push_back(cur);
+        for (auto const& next : step(cur)) {
+            if (seen.insert(next).second) {
+                stack.push_back(next);
+            }
+        }
+    }
+    return result;
+}
+} // namespace
+
+std::vector<hash_digest> mempool::ancestors(hash_digest const& txid) const {
+    KTH_STATS_INCREMENT(stats_, ancestors_calls);
+    KTH_STATS_TIME_START(ancestors);
+    auto result = closure(txid, [this](hash_digest const& h) { return parents_of(h); });
+    KTH_STATS_TIME_ADD(stats_, ancestors, ancestors_time_ns);
+    return result;
+}
+
+std::vector<hash_digest> mempool::descendants(hash_digest const& txid) const {
+    KTH_STATS_INCREMENT(stats_, descendants_calls);
+    KTH_STATS_TIME_START(descendants);
+    auto result = closure(txid, [this](hash_digest const& h) { return children_of(h); });
+    KTH_STATS_TIME_ADD(stats_, descendants, descendants_time_ns);
+    return result;
+}
+
+std::vector<hash_digest> mempool::all_txids() const {
+    KTH_STATS_INCREMENT(stats_, txids_calls);
+    KTH_STATS_TIME_START(txids);
+
+    std::vector<hash_digest> result;
+    result.reserve(pool_.size());
+    pool_.for_each([&](hash_digest const& txid, mempool_entry const&) {
+        result.push_back(txid);
+    });
+
+    KTH_STATS_TIME_ADD(stats_, txids, txids_time_ns);
+    return result;
+}
+
+mempool_totals mempool::summary() const {
+    KTH_STATS_INCREMENT(stats_, info_calls);
+    KTH_STATS_TIME_START(info);
+
+    // On-demand O(n) scan. If getmempoolinfo is ever polled hard over a huge
+    // pool, maintain running byte/fee totals in add/remove instead — but the
+    // totals are informational (nothing consensus/mining depends on them) so
+    // this stays simple until a profile says otherwise.
+    mempool_totals totals{0, 0, 0};
+    pool_.for_each([&](hash_digest const&, mempool_entry const& e) {
+        ++totals.size;
+        totals.bytes += e.size;
+        totals.total_fee += e.fee;
+    });
+
+    KTH_STATS_TIME_ADD(stats_, info, info_time_ns);
+    return totals;
 }
 
 } // namespace kth::blockchain

@@ -1519,6 +1519,38 @@ block_chain::fetch_mempool(size_t count_limit, uint64_t /*minimum_fee*/) const {
     co_return std::make_shared<domain::message::inventory>(std::move(*inv));
 }
 
+std::vector<hash_digest> block_chain::get_mempool_txids() const {
+    return mempool_.all_txids();
+}
+
+blockchain::mempool_totals block_chain::get_mempool_info() const {
+    return mempool_.summary();
+}
+
+std::optional<mempool_entry_info> block_chain::get_mempool_entry(hash_digest const& txid) const {
+    auto const e = mempool_.entry(txid);
+    if ( ! e) {
+        return std::nullopt;
+    }
+    return mempool_entry_info{e->fee, e->size, e->time_seen};
+}
+
+std::vector<hash_digest> block_chain::get_mempool_depends(hash_digest const& txid) const {
+    return mempool_.parents(txid);
+}
+
+std::vector<hash_digest> block_chain::get_mempool_spentby(hash_digest const& txid) const {
+    return mempool_.children(txid);
+}
+
+std::vector<hash_digest> block_chain::get_mempool_ancestors(hash_digest const& txid) const {
+    return mempool_.ancestors(txid);
+}
+
+std::vector<hash_digest> block_chain::get_mempool_descendants(hash_digest const& txid) const {
+    return mempool_.descendants(txid);
+}
+
 std::filesystem::path block_chain::mempool_dat_path() const {
     return database_.internal_db_dir.parent_path() / "mempool.dat";
 }
