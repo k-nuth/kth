@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 #include <kth/domain.hpp>
 
@@ -29,6 +30,14 @@ struct mempool_entry {
     uint32_t size;
     uint32_t sigchecks;
     uint64_t time_seen;
+};
+
+// Aggregate figures over the whole pool (== the BCHN getmempoolinfo fields KTH
+// backs). Computed on demand by summary().
+struct mempool_totals {
+    std::size_t size;   // number of transactions
+    uint64_t bytes;     // sum of serialized sizes
+    uint64_t total_fee; // sum of fees (satoshis)
 };
 
 // The BCH mempool: unconfirmed transactions in two concurrent maps —
@@ -79,6 +88,24 @@ struct mempool {
     // Fetch a pooled transaction by id (null if absent).
     transaction_const_ptr get(hash_digest const& txid) const;
 
+    // Copy a pooled entry (tx + policy metadata) by id, or nullopt if absent.
+    std::optional<mempool_entry> entry(hash_digest const& txid) const;
+
+    // Read-only graph queries over the pool (mirror BCHN CTxMemPool). `parents`
+    // / `children` are the direct in-mempool adjacency (== BCHN depends /
+    // spentby); `ancestors` / `descendants` are their transitive closures. All
+    // exclude `txid` itself and are de-duplicated. Empty if txid is not pooled.
+    std::vector<hash_digest> parents(hash_digest const& txid) const;
+    std::vector<hash_digest> children(hash_digest const& txid) const;
+    std::vector<hash_digest> ancestors(hash_digest const& txid) const;
+    std::vector<hash_digest> descendants(hash_digest const& txid) const;
+
+    // The ids of every pooled transaction (== BCHN getrawmempool).
+    std::vector<hash_digest> all_txids() const;
+
+    // Aggregate size / bytes / total_fee over the pool (== getmempoolinfo).
+    mempool_totals summary() const;
+
     // Visit every pooled entry. Snapshot-ish under concurrency (an entry added
     // or removed during the walk may or may not be seen) — fine for the
     // read-only listing/relay queries that use it.
@@ -100,6 +127,12 @@ private:
     // Remove a tx and, transitively, every pool tx that spends its outputs
     // (the rare invalid/conflict path).
     void remove_recursive(hash_digest const& txid);
+
+    // Direct in-mempool adjacency, un-instrumented (the public parents/children
+    // wrap these with stats; the ancestors/descendants traversal reuses them so
+    // the internal walk is not counted as top-level calls).
+    std::vector<hash_digest> parents_of(hash_digest const& txid) const;
+    std::vector<hash_digest> children_of(hash_digest const& txid) const;
 
     mempool_map<hash_digest, mempool_entry, salted_txid_hasher> pool_;
     mempool_map<outpoint_key, hash_digest, salted_outpoint_hasher> spent_by_;

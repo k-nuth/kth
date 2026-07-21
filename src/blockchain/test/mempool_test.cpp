@@ -19,6 +19,7 @@
 #include <kth/blockchain/pools/mempool.hpp>
 #include <kth/domain.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <map>
@@ -292,6 +293,91 @@ TEST_CASE("mempool update_for_reorg evicts for incoming blocks", "[mempool][seri
     CHECK_FALSE(mp.contains(b.hash()));
     CHECK(mp.contains(other.hash()));
     CHECK(mp.size() == 1u);
+}
+
+// ---------------------------------------------------------------------------
+// Graph queries (entry / parents / children / ancestors / descendants)
+// ---------------------------------------------------------------------------
+
+namespace {
+// Sort a copy so graph-query results can be compared irrespective of order.
+std::vector<hash_digest> sorted(std::vector<hash_digest> v) {
+    std::sort(v.begin(), v.end());
+    return v;
+}
+} // namespace
+
+TEST_CASE("mempool entry returns metadata or nullopt", "[mempool][serial]") {
+    mempool mp(1, 2);
+    auto const tx = make_tx({op(1, 0)}, 1, 1);
+    mp.add(entry_for(tx, 7));
+
+    auto const e = mp.entry(tx.hash());
+    REQUIRE(e.has_value());
+    CHECK(e->tx->hash() == tx.hash());
+    CHECK(e->time_seen == 7u);
+
+    CHECK_FALSE(mp.entry(make_hash(999)).has_value());
+}
+
+TEST_CASE("mempool parents and children give direct adjacency", "[mempool][serial]") {
+    mempool mp(1, 2);
+    // parent has 2 outputs; child spends output 0; grandchild spends child's 0.
+    auto const parent = make_tx({op(1, 0)}, 2, 1);
+    auto const child = make_tx({output_point{parent.hash(), 0}}, 1, 2);
+    auto const grandchild = make_tx({output_point{child.hash(), 0}}, 1, 3);
+    mp.add(entry_for(parent, 1));
+    mp.add(entry_for(child, 2));
+    mp.add(entry_for(grandchild, 3));
+
+    CHECK(mp.parents(child.hash()) == std::vector<hash_digest>{parent.hash()});
+    CHECK(mp.children(parent.hash()) == std::vector<hash_digest>{child.hash()});
+    CHECK(mp.children(child.hash()) == std::vector<hash_digest>{grandchild.hash()});
+    // Endpoints: parent has no in-pool parent, grandchild has no child.
+    CHECK(mp.parents(parent.hash()).empty());
+    CHECK(mp.children(grandchild.hash()).empty());
+    // A confirmed/absent prevout is not an in-pool parent.
+    CHECK(mp.parents(parent.hash()).empty());
+}
+
+TEST_CASE("mempool ancestors and descendants give transitive closure", "[mempool][serial]") {
+    mempool mp(1, 2);
+    auto const parent = make_tx({op(1, 0)}, 2, 1);
+    auto const child = make_tx({output_point{parent.hash(), 0}}, 1, 2);
+    auto const grandchild = make_tx({output_point{child.hash(), 0}}, 1, 3);
+    mp.add(entry_for(parent, 1));
+    mp.add(entry_for(child, 2));
+    mp.add(entry_for(grandchild, 3));
+
+    CHECK(sorted(mp.ancestors(grandchild.hash())) == sorted({parent.hash(), child.hash()}));
+    CHECK(mp.ancestors(child.hash()) == std::vector<hash_digest>{parent.hash()});
+    CHECK(mp.ancestors(parent.hash()).empty());
+
+    CHECK(sorted(mp.descendants(parent.hash())) == sorted({child.hash(), grandchild.hash()}));
+    CHECK(mp.descendants(child.hash()) == std::vector<hash_digest>{grandchild.hash()});
+    CHECK(mp.descendants(grandchild.hash()).empty());
+}
+
+TEST_CASE("mempool parents/children de-duplicate multi-output spends", "[mempool][serial]") {
+    mempool mp(1, 2);
+    // parent has 2 outputs; child spends BOTH (0 and 1) -> counted once each way.
+    auto const parent = make_tx({op(1, 0)}, 2, 1);
+    auto const child = make_tx(
+        {output_point{parent.hash(), 0}, output_point{parent.hash(), 1}}, 1, 2);
+    mp.add(entry_for(parent, 1));
+    mp.add(entry_for(child, 2));
+
+    CHECK(mp.parents(child.hash()) == std::vector<hash_digest>{parent.hash()});
+    CHECK(mp.children(parent.hash()) == std::vector<hash_digest>{child.hash()});
+}
+
+TEST_CASE("mempool graph queries are empty for absent txid", "[mempool][serial]") {
+    mempool mp(1, 2);
+    auto const missing = make_hash(12345);
+    CHECK(mp.parents(missing).empty());
+    CHECK(mp.children(missing).empty());
+    CHECK(mp.ancestors(missing).empty());
+    CHECK(mp.descendants(missing).empty());
 }
 
 // ---------------------------------------------------------------------------
