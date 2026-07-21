@@ -254,6 +254,17 @@ void add_settings(CLI::App& app, configuration& cfg) {
         cfg.node.display, parse_display_mode,
         "Display mode (tui, log, daemon).");
 
+    // [rpc]
+    app.add_option("--rpc.enabled",  cfg.rpc.enabled,
+        "Enable the JSON-RPC server (requires a build with RPC support).");
+    app.add_option("--rpc.bind",     cfg.rpc.bind,
+        "Address the JSON-RPC listener binds to (default 127.0.0.1).");
+    app.add_option("--rpc.port",     cfg.rpc.port,
+        "TCP port for the JSON-RPC listener (default 8332).");
+    app.add_option("--rpc.user",     cfg.rpc.user,
+        "JSON-RPC HTTP Basic-Auth user (empty uses the .cookie file).");
+    app.add_option("--rpc.password", cfg.rpc.password,
+        "JSON-RPC HTTP Basic-Auth password.");
 }
 
 // Read KTH_* env vars once and, for the subset of names that map to CLI11

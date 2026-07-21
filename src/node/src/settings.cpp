@@ -28,4 +28,12 @@ duration settings::block_latency() const {
     return seconds(block_latency_seconds);
 }
 
+rpc_settings::rpc_settings()
+    : enabled(false)
+    , bind("127.0.0.1")
+    , port(8332)
+    , user()
+    , password()
+{}
+
 } // namespace kth::node

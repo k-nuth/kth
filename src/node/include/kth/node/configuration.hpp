@@ -34,7 +34,7 @@ namespace kth::node {
 /// Full node configuration, thread safe.
 struct KND_API configuration {
     configuration(domain::config::network net);
-    configuration(configuration const& other);
+    configuration(configuration const& other) = default;
 
     /// Options.
     bool help;
@@ -53,6 +53,7 @@ struct KND_API configuration {
 
     /// Settings.
     node::settings node;
+    node::rpc_settings rpc;
     blockchain::settings chain;
     database::settings database;
 #if ! defined(__EMSCRIPTEN__)

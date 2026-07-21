@@ -160,6 +160,18 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   )
 endif()
 
+# Optional JSON-RPC server (llhttp transport). Compiled only when KTH_WITH_RPC is
+# set (conan option rpc) and never for WebAssembly.
+if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  set(kth_sources_just_legacy
+    ${kth_sources_just_legacy}
+    src/rpc/json.cpp
+    src/rpc/dispatch.cpp
+    src/rpc/methods.cpp
+    src/rpc/server.cpp
+  )
+endif()
+
 if (NOT JUST_KTH_SOURCES)
   set(kth_sources
     ${kth_sources_just_legacy}
@@ -190,6 +202,12 @@ set(kth_headers
   include/kth/node/settings.hpp
   include/kth/node/full_node.hpp
   include/kth/node/parser.hpp
+
+  # Optional JSON-RPC server (compiled only when KTH_WITH_RPC is set).
+  include/kth/node/rpc/error.hpp
+  include/kth/node/rpc/json.hpp
+  include/kth/node/rpc/dispatch.hpp
+  include/kth/node/rpc/server.hpp
 
   # CSP-based sync system
   include/kth/node/sync.hpp
@@ -233,6 +251,13 @@ if (MINGW)
   target_link_libraries(${PROJECT_NAME} PUBLIC ws2_32 wsock32)
 endif()
 
+# JSON-RPC server: link the llhttp HTTP parser and enable the feature macro.
+if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  find_package(llhttp REQUIRED)
+  target_link_libraries(${PROJECT_NAME} PUBLIC llhttp::llhttp)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC -DKTH_WITH_RPC)
+endif()
+
 _group_sources(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}")
 
 # Tests
@@ -256,6 +281,11 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/settings.cpp
           test/utility.cpp
           test/utility.hpp)
+
+  # JSON-RPC unit tests build only when the server is compiled in.
+  if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    target_sources(kth_node_test PRIVATE test/rpc_json.cpp)
+  endif()
 
   target_include_directories(kth_node_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
 

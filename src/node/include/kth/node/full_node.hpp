@@ -51,6 +51,10 @@
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
 
+#if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
+#include <kth/node/rpc/server.hpp>
+#endif
+
 #include <asio/awaitable.hpp>
 
 namespace kth::node {
@@ -202,6 +206,10 @@ private:
     kth::node::p2p_node network_;
 #endif
     blockchain::block_chain chain_;
+    node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
+#if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
+    std::unique_ptr<rpc::server> rpc_server_;
+#endif
 };
 
 } // namespace kth::node

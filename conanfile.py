@@ -73,6 +73,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_qrencode": [True, False],
         "with_jemalloc": [True, False],
         "with_stats": [True, False],
+        "rpc": [True, False],
         "embed_utxo_bloom": [True, False],
         "utxoz_compact": [True, False],
         "asio_standalone": [True, False],
@@ -124,6 +125,7 @@ class KthRecipe(KnuthConanFileV2):
         # For now, keep disabled until a proper solution is implemented.
         "with_jemalloc": False,
         "with_stats": False,
+        "rpc": False,
         "embed_utxo_bloom": False,
         "utxoz_compact": False,
         "asio_standalone": True,
@@ -200,6 +202,12 @@ class KthRecipe(KnuthConanFileV2):
         # TODO(2026-02-02): Check if simdjson adds WASM support in future versions
         if self.settings.os != "Emscripten":
             self.requires("simdjson/4.2.2", transitive_headers=True, transitive_libs=True)
+
+        # llhttp (Node.js HTTP parser) backs the optional JSON-RPC server. It is a
+        # sans-io codec driven by the node's existing standalone-asio I/O loop, so
+        # it is only pulled in when the RPC server is compiled (and never for WASM).
+        if self.options.rpc and self.settings.os != "Emscripten":
+            self.requires("llhttp/9.3.0", transitive_headers=True, transitive_libs=True)
 
         if self.options.with_png:
             self.requires("libpng/1.6.58", transitive_headers=True, transitive_libs=True)
@@ -296,6 +304,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
         tc.variables["KTH_WITH_JEMALLOC"] = option_on_off(self.options.with_jemalloc)
         tc.variables["KTH_WITH_STATS"] = option_on_off(self.options.with_stats)
+        tc.variables["KTH_WITH_RPC"] = option_on_off(self.options.rpc)
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
         tc.variables["KTH_UTXOZ_COMPACT_MODE"] = option_on_off(self.options.utxoz_compact)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
@@ -369,6 +378,9 @@ class KthRecipe(KnuthConanFileV2):
 
         # Define mempool-backend macro based on option (cfm | parlay)
         mempool_backend_define = f"KTH_MEMPOOL_BACKEND_{str(self.options.mempool_backend).upper()}"
+
+        # The JSON-RPC server (node module) is compiled only when the rpc option is on.
+        rpc_defines = ["KTH_WITH_RPC"] if self.options.rpc else []
 
         # Define STATIC macros when building static libraries
         static_defines = []
@@ -494,7 +506,7 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["node"].libs = ["node"]
         self.cpp_info.components["node"].names["cmake_find_package"] = "node"
         self.cpp_info.components["node"].names["cmake_find_package_multi"] = "node"
-        self.cpp_info.components["node"].defines = [currency_define, mempool_backend_define] + static_defines
+        self.cpp_info.components["node"].defines = [currency_define, mempool_backend_define] + rpc_defines + static_defines
         # Node depends on blockchain and optionally network (if not Emscripten).
         # ftxui is consumed by the node-exe TUI dashboard (executable, not a
         # library component); listing it here keeps Conan 2's strict
@@ -504,6 +516,8 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os != "Emscripten":
             node_requires.append("network")
             node_requires.append("ftxui::ftxui")
+        if self.options.rpc and self.settings.os != "Emscripten":
+            node_requires.append("llhttp::llhttp")
         self.cpp_info.components["node"].requires = node_requires
         
         # Optional components
