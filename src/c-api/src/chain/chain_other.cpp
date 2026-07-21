@@ -15,7 +15,7 @@
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 
-#include <kth/capi/chain/block_list.h>
+#include <kth/capi/domain/chain/block_list.h>
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
 
@@ -92,17 +92,17 @@ void kth_chain_subscribe_blockchain(kth_node_t exec, kth_chain_t chain, void* ct
 
             kth_block_list_mut_t incoming_cpp = nullptr;
             if (incoming) {
-                incoming_cpp = kth_chain_block_list_construct_default();
+                incoming_cpp = kth_domain_chain_block_list_construct_default();
                 for (auto&& x : *incoming) {
-                    kth_chain_block_list_push_back(incoming_cpp, cast_block(*x));
+                    kth_domain_chain_block_list_push_back(incoming_cpp, cast_block(*x));
                 }
             }
 
             kth_block_list_mut_t replaced_blocks_cpp = nullptr;
             if (replaced_blocks) {
-                replaced_blocks_cpp = kth_chain_block_list_construct_default();
+                replaced_blocks_cpp = kth_domain_chain_block_list_construct_default();
                 for (auto&& x : *replaced_blocks) {
-                    kth_chain_block_list_push_back(replaced_blocks_cpp, cast_block(*x));
+                    kth_domain_chain_block_list_push_back(replaced_blocks_cpp, cast_block(*x));
                 }
             }
 

@@ -6,16 +6,16 @@
 #include <print>
 
 #include <kth/capi/chain/chain.h>
-#include <kth/capi/chain/history_compact.h>
-#include <kth/capi/chain/history_compact_list.h>
-#include <kth/capi/chain/input.h>
-#include <kth/capi/chain/input_list.h>
-#include <kth/capi/chain/output.h>
-#include <kth/capi/chain/output_list.h>
-#include <kth/capi/chain/output_point.h>
-#include <kth/capi/chain/script.h>
-#include <kth/capi/chain/transaction.h>
-#include <kth/capi/chain/transaction_list.h>
+#include <kth/capi/domain/chain/history_compact.h>
+#include <kth/capi/domain/chain/history_compact_list.h>
+#include <kth/capi/domain/chain/input.h>
+#include <kth/capi/domain/chain/input_list.h>
+#include <kth/capi/domain/chain/output.h>
+#include <kth/capi/domain/chain/output_list.h>
+#include <kth/capi/domain/chain/output_point.h>
+#include <kth/capi/domain/chain/script.h>
+#include <kth/capi/domain/chain/transaction.h>
+#include <kth/capi/domain/chain/transaction_list.h>
 #include <kth/capi/node.h>
 #include <kth/capi/hash_list.h>
 

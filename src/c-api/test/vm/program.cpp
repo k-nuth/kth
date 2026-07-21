@@ -12,7 +12,7 @@
 
 #include <stdint.h>
 
-#include <kth/capi/chain/script.h>
+#include <kth/capi/domain/chain/script.h>
 #include <kth/capi/data_stack.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/vm/big_number.h>
@@ -37,7 +37,7 @@ static uint8_t const kTwoOpScript[2] = { 0x51, 0xab };
 static void build_program_for_two_op_script(kth_program_mut_t* out_prog,
                                             kth_script_mut_t* out_script) {
     kth_script_mut_t script = NULL;
-    kth_error_code_t ec = kth_chain_script_construct_from_data(
+    kth_error_code_t ec = kth_domain_chain_script_construct_from_data(
         kTwoOpScript, sizeof(kTwoOpScript), 0, &script);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(script != NULL);
@@ -81,7 +81,7 @@ TEST_CASE("C-API Program - mark_code_separator succeeds for every valid PC",
     REQUIRE(kth_vm_program_mark_code_separator(prog, 1) != 0);
 
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ TEST_CASE("C-API Program - mark_code_separator rejects out-of-range PC",
     REQUIRE(kth_vm_program_mark_code_separator(prog, (kth_size_t)(~(kth_size_t)0)) == 0);
 
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ TEST_CASE("C-API Program - top_number reads the script integer at TOS",
     kth_vm_number_destruct(out);
 
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 TEST_CASE("C-API Program - pop_number consumes the stack top",
@@ -150,7 +150,7 @@ TEST_CASE("C-API Program - pop_number consumes the stack top",
     REQUIRE(out2 == NULL);
 
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 TEST_CASE("C-API Program - top_big_number reads the stack top as big-int",
@@ -169,7 +169,7 @@ TEST_CASE("C-API Program - top_big_number reads the stack top as big-int",
     kth_vm_big_number_destruct(out);
 
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 TEST_CASE("C-API Program - pop_big_number consumes the stack top",
@@ -185,7 +185,7 @@ TEST_CASE("C-API Program - pop_big_number consumes the stack top",
     kth_vm_big_number_destruct(out);
 
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------
@@ -218,7 +218,7 @@ TEST_CASE("C-API Program - pop_binary pops two numbers from TOS",
     kth_vm_number_destruct(b);
     kth_vm_number_destruct(a);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 TEST_CASE("C-API Program - pop_ternary pops three numbers from TOS",
@@ -242,7 +242,7 @@ TEST_CASE("C-API Program - pop_ternary pops three numbers from TOS",
     kth_vm_number_destruct(b);
     kth_vm_number_destruct(a);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 TEST_CASE("C-API Program - pop_binary on empty stack reports error",
@@ -260,7 +260,7 @@ TEST_CASE("C-API Program - pop_binary on empty stack reports error",
     REQUIRE(b == NULL);
 
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------
@@ -284,7 +284,7 @@ TEST_CASE("C-API Program - pop_big_binary pops two big numbers from TOS",
     kth_vm_big_number_destruct(b);
     kth_vm_big_number_destruct(a);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 TEST_CASE("C-API Program - pop_big_ternary pops three big numbers from TOS",
@@ -308,7 +308,7 @@ TEST_CASE("C-API Program - pop_big_ternary pops three big numbers from TOS",
     kth_vm_big_number_destruct(b);
     kth_vm_big_number_destruct(a);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------
@@ -337,7 +337,7 @@ TEST_CASE("C-API Program - pop(count) returns the top N stack elements",
 
     kth_core_data_stack_destruct(popped);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 TEST_CASE("C-API Program - pop(count) fails when the stack is too short",
@@ -354,7 +354,7 @@ TEST_CASE("C-API Program - pop(count) fails when the stack is too short",
     REQUIRE(popped == NULL);
 
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------

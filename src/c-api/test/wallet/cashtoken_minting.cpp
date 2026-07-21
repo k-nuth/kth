@@ -12,11 +12,11 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <kth/capi/chain/output.h>
-#include <kth/capi/chain/output_point.h>
+#include <kth/capi/domain/chain/output.h>
+#include <kth/capi/domain/chain/output_point.h>
 #include <kth/capi/chain/token_capability.h>
-#include <kth/capi/chain/utxo.h>
-#include <kth/capi/chain/utxo_list.h>
+#include <kth/capi/domain/chain/utxo.h>
+#include <kth/capi/domain/chain/utxo_list.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/wallet/cashtoken_minting.h>
@@ -56,9 +56,9 @@ static kth_payment_address_mut_t make_addr(void) {
 static kth_utxo_mut_t make_bch_utxo(uint8_t const* parent, uint32_t index, uint64_t amount) {
     kth_hash_t h;
     memcpy(h.hash, parent, 32);
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&h, index);
-    kth_utxo_mut_t u = kth_chain_utxo_construct(op, amount, NULL);
-    kth_chain_output_point_destruct(op);
+    kth_output_point_mut_t op = kth_domain_chain_output_point_construct_from_hash_index(&h, index);
+    kth_utxo_mut_t u = kth_domain_chain_utxo_construct(op, amount, NULL);
+    kth_domain_chain_output_point_destruct(op);
     return u;
 }
 
@@ -125,8 +125,8 @@ TEST_CASE("C-API create_ft_output - returns a valid owned output",
     kth_payment_address_mut_t addr = make_addr();
     kth_output_mut_t out = kth_wallet_cashtoken_create_ft_output(addr, kCategoryA, 1000u, 1500u);
     REQUIRE(out != NULL);
-    REQUIRE(kth_chain_output_value(out) == 1500u);
-    kth_chain_output_destruct(out);
+    REQUIRE(kth_domain_chain_output_value(out) == 1500u);
+    kth_domain_chain_output_destruct(out);
     kth_wallet_payment_address_destruct(addr);
 }
 
@@ -137,8 +137,8 @@ TEST_CASE("C-API create_nft_output - returns a valid owned output",
     kth_output_mut_t out = kth_wallet_cashtoken_create_nft_output(
         addr, kCategoryA, kth_token_capability_mut, commitment, 4u, 1000u);
     REQUIRE(out != NULL);
-    REQUIRE(kth_chain_output_value(out) == 1000u);
-    kth_chain_output_destruct(out);
+    REQUIRE(kth_domain_chain_output_value(out) == 1000u);
+    kth_domain_chain_output_destruct(out);
     kth_wallet_payment_address_destruct(addr);
 }
 
@@ -149,7 +149,7 @@ TEST_CASE("C-API create_combined_token_output - returns a valid owned output",
     kth_output_mut_t out = kth_wallet_cashtoken_create_combined_token_output(
         addr, kCategoryA, 5000u, kth_token_capability_minting, commitment, 1u, 1000u);
     REQUIRE(out != NULL);
-    kth_chain_output_destruct(out);
+    kth_domain_chain_output_destruct(out);
     kth_wallet_payment_address_destruct(addr);
 }
 
@@ -172,7 +172,7 @@ TEST_CASE("C-API prepare_genesis_utxo - happy path produces a result",
     REQUIRE(kth_wallet_cashtoken_prepare_genesis_result_signing_index_nth(res, 0) == 0u);
 
     kth_wallet_cashtoken_prepare_genesis_result_destruct(res);
-    kth_chain_utxo_destruct(u);
+    kth_domain_chain_utxo_destruct(u);
     kth_wallet_payment_address_destruct(dest);
 }
 
@@ -187,7 +187,7 @@ TEST_CASE("C-API prepare_genesis_utxo - rejects dust-level satoshis",
     REQUIRE(ec != kth_ec_success);
     REQUIRE(res == NULL);
 
-    kth_chain_utxo_destruct(u);
+    kth_domain_chain_utxo_destruct(u);
     kth_wallet_payment_address_destruct(dest);
 }
 
@@ -218,7 +218,7 @@ TEST_CASE("C-API create_token_genesis - FT-only returns category_id = parent txi
     REQUIRE(memcmp(cat, kParentTxA, 32) == 0);
 
     kth_wallet_cashtoken_token_genesis_result_destruct(res);
-    kth_chain_utxo_destruct(u);
+    kth_domain_chain_utxo_destruct(u);
     kth_wallet_payment_address_destruct(dest);
 }
 
@@ -240,7 +240,7 @@ TEST_CASE("C-API create_token_genesis - rejects outpoint.index != 0",
     REQUIRE(ec != kth_ec_success);
     REQUIRE(res == NULL);
 
-    kth_chain_utxo_destruct(u);
+    kth_domain_chain_utxo_destruct(u);
     kth_wallet_payment_address_destruct(dest);
 }
 
@@ -299,6 +299,6 @@ TEST_CASE("C-API create_nft_collection - partitions into batches",
 
     kth_wallet_cashtoken_nft_collection_result_destruct(res);
     kth_wallet_cashtoken_nft_collection_item_list_destruct(items);
-    kth_chain_utxo_destruct(u);
+    kth_domain_chain_utxo_destruct(u);
     kth_wallet_payment_address_destruct(creator);
 }

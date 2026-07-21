@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 #include <kth/capi/bool_list.h>
-#include <kth/capi/chain/script.h>
+#include <kth/capi/domain/chain/script.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/u64_list.h>
 #include <kth/capi/vm/debug_snapshot.h>
@@ -33,7 +33,7 @@ static uint8_t const kTwoPushes[2] = { 0x51, 0x51 };
 static void build_two_push_program(kth_program_mut_t* out_prog,
                                    kth_script_mut_t* out_script) {
     kth_script_mut_t script = NULL;
-    kth_error_code_t ec = kth_chain_script_construct_from_data(
+    kth_error_code_t ec = kth_domain_chain_script_construct_from_data(
         kTwoPushes, sizeof(kTwoPushes), 0, &script);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(script != NULL);
@@ -77,7 +77,7 @@ TEST_CASE("C-API DebugSnapshot - construct(program) seats the snapshot on the sc
 
     kth_vm_debug_snapshot_destruct(snap);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 TEST_CASE("C-API DebugSnapshot - destruct(NULL) is a no-op",
@@ -108,7 +108,7 @@ TEST_CASE("C-API DebugSnapshot - copy produces an independent snapshot",
     kth_vm_debug_snapshot_destruct(s1);
     kth_vm_debug_snapshot_destruct(s0);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------
@@ -133,7 +133,7 @@ TEST_CASE("C-API DebugSnapshot - debug_step preserves the input snapshot (rewind
     kth_vm_debug_snapshot_destruct(advanced);
     kth_vm_debug_snapshot_destruct(start);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 TEST_CASE("C-API DebugSnapshot - debug_step on a done snapshot is a no-op",
@@ -141,7 +141,7 @@ TEST_CASE("C-API DebugSnapshot - debug_step on a done snapshot is a no-op",
     // Single-op script: after one step the snapshot is `done`.
     uint8_t const one_push[1] = { 0x51 };
     kth_script_mut_t script = NULL;
-    kth_error_code_t ec = kth_chain_script_construct_from_data(
+    kth_error_code_t ec = kth_domain_chain_script_construct_from_data(
         one_push, sizeof(one_push), 0, &script);
     REQUIRE(ec == kth_ec_success);
     kth_program_mut_t prog = kth_vm_program_construct_from_script(script);
@@ -161,7 +161,7 @@ TEST_CASE("C-API DebugSnapshot - debug_step on a done snapshot is a no-op",
     kth_vm_debug_snapshot_destruct(s1);
     kth_vm_debug_snapshot_destruct(s0);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +185,7 @@ TEST_CASE("C-API DebugSnapshot - control_stack getter returns a queryable bool_l
 
     kth_vm_debug_snapshot_destruct(snap);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +210,7 @@ TEST_CASE("C-API DebugSnapshot - loop_stack getter returns an owned u64_list",
 
     kth_vm_debug_snapshot_destruct(snap);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------

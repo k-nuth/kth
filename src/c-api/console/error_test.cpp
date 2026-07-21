@@ -51,8 +51,8 @@ void DoSomething(kth_node_t node) {
     kth_size_t out_index;
     res = kth_chain_sync_transaction(chain, hash, true, &out_transaction, &out_height, &out_index);
 
-    // kth_size_t sigops = kth_chain_transaction_signature_operations(out_transaction);
-    kth_size_t sigops = kth_chain_transaction_signature_operations_bip16_active(out_transaction, true);
+    // kth_size_t sigops = kth_domain_chain_transaction_signature_operations(out_transaction);
+    kth_size_t sigops = kth_domain_chain_transaction_signature_operations_bip16_active(out_transaction, true);
     printf("sigops: %d", sigops);
 
     // string txHashHexStr = "f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16";

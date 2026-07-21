@@ -13,10 +13,10 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <kth/capi/chain/block.h>
-#include <kth/capi/chain/header.h>
-#include <kth/capi/chain/transaction.h>
-#include <kth/capi/chain/transaction_list.h>
+#include <kth/capi/domain/chain/block.h>
+#include <kth/capi/domain/chain/header.h>
+#include <kth/capi/domain/chain/transaction.h>
+#include <kth/capi/domain/chain/transaction_list.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/primitives.h>
 
@@ -32,25 +32,25 @@ TEST_CASE("C-API Block - create accepts a block with no transactions",
     // A domain block does no consensus checks: an empty block is syntactically
     // valid and construction cannot fail.
     kth_hash_t const zero = {{ 0 }};
-    kth_header_mut_t h = kth_chain_header_construct(0u, &zero, &zero, 0u, 0u, 0u);
-    kth_transaction_list_mut_t txs = kth_chain_transaction_list_construct_default();
-    kth_block_mut_t blk = kth_chain_block_construct(h, txs);
+    kth_header_mut_t h = kth_domain_chain_header_construct(0u, &zero, &zero, 0u, 0u, 0u);
+    kth_transaction_list_mut_t txs = kth_domain_chain_transaction_list_construct_default();
+    kth_block_mut_t blk = kth_domain_chain_block_construct(h, txs);
     REQUIRE(blk != NULL);
-    kth_chain_block_destruct(blk);
-    kth_chain_header_destruct(h);
-    kth_chain_transaction_list_destruct(txs);
+    kth_domain_chain_block_destruct(blk);
+    kth_domain_chain_header_destruct(h);
+    kth_domain_chain_transaction_list_destruct(txs);
 }
 
 TEST_CASE("C-API Block - genesis mainnet is valid",
           "[C-API Block]") {
     kth_block_mut_t blk = make_block();
-    REQUIRE(kth_chain_block_is_valid_merkle_root(blk) != 0);
-    kth_chain_block_destruct(blk);
+    REQUIRE(kth_domain_chain_block_is_valid_merkle_root(blk) != 0);
+    kth_domain_chain_block_destruct(blk);
 }
 
 TEST_CASE("C-API Block - destruct null is safe",
           "[C-API Block]") {
-    kth_chain_block_destruct(NULL);
+    kth_domain_chain_block_destruct(NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@ TEST_CASE("C-API Block - from_data insufficient bytes fails",
     uint8_t data[10];
     memset(data, 0, sizeof(data));
     kth_block_mut_t blk = NULL;
-    kth_error_code_t ec = kth_chain_block_construct_from_data(
+    kth_error_code_t ec = kth_domain_chain_block_construct_from_data(
         data, sizeof(data), &blk);
     REQUIRE(ec != kth_ec_success);
     REQUIRE(blk == NULL);
@@ -73,19 +73,19 @@ TEST_CASE("C-API Block - to_data / from_data roundtrip",
     kth_block_mut_t expected = make_block();
 
     kth_size_t size = 0;
-    uint8_t* raw = kth_chain_block_to_data(expected, &size);
+    uint8_t* raw = kth_domain_chain_block_to_data(expected, &size);
     REQUIRE(raw != NULL);
     REQUIRE(size > 0);
 
     kth_block_mut_t parsed = NULL;
-    kth_error_code_t ec = kth_chain_block_construct_from_data(raw, size, &parsed);
+    kth_error_code_t ec = kth_domain_chain_block_construct_from_data(raw, size, &parsed);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(parsed != NULL);
-    REQUIRE(kth_chain_block_equals(expected, parsed) != 0);
+    REQUIRE(kth_domain_chain_block_equals(expected, parsed) != 0);
 
     kth_core_destruct_array(raw);
-    kth_chain_block_destruct(parsed);
-    kth_chain_block_destruct(expected);
+    kth_domain_chain_block_destruct(parsed);
+    kth_domain_chain_block_destruct(expected);
 }
 
 // ---------------------------------------------------------------------------
@@ -95,40 +95,40 @@ TEST_CASE("C-API Block - to_data / from_data roundtrip",
 TEST_CASE("C-API Block - header returns borrowed view",
           "[C-API Block]") {
     kth_block_mut_t blk = make_block();
-    kth_header_const_t hdr = kth_chain_block_header(blk);
+    kth_header_const_t hdr = kth_domain_chain_block_header(blk);
     REQUIRE(hdr != NULL);
-    REQUIRE(kth_chain_header_version(hdr) != 0);
-    kth_chain_block_destruct(blk);
+    REQUIRE(kth_domain_chain_header_version(hdr) != 0);
+    kth_domain_chain_block_destruct(blk);
 }
 
 TEST_CASE("C-API Block - transactions returns borrowed view",
           "[C-API Block]") {
     kth_block_mut_t blk = make_block();
-    kth_transaction_list_const_t txs = kth_chain_block_transactions(blk);
+    kth_transaction_list_const_t txs = kth_domain_chain_block_transactions(blk);
     REQUIRE(txs != NULL);
     // Genesis block has exactly 1 transaction.
-    REQUIRE(kth_chain_transaction_list_count(txs) == 1u);
-    kth_chain_block_destruct(blk);
+    REQUIRE(kth_domain_chain_transaction_list_count(txs) == 1u);
+    kth_domain_chain_block_destruct(blk);
 }
 
 TEST_CASE("C-API Block - hash is stable across calls",
           "[C-API Block]") {
     kth_block_mut_t blk = make_block();
-    kth_hash_t a = kth_chain_block_hash(blk);
-    kth_hash_t b = kth_chain_block_hash(blk);
+    kth_hash_t a = kth_domain_chain_block_hash(blk);
+    kth_hash_t b = kth_domain_chain_block_hash(blk);
     REQUIRE(memcmp(a.hash, b.hash, sizeof(a.hash)) == 0);
-    kth_chain_block_destruct(blk);
+    kth_domain_chain_block_destruct(blk);
 }
 
 TEST_CASE("C-API Block - serialized_size matches to_data length",
           "[C-API Block]") {
     kth_block_mut_t blk = make_block();
     kth_size_t size = 0;
-    uint8_t* raw = kth_chain_block_to_data(blk, &size);
+    uint8_t* raw = kth_domain_chain_block_to_data(blk, &size);
     REQUIRE(raw != NULL);
-    REQUIRE(kth_chain_block_serialized_size(blk) == size);
+    REQUIRE(kth_domain_chain_block_serialized_size(blk) == size);
     kth_core_destruct_array(raw);
-    kth_chain_block_destruct(blk);
+    kth_domain_chain_block_destruct(blk);
 }
 
 // ---------------------------------------------------------------------------
@@ -138,15 +138,15 @@ TEST_CASE("C-API Block - serialized_size matches to_data length",
 TEST_CASE("C-API Block - genesis has valid merkle root",
           "[C-API Block]") {
     kth_block_mut_t blk = make_block();
-    REQUIRE(kth_chain_block_is_valid_merkle_root(blk) != 0);
-    kth_chain_block_destruct(blk);
+    REQUIRE(kth_domain_chain_block_is_valid_merkle_root(blk) != 0);
+    kth_domain_chain_block_destruct(blk);
 }
 
 TEST_CASE("C-API Block - default is not extra coinbases",
           "[C-API Block]") {
     kth_block_mut_t blk = make_minimal_block();
-    REQUIRE(kth_chain_block_is_extra_coinbases(blk) == 0);
-    kth_chain_block_destruct(blk);
+    REQUIRE(kth_domain_chain_block_is_extra_coinbases(blk) == 0);
+    kth_domain_chain_block_destruct(blk);
 }
 
 // ---------------------------------------------------------------------------
@@ -156,12 +156,12 @@ TEST_CASE("C-API Block - default is not extra coinbases",
 TEST_CASE("C-API Block - copy preserves fields",
           "[C-API Block]") {
     kth_block_mut_t original = make_block();
-    kth_block_mut_t copy = kth_chain_block_copy(original);
+    kth_block_mut_t copy = kth_domain_chain_block_copy(original);
 
-    REQUIRE(kth_chain_block_equals(original, copy) != 0);
+    REQUIRE(kth_domain_chain_block_equals(original, copy) != 0);
 
-    kth_chain_block_destruct(copy);
-    kth_chain_block_destruct(original);
+    kth_domain_chain_block_destruct(copy);
+    kth_domain_chain_block_destruct(original);
 }
 
 TEST_CASE("C-API Block - equals identical blocks is true, different is false",
@@ -170,12 +170,12 @@ TEST_CASE("C-API Block - equals identical blocks is true, different is false",
     kth_block_mut_t b = make_block();
     kth_block_mut_t c = make_minimal_block();
 
-    REQUIRE(kth_chain_block_equals(a, b) != 0);
-    REQUIRE(kth_chain_block_equals(a, c) == 0);
+    REQUIRE(kth_domain_chain_block_equals(a, b) != 0);
+    REQUIRE(kth_domain_chain_block_equals(a, c) == 0);
 
-    kth_chain_block_destruct(a);
-    kth_chain_block_destruct(b);
-    kth_chain_block_destruct(c);
+    kth_domain_chain_block_destruct(a);
+    kth_domain_chain_block_destruct(b);
+    kth_domain_chain_block_destruct(c);
 }
 
 // ---------------------------------------------------------------------------
@@ -186,7 +186,7 @@ TEST_CASE("C-API Block - construct_from_data null data with non-zero size aborts
           "[C-API Block][precondition]") {
     KTH_EXPECT_ABORT({
         kth_block_mut_t out = NULL;
-        kth_chain_block_construct_from_data(NULL, 1, &out);
+        kth_domain_chain_block_construct_from_data(NULL, 1, &out);
     });
 }
 
@@ -194,17 +194,17 @@ TEST_CASE("C-API Block - construct_from_data null out aborts",
           "[C-API Block][precondition]") {
     uint8_t data[10];
     memset(data, 0, sizeof(data));
-    KTH_EXPECT_ABORT(kth_chain_block_construct_from_data(data, 10, NULL));
+    KTH_EXPECT_ABORT(kth_domain_chain_block_construct_from_data(data, 10, NULL));
 }
 
 TEST_CASE("C-API Block - copy null self aborts",
           "[C-API Block][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_block_copy(NULL));
+    KTH_EXPECT_ABORT(kth_domain_chain_block_copy(NULL));
 }
 
 TEST_CASE("C-API Block - to_data_simple null out_size aborts",
           "[C-API Block][precondition]") {
     kth_block_mut_t blk = make_minimal_block();
-    KTH_EXPECT_ABORT(kth_chain_block_to_data(blk, NULL));
-    kth_chain_block_destruct(blk);
+    KTH_EXPECT_ABORT(kth_domain_chain_block_to_data(blk, NULL));
+    kth_domain_chain_block_destruct(blk);
 }

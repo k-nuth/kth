@@ -13,13 +13,13 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <kth/capi/chain/input.h>
-#include <kth/capi/chain/input_list.h>
-#include <kth/capi/chain/output.h>
-#include <kth/capi/chain/output_list.h>
-#include <kth/capi/chain/output_point.h>
-#include <kth/capi/chain/script.h>
-#include <kth/capi/chain/transaction.h>
+#include <kth/capi/domain/chain/input.h>
+#include <kth/capi/domain/chain/input_list.h>
+#include <kth/capi/domain/chain/output.h>
+#include <kth/capi/domain/chain/output_list.h>
+#include <kth/capi/domain/chain/output_point.h>
+#include <kth/capi/domain/chain/script.h>
+#include <kth/capi/domain/chain/transaction.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/primitives.h>
 
@@ -51,7 +51,7 @@ static uint8_t const kScriptBody[20] = {
 
 static kth_script_mut_t make_script(void) {
     kth_script_mut_t s = NULL;
-    kth_error_code_t ec = kth_chain_script_construct_from_data(
+    kth_error_code_t ec = kth_domain_chain_script_construct_from_data(
         kScriptBody, sizeof(kScriptBody), 0, &s);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(s != NULL);
@@ -61,35 +61,35 @@ static kth_script_mut_t make_script(void) {
 // Build a single-input/single-output input_list and output_list pair.
 // The caller takes ownership and must free with the matching destruct.
 static kth_input_list_mut_t make_inputs(void) {
-    kth_input_list_mut_t list = kth_chain_input_list_construct_default();
+    kth_input_list_mut_t list = kth_domain_chain_input_list_construct_default();
     REQUIRE(list != NULL);
 
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kPrevHash, 0);
+    kth_output_point_mut_t op = kth_domain_chain_output_point_construct_from_hash_index(&kPrevHash, 0);
     REQUIRE(op != NULL);
     kth_script_mut_t script = make_script();
-    kth_input_mut_t in = kth_chain_input_construct(op, script, 0xffffffffu);
+    kth_input_mut_t in = kth_domain_chain_input_construct(op, script, 0xffffffffu);
     REQUIRE(in != NULL);
 
-    kth_chain_input_list_push_back(list, in);
+    kth_domain_chain_input_list_push_back(list, in);
 
-    kth_chain_input_destruct(in);
-    kth_chain_script_destruct(script);
-    kth_chain_output_point_destruct(op);
+    kth_domain_chain_input_destruct(in);
+    kth_domain_chain_script_destruct(script);
+    kth_domain_chain_output_point_destruct(op);
     return list;
 }
 
 static kth_output_list_mut_t make_outputs(void) {
-    kth_output_list_mut_t list = kth_chain_output_list_construct_default();
+    kth_output_list_mut_t list = kth_domain_chain_output_list_construct_default();
     REQUIRE(list != NULL);
 
     kth_script_mut_t script = make_script();
-    kth_output_mut_t out = kth_chain_output_construct(50000ull, script, NULL);
+    kth_output_mut_t out = kth_domain_chain_output_construct(50000ull, script, NULL);
     REQUIRE(out != NULL);
 
-    kth_chain_output_list_push_back(list, out);
+    kth_domain_chain_output_list_push_back(list, out);
 
-    kth_chain_output_destruct(out);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_output_destruct(out);
+    kth_domain_chain_script_destruct(script);
     return list;
 }
 
@@ -97,11 +97,11 @@ static kth_output_list_mut_t make_outputs(void) {
 static kth_transaction_mut_t make_tx(void) {
     kth_input_list_mut_t ins = make_inputs();
     kth_output_list_mut_t outs = make_outputs();
-    kth_transaction_mut_t tx = kth_chain_transaction_construct(
+    kth_transaction_mut_t tx = kth_domain_chain_transaction_construct(
         kVersion, kLocktime, ins, outs);
     REQUIRE(tx != NULL);
-    kth_chain_input_list_destruct(ins);
-    kth_chain_output_list_destruct(outs);
+    kth_domain_chain_input_list_destruct(ins);
+    kth_domain_chain_output_list_destruct(outs);
     return tx;
 }
 
@@ -112,14 +112,14 @@ static kth_transaction_mut_t make_tx(void) {
 TEST_CASE("C-API Transaction - field constructor preserves version & locktime",
           "[C-API Transaction]") {
     kth_transaction_mut_t tx = make_tx();
-    REQUIRE(kth_chain_transaction_version(tx) == kVersion);
-    REQUIRE(kth_chain_transaction_locktime(tx) == kLocktime);
-    kth_chain_transaction_destruct(tx);
+    REQUIRE(kth_domain_chain_transaction_version(tx) == kVersion);
+    REQUIRE(kth_domain_chain_transaction_locktime(tx) == kLocktime);
+    kth_domain_chain_transaction_destruct(tx);
 }
 
 TEST_CASE("C-API Transaction - destruct null is safe",
           "[C-API Transaction]") {
-    kth_chain_transaction_destruct(NULL);
+    kth_domain_chain_transaction_destruct(NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ TEST_CASE("C-API Transaction - from_data insufficient bytes fails",
     uint8_t data[5];
     memset(data, 0, sizeof(data));
     kth_transaction_mut_t tx = NULL;
-    kth_error_code_t ec = kth_chain_transaction_construct_from_data(
+    kth_error_code_t ec = kth_domain_chain_transaction_construct_from_data(
         data, sizeof(data), 1, &tx);
     REQUIRE(ec != kth_ec_success);
     REQUIRE(tx == NULL);
@@ -142,21 +142,21 @@ TEST_CASE("C-API Transaction - to_data / from_data roundtrip",
     kth_transaction_mut_t expected = make_tx();
 
     kth_size_t size = 0;
-    uint8_t* raw = kth_chain_transaction_to_data(expected, 1, &size);
+    uint8_t* raw = kth_domain_chain_transaction_to_data(expected, 1, &size);
     REQUIRE(raw != NULL);
     REQUIRE(size > 0);
 
     kth_transaction_mut_t parsed = NULL;
-    kth_error_code_t ec = kth_chain_transaction_construct_from_data(raw, size, 1, &parsed);
+    kth_error_code_t ec = kth_domain_chain_transaction_construct_from_data(raw, size, 1, &parsed);
     REQUIRE(ec == kth_ec_success);
     REQUIRE(parsed != NULL);
-    REQUIRE(kth_chain_transaction_version(parsed) == kVersion);
-    REQUIRE(kth_chain_transaction_locktime(parsed) == kLocktime);
-    REQUIRE(kth_chain_transaction_equals(expected, parsed) != 0);
+    REQUIRE(kth_domain_chain_transaction_version(parsed) == kVersion);
+    REQUIRE(kth_domain_chain_transaction_locktime(parsed) == kLocktime);
+    REQUIRE(kth_domain_chain_transaction_equals(expected, parsed) != 0);
 
     kth_core_destruct_array(raw);
-    kth_chain_transaction_destruct(parsed);
-    kth_chain_transaction_destruct(expected);
+    kth_domain_chain_transaction_destruct(parsed);
+    kth_domain_chain_transaction_destruct(expected);
 }
 
 // ---------------------------------------------------------------------------
@@ -165,52 +165,52 @@ TEST_CASE("C-API Transaction - to_data / from_data roundtrip",
 
 TEST_CASE("C-API Transaction - constructor sets version",
           "[C-API Transaction]") {
-    kth_input_list_mut_t ins = kth_chain_input_list_construct_default();
-    kth_output_list_mut_t outs = kth_chain_output_list_construct_default();
-    kth_transaction_mut_t tx = kth_chain_transaction_construct(kVersion, 0u, ins, outs);
-    REQUIRE(kth_chain_transaction_version(tx) == kVersion);
-    kth_chain_transaction_destruct(tx);
-    kth_chain_input_list_destruct(ins);
-    kth_chain_output_list_destruct(outs);
+    kth_input_list_mut_t ins = kth_domain_chain_input_list_construct_default();
+    kth_output_list_mut_t outs = kth_domain_chain_output_list_construct_default();
+    kth_transaction_mut_t tx = kth_domain_chain_transaction_construct(kVersion, 0u, ins, outs);
+    REQUIRE(kth_domain_chain_transaction_version(tx) == kVersion);
+    kth_domain_chain_transaction_destruct(tx);
+    kth_domain_chain_input_list_destruct(ins);
+    kth_domain_chain_output_list_destruct(outs);
 }
 
 TEST_CASE("C-API Transaction - constructor sets locktime",
           "[C-API Transaction]") {
-    kth_input_list_mut_t ins = kth_chain_input_list_construct_default();
-    kth_output_list_mut_t outs = kth_chain_output_list_construct_default();
-    kth_transaction_mut_t tx = kth_chain_transaction_construct(0u, 12345u, ins, outs);
-    REQUIRE(kth_chain_transaction_locktime(tx) == 12345u);
-    kth_chain_transaction_destruct(tx);
-    kth_chain_input_list_destruct(ins);
-    kth_chain_output_list_destruct(outs);
+    kth_input_list_mut_t ins = kth_domain_chain_input_list_construct_default();
+    kth_output_list_mut_t outs = kth_domain_chain_output_list_construct_default();
+    kth_transaction_mut_t tx = kth_domain_chain_transaction_construct(0u, 12345u, ins, outs);
+    REQUIRE(kth_domain_chain_transaction_locktime(tx) == 12345u);
+    kth_domain_chain_transaction_destruct(tx);
+    kth_domain_chain_input_list_destruct(ins);
+    kth_domain_chain_output_list_destruct(outs);
 }
 
 TEST_CASE("C-API Transaction - constructor deep-copies inputs",
           "[C-API Transaction]") {
     kth_input_list_mut_t ins = make_inputs();
-    kth_output_list_mut_t empty_outs = kth_chain_output_list_construct_default();
-    kth_transaction_mut_t tx = kth_chain_transaction_construct(0u, 0u, ins, empty_outs);
-    kth_chain_output_list_destruct(empty_outs);
+    kth_output_list_mut_t empty_outs = kth_domain_chain_output_list_construct_default();
+    kth_transaction_mut_t tx = kth_domain_chain_transaction_construct(0u, 0u, ins, empty_outs);
+    kth_domain_chain_output_list_destruct(empty_outs);
     // Destroy the source list first to prove the constructor deep-copied.
     // An aliasing constructor would leave a dangling view after this point.
-    kth_chain_input_list_destruct(ins);
-    kth_input_list_const_t view = kth_chain_transaction_inputs(tx);
+    kth_domain_chain_input_list_destruct(ins);
+    kth_input_list_const_t view = kth_domain_chain_transaction_inputs(tx);
     REQUIRE(view != NULL);
-    REQUIRE(kth_chain_input_list_count(view) == 1u);
-    kth_chain_transaction_destruct(tx);
+    REQUIRE(kth_domain_chain_input_list_count(view) == 1u);
+    kth_domain_chain_transaction_destruct(tx);
 }
 
 TEST_CASE("C-API Transaction - constructor deep-copies outputs",
           "[C-API Transaction]") {
     kth_output_list_mut_t outs = make_outputs();
-    kth_input_list_mut_t empty_ins = kth_chain_input_list_construct_default();
-    kth_transaction_mut_t tx = kth_chain_transaction_construct(0u, 0u, empty_ins, outs);
-    kth_chain_input_list_destruct(empty_ins);
-    kth_chain_output_list_destruct(outs);
-    kth_output_list_const_t view = kth_chain_transaction_outputs(tx);
+    kth_input_list_mut_t empty_ins = kth_domain_chain_input_list_construct_default();
+    kth_transaction_mut_t tx = kth_domain_chain_transaction_construct(0u, 0u, empty_ins, outs);
+    kth_domain_chain_input_list_destruct(empty_ins);
+    kth_domain_chain_output_list_destruct(outs);
+    kth_output_list_const_t view = kth_domain_chain_transaction_outputs(tx);
     REQUIRE(view != NULL);
-    REQUIRE(kth_chain_output_list_count(view) == 1u);
-    kth_chain_transaction_destruct(tx);
+    REQUIRE(kth_domain_chain_output_list_count(view) == 1u);
+    kth_domain_chain_transaction_destruct(tx);
 }
 
 // ---------------------------------------------------------------------------
@@ -219,29 +219,29 @@ TEST_CASE("C-API Transaction - constructor deep-copies outputs",
 
 TEST_CASE("C-API Transaction - default is_coinbase is false",
           "[C-API Transaction]") {
-    kth_transaction_mut_t tx = kth_chain_transaction_construct_default();
-    REQUIRE(kth_chain_transaction_is_coinbase(tx) == 0);
-    kth_chain_transaction_destruct(tx);
+    kth_transaction_mut_t tx = kth_domain_chain_transaction_construct_default();
+    REQUIRE(kth_domain_chain_transaction_is_coinbase(tx) == 0);
+    kth_domain_chain_transaction_destruct(tx);
 }
 
 TEST_CASE("C-API Transaction - hash is stable across calls",
           "[C-API Transaction]") {
     kth_transaction_mut_t tx = make_tx();
-    kth_hash_t a = kth_chain_transaction_hash(tx);
-    kth_hash_t b = kth_chain_transaction_hash(tx);
+    kth_hash_t a = kth_domain_chain_transaction_hash(tx);
+    kth_hash_t b = kth_domain_chain_transaction_hash(tx);
     REQUIRE(memcmp(a.hash, b.hash, sizeof(a.hash)) == 0);
-    kth_chain_transaction_destruct(tx);
+    kth_domain_chain_transaction_destruct(tx);
 }
 
 TEST_CASE("C-API Transaction - serialized_size matches to_data length",
           "[C-API Transaction]") {
     kth_transaction_mut_t tx = make_tx();
     kth_size_t size = 0;
-    uint8_t* raw = kth_chain_transaction_to_data(tx, 1, &size);
+    uint8_t* raw = kth_domain_chain_transaction_to_data(tx, 1, &size);
     REQUIRE(raw != NULL);
-    REQUIRE(kth_chain_transaction_serialized_size(tx, 1) == size);
+    REQUIRE(kth_domain_chain_transaction_serialized_size(tx, 1) == size);
     kth_core_destruct_array(raw);
-    kth_chain_transaction_destruct(tx);
+    kth_domain_chain_transaction_destruct(tx);
 }
 
 // ---------------------------------------------------------------------------
@@ -251,14 +251,14 @@ TEST_CASE("C-API Transaction - serialized_size matches to_data length",
 TEST_CASE("C-API Transaction - copy preserves fields",
           "[C-API Transaction]") {
     kth_transaction_mut_t original = make_tx();
-    kth_transaction_mut_t copy = kth_chain_transaction_copy(original);
+    kth_transaction_mut_t copy = kth_domain_chain_transaction_copy(original);
 
-    REQUIRE(kth_chain_transaction_equals(original, copy) != 0);
-    REQUIRE(kth_chain_transaction_version(copy) == kVersion);
-    REQUIRE(kth_chain_transaction_locktime(copy) == kLocktime);
+    REQUIRE(kth_domain_chain_transaction_equals(original, copy) != 0);
+    REQUIRE(kth_domain_chain_transaction_version(copy) == kVersion);
+    REQUIRE(kth_domain_chain_transaction_locktime(copy) == kLocktime);
 
-    kth_chain_transaction_destruct(copy);
-    kth_chain_transaction_destruct(original);
+    kth_domain_chain_transaction_destruct(copy);
+    kth_domain_chain_transaction_destruct(original);
 }
 
 TEST_CASE("C-API Transaction - equals identical txs is true, different is false",
@@ -271,24 +271,24 @@ TEST_CASE("C-API Transaction - equals identical txs is true, different is false"
     // an `equals()` impl that ignores fields.
     kth_input_list_mut_t mut_ins = make_inputs();
     kth_output_list_mut_t mut_outs = make_outputs();
-    kth_transaction_mut_t mutated = kth_chain_transaction_construct(
+    kth_transaction_mut_t mutated = kth_domain_chain_transaction_construct(
         kVersion, kLocktime + 1u, mut_ins, mut_outs);
-    kth_chain_input_list_destruct(mut_ins);
-    kth_chain_output_list_destruct(mut_outs);
+    kth_domain_chain_input_list_destruct(mut_ins);
+    kth_domain_chain_output_list_destruct(mut_outs);
     // No recompute_hash needed — the new transaction value type has no
     // internal hash cache; `hash()` always reflects the current fields.
 
     // `c` is a default tx, structurally distinct from `a`.
-    kth_transaction_mut_t c = kth_chain_transaction_construct_default();
+    kth_transaction_mut_t c = kth_domain_chain_transaction_construct_default();
 
-    REQUIRE(kth_chain_transaction_equals(a, b) != 0);
-    REQUIRE(kth_chain_transaction_equals(a, mutated) == 0);
-    REQUIRE(kth_chain_transaction_equals(a, c) == 0);
+    REQUIRE(kth_domain_chain_transaction_equals(a, b) != 0);
+    REQUIRE(kth_domain_chain_transaction_equals(a, mutated) == 0);
+    REQUIRE(kth_domain_chain_transaction_equals(a, c) == 0);
 
-    kth_chain_transaction_destruct(a);
-    kth_chain_transaction_destruct(b);
-    kth_chain_transaction_destruct(mutated);
-    kth_chain_transaction_destruct(c);
+    kth_domain_chain_transaction_destruct(a);
+    kth_domain_chain_transaction_destruct(b);
+    kth_domain_chain_transaction_destruct(mutated);
+    kth_domain_chain_transaction_destruct(c);
 }
 
 // ---------------------------------------------------------------------------
@@ -299,7 +299,7 @@ TEST_CASE("C-API Transaction - construct_from_data null data with non-zero size 
           "[C-API Transaction][precondition]") {
     KTH_EXPECT_ABORT({
         kth_transaction_mut_t out = NULL;
-        kth_chain_transaction_construct_from_data(NULL, 1, 1, &out);
+        kth_domain_chain_transaction_construct_from_data(NULL, 1, 1, &out);
     });
 }
 
@@ -307,35 +307,35 @@ TEST_CASE("C-API Transaction - construct_from_data null out aborts",
           "[C-API Transaction][precondition]") {
     uint8_t data[10];
     memset(data, 0, sizeof(data));
-    KTH_EXPECT_ABORT(kth_chain_transaction_construct_from_data(data, 10, 1, NULL));
+    KTH_EXPECT_ABORT(kth_domain_chain_transaction_construct_from_data(data, 10, 1, NULL));
 }
 
 TEST_CASE("C-API Transaction - to_data null out_size aborts",
           "[C-API Transaction][precondition]") {
-    kth_transaction_mut_t tx = kth_chain_transaction_construct_default();
-    KTH_EXPECT_ABORT(kth_chain_transaction_to_data(tx, 1, NULL));
-    kth_chain_transaction_destruct(tx);
+    kth_transaction_mut_t tx = kth_domain_chain_transaction_construct_default();
+    KTH_EXPECT_ABORT(kth_domain_chain_transaction_to_data(tx, 1, NULL));
+    kth_domain_chain_transaction_destruct(tx);
 }
 
 TEST_CASE("C-API Transaction - copy null self aborts",
           "[C-API Transaction][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_transaction_copy(NULL));
+    KTH_EXPECT_ABORT(kth_domain_chain_transaction_copy(NULL));
 }
 
 TEST_CASE("C-API Transaction - construct null inputs aborts",
           "[C-API Transaction][precondition]") {
     kth_output_list_mut_t outs = make_outputs();
     KTH_EXPECT_ABORT(
-        kth_chain_transaction_construct(
+        kth_domain_chain_transaction_construct(
             kVersion, kLocktime, NULL, outs));
-    kth_chain_output_list_destruct(outs);
+    kth_domain_chain_output_list_destruct(outs);
 }
 
 TEST_CASE("C-API Transaction - construct null outputs aborts",
           "[C-API Transaction][precondition]") {
     kth_input_list_mut_t ins = make_inputs();
     KTH_EXPECT_ABORT(
-        kth_chain_transaction_construct(
+        kth_domain_chain_transaction_construct(
             kVersion, kLocktime, ins, NULL));
-    kth_chain_input_list_destruct(ins);
+    kth_domain_chain_input_list_destruct(ins);
 }

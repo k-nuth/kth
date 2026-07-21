@@ -14,8 +14,8 @@
 
 #include <kth/capi/bool_list.h>
 #include <kth/capi/chain/opcode.h>
-#include <kth/capi/chain/operation.h>
-#include <kth/capi/chain/script.h>
+#include <kth/capi/domain/machine/operation.h>
+#include <kth/capi/domain/chain/script.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/vm/debug_snapshot.h>
 #include <kth/capi/vm/debug_snapshot_list.h>
@@ -36,7 +36,7 @@ static uint8_t const kTwoPushes[2] = { 0x51, 0x51 };
 static void build_two_push_program(kth_program_mut_t* out_prog,
                                    kth_script_mut_t* out_script) {
     kth_script_mut_t script = NULL;
-    kth_error_code_t ec = kth_chain_script_construct_from_data(
+    kth_error_code_t ec = kth_domain_chain_script_construct_from_data(
         kTwoPushes, sizeof(kTwoPushes), 0, &script);
     REQUIRE(ec == kth_ec_success);
     kth_program_mut_t prog = kth_vm_program_construct_from_script(script);
@@ -58,7 +58,7 @@ TEST_CASE("C-API Interpreter - run_operation rejects OP_CODESEPARATOR standalone
     // the full-script runner handles OP_CODESEPARATOR directly via
     // `kth_vm_program_mark_code_separator(prog, idx)`.
     kth_program_mut_t prog = kth_vm_program_construct_default();
-    kth_operation_mut_t op = kth_chain_operation_construct_from_code(
+    kth_operation_mut_t op = kth_domain_machine_operation_construct_from_code(
         kth_opcode_codeseparator);
 
     // Capture the verdict before asserting. A failing REQUIRE aborts
@@ -66,7 +66,7 @@ TEST_CASE("C-API Interpreter - run_operation rejects OP_CODESEPARATOR standalone
     // destructor call after the REQUIRE would be skipped and leak
     // the handles; release first, then assert.
     kth_error_code_t const ec = kth_vm_interpreter_run(op, prog);
-    kth_chain_operation_destruct(op);
+    kth_domain_machine_operation_destruct(op);
     kth_vm_program_destruct(prog);
 
     REQUIRE(ec == kth_ec_not_implemented);
@@ -90,7 +90,7 @@ TEST_CASE("C-API Interpreter - debug_begin yields a fresh snapshot at step 0",
 
     kth_vm_debug_snapshot_destruct(snap);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ TEST_CASE("C-API Interpreter - debug_step advances one op at a time",
     kth_vm_debug_snapshot_destruct(s1);
     kth_vm_debug_snapshot_destruct(s0);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 TEST_CASE("C-API Interpreter - debug_step_n advances by N or stops at done",
@@ -132,7 +132,7 @@ TEST_CASE("C-API Interpreter - debug_step_n advances by N or stops at done",
     kth_vm_debug_snapshot_destruct(s_many);
     kth_vm_debug_snapshot_destruct(s0);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +153,7 @@ TEST_CASE("C-API Interpreter - debug_run + debug_finalize reach success",
     kth_vm_debug_snapshot_destruct(done);
     kth_vm_debug_snapshot_destruct(s0);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +175,7 @@ TEST_CASE("C-API Interpreter - debug_run_traced records initial + per-step snaps
     kth_vm_debug_snapshot_list_destruct(trace);
     kth_vm_debug_snapshot_destruct(start);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }
 
 // ---------------------------------------------------------------------------
@@ -207,5 +207,5 @@ TEST_CASE("C-API Interpreter - debug_step_until stops when predicate fires",
     kth_vm_debug_snapshot_destruct(stopped);
     kth_vm_debug_snapshot_destruct(start);
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
 }

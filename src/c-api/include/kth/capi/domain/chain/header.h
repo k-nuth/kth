@@ -1,0 +1,143 @@
+// Copyright (c) 2016-present Knuth Project developers.
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#ifndef KTH_CAPI_DOMAIN_CHAIN_HEADER_H_
+#define KTH_CAPI_DOMAIN_CHAIN_HEADER_H_
+
+#include <stdint.h>
+
+#include <kth/capi/primitives.h>
+#include <kth/capi/visibility.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Constructors
+
+/** @return Owned `kth_header_mut_t`. Caller must release with `kth_chain_header_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_header_mut_t kth_domain_chain_header_construct_default(void);
+
+/** @param[out] out Must point to a null `kth_header_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_header_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_domain_chain_header_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_header_mut_t* out);
+
+/**
+ * @return Owned `kth_header_mut_t`. Caller must release with `kth_chain_header_destruct`.
+ * @param previous_block_hash Borrowed input; must be non-null. Copied into the resulting object; ownership of `previous_block_hash` stays with the caller.
+ * @param merkle Borrowed input; must be non-null. Copied into the resulting object; ownership of `merkle` stays with the caller.
+ */
+KTH_EXPORT KTH_OWNED
+kth_header_mut_t kth_domain_chain_header_construct(uint32_t version, kth_hash_t const* previous_block_hash, kth_hash_t const* merkle, uint32_t timestamp, uint32_t bits, uint32_t nonce);
+
+/**
+ * @return Owned `kth_header_mut_t`. Caller must release with `kth_chain_header_destruct`.
+ * @warning `previous_block_hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
+ * @warning `merkle` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
+ */
+KTH_EXPORT KTH_OWNED
+kth_header_mut_t kth_domain_chain_header_construct_unsafe(uint32_t version, uint8_t const* previous_block_hash, uint8_t const* merkle, uint32_t timestamp, uint32_t bits, uint32_t nonce);
+
+
+// Destructor
+
+/** No-op if `self` is null. */
+KTH_EXPORT
+void kth_domain_chain_header_destruct(kth_header_mut_t self);
+
+
+// Copy
+
+/** @return Owned `kth_header_mut_t`. Caller must release with `kth_chain_header_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_header_mut_t kth_domain_chain_header_copy(kth_header_const_t self);
+
+
+// Equality
+
+KTH_EXPORT
+kth_bool_t kth_domain_chain_header_equals(kth_header_const_t self, kth_header_const_t other);
+
+KTH_EXPORT
+kth_bool_t kth_domain_chain_header_not_equal(kth_header_const_t self, kth_header_const_t other);
+
+
+// Serialization
+
+/** @return Owned byte buffer. Caller must release with `kth_core_destruct_array` (length is written to `out_size`). */
+KTH_EXPORT KTH_OWNED
+uint8_t* kth_domain_chain_header_to_data(kth_header_const_t self, kth_bool_t wire, kth_size_t* out_size);
+
+KTH_EXPORT
+kth_size_t kth_domain_chain_header_serialized_size(kth_header_const_t self, kth_bool_t wire);
+
+
+// Getters
+
+KTH_EXPORT
+uint32_t kth_domain_chain_header_version(kth_header_const_t self);
+
+KTH_EXPORT
+kth_hash_t kth_domain_chain_header_previous_block_hash(kth_header_const_t self);
+
+KTH_EXPORT
+kth_hash_t kth_domain_chain_header_merkle(kth_header_const_t self);
+
+KTH_EXPORT
+uint32_t kth_domain_chain_header_timestamp(kth_header_const_t self);
+
+KTH_EXPORT
+uint32_t kth_domain_chain_header_bits(kth_header_const_t self);
+
+KTH_EXPORT
+uint32_t kth_domain_chain_header_nonce(kth_header_const_t self);
+
+KTH_EXPORT
+kth_hash_t kth_domain_chain_header_hash(kth_header_const_t self);
+
+
+// Predicates
+
+KTH_EXPORT
+kth_bool_t kth_domain_chain_header_is_valid_timestamp(kth_header_const_t self);
+
+/** @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller. */
+KTH_EXPORT
+kth_bool_t kth_domain_chain_header_is_valid_proof_of_work(kth_header_const_t self, kth_hash_t const* hash, kth_bool_t retarget);
+
+/** @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
+KTH_EXPORT
+kth_bool_t kth_domain_chain_header_is_valid_proof_of_work_unsafe(kth_header_const_t self, uint8_t const* hash, kth_bool_t retarget);
+
+
+// Operations
+
+/** @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller. */
+KTH_EXPORT
+kth_error_code_t kth_domain_chain_header_check(kth_header_const_t self, kth_hash_t const* hash, kth_bool_t retarget);
+
+/** @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
+KTH_EXPORT
+kth_error_code_t kth_domain_chain_header_check_unsafe(kth_header_const_t self, uint8_t const* hash, kth_bool_t retarget);
+
+/** @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller. */
+KTH_EXPORT
+kth_error_code_t kth_domain_chain_header_accept(kth_header_const_t self, kth_chain_state_const_t state, kth_hash_t const* hash);
+
+/** @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`. */
+KTH_EXPORT
+kth_error_code_t kth_domain_chain_header_accept_unsafe(kth_header_const_t self, kth_chain_state_const_t state, uint8_t const* hash);
+
+
+// Static utilities
+
+KTH_EXPORT
+kth_size_t kth_domain_chain_header_satoshi_fixed_size(void);
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
+
+#endif // KTH_CAPI_DOMAIN_CHAIN_HEADER_H_

@@ -16,7 +16,7 @@
 #include <kth/capi/primitives.h>
 #include <kth/capi/vm/metrics.h>
 #include <kth/capi/vm/program.h>
-#include <kth/capi/chain/script.h>
+#include <kth/capi/domain/chain/script.h>
 
 #include "../test_helpers.hpp"
 
@@ -46,7 +46,7 @@ static uint64_t const kScriptSigSize = 100;
 static kth_metrics_mut_t fresh_metrics(void) {
     uint8_t const one_push[1] = { 0x51 };
     kth_script_mut_t script = NULL;
-    kth_error_code_t ec = kth_chain_script_construct_from_data(
+    kth_error_code_t ec = kth_domain_chain_script_construct_from_data(
         one_push, sizeof(one_push), 0, &script);
     REQUIRE(ec == kth_ec_success);
     kth_program_mut_t prog = kth_vm_program_construct_from_script(script);
@@ -60,7 +60,7 @@ static kth_metrics_mut_t fresh_metrics(void) {
     REQUIRE(owned != NULL);
 
     kth_vm_program_destruct(prog);
-    kth_chain_script_destruct(script);
+    kth_domain_chain_script_destruct(script);
     return owned;
 }
 

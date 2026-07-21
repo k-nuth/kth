@@ -12,10 +12,10 @@
 
 #include <stdint.h>
 
-#include <kth/capi/chain/output_point.h>
+#include <kth/capi/domain/chain/output_point.h>
 #include <kth/capi/chain/token_capability.h>
-#include <kth/capi/chain/token_data.h>
-#include <kth/capi/chain/utxo.h>
+#include <kth/capi/domain/chain/token_data.h>
+#include <kth/capi/domain/chain/utxo.h>
 #include <kth/capi/hash.h>
 #include <kth/capi/primitives.h>
 
@@ -44,7 +44,7 @@ static kth_hash_t const kCategory = {{
 // ---------------------------------------------------------------------------
 
 TEST_CASE("C-API Utxo - destruct null is safe", "[C-API Utxo]") {
-    kth_chain_utxo_destruct(NULL);
+    kth_domain_chain_utxo_destruct(NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -53,40 +53,40 @@ TEST_CASE("C-API Utxo - destruct null is safe", "[C-API Utxo]") {
 
 TEST_CASE("C-API Utxo - construct_default builds a handle with zero fields",
           "[C-API Utxo]") {
-    kth_utxo_mut_t u = kth_chain_utxo_construct_default();
-    REQUIRE(kth_chain_utxo_height(u) == 0u);
-    REQUIRE(kth_chain_utxo_amount(u) == 0u);
-    REQUIRE(kth_chain_utxo_token_data(u) == NULL);
+    kth_utxo_mut_t u = kth_domain_chain_utxo_construct_default();
+    REQUIRE(kth_domain_chain_utxo_height(u) == 0u);
+    REQUIRE(kth_domain_chain_utxo_amount(u) == 0u);
+    REQUIRE(kth_domain_chain_utxo_token_data(u) == NULL);
 
-    kth_chain_utxo_destruct(u);
+    kth_domain_chain_utxo_destruct(u);
 }
 
 TEST_CASE("C-API Utxo - construct from point+amount yields engaged values",
           "[C-API Utxo]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 7u);
-    kth_utxo_mut_t u = kth_chain_utxo_construct(op, 5000u, NULL);
+    kth_output_point_mut_t op = kth_domain_chain_output_point_construct_from_hash_index(&kTxid, 7u);
+    kth_utxo_mut_t u = kth_domain_chain_utxo_construct(op, 5000u, NULL);
 
-    REQUIRE(kth_chain_utxo_amount(u) == 5000u);
-    REQUIRE(kth_chain_utxo_token_data(u) == NULL);
-    REQUIRE(kth_chain_output_point_index(kth_chain_utxo_point(u)) == 7u);
+    REQUIRE(kth_domain_chain_utxo_amount(u) == 5000u);
+    REQUIRE(kth_domain_chain_utxo_token_data(u) == NULL);
+    REQUIRE(kth_domain_chain_output_point_index(kth_domain_chain_utxo_point(u)) == 7u);
 
-    kth_chain_utxo_destruct(u);
-    kth_chain_output_point_destruct(op);
+    kth_domain_chain_utxo_destruct(u);
+    kth_domain_chain_output_point_destruct(op);
 }
 
 TEST_CASE("C-API Utxo - construct with token_data stores it",
           "[C-API Utxo]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 0u);
-    kth_token_data_mut_t td = kth_chain_token_make_fungible(&kCategory, 1234u);
-    kth_utxo_mut_t u = kth_chain_utxo_construct(op, 1000u, td);
+    kth_output_point_mut_t op = kth_domain_chain_output_point_construct_from_hash_index(&kTxid, 0u);
+    kth_token_data_mut_t td = kth_domain_chain_token_make_fungible(&kCategory, 1234u);
+    kth_utxo_mut_t u = kth_domain_chain_utxo_construct(op, 1000u, td);
 
-    kth_token_data_const_t got = kth_chain_utxo_token_data(u);
+    kth_token_data_const_t got = kth_domain_chain_utxo_token_data(u);
     REQUIRE(got != NULL);
-    REQUIRE(kth_chain_token_data_get_amount(got) == 1234);
+    REQUIRE(kth_domain_chain_token_data_get_amount(got) == 1234);
 
-    kth_chain_utxo_destruct(u);
-    kth_chain_token_data_destruct(td);
-    kth_chain_output_point_destruct(op);
+    kth_domain_chain_utxo_destruct(u);
+    kth_domain_chain_token_data_destruct(td);
+    kth_domain_chain_output_point_destruct(op);
 }
 
 // ---------------------------------------------------------------------------
@@ -95,62 +95,62 @@ TEST_CASE("C-API Utxo - construct with token_data stores it",
 
 TEST_CASE("C-API Utxo - copy preserves fields and equals original",
           "[C-API Utxo]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 3u);
-    kth_utxo_mut_t u = kth_chain_utxo_construct(op, 999u, NULL);
+    kth_output_point_mut_t op = kth_domain_chain_output_point_construct_from_hash_index(&kTxid, 3u);
+    kth_utxo_mut_t u = kth_domain_chain_utxo_construct(op, 999u, NULL);
 
-    kth_utxo_mut_t cp = kth_chain_utxo_copy(u);
+    kth_utxo_mut_t cp = kth_domain_chain_utxo_copy(u);
     REQUIRE(cp != u);
 
-    REQUIRE(kth_chain_utxo_equals(u, cp) != 0);
-    REQUIRE(kth_chain_utxo_amount(cp) == 999u);
-    REQUIRE(kth_chain_output_point_index(kth_chain_utxo_point(cp)) == 3u);
+    REQUIRE(kth_domain_chain_utxo_equals(u, cp) != 0);
+    REQUIRE(kth_domain_chain_utxo_amount(cp) == 999u);
+    REQUIRE(kth_domain_chain_output_point_index(kth_domain_chain_utxo_point(cp)) == 3u);
 
-    kth_chain_utxo_destruct(cp);
-    kth_chain_utxo_destruct(u);
-    kth_chain_output_point_destruct(op);
+    kth_domain_chain_utxo_destruct(cp);
+    kth_domain_chain_utxo_destruct(u);
+    kth_domain_chain_output_point_destruct(op);
 }
 
 TEST_CASE("C-API Utxo - differing amount is unequal",
           "[C-API Utxo]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 1u);
-    kth_utxo_mut_t a = kth_chain_utxo_construct(op, 10u, NULL);
-    kth_utxo_mut_t b = kth_chain_utxo_construct(op, 11u, NULL);
+    kth_output_point_mut_t op = kth_domain_chain_output_point_construct_from_hash_index(&kTxid, 1u);
+    kth_utxo_mut_t a = kth_domain_chain_utxo_construct(op, 10u, NULL);
+    kth_utxo_mut_t b = kth_domain_chain_utxo_construct(op, 11u, NULL);
 
-    REQUIRE(kth_chain_utxo_equals(a, b) == 0);
+    REQUIRE(kth_domain_chain_utxo_equals(a, b) == 0);
 
-    kth_chain_utxo_destruct(b);
-    kth_chain_utxo_destruct(a);
-    kth_chain_output_point_destruct(op);
+    kth_domain_chain_utxo_destruct(b);
+    kth_domain_chain_utxo_destruct(a);
+    kth_domain_chain_output_point_destruct(op);
 }
 
 TEST_CASE("C-API Utxo - differing point is unequal",
           "[C-API Utxo]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 1u);
-    kth_output_point_mut_t op2 = kth_chain_output_point_construct_from_hash_index(&kTxid, 99u);
-    kth_utxo_mut_t a = kth_chain_utxo_construct(op, 10u, NULL);
-    kth_utxo_mut_t b = kth_chain_utxo_construct(op2, 10u, NULL);
+    kth_output_point_mut_t op = kth_domain_chain_output_point_construct_from_hash_index(&kTxid, 1u);
+    kth_output_point_mut_t op2 = kth_domain_chain_output_point_construct_from_hash_index(&kTxid, 99u);
+    kth_utxo_mut_t a = kth_domain_chain_utxo_construct(op, 10u, NULL);
+    kth_utxo_mut_t b = kth_domain_chain_utxo_construct(op2, 10u, NULL);
 
-    REQUIRE(kth_chain_utxo_equals(a, b) == 0);
+    REQUIRE(kth_domain_chain_utxo_equals(a, b) == 0);
 
-    kth_chain_utxo_destruct(b);
-    kth_chain_utxo_destruct(a);
-    kth_chain_output_point_destruct(op2);
-    kth_chain_output_point_destruct(op);
+    kth_domain_chain_utxo_destruct(b);
+    kth_domain_chain_utxo_destruct(a);
+    kth_domain_chain_output_point_destruct(op2);
+    kth_domain_chain_output_point_destruct(op);
 }
 
 TEST_CASE("C-API Utxo - differing token_data is unequal",
           "[C-API Utxo]") {
-    kth_output_point_mut_t op = kth_chain_output_point_construct_from_hash_index(&kTxid, 1u);
-    kth_token_data_mut_t td = kth_chain_token_make_fungible(&kCategory, 1u);
-    kth_utxo_mut_t a = kth_chain_utxo_construct(op, 10u, NULL);
-    kth_utxo_mut_t b = kth_chain_utxo_construct(op, 10u, td);
+    kth_output_point_mut_t op = kth_domain_chain_output_point_construct_from_hash_index(&kTxid, 1u);
+    kth_token_data_mut_t td = kth_domain_chain_token_make_fungible(&kCategory, 1u);
+    kth_utxo_mut_t a = kth_domain_chain_utxo_construct(op, 10u, NULL);
+    kth_utxo_mut_t b = kth_domain_chain_utxo_construct(op, 10u, td);
 
-    REQUIRE(kth_chain_utxo_equals(a, b) == 0);
+    REQUIRE(kth_domain_chain_utxo_equals(a, b) == 0);
 
-    kth_chain_utxo_destruct(b);
-    kth_chain_utxo_destruct(a);
-    kth_chain_token_data_destruct(td);
-    kth_chain_output_point_destruct(op);
+    kth_domain_chain_utxo_destruct(b);
+    kth_domain_chain_utxo_destruct(a);
+    kth_domain_chain_token_data_destruct(td);
+    kth_domain_chain_output_point_destruct(op);
 }
 
 // ---------------------------------------------------------------------------
@@ -159,26 +159,26 @@ TEST_CASE("C-API Utxo - differing token_data is unequal",
 
 TEST_CASE("C-API Utxo - copy null aborts",
           "[C-API Utxo][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_utxo_copy(NULL));
+    KTH_EXPECT_ABORT(kth_domain_chain_utxo_copy(NULL));
 }
 
 TEST_CASE("C-API Utxo - equals null aborts",
           "[C-API Utxo][precondition]") {
-    kth_utxo_mut_t u = kth_chain_utxo_construct_default();
-    KTH_EXPECT_ABORT(kth_chain_utxo_equals(NULL, u));
-    KTH_EXPECT_ABORT(kth_chain_utxo_equals(u, NULL));
-    kth_chain_utxo_destruct(u);
+    kth_utxo_mut_t u = kth_domain_chain_utxo_construct_default();
+    KTH_EXPECT_ABORT(kth_domain_chain_utxo_equals(NULL, u));
+    KTH_EXPECT_ABORT(kth_domain_chain_utxo_equals(u, NULL));
+    kth_domain_chain_utxo_destruct(u);
 }
 
 TEST_CASE("C-API Utxo - getters null aborts",
           "[C-API Utxo][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_utxo_height(NULL));
-    KTH_EXPECT_ABORT(kth_chain_utxo_amount(NULL));
-    KTH_EXPECT_ABORT(kth_chain_utxo_point(NULL));
-    KTH_EXPECT_ABORT(kth_chain_utxo_token_data(NULL));
+    KTH_EXPECT_ABORT(kth_domain_chain_utxo_height(NULL));
+    KTH_EXPECT_ABORT(kth_domain_chain_utxo_amount(NULL));
+    KTH_EXPECT_ABORT(kth_domain_chain_utxo_point(NULL));
+    KTH_EXPECT_ABORT(kth_domain_chain_utxo_token_data(NULL));
 }
 
 TEST_CASE("C-API Utxo - construct null point aborts",
           "[C-API Utxo][precondition]") {
-    KTH_EXPECT_ABORT(kth_chain_utxo_construct(NULL, 0u, NULL));
+    KTH_EXPECT_ABORT(kth_domain_chain_utxo_construct(NULL, 0u, NULL));
 }
