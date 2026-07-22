@@ -67,6 +67,12 @@ counterpart.
 | JSON-RPC method | C-API function | C++ (`block_chain`) |
 |---|---|---|
 | `getblockcount` | `kth_chain_sync_last_height` | `fetch_last_height().block` |
+| `getbestblockhash` | `kth_chain_sync_block_hash` | `get_last_heights()` + `get_block_hash()` |
+| `getblockhash` | `kth_chain_sync_block_hash` | `get_block_hash(height)` |
+| `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
+| `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `fetch_mining_info()` + `get_last_heights()` |
+| `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
+| `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
 | `getblocktemplatelight` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getmininginfo` | `kth_chain_sync_mining_info` / `kth_chain_async_mining_info` | `fetch_mining_info()` |
 | `submitblocklight` | `kth_chain_sync_organize_block` / `kth_chain_async_organize_block` | `organize(block)` |

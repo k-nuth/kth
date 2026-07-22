@@ -169,6 +169,7 @@ if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/rpc/dispatch.cpp
     src/rpc/job_store.cpp
     src/rpc/mining.cpp
+    src/rpc/query.cpp
     src/rpc/methods.cpp
     src/rpc/server.cpp
   )
@@ -211,6 +212,7 @@ set(kth_headers
   include/kth/node/rpc/dispatch.hpp
   include/kth/node/rpc/job_store.hpp
   include/kth/node/rpc/mining.hpp
+  include/kth/node/rpc/query.hpp
   include/kth/node/rpc/server.hpp
 
   # CSP-based sync system
@@ -289,7 +291,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # JSON-RPC unit tests build only when the server is compiled in.
   if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     target_sources(kth_node_test PRIVATE
-      test/rpc_json.cpp test/rpc_job_store.cpp test/rpc_mining.cpp)
+      test/rpc_json.cpp test/rpc_job_store.cpp test/rpc_mining.cpp test/rpc_query.cpp)
   endif()
 
   target_include_directories(kth_node_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)

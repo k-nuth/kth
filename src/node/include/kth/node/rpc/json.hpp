@@ -35,6 +35,11 @@ std::expected<request, rpc_error> parse_request(std::string_view body);
 // handlers validate arity and emptiness themselves.
 std::vector<std::string> params_strings(std::string_view params_json);
 
+// The positional param at `index` as an unsigned integer. Accepts a JSON number
+// (e.g. getblockhash's `[0]`) or a numeric string (`["0"]`); nullopt when absent
+// or not a non-negative integer.
+std::optional<std::uint64_t> params_uint(std::string_view params_json, std::size_t index);
+
 // Build the response envelopes. `result_raw` / `id_raw` are already-serialized
 // JSON fragments and are emitted verbatim.
 std::string build_success(std::string_view id_raw, std::string_view result_raw);
