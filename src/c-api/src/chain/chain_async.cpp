@@ -13,6 +13,8 @@
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 
+#include <kth/capi/detail/mining_template.hpp>
+
 #include <kth/capi/domain/chain/block_list.h>
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
@@ -68,6 +70,21 @@ void kth_chain_async_mining_info(kth_chain_t chain, void* ctx, kth_mining_info_f
                 kth::to_c_struct<kth_mining_info_t>(*result));
         } else {
             handler(chain, ctx, kth::to_c_err(result.error()), kth_mining_info_t{});
+        }
+    }, ::asio::detached);
+}
+
+void kth_chain_async_mining_template(kth_chain_t chain, void* ctx, kth_mining_template_fetch_handler_t handler) {
+    auto& bc = safe_chain(chain);
+    ::asio::co_spawn(bc.executor(), [&bc, chain, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_mining_template();
+        if (result) {
+            kth_mining_template_t tmpl;
+            kth_transaction_list_mut_t txs = nullptr;
+            kth::capi::fill_mining_template(tmpl, txs, *result);
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), tmpl, txs);
+        } else {
+            handler(chain, ctx, kth::to_c_err(result.error()), kth_mining_template_t{}, nullptr);
         }
     }, ::asio::detached);
 }

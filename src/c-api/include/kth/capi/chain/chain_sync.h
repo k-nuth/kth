@@ -9,6 +9,7 @@
 
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
+#include <kth/capi/chain/mining_template.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -91,6 +92,15 @@ kth_transaction_list_mut_t kth_chain_sync_mempool_transactions_from_wallets(kth_
 //-------------------------------------------------------------------------
 KTH_EXPORT
 int kth_chain_sync_organize_block(kth_chain_t chain, kth_block_mut_t block);
+
+/**
+ * Fetch the mining template. On success fills `out` with the header fields and
+ * hands back the transaction selection as an owned `*out_txs`.
+ * @return Owned `*out_txs` on success. Caller must release it with
+ *   `kth_domain_chain_transaction_list_destruct`.
+ */
+KTH_EXPORT KTH_OWNED
+kth_error_code_t kth_chain_sync_mining_template(kth_chain_t chain, kth_mining_template_t* out, kth_transaction_list_mut_t* out_txs);
 
 KTH_EXPORT
 int kth_chain_sync_organize_transaction(kth_chain_t chain, kth_transaction_mut_t transaction);

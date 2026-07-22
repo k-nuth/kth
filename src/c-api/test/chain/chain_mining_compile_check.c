@@ -10,6 +10,7 @@
 
 #include <kth/capi.h>
 #include <kth/capi/chain/chain_mining.h>
+#include <kth/capi/chain/chain_sync.h>
 #include <kth/capi/chain/chain_async.h>
 
 static void on_mining_info(kth_chain_t chain, void* ctx, kth_error_code_t ec,
@@ -17,14 +18,25 @@ static void on_mining_info(kth_chain_t chain, void* ctx, kth_error_code_t ec,
     (void)chain; (void)ctx; (void)ec; (void)info;
 }
 
+static void on_mining_template(kth_chain_t chain, void* ctx, kth_error_code_t ec,
+                               kth_mining_template_t tmpl,
+                               kth_transaction_list_mut_t txs) {
+    (void)chain; (void)ctx; (void)ec; (void)tmpl; (void)txs;
+}
+
 static void mining_readers_sig_check(kth_chain_t chain) {
-    // Synchronous (blocking) flavor.
+    // getmininginfo — both flavors.
     kth_mining_info_t info;
     kth_error_code_t rc = kth_chain_sync_mining_info(chain, &info);
     (void)rc; (void)info;
-
-    // Asynchronous (callback) flavor.
     kth_chain_async_mining_info(chain, NULL, &on_mining_info);
+
+    // getblocktemplatelight — both flavors (header POD + owned tx list).
+    kth_mining_template_t tmpl;
+    kth_transaction_list_mut_t txs;
+    kth_error_code_t rc2 = kth_chain_sync_mining_template(chain, &tmpl, &txs);
+    (void)rc2; (void)tmpl; (void)txs;
+    kth_chain_async_mining_template(chain, NULL, &on_mining_template);
 }
 
 int main(void) {

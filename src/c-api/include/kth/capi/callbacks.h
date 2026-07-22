@@ -12,6 +12,7 @@
 #include <kth/capi/error.h>
 #include <kth/capi/handles.h>
 #include <kth/capi/chain/mining_info.h>
+#include <kth/capi/chain/mining_template.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,6 +57,9 @@ typedef void (*kth_compact_block_fetch_handler_t)(kth_chain_t, void*, kth_error_
 typedef void (*kth_history_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_history_compact_list_mut_t history);
 typedef void (*kth_last_height_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_size_t);
 typedef void (*kth_mining_info_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_mining_info_t);
+// The owned kth_transaction_list_mut_t is the template's tx selection; the caller
+// must release it with kth_domain_chain_transaction_list_destruct.
+typedef void (*kth_mining_template_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_mining_template_t, kth_transaction_list_mut_t);
 
 // Owned: `block` (`kth_merkle_block_mut_t`) — caller must release with `kth_domain_message_merkle_block_destruct`.
 typedef void (*kth_merkle_block_fetch_handler_t)(kth_chain_t, void*, kth_error_code_t, kth_merkle_block_mut_t block, kth_size_t);

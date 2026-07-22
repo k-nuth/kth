@@ -67,9 +67,12 @@ counterpart.
 | JSON-RPC method | C-API function | C++ (`block_chain`) |
 |---|---|---|
 | `getblockcount` | `kth_chain_sync_last_height` | `fetch_last_height().block` |
-| `getblocktemplatelight` | `kth_chain_async_fetch_mining_template` _(pending)_ | `fetch_mining_template()` |
-| `getmininginfo` | `kth_chain_async_fetch_mining_info` _(pending)_ | `fetch_mining_info()` |
-| `submitblocklight` | `kth_chain_async_organize_block` _(pending)_ | `organize(block)` |
+| `getblocktemplatelight` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
+| `getmininginfo` | `kth_chain_sync_mining_info` / `kth_chain_async_mining_info` | `fetch_mining_info()` |
+| `submitblocklight` | `kth_chain_sync_organize_block` / `kth_chain_async_organize_block` | `organize(block)` |
+
+Each async chain reader is exposed in both a blocking (`kth_chain_sync_*`) and a
+callback (`kth_chain_async_*`) flavor.
 
 _More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
 (`getrawmempool`, `getmempoolentry`, ...), and blockchain/raw-tx (`getblock`,
