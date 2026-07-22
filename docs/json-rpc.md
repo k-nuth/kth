@@ -68,10 +68,11 @@ counterpart.
 |---|---|---|
 | `getblockcount` | `kth_chain_sync_last_height` | `fetch_last_height().block` |
 | `getblocktemplatelight` | `kth_chain_async_fetch_mining_template` _(pending)_ | `fetch_mining_template()` |
+| `submitblocklight` | `kth_chain_async_organize_block` _(pending)_ | `organize(block)` |
 
-_More methods land per phase: mining (`submitblocklight`, `submitblock`,
-`getmininginfo`), mempool (`getrawmempool`, `getmempoolentry`, ...), and
-blockchain/raw-tx (`getblock`, `getrawtransaction`, `sendrawtransaction`, ...)._
+_More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
+(`getrawmempool`, `getmempoolentry`, ...), and blockchain/raw-tx (`getblock`,
+`getrawtransaction`, `sendrawtransaction`, ...)._
 
 ## Mining: getblocktemplatelight
 
@@ -95,3 +96,13 @@ rpc.gbt_store_time = 3600   # seconds before a job expires
 > load-tests the miner-polling side; a faithful benchmark also simulates
 > transactions and blocks arriving (mempool churn + tip changes), which needs the
 > submit paths added in later phases.
+
+## Mining: submitblocklight
+
+`submitblocklight ["hexdata", "job_id"]` closes the light-template loop. `hexdata`
+is the solved block carrying just the header and the coinbase; the node looks up
+`job_id`, splices the cached selection after the coinbase, and submits the
+reconstructed block to the chain. Returns the Bitcoin `submitblock` result: `null`
+when accepted, otherwise a reject-reason string (e.g. `"duplicate block"`,
+`"high-hash"`). Malformed input (missing args, bad hex, undecodable block, unknown
+or expired `job_id`) is a JSON-RPC `-32602` error instead.

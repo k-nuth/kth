@@ -30,6 +30,11 @@ struct request {
 // parse_error for malformed JSON, invalid_request when "method" is missing.
 std::expected<request, rpc_error> parse_request(std::string_view body);
 
+// Positional params (a JSON array) decoded as strings. A missing/empty params,
+// a non-array, or a non-string element each yields an empty string in that slot;
+// handlers validate arity and emptiness themselves.
+std::vector<std::string> params_strings(std::string_view params_json);
+
 // Build the response envelopes. `result_raw` / `id_raw` are already-serialized
 // JSON fragments and are emitted verbatim.
 std::string build_success(std::string_view id_raw, std::string_view result_raw);

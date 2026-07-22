@@ -195,4 +195,25 @@ block_template build_block_template(mempool const& pool, block_template_context 
     return result;
 }
 
+mining_template make_mining_template(
+    uint32_t version, hash_digest const& previous_block_hash, size_t height,
+    uint32_t bits, uint32_t median_time_past, uint32_t now,
+    uint64_t size_limit, uint64_t sigchecks_limit, block_template selection) {
+
+    auto const min_time = median_time_past + 1;
+    auto const coinbase_value = selection.total_fees + block::subsidy(height, true);
+
+    return mining_template{
+        version,
+        previous_block_hash,
+        height,
+        bits,
+        min_time,
+        std::max(min_time, now),
+        coinbase_value,
+        size_limit,
+        sigchecks_limit,
+        std::move(selection)};
+}
+
 } // namespace kth::blockchain

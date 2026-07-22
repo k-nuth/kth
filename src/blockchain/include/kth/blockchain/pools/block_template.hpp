@@ -64,6 +64,15 @@ struct mining_template {
     block_template selection;           // CTOR-ordered txs + totals (no coinbase)
 };
 
+// Assemble a mining_template from the next-block parameters and the selection.
+// Pure (no chain access), so it is unit-tested directly: min_time = MTP + 1,
+// current_time = max(min_time, now), coinbase_value = subsidy(height) + fees.
+KB_API
+mining_template make_mining_template(
+    uint32_t version, hash_digest const& previous_block_hash, size_t height,
+    uint32_t bits, uint32_t median_time_past, uint32_t now,
+    uint64_t size_limit, uint64_t sigchecks_limit, block_template selection);
+
 } // namespace kth::blockchain
 
 #endif

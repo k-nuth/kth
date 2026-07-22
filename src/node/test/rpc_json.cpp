@@ -80,3 +80,23 @@ TEST_CASE("build_error wraps code and message", "[rpc json]") {
     REQUIRE(build_error("null", -32601, "Method not found") ==
         R"({"result":null,"error":{"code":-32601,"message":"Method not found"},"id":null})");
 }
+
+TEST_CASE("params_strings reads a string array", "[rpc json]") {
+    auto const p = params_strings(R"(["aa","bb"])");
+    REQUIRE(p.size() == 2u);
+    REQUIRE(p[0] == "aa");
+    REQUIRE(p[1] == "bb");
+}
+
+TEST_CASE("params_strings yields empty slots for non-strings", "[rpc json]") {
+    auto const p = params_strings(R"([1,"x"])");
+    REQUIRE(p.size() == 2u);
+    REQUIRE(p[0].empty());
+    REQUIRE(p[1] == "x");
+}
+
+TEST_CASE("params_strings tolerates empty and non-array params", "[rpc json]") {
+    REQUIRE(params_strings("").empty());
+    REQUIRE(params_strings("[]").empty());
+    REQUIRE(params_strings("{}").empty());
+}
