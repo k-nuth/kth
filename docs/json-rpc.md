@@ -73,6 +73,13 @@ counterpart.
 | `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `fetch_mining_info()` + `get_last_heights()` |
 | `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
+| `getblockheader` | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` |
+| `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
+| `getrawmempool` | `kth_chain_get_mempool_txids` | `get_mempool_txids()` |
+| `getmempoolinfo` | `kth_chain_get_mempool_info` | `get_mempool_info()` |
+| `getmempoolentry` | `kth_chain_get_mempool_entry` | `get_mempool_entry()` (+ depends/spentby) |
+| `getmempoolancestors` | `kth_chain_get_mempool_ancestors` | `get_mempool_ancestors()` |
+| `getmempooldescendants` | `kth_chain_get_mempool_descendants` | `get_mempool_descendants()` |
 | `getblocktemplatelight` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getmininginfo` | `kth_chain_sync_mining_info` / `kth_chain_async_mining_info` | `fetch_mining_info()` |
 | `submitblocklight` | `kth_chain_sync_organize_block` / `kth_chain_async_organize_block` | `organize(block)` |
