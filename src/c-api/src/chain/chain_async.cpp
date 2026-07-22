@@ -78,18 +78,7 @@ void kth_chain_async_mining_template(kth_chain_t chain, void* ctx, kth_mining_te
     }, ::asio::detached);
 }
 
-void kth_chain_async_block_height(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_block_height_fetch_handler_t handler) {
-    auto hash_cpp = kth::to_array(hash.hash);
-    auto& bc = safe_chain(chain);
-    ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
-        auto result = co_await bc.fetch_block_height(hash_cpp);
-        if (result) {
-            handler(chain, ctx, kth::to_c_err(std::error_code{}), *result);
-        } else {
-            handler(chain, ctx, kth::to_c_err(result.error()), 0);
-        }
-    }, ::asio::detached);
-}
+// kth_chain_async_block_height is generated (chain_query.cpp).
 
 void kth_chain_async_block_header_by_height(kth_chain_t chain, void* ctx, kth_size_t height, kth_block_header_fetch_handler_t handler) {
     auto& bc = safe_chain(chain);

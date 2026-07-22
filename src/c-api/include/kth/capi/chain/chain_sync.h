@@ -18,8 +18,7 @@ extern "C" {
 KTH_EXPORT
 kth_error_code_t kth_chain_sync_last_height(kth_chain_t chain, kth_size_t* out_height);
 
-KTH_EXPORT
-kth_error_code_t kth_chain_sync_block_height(kth_chain_t chain, kth_hash_t hash, kth_size_t* out_height);
+// kth_chain_sync_block_height is generated (see chain_query.h).
 
 
 // Block Header ---------------------------------------------------------------------
