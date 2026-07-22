@@ -257,6 +257,7 @@ set(kth_sources
         src/chain/chain_other.cpp
         src/chain/chain_sync.cpp
         src/chain/chain_mempool.cpp
+        src/chain/chain_mining.cpp
 
         src/domain/message/compact_block.cpp
         src/domain/message/double_spend_proof.cpp
@@ -639,6 +640,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # Chain-interface mempool readers — compile + link signature check.
     add_executable(kth_chain_mempool_compile_check test/chain/chain_mempool_compile_check.c)
     target_link_libraries(kth_chain_mempool_compile_check PRIVATE ${PROJECT_NAME})
+
+    add_executable(kth_chain_mining_compile_check test/chain/chain_mining_compile_check.c)
+    target_link_libraries(kth_chain_mining_compile_check PRIVATE ${PROJECT_NAME})
 
     # README C snippet — runtime smoke. Same flow as the README but
     # adapted for CI: regtest network, fresh temp data dir, 16 MiB DB

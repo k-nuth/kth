@@ -17,6 +17,11 @@ extern "C" {
 KTH_EXPORT
 void kth_chain_async_last_height(kth_chain_t chain, void* ctx, kth_last_height_fetch_handler_t handler);
 
+// Async counterpart of kth_chain_sync_mining_info: the handler receives the
+// mining_info snapshot (by value) once fetch_mining_info() completes.
+KTH_EXPORT
+void kth_chain_async_mining_info(kth_chain_t chain, void* ctx, kth_mining_info_fetch_handler_t handler);
+
 KTH_EXPORT
 void kth_chain_async_block_height(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_block_height_fetch_handler_t handler);
 
