@@ -265,6 +265,10 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "JSON-RPC HTTP Basic-Auth user (empty uses the .cookie file).");
     app.add_option("--rpc.password", cfg.rpc.password,
         "JSON-RPC HTTP Basic-Auth password.");
+    app.add_option("--rpc.gbt_cache_size", cfg.rpc.gbt_cache_size,
+        "getblocktemplatelight jobs to keep cached (default 10).");
+    app.add_option("--rpc.gbt_store_time", cfg.rpc.gbt_store_time,
+        "Seconds to keep a getblocktemplatelight job (default 3600).");
 }
 
 // Read KTH_* env vars once and, for the subset of names that map to CLI11

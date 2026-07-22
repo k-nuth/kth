@@ -161,7 +161,8 @@ std::string random_token() {
 
 server::server(rpc_settings const& settings, blockchain::block_chain& chain)
     : settings_(settings)
-    , chain_(chain) {
+    , chain_(chain)
+    , jobs_(settings.gbt_cache_size, settings.gbt_store_time) {
     register_builtin_methods(dispatcher_);
 
     if ( ! settings_.user.empty() || ! settings_.password.empty()) {
@@ -225,7 +226,8 @@ bool server::authorized(std::string_view authorization_header) const {
             co_return;
         }
 
-        std::string const response = co_await dispatcher_.handle(chain_, ctx.body);
+        method_context mctx{chain_, jobs_};
+        std::string const response = co_await dispatcher_.handle(mctx, ctx.body);
         co_await write_response(socket, 200, "OK", response, ctx.keep_alive);
         if ( ! ctx.keep_alive) {
             co_return;

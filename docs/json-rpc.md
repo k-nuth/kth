@@ -67,7 +67,31 @@ counterpart.
 | JSON-RPC method | C-API function | C++ (`block_chain`) |
 |---|---|---|
 | `getblockcount` | `kth_chain_sync_last_height` | `fetch_last_height().block` |
+| `getblocktemplatelight` | `kth_chain_async_fetch_mining_template` _(pending)_ | `fetch_mining_template()` |
 
-_More methods land per phase: mining (`getblocktemplate`, `submitblock`,
+_More methods land per phase: mining (`submitblocklight`, `submitblock`,
 `getmininginfo`), mempool (`getrawmempool`, `getmempoolentry`, ...), and
 blockchain/raw-tx (`getblock`, `getrawtransaction`, `sendrawtransaction`, ...)._
+
+## Mining: getblocktemplatelight
+
+Returns the next-block template **without** the transaction list. The selected
+transactions are cached server-side under `job_id`; a later `submitblocklight`
+(pending) reconstructs the full block from the miner's solved header + coinbase
+alone, so transactions never travel over the wire.
+
+Response fields: `version`, `previousblockhash`, `height`, `coinbasevalue`
+(subsidy + selected fees), `target`, `bits`, `mintime` (MTP + 1), `curtime`,
+`sizelimit`, `sigchecklimit`, `noncerange`, `mutable`, and `job_id`.
+
+Job cache config (mirrors bitcoind `-gbtcachesize` / `-gbtstoretime`):
+
+```ini
+rpc.gbt_cache_size = 10     # recent jobs kept
+rpc.gbt_store_time = 3600   # seconds before a job expires
+```
+
+> The template is rebuilt on every call (no per-tip cache yet). `tools/rpc_bench.py`
+> load-tests the miner-polling side; a faithful benchmark also simulates
+> transactions and blocks arriving (mempool churn + tip changes), which needs the
+> submit paths added in later phases.

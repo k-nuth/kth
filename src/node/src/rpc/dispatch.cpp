@@ -21,7 +21,7 @@ bool dispatcher::has(std::string_view method) const {
 }
 
 ::asio::awaitable<std::string>
-dispatcher::handle(blockchain::block_chain& chain, std::string_view body) const {
+dispatcher::handle(method_context& ctx, std::string_view body) const {
     auto const req = parse_request(body);
     if ( ! req) {
         co_return build_error("null", req.error().code, req.error().message);
@@ -33,7 +33,7 @@ dispatcher::handle(blockchain::block_chain& chain, std::string_view body) const 
             "Method not found");
     }
 
-    auto const result = co_await it->second(chain, *req);
+    auto const result = co_await it->second(ctx, *req);
     if ( ! result) {
         co_return build_error(req->id, result.error().code, result.error().message);
     }

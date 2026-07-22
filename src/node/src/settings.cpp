@@ -34,6 +34,8 @@ rpc_settings::rpc_settings()
     , port(8332)
     , user()
     , password()
+    , gbt_cache_size(10)
+    , gbt_store_time(3600)
 {}
 
 } // namespace kth::node

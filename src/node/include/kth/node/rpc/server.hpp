@@ -13,6 +13,7 @@
 #include <asio/ip/tcp.hpp>
 
 #include <kth/node/rpc/dispatch.hpp>
+#include <kth/node/rpc/job_store.hpp>
 #include <kth/node/settings.hpp>
 
 namespace kth::blockchain {
@@ -39,6 +40,7 @@ private:
     rpc_settings const& settings_;
     blockchain::block_chain& chain_;
     dispatcher dispatcher_;
+    job_store jobs_;
     // Plaintext "user:password" (or "__cookie__:token") the Authorization header
     // must decode to.
     std::string expected_credentials_;

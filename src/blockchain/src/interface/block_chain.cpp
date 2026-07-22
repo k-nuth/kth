@@ -1497,6 +1497,57 @@ block_chain::fetch_template() const {
         state->median_time_past()});
 }
 
+awaitable_expected<blockchain::mining_template>
+block_chain::fetch_mining_template() const {
+    if (stopped()) {
+        co_return std::unexpected(error::service_stopped);
+    }
+
+    auto const state = chain_state();
+    if ( ! state) {
+        co_return std::unexpected(error::not_found);
+    }
+
+    auto const height = state->height();
+
+    auto selection = build_block_template(mempool_, block_template_context{
+        state->dynamic_max_block_size(),
+        state->dynamic_max_block_sigchecks(),
+        height,
+        state->median_time_past()});
+
+    // Previous block hash = the tip, i.e. the block one below the template height.
+    hash_digest previous = null_hash;
+    if (height > 0) {
+        auto const prev = get_block_hash(height - 1);
+        if ( ! prev) {
+            co_return std::unexpected(error::not_found);
+        }
+        previous = *prev;
+    }
+
+    auto const min_time = state->median_time_past() + 1;
+    auto const current_time = std::max(min_time,
+        static_cast<uint32_t>(zulu_time()));
+
+    auto const coinbase_value = selection.total_fees +
+        domain::chain::block::subsidy(height, true);
+
+    // 0x20000000: the BIP9 version base. BCH has no active version-bits signaling,
+    // and miners routinely override this, so it is only a sensible default.
+    co_return blockchain::mining_template{
+        0x20000000U,
+        previous,
+        height,
+        state->work_required(),
+        min_time,
+        current_time,
+        coinbase_value,
+        state->dynamic_max_block_size(),
+        state->dynamic_max_block_sigchecks(),
+        std::move(selection)};
+}
+
 awaitable_expected<inventory_ptr>
 block_chain::fetch_mempool(size_t count_limit, uint64_t /*minimum_fee*/) const {
     if (stopped()) {

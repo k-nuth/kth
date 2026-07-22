@@ -22,11 +22,20 @@ class block_chain;
 
 namespace kth::node::rpc {
 
+struct job_store;
+
+// Shared state a handler may reach: the chain and the getblocktemplatelight job
+// cache. Passed by reference; owned by the server for the connection's lifetime.
+struct method_context {
+    blockchain::block_chain& chain;
+    job_store& jobs;
+};
+
 // A method handler serializes the JSON-RPC "result" fragment for `req`, or
 // returns an rpc_error. It runs on the RPC coroutine and may co_await the chain.
 using handler_fn = std::function<
     ::asio::awaitable<std::expected<std::string, rpc_error>>(
-        blockchain::block_chain&, request const&)>;
+        method_context&, request const&)>;
 
 // Routes a parsed JSON-RPC request to its registered handler and wraps the
 // outcome (or any error) in a JSON-RPC response envelope.
@@ -36,7 +45,7 @@ struct dispatcher {
 
     // Parse `body`, invoke the matching handler, and return the full response body.
     [[nodiscard]] ::asio::awaitable<std::string>
-    handle(blockchain::block_chain& chain, std::string_view body) const;
+    handle(method_context& ctx, std::string_view body) const;
 
 private:
     boost::unordered_flat_map<std::string, handler_fn> methods_;
