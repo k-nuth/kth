@@ -61,18 +61,7 @@ void kth_chain_async_last_height(kth_chain_t chain, void* ctx, kth_last_height_f
     }, ::asio::detached);
 }
 
-void kth_chain_async_mining_info(kth_chain_t chain, void* ctx, kth_mining_info_fetch_handler_t handler) {
-    auto& bc = safe_chain(chain);
-    ::asio::co_spawn(bc.executor(), [&bc, chain, ctx, handler]() -> ::asio::awaitable<void> {
-        auto result = co_await bc.fetch_mining_info();
-        if (result) {
-            handler(chain, ctx, kth::to_c_err(std::error_code{}),
-                kth::to_c_struct<kth_mining_info_t>(*result));
-        } else {
-            handler(chain, ctx, kth::to_c_err(result.error()), kth_mining_info_t{});
-        }
-    }, ::asio::detached);
-}
+// kth_chain_async_mining_info is generated (chain_mining.cpp).
 
 void kth_chain_async_mining_template(kth_chain_t chain, void* ctx, kth_mining_template_fetch_handler_t handler) {
     auto& bc = safe_chain(chain);

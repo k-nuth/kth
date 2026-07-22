@@ -17,10 +17,7 @@ extern "C" {
 KTH_EXPORT
 void kth_chain_async_last_height(kth_chain_t chain, void* ctx, kth_last_height_fetch_handler_t handler);
 
-// Async counterpart of kth_chain_sync_mining_info: the handler receives the
-// mining_info snapshot (by value) once fetch_mining_info() completes.
-KTH_EXPORT
-void kth_chain_async_mining_info(kth_chain_t chain, void* ctx, kth_mining_info_fetch_handler_t handler);
+// kth_chain_async_mining_info is generated (see chain_mining.h).
 
 // Async counterpart of kth_chain_sync_mining_template: the handler receives the
 // header POD and the owned transaction selection once fetch_mining_template()
