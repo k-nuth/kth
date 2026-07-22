@@ -138,7 +138,7 @@ settings::settings(domain::config::network context)
         }
 
         case domain::config::network::regtest: {
-            identifier = 3669344250;        //TODO(fernando): use appropiate constant
+            identifier = netmagic::bch_regtest;
             inbound_port = 18444;
 
             // Regtest is private network only, so there is no seeding.
