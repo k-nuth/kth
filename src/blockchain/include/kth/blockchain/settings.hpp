@@ -31,6 +31,9 @@ struct KB_API settings {
     uint64_t minimum_output_satoshis = 500;
     uint32_t notify_limit_hours = 24;
     uint32_t reorganization_limit = 256;
+    // Minimum seconds between block-template rebuilds while the mempool churns
+    // (a new tip always rebuilds immediately). Mirrors bitcoind's 5s.
+    uint32_t gbt_template_refresh_seconds = 5;
     infrastructure::config::checkpoint::list checkpoints;
     // Derived fields — populated by settings(network) constructor.
     // If using settings() default and setting checkpoints manually,

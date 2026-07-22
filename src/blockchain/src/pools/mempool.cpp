@@ -75,6 +75,7 @@ bool mempool::add(mempool_entry entry) {
 
     KTH_STATS_INCREMENT(stats_, add_inserted);
     KTH_STATS_TIME_ADD(stats_, add, add_time_ns);
+    generation_.fetch_add(1, std::memory_order_relaxed);
     return true;
 }
 
@@ -92,6 +93,7 @@ void mempool::remove_entry(hash_digest const& txid) {
         spent_by_.erase(outpoint_key{op.hash(), op.index()});
     }
     pool_.erase(txid);
+    generation_.fetch_add(1, std::memory_order_relaxed);
 }
 
 void mempool::remove_recursive(hash_digest const& txid) {

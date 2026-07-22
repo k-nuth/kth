@@ -7,6 +7,7 @@
 #include <kth/database/flat_file_pos.hpp>
 
 #include <algorithm>
+#include <mutex>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -1510,13 +1511,8 @@ block_chain::fetch_mining_template() const {
 
     auto const height = state->height();
 
-    auto selection = build_block_template(mempool_, block_template_context{
-        state->dynamic_max_block_size(),
-        state->dynamic_max_block_sigchecks(),
-        height,
-        state->median_time_past()});
-
     // Previous block hash = the tip, i.e. the block one below the template height.
+    // Together with the mempool generation it forms the cache key.
     hash_digest previous = null_hash;
     if (height > 0) {
         auto const prev = get_block_hash(height - 1);
@@ -1526,18 +1522,76 @@ block_chain::fetch_mining_template() const {
         previous = *prev;
     }
 
+    auto const generation = mempool_.generation();
+    auto const now = static_cast<uint32_t>(zulu_time());
+
+    // A snapshot is usable while the tip is unchanged and the mempool is either
+    // unchanged or its last change is still within the refresh window; a new tip
+    // always forces a rebuild.
+    auto const usable = [&](boost::shared_ptr<template_snapshot> const& s) {
+        return s &&
+               s->previous == previous &&
+               (s->generation == generation ||
+                now - s->time < settings_.gbt_template_refresh_seconds);
+    };
+
+    // Lock-free read: rebuilds are expensive (full mempool scan + fee-rate
+    // ordering), so serve the published snapshot when it is still usable.
+    auto snapshot = template_cache_.load();
+    if (usable(snapshot)) {
+        co_return snapshot->value;
+    }
+
+    // Stale or cold. Coalesce rebuilds: exactly one thread rebuilds. If another
+    // thread already holds the rebuild lock, do not block on it — serve the
+    // previous (bounded-stale) snapshot if we have one. Only a cold start with no
+    // snapshot at all waits for the first build.
+    //
+    // NOTE: there is no co_await between here and co_return; the rebuild is fully
+    // synchronous, so holding this std::mutex across it is safe. Do not introduce
+    // a suspension point inside this section.
+    std::unique_lock<std::mutex> lock(template_rebuild_mutex_, std::try_to_lock);
+    if ( ! lock) {
+        // Another thread is rebuilding. If our stale snapshot is for the SAME tip
+        // (only the mempool moved on), it is still a valid template — serve it
+        // rather than block. Never serve a snapshot from a previous tip: a
+        // wrong-parent template would orphan the miner's block, so wait for the
+        // rebuild in that case (a cold start with no snapshot also waits).
+        if (snapshot && snapshot->previous == previous) {
+            co_return snapshot->value;
+        }
+        lock.lock();
+    }
+
+    // Re-check under the lock: another thread may have published while we waited.
+    snapshot = template_cache_.load();
+    if (usable(snapshot)) {
+        co_return snapshot->value;
+    }
+
+    auto selection = build_block_template(mempool_, block_template_context{
+        state->dynamic_max_block_size(),
+        state->dynamic_max_block_sigchecks(),
+        height,
+        state->median_time_past()});
+
     // 0x20000000: the BIP9 version base. BCH has no active version-bits signaling,
     // and miners routinely override this, so it is only a sensible default.
-    co_return make_mining_template(
+    auto built = make_mining_template(
         0x20000000U,
         previous,
         height,
         state->work_required(),
         state->median_time_past(),
-        static_cast<uint32_t>(zulu_time()),
+        now,
         state->dynamic_max_block_size(),
         state->dynamic_max_block_sigchecks(),
         std::move(selection));
+
+    auto next = boost::make_shared<template_snapshot>(
+        template_snapshot{std::move(built), previous, generation, now});
+    template_cache_.store(next);
+    co_return next->value;
 }
 
 awaitable_expected<blockchain::mining_info>

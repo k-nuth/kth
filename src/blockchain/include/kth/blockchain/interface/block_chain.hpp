@@ -12,11 +12,15 @@
 #include <filesystem>
 #include <functional>
 #include <expected>
+#include <mutex>
 #include <optional>
 #include <vector>
 
 #include <kth/infrastructure/utility/atomic.hpp>
 
+#include <boost/smart_ptr/atomic_shared_ptr.hpp>
+#include <boost/smart_ptr/make_shared.hpp>
+#include <boost/smart_ptr/shared_ptr.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
 
@@ -522,6 +526,32 @@ private:
     mutable transaction_validation_store transaction_validations_;
 
     blockchain::mempool mempool_;
+
+    // Block-template cache: fetch_mining_template() serves this while the tip
+    // and mempool are unchanged (a mempool-only change within the refresh window
+    // is also served). Lives in the core so both the JSON-RPC and C-API frontends
+    // share it.
+    //
+    // Published as an immutable snapshot through an atomic shared_ptr: readers
+    // load() it lock-free and serve a copy, so a GBT request never blocks on
+    // another GBT request. The rebuild is coalesced by template_rebuild_mutex_
+    // (try_lock), so at most one thread rebuilds; a concurrent caller whose
+    // snapshot is stale only for the mempool (same tip) serves that snapshot
+    // instead of blocking, while a tip change waits for the rebuild (a
+    // wrong-parent template would orphan the miner's block). Insertion into the
+    // mempool never touches either of these — it is a separate lock-free
+    // structure.
+    //
+    // boost::atomic_shared_ptr (not std::atomic<std::shared_ptr>): the latter is
+    // unsupported on macOS libc++.
+    struct template_snapshot {
+        blockchain::mining_template value;
+        hash_digest previous;
+        uint64_t generation;
+        uint32_t time;
+    };
+    mutable boost::atomic_shared_ptr<template_snapshot> template_cache_;
+    mutable std::mutex template_rebuild_mutex_;
 
     transaction_organizer transaction_organizer_;
     block_organizer block_organizer_;
