@@ -242,7 +242,7 @@ TEST_CASE("p2p_node connect to invalid host fails", "[p2p_node][integration]") {
     ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
         start_result = co_await node.start();
         if (start_result == error::success) {
-            connect_result = co_await node.connect("invalid.host.that.does.not.exist.local", 18333);
+            connect_result = co_await node.connect("invalid.host.that.does.not.exist.invalid", 18333);
         }
         done = true;
     }, ::asio::detached);

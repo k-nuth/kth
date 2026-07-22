@@ -1,0 +1,32 @@
+// Copyright (c) 2016-present Knuth Project developers.
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#include <kth/capi/chain/chain_mining.h>
+
+#include <kth/capi/conversions.hpp>
+#include <kth/capi/helpers.hpp>
+#include <kth/capi/detail/sync_wait.hpp>
+#include <kth/blockchain/interface/block_chain.hpp>
+
+// File-local alias so `kth::cpp_ref<T>(...)` and friends don't
+// spell out the full qualified C++ name at every call site.
+namespace {
+using cpp_t = kth::blockchain::block_chain;
+} // namespace
+
+// ---------------------------------------------------------------------------
+extern "C" {
+
+// Getters
+
+kth_error_code_t kth_chain_sync_mining_info(kth_chain_t self, kth_mining_info_t* out) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    auto const result = kth::capi::sync_wait(kth::cpp_ref<cpp_t>(self), kth::cpp_ref<cpp_t>(self).fetch_mining_info());
+    if ( ! result) return kth::to_c_err(result.error());
+    *out = kth::to_c_struct<kth_mining_info_t>(*result);
+    return kth_ec_success;
+}
+
+} // extern "C"
