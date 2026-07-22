@@ -403,6 +403,11 @@ struct KB_API block_chain {
     [[nodiscard]] awaitable_expected<blockchain::block_template>
     fetch_template() const;
 
+    // Full mining template (header fields + coinbase value + tx selection) for
+    // getblocktemplate[light]. C-API counterpart: kth_chain_async_fetch_mining_template.
+    [[nodiscard]] awaitable_expected<blockchain::mining_template>
+    fetch_mining_template() const;
+
     [[nodiscard]] awaitable_expected<inventory_ptr>
     fetch_mempool(size_t count_limit, uint64_t minimum_fee) const;
 

@@ -31,6 +31,11 @@ struct KND_API rpc_settings {
     /// the auto-generated .cookie file (bitcoind-style).
     std::string user;
     std::string password;
+    /// getblocktemplatelight job cache: how many recent jobs to keep, and for how
+    /// long (seconds) before a job expires. Mirrors bitcoind -gbtcachesize /
+    /// -gbtstoretime.
+    uint32_t gbt_cache_size;
+    uint32_t gbt_store_time;
 };
 
 /// Common database configuration settings, properties not thread safe.

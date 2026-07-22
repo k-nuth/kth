@@ -47,6 +47,23 @@ struct block_template_context {
 KB_API
 block_template build_block_template(mempool const& pool, block_template_context const& ctx);
 
+// A full mining template: the transaction selection plus every header-level field
+// a miner needs to assemble and solve the next block. This is what the getblock-
+// template / getblocktemplatelight RPC and its C-API counterpart serialize. The
+// caller builds a coinbase paying `coinbase_value` and prepends it to `selection`.
+struct mining_template {
+    uint32_t version;                   // suggested block version
+    hash_digest previous_block_hash;    // tip hash (big-endian display is caller's job)
+    size_t height;                      // template height (tip + 1)
+    uint32_t bits;                      // required work, compact nBits
+    uint32_t min_time;                  // earliest valid timestamp (MTP + 1)
+    uint32_t current_time;              // suggested timestamp (clamped to >= min_time)
+    uint64_t coinbase_value;            // subsidy(height) + selected fees, in satoshis
+    uint64_t size_limit;                // consensus max block size
+    uint64_t sigchecks_limit;           // consensus max block sigchecks
+    block_template selection;           // CTOR-ordered txs + totals (no coinbase)
+};
+
 } // namespace kth::blockchain
 
 #endif
