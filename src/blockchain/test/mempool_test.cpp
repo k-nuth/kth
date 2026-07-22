@@ -131,6 +131,25 @@ TEST_CASE("mempool add then query", "[mempool][serial]") {
     CHECK_FALSE(mp.resolve(point{make_hash(999), 0}).has_value());
 }
 
+TEST_CASE("mempool generation bumps on add and remove", "[mempool][serial]") {
+    mempool mp{0x1111u, 0x2222u};
+    auto const g0 = mp.generation();
+
+    auto const tx = make_tx({op(1, 0)}, 1, /*tag*/ 1);
+    REQUIRE(mp.add(entry_for(tx, 1)));
+    auto const g1 = mp.generation();
+    REQUIRE(g1 > g0);
+
+    // A rejected add (duplicate) leaves the counter untouched.
+    REQUIRE_FALSE(mp.add(entry_for(tx, 1)));
+    REQUIRE(mp.generation() == g1);
+
+    // Removing the tx (as part of a block) bumps again.
+    mp.remove_for_block(make_block({tx}));
+    REQUIRE(mp.generation() > g1);
+    REQUIRE(mp.size() == 0u);
+}
+
 TEST_CASE("mempool first-seen rejects conflicting input", "[mempool][serial]") {
     mempool mp{0x1111u, 0x2222u};
 

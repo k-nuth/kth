@@ -217,6 +217,7 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--chain.cores",                cfg.chain.cores);
     app.add_option("--chain.priority",             cfg.chain.priority);
     app.add_option("--chain.reorganization_limit", cfg.chain.reorganization_limit);
+    app.add_option("--chain.gbt_template_refresh_seconds", cfg.chain.gbt_template_refresh_seconds);
     add_parse_from_list(app, "--chain.checkpoint", cfg.chain.checkpoints,
         "A hash:height checkpoint.");
     app.add_option("--chain.fix_checkpoints", cfg.chain.fix_checkpoints);

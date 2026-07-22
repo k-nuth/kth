@@ -109,10 +109,11 @@ rpc.gbt_cache_size = 10     # recent jobs kept
 rpc.gbt_store_time = 3600   # seconds before a job expires
 ```
 
-> The template is rebuilt on every call (no per-tip cache yet). `tools/rpc_bench.py`
-> load-tests the miner-polling side; a faithful benchmark also simulates
-> transactions and blocks arriving (mempool churn + tip changes), which needs the
-> submit paths added in later phases.
+> The assembled template is cached in the core (`block_chain::fetch_mining_template`,
+> shared by this RPC and the C-API): a new tip rebuilds immediately, while under
+> mempool churn rebuilds are rate-limited to `chain.gbt_template_refresh_seconds`
+> (default 5, bitcoind-style). `tools/rpc_bench.py` load-tests the miner-polling
+> side; a faithful benchmark also simulates transactions and blocks arriving.
 
 ## Mining: getmininginfo
 

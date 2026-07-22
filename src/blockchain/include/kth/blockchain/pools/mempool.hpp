@@ -5,6 +5,7 @@
 #ifndef KTH_BLOCKCHAIN_POOLS_MEMPOOL_HPP
 #define KTH_BLOCKCHAIN_POOLS_MEMPOOL_HPP
 
+#include <atomic>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -119,6 +120,13 @@ struct mempool {
 
     mempool_stats const& stats() const { return stats_; }
 
+    /// A monotonically-increasing counter bumped on every mutation (add or
+    /// remove). Callers cache "has the mempool changed since I last looked?"
+    /// by comparing this — e.g. the block-template cache. Not a cache itself.
+    uint64_t generation() const {
+        return generation_.load(std::memory_order_relaxed);
+    }
+
 private:
     // Erase one tx from pool_ and release its input-outpoint claims in
     // spent_by_. Non-recursive: descendants are untouched.
@@ -137,6 +145,7 @@ private:
     mempool_map<hash_digest, mempool_entry, salted_txid_hasher> pool_;
     mempool_map<outpoint_key, hash_digest, salted_outpoint_hasher> spent_by_;
     mempool_stats stats_;
+    std::atomic<uint64_t> generation_{0};
 };
 
 } // namespace kth::blockchain
