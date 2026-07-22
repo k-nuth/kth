@@ -14,6 +14,8 @@
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 
+#include <kth/capi/detail/mining_template.hpp>
+
 #include <kth/capi/domain/chain/block_list.h>
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
@@ -338,6 +340,16 @@ int kth_chain_sync_organize_transaction(kth_chain_t chain, kth_transaction_mut_t
     auto& bc = safe_chain(chain);
     auto ec = sync_wait(bc, bc.organize(tx_shared(transaction)));
     return kth::to_c_err(ec);
+}
+
+kth_error_code_t kth_chain_sync_mining_template(kth_chain_t chain, kth_mining_template_t* out, kth_transaction_list_mut_t* out_txs) {
+    auto& bc = safe_chain(chain);
+    auto result = sync_wait(bc, bc.fetch_mining_template());
+    if ( ! result) {
+        return kth::to_c_err(result.error());
+    }
+    kth::capi::fill_mining_template(*out, *out_txs, *result);
+    return kth::to_c_err(std::error_code{});
 }
 
 //-------------------------------------------------------------------------
