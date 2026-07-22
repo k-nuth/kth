@@ -12,6 +12,7 @@
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/config/network.hpp>
+#include <kth/domain/message/transaction.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -237,16 +238,147 @@ get_block(method_context& ctx, request const& req) {
     co_return w.str();
 }
 
+// getblockheader <blockhash> -> the header fields (verbose).
+// C-API counterpart: kth_chain_sync_block_header_by_hash.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_block_header(method_context& ctx, request const& req) {
+    auto const args = params_strings(req.params);
+    if (args.empty() || args[0].empty()) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "getblockheader requires [blockhash]"));
+    }
+    auto const hash = decode_hash(args[0]);
+    if ( ! hash) {
+        co_return std::unexpected(make_error(error_code::invalid_params, "invalid block hash"));
+    }
+    auto const result = co_await ctx.chain.fetch_block_header(*hash);
+    if ( ! result) {
+        co_return std::unexpected(from_code(result.error()));
+    }
+    auto const& [header, height] = *result;
+    co_return render_block_header(*header, height, *hash);
+}
+
+// sendrawtransaction <hexstring> -> the accepted txid, or a reject error.
+// C-API counterpart: kth_chain_sync_organize_transaction.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+send_raw_transaction(method_context& ctx, request const& req) {
+    auto const args = params_strings(req.params);
+    if (args.empty() || args[0].empty()) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "sendrawtransaction requires [hexstring]"));
+    }
+    auto const raw = decode_base16(args[0]);
+    if ( ! raw) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "hexstring is not valid hex"));
+    }
+    byte_reader reader(*raw);
+    auto tx = domain::chain::transaction::from_data(reader, /*wire*/ true);
+    if ( ! tx) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "transaction decode failed"));
+    }
+
+    auto const txid = encode_hash(tx->hash());
+    auto const pooled = std::make_shared<domain::message::transaction>(std::move(*tx));
+    auto const ec = co_await ctx.chain.organize(pooled);
+    if (ec) {
+        co_return std::unexpected(make_error(error_code::misc_error, ec.message()));
+    }
+
+    writer w;
+    w.value(txid);
+    co_return w.str();
+}
+
+// ---- mempool query methods -----------------------------------------------
+
+// getrawmempool -> the txids currently in the mempool.
+// C-API counterpart: kth_chain_get_mempool_txids.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_raw_mempool(method_context& ctx, request const& /*req*/) {
+    co_return render_hash_list(ctx.chain.get_mempool_txids());
+}
+
+// getmempoolinfo -> mempool size, byte total, and fee total.
+// C-API counterpart: kth_chain_get_mempool_info.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_mempool_info(method_context& ctx, request const& /*req*/) {
+    co_return render_mempool_info(ctx.chain.get_mempool_info());
+}
+
+// getmempoolentry <txid> -> the entry's fee/size/time plus depends/spentby.
+// C-API counterpart: kth_chain_get_mempool_entry.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_mempool_entry(method_context& ctx, request const& req) {
+    auto const args = params_strings(req.params);
+    if (args.empty() || args[0].empty()) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "getmempoolentry requires [txid]"));
+    }
+    auto const hash = decode_hash(args[0]);
+    if ( ! hash) {
+        co_return std::unexpected(make_error(error_code::invalid_params, "invalid txid"));
+    }
+    auto const entry = ctx.chain.get_mempool_entry(*hash);
+    if ( ! entry) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "transaction not in mempool"));
+    }
+    co_return render_mempool_entry(*entry,
+        ctx.chain.get_mempool_depends(*hash), ctx.chain.get_mempool_spentby(*hash));
+}
+
+// getmempoolancestors <txid> -> in-mempool ancestor txids.
+// C-API counterpart: kth_chain_get_mempool_ancestors.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_mempool_ancestors(method_context& ctx, request const& req) {
+    auto const args = params_strings(req.params);
+    if (args.empty() || args[0].empty()) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "getmempoolancestors requires [txid]"));
+    }
+    auto const hash = decode_hash(args[0]);
+    if ( ! hash) {
+        co_return std::unexpected(make_error(error_code::invalid_params, "invalid txid"));
+    }
+    co_return render_hash_list(ctx.chain.get_mempool_ancestors(*hash));
+}
+
+// getmempooldescendants <txid> -> in-mempool descendant txids.
+// C-API counterpart: kth_chain_get_mempool_descendants.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_mempool_descendants(method_context& ctx, request const& req) {
+    auto const args = params_strings(req.params);
+    if (args.empty() || args[0].empty()) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "getmempooldescendants requires [txid]"));
+    }
+    auto const hash = decode_hash(args[0]);
+    if ( ! hash) {
+        co_return std::unexpected(make_error(error_code::invalid_params, "invalid txid"));
+    }
+    co_return render_hash_list(ctx.chain.get_mempool_descendants(*hash));
+}
+
 } // namespace
 
 void register_builtin_methods(dispatcher& d) {
     d.add("getblockcount", get_block_count);
     d.add("getbestblockhash", get_best_block_hash);
     d.add("getblockhash", get_block_hash);
+    d.add("getblockheader", get_block_header);
     d.add("getdifficulty", get_difficulty);
     d.add("getblockchaininfo", get_blockchain_info);
     d.add("getrawtransaction", get_raw_transaction);
     d.add("getblock", get_block);
+    d.add("sendrawtransaction", send_raw_transaction);
+    d.add("getrawmempool", get_raw_mempool);
+    d.add("getmempoolinfo", get_mempool_info);
+    d.add("getmempoolentry", get_mempool_entry);
+    d.add("getmempoolancestors", get_mempool_ancestors);
+    d.add("getmempooldescendants", get_mempool_descendants);
     d.add("getblocktemplatelight", get_block_template_light);
     d.add("getmininginfo", get_mining_info);
     d.add("submitblocklight", submit_block_light);
