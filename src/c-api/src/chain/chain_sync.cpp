@@ -70,17 +70,7 @@ kth_error_code_t kth_chain_sync_last_height(kth_chain_t chain, kth_size_t* out_h
     return kth::to_c_err(result.error());
 }
 
-kth_error_code_t kth_chain_sync_block_height(kth_chain_t chain, kth_hash_t hash, kth_size_t* out_height) {
-    auto& bc = safe_chain(chain);
-    auto hash_cpp = kth::to_array(hash.hash);
-    auto result = sync_wait(bc, bc.fetch_block_height(hash_cpp));
-    if (result) {
-        *out_height = *result;
-        return kth::to_c_err(std::error_code{});
-    }
-    *out_height = 0;
-    return kth::to_c_err(result.error());
-}
+// kth_chain_sync_block_height is generated (chain_query.cpp).
 
 kth_error_code_t kth_chain_sync_block_header_by_height(kth_chain_t chain, kth_size_t height, kth_header_mut_t* out_header, kth_size_t* out_height) {
     auto& bc = safe_chain(chain);

@@ -26,8 +26,7 @@ void kth_chain_async_last_height(kth_chain_t chain, void* ctx, kth_last_height_f
 KTH_EXPORT
 void kth_chain_async_mining_template(kth_chain_t chain, void* ctx, kth_mining_template_fetch_handler_t handler);
 
-KTH_EXPORT
-void kth_chain_async_block_height(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_block_height_fetch_handler_t handler);
+// kth_chain_async_block_height is generated (see chain_query.h).
 
 // Block Header ---------------------------------------------------------------------
 KTH_EXPORT
