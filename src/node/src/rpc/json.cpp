@@ -58,6 +58,38 @@ std::expected<request, rpc_error> parse_request(std::string_view body) {
     return req;
 }
 
+std::vector<std::string> params_strings(std::string_view params_json) {
+    std::vector<std::string> out;
+    if (params_json.empty()) {
+        return out;
+    }
+
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(params_json);
+
+    simdjson::ondemand::document doc;
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS) {
+        return out;
+    }
+
+    simdjson::ondemand::array arr;
+    if (doc.get_array().get(arr) != simdjson::SUCCESS) {
+        return out;
+    }
+
+    for (auto element : arr) {
+        simdjson::ondemand::value value;
+        std::string_view text;
+        if (element.get(value) == simdjson::SUCCESS &&
+            value.get_string().get(text) == simdjson::SUCCESS) {
+            out.emplace_back(text);
+        } else {
+            out.emplace_back();
+        }
+    }
+    return out;
+}
+
 std::string build_success(std::string_view id_raw, std::string_view result_raw) {
     writer w;
     w.begin_object();

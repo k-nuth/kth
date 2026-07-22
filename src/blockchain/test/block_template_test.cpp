@@ -25,6 +25,8 @@ using kth::blockchain::mempool_entry;
 using kth::blockchain::block_template;
 using kth::blockchain::block_template_context;
 using kth::blockchain::build_block_template;
+using kth::blockchain::mining_template;
+using kth::blockchain::make_mining_template;
 
 namespace {
 
@@ -254,4 +256,46 @@ TEST_CASE("block_template: non-final tx is excluded", "[block_template]") {
     for (auto const& tx : tpl.txs) present.insert(tx->hash());
     REQUIRE(present.count(final_tx->hash()) == 1u);
     REQUIRE(present.count(non_final->hash()) == 0u);
+}
+
+// ---------------------------------------------------------------------------
+// make_mining_template: the pure header-field assembly (subsidy, times).
+
+TEST_CASE("make_mining_template computes min_time as MTP + 1", "[block_template]") {
+    auto const t = make_mining_template(0x20000000u, null_hash, 1u, 0x1d00ffffu,
+        /*mtp*/ 1000u, /*now*/ 5000u, 32000000u, 226950u, block_template{});
+    REQUIRE(t.min_time == 1001u);
+}
+
+TEST_CASE("make_mining_template clamps current_time up to min_time", "[block_template]") {
+    // now behind MTP+1 -> clamped to min_time.
+    auto const behind = make_mining_template(0x20000000u, null_hash, 1u, 0x1d00ffffu,
+        /*mtp*/ 4000u, /*now*/ 100u, 32000000u, 226950u, block_template{});
+    REQUIRE(behind.current_time == 4001u);
+
+    // now ahead of MTP+1 -> used as-is.
+    auto const ahead = make_mining_template(0x20000000u, null_hash, 1u, 0x1d00ffffu,
+        /*mtp*/ 1000u, /*now*/ 9000u, 32000000u, 226950u, block_template{});
+    REQUIRE(ahead.current_time == 9000u);
+}
+
+TEST_CASE("make_mining_template coinbase value is subsidy plus fees", "[block_template]") {
+    block_template selection{};
+    selection.total_fees = 1234u;
+    auto const t = make_mining_template(0x20000000u, null_hash, /*height*/ 1u,
+        0x1d00ffffu, 1000u, 5000u, 32000000u, 226950u, std::move(selection));
+    // Height 1 subsidy is 50 BCH.
+    REQUIRE(t.coinbase_value == 5000000000ull + 1234u);
+}
+
+TEST_CASE("make_mining_template passes the header fields through", "[block_template]") {
+    auto const t = make_mining_template(0x20000000u, null_hash, /*height*/ 7u,
+        0x1d00ffffu, 1000u, 5000u, /*size*/ 32000000u, /*sigchecks*/ 226950u,
+        block_template{});
+    REQUIRE(t.version == 0x20000000u);
+    REQUIRE(t.previous_block_hash == null_hash);
+    REQUIRE(t.height == 7u);
+    REQUIRE(t.bits == 0x1d00ffffu);
+    REQUIRE(t.size_limit == 32000000u);
+    REQUIRE(t.sigchecks_limit == 226950u);
 }
