@@ -10,6 +10,7 @@
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
 #include <kth/capi/chain/mining_info.h>
+#include <kth/capi/callbacks.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,6 +20,9 @@ extern "C" {
 
 KTH_EXPORT
 kth_error_code_t kth_chain_sync_mining_info(kth_chain_t self, kth_mining_info_t* out);
+
+KTH_EXPORT
+void kth_chain_async_mining_info(kth_chain_t self, void* ctx, kth_mining_info_fetch_handler_t handler);
 
 #ifdef __cplusplus
 } // extern "C"
