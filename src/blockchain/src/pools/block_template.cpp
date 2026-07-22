@@ -216,4 +216,26 @@ mining_template make_mining_template(
         std::move(selection)};
 }
 
+double difficulty_from_bits(uint32_t bits) {
+    auto const mantissa = bits & 0x00ffffffu;
+    if (mantissa == 0) {
+        return 0.0;
+    }
+
+    // Standard Bitcoin difficulty: the ratio of the difficulty-1 target
+    // (0x1d00ffff) to this target, scaled by the exponent difference.
+    int shift = static_cast<int>((bits >> 24) & 0xffu);
+    double difficulty = static_cast<double>(0x0000ffff) /
+        static_cast<double>(mantissa);
+    while (shift < 29) {
+        difficulty *= 256.0;
+        ++shift;
+    }
+    while (shift > 29) {
+        difficulty /= 256.0;
+        --shift;
+    }
+    return difficulty;
+}
+
 } // namespace kth::blockchain

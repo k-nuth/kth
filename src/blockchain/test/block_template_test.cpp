@@ -8,6 +8,8 @@
 
 #include <test_helpers.hpp>
 
+#include <catch2/catch_approx.hpp>
+
 #include <kth/blockchain/pools/block_template.hpp>
 #include <kth/blockchain/pools/mempool.hpp>
 #include <kth/domain.hpp>
@@ -298,4 +300,23 @@ TEST_CASE("make_mining_template passes the header fields through", "[block_templ
     REQUIRE(t.bits == 0x1d00ffffu);
     REQUIRE(t.size_limit == 32000000u);
     REQUIRE(t.sigchecks_limit == 226950u);
+}
+
+// ---------------------------------------------------------------------------
+// difficulty_from_bits: the compact nBits -> Bitcoin difficulty conversion.
+
+TEST_CASE("difficulty_from_bits is 1.0 at the difficulty-1 target", "[block_template]") {
+    using kth::blockchain::difficulty_from_bits;
+    REQUIRE(difficulty_from_bits(0x1d00ffffu) == Catch::Approx(1.0));
+}
+
+TEST_CASE("difficulty_from_bits scales with the exponent", "[block_template]") {
+    using kth::blockchain::difficulty_from_bits;
+    // One lower exponent byte is a 256x harder target.
+    REQUIRE(difficulty_from_bits(0x1c00ffffu) == Catch::Approx(256.0));
+}
+
+TEST_CASE("difficulty_from_bits is zero for a zero mantissa", "[block_template]") {
+    using kth::blockchain::difficulty_from_bits;
+    REQUIRE(difficulty_from_bits(0x1d000000u) == Catch::Approx(0.0));
 }

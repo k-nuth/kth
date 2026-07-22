@@ -68,6 +68,7 @@ counterpart.
 |---|---|---|
 | `getblockcount` | `kth_chain_sync_last_height` | `fetch_last_height().block` |
 | `getblocktemplatelight` | `kth_chain_async_fetch_mining_template` _(pending)_ | `fetch_mining_template()` |
+| `getmininginfo` | `kth_chain_async_fetch_mining_info` _(pending)_ | `fetch_mining_info()` |
 | `submitblocklight` | `kth_chain_async_organize_block` _(pending)_ | `organize(block)` |
 
 _More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
@@ -96,6 +97,13 @@ rpc.gbt_store_time = 3600   # seconds before a job expires
 > load-tests the miner-polling side; a faithful benchmark also simulates
 > transactions and blocks arriving (mempool churn + tip changes), which needs the
 > submit paths added in later phases.
+
+## Mining: getmininginfo
+
+Returns a small mining snapshot: `blocks` (tip height), `difficulty` (of the next
+required work, matching the template's `bits`), `pooledtx` (mempool size), `chain`
+(network name), and `warnings`. `networkhashps` is not reported yet — it needs a
+historical hashrate estimate and is a follow-up.
 
 ## Mining: submitblocklight
 

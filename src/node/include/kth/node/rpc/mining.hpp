@@ -33,6 +33,9 @@ domain::message::block assemble_block(
     domain::chain::transaction const& coinbase,
     std::vector<transaction_const_ptr> const& job_txs);
 
+// Serialize a mining_info as the getmininginfo "result" object.
+std::string render_mining_info(blockchain::mining_info const& info);
+
 } // namespace kth::node::rpc
 
 #endif // KTH_NODE_RPC_MINING_HPP

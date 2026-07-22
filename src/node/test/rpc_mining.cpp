@@ -67,3 +67,14 @@ TEST_CASE("assemble_block with an empty selection is coinbase-only", "[rpc minin
     REQUIRE(block.transactions().size() == 1u);
     REQUIRE(block.transactions()[0].hash() == coinbase.hash());
 }
+
+TEST_CASE("render_mining_info serializes the getmininginfo fields", "[rpc mining]") {
+    blockchain::mining_info info{
+        /*blocks*/ 42u,
+        /*difficulty*/ 1.0,
+        /*pooled_tx*/ 3u,
+        /*chain*/ domain::config::network::mainnet};
+
+    REQUIRE(render_mining_info(info) ==
+        R"({"blocks":42,"difficulty":1.0,"pooledtx":3,"chain":"Mainnet","warnings":""})");
+}

@@ -1540,6 +1540,29 @@ block_chain::fetch_mining_template() const {
         std::move(selection));
 }
 
+awaitable_expected<blockchain::mining_info>
+block_chain::fetch_mining_info() const {
+    if (stopped()) {
+        co_return std::unexpected(error::service_stopped);
+    }
+
+    auto const state = chain_state();
+    if ( ! state) {
+        co_return std::unexpected(error::not_found);
+    }
+
+    auto const heights = co_await fetch_last_height();
+    if ( ! heights) {
+        co_return std::unexpected(heights.error());
+    }
+
+    co_return blockchain::mining_info{
+        heights->block,
+        difficulty_from_bits(state->work_required()),
+        mempool_.size(),
+        state->network()};
+}
+
 awaitable_expected<inventory_ptr>
 block_chain::fetch_mempool(size_t count_limit, uint64_t /*minimum_fee*/) const {
     if (stopped()) {
