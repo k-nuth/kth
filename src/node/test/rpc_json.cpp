@@ -100,3 +100,18 @@ TEST_CASE("params_strings tolerates empty and non-array params", "[rpc json]") {
     REQUIRE(params_strings("[]").empty());
     REQUIRE(params_strings("{}").empty());
 }
+
+TEST_CASE("params_uint reads a JSON number or numeric string", "[rpc json]") {
+    REQUIRE(params_uint("[0]", 0) == 0u);
+    REQUIRE(params_uint("[42]", 0) == 42u);
+    REQUIRE(params_uint(R"(["7"])", 0) == 7u);
+    REQUIRE(params_uint("[1,2,3]", 2) == 3u);
+}
+
+TEST_CASE("params_uint rejects missing or non-integer params", "[rpc json]") {
+    REQUIRE_FALSE(params_uint("[]", 0).has_value());
+    REQUIRE_FALSE(params_uint("[0]", 1).has_value());     // out of range
+    REQUIRE_FALSE(params_uint(R"(["x"])", 0).has_value());
+    REQUIRE_FALSE(params_uint("[1.5]", 0).has_value());
+    REQUIRE_FALSE(params_uint("", 0).has_value());
+}

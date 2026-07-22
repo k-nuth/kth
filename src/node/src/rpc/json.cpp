@@ -4,6 +4,8 @@
 
 #include <kth/node/rpc/json.hpp>
 
+#include <charconv>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -88,6 +90,51 @@ std::vector<std::string> params_strings(std::string_view params_json) {
         }
     }
     return out;
+}
+
+std::optional<std::uint64_t> params_uint(std::string_view params_json, std::size_t index) {
+    if (params_json.empty()) {
+        return std::nullopt;
+    }
+
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(params_json);
+
+    simdjson::ondemand::document doc;
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS) {
+        return std::nullopt;
+    }
+
+    simdjson::ondemand::array arr;
+    if (doc.get_array().get(arr) != simdjson::SUCCESS) {
+        return std::nullopt;
+    }
+
+    std::size_t i = 0;
+    for (auto element : arr) {
+        if (i != index) {
+            ++i;
+            continue;
+        }
+        simdjson::ondemand::value value;
+        std::string_view raw;
+        if (element.get(value) != simdjson::SUCCESS ||
+            value.raw_json().get(raw) != simdjson::SUCCESS) {
+            return std::nullopt;
+        }
+        // Accept a bare number ("0") or a quoted numeric string ("\"0\"").
+        std::string_view text = raw;
+        if (text.size() >= 2 && text.front() == '"' && text.back() == '"') {
+            text = text.substr(1, text.size() - 2);
+        }
+        std::uint64_t out = 0;
+        auto const [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), out);
+        if (ec == std::errc{} && ptr == text.data() + text.size()) {
+            return out;
+        }
+        return std::nullopt;
+    }
+    return std::nullopt;
 }
 
 std::string build_success(std::string_view id_raw, std::string_view result_raw) {
