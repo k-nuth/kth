@@ -10,6 +10,7 @@
 #include <utility>
 
 #include <kth/domain/chain/compact.hpp>
+#include <kth/domain/config/network.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 
 #include <kth/node/rpc/json.hpp>
@@ -77,6 +78,18 @@ domain::message::block assemble_block(
         txs.push_back(*tx); // slice message::transaction -> chain::transaction
     }
     return domain::message::block(header, std::move(txs));
+}
+
+std::string render_mining_info(blockchain::mining_info const& info) {
+    writer w;
+    w.begin_object();
+    w.field("blocks", static_cast<std::uint64_t>(info.blocks));
+    w.field("difficulty", info.difficulty);
+    w.field("pooledtx", static_cast<std::uint64_t>(info.pooled_tx));
+    w.field("chain", domain::config::name(info.chain));
+    w.field("warnings", "");
+    w.end_object();
+    return w.str();
 }
 
 } // namespace kth::node::rpc

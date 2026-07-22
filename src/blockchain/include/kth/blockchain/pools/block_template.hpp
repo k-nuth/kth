@@ -73,6 +73,20 @@ mining_template make_mining_template(
     uint32_t bits, uint32_t median_time_past, uint32_t now,
     uint64_t size_limit, uint64_t sigchecks_limit, block_template selection);
 
+// A snapshot of mining-relevant chain state, for the getmininginfo RPC and its
+// C-API counterpart.
+struct mining_info {
+    size_t blocks;                      // current block height (tip)
+    double difficulty;                  // difficulty of the next required work
+    size_t pooled_tx;                   // transactions in the mempool
+    domain::config::network chain;      // network the node is on
+};
+
+// The Bitcoin difficulty a compact nBits target represents (target 1 == 1.0).
+// Pure, so it is unit-tested directly.
+KB_API
+double difficulty_from_bits(uint32_t bits);
+
 } // namespace kth::blockchain
 
 #endif

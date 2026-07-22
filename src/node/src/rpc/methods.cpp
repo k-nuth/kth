@@ -52,6 +52,17 @@ get_block_template_light(method_context& ctx, request const& /*req*/) {
     co_return render_mining_template(*tmpl, job_id);
 }
 
+// getmininginfo -> height, difficulty, mempool size, and network.
+// C-API counterpart: kth_chain_async_fetch_mining_info (see docs/json-rpc.md).
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_mining_info(method_context& ctx, request const& /*req*/) {
+    auto const info = co_await ctx.chain.fetch_mining_info();
+    if ( ! info) {
+        co_return std::unexpected(from_code(info.error()));
+    }
+    co_return render_mining_info(*info);
+}
+
 // submitblocklight -> reconstruct the full block from the miner's solved header +
 // coinbase and the cached job selection, then submit it to the chain. Returns
 // (Bitcoin submitblock semantics) null on accept, or a reject-reason string.
@@ -106,6 +117,7 @@ submit_block_light(method_context& ctx, request const& req) {
 void register_builtin_methods(dispatcher& d) {
     d.add("getblockcount", get_block_count);
     d.add("getblocktemplatelight", get_block_template_light);
+    d.add("getmininginfo", get_mining_info);
     d.add("submitblocklight", submit_block_light);
 }
 

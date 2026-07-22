@@ -408,6 +408,11 @@ struct KB_API block_chain {
     [[nodiscard]] awaitable_expected<blockchain::mining_template>
     fetch_mining_template() const;
 
+    // Mining-relevant chain snapshot (height, difficulty, mempool size, network)
+    // for getmininginfo. C-API counterpart: kth_chain_async_fetch_mining_info.
+    [[nodiscard]] awaitable_expected<blockchain::mining_info>
+    fetch_mining_info() const;
+
     [[nodiscard]] awaitable_expected<inventory_ptr>
     fetch_mempool(size_t count_limit, uint64_t minimum_fee) const;
 
