@@ -1,3 +1,48 @@
+# version 1.3.0
+
+You can install Knuth node version v1.3.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* refactor(blockchain): move block validation metadata out of the domain type by @fpelliccioni in https://github.com/k-nuth/kth/pull/487
+* refactor(blockchain): move transaction validation metadata out of the domain type by @fpelliccioni in https://github.com/k-nuth/kth/pull/489
+* refactor: remove abandoned mempool (dead v1/v2 + LMDB unconfirmed path) by @fpelliccioni in https://github.com/k-nuth/kth/pull/492
+* chore: use "2016-present" in the Knuth copyright header by @fpelliccioni in https://github.com/k-nuth/kth/pull/493
+* build: add mempool_backend conan flag (cfm|parlay) propagated to code by @fpelliccioni in https://github.com/k-nuth/kth/pull/495
+* vendor: add ParlayHash (third_party/parlayhash, pinned 081408ba) by @fpelliccioni in https://github.com/k-nuth/kth/pull/499
+* mempool: implement the BCH mempool (concurrent maps, cfm/parlay backends) by @fpelliccioni in https://github.com/k-nuth/kth/pull/500
+* mempool: wire the mempool into the organizers (admit / evict) by @fpelliccioni in https://github.com/k-nuth/kth/pull/501
+* mempool: reimplement the mempool reader functions against the mempool by @fpelliccioni in https://github.com/k-nuth/kth/pull/502
+* mempool: resolve unconfirmed-parent prevouts from the mempool (chained txs) by @fpelliccioni in https://github.com/k-nuth/kth/pull/503
+* mempool: cache per-tx sigchecks in the mempool entry by @fpelliccioni in https://github.com/k-nuth/kth/pull/504
+* mempool: assemble the block template from the mempool (GBT) by @fpelliccioni in https://github.com/k-nuth/kth/pull/505
+* mempool: persist the mempool to disk across restarts (mempool.dat) by @fpelliccioni in https://github.com/k-nuth/kth/pull/507
+* mempool: add mempool query readers for the BCH JSON-RPC mempool calls by @fpelliccioni in https://github.com/k-nuth/kth/pull/508
+* c-api: move domain bindings under kth_domain_* and domain/ directories by @fpelliccioni in https://github.com/k-nuth/kth/pull/509
+* c-api: expose the mempool query readers on the chain interface by @fpelliccioni in https://github.com/k-nuth/kth/pull/510
+* node: fix node-exe startup crashes in the CLI parser by @fpelliccioni in https://github.com/k-nuth/kth/pull/511
+* network: restore post-handshake service handlers (getaddr, announcements) by @fpelliccioni in https://github.com/k-nuth/kth/pull/512
+* node: move p2p_node from the network module to the node module by @fpelliccioni in https://github.com/k-nuth/kth/pull/513
+* node: serve the BIP-35 mempool message with an inv of pooled txs by @fpelliccioni in https://github.com/k-nuth/kth/pull/514
+* node: apply config-file settings and shorten the config keys by @fpelliccioni in https://github.com/k-nuth/kth/pull/515
+* node: add an optional JSON-RPC server (foundation) by @fpelliccioni in https://github.com/k-nuth/kth/pull/516
+* node: add getblocktemplatelight JSON-RPC method by @fpelliccioni in https://github.com/k-nuth/kth/pull/517
+* node: add submitblocklight JSON-RPC method by @fpelliccioni in https://github.com/k-nuth/kth/pull/518
+* node: add getmininginfo JSON-RPC method by @fpelliccioni in https://github.com/k-nuth/kth/pull/519
+* c-api: expose the mining info reader (sync + async) on the chain interface by @fpelliccioni in https://github.com/k-nuth/kth/pull/520
+* c-api: expose the mining template reader (sync + async) on the chain interface by @fpelliccioni in https://github.com/k-nuth/kth/pull/521
+* c-api: generate the async mining-info flavor by @fpelliccioni in https://github.com/k-nuth/kth/pull/522
+* c-api: generate the block-height reader (sync + async) by @fpelliccioni in https://github.com/k-nuth/kth/pull/523
+* node: add blockchain query JSON-RPC methods by @fpelliccioni in https://github.com/k-nuth/kth/pull/524
+* node: add mempool, block-header and sendrawtransaction JSON-RPC methods by @fpelliccioni in https://github.com/k-nuth/kth/pull/525
+* blockchain: cache the block template in the core by @fpelliccioni in https://github.com/k-nuth/kth/pull/526
+* network: fix regtest network identifier (regtest was running as mainnet) by @fpelliccioni in https://github.com/k-nuth/kth/pull/527
+* infrastructure: fix integer-overflow bounds checks in byte_reader (remote DoS) by @fpelliccioni in https://github.com/k-nuth/kth/pull/528
+* release: 1.3.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/529
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.2.0...v1.3.0
+
+
 # version 1.2.0
 
 You can install Knuth node version v1.2.0 [using these instructions](https://kth.cash/#download).
