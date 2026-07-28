@@ -45,7 +45,8 @@ struct byte_reader {
 
     [[nodiscard]] constexpr
     expect<void> skip(size_t count) {
-        if (position_ + count > buffer_.size()) {
+        // `position_ + count` would wrap modulo 2^64 and let a huge count pass.
+        if (count > remaining_size()) {
             return std::unexpected(error::skip_past_end_of_buffer);
         }
         position_ += count;
@@ -89,7 +90,7 @@ struct byte_reader {
 
     [[nodiscard]] constexpr
     expect<byte_span> read_bytes(size_t size) {
-        if (position_ + size > buffer_.size()) {
+        if (size > remaining_size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
         auto const start = position_;
@@ -101,7 +102,7 @@ struct byte_reader {
     // Size to read is determined by dest.size().
     [[nodiscard]]
     expect<void> read_bytes_to(std::span<uint8_t> dest) {
-        if (position_ + dest.size() > buffer_.size()) {
+        if (dest.size() > remaining_size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
         std::memcpy(dest.data(), buffer_.data() + position_, dest.size());
@@ -113,7 +114,7 @@ struct byte_reader {
     template <size_t N>
     [[nodiscard]]
     expect<std::array<uint8_t, N>> read_array() {
-        if (position_ + N > buffer_.size()) {
+        if (N > remaining_size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
         std::array<uint8_t, N> result;
@@ -137,7 +138,7 @@ struct byte_reader {
     template <std::integral I>
     [[nodiscard]]
     expect<I> read_little_endian() {
-        if (position_ + sizeof(I) > buffer_.size()) {
+        if (sizeof(I) > remaining_size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
         I value = 0;
@@ -149,7 +150,7 @@ struct byte_reader {
     template <std::integral I>
     [[nodiscard]] constexpr
     expect<I> read_big_endian() {
-        if (position_ + sizeof(I) > buffer_.size()) {
+        if (sizeof(I) > remaining_size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
         I value = 0;
@@ -162,7 +163,7 @@ struct byte_reader {
     template <trivially_copyable T>
     [[nodiscard]]
     expect<T> read_packed() {
-        if (position_ + sizeof(T) > buffer_.size()) {
+        if (sizeof(T) > remaining_size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
         T value;
@@ -205,7 +206,7 @@ struct byte_reader {
     // Removes trailing zeros, required for bitcoin string comparisons.
     [[nodiscard]]
     expect<std::string> read_string(size_t size) {
-        if (position_ + size > buffer_.size()) {
+        if (size > remaining_size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
 

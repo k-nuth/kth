@@ -2449,3 +2449,96 @@ TEST_CASE("peer_session OLD pattern without check_interval is slow",
         INFO("Channel close worked correctly this time - took " << stop_ms << "ms");
     }
 }
+
+// =============================================================================
+// Regression (0xaudron report): an inbound `block` message carrying an
+// overflowing script_len must be rejected by the real node download path
+// without hanging the worker thread. Drives the actual
+// `request_blocks_batch<sync_mode::fast>` (as a block_download_task does,
+// block_tasks.cpp:225) over a real loopback socket, with the io_context on a
+// dedicated thread so a re-regression is observed as a hang rather than
+// hanging the test itself. build_message() supplies a valid checksum, so
+// checksum validation is not what gates the payload.
+// =============================================================================
+
+// The 139-byte malicious `block` payload from the report (script_len wraps).
+static data_chunk make_malicious_block_payload_net() {
+    data_chunk p;
+    p.insert(p.end(), 80, 0x00);   // block header
+    p.push_back(0x01);             // tx_count = 1
+    p.insert(p.end(), 4, 0x00);    // tx version
+    p.push_back(0xFF);             // input_count varint prefix
+    p.insert(p.end(), 8, 0xFF);    // input_count = 2^64 - 1
+    p.insert(p.end(), 36, 0x00);   // prevout (32) + index (4)
+    p.push_back(0xFF);             // script_len varint prefix
+    p.push_back(0xCF);             // script_len = 0xFFFFFFFFFFFFFFCF
+    p.insert(p.end(), 7, 0xFF);
+    return p;
+}
+
+TEST_CASE("peer_session inbound block is rejected by request_blocks_batch without hanging",
+          "[integration]") {
+    ::asio::io_context ctx;
+    auto settings = make_test_settings();
+    auto [client, server] = make_connected_sockets(ctx);
+
+    auto session = std::make_shared<peer_session>(std::move(server), settings);
+
+    std::atomic<bool> batch_returned{false};
+    std::atomic<bool> batch_errored{false};
+    std::atomic<bool> block_routed{false};
+
+    // (1) Real peer read loop: socket -> messages().
+    ::asio::co_spawn(ctx, session->run(), ::asio::detached);
+
+    // (2) Router replicating p2p_node.cpp:825-830: forward `block` command
+    //     from messages() to the block_responses() channel.
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        for (;;) {
+            auto [ec, raw] = co_await session->messages().async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (ec) co_return;
+            if (raw.heading.command() == domain::message::block::command) {
+                block_routed.store(true, std::memory_order_release);
+                co_await session->block_responses().async_send(
+                    std::error_code{}, raw, ::asio::use_awaitable);
+            }
+        }
+    }, ::asio::detached);
+
+    // (3) The real node download function. The requested (height,hash) is a
+    //     dummy; the malicious block is rejected during the parse regardless.
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        std::vector<std::pair<uint32_t, hash_digest>> want{{1u, hash_digest{}}};
+        auto r = co_await request_blocks_batch<sync_mode::fast>(*session, want, 60s);
+        batch_errored.store( ! r.has_value(), std::memory_order_relaxed);
+        batch_returned.store(true, std::memory_order_release);
+    }, ::asio::detached);
+
+    std::thread worker([&]{ ctx.run(); });
+
+    auto const frame = build_message("block", make_malicious_block_payload_net(),
+                                     settings.identifier);
+    REQUIRE(frame.size() == 163);
+    std::error_code write_ec;
+    ::asio::write(client, ::asio::buffer(frame), write_ec);
+    REQUIRE(!write_ec);
+
+    auto const deadline = std::chrono::steady_clock::now() + 4s;
+    while (!batch_returned.load(std::memory_order_acquire) &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(50ms);
+    }
+
+    bool const hung = !batch_returned.load(std::memory_order_acquire);
+    if (hung) {
+        worker.detach();
+    } else {
+        ctx.stop();
+        worker.join();
+    }
+
+    REQUIRE(block_routed.load());
+    REQUIRE( ! hung);
+    REQUIRE(batch_errored.load(std::memory_order_relaxed));
+}

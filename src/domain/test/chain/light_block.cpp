@@ -2,9 +2,17 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <atomic>
+#include <chrono>
+#include <thread>
+
 #include <test_helpers.hpp>
 
 #include <kth/domain/chain/light_block.hpp>
+#include <kth/domain/message/heading.hpp>
+#include <kth/domain/message/block.hpp>
+#include <kth/domain/multi_crypto_support.hpp>
+#include <kth/infrastructure/math/checksum.hpp>
 
 using namespace kth;
 using namespace kd;
@@ -136,4 +144,96 @@ TEST_CASE("light_block tx_length returns correct lengths", "[chain light_block]"
 
     // Block = header (80) + tx_count varint (1) + transactions
     REQUIRE(total_tx_bytes == raw_block.size() - 80 - 1);
+}
+
+// Builds the 139-byte malicious `block` payload from the report: input_count
+// = 2^64-1 and script_len = 0xFFFFFFFFFFFFFFCF, so `*script_len + 4` == 2^64-45
+// rewinds the cursor by the 45 bytes consumed per iteration -> pre-fix, an
+// infinite loop with a static cursor.
+static data_chunk make_malicious_block_payload() {
+    data_chunk payload;
+    payload.insert(payload.end(), 80, 0x00);   // block header
+    payload.push_back(0x01);                    // tx_count = 1
+    payload.insert(payload.end(), 4, 0x00);     // tx version
+    payload.push_back(0xFF);                    // input_count varint prefix
+    payload.insert(payload.end(), 8, 0xFF);     // input_count = 2^64 - 1
+    payload.insert(payload.end(), 36, 0x00);    // prevout hash(32) + index(4)
+    payload.push_back(0xFF);                    // script_len varint prefix
+    payload.push_back(0xCF);                    // script_len = 0xFFFFFFFFFFFFFFCF
+    payload.insert(payload.end(), 7, 0xFF);
+    return payload;
+}
+
+// ---------------------------------------------------------------------------
+// Regression: reproduces the remote reception path for an inbound `block`
+// message and checks the malicious payload is rejected (not hung) once it
+// reaches the parser. Gate labels map to the node source at kth @ 22a7d59b.
+// The parse runs on a watchdog thread so a re-regression cannot hang CI.
+// ---------------------------------------------------------------------------
+TEST_CASE("light_block inbound block message is rejected without hanging", "[chain light_block]") {
+    using namespace std::chrono_literals;
+
+    auto const payload = make_malicious_block_payload();
+    REQUIRE(payload.size() == 139);
+
+    uint32_t const magic = netmagic::bch_mainnet;
+
+    // A well-formed frame carrying a malicious payload; the checksum is bogus
+    // to show it is not what gates the payload (validate_checksum defaults off).
+    uint32_t const bogus_checksum = 0xDEADBEEF;
+    message::heading const head(magic, message::block::command,
+                                static_cast<uint32_t>(payload.size()), bogus_checksum);
+
+    data_chunk frame = head.to_data();
+    REQUIRE(frame.size() == message::heading::maximum_size());
+    frame.insert(frame.end(), payload.begin(), payload.end());
+    REQUIRE(frame.size() == 163);
+
+    // Gate: heading parse (peer_session.cpp:625).
+    byte_reader head_reader(frame);
+    auto const parsed_head = message::heading::from_data(head_reader, 0);
+    REQUIRE(parsed_head.has_value());
+
+    // Gate: magic (peer_session.cpp:635).
+    REQUIRE(parsed_head->magic() == magic);
+
+    // Gate: payload_size <= maximum_payload_ (peer_session.cpp:640).
+    size_t const max_payload =
+        message::heading::maximum_payload_size(0, magic, /*is_chipnet*/ false);
+    REQUIRE(parsed_head->payload_size() <= max_payload);
+
+    // Gate: checksum is ignored by default; the bogus value does not match.
+    uint32_t const real_checksum = bitcoin_checksum(byte_span{payload});
+    REQUIRE(parsed_head->checksum() != real_checksum);
+
+    // Gate: command routes to the block channel (p2p_node.cpp:825).
+    REQUIRE(parsed_head->command() == message::block::command);
+
+    data_chunk const wire_payload(frame.begin() + message::heading::maximum_size(),
+                                  frame.end());
+    REQUIRE(wire_payload == payload);
+
+    // The exact node parse (protocols_coro.cpp:863-868), under a watchdog.
+    std::atomic<bool> finished{false};
+    std::atomic<bool> rejected{false};
+    std::thread worker([&]() {
+        byte_reader reader(wire_payload);
+        auto const r = chain::light_block::from_data(reader, true);
+        rejected.store( ! r.has_value(), std::memory_order_relaxed);
+        finished.store(true, std::memory_order_release);
+    });
+
+    for (int i = 0; i < 30 && !finished.load(std::memory_order_acquire); ++i) {
+        std::this_thread::sleep_for(100ms);
+    }
+
+    bool const hung = !finished.load(std::memory_order_acquire);
+    if (hung) {
+        worker.detach();
+    } else {
+        worker.join();
+    }
+
+    REQUIRE( ! hung);
+    REQUIRE(rejected.load(std::memory_order_relaxed));
 }
