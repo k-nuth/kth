@@ -4,6 +4,7 @@
 
 #include <kth/domain/chain/light_block.hpp>
 
+#include <kth/domain/constants/functions.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 
 // Bitcoin Core optimized SHA256D64 for merkle tree computation
@@ -23,10 +24,13 @@ expect<uint32_t> skip_transaction(byte_reader& reader) {
         return std::unexpected(ec.error());
     }
 
-    // Input count (varint)
+    // Input count (varint).
     auto input_count = reader.read_size_little_endian();
     if (!input_count) {
         return std::unexpected(input_count.error());
+    }
+    if (*input_count > static_absolute_max_block_size()) {
+        return std::unexpected(error::invalid_size);
     }
 
     // Skip all inputs
@@ -42,8 +46,12 @@ expect<uint32_t> skip_transaction(byte_reader& reader) {
             return std::unexpected(script_len.error());
         }
 
-        // Script + sequence (4 bytes)
-        if (auto ec = reader.skip(*script_len + 4); !ec) {
+        // Script and sequence skipped separately so script_len is never added
+        // to another value (the sum could overflow past the bounds check).
+        if (auto ec = reader.skip(*script_len); !ec) {
+            return std::unexpected(ec.error());
+        }
+        if (auto ec = reader.skip(4); !ec) {
             return std::unexpected(ec.error());
         }
     }
@@ -52,6 +60,9 @@ expect<uint32_t> skip_transaction(byte_reader& reader) {
     auto output_count = reader.read_size_little_endian();
     if (!output_count) {
         return std::unexpected(output_count.error());
+    }
+    if (*output_count > static_absolute_max_block_size()) {
+        return std::unexpected(error::invalid_size);
     }
 
     // Skip all outputs
@@ -95,10 +106,13 @@ expect<light_block> light_block::from_data(byte_reader& reader, bool wire) {
         return std::unexpected(hdr.error());
     }
 
-    // 2. Read transaction count (varint)
+    // 2. Read transaction count (varint). Cap before reserve() below.
     auto tx_count = reader.read_size_little_endian();
     if (!tx_count) {
         return std::unexpected(tx_count.error());
+    }
+    if (*tx_count > static_absolute_max_block_size()) {
+        return std::unexpected(error::invalid_size);
     }
 
     // 3. For each transaction: record start offset and skip

@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <limits>
+
 #include <test_helpers.hpp>
 
 #include <kth/infrastructure.hpp>
@@ -407,6 +409,47 @@ TEST_CASE("byte_reader - read_array fails when not enough bytes", "[byte_reader 
     auto result = reader.read_array<5>();
     REQUIRE( ! result.has_value());
     REQUIRE(result.error() == error::read_past_end_of_buffer);
+}
+
+// ---------------------------------------------------------------------------
+// Regression: integer-overflow / wrap-around in the bounds checks (0xaudron
+// report). Before the fix, `position_ + count > buffer_.size()` wrapped modulo
+// 2^64, so a huge count passed the guard and moved the cursor backwards. The
+// fix compares against remaining_size(). These tests pin the fixed behavior.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("byte_reader - skip rejects wrapping count and does not move cursor", "[overflow-poc]") {
+    data_chunk const buffer(100, 0x00);
+    byte_reader reader(buffer);
+
+    // Advance to a known position.
+    REQUIRE(reader.skip(50).has_value());
+    REQUIRE(reader.position() == 50);
+
+    // count = 2^64 - 10.  Pre-fix, 50 + count wrapped to 40 and passed the
+    // guard; post-fix it is correctly rejected (10 remaining bytes < count).
+    size_t const wrapping_count = std::numeric_limits<size_t>::max() - 9;
+    auto const result = reader.skip(wrapping_count);
+
+    REQUIRE( ! result.has_value());
+    REQUIRE(result.error() == error::skip_past_end_of_buffer);
+    REQUIRE(reader.position() == 50);   // cursor untouched
+}
+
+TEST_CASE("byte_reader - read_bytes rejects wrapping size", "[overflow-poc]") {
+    data_chunk const buffer(100, 0x00);
+    byte_reader reader(buffer);
+
+    REQUIRE(reader.skip(50).has_value());
+
+    // size = 2^64 - 10.  Pre-fix this returned a bogus ~2^64-byte span; post-fix
+    // it is rejected and the cursor stays put.
+    size_t const wrapping_size = std::numeric_limits<size_t>::max() - 9;
+    auto const result = reader.read_bytes(wrapping_size);
+
+    REQUIRE( ! result.has_value());
+    REQUIRE(result.error() == error::read_past_end_of_buffer);
+    REQUIRE(reader.position() == 50);
 }
 
 // End Test Suite
