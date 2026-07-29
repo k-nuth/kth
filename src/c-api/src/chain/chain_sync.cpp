@@ -332,9 +332,9 @@ int kth_chain_sync_organize_transaction(kth_chain_t chain, kth_transaction_mut_t
     return kth::to_c_err(ec);
 }
 
-kth_error_code_t kth_chain_sync_mining_template(kth_chain_t chain, kth_mining_template_t* out, kth_transaction_list_mut_t* out_txs) {
+kth_error_code_t kth_chain_sync_mining_template(kth_chain_t chain, uint64_t coinbase_reserve_size, kth_mining_template_t* out, kth_transaction_list_mut_t* out_txs) {
     auto& bc = safe_chain(chain);
-    auto result = sync_wait(bc, bc.fetch_mining_template());
+    auto result = sync_wait(bc, bc.fetch_mining_template(coinbase_reserve_size));
     if ( ! result) {
         return kth::to_c_err(result.error());
     }

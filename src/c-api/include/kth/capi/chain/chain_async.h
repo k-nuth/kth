@@ -24,7 +24,7 @@ void kth_chain_async_last_height(kth_chain_t chain, void* ctx, kth_last_height_f
 // completes. The handler must release the list with
 // kth_domain_chain_transaction_list_destruct.
 KTH_EXPORT
-void kth_chain_async_mining_template(kth_chain_t chain, void* ctx, kth_mining_template_fetch_handler_t handler);
+void kth_chain_async_mining_template(kth_chain_t chain, uint64_t coinbase_reserve_size, void* ctx, kth_mining_template_fetch_handler_t handler);
 
 // kth_chain_async_block_height is generated (see chain_query.h).
 

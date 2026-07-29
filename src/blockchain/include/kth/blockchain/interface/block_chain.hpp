@@ -409,8 +409,12 @@ struct KB_API block_chain {
 
     // Full mining template (header fields + coinbase value + tx selection) for
     // getblocktemplate[light]. C-API counterpart: kth_chain_async_fetch_mining_template.
+    // coinbase_reserve_size is the space held back for the caller's coinbase; a
+    // caller with extra coinbase outputs, such as an SV2 CoinbaseOutputDataSize
+    // request, raises it above default_coinbase_reserve_size. The reserve is
+    // part of the template cache key.
     [[nodiscard]] awaitable_expected<blockchain::mining_template>
-    fetch_mining_template() const;
+    fetch_mining_template(uint64_t coinbase_reserve_size) const;
 
     // Mining-relevant chain snapshot (height, difficulty, mempool size, network)
     // for getmininginfo. C-API counterpart: kth_chain_async_fetch_mining_info.
@@ -549,6 +553,7 @@ private:
         hash_digest previous;
         uint64_t generation;
         uint32_t time;
+        uint64_t coinbase_reserve_size;
     };
     mutable boost::atomic_shared_ptr<template_snapshot> template_cache_;
     mutable std::mutex template_rebuild_mutex_;
