@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef KTH_NODE_RPC_JOB_STORE_HPP
-#define KTH_NODE_RPC_JOB_STORE_HPP
+#ifndef KTH_NODE_MINING_JOB_STORE_HPP
+#define KTH_NODE_MINING_JOB_STORE_HPP
 
 #include <cstdint>
 #include <deque>
@@ -16,13 +16,14 @@
 
 #include <kth/blockchain/pools/block_template.hpp>
 
-namespace kth::node::rpc {
+namespace kth::node::mining {
 
-// Stores the transaction selection behind each getblocktemplatelight job so a
-// later submitblocklight can reconstruct the full block from the miner's solved
-// header + coinbase alone (transactions never travel over the wire). Bounded by
-// count (gbtcachesize) with insertion-order eviction and a TTL (gbtstoretime).
-// Thread-safe: RPC handlers run on the shared asio executor.
+// Stores the transaction selection behind a mining job so a later submission can
+// reconstruct the full block from the miner's solved header + coinbase alone
+// (transactions never travel over the wire). Used by getblocktemplatelight /
+// submitblocklight, and shareable by any other template consumer. Bounded by
+// count with insertion-order eviction and a TTL. Thread-safe: callers run on
+// the shared asio executor.
 struct job_store {
     job_store(std::size_t max_jobs, std::uint32_t ttl_seconds);
 
@@ -30,8 +31,7 @@ struct job_store {
     // the same selection yields the same id (idempotent).
     std::string add(std::vector<transaction_const_ptr> txs);
 
-    // The transactions for `job_id`, or nullopt if unknown or expired. Used by
-    // submitblocklight (F1b).
+    // The transactions for `job_id`, or nullopt if unknown or expired.
     std::optional<std::vector<transaction_const_ptr>> get(std::string const& job_id) const;
 
 private:
@@ -49,6 +49,6 @@ private:
     std::uint32_t ttl_seconds_;
 };
 
-} // namespace kth::node::rpc
+} // namespace kth::node::mining
 
-#endif // KTH_NODE_RPC_JOB_STORE_HPP
+#endif // KTH_NODE_MINING_JOB_STORE_HPP

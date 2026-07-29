@@ -20,15 +20,17 @@ namespace kth::blockchain {
 class block_chain;
 } // namespace kth::blockchain
 
-namespace kth::node::rpc {
-
+namespace kth::node::mining {
 struct job_store;
+} // namespace kth::node::mining
+
+namespace kth::node::rpc {
 
 // Shared state a handler may reach: the chain and the getblocktemplatelight job
 // cache. Passed by reference; owned by the server for the connection's lifetime.
 struct method_context {
     blockchain::block_chain& chain;
-    job_store& jobs;
+    mining::job_store& jobs;
 };
 
 // A method handler serializes the JSON-RPC "result" fragment for `req`, or

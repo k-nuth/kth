@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <kth/node/rpc/job_store.hpp>
+#include <kth/node/mining/job_store.hpp>
 
 #include <utility>
 
@@ -11,7 +11,7 @@
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/timer.hpp>
 
-namespace kth::node::rpc {
+namespace kth::node::mining {
 
 job_store::job_store(std::size_t max_jobs, std::uint32_t ttl_seconds)
     : max_jobs_(max_jobs == 0 ? 1 : max_jobs)
@@ -72,4 +72,4 @@ void job_store::evict_locked() {
     }
 }
 
-} // namespace kth::node::rpc
+} // namespace kth::node::mining
