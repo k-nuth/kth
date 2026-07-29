@@ -160,6 +160,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
     # Mining helpers shared by the JSON-RPC server and other template consumers.
     src/mining/job_store.cpp
+    src/mining/block_submit.cpp
   )
 endif()
 
@@ -210,6 +211,7 @@ set(kth_headers
 
   # Mining helpers shared by the JSON-RPC server and other template consumers.
   include/kth/node/mining/job_store.hpp
+  include/kth/node/mining/block_submit.hpp
 
   # Optional JSON-RPC server (compiled only when KTH_WITH_RPC is set).
   include/kth/node/rpc/error.hpp
@@ -289,6 +291,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/reservation.cpp
           test/reservations.cpp
           test/mining_job_store.cpp
+          test/mining_block_submit.cpp
           test/settings.cpp
           test/utility.cpp
           test/utility.hpp)
