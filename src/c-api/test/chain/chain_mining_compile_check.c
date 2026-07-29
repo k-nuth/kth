@@ -34,9 +34,9 @@ static void mining_readers_sig_check(kth_chain_t chain) {
     // getblocktemplatelight — both flavors (header POD + owned tx list).
     kth_mining_template_t tmpl;
     kth_transaction_list_mut_t txs;
-    kth_error_code_t rc2 = kth_chain_sync_mining_template(chain, &tmpl, &txs);
+    kth_error_code_t rc2 = kth_chain_sync_mining_template(chain, 1000, &tmpl, &txs);
     (void)rc2; (void)tmpl; (void)txs;
-    kth_chain_async_mining_template(chain, NULL, &on_mining_template);
+    kth_chain_async_mining_template(chain, 1000, NULL, &on_mining_template);
 }
 
 int main(void) {

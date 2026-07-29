@@ -1499,7 +1499,7 @@ block_chain::fetch_template() const {
 }
 
 awaitable_expected<blockchain::mining_template>
-block_chain::fetch_mining_template() const {
+block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
@@ -1531,6 +1531,7 @@ block_chain::fetch_mining_template() const {
     auto const usable = [&](boost::shared_ptr<template_snapshot> const& s) {
         return s &&
                s->previous == previous &&
+               s->coinbase_reserve_size == coinbase_reserve_size &&
                (s->generation == generation ||
                 now - s->time < settings_.gbt_template_refresh_seconds);
     };
@@ -1573,7 +1574,8 @@ block_chain::fetch_mining_template() const {
         state->dynamic_max_block_size(),
         state->dynamic_max_block_sigchecks(),
         height,
-        state->median_time_past()});
+        state->median_time_past(),
+        coinbase_reserve_size});
 
     // 0x20000000: the BIP9 version base. BCH has no active version-bits signaling,
     // and miners routinely override this, so it is only a sensible default.
@@ -1589,7 +1591,7 @@ block_chain::fetch_mining_template() const {
         std::move(selection));
 
     auto next = boost::make_shared<template_snapshot>(
-        template_snapshot{std::move(built), previous, generation, now});
+        template_snapshot{std::move(built), previous, generation, now, coinbase_reserve_size});
     template_cache_.store(next);
     co_return next->value;
 }

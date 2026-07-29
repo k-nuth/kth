@@ -31,18 +31,20 @@ struct block_template {
 // Everything the builder needs about the block being assembled, taken from the
 // chain state of the tip's next block. Kept as plain scalars so the builder is a
 // pure function of (mempool, context), independent of chain_state.
+// Space and sigchecks held back for the coinbase the caller prepends, matching
+// BCHN's BlockAssembler. getblocktemplate uses these; a caller with a larger
+// coinbase (extra outputs, e.g. an SV2 CoinbaseOutputDataSize request) raises
+// the size reserve so the selection leaves room for it.
+constexpr uint64_t default_coinbase_reserve_size = 1000;
+constexpr uint64_t default_coinbase_reserve_sigchecks = 100;
+
 struct block_template_context {
     uint64_t max_block_size;        // consensus block size limit
     uint64_t max_block_sigchecks;   // consensus block sigchecks limit
     size_t height;                  // template height (tip + 1)
     uint32_t median_time_past;      // tip's MTP (BIP113 finality time)
-
-    // Space and sigchecks held back for the coinbase the caller prepends. The
-    // defaults match BCHN's BlockAssembler; a caller that needs a larger
-    // coinbase (extra outputs, e.g. an SV2 CoinbaseOutputDataSize request)
-    // raises the size reserve so the selection leaves room for it.
-    uint64_t coinbase_reserve_size = 1000;
-    uint64_t coinbase_reserve_sigchecks = 100;
+    uint64_t coinbase_reserve_size = default_coinbase_reserve_size;
+    uint64_t coinbase_reserve_sigchecks = default_coinbase_reserve_sigchecks;
 };
 
 // Assemble a block template from the mempool, mirroring BCHN's BlockAssembler

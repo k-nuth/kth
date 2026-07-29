@@ -47,7 +47,8 @@ get_block_count(method_context& ctx, request const& /*req*/) {
 // C-API counterpart: kth_chain_async_fetch_mining_template (see docs/json-rpc.md).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block_template_light(method_context& ctx, request const& /*req*/) {
-    auto const tmpl = co_await ctx.chain.fetch_mining_template();
+    auto const tmpl = co_await ctx.chain.fetch_mining_template(
+        blockchain::default_coinbase_reserve_size);
     if ( ! tmpl) {
         co_return std::unexpected(from_code(tmpl.error()));
     }

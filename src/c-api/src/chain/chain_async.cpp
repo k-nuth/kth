@@ -63,10 +63,10 @@ void kth_chain_async_last_height(kth_chain_t chain, void* ctx, kth_last_height_f
 
 // kth_chain_async_mining_info is generated (chain_mining.cpp).
 
-void kth_chain_async_mining_template(kth_chain_t chain, void* ctx, kth_mining_template_fetch_handler_t handler) {
+void kth_chain_async_mining_template(kth_chain_t chain, uint64_t coinbase_reserve_size, void* ctx, kth_mining_template_fetch_handler_t handler) {
     auto& bc = safe_chain(chain);
-    ::asio::co_spawn(bc.executor(), [&bc, chain, ctx, handler]() -> ::asio::awaitable<void> {
-        auto result = co_await bc.fetch_mining_template();
+    ::asio::co_spawn(bc.executor(), [&bc, chain, coinbase_reserve_size, ctx, handler]() -> ::asio::awaitable<void> {
+        auto result = co_await bc.fetch_mining_template(coinbase_reserve_size);
         if (result) {
             kth_mining_template_t tmpl;
             kth_transaction_list_mut_t txs = nullptr;
