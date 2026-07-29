@@ -19,6 +19,7 @@
 
 #include <kth/node/rpc/dispatch.hpp>
 #include <kth/node/rpc/error.hpp>
+#include <kth/node/mining/block_submit.hpp>
 #include <kth/node/mining/job_store.hpp>
 #include <kth/node/rpc/json.hpp>
 #include <kth/node/rpc/mining.hpp>
@@ -100,13 +101,12 @@ submit_block_light(method_context& ctx, request const& req) {
             "job_id not found or expired"));
     }
 
-    // Reassemble: coinbase (from the miner) followed by the cached selection.
-    auto const block = std::make_shared<domain::message::block>(assemble_block(
+    // Reassemble (coinbase followed by the cached selection) and submit.
+    auto const ec = co_await mining::submit_block_light(
+        ctx.chain,
         header_and_coinbase->header(),
         header_and_coinbase->transactions().front(),
-        *job));
-
-    auto const ec = co_await ctx.chain.organize(block);
+        *job);
 
     writer w;
     if (ec) {

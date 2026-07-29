@@ -7,16 +7,13 @@
 
 #include <string>
 #include <string_view>
-#include <vector>
 
 #include <kth/blockchain/pools/block_template.hpp>
-#include <kth/domain/chain/header.hpp>
-#include <kth/domain/chain/transaction.hpp>
-#include <kth/domain/message/block.hpp>
 
-// The pure (chain-free) logic behind the mining RPCs, split out so it can be
+// The pure (chain-free) rendering behind the mining RPCs, split out so it can be
 // unit-tested without a live block_chain: the handlers are just fetch/submit
-// glue around these.
+// glue around these. Block reassembly and submission live in
+// kth/node/mining/block_submit.hpp.
 
 namespace kth::node::rpc {
 
@@ -25,13 +22,6 @@ namespace kth::node::rpc {
 // tagged with `job_id`.
 std::string render_mining_template(
     blockchain::mining_template const& tmpl, std::string_view job_id);
-
-// Reassemble the full block a submitblocklight refers to: the miner's coinbase
-// first, then the job's cached selection (CTOR order preserved).
-domain::message::block assemble_block(
-    domain::chain::header const& header,
-    domain::chain::transaction const& coinbase,
-    std::vector<transaction_const_ptr> const& job_txs);
 
 // Serialize a mining_info as the getmininginfo "result" object.
 std::string render_mining_info(blockchain::mining_info const& info);

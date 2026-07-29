@@ -66,20 +66,6 @@ std::string render_mining_template(
     return w.str();
 }
 
-domain::message::block assemble_block(
-    domain::chain::header const& header,
-    domain::chain::transaction const& coinbase,
-    std::vector<transaction_const_ptr> const& job_txs) {
-
-    domain::chain::transaction::list txs;
-    txs.reserve(1 + job_txs.size());
-    txs.push_back(coinbase);
-    for (auto const& tx : job_txs) {
-        txs.push_back(*tx); // slice message::transaction -> chain::transaction
-    }
-    return domain::message::block(header, std::move(txs));
-}
-
 std::string render_mining_info(blockchain::mining_info const& info) {
     writer w;
     w.begin_object();
