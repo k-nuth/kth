@@ -157,6 +157,9 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/sync/header_tasks.cpp
     src/sync/block_tasks.cpp
     src/sync/orchestrator.cpp
+
+    # Mining helpers shared by the JSON-RPC server and other template consumers.
+    src/mining/job_store.cpp
   )
 endif()
 
@@ -167,7 +170,6 @@ if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     ${kth_sources_just_legacy}
     src/rpc/json.cpp
     src/rpc/dispatch.cpp
-    src/rpc/job_store.cpp
     src/rpc/mining.cpp
     src/rpc/query.cpp
     src/rpc/methods.cpp
@@ -206,11 +208,13 @@ set(kth_headers
   include/kth/node/full_node.hpp
   include/kth/node/parser.hpp
 
+  # Mining helpers shared by the JSON-RPC server and other template consumers.
+  include/kth/node/mining/job_store.hpp
+
   # Optional JSON-RPC server (compiled only when KTH_WITH_RPC is set).
   include/kth/node/rpc/error.hpp
   include/kth/node/rpc/json.hpp
   include/kth/node/rpc/dispatch.hpp
-  include/kth/node/rpc/job_store.hpp
   include/kth/node/rpc/mining.hpp
   include/kth/node/rpc/query.hpp
   include/kth/node/rpc/server.hpp
@@ -284,6 +288,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/performance.cpp
           test/reservation.cpp
           test/reservations.cpp
+          test/mining_job_store.cpp
           test/settings.cpp
           test/utility.cpp
           test/utility.hpp)
@@ -291,7 +296,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # JSON-RPC unit tests build only when the server is compiled in.
   if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     target_sources(kth_node_test PRIVATE
-      test/rpc_json.cpp test/rpc_job_store.cpp test/rpc_mining.cpp test/rpc_query.cpp)
+      test/rpc_json.cpp test/rpc_mining.cpp test/rpc_query.cpp)
   endif()
 
   target_include_directories(kth_node_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)

@@ -19,7 +19,7 @@
 
 #include <kth/node/rpc/dispatch.hpp>
 #include <kth/node/rpc/error.hpp>
-#include <kth/node/rpc/job_store.hpp>
+#include <kth/node/mining/job_store.hpp>
 #include <kth/node/rpc/json.hpp>
 #include <kth/node/rpc/mining.hpp>
 #include <kth/node/rpc/query.hpp>
