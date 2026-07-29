@@ -169,6 +169,48 @@ TEST_CASE("block_template: size limit selects highest fee-rate first", "[block_t
     REQUIRE(present.count(lo->hash()) == 0u);
 }
 
+TEST_CASE("block_template: a larger coinbase size reserve shrinks the selection", "[block_template]") {
+    mempool pool(0x1111u, 0x2222u);
+
+    auto hi  = as_ptr(make_tx({op(1, 0)}, 1, 1));
+    auto mid = as_ptr(make_tx({op(2, 0)}, 1, 2));
+    auto lo  = as_ptr(make_tx({op(3, 0)}, 1, 3));
+    REQUIRE(pool.add(make_entry(hi,  300u, 100u, 1u)));
+    REQUIRE(pool.add(make_entry(mid, 200u, 100u, 1u)));
+    REQUIRE(pool.add(make_entry(lo,  100u, 100u, 1u)));
+
+    // The same 1250-byte block that fits two 100-byte txs under the default
+    // 1000-byte reserve leaves room for only one once the reserve grows to 1100.
+    auto ctx = unlimited_ctx();
+    ctx.max_block_size = 1000u + 250u;
+    ctx.coinbase_reserve_size = 1100u;
+
+    auto const tpl = build_block_template(pool, ctx);
+
+    REQUIRE(tpl.txs.size() == 1u);
+    REQUIRE(tpl.total_fees == 300u);   // only the top fee-rate tx.
+}
+
+TEST_CASE("block_template: a larger coinbase sigchecks reserve caps selection", "[block_template]") {
+    mempool pool(0x1111u, 0x2222u);
+
+    auto a = as_ptr(make_tx({op(1, 0)}, 1, 1));
+    auto b = as_ptr(make_tx({op(2, 0)}, 1, 2));
+    REQUIRE(pool.add(make_entry(a, 300u, 100u, /*sigchecks*/ 40u)));
+    REQUIRE(pool.add(make_entry(b, 200u, 100u, /*sigchecks*/ 40u)));
+
+    // 200 sigchecks fits both under the default 100 reserve; a 130 reserve
+    // leaves room for one.
+    auto ctx = unlimited_ctx();
+    ctx.max_block_sigchecks = 200u;
+    ctx.coinbase_reserve_sigchecks = 130u;
+
+    auto const tpl = build_block_template(pool, ctx);
+
+    REQUIRE(tpl.txs.size() == 1u);
+    REQUIRE(tpl.total_sigchecks == 40u);
+}
+
 TEST_CASE("block_template: sigchecks limit caps selection", "[block_template]") {
     mempool pool(0x1111u, 0x2222u);
 

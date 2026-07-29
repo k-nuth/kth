@@ -36,6 +36,13 @@ struct block_template_context {
     uint64_t max_block_sigchecks;   // consensus block sigchecks limit
     size_t height;                  // template height (tip + 1)
     uint32_t median_time_past;      // tip's MTP (BIP113 finality time)
+
+    // Space and sigchecks held back for the coinbase the caller prepends. The
+    // defaults match BCHN's BlockAssembler; a caller that needs a larger
+    // coinbase (extra outputs, e.g. an SV2 CoinbaseOutputDataSize request)
+    // raises the size reserve so the selection leaves room for it.
+    uint64_t coinbase_reserve_size = 1000;
+    uint64_t coinbase_reserve_sigchecks = 100;
 };
 
 // Assemble a block template from the mempool, mirroring BCHN's BlockAssembler

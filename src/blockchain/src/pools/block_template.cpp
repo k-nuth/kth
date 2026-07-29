@@ -30,10 +30,6 @@ struct digest_hasher {
     }
 };
 
-// Coinbase reserve, matching BCHN BlockAssembler::resetBlock (miner.cpp).
-constexpr uint64_t coinbase_size_reserve = 1000;
-constexpr uint64_t coinbase_sigchecks_reserve = 100;
-
 // Give up adding once the block is nearly full and a run of candidates in a row
 // have all failed the size/sigchecks test (BCHN's MAX_CONSECUTIVE_FAILURES).
 constexpr int max_consecutive_failures = 1000;
@@ -115,6 +111,8 @@ block_template build_block_template(mempool const& pool, block_template_context 
     auto const max_sigchecks = ctx.max_block_sigchecks;
     auto const height = ctx.height;
     auto const mtp = ctx.median_time_past;
+    auto const coinbase_size_reserve = ctx.coinbase_reserve_size;
+    auto const coinbase_sigchecks_reserve = ctx.coinbase_reserve_sigchecks;
 
     std::vector<uint32_t> missing(n);   // in-mempool parents not yet added
     for (uint32_t i = 0; i < n; ++i) {
