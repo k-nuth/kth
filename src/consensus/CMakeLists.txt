@@ -168,6 +168,7 @@ if (${CURRENCY} STREQUAL "BCH")
     src/bch-rules/script/bigint.cpp
     src/bch-rules/script/bitfield.cpp
     src/bch-rules/script/bitfield.h
+    src/bch-rules/script/container_types.h
     src/bch-rules/script/interpreter.cpp
     src/bch-rules/script/interpreter.h
     src/bch-rules/script/script.cpp
@@ -188,6 +189,8 @@ if (${CURRENCY} STREQUAL "BCH")
 
 
     src/bch-rules/util/bitmanip.cpp
+    src/bch-rules/util/hwaccel.cpp
+    src/bch-rules/util/hwaccel.h
     src/bch-rules/util/strencodings.cpp
     src/bch-rules/util/strencodings.h
     src/bch-rules/util/string.cpp

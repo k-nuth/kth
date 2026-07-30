@@ -339,7 +339,22 @@ verify_result_type eval_script_with_metrics(
     ScriptExecutionMetrics metrics;
     ScriptError error;
 
-    EvalScript(stack, script, script_flags, standalone_sig_checker, metrics, &error);
+    // Note(kth): the interpreter stack element type is now the StackItem wrapper
+    // (StackT = std::vector<StackItem>). Convert the public byte-vector stack to StackT for
+    // evaluation, then copy the resulting items back out.
+    StackT stack_items;
+    stack_items.reserve(stack.size());
+    for (auto & elem : stack) {
+        stack_items.emplace_back(std::move(elem));
+    }
+
+    EvalScript(stack_items, script, script_flags, standalone_sig_checker, metrics, &error);
+
+    stack.clear();
+    stack.reserve(stack_items.size());
+    for (auto const& item : stack_items) {
+        stack.push_back(item.vec());
+    }
 
     metrics_out.sig_checks = metrics.GetSigChecks();
     metrics_out.op_cost = metrics.GetBaseOpCost();
