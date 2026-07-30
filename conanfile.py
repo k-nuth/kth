@@ -125,7 +125,7 @@ class KthRecipe(KnuthConanFileV2):
         # For now, keep disabled until a proper solution is implemented.
         "with_jemalloc": False,
         "with_stats": False,
-        "rpc": False,
+        "rpc": True,
         "embed_utxo_bloom": False,
         "utxoz_compact": False,
         "asio_standalone": True,
@@ -245,9 +245,12 @@ class KthRecipe(KnuthConanFileV2):
             self.options.secp256k1_use_asm = False
 
         # Disable tests for WebAssembly (Catch2 incompatible with shared-memory/threads)
+        # and force the JSON-RPC server off: it relies on the standalone-asio I/O
+        # loop and llhttp, neither of which is built for Emscripten.
         if self.settings.os == "Emscripten":
             self.options.tests = False
-            self.output.info("Tests disabled for Emscripten build")
+            self.options.rpc = False
+            self.output.info("Tests and JSON-RPC disabled for Emscripten build")
 
     def configure(self):
         KnuthConanFileV2.configure(self)
