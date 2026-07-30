@@ -299,6 +299,7 @@ if (ENABLE_TEST)
         test/mempool_test.cpp
         test/mempool_persistence_test.cpp
         test/block_template_test.cpp
+        test/utxoz_roundtrip.cpp
     )
 
     # Disabled until ported to v1.0 APIs:

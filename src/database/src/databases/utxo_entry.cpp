@@ -55,7 +55,7 @@ size_t utxo_entry::serialized_size_fixed() {
 }
 
 size_t utxo_entry::serialized_size() const {
-    return output_.serialized_size(false) + serialized_size_fixed();
+    return output_.serialized_size(true) + serialized_size_fixed();
 }
 
 // Serialization.
@@ -73,7 +73,7 @@ data_chunk utxo_entry::to_data_fixed(uint32_t height, uint32_t median_time_past,
 
 // static
 data_chunk utxo_entry::to_data_with_fixed(domain::chain::output const& output, data_chunk const& fixed) {
-    auto const size = output.serialized_size(false) + fixed.size();
+    auto const size = output.serialized_size(true) + fixed.size();
     data_chunk data(size);
     byte_writer writer(data);
     auto const r = to_data_with_fixed(writer, output, fixed);
@@ -87,7 +87,7 @@ data_chunk utxo_entry::to_data_with_fixed(domain::chain::output const& output, d
 
 // static
 expect<utxo_entry> utxo_entry::from_data(byte_reader& reader) {
-    auto output = domain::chain::output::from_data(reader, false);
+    auto output = domain::chain::output::from_data(reader, true);
     if ( ! output) {
         return std::unexpected(output.error());
     }

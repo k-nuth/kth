@@ -145,7 +145,7 @@ expect<utxo_compact_block> parse_utxo_block(byte_span raw_block) {
 // =============================================================================
 // utxo_raw_value serialization
 // =============================================================================
-// Format: height(4) + mtp(4) + coinbase(1) + raw_output_bytes
+// Format: raw_output_bytes (wire) + height(4) + mtp(4) + coinbase(1)
 // =============================================================================
 
 namespace {
@@ -159,9 +159,18 @@ std::vector<uint8_t> serialize_utxo_raw_value(
     uint32_t median_time_past,
     bool coinbase
 ) {
-    size_t const total = utxo_raw_prefix_size + raw_output.size();
+    // Layout MUST match utxo_entry::from_data (the database read path via
+    // bytes_to_entry, i.e. get_utxo/find): the wire output first (self-delimiting),
+    // then the fixed metadata. Writing the metadata first made from_data misparse
+    // the value as an output and fail with "not found" for every full-mode UTXO
+    // lookup.
+    size_t const total = raw_output.size() + utxo_raw_prefix_size;
     std::vector<uint8_t> result(total);
     auto* p = result.data();
+
+    // raw output bytes (value + varint + script)
+    std::memcpy(p, raw_output.data(), raw_output.size());
+    p += raw_output.size();
 
     // height (4 bytes LE)
     std::memcpy(p, &height, 4);
@@ -172,10 +181,7 @@ std::vector<uint8_t> serialize_utxo_raw_value(
     p += 4;
 
     // coinbase (1 byte)
-    *p++ = coinbase ? uint8_t{1} : uint8_t{0};
-
-    // raw output bytes (value + varint + script)
-    std::memcpy(p, raw_output.data(), raw_output.size());
+    *p = coinbase ? uint8_t{1} : uint8_t{0};
 
     return result;
 }

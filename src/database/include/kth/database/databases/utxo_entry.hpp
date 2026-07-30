@@ -31,7 +31,7 @@ struct KD_API utxo_entry {
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer) const {
-        if (auto r = output_.to_data(writer, false); ! r) return r;
+        if (auto r = output_.to_data(writer, true); ! r) return r;
         return to_data_fixed(writer, height_, median_time_past_, coinbase_);
     }
 
@@ -51,7 +51,7 @@ struct KD_API utxo_entry {
     [[nodiscard]]
     static
     expect<void> to_data_with_fixed(byte_writer& writer, domain::chain::output const& output, data_chunk const& fixed) {
-        if (auto r = output.to_data(writer, false); ! r) return r;
+        if (auto r = output.to_data(writer, true); ! r) return r;
         return writer.write_bytes(fixed);
     }
 
