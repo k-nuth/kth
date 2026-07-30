@@ -15,6 +15,7 @@
 #include <kth/infrastructure/constants.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/hash.hpp>
+#include <kth/infrastructure/utility/assert.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
 
@@ -226,7 +227,11 @@ data_chunk to_data_chunk(T const& obj, Args... args) {
     data_chunk buf(obj.serialized_size(args...));
     byte_writer writer(buf);
     auto const r = obj.to_data(writer, args...);
-    KTH_ASSERT(r.has_value());
+    // A failed write means the buffer was mis-sized (serialized_size disagrees
+    // with to_data) or a field is out of range; either way the returned buffer
+    // would be malformed. Abort loudly in Release rather than emit it, since
+    // this data goes on the wire / to disk. KTH_ASSERT alone is a Release no-op.
+    KTH_CONTRACT(r.has_value());
     return buf;
 }
 
