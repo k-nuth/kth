@@ -251,9 +251,15 @@ std::pair<code, size_t> validate_input::verify_script(transaction const& tx, uin
     auto const tx_data = kth::to_data_chunk(tx, true);
 
     size_t sig_checks;
-    bool const should_create_context = script::is_enabled(flags, domain::machine::script_flags::bch_native_introspection)
-                                   || script::is_enabled(flags, domain::machine::script_flags::bch_tokens);
-    auto const coins = create_context_data(tx, should_create_context);
+    // BCH's signature checker is context-based: verify_script builds a
+    // TransactionSignatureChecker from the spent outputs (coins) for the input
+    // under test. Without the context it falls back to a checker that cannot
+    // compute the sighash, so every CHECKSIG evaluates to false ("stack false").
+    // The context is therefore required for ALL inputs, not only when native
+    // introspection or tokens are active (those merely read additional fields
+    // from the same context). Every input's prevout cache must be populated by
+    // the caller before this point.
+    auto const coins = create_context_data(tx, true);
     auto const unlock_script_data = kth::to_data_chunk(tx.inputs()[input_index].script(), prefix);
 
     auto res = consensus::verify_script(
