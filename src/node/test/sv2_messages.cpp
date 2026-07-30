@@ -110,3 +110,53 @@ TEST_CASE("sv2 message from_data rejects a truncated buffer", "[sv2 messages]") 
     auto const parsed = from_data_chunk<coinbase_output_constraints>(short_buffer);
     REQUIRE_FALSE(parsed.has_value());
 }
+
+TEST_CASE("sv2 NewTemplate round-trips all its fields", "[sv2 messages]") {
+    new_template const msg{
+        /*template_id*/ 0x0102030405060708ull,
+        /*future_template*/ true,
+        /*version*/ 0x20000000u,
+        /*coinbase_tx_version*/ 2u,
+        /*coinbase_prefix*/ data_chunk{0x03, 0x51, 0x52, 0x53},
+        /*coinbase_tx_input_sequence*/ 0xffffffffu,
+        /*coinbase_tx_value_remaining*/ 5000000000ull,
+        /*coinbase_tx_outputs_count*/ 1u,
+        /*coinbase_tx_outputs*/ data_chunk{0xAA, 0xBB, 0xCC, 0xDD},
+        /*coinbase_tx_locktime*/ 0u,
+        /*merkle_path*/ std::vector<hash_digest>{seq_hash(0x10), seq_hash(0x20)}};
+
+    auto const bytes = to_data_chunk(msg);
+    REQUIRE(bytes.size() == msg.serialized_size());
+
+    auto const parsed = from_data_chunk<new_template>(bytes);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->template_id == msg.template_id);
+    REQUIRE(parsed->future_template == msg.future_template);
+    REQUIRE(parsed->version == msg.version);
+    REQUIRE(parsed->coinbase_tx_version == msg.coinbase_tx_version);
+    REQUIRE(parsed->coinbase_prefix == msg.coinbase_prefix);
+    REQUIRE(parsed->coinbase_tx_input_sequence == msg.coinbase_tx_input_sequence);
+    REQUIRE(parsed->coinbase_tx_value_remaining == msg.coinbase_tx_value_remaining);
+    REQUIRE(parsed->coinbase_tx_outputs_count == msg.coinbase_tx_outputs_count);
+    REQUIRE(parsed->coinbase_tx_outputs == msg.coinbase_tx_outputs);
+    REQUIRE(parsed->coinbase_tx_locktime == msg.coinbase_tx_locktime);
+    REQUIRE(parsed->merkle_path == msg.merkle_path);
+    REQUIRE(new_template::message_type == 0x71);
+}
+
+TEST_CASE("sv2 RequestTransactionData.Success round-trips its excess data and tx list", "[sv2 messages]") {
+    request_transaction_data_success const msg{
+        /*template_id*/ 99u,
+        /*excess_data*/ data_chunk{0x01, 0x02, 0x03},
+        /*transaction_list*/ std::vector<data_chunk>{{0xDE, 0xAD}, {}, {0xBE, 0xEF, 0x00, 0x11}}};
+
+    auto const bytes = to_data_chunk(msg);
+    REQUIRE(bytes.size() == msg.serialized_size());
+
+    auto const parsed = from_data_chunk<request_transaction_data_success>(bytes);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->template_id == msg.template_id);
+    REQUIRE(parsed->excess_data == msg.excess_data);
+    REQUIRE(parsed->transaction_list == msg.transaction_list);
+    REQUIRE(request_transaction_data_success::message_type == 0x74);
+}

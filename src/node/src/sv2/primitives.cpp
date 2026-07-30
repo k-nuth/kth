@@ -61,4 +61,52 @@ expect<std::string> read_string_u8(byte_reader& source) {
     return std::string(bytes->begin(), bytes->end());
 }
 
+expect<void> write_hash_seq_u8(byte_writer& sink, std::vector<hash_digest> const& items) {
+    if (items.size() > b0_255_max) {
+        return std::unexpected(error::operation_failed);
+    }
+    if (auto r = sink.write_byte(static_cast<uint8_t>(items.size())); ! r) return r;
+    for (auto const& hash : items) {
+        if (auto r = sink.write_bytes(byte_span{hash}); ! r) return r;
+    }
+    return {};
+}
+
+expect<std::vector<hash_digest>> read_hash_seq_u8(byte_reader& source) {
+    auto const count = source.read_byte();
+    if ( ! count) return std::unexpected(count.error());
+    std::vector<hash_digest> items;
+    items.reserve(*count);
+    for (uint8_t i = 0; i < *count; ++i) {
+        auto const hash = source.read_array<hash_size>();
+        if ( ! hash) return std::unexpected(hash.error());
+        items.push_back(*hash);
+    }
+    return items;
+}
+
+expect<void> write_bytes_seq_u16(byte_writer& sink, std::vector<data_chunk> const& items) {
+    if (items.size() > b0_64k_max) {
+        return std::unexpected(error::operation_failed);
+    }
+    if (auto r = sink.write_little_endian<uint16_t>(static_cast<uint16_t>(items.size())); ! r) return r;
+    for (auto const& item : items) {
+        if (auto r = write_bytes_u24(sink, byte_span{item}); ! r) return r;
+    }
+    return {};
+}
+
+expect<std::vector<data_chunk>> read_bytes_seq_u16(byte_reader& source) {
+    auto const count = source.read_little_endian<uint16_t>();
+    if ( ! count) return std::unexpected(count.error());
+    std::vector<data_chunk> items;
+    items.reserve(*count);
+    for (uint16_t i = 0; i < *count; ++i) {
+        auto const bytes = read_bytes_u24(source);
+        if ( ! bytes) return std::unexpected(bytes.error());
+        items.emplace_back(bytes->begin(), bytes->end());
+    }
+    return items;
+}
+
 } // namespace kth::node::sv2

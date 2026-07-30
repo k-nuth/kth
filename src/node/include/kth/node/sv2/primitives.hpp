@@ -8,8 +8,10 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <kth/infrastructure/error.hpp>
+#include <kth/infrastructure/hash_define.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -40,6 +42,17 @@ constexpr size_t b0_16m_max = 0xffffffu;
 // interior and trailing NUL bytes are preserved (SV2 strings are not NUL-padded).
 [[nodiscard]] expect<void> write_string_u8(byte_writer& sink, std::string_view value);
 [[nodiscard]] expect<std::string> read_string_u8(byte_reader& source);
+
+// Sequences: a little-endian count followed by that many elements. write_* fail
+// when the element count overflows the count prefix.
+//
+// SEQ0_255[U256]: a U8 count of 32-byte values (e.g. a merkle path).
+[[nodiscard]] expect<void> write_hash_seq_u8(byte_writer& sink, std::vector<hash_digest> const& items);
+[[nodiscard]] expect<std::vector<hash_digest>> read_hash_seq_u8(byte_reader& source);
+
+// SEQ0_64K[B0_16M]: a U16 count of B0_16M byte blobs (e.g. a transaction list).
+[[nodiscard]] expect<void> write_bytes_seq_u16(byte_writer& sink, std::vector<data_chunk> const& items);
+[[nodiscard]] expect<std::vector<data_chunk>> read_bytes_seq_u16(byte_reader& source);
 
 } // namespace kth::node::sv2
 
