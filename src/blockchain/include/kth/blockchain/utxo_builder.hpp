@@ -82,9 +82,9 @@ KB_API expect<utxo_compact_block> parse_utxo_block(byte_span raw_block);
 // =============================================================================
 // Pre-serialized UTXO value for zero-copy insertion into UTXO-Z.
 // =============================================================================
-// Format: height(4) + mtp(4) + coinbase(1) + raw_output_bytes
-// Fixed prefix is 9 bytes. Raw output starts at offset 9 to end of buffer.
-// No size field needed — output size = total_size - 9.
+// Format: raw_output_bytes (wire) + height(4) + mtp(4) + coinbase(1) — matches utxo_entry
+// Raw output starts at offset 0; the 9-byte fixed metadata follows it.
+// No size field needed — the wire output is self-delimiting.
 // =============================================================================
 
 struct utxo_raw_value {
