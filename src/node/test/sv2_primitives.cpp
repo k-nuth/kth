@@ -13,6 +13,19 @@
 using namespace kth;
 using namespace kth::node::sv2;
 
+namespace {
+
+// A 32-byte value with distinct, position-dependent bytes.
+hash_digest seq_hash(uint8_t start) {
+    hash_digest h{};
+    for (size_t i = 0; i < h.size(); ++i) {
+        h[i] = static_cast<uint8_t>(start + i);
+    }
+    return h;
+}
+
+} // namespace
+
 // Start Test Suite: sv2 primitives tests
 
 TEST_CASE("sv2 B0_255 round-trips a payload behind a U8 length", "[sv2 primitives]") {
@@ -102,4 +115,50 @@ TEST_CASE("sv2 STR0_255 round-trips and preserves embedded NUL bytes", "[sv2 pri
     REQUIRE(got.has_value());
     REQUIRE(got->size() == 5);
     REQUIRE(*got == text);
+}
+
+TEST_CASE("sv2 SEQ0_255[U256] round-trips behind a U8 count", "[sv2 primitives]") {
+    std::vector<hash_digest> const items{seq_hash(1), seq_hash(0x40), seq_hash(0x80)};
+
+    data_chunk buf(1 + items.size() * 32);
+    byte_writer sink(buf);
+    REQUIRE(write_hash_seq_u8(sink, items).has_value());
+    REQUIRE(buf.front() == 0x03);          // U8 count
+
+    byte_reader source(buf);
+    auto const got = read_hash_seq_u8(source);
+    REQUIRE(got.has_value());
+    REQUIRE(*got == items);
+    REQUIRE(source.is_exhausted());
+}
+
+TEST_CASE("sv2 SEQ0_255[U256] handles an empty sequence", "[sv2 primitives]") {
+    data_chunk buf(1);
+    byte_writer sink(buf);
+    REQUIRE(write_hash_seq_u8(sink, {}).has_value());
+    REQUIRE(buf == data_chunk{0x00});
+
+    byte_reader source(buf);
+    auto const got = read_hash_seq_u8(source);
+    REQUIRE(got.has_value());
+    REQUIRE(got->empty());
+}
+
+TEST_CASE("sv2 SEQ0_64K[B0_16M] round-trips variable-size elements behind a U16 count", "[sv2 primitives]") {
+    std::vector<data_chunk> const items{{0x01, 0x02}, {}, {0xAA, 0xBB, 0xCC}};
+
+    size_t size = 2;                       // U16 count
+    for (auto const& item : items) size += 3 + item.size();  // U24 prefix each
+
+    data_chunk buf(size);
+    byte_writer sink(buf);
+    REQUIRE(write_bytes_seq_u16(sink, items).has_value());
+    REQUIRE(buf[0] == 0x03);               // count, little-endian
+    REQUIRE(buf[1] == 0x00);
+
+    byte_reader source(buf);
+    auto const got = read_bytes_seq_u16(source);
+    REQUIRE(got.has_value());
+    REQUIRE(*got == items);
+    REQUIRE(source.is_exhausted());
 }

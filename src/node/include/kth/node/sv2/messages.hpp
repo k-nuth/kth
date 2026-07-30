@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/hash_define.hpp>
@@ -91,6 +92,56 @@ struct submit_solution {
     [[nodiscard]] size_t serialized_size() const { return 8 + 4 + 4 + 4 + 2 + coinbase_tx.size(); }
     [[nodiscard]] expect<void> to_data(byte_writer& sink) const;
     [[nodiscard]] static expect<submit_solution> from_data(byte_reader& source);
+};
+
+// NewTemplate (0x71, Server -> Client): a new block template. The client builds
+// the coinbase around coinbase_prefix / coinbase_tx_outputs and pairs it with
+// merkle_path to compute the block's merkle root.
+struct new_template {
+    static constexpr uint8_t message_type = 0x71;
+
+    uint64_t template_id = 0;
+    bool future_template = false;              // BOOL
+    uint32_t version = 0;
+    uint32_t coinbase_tx_version = 0;
+    data_chunk coinbase_prefix;                // B0_255
+    uint32_t coinbase_tx_input_sequence = 0;
+    uint64_t coinbase_tx_value_remaining = 0;
+    uint32_t coinbase_tx_outputs_count = 0;
+    data_chunk coinbase_tx_outputs;            // B0_64K
+    uint32_t coinbase_tx_locktime = 0;
+    std::vector<hash_digest> merkle_path;      // SEQ0_255[U256]
+
+    [[nodiscard]] size_t serialized_size() const {
+        return 8 + 1 + 4 + 4
+            + (1 + coinbase_prefix.size())
+            + 4 + 8 + 4
+            + (2 + coinbase_tx_outputs.size())
+            + 4
+            + (1 + merkle_path.size() * hash_size);
+    }
+    [[nodiscard]] expect<void> to_data(byte_writer& sink) const;
+    [[nodiscard]] static expect<new_template> from_data(byte_reader& source);
+};
+
+// RequestTransactionData.Success (0x74, Server -> Client): the full transaction
+// list behind a template, plus any excess (segwit-style) data.
+struct request_transaction_data_success {
+    static constexpr uint8_t message_type = 0x74;
+
+    uint64_t template_id = 0;
+    data_chunk excess_data;                    // B0_64K
+    std::vector<data_chunk> transaction_list;  // SEQ0_64K[B0_16M]
+
+    [[nodiscard]] size_t serialized_size() const {
+        size_t size = 8 + (2 + excess_data.size()) + 2;
+        for (auto const& tx : transaction_list) {
+            size += 3 + tx.size();
+        }
+        return size;
+    }
+    [[nodiscard]] expect<void> to_data(byte_writer& sink) const;
+    [[nodiscard]] static expect<request_transaction_data_success> from_data(byte_reader& source);
 };
 
 } // namespace kth::node::sv2
