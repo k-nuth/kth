@@ -164,6 +164,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
     # Stratum V2 template provider.
     src/sv2/framing.cpp
+    src/sv2/primitives.cpp
   )
 endif()
 
@@ -218,6 +219,7 @@ set(kth_headers
 
   # Stratum V2 template provider.
   include/kth/node/sv2/framing.hpp
+  include/kth/node/sv2/primitives.hpp
 
   # Optional JSON-RPC server (compiled only when KTH_WITH_RPC is set).
   include/kth/node/rpc/error.hpp
@@ -299,6 +301,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/mining_job_store.cpp
           test/mining_block_submit.cpp
           test/sv2_framing.cpp
+          test/sv2_primitives.cpp
           test/settings.cpp
           test/utility.cpp
           test/utility.hpp)
