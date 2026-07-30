@@ -1,35 +1,29 @@
 reviews:
   path_filters:
-    # === Incremental review strategy ===
-    # Start with infrastructure only. After review, expand to next module.
-    # Order: infrastructure -> domain -> database -> network -> blockchain -> node
-
-    # Include only infrastructure
+    # Review the Knuth source modules and their tests.
     - "src/infrastructure/**"
+    - "src/domain/**"
+    - "src/database/**"
+    - "src/network/**"
+    - "src/blockchain/**"
+    - "src/node/**"
+    - "src/node-exe/**"
+    - "src/c-api/**"
 
-    # Exclude everything else
-    - "!src/domain/**"
-    - "!src/database/**"
-    - "!src/network/**"
-    - "!src/blockchain/**"
-    - "!src/node/**"
-    - "!src/node-exe/**"
-    - "!src/c-api/**"
+    # Vendored / third-party code we do not review.
     - "!src/consensus/**"
     - "!src/secp256k1/**"
 
-    # Always exclude
+    # Non-source and generated files.
     - "!data/**"
     - "!**/*.dat"
     - "!**/*.png"
     - "!**/*.pdf"
     - "!scripts/**"
-    - "!**/CMakeLists.txt"
     - "!**/conanfile.py"
     - "!conan.lock"
     - "!.gitignore"
     - "!.github/**"
-    - "!**/test/**"
     - "!**/tools/**"
     - "!**/*.ipp"
     - "!**/*.S.in"
