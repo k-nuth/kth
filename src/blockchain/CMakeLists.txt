@@ -300,6 +300,7 @@ if (ENABLE_TEST)
         test/mempool_persistence_test.cpp
         test/block_template_test.cpp
         test/utxoz_roundtrip.cpp
+        test/verify_script_context.cpp
     )
 
     # Disabled until ported to v1.0 APIs:
