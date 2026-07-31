@@ -289,6 +289,18 @@ KB_API bool save_utxo_bloom(
 [[nodiscard]]
 KB_API std::shared_ptr<database::utxo_bloom_filter const> load_utxo_bloom();
 
+/// Whether this build embeds a UTXO bloom filter (KTH_HAS_EMBEDDED_BLOOM).
+/// Build-info: with an embedded bloom, IBD skips inserting outputs known to be
+/// spent before the checkpoint; without it, IBD runs unoptimized. Single source
+/// of truth for the node's --version / startup banner.
+[[nodiscard]]
+KB_API bool embedded_bloom_available();
+
+/// The checkpoint height baked into the embedded bloom filter, if any.
+/// @return the height, or 0 when this build has no embedded bloom.
+[[nodiscard]]
+KB_API uint32_t embedded_bloom_checkpoint_height();
+
 } // namespace kth::blockchain
 
 #endif // KTH_BLOCKCHAIN_UTXO_BUILDER_HPP

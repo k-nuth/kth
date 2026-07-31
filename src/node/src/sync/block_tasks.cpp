@@ -1665,21 +1665,27 @@ std::atomic<uint32_t> g_active_download_peers{0};
     constexpr uint32_t batch_size = 1000;
     constexpr auto poll_interval = std::chrono::milliseconds(500);
 
-    // Load bloom filter. The hardcoded bloom is the FINAL UTXO set as of the real
-    // checkpoint: it prunes outputs spent before then. That is only valid up to the
-    // checkpoint (no validation there); above the checkpoint we need the live UTXO
-    // set to resolve prevouts for full validation, so the bloom is disabled per
-    // batch below.
+    // Highest checkpoint height: at/below it IBD is merkle-only (fast), strictly
+    // above it every block runs FULL validation. Constant for the whole run.
+    uint32_t const checkpoint_height =
+        static_cast<uint32_t>(chain.chain_settings().max_checkpoint_height);
+
+    // Load bloom filter. The embedded bloom is the FINAL UTXO set as of the height
+    // it was built for: it prunes outputs spent before then. Use it only when that
+    // height matches the active checkpoint — otherwise skip-insert would drop
+    // outputs still unspent at this checkpoint (a lowered test checkpoint, or any
+    // build whose embedded bloom targets a different height). It is valid only up to
+    // the checkpoint; above it we need the live UTXO set to resolve prevouts for
+    // full validation, so the bloom is disabled per batch below.
     auto const bloom = blockchain::load_utxo_bloom();
     auto const* bloom_ptr = bloom.get();
-#if defined(KTH_TEST_LOW_CHECKPOINT)
-    // With a lowered test checkpoint the hardcoded bloom (the final UTXO set at
-    // the real checkpoint) does not match, so disable it entirely and keep every
-    // output. Compiled in only under KTH_TEST_LOW_CHECKPOINT.
-    if (std::getenv("KTH_TEST_MAX_CHECKPOINT") != nullptr) {
+    if (bloom_ptr != nullptr &&
+        blockchain::embedded_bloom_checkpoint_height() != checkpoint_height) {
+        spdlog::info(
+            "[utxo_build] Embedded bloom checkpoint {} != active checkpoint {}; disabling bloom",
+            blockchain::embedded_bloom_checkpoint_height(), checkpoint_height);
         bloom_ptr = nullptr;
     }
-#endif
 
     // Resume from saved progress
     uint32_t utxo_built_height = start_height > 0 ? start_height - 1 : 0;
@@ -1727,6 +1733,18 @@ std::atomic<uint32_t> g_active_download_peers{0};
         uint32_t batch_start = utxo_built_height + 1;
         uint32_t batch_end = batch_start + batch_size - 1;
 
+        // Never let a batch straddle the checkpoint. Cap it at the checkpoint so
+        // the below-checkpoint remainder is built (merkle-only) as its own batch
+        // and the UTXO delta of those blocks is applied first. The next batch then
+        // starts strictly above the checkpoint and is validated in full against a
+        // UTXO-Z that already contains every below-checkpoint output. A straddling
+        // batch would instead validate above-checkpoint blocks whose prevouts were
+        // created by below-checkpoint blocks in the SAME batch — outputs whose delta
+        // is applied only after validation — yielding spurious "prevout not found".
+        if (batch_start <= checkpoint_height && checkpoint_height < batch_end) {
+            batch_end = checkpoint_height;
+        }
+
         // Read raw blocks from flat files
         auto raw_result = chain.fetch_blocks_raw(batch_start, batch_end);
         if ( ! raw_result) {
@@ -1739,26 +1757,22 @@ std::atomic<uint32_t> g_active_download_peers{0};
         }
 
         // Post-checkpoint FULL validation (scripts / signatures / fees / coinbase
-        // value) BEFORE the UTXO delta is applied. Below the highest checkpoint we
-        // keep the fast merkle-only path. Validate ONLY heights strictly above the
-        // checkpoint: below it the bloom may have pruned outputs spent before the
-        // checkpoint, so a pre-checkpoint block can reference a prevout that is
-        // absent from UTXO-Z. On failure we halt: the invalid block is never applied.
-        uint32_t const checkpoint_height =
-            static_cast<uint32_t>(chain.chain_settings().max_checkpoint_height);
-        if (batch_end > checkpoint_height) {
-            uint32_t const validate_start = std::max(batch_start, checkpoint_height + 1);
-            // Parse the above-checkpoint blocks and validate them on the worker
-            // pool, off this coroutine's executor.
+        // value) BEFORE the UTXO delta is applied. At/below the highest checkpoint
+        // we keep the fast merkle-only path; strictly above it the whole batch runs
+        // full validation. Because a batch never straddles the checkpoint (capped
+        // above), a batch that starts above the checkpoint is entirely above it, so
+        // every block in it is validated against a UTXO-Z that already holds every
+        // below-checkpoint output. On failure we halt: the invalid block is never
+        // applied.
+        if (batch_start > checkpoint_height) {
+            // Parse the blocks and validate them on the worker pool, off this
+            // coroutine's executor.
             auto const vc = co_await ::asio::co_spawn(validation_pool.get_executor(),
                 [&]() -> ::asio::awaitable<code> {
                     std::vector<kth::block_const_ptr> full_blocks;
                     full_blocks.reserve(raw_result->size());
                     for (uint32_t i = 0; i < raw_result->size(); ++i) {
                         uint32_t const h = batch_start + i;
-                        if (h < validate_start) {
-                            continue;   // at/below the checkpoint: merkle-only
-                        }
                         auto const& raw = (*raw_result)[i];
                         byte_reader reader(byte_span{raw.data(), raw.size()});
                         auto blk = domain::message::block::from_data(reader, 0u);
@@ -1773,15 +1787,15 @@ std::atomic<uint32_t> g_active_download_peers{0};
                         co_return error::success;
                     }
                     co_return blockchain::validate_block_batch(
-                        chain, chain.chain_settings(), network, full_blocks, validate_start);
+                        chain, chain.chain_settings(), network, full_blocks, batch_start);
                 }, ::asio::use_awaitable);
 
             if (vc) {
                 spdlog::critical("[utxo_build] POST-CHECKPOINT VALIDATION FAILED at {}-{}: {}",
-                    validate_start, batch_end, vc.message());
+                    batch_start, batch_end, vc.message());
                 co_return;
             }
-            spdlog::info("[utxo_build] Full validation OK for {}-{}", validate_start, batch_end);
+            spdlog::info("[utxo_build] Full validation OK for {}-{}", batch_start, batch_end);
         }
 
         // Parse and process UTXO delta
