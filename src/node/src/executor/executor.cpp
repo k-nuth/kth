@@ -528,6 +528,9 @@ void executor::print_version(std::string_view extra) {
     std::println("Knuth Node\n  C++ lib v{}\n  {}\n  Currency: {}\n  Microarchitecture: {}\n  Built for CPU instructions/extensions: {}\n  (Debug Build)",
         kth::version, extra, KTH_CURRENCY_SYMBOL_STR, KTH_MICROARCHITECTURE_STR, march_names());
 #endif
+    // UTXO-Z storage mode (single source of truth).
+    std::println("  UTXO-Z mode: {}",
+        kth::database::utxoz_compact_mode() ? "compact" : "full");
 }
 
 void executor::print_ascii_art() {

@@ -245,6 +245,19 @@ struct KD_API utxoz_database {
     [[nodiscard]]
     std::pair<uint32_t, std::vector<utxoz::deferred_deletion_entry>> process_pending_deletions();
 
+    /// Get the number of pending deferred lookups
+    [[nodiscard]]
+    size_t deferred_lookups_size() const;
+
+    /// Process pending deferred lookups (sweeps cached/older file versions).
+    /// find() is a two-phase contract: its key_not_found only means "not in the
+    /// active file, queued". This resolves the queue. Call once per batch, BEFORE
+    /// process_pending_deletions().
+    /// @return pair of (resolved entries keyed by outpoint, keys that truly don't exist)
+    [[nodiscard]]
+    std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, utxo_entry>, std::vector<utxoz::raw_outpoint>>
+    process_pending_lookups();
+
     /// Compact the database
     void compact();
 

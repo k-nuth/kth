@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <fstream>
@@ -25,12 +26,15 @@
 #include <asio/post.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/this_coro.hpp>
+#include <asio/co_spawn.hpp>
+#include <asio/thread_pool.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
 
 #include <kth/infrastructure/utility/task_group.hpp>
 #include <kth/infrastructure/utility/stats.hpp>
 #include <kth/blockchain/utxo_builder.hpp>
+#include <kth/blockchain/validate/batch_validate.hpp>
 #include <kth/network/protocols_coro.hpp>
 
 namespace kth::node::sync {
@@ -1653,16 +1657,29 @@ std::atomic<uint32_t> g_active_download_peers{0};
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
-    uint32_t start_height
+    uint32_t start_height,
+    domain::config::network network
 ) {
     spdlog::info("[utxo_build] Task started at height {}", start_height);
 
     constexpr uint32_t batch_size = 1000;
     constexpr auto poll_interval = std::chrono::milliseconds(500);
 
-    // Load bloom filter
+    // Load bloom filter. The hardcoded bloom is the FINAL UTXO set as of the real
+    // checkpoint: it prunes outputs spent before then. That is only valid up to the
+    // checkpoint (no validation there); above the checkpoint we need the live UTXO
+    // set to resolve prevouts for full validation, so the bloom is disabled per
+    // batch below.
     auto const bloom = blockchain::load_utxo_bloom();
     auto const* bloom_ptr = bloom.get();
+#if defined(KTH_TEST_LOW_CHECKPOINT)
+    // With a lowered test checkpoint the hardcoded bloom (the final UTXO set at
+    // the real checkpoint) does not match, so disable it entirely and keep every
+    // output. Compiled in only under KTH_TEST_LOW_CHECKPOINT.
+    if (std::getenv("KTH_TEST_MAX_CHECKPOINT") != nullptr) {
+        bloom_ptr = nullptr;
+    }
+#endif
 
     // Resume from saved progress
     uint32_t utxo_built_height = start_height > 0 ? start_height - 1 : 0;
@@ -1683,6 +1700,12 @@ std::atomic<uint32_t> g_active_download_peers{0};
     }
 
     auto executor = co_await ::asio::this_coro::executor;
+
+    // Dedicated worker for block parsing + full validation, so that CPU-heavy work
+    // does not block this coroutine's executor (download supervision, storage).
+    // validate_block_batch fans script verification out to its own threads, so one
+    // pool thread to run the serial phase and orchestrate is enough.
+    ::asio::thread_pool validation_pool(1);
 
     while ( ! chain.stopped()) {
         uint32_t current_contiguous = contiguous_height.load(std::memory_order_acquire);
@@ -1715,6 +1738,52 @@ std::atomic<uint32_t> g_active_download_peers{0};
             continue;
         }
 
+        // Post-checkpoint FULL validation (scripts / signatures / fees / coinbase
+        // value) BEFORE the UTXO delta is applied. Below the highest checkpoint we
+        // keep the fast merkle-only path. Validate ONLY heights strictly above the
+        // checkpoint: below it the bloom may have pruned outputs spent before the
+        // checkpoint, so a pre-checkpoint block can reference a prevout that is
+        // absent from UTXO-Z. On failure we halt: the invalid block is never applied.
+        uint32_t const checkpoint_height =
+            static_cast<uint32_t>(chain.chain_settings().max_checkpoint_height);
+        if (batch_end > checkpoint_height) {
+            uint32_t const validate_start = std::max(batch_start, checkpoint_height + 1);
+            // Parse the above-checkpoint blocks and validate them on the worker
+            // pool, off this coroutine's executor.
+            auto const vc = co_await ::asio::co_spawn(validation_pool.get_executor(),
+                [&]() -> ::asio::awaitable<code> {
+                    std::vector<kth::block_const_ptr> full_blocks;
+                    full_blocks.reserve(raw_result->size());
+                    for (uint32_t i = 0; i < raw_result->size(); ++i) {
+                        uint32_t const h = batch_start + i;
+                        if (h < validate_start) {
+                            continue;   // at/below the checkpoint: merkle-only
+                        }
+                        auto const& raw = (*raw_result)[i];
+                        byte_reader reader(byte_span{raw.data(), raw.size()});
+                        auto blk = domain::message::block::from_data(reader, 0u);
+                        if ( ! blk) {
+                            spdlog::critical("[utxo_build] Failed to parse block for validation at height {}", h);
+                            co_return error::operation_failed;
+                        }
+                        full_blocks.push_back(
+                            std::make_shared<domain::message::block const>(std::move(*blk)));
+                    }
+                    if (full_blocks.empty()) {
+                        co_return error::success;
+                    }
+                    co_return blockchain::validate_block_batch(
+                        chain, chain.chain_settings(), network, full_blocks, validate_start);
+                }, ::asio::use_awaitable);
+
+            if (vc) {
+                spdlog::critical("[utxo_build] POST-CHECKPOINT VALIDATION FAILED at {}-{}: {}",
+                    validate_start, batch_end, vc.message());
+                co_return;
+            }
+            spdlog::info("[utxo_build] Full validation OK for {}-{}", validate_start, batch_end);
+        }
+
         // Parse and process UTXO delta
         blockchain::utxo_raw_delta delta;
         for (uint32_t i = 0; i < raw_result->size(); ++i) {
@@ -1729,11 +1798,14 @@ std::atomic<uint32_t> g_active_download_peers{0};
             }
 
             auto const idx = static_cast<blockchain::header_index::index_t>(h);
+            // Prune with the bloom only up to the checkpoint; above it keep every
+            // output (live UTXO set) so full validation can resolve prevouts.
+            auto const* block_bloom = (h <= checkpoint_height) ? bloom_ptr : nullptr;
             auto block_delta = blockchain::process_compact_block_utxos(
                 *parsed, h, mtp,
                 chain.headers().get_file_number(idx),
                 chain.headers().get_data_pos(idx),
-                bloom_ptr);
+                block_bloom);
             delta.merge(std::move(block_delta));
 
             // Update MTP window from raw block header (timestamp at offset 68)

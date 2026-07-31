@@ -99,6 +99,18 @@ struct KB_API validate_header {
                      header_index::index_t parent_idx,
                      header_index const& index) const;
 
+    /// Build a full chain_state for `height` from the header_index (same
+    /// construction accept_full uses). Lets callers obtain per-height consensus
+    /// flags / activations (e.g. post-checkpoint block validation). Advance it
+    /// across contiguous blocks with chain_state::from_pool_ptr.
+    [[nodiscard]]
+    std::expected<domain::chain::chain_state::ptr, code> chain_state_at(
+        domain::chain::header const& header,
+        hash_digest const& hash,
+        size_t height,
+        header_index::index_t parent_idx,
+        header_index const& index) const;
+
     /// Build chain_state::data from header_index for a given height.
     /// This collects the historical bits, versions, and timestamps needed
     /// to construct a chain_state for validation.

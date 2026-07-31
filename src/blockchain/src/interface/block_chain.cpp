@@ -690,6 +690,15 @@ std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>> block_chain::utxo
     return utxoz_db_.process_pending_deletions();
 }
 
+size_t block_chain::utxo_deferred_lookups_size() const {
+    return utxoz_db_.deferred_lookups_size();
+}
+
+std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxo_entry>, std::vector<utxoz::raw_outpoint>>
+block_chain::utxo_process_pending_lookups() {
+    return utxoz_db_.process_pending_lookups();
+}
+
 void block_chain::utxo_compact() {
     utxoz_db_.compact();
 }

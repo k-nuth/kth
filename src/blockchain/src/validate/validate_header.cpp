@@ -252,6 +252,38 @@ chain_state::assert_anchor_block_info_t validate_header::get_asert_anchor_block(
 }
 #endif // KTH_CURRENCY_BCH
 
+std::expected<chain_state::ptr, code> validate_header::chain_state_at(
+    header const& header,
+    hash_digest const& hash,
+    size_t height,
+    header_index::index_t parent_idx,
+    header_index const& index) const {
+
+    auto data_result = build_chain_state_data(height, header, hash, parent_idx, index);
+    if ( ! data_result) {
+        return std::unexpected(data_result.error());
+    }
+
+#if defined(KTH_CURRENCY_BCH)
+    auto const anchor = get_asert_anchor_block();
+    return std::make_shared<chain_state>(
+        std::move(*data_result),
+        configured_flags_,
+        checkpoints_,
+        network_,
+        anchor,
+        settings_.asert_half_life,
+        settings_.abla_config,
+        cantor_t(settings_.cantor_activation_time));
+#else
+    return std::make_shared<chain_state>(
+        std::move(*data_result),
+        configured_flags_,
+        checkpoints_,
+        network_);
+#endif
+}
+
 std::expected<chain_state::data, code> validate_header::build_chain_state_data(
     size_t height,
     domain::chain::header const& header,
@@ -352,48 +384,20 @@ code validate_header::accept_full(domain::chain::header const& header,
         return error::store_block_missing_parent;
     }
 
-    // Build chain_state data from header_index
-    auto data_result = build_chain_state_data(height, header, hash, parent_idx, index);
-    if (!data_result) {
-        spdlog::error("[validate_header] accept_full: failed to build chain_state data for height {}", height);
-        return data_result.error();
+    // Build the chain_state for this height. Reuse chain_state_at instead of
+    // duplicating build_chain_state_data + the (BCH-parameter-heavy) construction,
+    // so a new consensus parameter only has to be wired in one place.
+    auto state_result = chain_state_at(header, hash, height, parent_idx, index);
+    if ( ! state_result) {
+        spdlog::error("[validate_header] accept_full: failed to build chain_state for height {}", height);
+        return state_result.error();
     }
-
-    // Create chain_state from the data
-#if defined(KTH_CURRENCY_BCH)
-    auto const anchor = get_asert_anchor_block();
-    chain_state state(
-        std::move(*data_result),
-        configured_flags_,
-        checkpoints_,
-        network_,
-        anchor,
-        settings_.asert_half_life,
-        settings_.abla_config,
-        cantor_t(settings_.cantor_activation_time)
-    );
-#else
-    chain_state state(
-        std::move(*data_result),
-        configured_flags_,
-        checkpoints_,
-        network_
-    );
-#endif
+    chain_state const& state = **state_result;
 
     // Now perform the full header validation using chain_state
     // This is equivalent to header_basis::accept()
 
     // 1. Difficulty check
-    if (height == 32256) {
-        spdlog::warn("[validate_header] DEBUG height 32256: work_required={:#x}, header.bits={:#x}, "
-            "data.timestamp.retarget={}, data.bits.ordered.size={}, "
-            "data.timestamp.ordered.size={}",
-            state.work_required(), header.bits(),
-            data_result->timestamp.retarget,
-            data_result->bits.ordered.size(),
-            data_result->timestamp.ordered.size());
-    }
     if (header.bits() != state.work_required()) {
         spdlog::debug("[validate_header] accept_full: incorrect PoW at height {}: "
             "header bits={:#x}, required={:#x}",
