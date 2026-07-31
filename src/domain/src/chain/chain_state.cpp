@@ -290,6 +290,26 @@ bool bip65(size_t height, bool frozen, domain::config::network network) {
                             );
 }
 
+#if ! defined(KTH_CURRENCY_LTC)
+// P2SH (BIP16) activates by height, matching BCHN (consensus.BIP16Height):
+// block N enforces P2SH iff N >= BIP16 height. Unlike the date-based path this
+// needs no per-block exception (the historical invalid-p2sh block precedes the
+// height on every network).
+inline
+bool bip16(size_t height, domain::config::network network) {
+    return network_relation(network, std::greater_equal<>{}, height
+                            , mainnet_bip16_activation_height
+                            , testnet_bip16_activation_height
+                            , regtest_bip16_activation_height
+#if defined(KTH_CURRENCY_BCH)
+                            , testnet4_bip16_activation_height
+                            , scalenet_bip16_activation_height
+                            , chipnet_bip16_activation_height
+#endif
+                            );
+}
+#endif // ! KTH_CURRENCY_LTC
+
 inline
 uint32_t timestamp_high(chain_state::data const& values) {
     return values.timestamp.ordered.back();
@@ -443,12 +463,21 @@ chain_state::activations chain_state::activation(data const& values, script_flag
     // bip90 is activated based on configuration alone (network upgrade).
     result.flags |= (script_flags::bip90_rule & flags);
 
+#if defined(KTH_CURRENCY_LTC)
     // bip16 is activated with a one-time test on mainnet/testnet (~55% rule).
     // There was one invalid p2sh tx mined after that time (code shipped late).
     if (values.timestamp.self >= bip16_activation_time &&
         ! is_bip16_exception({values.hash, height}, network)) {
         result.flags |= (script_flags::bip16_rule & flags);
     }
+#else
+    // bip16 (P2SH) is activated by height, matching BCHN (consensus.BIP16Height).
+    // The date-based path (LTC branch) enforces P2SH ~7000 blocks early and needs
+    // a per-block exception; height-based activation matches BCHN and needs none.
+    if (bip16(height, network)) {
+        result.flags |= (script_flags::bip16_rule & flags);
+    }
+#endif
 
     // bip30 is active for all but two mainnet blocks that violate the rule.
     // These two blocks each have a coinbase transaction that exctly duplicates
