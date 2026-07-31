@@ -127,7 +127,8 @@ static
 ::asio::awaitable<void> sync_orchestrator(
     blockchain::block_chain& chain,
     blockchain::header_organizer& organizer,
-    kth::node::p2p_node& network
+    kth::node::p2p_node& network,
+    domain::config::network network_type
 ) {
     auto executor = co_await ::asio::this_coro::executor;
 
@@ -627,7 +628,8 @@ static
     all_tasks.spawn("utxo_build_task", utxo_build_task(
         chain,
         *contiguous_height,
-        initial_block_height + 1
+        initial_block_height + 1,
+        network_type
     ));
 
     // Bridge: validated_chunks -> coordinator_events (carries validation errors only)

@@ -16,6 +16,15 @@
 
 namespace kth::database {
 
+bool utxoz_compact_mode() {
+#ifdef KTH_UTXOZ_COMPACT_MODE
+    return true;
+#else
+    return false;
+#endif
+}
+
+
 utxoz_database::~utxoz_database() {
     close();
 }
@@ -134,6 +143,54 @@ std::pair<uint32_t, std::vector<utxoz::deferred_deletion_entry>> utxoz_database:
         return {0, {}};
     }
     return db_->process_pending_deletions();
+}
+
+size_t utxoz_database::deferred_lookups_size() const {
+    if ( ! is_open()) {
+        return 0;
+    }
+    return db_->deferred_lookups_size();
+}
+
+std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, utxo_entry>, std::vector<utxoz::raw_outpoint>>
+utxoz_database::process_pending_lookups() {
+    boost::unordered_flat_map<utxoz::raw_outpoint, utxo_entry> resolved;
+    std::vector<utxoz::raw_outpoint> failed;
+    if ( ! is_open()) {
+        return {std::move(resolved), std::move(failed)};
+    }
+
+#ifdef KTH_UTXOZ_COMPACT_MODE
+    auto [found, fail] = db_->process_pending_lookups();
+    resolved.reserve(found.size());
+    for (auto const& [key, ref] : found) {
+        uint32_t index;
+        std::memcpy(&index, key.data() + 32, sizeof(index));   // outpoint index (LE)
+        auto entry = resolve_compact_ref(ref, index);
+        if (entry) {
+            resolved.emplace(key, std::move(*entry));
+        } else {
+            failed.push_back(key);   // conversion failure -> treat as missing
+        }
+    }
+    for (auto const& e : fail) {
+        failed.push_back(e.key);
+    }
+#else
+    auto [found, fail] = db_->process_pending_lookups();
+    resolved.reserve(found.size());
+    for (auto const& [key, res] : found) {
+        auto entry = bytes_to_entry(res.data);
+        if (entry) {
+            resolved.emplace(key, std::move(*entry));
+        }
+    }
+    failed.reserve(fail.size());
+    for (auto const& e : fail) {
+        failed.push_back(e.key);
+    }
+#endif
+    return {std::move(resolved), std::move(failed)};
 }
 
 void utxoz_database::compact() {

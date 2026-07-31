@@ -195,6 +195,16 @@ struct KB_API block_chain {
     [[nodiscard]]
     std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>> utxo_process_pending_deletions();
 
+    [[nodiscard]]
+    size_t utxo_deferred_lookups_size() const;
+
+    // Second phase of the find() contract: resolves outpoints whose find()
+    // returned key_not_found (queued, not authoritative) by sweeping older file
+    // versions. Returns {resolved by outpoint, keys that truly don't exist}.
+    [[nodiscard]]
+    std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxo_entry>, std::vector<utxoz::raw_outpoint>>
+    utxo_process_pending_lookups();
+
     void utxo_compact();
     void utxo_print_statistics();
     void utxo_print_sizing_report();

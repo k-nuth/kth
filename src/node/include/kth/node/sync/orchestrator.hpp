@@ -38,7 +38,8 @@ namespace kth::node::sync {
 ::asio::awaitable<void> sync_orchestrator(
     blockchain::block_chain& chain,
     blockchain::header_organizer& organizer,
-    kth::node::p2p_node& network
+    kth::node::p2p_node& network,
+    domain::config::network network_type
 );
 
 } // namespace kth::node::sync

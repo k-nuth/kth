@@ -10,6 +10,11 @@
 
 //TODO(fernando): Avoid this dependency
 
+#if defined(KTH_TEST_LOW_CHECKPOINT)
+#include <cstdlib>
+#include <string>
+#endif
+
 namespace kth::blockchain {
 
 settings::settings(domain::config::network net) {
@@ -69,6 +74,18 @@ settings::settings(domain::config::network net) {
     }
 
     checkpoints = domain::config::default_checkpoints(net);
+
+#if defined(KTH_TEST_LOW_CHECKPOINT)
+    // Test-only: cap the checkpoint list at the height given by the
+    // KTH_TEST_MAX_CHECKPOINT environment variable, so full post-checkpoint
+    // validation can be exercised from a low height without a full mainnet sync.
+    // Compiled in only when KTH_TEST_LOW_CHECKPOINT is defined; never in a
+    // production build.
+    if (auto const* cap = std::getenv("KTH_TEST_MAX_CHECKPOINT")) {
+        auto const h = static_cast<size_t>(std::stoull(cap));
+        std::erase_if(checkpoints, [h](auto const& c){ return c.height() > h; });
+    }
+#endif
 
     // Pre-compute sorted list and max height
     checkpoints_sorted = checkpoints;

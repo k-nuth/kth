@@ -139,7 +139,8 @@ extern std::atomic<uint64_t> g_blocks_received_by_validation;
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
-    uint32_t start_height
+    uint32_t start_height,
+    domain::config::network network
 );
 
 } // namespace kth::node::sync

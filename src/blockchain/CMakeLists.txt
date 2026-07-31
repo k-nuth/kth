@@ -186,6 +186,7 @@ set(kth_sources_just_legacy
   src/populate/populate_block.cpp
   src/populate/populate_chain_state.cpp
   src/populate/populate_transaction.cpp
+  src/validate/batch_validate.cpp
   src/validate/validate_block.cpp
   src/validate/validate_header.cpp
   src/validate/validate_input.cpp

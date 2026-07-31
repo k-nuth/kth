@@ -267,7 +267,7 @@ full_node::~full_node() {
     // run on the network pool's 32 threads instead of the single io_thread.
     co_await ::asio::co_spawn(
         network_.thread_pool().get_executor(),
-        sync::sync_orchestrator(chain_, organizer, network_),
+        sync::sync_orchestrator(chain_, organizer, network_, network_type_),
         ::asio::use_awaitable
     );
 
