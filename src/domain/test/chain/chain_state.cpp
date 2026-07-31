@@ -46,6 +46,13 @@ chain::chain_state::data make_data_with_mtp(uint32_t mtp_anchor, int32_t offset 
     return values;
 }
 
+// Helper: minimal data at a given height (MTP irrelevant for height-gated rules).
+chain::chain_state::data make_data_at_height(size_t height) {
+    auto values = make_data_with_mtp(1500000000u);
+    values.height = height;
+    return values;
+}
+
 } // namespace
 
 // Start Test Suite: chain_state tests
@@ -110,3 +117,24 @@ TEST_CASE("chain_state activation leaves Cantor bits off while MTP is below the 
 
     REQUIRE_FALSE(chain::script::is_enabled(result.flags, script_flags::bch_2027_may));
 }
+
+#if defined(KTH_CURRENCY_BCH)
+// P2SH (BIP16) must activate by height, matching BCHN (consensus.BIP16Height,
+// mainnet 173805), not by block timestamp. The date-based path enforced P2SH
+// ~7000 blocks early (from ~166832), which wrongly rejected pre-enforcement
+// P2SH-format spends (e.g. block 170060). Block 173804 has no P2SH; 173805 does.
+TEST_CASE("chain_state activation gates BIP16 (P2SH) by height, matching BCHN", "[chain_state]") {
+    using namespace kth::domain::machine;
+    auto const mask = static_cast<domain::script_flags_t>(script_flags::bip16_rule);
+
+    auto const below = chain_state_test_access::activation(
+        make_data_at_height(173804), mask, domain::config::network::mainnet,
+        bch_cantor_activation_time);
+    REQUIRE_FALSE(chain::script::is_enabled(below.flags, script_flags::bip16_rule));
+
+    auto const at = chain_state_test_access::activation(
+        make_data_at_height(173805), mask, domain::config::network::mainnet,
+        bch_cantor_activation_time);
+    REQUIRE(chain::script::is_enabled(at.flags, script_flags::bip16_rule));
+}
+#endif // KTH_CURRENCY_BCH

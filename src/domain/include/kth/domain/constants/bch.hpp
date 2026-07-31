@@ -70,6 +70,12 @@ constexpr size_t chipnet_bip65_freeze = 3;
 constexpr size_t chipnet_bip66_freeze = 4;
 constexpr size_t chipnet_bip34_freeze = 2;
 
+// P2SH (BIP16) activation heights for the BCH test networks, matching BCHN
+// (consensus.BIP16Height = 1 on testnet4/scalenet/chipnet).
+constexpr size_t testnet4_bip16_activation_height = 1;
+constexpr size_t scalenet_bip16_activation_height = 1;
+constexpr size_t chipnet_bip16_activation_height = 1;
+
 static
 const infrastructure::config::checkpoint testnet4_bip34_active_checkpoint {
     "00000000b0c65b1e03baace7d5c093db0d6aac224df01484985ffd5e86a1a20c"_hash, 2};

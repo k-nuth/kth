@@ -46,6 +46,15 @@ constexpr size_t regtest_bip65_freeze = 1351;
 constexpr size_t regtest_bip66_freeze = 1251;
 constexpr size_t regtest_bip34_freeze = 0;
 
+// P2SH (BIP16) activation by height, matching BCHN (consensus.BIP16Height).
+// BCHN activates P2SH at a fixed height (mainnet 173805 = the 2012-04-01 flag
+// day), NOT by the block timestamp. The date-based path below enforces P2SH
+// ~7000 blocks early (from mainnet 166832) and then needs a per-block exception;
+// height-based activation matches BCHN exactly and needs no exception.
+constexpr size_t mainnet_bip16_activation_height = 173805;
+constexpr size_t testnet_bip16_activation_height = 514;
+constexpr size_t regtest_bip16_activation_height = 0;
+
 // Block 514 is the first testnet block after date-based activation.
 // Block 166832 is the first mainnet block after date-based activation.
 constexpr uint32_t bip16_activation_time = 0x4f3af580;
