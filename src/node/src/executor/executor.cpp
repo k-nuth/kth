@@ -14,6 +14,7 @@
 
 #include <boost/core/null_deleter.hpp>
 
+#include <kth/blockchain/utxo_builder.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node.hpp>
 #include <kth/node/parser.hpp>
@@ -531,6 +532,13 @@ void executor::print_version(std::string_view extra) {
     // UTXO-Z storage mode (single source of truth).
     std::println("  UTXO-Z mode: {}",
         kth::database::utxoz_compact_mode() ? "compact" : "full");
+    // Embedded UTXO bloom filter (single source of truth).
+    if (kth::blockchain::embedded_bloom_available()) {
+        std::println("  UTXO bloom: embedded (checkpoint height {})",
+            kth::blockchain::embedded_bloom_checkpoint_height());
+    } else {
+        std::println("  UTXO bloom: none");
+    }
 }
 
 void executor::print_ascii_art() {

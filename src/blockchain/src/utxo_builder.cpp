@@ -709,6 +709,44 @@ std::shared_ptr<database::utxo_bloom_filter const> load_utxo_bloom() {
 #endif
 }
 
+bool embedded_bloom_available() {
+#ifdef KTH_HAS_EMBEDDED_BLOOM
+    return true;
+#else
+    return false;
+#endif
+}
+
+uint32_t embedded_bloom_checkpoint_height() {
+#ifndef KTH_HAS_EMBEDDED_BLOOM
+    return 0;
+#else
+    auto const data_size = static_cast<size_t>(kth_utxo_bloom_data_end - kth_utxo_bloom_data);
+    if (data_size < bloom_header_size) {
+        return 0;
+    }
+    auto const* p = kth_utxo_bloom_data;
+
+    std::array<char, 4> magic{};
+    std::memcpy(magic.data(), p, 4);
+    p += 4;
+    if (magic != bloom_magic) {
+        return 0;
+    }
+
+    uint32_t version = 0;
+    std::memcpy(&version, p, sizeof(version));
+    p += sizeof(version);
+    if (version != bloom_version) {
+        return 0;
+    }
+
+    uint32_t stored_height = 0;
+    std::memcpy(&stored_height, p, sizeof(stored_height));
+    return stored_height;
+#endif
+}
+
 ::asio::awaitable<database::result_code> build_utxo_set(
     block_chain& chain,
     ::asio::thread_pool& pool,
