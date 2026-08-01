@@ -302,6 +302,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/performance.cpp
           test/reservation.cpp
           test/reservations.cpp
+          test/sync_decisions.cpp
           test/mining_job_store.cpp
           test/mining_block_submit.cpp
           test/sv2_framing.cpp

@@ -513,7 +513,18 @@ bool internal_database_basis<Clock>::close() {
 
 template <typename Clock>
 std::expected<uint32_t, result_code> internal_database_basis<Clock>::get_utxo_built_height() const {
-    return get_property_height(property_code::utxo_built_height, nullptr);
+    // A read needs a live transaction: get_property_height forwards it straight to
+    // kth_db_get, and a null txn makes every lookup fail (key_not_found), so the
+    // persisted height was never actually read back and resume always fell through
+    // to the block-sync marker. Open a read-only transaction like get_last_heights.
+    KTH_DB_txn* db_txn;
+    if (kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn) != KTH_DB_SUCCESS) {
+        return std::unexpected(result_code::other);
+    }
+
+    auto result = get_property_height(property_code::utxo_built_height, db_txn);
+    kth_db_txn_commit(db_txn);
+    return result;
 }
 
 template <typename Clock>

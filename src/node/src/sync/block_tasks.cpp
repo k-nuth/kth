@@ -1651,6 +1651,27 @@ std::atomic<uint32_t> g_active_download_peers{0};
 }
 
 // =============================================================================
+// UTXO-build sync decisions (pure; unit-tested in test/sync_decisions.cpp)
+// =============================================================================
+
+uint32_t resume_utxo_built_height(std::optional<uint32_t> saved, uint32_t start_height) {
+    if (saved) {
+        return *saved;
+    }
+    return start_height > 0 ? start_height - 1 : 0;
+}
+
+uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
+    if (available >= batch_size) {
+        return batch_size;
+    }
+    if (available >= 1 && ! stale) {
+        return available;
+    }
+    return 0;
+}
+
+// =============================================================================
 // Incremental UTXO Build Task
 // =============================================================================
 
@@ -1687,11 +1708,15 @@ std::atomic<uint32_t> g_active_download_peers{0};
         bloom_ptr = nullptr;
     }
 
-    // Resume from saved progress
-    uint32_t utxo_built_height = start_height > 0 ? start_height - 1 : 0;
-    auto saved = chain.get_utxo_built_height();
-    if (saved && *saved >= start_height) {
-        utxo_built_height = *saved;
+    // Resume from saved progress. The persisted utxo-built height is the
+    // authoritative floor (see resume_utxo_built_height): it must win over
+    // start_height, which is derived from the block-sync marker (blocks
+    // downloaded) and can run ahead of what has been built. See the header note.
+    auto const saved = chain.get_utxo_built_height();
+    std::optional<uint32_t> const saved_opt =
+        saved ? std::optional<uint32_t>(*saved) : std::nullopt;
+    uint32_t utxo_built_height = resume_utxo_built_height(saved_opt, start_height);
+    if (saved_opt) {
         spdlog::info("[utxo_build] Resuming from height {}", utxo_built_height);
     }
 
@@ -1721,19 +1746,13 @@ std::atomic<uint32_t> g_active_download_peers{0};
             ? current_contiguous - 1 - utxo_built_height
             : 0;
 
-        // Batch length depends on the sync regime:
-        //  - IBD (is_stale): wait for a full batch_size window before processing,
-        //    for throughput — small batches would add per-batch overhead over the
-        //    millions of blocks to catch up.
-        //  - No-IBD (caught up to the tip, is_stale() == false): process whatever is
-        //    available, down to a single block. This drains the final < batch_size
-        //    remainder at the tip and then fully validates each newly mined block as
-        //    it arrives (~1 every 10 min), instead of stalling until batch_size more
-        //    blocks accumulate. is_stale() keys off the top block's timestamp (a
-        //    domain property), so it stays within the module boundary.
-        uint32_t const batch_len = (available >= batch_size)
-            ? batch_size
-            : ((available >= 1 && ! chain.is_stale()) ? available : 0);
+        // Batch length by sync regime (see utxo_batch_len): a full batch_size
+        // window during IBD for throughput; once caught up to the tip, drain
+        // whatever is available down to a single block so the trailing remainder
+        // and each newly mined block are validated promptly. is_stale() keys off
+        // the top block's timestamp (a domain property), staying within the module
+        // boundary.
+        uint32_t const batch_len = utxo_batch_len(available, batch_size, chain.is_stale());
 
         if (batch_len == 0) {
             // Still in IBD and short of a full batch — wait and poll.
