@@ -6,7 +6,9 @@
 #define KTH_NODE_SYNC_BLOCK_TASKS_HPP
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
+#include <optional>
 
 #include <asio/awaitable.hpp>
 
@@ -15,6 +17,27 @@
 #include <kth/node/sync/messages.hpp>
 
 namespace kth::node::sync {
+
+// =============================================================================
+// UTXO-build sync decisions (pure; unit-tested in test/sync_decisions.cpp)
+// =============================================================================
+
+/// Resume floor for the UTXO builder: the height already built (the builder
+/// resumes at the next one). The persisted utxo-built height (`saved`) is
+/// authoritative — it is the last height whose UTXO delta was actually applied —
+/// and must win over `start_height`, which is derived from the block-sync marker
+/// (blocks downloaded) and can run ahead of what has been built. Only when there
+/// is no saved progress does it fall back to `start_height - 1`.
+[[nodiscard]]
+uint32_t resume_utxo_built_height(std::optional<uint32_t> saved, uint32_t start_height);
+
+/// Number of contiguous blocks the UTXO builder should process this iteration,
+/// or 0 to wait and poll. During IBD (`stale`) it requires a full `batch_size`
+/// window for throughput; once caught up to the tip (`!stale`) it drains whatever
+/// is available, down to a single block, so the trailing remainder and each
+/// newly-mined block are validated promptly instead of stalling for a full batch.
+[[nodiscard]]
+uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale);
 
 // =============================================================================
 // Pipeline Counters for debugging block loss
