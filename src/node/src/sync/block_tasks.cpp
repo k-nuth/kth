@@ -1716,13 +1716,27 @@ std::atomic<uint32_t> g_active_download_peers{0};
     while ( ! chain.stopped()) {
         uint32_t current_contiguous = contiguous_height.load(std::memory_order_acquire);
 
-        // Need at least batch_size contiguous blocks ahead of what we've built
+        // Blocks stored and contiguous ahead of what we've built.
         uint32_t available = (current_contiguous > utxo_built_height + 1)
             ? current_contiguous - 1 - utxo_built_height
             : 0;
 
-        if (available < batch_size) {
-            // Not enough blocks yet — wait and poll
+        // Batch length depends on the sync regime:
+        //  - IBD (is_stale): wait for a full batch_size window before processing,
+        //    for throughput — small batches would add per-batch overhead over the
+        //    millions of blocks to catch up.
+        //  - No-IBD (caught up to the tip, is_stale() == false): process whatever is
+        //    available, down to a single block. This drains the final < batch_size
+        //    remainder at the tip and then fully validates each newly mined block as
+        //    it arrives (~1 every 10 min), instead of stalling until batch_size more
+        //    blocks accumulate. is_stale() keys off the top block's timestamp (a
+        //    domain property), so it stays within the module boundary.
+        uint32_t const batch_len = (available >= batch_size)
+            ? batch_size
+            : ((available >= 1 && ! chain.is_stale()) ? available : 0);
+
+        if (batch_len == 0) {
+            // Still in IBD and short of a full batch — wait and poll.
             ::asio::steady_timer timer(executor);
             timer.expires_after(poll_interval);
             co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
@@ -1731,7 +1745,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
 
         // Process one batch
         uint32_t batch_start = utxo_built_height + 1;
-        uint32_t batch_end = batch_start + batch_size - 1;
+        uint32_t batch_end = batch_start + batch_len - 1;
 
         // Never let a batch straddle the checkpoint. Cap it at the checkpoint so
         // the below-checkpoint remainder is built (merkle-only) as its own batch
