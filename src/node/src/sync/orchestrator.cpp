@@ -814,6 +814,36 @@ static
             spdlog::warn("[sync_coordinator] Channel full, initial header_request dropped");
         }
 
+        // Reliable delivery of a block_range_request: every trigger site is
+        // one-shot (guarded by header_sync_complete / slow_sync_started), so a
+        // dropped try_send would leave the download coordinator uncreated and the
+        // node stalled forever with peers idle. Retry until the channel accepts it.
+        // Returns false only if we are shutting down. (async_send is intentionally
+        // avoided here — it has its own issues on this channel type.)
+        auto send_block_range = [&](uint32_t start, uint32_t end) -> ::asio::awaitable<bool> {
+            block_range_request const req{.start_height = start, .end_height = end};
+            size_t retries = 0;
+            while ( ! block_download_input.try_send(std::error_code{}, req)) {
+                // Log the first stall and then periodically, so a genuinely wedged
+                // channel (no consumer draining) is visible rather than silent.
+                if (retries == 0 || retries % 50 == 0) {
+                    spdlog::warn("[sync_coordinator] block_download_input full — retrying block_range_request {}-{} (retry {})",
+                        start, end, retries);
+                }
+                ++retries;
+                ::asio::steady_timer timer(exec);
+                timer.expires_after(std::chrono::milliseconds(20));
+                auto [tec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+                if (tec || network.stopped()) {
+                    spdlog::info("[sync_coordinator] block_range_request {}-{} abandoned (stopping) after {} retries",
+                        start, end, retries);
+                    co_return false;
+                }
+            }
+            spdlog::info("[sync_coordinator] block_range_request {}-{} sent ({} retries)", start, end, retries);
+            co_return true;
+        };
+
         // Main loop: ONLY receives from unified channel (no || operator)
         while (true) {
             spdlog::debug("[sync_coordinator] Waiting for events...");
@@ -962,12 +992,7 @@ static
                                 end_height - blocks_synced_to);
                         }
 
-                        if (!block_download_input.try_send(std::error_code{}, block_range_request{
-                            .start_height = blocks_synced_to + 1,
-                            .end_height = end_height
-                        })) {
-                            spdlog::warn("[sync_coordinator] Channel full, block_range_request dropped");
-                        }
+                        co_await send_block_range(blocks_synced_to + 1, end_height);
                     } else {
                         // Already synced - wait and check for new blocks later
                         spdlog::info("[sync_coordinator] Fully synced at height {}", blocks_synced_to);
@@ -1020,14 +1045,7 @@ static
                         spdlog::info("[sync_coordinator] Starting SLOW block sync: {} to {} ({} blocks)",
                             blocks_synced_to + 1, headers_synced_to,
                             headers_synced_to - blocks_synced_to);
-                        if (!block_download_input.try_send(std::error_code{}, block_range_request{
-                            .start_height = blocks_synced_to + 1,
-                            .end_height = headers_synced_to
-                        })) {
-                            spdlog::warn("[sync_coordinator] Channel full, SLOW block_range_request dropped");
-                        } else {
-                            slow_sync_started = true;
-                        }
+                        slow_sync_started = co_await send_block_range(blocks_synced_to + 1, headers_synced_to);
                     }
 
                     // Check if we've caught up to headers
@@ -1111,14 +1129,7 @@ static
                         spdlog::info("[sync_coordinator] Starting SLOW block sync: {} to {} ({} blocks)",
                             blocks_synced_to + 1, headers_synced_to,
                             headers_synced_to - blocks_synced_to);
-                        if (!block_download_input.try_send(std::error_code{}, block_range_request{
-                            .start_height = blocks_synced_to + 1,
-                            .end_height = headers_synced_to
-                        })) {
-                            spdlog::warn("[sync_coordinator] Channel full, SLOW block_range_request dropped");
-                        } else {
-                            slow_sync_started = true;
-                        }
+                        slow_sync_started = co_await send_block_range(blocks_synced_to + 1, headers_synced_to);
                     }
 
                     // Check if we've caught up to headers
