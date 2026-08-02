@@ -19,6 +19,7 @@
 #endif
 
 #include <kth/blockchain/define.hpp>
+#include <kth/blockchain/finalization.hpp>
 #include <kth/blockchain/header_index.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/blockchain/utxo_builder.hpp>
