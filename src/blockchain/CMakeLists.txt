@@ -190,6 +190,7 @@ set(kth_sources_just_legacy
   src/validate/validate_input.cpp
   src/validate/validate_transaction.cpp
   src/settings.cpp
+  src/finalization.cpp
   src/utxo_builder.cpp
 )
 
@@ -233,6 +234,7 @@ set(kth_headers
   include/kth/blockchain/pools/block_pool.hpp
   include/kth/blockchain/pools/header_organizer.hpp
   include/kth/blockchain/pools/transaction_organizer.hpp
+  include/kth/blockchain/finalization.hpp
   include/kth/blockchain/settings.hpp
 )
 
@@ -299,6 +301,7 @@ if (ENABLE_TEST)
         test/utxoz_roundtrip.cpp
         test/verify_script_context.cpp
         test/batch_sigchecks.cpp
+        test/finalization.cpp
     )
 
     # Disabled until ported to v1.0 APIs:

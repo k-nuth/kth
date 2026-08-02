@@ -235,6 +235,20 @@ struct KD_API header_index {
     /// @param pos Byte offset within rev*.dat (same file number as block).
     void set_undo_pos(index_t idx, uint32_t pos);
 
+    // =========================================================================
+    // Header reception time (for finalization)
+    // =========================================================================
+
+    /// Record the wall-clock time (unix seconds) at which this header was first
+    /// received from the network. 0 means "known before this session" (loaded
+    /// from the store at startup), which BCHN treats as immediately finalizable.
+    /// Mirrors BCHN's CBlockIndex::nTimeReceived.
+    void set_received_time(index_t idx, uint32_t unix_seconds);
+
+    /// Get the header's reception time (unix seconds), or 0 if never set.
+    [[nodiscard]]
+    uint32_t get_received_time(index_t idx) const;
+
     /// Get file number for block.
     /// @return File number or -1 if no data.
     [[nodiscard]]
@@ -346,6 +360,10 @@ private:
     std::vector<int16_t> file_numbers_;    // -1 = no data
     std::vector<uint32_t> data_positions_; // Position in blk*.dat
     std::vector<uint32_t> undo_positions_; // Position in rev*.dat
+
+    // Wall-clock reception time (unix seconds) per header; 0 = loaded from store
+    // at startup (immediately finalizable). Used by finalization's time rule.
+    std::vector<uint32_t> header_received_times_;
 
     // Index counter
     std::atomic<index_t> next_idx_{0};

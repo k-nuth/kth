@@ -38,6 +38,9 @@ header_index::header_index(size_t capacity)
     data_positions_.resize(capacity_, 0);
     undo_positions_.resize(capacity_, 0);
 
+    // Reception time (0 = loaded from store / not yet set)
+    header_received_times_.resize(capacity_, 0);
+
     // Reserve hash map capacity
     hash_to_idx_.reserve(capacity_);
 }
@@ -242,6 +245,14 @@ void header_index::set_block_pos(index_t idx, int16_t file, uint32_t pos) {
 
 void header_index::set_undo_pos(index_t idx, uint32_t pos) {
     undo_positions_[idx] = pos;
+}
+
+void header_index::set_received_time(index_t idx, uint32_t unix_seconds) {
+    header_received_times_[idx] = unix_seconds;
+}
+
+uint32_t header_index::get_received_time(index_t idx) const {
+    return header_received_times_[idx];
 }
 
 int16_t header_index::get_file_number(index_t idx) const {
