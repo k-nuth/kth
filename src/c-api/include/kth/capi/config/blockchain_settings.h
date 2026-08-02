@@ -22,6 +22,8 @@ typedef struct {
     uint64_t minimum_output_satoshis;
     uint32_t notify_limit_hours;
     uint32_t reorganization_limit;
+    int32_t max_reorg_depth;
+    int64_t finalization_delay_seconds;
     kth_size_t checkpoint_count;
     kth_checkpoint* checkpoints;
     kth_bool_t fix_checkpoints;

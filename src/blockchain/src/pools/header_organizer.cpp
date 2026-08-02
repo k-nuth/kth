@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include <kth/infrastructure/utility/stats.hpp>
+#include <kth/infrastructure/utility/timer.hpp>
 
 #include <kth/blockchain/settings.hpp>
 #include <kth/blockchain/validate/validate_header.hpp>
@@ -22,7 +23,18 @@ header_organizer::header_organizer(header_index& index, settings const& settings
                                    domain::config::network network)
     : index_(index)
     , validator_(settings, network)
+    , finalizer_(index, settings.max_reorg_depth, settings.finalization_delay_seconds,
+                 static_cast<int64_t>(zulu_time()))
 {}
+
+void header_organizer::note_block_validated(int32_t block_valid_height) {
+    auto const before = finalizer_.finalized_height();
+    finalizer_.maybe_advance(tip_index_, block_valid_height, static_cast<int64_t>(zulu_time()));
+    auto const after = finalizer_.finalized_height();
+    if (after != before) {
+        spdlog::info("[header_organizer] Finalized block advanced to height {}", after);
+    }
+}
 
 // =============================================================================
 // Lifecycle
@@ -168,6 +180,10 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
             prev_hash = hash;
             ++height;
             ++result.headers_added;
+
+            // Record wall-clock reception time for the finalization time rule.
+            // (Headers loaded from the store at startup keep 0 = immediately eligible.)
+            index_.set_received_time(add_result.index, static_cast<uint32_t>(zulu_time()));
 
             // Mark as valid header
             index_.add_status(add_result.index, header_status::valid_header);

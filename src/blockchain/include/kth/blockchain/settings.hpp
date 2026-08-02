@@ -31,6 +31,13 @@ struct KB_API settings {
     uint64_t minimum_output_satoshis = 500;
     uint32_t notify_limit_hours = 24;
     uint32_t reorganization_limit = 256;
+    // Finalization (BCHN parity). A block is finalized once it is `max_reorg_depth`
+    // deep and its header is `finalization_delay_seconds` old. Currently the node
+    // only tracks the finalized block; enforcement (refusing to reorg across it,
+    // rejecting headers below it) is not wired yet. max_reorg_depth < 0 disables
+    // finalization entirely.
+    int32_t max_reorg_depth = 10;                       // BCHN -maxreorgdepth
+    int64_t finalization_delay_seconds = 2 * 60 * 60;   // BCHN -finalizationdelay (2h)
     // Minimum seconds between block-template rebuilds while the mempool churns
     // (a new tip always rebuilds immediately). Mirrors bitcoind's 5s.
     uint32_t gbt_template_refresh_seconds = 5;
