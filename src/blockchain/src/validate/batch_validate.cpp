@@ -59,13 +59,14 @@ struct db_prevout {
     bool coinbase;
 };
 
-// One script-verification unit, filled during the serial pass and run in parallel.
+// One transaction to script-verify, filled during the serial pass and run in
+// parallel. Verifying a whole transaction (rather than a single input) lets the
+// signature-checker context be built once per tx instead of once per input.
 // Flags are the per-height consensus flags for the block the tx belongs to.
 struct verify_task {
     transaction const* tx;
-    uint32_t input_index;
     domain::script_flags_t flags;
-    size_t height;   // for diagnostics on failure
+    size_t height;   // for diagnostics and per-block SigChecks accounting
 };
 
 } // namespace
@@ -299,13 +300,16 @@ code validate_block_batch(
                 op.validation.confirmed = true;
 
                 in_value += out->value();
-                tasks.push_back(verify_task{&tx, ii, block_flags[i], height});
             }
 
             if (in_value < out_value) {
                 return error::spend_exceeds_value;
             }
             block_fees += (in_value - out_value);
+
+            // One script-verification unit per transaction (all its inputs share
+            // one signature-checker context).
+            tasks.push_back(verify_task{&tx, block_flags[i], height});
         }
 
         auto const reward = block::subsidy(height, settings.retarget) + block_fees;
@@ -315,10 +319,11 @@ code validate_block_batch(
     }
 
     // -----------------------------------------------------------------------
-    // Phase 2 (parallel): script/signature verification per input. Independent
-    // now that every prevout cache is populated; split across the hardware. Each
-    // input's SigChecks count is recorded and enforced against the per-tx /
-    // per-block limits in Phase 3 below.
+    // Phase 2 (parallel): script/signature verification, one transaction per task
+    // (its inputs share a signature-checker context). Independent now that every
+    // prevout cache is populated; split across the hardware. Each transaction's
+    // total SigChecks is recorded and enforced against the per-tx / per-block
+    // limits in Phase 3 below.
     // -----------------------------------------------------------------------
     if (tasks.empty()) {
         return error::success;
@@ -330,30 +335,37 @@ code validate_block_batch(
     std::atomic<bool> failed{false};
     std::mutex err_mutex;
     code first_error = error::success;
-    // SigChecks returned per input; each worker writes its own slot (no contention).
+    // Total SigChecks per transaction; each worker writes its own slot (no contention).
     std::vector<size_t> task_sigchecks(tasks.size(), 0);
 
     auto run_bucket = [&](size_t bucket) {
       try {
         for (size_t t = bucket; t < tasks.size() && ! failed.load(std::memory_order_relaxed); t += workers) {
             auto const& task = tasks[t];
-            auto const res = validate_input::verify_script(*task.tx, task.input_index, task.flags);
+            auto const res = validate_input::verify_transaction(*task.tx, task.flags);
             if (res.first != error::success) {
                 std::lock_guard<std::mutex> lk(err_mutex);
                 if ( ! failed.exchange(true)) {
                     first_error = res.first;
-                    // Decisive diagnostic: everything needed to reproduce the failing
-                    // input in a standalone verify_script test.
-                    auto const& in = task.tx->inputs()[task.input_index];
-                    auto const& pv = in.previous_output();
-                    spdlog::error("[batch_validate] script FAIL h={} err={} flags={:#x} tx={} in={} prevout={}:{} value={} prevout_script={} input_script={}",
-                        task.height, res.first.message(),
-                        static_cast<uint64_t>(task.flags),
-                        encode_hash(task.tx->hash()), task.input_index,
-                        encode_hash(pv.hash()), pv.index(),
-                        pv.validation.cache.value(),
-                        encode_base16(to_data_chunk(pv.validation.cache.script(), false)),
-                        encode_base16(to_data_chunk(in.script(), false)));
+                    // Re-run per input to pinpoint the culprit and emit a decisive
+                    // diagnostic (everything needed to reproduce it in a standalone
+                    // verify_script test). Only on failure, so it is off the hot path.
+                    auto const& inputs = task.tx->inputs();
+                    for (uint32_t ii = 0; ii < inputs.size(); ++ii) {
+                        if (validate_input::verify_script(*task.tx, ii, task.flags).first == error::success) {
+                            continue;
+                        }
+                        auto const& pv = inputs[ii].previous_output();
+                        spdlog::error("[batch_validate] script FAIL h={} err={} flags={:#x} tx={} in={} prevout={}:{} value={} prevout_script={} input_script={}",
+                            task.height, res.first.message(),
+                            static_cast<uint64_t>(task.flags),
+                            encode_hash(task.tx->hash()), ii,
+                            encode_hash(pv.hash()), pv.index(),
+                            pv.validation.cache.value(),
+                            encode_base16(to_data_chunk(pv.validation.cache.script(), false)),
+                            encode_base16(to_data_chunk(inputs[ii].script(), false)));
+                        break;
+                    }
                 }
                 return;
             }
@@ -384,29 +396,19 @@ code validate_block_batch(
     }
 
     // -----------------------------------------------------------------------
-    // Phase 3 (serial): enforce the SigChecks consensus limits from the per-input
-    // counts — max_tx_sigchecks per transaction and the dynamic ABLA limit per
-    // block. Tasks are emitted block-by-block then tx-by-tx then input-by-input,
-    // so a transaction's inputs are contiguous and each block's tasks form a run.
+    // Phase 3 (serial): enforce the SigChecks consensus limits from the per-tx
+    // totals — max_tx_sigchecks per transaction and the dynamic ABLA limit per
+    // block. Each task is one transaction, so there is one entry per task.
     // (BCHN stops as soon as a limiter is exceeded; validating the whole batch
     // first and checking the sums is equivalent for accept/reject, only less
     // DoS-optimal, which is acceptable on the IBD path.)
     // -----------------------------------------------------------------------
-    // Number transactions with a per-batch ordinal so the pure limiter can group
-    // a tx's inputs without knowing the transaction type. Inputs are emitted
-    // contiguously per tx, so the ordinal bumps whenever the tx pointer changes.
     std::vector<sigcheck_entry> entries;
     entries.reserve(tasks.size());
-    transaction const* prev_tx = nullptr;
-    size_t tx_index = 0;
     for (size_t t = 0; t < tasks.size(); ++t) {
-        if (t != 0 && tasks[t].tx != prev_tx) {
-            ++tx_index;
-        }
-        prev_tx = tasks[t].tx;
         entries.push_back(sigcheck_entry{
             tasks[t].height - start_height,
-            tx_index,
+            t,   // one task is one transaction
             static_cast<uint64_t>(task_sigchecks[t])});
     }
     return enforce_sigcheck_limits(entries, block_sigcheck_limit, max_tx_sigchecks);

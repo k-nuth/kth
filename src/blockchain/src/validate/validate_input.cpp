@@ -279,12 +279,65 @@ std::pair<code, size_t> validate_input::verify_script(transaction const& tx, uin
     return {convert_result(res), sig_checks};
 }
 
+std::pair<code, size_t> validate_input::verify_transaction(transaction const& tx, script_flags_t flags) {
+    constexpr bool prefix = false;
+
+    // The signature-checker context depends only on the transaction (the
+    // serialized tx and the spent-output coins), so build it once and reuse it for
+    // every input instead of rebuilding it per input as verify_script does.
+    auto const tx_data = kth::to_data_chunk(tx, true);
+    auto const coins = create_context_data(tx, true);
+    auto const native_flags = convert_flags(flags);
+
+    size_t total_sig_checks = 0;
+    auto const& inputs = tx.inputs();
+    for (uint32_t i = 0; i < inputs.size(); ++i) {
+        auto const& prevout = inputs[i].previous_output().validation;
+        auto const locking_script_data = kth::to_data_chunk(prevout.cache.script(), false);
+        auto const unlock_script_data = kth::to_data_chunk(inputs[i].script(), prefix);
+        auto const amount = prevout.cache.value();
+
+        size_t sig_checks;
+        auto const res = consensus::verify_script(
+            tx_data.data(),
+            tx_data.size(),
+            locking_script_data.data(),
+            locking_script_data.size(),
+            unlock_script_data.data(),
+            unlock_script_data.size(),
+            i,
+            native_flags,
+            sig_checks,
+            amount,
+            coins
+        );
+
+        auto const c = convert_result(res);
+        if (c != error::success) {
+            return {c, total_sig_checks};
+        }
+        total_sig_checks += sig_checks;
+    }
+
+    return {error::success, total_sig_checks};
+}
+
 #else //WITH_CONSENSUS
 
 // #error Not supported, build using -o consensus=True
 
 std::pair<code, size_t> validate_input::verify_script(transaction const& tx, uint32_t input_index, script_flags_t flags) {
     return {script::verify(tx, input_index, flags), 0};
+}
+
+std::pair<code, size_t> validate_input::verify_transaction(transaction const& tx, script_flags_t flags) {
+    for (uint32_t i = 0; i < tx.inputs().size(); ++i) {
+        auto const c = script::verify(tx, i, flags);
+        if (c != error::success) {
+            return {c, 0};
+        }
+    }
+    return {error::success, 0};
 }
 
 #endif //WITH_CONSENSUS
