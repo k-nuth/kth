@@ -150,6 +150,89 @@ TEST_CASE("header_organizer empty batch returns success with zero count", "[head
     REQUIRE(result.headers_added == 0);
 }
 
+// =============================================================================
+// Fork detection tests (headers-first reorg, detection layer)
+// =============================================================================
+
+// Build a side branch off `fork_prev` (the fork ancestor's hash) using header ids
+// starting at `id_base` so the hashes never collide with the main chain.
+domain::message::header::list make_branch(hash_digest fork_prev, size_t length, uint32_t id_base) {
+    domain::message::header::list branch;
+    hash_digest prev = fork_prev;
+    for (size_t i = 0; i < length; ++i) {
+        auto hdr = make_header_with_prev(prev, id_base + uint32_t(i));
+        prev = kth::domain::chain::hash(hdr);
+        branch.push_back(std::move(hdr));
+    }
+    return branch;
+}
+
+TEST_CASE("header_organizer flags a heavier side branch as a reorg candidate", "[header_organizer][fork]") {
+    // Main chain: heights 0..9 (tip at 9). All headers share the same target, so
+    // cumulative work is proportional to height.
+    header_index index;
+    (void)build_chain(index, 10);
+    auto const fork_prev = index.get_hash(5);   // fork ancestor at height 5
+
+    auto settings = make_test_settings();
+    header_organizer organizer(index, settings, domain::config::network::mainnet);
+    REQUIRE(organizer.start());
+    organizer.sync_tip();
+    auto const tip_height_before = organizer.header_height();
+
+    // Branch of 6 blocks off height 5 -> branch head at height 11 with more total
+    // work than the height-9 tip (6 branch blocks vs 4 tip blocks above the fork).
+    auto branch = make_branch(fork_prev, 6, 200);
+    auto result = organizer.add_headers(branch);
+
+    // Detected, but the active tip is NOT switched (execution layer pending).
+    REQUIRE(result.reorg_candidate);
+    REQUIRE(result.reorg_fork_height == 5);
+    REQUIRE(result.error == error::stale_chain);
+    REQUIRE(result.headers_added == 0);
+    REQUIRE(organizer.header_height() == tip_height_before);   // tip unchanged
+    REQUIRE(index.size() == 16);                               // branch stored (10 + 6)
+}
+
+TEST_CASE("header_organizer does not flag a lighter side branch", "[header_organizer][fork]") {
+    header_index index;
+    (void)build_chain(index, 10);              // tip at height 9
+    auto const fork_prev = index.get_hash(5);
+
+    auto settings = make_test_settings();
+    header_organizer organizer(index, settings, domain::config::network::mainnet);
+    REQUIRE(organizer.start());
+    organizer.sync_tip();
+
+    // Branch of 3 blocks off height 5 -> head at height 8, less work than the tip.
+    auto branch = make_branch(fork_prev, 3, 300);
+    auto result = organizer.add_headers(branch);
+
+    REQUIRE_FALSE(result.reorg_candidate);
+    REQUIRE(result.reorg_fork_height == -1);
+    REQUIRE(result.error == error::stale_chain);   // still "keep syncing"
+    REQUIRE(result.headers_added == 0);
+}
+
+TEST_CASE("header_organizer ignores a fork deeper than the reorg limit", "[header_organizer][fork]") {
+    header_index index;
+    (void)build_chain(index, 10);              // tip at height 9
+    auto const fork_prev = index.get_hash(5);  // depth from tip = 4
+
+    auto settings = make_test_settings();
+    settings.reorganization_limit = 2;         // fork depth 4 > 2 -> ignore
+    header_organizer organizer(index, settings, domain::config::network::mainnet);
+    REQUIRE(organizer.start());
+    organizer.sync_tip();
+
+    auto branch = make_branch(fork_prev, 6, 400);
+    auto result = organizer.add_headers(branch);
+
+    REQUIRE(result.error == error::stale_chain);
+    REQUIRE_FALSE(result.reorg_candidate);
+    REQUIRE(index.size() == 10);               // branch NOT stored (bounded growth)
+}
+
 TEST_CASE("header_organizer duplicate headers in same batch", "[header_organizer][stale]") {
     // Setup
     header_index index;

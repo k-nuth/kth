@@ -24,6 +24,13 @@ struct header_organize_result {
     size_t headers_added{0};
     size_t index_size{0};
     size_t index_memory_bytes{0};
+
+    // Fork detection (headers-first): set when a stored side branch reaches
+    // strictly greater cumulative chain work than the active header tip, i.e. a
+    // reorganization candidate. The active tip is NOT switched here — executing
+    // the switch (disconnecting blocks, rewinding UTXO-Z) is a separate layer.
+    bool reorg_candidate{false};
+    int32_t reorg_fork_height{-1};   // height of the common ancestor, or -1
 };
 
 /// Header organizer for headers-first sync.
@@ -136,6 +143,11 @@ private:
     header_index& index_;
     std::atomic<bool> stopped_{false};
     validate_header validator_;
+
+    // Maximum fork depth (tip height - fork height) we bother storing/comparing a
+    // side branch at. Deeper forks are treated as stale, bounding index growth
+    // against branch spam. From settings.reorganization_limit.
+    uint32_t reorg_limit_;
 
     // Current tip state
     index_t tip_index_{header_index::null_index};
