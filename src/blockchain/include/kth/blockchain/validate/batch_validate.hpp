@@ -39,11 +39,12 @@ struct settings;
 // active at its height — not a fixed all-forks set.
 //
 // This stage verifies: input scripts/signatures, in-batch double spends, coinbase
-// maturity, fees (inputs >= outputs) and coinbase value (<= subsidy + fees). It
-// does NOT re-check block-level rules already covered by the fast path or applied
-// elsewhere (merkle root, ABLA block size, per-block sigcheck accounting, tx
-// duplicate / BIP30, coinbase input shape). The batch is NOT applied/persisted
-// here — the caller applies the UTXO delta only after this returns error::success.
+// maturity, fees (inputs >= outputs), coinbase value (<= subsidy + fees) and the
+// per-transaction / per-block SigChecks limits. It does NOT re-check block-level
+// rules already covered by the fast path or applied elsewhere (merkle root, ABLA
+// block size, tx duplicate / BIP30, coinbase input shape). The batch is NOT
+// applied/persisted here — the caller applies the UTXO delta only after this
+// returns error::success.
 //
 // Returns error::success, or the first consensus error encountered.
 KB_API
@@ -53,6 +54,27 @@ code validate_block_batch(
     domain::config::network network,
     std::vector<block_const_ptr> const& blocks,
     size_t start_height);
+
+// One input's SigChecks contribution to a validated batch, in emission order
+// (block by block, then transaction by transaction, then input by input — so a
+// transaction's inputs are contiguous and each block's inputs form a run).
+struct sigcheck_entry {
+    size_t block_index;   // index into block_limits; MUST be < block_limits.size()
+    size_t tx_index;      // per-batch transaction ordinal; groups a tx's inputs
+    uint64_t sigchecks;
+};
+
+// Enforce the BCH SigChecks consensus limits over a batch's per-input counts: at
+// most `tx_limit` per transaction and at most `block_limits[block_index]` per
+// block. `entries` must be in emission order. Returns error::success, or
+// error::transaction_sigchecks_limit / error::block_sigchecks_limit on the first
+// limit exceeded. Pure (no I/O) — unit-tested in test/batch_sigchecks.cpp.
+// Precondition (contract-checked): every entry's block_index < block_limits.size().
+[[nodiscard]] KB_API
+code enforce_sigcheck_limits(
+    std::vector<sigcheck_entry> const& entries,
+    std::vector<uint64_t> const& block_limits,
+    uint64_t tx_limit);
 
 } // namespace kth::blockchain
 

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <limits>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -19,6 +20,7 @@
 #include <kth/blockchain/validate/validate_header.hpp>
 #include <kth/blockchain/validate/validate_input.hpp>
 #include <kth/domain/constants.hpp>
+#include <kth/infrastructure/utility/assert.hpp>
 
 namespace kth::blockchain {
 
@@ -68,6 +70,36 @@ struct verify_task {
 
 } // namespace
 
+code enforce_sigcheck_limits(
+    std::vector<sigcheck_entry> const& entries,
+    std::vector<uint64_t> const& block_limits,
+    uint64_t tx_limit) {
+
+    std::vector<uint64_t> block_sigchecks(block_limits.size(), 0);
+    size_t cur_tx = std::numeric_limits<size_t>::max();
+    uint64_t tx_sigchecks = 0;
+
+    for (auto const& e : entries) {
+        // Precondition: every entry's block_index addresses block_limits.
+        KTH_CONTRACT(e.block_index < block_limits.size());
+
+        if (e.tx_index != cur_tx) {
+            cur_tx = e.tx_index;
+            tx_sigchecks = 0;
+        }
+        tx_sigchecks += e.sigchecks;
+        if (tx_sigchecks > tx_limit) {
+            return error::transaction_sigchecks_limit;
+        }
+
+        block_sigchecks[e.block_index] += e.sigchecks;
+        if (block_sigchecks[e.block_index] > block_limits[e.block_index]) {
+            return error::block_sigchecks_limit;
+        }
+    }
+    return error::success;
+}
+
 code validate_block_batch(
     block_chain& chain,
     settings const& settings,
@@ -88,6 +120,8 @@ code validate_block_batch(
 
     domain::chain::chain_state::ptr state;
     std::vector<domain::script_flags_t> block_flags(blocks.size());
+    // Per-block dynamic SigChecks limit (consensus), one per block in the batch.
+    std::vector<uint64_t> block_sigcheck_limit(blocks.size());
 
     boost::unordered_flat_map<bv_outpoint, created_output, bv_outpoint_hasher> created;
     boost::unordered_flat_set<bv_outpoint, bv_outpoint_hasher> spent;
@@ -141,6 +175,11 @@ code validate_block_batch(
             return error::operation_failed;
         }
         block_flags[i] = state->enabled_flags();
+        // Per-block dynamic SigChecks limit: the ABLA block-size limit at this
+        // height divided by the fixed ratio, matching BCHN's
+        // GetMaxBlockSigChecksCount(nMaxBlockSize).
+        block_sigcheck_limit[i] =
+            state->dynamic_max_block_size() / block_maxbytes_maxsigchecks_ratio;
 
         for (auto const& tx : block.transactions()) {
             if (tx.is_coinbase()) {
@@ -277,9 +316,9 @@ code validate_block_batch(
 
     // -----------------------------------------------------------------------
     // Phase 2 (parallel): script/signature verification per input. Independent
-    // now that every prevout cache is populated; split across the hardware.
-    // TODO: enforce the per-block dynamic sigchecks limit (ABLA); per-tx limit is
-    // enforced inside verify_script accumulation.
+    // now that every prevout cache is populated; split across the hardware. Each
+    // input's SigChecks count is recorded and enforced against the per-tx /
+    // per-block limits in Phase 3 below.
     // -----------------------------------------------------------------------
     if (tasks.empty()) {
         return error::success;
@@ -291,6 +330,8 @@ code validate_block_batch(
     std::atomic<bool> failed{false};
     std::mutex err_mutex;
     code first_error = error::success;
+    // SigChecks returned per input; each worker writes its own slot (no contention).
+    std::vector<size_t> task_sigchecks(tasks.size(), 0);
 
     auto run_bucket = [&](size_t bucket) {
       try {
@@ -316,6 +357,7 @@ code validate_block_batch(
                 }
                 return;
             }
+            task_sigchecks[t] = res.second;
         }
       } catch (std::exception const& e) {
         // A worker thread must not let an exception escape (std::terminate).
@@ -337,7 +379,37 @@ code validate_block_batch(
         th.join();
     }
 
-    return first_error;
+    if (first_error != error::success) {
+        return first_error;
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3 (serial): enforce the SigChecks consensus limits from the per-input
+    // counts — max_tx_sigchecks per transaction and the dynamic ABLA limit per
+    // block. Tasks are emitted block-by-block then tx-by-tx then input-by-input,
+    // so a transaction's inputs are contiguous and each block's tasks form a run.
+    // (BCHN stops as soon as a limiter is exceeded; validating the whole batch
+    // first and checking the sums is equivalent for accept/reject, only less
+    // DoS-optimal, which is acceptable on the IBD path.)
+    // -----------------------------------------------------------------------
+    // Number transactions with a per-batch ordinal so the pure limiter can group
+    // a tx's inputs without knowing the transaction type. Inputs are emitted
+    // contiguously per tx, so the ordinal bumps whenever the tx pointer changes.
+    std::vector<sigcheck_entry> entries;
+    entries.reserve(tasks.size());
+    transaction const* prev_tx = nullptr;
+    size_t tx_index = 0;
+    for (size_t t = 0; t < tasks.size(); ++t) {
+        if (t != 0 && tasks[t].tx != prev_tx) {
+            ++tx_index;
+        }
+        prev_tx = tasks[t].tx;
+        entries.push_back(sigcheck_entry{
+            tasks[t].height - start_height,
+            tx_index,
+            static_cast<uint64_t>(task_sigchecks[t])});
+    }
+    return enforce_sigcheck_limits(entries, block_sigcheck_limit, max_tx_sigchecks);
 }
 
 } // namespace kth::blockchain

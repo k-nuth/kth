@@ -302,6 +302,7 @@ if (ENABLE_TEST)
         test/block_template_test.cpp
         test/utxoz_roundtrip.cpp
         test/verify_script_context.cpp
+        test/batch_sigchecks.cpp
     )
 
     # Disabled until ported to v1.0 APIs:
