@@ -29,6 +29,15 @@ struct KB_API validate_input {
 
     static
     std::pair<code, size_t> verify_script(domain::chain::transaction const& tx, uint32_t input_index, domain::script_flags_t flags);
+
+    // Verify every input of `tx`, building the signature-checker context (the
+    // serialized transaction and the spent-output coins) ONCE and reusing it
+    // across inputs — that context depends only on the transaction, not on the
+    // input, so the per-input verify_script rebuilds it redundantly (O(inputs^2)).
+    // Returns the first input error (or success) and the transaction's total
+    // SigChecks. Every input's prevout cache must be populated by the caller.
+    static
+    std::pair<code, size_t> verify_transaction(domain::chain::transaction const& tx, domain::script_flags_t flags);
 };
 
 } // namespace kth::blockchain
