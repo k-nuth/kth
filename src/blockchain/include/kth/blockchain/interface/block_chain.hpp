@@ -150,16 +150,10 @@ struct KB_API block_chain {
 
 #if ! defined(KTH_DB_READONLY)
     [[nodiscard]]
-    awaitable_expected<block_const_ptr_list_ptr> reorganize(
-        infrastructure::config::checkpoint const& fork_point,
-        block_const_ptr_list_const_ptr incoming_blocks);
-
-    [[nodiscard]]
     ::asio::awaitable<code> push(transaction_const_ptr tx);
 
     [[nodiscard]] code push_sync(transaction_const_ptr tx);
     [[nodiscard]] bool insert(block_const_ptr block, size_t height);
-    void prune_reorg_async();
 
 #ifndef KTH_UTXOZ_COMPACT_MODE
     // Apply a batch of UTXO changes (full mode only — compact mode uses apply_utxo_delta_raw)
@@ -312,17 +306,8 @@ struct KB_API block_chain {
         bool coinbase;
     };
 
-    [[nodiscard]] std::expected<output_info, database::result_code> get_output(
-        domain::chain::output_point const& outpoint,
-        size_t branch_height, bool require_confirmed) const;
-
     [[nodiscard]] std::expected<output_info, database::result_code> get_utxo(
         domain::chain::output_point const& outpoint, size_t branch_height) const;
-
-    [[nodiscard]] std::expected<database::internal_database::utxo_pool_t, database::result_code> get_utxo_pool_from(uint32_t from, uint32_t to) const;
-
-    [[nodiscard]] std::expected<std::pair<size_t, size_t>, database::result_code> get_transaction_position(
-        hash_digest const& hash, bool require_confirmed) const;
 
     [[nodiscard]] bool header_exists(hash_digest const& block_hash) const;
     [[nodiscard]] bool block_exists(hash_digest const& block_hash) const;
@@ -398,15 +383,6 @@ struct KB_API block_chain {
     fetch_block_locator(domain::chain::block::indexes const& heights) const;
 
     // Server queries
-    [[nodiscard]] awaitable_expected<domain::chain::input_point_opt>
-    fetch_spend(domain::chain::output_point const& outpoint) const;
-
-    [[nodiscard]] awaitable_expected<domain::chain::history_compact::list>
-    fetch_history(short_hash const& address_hash, size_t limit, size_t from_height) const;
-
-    [[nodiscard]] awaitable_expected<std::vector<hash_digest>>
-    fetch_confirmed_transactions(short_hash const& address_hash, size_t limit, size_t from_height) const;
-
     [[nodiscard]] awaitable_expected<double_spend_proof_const_ptr>
     fetch_ds_proof(hash_digest const& hash) const;
 
@@ -468,39 +444,6 @@ struct KB_API block_chain {
 
     [[nodiscard]] ::asio::awaitable<code>
     filter_transactions(get_data_ptr message) const;
-
-    // =========================================================================
-    // ITERATION HELPERS
-    // =========================================================================
-
-    template <typename I, typename Handler>
-    void for_each_tx_hash(I f, I l, size_t height, Handler handler) const {
-        while (f != l) {
-            auto const& hash = *f;
-            auto const tx_result = database_.internal_db().get_transaction(hash, max_size_t);
-
-            if ( ! tx_result) {
-                handler(error::transaction_lookup_failed, 0, domain::chain::transaction::null());
-                return;
-            }
-            KTH_ASSERT(tx_result->height() == height);
-            handler(error::success, height, tx_result->transaction());
-            ++f;
-        }
-    }
-
-    template <typename I, typename Handler>
-    void for_each_tx_valid(I f, I l, size_t height, Handler handler) const {
-        while (f != l) {
-            auto const& tx = *f;
-            if ( ! tx.is_valid()) {
-                handler(error::transaction_lookup_failed, 0, domain::chain::transaction::null());
-                return;
-            }
-            handler(error::success, height, tx);
-            ++f;
-        }
-    }
 
 private:
     using handle = database::data_base::handle;

@@ -311,7 +311,15 @@ bool block_chain::stopped() const {
 // =============================================================================
 
 ::asio::awaitable<code> block_chain::organize(block_const_ptr block, bool headers_pre_validated) {
-    co_return co_await block_organizer_.organize(block, headers_pre_validated);
+    // Single-block acceptance was implemented on the pre-v1 LMDB storage
+    // (block_organizer -> populate_block over the LMDB utxo_pool, reorg pool).
+    // That storage is dead in the v1 node (flat files + UTXO-Z; IBD validates via
+    // validate_block_batch + utxo_build), so this path can no longer accept a
+    // block and is stubbed while the dead LMDB code is removed. Reimplementing it
+    // on the v1 model is tracked in issue #563.
+    (void)block;
+    (void)headers_pre_validated;
+    co_return error::not_implemented;
 }
 
 ::asio::awaitable<code> block_chain::organize_fast(std::shared_ptr<domain::chain::light_block const> block, size_t height) {
@@ -620,18 +628,6 @@ code block_chain::organize_headers_batch(domain::chain::header::list const& head
 
 #if ! defined(KTH_DB_READONLY)
 
-awaitable_expected<block_const_ptr_list_ptr> block_chain::reorganize(
-    infrastructure::config::checkpoint const& fork_point,
-    block_const_ptr_list_const_ptr incoming_blocks) {
-
-    // ==========================================================================
-    // DEPRECATED: Block storage moved to flat files (blk*.dat)
-    // ==========================================================================
-    (void)incoming_blocks;
-    (void)fork_point;
-    co_return std::unexpected(error::operation_failed);
-}
-
 ::asio::awaitable<code> block_chain::push(transaction_const_ptr tx) {
     using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
     auto channel = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
@@ -660,14 +656,6 @@ bool block_chain::insert(block_const_ptr block, size_t height) {
     (void)block;
     (void)height;
     return false;
-}
-
-void block_chain::prune_reorg_async() {
-    if ( ! is_stale()) {
-        ::asio::post(priority_pool_.get_executor(), [this]() {
-            database_.prune_reorg();
-        });
-    }
 }
 
 std::expected<uint32_t, database::result_code> block_chain::get_utxo_built_height() const {
@@ -954,23 +942,6 @@ std::expected<uint256_t, database::result_code> block_chain::get_branch_work(uin
     return out_work;
 }
 
-std::expected<block_chain::output_info, database::result_code> block_chain::get_output(
-    domain::chain::output_point const& outpoint,
-    size_t branch_height, bool /*require_confirmed*/) const {
-
-    auto const tx = database_.internal_db().get_transaction(outpoint.hash(), branch_height);
-    if ( ! tx) {
-        return std::unexpected(tx.error());
-    }
-
-    return output_info{
-        tx->transaction().outputs()[outpoint.index()],
-        tx->height(),
-        tx->median_time_past(),
-        tx->position() == 0
-    };
-}
-
 std::expected<block_chain::output_info, database::result_code> block_chain::get_utxo(
     domain::chain::output_point const& outpoint, size_t branch_height) const {
 
@@ -989,26 +960,6 @@ std::expected<block_chain::output_info, database::result_code> block_chain::get_
         entry->median_time_past(),
         entry->coinbase()
     };
-}
-
-std::expected<database::internal_database::utxo_pool_t, database::result_code> block_chain::get_utxo_pool_from(uint32_t from, uint32_t to) const {
-    return database_.internal_db().get_utxo_pool_from(from, to);
-}
-
-std::expected<std::pair<size_t, size_t>, database::result_code> block_chain::get_transaction_position(
-    hash_digest const& hash, bool require_confirmed) const {
-
-    auto const result = database_.internal_db().get_transaction(hash, max_size_t);
-
-    if (result) {
-        return std::pair{result->height(), result->position()};
-    }
-
-    // No mempool: only confirmed transactions are stored, so an unconfirmed
-    // lookup can never succeed. TODO(mempool): consult the new mempool when
-    // require_confirmed is false. See issue #491.
-    (void)require_confirmed;
-    return std::unexpected(result.error());
 }
 
 // =============================================================================
@@ -1234,18 +1185,10 @@ block_chain::fetch_transaction(hash_digest const& hash, bool require_confirmed) 
         co_return std::unexpected(error::service_stopped);
     }
 
-    auto const result = database_.internal_db().get_transaction(hash, max_size_t);
-    if (result) {
-        co_return std::tuple{
-            std::make_shared<const transaction>(result->transaction()),
-            result->position(),
-            result->height()
-        };
-    }
-
-    // No mempool: unconfirmed transactions are not stored.
-    // TODO(mempool): consult the new mempool when require_confirmed is false.
-    // See issue #491.
+    // Confirmed transactions are no longer indexed by hash (the LMDB transaction
+    // store was removed; blocks live in flat files). Reading a tx by hash will be
+    // reimplemented over the flat-file block store. See issue #491.
+    (void)hash;
     (void)require_confirmed;
     co_return std::unexpected(error::not_found);
 }
@@ -1256,14 +1199,10 @@ block_chain::fetch_transaction_position(hash_digest const& hash, bool require_co
         co_return std::unexpected(error::service_stopped);
     }
 
-    auto const result = database_.internal_db().get_transaction(hash, max_size_t);
-    if (result) {
-        co_return std::pair{result->position(), result->height()};
-    }
-
-    // No mempool: unconfirmed transactions are not stored.
-    // TODO(mempool): consult the new mempool when require_confirmed is false.
-    // See issue #491.
+    // Confirmed transactions are no longer indexed by hash (the LMDB transaction
+    // store was removed; blocks live in flat files). Reading a tx position by hash
+    // will be reimplemented over the flat-file block store. See issue #491.
+    (void)hash;
     (void)require_confirmed;
     co_return std::unexpected(error::not_found);
 }
@@ -1413,59 +1352,10 @@ block_chain::fetch_block_locator(block::indexes const& heights) const {
     co_return message;
 }
 
-awaitable_expected<domain::chain::input_point_opt>
-block_chain::fetch_spend(domain::chain::output_point const& outpoint) const {
-    if (stopped()) {
-        co_return std::unexpected(error::service_stopped);
-    }
-
-#if defined(KTH_DB_SPENDS)
-    auto point = database_.spends().get(outpoint);
-#else
-    auto point = database_.internal_db().get_spend(outpoint);
-#endif
-
-    if ( ! point) {
-        co_return std::unexpected(error::not_found);
-    }
-
-    co_return domain::chain::input_point_opt{*point};
-}
-
-awaitable_expected<domain::chain::history_compact::list>
-block_chain::fetch_history(short_hash const& address_hash, size_t limit, size_t from_height) const {
-    if (stopped()) {
-        co_return std::unexpected(error::service_stopped);
-    }
-
-#if defined(KTH_DB_HISTORY)
-    auto const result = database_.history().get(address_hash, limit, from_height);
-#else
-    auto const result = database_.internal_db().get_history(address_hash, limit, from_height);
-#endif
-    if ( ! result) {
-        co_return std::unexpected(error::not_found);
-    }
-    co_return *result;
-}
-
-awaitable_expected<std::vector<hash_digest>>
-block_chain::fetch_confirmed_transactions(short_hash const& address_hash,
-                                          size_t limit, size_t from_height) const {
-    if (stopped()) {
-        co_return std::unexpected(error::service_stopped);
-    }
-
-#if defined(KTH_DB_HISTORY)
-    auto const result = database_.history().get_txns(address_hash, limit, from_height);
-#else
-    auto const result = database_.internal_db().get_history_txns(address_hash, limit, from_height);
-#endif
-    if ( ! result) {
-        co_return std::unexpected(error::not_found);
-    }
-    co_return *result;
-}
+// The confirmed address index (history / spend) was backed by the LMDB history
+// and spend stores, which the v1 node never populates (blocks live in flat files,
+// the UTXO set in UTXO-Z). The stores and these queries were removed; a confirmed
+// address index will be reintroduced on the v1 model if/when it is needed.
 
 awaitable_expected<double_spend_proof_const_ptr>
 block_chain::fetch_ds_proof(hash_digest const& hash) const {
@@ -1761,27 +1651,10 @@ std::vector<mempool_transaction_summary> block_chain::get_mempool_transactions(
             ++i;
         }
 
-        i = 0;
-        for (auto const& input : tx.inputs()) {
-            auto const tx_addresses = kth::domain::wallet::payment_address::extract(
-                input.script(), encoding_p2kh, encoding_p2sh);
-            for (auto const tx_address : tx_addresses) {
-                if (addrs.find(tx_address) != addrs.end()) {
-                    auto const prev_tx = database_.internal_db().get_transaction(
-                        input.previous_output().hash(), max_size_t);
-                    if (prev_tx) {
-                        ret.push_back(mempool_transaction_summary(
-                            tx_address.encoded_cashaddr(false),
-                            kth::encode_hash(tx.hash()),
-                            kth::encode_hash(input.previous_output().hash()),
-                            std::to_string(input.previous_output().index()),
-                            "-" + std::to_string(prev_tx->transaction().outputs()[input.previous_output().index()].value()),
-                            i, e.time_seen));
-                    }
-                }
-            }
-            ++i;
-        }
+        // Input-side (debit) entries required resolving each spent prevout's value
+        // from the confirmed transaction store, which no longer exists (blocks live
+        // in flat files, the UTXO set in UTXO-Z). Only credit (output) entries are
+        // reported here until this is reworked over the v1 stores. See issue #491.
     });
 
     return ret;
@@ -1924,9 +1797,12 @@ void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const
         co_return error::service_stopped;
     }
 
+    // Drop inventory for transactions we already hold in the mempool so we do not
+    // re-request them. Confirmed transactions are no longer indexed by hash (the
+    // LMDB transaction store was removed); a confirmed-tx filter over the
+    // flat-file block store is tracked by issue #491.
     message->erase_if([this](auto const& inv) {
-        return inv.is_transaction_type() &&
-               get_transaction_position(inv.hash(), false);
+        return inv.is_transaction_type() && mempool_.contains(inv.hash());
     });
 
     co_return error::success;

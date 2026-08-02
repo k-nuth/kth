@@ -86,8 +86,6 @@ public:
     /// start_height is the height of the first header in the list.
     code push_headers_batch(domain::chain::header::list const& headers, size_t start_height);
 
-    code prune_reorg();
-
     //bool set_database_flags(bool fast);
 
     // ==========================================================================

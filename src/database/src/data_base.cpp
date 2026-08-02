@@ -469,15 +469,6 @@ awaitable_expected<block_const_ptr_list_ptr> data_base::pop_above(executor_type 
     co_return std::unexpected(error::operation_failed);
 }
 
-code data_base::prune_reorg() {
-    auto res = internal_db_->prune();
-    if ( ! succeed_prune(res)) {
-        spdlog::error("[database] Error pruning the reorganization pool, code: {}", static_cast<std::underlying_type<result_code>::type>(res));
-        return error::unknown;
-    }
-    return error::success;
-}
-
 // =============================================================================
 // DEPRECATED: Block storage moved to flat files (blk*.dat)
 // =============================================================================

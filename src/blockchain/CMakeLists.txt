@@ -183,11 +183,9 @@ set(kth_sources_just_legacy
   src/pools/block_template.cpp
   src/pools/mempool_transaction_summary.cpp
   src/populate/populate_base.cpp
-  src/populate/populate_block.cpp
   src/populate/populate_chain_state.cpp
   src/populate/populate_transaction.cpp
   src/validate/batch_validate.cpp
-  src/validate/validate_block.cpp
   src/validate/validate_header.cpp
   src/validate/validate_input.cpp
   src/validate/validate_transaction.cpp
@@ -218,9 +216,7 @@ set(kth_headers
   include/kth/blockchain/header_index.hpp
   include/kth/blockchain/populate/populate_transaction.hpp
   include/kth/blockchain/populate/populate_chain_state.hpp
-  include/kth/blockchain/populate/populate_block.hpp
   include/kth/blockchain/populate/populate_base.hpp
-  include/kth/blockchain/validate/validate_block.hpp
   include/kth/blockchain/validate/validate_header.hpp
   include/kth/blockchain/validate/validate_input.hpp
   include/kth/blockchain/validate/validate_transaction.hpp
@@ -309,11 +305,8 @@ if (ENABLE_TEST)
     #   - block_chain.cpp / utxo.cpp: use `kd::entity_from_data` (renamed/moved),
     #     `block_chain::get_utxo` (signature changed) and `block_chain::start()`
     #     (now an awaitable).
-    #   - validate_block.cpp: uses `kd::create<script>` (renamed/moved) and
-    #     `machine::to_flags` (moved to `kth::domain::to_flags`).
     # test/block_chain.cpp
     # test/utxo.cpp
-    # test/validate_block.cpp
 
     add_executable(kth_blockchain_test
         ${kth_blockchain_test_sources}

@@ -36,12 +36,13 @@ void populate_base::populate_duplicate(size_t branch_height, domain::chain::tran
 // Must be called serially: it writes the tx's entry in the validator-owned
 // transaction_validation_store (non-concurrent).
 void populate_base::populate_pooled(domain::chain::transaction const& tx, uint32_t height) const {
-    bool current = false;
-    auto const result = chain_.get_transaction_position(tx.hash(), false);
-    if (result && result->second == position_max) {
-        current = (result->first == height);
-    }
-    chain_.transaction_validations().mutate(tx.hash(), [&](auto& tv){ tv.current = current; });
+    // The "current" flag marked a tx already confirmed at this height, resolved
+    // from the LMDB confirmed-transaction index. That store was removed (blocks
+    // live in flat files, the UTXO set in UTXO-Z), so there is no hash->position
+    // lookup: a tx reaching validation is treated as not-yet-confirmed. A v1
+    // confirmed lookup over the flat-file block store is tracked by issue #491.
+    (void)height;
+    chain_.transaction_validations().mutate(tx.hash(), [](auto& tv){ tv.current = false; });
 }
 
 // Unspent outputs are cached by the store. If the cache is large enough this

@@ -249,44 +249,10 @@ void kth_chain_async_transaction_position(kth_chain_t chain, void* ctx, kth_hash
     }, ::asio::detached);
 }
 
-void kth_chain_async_spend(kth_chain_t chain, void* ctx, kth_output_point_const_t op, kth_spend_fetch_handler_t handler) {
-    auto const* outpoint_cpp = static_cast<kth::domain::chain::output_point const*>(op);
-    auto& bc = safe_chain(chain);
-    ::asio::co_spawn(bc.executor(), [&bc, outpoint_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
-        auto result = co_await bc.fetch_spend(*outpoint_cpp);
-        if (result) {
-            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(**result, std::error_code{}));
-        } else {
-            handler(chain, ctx, kth::to_c_err(result.error()), nullptr);
-        }
-    }, ::asio::detached);
-}
-
-void kth_chain_async_history(kth_chain_t chain, void* ctx, kth_payment_address_t address, kth_size_t limit, kth_size_t from_height, kth_history_fetch_handler_t handler) {
-    auto const addr_hash = kth::cpp_ref<kth::domain::wallet::payment_address>(address).hash20();
-    auto& bc = safe_chain(chain);
-    ::asio::co_spawn(bc.executor(), [&bc, addr_hash, limit, from_height, chain, ctx, handler]() -> ::asio::awaitable<void> {
-        auto result = co_await bc.fetch_history(addr_hash, limit, from_height);
-        if (result) {
-            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(*result, std::error_code{}));
-        } else {
-            handler(chain, ctx, kth::to_c_err(result.error()), nullptr);
-        }
-    }, ::asio::detached);
-}
-
-void kth_chain_async_confirmed_transactions(kth_chain_t chain, void* ctx, kth_payment_address_t address, uint64_t max, uint64_t start_height, kth_transactions_by_address_fetch_handler_t handler) {
-    auto const addr_hash = kth::cpp_ref<kth::domain::wallet::payment_address>(address).hash20();
-    auto& bc = safe_chain(chain);
-    ::asio::co_spawn(bc.executor(), [&bc, addr_hash, max, start_height, chain, ctx, handler]() -> ::asio::awaitable<void> {
-        auto result = co_await bc.fetch_confirmed_transactions(addr_hash, max, start_height);
-        if (result) {
-            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(*result, std::error_code{}));
-        } else {
-            handler(chain, ctx, kth::to_c_err(result.error()), nullptr);
-        }
-    }, ::asio::detached);
-}
+// The confirmed address index (spend / history / confirmed transactions) was
+// backed by the LMDB spend and history stores, which the v1 node no longer
+// maintains. Those queries were removed from block_chain; a v1 address index
+// will be reintroduced here if/when it is needed.
 
 // Organizers.
 //-------------------------------------------------------------------------
