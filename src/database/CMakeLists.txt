@@ -146,15 +146,11 @@ set(kth_headers
   include/kth/database/block_undo.hpp
   include/kth/database/block_store.hpp
   include/kth/database/mempool_store.hpp
-  include/kth/database/databases/block_database.ipp
   include/kth/database/databases/property_code.hpp
   include/kth/database/databases/internal_database.ipp
-  include/kth/database/databases/reorg_database.ipp
   include/kth/database/databases/internal_database.hpp
   include/kth/database/databases/transaction_entry.hpp
-  include/kth/database/databases/history_database.ipp
   include/kth/database/databases/history_entry.hpp
-  include/kth/database/databases/transaction_database.ipp
   include/kth/database/databases/generic_db.hpp
   include/kth/database/databases/tools.hpp
   include/kth/database/databases/lmdb_helper.hpp
@@ -162,8 +158,6 @@ set(kth_headers
   include/kth/database/databases/header_abla_entry.hpp
   include/kth/database/databases/utxo_entry.hpp
   include/kth/database/databases/utxoz_database.hpp
-  include/kth/database/databases/spend_database.ipp
-  include/kth/database/databases/utxo_database.ipp
   include/kth/database/databases/header_database.ipp
   include/kth/database/settings.hpp
   # include/kth/database/unspent_outputs.hpp
