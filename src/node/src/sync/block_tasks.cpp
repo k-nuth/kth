@@ -1704,7 +1704,8 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
     uint32_t start_height,
-    domain::config::network network
+    domain::config::network network,
+    std::function<bool()> should_stop
 ) {
     spdlog::info("[utxo_build] Task started at height {}", start_height);
 
@@ -1763,7 +1764,13 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     // pool thread to run the serial phase and orchestrate is enough.
     ::asio::thread_pool validation_pool(1);
 
-    while ( ! chain.stopped()) {
+    // Exit on the node-owned stop signal too, not only chain.stopped(): the chain
+    // is stopped in full_node::join(), which runs AFTER run() completes (all sync
+    // coroutines exited). Looping on chain.stopped() alone therefore deadlocks
+    // shutdown — this task would never exit, so run() never completes, so
+    // chain.stop() is never called. should_stop() reflects network.stopped(),
+    // the same signal every other sync coroutine uses.
+    while ( ! chain.stopped() && ! should_stop()) {
         uint32_t current_contiguous = contiguous_height.load(std::memory_order_acquire);
 
         // Blocks stored and contiguous ahead of what we've built.

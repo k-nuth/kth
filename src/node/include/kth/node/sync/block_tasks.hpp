@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -163,7 +164,8 @@ extern std::atomic<uint64_t> g_blocks_received_by_validation;
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
     uint32_t start_height,
-    domain::config::network network
+    domain::config::network network,
+    std::function<bool()> should_stop  // node-owned stop signal (e.g. network.stopped())
 );
 
 } // namespace kth::node::sync
