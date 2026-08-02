@@ -498,6 +498,37 @@ std::atomic<uint32_t> g_active_download_peers{0};
     // -------------------------------------------------------------------------
     tasks.spawn("block_supervisor_input_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::debug("[block_supervisor:input_bridge] Started");
+
+        // Forward a message to the unified events channel, retrying while the
+        // channel is full instead of dropping it and breaking the bridge — a
+        // dropped peers_updated / block_range_request there would silently kill
+        // all forwarding and stall the download. Returns false when the channel is
+        // closed or the wait is cancelled (both mean shutdown: the supervisor
+        // cancels + closes `events` before joining), so the caller exits cleanly
+        // and tasks.join() never blocks on a wedged retry.
+        auto forward = [&](auto const& m) -> ::asio::awaitable<bool> {
+            size_t retries = 0;
+            while ( ! events.try_send(std::error_code{}, m)) {
+                if ( ! events.is_open()) {
+                    co_return false;  // shutting down
+                }
+                if (retries == 0 || retries % 50 == 0) {
+                    spdlog::warn("[block_supervisor:input_bridge] events channel full — retrying forward (retry {})", retries);
+                }
+                ++retries;
+                ::asio::steady_timer timer(co_await ::asio::this_coro::executor);
+                timer.expires_after(std::chrono::milliseconds(20));
+                auto [tec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+                if (tec) {
+                    co_return false;
+                }
+            }
+            if (retries > 0) {
+                spdlog::info("[block_supervisor:input_bridge] forward succeeded after {} retries", retries);
+            }
+            co_return true;
+        };
+
         while (true) {
             auto [ec, msg] = co_await input.async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
@@ -516,15 +547,9 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 }
                 break;  // Exit after forwarding stop signal
             } else if (auto* peers = std::get_if<peers_updated>(&msg)) {
-                if (!events.try_send(std::error_code{}, *peers)) {
-                    spdlog::warn("[block_supervisor:input_bridge] Channel full, peers_updated dropped");
-                    break;
-                }
+                if ( ! co_await forward(*peers)) break;
             } else if (auto* range = std::get_if<block_range_request>(&msg)) {
-                if (!events.try_send(std::error_code{}, *range)) {
-                    spdlog::warn("[block_supervisor:input_bridge] Channel full, block_range_request dropped");
-                    break;
-                }
+                if ( ! co_await forward(*range)) break;
             }
         }
         spdlog::debug("[block_supervisor:input_bridge] Ended");
