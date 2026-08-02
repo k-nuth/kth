@@ -264,41 +264,10 @@ kth_error_code_t kth_chain_sync_transaction_position(kth_chain_t chain, kth_hash
     return kth::to_c_err(result.error());
 }
 
-kth_error_code_t kth_chain_sync_spend(kth_chain_t chain, kth_output_point_const_t op, kth_input_point_mut_t* out_input_point) {
-    auto& bc = safe_chain(chain);
-    auto const* outpoint_cpp = static_cast<kth::domain::chain::output_point const*>(op);
-    auto result = sync_wait(bc, bc.fetch_spend(*outpoint_cpp));
-    if (result) {
-        *out_input_point = kth::leak_if_success(**result, std::error_code{});
-        return kth::to_c_err(std::error_code{});
-    }
-    *out_input_point = nullptr;
-    return kth::to_c_err(result.error());
-}
-
-kth_error_code_t kth_chain_sync_history(kth_chain_t chain, kth_payment_address_t address, kth_size_t limit, kth_size_t from_height, kth_history_compact_list_mut_t* out_history) {
-    auto& bc = safe_chain(chain);
-    auto const addr_hash = kth::cpp_ref<kth::domain::wallet::payment_address>(address).hash20();
-    auto result = sync_wait(bc, bc.fetch_history(addr_hash, limit, from_height));
-    if (result) {
-        *out_history = kth::leak_if_success(*result, std::error_code{});
-        return kth::to_c_err(std::error_code{});
-    }
-    *out_history = nullptr;
-    return kth::to_c_err(result.error());
-}
-
-kth_error_code_t kth_chain_sync_confirmed_transactions(kth_chain_t chain, kth_payment_address_t address, uint64_t max, uint64_t start_height, kth_hash_list_mut_t* out_tx_hashes) {
-    auto& bc = safe_chain(chain);
-    auto const addr_hash = kth::cpp_ref<kth::domain::wallet::payment_address>(address).hash20();
-    auto result = sync_wait(bc, bc.fetch_confirmed_transactions(addr_hash, max, start_height));
-    if (result) {
-        *out_tx_hashes = kth::leak_if_success(*result, std::error_code{});
-        return kth::to_c_err(std::error_code{});
-    }
-    *out_tx_hashes = nullptr;
-    return kth::to_c_err(result.error());
-}
+// The confirmed address index (spend / history / confirmed transactions) was
+// backed by the LMDB spend and history stores, which the v1 node no longer
+// maintains. Those queries were removed from block_chain; a v1 address index
+// will be reintroduced here if/when it is needed.
 
 // ------------------------------------------------------------------
 

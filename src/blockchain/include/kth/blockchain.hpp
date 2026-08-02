@@ -30,10 +30,8 @@
 #include <kth/blockchain/pools/header_organizer.hpp>
 #include <kth/blockchain/pools/transaction_organizer.hpp>
 #include <kth/blockchain/populate/populate_base.hpp>
-#include <kth/blockchain/populate/populate_block.hpp>
 #include <kth/blockchain/populate/populate_chain_state.hpp>
 #include <kth/blockchain/populate/populate_transaction.hpp>
-#include <kth/blockchain/validate/validate_block.hpp>
 #include <kth/blockchain/validate/validate_header.hpp>
 #include <kth/blockchain/validate/validate_input.hpp>
 #include <kth/blockchain/validate/validate_transaction.hpp>

@@ -72,14 +72,9 @@ KTH_EXPORT
 void kth_chain_async_transaction_position(kth_chain_t chain, void* ctx, kth_hash_t hash, int require_confirmed, kth_transaction_index_fetch_handler_t handler);
 
 
-KTH_EXPORT
-void kth_chain_async_spend(kth_chain_t chain, void* ctx, kth_output_point_const_t op, kth_spend_fetch_handler_t handler);
-
-KTH_EXPORT
-void kth_chain_async_history(kth_chain_t chain, void* ctx, kth_payment_address_t address, kth_size_t limit, kth_size_t from_height, kth_history_fetch_handler_t handler);
-
-KTH_EXPORT
-void kth_chain_async_confirmed_transactions(kth_chain_t chain, void* ctx, kth_payment_address_t address, uint64_t max, uint64_t start_height, kth_transactions_by_address_fetch_handler_t handler);
+// Spend / History / Confirmed transactions (confirmed address index) were backed
+// by the LMDB spend and history stores, which the v1 node no longer maintains.
+// Removed until a v1 address index is reintroduced.
 
 // KTH_EXPORT
 // void kth_chain_async_stealth(kth_chain_t chain, void* ctx, kth_binary_t filter, uint64_t from_height, kth_stealth_fetch_handler_t handler);

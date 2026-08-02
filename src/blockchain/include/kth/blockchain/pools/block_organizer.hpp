@@ -12,9 +12,7 @@
 
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/pools/block_pool.hpp>
-#include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/settings.hpp>
-#include <kth/blockchain/validate/validate_block.hpp>
 #include <kth/domain.hpp>
 
 #include <kth/infrastructure/utility/prioritized_mutex.hpp>
@@ -45,11 +43,6 @@ struct KB_API block_organizer {
     bool start();
     bool stop();
 
-    /// Organize a block - coroutine version
-    /// @param headers_pre_validated If true, skip header validation (for headers-first sync)
-    [[nodiscard]]
-    ::asio::awaitable<code> organize(block_const_ptr block, bool headers_pre_validated = false);
-
     [[nodiscard]]
     block_broadcaster::channel_ptr subscribe();
     void unsubscribe(block_broadcaster::channel_ptr const& channel);
@@ -61,19 +54,6 @@ protected:
     bool stopped() const;
 
 private:
-    // Utility.
-    bool set_branch_height(branch::ptr branch);
-
-#if ! defined(KTH_DB_READONLY)
-    ::asio::awaitable<code> handle_reorganized(branch::const_ptr branch, block_const_ptr_list_ptr outgoing);
-#endif
-
-
-    bool is_branch_double_spend(branch::ptr const& branch) const;
-
-    // Subscription.
-    void notify(size_t branch_height, block_const_ptr_list_const_ptr branch, block_const_ptr_list_const_ptr original);
-
     // This must be protected by the implementation.
     block_chain& chain_;
 
@@ -83,7 +63,6 @@ private:
     executor_type executor_;
     size_t threads_;
     block_pool block_pool_;
-    validate_block validator_;
     block_broadcaster broadcaster_;
 
 };

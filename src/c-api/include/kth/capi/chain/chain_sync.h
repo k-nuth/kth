@@ -66,21 +66,19 @@ KTH_EXPORT
 kth_error_code_t kth_chain_sync_transaction_position(kth_chain_t chain, kth_hash_t hash, int require_confirmed, kth_size_t* out_position, kth_size_t* out_height);
 
 
-// Spend ---------------------------------------------------------------------
-KTH_EXPORT
-kth_error_code_t kth_chain_sync_spend(kth_chain_t chain, kth_output_point_const_t op, kth_input_point_mut_t* out_input_point);
-
-// History ---------------------------------------------------------------------
-KTH_EXPORT
-kth_error_code_t kth_chain_sync_history(kth_chain_t chain, kth_payment_address_t address, kth_size_t limit, kth_size_t from_height, kth_history_compact_list_mut_t* out_history);
-
-KTH_EXPORT
-kth_error_code_t kth_chain_sync_confirmed_transactions(kth_chain_t chain, kth_payment_address_t address, uint64_t max, uint64_t start_height, kth_hash_list_mut_t* out_tx_hashes);
+// Spend / History / Confirmed transactions (confirmed address index) were backed
+// by the LMDB spend and history stores, which the v1 node no longer maintains.
+// Removed until a v1 address index is reintroduced.
 
 // // Stealth ---------------------------------------------------------------------
 // KTH_EXPORT
 // kth_error_code_t kth_chain_sync_stealth(kth_chain_t chain, kth_binary_t filter, uint64_t from_height, kth_stealth_compact_list_t* out_list);
 
+// NOTE: output-side (credit) entries only. Resolving an input's debit requires the
+// spent prevout's value, which came from the confirmed-transaction store; that store
+// was removed (blocks live in flat files, the UTXO set in UTXO-Z). Until a v1 lookup
+// is added (issue #491) this is NOT a complete input/output balance ledger — do not
+// use it to compute balances.
 KTH_EXPORT
 kth_mempool_transaction_list_t kth_chain_sync_mempool_transactions(kth_chain_t chain, kth_payment_address_t address, kth_bool_t use_testnet_rules);
 
