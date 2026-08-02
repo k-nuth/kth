@@ -18,6 +18,8 @@
 // #ifndef __EMSCRIPTEN__
 #include <kth/node/executor/executor_info.hpp>
 #include <kth/domain/version.hpp>
+#include <kth/database/define.hpp>
+#include <kth/blockchain/utxo_builder.hpp>
 // #endif
 
 extern "C" {
@@ -84,6 +86,18 @@ uint32_t kth_node_cppapi_build_timestamp() {
 // #else
 //     return 0;
 // #endif
+}
+
+kth_bool_t kth_node_utxoz_compact_mode() {
+    return kth::database::utxoz_compact_mode() ? 1 : 0;
+}
+
+kth_bool_t kth_node_embedded_bloom_available() {
+    return kth::blockchain::embedded_bloom_available() ? 1 : 0;
+}
+
+uint32_t kth_node_embedded_bloom_checkpoint_height() {
+    return kth::blockchain::embedded_bloom_checkpoint_height();
 }
 
 } // extern "C"
