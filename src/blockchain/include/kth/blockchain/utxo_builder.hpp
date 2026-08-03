@@ -21,6 +21,7 @@
 #include <utxoz/types.hpp>
 
 #include <kth/blockchain/define.hpp>
+#include <kth/database/block_undo.hpp>
 #include <kth/database/databases/internal_database.hpp>
 #include <kth/database/databases/utxo_entry.hpp>
 #include <kth/database/databases/utxoz_database.hpp>
@@ -41,6 +42,9 @@ struct point_fast_hasher {
 };
 
 namespace kth::blockchain {
+
+// Forward declaration (capture_block_undo reads UTXO-Z through the chain).
+struct block_chain;
 
 // =============================================================================
 // Minimal block representation for UTXO indexing
@@ -151,6 +155,31 @@ KB_API utxo_raw_delta process_compact_block_utxos(
     int16_t file_number,
     uint32_t block_data_pos,
     database::utxo_bloom_filter const* bloom = nullptr
+);
+
+// Build the undo record for one block: every output the block spends that
+// existed BEFORE it, captured so the block can later be disconnected.
+//
+// `block_delta` is the block's OWN delta (from process_compact_block_utxos), not
+// a merged batch delta: outputs created and spent inside the same block have
+// already cancelled out there, and that is correct — they did not exist before
+// the block, so disconnecting must not restore them.
+//
+// Values are resolved in two places because a spent output's parent may not be
+// in UTXO-Z yet:
+//   - `batch_delta` — the accumulated delta for blocks already processed in this
+//     batch but not yet applied; a parent created there is still only in memory.
+//   - UTXO-Z — everything older, read verbatim (no resolution) via find_raw,
+//     honouring its two-phase contract (a miss is queued, not absent).
+//
+// Returns an error if any spent output cannot be located, since undo data that
+// silently drops entries would corrupt the UTXO set on disconnect.
+[[nodiscard]]
+KB_API std::expected<database::block_undo, database::result_code> capture_block_undo(
+    utxo_raw_delta const& block_delta,
+    utxo_raw_delta const& batch_delta,
+    block_chain& chain,
+    uint32_t height
 );
 
 // =============================================================================

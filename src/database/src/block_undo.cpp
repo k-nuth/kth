@@ -5,40 +5,52 @@
 #include <kth/database/block_undo.hpp>
 
 #include <kth/infrastructure/message/message_tools.hpp>
+
 namespace kth::database {
 
 // =============================================================================
-// tx_undo
+// spent_output
 // =============================================================================
 
-size_t tx_undo::serialized_size() const {
-    size_t size = infrastructure::message::variable_uint_size(prev_outputs.size());
-    for (auto const& entry : prev_outputs) {
-        size += entry.serialized_size();
+size_t spent_output::serialized_size() const {
+    return std::tuple_size<utxoz::raw_outpoint>::value                      // key
+         + infrastructure::message::variable_uint_size(value.size())        // value length
+         + value.size()                                                     // value
+         + sizeof(uint32_t);                                                // height
+}
+
+expect<void> spent_output::to_data(byte_writer& writer) const {
+    if (auto r = writer.write_bytes(key); ! r) return r;
+    if (auto r = writer.write_variable_little_endian(value.size()); ! r) return r;
+    if (auto r = writer.write_bytes(value); ! r) return r;
+    return writer.write_little_endian<uint32_t>(height);
+}
+
+std::expected<spent_output, result_code> spent_output::from_data(byte_reader& reader) {
+    spent_output result;
+
+    auto key = reader.read_array<std::tuple_size<utxoz::raw_outpoint>::value>();
+    if ( ! key) {
+        return std::unexpected(result_code::other);
     }
-    return size;
-}
+    result.key = *key;
 
-data_chunk tx_undo::to_data() const {
-    return kth::to_data_chunk(*this);
-}
-
-std::expected<tx_undo, database::result_code> tx_undo::from_data(byte_reader& reader) {
-    tx_undo result;
-
-    auto const count = reader.read_variable_little_endian();
-    if ( ! count) {
+    auto const size = reader.read_variable_little_endian();
+    if ( ! size) {
         return std::unexpected(result_code::other);
     }
 
-    result.prev_outputs.reserve(*count);
-    for (uint64_t i = 0; i < *count; ++i) {
-        auto entry = utxo_entry::from_data(reader);
-        if ( ! entry) {
-            return std::unexpected(result_code::other);
-        }
-        result.prev_outputs.push_back(std::move(*entry));
+    auto value = reader.read_bytes(*size);
+    if ( ! value) {
+        return std::unexpected(result_code::other);
     }
+    result.value.assign(value->begin(), value->end());
+
+    auto const height = reader.read_little_endian<uint32_t>();
+    if ( ! height) {
+        return std::unexpected(result_code::other);
+    }
+    result.height = *height;
 
     return result;
 }
@@ -48,18 +60,26 @@ std::expected<tx_undo, database::result_code> tx_undo::from_data(byte_reader& re
 // =============================================================================
 
 size_t block_undo::serialized_size() const {
-    size_t size = infrastructure::message::variable_uint_size(tx_undos.size());
-    for (auto const& tx : tx_undos) {
-        size += tx.serialized_size();
+    size_t size = infrastructure::message::variable_uint_size(spent.size());
+    for (auto const& entry : spent) {
+        size += entry.serialized_size();
     }
     return size;
+}
+
+expect<void> block_undo::to_data(byte_writer& writer) const {
+    if (auto r = writer.write_variable_little_endian(spent.size()); ! r) return r;
+    for (auto const& entry : spent) {
+        if (auto r = entry.to_data(writer); ! r) return r;
+    }
+    return {};
 }
 
 data_chunk block_undo::to_data() const {
     return kth::to_data_chunk(*this);
 }
 
-std::expected<block_undo, database::result_code> block_undo::from_data(byte_reader& reader) {
+std::expected<block_undo, result_code> block_undo::from_data(byte_reader& reader) {
     block_undo result;
 
     auto const count = reader.read_variable_little_endian();
@@ -67,41 +87,15 @@ std::expected<block_undo, database::result_code> block_undo::from_data(byte_read
         return std::unexpected(result_code::other);
     }
 
-    result.tx_undos.reserve(*count);
+    // No reserve(): `count` comes straight off disk, so trusting it would let a
+    // corrupt record throw length_error/bad_alloc instead of returning a decode
+    // failure. The loop below fails cleanly as soon as the reader runs dry.
     for (uint64_t i = 0; i < *count; ++i) {
-        auto tx = tx_undo::from_data(reader);
-        if ( ! tx) {
-            return std::unexpected(result_code::other);
+        auto entry = spent_output::from_data(reader);
+        if ( ! entry) {
+            return std::unexpected(entry.error());
         }
-        result.tx_undos.push_back(std::move(*tx));
-    }
-
-    return result;
-}
-
-block_undo block_undo::from_block(
-    domain::chain::block const& block,
-    std::function<utxo_entry(domain::chain::output_point const&)> const& get_utxo)
-{
-    block_undo result;
-    auto const& txs = block.transactions();
-
-    // Skip coinbase (index 0), process all other transactions
-    if (txs.size() > 1) {
-        result.tx_undos.reserve(txs.size() - 1);
-
-        for (size_t tx_idx = 1; tx_idx < txs.size(); ++tx_idx) {
-            auto const& tx = txs[tx_idx];
-            tx_undo tx_undo_data;
-            tx_undo_data.prev_outputs.reserve(tx.inputs().size());
-
-            for (auto const& input : tx.inputs()) {
-                auto const& prevout = input.previous_output();
-                tx_undo_data.prev_outputs.push_back(get_utxo(prevout));
-            }
-
-            result.tx_undos.push_back(std::move(tx_undo_data));
-        }
+        result.spent.push_back(std::move(*entry));
     }
 
     return result;

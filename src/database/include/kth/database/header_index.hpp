@@ -292,6 +292,46 @@ struct KD_API header_index {
     index_t find_fork(index_t idx_a, index_t idx_b) const;
 
     // =========================================================================
+    // Active chain (height -> index)
+    // =========================================================================
+    //
+    // The index stores every known header, side branches included, so an entry's
+    // index is NOT its height: entries are numbered in arrival order. The active
+    // chain is the subset that currently forms the best chain, addressed by
+    // height — it is what "the block at height N" means to block download, the
+    // UTXO build and block storage. Equivalent to BCHN's CChain, as distinct
+    // from mapBlockIndex.
+    //
+    // Concurrency: appended/truncated by the header path (single writer) and read
+    // from the block-download and UTXO-build paths. Reads are lock-free: the
+    // backing vector is pre-allocated to capacity and `active_size_` publishes
+    // how much of it is valid, so a reader never observes a partially written
+    // entry. Truncation lowers the published size first, so a concurrent reader
+    // can only ever see a *shorter* chain, never a stale entry.
+
+    /// Append `idx` as the new active tip (forward extension).
+    void active_push(index_t idx);
+
+    /// Drop everything above `height`, keeping [0, height]. Used when a reorg
+    /// rewinds the active chain to the fork point.
+    void active_truncate(int32_t height);
+
+    /// Index of the active-chain header at `height`, or null_index if `height` is
+    /// beyond the active tip.
+    [[nodiscard]]
+    index_t active_at(int32_t height) const;
+
+    /// Height of the active tip, or -1 if the active chain is empty.
+    [[nodiscard]]
+    int32_t active_tip_height() const;
+
+    /// Re-point the active chain at `tip_idx`: truncate to the fork with the
+    /// current chain, then re-link every entry from the fork up to `tip_idx`.
+    /// This is the chain switch; the caller is responsible for having already
+    /// disconnected the blocks being abandoned.
+    void active_set_tip(index_t tip_idx);
+
+    // =========================================================================
     // State Queries
     // =========================================================================
 
@@ -351,6 +391,11 @@ private:
     // Wall-clock reception time (unix seconds) per header; 0 = loaded from store
     // at startup (immediately finalizable). Used by finalization's time rule.
     std::vector<uint32_t> header_received_times_;
+
+    // Active chain: height -> entry index. Pre-allocated to capacity like the SoA
+    // vectors; active_size_ publishes the valid prefix (see the accessors above).
+    std::vector<index_t> active_;
+    std::atomic<int32_t> active_size_{0};
 
     // Index counter
     std::atomic<index_t> next_idx_{0};

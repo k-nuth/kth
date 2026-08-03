@@ -9,73 +9,66 @@
 #include <expected>
 #include <vector>
 
+#include <utxoz/types.hpp>
+
 #include <kth/database/define.hpp>
 #include <kth/database/databases/result_code.hpp>
-#include <kth/database/databases/utxo_entry.hpp>
 #include <kth/domain.hpp>
 
 namespace kth::database {
 
-/// Undo information for a single transaction.
-/// Contains the UTXOs that were spent by this transaction's inputs.
-struct KD_API tx_undo {
-    std::vector<utxo_entry> prev_outputs;
+/// One output spent by a block, recorded so the block can be disconnected.
+///
+/// `value` is the UTXO storage payload verbatim — in compact mode the 8-byte
+/// {file_number, tx_offset} reference, in full mode the serialized entry — which
+/// is exactly the shape apply_delta_raw's insert range consumes. Restoring a
+/// spent output is therefore just re-inserting this record; no reconstruction of
+/// the output is needed, and none is possible in compact mode (the storage holds
+/// a reference into the block files, not the output bytes).
+///
+/// `height` is the output's ORIGINAL creation height, not the height of the block
+/// that spent it. It must round-trip exactly: in compact mode the height also
+/// drives the median-time-past window used when the UTXO is later resolved.
+struct KD_API spent_output {
+    utxoz::raw_outpoint key{};
+    std::vector<uint8_t> value;
+    uint32_t height{0};
 
     /// Serialized size in bytes.
     [[nodiscard]]
     size_t serialized_size() const;
 
-    /// Deserialize from reader.
     [[nodiscard]]
-    static std::expected<tx_undo, database::result_code> from_data(byte_reader& reader);
-
-    /// Serialize.
-    [[nodiscard]]
-    expect<void> to_data(byte_writer& writer) const {
-        if (auto r = writer.write_variable_little_endian(prev_outputs.size()); ! r) return r;
-        for (auto const& entry : prev_outputs) {
-            if (auto r = entry.to_data(writer); ! r) return r;
-        }
-        return {};
-    }
+    static std::expected<spent_output, result_code> from_data(byte_reader& reader);
 
     [[nodiscard]]
-    data_chunk to_data() const;
+    expect<void> to_data(byte_writer& writer) const;
 };
 
-/// Undo information for a block.
-/// Contains tx_undo for all transactions except the coinbase.
+/// Undo information for a block: every output the block spent, keyed by outpoint.
+///
+/// The order of `spent` is unspecified — entries are identified by `key`, not by
+/// position, and do NOT line up with the block's inputs (outputs a block both
+/// creates and spends have no entry at all). Consumers must match by key.
+///
+/// Outputs *created* by the block are deliberately not recorded: they are
+/// recomputable by re-reading the block from the flat files, so storing them
+/// would roughly double the undo size for no gain (this mirrors BCHN).
 struct KD_API block_undo {
-    std::vector<tx_undo> tx_undos;
+    std::vector<spent_output> spent;
 
     /// Serialized size in bytes.
     [[nodiscard]]
     size_t serialized_size() const;
 
-    /// Deserialize from reader.
     [[nodiscard]]
-    static std::expected<block_undo, database::result_code> from_data(byte_reader& reader);
+    static std::expected<block_undo, result_code> from_data(byte_reader& reader);
 
-    /// Serialize.
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer) const {
-        if (auto r = writer.write_variable_little_endian(tx_undos.size()); ! r) return r;
-        for (auto const& tx : tx_undos) {
-            if (auto r = tx.to_data(writer); ! r) return r;
-        }
-        return {};
-    }
+    expect<void> to_data(byte_writer& writer) const;
 
     [[nodiscard]]
     data_chunk to_data() const;
-
-    /// Create block undo from a block and the UTXOs it spends.
-    /// @param block The block being connected.
-    /// @param spent_utxos Map of output_point -> utxo_entry for all inputs.
-    [[nodiscard]]
-    static block_undo from_block(
-        domain::chain::block const& block,
-        std::function<utxo_entry(domain::chain::output_point const&)> const& get_utxo);
 };
 
 /// Result of disconnecting a block using undo data.

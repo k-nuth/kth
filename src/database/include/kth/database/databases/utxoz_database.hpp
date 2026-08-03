@@ -124,6 +124,41 @@ struct KD_API utxoz_database {
     result_code erase(domain::chain::point const& point, uint32_t height = 0);
 
     // =============================================================================
+    // Raw access (reorg undo capture / restore)
+    // =============================================================================
+
+    /// A UTXO exactly as stored, without resolving it into a utxo_entry.
+    /// `value` is the storage-native payload — in compact mode the 8-byte
+    /// {file_number, tx_offset} reference, in full mode the serialized entry — so
+    /// it can be fed straight back into apply_delta_raw's insert range. `height` is
+    /// the entry's ORIGINAL creation height, which restoring must preserve.
+    struct raw_stored {
+        std::vector<uint8_t> value;
+        uint32_t height;
+    };
+
+    /// Read a UTXO's stored payload without resolving it (compact mode does not
+    /// touch the flat block files here; only resolve/find does).
+    ///
+    /// Two-phase contract, same as find(): a key_not_found result only means "not
+    /// in the active version file, queued for the deferred sweep" — it is NOT proof
+    /// of absence. Drain the queue with process_pending_lookups_raw() before
+    /// concluding a UTXO is missing.
+    ///
+    /// @param key Raw outpoint key.
+    /// @param height Access height (statistics only; does not affect the result).
+    [[nodiscard]]
+    std::expected<raw_stored, result_code> find_raw(utxoz::raw_outpoint const& key, uint32_t height = 0) const;
+
+    /// Resolve the deferred-lookup queue, returning payloads verbatim (no
+    /// utxo_entry reconstruction — the cheap counterpart of
+    /// process_pending_lookups()).
+    /// @return pair of (resolved entries keyed by outpoint, keys that truly don't exist)
+    [[nodiscard]]
+    std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, raw_stored>, std::vector<utxoz::raw_outpoint>>
+    process_pending_lookups_raw();
+
+    // =============================================================================
     // Batch Operations (for UTXO set building)
     // =============================================================================
 

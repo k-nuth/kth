@@ -4,6 +4,7 @@
 
 #include <kth/blockchain/interface/block_chain.hpp>
 
+#include <kth/blockchain/utxo_builder.hpp>
 #include <kth/database/flat_file_pos.hpp>
 
 #include <algorithm>
@@ -686,6 +687,159 @@ std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxo_entry>, 
 block_chain::utxo_process_pending_lookups() {
     return utxoz_db_.process_pending_lookups();
 }
+
+// =============================================================================
+// REORG UNDO
+// =============================================================================
+
+std::expected<database::utxoz_database::raw_stored, database::result_code>
+block_chain::find_utxo_raw(utxoz::raw_outpoint const& key, uint32_t height) const {
+    return utxoz_db_.find_raw(key, height);
+}
+
+std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxoz_database::raw_stored>,
+          std::vector<utxoz::raw_outpoint>>
+block_chain::utxo_process_pending_lookups_raw() {
+    return utxoz_db_.process_pending_lookups_raw();
+}
+
+#if ! defined(KTH_DB_READONLY)
+bool block_chain::store_block_undo(database::header_index::index_t idx,
+                                   database::block_undo const& undo,
+                                   hash_digest const& prev_hash) {
+    // The undo record lives in the rev*.dat file matching the block's blk*.dat,
+    // and the header index stores only the offset — so the block must be on disk.
+    auto const file_number = header_index_.get_file_number(idx);
+    if (file_number < 0) {
+        spdlog::error("[blockchain] store_block_undo: no block data for index {}", idx);
+        return false;
+    }
+
+    auto const pos = block_store_->write_undo(undo, file_number, prev_hash);
+    if (pos.is_null()) {
+        spdlog::error("[blockchain] store_block_undo: failed to write undo for index {}", idx);
+        return false;
+    }
+
+    header_index_.set_undo_pos(idx, pos.pos);
+    header_index_.add_status(idx, database::header_status::have_undo);
+    return true;
+}
+#endif
+
+std::expected<database::block_undo, database::result_code>
+block_chain::read_block_undo(database::header_index::index_t idx, hash_digest const& prev_hash) const {
+    if ( ! header_index_.has_undo_data(idx)) {
+        return std::unexpected(database::result_code::key_not_found);
+    }
+
+    database::flat_file_pos const pos{
+        header_index_.get_file_number(idx),
+        header_index_.get_undo_pos(idx)
+    };
+    return block_store_->read_undo(pos, prev_hash);
+}
+
+#if ! defined(KTH_DB_READONLY)
+database::disconnect_result block_chain::disconnect_block(uint32_t height) {
+    // Genesis anchors the chain and has no parent to roll back to.
+    if (height == 0) {
+        spdlog::error("[blockchain] disconnect_block: refusing to disconnect genesis");
+        return database::disconnect_result::failed;
+    }
+
+    // Blocks are disconnected newest-first, so `height` must be the validated tip.
+    // Disconnecting out of order would restore outputs that a later block still
+    // spends, silently corrupting the UTXO set. Fail closed: if the tip cannot be
+    // read, we cannot prove this is the tip, so we must not proceed.
+    auto const heights = database_.internal_db().get_last_heights();
+    if ( ! heights) {
+        spdlog::error("[blockchain] disconnect_block: cannot read the validated tip");
+        return database::disconnect_result::failed;
+    }
+    if (height != heights->block) {
+        spdlog::error("[blockchain] disconnect_block: height {} is not the validated tip ({})",
+            height, heights->block);
+        return database::disconnect_result::failed;
+    }
+
+    // TODO(reorg): height -> index by cast. This holds while headers form a
+    // single linear sequence, but the index numbers entries by arrival, so a
+    // stored side branch shifts later entries. The explicit active chain
+    // (height -> index) that fixes this lands with the chain switch.
+    auto const idx = static_cast<database::header_index::index_t>(height);
+
+    if ( ! header_index_.has_block_data(idx)) {
+        spdlog::error("[blockchain] disconnect_block: no block data at height {}", height);
+        return database::disconnect_result::failed;
+    }
+
+    // The outputs the block created are not stored in the undo record: they are
+    // recomputed here by re-reading the block, which is why undo data only needs
+    // to carry what was spent.
+    database::flat_file_pos const pos{
+        header_index_.get_file_number(idx),
+        header_index_.get_data_pos(idx)
+    };
+    auto raw = block_store_->read_block_raw(pos);
+    if ( ! raw) {
+        spdlog::error("[blockchain] disconnect_block: cannot read block at height {}", height);
+        return database::disconnect_result::failed;
+    }
+
+    auto parsed = parse_utxo_block(byte_span{raw->data(), raw->size()});
+    if ( ! parsed) {
+        spdlog::error("[blockchain] disconnect_block: cannot parse block at height {}", height);
+        return database::disconnect_result::failed;
+    }
+
+    auto undo = read_block_undo(idx, header_index_.get_prev_block_hash(idx));
+    if ( ! undo) {
+        spdlog::error("[blockchain] disconnect_block: no undo data at height {} (block below the "
+            "checkpoint, or connected before undo data was recorded)", height);
+        return database::disconnect_result::failed;
+    }
+
+    // The inverse of a delta is another delta: restore what was spent, remove
+    // what was created.
+    utxo_raw_delta inverse;
+    inverse.inserts.reserve(undo->spent.size());
+    inverse.deletes.reserve(parsed->outputs.size());
+
+    for (auto const& entry : undo->spent) {
+        inverse.inserts.emplace(entry.key, utxo_raw_value{entry.value, entry.height});
+    }
+    for (auto const& out : parsed->outputs) {
+        inverse.deletes.emplace(out.key, height);
+    }
+
+    // An output both created and spent inside this block was never in the set;
+    // erasing it is a no-op, and it is absent from the undo record by construction.
+    auto const result = utxoz_db_.apply_delta_raw(inverse.inserts, inverse.deletes);
+    if (result != database::result_code::success) {
+        spdlog::error("[blockchain] disconnect_block: failed to apply inverse delta at height {}", height);
+        return database::disconnect_result::unclean;
+    }
+
+    // Roll the markers back to the parent block. The UTXO set is already reverted
+    // at this point, so a failed marker write leaves the two disagreeing — report
+    // it rather than claiming a clean disconnect.
+    auto const parent = height - 1;
+    auto const block_marker = database_.internal_db().set_last_block_height(parent);
+    auto const utxo_marker = database_.internal_db().set_utxo_built_height(parent);
+    if (block_marker != database::result_code::success ||
+        utxo_marker != database::result_code::success) {
+        spdlog::error("[blockchain] disconnect_block: UTXO set rolled back to {} but the height "
+            "markers could not be updated", parent);
+        return database::disconnect_result::unclean;
+    }
+
+    spdlog::info("[blockchain] Disconnected block at height {} ({} outputs removed, {} restored)",
+        height, parsed->outputs.size(), undo->spent.size());
+
+    return database::disconnect_result::ok;
+}
+#endif
 
 void block_chain::utxo_compact() {
     utxoz_db_.compact();
