@@ -25,6 +25,13 @@ struct header_organize_result {
     size_t headers_added{0};
     size_t index_size{0};
     size_t index_memory_bytes{0};
+
+    // Fork detection (headers-first): set when a stored side branch that descends
+    // from the finalized block reaches strictly greater cumulative chain work than
+    // the active header tip — a reorganization candidate. The active tip is NOT
+    // switched here; executing the switch is a separate layer.
+    bool reorg_candidate{false};
+    int32_t reorg_fork_height{-1};   // height of the common ancestor, or -1
 };
 
 /// Header organizer for headers-first sync.

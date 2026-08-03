@@ -51,6 +51,7 @@ typedef enum kth_error_code {
     kth_ec_insufficient_fee = 70,
     kth_ec_dusty_transaction = 76,
     kth_ec_stale_chain = 75,
+    kth_ec_finalized_header_violation = 88,
 
     // check header
     kth_ec_invalid_proof_of_work = 26,
