@@ -41,6 +41,24 @@ namespace kth::node::sync {
 
 namespace {
 
+// Retires a reorg-barrier participant on every exit path. A leaked registration
+// leaves reorg_registered_ above reorg_parked_ forever, so no later switch can
+// ever reach the barrier.
+struct reorg_participation {
+    explicit reorg_participation(blockchain::block_chain& chain) : chain_(chain) {
+        chain_.register_reorg_participant();
+    }
+    ~reorg_participation() { chain_.unregister_reorg_participant(); }
+    reorg_participation(reorg_participation const&) = delete;
+    reorg_participation& operator=(reorg_participation const&) = delete;
+private:
+    blockchain::block_chain& chain_;
+};
+
+} // namespace
+
+namespace {
+
 // MTP calculation for incremental UTXO build (same algorithm as utxo_builder)
 [[nodiscard]]
 uint32_t calculate_mtp(std::deque<uint32_t> const& timestamps) {
@@ -1457,6 +1475,10 @@ std::atomic<uint32_t> g_active_download_peers{0};
 ) {
     spdlog::info("[block_storage] Task started at height {}", start_height);
 
+    // This task marks blocks have_data and advances the validated height, both of
+    // which a chain switch rewrites, so it participates in the reorg barrier.
+    reorg_participation const storage_participation(chain);
+
     uint64_t chunks_stored = 0;
     uint64_t blocks_stored = 0;
     uint32_t max_stored_height = start_height > 0 ? start_height - 1 : 0;
@@ -1481,6 +1503,29 @@ std::atomic<uint32_t> g_active_download_peers{0};
     auto initial_rss = get_rss_mb();
 
     while (true) {
+        // Park BEFORE waiting for input. A paused pipeline delivers no chunk, so a
+        // check placed after the receive is never reached and the barrier would
+        // wait on a task that is itself waiting.
+        if (chain.reorg_pause_requested()) {
+            chain.enter_reorg_barrier();
+            while (chain.reorg_pause_requested() && ! chain.stopped()) {
+                ::asio::steady_timer pause_timer(co_await ::asio::this_coro::executor);
+                pause_timer.expires_after(std::chrono::milliseconds(50));
+                co_await pause_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            }
+            chain.leave_reorg_barrier();
+
+            // The switch rewound the chain and reset the shared counter: re-derive
+            // the local cursors instead of carrying pre-switch values.
+            if (contiguous_out) {
+                contiguous_height = contiguous_out->load(std::memory_order_acquire);
+                max_stored_height = contiguous_height > 0 ? contiguous_height - 1 : 0;
+                spdlog::info("[block_storage] Resuming after reorg at contiguous height {}",
+                    contiguous_height);
+            }
+            continue;
+        }
+
         auto [ec, msg] = co_await input.async_receive(
             ::asio::as_tuple(::asio::use_awaitable));
         if (ec) {
@@ -1754,15 +1799,27 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         spdlog::info("[utxo_build] Resuming from height {}", utxo_built_height);
     }
 
-    // Pre-load MTP timestamps
+    // This task writes the UTXO set, so a chain switch must wait for it. The guard
+    // retires it on every exit path — the batch loop has several co_returns.
+    reorg_participation const build_participation(chain);
+
+    // MTP window. Rebuilt from the active chain whenever the built height moves
+    // (a reorg rewinds it), since timestamps carried over from an abandoned
+    // branch would persist a wrong median_time_past into the UTXO entries.
     std::deque<uint32_t> timestamp_window;
-    uint32_t preload_start = (utxo_built_height > 11) ? (utxo_built_height - 11) : 0;
-    for (uint32_t h = preload_start; h <= utxo_built_height && h > 0; ++h) {
-        auto hdr = chain.get_header(h);
-        if (hdr) {
-            timestamp_window.push_back(hdr->timestamp());
+    auto reload_timestamp_window = [&](uint32_t up_to) {
+        timestamp_window.clear();
+        // 11 entries, matching what the incremental path keeps (it pops before
+        // pushing). A 12th would shift calculate_mtp's median element.
+        uint32_t const preload_start = (up_to > 10) ? (up_to - 10) : 0;
+        for (uint32_t h = preload_start; h <= up_to && h > 0; ++h) {
+            auto hdr = chain.get_header(h);
+            if (hdr) {
+                timestamp_window.push_back(hdr->timestamp());
+            }
         }
-    }
+    };
+    reload_timestamp_window(utxo_built_height);
 
     auto executor = co_await ::asio::this_coro::executor;
 
@@ -1779,6 +1836,29 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     // chain.stop() is never called. should_stop() reflects network.stopped(),
     // the same signal every other sync coroutine uses.
     while ( ! chain.stopped() && ! should_stop()) {
+        // A chain switch rewrites the UTXO set, so it must run alone. Park at the
+        // barrier between batches — never mid-batch, so the UTXO set is always at
+        // a block boundary, which is what disconnect expects.
+        if (chain.reorg_pause_requested()) {
+            chain.enter_reorg_barrier();
+            while (chain.reorg_pause_requested() && ! chain.stopped() && ! should_stop()) {
+                ::asio::steady_timer timer(executor);
+                timer.expires_after(poll_interval);
+                co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            }
+            chain.leave_reorg_barrier();
+
+            // The switch rewound the built height and re-pointed the active chain,
+            // so re-read the height and rebuild the MTP window from the new chain.
+            if (auto const built = chain.get_utxo_built_height(); built) {
+                spdlog::info("[utxo_build] Resuming after reorg: built height {} -> {}",
+                    utxo_built_height, *built);
+                utxo_built_height = *built;
+                reload_timestamp_window(utxo_built_height);
+            }
+            continue;
+        }
+
         uint32_t current_contiguous = contiguous_height.load(std::memory_order_acquire);
 
         // Blocks stored and contiguous ahead of what we've built.
@@ -1974,6 +2054,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
         spdlog::info("[utxo_build] UTXO built to height {}/{}", utxo_built_height, current_contiguous - 1);
     }
+
 
     // Final compaction
     spdlog::info("[utxo_build] Running final compaction...");

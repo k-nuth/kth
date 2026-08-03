@@ -244,7 +244,79 @@ struct KB_API block_chain {
     // newest first.
     [[nodiscard]]
     database::disconnect_result disconnect_block(uint32_t height);
+
+    // Switch the active chain onto `branch_head`, forking at `fork_height`.
+    //
+    // Disconnects the abandoned blocks newest-first (restoring their spent
+    // outputs from undo data), then re-points the active chain at the new branch.
+    // The caller is responsible for re-driving block download for the new branch:
+    // its blocks are headers-only at this point, so the validated tip ends at
+    // fork_height.
+    //
+    // Must be called with the UTXO build quiesced (see reorg_pause below): it
+    // rewrites the UTXO set and the height markers.
+    struct switch_result {
+        bool ok{false};
+        // Height the validated tip ended at, when it is known. On an aborted
+        // disconnect this is how far it got — NOT where it started — so the caller
+        // must resync from it. Empty means the tip could not be determined at all
+        // (nothing was touched); the caller must then leave its counters alone
+        // rather than treat it as height 0.
+        std::optional<uint32_t> validated_tip;
+    };
+
+    [[nodiscard]]
+    switch_result switch_to_branch(database::header_index::index_t branch_head, uint32_t fork_height);
+
+    // Awaitable form of switch_to_branch: runs the disconnect on priority_pool_
+    // instead of the caller's executor. A switch reads, parses and reverts every
+    // abandoned block, so running it inline would stall the coordinator coroutine
+    // and everything else sharing that executor for the whole reorg.
+    [[nodiscard]]
+    ::asio::awaitable<switch_result> switch_to_branch_async(
+        database::header_index::index_t branch_head, uint32_t fork_height);
 #endif
+
+    // =========================================================================
+    // Reorg barrier
+    // =========================================================================
+    //
+    // A chain switch rewrites the UTXO set and the active chain while the block
+    // pipeline (download -> validation -> storage -> UTXO build) is writing
+    // against the chain being abandoned.
+    //
+    // A pause flag is checked by every participating task between units of work,
+    // and a count tracks how many are parked. The switching side raises the pause
+    // and waits until every registered participant is parked. A task that is
+    // mid-unit finishes it first, so the barrier is only ever crossed at a unit
+    // boundary. Unlike a pair of booleans this needs no store-load ordering
+    // argument: the count only moves when a task is genuinely parked.
+    //
+    // Scope, stated plainly: this covers the tasks that write chain state
+    // (block storage, UTXO build). The download and validation stages are NOT
+    // drained yet — see the PR description.
+    //
+    // Participation is by explicit registration, not a hardcoded count: the
+    // barrier is reached when every task that registered is parked. A task
+    // deregisters when it exits, so a retired task neither blocks the barrier
+    // forever nor counts as parked.
+
+    void register_reorg_participant() { reorg_registered_.fetch_add(1, std::memory_order_seq_cst); }
+    void unregister_reorg_participant() { reorg_registered_.fetch_sub(1, std::memory_order_seq_cst); }
+
+    void request_reorg_pause(bool paused) { reorg_pause_.store(paused, std::memory_order_seq_cst); }
+    [[nodiscard]] bool reorg_pause_requested() const { return reorg_pause_.load(std::memory_order_seq_cst); }
+
+    // Called by a registered task when it parks at / leaves the barrier.
+    void enter_reorg_barrier() { reorg_parked_.fetch_add(1, std::memory_order_seq_cst); }
+    void leave_reorg_barrier() { reorg_parked_.fetch_sub(1, std::memory_order_seq_cst); }
+
+    [[nodiscard]] bool reorg_barrier_reached() const {
+        auto const registered = reorg_registered_.load(std::memory_order_seq_cst);
+        // No participants: nothing writes the chain, so the barrier is trivially
+        // satisfied (also the state after shutdown).
+        return reorg_parked_.load(std::memory_order_seq_cst) >= registered;
+    }
 
     void utxo_compact();
     void utxo_print_statistics();
@@ -508,6 +580,11 @@ private:
 
     // Thread safe members
     std::atomic<bool> stopped_;
+
+    // Reorg barrier (see request_reorg_pause / enter_reorg_barrier above).
+    std::atomic<bool> reorg_pause_{false};
+    std::atomic<size_t> reorg_parked_{0};
+    std::atomic<size_t> reorg_registered_{0};
     settings const& settings_;
     time_t const notify_limit_seconds_;
     kth::atomic<block_const_ptr> last_block_;

@@ -868,6 +868,64 @@ static
                 spdlog::debug("[sync_coordinator] Received: height={}, count={}, result={}",
                     result->height, result->count, result->result ? result->result.message() : "ok");
 
+                // A heavier branch was stored: switch the chain onto it. Handled
+                // before the error branch below, since a non-advancing batch also
+                // reports stale_chain.
+                if (result->reorg_candidate && result->reorg_fork_height >= 0) {
+                    auto const fork_height = uint32_t(result->reorg_fork_height);
+                    spdlog::warn("[sync_coordinator] Reorg requested: fork at height {}", fork_height);
+
+                    // Quiesce the UTXO build: the switch rewrites the UTXO set.
+                    chain.request_reorg_pause(true);
+                    while ( ! chain.reorg_barrier_reached() && ! network.stopped()) {
+                        ::asio::steady_timer wait_timer(exec);
+                        wait_timer.expires_after(std::chrono::milliseconds(50));
+                        co_await wait_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+                    }
+
+                    auto const outcome = network.stopped()
+                        ? blockchain::block_chain::switch_result{}
+                        : co_await chain.switch_to_branch_async(result->reorg_branch_head, fork_height);
+                    auto const switched = outcome.ok;
+
+                    // Resync from the tip the switch actually reports, so a partially
+                    // disconnected range is re-downloaded instead of stranded. When it
+                    // reports nothing the tip could not be read and nothing was
+                    // touched — leave the counters alone rather than treat that as
+                    // height 0, which would rewind the whole sync to genesis.
+                    if (outcome.validated_tip) {
+                        blocks_synced_to = *outcome.validated_tip;
+                        // The shared contiguous counter still holds the pre-switch
+                        // value; leaving it would make the UTXO build request
+                        // headers-only heights on every poll.
+                        contiguous_height->store(blocks_synced_to + 1, std::memory_order_release);
+                    }
+
+                    chain.request_reorg_pause(false);
+
+                    auto const new_tip = switched ? chain.headers().active_tip_height() : -1;
+                    if (switched && new_tip > int32_t(blocks_synced_to)) {
+                        // The new branch is headers-only from the fork up, so block
+                        // download refills from the rewound tip.
+                        headers_synced_to = uint32_t(new_tip);
+                        spdlog::warn("[sync_coordinator] Reorg complete: blocks rewound to {}, "
+                            "headers now at {}", blocks_synced_to, headers_synced_to);
+
+                        if ( ! co_await send_block_range(blocks_synced_to + 1, headers_synced_to)) {
+                            spdlog::error("[sync_coordinator] Reorg: failed to re-drive block download");
+                        }
+                    } else if (switched) {
+                        // Switched, but the new tip is not above the fork — nothing
+                        // to download. Leaves the chain shorter than it was, so make
+                        // it loud rather than silently idling.
+                        spdlog::error("[sync_coordinator] Reorg switched to a tip at {} which is not "
+                            "above the fork at {}", new_tip, fork_height);
+                    } else {
+                        spdlog::error("[sync_coordinator] Reorg aborted; staying on the current chain");
+                    }
+                    continue;
+                }
+
                 if (result->result) {
                     // Header validation failed - normal network behavior (peer on wrong chain)
                     spdlog::debug("[sync_coordinator] Header validation failed: {} from peer {}",

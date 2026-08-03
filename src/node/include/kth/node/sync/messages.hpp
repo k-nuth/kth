@@ -89,6 +89,13 @@ struct headers_validated {
     size_t count;
     code result;
     network::peer_session::ptr source_peer;  // For banning on checkpoint failure
+
+    // Set when the batch stored a side branch that out-works the active chain and
+    // descends from the finalized block. The coordinator performs the switch;
+    // the organizer only reports it.
+    bool reorg_candidate{false};
+    int32_t reorg_fork_height{-1};
+    uint32_t reorg_branch_head{0};
 };
 
 // -----------------------------------------------------------------------------

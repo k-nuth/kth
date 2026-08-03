@@ -241,6 +241,7 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
         if (branch_work > tip_work) {
             auto const fork_idx = index_.find_fork(branch_head_idx, tip_index_);
             result.reorg_candidate = true;
+            result.reorg_branch_head = branch_head_idx;
             result.reorg_fork_height = (fork_idx == header_index::null_index)
                 ? -1 : index_.get_height(fork_idx);
             spdlog::warn("[header_organizer] Reorg candidate: side branch (head height {}) has greater "
