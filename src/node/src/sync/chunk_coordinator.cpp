@@ -114,7 +114,13 @@ std::pair<uint32_t, uint32_t> chunk_coordinator::chunk_range(uint32_t chunk_id) 
 }
 
 hash_digest chunk_coordinator::get_block_hash(uint32_t height) const {
-    return index_.get_hash(static_cast<blockchain::header_index::index_t>(height));
+    // Address by height through the active chain: the index also holds side
+    // branches, numbered in arrival order, so an entry's index is not its height.
+    auto const idx = index_.active_at(static_cast<int32_t>(height));
+    if (idx == blockchain::header_index::null_index) {
+        return null_hash;
+    }
+    return index_.get_hash(idx);
 }
 
 void chunk_coordinator::chunk_completed(uint32_t chunk_id) {

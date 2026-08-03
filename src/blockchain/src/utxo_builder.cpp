@@ -947,10 +947,11 @@ uint32_t embedded_bloom_checkpoint_height() {
                 uint32_t h = batch_start + static_cast<uint32_t>(i);
                 uint32_t mtp = calculate_mtp(timestamp_window);
 
-                // Get block position from header_index for compact mode.
-                // Precondition: during linear IBD, header_index is dense and index == height.
-                // This assumption holds because headers are inserted sequentially during sync.
-                auto const idx = static_cast<header_index::index_t>(h);
+                // Get block position from header_index for compact mode. Resolved
+                // through the active chain: the index also holds side branches,
+                // numbered in arrival order, so an entry's index is not its height.
+                auto const idx = chain.headers().active_at(static_cast<int32_t>(h));
+                KTH_ASSERT(idx != header_index::null_index);
                 KTH_ASSERT(chain.headers().get_height(idx) == static_cast<int32_t>(h));
                 auto const file_num = chain.headers().get_file_number(idx);
                 auto const data_pos = chain.headers().get_data_pos(idx);
