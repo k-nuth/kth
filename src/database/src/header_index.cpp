@@ -41,6 +41,9 @@ header_index::header_index(size_t capacity)
     // Reception time (0 = loaded from store / not yet set)
     header_received_times_.resize(capacity_, 0);
 
+    // Active chain (height -> index), empty until headers are linked in
+    active_.resize(capacity_, null_index);
+
     // Reserve hash map capacity
     hash_to_idx_.reserve(capacity_);
 }
@@ -245,6 +248,77 @@ void header_index::set_block_pos(index_t idx, int16_t file, uint32_t pos) {
 
 void header_index::set_undo_pos(index_t idx, uint32_t pos) {
     undo_positions_[idx] = pos;
+}
+
+// =============================================================================
+// Active chain
+// =============================================================================
+
+void header_index::active_push(index_t idx) {
+    auto const size = active_size_.load(std::memory_order_relaxed);
+    if (size_t(size) >= capacity_) {
+        return;
+    }
+    // Write the entry, then publish it: a reader that sees the new size is
+    // guaranteed to see the entry too.
+    active_[size] = idx;
+    active_size_.store(size + 1, std::memory_order_release);
+}
+
+void header_index::active_truncate(int32_t height) {
+    auto const new_size = height + 1;
+    if (new_size < 0) {
+        active_size_.store(0, std::memory_order_release);
+        return;
+    }
+    if (new_size < active_size_.load(std::memory_order_relaxed)) {
+        // Shrinking only: a concurrent reader can see a shorter chain, never a
+        // stale entry.
+        active_size_.store(new_size, std::memory_order_release);
+    }
+}
+
+header_index::index_t header_index::active_at(int32_t height) const {
+    if (height < 0) {
+        return null_index;
+    }
+    if (height >= active_size_.load(std::memory_order_acquire)) {
+        return null_index;
+    }
+    return active_[height];
+}
+
+int32_t header_index::active_tip_height() const {
+    return active_size_.load(std::memory_order_acquire) - 1;
+}
+
+void header_index::active_set_tip(index_t tip_idx) {
+    if (tip_idx == null_index) {
+        active_size_.store(0, std::memory_order_release);
+        return;
+    }
+
+    // Walk the new branch back to the first entry already on the active chain —
+    // that is the fork point. Collect the branch on the way so it can be linked
+    // in ascending order afterwards.
+    std::vector<index_t> branch;
+    index_t idx = tip_idx;
+    while (idx != null_index) {
+        auto const h = heights_[idx];
+        if (active_at(h) == idx) {
+            break;   // fork point: this entry is already active
+        }
+        branch.push_back(idx);
+        idx = parent_indices_[idx];
+    }
+
+    auto const fork_height = (idx == null_index) ? -1 : heights_[idx];
+    active_truncate(fork_height);
+
+    // Link the branch in, lowest height first.
+    for (auto it = branch.rbegin(); it != branch.rend(); ++it) {
+        active_push(*it);
+    }
 }
 
 void header_index::set_received_time(index_t idx, uint32_t unix_seconds) {

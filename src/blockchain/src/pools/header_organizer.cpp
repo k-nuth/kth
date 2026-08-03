@@ -76,8 +76,14 @@ void header_organizer::sync_tip() {
     }
     tip_index_ = best_idx;
     tip_hash_ = index_.get_hash(tip_index_);
-    spdlog::info("[header_organizer] Synced tip: index {}, hash {}",
-        tip_index_, encode_hash(tip_hash_));
+
+    // Materialize the active chain (height -> index) for this tip. The index also
+    // holds side branches, so the rest of the node can only address blocks by
+    // height through this mapping.
+    index_.active_set_tip(tip_index_);
+
+    spdlog::info("[header_organizer] Synced tip: index {}, hash {}, active height {}",
+        tip_index_, encode_hash(tip_hash_), index_.active_tip_height());
 }
 
 // =============================================================================
@@ -226,6 +232,9 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
     if (extends_tip) {
         tip_index_ = branch_head_idx;
         tip_hash_ = index_.get_hash(branch_head_idx);
+        // Extend the active chain over the headers just linked in. Walks back only
+        // as far as the newly added run, since everything below is already active.
+        index_.active_set_tip(tip_index_);
     } else if ( ! result.error) {
         auto const branch_work = index_.get_chain_work(branch_head_idx);
         auto const tip_work = index_.get_chain_work(tip_index_);

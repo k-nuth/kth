@@ -199,6 +199,53 @@ struct KB_API block_chain {
     std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxo_entry>, std::vector<utxoz::raw_outpoint>>
     utxo_process_pending_lookups();
 
+    // =========================================================================
+    // Reorg undo
+    // =========================================================================
+
+    // Read a UTXO's stored payload verbatim (no resolution). Same two-phase
+    // contract as find(): key_not_found means "queued", not "absent" — resolve
+    // with utxo_process_pending_lookups_raw().
+    [[nodiscard]]
+    std::expected<database::utxoz_database::raw_stored, database::result_code>
+    find_utxo_raw(utxoz::raw_outpoint const& key, uint32_t height) const;
+
+    // Raw counterpart of utxo_process_pending_lookups(): resolves the deferred
+    // queue without reconstructing utxo_entry objects.
+    [[nodiscard]]
+    std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxoz_database::raw_stored>,
+              std::vector<utxoz::raw_outpoint>>
+    utxo_process_pending_lookups_raw();
+
+#if ! defined(KTH_DB_READONLY)
+    // Persist a block's undo data and record its position on the header index.
+    // The undo record shares the block's file number, so the block must already
+    // be stored (have_data) when this is called.
+    [[nodiscard]]
+    bool store_block_undo(database::header_index::index_t idx,
+                          database::block_undo const& undo,
+                          hash_digest const& prev_hash);
+#endif
+
+    // Read back a block's undo data, if any was recorded.
+    [[nodiscard]]
+    std::expected<database::block_undo, database::result_code>
+    read_block_undo(database::header_index::index_t idx, hash_digest const& prev_hash) const;
+
+#if ! defined(KTH_DB_READONLY)
+    // Disconnect the block at `height` from the active chain, reverting its
+    // effect on the UTXO set: the outputs it created are removed (recomputed by
+    // re-reading the block) and the outputs it spent are restored from its undo
+    // data, with their original creation heights.
+    //
+    // Only the UTXO set and the height markers are touched — the block data stays
+    // on disk, so the block can be reconnected without re-downloading. `height`
+    // must be the current validated tip: blocks are disconnected one at a time,
+    // newest first.
+    [[nodiscard]]
+    database::disconnect_result disconnect_block(uint32_t height);
+#endif
+
     void utxo_compact();
     void utxo_print_statistics();
     void utxo_print_sizing_report();

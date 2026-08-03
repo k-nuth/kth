@@ -1818,6 +1818,15 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             batch_end = checkpoint_height;
         }
 
+        // Above the checkpoint every block's undo data is captured and can only be
+        // written after the batch's delta is applied, so the whole batch is held in
+        // memory first. Cap the batch there: a full block can spend tens of
+        // thousands of outputs, so an unbounded batch would hold hundreds of MB.
+        static constexpr uint32_t max_undo_batch_len = 100;
+        if (batch_start > checkpoint_height && batch_end - batch_start + 1 > max_undo_batch_len) {
+            batch_end = batch_start + max_undo_batch_len - 1;
+        }
+
         // Read raw blocks from flat files
         auto raw_result = chain.fetch_blocks_raw(batch_start, batch_end);
         if ( ! raw_result) {
@@ -1873,6 +1882,14 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
         // Parse and process UTXO delta
         blockchain::utxo_raw_delta delta;
+        // Undo records for this batch, persisted only after the delta is applied.
+        struct pending_undo_entry {
+            blockchain::header_index::index_t idx;
+            database::block_undo undo;
+            hash_digest prev_hash;
+        };
+        std::vector<pending_undo_entry> pending_undo;
+
         for (uint32_t i = 0; i < raw_result->size(); ++i) {
             uint32_t h = batch_start + i;
             uint32_t mtp = calculate_mtp(timestamp_window);
@@ -1893,6 +1910,22 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                 chain.headers().get_file_number(idx),
                 chain.headers().get_data_pos(idx),
                 block_bloom);
+
+            // Capture undo data so this block can be disconnected on a reorg.
+            // Only above the checkpoint: below it the bloom prunes the delta, so
+            // the block is not disconnectable in principle (and reorgs only ever
+            // happen near the tip). Captured from the block's OWN delta, before
+            // merge collapses same-batch spends, and before the batch is applied.
+            if (h > checkpoint_height) {
+                auto undo = blockchain::capture_block_undo(block_delta, delta, chain, h);
+                if ( ! undo) {
+                    spdlog::error("[utxo_build] Failed to capture undo data at height {}", h);
+                    co_return;
+                }
+                pending_undo.emplace_back(idx, std::move(*undo),
+                                          chain.headers().get_prev_block_hash(idx));
+            }
+
             delta.merge(std::move(block_delta));
 
             // Update MTP window from raw block header (timestamp at offset 68)
@@ -1909,6 +1942,16 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             auto result = chain.apply_utxo_delta_raw(delta.inserts, delta.deletes);
             if (result != database::result_code::success) {
                 spdlog::error("[utxo_build] Failed to apply UTXO delta at batch {}", batch_start);
+                co_return;
+            }
+        }
+
+        // Persist undo data AFTER the delta is applied and BEFORE the built-height
+        // marker advances, so a crash can only leave undo data for a block that is
+        // already connected — never a connected block without undo data.
+        for (auto& entry : pending_undo) {
+            if ( ! chain.store_block_undo(entry.idx, entry.undo, entry.prev_hash)) {
+                spdlog::error("[utxo_build] Failed to store undo data for index {}", entry.idx);
                 co_return;
             }
         }

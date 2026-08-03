@@ -120,6 +120,68 @@ result_code utxoz_database::erase(domain::chain::point const& point, uint32_t he
     return erased > 0 ? result_code::success : result_code::key_not_found;
 }
 
+namespace {
+
+#ifdef KTH_UTXOZ_COMPACT_MODE
+// Pack a compact reference the way apply_delta_raw expects it to arrive:
+// {file_number(4 LE), tx_offset(4 LE)}.
+std::vector<uint8_t> pack_compact_ref(uint32_t file_number, uint32_t offset) {
+    std::vector<uint8_t> value(8);
+    std::memcpy(value.data(), &file_number, 4);
+    std::memcpy(value.data() + 4, &offset, 4);
+    return value;
+}
+#endif
+
+} // namespace
+
+std::expected<utxoz_database::raw_stored, result_code>
+utxoz_database::find_raw(utxoz::raw_outpoint const& key, uint32_t height) const {
+    if ( ! is_open()) {
+        return std::unexpected(result_code::other);
+    }
+
+    auto result = db_->find(key, height);
+    if ( ! result) {
+        // Not in the active version file. May still be resolved by the deferred
+        // sweep — the caller must not treat this as absence.
+        return std::unexpected(result_code::key_not_found);
+    }
+
+#ifdef KTH_UTXOZ_COMPACT_MODE
+    return raw_stored{pack_compact_ref(result->file_number, result->offset), result->block_height};
+#else
+    return raw_stored{result->data, result->block_height};
+#endif
+}
+
+std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, utxoz_database::raw_stored>, std::vector<utxoz::raw_outpoint>>
+utxoz_database::process_pending_lookups_raw() {
+    boost::unordered_flat_map<utxoz::raw_outpoint, raw_stored> resolved;
+    std::vector<utxoz::raw_outpoint> failed;
+
+    if ( ! is_open()) {
+        return {std::move(resolved), std::move(failed)};
+    }
+
+    auto [found, fail] = db_->process_pending_lookups();
+    resolved.reserve(found.size());
+    for (auto const& [key, res] : found) {
+#ifdef KTH_UTXOZ_COMPACT_MODE
+        resolved.emplace(key, raw_stored{pack_compact_ref(res.file_number, res.offset), res.block_height});
+#else
+        resolved.emplace(key, raw_stored{res.data, res.block_height});
+#endif
+    }
+
+    failed.reserve(fail.size());
+    for (auto const& e : fail) {
+        failed.push_back(e.key);
+    }
+
+    return {std::move(resolved), std::move(failed)};
+}
+
 result_code utxoz_database::clear() {
     if ( ! is_open()) {
         return result_code::other;

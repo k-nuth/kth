@@ -302,6 +302,7 @@ if (ENABLE_TEST)
         test/verify_script_context.cpp
         test/batch_sigchecks.cpp
         test/finalization.cpp
+        test/block_undo.cpp
     )
 
     # Disabled until ported to v1.0 APIs:
