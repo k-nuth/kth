@@ -29,24 +29,11 @@ namespace kth::database {
 //   - Fork tracking and reorganization
 //   - Headers-first sync
 //
-// Memory layout (SoA - Structure of Arrays):
-// For ~1.18M blocks (default capacity):
-//   prev_block_hashes: 37.7 MB (1,179,648 x 32 bytes)
-//   parent_indices:     4.7 MB (1,179,648 x 4 bytes)
-//   skip_indices:       4.7 MB
-//   heights:            4.7 MB
-//   chain_works:       37.7 MB (1,179,648 x 32 bytes — uint256 cumulative work)
-//   statuses:           4.7 MB
-//   versions:           4.7 MB
-//   merkle_roots:      37.7 MB (1,179,648 x 32 bytes)
-//   timestamps:         4.7 MB
-//   bits:               4.7 MB
-//   nonces:             4.7 MB
-//   file_numbers:       2.4 MB (1,179,648 x 2 bytes)
-//   data_positions:     4.7 MB
-//   undo_positions:     4.7 MB
-//   ─────────────────────────────
-//   Total:            ~137 MB
+// Memory layout (SoA — one vector per field). At default capacity (~1.18M
+// entries) the footprint is dominated by the four 32-byte vectors — hashes,
+// prev_block_hashes, chain_works (uint256), merkle_roots (~37.7 MB each) — plus
+// ~a dozen 2-to-4-byte vectors. Roughly 174 bytes/entry ≈ 205 MB total, plus the
+// hash->index concurrent map. See the private members below for the full set.
 //
 // Thread safety:
 //   - Writers: CFM's bucket lock during insert_and_visit

@@ -150,6 +150,23 @@ TEST_CASE("header_organizer empty batch returns success with zero count", "[head
     REQUIRE(result.headers_added == 0);
 }
 
+TEST_CASE("header_organizer note_block_validated respects the startup window", "[header_organizer][finalization]") {
+    // A freshly constructed organizer is within the finalization startup window
+    // (uptime < finalization_delay), so no block finalizes even once blocks are
+    // validated well past the depth threshold. (The finalization rule itself is
+    // covered by the finalization component tests.)
+    header_index index;
+    (void)build_chain(index, 30);
+    auto settings = make_test_settings();
+    header_organizer organizer(index, settings, domain::config::network::mainnet);
+    REQUIRE(organizer.start());
+    organizer.sync_tip();
+
+    REQUIRE(organizer.finalized_height() == -1);
+    organizer.note_block_validated(29);
+    REQUIRE(organizer.finalized_height() == -1);
+}
+
 TEST_CASE("header_organizer duplicate headers in same batch", "[header_organizer][stale]") {
     // Setup
     header_index index;

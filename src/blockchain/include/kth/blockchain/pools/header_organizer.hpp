@@ -10,6 +10,7 @@
 #include <memory>
 
 #include <kth/blockchain/define.hpp>
+#include <kth/blockchain/finalization.hpp>
 #include <kth/blockchain/header_index.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/blockchain/validate/validate_header.hpp>
@@ -63,6 +64,19 @@ struct KB_API header_organizer {
     /// Sync tip state from the header index.
     /// Call after header_index has been initialized (e.g., with genesis).
     void sync_tip();
+
+    /// Notify the organizer that blocks are validated up to `block_valid_height`,
+    /// advancing the finalized block per BCHN's depth + header-age rules. Called
+    /// by the block-download/validation path as it advances the validated tip.
+    void note_block_validated(int32_t block_valid_height);
+
+    /// Height of the finalized block, or -1 if nothing is finalized yet.
+    [[nodiscard]]
+    int32_t finalized_height() const { return finalizer_.finalized_height(); }
+
+    /// Read-only view of the finalization state (for header/reorg admission).
+    [[nodiscard]]
+    finalization const& finalized_state() const { return finalizer_; }
 
     /// Add a batch of headers to the organizer.
     /// Validates all headers and adds valid ones to the index.
@@ -136,6 +150,10 @@ private:
     header_index& index_;
     std::atomic<bool> stopped_{false};
     validate_header validator_;
+
+    // Tracks the finalized block (BCHN parity). Advanced by note_block_validated;
+    // read via finalized_state() for header/reorg admission.
+    finalization finalizer_;
 
     // Current tip state
     index_t tip_index_{header_index::null_index};

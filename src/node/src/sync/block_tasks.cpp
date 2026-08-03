@@ -1452,6 +1452,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
     block_storage_input_channel& input,
     chunk_validated_channel& output,
     uint32_t start_height,
+    blockchain::header_organizer& organizer,
     std::atomic<uint32_t>* contiguous_out
 ) {
     spdlog::info("[block_storage] Task started at height {}", start_height);
@@ -1524,6 +1525,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
             // Advance contiguous_height using header_index have_data flags.
             // store_chunk() already set have_data for each stored block.
             // idx == height during IBD (headers added sequentially).
+            auto const prev_contiguous = contiguous_height;
             auto const& hdr = chain.headers();
             while (hdr.has_status(static_cast<blockchain::header_index::index_t>(contiguous_height),
                                   blockchain::header_status::have_data)) {
@@ -1533,6 +1535,12 @@ std::atomic<uint32_t> g_active_download_peers{0};
             // Publish contiguous height for utxo_build_task
             if (contiguous_out) {
                 contiguous_out->store(contiguous_height, std::memory_order_release);
+            }
+
+            // Advance the finalized block as newly stored (batch-validated)
+            // blocks extend the contiguous validated range.
+            if (contiguous_height > prev_contiguous) {
+                organizer.note_block_validated(static_cast<int32_t>(contiguous_height - 1));
             }
         } else {
             // Store failed — release memory

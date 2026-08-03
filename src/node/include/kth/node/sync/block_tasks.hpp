@@ -147,6 +147,7 @@ extern std::atomic<uint64_t> g_blocks_received_by_validation;
     block_storage_input_channel& input,
     chunk_validated_channel& output,
     uint32_t start_height,
+    blockchain::header_organizer& organizer,  // advance finalization as blocks validate
     std::atomic<uint32_t>* contiguous_out = nullptr  // publish contiguous height for utxo_build_task
 );
 

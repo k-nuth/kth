@@ -27,6 +27,8 @@ Target blockchain_settings_to_common(Source const& x) {
     res.minimum_output_satoshis = x.minimum_output_satoshis;
     res.notify_limit_hours = x.notify_limit_hours;
     res.reorganization_limit = x.reorganization_limit;
+    res.max_reorg_depth = x.max_reorg_depth;
+    res.finalization_delay_seconds = x.finalization_delay_seconds;
     res.fix_checkpoints = x.fix_checkpoints;
     res.allow_collisions = x.allow_collisions;
     res.easy_blocks = x.easy_blocks;

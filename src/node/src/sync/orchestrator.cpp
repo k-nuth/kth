@@ -621,6 +621,7 @@ static
         block_storage_input,
         stored_chunks,
         initial_block_height + 1,
+        organizer,
         contiguous_height.get()
     ));
 
