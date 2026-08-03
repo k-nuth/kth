@@ -5,6 +5,7 @@
 #ifndef KTH_BLOCKCHAIN_FINALIZATION_HPP
 #define KTH_BLOCKCHAIN_FINALIZATION_HPP
 
+#include <atomic>
 #include <cstdint>
 
 #include <kth/blockchain/define.hpp>
@@ -45,7 +46,7 @@ struct KB_API finalization {
     void maybe_advance(index_t active_tip_idx, int32_t block_valid_height, int64_t now);
 
     // The finalized block, or null_index if nothing is finalized yet.
-    [[nodiscard]] index_t finalized() const { return finalized_idx_; }
+    [[nodiscard]] index_t finalized() const { return finalized_idx_.load(std::memory_order_acquire); }
 
     // Height of the finalized block, or -1 if nothing is finalized yet.
     [[nodiscard]] int32_t finalized_height() const;
@@ -70,7 +71,9 @@ private:
     int32_t const max_reorg_depth_;
     int64_t const finalization_delay_;
     int64_t const startup_time_;
-    index_t finalized_idx_{null_index};
+    // Written only by the block-validation path (single writer), read from the
+    // header path (add_headers admission); atomic for that cross-thread read.
+    std::atomic<index_t> finalized_idx_{null_index};
 };
 
 } // namespace kth::blockchain

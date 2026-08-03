@@ -70,6 +70,7 @@ std::string error_category_impl::message(int ev) const noexcept {
         { error::insufficient_fee, "insufficient transaction fee" },
         { error::dusty_transaction, "output value too low" },
         { error::stale_chain, "blockchain too far behind" },
+        { error::finalized_header_violation, "header forks below the finalized block" },
 
         // check header
         { error::invalid_proof_of_work, "proof of work invalid" },

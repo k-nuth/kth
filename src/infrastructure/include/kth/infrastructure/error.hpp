@@ -80,6 +80,7 @@ enum error_code_t {
     insufficient_fee = 70,
     dusty_transaction = 76,
     stale_chain = 75,
+    finalized_header_violation = 88,   // header forks below the finalized block (BCHN -finalizeheaders); 88-99 is a free gap before the op_* range (100+)
 
     // check header
     invalid_proof_of_work = 26,

@@ -53,6 +53,7 @@ static bool is_bannable_error(code const& ec) {
         case error::not_found:              // Data not available yet
         case error::orphan_block:           // Just out of order, not invalid
         case error::orphan_transaction:
+        case error::stale_chain:            // Stale/duplicate batch, not malicious
             return false;
         default:
             // Any other error is a validation failure -> BAN
