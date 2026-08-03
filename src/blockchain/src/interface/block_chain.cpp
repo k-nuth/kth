@@ -763,11 +763,11 @@ database::disconnect_result block_chain::disconnect_block(uint32_t height) {
         return database::disconnect_result::failed;
     }
 
-    // TODO(reorg): height -> index by cast. This holds while headers form a
-    // single linear sequence, but the index numbers entries by arrival, so a
-    // stored side branch shifts later entries. The explicit active chain
-    // (height -> index) that fixes this lands with the chain switch.
-    auto const idx = static_cast<database::header_index::index_t>(height);
+    auto const idx = header_index_.active_at(static_cast<int32_t>(height));
+    if (idx == database::header_index::null_index) {
+        spdlog::error("[blockchain] disconnect_block: height {} is not on the active chain", height);
+        return database::disconnect_result::failed;
+    }
 
     if ( ! header_index_.has_block_data(idx)) {
         spdlog::error("[blockchain] disconnect_block: no block data at height {}", height);
@@ -1178,11 +1178,12 @@ block_chain::fetch_blocks_raw(uint32_t from, uint32_t to) const {
     positions.reserve(to - from + 1);
 
     for (uint32_t h = from; h <= to; ++h) {
-        // In IBD mode, the header index matches the height
-        auto const idx = static_cast<header_index::index_t>(h);
+        // Resolve through the active chain — the index also holds side branches,
+        // numbered in arrival order, so an entry's index is not its height.
+        auto const idx = header_index_.active_at(static_cast<int32_t>(h));
 
-        if (idx >= header_index_.size()) {
-            spdlog::error("[blockchain] fetch_blocks_raw: Height {} exceeds header_index size {}", h, header_index_.size());
+        if (idx == header_index::null_index) {
+            spdlog::error("[blockchain] fetch_blocks_raw: Height {} is not on the active chain", h);
             return std::unexpected(database::result_code::key_not_found);
         }
 

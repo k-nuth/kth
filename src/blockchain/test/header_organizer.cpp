@@ -336,3 +336,87 @@ TEST_CASE("header_organizer rejects a new header after a known one on a sub-fina
     REQUIRE(result.headers_added == 0);
     REQUIRE(index.size() == size_before);          // nothing stored
 }
+
+// =============================================================================
+// Active chain (height -> index)
+// =============================================================================
+
+TEST_CASE("active chain maps heights to indices after a linear sync", "[header_organizer][active_chain]") {
+    header_index index;
+    (void)build_chain(index, 10);
+    auto settings = make_test_settings();
+    header_organizer organizer(index, settings, domain::config::network::mainnet);
+    REQUIRE(organizer.start());
+    organizer.sync_tip();
+
+    REQUIRE(index.active_tip_height() == 9);
+    for (int32_t h = 0; h <= 9; ++h) {
+        auto const idx = index.active_at(h);
+        REQUIRE(idx != header_index::null_index);
+        REQUIRE(index.get_height(idx) == h);
+    }
+    REQUIRE(index.active_at(10) == header_index::null_index);
+}
+
+TEST_CASE("active chain stays correct when a side branch shifts indices", "[header_organizer][active_chain]") {
+    // The regression this structure exists for: the index numbers entries in
+    // arrival order, so storing a side branch used to make index != height for
+    // every later block, silently corrupting height-addressed lookups.
+    header_index index;
+    auto tip_hash = build_chain(index, 10);           // heights 0..9 at indices 0..9
+    auto settings = make_test_settings();
+    header_organizer organizer(index, settings, domain::config::network::mainnet);
+    REQUIRE(organizer.start());
+    organizer.sync_tip();
+
+    // Store a 3-block side branch off height 5: it takes indices 10..12.
+    auto branch = make_branch(index.get_hash(index.active_at(5)), 3, 800);
+    (void)organizer.add_headers(branch);
+    REQUIRE(index.size() == 13);
+
+    // Now extend the MAIN chain: height 10 lands at index 13, not 10.
+    domain::message::header::list extension;
+    extension.push_back(make_header_with_prev(tip_hash, 10));
+    auto result = organizer.add_headers(extension);
+    REQUIRE(result.headers_added == 1);
+
+    auto const idx10 = index.active_at(10);
+    REQUIRE(idx10 != header_index::null_index);
+    REQUIRE(idx10 != 10);                             // the index HAS shifted
+    REQUIRE(index.get_height(idx10) == 10);           // but the mapping is right
+    REQUIRE(index.active_tip_height() == 10);
+
+    // The branch must not be on the active chain.
+    for (int32_t h = 0; h <= 10; ++h) {
+        REQUIRE(index.get_height(index.active_at(h)) == h);
+    }
+}
+
+TEST_CASE("active chain re-points to a new tip across a fork", "[header_organizer][active_chain]") {
+    header_index index;
+    (void)build_chain(index, 10);                     // tip height 9
+    auto settings = make_test_settings();
+    header_organizer organizer(index, settings, domain::config::network::mainnet);
+    REQUIRE(organizer.start());
+    organizer.sync_tip();
+
+    auto const old_idx7 = index.active_at(7);
+
+    // A branch off height 5 that outgrows the current chain.
+    auto branch = make_branch(index.get_hash(index.active_at(5)), 7, 900);
+    (void)organizer.add_headers(branch);
+
+    // Switch the active chain onto the branch head (what a reorg will do once
+    // the abandoned blocks have been disconnected).
+    auto const branch_head = index.find(kth::domain::chain::hash(branch.back()));
+    REQUIRE(branch_head != header_index::null_index);
+    index.active_set_tip(branch_head);
+
+    REQUIRE(index.active_tip_height() == 12);         // 5 + 7
+    REQUIRE(index.active_at(12) == branch_head);
+    REQUIRE(index.active_at(7) != old_idx7);          // height 7 now on the branch
+    // Everything at or below the fork is untouched.
+    for (int32_t h = 0; h <= 5; ++h) {
+        REQUIRE(index.get_height(index.active_at(h)) == h);
+    }
+}

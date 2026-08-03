@@ -6,6 +6,8 @@
 
 #include <cstring>
 
+#include <spdlog/spdlog.h>
+
 #include <kth/domain/chain/header.hpp>
 #include <kth/infrastructure/utility/stats.hpp>
 
@@ -257,6 +259,10 @@ void header_index::set_undo_pos(index_t idx, uint32_t pos) {
 void header_index::active_push(index_t idx) {
     auto const size = active_size_.load(std::memory_order_relaxed);
     if (size_t(size) >= capacity_) {
+        // Dropping silently would freeze the active chain while headers kept
+        // being indexed, so every later height would resolve to nothing.
+        spdlog::error("[header_index] Active chain is at capacity ({}); cannot extend to height {}",
+            capacity_, size);
         return;
     }
     // Write the entry, then publish it: a reader that sees the new size is
@@ -266,11 +272,15 @@ void header_index::active_push(index_t idx) {
 }
 
 void header_index::active_truncate(int32_t height) {
-    auto const new_size = height + 1;
-    if (new_size < 0) {
+    if (height < 0) {
+        // Fork below genesis: the whole active chain goes.
         active_size_.store(0, std::memory_order_release);
         return;
     }
+    if (height == std::numeric_limits<int32_t>::max()) {
+        return;   // height + 1 would overflow; nothing to truncate anyway
+    }
+    auto const new_size = height + 1;
     if (new_size < active_size_.load(std::memory_order_relaxed)) {
         // Shrinking only: a concurrent reader can see a shorter chain, never a
         // stale entry.

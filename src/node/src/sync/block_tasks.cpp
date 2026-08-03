@@ -1901,7 +1901,11 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                 co_return;
             }
 
-            auto const idx = static_cast<blockchain::header_index::index_t>(h);
+            auto const idx = chain.headers().active_at(static_cast<int32_t>(h));
+            if (idx == blockchain::header_index::null_index) {
+                spdlog::error("[utxo_build] Height {} is not on the active chain", h);
+                co_return;
+            }
             // Prune with the bloom only up to the checkpoint; above it keep every
             // output (live UTXO set) so full validation can resolve prevouts.
             auto const* block_bloom = (h <= checkpoint_height) ? bloom_ptr : nullptr;
