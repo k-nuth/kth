@@ -1,4 +1,16 @@
 reviews:
+  # Less nitpicky, fewer low-value comments (also lighter per review).
+  profile: chill
+  # We iterate with amend + force-push; don't gate merges on CR's status.
+  request_changes_workflow: false
+  high_level_summary: true
+  # Noise reduction.
+  poem: false
+  auto_review:
+    enabled: true
+    # Do NOT review while a PR is in draft. Iterate in draft, mark ready once,
+    # and CR reviews a single time — instead of one review per intermediate push.
+    drafts: false
   path_filters:
     # Review the Knuth source modules and their tests.
     - "src/infrastructure/**"
