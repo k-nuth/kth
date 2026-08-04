@@ -195,6 +195,15 @@ bool persist_active_headers(
                 }
             }
         }
+
+        // The switch rewound the validated tip to the fork. Tell the organizer
+        // before the pause is lifted: deep-reorg parking measures depth against
+        // that height, so a value left over from the abandoned branch would park
+        // a fork sitting above where the chain now actually reaches — and the
+        // next header batch can arrive as soon as the pause is gone.
+        if (outcome.validated_tip) {
+            organizer.note_block_validated(static_cast<int32_t>(*outcome.validated_tip));
+        }
     }
 
     co_return reorg_outcome{outcome, fatal};

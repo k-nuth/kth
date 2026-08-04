@@ -90,12 +90,22 @@ struct KB_API header_organizer {
 
     /// Notify the organizer that blocks are validated up to `block_valid_height`,
     /// advancing the finalized block per BCHN's depth + header-age rules. Called
-    /// by the block-download/validation path as it advances the validated tip.
+    /// by the block-download/validation path as it advances the validated tip,
+    /// and by the reorg execution once a switch rewinds it — deep-reorg parking
+    /// measures against this height, so a value left over from the abandoned
+    /// branch would park forks that sit above where the chain now reaches.
+    /// Finalization only ever moves forward, so a rewind does not retreat it.
     void note_block_validated(int32_t block_valid_height);
 
     /// Height of the finalized block, or -1 if nothing is finalized yet.
     [[nodiscard]]
     int32_t finalized_height() const { return finalizer_.finalized_height(); }
+
+    /// How far blocks are validated, as last reported, or -1 before the first
+    /// report. This is the height deep-reorg parking measures rewind depth
+    /// against.
+    [[nodiscard]]
+    int32_t validated_height() const { return block_valid_height_.load(std::memory_order_acquire); }
 
     /// Read-only view of the finalization state (for header/reorg admission).
     [[nodiscard]]
@@ -171,6 +181,12 @@ private:
                        int32_t height,
                        header_index::index_t parent_idx) const;
 
+    // Deep-reorg parking (BCHN -parkdeepreorg): true when a heavier branch
+    // forking at `fork_idx` must not be promoted to a reorg candidate yet.
+    // See parking.hpp for the rule.
+    [[nodiscard]]
+    bool parked(index_t fork_idx, int32_t fork_height, uint256_t const& branch_work) const;
+
     // Members
     header_index& index_;
     std::atomic<bool> stopped_{false};
@@ -179,6 +195,15 @@ private:
     // Tracks the finalized block (BCHN parity). Advanced by note_block_validated;
     // read via finalized_state() for header/reorg admission.
     finalization finalizer_;
+
+    // How far blocks are validated (BCHN's m_chain.Height()), or -1 before the
+    // first notification. Deep-reorg parking measures rewind depth against this,
+    // not against the header tip.
+    //
+    // Written by the block-storage path and by reorg execution, read from the
+    // header path (parked, during add_headers). Those run on different threads,
+    // so the field is atomic and every read takes a single snapshot.
+    std::atomic<int32_t> block_valid_height_{-1};
 
     // Current tip. Two writers now: header organization, and reorg execution
     // through adopt_tip. Atomic so a reader never sees a torn value, and guarded

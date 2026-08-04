@@ -32,19 +32,21 @@ struct KB_API settings {
     uint32_t notify_limit_hours = 24;
     uint32_t reorganization_limit = 256;
     // Finalization (BCHN parity). A block is finalized once it is `max_reorg_depth`
-    // deep and its header is `finalization_delay_seconds` old. Currently the node
-    // only tracks the finalized block; enforcement (refusing to reorg across it,
-    // rejecting headers below it) is not wired yet. max_reorg_depth < 0 disables
-    // finalization entirely.
+    // deep and its header is `finalization_delay_seconds` old. Headers forking below
+    // the finalized block are rejected, which bounds any reorg to this depth; within
+    // it, deep-reorg parking (parking.hpp) governs whether a heavier branch is
+    // followed. max_reorg_depth < 0 disables finalization entirely.
     int32_t max_reorg_depth = 10;                       // BCHN -maxreorgdepth
     int64_t finalization_delay_seconds = 2 * 60 * 60;   // BCHN -finalizationdelay (2h)
     // Minimum seconds between block-template rebuilds while the mempool churns
     // (a new tip always rebuilds immediately). Mirrors bitcoind's 5s.
     uint32_t gbt_template_refresh_seconds = 5;
     infrastructure::config::checkpoint::list checkpoints;
-    // Derived fields — populated by settings(network) constructor.
-    // If using settings() default and setting checkpoints manually,
-    // call sort_checkpoints() to sync these.
+    // Derived fields — populated by the settings(network) constructor, and read
+    // by validation instead of `checkpoints` above. Nothing re-derives them:
+    // changing `checkpoints` afterwards leaves these describing the old list, so
+    // set all three together (there is no sort_checkpoints(), despite what this
+    // comment used to promise).
     infrastructure::config::checkpoint::list checkpoints_sorted;  // Pre-sorted by height
     size_t max_checkpoint_height = 0;                             // Pre-computed max
     bool fix_checkpoints = true;

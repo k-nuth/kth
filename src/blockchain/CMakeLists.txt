@@ -196,6 +196,7 @@ set(kth_sources_just_legacy
   src/validate/validate_transaction.cpp
   src/settings.cpp
   src/finalization.cpp
+  src/parking.cpp
   src/utxo_builder.cpp
 )
 
@@ -240,6 +241,7 @@ set(kth_headers
   include/kth/blockchain/pools/header_organizer.hpp
   include/kth/blockchain/pools/transaction_organizer.hpp
   include/kth/blockchain/finalization.hpp
+  include/kth/blockchain/parking.hpp
   include/kth/blockchain/settings.hpp
 )
 
@@ -307,6 +309,7 @@ if (ENABLE_TEST)
         test/verify_script_context.cpp
         test/batch_sigchecks.cpp
         test/finalization.cpp
+        test/parking.cpp
         test/block_undo.cpp
         test/reorg_undo_roundtrip.cpp
         test/reorg_e2e.cpp

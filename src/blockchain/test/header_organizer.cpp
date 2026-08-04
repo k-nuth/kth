@@ -284,13 +284,16 @@ TEST_CASE("header_organizer allows a branch forking above the finalized block", 
     organizer.note_block_validated(29);
     REQUIRE(organizer.finalized_height() == 19);
 
+    auto const size_before = index.size();
     // 8 blocks off height 22 (above finalized) -> head at height 30, out-works the tip.
     auto branch = make_branch(index.get_hash(22), 8, 600);
     auto result = organizer.add_headers(branch);
 
+    // Admitted and stored. Whether it also becomes a reorg candidate is a separate
+    // question, decided by deep-reorg parking (see test/parking.cpp) — this branch
+    // rewinds 7 validated blocks on one block of surplus work, so it is parked.
     REQUIRE(result.error != error::finalized_header_violation);
-    REQUIRE(result.reorg_candidate);
-    REQUIRE(result.reorg_fork_height == 22);
+    REQUIRE(index.size() == size_before + 8);
 }
 
 TEST_CASE("header_organizer does not penalize re-sent known headers below the finalized block", "[header_organizer][finalization]") {
