@@ -170,6 +170,15 @@ void executor::start_async(start_handler handler) {
     // Create the node
     node_ = std::make_shared<kth::node::full_node>(config_);
 
+    // The node reports conditions it cannot go on from (see full_node::notify_fatal)
+    // from inside its own tasks. It stops itself; ending the process is this
+    // executor's, and it is the same wind-down a stop request takes — the node
+    // has no second, partial copy of it.
+    node_->set_fatal_handler([this](std::string const& reason) {
+        spdlog::critical("[node] Shutting down: {}", reason);
+        stop_async({});
+    });
+
     // Start IO thread
     start_io_thread();
 
@@ -220,7 +229,11 @@ void executor::start_async(start_handler handler) {
             auto executor = co_await ::asio::this_coro::executor;
             ::asio::steady_timer timer(executor);
             uint64_t heartbeat_count = 0;
-            while (state_.load() == state::running) {
+            // Also stops when the node stopped on its own: a fatal condition
+            // reported from inside it ends run(), and a heartbeat that only
+            // watched this executor's state would keep the `&&` below from ever
+            // completing — no join, no shutdown, a process with nothing to do.
+            while (state_.load() == state::running && node_ && ! node_->stopped()) {
                 timer.expires_after(std::chrono::seconds(10));
                 auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
                 if (ec) {

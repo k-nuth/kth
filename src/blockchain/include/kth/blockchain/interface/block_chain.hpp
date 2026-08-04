@@ -14,6 +14,7 @@
 #include <expected>
 #include <mutex>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include <kth/infrastructure/utility/atomic.hpp>
@@ -149,6 +150,18 @@ struct KB_API block_chain {
     code organize_headers_batch(domain::chain::header::list const& headers, size_t start_height);
 
 #if ! defined(KTH_DB_READONLY)
+    /// Make the persisted by-height headers describe `headers` from
+    /// `start_height` up, and nothing above them. This is how a reorganization
+    /// updates that table: all of it or none, so a failed write cannot leave the
+    /// replaced range naming two branches at once.
+    ///
+    /// A write, so it follows the layers below it out of read-only builds.
+    /// (organize_headers_batch above is not guarded, and so fails to link
+    /// rather than to compile in such a build — pre-existing, left alone here.)
+    code replace_headers_from(domain::chain::header::list const& headers, size_t start_height);
+#endif // ! defined(KTH_DB_READONLY)
+
+#if ! defined(KTH_DB_READONLY)
     [[nodiscard]]
     ::asio::awaitable<code> push(transaction_const_ptr tx);
 
@@ -245,16 +258,26 @@ struct KB_API block_chain {
     [[nodiscard]]
     database::disconnect_result disconnect_block(uint32_t height);
 
-    // Switch the active chain onto `branch_head`, forking at `fork_height`.
+    // Rewind the UTXO state to `fork_height` so the chain can move onto
+    // `branch_head`.
     //
-    // Disconnects the abandoned blocks newest-first (restoring their spent
-    // outputs from undo data), then re-points the active chain at the new branch.
-    // The caller is responsible for re-driving block download for the new branch:
-    // its blocks are headers-only at this point, so the validated tip ends at
-    // fork_height.
+    // Disconnects the abandoned blocks newest-first, restoring their spent
+    // outputs from undo data, and rolls the height markers back to the fork.
+    //
+    // It does NOT publish the new branch: the height mapping and the organizer's
+    // tip have to move together, under the organizer's lock, or a header batch
+    // that validated against the old tip can publish between the two halves and
+    // leave them naming different branches. header_organizer::adopt_tip does
+    // both; call it as soon as this returns (node::sync::execute_reorg is the
+    // one place that owns the whole sequence). Until then the chain still reads
+    // as the old branch above the fork, which is why this must run with the
+    // writers quiesced.
     //
     // Must be called with the UTXO build quiesced (see reorg_pause below): it
     // rewrites the UTXO set and the height markers.
+    // The caller is responsible for re-driving block download for the new branch:
+    // its blocks are headers-only at this point, so the validated tip ends at
+    // fork_height.
     struct switch_result {
         bool ok{false};
         // Height the validated tip ended at, when it is known. On an aborted
@@ -316,6 +339,13 @@ struct KB_API block_chain {
     // applying it, which is what makes a stale chunk buffered during the barrier
     // harmless rather than corrupting.
     [[nodiscard]] uint64_t chain_generation() const { return header_index_.generation(); }
+
+    // Parked and registered counts, for a caller that has to report why the
+    // barrier was never reached.
+    [[nodiscard]] std::pair<size_t, size_t> reorg_barrier_state() const {
+        return {reorg_parked_.load(std::memory_order_seq_cst),
+                reorg_registered_.load(std::memory_order_seq_cst)};
+    }
 
     [[nodiscard]] bool reorg_barrier_reached() const {
         auto const registered = reorg_registered_.load(std::memory_order_seq_cst);

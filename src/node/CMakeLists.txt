@@ -157,6 +157,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/sync/header_tasks.cpp
     src/sync/block_tasks.cpp
     src/sync/orchestrator.cpp
+    src/sync/reorg.cpp
 
     # Mining helpers shared by the JSON-RPC server and other template consumers.
     src/mining/job_store.cpp
@@ -294,6 +295,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   add_executable(kth_node_test
           test/check_list.cpp
           test/chunk_coordinator.cpp
+          test/reorg_cycle.cpp
           test/reorg_stale_chunk_drop.cpp
           test/configuration.cpp
           test/header_list.cpp

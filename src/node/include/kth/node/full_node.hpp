@@ -39,6 +39,7 @@
 // =============================================================================
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 
 #include <kth/blockchain.hpp>
@@ -96,6 +97,17 @@ public:
 
     /// Stop the node.
     void stop();
+
+    /// A condition the node cannot go on from, reported from inside its own
+    /// tasks: the persisted chain and the chain in memory no longer describe the
+    /// same thing (see node::sync::reorg_outcome::fatal).
+    ///
+    /// Stops the node, and tells whoever owns its lifecycle so the process can
+    /// wind down instead of idling with nothing left to do. Without a handler
+    /// the node still stops; the owner just never hears about it.
+    using fatal_handler = std::function<void(std::string const&)>;
+    void set_fatal_handler(fatal_handler handler);
+    void notify_fatal(std::string const& reason);
 
     /// Block until all work is complete.
     void join();
@@ -198,6 +210,7 @@ private:
     // Configuration references (stored in configuration object)
     node::settings const& node_settings_;
     blockchain::settings const& chain_settings_;
+    fatal_handler fatal_handler_;
     domain::config::network network_type_;
 
     // Core components (composition, not inheritance)

@@ -267,7 +267,8 @@ full_node::~full_node() {
     // run on the network pool's 32 threads instead of the single io_thread.
     co_await ::asio::co_spawn(
         network_.thread_pool().get_executor(),
-        sync::sync_orchestrator(chain_, organizer, network_, network_type_),
+        sync::sync_orchestrator(chain_, organizer, network_, network_type_,
+            [this](std::string const& reason) { notify_fatal(reason); }),
         ::asio::use_awaitable
     );
 
@@ -275,6 +276,25 @@ full_node::~full_node() {
     spdlog::info("[full_node] run_sync() ENDED");
 }
 #endif
+
+void full_node::set_fatal_handler(fatal_handler handler) {
+    fatal_handler_ = std::move(handler);
+}
+
+void full_node::notify_fatal(std::string const& reason) {
+    spdlog::critical("[node] Cannot continue: {}", reason);
+
+    // Stop first, so the node's own tasks wind down even when nobody installed a
+    // handler — a library embedding the node still gets a node that stops.
+    stop();
+
+    if (fatal_handler_) {
+        fatal_handler_(reason);
+    } else {
+        spdlog::warn("[node] No fatal handler installed; the node stopped but its owner was not "
+            "told, so the process may stay up with nothing left to do");
+    }
+}
 
 void full_node::stop() {
 #if ! defined(__EMSCRIPTEN__)

@@ -808,8 +808,10 @@ operation::list script::to_pay_public_key_hash_pattern(short_hash const& hash) {
 }
 
 operation::list script::to_pay_public_key_hash_pattern_unlocking(endorsement const& end, wallet::ec_public const& pubkey) {
+    // Signature then public key, and nothing else: the locking script consumes
+    // both, leaving a single true on the stack. A leading OP_0 (the dummy
+    // multisig needs) would survive to the end and fail CLEANSTACK.
     return operation::list {
-        operation(opcode::push_size_0),
         operation(end),
         operation(pubkey.to_data())
     };
@@ -818,8 +820,9 @@ operation::list script::to_pay_public_key_hash_pattern_unlocking(endorsement con
 operation::list script::to_pay_public_key_hash_pattern_unlocking_placeholder(size_t endorsement_size, size_t pubkey_size) {
     data_chunk placeholder_signature(endorsement_size, 0);
     data_chunk placeholder_pubkey(pubkey_size, 0);
+    // Same shape as the real unlocking script above, so a size estimate built
+    // from this matches what the spend will actually serialize to.
     return operation::list {
-        operation(opcode::push_size_0),
         operation(std::move(placeholder_signature)),
         operation(std::move(placeholder_pubkey))
     };

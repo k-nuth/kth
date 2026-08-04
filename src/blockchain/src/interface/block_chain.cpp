@@ -629,6 +629,14 @@ code block_chain::organize_headers_batch(domain::chain::header::list const& head
 
 #if ! defined(KTH_DB_READONLY)
 
+code block_chain::replace_headers_from(domain::chain::header::list const& headers, size_t start_height) {
+    if (stopped()) {
+        return error::service_stopped;
+    }
+
+    return database_.replace_headers_from(headers, start_height);
+}
+
 ::asio::awaitable<code> block_chain::push(transaction_const_ptr tx) {
     using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
     auto channel = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
@@ -926,16 +934,15 @@ block_chain::switch_result block_chain::switch_to_branch(
         }
     }
 
-    // Re-point the active chain. From here "the block at height N" means the new
-    // branch; its blocks are headers-only, so block download must refill them.
-    header_index_.active_set_tip(branch_head);
-
-    // active_set_tip bumps the generation when it moves onto a different branch,
-    // which is what marks chunks requested against the old chain as stale.
-    auto const generation = chain_generation();
-
-    spdlog::warn("[blockchain] Reorg: active chain switched to height {} (fork at {}), generation {}",
-        header_index_.active_tip_height(), fork_height, generation);
+    // The active chain is NOT re-pointed here. Publishing the new tip is the
+    // organizer's (see header_organizer::adopt_tip), because the header path
+    // publishes there too: a batch that validated against the old tip decides
+    // whether to publish under the organizer's lock, and a switch that published
+    // the height mapping outside that lock could land between that decision and
+    // its write — leaving the tip on one branch and the height mapping on the
+    // other. The caller adopts the branch head as soon as this returns.
+    spdlog::warn("[blockchain] Reorg: UTXO state rewound to the fork at {}; the branch head is "
+        "published by the caller", fork_height);
     return {true, validated_tip};
 }
 #endif
