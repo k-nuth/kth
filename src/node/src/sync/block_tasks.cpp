@@ -1785,7 +1785,8 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     std::atomic<uint32_t> const& contiguous_height,
     uint32_t start_height,
     domain::config::network network,
-    std::function<bool()> should_stop
+    std::function<bool()> should_stop,
+    std::function<void(std::string const&)> on_fatal
 ) {
     spdlog::info("[utxo_build] Task started at height {}", start_height);
 
@@ -1953,12 +1954,17 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // every block in it is validated against a UTXO-Z that already holds every
         // below-checkpoint output. On failure we halt: the invalid block is never
         // applied.
+        // Kept past the validation step: the mempool update below needs parsed
+        // blocks, and above the checkpoint they are parsed here anyway. Below it
+        // this stays empty and the raw bytes are used instead.
+        std::vector<kth::block_const_ptr> validated_blocks;
+
         if (batch_start > checkpoint_height) {
             // Parse the blocks and validate them on the worker pool, off this
             // coroutine's executor.
             auto const vc = co_await ::asio::co_spawn(validation_pool.get_executor(),
                 [&]() -> ::asio::awaitable<code> {
-                    std::vector<kth::block_const_ptr> full_blocks;
+                    auto& full_blocks = validated_blocks;
                     full_blocks.reserve(raw_result->size());
                     for (uint32_t i = 0; i < raw_result->size(); ++i) {
                         uint32_t const h = batch_start + i;
@@ -2069,8 +2075,44 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
         utxo_built_height = batch_end;
 
-        // Save progress + process deferred deletions
-        std::ignore = chain.set_utxo_built_height(utxo_built_height);
+        // Save progress. Not ignorable: everything below treats these blocks as
+        // connected, and on the next start the built height is what says how far
+        // the UTXO set reaches. A set that moved without its marker would be
+        // rebuilt over on resume, applying deltas that are already in it.
+        if (auto const marked = chain.set_utxo_built_height(utxo_built_height);
+                marked != database::result_code::success) {
+            spdlog::critical("[utxo_build] Could not record the built height {}: the UTXO set is "
+                "ahead of what the next start will believe", utxo_built_height);
+            on_fatal("the UTXO set advanced past the height marker that describes it");
+            co_return;
+        }
+
+        // These blocks are connected now — the delta is applied, the undo records
+        // are written and the marker has moved — so what they confirmed leaves the
+        // mempool, along with anything pooled that conflicts with them.
+        //
+        // Through the chain rather than the mempool directly: the mempool's writes
+        // are serialized by the validation mutex, which is not this task's to take.
+        // Above the checkpoint the blocks are already parsed by validation; below
+        // it the raw form parses only if there is something in the pool to remove.
+        for (uint32_t i = 0; i < raw_result->size(); ++i) {
+            if (i < validated_blocks.size()) {
+                chain.mempool_remove_for_block(*validated_blocks[i]);
+                continue;
+            }
+            auto const& raw = (*raw_result)[i];
+            if (auto const ec = chain.mempool_remove_for_block(
+                    byte_span{raw.data(), raw.size()}); ec) {
+                // These bytes came off disk after the compact parser accepted
+                // them, so failing here should not be reachable. If it is, the
+                // pool now holds transactions this block confirmed and will keep
+                // offering them for a template — carrying on would mine them.
+                spdlog::critical("[utxo_build] Could not update the mempool for the block at "
+                    "height {}: {}", batch_start + i, ec.message());
+                on_fatal("the mempool still holds transactions a connected block confirmed");
+                co_return;
+            }
+        }
         auto deferred = chain.utxo_deferred_deletions_size();
         if (deferred > 0) {
             auto [deleted, failed] = chain.utxo_process_pending_deletions();
