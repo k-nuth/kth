@@ -379,3 +379,123 @@ TEST_CASE("the node reorganizes onto a heavier branch and back to a consistent s
     CHECK_FALSE(extension.reorg_candidate);
     CHECK(fixture.organizer().header_height() == 104);
 }
+
+// =============================================================================
+// The chain the node comes back on
+// =============================================================================
+
+TEST_CASE("a restart after a reorganization comes back on the branch that won", "[reorg][cycle]") {
+    // The header index is rebuilt at startup from the persisted by-height headers,
+    // so those are what decides which chain the node resumes. A switch that moved
+    // the chain in memory without rewriting them would look fine for as long as
+    // the process lived, and come back up on the branch it had abandoned — with
+    // the UTXO set already rewound below it.
+    //
+    // Short chain on purpose: this is about what survives a restart, not about
+    // spending a matured coinbase, which the cycle above covers.
+    test::chain_fixture fixture("restart");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    constexpr uint32_t trunk_len = 12;
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const base_time = uint32_t(zulu_time()) - (trunk_len + 30) * block_spacing;
+
+    std::vector<domain::chain::block> trunk;
+    auto prev = genesis.hash();
+    for (uint32_t h = 1; h <= trunk_len; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(trunk)).headers_added == trunk_len);
+    persist_headers(fixture, trunk, 1);
+    connect_bodies(fixture, trunk, 1);
+
+    // Branch A: one block on the trunk.
+    auto const a13 = test::mine_block(trunk.back().hash(), 13,
+        base_time + 13 * block_spacing, 1, {}, 0);
+    REQUIRE(fixture.organizer().add_headers(headers_of({a13})).headers_added == 1);
+    persist_headers(fixture, {a13}, 13);
+    connect_bodies(fixture, {a13}, 13);
+
+    // Branch B: three blocks from 12, outweighing it.
+    std::vector<domain::chain::block> branch_b;
+    prev = trunk.back().hash();
+    for (uint32_t h = 13; h <= 15; ++h) {
+        branch_b.push_back(test::mine_block(prev, h, base_time + h * block_spacing + 60, 2, {}, 0));
+        prev = branch_b.back().hash();
+    }
+    auto const b_result = fixture.organizer().add_headers(headers_of(branch_b));
+    REQUIRE(b_result.reorg_candidate);
+
+    reorg_outcome reorg;
+    {
+        ::asio::io_context switch_ctx;
+        ::asio::co_spawn(switch_ctx,
+            execute_reorg(fixture.chain(), fixture.organizer(), b_result.reorg_branch_head,
+                trunk_len, [] { return false; }),
+            [&reorg](std::exception_ptr, reorg_outcome result) { reorg = result; });
+        switch_ctx.run_for(std::chrono::seconds(30));
+    }
+    REQUIRE(reorg.result.ok);
+    REQUIRE_FALSE(reorg.fatal);
+
+    connect_bodies(fixture, branch_b, 13);
+
+    // -------------------------------------------------------------------------
+    // Everything above is in memory as much as on disk. Drop it all.
+    // -------------------------------------------------------------------------
+    REQUIRE(fixture.restart());
+
+    auto& chain = fixture.chain();
+    auto& index = chain.headers();
+
+    // Rebuilt from disk: heights 13..15 name B's blocks, and the tip is B's head.
+    CHECK(index.active_tip_height() == 15);
+    for (uint32_t h = 13; h <= 15; ++h) {
+        auto const idx = index.active_at(int32_t(h));
+        REQUIRE(idx != blockchain::header_index::null_index);
+        CHECK(index.get_hash(idx) == branch_b[h - 13].hash());
+    }
+    CHECK(fixture.organizer().tip_index() == index.active_at(15));
+
+    // The abandoned branch is not in the index at all, which is worth stating
+    // rather than discovering: the index is rebuilt from the by-height table, and
+    // that table describes the active chain only. Side branches live in memory,
+    // so a restart forgets them. Their block bytes stay in the flat files, held
+    // by nothing, until a peer announces the branch again and the headers are
+    // re-downloaded. (BCHN persists its whole block index and does remember.)
+    CHECK(index.find(a13.hash()) == blockchain::header_index::null_index);
+
+    // The validated tip and the UTXO set came back together, at B's head.
+    {
+        auto const heights = chain.get_last_heights();
+        REQUIRE(heights);
+        CHECK(heights->block == 15);
+        auto const built = chain.get_utxo_built_height();
+        REQUIRE(built);
+        CHECK(*built == 15);
+    }
+
+    // And the organizer knows it. Nothing tells it until the first newly stored
+    // block, so a node that came up and was handed a deep, heavier branch before
+    // storing anything would measure the rewind against "nothing validated yet"
+    // and follow it — with finalization not protecting either, since it needs
+    // headers older than the finalization delay.
+    CHECK(fixture.organizer().validated_height() == 15);
+
+    // And the UTXO set is B's: its coinbases are there, A's is not.
+    for (auto const& blk : branch_b) {
+        CHECK(utxo_present(chain, blk.transactions().front().hash(), 0, 15));
+    }
+    CHECK_FALSE(utxo_present(chain, a13.transactions().front().hash(), 0, 15));
+
+    // Nothing that is on the chain is A's: every active height names a B block or
+    // a trunk one, so the switch did not leave the abandoned branch reachable by
+    // height either.
+    for (int32_t h = 13; h <= index.active_tip_height(); ++h) {
+        auto const idx = index.active_at(h);
+        REQUIRE(idx != blockchain::header_index::null_index);
+        CHECK(index.get_hash(idx) != a13.hash());
+    }
+}
