@@ -288,6 +288,12 @@ TEST_CASE("the node reorganizes onto a heavier branch and back to a consistent s
     REQUIRE(outcome.validated_tip);
     CHECK(*outcome.validated_tip == trunk_len);
 
+    // The organizer heard about the rewind. Deep-reorg parking measures depth
+    // against this height, and the next header batch can arrive as soon as the
+    // switch releases the pause — so a height left over from the branch just
+    // abandoned would be read before anything corrected it.
+    CHECK(fixture.organizer().validated_height() == int32_t(trunk_len));
+
     // A's block is disconnected: its coinbase is out of the set and the coinbase it
     // spent is back, at the height it was originally created — not at 101, which
     // would misdate its maturity and its median-time-past.

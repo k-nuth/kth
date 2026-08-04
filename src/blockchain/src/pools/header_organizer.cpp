@@ -9,6 +9,7 @@
 #include <kth/infrastructure/utility/stats.hpp>
 #include <kth/infrastructure/utility/timer.hpp>
 
+#include <kth/blockchain/parking.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/blockchain/validate/validate_header.hpp>
 #include <kth/domain.hpp>
@@ -28,6 +29,10 @@ header_organizer::header_organizer(header_index& index, settings const& settings
 {}
 
 void header_organizer::note_block_validated(int32_t block_valid_height) {
+    // Deep-reorg parking measures against the validated chain, not the header
+    // tip, so the organizer has to remember how far blocks actually reach.
+    block_valid_height_.store(block_valid_height, std::memory_order_release);
+
     auto const before = finalizer_.finalized_height();
     finalizer_.maybe_advance(tip_index(), block_valid_height, static_cast<int64_t>(zulu_time()));
     auto const after = finalizer_.finalized_height();
@@ -279,19 +284,33 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
     }
 
     if ( ! extends_tip && ! result.error) {
+        // Under the tip lock, and only while the tip is still the one this batch
+        // was validated against. The fork is derived from that tip and the parking
+        // rule then reads the active chain: taken from either side of a switch,
+        // the two would describe different branches, and the fork would not be an
+        // ancestor of the validated tip the rule measures against.
+        std::lock_guard<std::mutex> const lock(tip_mutex_);
         auto const branch_work = index_.get_chain_work(branch_head_idx);
         auto const tip_work = index_.get_chain_work(tip_idx);
-        if (branch_work > tip_work) {
+        if (tip_index_.load(std::memory_order_acquire) != tip_idx) {
+            spdlog::warn("[header_organizer] The tip moved while this batch validated; not judging "
+                "the branch against a chain that is no longer active");
+        } else if (branch_work > tip_work) {
             auto const fork_idx = index_.find_fork(branch_head_idx, tip_idx);
-            result.reorg_candidate = true;
-            result.reorg_branch_head = branch_head_idx;
-            result.reorg_fork_height = (fork_idx == header_index::null_index)
+            auto const fork_height = (fork_idx == header_index::null_index)
                 ? -1 : index_.get_height(fork_idx);
-            spdlog::warn("[header_organizer] Reorg candidate: side branch (head height {}) has greater "
-                "cumulative work than the active tip (height {}); fork at height {}. Active tip NOT "
-                "switched — execution layer pending.",
-                index_.get_height(branch_head_idx), index_.get_height(tip_idx),
-                result.reorg_fork_height);
+
+            // A parked branch is left exactly where it is: stored, still gaining
+            // work, not a candidate. The lines below then report the batch as
+            // non-advancing, which is already what a heavier branch does.
+            if ( ! parked(fork_idx, fork_height, branch_work)) {
+                result.reorg_candidate = true;
+                result.reorg_branch_head = branch_head_idx;
+                result.reorg_fork_height = fork_height;
+                spdlog::warn("[header_organizer] Reorg candidate: side branch (head height {}) has "
+                    "greater cumulative work than the active tip (height {}); fork at height {}",
+                    index_.get_height(branch_head_idx), index_.get_height(tip_idx), fork_height);
+            }
         }
         // The active tip did not advance: signal keep-syncing without reporting forward
         // progress (preserves the coordinator contract for stale/duplicate batches).
@@ -313,6 +332,45 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
     result.index_memory_bytes = index_.memory_usage();
 
     return result;
+}
+
+bool header_organizer::parked(index_t fork_idx, int32_t fork_height, uint256_t const& branch_work) const {
+    // One snapshot for the whole decision: the block-storage path can advance
+    // this while the decision is being made, and mixing two readings of it would
+    // compare a depth against one height and a threshold against another.
+    auto const validated_height = block_valid_height_.load(std::memory_order_acquire);
+
+    // No fork point (disjoint branches — should not happen with a shared genesis)
+    // or nothing validated yet: no validated block would be rewound, so there is
+    // nothing to park. The disjoint case is reported as fork height -1, which the
+    // execution layer refuses anyway.
+    if (fork_idx == header_index::null_index || validated_height < 0) {
+        return false;
+    }
+
+    // Above the validated tip the branch costs no rewind at all.
+    if ( ! parking::is_deep_reorg(fork_height, validated_height)) {
+        return false;
+    }
+
+    auto const validated_tip_idx = index_.active_at(validated_height);
+    if (validated_tip_idx == header_index::null_index) {
+        // The active chain is mid-switch or shorter than the validated height.
+        // Fail closed: refuse to promote a branch against a chain we cannot read.
+        spdlog::warn("[header_organizer] Parking branch: no active entry at validated height {}",
+            validated_height);
+        return true;
+    }
+
+    auto const required = parking::required_work(index_, fork_idx, validated_tip_idx);
+    if (branch_work > required) {
+        return false;
+    }
+
+    spdlog::warn("[header_organizer] Parking branch forking at height {}: it would rewind {} validated "
+        "blocks and has not accumulated twice the work the active chain gained since the fork",
+        fork_height, validated_height - fork_height);
+    return true;
 }
 
 // =============================================================================
