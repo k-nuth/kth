@@ -1962,6 +1962,11 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         if (batch_start > checkpoint_height) {
             // Parse the blocks and validate them on the worker pool, off this
             // coroutine's executor.
+            // A parse failure here is not a consensus failure, and the branch below
+            // cannot tell them apart from the code alone. Kept separate so each is
+            // reported as what it is.
+            bool parse_failed = false;
+
             auto const vc = co_await ::asio::co_spawn(validation_pool.get_executor(),
                 [&]() -> ::asio::awaitable<code> {
                     auto& full_blocks = validated_blocks;
@@ -1973,6 +1978,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                         auto blk = domain::message::block::from_data(reader, 0u);
                         if ( ! blk) {
                             spdlog::critical("[utxo_build] Failed to parse block for validation at height {}", h);
+                            parse_failed = true;
                             co_return error::operation_failed;
                         }
                         full_blocks.push_back(
@@ -1986,7 +1992,23 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                 }, ::asio::use_awaitable);
 
             if (vc) {
-                spdlog::critical("[utxo_build] POST-CHECKPOINT VALIDATION FAILED at {}-{}: {}",
+                if (parse_failed) {
+                    // Bytes this node wrote, and the compact parser accepted when it
+                    // stored them. Not being able to read them back is local damage,
+                    // not a peer's doing.
+                    on_fatal("a stored block could not be parsed for validation");
+                    co_return;
+                }
+
+                // A block that does not satisfy consensus: a peer sent something
+                // invalid. Recoverable in principle — the range wants re-fetching
+                // from someone else — but the block is already stored and marked
+                // have_data, its peer is not recorded here, and the contiguous
+                // height has moved past it, so there is nothing this task can do
+                // about it beyond stopping. Recovering properly needs a way back to
+                // the coordinator with the failed height, which does not exist yet.
+                spdlog::critical("[utxo_build] POST-CHECKPOINT VALIDATION FAILED at {}-{}: {}. "
+                    "The UTXO build stops here and nothing re-drives it",
                     batch_start, batch_end, vc.message());
                 co_return;
             }
@@ -2010,13 +2032,15 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             auto parsed = blockchain::parse_utxo_block(
                 byte_span{(*raw_result)[i].data(), (*raw_result)[i].size()});
             if ( ! parsed) {
-                spdlog::error("[utxo_build] Failed to parse block at height {}", h);
+                spdlog::critical("[utxo_build] Failed to parse block at height {}", h);
+                on_fatal("a stored block could not be parsed");
                 co_return;
             }
 
             auto const idx = chain.headers().active_at(static_cast<int32_t>(h));
             if (idx == blockchain::header_index::null_index) {
-                spdlog::error("[utxo_build] Height {} is not on the active chain", h);
+                spdlog::critical("[utxo_build] Height {} is not on the active chain", h);
+                on_fatal("a height being built is not on the active chain");
                 co_return;
             }
             // Prune with the bloom only up to the checkpoint; above it keep every
@@ -2036,7 +2060,14 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             if (h > checkpoint_height) {
                 auto undo = blockchain::capture_block_undo(block_delta, delta, chain, h);
                 if ( ! undo) {
-                    spdlog::error("[utxo_build] Failed to capture undo data at height {}", h);
+                    // Before the delta is applied, so nothing is half-done and this
+                    // could in principle be retried. It is not, because the failure
+                    // is not distinguishable here: a prevout missing because the
+                    // block is invalid, a read that failed, and a delta that does
+                    // not match the set all arrive as the same absence, and
+                    // retrying the last two forever would be worse than stopping.
+                    spdlog::error("[utxo_build] Failed to capture undo data at height {}; the UTXO "
+                        "build stops with nothing applied for this batch", h);
                     co_return;
                 }
                 pending_undo.emplace_back(idx, std::move(*undo),
@@ -2058,7 +2089,8 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         if ( ! delta.empty()) {
             auto result = chain.apply_utxo_delta_raw(delta.inserts, delta.deletes);
             if (result != database::result_code::success) {
-                spdlog::error("[utxo_build] Failed to apply UTXO delta at batch {}", batch_start);
+                spdlog::critical("[utxo_build] Failed to apply UTXO delta at batch {}", batch_start);
+                on_fatal("a UTXO delta could not be applied");
                 co_return;
             }
         }
@@ -2068,7 +2100,11 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // already connected — never a connected block without undo data.
         for (auto& entry : pending_undo) {
             if ( ! chain.store_block_undo(entry.idx, entry.undo, entry.prev_hash)) {
-                spdlog::error("[utxo_build] Failed to store undo data for index {}", entry.idx);
+                // After the delta: these blocks are in the UTXO set and now cannot be
+                // disconnected, so a later reorganization would have nothing to
+                // reverse them with.
+                spdlog::critical("[utxo_build] Failed to store undo data for index {}", entry.idx);
+                on_fatal("a connected block has no undo data and cannot be disconnected");
                 co_return;
             }
         }
