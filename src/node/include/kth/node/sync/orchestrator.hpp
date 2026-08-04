@@ -5,6 +5,7 @@
 #ifndef KTH_NODE_SYNC_ORCHESTRATOR_HPP
 #define KTH_NODE_SYNC_ORCHESTRATOR_HPP
 
+#include <functional>
 #include <asio/awaitable.hpp>
 
 #include <kth/blockchain.hpp>
@@ -35,11 +36,16 @@ namespace kth::node::sync {
 //
 // =============================================================================
 
+// `on_fatal` reports a condition sync cannot go on from — the persisted chain
+// and the chain in memory describing different branches after a reorganization.
+// Sync stops sending work the moment it fires; winding the process down is the
+// node owner's, so that logic is not half-repeated here.
 ::asio::awaitable<void> sync_orchestrator(
     blockchain::block_chain& chain,
     blockchain::header_organizer& organizer,
     kth::node::p2p_node& network,
-    domain::config::network network_type
+    domain::config::network network_type,
+    std::function<void(std::string const&)> on_fatal
 );
 
 } // namespace kth::node::sync

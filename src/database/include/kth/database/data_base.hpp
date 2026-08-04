@@ -86,6 +86,11 @@ public:
     /// start_height is the height of the first header in the list.
     code push_headers_batch(domain::chain::header::list const& headers, size_t start_height);
 
+    /// Make the by-height table describe `headers` from `start_height` up, and
+    /// nothing above them, in one transaction.
+    /// See internal_database::replace_headers_from.
+    code replace_headers_from(domain::chain::header::list const& headers, size_t start_height);
+
     //bool set_database_flags(bool fast);
 
     // ==========================================================================

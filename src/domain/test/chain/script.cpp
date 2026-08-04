@@ -1318,3 +1318,43 @@ void run_bchn_test(bchn_script_test const& test) {
 }
 
 
+
+// =============================================================================
+// P2PKH unlocking pattern
+// =============================================================================
+//
+// The shape is consensus-visible: an extra element left on the stack fails
+// CLEANSTACK, and the size estimate coin selection builds from the placeholder
+// has to match what the real spend serializes to.
+
+TEST_CASE("p2pkh unlocking script is the signature then the public key", "[script]") {
+    ec_secret const secret = "ce8f4b713ffdd2658900845251890f30371856be201cd1f5b3d970f793634333"_hash;
+    ec_compressed point{};
+    REQUIRE(secret_to_public(point, secret));
+    auto const pubkey = wallet::ec_public::from_verified_point(point, true);
+
+    endorsement const signature(72, 0x30);
+    auto const ops = script::to_pay_public_key_hash_pattern_unlocking(signature, pubkey);
+
+    REQUIRE(ops.size() == 2);
+    CHECK(ops[0].data() == data_chunk(signature));
+    CHECK(ops[1].data() == pubkey.to_data());
+
+    // No leading dummy: that is what multisig needs, and it would survive to the
+    // end of the script here.
+    CHECK(ops[0].code() != opcode::push_size_0);
+}
+
+TEST_CASE("the p2pkh unlocking placeholder serializes to the size of a real spend", "[script]") {
+    ec_secret const secret = "ce8f4b713ffdd2658900845251890f30371856be201cd1f5b3d970f793634333"_hash;
+    ec_compressed point{};
+    REQUIRE(secret_to_public(point, secret));
+    auto const pubkey = wallet::ec_public::from_verified_point(point, true);
+
+    endorsement const signature(72, 0x30);
+    script const real(script::to_pay_public_key_hash_pattern_unlocking(signature, pubkey));
+    script const placeholder(script::to_pay_public_key_hash_pattern_unlocking_placeholder(
+        signature.size(), pubkey.to_data().size()));
+
+    CHECK(placeholder.serialized_size(true) == real.serialized_size(true));
+}

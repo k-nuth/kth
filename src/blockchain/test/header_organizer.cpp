@@ -340,6 +340,50 @@ TEST_CASE("header_organizer rejects a new header after a known one on a sub-fina
     REQUIRE(index.size() == size_before);          // nothing stored
 }
 
+TEST_CASE("adopting a tip republishes the heights with it", "[header_organizer][fork]") {
+    // The two halves of the tip — the index the organizer remembers, and the
+    // height mapping everything else reads — must never name different branches.
+    //
+    // They could: the switch used to publish the mapping itself, so a header
+    // batch that validated against the old tip could publish its own extension
+    // in between, and adopt_tip would then move only the index. This reproduces
+    // that end state directly (extend the old tip, then adopt the branch) rather
+    // than racing for the interleaving that produces it.
+    header_index index;
+    (void)build_chain(index, 10);                  // tip at height 9
+    auto settings = make_test_settings();
+    header_organizer organizer(index, settings, domain::config::network::mainnet);
+    REQUIRE(organizer.start());
+    organizer.sync_tip();
+
+    // A side branch off height 5, stored but not active.
+    auto branch = make_branch(index.get_hash(5), 6, 800);
+    REQUIRE(organizer.add_headers(branch).reorg_candidate);
+    auto const branch_head = index.find(kth::domain::chain::hash(branch.back()));
+    REQUIRE(branch_head != header_index::null_index);
+
+    // An extension of the old tip publishes, as it would while a switch is being
+    // executed elsewhere.
+    domain::message::header::list extension;
+    extension.push_back(make_header_with_prev(index.get_hash(9), 999));
+    REQUIRE(organizer.add_headers(extension).headers_added == 1);
+    REQUIRE(index.active_tip_height() == 10);
+
+    // Now the switch's tip lands. Both halves move.
+    organizer.adopt_tip(branch_head);
+
+    CHECK(organizer.tip_index() == branch_head);
+    CHECK(index.active_tip_height() == index.get_height(branch_head));
+    CHECK(index.active_at(index.get_height(branch_head)) == branch_head);
+
+    // And every height above the fork names the branch, not the extension.
+    for (int32_t h = 6; h <= index.get_height(branch_head); ++h) {
+        auto const idx = index.active_at(h);
+        REQUIRE(idx != header_index::null_index);
+        CHECK(index.get_ancestor(branch_head, h) == idx);
+    }
+}
+
 // =============================================================================
 // Active chain (height -> index)
 // =============================================================================

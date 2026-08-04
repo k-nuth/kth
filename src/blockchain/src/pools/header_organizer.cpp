@@ -29,7 +29,7 @@ header_organizer::header_organizer(header_index& index, settings const& settings
 
 void header_organizer::note_block_validated(int32_t block_valid_height) {
     auto const before = finalizer_.finalized_height();
-    finalizer_.maybe_advance(tip_index_, block_valid_height, static_cast<int64_t>(zulu_time()));
+    finalizer_.maybe_advance(tip_index(), block_valid_height, static_cast<int64_t>(zulu_time()));
     auto const after = finalizer_.finalized_height();
     if (after != before) {
         spdlog::info("[header_organizer] Finalized block advanced to height {}", after);
@@ -74,16 +74,41 @@ void header_organizer::sync_tip() {
             best_idx = i;
         }
     }
-    tip_index_ = best_idx;
-    tip_hash_ = index_.get_hash(tip_index_);
+    {
+        std::lock_guard<std::mutex> const lock(tip_mutex_);
+        tip_index_.store(best_idx, std::memory_order_release);
 
-    // Materialize the active chain (height -> index) for this tip. The index also
-    // holds side branches, so the rest of the node can only address blocks by
-    // height through this mapping.
-    index_.active_set_tip(tip_index_);
+        // Materialize the active chain (height -> index) for this tip. The index also
+        // holds side branches, so the rest of the node can only address blocks by
+        // height through this mapping.
+        index_.active_set_tip(best_idx);
+    }
 
     spdlog::info("[header_organizer] Synced tip: index {}, hash {}, active height {}",
-        tip_index_, encode_hash(tip_hash_), index_.active_tip_height());
+        best_idx, encode_hash(index_.get_hash(best_idx)), index_.active_tip_height());
+}
+
+void header_organizer::adopt_tip(index_t tip_idx) {
+    if (tip_idx == header_index::null_index) {
+        spdlog::error("[header_organizer] adopt_tip called with a null index; keeping tip {}", tip_index());
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> const lock(tip_mutex_);
+        tip_index_.store(tip_idx, std::memory_order_release);
+
+        // The height mapping moves with the tip, under the same lock. The switch
+        // deliberately leaves this to us: publishing it there would let a header
+        // batch that validated against the old tip slip its own publication in
+        // between, and the two would end up naming different branches.
+        //
+        // active_set_tip bumps the chain generation when this is a branch change,
+        // which is what marks work requested against the old chain as stale.
+        index_.active_set_tip(tip_idx);
+    }
+    spdlog::info("[header_organizer] Adopted tip: index {}, hash {}, height {}, generation {}",
+        tip_idx, encode_hash(index_.get_hash(tip_idx)), index_.get_height(tip_idx),
+        index_.generation());
 }
 
 // =============================================================================
@@ -105,10 +130,16 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
 
     spdlog::debug("[header_organizer] add_headers() called with {} headers", headers.size());
 
-    if (tip_index_ == database::header_index::null_index) {
+    // One snapshot of the tip for the whole batch: reorg execution can adopt a
+    // new one while this runs, and deciding "extends the tip" against one value
+    // and anchoring against another would store the batch on the wrong parent.
+    // Whether it is still the tip when the batch is published is re-checked below.
+    auto const tip_idx = tip_index();
+    if (tip_idx == database::header_index::null_index) {
         spdlog::error("[header_organizer] add_headers() called with uninitialized tip_index_ — call sync_tip() first");
         return {error::operation_failed, 0, 0, 0};
     }
+    auto const tip_hash = index_.get_hash(tip_idx);
 
     // Determine the batch anchor: the index entry the first header builds on.
     //   (1) anchor == tip                        -> forward extension of the active chain.
@@ -118,15 +149,15 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
     //   (3) anchor unknown                       -> orphan; validation surfaces the
     //       missing-parent error (this is also the old ABC/BCHN duplicate-retry case).
     auto const first_prev_hash = headers.front().previous_block_hash();
-    bool const extends_tip = (first_prev_hash == tip_hash_);
+    bool const extends_tip = (first_prev_hash == tip_hash);
 
-    index_t anchor_idx = tip_index_;
+    index_t anchor_idx = tip_idx;
     if ( ! extends_tip) {
         anchor_idx = index_.find(first_prev_hash);
         if (anchor_idx == header_index::null_index) {
             // Unknown parent (orphan): validate against the tip so the missing-parent
             // error is raised and the batch rejected, as before.
-            anchor_idx = tip_index_;
+            anchor_idx = tip_idx;
         }
     }
 
@@ -229,17 +260,29 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
     // only becomes the tip if it has strictly greater cumulative work — and even then
     // the actual switch is deferred to the execution layer, so here we only flag the
     // reorg candidate and keep the coordinator syncing (stale_chain, no forward count).
+    bool published = false;
     if (extends_tip) {
-        tip_index_ = branch_head_idx;
-        tip_hash_ = index_.get_hash(branch_head_idx);
-        // Extend the active chain over the headers just linked in. Walks back only
-        // as far as the newly added run, since everything below is already active.
-        index_.active_set_tip(tip_index_);
-    } else if ( ! result.error) {
+        std::lock_guard<std::mutex> const lock(tip_mutex_);
+        // Still the tip this batch was validated against? A switch that executed
+        // while it validated has already moved the chain and re-pointed the active
+        // heights; publishing here would put the abandoned branch back.
+        if (tip_index_.load(std::memory_order_acquire) == tip_idx) {
+            tip_index_.store(branch_head_idx, std::memory_order_release);
+            // Extend the active chain over the headers just linked in. Walks back only
+            // as far as the newly added run, since everything below is already active.
+            index_.active_set_tip(branch_head_idx);
+            published = true;
+        } else {
+            spdlog::warn("[header_organizer] The tip moved while this batch validated; keeping the "
+                "chain the switch published and reporting no progress");
+        }
+    }
+
+    if ( ! extends_tip && ! result.error) {
         auto const branch_work = index_.get_chain_work(branch_head_idx);
-        auto const tip_work = index_.get_chain_work(tip_index_);
+        auto const tip_work = index_.get_chain_work(tip_idx);
         if (branch_work > tip_work) {
-            auto const fork_idx = index_.find_fork(branch_head_idx, tip_index_);
+            auto const fork_idx = index_.find_fork(branch_head_idx, tip_idx);
             result.reorg_candidate = true;
             result.reorg_branch_head = branch_head_idx;
             result.reorg_fork_height = (fork_idx == header_index::null_index)
@@ -247,11 +290,18 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
             spdlog::warn("[header_organizer] Reorg candidate: side branch (head height {}) has greater "
                 "cumulative work than the active tip (height {}); fork at height {}. Active tip NOT "
                 "switched — execution layer pending.",
-                index_.get_height(branch_head_idx), index_.get_height(tip_index_),
+                index_.get_height(branch_head_idx), index_.get_height(tip_idx),
                 result.reorg_fork_height);
         }
         // The active tip did not advance: signal keep-syncing without reporting forward
         // progress (preserves the coordinator contract for stale/duplicate batches).
+        result.error = error::stale_chain;
+        result.headers_added = 0;
+    }
+
+    if (extends_tip && ! published) {
+        // Same contract as a batch that did not advance the tip: the coordinator
+        // keeps syncing and asks again from wherever the chain now is.
         result.error = error::stale_chain;
         result.headers_added = 0;
     }
@@ -270,17 +320,19 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
 // =============================================================================
 
 int32_t header_organizer::header_height() const {
-    if (tip_index_ == header_index::null_index) {
+    auto const idx = tip_index();
+    if (idx == header_index::null_index) {
         return -1;  // No headers yet (only genesis)
     }
-    return index_.get_height(tip_index_);
+    return index_.get_height(idx);
 }
 
 uint32_t header_organizer::tip_timestamp() const {
-    if (tip_index_ == header_index::null_index) {
+    auto const idx = tip_index();
+    if (idx == header_index::null_index) {
         return 0;
     }
-    return index_.get_timestamp(tip_index_);
+    return index_.get_timestamp(idx);
 }
 
 // =============================================================================

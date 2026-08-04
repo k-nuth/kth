@@ -36,26 +36,9 @@
 #include <kth/blockchain/utxo_builder.hpp>
 #include <kth/blockchain/validate/batch_validate.hpp>
 #include <kth/network/protocols_coro.hpp>
+#include <kth/node/sync/reorg.hpp>
 
 namespace kth::node::sync {
-
-namespace {
-
-// Retires a reorg-barrier participant on every exit path. A leaked registration
-// leaves reorg_registered_ above reorg_parked_ forever, so no later switch can
-// ever reach the barrier.
-struct reorg_participation {
-    explicit reorg_participation(blockchain::block_chain& chain) : chain_(chain) {
-        chain_.register_reorg_participant();
-    }
-    ~reorg_participation() { chain_.unregister_reorg_participant(); }
-    reorg_participation(reorg_participation const&) = delete;
-    reorg_participation& operator=(reorg_participation const&) = delete;
-private:
-    blockchain::block_chain& chain_;
-};
-
-} // namespace
 
 namespace {
 
@@ -1606,11 +1589,18 @@ std::atomic<uint32_t> g_active_download_peers{0};
 
             // Advance contiguous_height using header_index have_data flags.
             // store_chunk() already set have_data for each stored block.
-            // idx == height during IBD (headers added sequentially).
+            //
+            // By height through the active chain: the index numbers entries in
+            // arrival order, so once a side branch is stored an entry's index is
+            // no longer its height. Walking the index directly would count the
+            // abandoned branch's blocks as contiguous and push the validated tip
+            // past where the chain actually reaches.
             auto const prev_contiguous = contiguous_height;
             auto const& hdr = chain.headers();
-            while (hdr.has_status(static_cast<blockchain::header_index::index_t>(contiguous_height),
-                                  blockchain::header_status::have_data)) {
+            while (true) {
+                auto const idx = hdr.active_at(static_cast<int32_t>(contiguous_height));
+                if (idx == blockchain::header_index::null_index) break;
+                if ( ! hdr.has_status(idx, blockchain::header_status::have_data)) break;
                 ++contiguous_height;
             }
 

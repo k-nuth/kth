@@ -4,6 +4,8 @@
 
 #include <kth/node/sync/orchestrator.hpp>
 
+#include <kth/node/sync/reorg.hpp>
+
 #include <chrono>
 #include <thread>
 
@@ -61,6 +63,26 @@ static bool is_bannable_error(code const& ec) {
     }
 }
 
+// The hash of the block at `height` on the active chain.
+//
+// A locator is built from a height, and the header index numbers its entries in
+// arrival order — so once a side branch is stored an entry's index is no longer
+// its height. Casting one to the other would ask peers to continue from whatever
+// block happens to sit at that index, which after a fork is a block the node did
+// not take.
+static
+hash_digest active_hash_at(blockchain::header_index const& index, uint32_t height) {
+    auto const idx = index.active_at(static_cast<int32_t>(height));
+    if (idx == blockchain::header_index::null_index) {
+        // Every height up to the header tip is on the active chain, so this means
+        // the chain is shorter than the coordinator believes. Say so: the request
+        // below will start from genesis, which is recoverable but wasteful.
+        spdlog::error("[sync_coordinator] Height {} is not on the active chain", height);
+        return null_hash;
+    }
+    return index.get_hash(idx);
+}
+
 // =============================================================================
 // Header Persistence (background task)
 // =============================================================================
@@ -80,36 +102,37 @@ static
     spdlog::info("[header_persist] Starting: {} headers ({} to {})", total, start_height, end_height);
 
     auto const start_time = std::chrono::steady_clock::now();
-    constexpr size_t batch_size = 1000;
+    constexpr uint32_t chunk = 10000;
 
-    size_t persisted = 0;
+    // This task writes the by-height header table, which a switch rewrites, so it
+    // takes part in the barrier. While it is registered and not parked a switch
+    // waits — which is what stops a chunk already under way from committing the
+    // old branch on top of the new one. Checking the generation alone could not:
+    // the switch can land between the check and the commit.
+    reorg_participation const participation(chain);
+
     uint32_t height = start_height;
-
     while (height <= end_height) {
-        domain::chain::header::list batch;
-        auto const batch_end = std::min(height + uint32_t(batch_size) - 1, end_height);
-        batch.reserve(batch_end - height + 1);
+        auto const chunk_end = std::min(height + chunk - 1, end_height);
 
-        for (uint32_t h = height; h <= batch_end; ++h) {
-            batch.push_back(index.get_header(h));
-        }
-
-        auto const ec = chain.organize_headers_batch(batch, height);
-        if (ec) {
-            spdlog::warn("[header_persist] Failed at height {}: {}", height, ec.message());
+        // Park, then give up: the switch rewrites the range it replaced itself,
+        // and a later header sync re-persists whatever is above it.
+        if (chain.reorg_pause_requested()) {
+            spdlog::info("[header_persist] A reorg is executing; stopping at height {}", height);
+            chain.enter_reorg_barrier();
+            while (chain.reorg_pause_requested() && ! chain.stopped()) {
+                ::asio::steady_timer timer(co_await ::asio::this_coro::executor);
+                timer.expires_after(std::chrono::milliseconds(50));
+                co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            }
+            chain.leave_reorg_barrier();
             co_return;
         }
 
-        persisted += batch.size();
-        height = batch_end + 1;
-
-        // Log progress every 100000 headers
-        if (persisted % 100000 < batch_size) {
-            auto const elapsed = std::chrono::steady_clock::now() - start_time;
-            auto const elapsed_secs = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
-            auto const rate = elapsed_secs > 0 ? persisted / elapsed_secs : persisted;
-            spdlog::info("[header_persist] {}/{} ({}/s)", persisted, total, rate);
+        if ( ! persist_active_headers(chain, index, height, chunk_end)) {
+            co_return;
         }
+        height = chunk_end + 1;
 
         // Yield to allow other coroutines to run
         co_await ::asio::post(co_await ::asio::this_coro::executor, ::asio::use_awaitable);
@@ -117,8 +140,8 @@ static
 
     auto const elapsed = std::chrono::steady_clock::now() - start_time;
     auto const elapsed_secs = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
-    auto const rate = elapsed_secs > 0 ? persisted / elapsed_secs : persisted;
-    spdlog::info("[header_persist] Complete: {} headers in {}s ({}/s)", persisted, elapsed_secs, rate);
+    auto const rate = elapsed_secs > 0 ? total / elapsed_secs : total;
+    spdlog::info("[header_persist] Complete: {} headers in {}s ({}/s)", total, elapsed_secs, rate);
 }
 
 // =============================================================================
@@ -129,7 +152,8 @@ static
     blockchain::block_chain& chain,
     blockchain::header_organizer& organizer,
     kth::node::p2p_node& network,
-    domain::config::network network_type
+    domain::config::network network_type,
+    std::function<void(std::string const&)> on_fatal
 ) {
     auto executor = co_await ::asio::this_coro::executor;
 
@@ -806,8 +830,7 @@ static
         auto exec = co_await ::asio::this_coro::executor;
 
         // Trigger parallel header sync (supervisor manages chunk coordination)
-        auto from_hash = organizer.index().get_hash(
-            static_cast<blockchain::header_index::index_t>(headers_synced_to));
+        auto from_hash = active_hash_at(organizer.index(), headers_synced_to);
 
         spdlog::debug("[sync_coordinator] Starting parallel header sync from height {}", headers_synced_to);
         if (!header_download_input.try_send(std::error_code{}, header_request{
@@ -875,17 +898,27 @@ static
                     auto const fork_height = uint32_t(result->reorg_fork_height);
                     spdlog::warn("[sync_coordinator] Reorg requested: fork at height {}", fork_height);
 
-                    // Quiesce the UTXO build: the switch rewrites the UTXO set.
-                    chain.request_reorg_pause(true);
-                    while ( ! chain.reorg_barrier_reached() && ! network.stopped()) {
-                        ::asio::steady_timer wait_timer(exec);
-                        wait_timer.expires_after(std::chrono::milliseconds(50));
-                        co_await wait_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+                    auto const reorg = co_await execute_reorg(
+                        chain, organizer, result->reorg_branch_head, fork_height,
+                        [&network] { return network.stopped(); });
+
+                    if (reorg.fatal) {
+                        // The chain moved but its persisted description did not.
+                        // Syncing on would build on a view a restart will not come
+                        // back to, so stop here: no counters, no new ranges, and
+                        // wind the node down. Stopping the network is what every
+                        // other task is watching, and the stop bridge turns it
+                        // into the stop_request this loop exits on.
+                        // Report and stop taking work. Winding the process down
+                        // is the node owner's — it holds the lifecycle, and half
+                        // of a shutdown started from here would be a second,
+                        // partial copy of it.
+                        on_fatal("a reorganization left the persisted chain and the active chain "
+                            "describing different branches");
+                        break;
                     }
 
-                    auto const outcome = network.stopped()
-                        ? blockchain::block_chain::switch_result{}
-                        : co_await chain.switch_to_branch_async(result->reorg_branch_head, fork_height);
+                    auto const outcome = reorg.result;
                     auto const switched = outcome.ok;
 
                     // Resync from the tip the switch actually reports, so a partially
@@ -900,8 +933,6 @@ static
                         // headers-only heights on every poll.
                         contiguous_height->store(blocks_synced_to + 1, std::memory_order_release);
                     }
-
-                    chain.request_reorg_pause(false);
 
                     auto const new_tip = switched ? chain.headers().active_tip_height() : -1;
                     if (switched && new_tip > int32_t(blocks_synced_to)) {
@@ -949,8 +980,7 @@ static
                     }
 
                     // Retry header sync with a different peer
-                    auto retry_hash = organizer.index().get_hash(
-                        static_cast<blockchain::header_index::index_t>(headers_synced_to));
+                    auto retry_hash = active_hash_at(organizer.index(), headers_synced_to);
 
                     spdlog::info("[sync_coordinator] Retrying header sync from height {} with different peer, from_hash={}",
                         headers_synced_to, encode_hash(retry_hash));
@@ -979,8 +1009,7 @@ static
                     }
 
                     // Request next batch of headers (sequential sync)
-                    auto next_hash = organizer.index().get_hash(
-                        static_cast<blockchain::header_index::index_t>(headers_synced_to));
+                    auto next_hash = active_hash_at(organizer.index(), headers_synced_to);
 
                     if (!header_download_input.try_send(std::error_code{}, header_request{
                         .from_height = headers_synced_to,
@@ -1002,8 +1031,7 @@ static
                         if (timer_ec || network.stopped()) break;
 
                         // Retry header sync
-                        auto retry_hash = organizer.index().get_hash(
-                            static_cast<blockchain::header_index::index_t>(headers_synced_to));
+                        auto retry_hash = active_hash_at(organizer.index(), headers_synced_to);
 
                         if (!header_download_input.try_send(std::error_code{}, header_request{
                             .from_height = headers_synced_to,
@@ -1067,8 +1095,7 @@ static
                         header_sync_start = std::chrono::steady_clock::now();
                         headers_at_start = headers_synced_to;
 
-                        auto next_hash = organizer.index().get_hash(
-                            static_cast<blockchain::header_index::index_t>(headers_synced_to));
+                        auto next_hash = active_hash_at(organizer.index(), headers_synced_to);
 
                         if (!header_download_input.try_send(std::error_code{}, header_request{
                             .from_height = headers_synced_to,
@@ -1121,8 +1148,7 @@ static
                         headers_at_start = headers_synced_to;
                         slow_sync_started = false;  // allow next FAST→SLOW transition after a full re-sync
 
-                        auto next_hash = organizer.index().get_hash(
-                            static_cast<blockchain::header_index::index_t>(headers_synced_to));
+                        auto next_hash = active_hash_at(organizer.index(), headers_synced_to);
 
                         if (!header_download_input.try_send(std::error_code{}, header_request{
                             .from_height = headers_synced_to,
@@ -1203,8 +1229,7 @@ static
                         headers_at_start = headers_synced_to;
                         slow_sync_started = false;
 
-                        auto next_hash = organizer.index().get_hash(
-                            static_cast<blockchain::header_index::index_t>(headers_synced_to));
+                        auto next_hash = active_hash_at(organizer.index(), headers_synced_to);
 
                         if (!header_download_input.try_send(std::error_code{}, header_request{
                             .from_height = headers_synced_to,

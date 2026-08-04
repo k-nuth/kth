@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <mutex>
 #include <memory>
 
 #include <kth/blockchain/define.hpp>
@@ -73,6 +74,20 @@ struct KB_API header_organizer {
     /// Call after header_index has been initialized (e.g., with genesis).
     void sync_tip();
 
+    /// Adopt `tip_idx` as the header tip, after the execution layer switched the
+    /// active chain onto it. The organizer decides whether an incoming batch
+    /// extends the chain or forks it by comparing against the tip it remembers;
+    /// left pointing at the abandoned branch it would read every subsequent
+    /// batch as another fork and ask for a switch that cannot be executed.
+    ///
+    /// Publishes both halves of the tip — the index the organizer remembers and
+    /// the height mapping the rest of the node reads — under one lock. The switch
+    /// leaves the mapping to this call for exactly that reason: a header batch
+    /// that validated against the old tip decides whether to publish under the
+    /// same lock, so the two can no longer interleave into a state where the tip
+    /// names one branch and the heights name another.
+    void adopt_tip(index_t tip_idx);
+
     /// Notify the organizer that blocks are validated up to `block_valid_height`,
     /// advancing the finalized block per BCHN's depth + header-age rules. Called
     /// by the block-download/validation path as it advances the validated tip.
@@ -118,15 +133,17 @@ struct KB_API header_organizer {
 
     /// Get the current tip index.
     [[nodiscard]]
-    index_t tip_index() const { return tip_index_; }
+    index_t tip_index() const { return tip_index_.load(std::memory_order_acquire); }
 
     /// Get the current header tip height.
     [[nodiscard]]
     int32_t header_height() const;
 
-    /// Get the hash of the header tip.
+    /// Get the hash of the header tip. Read from the index rather than cached:
+    /// the tip moves from two places (header organization and reorg execution),
+    /// and a second copy of it would be a second thing to keep in step.
     [[nodiscard]]
-    hash_digest const& header_tip_hash() const { return tip_hash_; }
+    hash_digest header_tip_hash() const { return index_.get_hash(tip_index()); }
 
     /// Get the timestamp of the header tip.
     /// Used for BCHN-style progress calculation.
@@ -163,9 +180,13 @@ private:
     // read via finalized_state() for header/reorg admission.
     finalization finalizer_;
 
-    // Current tip state
-    index_t tip_index_{header_index::null_index};
-    hash_digest tip_hash_{null_hash};
+    // Current tip. Two writers now: header organization, and reorg execution
+    // through adopt_tip. Atomic so a reader never sees a torn value, and guarded
+    // by tip_mutex_ where it is published, because the hazard is not only tearing
+    // — a batch that validated against the old tip must not put it back after a
+    // switch replaced it.
+    std::atomic<index_t> tip_index_{header_index::null_index};
+    mutable std::mutex tip_mutex_;
 };
 
 } // namespace kth::blockchain

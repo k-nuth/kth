@@ -110,6 +110,25 @@ struct KD_API internal_database_basis {
     // Headers-first sync: store multiple headers in a single transaction (batch)
     // start_height is the height of the first header in the list
     result_code push_headers_batch(domain::chain::header::list const& headers, uint32_t start_height);
+
+    /// Make the by-height table describe `headers` from `start_height` up, and
+    /// nothing above them: writes each header, drops every height past the last
+    /// one (with its hash -> height entry), and sets the last-header height.
+    ///
+    /// One transaction, because a reorganization needs all of it or none. Written
+    /// halfway, the table would name the new branch over part of the replaced
+    /// range and the abandoned one over the rest — an inconsistency no later pass
+    /// would notice, since each height holds a header that parses.
+    ///
+    /// Both halves are needed: a branch with more work can have fewer blocks (it
+    /// was mined at higher difficulty), so the chain can end lower than it did and
+    /// leave heights behind that are on no chain at all.
+    ///
+    /// `start_height` must be at least 1 — genesis anchors the chain — and
+    /// `headers` must not be empty: "replace with nothing from here up" would
+    /// mean deleting the chain from that height, which is not what any caller
+    /// means by it. Both are refused before the transaction opens.
+    result_code replace_headers_from(domain::chain::header::list const& headers, uint32_t start_height);
 #endif
 
     // DEPRECATED: UTXO storage moved to UTXOZ
