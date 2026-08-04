@@ -841,6 +841,119 @@ database::disconnect_result block_chain::disconnect_block(uint32_t height) {
 }
 #endif
 
+#if ! defined(KTH_DB_READONLY)
+block_chain::switch_result block_chain::switch_to_branch(
+    database::header_index::index_t branch_head, uint32_t fork_height) {
+
+    auto const heights = database_.internal_db().get_last_heights();
+    if ( ! heights) {
+        spdlog::error("[blockchain] switch_to_branch: cannot read the validated tip");
+        return {};
+    }
+
+    // Validate the target before touching anything: re-pointing the active chain
+    // at a bad index after the UTXO set is already rolled back would leave the
+    // node with no coherent chain at all.
+    if (branch_head == database::header_index::null_index) {
+        spdlog::error("[blockchain] switch_to_branch: null branch head");
+        return {false, heights->block};
+    }
+    if (header_index_.get_height(branch_head) <= int32_t(fork_height)) {
+        spdlog::error("[blockchain] switch_to_branch: branch head at height {} is not above the "
+            "fork at {}", header_index_.get_height(branch_head), fork_height);
+        return {false, heights->block};
+    }
+
+    // Do not take the caller's word for where the branch forks: derive it. A
+    // fork_height lower than the real one would disconnect fewer blocks than the
+    // switch needs, leaving UTXO effects of abandoned blocks active while the
+    // active tip moves onto the branch anyway.
+    auto const active_tip = header_index_.active_at(header_index_.active_tip_height());
+    auto const fork_idx = header_index_.find_fork(branch_head, active_tip);
+    if (fork_idx == database::header_index::null_index) {
+        spdlog::error("[blockchain] switch_to_branch: branch shares no ancestor with the active chain");
+        return {false, heights->block};
+    }
+
+    auto const real_fork = header_index_.get_height(fork_idx);
+    if (real_fork != int32_t(fork_height)) {
+        spdlog::error("[blockchain] switch_to_branch: fork height mismatch — caller says {}, the "
+            "branch actually forks at {}", fork_height, real_fork);
+        return {false, heights->block};
+    }
+
+    // Where the validated tip ends up. A fork above the validated tip disconnects
+    // nothing, so the tip does not move — reporting the fork height there would
+    // strand the still-missing blocks below it, never requested again.
+    uint32_t validated_tip = heights->block;
+
+    if (fork_height > heights->block) {
+        spdlog::info("[blockchain] Reorg: fork at {} is above the validated tip {}, nothing to disconnect",
+            fork_height, heights->block);
+    } else {
+        validated_tip = fork_height;
+
+        auto const to_disconnect = heights->block - fork_height;
+        spdlog::warn("[blockchain] Reorg: disconnecting {} block(s), {} down to {}",
+            to_disconnect, heights->block, fork_height + 1);
+
+        // Newest first: disconnecting out of order would restore outputs that a
+        // later block still spends.
+        for (uint32_t h = heights->block; h > fork_height; --h) {
+            auto const result = disconnect_block(h);
+
+            if (result == database::disconnect_result::unclean) {
+                // The inverse delta was applied but the markers could not be
+                // written: the UTXO set is at h-1 while the markers still say h.
+                // Reporting h as a resumable tip would re-download from a height
+                // whose UTXO state is already inconsistent, and nothing would ever
+                // repair it. Report "unknown" so the caller stops instead.
+                spdlog::error("[blockchain] Reorg: UTXO set and height markers diverged at {} "
+                    "(set is at {}, markers say {}); aborting without a resumable tip",
+                    h, h - 1, h);
+                return {false, std::nullopt};
+            }
+
+            if (result != database::disconnect_result::ok) {
+                // Clean failure: nothing was applied for this block, so the markers
+                // and the set agree at h. Report it so the caller resyncs there
+                // instead of assuming nothing moved (which would strand the rewound
+                // range, never re-downloaded).
+                spdlog::error("[blockchain] Reorg: failed to disconnect block at height {}, "
+                    "aborting the switch (validated tip is now {})", h, h);
+                return {false, h};
+            }
+        }
+    }
+
+    // Re-point the active chain. From here "the block at height N" means the new
+    // branch; its blocks are headers-only, so block download must refill them.
+    header_index_.active_set_tip(branch_head);
+
+    spdlog::warn("[blockchain] Reorg: active chain switched to height {} (fork at {})",
+        header_index_.active_tip_height(), fork_height);
+    return {true, validated_tip};
+}
+#endif
+
+::asio::awaitable<block_chain::switch_result> block_chain::switch_to_branch_async(
+    database::header_index::index_t branch_head, uint32_t fork_height) {
+
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, switch_result)>;
+    result_channel done(co_await ::asio::this_coro::executor, 1);
+
+    ::asio::post(priority_pool_.get_executor(), [this, branch_head, fork_height, &done]() {
+        auto result = switch_to_branch(branch_head, fork_height);
+        std::ignore = done.try_send(std::error_code{}, result);
+    });
+
+    auto [ec, result] = co_await done.async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (ec) {
+        co_return switch_result{};
+    }
+    co_return result;
+}
+
 void block_chain::utxo_compact() {
     utxoz_db_.compact();
 }

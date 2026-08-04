@@ -32,6 +32,7 @@ struct header_organize_result {
     // switched here; executing the switch is a separate layer.
     bool reorg_candidate{false};
     int32_t reorg_fork_height{-1};   // height of the common ancestor, or -1
+    header_index::index_t reorg_branch_head{header_index::null_index};   // tip of the heavier branch
 };
 
 /// Header organizer for headers-first sync.

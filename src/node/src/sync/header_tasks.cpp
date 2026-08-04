@@ -400,7 +400,10 @@ using namespace ::asio::experimental::awaitable_operators;
                 .height = uint32_t(organizer.header_height()),
                 .count = result.headers_added,
                 .result = result.error,
-                .source_peer = downloaded->source_peer
+                .source_peer = downloaded->source_peer,
+                .reorg_candidate = result.reorg_candidate,
+                .reorg_fork_height = result.reorg_fork_height,
+                .reorg_branch_head = result.reorg_branch_head
             })) {
                 spdlog::warn("[header_validation] Channel full, headers_validated dropped");
                 break;
