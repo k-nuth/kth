@@ -84,12 +84,22 @@ struct reorg_outcome {
 // untouched. So does waiting past the barrier deadline: a writer that never
 // parks is a bug, and holding the pause open forever on top of it would stall
 // sync silently.
+//
+// `persist` writes the replaced range of the by-height header table, and is a
+// parameter because that write is the step that decides whether the switch can
+// be lived with: if it fails, the chain and its persisted description disagree
+// and the node has to come down (see reorg_outcome::fatal). Production passes
+// block_chain::replace_headers_from; a test passes one that fails, which is the
+// only way to reach that path without corrupting a database on purpose.
+using header_persister = std::function<code(domain::chain::header::list const&, size_t)>;
+
 ::asio::awaitable<reorg_outcome> execute_reorg(
     blockchain::block_chain& chain,
     blockchain::header_organizer& organizer,
     blockchain::header_index::index_t branch_head,
     uint32_t fork_height,
-    std::function<bool()> abort);
+    std::function<bool()> abort,
+    header_persister persist);
 
 } // namespace kth::node::sync
 

@@ -295,6 +295,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   add_executable(kth_node_test
           test/check_list.cpp
           test/chunk_coordinator.cpp
+          test/fatal_shutdown.cpp
           test/reorg_cycle.cpp
           test/reorg_stale_chunk_drop.cpp
           test/configuration.cpp

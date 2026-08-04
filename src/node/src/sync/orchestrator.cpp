@@ -900,7 +900,10 @@ static
 
                     auto const reorg = co_await execute_reorg(
                         chain, organizer, result->reorg_branch_head, fork_height,
-                        [&network] { return network.stopped(); });
+                        [&network] { return network.stopped(); },
+                        [&chain](domain::chain::header::list const& headers, size_t start_height) {
+                            return chain.replace_headers_from(headers, start_height);
+                        });
 
                     if (reorg.fatal) {
                         // The chain moved but its persisted description did not.
