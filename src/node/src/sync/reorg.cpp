@@ -14,6 +14,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <kth/infrastructure/utility/assert.hpp>
+
 namespace kth::node::sync {
 
 bool persist_active_headers(
@@ -72,7 +74,13 @@ bool persist_active_headers(
     blockchain::header_organizer& organizer,
     blockchain::header_index::index_t branch_head,
     uint32_t fork_height,
-    std::function<bool()> abort) {
+    std::function<bool()> abort,
+    header_persister persist) {
+
+    // Before anything is touched: without somewhere to write the replaced range,
+    // a switch has no way to become survivable, and finding that out after the
+    // chain has already moved is finding out too late.
+    KTH_CONTRACT(persist);
 
     auto executor = co_await ::asio::this_coro::executor;
 
@@ -169,7 +177,7 @@ bool persist_active_headers(
             }
 
             if ( ! branch.empty()) {
-                if (auto const ec = chain.replace_headers_from(branch, fork_height + 1); ec) {
+                if (auto const ec = persist(branch, fork_height + 1); ec) {
                     // The transaction aborted, so nothing was written: the
                     // persisted headers still describe the branch the node just
                     // left — whole, but wrong.

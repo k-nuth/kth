@@ -80,7 +80,25 @@ struct chain_fixture {
             return false;
         }
         organizer_->sync_tip();
+
+        // Same as full_node::run_sync: the organizer learns how far blocks are
+        // validated at startup, since nothing else tells it until a new block is
+        // stored and deep-reorg parking measures against that height.
+        if (auto const heights = chain_->get_last_heights(); heights) {
+            organizer_->note_block_validated(static_cast<int32_t>(heights->block));
+        }
         return true;
+    }
+
+    // Close the chain and bring it back up on the same directory, which is what a
+    // process restart does: the header index is rebuilt from the persisted
+    // by-height headers, and the active chain is materialized again by sync_tip().
+    // Nothing in memory survives, so whatever the node comes back on is whatever
+    // was written to disk.
+    [[nodiscard]] bool restart() {
+        organizer_.reset();
+        chain_.reset();
+        return start();
     }
 
     [[nodiscard]] blockchain::header_organizer& organizer() { return *organizer_; }

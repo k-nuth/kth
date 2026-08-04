@@ -140,6 +140,13 @@ void connect_bodies(test::chain_fixture& fixture, std::vector<domain::chain::blo
     while (output.try_receive([](std::error_code, chunk_validated) {})) {}
 }
 
+// What the coordinator passes: the real write, through the chain.
+header_persister real_persister(blockchain::block_chain& chain) {
+    return [&chain](domain::chain::header::list const& headers, size_t start_height) {
+        return chain.replace_headers_from(headers, start_height);
+    };
+}
+
 // UTXO-Z answers a miss with "queued", not "absent": the lookup is deferred to a
 // sweep. Concluding a UTXO is gone without draining that queue would report
 // whatever the sweep had not reached yet.
@@ -273,7 +280,7 @@ TEST_CASE("the node reorganizes onto a heavier branch and back to a consistent s
         ::asio::io_context switch_ctx;
         ::asio::co_spawn(switch_ctx,
             execute_reorg(chain, fixture.organizer(), b_result.reorg_branch_head, trunk_len,
-                [] { return false; }),
+                [] { return false; }, real_persister(chain)),
             [&reorg](std::exception_ptr, reorg_outcome result) {
                 reorg = result;
             });
@@ -378,4 +385,259 @@ TEST_CASE("the node reorganizes onto a heavier branch and back to a consistent s
     CHECK(extension.headers_added == 1);
     CHECK_FALSE(extension.reorg_candidate);
     CHECK(fixture.organizer().header_height() == 104);
+}
+
+// =============================================================================
+// The chain the node comes back on
+// =============================================================================
+
+TEST_CASE("a restart after a reorganization comes back on the branch that won", "[reorg][cycle]") {
+    // The header index is rebuilt at startup from the persisted by-height headers,
+    // so those are what decides which chain the node resumes. A switch that moved
+    // the chain in memory without rewriting them would look fine for as long as
+    // the process lived, and come back up on the branch it had abandoned — with
+    // the UTXO set already rewound below it.
+    //
+    // Short chain on purpose: this is about what survives a restart, not about
+    // spending a matured coinbase, which the cycle above covers.
+    test::chain_fixture fixture("restart");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    constexpr uint32_t trunk_len = 12;
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const base_time = uint32_t(zulu_time()) - (trunk_len + 30) * block_spacing;
+
+    std::vector<domain::chain::block> trunk;
+    auto prev = genesis.hash();
+    for (uint32_t h = 1; h <= trunk_len; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(trunk)).headers_added == trunk_len);
+    persist_headers(fixture, trunk, 1);
+    connect_bodies(fixture, trunk, 1);
+
+    // Branch A: one block on the trunk.
+    auto const a13 = test::mine_block(trunk.back().hash(), 13,
+        base_time + 13 * block_spacing, 1, {}, 0);
+    REQUIRE(fixture.organizer().add_headers(headers_of({a13})).headers_added == 1);
+    persist_headers(fixture, {a13}, 13);
+    connect_bodies(fixture, {a13}, 13);
+
+    // Branch B: three blocks from 12, outweighing it.
+    std::vector<domain::chain::block> branch_b;
+    prev = trunk.back().hash();
+    for (uint32_t h = 13; h <= 15; ++h) {
+        branch_b.push_back(test::mine_block(prev, h, base_time + h * block_spacing + 60, 2, {}, 0));
+        prev = branch_b.back().hash();
+    }
+    auto const b_result = fixture.organizer().add_headers(headers_of(branch_b));
+    REQUIRE(b_result.reorg_candidate);
+
+    reorg_outcome reorg;
+    {
+        ::asio::io_context switch_ctx;
+        ::asio::co_spawn(switch_ctx,
+            execute_reorg(fixture.chain(), fixture.organizer(), b_result.reorg_branch_head,
+                trunk_len, [] { return false; }, real_persister(fixture.chain())),
+            [&reorg](std::exception_ptr, reorg_outcome result) { reorg = result; });
+        switch_ctx.run_for(std::chrono::seconds(30));
+    }
+    REQUIRE(reorg.result.ok);
+    REQUIRE_FALSE(reorg.fatal);
+
+    connect_bodies(fixture, branch_b, 13);
+
+    // -------------------------------------------------------------------------
+    // Everything above is in memory as much as on disk. Drop it all.
+    // -------------------------------------------------------------------------
+    REQUIRE(fixture.restart());
+
+    auto& chain = fixture.chain();
+    auto& index = chain.headers();
+
+    // Rebuilt from disk: heights 13..15 name B's blocks, and the tip is B's head.
+    CHECK(index.active_tip_height() == 15);
+    for (uint32_t h = 13; h <= 15; ++h) {
+        auto const idx = index.active_at(int32_t(h));
+        REQUIRE(idx != blockchain::header_index::null_index);
+        CHECK(index.get_hash(idx) == branch_b[h - 13].hash());
+    }
+    CHECK(fixture.organizer().tip_index() == index.active_at(15));
+
+    // The abandoned branch is not in the index at all, which is worth stating
+    // rather than discovering: the index is rebuilt from the by-height table, and
+    // that table describes the active chain only. Side branches live in memory,
+    // so a restart forgets them. Their block bytes stay in the flat files, held
+    // by nothing, until a peer announces the branch again and the headers are
+    // re-downloaded. (BCHN persists its whole block index and does remember.)
+    CHECK(index.find(a13.hash()) == blockchain::header_index::null_index);
+
+    // The validated tip and the UTXO set came back together, at B's head.
+    {
+        auto const heights = chain.get_last_heights();
+        REQUIRE(heights);
+        CHECK(heights->block == 15);
+        auto const built = chain.get_utxo_built_height();
+        REQUIRE(built);
+        CHECK(*built == 15);
+    }
+
+    // And the organizer knows it. Nothing tells it until the first newly stored
+    // block, so a node that came up and was handed a deep, heavier branch before
+    // storing anything would measure the rewind against "nothing validated yet"
+    // and follow it — with finalization not protecting either, since it needs
+    // headers older than the finalization delay.
+    CHECK(fixture.organizer().validated_height() == 15);
+
+    // And the UTXO set is B's: its coinbases are there, A's is not.
+    for (auto const& blk : branch_b) {
+        CHECK(utxo_present(chain, blk.transactions().front().hash(), 0, 15));
+    }
+    CHECK_FALSE(utxo_present(chain, a13.transactions().front().hash(), 0, 15));
+
+    // Nothing that is on the chain is A's: every active height names a B block or
+    // a trunk one, so the switch did not leave the abandoned branch reachable by
+    // height either.
+    for (int32_t h = 13; h <= index.active_tip_height(); ++h) {
+        auto const idx = index.active_at(h);
+        REQUIRE(idx != blockchain::header_index::null_index);
+        CHECK(index.get_hash(idx) != a13.hash());
+    }
+}
+
+// =============================================================================
+// When the persisted description cannot be updated
+// =============================================================================
+
+TEST_CASE("a switch whose header write fails is fatal, and the restart is coherent", "[reorg][cycle]") {
+    // The write that makes a switch survivable is the one that re-describes the
+    // replaced heights. If it fails, the chain in memory and the chain on disk
+    // name different branches, and nothing repairs that while the node runs — so
+    // execute_reorg reports it as fatal and the owner brings the node down.
+    //
+    // Reaching that path needs the write to fail on demand, which is why the
+    // persister is a parameter rather than a call to the chain. Corrupting a real
+    // database to get here would test the corruption, not the handling.
+    test::chain_fixture fixture("fatal");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    constexpr uint32_t trunk_len = 12;
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const base_time = uint32_t(zulu_time()) - (trunk_len + 30) * block_spacing;
+
+    std::vector<domain::chain::block> trunk;
+    auto prev = genesis.hash();
+    for (uint32_t h = 1; h <= trunk_len; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(trunk)).headers_added == trunk_len);
+    persist_headers(fixture, trunk, 1);
+    connect_bodies(fixture, trunk, 1);
+
+    auto const a13 = test::mine_block(trunk.back().hash(), 13,
+        base_time + 13 * block_spacing, 1, {}, 0);
+    REQUIRE(fixture.organizer().add_headers(headers_of({a13})).headers_added == 1);
+    persist_headers(fixture, {a13}, 13);
+    connect_bodies(fixture, {a13}, 13);
+
+    std::vector<domain::chain::block> branch_b;
+    prev = trunk.back().hash();
+    for (uint32_t h = 13; h <= 15; ++h) {
+        branch_b.push_back(test::mine_block(prev, h, base_time + h * block_spacing + 60, 2, {}, 0));
+        prev = branch_b.back().hash();
+    }
+    auto const b_result = fixture.organizer().add_headers(headers_of(branch_b));
+    REQUIRE(b_result.reorg_candidate);
+
+    // -------------------------------------------------------------------------
+    // The switch, with a write that refuses.
+    // -------------------------------------------------------------------------
+    bool persist_called = false;
+    reorg_outcome reorg;
+    {
+        ::asio::io_context switch_ctx;
+        ::asio::co_spawn(switch_ctx,
+            execute_reorg(fixture.chain(), fixture.organizer(), b_result.reorg_branch_head,
+                trunk_len, [] { return false; },
+                [&persist_called](domain::chain::header::list const&, size_t) {
+                    persist_called = true;
+                    return code(error::operation_failed);
+                }),
+            [&reorg](std::exception_ptr, reorg_outcome result) { reorg = result; });
+        switch_ctx.run_for(std::chrono::seconds(30));
+    }
+
+    CHECK(persist_called);
+
+    // The switch itself succeeded — the UTXO set was rewound and the chain moved.
+    // What failed is describing that on disk, and it is that which is fatal.
+    CHECK(reorg.result.ok);
+    CHECK(reorg.fatal);
+
+    // Height 13 still answers with A's block, the branch the node was on before:
+    // a refused write leaves the table describing the old chain, and execute_reorg
+    // does not change it by some other route on the way out.
+    //
+    // Not what this shows: that the write itself is atomic. The persister here
+    // never reaches the database, so there is no transaction to have been left
+    // half-applied. Atomicity is replace_headers_from's, and it is not exercised
+    // from this test.
+    {
+        auto const persisted = fixture.chain().get_header(13);
+        REQUIRE(persisted);
+        CHECK(domain::chain::hash(*persisted) == a13.hash());
+    }
+
+    // No blocks are connected for B. In the node this is the coordinator refusing
+    // to send more work; here it is simply not sending any.
+
+    // -------------------------------------------------------------------------
+    // The restart the owner's shutdown leads to.
+    // -------------------------------------------------------------------------
+    REQUIRE(fixture.restart());
+
+    auto& chain = fixture.chain();
+    auto& index = chain.headers();
+
+    // Back on A, whole: the persisted table never described anything else.
+    CHECK(index.active_tip_height() == 13);
+    {
+        auto const idx = index.active_at(13);
+        REQUIRE(idx != blockchain::header_index::null_index);
+        CHECK(index.get_hash(idx) == a13.hash());
+    }
+
+    // The UTXO set and the validated height are where the switch left them — at
+    // the fork — so the node re-downloads A's block at 13 rather than trusting a
+    // UTXO state that no longer matches the chain it came back on.
+    {
+        auto const heights = chain.get_last_heights();
+        REQUIRE(heights);
+        CHECK(heights->block == trunk_len);
+        auto const built = chain.get_utxo_built_height();
+        REQUIRE(built);
+        CHECK(*built == trunk_len);
+    }
+
+    // A's coinbase at 13 is not in the set: its block was disconnected before the
+    // write failed, and the markers agree with that.
+    CHECK_FALSE(utxo_present(chain, a13.transactions().front().hash(), 0, trunk_len));
+
+    // The organizer came back knowing how far blocks are validated, so the retry
+    // below is judged with deep-reorg parking active rather than switched off.
+    CHECK(fixture.organizer().validated_height() == int32_t(trunk_len));
+
+    // And the heavier branch can be tried again. Its headers were forgotten with
+    // the restart (side branches are not persisted), so a peer re-announcing them
+    // is what a real node would see; the switch is then reachable exactly as
+    // before. It forks at the validated tip itself, so it rewinds nothing and
+    // parking does not hold it — which is the rule applying, not the rule being
+    // absent.
+    auto const retry = fixture.organizer().add_headers(headers_of(branch_b));
+    CHECK(retry.reorg_candidate);
+    CHECK(retry.reorg_fork_height == int32_t(trunk_len));
 }
