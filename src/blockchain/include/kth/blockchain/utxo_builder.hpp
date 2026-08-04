@@ -18,6 +18,8 @@
 #include <asio/awaitable.hpp>
 #include <asio/thread_pool.hpp>
 
+#include <spdlog/spdlog.h>
+
 #include <utxoz/types.hpp>
 
 #include <kth/blockchain/define.hpp>
@@ -174,13 +176,63 @@ KB_API utxo_raw_delta process_compact_block_utxos(
 //
 // Returns an error if any spent output cannot be located, since undo data that
 // silently drops entries would corrupt the UTXO set on disconnect.
+// `source` is anything exposing the two raw lookups this needs:
+//     std::expected<utxoz_database::raw_stored, result_code> find_utxo_raw(key, height)
+//     pair<map<key, raw_stored>, vector<key>>              utxo_process_pending_lookups_raw()
+// block_chain satisfies it in production; a test can substitute a thin adapter
+// over a utxoz_database, which is what keeps this function directly testable.
+template <typename UtxoSource>
 [[nodiscard]]
-KB_API std::expected<database::block_undo, database::result_code> capture_block_undo(
+std::expected<database::block_undo, database::result_code> capture_block_undo(
     utxo_raw_delta const& block_delta,
     utxo_raw_delta const& batch_delta,
-    block_chain& chain,
+    UtxoSource& source,
     uint32_t height
-);
+) {
+    database::block_undo undo;
+    undo.spent.reserve(block_delta.deletes.size());
+
+    // Spent outputs still missing after the first pass, to be resolved by the
+    // deferred sweep (find_raw's key_not_found only means "queued").
+    std::vector<utxoz::raw_outpoint> deferred;
+
+    for (auto const& [key, _] : block_delta.deletes) {
+        // Parent created earlier in this same batch: it lives only in the
+        // in-flight delta, UTXO-Z has not seen it yet.
+        if (auto it = batch_delta.inserts.find(key); it != batch_delta.inserts.end()) {
+            undo.spent.push_back({key, it->second.data, it->second.height});
+            continue;
+        }
+
+        auto stored = source.find_utxo_raw(key, height);
+        if (stored) {
+            undo.spent.push_back({key, std::move(stored->value), stored->height});
+        } else {
+            deferred.push_back(key);
+        }
+    }
+
+    if ( ! deferred.empty()) {
+        auto [resolved, missing] = source.utxo_process_pending_lookups_raw();
+
+        for (auto const& key : deferred) {
+            auto it = resolved.find(key);
+            if (it == resolved.end()) {
+                // The block spends an output the UTXO set does not have. Either
+                // the block should not have validated, or the set is corrupt —
+                // either way, undo data that silently dropped it would corrupt
+                // the set further on disconnect.
+                spdlog::error("[utxo_builder] capture_block_undo: spent output not found at height {} "
+                    "({} of {} deferred lookups unresolved) — cannot build undo data",
+                    height, missing.size(), deferred.size());
+                return std::unexpected(database::result_code::key_not_found);
+            }
+            undo.spent.push_back({key, it->second.value, it->second.height});
+        }
+    }
+
+    return undo;
+}
 
 // =============================================================================
 // UTXO Delta (domain object path — used by sequential_direct strategy)
