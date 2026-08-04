@@ -75,7 +75,12 @@ endif()
 message(STATUS "Knuth: Header index capacity: ${KTH_HEADER_INDEX_CAPACITY}")
 add_definitions(-DKTH_HEADER_INDEX_CAPACITY=${KTH_HEADER_INDEX_CAPACITY})
 
-# UTXO-Z compact storage mode (8-byte refs instead of full output data)
+# UTXO-Z compact storage mode (8-byte refs instead of full output data).
+# The real default comes from Conan (conanfile.py: utxoz_compact=False); this
+# option only applies to standalone builds. It MUST agree with the value used by
+# the other modules — the write path (utxo_builder) and the storage layer
+# (utxoz_database) branch on this same macro, so a mismatch makes them disagree
+# on the stored value layout.
 option(KTH_UTXOZ_COMPACT_MODE "Use UTXO-Z compact storage mode" OFF)
 
 # Embedded UTXO bloom filter — .incbin via assembly
@@ -303,6 +308,7 @@ if (ENABLE_TEST)
         test/batch_sigchecks.cpp
         test/finalization.cpp
         test/block_undo.cpp
+        test/reorg_undo_roundtrip.cpp
     )
 
     # Disabled until ported to v1.0 APIs:

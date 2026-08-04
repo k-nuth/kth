@@ -1,0 +1,209 @@
+// Copyright (c) 2016-present Knuth Project developers.
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#include <test_helpers.hpp>
+
+#include <algorithm>
+#include <filesystem>
+#include <string>
+#include <unistd.h>
+
+#include <kth/blockchain/utxo_builder.hpp>
+#include <kth/database/databases/utxoz_database.hpp>
+
+using namespace kth;
+using namespace kth::blockchain;
+using namespace kth::database;
+
+namespace {
+
+std::filesystem::path fresh_dir(char const* tag) {
+    auto const p = std::filesystem::temp_directory_path() /
+        ("kth_reorg_undo_" + std::string(tag) + "_" + std::to_string(getpid()));
+    std::error_code ec;
+    std::filesystem::remove_all(p, ec);
+    REQUIRE(std::filesystem::create_directories(p, ec));
+    REQUIRE( ! ec);
+    return p;
+}
+
+utxoz::raw_outpoint make_outpoint(uint8_t seed, uint32_t index) {
+    hash_digest txid{};
+    txid[0] = seed;
+    txid[31] = uint8_t(0xFF - seed);
+    return utxoz::make_outpoint(std::span<uint8_t const, 32>(txid.data(), 32), index);
+}
+
+// The storage-native payload for one UTXO, matching what utxo_build produces:
+// 8 bytes {file_number, tx_offset} in compact mode, a serialized entry otherwise.
+std::vector<uint8_t> make_payload(uint32_t file_number, uint32_t tx_offset) {
+#ifdef KTH_UTXOZ_COMPACT_MODE
+    std::vector<uint8_t> value(8);
+    std::memcpy(value.data(), &file_number, 4);
+    std::memcpy(value.data() + 4, &tx_offset, 4);
+    return value;
+#else
+    // Full mode stores a variable-length payload. The exact bytes do not matter
+    // here — what is under test is that whatever was stored comes back unchanged,
+    // so an opaque payload of a distinctive length is enough.
+    std::vector<uint8_t> value(32 + (file_number % 16));
+    for (size_t i = 0; i < value.size(); ++i) {
+        value[i] = uint8_t(file_number + tx_offset + i);
+    }
+    return value;
+#endif
+}
+
+// The two raw lookups capture_block_undo needs, forwarded to a bare database.
+// In production block_chain provides these; here it keeps the test on the real
+// code path without standing up a whole chain.
+struct db_source {
+    utxoz_database& db;
+
+    auto find_utxo_raw(utxoz::raw_outpoint const& key, uint32_t height) const {
+        return db.find_raw(key, height);
+    }
+    auto utxo_process_pending_lookups_raw() {
+        return db.process_pending_lookups_raw();
+    }
+};
+
+} // namespace
+
+// =============================================================================
+// Reorg undo: capture -> erase -> restore
+// =============================================================================
+//
+// The correctness claim behind the undo record is that a spent output can be put
+// back EXACTLY as it was: same storage payload and, critically, the same ORIGINAL
+// creation height. Restoring with the spending block's height instead would
+// corrupt both coinbase maturity and (in compact mode) the median-time-past
+// window used when the UTXO is later resolved — silently, and only for outputs
+// that a reorg touched.
+//
+// This exercises that round-trip against a real UTXO-Z database, which is the
+// piece disconnect_block depends on.
+
+TEST_CASE("a spent UTXO is restored with its original payload and height", "[reorg][undo]") {
+    utxoz_database db;
+    REQUIRE(db.open(fresh_dir("restore"), true));
+
+    // Three UTXOs created at different heights — the height spread is the point:
+    // a restore that used one height for all of them would still pass a naive test.
+    struct fixture { utxoz::raw_outpoint key; uint32_t height; std::vector<uint8_t> value; };
+    std::vector<fixture> created{
+        {make_outpoint(1, 0), 100, make_payload(0, 4096)},
+        {make_outpoint(2, 1), 5000, make_payload(3, 123456)},
+        {make_outpoint(3, 7), 99999, make_payload(11, 7)},
+    };
+
+    boost::unordered_flat_map<utxoz::raw_outpoint, utxo_raw_value, outpoint_fast_hasher> inserts;
+    for (auto const& f : created) {
+        inserts.emplace(f.key, utxo_raw_value{f.value, f.height});
+    }
+    boost::unordered_flat_map<utxoz::raw_outpoint, uint32_t, outpoint_fast_hasher> no_deletes;
+    REQUIRE(db.apply_delta_raw(inserts, no_deletes) == result_code::success);
+
+    // --- capture: through the production path, not a hand-rolled equivalent ---
+    // The spending block's own delta: it deletes all three, creating nothing.
+    utxo_raw_delta block_delta;
+    for (auto const& f : created) {
+        block_delta.deletes.emplace(f.key, 200000u);   // spending height
+    }
+    utxo_raw_delta const empty_batch;
+
+    db_source source{db};
+    auto captured = capture_block_undo(block_delta, empty_batch, source, 200000u);
+    REQUIRE(captured.has_value());
+    REQUIRE(captured->spent.size() == created.size());
+
+    // Every record must carry the ORIGINAL creation height, not the spend height
+    // it was captured at. Match by key — the record's order is unspecified.
+    for (auto const& f : created) {
+        auto const it = std::find_if(captured->spent.begin(), captured->spent.end(),
+            [&](auto const& e) { return e.key == f.key; });
+        REQUIRE(it != captured->spent.end());
+        CHECK(it->height == f.height);
+        CHECK(it->value == f.value);
+        CHECK(it->height != 200000u);
+    }
+
+    // --- spend: the block being connected erases them ---
+    boost::unordered_flat_map<utxoz::raw_outpoint, utxo_raw_value, outpoint_fast_hasher> no_inserts;
+    boost::unordered_flat_map<utxoz::raw_outpoint, uint32_t, outpoint_fast_hasher> deletes;
+    for (auto const& f : created) {
+        deletes.emplace(f.key, 200000u);   // spending height, not the creation height
+    }
+    REQUIRE(db.apply_delta_raw(no_inserts, deletes) == result_code::success);
+
+    for (auto const& f : created) {
+        CHECK_FALSE(db.find_raw(f.key, 200001).has_value());
+    }
+
+    // --- disconnect: the inverse delta puts them back ---
+    boost::unordered_flat_map<utxoz::raw_outpoint, utxo_raw_value, outpoint_fast_hasher> restores;
+    for (auto const& u : captured->spent) {
+        restores.emplace(u.key, utxo_raw_value{u.value, u.height});
+    }
+    REQUIRE(db.apply_delta_raw(restores, no_deletes) == result_code::success);
+
+    // The set must be indistinguishable from before the spend.
+    for (auto const& f : created) {
+        auto stored = db.find_raw(f.key, 200002);
+        REQUIRE(stored.has_value());
+        CHECK(stored->value == f.value);
+        CHECK(stored->height == f.height);   // ORIGINAL height, not the spend height
+    }
+}
+
+TEST_CASE("outputs created and spent in the same block need no undo entry", "[reorg][undo]") {
+    // A block that creates an output and spends it internally leaves nothing in
+    // the UTXO set, so disconnecting it must NOT restore that output — it never
+    // existed beforehand. process_compact_block_utxos cancels the pair, which is
+    // what keeps it out of the undo record.
+    utxoz_database db;
+    REQUIRE(db.open(fresh_dir("internal"), true));
+
+    // Build a block that creates one output and spends it in the same block, and
+    // run it through the real producer — the cancellation is its behaviour, so a
+    // hand-built delta would not test anything.
+    hash_digest txid{};
+    txid[0] = 9;
+    txid[31] = 0xF6;
+    auto const internal = utxoz::make_outpoint(std::span<uint8_t const, 32>(txid.data(), 32), 0);
+
+    std::vector<uint8_t> raw_out(16, 0x11);
+    utxo_compact_block block;
+    block.outputs.push_back({internal, std::span<uint8_t const>(raw_out.data(), raw_out.size()),
+                             /*coinbase*/ false, /*tx_start*/ 0u});
+    block.inputs.push_back({internal});   // spent by a later tx in the same block
+
+    auto delta = process_compact_block_utxos(block, /*height*/ 700u, /*mtp*/ 12u,
+                                             /*file*/ 0, /*data_pos*/ 0u, nullptr);
+
+    // The producer cancels the pair: nothing to insert, and nothing to delete —
+    // which is what keeps the output out of the undo record.
+    CHECK(delta.inserts.empty());
+    CHECK(delta.deletes.empty());
+
+    db_source source{db};
+    utxo_raw_delta const empty_batch;
+    auto captured = capture_block_undo(delta, empty_batch, source, 700u);
+    REQUIRE(captured.has_value());
+    CHECK(captured->spent.empty());   // no entry => disconnect will not restore it
+
+    REQUIRE(db.apply_delta_raw(delta.inserts, delta.deletes) == result_code::success);
+    CHECK_FALSE(db.find_raw(internal, 701).has_value());
+}
+
+TEST_CASE("find_raw reports a miss for an unknown outpoint", "[reorg][undo]") {
+    // Undo capture treats a miss as "resolve through the deferred queue, then
+    // fail loudly" — it must not silently produce an empty record.
+    utxoz_database db;
+    REQUIRE(db.open(fresh_dir("miss"), true));
+
+    auto const missed = db.find_raw(make_outpoint(42, 3), 1);
+    REQUIRE_FALSE(missed.has_value());
+    CHECK(missed.error() == result_code::key_not_found);   // the documented contract
+}
