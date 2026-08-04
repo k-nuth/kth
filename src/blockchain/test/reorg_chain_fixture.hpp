@@ -1,0 +1,114 @@
+// Copyright (c) 2016-present Knuth Project developers.
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#ifndef KTH_BLOCKCHAIN_TEST_REORG_CHAIN_FIXTURE_HPP
+#define KTH_BLOCKCHAIN_TEST_REORG_CHAIN_FIXTURE_HPP
+
+#include <filesystem>
+#include <string>
+#include <unistd.h>
+
+#include <kth/blockchain/interface/block_chain.hpp>
+#include <kth/blockchain/pools/header_organizer.hpp>
+#include <kth/blockchain/settings.hpp>
+#include <kth/database.hpp>
+#include <kth/database/settings.hpp>
+#include <kth/domain/multi_crypto_support.hpp>
+
+namespace kth::test {
+
+// A real block_chain on a throwaway directory.
+//
+// The reorg path (disconnect -> switch -> re-download) spans the header index,
+// the flat-file block store, the undo files and UTXO-Z, and its bugs live in how
+// those agree with each other. Testing it against mocks would mostly re-assert
+// the mocks, so this stands up the actual stack instead — the same create/open
+// sequence the node performs at startup.
+//
+// Regtest is used deliberately: its proof-of-work target is trivial, so a test
+// can build competing chains without mining.
+struct chain_fixture {
+    explicit chain_fixture(char const* tag)
+        : dir_(make_dir(tag))
+        , chain_settings_(domain::config::network::regtest)
+    {
+        db_settings_.directory = dir_;
+
+        // Same two steps as executor::init_directory followed by block_chain::start.
+        database::data_base db(db_settings_);
+        auto const genesis = genesis_block();
+        created_ = db.create(genesis);
+    }
+
+    ~chain_fixture() {
+        if (chain_) {
+            std::ignore = chain_->stop();
+            std::ignore = chain_->close();
+        }
+        std::error_code ec;
+        std::filesystem::remove_all(dir_, ec);
+    }
+
+    chain_fixture(chain_fixture const&) = delete;
+    chain_fixture& operator=(chain_fixture const&) = delete;
+
+    [[nodiscard]] bool created() const { return created_; }
+
+    // Construct and start the chain. Separate from the constructor so a test can
+    // assert on creation failure without the chain half-built.
+    [[nodiscard]] bool start() {
+        if ( ! created_) return false;
+        chain_ = std::make_unique<blockchain::block_chain>(
+            chain_settings_, db_settings_, domain::config::network::regtest,
+            /*relay_transactions*/ false);
+        if ( ! chain_->start(kth::get_disk_magic(domain::config::network::regtest))) {
+            return false;
+        }
+
+        // The node performs this second step at startup and the rest of the stack
+        // depends on it: block_chain::start loads headers into the index, but the
+        // ACTIVE CHAIN (height -> index) is materialized by the organizer. Until
+        // sync_tip() runs, active_at() answers null_index for every height, so
+        // fetch_blocks_raw and disconnect_block would find nothing.
+        organizer_ = std::make_unique<blockchain::header_organizer>(
+            chain_->headers(), chain_settings_, domain::config::network::regtest);
+        if ( ! organizer_->start()) {
+            return false;
+        }
+        organizer_->sync_tip();
+        return true;
+    }
+
+    [[nodiscard]] blockchain::header_organizer& organizer() { return *organizer_; }
+
+    [[nodiscard]] blockchain::block_chain& chain() { return *chain_; }
+    [[nodiscard]] std::filesystem::path const& dir() const { return dir_; }
+
+private:
+    static std::filesystem::path make_dir(char const* tag) {
+        auto const p = std::filesystem::temp_directory_path() /
+            ("kth_reorg_e2e_" + std::string(tag) + "_" + std::to_string(getpid()));
+        std::error_code ec;
+        std::filesystem::remove_all(p, ec);
+        std::filesystem::create_directories(p, ec);
+        return p;
+    }
+
+    static domain::chain::block genesis_block() {
+        // The regtest genesis, which the store is seeded with before any test
+        // chain is appended to it.
+        return domain::chain::block::genesis_regtest();
+    }
+
+    std::filesystem::path dir_;
+    blockchain::settings chain_settings_;
+    database::settings db_settings_;
+    bool created_{false};
+    std::unique_ptr<blockchain::block_chain> chain_;
+    std::unique_ptr<blockchain::header_organizer> organizer_;
+};
+
+} // namespace kth::test
+
+#endif // KTH_BLOCKCHAIN_TEST_REORG_CHAIN_FIXTURE_HPP
