@@ -42,10 +42,13 @@ struct chain_fixture {
     }
 
     ~chain_fixture() {
-        if (chain_) {
-            std::ignore = chain_->stop();
-            std::ignore = chain_->close();
-        }
+        // Destroy in dependency order and let the destructors do the closing:
+        // block_chain::~block_chain already closes (which stops), so calling
+        // close() here would close twice — and removing the directory first
+        // would run that second close against a datadir that no longer exists.
+        organizer_.reset();
+        chain_.reset();
+
         std::error_code ec;
         std::filesystem::remove_all(dir_, ec);
     }

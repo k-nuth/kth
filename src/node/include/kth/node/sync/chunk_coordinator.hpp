@@ -96,6 +96,12 @@ struct chunk_coordinator {
     [[nodiscard]]
     hash_digest get_block_hash(uint32_t height) const;
 
+    /// Active-chain generation at this moment. A chunk is stamped with it when
+    /// downloaded so work for a branch abandoned mid-flight can be dropped
+    /// instead of stored against the new chain.
+    [[nodiscard]]
+    uint64_t generation() const { return index_.generation(); }
+
     /// Report that a chunk was completed successfully
     void chunk_completed(uint32_t chunk_id);
 

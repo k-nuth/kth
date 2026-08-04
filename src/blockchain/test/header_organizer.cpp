@@ -4,6 +4,9 @@
 
 #include <test_helpers.hpp>
 
+#include <atomic>
+#include <thread>
+
 #include <kth/blockchain.hpp>
 
 using namespace kth;
@@ -419,4 +422,124 @@ TEST_CASE("active chain re-points to a new tip across a fork", "[header_organize
     for (int32_t h = 0; h <= 5; ++h) {
         REQUIRE(index.get_height(index.active_at(h)) == h);
     }
+}
+
+TEST_CASE("chain generation moves only on a branch change", "[header_organizer][active_chain]") {
+    // The generation stamp is what lets the block pipeline drop work downloaded
+    // for an abandoned branch. It must NOT move on ordinary forward extension:
+    // bumping it per block would discard perfectly good in-flight chunks on every
+    // new tip, stalling sync instead of protecting it.
+    header_index index;
+    auto tip_hash = build_chain(index, 10);
+    auto settings = make_test_settings();
+    header_organizer organizer(index, settings, domain::config::network::mainnet);
+    REQUIRE(organizer.start());
+    organizer.sync_tip();
+
+    auto const initial = index.generation();
+
+    // Forward extension: same branch, generation unchanged.
+    domain::message::header::list extension;
+    hash_digest prev = tip_hash;
+    for (int i = 0; i < 3; ++i) {
+        auto hdr = make_header_with_prev(prev, uint32_t(10 + i));
+        prev = kth::domain::chain::hash(hdr);
+        extension.push_back(std::move(hdr));
+    }
+    auto const extended = organizer.add_headers(extension);
+    REQUIRE(extended.headers_added == 3);
+    CHECK(index.generation() == initial);
+
+    // Re-pointing onto a different branch does move it.
+    auto branch = make_branch(index.get_hash(index.active_at(5)), 9, 1100);
+    (void)organizer.add_headers(branch);
+    auto const branch_head = index.find(kth::domain::chain::hash(branch.back()));
+    REQUIRE(branch_head != header_index::null_index);
+    index.active_set_tip(branch_head);
+
+    CHECK(index.generation() == initial + 1);
+}
+
+TEST_CASE("the active chain is never observed in a torn state", "[header_organizer][active_chain]") {
+    // active_set_tip truncates and then re-links, so it is NOT atomic: during a
+    // switch the chain is transiently SHORT. That is safe by construction —
+    // active_at() answers null_index for the heights not yet re-linked, so a
+    // reader fails closed (block download logs a missing hash and skips) rather
+    // than resolving a height to a block from the abandoned branch.
+    //
+    // What must hold at all times is that whatever active_at(h) DOES return is
+    // an entry actually at height h on a branch descending from the fork. A
+    // reader must never see an index left over from the previous chain sitting
+    // at a height it does not belong to.
+    //
+    // Note on scope, since it would be easy to overclaim: this pins the absence
+    // of torn entries. The ordering fix itself — publishing the chain before
+    // bumping the generation — is not provable here, because the transient
+    // truncation means neither "generation implies chain" nor its converse holds
+    // during a switch. The consequence of the ordering is covered by the storage
+    // drop test in the node suite.
+    header_index index;
+    (void)build_chain(index, 10);
+    auto settings = make_test_settings();
+    header_organizer organizer(index, settings, domain::config::network::mainnet);
+    REQUIRE(organizer.start());
+    organizer.sync_tip();
+
+    auto const fork_height = 5;
+    auto const fork_idx = index.active_at(fork_height);
+    auto const fork_hash = index.get_hash(fork_idx);
+    constexpr int switches = 64;
+
+    std::vector<header_index::index_t> heads;
+    for (int i = 0; i < switches; ++i) {
+        auto const branch = make_branch(fork_hash, size_t(i + 1), uint32_t(4000 + i * 100));
+        (void)organizer.add_headers(branch);
+        auto const head = index.find(kth::domain::chain::hash(branch.back()));
+        REQUIRE(head != header_index::null_index);
+        heads.push_back(head);
+    }
+
+    std::atomic<bool> done{false};
+    std::atomic<bool> violated{false};
+    std::atomic<bool> reader_started{false};
+    std::atomic<uint64_t> reads{0};
+
+    std::thread reader([&] {
+        reader_started.store(true, std::memory_order_release);
+        while ( ! done.load(std::memory_order_acquire)) {
+            auto const tip_height = index.active_tip_height();
+            for (int32_t h = 0; h <= tip_height; ++h) {
+                auto const idx = index.active_at(h);
+                if (idx == header_index::null_index) continue;   // not linked yet: safe
+
+                if (index.get_height(idx) != h) {
+                    violated.store(true, std::memory_order_release);
+                    return;
+                }
+                if (h > fork_height && index.get_ancestor(idx, fork_height) != fork_idx) {
+                    violated.store(true, std::memory_order_release);
+                    return;
+                }
+                reads.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    });
+
+    while ( ! reader_started.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+    }
+
+    auto const base = index.generation();
+    for (int i = 0; i < switches; ++i) {
+        index.active_set_tip(heads[size_t(i)]);
+    }
+    done.store(true, std::memory_order_release);
+    reader.join();
+
+    CHECK_FALSE(violated.load());
+    CHECK(reads.load() > 0);                            // the checks above ran
+    CHECK(index.generation() == base + switches);       // every move counted
+
+    // Quiesced, the chain and the counter agree on the final branch.
+    CHECK(index.active_at(index.active_tip_height()) == heads.back());
 }

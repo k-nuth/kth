@@ -311,6 +311,12 @@ struct KB_API block_chain {
     void enter_reorg_barrier() { reorg_parked_.fetch_add(1, std::memory_order_seq_cst); }
     void leave_reorg_barrier() { reorg_parked_.fetch_sub(1, std::memory_order_seq_cst); }
 
+    // Bumped by each completed switch. Work that was requested against the old
+    // chain carries the previous generation; the storage path drops it instead of
+    // applying it, which is what makes a stale chunk buffered during the barrier
+    // harmless rather than corrupting.
+    [[nodiscard]] uint64_t chain_generation() const { return header_index_.generation(); }
+
     [[nodiscard]] bool reorg_barrier_reached() const {
         auto const registered = reorg_registered_.load(std::memory_order_seq_cst);
         // No participants: nothing writes the chain, so the barrier is trivially
