@@ -139,6 +139,12 @@ struct downloaded_chunk {
     uint32_t chunk_id;
     std::vector<std::shared_ptr<domain::chain::light_block const>> blocks;
     network::peer_session::ptr source_peer;
+
+    // Chain generation this chunk was downloaded under. A reorg bumps it, so a
+    // chunk still in flight (or buffered behind the reorg barrier) for the
+    // abandoned branch is recognisable and dropped: its heights now belong to
+    // different blocks, and storing it would mark the wrong hashes have_data.
+    uint64_t generation{0};
 };
 
 struct chunk_validated {

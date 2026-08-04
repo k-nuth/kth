@@ -930,8 +930,12 @@ block_chain::switch_result block_chain::switch_to_branch(
     // branch; its blocks are headers-only, so block download must refill them.
     header_index_.active_set_tip(branch_head);
 
-    spdlog::warn("[blockchain] Reorg: active chain switched to height {} (fork at {})",
-        header_index_.active_tip_height(), fork_height);
+    // active_set_tip bumps the generation when it moves onto a different branch,
+    // which is what marks chunks requested against the old chain as stale.
+    auto const generation = chain_generation();
+
+    spdlog::warn("[blockchain] Reorg: active chain switched to height {} (fork at {}), generation {}",
+        header_index_.active_tip_height(), fork_height, generation);
     return {true, validated_tip};
 }
 #endif

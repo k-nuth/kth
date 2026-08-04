@@ -224,6 +224,13 @@ std::atomic<uint32_t> g_active_download_peers{0};
         spdlog::debug("[block_download] Peer {} claiming chunk {} (blocks {}-{})",
             addr, chunk_id, chunk_start, chunk_end);
 
+        // Capture the generation BEFORE reading any hash. Reading it after the
+        // download would stamp blocks of the old branch with the new generation
+        // if a switch landed while we waited on the peer — they would then be
+        // accepted as current, which is precisely the corruption the stamp exists
+        // to stop.
+        auto const request_generation = coordinator->generation();
+
         // Build request with hashes from coordinator
         std::vector<std::pair<uint32_t, hash_digest>> blocks;
         blocks.reserve(chunk_end - chunk_start + 1);
@@ -238,6 +245,17 @@ std::atomic<uint32_t> g_active_download_peers{0};
         }
 
         if (blocks.empty()) {
+            coordinator->chunk_failed(chunk_id);
+            continue;
+        }
+
+        // A switch may have landed while the hashes were being collected, in
+        // which case they are a mix of two branches. Drop the request and let the
+        // chunk be re-claimed against the new chain rather than downloading a
+        // set that was never a chain.
+        if (coordinator->generation() != request_generation) {
+            spdlog::info("[block_download] Chain switched while building chunk {} — releasing it",
+                chunk_id);
             coordinator->chunk_failed(chunk_id);
             continue;
         }
@@ -299,7 +317,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
                     .start_height = chunk_start,
                     .chunk_id = chunk_id,
                     .blocks = std::move(chunk_blocks),
-                    .source_peer = peer
+                    .source_peer = peer,
+                    .generation = request_generation
                 },
                 600,   // 600 attempts
                 100ms  // 100ms between attempts = 60 seconds total max wait
@@ -1381,6 +1400,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         auto const chunk_block_count = chunk.blocks.size();
         auto const chunk_start = chunk.start_height;
         auto const chunk_peer = chunk.source_peer;
+        auto const chunk_generation = chunk.generation;
 
         // Track bytes before validation (blocks are still in memory)
         uint64_t chunk_bytes = 0;
@@ -1424,7 +1444,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 .start_height = chunk_start,
                 .chunk_id = chunk.chunk_id,
                 .blocks = std::move(chunk.blocks),
-                .source_peer = chunk_peer
+                .source_peer = chunk_peer,
+                .generation = chunk_generation
             })) {
                 spdlog::error("[fast_validation] Storage channel full after retries!");
                 break;
@@ -1542,6 +1563,22 @@ std::atomic<uint32_t> g_active_download_peers{0};
         auto const chunk_start = chunk.start_height;
         auto const chunk_count = static_cast<uint32_t>(chunk.blocks.size());
         auto const chunk_peer = chunk.source_peer;
+        auto const chunk_generation = chunk.generation;
+
+        // Drop work from before a chain switch. Such a chunk was downloaded for
+        // the abandoned branch, so its heights now name different blocks —
+        // storing it would write the wrong data and mark the wrong hashes
+        // have_data. This is the point of the generation stamp: a chunk that was
+        // in flight, or buffered behind the reorg barrier, is recognisable
+        // afterwards instead of being applied to the new chain.
+        if (chunk_generation != chain.chain_generation()) {
+            spdlog::info("[block_storage] Dropping chunk at {} from generation {} (chain is at {}) "
+                "— downloaded for a branch that has since been abandoned",
+                chunk_start, chunk_generation, chain.chain_generation());
+            chunk.blocks.clear();
+            chunk.blocks.shrink_to_fit();
+            continue;
+        }
 
         auto store_start = std::chrono::steady_clock::now();
 

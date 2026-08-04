@@ -303,8 +303,22 @@ int32_t header_index::active_tip_height() const {
 }
 
 void header_index::active_set_tip(index_t tip_idx) {
+    // A forward extension re-points at a descendant of the current tip and does
+    // not invalidate in-flight work; only a move onto a different branch does.
+    auto const previous_tip = active_at(active_tip_height());
+    bool const same_branch = (previous_tip == null_index) ||
+        (tip_idx != null_index && get_ancestor(tip_idx, heights_[previous_tip]) == previous_tip);
+
+    // The generation is bumped at the END of a branch change, never here: a
+    // reader that saw the new generation while this function was still rebuilding
+    // would pair it with heights that still resolve to the OLD branch, and stamp
+    // stale work as current — the exact confusion the counter exists to prevent.
+
     if (tip_idx == null_index) {
         active_size_.store(0, std::memory_order_release);
+        if ( ! same_branch) {
+            generation_.fetch_add(1, std::memory_order_release);
+        }
         return;
     }
 
@@ -328,6 +342,13 @@ void header_index::active_set_tip(index_t tip_idx) {
     // Link the branch in, lowest height first.
     for (auto it = branch.rbegin(); it != branch.rend(); ++it) {
         active_push(*it);
+    }
+
+    // Now that the new active chain is fully published, mark the branch change.
+    // Ordered after the pushes so any reader observing the new generation is
+    // guaranteed to resolve heights against the new branch.
+    if ( ! same_branch) {
+        generation_.fetch_add(1, std::memory_order_release);
     }
 }
 

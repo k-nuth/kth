@@ -331,6 +331,13 @@ struct KD_API header_index {
     /// disconnected the blocks being abandoned.
     void active_set_tip(index_t tip_idx);
 
+    /// How many times the active chain has been re-pointed at a different branch.
+    /// Work requested against an earlier generation refers to heights that now
+    /// name different blocks, so the block pipeline stamps it and drops what is
+    /// stale instead of applying it to the new chain.
+    [[nodiscard]]
+    uint64_t generation() const { return generation_.load(std::memory_order_acquire); }
+
     // =========================================================================
     // State Queries
     // =========================================================================
@@ -396,6 +403,7 @@ private:
     // vectors; active_size_ publishes the valid prefix (see the accessors above).
     std::vector<index_t> active_;
     std::atomic<int32_t> active_size_{0};
+    std::atomic<uint64_t> generation_{0};
 
     // Index counter
     std::atomic<index_t> next_idx_{0};
