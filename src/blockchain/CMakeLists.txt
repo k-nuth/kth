@@ -309,6 +309,7 @@ if (ENABLE_TEST)
         test/finalization.cpp
         test/block_undo.cpp
         test/reorg_undo_roundtrip.cpp
+        test/reorg_e2e.cpp
     )
 
     # Disabled until ported to v1.0 APIs:
