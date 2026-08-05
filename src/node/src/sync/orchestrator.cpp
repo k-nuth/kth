@@ -656,7 +656,8 @@ static
         *contiguous_height,
         initial_block_height + 1,
         network_type,
-        [&network]() { return network.stopped(); }
+        [&network]() { return network.stopped(); },
+        on_fatal
     ));
 
     // Bridge: validated_chunks -> coordinator_events (carries validation errors only)

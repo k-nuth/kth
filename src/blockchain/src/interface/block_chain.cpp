@@ -1016,6 +1016,48 @@ transaction_validation_store& block_chain::transaction_validations() const {
     return transaction_validations_;
 }
 
+namespace {
+
+// Holds the validation mutex at high priority for a scope. The exclusion the
+// mempool depends on must not rest on the body never throwing.
+struct validation_high_priority_lock {
+    explicit validation_high_priority_lock(prioritized_mutex& mutex) : mutex_(mutex) {
+        mutex_.lock_high_priority();
+    }
+    ~validation_high_priority_lock() { mutex_.unlock_high_priority(); }
+    validation_high_priority_lock(validation_high_priority_lock const&) = delete;
+    validation_high_priority_lock& operator=(validation_high_priority_lock const&) = delete;
+private:
+    prioritized_mutex& mutex_;
+};
+
+} // namespace
+
+code block_chain::mempool_remove_for_block(byte_span raw) {
+    validation_high_priority_lock const lock(validation_mutex_);
+
+    // Under the lock, so an admission cannot land between finding the pool empty
+    // and deciding there is nothing to do. Empty is the whole of initial sync,
+    // where parsing every block for this would be the only reason to parse it.
+    if (mempool_.size() == 0) {
+        return error::success;
+    }
+
+    byte_reader reader(raw);
+    auto block = domain::message::block::from_data(reader, 0u);
+    if ( ! block) {
+        return error::operation_failed;
+    }
+
+    mempool_.remove_for_block(*block);
+    return error::success;
+}
+
+void block_chain::mempool_remove_for_block(domain::chain::block const& block) {
+    validation_high_priority_lock const lock(validation_mutex_);
+    mempool_.remove_for_block(block);
+}
+
 blockchain::mempool& block_chain::mempool_ref() {
     return mempool_;
 }

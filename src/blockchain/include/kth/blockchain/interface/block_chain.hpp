@@ -393,6 +393,26 @@ struct KB_API block_chain {
 
     /// The unconfirmed-transaction mempool. Owned here; the organizers admit to
     /// it (tx accept) and evict from it (block connect / reorg).
+    // A block was connected: drop the transactions it confirmed and any pooled
+    // transaction that conflicts with them (recursively, with descendants).
+    //
+    // This lives here, and not in the caller, because the mempool's writes are
+    // serialized by the validation mutex — the one the transaction organizer
+    // holds while admitting. Calling mempool::remove_for_block directly from the
+    // block-connect path would race an admission in flight. The lock is taken at
+    // high priority: connecting a block takes precedence over admitting, which is
+    // what a prioritized mutex is for.
+    //
+    // The raw form exists for the block-connect path, which holds bytes rather
+    // than parsed blocks: it parses only when there is something to remove, and
+    // decides that under the lock, so an admission cannot slip in between the
+    // decision and the removal. Returns an error if the bytes do not parse,
+    // rather than passing for a block with nothing to confirm.
+    code mempool_remove_for_block(byte_span raw);
+
+    // The same, for a caller that has already parsed the block.
+    void mempool_remove_for_block(domain::chain::block const& block);
+
     blockchain::mempool& mempool_ref();
     blockchain::mempool const& mempool_ref() const;
 
