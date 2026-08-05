@@ -187,6 +187,11 @@ bool block_chain::start(uint32_t disk_magic) {
 
     // Load all headers from database into header_index
     // This allows resuming sync from where we left off
+    // The chain by height as the database holds it, filled while headers load and
+    // used below to check undo coverage. Declared out here because the check and
+    // the load are in different scopes.
+    std::vector<header_index::index_t> persisted_chain_indices;
+
     auto const heights = get_last_heights();
     if ( ! heights) {
         spdlog::error("[blockchain] Failed to get last heights from database.");
@@ -217,6 +222,16 @@ bool block_chain::start(uint32_t disk_magic) {
         constexpr size_t batch_size = 10000;
         size_t loaded = 0;
 
+        // The chain by height as LMDB holds it, recorded as it is loaded.
+        //
+        // Deliberately not called the active chain: the organizer publishes that
+        // view after startup, so active_at() answers nothing here — a fact this
+        // code learned by asking it and being told height one does not exist.
+        // The persisted by-height table is the authoritative source available
+        // during startup, and it is the one the UTXO set was built against, so
+        // it is what undo coverage is checked against below.
+        persisted_chain_indices.assign(heights->header + 1, header_index::null_index);
+
         for (size_t from = 0; from <= heights->header; from += batch_size) {
             auto const to = std::min(from + batch_size - 1, size_t(heights->header));
             auto const headers_result = get_headers(from, to);
@@ -234,6 +249,18 @@ bool block_chain::start(uint32_t disk_magic) {
                     // Genesis might already be added, ignore that case
                     spdlog::warn("[blockchain] Failed to add header at height {} to index", height);
                 }
+                if (idx == header_index::null_index) {
+                    spdlog::critical("[blockchain] The header at height {} has no index after "
+                        "loading; the persisted chain cannot be reconstructed", height);
+                    return false;
+                }
+                if (height >= persisted_chain_indices.size()) {
+                    spdlog::critical("[blockchain] Loaded a header at height {}, past the {} the "
+                        "database reports; the by-height table is inconsistent",
+                        height, heights->header);
+                    return false;
+                }
+                persisted_chain_indices[height] = idx;
                 ++height;
                 ++loaded;
             }
@@ -265,6 +292,104 @@ bool block_chain::start(uint32_t disk_magic) {
                 }
             }
         );
+
+        // And the undo records, the same way and for the same reason: their
+        // positions live only in this in-memory index, so without this pass a
+        // restart leaves every block without undo and no reorganization can
+        // disconnect anything (#603).
+        //
+        // Nothing is applied until the whole scan succeeds. A half-restored index
+        // is worse than an empty one, because it looks complete: the blocks it
+        // reached would report undo data and the rest would not, with no way to
+        // tell which case a missing record is.
+        auto const undo_scan = block_store_->scan_undo_positions(
+            [this](hash_digest const& block_hash) -> std::optional<hash_digest> {
+                auto const idx = header_index_.find(block_hash);
+                if (idx == header_index::null_index) {
+                    return std::nullopt;
+                }
+                auto const parent = header_index_.get_parent_index(idx);
+                if (parent == header_index::null_index) {
+                    return std::nullopt;
+                }
+                return header_index_.get_hash(parent);
+            });
+
+        if (undo_scan.status != block_store::undo_scan_status::clean_eof) {
+            if (undo_scan.status == block_store::undo_scan_status::legacy_format) {
+                spdlog::critical("[blockchain] This database's undo records predate the format "
+                    "that records which block each one belongs to, and the association cannot be "
+                    "recovered from what is on disk. Without it no reorganization can disconnect "
+                    "a block connected before this start. The UTXO set and undo data have to be "
+                    "rebuilt.");
+            } else {
+                spdlog::critical("[blockchain] The undo records could not be read back "
+                    "(status {}, file {}, offset {}). Refusing to start on a chain whose undo "
+                    "data is unaccounted for.",
+                    static_cast<int>(undo_scan.status), undo_scan.file_number, undo_scan.position);
+            }
+            return false;
+        }
+
+        for (auto const& location : undo_scan.found) {
+            auto const idx = header_index_.find(location.block_hash);
+            if (idx == header_index::null_index) {
+                // The scan already refused an unknown block, so this cannot
+                // happen; if it somehow does, the index and the files disagree.
+                spdlog::critical("[blockchain] An undo record survived the scan for a block the "
+                    "index does not hold");
+                return false;
+            }
+            header_index_.set_undo_pos(idx, location.position);
+            header_index_.add_status(idx, header_status::have_undo);
+        }
+        spdlog::info("[blockchain] Restored {} undo positions ({} records belong to blocks this "
+            "index no longer holds, which is ordinary after a reorganization)",
+            undo_scan.found.size(), undo_scan.unattributed);
+
+        // Skipping a record whose block is unknown is right for an abandoned
+        // branch and would be wrong for a live one — and locally the two look the
+        // same, since a single flipped bit in a stored hash makes an active
+        // record unattributable. What separates them is coverage: every block on
+        // the active chain that was connected with undo must have it now. Below
+        // the checkpoint none is captured, and above the built height nothing is
+        // connected, so the range between is exactly what has to be complete.
+        auto const built = get_utxo_built_height();
+        if ( ! built) {
+            if (built.error() != database::result_code::key_not_found) {
+                // Not knowing how far the set was built is not the same as
+                // nothing having been built, and taking it for that would skip
+                // the coverage check entirely — the failure this check exists to
+                // catch, arriving through the check itself.
+                spdlog::critical("[blockchain] The built height could not be read, so whether the "
+                    "chain's undo data is complete cannot be established. Refusing to start.");
+                return false;
+            }
+        } else {
+            auto const first = static_cast<int32_t>(settings_.max_checkpoint_height) + 1;
+            for (int32_t height = first; height <= static_cast<int32_t>(*built); ++height) {
+                auto const at = static_cast<size_t>(height);
+                if (at >= persisted_chain_indices.size() ||
+                        persisted_chain_indices[at] == header_index::null_index) {
+                    // The range is the part of the persisted chain that was
+                    // connected. A height in it with no block means the coverage
+                    // cannot be established rather than that there is nothing to
+                    // cover.
+                    spdlog::critical("[blockchain] No block at height {}, which the built height "
+                        "says was connected. Refusing to start on a chain whose undo coverage "
+                        "cannot be established.", height);
+                    return false;
+                }
+                auto const idx = persisted_chain_indices[at];
+                if (header_index_.has_undo_data(idx)) continue;
+
+                spdlog::critical("[blockchain] The block at height {} is connected but has no undo "
+                    "data. Its record is missing or names a block this index does not hold, which "
+                    "means it cannot be disconnected and no reorganization below this height can "
+                    "run. The UTXO set and undo data have to be rebuilt.", height);
+                return false;
+            }
+        }
 
         auto const scan_elapsed = std::chrono::steady_clock::now() - scan_start;
         auto const scan_ms = std::chrono::duration_cast<std::chrono::milliseconds>(scan_elapsed).count();
@@ -723,7 +848,11 @@ bool block_chain::store_block_undo(database::header_index::index_t idx,
         return false;
     }
 
-    auto const pos = block_store_->write_undo(undo, file_number, prev_hash);
+    // The record carries the owning block's hash so a restart can attribute it.
+    // Nothing else can: the checksum is seeded with the parent hash, so every
+    // sibling validates the same record (#603).
+    auto const pos = block_store_->write_undo(undo, file_number,
+        header_index_.get_hash(idx), prev_hash);
     if (pos.is_null()) {
         spdlog::error("[blockchain] store_block_undo: failed to write undo for index {}", idx);
         return false;
@@ -745,7 +874,7 @@ block_chain::read_block_undo(database::header_index::index_t idx, hash_digest co
         header_index_.get_file_number(idx),
         header_index_.get_undo_pos(idx)
     };
-    return block_store_->read_undo(pos, prev_hash);
+    return block_store_->read_undo(pos, header_index_.get_hash(idx), prev_hash);
 }
 
 #if ! defined(KTH_DB_READONLY)

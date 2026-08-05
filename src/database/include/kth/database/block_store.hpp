@@ -10,6 +10,7 @@
 #include <expected>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <vector>
 
 #include <kth/database/define.hpp>
@@ -85,13 +86,14 @@ struct KD_API block_store {
     [[nodiscard]]
     flat_file_pos write_block_at(data_chunk const& raw_block, flat_file_pos header_pos);
 
-    /// Write undo data for a block.
-    /// @param undo The undo data.
-    /// @param file_num File number where the block is stored.
-    /// @param prev_hash Hash of the previous block (for checksum).
-    /// @return Position where undo was saved, or null position on error.
+    /// Write a block's undo record into the rev file matching `file_num`.
+    /// `block_hash` identifies the owning block and is stored in the record —
+    /// nothing else on disk can attribute it (#603). `prev_hash` seeds the
+    /// checksum and is not stored.
+    /// @return Position of the payload (just past the header), or null on error.
     [[nodiscard]]
-    flat_file_pos write_undo(block_undo const& undo, int32_t file_num, hash_digest const& prev_hash);
+    flat_file_pos write_undo(block_undo const& undo, int32_t file_num,
+                             hash_digest const& block_hash, hash_digest const& prev_hash);
 
     // =========================================================================
     // Read Operations
@@ -135,13 +137,14 @@ struct KD_API block_store {
     std::expected<std::vector<data_chunk>, result_code>
     read_blocks_raw(std::vector<flat_file_pos> const& positions) const;
 
-    /// Read undo data from disk.
-    /// @param pos Position of the undo data.
-    /// @param prev_hash Hash of the previous block (for checksum verification).
-    /// @return Undo data or error.
-    [[nodiscard]]
-    std::expected<block_undo, result_code>
-    read_undo(flat_file_pos const& pos, hash_digest const& prev_hash) const;
+    /// Read a block's undo record. `block_hash` is the block the caller believes
+    /// owns the record, and the record must agree — a wrong position would
+    /// otherwise return some other block's undo, and the checksum cannot catch
+    /// the sibling case, since siblings share its seed. `prev_hash` seeds the
+    /// checksum, as at write time.
+    [[nodiscard]] std::expected<block_undo, result_code>
+    read_undo(flat_file_pos const& pos, hash_digest const& block_hash,
+              hash_digest const& prev_hash) const;
 
     /// Scan all block files and invoke callback for each block found.
     /// Used on startup to rebuild in-memory block position index.
@@ -149,8 +152,66 @@ struct KD_API block_store {
     /// @return Number of blocks scanned.
     using block_position_callback = std::function<void(int32_t, uint32_t, hash_digest const&)>;
 
+    /// One recovered undo record: where it is, and which block owns it.
+    struct undo_location {
+        int32_t file_number;
+        uint32_t position;
+        hash_digest block_hash;
+    };
+
+    /// Why a scan stopped. Only `clean_eof` means the files were whole; every
+    /// other value has to keep the database from looking healthy, which is why
+    /// they are named apart rather than folded into one failure.
+    enum class undo_scan_status {
+        clean_eof,          ///< Every record read; nothing left but empty space.
+        legacy_format,      ///< A record written before it carried its block's hash.
+        invalid_marker,     ///< A marker that is neither this format's nor the old one's.
+        truncated_record,   ///< A header or payload that does not fit the file.
+        invalid_size,       ///< A payload size that cannot be right.
+        io_error,           ///< A seek or read failed.
+
+        invalid_checksum,   ///< A record whose contents do not match its checksum.
+        duplicate_record,   ///< Two records claiming the same block.
+    };
+
+    struct undo_scan_result {
+        undo_scan_status status;
+        std::vector<undo_location> found;   ///< Only meaningful when clean_eof.
+
+        /// Records naming a block the index does not hold. Not an error: a
+        /// restart rebuilds the index from the active chain only, so a branch
+        /// that lost a reorganization is forgotten while its undo records stay
+        /// in the files. They are counted rather than refused, because nothing
+        /// on disk distinguishes that from a genuine disagreement — and the
+        /// first is ordinary.
+        size_t unattributed{0};
+        int32_t file_number{-1};            ///< Where it stopped, for diagnosis.
+        uint32_t position{0};
+        hash_digest block_hash{};
+    };
+
+    /// Resolves a record's owning block to the hash its checksum is seeded with,
+    /// so the scan can verify a record rather than trust its header. Returns
+    /// nullopt when the block is not in the index, which is ordinary after a
+    /// reorganization: see undo_scan_result::unattributed.
+    using undo_parent_lookup = std::function<std::optional<hash_digest>(hash_digest const&)>;
+
     [[nodiscard]]
     size_t scan_block_positions(block_position_callback const& callback) const;
+
+    /// Walk the rev files and recover every undo record, so the header index can
+    /// be rebuilt at startup the way block positions already are.
+    ///
+    /// Each record is validated structurally — marker, size, bounds — and each
+    /// one whose block the index still holds is validated fully, against that
+    /// block's parent. Records naming a forgotten block cannot be checked further
+    /// and are counted rather than trusted; the coverage of the connected chain
+    /// is what protects against one of those being an active record in disguise. Nothing is
+    /// reported until every file has been read, so a failure late in the last
+    /// file cannot leave earlier records already applied — a half-restored index
+    /// is worse than none, because it looks complete.
+    [[nodiscard]]
+    undo_scan_result scan_undo_positions(undo_parent_lookup const& parent_of) const;
 
     // =========================================================================
     // Maintenance
@@ -192,7 +253,8 @@ private:
 
     /// Write undo to disk at position.
     [[nodiscard]]
-    bool write_undo_to_disk(block_undo const& undo, flat_file_pos& pos, hash_digest const& prev_hash);
+    bool write_undo_to_disk(block_undo const& undo, flat_file_pos& pos,
+                            hash_digest const& block_hash, hash_digest const& prev_hash);
 
     std::filesystem::path blocks_dir_;
     magic_t magic_;

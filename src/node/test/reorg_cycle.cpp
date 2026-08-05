@@ -4,6 +4,9 @@
 
 #include <test_helpers.hpp>
 
+#include <cstdio>
+#include <filesystem>
+
 #include <chrono>
 #include <vector>
 
@@ -515,4 +518,164 @@ TEST_CASE("a switch whose header write fails is fatal, and the restart is cohere
     auto const retry = fixture.organizer().add_headers(headers_of(branch_b));
     CHECK(retry.reorg_candidate);
     CHECK(retry.reorg_fork_height == int32_t(trunk_len));
+}
+
+TEST_CASE("a reorganization after a restart can disconnect what was connected before it",
+          "[reorg][cycle][restart]") {
+    // The restart test above reorganizes and *then* restarts, so nothing it
+    // disconnects was connected in an earlier process. This is the other order,
+    // and it is the one that needs undo data to survive: the blocks being rolled
+    // back were connected before the node came down.
+    //
+    // Undo records live in the rev files and their positions live in the header
+    // index, which is rebuilt at startup. Whether that rebuild restores them is
+    // exactly what this pins.
+    test::chain_fixture fixture("reorg_after_restart");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    constexpr uint32_t trunk_len = 12;
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const base_time = uint32_t(zulu_time()) - (trunk_len + 30) * block_spacing;
+
+    std::vector<domain::chain::block> trunk;
+    auto prev = genesis.hash();
+    for (uint32_t h = 1; h <= trunk_len; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(trunk)).headers_added == trunk_len);
+    persist_headers(fixture, trunk, 1);
+    connect_bodies(fixture, trunk, 1);
+
+    // Branch A, connected in this process: two blocks that a later branch will
+    // have to roll back.
+    std::vector<domain::chain::block> branch_a;
+    prev = trunk.back().hash();
+    for (uint32_t h = 13; h <= 14; ++h) {
+        branch_a.push_back(test::mine_block(prev, h, base_time + h * block_spacing, 1, {}, 0));
+        prev = branch_a.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(branch_a)).headers_added == 2);
+    persist_headers(fixture, branch_a, 13);
+    connect_bodies(fixture, branch_a, 13);
+
+    {
+        auto const built = fixture.chain().get_utxo_built_height();
+        REQUIRE(built);
+        REQUIRE(*built == 14);
+    }
+
+    // Undo data exists for them, in this process.
+    {
+        auto& index = fixture.chain().headers();
+        for (uint32_t h = 13; h <= 14; ++h) {
+            auto const idx = index.active_at(int32_t(h));
+            REQUIRE(idx != blockchain::header_index::null_index);
+            INFO("before the restart, height " << h);
+            CHECK(index.has_undo_data(idx));
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Drop everything held in memory. The rev files stay on disk.
+    // -------------------------------------------------------------------------
+    REQUIRE(fixture.restart());
+
+    {
+        auto& index = fixture.chain().headers();
+        for (uint32_t h = 13; h <= 14; ++h) {
+            auto const idx = index.active_at(int32_t(h));
+            REQUIRE(idx != blockchain::header_index::null_index);
+            INFO("after the restart, height " << h);
+            CHECK(index.has_undo_data(idx));
+        }
+    }
+
+    // Branch B forks at 12 and outweighs A, so switching to it has to disconnect
+    // 13 and 14 — the two connected before the restart.
+    std::vector<domain::chain::block> branch_b;
+    prev = trunk.back().hash();
+    for (uint32_t h = 13; h <= 15; ++h) {
+        branch_b.push_back(test::mine_block(prev, h, base_time + h * block_spacing + 60, 2, {}, 0));
+        prev = branch_b.back().hash();
+    }
+    auto const b_result = fixture.organizer().add_headers(headers_of(branch_b));
+    REQUIRE(b_result.reorg_candidate);
+
+    reorg_outcome reorg;
+    {
+        ::asio::io_context switch_ctx;
+        ::asio::co_spawn(switch_ctx,
+            execute_reorg(fixture.chain(), fixture.organizer(), b_result.reorg_branch_head,
+                trunk_len, [] { return false; }, real_persister(fixture.chain())),
+            [&reorg](std::exception_ptr, reorg_outcome result) { reorg = result; });
+        switch_ctx.run_for(std::chrono::seconds(30));
+    }
+
+    INFO("the switch has to disconnect two blocks connected before the restart");
+    REQUIRE(reorg.result.ok);
+    REQUIRE_FALSE(reorg.fatal);
+
+    connect_bodies(fixture, branch_b, 13);
+
+    auto const built = fixture.chain().get_utxo_built_height();
+    REQUIRE(built);
+    CHECK(*built == 15);
+}
+
+TEST_CASE("an undo record whose block hash was altered stops the node starting",
+          "[reorg][cycle][restart]") {
+    // What justifies skipping a record whose block the index does not hold. That
+    // is ordinary for a branch that lost a reorganization, and locally
+    // indistinguishable from an active record with a flipped bit in its stored
+    // hash — which would otherwise leave a connected block quietly without undo,
+    // unable to be disconnected, and nothing would say so.
+    //
+    // The separation is global rather than local: every block on the active chain
+    // that was connected must still have its undo. Altering one hash makes that
+    // coverage short, and the start has to refuse.
+    test::chain_fixture fixture("undo_hash_altered");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    constexpr uint32_t trunk_len = 6;
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const base_time = uint32_t(zulu_time()) - (trunk_len + 30) * block_spacing;
+
+    std::vector<domain::chain::block> trunk;
+    auto prev = genesis.hash();
+    for (uint32_t h = 1; h <= trunk_len; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(trunk)).headers_added == trunk_len);
+    persist_headers(fixture, trunk, 1);
+    connect_bodies(fixture, trunk, 1);
+
+    {
+        auto const built = fixture.chain().get_utxo_built_height();
+        REQUIRE(built);
+        REQUIRE(*built == trunk_len);
+    }
+
+    // Flip a bit of the first record's stored block hash, which sits four bytes
+    // past the marker. The checksum still passes — it covers the payload and is
+    // seeded with the parent — so nothing but the coverage check can catch this.
+    auto const rev_path = fixture.dir() / "blocks" / "rev00000.dat";
+    REQUIRE(std::filesystem::exists(rev_path));
+    {
+        FILE* file = std::fopen(rev_path.string().c_str(), "r+b");
+        REQUIRE(file != nullptr);
+        REQUIRE(std::fseek(file, 4, SEEK_SET) == 0);
+        int const original = std::fgetc(file);
+        REQUIRE(original != EOF);
+        REQUIRE(std::fseek(file, 4, SEEK_SET) == 0);
+        REQUIRE(std::fputc(original ^ 0x01, file) != EOF);
+        std::fclose(file);
+    }
+
+    // The altered record now names a block the index does not hold, so the scan
+    // passes it over — and the block it belonged to is left without undo.
+    CHECK_FALSE(fixture.restart());
 }

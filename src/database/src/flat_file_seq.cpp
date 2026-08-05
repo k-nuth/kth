@@ -4,6 +4,8 @@
 
 #include <kth/database/flat_file_seq.hpp>
 
+#include <kth/database/native_file.hpp>
+
 #include <cerrno>
 #include <cstdio>
 #include <stdexcept>
@@ -48,7 +50,7 @@ FILE* flat_file_seq::open(flat_file_pos const& pos, bool read_only) const {
     auto const path = file_name(pos);
 
     // Try to open existing file
-    FILE* file = std::fopen(path.c_str(), read_only ? "rb" : "rb+");
+    FILE* file = open_native(path, read_only ? "rb" : "rb+");
 
     if (!file) {
         // Create directory if needed
@@ -58,7 +60,7 @@ FILE* flat_file_seq::open(flat_file_pos const& pos, bool read_only) const {
 
     // For write mode, create if doesn't exist
     if (!file && !read_only) {
-        file = std::fopen(path.c_str(), "wb+");
+        file = open_native(path, "wb+");
     }
 
     if (!file) {
