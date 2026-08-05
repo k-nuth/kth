@@ -712,8 +712,37 @@ not the same claim, and only the first comes free. What the first does buy is
 that **no historical lookup per inserted output is needed, and none is asked
 for** — the delta a valid chain produces does not create the ambiguity.
 
-**Why that is not enough on its own.** Consensus proves the *logical* state is
-unique. It says nothing about whether an *existing physical database* is sound: a
+### Two durable markers, for two different things
+
+They are easy to conflate and they answer different questions:
+
+- **the validated-invariant marker** — records that the database completed the
+  global uniqueness validation. Missing, or left behind by an interrupted
+  migration, the validation is repeated or the database is refused. **Full
+  validation belongs to migration, not to every open**: a scan over tens of
+  millions of keys is not something to pay at each startup, and a normal open only
+  checks the marker.
+
+  **It is bound to the invariant schema's version, not to the catalogue
+  generation.** The generation advances during ordinary work; tying the
+  certification to it would invalidate it after every compaction or rotation and
+  demand another full scan. The two are different things: a schema epoch changes
+  only when a migration is required, while an operational generation may advance
+  and keep the certification — provided the operation completed and preserved the
+  invariant.
+
+  Which puts a duty on any durable mutation that could leave the state ambiguous.
+  It must either **carry the certification across atomically**, or **mark it dirty
+  before mutating and restore it only on completion**. #600 covers batches;
+  compaction and rotation need the equivalent rule unless they are crash-atomic.
+- **the in-flight batch marker** (#600) — records that a mutation of the set
+  began and did not complete delta, deletions and height recoverably.
+
+Neither substitutes for the other. The first says the database was ever known
+sound; the second says whether the last thing done to it finished.
+
+**Why consensus is not enough on its own.** Consensus proves the *logical* state
+is unique. It says nothing about whether an *existing physical database* is sound: a
 storage bug, an interrupted transition or older behaviour could have left a
 duplicate, after BIP34 as much as before. So **migration validates the invariant
 over the whole database**, not only over pre-BIP34 history. After that, transitions
@@ -728,10 +757,36 @@ that transitions preserve the invariant by construction is a target rather than 
 fact**, and this document should not be read as asserting it of the current
 node.
 
-**Duplicates may exist transiently inside an exclusive phase** — an old copy and
-its reinsertion can coexist while a batch is being applied. That is fine while
-nothing can read them. The delta must reconcile them before the batch is
-published and the barrier released.
+**Only one kind of transient duplicate is legitimate**, and the distinction
+decides whether an operation carries on or stops.
+
+**Legitimate: relocation.** While rotation or compaction moves an entry, the copy
+exists in the target before it is erased from the source. Their contents are
+indistinguishable, so no semantic tie-break is needed — but the relocation must
+still complete according to its own operation state: **retain the target, erase
+the source**, before publication. "Either one will do" is true of their contents
+and false of the operation, and only the operation in flight knows the pair is
+its own.
+
+**Not legitimate: a logical insert or an undo finding the key already there.** An
+undo reinserts what a block *spent*, so the key it restores was removed when that
+block connected. Finding it still present means that removal never happened —
+evidence of a failed earlier deletion, not a phase. This must **fail**, not be
+absorbed.
+
+**A collision already present when an operation begins is fatal, even if the two
+entries are identical.** Compaction is the case that matters, since it sees both
+copies at once and is therefore the best detection point the store has. It must
+not read a collision as "probably left over from some earlier relocation" and
+tidy it away: without a journal proving whose relocation it was, that claim
+cannot be made, and dropping one copy destroys the evidence of exactly the
+inconsistency the rest of this design exists to catch. **Only the operation
+currently moving an entry knows its own source/target pair is transient.**
+
+And more generally: **no persisted duplicate is repairable without a journal or
+an authoritative source.** Not by height — a reorg can leave an abandoned copy
+newer than the live one, so height carries no branch identity — and not by
+position.
 
 **A second eligible entry in a published state is local inconsistency**, and is
 reported as a fatal error. It is never resolved by picking one — not by order,
@@ -739,8 +794,9 @@ not by height. Choosing would hide a corrupt database behind a plausible answer.
 
 But **do not promise that every lookup detects it**: with early exit, a lookup
 that finds the first eligible entry stops, and cannot know a second exists.
-Detection belongs to migration and open-time validation, to operations that can
-check as they go, and to explicit auditing.
+Detection belongs to migration, to the marker check a normal open performs, to
+operations that can check as they go, and to explicit auditing — not to a full
+scan at every startup.
 
 The summary of section 2 can make any of those checks cheaper. It stays an
 optional accelerator; the invariant is what makes the contract correct.
