@@ -20,6 +20,7 @@ struct mempool_stats {
     std::atomic<uint64_t> add_inserted{0};
     std::atomic<uint64_t> add_rejected_duplicate{0};
     std::atomic<uint64_t> add_rejected_conflict{0};
+    std::atomic<uint64_t> add_rejected_self_conflict{0};
     std::atomic<uint64_t> add_time_ns{0};
 
     // Block connect / reorg eviction.
@@ -52,7 +53,8 @@ struct mempool_stats {
 
     void reset_all() {
         add_calls = 0; add_inserted = 0; add_rejected_duplicate = 0;
-        add_rejected_conflict = 0; add_time_ns = 0;
+        add_rejected_conflict = 0; add_rejected_self_conflict = 0;
+        add_time_ns = 0;
         remove_for_block_calls = 0; removed_confirmed = 0; removed_conflict = 0;
         remove_time_ns = 0;
         resolve_calls = 0; resolve_hits = 0; resolve_time_ns = 0;
