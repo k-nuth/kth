@@ -647,9 +647,47 @@ after being made optional.
 The same shape, for the same reasons.
 
 ```
-erase(key, height)                        -> erased | not_in_active_map | error
+erase(request)                            -> erased | needs_resolution | error
 resolve_deletions(span<request const>)    -> { erased_count, absent, unresolved, cancelled }
 ```
+
+### The creation-height bound applies here too, identically
+
+Section 2 settles what the height on a lookup means — `max_creation_height`, a
+bound on which entries are eligible — and section 3 restates the rule the
+resolver needs. **Deletion was left silent on both, and it is the side that
+mutates.** A lookup that applies the bound wrongly returns a wrong answer; a
+delete that applies it wrongly **removes the wrong entry**, and that does not
+undo.
+
+So, in full and with nothing left to infer:
+
+- `erase(request)` removes from the active map **only if the entry it finds is
+  eligible** under the request's bound;
+- an active entry that is **too new is not erased**, and the answer is
+  **`needs_resolution`**, exactly as the probe's is. Not "not in the active map":
+  the entry *is* there, it is simply not eligible, and a name that says otherwise
+  would be false and would leave the caller translating it with knowledge the
+  answer failed to carry. One outcome covers both reasons a delete cannot settle
+  from the active map — the key is absent from it, or present and ineligible —
+  and in both the caller carries the request on to `resolve_deletions`;
+- `resolve_deletions` walks versions in the **same order** `resolve_lookups`
+  does;
+- a too-new entry found in some version **does not count as erased and does not
+  authorize `absent`.** The walk continues into older versions;
+- `absent` is authoritative only after every relevant location has been exhausted
+  without an eligible entry.
+
+**And the rule that makes the two agree.** If reinsertions leave more than one
+eligible copy, the delete removes **exactly the entry a read would have returned
+for the same `{key, max_creation_height}`** — same traversal order, first
+eligible one wins.
+
+That is not a tidiness requirement. Validation resolves a prevout through a read
+and the delta then erases it through a delete; if the two resolve to different
+entries, the block is validated against one UTXO and spends another. Read and
+delete must identify the same one, and the only way to guarantee that is for them
+to search the same way.
 
 `erase` must touch only the active map. Today it also searches cached files
 inline, which puts a writer into the file cache from wherever it is called; that
