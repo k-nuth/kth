@@ -23,9 +23,6 @@ struct block_validation {
     uint64_t originator = 0;
     code error = error::not_found;
     domain::chain::chain_state::ptr state = nullptr;
-
-    // Simulate organization and instead just validate the block.
-    bool simulate = false;
 };
 
 /// Owns the per-block validation state keyed by block hash. See
