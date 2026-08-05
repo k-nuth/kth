@@ -411,6 +411,30 @@ within the transaction itself. With the keys sorted, two conflicting transaction
 try the same key first: one wins cleanly and the other fails having claimed
 nothing.
 
+### The conflict branch is where a double-spend proof is born
+
+Worth knowing before that code is touched again. Detecting a conflict is exactly
+the moment the node learns of a double spend, which is what a proof attests to —
+and admission today answers a conflict with a bare `false`. It reports neither
+the outpoint that conflicted nor the pooled transaction holding it, and a proof
+needs both.
+
+Nothing asks for that yet: no path creates a proof, none ingests one, and none
+validates one (#587). So this is a constraint on that work rather than something
+to build ahead of it — when proofs are implemented, the conflict result grows
+along with the code that consumes it.
+
+Canonical claim order helps here too, beyond picking a winner: it makes *which*
+outpoint this node reports as the conflict deterministic, so the same pair of
+transactions always yields the same proof candidate locally.
+
+It does not give a proof its identity, and it should not be read that way. That
+comes from the specification's ordering of the two spenders — by hash-outputs,
+and by hash-prevoutputs where those tie — which is a separate thing this code
+does not touch. Nor does it bind anyone else: when two transactions conflict on
+several outpoints, another implementation may pick a different one and build a
+different, equally valid proof.
+
 ### A block is not valid because its transactions are in the mempool
 
 That a transaction is pooled means it was validated against some chain state. A
