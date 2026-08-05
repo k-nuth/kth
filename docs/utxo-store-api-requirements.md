@@ -625,7 +625,7 @@ arrived disguised as a missing output.
 Cancelling must also leave nothing behind: no retained mapping, no partial state
 that a later call inherits.
 
-    resolve_lookups(...) -> { found, absent, unresolved, cancelled }
+    resolve_lookups(...) -> { found_count, absent, unresolved, cancelled }
 
 ### One consequence the node owns
 
@@ -648,7 +648,7 @@ The same shape, for the same reasons.
 
 ```
 erase(key, height)                        -> erased | not_in_active_map | error
-resolve_deletions(span<request const>)    -> { erased, absent, unresolved, cancelled }
+resolve_deletions(span<request const>)    -> { erased_count, absent, unresolved, cancelled }
 ```
 
 `erase` must touch only the active map. Today it also searches cached files
@@ -656,9 +656,12 @@ inline, which puts a writer into the file cache from wherever it is called; that
 has to go, for the same reason the probe must not touch it.
 
 Deletes are a writer's operation, so they do not need to scale the way probes do.
-What they need is to stop being ambiguous: an explicit outcome rather than a
-count or a bool that means different things. The partition rules of section 3
-apply here too, cancellation included.
+What they need is to stop being ambiguous: `erase` returns an explicit outcome
+rather than a count or a bool that means different things, while the batch result
+uses `erased_count` without duplicating the erased request identities. The caller
+already owns the input span, and the count together with the other three sets is
+enough to verify the partition. The partition rules of section 3 apply here too,
+cancellation included.
 
 ## 5. Writes, rotation and compaction
 
