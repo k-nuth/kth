@@ -22,6 +22,12 @@ struct outpoint_key {
     hash_digest hash{};
     uint32_t index{};
     friend bool operator==(outpoint_key const&, outpoint_key const&) = default;
+
+    // Ordering
+    // Any total order does, and this one is only ever used to claim a
+    // transaction's outpoints in the same sequence every caller would — see
+    // mempool::add. It says nothing about the chain.
+    friend auto operator<=>(outpoint_key const&, outpoint_key const&) = default;
 };
 
 // SipHash-based, salted hashers for the mempool keys — the Bitcoin Core / BCHN

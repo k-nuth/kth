@@ -187,6 +187,86 @@ TEST_CASE("mempool first-seen conflict rolls back partial claims", "[mempool][se
     CHECK(mp.size() == 2u);
 }
 
+TEST_CASE("mempool rejects a transaction that spends an outpoint twice", "[mempool][serial]") {
+    // Admission never sends one of these — check() rejects an internal double
+    // spend first — so this is the guard for callers that did not come that way.
+    // What matters is that it is turned away without leaving a claim behind: the
+    // outpoint has to stay free for the transaction that legitimately spends it.
+    mempool mp{0x1111u, 0x2222u};
+
+    auto const P = op(1, 0);
+    auto const self = make_tx({P, P}, 1, 1);
+    auto const other = make_tx({P}, 1, 2);
+
+    REQUIRE_FALSE(mp.add(entry_for(self, 1)));
+    CHECK(mp.size() == 0u);
+
+    REQUIRE(mp.add(entry_for(other, 2)));
+    CHECK(mp.contains(other.hash()));
+}
+
+TEST_CASE("mempool first-seen picks a winner however inputs are ordered", "[mempool][concurrent]") {
+    // The reason claims are made in a canonical order rather than in input
+    // order. Two transactions spending the same pair of outpoints, one listing
+    // them {P,Q} and the other {Q,P}, race: claiming in input order lets each
+    // take one, fail on the other, and roll back — both rejected, when exactly
+    // one should win. Sorted, they contend on the same key first.
+    //
+    // Serially this is invisible: whoever runs first takes both. Only the race
+    // shows it. The assertion is absolute — exactly one of each pair, always —
+    // but noticing a regression depends on the race landing, and the window is
+    // two atomic inserts wide. Hence the rounds: each pair is an independent
+    // chance, and rounds buy chances without buying threads. Removing the sort
+    // fails this within a couple of rounds; it has never failed with it.
+    constexpr size_t rounds = 24;
+    constexpr size_t pairs = 64;
+
+    for (size_t round = 0; round < rounds; ++round) {
+        mempool mp{0x1111u, 0x2222u};
+
+        std::vector<transaction> first;
+        std::vector<transaction> second;
+        first.reserve(pairs);
+        second.reserve(pairs);
+        for (size_t i = 0; i < pairs; ++i) {
+            auto const P = op(1000 + i * 2, 0);
+            auto const Q = op(1000 + i * 2 + 1, 0);
+            first.push_back(make_tx({P, Q}, 1, 2 * i));
+            second.push_back(make_tx({Q, P}, 1, 2 * i + 1));
+        }
+
+        // Released together, so the two halves of a pair are actually inside
+        // add() at the same time. Spawning them in order lets the first finish
+        // before the second starts, and then there is no race to observe.
+        std::atomic<bool> go{false};
+        auto const run = [&go](mempool& pool, transaction const& tx, uint64_t tag) {
+            while ( ! go.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            pool.add(entry_for(tx, tag));
+        };
+
+        std::vector<std::thread> threads;
+        threads.reserve(pairs * 2);
+        for (size_t i = 0; i < pairs; ++i) {
+            threads.emplace_back(run, std::ref(mp), std::cref(first[i]), 2 * i);
+            threads.emplace_back(run, std::ref(mp), std::cref(second[i]), 2 * i + 1);
+        }
+        go.store(true, std::memory_order_release);
+        for (auto& t : threads) {
+            t.join();
+        }
+
+        for (size_t i = 0; i < pairs; ++i) {
+            auto const a = mp.contains(first[i].hash());
+            auto const b = mp.contains(second[i].hash());
+            INFO("round " << round << " pair " << i << ": first=" << a << " second=" << b);
+            REQUIRE(a != b);
+        }
+        REQUIRE(mp.size() == pairs);
+    }
+}
+
 TEST_CASE("mempool rejects duplicate txid", "[mempool][serial]") {
     mempool mp{0x1111u, 0x2222u};
 

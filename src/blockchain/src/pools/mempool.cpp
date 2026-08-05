@@ -47,27 +47,52 @@ bool mempool::add(mempool_entry entry) {
 
     // First-seen: atomically claim every spent outpoint. On any conflict, roll
     // back the claims already made and reject.
-    std::vector<outpoint_key> reserved;
-    reserved.reserve(tx.inputs().size());
+    //
+    // The claims go in a canonical order, not in input order, and that is what
+    // makes first-seen actually pick a winner. Two transactions spending the same
+    // outpoints listed differently — one {a,b}, the other {b,a} — would each take
+    // one, each fail on the other, and each roll back: both rejected, when exactly
+    // one should be admitted. Sorted, they contend on the same key first, so one
+    // wins outright and the other fails having claimed nothing.
+    std::vector<outpoint_key> keys;
+    keys.reserve(tx.inputs().size());
     for (auto const& in : tx.inputs()) {
         auto const& op = in.previous_output();
-        outpoint_key const key{op.hash(), op.index()};
+        keys.push_back({op.hash(), op.index()});
+    }
+    std::ranges::sort(keys);
+
+    // Sorting also puts a repeated outpoint next to itself. A transaction that
+    // spends one twice never reaches here through admission — check() rejects it
+    // as an internal double spend — so this guards the callers that did not come
+    // that way. Without it such a transaction would fail below and be reported as
+    // conflicting with another one, when what it conflicts with is itself.
+    if (std::ranges::adjacent_find(keys) != keys.end()) {
+        KTH_STATS_INCREMENT(stats_, add_rejected_self_conflict);
+        KTH_STATS_TIME_ADD(stats_, add, add_time_ns);
+        return false;
+    }
+
+    auto const release = [this, &keys](size_t claimed) {
+        for (size_t i = 0; i < claimed; ++i) {
+            spent_by_.erase(keys[i]);
+        }
+    };
+
+    size_t claimed = 0;
+    for (auto const& key : keys) {
         if ( ! spent_by_.try_insert(key, txid)) {
-            for (auto const& k : reserved) {
-                spent_by_.erase(k);
-            }
+            release(claimed);
             KTH_STATS_INCREMENT(stats_, add_rejected_conflict);
             KTH_STATS_TIME_ADD(stats_, add, add_time_ns);
             return false;
         }
-        reserved.push_back(key);
+        ++claimed;
     }
 
     // Commit the transaction; release the claims if it is a duplicate.
     if ( ! pool_.try_insert(txid, std::move(entry))) {
-        for (auto const& k : reserved) {
-            spent_by_.erase(k);
-        }
+        release(claimed);
         KTH_STATS_INCREMENT(stats_, add_rejected_duplicate);
         KTH_STATS_TIME_ADD(stats_, add, add_time_ns);
         return false;
