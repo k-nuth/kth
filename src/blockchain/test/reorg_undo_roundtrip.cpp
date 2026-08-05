@@ -69,6 +69,27 @@ struct db_source {
     }
 };
 
+// A source that fails every read the way a broken storage layer would, to reach
+// the branch a working database cannot produce on demand.
+struct failing_source {
+    result_code error{result_code::other};
+    mutable size_t reads{0};
+    size_t sweeps{0};
+
+    std::expected<utxoz_database::raw_stored, result_code> find_utxo_raw(
+        utxoz::raw_outpoint const&, uint32_t) const {
+        ++reads;
+        return std::unexpected(error);
+    }
+
+    std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, utxoz_database::raw_stored>,
+              std::vector<utxoz::raw_outpoint>>
+    utxo_process_pending_lookups_raw() {
+        ++sweeps;
+        return {};
+    }
+};
+
 } // namespace
 
 // =============================================================================
@@ -206,4 +227,67 @@ TEST_CASE("find_raw reports a miss for an unknown outpoint", "[reorg][undo]") {
     auto const missed = db.find_raw(make_outpoint(42, 3), 1);
     REQUIRE_FALSE(missed.has_value());
     CHECK(missed.error() == result_code::key_not_found);   // the documented contract
+}
+
+// =============================================================================
+// Telling a failed read apart from a missing output
+// =============================================================================
+//
+// find_utxo_raw answers key_not_found for "queued for the deferred sweep" and
+// other codes for a read that failed. Capture used to queue both, so a storage
+// failure came back out as a missing output — the caller told the set does not
+// hold what a block spends, when what happened is that it could not be asked.
+
+TEST_CASE("a failed read is reported as itself, not as a missing output", "[reorg][undo]") {
+    failing_source source{result_code::other, 0, 0};
+
+    utxo_raw_delta delta;
+    delta.deletes.emplace(make_outpoint(7, 0), 900u);
+    utxo_raw_delta const empty_batch;
+
+    auto const captured = capture_block_undo(delta, empty_batch, source, 900u);
+
+    REQUIRE_FALSE(captured.has_value());
+    CHECK(captured.error() == result_code::other);
+
+    // And it did not go through the deferred sweep: queueing a read that failed
+    // is what turned it into a missing output in the first place.
+    CHECK(source.sweeps == 0);
+}
+
+TEST_CASE("an output still missing after the sweep is reported as not found", "[reorg][undo]") {
+    // The other half of the split: key_not_found is what the sweep is for, so it
+    // is queued, swept, and only then reported — and it now means only this.
+    failing_source source{result_code::key_not_found, 0, 0};
+
+    utxo_raw_delta delta;
+    delta.deletes.emplace(make_outpoint(8, 0), 900u);
+    utxo_raw_delta const empty_batch;
+
+    auto const captured = capture_block_undo(delta, empty_batch, source, 900u);
+
+    REQUIRE_FALSE(captured.has_value());
+    CHECK(captured.error() == result_code::key_not_found);
+    CHECK(source.sweeps == 1);
+}
+
+TEST_CASE("an output the same batch created needs no read at all", "[reorg][undo]") {
+    // The in-flight parent case, pinned here because it is what keeps a failing
+    // source from being consulted: the batch delta answers first.
+    failing_source source{result_code::other, 0, 0};
+
+    auto const key = make_outpoint(9, 0);
+    utxo_raw_delta delta;
+    delta.deletes.emplace(key, 900u);
+
+    utxo_raw_delta batch;
+    batch.inserts.emplace(key, utxo_raw_value{data_chunk{0x01, 0x02}, 899u});
+
+    auto const captured = capture_block_undo(delta, batch, source, 900u);
+
+    REQUIRE(captured.has_value());
+    REQUIRE(captured->spent.size() == 1);
+    CHECK(captured->spent.front().height == 899u);
+    CHECK(source.reads == 0);
+    CHECK(source.sweeps == 0);
 }

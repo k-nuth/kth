@@ -2060,14 +2060,28 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             if (h > checkpoint_height) {
                 auto undo = blockchain::capture_block_undo(block_delta, delta, chain, h);
                 if ( ! undo) {
-                    // Before the delta is applied, so nothing is half-done and this
-                    // could in principle be retried. It is not, because the failure
-                    // is not distinguishable here: a prevout missing because the
-                    // block is invalid, a read that failed, and a delta that does
-                    // not match the set all arrive as the same absence, and
-                    // retrying the last two forever would be worse than stopping.
-                    spdlog::error("[utxo_build] Failed to capture undo data at height {}; the UTXO "
-                        "build stops with nothing applied for this batch", h);
+                    // Nothing is applied yet, so the state is clean — but neither
+                    // cause is one to retry into. A read that failed is storage
+                    // that is not answering; an output the set does not have,
+                    // after this batch has already validated, is the set and the
+                    // delta disagreeing. Both are local and both persist.
+                    if (undo.error() == database::result_code::key_not_found) {
+                        // Here — and not in capture_block_undo, which cannot know
+                        // this — the reading is unambiguous: undo data is captured
+                        // above the checkpoint, where this batch has already passed
+                        // full validation, and that resolves every prevout against
+                        // UTXO-Z or against a batch output created at or below the
+                        // height being validated. A block cannot spend one from a
+                        // later block. So the block is not the problem: the set and
+                        // the delta describing it disagree.
+                        spdlog::critical("[utxo_build] The UTXO set does not hold an output the "
+                            "block at height {} spends, which validation resolved", h);
+                        on_fatal("the UTXO set and the delta built from it disagree");
+                    } else {
+                        spdlog::critical("[utxo_build] Could not read the outputs the block at "
+                            "height {} spends", h);
+                        on_fatal("the UTXO set could not be read while capturing undo data");
+                    }
                     co_return;
                 }
                 pending_undo.emplace_back(idx, std::move(*undo),

@@ -174,13 +174,22 @@ KB_API utxo_raw_delta process_compact_block_utxos(
 //   - UTXO-Z — everything older, read verbatim (no resolution) via find_raw,
 //     honouring its two-phase contract (a miss is queued, not absent).
 //
-// Returns an error if any spent output cannot be located, since undo data that
-// silently drops entries would corrupt the UTXO set on disconnect.
+// Fails rather than drop an entry, since undo data missing one would corrupt the
+// UTXO set on disconnect. The two ways to fail are kept apart, because they mean
+// different things:
+//   key_not_found — the delta says an output is spent that the set does not
+//                   have, once the deferred sweep has run;
+//   anything else — the source could not be read at all.
+// Neither is interpreted here: this function does not know what the caller knows
+// about the block. One that knows it passed validation can conclude more from
+// the first than one that does not (see utxo_build_task).
+//
 // `source` is anything exposing the two raw lookups this needs:
 //     std::expected<utxoz_database::raw_stored, result_code> find_utxo_raw(key, height)
 //     pair<map<key, raw_stored>, vector<key>>              utxo_process_pending_lookups_raw()
 // block_chain satisfies it in production; a test can substitute a thin adapter
-// over a utxoz_database, which is what keeps this function directly testable.
+// over a utxoz_database — or one that fails on purpose, which is how the two
+// branches above are covered.
 template <typename UtxoSource>
 [[nodiscard]]
 std::expected<database::block_undo, database::result_code> capture_block_undo(
@@ -207,9 +216,20 @@ std::expected<database::block_undo, database::result_code> capture_block_undo(
         auto stored = source.find_utxo_raw(key, height);
         if (stored) {
             undo.spent.push_back({key, std::move(stored->value), stored->height});
-        } else {
-            deferred.push_back(key);
+            continue;
         }
+
+        // Only key_not_found means "queued for the deferred sweep". Anything else
+        // is a read that failed, and queueing it would turn a storage error into a
+        // missing output — the caller would be told the set does not have what the
+        // block spends, when what happened is that it could not be asked.
+        if (stored.error() != database::result_code::key_not_found) {
+            spdlog::error("[utxo_builder] capture_block_undo: reading a spent output failed at "
+                "height {}", height);
+            return std::unexpected(stored.error());
+        }
+
+        deferred.push_back(key);
     }
 
     if ( ! deferred.empty()) {
@@ -218,13 +238,17 @@ std::expected<database::block_undo, database::result_code> capture_block_undo(
         for (auto const& key : deferred) {
             auto it = resolved.find(key);
             if (it == resolved.end()) {
-                // The block spends an output the UTXO set does not have. Either
-                // the block should not have validated, or the set is corrupt —
-                // either way, undo data that silently dropped it would corrupt
-                // the set further on disconnect.
+                // The delta says this output is spent and the set does not have
+                // it. What that means depends on what the caller already knows
+                // about the block — this function does not know, and does not
+                // guess; it reports the fact and leaves the reading to whoever
+                // called (see the UTXO build, which knows the block validated).
+                //
+                // key_not_found means exactly this and nothing else now: a read
+                // that failed took the branch above.
                 spdlog::error("[utxo_builder] capture_block_undo: spent output not found at height {} "
-                    "({} of {} deferred lookups unresolved) — cannot build undo data",
-                    height, missing.size(), deferred.size());
+                    "({} of {} deferred lookups unresolved) — the delta and the UTXO set disagree "
+                    "about it", height, missing.size(), deferred.size());
                 return std::unexpected(database::result_code::key_not_found);
             }
             undo.spent.push_back({key, it->second.value, it->second.height});
