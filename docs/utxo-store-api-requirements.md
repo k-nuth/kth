@@ -678,16 +678,78 @@ So, in full and with nothing left to infer:
 - `absent` is authoritative only after every relevant location has been exhausted
   without an eligible entry.
 
-**And the rule that makes the two agree.** If reinsertions leave more than one
-eligible copy, the delete removes **exactly the entry a read would have returned
-for the same `{key, max_creation_height}`** — same traversal order, first
-eligible one wins.
+**And the invariant that makes "the first eligible one" the right answer.**
 
-That is not a tidiness requirement. Validation resolves a prevout through a read
-and the delta then erases it through a delete; if the two resolve to different
-entries, the block is validated against one UTXO and spends another. Read and
-delete must identify the same one, and the only way to guarantee that is for them
-to search the same way.
+> For a given `{key, max_creation_height}`, a published state holds **at most one
+> eligible entry**.
+
+Since that has to hold for **every** bound, it is the same as saying:
+
+> A published state contains **at most one physical entry per key**.
+
+Worth writing both ways, because the second is what migration validates. It looks
+for duplicate physical keys across the whole database, without depending on any
+particular bound being chosen to reveal them.
+
+So "first eligible wins" is not a tie-breaking convention. There is nothing to
+break: a read and a delete identify the same entry because only one exists. That
+is what lets both keep their early exit — stopping at the first eligible entry is
+correct rather than merely consistent — and with it the borrowed sink, which
+could not survive having to hold candidates back in case a better one appeared
+later in the walk.
+
+**Why it holds going forward.** Consensus ensures a valid published UTXO view
+cannot contain two spendable entries for the same outpoint: BIP30 prevents a
+transaction from overwriting an earlier instance that still has spendable
+outputs, and BIP34 makes coinbase transactions unique by height, removing the
+practical source of duplicate transaction chains. Stated no more strongly than
+that — BIP30 does permit a txid to repeat once the earlier instance has nothing
+spendable left.
+
+**Consensus constrains the logical delta; the store remains responsible for
+applying that delta without publishing duplicate physical entries.** The two are
+not the same claim, and only the first comes free. What the first does buy is
+that **no historical lookup per inserted output is needed, and none is asked
+for** — the delta a valid chain produces does not create the ambiguity.
+
+**Why that is not enough on its own.** Consensus proves the *logical* state is
+unique. It says nothing about whether an *existing physical database* is sound: a
+storage bug, an interrupted transition or older behaviour could have left a
+duplicate, after BIP34 as much as before. So **migration validates the invariant
+over the whole database**, not only over pre-BIP34 history. After that, transitions
+maintain it, provided a batch is never published half-applied.
+
+**That proviso is a requirement, and the node does not meet it today** (#600).
+The built-height marker is persisted before the batch's deferred deletions run,
+and a failed deletion is logged rather than acted on — so a batch can be recorded
+as connected while an entry that should have been removed is still there, with no
+rollback and nothing telling the next start. Until that is closed, **the claim
+that transitions preserve the invariant by construction is a target rather than a
+fact**, and this document should not be read as asserting it of the current
+node.
+
+**Duplicates may exist transiently inside an exclusive phase** — an old copy and
+its reinsertion can coexist while a batch is being applied. That is fine while
+nothing can read them. The delta must reconcile them before the batch is
+published and the barrier released.
+
+**A second eligible entry in a published state is local inconsistency**, and is
+reported as a fatal error. It is never resolved by picking one — not by order,
+not by height. Choosing would hide a corrupt database behind a plausible answer.
+
+But **do not promise that every lookup detects it**: with early exit, a lookup
+that finds the first eligible entry stops, and cannot know a second exists.
+Detection belongs to migration and open-time validation, to operations that can
+check as they go, and to explicit auditing.
+
+The summary of section 2 can make any of those checks cheaper. It stays an
+optional accelerator; the invariant is what makes the contract correct.
+
+None of this is tidiness. Validation resolves a prevout through a read and the
+delta then erases it through a delete; if the two could resolve to different
+entries, the block would be validated against one UTXO and spend another. The
+invariant is what rules that out, and searching the same way is what keeps the
+two honest about it.
 
 `erase` must touch only the active map. Today it also searches cached files
 inline, which puts a writer into the file cache from wherever it is called; that
