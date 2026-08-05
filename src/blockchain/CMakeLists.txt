@@ -313,6 +313,7 @@ if (ENABLE_TEST)
         test/parking.cpp
         test/block_undo.cpp
         test/reorg_undo_roundtrip.cpp
+        test/undo_scan.cpp
         test/reorg_e2e.cpp
     )
 

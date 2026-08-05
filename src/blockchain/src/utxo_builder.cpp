@@ -26,6 +26,7 @@
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/database/databases/utxoz_database.hpp>
+#include <kth/database/native_file.hpp>
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/machine/opcode.hpp>
 namespace kth::blockchain {
@@ -605,7 +606,7 @@ bool save_utxo_bloom(
     auto const path = data_dir / fmt::format("utxo_bloom_{}.dat", checkpoint_height);
     std::filesystem::create_directories(data_dir);
 
-    auto* fp = std::fopen(path.c_str(), "wb");
+    auto* fp = database::open_native(path, "wb");
     if ( ! fp) {
         spdlog::error("[bloom] Failed to open {} for writing", path.string());
         return false;

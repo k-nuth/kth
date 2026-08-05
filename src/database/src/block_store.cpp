@@ -7,10 +7,14 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <optional>
 #include <print>
 #include <thread>
 
+#include <boost/unordered/unordered_flat_set.hpp>
+
 #include <spdlog/spdlog.h>
+#include <kth/database/native_file.hpp>
 #include <kth/infrastructure/utility/stats.hpp>
 
 namespace kth::database {
@@ -20,11 +24,65 @@ namespace {
 // Size of block file header: magic (4) + size (4)
 constexpr size_t block_header_size = 8;
 
-// Size of undo file header: magic (4) + size (4)
-constexpr size_t undo_header_size = 8;
+// The undo record's own marker, and it has to be its own rather than the network
+// magic the blocks use. Records written before issue #603 begin with that same
+// network magic followed by a size, so a reader expecting the current layout
+// would take those four size bytes for the first of a hash and misread
+// everything after. Two formats sharing a marker are two formats that cannot be
+// told apart. Finding the network magic where this is expected is therefore not
+// a corrupt record: it is a database written by an older build, and it is
+// reported as such.
+constexpr std::array<uint8_t, 4> undo_magic_v2{{'K', 'U', 'N', '2'}};
+
+// undo marker (4) + owning block hash (32) + payload size (4). The hash is what
+// makes a record self-identifying. Nothing already on disk could stand in for
+// it: order cannot, because a rev file holds undo for a subset of its blk file's
+// blocks in build order with no gap to mark the ones that never got any; and the
+// checksum cannot, because it is seeded with the parent hash, so every sibling
+// validates the same record — and two siblings built from the same transactions
+// with different coinbases produce byte-identical undo data.
+constexpr size_t undo_header_size = 40;
 
 // Size of undo checksum (SHA256)
 constexpr size_t undo_checksum_size = 32;
+
+// A payload larger than this is not a record, it is a misread header. Undo data
+// holds one entry per output a block spends, so this is far above anything a
+// block could produce and only rules out nonsense.
+constexpr uint32_t max_undo_size = 256u * 1024u * 1024u;
+
+// The record's checksum: the owning block's parent hash, then the payload. The
+// parent seeds it and is not stored, which is why it cannot serve as identity —
+// every sibling produces the same value.
+// Whether everything from `offset` to `file_size` is zero. Reserved space a
+// preallocated file never used looks exactly like that, and it is the only tail
+// that may be taken for a clean end: anything non-zero after the records is
+// either an interrupted write or damage, and treating it as the end would let it
+// hide whatever follows.
+bool tail_is_all_zero(FILE* file, uint32_t offset, uint32_t file_size) {
+    if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0) return false;
+
+    std::array<uint8_t, 4096> buffer{};
+    uint32_t remaining = file_size - offset;
+    while (remaining > 0) {
+        auto const want = std::min<size_t>(remaining, buffer.size());
+        if (std::fread(buffer.data(), 1, want, file) != want) return false;
+        if (std::any_of(buffer.begin(), buffer.begin() + want,
+                        [](uint8_t byte) { return byte != 0; })) {
+            return false;
+        }
+        remaining -= static_cast<uint32_t>(want);
+    }
+    return true;
+}
+
+hash_digest undo_checksum(hash_digest const& prev_hash, data_chunk const& undo_data) {
+    data_chunk input;
+    input.reserve(prev_hash.size() + undo_data.size());
+    input.insert(input.end(), prev_hash.begin(), prev_hash.end());
+    input.insert(input.end(), undo_data.begin(), undo_data.end());
+    return bitcoin_hash(input);
+}
 
 } // anonymous namespace
 
@@ -135,7 +193,8 @@ flat_file_pos block_store::write_block_at(data_chunk const& raw_block, flat_file
     return header_pos;
 }
 
-flat_file_pos block_store::write_undo(block_undo const& undo, int32_t file_num, hash_digest const& prev_hash) {
+flat_file_pos block_store::write_undo(block_undo const& undo, int32_t file_num,
+                                     hash_digest const& block_hash, hash_digest const& prev_hash) {
     std::println("[block_store::write_undo] thread_id: {}", std::this_thread::get_id());
 
     auto const undo_size = static_cast<uint32_t>(undo.serialized_size());
@@ -146,7 +205,7 @@ flat_file_pos block_store::write_undo(block_undo const& undo, int32_t file_num, 
         return {};
     }
 
-    if (!write_undo_to_disk(undo, pos, prev_hash)) {
+    if (!write_undo_to_disk(undo, pos, block_hash, prev_hash)) {
         return {};
     }
 
@@ -448,6 +507,178 @@ block_store::read_blocks_raw(std::vector<flat_file_pos> const& positions) const 
     return results;
 }
 
+block_store::undo_scan_result
+block_store::scan_undo_positions(undo_parent_lookup const& parent_of) const {
+    undo_scan_result result;
+    result.status = undo_scan_status::clean_eof;
+
+    // Collected, not published. A caller applies these only once every file has
+    // been read without incident; a record rejected in the last file must not
+    // leave the ones before it already in the index.
+    boost::unordered_flat_set<hash_digest> seen;
+
+    auto fail = [&result](undo_scan_status status, int32_t file_num, uint32_t offset,
+                          hash_digest const& hash) {
+        result.status = status;
+        result.file_number = file_num;
+        result.position = offset;
+        result.block_hash = hash;
+        result.found.clear();
+        return result;
+    };
+
+    for (int32_t file_num = 0; file_num <= last_block_file_; ++file_num) {
+        auto path = undo_files_.file_name(flat_file_pos{file_num, 0});
+
+        FILE* file = open_native(path, "rb");
+        if (file == nullptr) {
+            // A file that is not there is a file that was never written. One that
+            // is there and will not open is a failure, and skipping it would
+            // start the node without undo it actually has.
+            std::error_code ec;
+            auto const present = std::filesystem::exists(path, ec);
+            // Not being able to ask whether it exists is its own failure, and
+            // taking it for "not there" would be the same mistake once more.
+            if (ec) return fail(undo_scan_status::io_error, file_num, 0, {});
+            if ( ! present) continue;
+            return fail(undo_scan_status::io_error, file_num, 0, {});
+        }
+
+        auto const file_size = file_info_[file_num].undo_size;
+        uint32_t offset = 0;
+
+        while (true) {
+            // No room for another header. That is the end only if what remains
+            // is the zeroes of unused reserved space; between one and thirty-nine
+            // non-zero bytes are an interrupted write, not an ending.
+            if (offset + undo_header_size > file_size) {
+                if ( ! tail_is_all_zero(file, offset, file_size)) {
+                    std::fclose(file);
+                    return fail(undo_scan_status::truncated_record, file_num, offset, {});
+                }
+                break;
+            }
+
+            if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0) {
+                std::fclose(file);
+                return fail(undo_scan_status::io_error, file_num, offset, {});
+            }
+
+            std::array<uint8_t, 4> marker;
+            if (std::fread(marker.data(), 1, marker.size(), file) != marker.size()) {
+                std::fclose(file);
+                return fail(undo_scan_status::io_error, file_num, offset, {});
+            }
+
+            if (marker != undo_magic_v2) {
+                // All zeroes is space the file reserved and never used: rev files
+                // are preallocated, and a restart takes their size from the file
+                // system rather than from how far writing got. That is the normal
+                // end of the records, not damage.
+                if (marker == std::array<uint8_t, 4>{}) {
+                    // Four zero bytes are the start of unused space — but only if
+                    // everything after them is unused too. Four zeroes in the
+                    // middle of a file would otherwise end the scan and hide every
+                    // record beyond, reporting a clean read of a damaged file.
+                    if ( ! tail_is_all_zero(file, offset, file_size)) {
+                        std::fclose(file);
+                        return fail(undo_scan_status::truncated_record, file_num, offset, {});
+                    }
+                    break;
+                }
+
+                std::fclose(file);
+                // Three different things, and they read as three. The network
+                // magic is a record from before undo records carried their
+                // block's hash, which is what lets a caller ask for a rebuild
+                // rather than guess. Anything else is a marker that should not be
+                // here at all — not a record cut short, which is what
+                // truncated_record means and is a different diagnosis.
+                auto const status = (marker == magic_)
+                    ? undo_scan_status::legacy_format
+                    : undo_scan_status::invalid_marker;
+                return fail(status, file_num, offset, {});
+            }
+
+            hash_digest block_hash;
+            if (std::fread(block_hash.data(), 1, block_hash.size(), file) != block_hash.size()) {
+                std::fclose(file);
+                return fail(undo_scan_status::io_error, file_num, offset, {});
+            }
+
+            uint32_t undo_size = 0;
+            if (std::fread(&undo_size, sizeof(undo_size), 1, file) != 1) {
+                std::fclose(file);
+                return fail(undo_scan_status::io_error, file_num, offset, block_hash);
+            }
+
+            if (undo_size == 0 || undo_size > max_undo_size) {
+                std::fclose(file);
+                return fail(undo_scan_status::invalid_size, file_num, offset, block_hash);
+            }
+
+            auto const record_size = undo_header_size + undo_size + undo_checksum_size;
+            if (offset + record_size > file_size) {
+                std::fclose(file);
+                return fail(undo_scan_status::truncated_record, file_num, offset, block_hash);
+            }
+
+            // Uniqueness first, because it does not depend on knowing the
+            // block: two records claiming one block are wrong whether or not the
+            // index still holds it, and checking after the owner is resolved
+            // would let a duplicate pair from a forgotten branch pass as two
+            // ordinary unattributed records.
+            if ( ! seen.insert(block_hash).second) {
+                std::fclose(file);
+                return fail(undo_scan_status::duplicate_record, file_num, offset, block_hash);
+            }
+
+            // The block this claims to belong to gives the parent hash the
+            // checksum was seeded with. Not having it is not a failure: a
+            // restart rebuilds the index from the active chain, so a branch that
+            // lost a reorganization is gone while its undo records remain. Skip
+            // the record — its size is known, so the walk continues — and count
+            // it, rather than refuse a database that is merely older than its
+            // last reorganization.
+            auto const prev_hash = parent_of(block_hash);
+            if ( ! prev_hash) {
+                ++result.unattributed;
+                offset += static_cast<uint32_t>(record_size);
+                continue;
+            }
+
+            data_chunk undo_data(undo_size);
+            if (std::fread(undo_data.data(), 1, undo_size, file) != undo_size) {
+                std::fclose(file);
+                return fail(undo_scan_status::io_error, file_num, offset, block_hash);
+            }
+
+            hash_digest stored_checksum;
+            if (std::fread(stored_checksum.data(), 1, stored_checksum.size(), file)
+                    != stored_checksum.size()) {
+                std::fclose(file);
+                return fail(undo_scan_status::io_error, file_num, offset, block_hash);
+            }
+
+            if (undo_checksum(*prev_hash, undo_data) != stored_checksum) {
+                std::fclose(file);
+                return fail(undo_scan_status::invalid_checksum, file_num, offset, block_hash);
+            }
+
+            // The position handed back is what read_undo expects: just past the
+            // header, since it seeks backwards from there.
+            result.found.push_back({file_num, offset + static_cast<uint32_t>(undo_header_size),
+                block_hash});
+
+            offset += static_cast<uint32_t>(record_size);
+        }
+
+        std::fclose(file);
+    }
+
+    return result;
+}
+
 size_t block_store::scan_block_positions(block_position_callback const& callback) const {
     size_t count = 0;
     constexpr size_t header_bytes = 80;  // Bitcoin block header size
@@ -455,7 +686,7 @@ size_t block_store::scan_block_positions(block_position_callback const& callback
     for (int32_t file_num = 0; file_num <= last_block_file_; ++file_num) {
         auto path = block_files_.file_name(flat_file_pos{file_num, 0});
 
-        FILE* file = std::fopen(path.c_str(), "rb");
+        FILE* file = open_native(path, "rb");
         if (!file) continue;
 
         auto const file_size = file_info_[file_num].size;
@@ -498,7 +729,8 @@ size_t block_store::scan_block_positions(block_position_callback const& callback
 }
 
 std::expected<block_undo, result_code>
-block_store::read_undo(flat_file_pos const& pos, hash_digest const& prev_hash) const {
+block_store::read_undo(flat_file_pos const& pos, hash_digest const& block_hash,
+                       hash_digest const& prev_hash) const {
     if (pos.is_null()) {
         return std::unexpected(result_code::key_not_found);
     }
@@ -510,8 +742,9 @@ block_store::read_undo(flat_file_pos const& pos, hash_digest const& prev_hash) c
         return std::unexpected(result_code::other);
     }
 
-    // Read header: magic + size
+    // Read header: magic + owning block hash + size
     std::array<uint8_t, 4> file_magic;
+    hash_digest record_block_hash;
     uint32_t undo_size;
 
     // Seek back to header position
@@ -525,20 +758,59 @@ block_store::read_undo(flat_file_pos const& pos, hash_digest const& prev_hash) c
         return std::unexpected(result_code::other);
     }
 
+    // Before anything after it is read, let alone compared. In the old layout
+    // the next thirty-two bytes are a size and the start of a payload, not a
+    // hash — comparing them would report a record belonging to another block,
+    // which is both the wrong diagnosis and the wrong error.
+    if (file_magic != undo_magic_v2) {
+        if (file_magic == magic_) {
+            spdlog::error("block_store::read_undo: undo record at {} predates the format that "
+                "identifies its block; this database cannot serve undo data", pos.to_string());
+        } else {
+            spdlog::error("block_store::read_undo: marker mismatch at {}", pos.to_string());
+        }
+        std::fclose(file);
+        return std::unexpected(result_code::other);
+    }
+
+    if (std::fread(record_block_hash.data(), 1, record_block_hash.size(), file)
+            != record_block_hash.size()) {
+        std::fclose(file);
+        return std::unexpected(result_code::other);
+    }
+
+    // The record names its owner, so a position that points at some other
+    // block's record is caught here rather than by the checksum — which cannot
+    // catch it for a sibling, whose checksum this record also satisfies.
+    if (record_block_hash != block_hash) {
+        // Corruption, not absence: something pointed at a record belonging to
+        // another block. Reporting it as "no undo here" would dress a damaged
+        // database as an ordinary missing one, which is the confusion this record
+        // format exists to end.
+        spdlog::error("block_store::read_undo: record at {} belongs to another block",
+            pos.to_string());
+        std::fclose(file);
+        return std::unexpected(result_code::db_corrupt);
+    }
+
     if (std::fread(&undo_size, sizeof(undo_size), 1, file) != 1) {
         std::fclose(file);
         return std::unexpected(result_code::other);
     }
 
-    // Verify magic
-    if (file_magic != magic_) {
-        spdlog::error("block_store::read_undo: Magic mismatch at {}", pos.to_string());
+    // Bound it before it is used as a length. A corrupted size would otherwise
+    // be handed straight to an allocation — several gigabytes of it — and the
+    // addition below would overflow first. The scanner checks this on the way
+    // in; a record can be damaged after that, so the read checks it too.
+    if (undo_size == 0 || undo_size > max_undo_size) {
+        spdlog::error("block_store::read_undo: implausible payload size {} at {}",
+            undo_size, pos.to_string());
         std::fclose(file);
-        return std::unexpected(result_code::other);
+        return std::unexpected(result_code::db_corrupt);
     }
 
     // Read undo data + checksum
-    data_chunk data(undo_size + undo_checksum_size);
+    data_chunk data(static_cast<size_t>(undo_size) + undo_checksum_size);
     if (std::fread(data.data(), 1, data.size(), file) != data.size()) {
         std::fclose(file);
         return std::unexpected(result_code::other);
@@ -546,18 +818,12 @@ block_store::read_undo(flat_file_pos const& pos, hash_digest const& prev_hash) c
     std::fclose(file);
 
     // Extract undo data and checksum
-    data_chunk undo_data(data.begin(), data.begin() + undo_size);
+    data_chunk undo_data(data.begin(), data.begin() + static_cast<ptrdiff_t>(undo_size));
     hash_digest stored_checksum;
-    std::copy(data.begin() + undo_size, data.end(), stored_checksum.begin());
+    std::copy(data.begin() + static_cast<ptrdiff_t>(undo_size), data.end(),
+        stored_checksum.begin());
 
-    // Verify checksum: SHA256(prev_hash || undo_data)
-    data_chunk checksum_input;
-    checksum_input.reserve(prev_hash.size() + undo_data.size());
-    checksum_input.insert(checksum_input.end(), prev_hash.begin(), prev_hash.end());
-    checksum_input.insert(checksum_input.end(), undo_data.begin(), undo_data.end());
-
-    auto computed_checksum = bitcoin_hash(checksum_input);
-    if (computed_checksum != stored_checksum) {
+    if (undo_checksum(prev_hash, undo_data) != stored_checksum) {
         spdlog::error("block_store::read_undo: Checksum mismatch at {}", pos.to_string());
         return std::unexpected(result_code::other);
     }
@@ -710,7 +976,8 @@ bool block_store::write_block_to_disk(data_chunk const& raw_block, flat_file_pos
     return true;
 }
 
-bool block_store::write_undo_to_disk(block_undo const& undo, flat_file_pos& pos, hash_digest const& prev_hash) {
+bool block_store::write_undo_to_disk(block_undo const& undo, flat_file_pos& pos,
+                                     hash_digest const& block_hash, hash_digest const& prev_hash) {
     FILE* file = undo_files_.open(pos, false);
     if (!file) {
         spdlog::error("block_store::write_undo_to_disk: Failed to open file");
@@ -720,8 +987,13 @@ bool block_store::write_undo_to_disk(block_undo const& undo, flat_file_pos& pos,
     auto const undo_data = undo.to_data();
     auto const undo_size = static_cast<uint32_t>(undo_data.size());
 
-    // Write header: magic + size
-    if (std::fwrite(magic_.data(), 1, magic_.size(), file) != magic_.size()) {
+    // Write header: undo marker + owning block hash + size
+    if (std::fwrite(undo_magic_v2.data(), 1, undo_magic_v2.size(), file) != undo_magic_v2.size()) {
+        std::fclose(file);
+        return false;
+    }
+
+    if (std::fwrite(block_hash.data(), 1, block_hash.size(), file) != block_hash.size()) {
         std::fclose(file);
         return false;
     }
