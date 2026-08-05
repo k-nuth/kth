@@ -337,6 +337,35 @@ result_code internal_database_basis<Clock>::set_utxo_built_height(uint32_t heigh
     return set_property_height(property_code::utxo_built_height, height);
 }
 
+template <typename Clock>
+std::expected<std::optional<uint32_t>, result_code>
+internal_database_basis<Clock>::get_utxo_batch_dirty() const {
+    KTH_DB_txn* db_txn;
+    if (kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn) != KTH_DB_SUCCESS) {
+        // Not readable is its own answer. Reporting it as either "clean" or
+        // "dirty at height zero" would be a caller reading a cause the value does
+        // not carry — which is the failure this marker exists to prevent.
+        return std::unexpected(result_code::other);
+    }
+    auto const stored = get_property_height(property_code::utxo_batch_dirty, db_txn);
+    kth_db_txn_commit(db_txn);
+
+    if ( ! stored || *stored == 0u) {
+        return std::nullopt;
+    }
+    return *stored - 1u;
+}
+
+template <typename Clock>
+result_code internal_database_basis<Clock>::set_utxo_batch_dirty(uint32_t first_height) {
+    return set_property_height(property_code::utxo_batch_dirty, first_height + 1u);
+}
+
+template <typename Clock>
+result_code internal_database_basis<Clock>::clear_utxo_batch_dirty() {
+    return set_property_height(property_code::utxo_batch_dirty, 0u);
+}
+
 #endif // ! defined(KTH_DB_READONLY)
 
 template <typename Clock>

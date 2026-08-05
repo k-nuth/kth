@@ -120,9 +120,11 @@ inline void run_connect_tasks(test::chain_fixture& fixture,
                 auto const built = chain.get_utxo_built_height();
                 return built && *built >= end_height;
             },
-            // Nothing here can reach it: the two conditions that report through
-            // this are a failed height-marker write and a failed mempool update,
-            // neither of which a test can provoke against a working database.
+            // Against a working database none of these should fire: they are the
+            // conditions that say the UTXO set no longer describes itself — a
+            // marker that cannot be written, read or cleared, deferred deletions
+            // that failed, a batch left in flight by an earlier run. A test that
+            // trips one has found something, so failing loudly is the point.
             [](std::string const& reason) {
                 FAIL("the UTXO build reported a fatal condition: " << reason);
             }),

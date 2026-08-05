@@ -101,6 +101,15 @@ struct KD_API internal_database_basis {
     std::expected<uint32_t, result_code> get_utxo_built_height() const;
     result_code set_utxo_built_height(uint32_t height);
 
+    /// The in-flight batch marker (issue #600). Persisted before the first
+    /// mutation of a batch and cleared only once its delta, its deferred
+    /// deletions and its built height have all landed. Stored as first + 1 so
+    /// that zero — the value a missing key reads as — means clean, and height
+    /// zero stays expressible.
+    std::expected<std::optional<uint32_t>, result_code> get_utxo_batch_dirty() const;
+    result_code set_utxo_batch_dirty(uint32_t first_height);
+    result_code clear_utxo_batch_dirty();
+
     // Headers-first sync: store header without full block data (ABLA state = zeros)
     result_code push_header(domain::chain::header const& header, uint32_t height);
 

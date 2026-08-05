@@ -671,6 +671,19 @@ std::expected<uint32_t, database::result_code> block_chain::get_utxo_built_heigh
     return database_.internal_db().get_utxo_built_height();
 }
 
+std::expected<std::optional<uint32_t>, database::result_code>
+block_chain::get_utxo_batch_dirty() const {
+    return database_.internal_db().get_utxo_batch_dirty();
+}
+
+database::result_code block_chain::set_utxo_batch_dirty(uint32_t first_height) {
+    return database_.internal_db().set_utxo_batch_dirty(first_height);
+}
+
+database::result_code block_chain::clear_utxo_batch_dirty() {
+    return database_.internal_db().clear_utxo_batch_dirty();
+}
+
 database::result_code block_chain::set_utxo_built_height(uint32_t height) {
     return database_.internal_db().set_utxo_built_height(height);
 }
