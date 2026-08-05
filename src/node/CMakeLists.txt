@@ -296,6 +296,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/check_list.cpp
           test/chunk_coordinator.cpp
           test/fatal_shutdown.cpp
+          test/mempool_connect_wiring.cpp
           test/reorg_cycle.cpp
           test/reorg_stale_chunk_drop.cpp
           test/configuration.cpp

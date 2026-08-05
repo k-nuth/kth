@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <memory>
 #include <optional>
 
@@ -161,12 +162,17 @@ extern std::atomic<uint64_t> g_blocks_received_by_validation;
 //
 // =============================================================================
 
+// `on_fatal` reports a condition this task cannot go on from and that ending the
+// coroutine would not communicate: the task group only propagates exceptions, so
+// a co_return here reduces a counter and nothing else. Winding the node down is
+// the owner's (see full_node::notify_fatal).
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
     uint32_t start_height,
     domain::config::network network,
-    std::function<bool()> should_stop  // node-owned stop signal (e.g. network.stopped())
+    std::function<bool()> should_stop,  // node-owned stop signal (e.g. network.stopped())
+    std::function<void(std::string const&)> on_fatal
 );
 
 } // namespace kth::node::sync

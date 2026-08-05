@@ -1785,7 +1785,8 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     std::atomic<uint32_t> const& contiguous_height,
     uint32_t start_height,
     domain::config::network network,
-    std::function<bool()> should_stop
+    std::function<bool()> should_stop,
+    std::function<void(std::string const&)> on_fatal
 ) {
     spdlog::info("[utxo_build] Task started at height {}", start_height);
 
@@ -1953,12 +1954,22 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // every block in it is validated against a UTXO-Z that already holds every
         // below-checkpoint output. On failure we halt: the invalid block is never
         // applied.
+        // Kept past the validation step: the mempool update below needs parsed
+        // blocks, and above the checkpoint they are parsed here anyway. Below it
+        // this stays empty and the raw bytes are used instead.
+        std::vector<kth::block_const_ptr> validated_blocks;
+
         if (batch_start > checkpoint_height) {
             // Parse the blocks and validate them on the worker pool, off this
             // coroutine's executor.
+            // A parse failure here is not a consensus failure, and the branch below
+            // cannot tell them apart from the code alone. Kept separate so each is
+            // reported as what it is.
+            bool parse_failed = false;
+
             auto const vc = co_await ::asio::co_spawn(validation_pool.get_executor(),
                 [&]() -> ::asio::awaitable<code> {
-                    std::vector<kth::block_const_ptr> full_blocks;
+                    auto& full_blocks = validated_blocks;
                     full_blocks.reserve(raw_result->size());
                     for (uint32_t i = 0; i < raw_result->size(); ++i) {
                         uint32_t const h = batch_start + i;
@@ -1967,6 +1978,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                         auto blk = domain::message::block::from_data(reader, 0u);
                         if ( ! blk) {
                             spdlog::critical("[utxo_build] Failed to parse block for validation at height {}", h);
+                            parse_failed = true;
                             co_return error::operation_failed;
                         }
                         full_blocks.push_back(
@@ -1980,7 +1992,23 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                 }, ::asio::use_awaitable);
 
             if (vc) {
-                spdlog::critical("[utxo_build] POST-CHECKPOINT VALIDATION FAILED at {}-{}: {}",
+                if (parse_failed) {
+                    // Bytes this node wrote, and the compact parser accepted when it
+                    // stored them. Not being able to read them back is local damage,
+                    // not a peer's doing.
+                    on_fatal("a stored block could not be parsed for validation");
+                    co_return;
+                }
+
+                // A block that does not satisfy consensus: a peer sent something
+                // invalid. Recoverable in principle — the range wants re-fetching
+                // from someone else — but the block is already stored and marked
+                // have_data, its peer is not recorded here, and the contiguous
+                // height has moved past it, so there is nothing this task can do
+                // about it beyond stopping. Recovering properly needs a way back to
+                // the coordinator with the failed height, which does not exist yet.
+                spdlog::critical("[utxo_build] POST-CHECKPOINT VALIDATION FAILED at {}-{}: {}. "
+                    "The UTXO build stops here and nothing re-drives it",
                     batch_start, batch_end, vc.message());
                 co_return;
             }
@@ -2004,13 +2032,15 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             auto parsed = blockchain::parse_utxo_block(
                 byte_span{(*raw_result)[i].data(), (*raw_result)[i].size()});
             if ( ! parsed) {
-                spdlog::error("[utxo_build] Failed to parse block at height {}", h);
+                spdlog::critical("[utxo_build] Failed to parse block at height {}", h);
+                on_fatal("a stored block could not be parsed");
                 co_return;
             }
 
             auto const idx = chain.headers().active_at(static_cast<int32_t>(h));
             if (idx == blockchain::header_index::null_index) {
-                spdlog::error("[utxo_build] Height {} is not on the active chain", h);
+                spdlog::critical("[utxo_build] Height {} is not on the active chain", h);
+                on_fatal("a height being built is not on the active chain");
                 co_return;
             }
             // Prune with the bloom only up to the checkpoint; above it keep every
@@ -2030,7 +2060,28 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             if (h > checkpoint_height) {
                 auto undo = blockchain::capture_block_undo(block_delta, delta, chain, h);
                 if ( ! undo) {
-                    spdlog::error("[utxo_build] Failed to capture undo data at height {}", h);
+                    // Nothing is applied yet, so the state is clean — but neither
+                    // cause is one to retry into. A read that failed is storage
+                    // that is not answering; an output the set does not have,
+                    // after this batch has already validated, is the set and the
+                    // delta disagreeing. Both are local and both persist.
+                    if (undo.error() == database::result_code::key_not_found) {
+                        // Here — and not in capture_block_undo, which cannot know
+                        // this — the reading is unambiguous: undo data is captured
+                        // above the checkpoint, where this batch has already passed
+                        // full validation, and that resolves every prevout against
+                        // UTXO-Z or against a batch output created at or below the
+                        // height being validated. A block cannot spend one from a
+                        // later block. So the block is not the problem: the set and
+                        // the delta describing it disagree.
+                        spdlog::critical("[utxo_build] The UTXO set does not hold an output the "
+                            "block at height {} spends, which validation resolved", h);
+                        on_fatal("the UTXO set and the delta built from it disagree");
+                    } else {
+                        spdlog::critical("[utxo_build] Could not read the outputs the block at "
+                            "height {} spends", h);
+                        on_fatal("the UTXO set could not be read while capturing undo data");
+                    }
                     co_return;
                 }
                 pending_undo.emplace_back(idx, std::move(*undo),
@@ -2052,7 +2103,8 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         if ( ! delta.empty()) {
             auto result = chain.apply_utxo_delta_raw(delta.inserts, delta.deletes);
             if (result != database::result_code::success) {
-                spdlog::error("[utxo_build] Failed to apply UTXO delta at batch {}", batch_start);
+                spdlog::critical("[utxo_build] Failed to apply UTXO delta at batch {}", batch_start);
+                on_fatal("a UTXO delta could not be applied");
                 co_return;
             }
         }
@@ -2062,15 +2114,55 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // already connected — never a connected block without undo data.
         for (auto& entry : pending_undo) {
             if ( ! chain.store_block_undo(entry.idx, entry.undo, entry.prev_hash)) {
-                spdlog::error("[utxo_build] Failed to store undo data for index {}", entry.idx);
+                // After the delta: these blocks are in the UTXO set and now cannot be
+                // disconnected, so a later reorganization would have nothing to
+                // reverse them with.
+                spdlog::critical("[utxo_build] Failed to store undo data for index {}", entry.idx);
+                on_fatal("a connected block has no undo data and cannot be disconnected");
                 co_return;
             }
         }
 
         utxo_built_height = batch_end;
 
-        // Save progress + process deferred deletions
-        std::ignore = chain.set_utxo_built_height(utxo_built_height);
+        // Save progress. Not ignorable: everything below treats these blocks as
+        // connected, and on the next start the built height is what says how far
+        // the UTXO set reaches. A set that moved without its marker would be
+        // rebuilt over on resume, applying deltas that are already in it.
+        if (auto const marked = chain.set_utxo_built_height(utxo_built_height);
+                marked != database::result_code::success) {
+            spdlog::critical("[utxo_build] Could not record the built height {}: the UTXO set is "
+                "ahead of what the next start will believe", utxo_built_height);
+            on_fatal("the UTXO set advanced past the height marker that describes it");
+            co_return;
+        }
+
+        // These blocks are connected now — the delta is applied, the undo records
+        // are written and the marker has moved — so what they confirmed leaves the
+        // mempool, along with anything pooled that conflicts with them.
+        //
+        // Through the chain rather than the mempool directly: the mempool's writes
+        // are serialized by the validation mutex, which is not this task's to take.
+        // Above the checkpoint the blocks are already parsed by validation; below
+        // it the raw form parses only if there is something in the pool to remove.
+        for (uint32_t i = 0; i < raw_result->size(); ++i) {
+            if (i < validated_blocks.size()) {
+                chain.mempool_remove_for_block(*validated_blocks[i]);
+                continue;
+            }
+            auto const& raw = (*raw_result)[i];
+            if (auto const ec = chain.mempool_remove_for_block(
+                    byte_span{raw.data(), raw.size()}); ec) {
+                // These bytes came off disk after the compact parser accepted
+                // them, so failing here should not be reachable. If it is, the
+                // pool now holds transactions this block confirmed and will keep
+                // offering them for a template — carrying on would mine them.
+                spdlog::critical("[utxo_build] Could not update the mempool for the block at "
+                    "height {}: {}", batch_start + i, ec.message());
+                on_fatal("the mempool still holds transactions a connected block confirmed");
+                co_return;
+            }
+        }
         auto deferred = chain.utxo_deferred_deletions_size();
         if (deferred > 0) {
             auto [deleted, failed] = chain.utxo_process_pending_deletions();
