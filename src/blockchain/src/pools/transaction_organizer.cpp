@@ -230,17 +230,9 @@ bool transaction_organizer::stop() {
         co_return connected.error();
     }
 
-    // TODO: create a simulated validation path that does not block others.
-    bool simulate = false;
-    chain_.transaction_validations().visit(tx->hash(), [&](auto const& tv){ simulate = tv.simulate; });
-
-    // Last read of the store entry; safe to drop it now for every path below.
+    // Validation is over and nothing below reads the entry, so drop it here
+    // rather than repeating the erase down each remaining exit.
     erase_tx_validation();
-
-    if (simulate) {
-        mutex_.unlock_low_priority();
-        co_return error::success;
-    }
 
     //#########################################################################
     // Admit to the mempool. The tx is already validated (accept / fee / dust /

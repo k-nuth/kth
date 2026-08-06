@@ -179,25 +179,6 @@ void kth_chain_unsubscribe(kth_chain_t /*chain*/) {
     // Callers should return 0 from their handler to unsubscribe
 }
 
-void kth_chain_transaction_validate_sequential(kth_chain_t chain, void* ctx, kth_transaction_mut_t tx, kth_validate_tx_handler_t handler) {
-    if (handler == nullptr) return;
-
-    auto tx_cpp = tx_shared(tx);
-
-    auto& bc = safe_chain(chain);
-    // `simulate` moved off the transaction value type into the validator's
-    // per-tx store; set it there before organizing.
-    bc.transaction_validations().mutate(tx_cpp->hash(), [](auto& tv){ tv.simulate = true; });
-    ::asio::co_spawn(bc.executor(), [&bc, tx_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
-        auto ec = co_await bc.organize(tx_cpp);
-        if (ec) {
-            handler(chain, ctx, kth::to_c_err(ec), ec.message().c_str());
-        } else {
-            handler(chain, ctx, kth::to_c_err(ec), nullptr);
-        }
-    }, ::asio::detached);
-}
-
 void kth_chain_transaction_validate(kth_chain_t chain, void* ctx, kth_transaction_mut_t tx, kth_validate_tx_handler_t handler) {
     if (handler == nullptr) return;
 
@@ -232,28 +213,6 @@ kth_bool_t kth_chain_is_stale(kth_chain_t chain) {
 
 //-------------------------------------------------------------------------
 
-// kth_transaction_t kth_chain_hex_to_tx(char const* tx_hex) {
-//
-//    static auto const version = kth::domain::chain::version::level::canonical;
-//
-////    auto const tx = std::make_shared<kth::domain::chain::transaction>();
-//    auto* tx = new kth::domain::chain::transaction;
-//
-//    std::string tx_hex_cpp(tx_hex);
-//    std::vector<uint8_t> data(tx_hex_cpp.size() / 2); // (tx_hex_cpp.begin(), tx_hex_cpp.end());
-//    //data.reserve(tx_hex_cpp.size() / 2);
-//
-//    hex2bin(tx_hex_cpp.c_str(), data.data());
-//
-//    if ( ! tx->from_data(version, data)) {
-//        return nullptr;
-//    }
-//
-//    // Simulate organization into our chain.
-//    tx->validation.simulate = true;
-//
-//    return tx;
-//}
 
 
 

@@ -23,9 +23,6 @@ struct transaction_validation {
     // The unconfirmed tx is validated at the block's current fork state.
     bool current = false;
 
-    // Simulate organization and instead just validate the transaction.
-    bool simulate = false;
-
     // The transaction was validated before its insertion in the mempool.
     bool validated = false;
 };
