@@ -50,6 +50,7 @@ The script provides colored output with the following indicators:
 
 - `0`: All packages are up to date, or updates were successfully applied
 - `1`: Updates are available (useful for CI/CD to detect outdated dependencies)
+- `2`: The check was incomplete because a package source could not be queried
 
 ## Automation
 
@@ -101,5 +102,6 @@ Checking boost... 🔄 Update available: 1.86.0 → 1.89.0
 - The script only checks packages listed in `self.requires()`, `self.test_requires()`, and `self.tool_requires()`
 - Commented-out dependencies are ignored
 - Custom package sources (e.g., `package@user/channel`) are skipped
+- `utxoz` and `secp256k1-precompute` are checked in the public KTH remote
 - Version comparison uses semantic versioning (major.minor.patch)
 - The script filters out non-standard version formats from CCI (e.g., "3.1w")
