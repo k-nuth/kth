@@ -2163,12 +2163,42 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                 co_return;
             }
         }
-        auto deferred = chain.utxo_deferred_deletions_size();
+        // The deletions the store deferred are part of this batch's delta, not
+        // work that follows it: until they run, outputs these blocks spent are
+        // still in the set. So they come before the state is published, and a
+        // failure is fatal rather than logged — a spent output left behind is a
+        // double spend the node would accept.
+        //
+        // The marker at which this becomes recoverable rather than merely fatal
+        // is #600, and #602 is the change that adds it. This orders the work
+        // correctly and refuses to continue past a failure; it does not make the
+        // window crash-safe, and the two must not be confused.
+        auto const deferred = chain.utxo_deferred_deletions_size();
         if (deferred > 0) {
             auto [deleted, failed] = chain.utxo_process_pending_deletions();
             if ( ! failed.empty()) {
-                spdlog::error("[utxo_build] {} deferred deletions failed", failed.size());
+                spdlog::critical("[utxo_build] {} deferred deletion(s) failed at batch {}-{}: the "
+                    "UTXO set still holds outputs these blocks spent", failed.size(),
+                    batch_start, batch_end);
+                on_fatal("a batch left spent outputs in the UTXO set");
+                co_return;
             }
+        }
+
+        // Now the batch is closed: the delta is applied in full, the undo records
+        // are written, the height marker has moved and the mempool no longer
+        // holds what these blocks confirmed. Only now does a coherent state exist
+        // to describe, and publishing it is what makes the chain state advance —
+        // it used to be computed once at startup and left behind (#605).
+        //
+        // `batch_end` is the last height actually applied: it is clamped to the
+        // checkpoint and to the undo batch limit above, so it is the tip and not
+        // the range that was asked for.
+        if (auto const ec = chain.publish_chain_view(batch_end); ec) {
+            spdlog::critical("[utxo_build] Could not publish the chain state at height {}: {}",
+                batch_end, ec.message());
+            on_fatal("a connected batch could not be described by a chain state");
+            co_return;
         }
 
         spdlog::info("[utxo_build] UTXO built to height {}/{}", utxo_built_height, current_contiguous - 1);

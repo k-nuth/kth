@@ -263,23 +263,18 @@ chain_state::assert_anchor_block_info_t populate_chain_state::get_assert_anchor_
 
 #endif // defined(KTH_CURRENCY_BCH)
 
-chain_state::ptr populate_chain_state::populate() const {
-    auto const heights = chain_.get_last_heights();
-    if ( ! heights) {
-        spdlog::error("[blockchain] Failed to populate chain state, last height.");
-        return {};
-    }
-    auto const top = heights->header;
-    auto const header_result = chain_.get_header_and_abla_state(top);
+chain_state::ptr populate_chain_state::populate(size_t connected_top) const {
+    auto const header_result = chain_.get_header_and_abla_state(connected_top);
     if ( ! header_result) {
-        spdlog::error("[blockchain] Failed to populate chain state, last header.");
+        spdlog::error("[blockchain] Failed to populate chain state: no header at height {}",
+                      connected_top);
         return {};
     }
     auto const& [last_header, block_size, control_block_size, elastic_buffer_size] = *header_result;
 
     chain_state::data data;
     data.hash = null_hash;
-    data.height = *safe_add(size_t(top), size_t(1));
+    data.height = *safe_add(connected_top, size_t(1));
 
     if (block_size == 0) {
         data.abla_state = abla::state(settings_.abla_config, static_max_block_size(network_));
@@ -289,7 +284,7 @@ chain_state::ptr populate_chain_state::populate() const {
         data.abla_state.elastic_buffer_size = elastic_buffer_size;
     }
 
-    auto branch_ptr = std::make_shared<branch>(top, chain_.block_validations());
+    auto branch_ptr = std::make_shared<branch>(connected_top, chain_.block_validations());
 
     // Use an empty branch to represent the transaction pool.
     if ( ! populate_all(data, branch_ptr)) {

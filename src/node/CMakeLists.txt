@@ -293,6 +293,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(Catch2 3 REQUIRED)
 
   add_executable(kth_node_test
+          test/chain_view.cpp
           test/check_list.cpp
           test/chunk_coordinator.cpp
           test/fatal_shutdown.cpp

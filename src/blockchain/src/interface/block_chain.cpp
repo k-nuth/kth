@@ -169,9 +169,15 @@ bool block_chain::start(uint32_t disk_magic) {
     }
     spdlog::info("[blockchain] Block store initialized at {}", blocks_path.string());
 
-    pool_state_ = chain_state_populator_.populate();
-    if ( ! pool_state_) {
-        spdlog::error("[blockchain] Failed to initialize chain state.");
+    // From the connected tip, never the header tip: the two differ by the whole
+    // of an unfinished sync, and the state describes what is connected.
+    auto const connected = get_last_heights();
+    if ( ! connected) {
+        spdlog::error("[blockchain] Failed to read the last heights.");
+        return false;
+    }
+    if (auto const ec = publish_chain_view(connected->block); ec) {
+        spdlog::error("[blockchain] Failed to initialize chain state: {}", ec.message());
         return false;
     }
 
@@ -1128,13 +1134,70 @@ void block_chain::clear_utxo_bloom() {
 // CHAIN STATE
 // =============================================================================
 
+block_chain::chain_view_ptr block_chain::chain_view() const {
+    return chain_view_.load();
+}
+
+code block_chain::publish_chain_view(size_t connected_tip_height) {
+    // Both halves come from the one height, under whatever exclusion the caller
+    // holds — so the state and the hash cannot describe different chains, and
+    // there is no combination for a caller to assemble.
+    auto state = chain_state_populator_.populate(connected_tip_height);
+    if ( ! state) {
+        spdlog::error("[blockchain] Could not build the chain state at height {}", connected_tip_height);
+        return error::pool_state_failed;
+    }
+
+    auto const tip_hash = get_block_hash(connected_tip_height);
+    if ( ! tip_hash) {
+        spdlog::error("[blockchain] Could not resolve the block hash at height {}", connected_tip_height);
+        return error::pool_state_failed;
+    }
+
+    // Allocate before the counter moves, and take the number last. Reversed —
+    // reading the counter while building the argument — an allocation that threw
+    // would leave a generation that no published view carries: a reader
+    // comparing numbers would see one it can never be given, and conclude
+    // something was published that was not.
+    boost::shared_ptr<published_chain_view> built;
+    try {
+        built = boost::make_shared<published_chain_view>();
+    } catch (std::exception const& e) {
+        // The only throwing step here, and the reason this returns a code rather
+        // than letting it escape: the callers publish at the close of a batch or
+        // a reorganization and decide what to do about a failure. An exception
+        // out of an API that promises a code would bypass that decision.
+        spdlog::error("[blockchain] Could not allocate the chain view at height {}: {}",
+                      connected_tip_height, e.what());
+        return error::pool_state_failed;
+    }
+
+    built->state = std::move(state);
+    built->tip_hash = *tip_hash;
+    built->generation = view_generation_.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    // One swap. A reader holds the previous triple or this one.
+    chain_view_.store(boost::shared_ptr<published_chain_view const>(std::move(built)));
+    return error::success;
+}
+
 domain::chain::chain_state::ptr block_chain::chain_state() const {
-    shared_lock lock(pool_state_mutex_);
-    return pool_state_;
+    auto const view = chain_view();
+    return view ? view->state : nullptr;
 }
 
 domain::chain::chain_state::ptr block_chain::chain_state(branch::const_ptr branch) const {
-    return chain_state_populator_.populate(chain_state(), branch);
+    // The branch's state is seeded from the published one, and `populate`
+    // dereferences that seed. Before the first publication there is nothing to
+    // seed from, so this answers null rather than reading through it — the one
+    // window is a chain constructed but not started, which start() closes by
+    // publishing.
+    auto const seed = chain_state();
+    if ( ! seed) {
+        spdlog::error("[blockchain] A branch state was asked for before any chain view was published");
+        return {};
+    }
+    return chain_state_populator_.populate(seed, branch);
 }
 
 block_validation_store& block_chain::block_validations() const {
@@ -1193,12 +1256,6 @@ blockchain::mempool& block_chain::mempool_ref() {
 
 blockchain::mempool const& block_chain::mempool_ref() const {
     return mempool_;
-}
-
-code block_chain::set_chain_state(domain::chain::chain_state::ptr previous) {
-    unique_lock lock(pool_state_mutex_);
-    pool_state_ = chain_state_populator_.populate(previous);
-    return pool_state_ ? error::success : error::pool_state_failed;
 }
 
 // =============================================================================
@@ -1835,10 +1892,11 @@ block_chain::fetch_template() const {
         co_return std::unexpected(error::service_stopped);
     }
 
-    auto const state = chain_state();
-    if ( ! state) {
+    auto const published = chain_view();
+    if ( ! published) {
         co_return std::unexpected(error::not_found);
     }
+    auto const& state = published->state;
 
     auto const view = lease_pool_view(validation_mutex_, mempool_);
 
@@ -1855,23 +1913,20 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         co_return std::unexpected(error::service_stopped);
     }
 
-    auto const state = chain_state();
-    if ( ! state) {
+    auto const published = chain_view();
+    if ( ! published) {
         co_return std::unexpected(error::not_found);
     }
+    auto const& state = published->state;
 
     auto const height = state->height();
 
-    // Previous block hash = the tip, i.e. the block one below the template height.
-    // Together with the mempool generation it forms the cache key.
-    hash_digest previous = null_hash;
-    if (height > 0) {
-        auto const prev = get_block_hash(height - 1);
-        if ( ! prev) {
-            co_return std::unexpected(error::not_found);
-        }
-        previous = *prev;
-    }
+    // The parent comes from the same publication as the height, not from a
+    // second lookup keyed on it. That pairing is what used to be wrong: the
+    // height was frozen at startup and the hash was read now, so the template
+    // could name a parent the chain had left behind — and the cache's guard
+    // against exactly that is keyed on this value, so it could never fire.
+    hash_digest const previous = published->tip_hash;
 
     // Only decides whether to rebuild, so it is read without the lease: a value
     // that has already moved on costs one extra rebuild, and paying the
@@ -1962,18 +2017,17 @@ block_chain::fetch_mining_info() const {
         co_return std::unexpected(error::service_stopped);
     }
 
-    auto const state = chain_state();
-    if ( ! state) {
+    auto const published = chain_view();
+    if ( ! published) {
         co_return std::unexpected(error::not_found);
     }
+    auto const& state = published->state;
 
-    auto const heights = co_await fetch_last_height();
-    if ( ! heights) {
-        co_return std::unexpected(heights.error());
-    }
-
+    // Every field from the one publication. Reading the height separately is
+    // how this reported the current tip beside the difficulty in force when the
+    // node started.
     co_return blockchain::mining_info{
-        heights->block,
+        uint32_t(state->height() - 1u),
         difficulty_from_bits(state->work_required()),
         mempool_.size(),
         state->network()};
