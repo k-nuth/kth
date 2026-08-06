@@ -16,13 +16,25 @@ Options:
 """
 
 import argparse
+import json
 import re
+import subprocess
 import sys
-import ssl
+import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Set
+from typing import Dict, List, Tuple, Optional
 import yaml
+
+
+CUSTOM_PACKAGE_REMOTES = {
+    "secp256k1-precompute": "kth",
+    "utxoz": "kth",
+}
+
+
+class PackageLookupError(RuntimeError):
+    """A package source could not provide a complete version listing."""
 
 
 class Version:
@@ -117,7 +129,7 @@ def parse_conanfile(conanfile_path: Path) -> Dict[str, str]:
     return packages
 
 
-def fetch_cci_versions(package_name: str) -> Optional[List[str]]:
+def fetch_cci_versions(package_name: str) -> List[str]:
     """
     Fetch available versions from Conan Center Index for a package.
 
@@ -125,32 +137,80 @@ def fetch_cci_versions(package_name: str) -> Optional[List[str]]:
         package_name: Name of the package (e.g., "boost", "fmt")
 
     Returns:
-        List of version strings, or None if package not found
+        List of version strings.
+
+    Raises:
+        PackageLookupError: The package could not be looked up completely.
     """
     url = f"https://raw.githubusercontent.com/conan-io/conan-center-index/master/recipes/{package_name}/config.yml"
 
     try:
-        # Create SSL context that doesn't verify certificates (for macOS compatibility)
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-
-        with urllib.request.urlopen(url, timeout=10, context=ctx) as response:
+        with urllib.request.urlopen(url, timeout=10) as response:
             content = response.read().decode('utf-8')
             data = yaml.safe_load(content)
 
-            if 'versions' in data:
+            if data.get('versions'):
                 return list(data['versions'].keys())
 
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            print(f"  ⚠️  Package '{package_name}' not found in CCI", file=sys.stderr)
+            raise PackageLookupError(
+                "package not found in CCI; if it is hosted by KTH, add its "
+                "Conan remote to CUSTOM_PACKAGE_REMOTES"
+            ) from e
         else:
-            print(f"  ⚠️  HTTP error for '{package_name}': {e.code}", file=sys.stderr)
+            raise PackageLookupError(f"CCI returned HTTP {e.code}") from e
     except Exception as e:
-        print(f"  ⚠️  Error fetching '{package_name}': {e}", file=sys.stderr)
+        raise PackageLookupError(f"CCI lookup failed: {e}") from e
 
-    return None
+    raise PackageLookupError("CCI response contained no versions")
+
+
+def fetch_conan_remote_versions(package_name: str, remote: str) -> List[str]:
+    """Fetch recipe versions from a configured Conan remote."""
+    command = [
+        "conan", "list", f"{package_name}/*", "-r", remote, "--format=json"
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        raise PackageLookupError(f"Conan remote '{remote}' lookup failed: {e}") from e
+
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or f"exit status {completed.returncode}"
+        raise PackageLookupError(f"Conan remote '{remote}' lookup failed: {detail}")
+
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as e:
+        raise PackageLookupError(
+            f"Conan remote '{remote}' returned invalid JSON"
+        ) from e
+
+    versions = []
+    for recipes in payload.values():
+        if not isinstance(recipes, dict):
+            continue
+        for reference in recipes:
+            prefix = f"{package_name}/"
+            if not reference.startswith(prefix):
+                continue
+            version = reference[len(prefix):].split("@", 1)[0].split("#", 1)[0]
+            if version:
+                versions.append(version)
+
+    if not versions:
+        raise PackageLookupError(
+            f"package not found in Conan remote '{remote}'"
+        )
+
+    return versions
 
 
 def get_latest_version(versions: List[str]) -> Version:
@@ -201,7 +261,10 @@ def update_conanfile(conanfile_path: Path, updates: List[Tuple[str, str, str]]) 
         print(f"\n⚠️  No changes made to {conanfile_path.name}")
 
 
-def check_updates(conanfile_path: Path, package_filter: Optional[str] = None) -> List[Tuple[str, str, str]]:
+def check_updates(
+    conanfile_path: Path,
+    package_filter: Optional[str] = None,
+) -> Tuple[List[Tuple[str, str, str]], List[Tuple[str, str]]]:
     """
     Check for updates to packages in conanfile.py.
 
@@ -210,7 +273,7 @@ def check_updates(conanfile_path: Path, package_filter: Optional[str] = None) ->
         package_filter: If specified, only check this package
 
     Returns:
-        List of tuples (package_name, current_version, latest_version) for packages with updates
+        A pair containing updates and lookup failures.
     """
     print(f"📦 Checking dependencies in {conanfile_path.name}...")
     if package_filter:
@@ -224,33 +287,42 @@ def check_updates(conanfile_path: Path, package_filter: Optional[str] = None) ->
         if package_filter not in packages:
             print(f"❌ Package '{package_filter}' not found in conanfile.py")
             print(f"   Available packages: {', '.join(sorted(packages.keys()))}")
-            return []
+            return [], [(package_filter, "package not found in conanfile.py")]
         packages = {package_filter: packages[package_filter]}
 
     updates = []
+    failures = []
 
     for package_name, current_version in sorted(packages.items()):
         print(f"Checking {package_name}...", end=' ')
         sys.stdout.flush()
 
-        cci_versions = fetch_cci_versions(package_name)
-
-        if cci_versions is None:
-            print("❌ Not found in CCI")
+        remote = CUSTOM_PACKAGE_REMOTES.get(package_name)
+        source = f"{remote} remote" if remote else "CCI"
+        try:
+            versions = (
+                fetch_conan_remote_versions(package_name, remote)
+                if remote
+                else fetch_cci_versions(package_name)
+            )
+        except PackageLookupError as e:
+            print(f"❌ Lookup failed [{source}]: {e}")
+            failures.append((package_name, str(e)))
             continue
 
-        latest_version = get_latest_version(cci_versions)
+        latest_version = get_latest_version(versions)
         current = Version(current_version)
+        suffix = f" [{source}]"
 
         if current < latest_version:
-            print(f"🔄 Update available: {current_version} → {latest_version}")
+            print(f"🔄 Update available: {current_version} → {latest_version}{suffix}")
             updates.append((package_name, current_version, str(latest_version)))
         elif current == latest_version:
-            print(f"✅ Up to date ({current_version})")
+            print(f"✅ Up to date ({current_version}){suffix}")
         else:
-            print(f"⚡ Ahead of CCI ({current_version} > {latest_version})")
+            print(f"⚡ Ahead of {source} ({current_version} > {latest_version})")
 
-    return updates
+    return updates, failures
 
 
 def main():
@@ -293,15 +365,15 @@ Examples:
 
     if not conanfile.exists():
         print(f"❌ Error: {conanfile} not found", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(2)
 
     try:
         import yaml
     except ImportError:
         print("❌ Error: PyYAML is required. Install it with: pip install pyyaml", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(2)
 
-    updates = check_updates(conanfile, package_filter=args.package)
+    updates, failures = check_updates(conanfile, package_filter=args.package)
 
     print()
     print("=" * 70)
@@ -312,23 +384,48 @@ Examples:
         for package_name, current, latest in updates:
             print(f"  • {package_name}: {current} → {latest}")
 
-        if args.update:
+        if args.update and not failures:
             print()
             print("=" * 70)
             print("🔧 Updating conanfile.py...")
             update_conanfile(conanfile, updates)
-    else:
+    elif not failures:
         print("✨ All packages are up to date!")
+
+    if failures:
+        print()
+        print(f"❌ Incomplete check: {len(failures)} package lookup(s) failed:")
+        print()
+        for package_name, reason in failures:
+            print(f"  • {package_name}: {reason}")
 
     print("=" * 70)
 
-    # Exit with status 1 if there are updates (for CI/CD)
-    # Unless --update was used and updates were applied
-    if updates and not args.update:
+    # A partial result must never be reported as success or used to create an
+    # update issue: it cannot establish which dependencies are current.
+    if failures:
+        sys.exit(2)
+    elif updates and not args.update:
         sys.exit(1)
     else:
         sys.exit(0)
 
 
+def entrypoint():
+    """Run the checker while preserving the documented exit-code contract."""
+    try:
+        main()
+    except SystemExit:
+        # argparse and main() use SystemExit for the documented 0/1/2 outcomes.
+        raise
+    except Exception as e:
+        # Exit 1 has exactly one meaning: a complete check found updates.
+        # Anything the checker did not classify is an incomplete check instead,
+        # otherwise the scheduled workflow would publish a misleading update
+        # issue for a broken run.
+        print(f"❌ Unexpected dependency-check failure: {e}", file=sys.stderr)
+        sys.exit(2)
+
+
 if __name__ == "__main__":
-    main()
+    entrypoint()
