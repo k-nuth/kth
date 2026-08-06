@@ -195,6 +195,20 @@ struct KB_API block_chain {
     [[nodiscard]]
     database::result_code set_utxo_built_height(uint32_t height);
 
+    // The in-flight batch marker (#600). Persisted before a batch mutates
+    // anything and cleared only once its delta, its deferred deletions and its
+    // built height have all landed, so a start that finds it knows the set may
+    // be half-applied. Nothing here can be rolled back — the delta mutates the
+    // maps in place — so the marker is what stands in for a transaction.
+    [[nodiscard]]
+    std::expected<std::optional<uint32_t>, database::result_code> get_utxo_batch_dirty() const;
+
+    [[nodiscard]]
+    database::result_code set_utxo_batch_dirty(uint32_t first_height);
+
+    [[nodiscard]]
+    database::result_code clear_utxo_batch_dirty();
+
     // UTXO-Z maintenance operations
     [[nodiscard]]
     size_t utxo_deferred_deletions_size() const;

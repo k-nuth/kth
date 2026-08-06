@@ -748,14 +748,16 @@ duplicate, after BIP34 as much as before. So **migration validates the invariant
 over the whole database**, not only over pre-BIP34 history. After that, transitions
 maintain it, provided a batch is never published half-applied.
 
-**That proviso is a requirement, and the node does not meet it today** (#600).
-The built-height marker is persisted before the batch's deferred deletions run,
-and a failed deletion is logged rather than acted on — so a batch can be recorded
-as connected while an entry that should have been removed is still there, with no
-rollback and nothing telling the next start. Until that is closed, **the claim
-that transitions preserve the invariant by construction is a target rather than a
-fact**, and this document should not be read as asserting it of the current
-node.
+**The node meets that proviso as of #600.** A batch records durably that it is
+about to mutate the set, before it does; its deferred deletions run before the
+built height advances and are fatal if any fails; and the record is cleared only
+once delta, deletions and height have all landed. A start that finds the record
+refuses to build — the delta mutates the maps in place, so an interrupted batch
+can be neither rolled back nor resumed, and rebuilding is the only sound answer.
+
+What that buys is not a transaction. It is that a half-applied set is **always
+detectable and never silently continued**, which is what the claim above needs:
+a published state is one that finished.
 
 **Only one kind of transient duplicate is legitimate**, and the distinction
 decides whether an operation carries on or stops.

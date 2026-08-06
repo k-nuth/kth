@@ -23,6 +23,14 @@ enum class property_code {
     last_header_height = 1,
     last_block_height  = 2,
     utxo_built_height  = 3,  // Last block height for which UTXO set was built
+
+    // The first height of a UTXO batch whose mutation started and has not been
+    // recorded as complete. Written before anything is mutated and cleared only
+    // once the delta, the deferred deletions and the built height have all
+    // landed. Its presence at startup means the set may be half-applied: the
+    // delta mutates the maps in place, so there is nothing to roll back and
+    // resuming would reapply mutations that already happened. See issue #600.
+    utxo_batch_dirty   = 4,
 };
 
 enum class db_mode_type {

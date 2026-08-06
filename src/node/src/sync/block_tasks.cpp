@@ -1815,6 +1815,27 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         bloom_ptr = nullptr;
     }
 
+    // Before trusting any of it: did the last run leave a batch half-applied?
+    // The delta mutates the maps in place, so an interrupted batch cannot be
+    // rolled back and must not be resumed — the built height names the batch
+    // before it, so resuming would reapply mutations that are already in the
+    // set. Rebuilding from an authoritative point is the only sound answer, and
+    // until that exists the honest thing is to refuse rather than continue on a
+    // set nothing can vouch for.
+    auto const dirty = chain.get_utxo_batch_dirty();
+    if ( ! dirty) {
+        spdlog::critical("[utxo_build] Could not read the in-flight batch marker; refusing to "
+            "build on a UTXO set whose state is unknown");
+        on_fatal("the in-flight batch marker could not be read");
+        co_return;
+    }
+    if (*dirty) {
+        spdlog::critical("[utxo_build] The last run left batch {} in flight: the UTXO set may be "
+            "part-applied and cannot be resumed or rolled back. It has to be rebuilt.", **dirty);
+        on_fatal("a UTXO batch was left half-applied and the set cannot be resumed");
+        co_return;
+    }
+
     // Resume from saved progress. The persisted utxo-built height is the
     // authoritative floor (see resume_utxo_built_height): it must win over
     // start_height, which is derived from the block-sync marker (blocks
@@ -2099,6 +2120,19 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             timestamp_window.push_back(block_timestamp);
         }
 
+        // Say, durably, that this batch is about to mutate the set — before it
+        // does. Nothing below can be rolled back: the delta writes the maps in
+        // place, so if anything after this fails, or the process dies, the set is
+        // left part-way with no way to tell from the built height, which still
+        // names the previous batch. The marker is what a restart reads instead.
+        if (auto const dirty = chain.set_utxo_batch_dirty(batch_start);
+                dirty != database::result_code::success) {
+            spdlog::critical("[utxo_build] Could not record that batch {} is in flight; refusing "
+                "to mutate the UTXO set without it", batch_start);
+            on_fatal("the in-flight batch marker could not be written");
+            co_return;
+        }
+
         // Apply to UTXO-Z
         if ( ! delta.empty()) {
             auto result = chain.apply_utxo_delta_raw(delta.inserts, delta.deletes);
@@ -2119,6 +2153,22 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                 // reverse them with.
                 spdlog::critical("[utxo_build] Failed to store undo data for index {}", entry.idx);
                 on_fatal("a connected block has no undo data and cannot be disconnected");
+                co_return;
+            }
+        }
+
+        // Deferred deletions belong to this batch, so they run before its height
+        // is recorded rather than after. A failure here used to be logged and
+        // stepped over, which left an entry alive that the delta says is spent —
+        // a duplicate the rest of the design counts on not existing — while the
+        // marker went on to call the batch connected.
+        if (chain.utxo_deferred_deletions_size() > 0) {
+            auto [deleted, failed] = chain.utxo_process_pending_deletions();
+            if ( ! failed.empty()) {
+                spdlog::critical("[utxo_build] {} deferred deletions failed in batch {}-{}: the "
+                    "UTXO set still holds outputs this batch spent", failed.size(),
+                    batch_start, batch_end);
+                on_fatal("outputs a connected batch spent are still in the UTXO set");
                 co_return;
             }
         }
@@ -2163,12 +2213,16 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                 co_return;
             }
         }
-        auto deferred = chain.utxo_deferred_deletions_size();
-        if (deferred > 0) {
-            auto [deleted, failed] = chain.utxo_process_pending_deletions();
-            if ( ! failed.empty()) {
-                spdlog::error("[utxo_build] {} deferred deletions failed", failed.size());
-            }
+        // Delta, deletions and height have all landed, so the batch is complete
+        // and a restart has nothing to recover. Clearing last is what makes the
+        // marker mean what it says.
+        if (auto const cleared = chain.clear_utxo_batch_dirty();
+                cleared != database::result_code::success) {
+            spdlog::critical("[utxo_build] Batch {}-{} completed but its in-flight marker could "
+                "not be cleared; the next start would rebuild needlessly",
+                batch_start, batch_end);
+            on_fatal("the in-flight batch marker could not be cleared");
+            co_return;
         }
 
         spdlog::info("[utxo_build] UTXO built to height {}/{}", utxo_built_height, current_contiguous - 1);
