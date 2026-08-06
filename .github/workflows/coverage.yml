@@ -143,6 +143,12 @@ jobs:
       - name: 📊 Generate coverage report
         if: always()
         timeout-minutes: 20
+        # The job runs in a container without bash, so GitHub falls back to
+        # `sh -e {0}` — dash, which has no `set -o pipefail`. The step died on
+        # its first line and produced no report at all, which nothing noticed
+        # because the job is advisory: it reported success while doing none of
+        # its work. Naming the shell is what makes the body below run.
+        shell: bash
         run: |
           # Switched off gcovr to lcov. gcovr 8.5 and 8.6 both blow
           # past the GHA hosted runner's memory ceiling on this
@@ -205,12 +211,111 @@ jobs:
           # Test sources still need pruning: they live alongside
           # the headers we keep, so `--no-external` and the
           # narrowed `--directory` set don't filter them.
+          #
+          # `unused` is needed alongside `mismatch`: lcov 2.0 makes an exclude
+          # pattern that matched nothing a hard error, and whether `*/tests/*`
+          # matches depends on the narrowed capture scope above. A pattern
+          # finding nothing to remove is the expected outcome, not a failure,
+          # and letting it abort the step is what kept the prune from ever
+          # running once the shell was fixed.
+          #
+          # geninfo emits absolute paths even under `--base-directory .`, so
+          # every SF: record names `/__w/kth/kth/...` — a path that exists only
+          # inside this container. Codecov matches coverage to files by path, so
+          # a report full of absolute ones measures nothing it can attribute.
+          # `--substitute` makes them repository-relative, which is what the
+          # rest of the pipeline and the audit below both assume.
           lcov --remove coverage.info \
                '*/test/*' '*/tests/*' \
-               --ignore-errors mismatch \
+               --substitute "s#^${PWD}/##" \
+               --ignore-errors mismatch,unused \
                --rc branch_coverage=0 \
                --output-file coverage.info
-          lcov --list coverage.info | tail -1
+
+          # Prove the report exists before handing it to an uploader that
+          # treats a missing file as a warning. That is how the dead step
+          # above stayed invisible: nothing between "produced nothing" and
+          # "uploaded nothing" ever said so.
+          test -s coverage.info || {
+            echo "::error::coverage.info is missing or empty"
+            exit 1
+          }
+          records=$(grep -c '^SF:' coverage.info || true)
+          bytes=$(wc -c < coverage.info)
+          test "${records}" -gt 0 || {
+            echo "::error::coverage.info holds no SF: records — nothing was captured"
+            exit 1
+          }
+          totals=$(lcov --list coverage.info | tail -1)
+          echo "coverage.info: ${bytes} bytes, ${records} source files"
+          echo "${totals}"
+
+          # What the tracefile actually measures. A count on its own cannot tell
+          # a report over this repository apart from one that swept in vendored
+          # or generated sources, and that difference decides whether the
+          # percentage means anything. Grouped by the first two path segments.
+          #
+          # Expect prefixes beyond the three captured above. gcov attributes
+          # inline code to the file where it is defined, so a header belonging
+          # to another module appears here when the captured modules instantiate
+          # or execute it — src/database shows up that way. That is the coverage
+          # of code these tests really ran, not a sign that database's own
+          # objects were captured: no .cpp of theirs is in the scope above.
+          # Filtering those records out, or widening the scope to include the
+          # module, would each distort the figure in opposite directions.
+          echo "--- SF: records by prefix ---"
+          sed -n 's/^SF://p' coverage.info \
+            | sed 's#^\(\./\)*##' \
+            | awk -F/ '{ print ($2 == "" ? $1 : $1 "/" $2) }' \
+            | sort | uniq -c | sort -rn
+          echo "--- SF: records that do not resolve on disk ---"
+          missing=0
+          while IFS= read -r f; do
+            if [ ! -f "${f}" ]; then
+              echo "  ${f}"
+              missing=$((missing + 1))
+            fi
+          done < <(sed -n 's/^SF://p' coverage.info)
+          echo "unresolvable SF: records: ${missing}"
+
+          # The two properties the audit exists to establish, asserted rather
+          # than printed. Printing a prefix breakdown shows the defect to whoever
+          # reads the log; it does nothing to stop the next change reintroducing
+          # it, which is how absolute paths survived here unnoticed in the first
+          # place.
+          absolute=$(grep -c '^SF:/' coverage.info || true)
+          if [ "${absolute}" -ne 0 ]; then
+            echo "::error::${absolute} SF: record(s) are absolute paths"
+            grep -m 5 '^SF:/' coverage.info
+            echo "Codecov attributes coverage by repository-relative path, so"
+            echo "absolute ones attribute none of it."
+            exit 1
+          fi
+          if [ "${missing}" -ne 0 ]; then
+            echo "::error::${missing} SF: record(s) name files that do not exist"
+            exit 1
+          fi
+
+          {
+            echo "### Coverage"
+            echo
+            echo "\`coverage.info\`: **${bytes}** bytes, **${records}** source files, ${missing} unresolvable"
+            echo
+            echo '```'
+            echo "${totals}"
+            echo '```'
+            echo
+            echo '<details><summary>SF: records by prefix</summary>'
+            echo
+            echo '```'
+            sed -n 's/^SF://p' coverage.info \
+              | sed 's#^\(\./\)*##' \
+              | awk -F/ '{ print ($2 == "" ? $1 : $1 "/" $2) }' \
+              | sort | uniq -c | sort -rn
+            echo '```'
+            echo
+            echo '</details>'
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: ☁️ Upload to Codecov
         if: always()
