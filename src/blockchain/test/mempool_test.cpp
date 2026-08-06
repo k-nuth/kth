@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -659,4 +660,128 @@ TEST_CASE("mempool concurrent stress 16 threads", "[mempool][concurrent]") {
 
 TEST_CASE("mempool concurrent stress 32 threads", "[mempool][concurrent]") {
     run_concurrent(32);
+}
+
+// =============================================================================
+// The leased view is a state the pool was in (#611)
+// =============================================================================
+
+TEST_CASE("a leased view is closed under in-mempool parents while admissions run", "[mempool][lease]") {
+    // `for_each` alone locks per element, so a walk racing an admission collects
+    // a set gathered over an interval — one that can hold a child and not the
+    // parent it spends, because bucket order follows the hash and not insertion
+    // order. A template built from such a set selects the child alone.
+    //
+    // The lease is what makes the result a state: it takes the same exclusion
+    // the writers take, so nothing is admitted while the copy runs. Here a
+    // writer admits chained pairs through that exclusion, parent first, while a
+    // reader leases repeatedly. Since a parent is always admitted before its
+    // child, any state of the pool holding the child holds the parent — so any
+    // view holding a child without its parent is not a state, and that is the
+    // whole assertion.
+    mempool pool(0x1122334455667788ull, 0x99aabbccddeeff00ull);
+    prioritized_mutex mutex;
+
+    constexpr uint64_t pairs = 400;
+
+    // The transactions are deterministic, so both threads can name them without
+    // sharing anything: no ambiguity about which entry is whose parent, and no
+    // second race introduced by the checking.
+    std::vector<transaction_const_ptr> parents;
+    std::vector<transaction_const_ptr> children;
+    parents.reserve(pairs);
+    children.reserve(pairs);
+    for (uint64_t i = 0; i < pairs; ++i) {
+        auto const parent = as_ptr(make_tx({op(500000 + i, 0)}, 1, 7000 + i));
+        children.push_back(as_ptr(make_tx({output_point{parent->hash(), 0}}, 1, 8000 + i)));
+        parents.push_back(parent);
+    }
+
+    std::atomic<bool> writing{true};
+    std::atomic<uint64_t> admitted{0};
+    std::atomic<bool> saw_partial{false};
+
+    // The writer pauses once a quarter of the pairs are in and does not resume
+    // until the reader reports a view that is neither empty nor the whole set.
+    // Without that handshake the reader's leases could all land before the
+    // writer starts or after it finishes, and every assertion below would hold
+    // without a concurrent walk ever happening — the false green this test
+    // exists to rule out. Bounded so a failure to interleave fails the test
+    // instead of hanging it.
+    constexpr uint64_t handshake_at = pairs / 4;
+    std::atomic<bool> handshake_timed_out{false};
+
+    std::thread writer([&] {
+        for (uint64_t i = 0; i < pairs; ++i) {
+            // Through the writers' own exclusion, as the organizers hold it.
+            mutex.lock_high_priority();
+            bool const p = pool.add(mempool_entry{parents[i], 1000, 250, 1, 0});
+            bool const c = pool.add(mempool_entry{children[i], 1000, 250, 1, 0});
+            mutex.unlock_high_priority();
+
+            if (p) ++admitted;
+            if (c) ++admitted;
+
+            if (i == handshake_at) {
+                auto const limit = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+                while ( ! saw_partial.load(std::memory_order_acquire)) {
+                    if (std::chrono::steady_clock::now() > limit) {
+                        handshake_timed_out = true;
+                        break;
+                    }
+                    std::this_thread::yield();
+                }
+            }
+        }
+        writing = false;
+    });
+
+    uint64_t leases = 0;
+    uint64_t orphans = 0;
+    uint64_t children_seen = 0;
+    uint64_t widest = 0;
+    uint64_t partial = 0;
+
+    while (writing || leases < 4) {
+        auto const view = kth::blockchain::lease_pool_view(mutex, pool);
+        ++leases;
+        widest = std::max<uint64_t>(widest, view.entries.size());
+        if ( ! view.entries.empty() && view.entries.size() < pairs * 2) {
+            ++partial;
+            saw_partial.store(true, std::memory_order_release);
+        }
+
+        std::set<hash_digest> present;
+        for (auto const& entry : view.entries) {
+            present.insert(entry.tx->hash());
+        }
+
+        for (uint64_t i = 0; i < pairs; ++i) {
+            if ( ! present.contains(children[i]->hash())) {
+                continue;
+            }
+            ++children_seen;
+            if ( ! present.contains(parents[i]->hash())) {
+                ++orphans;
+            }
+        }
+    }
+
+    writer.join();
+
+    CHECK(orphans == 0);
+
+    // And the run has to have exercised what it claims: every pair admitted,
+    // more than one view taken while that was happening, and views that
+    // actually held children — an empty or single view would satisfy the
+    // assertion above without testing it.
+    CHECK(admitted == pairs * 2);
+    CHECK(leases > 1);
+    CHECK(children_seen > 0);
+    CHECK(widest > 0);
+
+    // The ones that keep this from passing without testing anything: the writer
+    // was made to wait for a view taken mid-fill, and it got one.
+    CHECK_FALSE(handshake_timed_out.load());
+    CHECK(partial > 0);
 }

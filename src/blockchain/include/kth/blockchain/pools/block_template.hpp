@@ -47,14 +47,24 @@ struct block_template_context {
     uint64_t coinbase_reserve_sigchecks = default_coinbase_reserve_sigchecks;
 };
 
-// Assemble a block template from the mempool, mirroring BCHN's BlockAssembler
+// Assemble a block template from `entries`, mirroring BCHN's BlockAssembler
 // (miner.cpp addTxs): order candidates by individual fee-rate and add each once
 // all its in-mempool parents are in, so the result is dependency-complete under
 // CTOR without CPFP / ancestor-package scoring. Enforces the block size and
 // sigchecks limits (with a coinbase reserve) and per-tx finality at the
 // template height.
+//
+// `entries` must be a coherent view of the pool: a set the pool actually held
+// at some instant. The dependency rule above is only meaningful on a set closed
+// under "in-mempool parents" — a prevout whose txid is absent is read as
+// already confirmed, so a child collected without its parent would be selected
+// alone, and the block would spend an output that is neither in it nor on the
+// chain (#611). This takes the entries rather than the pool precisely so that
+// obligation lands on the caller holding the exclusion, where it can be met;
+// walking a live concurrent map cannot meet it.
 KB_API
-block_template build_block_template(mempool const& pool, block_template_context const& ctx);
+block_template build_block_template(std::vector<mempool_entry> const& entries,
+                                    block_template_context const& ctx);
 
 // A full mining template: the transaction selection plus every header-level field
 // a miner needs to assemble and solve the next block. This is what the getblock-

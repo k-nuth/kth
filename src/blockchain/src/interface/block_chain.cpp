@@ -1840,7 +1840,9 @@ block_chain::fetch_template() const {
         co_return std::unexpected(error::not_found);
     }
 
-    co_return build_block_template(mempool_, block_template_context{
+    auto const view = lease_pool_view(validation_mutex_, mempool_);
+
+    co_return build_block_template(view.entries, block_template_context{
         state->dynamic_max_block_size(),
         state->dynamic_max_block_sigchecks(),
         state->height(),
@@ -1871,6 +1873,10 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         previous = *prev;
     }
 
+    // Only decides whether to rebuild, so it is read without the lease: a value
+    // that has already moved on costs one extra rebuild, and paying the
+    // exclusion on every cache hit would cost far more. The label stored with a
+    // rebuilt template comes from inside the lease instead — see below.
     auto const generation = mempool_.generation();
     auto const now = static_cast<uint32_t>(zulu_time());
 
@@ -1919,7 +1925,12 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         co_return snapshot->value;
     }
 
-    auto selection = build_block_template(mempool_, block_template_context{
+    // Lock order: template_rebuild_mutex_ (held above) then the validation
+    // mutex. Nothing takes them the other way round — the organizers hold the
+    // validation mutex and know nothing about the template cache.
+    auto const view = lease_pool_view(validation_mutex_, mempool_);
+
+    auto selection = build_block_template(view.entries, block_template_context{
         state->dynamic_max_block_size(),
         state->dynamic_max_block_sigchecks(),
         height,
@@ -1940,7 +1951,7 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         std::move(selection));
 
     auto next = boost::make_shared<template_snapshot>(
-        template_snapshot{std::move(built), previous, generation, now, coinbase_reserve_size});
+        template_snapshot{std::move(built), previous, view.generation, now, coinbase_reserve_size});
     template_cache_.store(next);
     co_return next->value;
 }

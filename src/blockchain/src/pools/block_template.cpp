@@ -44,14 +44,12 @@ bool canonical_less(transaction_const_ptr const& a, transaction_const_ptr const&
 
 } // namespace
 
-block_template build_block_template(mempool const& pool, block_template_context const& ctx) {
-    // 1. Point-in-time snapshot of the pool. The mempool is lock-free, so we copy
-    //    the entries out (cheap: shared_ptr + a few ints) and build the template
-    //    from a self-consistent view instead of querying the live maps.
-    std::vector<mempool_entry> entries;
-    entries.reserve(pool.size());
-    pool.for_each([&](mempool_entry const& e) { entries.push_back(e); });
-
+block_template build_block_template(std::vector<mempool_entry> const& entries,
+                                    block_template_context const& ctx) {
+    // 1. The caller's view of the pool. Everything below reads only `entries`,
+    //    so nothing here can be disturbed by a concurrent admission — but that
+    //    is the easy half. The half that matters is that the view was coherent
+    //    when it was taken; see the note on the declaration.
     auto const n = entries.size();
 
     block_template result{};

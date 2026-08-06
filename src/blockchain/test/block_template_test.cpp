@@ -32,6 +32,17 @@ using kth::blockchain::make_mining_template;
 
 namespace {
 
+// The builder takes a coherent set of entries rather than the pool, so that the
+// obligation to have one lands on the caller holding the exclusion (#611). A
+// test pool has no concurrent writer, so copying it out here is coherent by
+// construction — that is exactly the assumption production could not make.
+std::vector<mempool_entry> view_of(mempool const& pool) {
+    std::vector<mempool_entry> entries;
+    entries.reserve(pool.size());
+    pool.for_each([&](mempool_entry const& entry) { entries.push_back(entry); });
+    return entries;
+}
+
 hash_digest make_hash(uint64_t seed) {
     hash_digest h{};
     for (int i = 0; i < 8; ++i) {
@@ -113,7 +124,7 @@ void check_template_invariants(block_template const& tpl) {
 
 TEST_CASE("block_template: empty pool yields empty template", "[block_template]") {
     mempool pool(0x1111u, 0x2222u);
-    auto const tpl = build_block_template(pool, unlimited_ctx());
+    auto const tpl = build_block_template(view_of(pool), unlimited_ctx());
 
     REQUIRE(tpl.txs.empty());
     REQUIRE(tpl.total_fees == 0u);
@@ -131,7 +142,7 @@ TEST_CASE("block_template: includes all independent txs, CTOR-ordered, totals su
         REQUIRE(pool.add(make_entry(tx, /*fee*/ 100u * (i + 1), /*size*/ 200u, /*sigchecks*/ 3u)));
     }
 
-    auto const tpl = build_block_template(pool, unlimited_ctx());
+    auto const tpl = build_block_template(view_of(pool), unlimited_ctx());
 
     REQUIRE(tpl.txs.size() == 5u);
     check_template_invariants(tpl);
@@ -155,7 +166,7 @@ TEST_CASE("block_template: size limit selects highest fee-rate first", "[block_t
     auto ctx = unlimited_ctx();
     ctx.max_block_size = 1000u + 250u;
 
-    auto const tpl = build_block_template(pool, ctx);
+    auto const tpl = build_block_template(view_of(pool), ctx);
 
     REQUIRE(tpl.txs.size() == 2u);
     check_template_invariants(tpl);
@@ -185,7 +196,7 @@ TEST_CASE("block_template: a larger coinbase size reserve shrinks the selection"
     ctx.max_block_size = 1000u + 250u;
     ctx.coinbase_reserve_size = 1100u;
 
-    auto const tpl = build_block_template(pool, ctx);
+    auto const tpl = build_block_template(view_of(pool), ctx);
 
     REQUIRE(tpl.txs.size() == 1u);
     REQUIRE(tpl.total_fees == 300u);   // only the top fee-rate tx.
@@ -205,7 +216,7 @@ TEST_CASE("block_template: a larger coinbase sigchecks reserve caps selection", 
     ctx.max_block_sigchecks = 200u;
     ctx.coinbase_reserve_sigchecks = 130u;
 
-    auto const tpl = build_block_template(pool, ctx);
+    auto const tpl = build_block_template(view_of(pool), ctx);
 
     REQUIRE(tpl.txs.size() == 1u);
     REQUIRE(tpl.total_sigchecks == 40u);
@@ -225,7 +236,7 @@ TEST_CASE("block_template: sigchecks limit caps selection", "[block_template]") 
     auto ctx = unlimited_ctx();
     ctx.max_block_sigchecks = 100u + 100u;
 
-    auto const tpl = build_block_template(pool, ctx);
+    auto const tpl = build_block_template(view_of(pool), ctx);
 
     REQUIRE(tpl.txs.size() == 2u);
     REQUIRE(tpl.total_sigchecks == 80u);
@@ -241,7 +252,7 @@ TEST_CASE("block_template: child added only after its parent (dependency complet
     REQUIRE(pool.add(make_entry(parent, /*fee*/ 100u, /*size*/ 100u, 1u)));
     REQUIRE(pool.add(make_entry(child,  /*fee*/ 900u, /*size*/ 100u, 1u)));
 
-    auto const tpl = build_block_template(pool, unlimited_ctx());
+    auto const tpl = build_block_template(view_of(pool), unlimited_ctx());
 
     REQUIRE(tpl.txs.size() == 2u);
     check_template_invariants(tpl);
@@ -271,7 +282,7 @@ TEST_CASE("block_template: child dropped when parent does not fit", "[block_temp
     auto ctx = unlimited_ctx();
     ctx.max_block_size = 1000u + 350u;
 
-    auto const tpl = build_block_template(pool, ctx);
+    auto const tpl = build_block_template(view_of(pool), ctx);
 
     check_template_invariants(tpl);
     std::set<hash_digest> present;
@@ -294,7 +305,7 @@ TEST_CASE("block_template: non-final tx is excluded", "[block_template]") {
     REQUIRE(pool.add(make_entry(final_tx,  100u, 100u, 1u)));
     REQUIRE(pool.add(make_entry(non_final, 900u, 100u, 1u)));
 
-    auto const tpl = build_block_template(pool, unlimited_ctx());
+    auto const tpl = build_block_template(view_of(pool), unlimited_ctx());
 
     std::set<hash_digest> present;
     for (auto const& tx : tpl.txs) present.insert(tx->hash());
@@ -361,4 +372,61 @@ TEST_CASE("difficulty_from_bits scales with the exponent", "[block_template]") {
 TEST_CASE("difficulty_from_bits is zero for a zero mantissa", "[block_template]") {
     using kth::blockchain::difficulty_from_bits;
     REQUIRE(difficulty_from_bits(0x1d000000u) == Catch::Approx(0.0));
+}
+
+// =============================================================================
+// Why the builder takes entries and not the pool (#611)
+// =============================================================================
+
+TEST_CASE("an incoherent view selects a child whose parent is missing", "[block_template][coherence]") {
+    // The dependency rule reads a prevout whose txid is absent from the view as
+    // already confirmed — it has no other way to tell an unconfirmed parent from
+    // a chain output. So on a view that is missing a parent it holds, the child
+    // looks spendable and is selected alone, and the block would spend an output
+    // that is neither in it nor on the chain.
+    //
+    // This is what the builder does with a set the pool was never in, which is
+    // what walking the live map produced. It is not a defect of the selection:
+    // no rule over a set can recover what the set omits. It is the reason the
+    // coherent view is the caller's obligation, and the reason this signature
+    // takes entries rather than the pool.
+    auto const parent = as_ptr(make_tx({op(1, 0)}, 1, 1));
+    auto const child = as_ptr(make_tx({output_point{parent->hash(), 0}}, 1, 2));
+
+    std::vector<mempool_entry> const incoherent{make_entry(child, 5000, 250, 1)};
+
+    auto const tpl = build_block_template(incoherent, unlimited_ctx());
+
+    REQUIRE(tpl.txs.size() == 1);
+    CHECK(tpl.txs.front()->hash() == child->hash());
+
+    // Stated the other way round, since that is the property callers rely on:
+    // the selection is closed under in-mempool parents *of the view given*, and
+    // the parent is not in it.
+    auto const& only_input = tpl.txs.front()->inputs().front();
+    CHECK(only_input.previous_output().hash() == parent->hash());
+}
+
+TEST_CASE("a coherent view keeps the child with its parent", "[block_template][coherence]") {
+    // The same two transactions, this time as a set the pool could have held.
+    auto const parent = as_ptr(make_tx({op(1, 0)}, 1, 1));
+    auto const child = as_ptr(make_tx({output_point{parent->hash(), 0}}, 1, 2));
+
+    // The child pays far better, so fee-rate order alone would place it first;
+    // only the dependency rule keeps them together and in CTOR order.
+    std::vector<mempool_entry> const coherent{
+        make_entry(parent, 100, 250, 1),
+        make_entry(child, 50000, 250, 1)};
+
+    auto const tpl = build_block_template(coherent, unlimited_ctx());
+
+    REQUIRE(tpl.txs.size() == 2);
+    check_template_invariants(tpl);
+
+    std::set<hash_digest> selected;
+    for (auto const& tx : tpl.txs) {
+        selected.insert(tx->hash());
+    }
+    CHECK(selected.contains(parent->hash()));
+    CHECK(selected.contains(child->hash()));
 }

@@ -371,4 +371,30 @@ mempool_totals mempool::summary() const {
     return totals;
 }
 
+namespace {
+
+// The copy allocates, so the release must not rest on the body never throwing.
+struct low_priority_lease {
+    explicit low_priority_lease(prioritized_mutex& mutex) : mutex_(mutex) {
+        mutex_.lock_low_priority();
+    }
+    ~low_priority_lease() { mutex_.unlock_low_priority(); }
+    low_priority_lease(low_priority_lease const&) = delete;
+    low_priority_lease& operator=(low_priority_lease const&) = delete;
+private:
+    prioritized_mutex& mutex_;
+};
+
+} // namespace
+
+pool_view lease_pool_view(prioritized_mutex& mutex, mempool const& pool) {
+    pool_view view;
+
+    low_priority_lease const lease(mutex);
+    view.entries.reserve(pool.size());
+    pool.for_each([&](mempool_entry const& entry) { view.entries.push_back(entry); });
+    view.generation = pool.generation();
+    return view;
+}
+
 } // namespace kth::blockchain
