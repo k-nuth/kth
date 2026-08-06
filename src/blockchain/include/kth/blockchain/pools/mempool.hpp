@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <kth/domain.hpp>
+#include <kth/infrastructure/utility/prioritized_mutex.hpp>
 
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/pools/mempool_hashers.hpp>
@@ -147,6 +148,34 @@ private:
     mempool_stats stats_;
     std::atomic<uint64_t> generation_{0};
 };
+
+// A set of entries the pool actually held, and the number that labels it.
+struct pool_view {
+    std::vector<mempool_entry> entries;
+    uint64_t generation;
+};
+
+/// Copy the pool coherently, under the same exclusion its writers take.
+///
+/// `for_each` walks a map that locks per element, so on its own it collects a
+/// set gathered over an interval rather than a state the pool was ever in. That
+/// distinction is not academic: a template built from such a set can select a
+/// transaction without its unconfirmed parent, because a prevout whose txid is
+/// absent reads as already confirmed (#611). Holding the writers' mutex for the
+/// walk is what makes the result a state; sampling the generation inside the
+/// same lease is what makes the label describe these entries rather than some
+/// instant near them.
+///
+/// The lease covers the copy and nothing else — everything a caller does with
+/// the result touches only its own copy, and the exclusion stops admission, so
+/// its length is paid by every transaction arriving meanwhile. The low-priority
+/// side is deliberate: connecting a block must not wait behind a reader.
+///
+/// Must not be called with a suspension point inside a caller's use of it: a
+/// shared_mutex may only be released by the thread that took it, and a
+/// coroutine may resume on another. The copy itself is synchronous.
+KB_API
+pool_view lease_pool_view(prioritized_mutex& mutex, mempool const& pool);
 
 } // namespace kth::blockchain
 
