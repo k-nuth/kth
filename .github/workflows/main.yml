@@ -1,4 +1,4 @@
-name: Build and Test
+name: 🏗️ Build and Test
 
 on:
   push:
@@ -46,6 +46,7 @@ env:
 
 jobs:
   debug:
+    name: 🐛 Debug
     runs-on: ubuntu-24.04
     outputs:
       permitted: ${{ steps.check.outputs.permitted }}
@@ -57,6 +58,7 @@ jobs:
           echo "Condition result: ${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master' }}"
 
   check:
+    name: 🔐 Permissions
     if: github.event_name == 'push' || 
       (github.event_name == 'pull_request' && 
        !startsWith(github.head_ref, 'release/') && 
@@ -82,6 +84,7 @@ jobs:
           permission: write
 
   setup:
+    name: 🔧 Setup
     if: github.event_name == 'push' || 
       (github.event_name == 'pull_request' && 
        !startsWith(github.head_ref, 'release/') && 
@@ -135,20 +138,20 @@ jobs:
 
           echo "### 🏗️ Build Strategy" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ github.ref }}" == refs/heads/release/* ]] || [[ "${{ github.ref }}" == refs/heads/hotfix/* ]] || [[ "${{ github.ref }}" == refs/heads/dev-publish/* ]] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "**Type:** 🚀 Release builds + Sanitizer builds" >> $GITHUB_STEP_SUMMARY
+            echo "**Type:** 🚀 Release builds + 🧹 sanitizer build" >> $GITHUB_STEP_SUMMARY
             echo "**Upload:** ✅ Packages will be uploaded to Conan registry" >> $GITHUB_STEP_SUMMARY
           else
-            echo "**Type:** 🔨 Development builds (Sanitizer builds only)" >> $GITHUB_STEP_SUMMARY
+            echo "**Type:** 🔨 Development Build & Test" >> $GITHUB_STEP_SUMMARY
+            echo "**Sanitizers:** ${{ github.event_name == 'pull_request' && '⏭️ Run after merge' || '✅ Enabled on this push' }}" >> $GITHUB_STEP_SUMMARY
             echo "**Upload:** ⏭️ Packages will not be uploaded" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "### 🎯 Build Matrix" >> $GITHUB_STEP_SUMMARY
-          echo "Builds will run on multiple platforms with different sanitizer configurations:" >> $GITHUB_STEP_SUMMARY
-          echo "- Linux (GCC 14) - AddressSanitizer + UndefinedBehaviorSanitizer" >> $GITHUB_STEP_SUMMARY
-          echo "- macOS (Apple Clang 15) - AddressSanitizer + UndefinedBehaviorSanitizer" >> $GITHUB_STEP_SUMMARY
-          echo "- macOS (Apple Clang 15) - ThreadSanitizer" >> $GITHUB_STEP_SUMMARY
-          echo "- WebAssembly (Emscripten)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐧 Linux x86_64 GCC 16 — Build & Test" >> $GITHUB_STEP_SUMMARY
+          echo "- 🍎 macOS arm64 Apple Clang 21 — Build & Test" >> $GITHUB_STEP_SUMMARY
+          echo "- 🧹 Linux x86_64 GCC 16 — ASan+UBSan on pushes" >> $GITHUB_STEP_SUMMARY
+          echo "- 🌐 WebAssembly Emscripten 5 — separate build workflow" >> $GITHUB_STEP_SUMMARY
 
   # build-base-docker-image:
   #   name: Builds Alpine Docker image
@@ -188,7 +191,7 @@ jobs:
        !startsWith(github.head_ref, 'style/') &&
        !startsWith(github.head_ref, 'chore/') &&
        !startsWith(github.head_ref, 'noci/'))
-    name: Generate Job Matrix
+    name: 🧭 Generate job matrix
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -214,7 +217,7 @@ jobs:
     needs: [setup, generate-matrix]
     strategy:
       matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
-    name: ${{ matrix.config.name }}
+    name: 📦 ${{ matrix.config.icon }} ${{ matrix.config.name }} — Resolve dependencies
     uses: ./.github/workflows/calc-deps-with-container.yml
     with:
       if: ${{ matrix.config.compiler == 'GCC' }}
@@ -230,7 +233,7 @@ jobs:
     needs: [setup, generate-matrix]
     strategy:
       matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
-    name: ${{ matrix.config.name }}
+    name: 📦 ${{ matrix.config.icon }} ${{ matrix.config.name }} — Resolve dependencies
     uses: ./.github/workflows/calc-deps-without-container.yml
     with:
       if: ${{ matrix.config.compiler != 'GCC' }}
@@ -245,7 +248,7 @@ jobs:
     needs: [calc-deps-with-container]
     strategy:
       matrix: ${{ fromJson(needs.calc-deps-with-container.outputs.matrix) }}
-    name: ${{ matrix.config.name }}
+    name: 📦 ${{ matrix.config.icon }} ${{ matrix.config.name }} — Build dependencies
     uses: ./.github/workflows/build-deps-with-container.yml
     with:
       if: ${{ matrix.config.compiler == 'GCC' }}
@@ -262,7 +265,7 @@ jobs:
     needs: [calc-deps-without-container]
     strategy:
       matrix: ${{ fromJson(needs.calc-deps-without-container.outputs.matrix) }}
-    name: ${{ matrix.config.name }}
+    name: 📦 ${{ matrix.config.icon }} ${{ matrix.config.name }} — Build dependencies
     uses: ./.github/workflows/build-deps-without-container.yml
     with:
       if: ${{ matrix.config.compiler != 'GCC' }}
@@ -283,7 +286,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
-    name: ${{ matrix.config.name }} (Build & Test)
+    name: ${{ matrix.config.icon }} ${{ matrix.config.name }} — Build & Test
     uses: ./.github/workflows/build-with-container.yml
     with:
       if: ${{ matrix.config.compiler == 'GCC' }}
@@ -332,7 +335,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
-    name: ${{ matrix.config.name }} (Sanitizers)
+    name: 🧹 ${{ matrix.config.name }} — ASan+UBSan
     uses: ./.github/workflows/build-with-container.yml
     with:
       if: ${{ matrix.config.compiler == 'GCC' }}
@@ -361,7 +364,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
-    name: ${{ matrix.config.name }} (Build & Test)
+    name: ${{ matrix.config.icon }} ${{ matrix.config.name }} — Build & Test
     uses: ./.github/workflows/build-without-container.yml
     with:
       if: ${{ matrix.config.compiler != 'GCC' }}
@@ -387,7 +390,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
-    name: ${{ matrix.config.name }} (Release)
+    name: 🚀 ${{ matrix.config.icon }} ${{ matrix.config.name }} — Release
     uses: ./.github/workflows/build-with-container.yml
     with:
       if: ${{ matrix.config.compiler == 'GCC' }}
@@ -414,7 +417,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
-    name: ${{ matrix.config.name }} (Release)
+    name: 🚀 ${{ matrix.config.icon }} ${{ matrix.config.name }} — Release
     uses: ./.github/workflows/build-without-container.yml
     with:
       if: ${{ matrix.config.compiler != 'GCC' }}
@@ -434,7 +437,7 @@ jobs:
       CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
 
   static-checks:
-    name: Static Checks
+    name: 🔍 Static analysis
     if: github.event_name == 'push' || 
       (github.event_name == 'pull_request' && 
        !startsWith(github.head_ref, 'release/') && 
@@ -752,4 +755,3 @@ jobs:
           
           # Don't fail CI - IWYU suggestions are optional optimizations
           exit 0
-

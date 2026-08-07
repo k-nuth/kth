@@ -37,6 +37,8 @@ def main():
                 # Create a dummy entry with minimal required fields when no dependencies to build
                 # This prevents workflow errors when os field is accessed
                 matrix["config"].append({
+                    "name": "No dependencies",
+                    "icon": "⏭️",
                     "reference": "null",
                     "os": "ubuntu-latest",
                     "context": "host"
