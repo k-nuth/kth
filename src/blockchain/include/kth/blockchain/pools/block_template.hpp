@@ -94,11 +94,19 @@ mining_template make_mining_template(
 
 // A snapshot of mining-relevant chain state, for the getmininginfo RPC and its
 // C-API counterpart.
+// A composite diagnostic, deliberately not a snapshot: `blocks`, `difficulty`
+// and `chain` come from one published chain view, while `pooled_tx` and the two
+// flags are read live. It stays answerable during a transition precisely because
+// that is when someone is looking at it, and describing it as internally atomic
+// would be a claim it cannot keep.
 struct mining_info {
     size_t blocks;                      // current block height (tip)
     double difficulty;                  // difficulty of the next required work
     size_t pooled_tx;                   // transactions in the mempool
     domain::config::network chain;      // network the node is on
+    bool transition_in_progress;        // a batch or reorganization is mutating
+    bool caught_up;                     // connected chain has reached its headers
+    bool fresh;                         // that tip is within the configured age
 };
 
 // The Bitcoin difficulty a compact nBits target represents (target 1 == 1.0).

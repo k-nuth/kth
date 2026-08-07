@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <exception>
 
 #include <asio/as_tuple.hpp>
 #include <asio/steady_timer.hpp>
@@ -69,64 +70,19 @@ bool persist_active_headers(
     return true;
 }
 
-::asio::awaitable<reorg_outcome> execute_reorg(
+namespace {
+
+// Everything between closing entry and reopening it.
+//
+// Split out so the whole of it sits inside one try in the caller: from
+// `begin_transition` on, an exception that unwinds past here leaves the gate
+// shut with nobody told.
+::asio::awaitable<reorg_outcome> switch_publish_and_reopen(
     blockchain::block_chain& chain,
     blockchain::header_organizer& organizer,
     blockchain::header_index::index_t branch_head,
     uint32_t fork_height,
-    std::function<bool()> abort,
-    header_persister persist) {
-
-    // Before anything is touched: without somewhere to write the replaced range,
-    // a switch has no way to become survivable, and finding that out after the
-    // chain has already moved is finding out too late.
-    KTH_CONTRACT(persist);
-
-    auto executor = co_await ::asio::this_coro::executor;
-
-    // Quiesce the writers: the switch rewrites the UTXO set and the validated
-    // height, so it must run alone. Lifting the pause is tied to the scope: a
-    // pause left on stops every registered writer for the rest of the run, and
-    // there are several ways out of here (an abort, a throw from the switch).
-    struct pause_scope {
-        blockchain::block_chain& chain;
-        explicit pause_scope(blockchain::block_chain& c) : chain(c) { chain.request_reorg_pause(true); }
-        ~pause_scope() { chain.request_reorg_pause(false); }
-        pause_scope(pause_scope const&) = delete;
-        pause_scope& operator=(pause_scope const&) = delete;
-    } const pause(chain);
-
-    // Bounded: a registered writer that never parks is a bug, and waiting on it
-    // forever would hold the pause open and stall sync with nothing in the log.
-    // Long enough that a legitimately slow batch — a UTXO build parks between
-    // batches, and one batch runs full validation over a hundred blocks — is not
-    // cut off.
-    constexpr auto barrier_deadline = std::chrono::minutes(5);
-    auto const wait_started = std::chrono::steady_clock::now();
-    bool timed_out = false;
-
-    while ( ! chain.reorg_barrier_reached() && ! abort()) {
-        if (std::chrono::steady_clock::now() - wait_started > barrier_deadline) {
-            timed_out = true;
-            break;
-        }
-        ::asio::steady_timer wait_timer(executor);
-        wait_timer.expires_after(std::chrono::milliseconds(50));
-        co_await wait_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-    }
-
-    if (timed_out) {
-        auto const [parked, registered] = chain.reorg_barrier_state();
-        spdlog::error("[reorg] Gave up waiting for the reorg barrier after {} minutes: {} of {} "
-            "writers parked. The chain was not touched; the branch will be reconsidered when it is "
-            "announced again", barrier_deadline.count(), parked, registered);
-        co_return reorg_outcome{};
-    }
-
-    if (abort()) {
-        spdlog::info("[reorg] Aborted while waiting for the barrier; the chain was not touched");
-        co_return reorg_outcome{};
-    }
+    header_persister const& persist) {
 
     auto const outcome = co_await chain.switch_to_branch_async(branch_head, fork_height);
 
@@ -211,30 +167,152 @@ bool persist_active_headers(
         // next header batch can arrive as soon as the pause is gone.
         if (outcome.validated_tip) {
             organizer.note_block_validated(static_cast<int32_t>(*outcome.validated_tip));
-
-            // The transition is closed: the UTXO set, the by-height table, the
-            // adopted tip and the mempool all describe the new fork. Publish the
-            // state here, while the writers are still parked — this is the one
-            // moment nothing else can read a half-switched chain (#605).
-            //
-            // The validated tip, not the branch head. The switch rewound the
-            // connected chain to the fork; the blocks above it are headers, and
-            // they get connected by the ordinary path, which publishes at each
-            // batch. Publishing the branch head would describe a chain whose
-            // UTXO delta has not been applied — the height moving down here
-            // while the generation moves up is the transition being honest.
-            if ( ! fatal) {
-                if (auto const ec = chain.publish_chain_view(*outcome.validated_tip); ec) {
-                    spdlog::critical("[reorg] Could not publish the chain state at the fork "
-                        "height {}: {}. The node would keep validating against the branch it "
-                        "just left", *outcome.validated_tip, ec.message());
-                    fatal = true;
-                }
-            }
         }
     }
 
+    // Publish where the connected chain actually ended up, and only then reopen.
+    //
+    // The validated tip, not the branch head: the switch rewound the connected
+    // chain to the fork, and the blocks above it are headers until the ordinary
+    // path applies their deltas. Publishing the branch head would describe a
+    // chain whose UTXO delta has not been applied — the height moving down here
+    // while the generation moves up is the transition being honest (#605).
+    //
+    //
+    // Both outcomes come through here. A switch that reports failure may still
+    // have rewound part way — `validated_tip` is how far it got, not where it
+    // started — so the published state has to describe that, and a node that
+    // resyncs from there can serve work again. A switch that touched nothing
+    // reports no tip, and there is nothing to republish.
+    if ( ! fatal && ! outcome.mutated) {
+        // Rejected before touching anything — a null head, a fork that is not
+        // above the tip, an ancestry mismatch. Those report the current tip, so
+        // publishing on them would move the generation and drop the template
+        // cache for a switch that did nothing. Reopen and leave the view alone.
+        spdlog::info("[reorg] The switch was rejected before touching the chain; "
+            "the published state is unchanged");
+        chain.end_transition();
+        co_return reorg_outcome{outcome, fatal};
+    }
+
+    // Mutated, and no tip to describe it. The chain has been moved and nothing
+    // says where to, so there is no height to publish and no state a capture
+    // could be coherent with — reopening here would hand out templates built on
+    // a view that describes the branch the node just left. Fatal, and the gate
+    // stays shut.
+    if ( ! fatal && ! outcome.validated_tip) {
+        spdlog::critical("[reorg] The switch disconnected blocks and reported no tip. The chain "
+            "has moved and nothing says where to; capture stays closed and the node winds down");
+        fatal = true;
+    }
+
+    if ( ! fatal && outcome.validated_tip) {
+        if (auto const ec = chain.publish_chain_view(*outcome.validated_tip); ec) {
+            spdlog::critical("[reorg] Could not publish the chain state at height {}: {}. The "
+                "node would keep validating against the branch it just left",
+                *outcome.validated_tip, ec.message());
+            fatal = true;
+        }
+    }
+
+    if ( ! fatal) {
+        // Earned. A failure above leaves capture closed while the node winds
+        // down: there is no coherent state for a capture to be coherent with.
+        chain.end_transition();
+    }
+
     co_return reorg_outcome{outcome, fatal};
+}
+
+} // namespace
+
+::asio::awaitable<reorg_outcome> execute_reorg(
+    blockchain::block_chain& chain,
+    blockchain::header_organizer& organizer,
+    blockchain::header_index::index_t branch_head,
+    uint32_t fork_height,
+    std::function<bool()> abort,
+    header_persister persist) {
+
+    // Before anything is touched: without somewhere to write the replaced range,
+    // a switch has no way to become survivable, and finding that out after the
+    // chain has already moved is finding out too late.
+    KTH_CONTRACT(persist);
+
+    auto executor = co_await ::asio::this_coro::executor;
+
+    // Quiesce the writers: the switch rewrites the UTXO set and the validated
+    // height, so it must run alone. Lifting the pause is tied to the scope: a
+    // pause left on stops every registered writer for the rest of the run, and
+    // there are several ways out of here (an abort, a throw from the switch).
+    struct pause_scope {
+        blockchain::block_chain& chain;
+        explicit pause_scope(blockchain::block_chain& c) : chain(c) { chain.request_reorg_pause(true); }
+        ~pause_scope() { chain.request_reorg_pause(false); }
+        pause_scope(pause_scope const&) = delete;
+        pause_scope& operator=(pause_scope const&) = delete;
+    } const pause(chain);
+
+    // Bounded: a registered writer that never parks is a bug, and waiting on it
+    // forever would hold the pause open and stall sync with nothing in the log.
+    // Long enough that a legitimately slow batch — a UTXO build parks between
+    // batches, and one batch runs full validation over a hundred blocks — is not
+    // cut off.
+    constexpr auto barrier_deadline = std::chrono::minutes(5);
+    auto const wait_started = std::chrono::steady_clock::now();
+    bool timed_out = false;
+
+    while ( ! chain.reorg_barrier_reached() && ! abort()) {
+        if (std::chrono::steady_clock::now() - wait_started > barrier_deadline) {
+            timed_out = true;
+            break;
+        }
+        ::asio::steady_timer wait_timer(executor);
+        wait_timer.expires_after(std::chrono::milliseconds(50));
+        co_await wait_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+    }
+
+    if (timed_out) {
+        auto const [parked, registered] = chain.reorg_barrier_state();
+        spdlog::error("[reorg] Gave up waiting for the reorg barrier after {} minutes: {} of {} "
+            "writers parked. The chain was not touched; the branch will be reconsidered when it is "
+            "announced again", barrier_deadline.count(), parked, registered);
+        co_return reorg_outcome{};
+    }
+
+    if (abort()) {
+        spdlog::info("[reorg] Aborted while waiting for the barrier; the chain was not touched");
+        co_return reorg_outcome{};
+    }
+
+    // Entry closes before the switch touches anything, and the captures already
+    // admitted are drained first. A template that entered earlier finishes on
+    // copies it holds; nothing new may capture a half-switched chain (#621).
+    if ( ! chain.begin_transition()) {
+        spdlog::critical("[reorg] A reorganization began while another transition was running");
+        co_return reorg_outcome{{}, /*fatal*/ true};
+    }
+
+    // From here the gate is closed, and reopening it is the last thing a path
+    // that ends well does. An exception unwinding past this point would leave it
+    // closed with nobody told: `pause_scope` lifts the pause on the way out and
+    // the sync loop carries on, so the node keeps working with every template
+    // request refused for the rest of the process — a stop that never announces
+    // itself. Convert it into the outcome the caller already knows how to act
+    // on, and leave the gate shut on purpose: after a throw there is no coherent
+    // state for a capture to be coherent with.
+    try {
+        co_return co_await switch_publish_and_reopen(
+            chain, organizer, branch_head, fork_height, persist);
+    } catch (std::exception const& e) {
+        spdlog::critical("[reorg] The switch threw after the transition began: {}. The chain may "
+            "be part way onto the branch; capture stays closed and the node winds down", e.what());
+        co_return reorg_outcome{{}, /*fatal*/ true};
+    } catch (...) {
+        spdlog::critical("[reorg] The switch threw after the transition began. The chain may be "
+            "part way onto the branch; capture stays closed and the node winds down");
+        co_return reorg_outcome{{}, /*fatal*/ true};
+    }
 }
 
 } // namespace kth::node::sync

@@ -2099,6 +2099,16 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             timestamp_window.push_back(block_timestamp);
         }
 
+        // Entry closes here, before the first mutation, and the captures already
+        // admitted are drained before anything moves. A template that entered
+        // earlier finishes on copies it already holds; nothing new may capture
+        // stores that are about to change (#621).
+        if ( ! chain.begin_transition()) {
+            spdlog::critical("[utxo_build] A batch began while another transition was running");
+            on_fatal("two chain transitions overlapped");
+            co_return;
+        }
+
         // Apply to UTXO-Z
         if ( ! delta.empty()) {
             auto result = chain.apply_utxo_delta_raw(delta.inserts, delta.deletes);
@@ -2197,9 +2207,15 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         if (auto const ec = chain.publish_chain_view(batch_end); ec) {
             spdlog::critical("[utxo_build] Could not publish the chain state at height {}: {}",
                 batch_end, ec.message());
+            // Deliberately not reopened: the coherent state was never published,
+            // so there is nothing for a capture to be coherent with. The gate
+            // stays shut while the node winds down.
             on_fatal("a connected batch could not be described by a chain state");
             co_return;
         }
+
+        // Earned, not unwound.
+        chain.end_transition();
 
         spdlog::info("[utxo_build] UTXO built to height {}/{}", utxo_built_height, current_contiguous - 1);
     }

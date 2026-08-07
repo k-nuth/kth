@@ -284,6 +284,11 @@ std::string error_category_impl::message(int ev) const noexcept {
         { error::hash_not_found, "hash not found" },
         { error::empty_cache, "empty cache" },
         { error::utxo_not_found, "utxo not found" },
+
+        // Why mining work is not being served.
+        { error::transition_in_progress, "a batch or reorganization is in progress" },
+        { error::node_behind, "the connected chain has not caught up with its headers" },
+        { error::node_stale, "the chain tip is older than the configured limit" },
     };
 
     auto const message = messages.find(ev);

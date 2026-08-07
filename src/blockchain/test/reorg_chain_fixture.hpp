@@ -29,6 +29,17 @@ namespace kth::test {
 // Regtest is used deliberately: its proof-of-work target is trivial, so a test
 // can build competing chains without mining.
 struct chain_fixture {
+    // The freshness half of synchronization compares the connected tip's
+    // timestamp against notify_limit_hours. A test that needs a chain which is
+    // complete but stale cannot move the clock or the blocks — the connect path
+    // refuses a chain old enough to look like initial sync — so it moves the
+    // limit instead.
+    chain_fixture(char const* tag, uint32_t notify_limit_hours)
+        : chain_fixture(tag)
+    {
+        chain_settings_.notify_limit_hours = notify_limit_hours;
+    }
+
     explicit chain_fixture(char const* tag)
         : dir_(make_dir(tag))
         , chain_settings_(domain::config::network::regtest)
@@ -99,6 +110,18 @@ struct chain_fixture {
         organizer_.reset();
         chain_.reset();
         return start();
+    }
+
+    // Bring the chain down and leave it down, so the directory can be opened by
+    // something else — a second block_chain with different settings reading the
+    // data this one wrote. Two live opens of one data directory is not something
+    // the stack supports: the LMDB environment, UTXO-Z and the flat-file stores
+    // each hold their own handles and cached state for that path.
+    //
+    // `chain()` and `organizer()` must not be used after this.
+    void close() {
+        organizer_.reset();
+        chain_.reset();
     }
 
     [[nodiscard]] blockchain::header_organizer& organizer() { return *organizer_; }

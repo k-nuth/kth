@@ -184,7 +184,8 @@ enum error_code_t {
     reorganize_empty_blocks,              
     chain_state_invalid,                  
     pool_state_failed,
-    transaction_lookup_failed,            
+
+    transaction_lookup_failed,
     branch_work_failed,
     block_validation_state_failed,
     transaction_validation_state_failed,
@@ -303,6 +304,17 @@ enum error_code_t {
     invalid_split_range,                // SPLIT position out of range
     invalid_number_encoding,            // BIN2NUM result not minimally encoded
     operand_size_mismatch,              // Bitwise operation operands differ in size
+
+    // Why mining work is not being served. Three states, not one: a transition
+    // is a correctness barrier and clears in milliseconds, while the other two
+    // are operational and clear when the node catches up.
+    //
+    // Appended here rather than filed next to the other blockchain codes on
+    // purpose: these values cross the C API, so inserting mid-enum would
+    // renumber every code below the insertion point for no gain.
+    transition_in_progress,   ///< A batch or reorganization is mutating the stores.
+    node_behind,              ///< Connected chain has not reached the headers it holds.
+    node_stale,               ///< Caught up, but the tip is older than the configured limit.
 
     // Last error code.
     last_error_code

@@ -317,8 +317,18 @@ inline std::optional<T> optional_cpp_ref(void const* h) {
 // small struct memcpy to register moves). static_assert guards that the
 // source and destination structs have the same size.
 // Works both directions: C→C++ and C++→C.
+// A type that has an explicit field-by-field conversion opts out of the byte
+// copy here, on both sides of the crossing. Specialize it next to that
+// conversion; the generic path below then refuses the type instead of silently
+// reintroducing the coupling the explicit conversion exists to remove.
+template<typename T>
+struct forbids_struct_cast : std::false_type {};
+
 template<typename To, typename From>
 inline To struct_cast(From const& src) {
+    static_assert( ! forbids_struct_cast<To>::value && ! forbids_struct_cast<From>::value,
+                  "this type crosses field by field; the memcpy conversion would put its "
+                  "layout, padding and declaration order back into the ABI");
     static_assert(sizeof(To) == sizeof(From),
                   "C and C++ struct sizes must match for memcpy conversion");
     static_assert(std::is_trivially_copyable_v<To> && std::is_trivially_copyable_v<From>,

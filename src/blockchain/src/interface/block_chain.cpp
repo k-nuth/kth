@@ -1030,6 +1030,11 @@ block_chain::switch_result block_chain::switch_to_branch(
     // strand the still-missing blocks below it, never requested again.
     uint32_t validated_tip = heights->block;
 
+    // Whether any block was actually disconnected. A fork above the validated
+    // tip disconnects nothing and several rejections above return before this
+    // point, so "the tip is where it was" is not evidence either way.
+    bool mutated = false;
+
     if (fork_height > heights->block) {
         spdlog::info("[blockchain] Reorg: fork at {} is above the validated tip {}, nothing to disconnect",
             fork_height, heights->block);
@@ -1046,6 +1051,8 @@ block_chain::switch_result block_chain::switch_to_branch(
             auto const result = disconnect_block(h);
 
             if (result == database::disconnect_result::unclean) {
+                // The delta was applied, so this counts as a mutation even
+                // though the switch is abandoned.
                 // The inverse delta was applied but the markers could not be
                 // written: the UTXO set is at h-1 while the markers still say h.
                 // Reporting h as a resumable tip would re-download from a height
@@ -1054,7 +1061,7 @@ block_chain::switch_result block_chain::switch_to_branch(
                 spdlog::error("[blockchain] Reorg: UTXO set and height markers diverged at {} "
                     "(set is at {}, markers say {}); aborting without a resumable tip",
                     h, h - 1, h);
-                return {false, std::nullopt};
+                return {false, std::nullopt, /*mutated*/ true};
             }
 
             if (result != database::disconnect_result::ok) {
@@ -1064,8 +1071,11 @@ block_chain::switch_result block_chain::switch_to_branch(
                 // range, never re-downloaded).
                 spdlog::error("[blockchain] Reorg: failed to disconnect block at height {}, "
                     "aborting the switch (validated tip is now {})", h, h);
-                return {false, h};
+                return {false, h, mutated};
             }
+
+            // Applied. From here the chain has moved, whatever happens next.
+            mutated = true;
         }
     }
 
@@ -1078,7 +1088,7 @@ block_chain::switch_result block_chain::switch_to_branch(
     // other. The caller adopts the branch head as soon as this returns.
     spdlog::warn("[blockchain] Reorg: UTXO state rewound to the fork at {}; the branch head is "
         "published by the caller", fork_height);
-    return {true, validated_tip};
+    return {true, validated_tip, mutated};
 }
 #endif
 
@@ -1134,6 +1144,60 @@ void block_chain::clear_utxo_bloom() {
 // CHAIN STATE
 // =============================================================================
 
+bool block_chain::begin_transition() {
+    return capture_gate_.begin_transition();
+}
+
+void block_chain::end_transition() {
+    capture_gate_.end_transition();
+}
+
+bool block_chain::transition_in_progress() const {
+    return capture_gate_.transition_in_progress();
+}
+
+block_chain::sync_status block_chain::synchronization() const {
+    auto const view = chain_view();
+    if ( ! view) {
+        return {false, false};
+    }
+
+    // The connected tip against the header tip. The stored block marker is not
+    // this: during a sync it runs thousands of blocks ahead of what is
+    // connected, so a node with fresh headers and an unbuilt UTXO set would
+    // read as caught up (#605 was the same confusion one level down).
+    auto const header_tip = header_index_.active_tip_height();
+    bool const caught_up = header_tip >= 0 &&
+        view->connected_tip_height == size_t(header_tip);
+
+    // A limit of zero disables the clock half. It does not say the node is at
+    // the head — that is what caught_up is for, and it still has to hold.
+    if (notify_limit_seconds_ == 0) {
+        return {caught_up, true};
+    }
+
+    auto const tip_header = get_header(view->connected_tip_height);
+    if ( ! tip_header) {
+        return {caught_up, false};
+    }
+
+    auto const now = static_cast<uint32_t>(zulu_time());
+    auto const stamp = tip_header->timestamp();
+
+    // Subtract from now rather than add to the stamp. The sum is one addition
+    // away from wrapping wherever it lands in 32 bits, and a wrapped sum reads
+    // as fresh — the direction that keeps a stale node serving mining work.
+    // Subtracting cannot wrap: it floors at zero, where every timestamp is
+    // fresh, which is also the honest answer for a limit longer than the epoch.
+    // Both operands are uint32_t so the floor is zero and not a signed minimum.
+    auto const limit = notify_limit_seconds_ > time_t(std::numeric_limits<uint32_t>::max())
+        ? std::numeric_limits<uint32_t>::max()
+        : static_cast<uint32_t>(notify_limit_seconds_);
+
+    bool const fresh = stamp >= floor_subtract(now, limit);
+    return {caught_up, fresh};
+}
+
 block_chain::chain_view_ptr block_chain::chain_view() const {
     return chain_view_.load();
 }
@@ -1173,6 +1237,7 @@ code block_chain::publish_chain_view(size_t connected_tip_height) {
     }
 
     built->state = std::move(state);
+    built->connected_tip_height = connected_tip_height;
     built->tip_hash = *tip_hash;
     built->generation = view_generation_.fetch_add(1, std::memory_order_relaxed) + 1;
 
@@ -1892,13 +1957,29 @@ block_chain::fetch_template() const {
         co_return std::unexpected(error::service_stopped);
     }
 
-    auto const published = chain_view();
-    if ( ! published) {
-        co_return std::unexpected(error::not_found);
+    auto const ready = synchronization();
+    if ( ! ready.synchronized()) {
+        co_return std::unexpected(ready.caught_up ? error::node_stale : error::node_behind);
     }
-    auto const& state = published->state;
 
-    auto const view = lease_pool_view(validation_mutex_, mempool_);
+    // Capture inside the gate, build outside it. Asking whether a transition is
+    // running and then capturing are two moments; entry is what joins them.
+    chain_view_ptr published;
+    blockchain::pool_view view;
+    {
+        captured_lease const lease(capture_gate_);
+        if ( ! lease) {
+            co_return std::unexpected(error::transition_in_progress);
+        }
+
+        published = chain_view();
+        if ( ! published) {
+            co_return std::unexpected(error::not_found);
+        }
+        view = lease_pool_view(validation_mutex_, mempool_);
+    }
+
+    auto const& state = published->state;
 
     co_return build_block_template(view.entries, block_template_context{
         state->dynamic_max_block_size(),
@@ -1913,43 +1994,54 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         co_return std::unexpected(error::service_stopped);
     }
 
-    auto const published = chain_view();
-    if ( ! published) {
-        co_return std::unexpected(error::not_found);
+    auto const ready = synchronization();
+    if ( ! ready.synchronized()) {
+        co_return std::unexpected(ready.caught_up ? error::node_stale : error::node_behind);
     }
-    auto const& state = published->state;
 
-    auto const height = state->height();
+    // This capture decides only whether an ALREADY BUILT template can be served.
+    // That is a weaker requirement than building one: a template is a coherent
+    // copy, so a request admitted before a transition may legitimately finish
+    // with it. Nothing here may feed a rebuild — see the recapture below.
+    hash_digest served_previous;
+    {
+        captured_lease const lease(capture_gate_);
+        if ( ! lease) {
+            co_return std::unexpected(error::transition_in_progress);
+        }
 
-    // The parent comes from the same publication as the height, not from a
-    // second lookup keyed on it. That pairing is what used to be wrong: the
-    // height was frozen at startup and the hash was read now, so the template
-    // could name a parent the chain had left behind — and the cache's guard
-    // against exactly that is keyed on this value, so it could never fire.
-    hash_digest const previous = published->tip_hash;
+        auto const published = chain_view();
+        if ( ! published) {
+            co_return std::unexpected(error::not_found);
+        }
+
+        served_previous = published->tip_hash;
+    }
 
     // Only decides whether to rebuild, so it is read without the lease: a value
     // that has already moved on costs one extra rebuild, and paying the
     // exclusion on every cache hit would cost far more. The label stored with a
     // rebuilt template comes from inside the lease instead — see below.
     auto const generation = mempool_.generation();
-    auto const now = static_cast<uint32_t>(zulu_time());
+    auto now = static_cast<uint32_t>(zulu_time());
 
     // A snapshot is usable while the tip is unchanged and the mempool is either
     // unchanged or its last change is still within the refresh window; a new tip
-    // always forces a rebuild.
-    auto const usable = [&](boost::shared_ptr<template_snapshot> const& s) {
+    // always forces a rebuild. The tip and generation are parameters rather than
+    // captures because this is asked twice, against two different captures.
+    auto const usable = [&](boost::shared_ptr<template_snapshot> const& s,
+                            hash_digest const& tip, uint64_t gen, uint32_t at) {
         return s &&
-               s->previous == previous &&
+               s->previous == tip &&
                s->coinbase_reserve_size == coinbase_reserve_size &&
-               (s->generation == generation ||
-                now - s->time < settings_.gbt_template_refresh_seconds);
+               (s->generation == gen ||
+                at - s->time < settings_.gbt_template_refresh_seconds);
     };
 
     // Lock-free read: rebuilds are expensive (full mempool scan + fee-rate
     // ordering), so serve the published snapshot when it is still usable.
     auto snapshot = template_cache_.load();
-    if (usable(snapshot)) {
+    if (usable(snapshot, served_previous, generation, now)) {
         co_return snapshot->value;
     }
 
@@ -1968,23 +2060,70 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         // rather than block. Never serve a snapshot from a previous tip: a
         // wrong-parent template would orphan the miner's block, so wait for the
         // rebuild in that case (a cold start with no snapshot also waits).
-        if (snapshot && snapshot->previous == previous) {
+        // The same tip AND the same coinbase budget. A snapshot built for a
+        // different reserve leaves a different amount of room for the coinbase,
+        // so serving it here would answer this request with someone else's
+        // budget — and the caller asked for that number precisely because its
+        // coinbase does not fit the default. Wait for the rebuild instead.
+        if (snapshot && snapshot->previous == served_previous &&
+            snapshot->coinbase_reserve_size == coinbase_reserve_size) {
             co_return snapshot->value;
         }
         lock.lock();
     }
 
-    // Re-check under the lock: another thread may have published while we waited.
-    snapshot = template_cache_.load();
-    if (usable(snapshot)) {
-        co_return snapshot->value;
+    // Everything a rebuild consumes is captured HERE, inside one lease: the
+    // chain state, the tip it names, the height, and the mempool. Reading the
+    // chain view under one lease and the pool under another is not the same
+    // thing, however briefly each half was admitted — a whole transition can
+    // run between the two, and the template would then pair a pre-transition
+    // parent and height with a post-transition pool. Each half is coherent with
+    // the gate and the pair is coherent with nothing.
+    //
+    // Lock order: template_rebuild_mutex_ (held above), then the capture gate,
+    // then the validation mutex. Nothing takes them the other way round — the
+    // organizers hold the validation mutex and know nothing about the template
+    // cache, and a transition drains the gate without taking either.
+    chain_view_ptr published;
+    blockchain::pool_view view;
+    {
+        captured_lease const lease(capture_gate_);
+        if ( ! lease) {
+            co_return std::unexpected(error::transition_in_progress);
+        }
+
+        published = chain_view();
+        if ( ! published) {
+            co_return std::unexpected(error::not_found);
+        }
+
+        // Re-check against the publication just captured rather than the one
+        // the fast path used. The wait on the rebuild mutex may have spanned a
+        // whole transition, in which case that earlier check decided nothing —
+        // and asking before copying the pool keeps a hit from paying for a copy
+        // it will discard.
+        now = static_cast<uint32_t>(zulu_time());
+        snapshot = template_cache_.load();
+        if (usable(snapshot, published->tip_hash, mempool_.generation(), now)) {
+            co_return snapshot->value;
+        }
+
+        view = lease_pool_view(validation_mutex_, mempool_);
     }
 
-    // Lock order: template_rebuild_mutex_ (held above) then the validation
-    // mutex. Nothing takes them the other way round — the organizers hold the
-    // validation mutex and know nothing about the template cache.
-    auto const view = lease_pool_view(validation_mutex_, mempool_);
+    auto const& state = published->state;
 
+    // The parent comes from the same capture as the height and the state, not
+    // from a second lookup keyed on it. That pairing is what used to be wrong:
+    // the height was frozen at startup and the hash was read now, so the
+    // template could name a parent the chain had left behind — and the cache's
+    // guard against exactly that is keyed on this value, so it could never fire.
+    hash_digest const previous = published->tip_hash;
+    auto const height = state->height();
+
+    // Everything below runs on the copy, outside the gate: holding it across
+    // the graph, the ordering and the selection would make a transition wait on
+    // work that cannot be affected by it.
     auto selection = build_block_template(view.entries, block_template_context{
         state->dynamic_max_block_size(),
         state->dynamic_max_block_sigchecks(),
@@ -2026,11 +2165,16 @@ block_chain::fetch_mining_info() const {
     // Every field from the one publication. Reading the height separately is
     // how this reported the current tip beside the difficulty in force when the
     // node started.
+    auto const ready = synchronization();
+
     co_return blockchain::mining_info{
-        uint32_t(state->height() - 1u),
+        uint32_t(published->connected_tip_height),
         difficulty_from_bits(state->work_required()),
         mempool_.size(),
-        state->network()};
+        state->network(),
+        transition_in_progress(),
+        ready.caught_up,
+        ready.fresh};
 }
 
 awaitable_expected<inventory_ptr>

@@ -35,6 +35,7 @@
 #include <kth/blockchain/header_index.hpp>
 #include <kth/blockchain/pools/block_organizer.hpp>
 #include <kth/blockchain/pools/branch.hpp>
+#include <kth/blockchain/pools/capture_gate.hpp>
 #include <kth/blockchain/pools/block_template.hpp>
 #include <kth/blockchain/pools/mempool.hpp>
 #include <kth/blockchain/pools/mempool_transaction_summary.hpp>
@@ -286,6 +287,13 @@ struct KB_API block_chain {
         // (nothing was touched); the caller must then leave its counters alone
         // rather than treat it as height 0.
         std::optional<uint32_t> validated_tip;
+        // Whether any block was actually disconnected. Carried rather than
+        // inferred: several rejections happen before anything is touched and
+        // still report the current tip, so comparing heights cannot tell them
+        // from a switch that rewound to where the chain already was. A caller
+        // that republished on those would move the generation and drop the
+        // template cache for a switch that did nothing.
+        bool mutated{false};
     };
 
     [[nodiscard]]
@@ -392,6 +400,11 @@ struct KB_API block_chain {
         /// The context for validating the block after the connected tip, so its
         /// height is the tip's plus one.
         domain::chain::chain_state::ptr state;
+        /// The height of the connected tip. Carried rather than derived: every
+        /// reader that wanted it was subtracting one from the state's height,
+        /// and an off-by-one in a comparison against the header tip is the kind
+        /// of thing that reads as "not caught up" forever.
+        size_t connected_tip_height;
         /// The hash of the block at the connected tip.
         hash_digest tip_hash;
         /// Advances once per coherent state published — never per internal step,
@@ -424,6 +437,42 @@ struct KB_API block_chain {
     /// rather than carry on against a view that describes an older chain.
     [[nodiscard]]
     code publish_chain_view(size_t connected_tip_height);
+
+    /// Close template capture and wait for the captures already admitted.
+    ///
+    /// Called before the first mutation of a batch or a reorganization, so that
+    /// nothing captures the stores while they are being changed. Returns false
+    /// if a transition is already running, which the caller must treat as fatal
+    /// rather than proceed: two at once is not a state this has an answer for.
+    [[nodiscard]]
+    bool begin_transition();
+
+    /// Reopen capture. Only after the transition's state has been published —
+    /// a failure leaves the gate closed while the node winds down, which is why
+    /// this is a call and not a scope guard.
+    void end_transition();
+
+    [[nodiscard]]
+    bool transition_in_progress() const;
+
+    /// Whether this node should be serving mining work: it has connected
+    /// everything it has headers for, and that tip is recent.
+    ///
+    /// Two components, because they fail for different reasons and only one is
+    /// about the clock. `caught_up` compares the published view's connected tip
+    /// against the active header tip — not the stored block marker, which
+    /// during a sync sits far ahead of both. `fresh` measures the published
+    /// tip's timestamp against the configured limit; a limit of zero disables
+    /// that half only, and never turns a node that is behind into one that is
+    /// caught up.
+    struct sync_status {
+        bool caught_up;
+        bool fresh;
+        [[nodiscard]] bool synchronized() const { return caught_up && fresh; }
+    };
+
+    [[nodiscard]]
+    sync_status synchronization() const;
 
     /// The state for a branch under consideration, seeded from the published
     /// one. Block validation only; the published view is what everything else
@@ -702,6 +751,8 @@ private:
     /// is seeding a branch's state below.
     [[nodiscard]]
     domain::chain::chain_state::ptr chain_state() const;
+
+    mutable capture_gate capture_gate_;
 
     // One swap publishes the whole triple; see published_chain_view.
     mutable boost::atomic_shared_ptr<published_chain_view const> chain_view_;
