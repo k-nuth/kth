@@ -38,12 +38,56 @@ TEST_CASE("render_mining_template serializes the GBT-light fields", "[rpc mining
 }
 
 TEST_CASE("render_mining_info serializes the getmininginfo fields", "[rpc mining]") {
+    // Designated rather than positional: the three flags are all `bool`, so a
+    // reorder of the struct would keep compiling and silently re-label them.
     blockchain::mining_info info{
-        /*blocks*/ 42u,
-        /*difficulty*/ 1.0,
-        /*pooled_tx*/ 3u,
-        /*chain*/ domain::config::network::mainnet};
+        .blocks = 42u,
+        .difficulty = 1.0,
+        .pooled_tx = 3u,
+        .chain = domain::config::network::mainnet,
+        .transition_in_progress = false,
+        .caught_up = true,
+        .fresh = true};
 
     REQUIRE(render_mining_info(info) ==
-        R"({"blocks":42,"difficulty":1.0,"pooledtx":3,"chain":"Mainnet","warnings":""})");
+        R"({"blocks":42,"difficulty":1.0,"pooledtx":3,"chain":"Mainnet",)"
+        R"("transitioninprogress":false,"caughtup":true,"fresh":true,"warnings":""})");
+}
+
+TEST_CASE("render_mining_info reports the three refusal reasons apart", "[rpc mining]") {
+    // Why mining work is being refused is what an operator reads here, and the
+    // three have different remedies: a transition clears in milliseconds, a node
+    // that is behind is downloading, and a node that is caught up but stale has
+    // a connectivity or a clock problem. One boolean could not tell them apart.
+    blockchain::mining_info info{
+        .blocks = 7u,
+        .difficulty = 2.5,
+        .pooled_tx = 0u,
+        .chain = domain::config::network::regtest,
+        .transition_in_progress = true,
+        .caught_up = false,
+        .fresh = false};
+
+    REQUIRE(render_mining_info(info) ==
+        R"({"blocks":7,"difficulty":2.5,"pooledtx":0,"chain":"Regtest",)"
+        R"("transitioninprogress":true,"caughtup":false,"fresh":false,"warnings":""})");
+}
+
+TEST_CASE("render_mining_info reports a caught-up but stale tip", "[rpc mining]") {
+    // The two operational flags are independent, and the cases above do not show
+    // it: both hold them equal, so a renderer that emitted `caught_up` for the
+    // `fresh` key would pass either one. This is the node that reached its
+    // headers and is sitting on a tip older than the configured age.
+    blockchain::mining_info info{
+        .blocks = 9u,
+        .difficulty = 1.0,
+        .pooled_tx = 1u,
+        .chain = domain::config::network::regtest,
+        .transition_in_progress = false,
+        .caught_up = true,
+        .fresh = false};
+
+    REQUIRE(render_mining_info(info) ==
+        R"({"blocks":9,"difficulty":1.0,"pooledtx":1,"chain":"Regtest",)"
+        R"("transitioninprogress":false,"caughtup":true,"fresh":false,"warnings":""})");
 }

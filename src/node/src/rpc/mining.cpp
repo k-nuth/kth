@@ -73,6 +73,12 @@ std::string render_mining_info(blockchain::mining_info const& info) {
     w.field("difficulty", info.difficulty);
     w.field("pooledtx", static_cast<std::uint64_t>(info.pooled_tx));
     w.field("chain", domain::config::name(info.chain));
+    // Why mining work may be refused, reported apart. A transition is a
+    // correctness barrier and clears in milliseconds; the other two are
+    // operational and clear when the node catches up.
+    w.field("transitioninprogress", info.transition_in_progress);
+    w.field("caughtup", info.caught_up);
+    w.field("fresh", info.fresh);
     w.field("warnings", "");
     w.end_object();
     return w.str();

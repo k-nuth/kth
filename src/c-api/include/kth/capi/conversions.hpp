@@ -46,6 +46,13 @@
 #include <kth/blockchain/interface/block_chain.hpp>
 // #endif
 
+// Field-by-field conversion for the one POD that would otherwise cross by
+// memcpy with its declaration order load-bearing. Included here, from the
+// umbrella every binding TU takes, so the specialization is always visible
+// before the call — a TU that saw only the generic template would silently get
+// the memcpy back.
+#include <kth/capi/chain/mining_info_conversion.hpp>
+
 // Element type for the hand-written `kth_wallet_ec_compressed_list`
 // binding. The list stores the raw 33-byte EC compressed public keys
 // by value, not wrapped `kth::domain::wallet::ec_compressed` objects.
