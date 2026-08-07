@@ -1,1 +1,0 @@
-{"config": [{"name": "Linux x86_64 GCC 14","compiler": "GCC","version": "14","os": "ubuntu-20.04","docker_suffix": "-ubuntu20.04"},{"name": "macOS - x86_64 - apple-clang 15","compiler": "apple-clang","version": "15","os": "macos-14-large"}, {"name": "macOS - arm64 - apple-clang 15","compiler": "apple-clang","version": "15","os": "macos-14"}]}

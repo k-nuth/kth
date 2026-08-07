@@ -1,4 +1,4 @@
-name: Build WebAssembly
+name: 🌐 WebAssembly
 
 on:
   push:
@@ -51,7 +51,7 @@ jobs:
        !startsWith(github.head_ref, 'hotfix/') &&
        !startsWith(github.head_ref, 'dev-publish/'))
     runs-on: ubuntu-24.04
-    name: WebAssembly (Emscripten)
+    name: 🌐 WebAssembly Emscripten 5 — Build
 
     steps:
       - name: 📥 Checkout code
