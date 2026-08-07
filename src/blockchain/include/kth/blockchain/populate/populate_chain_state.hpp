@@ -23,7 +23,15 @@ struct KB_API populate_chain_state {
     populate_chain_state(block_chain const& chain, settings const& settings, domain::config::network network);
 
     /// Populate chain state for the tx pool (start).
-    domain::chain::chain_state::ptr populate() const;
+    /// Build the state for the block after `connected_top`.
+    ///
+    /// The height is given rather than read, because the two tips differ: during
+    /// initial sync the header table runs thousands of blocks ahead of what is
+    /// connected, and a state built from that tip would carry a height, a median
+    /// time past and a set of activation flags for a block whose UTXO delta has
+    /// not been applied — internally consistent and describing nothing (#605).
+    /// Only the caller holding the exclusion knows which height is coherent.
+    domain::chain::chain_state::ptr populate(size_t connected_top) const;
 
     /// Populate chain state for the top block in the branch (try).
     domain::chain::chain_state::ptr populate(domain::chain::chain_state::ptr pool, branch::const_ptr branch) const;

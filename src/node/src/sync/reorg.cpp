@@ -211,6 +211,26 @@ bool persist_active_headers(
         // next header batch can arrive as soon as the pause is gone.
         if (outcome.validated_tip) {
             organizer.note_block_validated(static_cast<int32_t>(*outcome.validated_tip));
+
+            // The transition is closed: the UTXO set, the by-height table, the
+            // adopted tip and the mempool all describe the new fork. Publish the
+            // state here, while the writers are still parked — this is the one
+            // moment nothing else can read a half-switched chain (#605).
+            //
+            // The validated tip, not the branch head. The switch rewound the
+            // connected chain to the fork; the blocks above it are headers, and
+            // they get connected by the ordinary path, which publishes at each
+            // batch. Publishing the branch head would describe a chain whose
+            // UTXO delta has not been applied — the height moving down here
+            // while the generation moves up is the transition being honest.
+            if ( ! fatal) {
+                if (auto const ec = chain.publish_chain_view(*outcome.validated_tip); ec) {
+                    spdlog::critical("[reorg] Could not publish the chain state at the fork "
+                        "height {}: {}. The node would keep validating against the branch it "
+                        "just left", *outcome.validated_tip, ec.message());
+                    fatal = true;
+                }
+            }
         }
     }
 

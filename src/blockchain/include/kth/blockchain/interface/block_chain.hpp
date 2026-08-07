@@ -378,7 +378,56 @@ struct KB_API block_chain {
     // CHAIN STATE
     // =========================================================================
 
-    domain::chain::chain_state::ptr chain_state() const;
+    /// The chain state, the tip it describes and the number that labels the
+    /// pair — published together, read together.
+    ///
+    /// Everything a caller needs about the connected chain comes from one
+    /// reference. That is not a convenience: the state used to be computed once
+    /// at startup and never advance, and the readers that noticed combined it
+    /// with a fresh read of the height or the tip hash — a stale value beside a
+    /// current one, describing a chain that never existed (#605). With the three
+    /// in one immutable object behind one pointer, a reader sees the old triple
+    /// or the new one and there is no third possibility to reason about.
+    struct published_chain_view {
+        /// The context for validating the block after the connected tip, so its
+        /// height is the tip's plus one.
+        domain::chain::chain_state::ptr state;
+        /// The hash of the block at the connected tip.
+        hash_digest tip_hash;
+        /// Advances once per coherent state published — never per internal step,
+        /// and monotonically, including a reorganization that moves the tip
+        /// down.
+        uint64_t generation;
+    };
+
+    using chain_view_ptr = boost::shared_ptr<published_chain_view const>;
+
+    /// The published view. Null only before the first publication, which
+    /// start() performs.
+    [[nodiscard]]
+    chain_view_ptr chain_view() const;
+
+    /// Build the view for `connected_tip_height` and publish it.
+    ///
+    /// `connected_tip_height` is the last block whose state — the UTXO delta,
+    /// the undo records, the by-height header table and the mempool — is
+    /// coherently applied. Headers arriving on their own connect nothing, so
+    /// they neither publish nor advance the generation.
+    ///
+    /// The height is the only thing the caller supplies. State and hash are
+    /// derived from it here, so a caller cannot assemble a combination that
+    /// never existed; the generation advances internally, once.
+    ///
+    /// Fails rather than keeping the previous view: at the close of a batch or a
+    /// reorganization, being unable to publish means the coherent state that was
+    /// just reached cannot be described, and the caller must treat that as fatal
+    /// rather than carry on against a view that describes an older chain.
+    [[nodiscard]]
+    code publish_chain_view(size_t connected_tip_height);
+
+    /// The state for a branch under consideration, seeded from the published
+    /// one. Block validation only; the published view is what everything else
+    /// reads.
     domain::chain::chain_state::ptr chain_state(branch::const_ptr branch) const;
 
     /// Validator-owned side store for transient per-block validation state,
@@ -629,7 +678,6 @@ private:
     template <typename Handler, typename... Args>
     bool finish_read(handle sequence, Handler handler, Args... args) const;
 
-    code set_chain_state(domain::chain::chain_state::ptr previous);
 
     // <datadir>/mempool.dat — sibling of the blocks/ and utxoz/ directories.
     std::filesystem::path mempool_dat_path() const;
@@ -648,9 +696,16 @@ private:
     populate_chain_state const chain_state_populator_;
     database::data_base database_;
 
-    // Protected by mutex
-    domain::chain::chain_state::ptr pool_state_;
-    mutable shared_mutex pool_state_mutex_;
+    /// The published state on its own. Private: a caller that wants the state
+    /// wants the tip and the generation that go with it, and reading them apart
+    /// is what produced the combinations #605 was about. The one legitimate use
+    /// is seeding a branch's state below.
+    [[nodiscard]]
+    domain::chain::chain_state::ptr chain_state() const;
+
+    // One swap publishes the whole triple; see published_chain_view.
+    mutable boost::atomic_shared_ptr<published_chain_view const> chain_view_;
+    std::atomic<uint64_t> view_generation_{0};
 
     // Thread safe
     mutable prioritized_mutex validation_mutex_;

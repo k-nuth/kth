@@ -142,6 +142,12 @@ TEST_CASE("the node reorganizes onto a heavier branch and back to a consistent s
         prev = branch_b.back().hash();
     }
 
+    // The published state as it stands on A, to compare against after the switch.
+    auto const view_on_a = chain.chain_view();
+    REQUIRE(view_on_a);
+    REQUIRE(view_on_a->state->height() == 102u);
+    REQUIRE(view_on_a->tip_hash == a101.hash());
+
     auto const generation_before = index.generation();
     auto const b_result = fixture.organizer().add_headers(headers_of(branch_b));
     REQUIRE(b_result.reorg_candidate);
@@ -178,6 +184,23 @@ TEST_CASE("the node reorganizes onto a heavier branch and back to a consistent s
     // switch releases the pause — so a height left over from the branch just
     // abandoned would be read before anything corrected it.
     CHECK(fixture.organizer().validated_height() == int32_t(trunk_len));
+
+    // The published state followed the switch, and followed it *down*: the
+    // connected chain is back at the fork, so the height fell — while the
+    // generation rose, because a state was published. That pairing is the whole
+    // point of counting published states rather than heights; a counter derived
+    // from the height would have gone backwards here, and a reader comparing it
+    // would conclude nothing had changed (#605).
+    //
+    // The fork, not B's head: the switch rewound the connected chain, and B's
+    // blocks are headers until the ordinary connect path applies their deltas.
+    auto const view_on_b = chain.chain_view();
+    REQUIRE(view_on_b);
+    CHECK(view_on_b->state->height() == trunk_len + 1u);
+    CHECK(view_on_b->state->height() < view_on_a->state->height());
+    CHECK(view_on_b->tip_hash == trunk.back().hash());
+    CHECK(view_on_b->tip_hash != view_on_a->tip_hash);
+    CHECK(view_on_b->generation > view_on_a->generation);
 
     // A's block is disconnected: its coinbase is out of the set and the coinbase it
     // spent is back, at the height it was originally created — not at 101, which

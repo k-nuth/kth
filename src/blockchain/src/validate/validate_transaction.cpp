@@ -82,7 +82,10 @@ void validate_transaction::stop()
     // store write happens off the organizer mutex, but the tx is private to
     // the caller so no other worker touches this hash concurrently.
     {
-        auto const state = chain_.chain_state();
+        // One reference: the state a transaction is validated against and the
+        // chain it describes are published together (#605).
+        auto const published = chain_.chain_view();
+        auto const state = published ? published->state : nullptr;
         chain_.transaction_validations().mutate(tx->hash(), [&](auto& tv){ tv.state = state; });
         if ( ! state) {
             co_return error::transaction_validation_state_failed;

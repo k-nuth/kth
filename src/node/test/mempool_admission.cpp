@@ -82,16 +82,14 @@ struct admission_chain {
         persist_headers(fixture, trunk, 1);
         connect_bodies(fixture, trunk, 1);
 
-        // The chain computes the state a transaction is validated against once,
-        // at startup, and nothing advances it as blocks connect (#605). So a
-        // chain built in this process is stuck validating at the height it was
-        // created at, and every prevout reads as missing. Restarting recomputes
-        // it, which is the only way to reach a usable state today — a way around
-        // #605 for this test, not something a running node may rely on.
-        REQUIRE(fixture.restart());
-        auto const state = fixture.chain().chain_state();
-        REQUIRE(state);
-        REQUIRE(state->height() == trunk_len + 1u);
+        // No restart. The connect path publishes the chain state at the close of
+        // every batch (#605), so the state a transaction is validated against is
+        // the one this chain just reached — which is what a running node needs,
+        // since a node cannot restart itself to stay correct.
+        auto const view = fixture.chain().chain_view();
+        REQUIRE(view);
+        REQUIRE(view->state->height() == trunk_len + 1u);
+        REQUIRE(view->tip_hash == trunk.back().hash());
     }
 
     blockchain::block_chain& chain() { return fixture.chain(); }
