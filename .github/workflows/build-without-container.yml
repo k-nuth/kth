@@ -127,6 +127,7 @@ jobs:
           ccache --version || true
 
       - name: 🗄️ Restore ccache
+        id: ccache-restore
         if: ${{ inputs.upload != true }}
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
@@ -219,26 +220,76 @@ jobs:
           else
             echo "🔨 Development build - direct compilation with tests"
             conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd
+            METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
+
+            "$METRICS" phase-start deps
+            set +e
             conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b general-ci-cd -pr:h general-ci-cd -o tests=True
-            
+            rc=$?
+            set -e
+            "$METRICS" phase-end deps "$rc"
+            if [ "$rc" != 0 ]; then exit "$rc"; fi
+
+            # The cache as it was restored, before the counters are zeroed. This
+            # is the only moment that state is observable.
+            "$METRICS" ccache-snapshot before
+
             CCACHE_OPT=""
             if command -v ccache &>/dev/null; then
               ccache --zero-stats
               CCACHE_OPT="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
             fi
 
+            "$METRICS" phase-start configure
+            set +e
             cmake --preset conan-release \
                  -DCMAKE_VERBOSE_MAKEFILE=ON \
                  -DGLOBAL_BUILD=ON \
                  -DENABLE_TEST=ON \
                  -DCMAKE_BUILD_TYPE=Release \
                  $CCACHE_OPT
+            rc=$?
+            set -e
+            "$METRICS" phase-end configure "$rc"
+            if [ "$rc" != 0 ]; then exit "$rc"; fi
 
-            cmake --build --preset conan-release -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
+            CPUS="$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
 
+            "$METRICS" phase-start compile
+            set +e
+            cmake --build --preset conan-release -j"$CPUS"
+            rc=$?
+            set -e
+            "$METRICS" phase-end compile "$rc"
+
+            # Read out of the cache CMake wrote, so the launcher is not mistaken
+            # for the compiler and neither is guessed at.
+            CACHE_FILE="build/build/Release/CMakeCache.txt"
+            CXX_COMPILER="$(awk -F= '/^CMAKE_CXX_COMPILER:/ { print $2 }' "$CACHE_FILE" 2>/dev/null)"
+            CXX_LAUNCHER="$(awk -F= '/^CMAKE_CXX_COMPILER_LAUNCHER:/ { print $2 }' "$CACHE_FILE" 2>/dev/null)"
+            "$METRICS" note cmake_cxx_compiler "${CXX_COMPILER:-unreadable}"
+            "$METRICS" note cmake_cxx_launcher "${CXX_LAUNCHER:-unset}"
+            if [ -n "${CXX_COMPILER:-}" ] && [ -x "${CXX_COMPILER}" ]; then
+              "$METRICS" note compiler_version "$("${CXX_COMPILER}" --version 2>/dev/null | head -n 1)"
+            else
+              "$METRICS" note compiler_version "unreadable"
+            fi
+
+            "$METRICS" note cpus_visible "$CPUS"
+            "$METRICS" note cmake_parallel_level "${CMAKE_BUILD_PARALLEL_LEVEL:-unset}"
+            "$METRICS" note parallel_argument "$CPUS"
+            "$METRICS" note build_tool "$(awk -F= '/^CMAKE_GENERATOR:/ { print $2 }' "$CACHE_FILE" 2>/dev/null || echo unreadable)"
+
+            "$METRICS" ccache-snapshot after
             if command -v ccache &>/dev/null; then
               ccache --show-stats
             fi
+
+            # Last, and explicit: every line above this one is diagnostics, and
+            # none of them may decide whether the build passed. Without this the
+            # step would exit on the final note and a failed build would read as
+            # a green one.
+            exit "$rc"
           fi
 
       - name: 📊 Build summary
@@ -319,13 +370,16 @@ jobs:
           # still exits 0 so the rest of the workflow can run, but a non-zero
           # rc is recorded in $GITHUB_ENV and the gate step below fails the
           # job. Mirrors the pattern in build-with-container.yml.
+          METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
           cd build/build/Release
           rc=0
+          "$METRICS" phase-start tests
           if [ "${{ inputs.enable-asan }}" = "true" ] || [ "${{ inputs.enable-ubsan }}" = "true" ] || [ "$TSAN_ENABLED_FOR_TESTS" = "true" ]; then
             timeout 1800 ctest --output-on-failure --parallel 2 || rc=$?
           else
             ctest --output-on-failure --parallel 4 || rc=$?
           fi
+          "$METRICS" phase-end tests "$rc"
           if [ "$rc" != 0 ]; then
             echo "::error::ctest failed or timed out (exit=$rc)"
             echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
@@ -342,6 +396,37 @@ jobs:
             exit 1
           fi
           echo "All tests passed"
+
+      # Its own step, and always: a run that failed in configure, in the build
+      # or in the tests is exactly the run someone needs this for, and a summary
+      # written at the end of the build step would not exist for any of them.
+      # It reports; it does not decide. The steps that failed have already
+      # failed, and nothing here changes that.
+      - name: 📊 Where the time went
+        if: ${{ always() && inputs.upload != true }}
+        run: |
+          METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
+
+          # `cache-hit` is the only output `actions/cache` documents. It answers
+          # one question — did the PRIMARY key match — and this workflow's primary
+          # key ends in the run id on purpose, so it never does. Whether a
+          # restore-key matched is not exposed by this action, and inferring it
+          # from an undocumented output or from the step's outcome would be a
+          # guess dressed as a measurement. The empirical answer is the ccache
+          # "before" snapshot further down: a restored cache has entries.
+          if [ "${{ steps.ccache-restore.outcome }}" = "skipped" ]; then
+            "$METRICS" note ccache_restore "not attempted (step skipped)"
+          elif [ "${{ steps.ccache-restore.outputs.cache-hit }}" = "true" ]; then
+            "$METRICS" note ccache_restore "primary key matched"
+          else
+            "$METRICS" note ccache_restore "no primary-key match; whether a restore-key matched is not reported by actions/cache — see the *before* column"
+          fi
+
+          # The save is a post-job action and runs after this. Saying it was
+          # saved would be reporting something that has not happened.
+          "$METRICS" note ccache_save "scheduled (post-job; result unavailable at summary time)"
+
+          "$METRICS" summary
 
       # ccache log helps diagnose hit-rate problems on macOS-hosted
       # runners — upload it as an artifact so we can post-mortem the

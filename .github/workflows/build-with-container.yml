@@ -267,8 +267,19 @@ jobs:
           else
             echo "🔨 Development build - direct compilation with tests"
             conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh $EXTRA_CONAN_OPTS
+            METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
+
+            "$METRICS" phase-start deps
+            set +e
             conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh -o tests=True $EXTRA_CONAN_OPTS
-            
+            rc=$?
+            set -e
+            "$METRICS" phase-end deps "$rc"
+            if [ "$rc" != 0 ]; then exit "$rc"; fi
+
+            # Before the counters are zeroed: this is the restored cache.
+            "$METRICS" ccache-snapshot before
+
             CCACHE_OPT=""
             if command -v ccache &>/dev/null; then
               export PATH="/usr/lib/ccache:$PATH"
@@ -276,18 +287,52 @@ jobs:
               CCACHE_OPT="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
             fi
 
+            "$METRICS" phase-start configure
+            set +e
             cmake --preset conan-release \
                  -DCMAKE_VERBOSE_MAKEFILE=ON \
                  -DGLOBAL_BUILD=ON \
                  -DENABLE_TEST=ON \
                  -DCMAKE_BUILD_TYPE=Release \
                  $CCACHE_OPT
+            rc=$?
+            set -e
+            "$METRICS" phase-end configure "$rc"
+            if [ "$rc" != 0 ]; then exit "$rc"; fi
 
-            cmake --build --preset conan-release -j"$(nproc)"
+            CPUS="$(nproc)"
 
+            "$METRICS" phase-start compile
+            set +e
+            cmake --build --preset conan-release -j"$CPUS"
+            rc=$?
+            set -e
+            "$METRICS" phase-end compile "$rc"
+
+            CACHE_FILE="build/build/Release/CMakeCache.txt"
+            CXX_COMPILER="$(awk -F= '/^CMAKE_CXX_COMPILER:/ { print $2 }' "$CACHE_FILE" 2>/dev/null)"
+            CXX_LAUNCHER="$(awk -F= '/^CMAKE_CXX_COMPILER_LAUNCHER:/ { print $2 }' "$CACHE_FILE" 2>/dev/null)"
+            "$METRICS" note cmake_cxx_compiler "${CXX_COMPILER:-unreadable}"
+            "$METRICS" note cmake_cxx_launcher "${CXX_LAUNCHER:-unset}"
+            if [ -n "${CXX_COMPILER:-}" ] && [ -x "${CXX_COMPILER}" ]; then
+              "$METRICS" note compiler_version "$("${CXX_COMPILER}" --version 2>/dev/null | head -n 1)"
+            else
+              "$METRICS" note compiler_version "unreadable"
+            fi
+
+            "$METRICS" note cpus_visible "$CPUS"
+            "$METRICS" note cmake_parallel_level "${CMAKE_BUILD_PARALLEL_LEVEL:-unset}"
+            "$METRICS" note parallel_argument "$CPUS"
+            "$METRICS" note build_tool "$(awk -F= '/^CMAKE_GENERATOR:/ { print $2 }' "$CACHE_FILE" 2>/dev/null || echo unreadable)"
+
+            "$METRICS" ccache-snapshot after
             if command -v ccache &>/dev/null; then
               ccache --show-stats
             fi
+
+            # Diagnostics above, verdict here. Without this the step would exit
+            # on the last note and a failed build would read as a green one.
+            exit "$rc"
           fi
 
       # Persist caches as soon as the build finishes — saves get the
@@ -315,6 +360,7 @@ jobs:
           key: ${{ steps.restore-conan.outputs.cache-primary-key }}
 
       - name: 🗄️ Save ccache
+        id: save-ccache
         # Save on every non-upload run. The old gate
         # `cache-hit != 'true'` skipped saves for every run whose
         # `conanfile.py`-hashed key already existed, freezing the cache
@@ -422,6 +468,12 @@ jobs:
       # short-circuit on the first failure), but a non-zero rc is recorded
       # in $GITHUB_ENV. The final gate step reads that and fails the job
       # so the workflow correctly surfaces test failures.
+      - name: ⏱️ Tests start
+        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
+        shell: bash
+        run: |
+          "${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh" phase-start tests
+
       - name: 🧪 secp256k1 (tests + exhaustive)
         if: ${{ inputs.skip-tests != true && inputs.upload != true }}
         working-directory: build/build/Release
@@ -524,11 +576,39 @@ jobs:
       - name: 🧪 Test results gate
         if: ${{ always() && inputs.skip-tests != true && inputs.upload != true }}
         run: |
+          "${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh" phase-end tests "${TESTS_FAILED:-0}"
           if [ "${TESTS_FAILED:-0}" = "1" ]; then
             echo "::error::One or more test binaries failed or timed out (see annotations above)"
             exit 1
           fi
           echo "All test binaries passed"
+
+      # Its own step, and always: a run that failed in configure, in the build
+      # or in the tests is exactly the run this is for. It reports; the steps
+      # that failed have already failed and nothing here changes that.
+      #
+      # Unlike the container-less workflow, the ccache save here is an explicit
+      # step that runs before this one, so its real outcome is knowable and is
+      # reported rather than described as scheduled.
+      - name: 📊 Where the time went
+        if: ${{ always() && inputs.upload != true }}
+        shell: bash
+        run: |
+          METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
+
+          # actions/cache/restore documents cache-primary-key and
+          # cache-matched-key, so here the restore can be reported exactly.
+          if [ "${{ steps.restore-ccache.outcome }}" = "skipped" ]; then
+            "$METRICS" note ccache_restore "not attempted (step skipped)"
+          elif [ -n "${{ steps.restore-ccache.outputs.cache-matched-key }}" ]; then
+            "$METRICS" note ccache_restore "matched \`${{ steps.restore-ccache.outputs.cache-matched-key }}\`"
+          else
+            "$METRICS" note ccache_restore "no key matched; nothing restored"
+          fi
+
+          "$METRICS" note ccache_save "${{ steps.save-ccache.outcome }} (explicit step, ran before this summary)"
+
+          "$METRICS" summary
 
       - name: ⏭️ Skip tests info
         if: ${{ inputs.skip-tests == true }}
