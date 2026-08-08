@@ -43,15 +43,6 @@
 
 #include <utxoz/logging.hpp>
 
-namespace kth {
-
-time_t floor_subtract(time_t left, time_t right) {
-    static auto const floor = (std::numeric_limits<time_t>::min)();
-    return right >= left ? floor : left - right;
-}
-
-} // namespace kth
-
 namespace kth::blockchain {
 
 using spent_value_type = std::pair<hash_digest, uint32_t>;
@@ -1383,7 +1374,16 @@ bool block_chain::is_stale() const {
     }
 
     auto const timestamp = top ? top->header().timestamp() : last_timestamp;
-    return timestamp < floor_subtract(zulu_time(), notify_limit_seconds_);
+    auto const now = static_cast<uint32_t>(zulu_time());
+    auto const limit = notify_limit_seconds_ > time_t(std::numeric_limits<uint32_t>::max())
+        ? std::numeric_limits<uint32_t>::max()
+        : static_cast<uint32_t>(notify_limit_seconds_);
+
+    // Keep both operands unsigned so floor_subtract saturates at zero. The old
+    // local time_t overload saturated at TIME_MIN and bypassed the constrained
+    // helper entirely; its comparison happened to produce the expected boolean
+    // while expressing the wrong cutoff.
+    return timestamp < floor_subtract(now, limit);
 }
 
 settings const& block_chain::chain_settings() const {
