@@ -6,6 +6,7 @@
 #define KTH_LIMITS_HPP
 
 #include <algorithm>
+#include <concepts>
 #include <limits>
 #include <stdexcept>
 
@@ -13,17 +14,6 @@
 #include <kth/infrastructure/utility/assert.hpp>
 
 namespace kth::domain {
-
-#define IF(T) std::enable_if<T>
-#define SIGN(T) std::is_signed<T>::value
-#define UNSIGN(T) std::is_unsigned<T>::value
-
-#define SIGNED(A) IF(SIGN(A))
-#define UNSIGNED(A) IF(UNSIGN(A))
-#define SIGNED_SIGNED(A, B) IF(SIGN(A) && SIGN(B))
-#define SIGNED_UNSIGNED(A, B) IF(SIGN(A) && UNSIGN(B))
-#define UNSIGNED_SIGNED(A, B) IF(UNSIGN(A) && SIGN(B))
-#define UNSIGNED_UNSIGNED(A, B) IF(UNSIGN(A) && UNSIGN(B))
 
 template <typename Space, typename Integer>
 Space cast_add(Integer left, Integer right) {
@@ -35,19 +25,19 @@ Space cast_subtract(Integer left, Integer right) {
     return static_cast<Space>(left) - static_cast<Space>(right);
 }
 
-template <typename Integer, typename = UNSIGNED(Integer)>
+template <std::unsigned_integral Integer>
 Integer ceiling_add(Integer left, Integer right) {
     static auto const ceiling = (std::numeric_limits<Integer>::max)();
     return left > ceiling - right ? ceiling : left + right;
 }
 
-template <typename Integer, typename = UNSIGNED(Integer)>
+template <std::unsigned_integral Integer>
 Integer floor_subtract(Integer left, Integer right) {
     static auto const floor = (std::numeric_limits<Integer>::min)();
     return right >= left ? floor : left - right;
 }
 
-template <typename Integer, typename = UNSIGNED(Integer)>
+template <std::unsigned_integral Integer>
 Integer safe_add(Integer left, Integer right) {
     static auto const maximum = (std::numeric_limits<Integer>::max)();
 
@@ -57,7 +47,7 @@ Integer safe_add(Integer left, Integer right) {
     return left + right;
 }
 
-template <typename Integer, typename = UNSIGNED(Integer)>
+template <std::unsigned_integral Integer>
 Integer safe_subtract(Integer left, Integer right) {
     static auto const minimum = (std::numeric_limits<Integer>::min)();
 
@@ -67,19 +57,20 @@ Integer safe_subtract(Integer left, Integer right) {
     return left - right;
 }
 
-template <typename Integer>
+template <std::unsigned_integral Integer>
 void safe_increment(Integer& value) {
     static constexpr auto one = Integer{1};
     value = safe_add(value, one);
 }
 
-template <typename Integer>
+template <std::unsigned_integral Integer>
 void safe_decrement(Integer& value) {
     static constexpr auto one = Integer{1};
     value = safe_subtract(value, one);
 }
 
-template <typename To, typename From, typename = SIGNED_SIGNED(To, From)>
+template <typename To, typename From>
+    requires std::signed_integral<To> && std::signed_integral<From>
 To safe_signed(From signed_value) {
     static auto const signed_minimum = (std::numeric_limits<To>::min)();
     static auto const signed_maximum = (std::numeric_limits<To>::max)();
@@ -90,7 +81,8 @@ To safe_signed(From signed_value) {
     return static_cast<To>(signed_value);
 }
 
-template <typename To, typename From, typename = UNSIGNED_UNSIGNED(To, From)>
+template <typename To, typename From>
+    requires std::unsigned_integral<To> && std::unsigned_integral<From>
 To safe_unsigned(From unsigned_value) {
     static auto const unsigned_minimum = (std::numeric_limits<To>::min)();
     static auto const unsigned_maximum = (std::numeric_limits<To>::max)();
@@ -101,7 +93,8 @@ To safe_unsigned(From unsigned_value) {
     return static_cast<To>(unsigned_value);
 }
 
-template <typename To, typename From, typename = SIGNED_UNSIGNED(To, From)>
+template <typename To, typename From>
+    requires std::signed_integral<To> && std::unsigned_integral<From>
 To safe_to_signed(From unsigned_value) {
     static_assert(sizeof(uint64_t) >= sizeof(To), "safe assign out of range");
     static auto const signed_maximum = (std::numeric_limits<To>::max)();
@@ -112,7 +105,8 @@ To safe_to_signed(From unsigned_value) {
     return static_cast<To>(unsigned_value);
 }
 
-template <typename To, typename From, typename = UNSIGNED_SIGNED(To, From)>
+template <typename To, typename From>
+    requires std::unsigned_integral<To> && std::signed_integral<From>
 To safe_to_unsigned(From signed_value) {
     static_assert(sizeof(uint64_t) >= sizeof(To), "safe assign out of range");
     static auto const unsigned_maximum = (std::numeric_limits<To>::max)();
@@ -150,16 +144,6 @@ To range_constrain(From value, To minimum, To maximum) {
 
     return static_cast<To>(value);
 }
-
-#undef IF
-#undef SIGN
-#undef UNSIGN
-#undef SIGNED
-#undef UNSIGNED
-#undef SIGNED_SIGNED
-#undef SIGNED_UNSIGNED
-#undef UNSIGNED_SIGNED
-#undef UNSIGNED_UNSIGNED
 
 } // namespace kth::domain
 

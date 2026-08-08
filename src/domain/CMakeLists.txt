@@ -583,6 +583,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/machine/operation.cpp
         test/machine/program.cpp
 
+        test/math/domain_limits_constraints.cpp
         test/math/limits.cpp
         test/math/stealth.cpp
 
