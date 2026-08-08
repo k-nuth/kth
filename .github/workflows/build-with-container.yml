@@ -376,6 +376,25 @@ jobs:
           path: /github/home/.cache/ccache
           key: ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ github.run_id }}
 
+      # The measured cause of the slow runs (#624): every run mints a new ~1 GB
+      # entry because the key must be unique for the save to fire, `restore-keys`
+      # only ever restores the newest, and the rest push the repository past its
+      # 10 GB budget. GitHub then evicts least-recently-used, which removes the
+      # family written least often - the sanitizer cache - and that job's build
+      # goes from 149 s to 8389 s with every translation unit missing.
+      #
+      # After the save, so what is pruned is never what this run just wrote.
+      # Only master prunes, and only master-scoped entries: a pull request must
+      # not be able to delete what master's next run will restore.
+      - name: 🧹 Prune superseded ccache entries
+        if: ${{ always() && inputs.upload != true && github.ref == 'refs/heads/master' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          "${GITHUB_WORKSPACE}/.github/scripts/ccache-prune.sh" "ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-"
+
       - name: 📊 Build summary
         if: always()
         run: |
