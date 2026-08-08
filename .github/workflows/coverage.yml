@@ -56,6 +56,10 @@ jobs:
         uses: ./ci_utils/.github/actions/setup-kthbuild
 
       - name: 🗄️ Setup ccache
+        # Declared rather than inherited: inside a container the default shell
+        # is whatever the image provides, and `&&`/`||` chains parsed by a
+        # non-bash `sh` behave differently enough to matter.
+        shell: bash
         run: |
           apt-get update -qq && apt-get install -y -qq ccache > /dev/null 2>&1 || true
           ccache --version || true
@@ -90,14 +94,27 @@ jobs:
           restore-keys: ccache-coverage-
 
       - name: 📦 Install dependencies
+        shell: bash
         run: |
+          METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
+          "$METRICS" phase-start deps
+          set +e
           conan install conanfile.py --version 0.0.0 -of build --build=missing \
             -pr:b linux-ci-cd -pr:h linux-ci-cd \
             -o march_id=ZLm9Pjh -o tests=True
+          rc=$?
+          set -e
+          "$METRICS" phase-end deps "$rc"
+          exit "$rc"
 
       - name: 🔨 Build with coverage
+        shell: bash
         run: |
+          METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
           export PATH="/usr/lib/ccache:$PATH"
+
+          # Before zeroing: this is what the restore actually produced.
+          "$METRICS" ccache-snapshot before
           ccache --zero-stats
 
           # Force -O0 on the coverage build. PR #309 dropped this
@@ -109,6 +126,8 @@ jobs:
           # master (24851108475, 2026-04-23) was on -O0 with gcovr
           # finishing in ~4 min. Slower tests are the right trade —
           # this job's purpose is the report, not benchmarking.
+          "$METRICS" phase-start configure
+          set +e
           cmake --preset conan-release \
             -DCMAKE_VERBOSE_MAKEFILE=OFF \
             -DGLOBAL_BUILD=ON \
@@ -119,9 +138,45 @@ jobs:
             -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          rc=$?
+          set -e
+          "$METRICS" phase-end configure "$rc"
+          if [ "$rc" != 0 ]; then exit "$rc"; fi
 
-          cmake --build --preset conan-release -j$(nproc)
+          CPUS="$(nproc)"
+
+          "$METRICS" phase-start compile
+          set +e
+          cmake --build --preset conan-release -j"$CPUS"
+          rc=$?
+          set -e
+          "$METRICS" phase-end compile "$rc"
+
+          # The compiler this CONTAINER used, read out of the cache CMake wrote
+          # inside it. The host runner's toolchain is a different thing and is
+          # not what produced these objects — reporting it would describe a
+          # build that did not happen.
+          CACHE_FILE="build/build/Release/CMakeCache.txt"
+          CXX_COMPILER="$(awk -F= '/^CMAKE_CXX_COMPILER:/ { print $2 }' "$CACHE_FILE" 2>/dev/null)"
+          CXX_LAUNCHER="$(awk -F= '/^CMAKE_CXX_COMPILER_LAUNCHER:/ { print $2 }' "$CACHE_FILE" 2>/dev/null)"
+          "$METRICS" note cmake_cxx_compiler "${CXX_COMPILER:-unreadable}"
+          "$METRICS" note cmake_cxx_launcher "${CXX_LAUNCHER:-unset}"
+          if [ -n "${CXX_COMPILER:-}" ] && [ -x "${CXX_COMPILER}" ]; then
+            "$METRICS" note compiler_version "$("${CXX_COMPILER}" --version 2>/dev/null | head -n 1)"
+          else
+            "$METRICS" note compiler_version "unreadable"
+          fi
+
+          "$METRICS" note cpus_visible "$CPUS"
+          "$METRICS" note cmake_parallel_level "${CMAKE_BUILD_PARALLEL_LEVEL:-unset}"
+          "$METRICS" note parallel_argument "$CPUS"
+          "$METRICS" note build_tool "$(awk -F= '/^CMAKE_GENERATOR:/ { print $2 }' "$CACHE_FILE" 2>/dev/null || echo unreadable)"
+
+          "$METRICS" ccache-snapshot after
           ccache --show-stats
+
+          # Diagnostics above, verdict here.
+          exit "$rc"
 
       # Persist ccache as soon as the build finishes — the compile
       # output is what populates it, so saving here gets the most
@@ -130,6 +185,7 @@ jobs:
       # save from failing the whole job; the failure becomes a
       # non-fatal warning.
       - name: 🗄️ Save ccache
+        id: save-ccache
         if: always() && steps.restore-ccache.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
@@ -138,8 +194,16 @@ jobs:
           key: ccache-coverage-${{ github.sha }}
 
       - name: 🧪 Run tests
+        shell: bash
         run: |
-          ctest --preset conan-release --output-on-failure -j$(nproc)
+          METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
+          "$METRICS" phase-start tests
+          set +e
+          ctest --preset conan-release --output-on-failure -j"$(nproc)"
+          rc=$?
+          set -e
+          "$METRICS" phase-end tests "$rc"
+          exit "$rc"
 
       - name: 📊 Generate coverage report
         if: always()
@@ -198,6 +262,8 @@ jobs:
           # `branch_coverage=0` is the lcov-2.x spelling of the
           # legacy `lcov_branch_coverage` option (still accepted,
           # but emits a deprecation warning per invocation).
+          METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
+          "$METRICS" phase-start coverage_generate
           lcov --capture \
                --directory build/build/Release/src/domain \
                --directory build/build/Release/src/infrastructure \
@@ -237,16 +303,25 @@ jobs:
           # treats a missing file as a warning. That is how the dead step
           # above stayed invisible: nothing between "produced nothing" and
           # "uploaded nothing" ever said so.
+          "$METRICS" phase-end coverage_generate 0
+
+          # Generation and validation are timed apart on purpose: lcov producing
+          # a tracefile and that tracefile being worth anything are different
+          # facts, and a run that is slow in one says nothing about the other.
+          "$METRICS" phase-start coverage_validate
           test -s coverage.info || {
+            "$METRICS" phase-end coverage_validate 1
             echo "::error::coverage.info is missing or empty"
             exit 1
           }
           records=$(grep -c '^SF:' coverage.info || true)
           bytes=$(wc -c < coverage.info)
           test "${records}" -gt 0 || {
+            "$METRICS" phase-end coverage_validate 1
             echo "::error::coverage.info holds no SF: records — nothing was captured"
             exit 1
           }
+          "$METRICS" phase-end coverage_validate 0
           totals=$(lcov --list coverage.info | tail -1)
           echo "coverage.info: ${bytes} bytes, ${records} source files"
           echo "${totals}"
@@ -318,7 +393,18 @@ jobs:
             echo '</details>'
           } >> "${GITHUB_STEP_SUMMARY}"
 
+      # Opened here so the phase has a beginning. Ending a phase that never
+      # started reports "measurement unavailable" — truthfully, which is why the
+      # gap was invisible: the summary was right about not knowing, and nobody
+      # had told it.
+      - name: ⏱️ Upload start
+        if: always()
+        shell: bash
+        run: |
+          "${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh" phase-start upload
+
       - name: ☁️ Upload to Codecov
+        id: codecov-upload
         if: always()
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac  # v5.5.5
         with:
@@ -326,3 +412,37 @@ jobs:
           fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_search: true
+
+      # Always, and last: a run that failed in the build, in generation or in
+      # the upload is exactly the run someone opens this for. It reports what
+      # happened; it does not change any of it. `continue-on-error` on the cache
+      # steps and the job's own setting are untouched — nothing here decides an
+      # exit code.
+      - name: 📊 Where the time went
+        if: always()
+        shell: bash
+        run: |
+          METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
+
+          # Three outcomes, kept apart. "Not reached" is a step that never ran
+          # because the job ended before it; a failed upload is a step that ran
+          # and did not work. Folding them together would hide a broken token
+          # behind an unrelated build failure.
+          case "${{ steps.codecov-upload.outcome }}" in
+            success)  "$METRICS" phase-end upload 0 ;;
+            failure)  "$METRICS" phase-end upload 1 ;;
+            skipped|"") : ;;   # never ran: left as "not reached"
+            *)        "$METRICS" phase-end upload 1 ;;
+          esac
+
+          if [ "${{ steps.restore-ccache.outcome }}" = "skipped" ]; then
+            "$METRICS" note ccache_restore "not attempted (step skipped)"
+          elif [ -n "${{ steps.restore-ccache.outputs.cache-matched-key }}" ]; then
+            "$METRICS" note ccache_restore "matched \`${{ steps.restore-ccache.outputs.cache-matched-key }}\`"
+          else
+            "$METRICS" note ccache_restore "no key matched; nothing restored"
+          fi
+
+          "$METRICS" note ccache_save "${{ steps.save-ccache.outcome }} (explicit step, ran before this summary)"
+
+          "$METRICS" summary
