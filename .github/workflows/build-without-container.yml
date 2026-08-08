@@ -120,6 +120,19 @@ jobs:
         with:
           new-version: ${{ inputs.build-version }}
 
+      # Runs with the platform's own /bin/bash, which on the macOS runners is
+      # 3.2. The prune script used `mapfile` in its first revision — a Bash 4
+      # builtin — so it passed every local test and would have failed here.
+      # And the key check exists because an edit once moved a `restore-keys`
+      # line into a neighbouring step's `run:` block: valid YAML, nothing for
+      # actionlint to say, and every container build silently cold.
+      - name: 🧪 CI script checks
+        if: ${{ inputs.upload != true }}
+        shell: /bin/bash -e {0}
+        run: |
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/check-cache-keys.py"
+          "${GITHUB_WORKSPACE}/.github/scripts/ccache-prune-selftest.sh"
+
       - name: 🗄️ Setup ccache
         if: ${{ inputs.upload != true }}
         run: |
@@ -427,6 +440,21 @@ jobs:
           "$METRICS" note ccache_save "scheduled (post-job; result unavailable at summary time)"
 
           "$METRICS" summary
+
+
+      # See #624 and .github/scripts/ccache-prune.sh: the run-unique key is what
+      # makes the save fire, and the entries it leaves behind are what push the
+      # repository past its cache budget. This job's own save is a post-job
+      # action that has not run yet, so what is pruned here is what earlier runs
+      # left — which is exactly the accumulation that matters.
+      - name: 🧹 Prune superseded ccache entries
+        if: ${{ always() && inputs.upload != true && github.ref == 'refs/heads/master' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          "${GITHUB_WORKSPACE}/.github/scripts/ccache-prune.sh" "ccache-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-"
 
       # ccache log helps diagnose hit-rate problems on macOS-hosted
       # runners — upload it as an artifact so we can post-mortem the
