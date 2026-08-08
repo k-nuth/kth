@@ -78,23 +78,9 @@ class KthRecipe(KnuthConanFileV2):
         "utxoz_compact": [True, False],
         "asio_standalone": [True, False],
 
-        # secp256k1 options
-        "secp256k1_enable_coverage": [True, False],
-        "secp256k1_enable_branch_coverage": [True, False],
-        "secp256k1_enable_bignum": [True, False],
-        "secp256k1_use_asm": [True, False],
-        "secp256k1_enable_module_ecdh": [True, False],
-        "secp256k1_enable_module_multiset": [True, False],
-        "secp256k1_enable_module_recovery": [True, False],
-        "secp256k1_enable_module_schnorr": [True, False],
-        "secp256k1_enable_external_default_callbacks": [True, False],
-        "secp256k1_enable_endomorphism": [True, False],
-        "secp256k1_ecmult_window_size": ["ANY"],
-        "secp256k1_ecmult_gen_precision": [2, 4, 8],
-        "secp256k1_ecmult_static_precomputation": [True, False],
-        "secp256k1_enable_jni": [True, False],
-        "use_field": ["", "64bit", "32bit"],
-        "use_scalar": ["", "64bit", "32bit"],
+        # secp256k1 assembly selection (modern SECP256K1_ASM). "off" is used by
+        # the ASan CI build, whose field_5x52 asm otherwise exhausts registers.
+        "secp256k1_asm": ["auto", "off"],
     }
 
 
@@ -129,24 +115,7 @@ class KthRecipe(KnuthConanFileV2):
         "embed_utxo_bloom": False,
         "utxoz_compact": False,
         "asio_standalone": True,
-
-        # secp256k1 options
-        "secp256k1_enable_coverage": False,
-        "secp256k1_enable_branch_coverage": False,
-        "secp256k1_enable_bignum": False,
-        "secp256k1_use_asm": True,
-        "secp256k1_enable_module_ecdh": False,
-        "secp256k1_enable_module_multiset": True,
-        "secp256k1_enable_module_recovery": True,
-        "secp256k1_enable_module_schnorr": True,
-        "secp256k1_enable_external_default_callbacks": False,
-        "secp256k1_enable_endomorphism": True,
-        "secp256k1_ecmult_window_size": 15,
-        "secp256k1_ecmult_gen_precision": 4,
-        "secp256k1_ecmult_static_precomputation": True,
-        "secp256k1_enable_jni": False,
-        "use_field": "",
-        "use_scalar": ""
+        "secp256k1_asm": "auto",
     }
 
     # `data/utxo_bloom.dat` (~68 MB) lives under `data/` but is intentionally
@@ -224,25 +193,12 @@ class KthRecipe(KnuthConanFileV2):
 
 
     def build_requirements(self):
-        self.tool_requires("secp256k1-precompute/1.0.0")
         if self.options.tests:
             self.test_requires("catch2/3.15.0")
             self.test_requires("nanobench/4.3.11")
 
     def config_options(self):
         KnuthConanFileV2.config_options(self)
-        # Disable ecmult static precomputation for Emscripten to avoid native build issues
-        # if self.settings.os == "Emscripten":
-        #     self.output.info("Setting secp256k1_ecmult_static_precomputation to False for Emscripten")
-        #     self.options.secp256k1_ecmult_static_precomputation = False
-            
-        # Disable ASM for architectures that don't support it
-        # Based on the logic in secp256k1's CMakeLists.txt
-        # Only x86_64 and arm-linux-gnueabihf are supported
-        arch = str(self.settings.arch)
-        if arch != "x86_64" and arch != "armv7":
-            self.output.info(f"Setting secp256k1_use_asm to False for architecture: {arch}")
-            self.options.secp256k1_use_asm = False
 
         # Disable tests for WebAssembly (Catch2 incompatible with shared-memory/threads)
         # and force the JSON-RPC server off: it relies on the standalone-asio I/O
@@ -312,32 +268,11 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_UTXOZ_COMPACT_MODE"] = option_on_off(self.options.utxoz_compact)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
 
-        # Secp256k1 --------------------------------------------
-        tc.variables["SECP256K1_ENABLE_COVERAGE"] = option_on_off(self.options.secp256k1_enable_coverage)
-        tc.variables["SECP256K1_ENABLE_BRANCH_COVERAGE"] = option_on_off(self.options.secp256k1_enable_branch_coverage)
-        tc.variables["SECP256K1_ENABLE_BIGNUM"] = option_on_off(self.options.secp256k1_enable_bignum)
-        tc.variables["SECP256K1_USE_ASM"] = option_on_off(self.options.secp256k1_use_asm)
-        tc.variables["SECP256K1_ENABLE_MODULE_ECDH"] = option_on_off(self.options.secp256k1_enable_module_ecdh)
-        tc.variables["SECP256K1_ENABLE_MODULE_MULTISET"] = option_on_off(self.options.secp256k1_enable_module_multiset)
-        tc.variables["SECP256K1_ENABLE_MODULE_RECOVERY"] = option_on_off(self.options.secp256k1_enable_module_recovery)
-        tc.variables["SECP256K1_ENABLE_MODULE_SCHNORR"] = option_on_off(self.options.secp256k1_enable_module_schnorr)
-        tc.variables["SECP256K1_ENABLE_EXTERNAL_DEFAULT_CALLBACKS"] = option_on_off(self.options.secp256k1_enable_external_default_callbacks)
-        tc.variables["SECP256K1_ENABLE_ENDOMORPHISM"] = option_on_off(self.options.secp256k1_enable_endomorphism)
-        tc.variables["SECP256K1_ECMULT_WINDOW_SIZE"] = self.options.secp256k1_ecmult_window_size
-        tc.variables["SECP256K1_ECMULT_GEN_PRECISION"] = self.options.secp256k1_ecmult_gen_precision
-        tc.variables["SECP256K1_ECMULT_STATIC_PRECOMPUTATION"] = option_on_off(self.options.secp256k1_ecmult_static_precomputation)
-        tc.variables["SECP256K1_ENABLE_JNI"] = option_on_off(self.options.secp256k1_enable_jni)
-        
-        if self.options.use_field:
-            tc.variables["USE_FIELD"] = self.options.use_field
-            
-        if self.options.use_scalar:
-            tc.variables["USE_SCALAR"] = self.options.use_scalar
-            
-        # Enable compatibility with the tests - unify all test variables
+        # secp256k1 is vendored (bitcoin-core/secp256k1) and configured directly
+        # in src/CMakeLists.txt; the modern build self-generates its precomputed
+        # tables, so only the assembly selection is exposed here.
+        tc.variables["SECP256K1_ASM"] = "OFF" if self.options.secp256k1_asm == "off" else "AUTO"
         tc.variables["ENABLE_TEST"] = option_on_off(self.options.tests)
-        tc.variables["SECP256K1_BUILD_TEST"] = option_on_off(self.options.tests)
-        # Secp256k1 -------------------------------------------- (END)
 
         tc.variables["CURRENCY"] = self.options.currency
         tc.variables["KTH_MEMPOOL_BACKEND"] = self.options.mempool_backend
@@ -352,9 +287,6 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_VERSION"] = kth_version
         self.output.info(f"Knuth Node version: {kth_version}")
 
-        # Generate secp256k1 precomputed tables before CMake generation
-        self._generate_secp256k1_tables()
-        
         tc.generate()
         
         deps = CMakeDeps(self)
@@ -412,8 +344,6 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["secp256k1"].libs = ["secp256k1"]
         self.cpp_info.components["secp256k1"].names["cmake_find_package"] = "secp256k1"
         self.cpp_info.components["secp256k1"].names["cmake_find_package_multi"] = "secp256k1"
-        # secp256k1 requires GMP for big number operations
-        self.cpp_info.components["secp256k1"].requires = ["gmp::gmp"]
 
         # Core infrastructure component
         self.cpp_info.components["infrastructure"].libs = ["infrastructure"]
@@ -562,99 +492,3 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["kth"].requires = main_requires
         self.cpp_info.components["kth"].names["cmake_find_package"] = "kth"
         self.cpp_info.components["kth"].names["cmake_find_package_multi"] = "kth"
-
-    def _generate_secp256k1_tables(self):
-        """Generate secp256k1 precomputed tables using external tool if needed"""
-        if not self.options.secp256k1_ecmult_static_precomputation:
-            return
-            
-        import platform
-        import subprocess
-        from pathlib import Path
-        
-        # Path to secp256k1 source directory and output file
-        secp256k1_src = Path(self.source_folder) / "src" / "secp256k1" / "src"
-        output_file = secp256k1_src / "ecmult_static_context.h"
-        
-        # Skip if file already exists and is newer than source
-        gen_context_src = secp256k1_src / "gen_context.c"
-        if output_file.exists() and gen_context_src.exists():
-            if output_file.stat().st_mtime > gen_context_src.stat().st_mtime:
-                self.output.info("secp256k1 precomputed tables are up to date")
-                return
-        
-        self.output.info("Generating secp256k1 precomputed tables...")
-        
-        try:
-            # Get the gen_context executable from the tool package
-            # Find the executable in the dependencies
-            gen_context_exe = None
-            for req, dep_info in self.dependencies.items():
-                if req.ref.name == "secp256k1-precompute":
-                    # Get the bin folder from the dependency
-                    bin_folder = Path(dep_info.cpp_info.bindirs[0]) if dep_info.cpp_info.bindirs else Path("bin")
-                    gen_context_exe = Path(dep_info.package_folder) / bin_folder / "gen_context"
-                    if platform.system() == "Windows":
-                        gen_context_exe = gen_context_exe.with_suffix(".exe")
-                    break
-            
-            if not gen_context_exe or not gen_context_exe.exists():
-                raise Exception(f"gen_context executable not found: {gen_context_exe}")
-            
-            # Create the secp256k1 src directory if it doesn't exist
-            secp256k1_src.mkdir(parents=True, exist_ok=True)
-            
-            # Create a temporary directory structure that gen_context expects
-            # gen_context writes to "src/ecmult_static_context.h" relative to its working directory
-            temp_dir = secp256k1_src.parent  # This should be src/secp256k1
-            src_subdir = temp_dir / "src"
-            src_subdir.mkdir(exist_ok=True)
-            
-            # Run the generator tool from secp256k1 directory so it can write to src/ecmult_static_context.h
-            self.output.info(f"gen_context_exe: {gen_context_exe}")
-            self.output.info(f"gen_context_exe exists: {gen_context_exe.exists()}")
-
-            # Check binary type (static vs dynamic)
-            import shutil
-            file_cmd = shutil.which("file")
-            ldd_cmd = shutil.which("ldd")
-
-            if file_cmd:
-                file_result = subprocess.run([file_cmd, str(gen_context_exe)], capture_output=True, text=True)
-                self.output.info(f"Binary type: {file_result.stdout.strip()}")
-            else:
-                self.output.warning("'file' command not found")
-
-            if ldd_cmd:
-                ldd_result = subprocess.run([ldd_cmd, str(gen_context_exe)], capture_output=True, text=True)
-                self.output.info(f"ldd output: {ldd_result.stdout.strip()}")
-                if ldd_result.stderr:
-                    self.output.warning(f"ldd stderr: {ldd_result.stderr.strip()}")
-            else:
-                self.output.warning("'ldd' command not found")
-
-            result = subprocess.run(
-                [str(gen_context_exe),
-                 str(self.options.secp256k1_ecmult_window_size),
-                 str(self.options.secp256k1_ecmult_gen_precision)],
-                cwd=str(temp_dir),
-                capture_output=True,
-                text=True
-            )
-            
-            if result.returncode != 0:
-                self.output.error(f"Failed to generate secp256k1 tables: {result.stderr}")
-                raise Exception("secp256k1 table generation failed")
-            
-            if output_file.exists():
-                self.output.info(f"Successfully generated {output_file}")
-            else:
-                raise Exception("secp256k1 table generation completed but output file not found")
-                
-        except Exception as e:
-            self.output.error(f"Error generating secp256k1 tables: {e}")
-            # Fall back to disabling precomputation if tool fails
-            self.output.warning("Disabling secp256k1 static precomputation due to generation failure")
-            # We could modify the CMake variable here, but it's already been set
-            # For now, just let it fail and require the user to disable it manually
-            raise

@@ -22,8 +22,8 @@ constexpr auto der_signature2 = "3045022100bc494fbd09a8e77d8266e2abdea9aef08b9e7
 // Scenario 3
 static auto const secret3 = "ce8f4b713ffdd2658900845251890f30371856be201cd1f5b3d970f793634333"_hash;
 static auto const sighash3 = "f89572635651b2e4f89778350616989183c98d1a721c911324bf9f17a0cf5bf0"_hash;
-constexpr auto ec_signature3 = "17b7b25c48e4ed2bd43369fa282f608b4329d96409860ce832fd5497b65fe663b901e34dff5291868c4401c8c1c6ed23b1887139cc4cd6884f38b9d936356131"_base16;
-constexpr auto der_signature3 = "3044022063e65fb69754fd32e80c860964d929438b602f28fa6933d42bede4485cb2b717022031613536d9b9384f88d64ccc397188b123edc6c1c801448c869152ff4de301b9";
+constexpr auto ec_signature3 = "57d0b4fb0df5cefa245e76ba9b099bb63aa46340cb152a927c1cb3f8befe32483750eae5727db3e6cc4275062971552e467f7cfd7269fec2626588b6c6d58e92"_base16;
+constexpr auto der_signature3 = "3044022057d0b4fb0df5cefa245e76ba9b099bb63aa46340cb152a927c1cb3f8befe324802203750eae5727db3e6cc4275062971552e467f7cfd7269fec2626588b6c6d58e92";
 
 TEST_CASE("elliptic curve secret to public positive test", "[elliptic curve tests]") {
     ec_compressed point;
