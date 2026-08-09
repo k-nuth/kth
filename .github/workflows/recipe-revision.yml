@@ -56,6 +56,10 @@ jobs:
           # pinned thing is conan, which computes it.
           python -m pip install --disable-pip-version-check "conan==${CONAN_VERSION}" kthbuild
 
+      - name: 🧹 No editor residue is exported
+        shell: bash
+        run: python3 .github/scripts/check-exported-residues.py
+
       - name: 🔢 Compute the recipe revision
         shell: bash
         run: |
