@@ -147,6 +147,19 @@ jobs:
         with:
           new-version: ${{ inputs.build-version }}
 
+      # Inside the container, because that is where the first revision failed:
+      # it called `gh`, which the build image does not have, so the prune
+      # reported "could not list caches" and pruned nothing while every other
+      # job worked. The self-test now exercises the API path against a stubbed
+      # curl here as well as on macOS, so a tool this image lacks is found by a
+      # check rather than by an inventory that quietly keeps growing.
+      - name: 🧪 CI script checks
+        if: ${{ inputs.upload != true }}
+        shell: bash
+        run: |
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/check-cache-keys.py"
+          "${GITHUB_WORKSPACE}/.github/scripts/ccache-prune-selftest.sh"
+
       - name: 🗄️ Setup ccache
         if: ${{ inputs.upload != true }}
         run: |
