@@ -1,0 +1,192 @@
+name: 🔁 Recipe revision
+
+# Knuth publishes the same recipe from Linux, macOS and Windows paths, and
+# nothing established that the three export the same bytes. A recipe revision is
+# a hash of what was exported, so two platforms disagreeing means one version
+# number naming two different recipes — which is what UTXO-Z hit when Windows
+# line endings produced a second revision for one nominal release.
+#
+# This check exports and compares. It uploads nothing and reads no secret: the
+# publication topology is deliberately left alone until reproducibility is
+# established (#632).
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: recipe-revision-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # A literal, not a derived value. Anything computed per platform — a date, a
+  # git describe, a hostname — would make the revisions differ for a reason that
+  # has nothing to do with the sources.
+  RECIPE_VERSION: "0.0.0-recipe-revision-check"
+  CONAN_VERSION: "2.31.2"
+
+jobs:
+  revision:
+    name: 🔢 ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Every platform reports, so one that cannot compute a revision is visible
+      # as a missing answer rather than hidden behind a neighbour's failure.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26, windows-2022]
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
+        with:
+          submodules: true
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c  # v6.0.0
+        with:
+          python-version: '3.12'
+
+      - name: 🔧 Install Conan ${{ env.CONAN_VERSION }} and kthbuild
+        shell: bash
+        run: |
+          # kthbuild is imported by the recipe, so the export cannot run without
+          # it. It is not exported, so it does not enter the revision — the
+          # pinned thing is conan, which computes it.
+          python -m pip install --disable-pip-version-check "conan==${CONAN_VERSION}" kthbuild
+
+      - name: 🔢 Compute the recipe revision
+        shell: bash
+        run: |
+          .github/scripts/recipe-revision.sh "${RECIPE_VERSION}" "revision.txt"
+
+      - name: 📤 Upload the revision
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: recipe-revision-${{ matrix.os }}
+          path: revision.txt
+          if-no-files-found: error
+
+  # Proves the comparison is looking at the bytes it claims to. Without it, a
+  # revision that ignored the exported sources would agree on all three
+  # platforms and the check above would pass while measuring nothing.
+  negative-control:
+    name: 🧪 A CRLF source must change the revision
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
+        with:
+          submodules: true
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c  # v6.0.0
+        with:
+          python-version: '3.12'
+
+      - name: 🔧 Install Conan ${{ env.CONAN_VERSION }} and kthbuild
+        shell: bash
+        run: |
+          # kthbuild is imported by the recipe, so the export cannot run without
+          # it. It is not exported, so it does not enter the revision — the
+          # pinned thing is conan, which computes it.
+          python -m pip install --disable-pip-version-check "conan==${CONAN_VERSION}" kthbuild
+
+      - name: 🧪 Mutate one exported source and re-export
+        shell: bash
+        run: |
+          # A file that is genuinely part of the export, not a fixture: the
+          # point is that the revision depends on what is published.
+          TARGET="src/domain/include/kth/domain/define.hpp"
+          test -f "${TARGET}" || {
+            echo "::error::the control's target no longer exists: ${TARGET}"
+            exit 1
+          }
+
+          .github/scripts/recipe-revision.sh "${RECIPE_VERSION}" "lf.txt"
+
+          python - "${TARGET}" <<'PY'
+          import sys
+          path = sys.argv[1]
+          with open(path, 'rb') as handle:
+              data = handle.read()
+          with open(path, 'wb') as handle:
+              handle.write(data.replace(b'\n', b'\r\n'))
+          PY
+
+          .github/scripts/recipe-revision.sh "${RECIPE_VERSION}" "crlf.txt"
+
+          lf="$(cat lf.txt)"
+          crlf="$(cat crlf.txt)"
+          echo "LF   revision: ${lf}"
+          echo "CRLF revision: ${crlf}"
+
+          if [ "${lf}" = "${crlf}" ]; then
+            echo "::error::the revision did not change when an exported source was rewritten with CRLF. The cross-platform comparison would agree without examining the sources, so it proves nothing."
+            exit 1
+          fi
+          echo "The revision depends on the exported bytes, so the comparison is not vacuous."
+
+  compare:
+    name: ⚖️ All platforms agree
+    needs: [revision, negative-control]
+    # Always, so a platform that failed to produce a revision is reported here
+    # as unverifiable rather than silently dropped from the comparison.
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 📥 Download every revision
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          path: revisions
+          pattern: recipe-revision-*
+
+      - name: ⚖️ Compare
+        shell: bash
+        run: |
+          expected="ubuntu-24.04 macos-26 windows-2022"
+          missing=""
+          summary=""
+          first=""
+          differ=0
+
+          for os in ${expected}; do
+            file="revisions/recipe-revision-${os}/revision.txt"
+            if [ ! -s "${file}" ]; then
+              # Not equality. A platform that could not answer has not agreed;
+              # it has said nothing, and the two must never be confused.
+              missing="${missing} ${os}"
+              summary="${summary}| ${os} | — | **no revision produced** |"$'\n'
+              continue
+            fi
+            rev="$(tr -d '\r\n' < "${file}")"
+            summary="${summary}| ${os} | \`${rev}\` | ok |"$'\n'
+            if [ -z "${first}" ]; then
+              first="${rev}"
+            elif [ "${rev}" != "${first}" ]; then
+              differ=1
+            fi
+          done
+
+          {
+            echo "### Recipe revision"
+            echo
+            echo "Version \`${RECIPE_VERSION}\`, conan \`${CONAN_VERSION}\`, commit \`${GITHUB_SHA}\`"
+            echo
+            echo "| Platform | Revision | |"
+            echo "|---|---|---|"
+            printf '%s' "${summary}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          if [ -n "${missing}" ]; then
+            echo "::error::no revision from:${missing}. Unavailable evidence is not agreement."
+            exit 1
+          fi
+
+          if [ "${differ}" -ne 0 ]; then
+            echo "::error::the platforms exported different bytes for the same commit and version, so this recipe has more than one revision."
+            exit 1
+          fi
+
+          echo "All platforms produced ${first}"

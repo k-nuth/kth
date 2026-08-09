@@ -1,0 +1,43 @@
+# The recipe's revision is a hash of the bytes it exports, so a file that
+# arrives with different line endings on different platforms is a different
+# recipe with the same version number. UTXO-Z hit exactly that: Windows CRLF
+# produced a second RREV for one nominal release.
+#
+# Measured here before writing this: converting a single exported header to
+# CRLF changes the revision from 86946016b03a167e85cca17804e4e7de to
+# 0bbafd72e08cca25c4887d0f8a24b528. The dependency is real, so the policy is
+# not decorative.
+#
+# `text=auto` lets git decide what is text; `eol=lf` fixes what text looks like
+# in the working tree on every platform, which is what conan exports.
+* text=auto eol=lf
+
+# Binary files must never be touched. Left as their own lines rather than a
+# single glob so that adding a format is a one-line, reviewable change.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.bz2   binary
+*.xz    binary
+*.7z    binary
+*.dat   binary
+*.bin   binary
+*.so    binary
+*.dylib binary
+*.dll   binary
+*.exe   binary
+*.a     binary
+*.lib   binary
+*.o     binary
+*.obj   binary
+
+# Windows-only scripts are the one place CRLF is the correct answer: cmd.exe
+# and PowerShell are the consumers, and they are not portable text.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
