@@ -173,7 +173,7 @@ class KthRecipe(KnuthConanFileV2):
 
     def requirements(self):
         self.requires("boost/1.91.0", transitive_headers=True, transitive_libs=True)
-        self.requires("cli11/2.5.0", transitive_headers=True)
+        self.requires("cli11/2.6.2", transitive_headers=True)
         self.requires("fmt/12.1.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.17.0", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/0.9.32", transitive_headers=True, transitive_libs=True)
@@ -185,7 +185,7 @@ class KthRecipe(KnuthConanFileV2):
         if self.options.consensus:
             self.requires("openssl/3.6.3", transitive_headers=True, transitive_libs=True)
 
-        self.requires("ctre/3.10.0", transitive_headers=True, transitive_libs=True)
+        self.requires("ctre/3.11.0", transitive_headers=True, transitive_libs=True)
         self.requires("tiny-aes-c/1.0.0", transitive_headers=True, transitive_libs=True)
 
         # ftxui drives the node-exe TUI dashboard, which doesn't build under
@@ -217,16 +217,16 @@ class KthRecipe(KnuthConanFileV2):
 
         if self.options.with_jemalloc:
             # https://jasone.github.io/2025/06/12/jemalloc-postmortem/
-            self.requires("jemalloc/5.3.0", transitive_headers=True, transitive_libs=True)
+            self.requires("jemalloc/5.3.1", transitive_headers=True, transitive_libs=True)
 
         if self.options.asio_standalone:
-            self.requires("asio/1.36.0", transitive_headers=True, transitive_libs=True)
+            self.requires("asio/1.38.2", transitive_headers=True, transitive_libs=True)
 
 
     def build_requirements(self):
         self.tool_requires("secp256k1-precompute/1.0.0")
         if self.options.tests:
-            self.test_requires("catch2/3.15.0")
+            self.test_requires("catch2/3.15.2")
             self.test_requires("nanobench/4.3.11")
 
     def config_options(self):
