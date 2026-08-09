@@ -132,6 +132,7 @@ jobs:
         run: |
           python3 "${GITHUB_WORKSPACE}/.github/scripts/check-cache-keys.py"
           "${GITHUB_WORKSPACE}/.github/scripts/ccache-prune-selftest.sh"
+          "${GITHUB_WORKSPACE}/.github/scripts/ccache-prune-closed-prs-selftest.sh"
 
       - name: 🗄️ Setup ccache
         if: ${{ inputs.upload != true }}
