@@ -4,6 +4,8 @@
 
 #include <test_helpers.hpp>
 
+#include <vector>
+
 #include <algorithm>
 #include <filesystem>
 #include <string>
@@ -64,8 +66,8 @@ struct db_source {
     auto find_utxo_raw(utxoz::raw_outpoint const& key, uint32_t height) const {
         return db.find_raw(key, height);
     }
-    auto utxo_process_pending_lookups_raw() {
-        return db.process_pending_lookups_raw();
+    auto utxo_resolve_raw(std::span<utxoz::lookup_request const> requests) const {
+        return db.resolve_raw(requests);
     }
 };
 
@@ -74,7 +76,7 @@ struct db_source {
 struct failing_source {
     result_code error{result_code::other};
     mutable size_t reads{0};
-    size_t sweeps{0};
+    mutable size_t sweeps{0};
 
     std::expected<utxoz_database::raw_stored, result_code> find_utxo_raw(
         utxoz::raw_outpoint const&, uint32_t) const {
@@ -82,9 +84,8 @@ struct failing_source {
         return std::unexpected(error);
     }
 
-    std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, utxoz_database::raw_stored>,
-                            std::vector<utxoz::raw_outpoint>>, result_code>
-    utxo_process_pending_lookups_raw() {
+    std::expected<utxoz_database::raw_resolution, result_code>
+    utxo_resolve_raw(std::span<utxoz::lookup_request const>) const {
         ++sweeps;
         return std::unexpected(error);
     }
@@ -124,7 +125,7 @@ TEST_CASE("a spent UTXO is restored with its original payload and height", "[reo
         inserts.emplace(f.key, utxo_raw_value{f.value, f.height});
     }
     boost::unordered_flat_map<utxoz::raw_outpoint, uint32_t, outpoint_fast_hasher> no_deletes;
-    REQUIRE(db.apply_delta_raw(inserts, no_deletes) == result_code::success);
+    REQUIRE(db.apply_inserts_raw(inserts) == result_code::success);
 
     // --- capture: through the production path, not a hand-rolled equivalent ---
     // The spending block's own delta: it deletes all three, creating nothing.
@@ -152,11 +153,18 @@ TEST_CASE("a spent UTXO is restored with its original payload and height", "[reo
 
     // --- spend: the block being connected erases them ---
     boost::unordered_flat_map<utxoz::raw_outpoint, utxo_raw_value, outpoint_fast_hasher> no_inserts;
-    boost::unordered_flat_map<utxoz::raw_outpoint, uint32_t, outpoint_fast_hasher> deletes;
+    std::vector<utxoz::deferred_deletion_entry> deletes;
     for (auto const& f : created) {
-        deletes.emplace(f.key, 200000u);   // spending height, not the creation height
+        deletes.emplace_back(f.key, 200000u);   // spending height, not the creation height
     }
-    REQUIRE(db.apply_delta_raw(no_inserts, deletes) == result_code::success);
+    REQUIRE(db.apply_inserts_raw(no_inserts) == result_code::success);
+
+    // The spend itself. Every one of these keys was just inserted, so the whole
+    // batch must land in `erased`: nothing here is entitled to be absent.
+    auto const spent_progress = db.apply_deletes(deletes);
+    REQUIRE(spent_progress.erased.size() == deletes.size());
+    REQUIRE(spent_progress.absent.empty());
+    REQUIRE(spent_progress.unresolved.empty());
 
     for (auto const& f : created) {
         CHECK_FALSE(db.find_raw(f.key, 200001).has_value());
@@ -167,7 +175,7 @@ TEST_CASE("a spent UTXO is restored with its original payload and height", "[reo
     for (auto const& u : captured->spent) {
         restores.emplace(u.key, utxo_raw_value{u.value, u.height});
     }
-    REQUIRE(db.apply_delta_raw(restores, no_deletes) == result_code::success);
+    REQUIRE(db.apply_inserts_raw(restores) == result_code::success);
 
     // The set must be indistinguishable from before the spend.
     for (auto const& f : created) {
@@ -216,29 +224,31 @@ TEST_CASE("outputs created and spent in the same block need no undo entry", "[re
     REQUIRE(captured.has_value());
     CHECK(captured->spent.empty());   // no entry => disconnect will not restore it
 
-    REQUIRE(db.apply_delta_raw(delta.inserts, delta.deletes) == result_code::success);
+    REQUIRE(db.apply_inserts_raw(delta.inserts) == result_code::success);
     CHECK_FALSE(db.find_raw(internal, 701).has_value());
 }
 
 TEST_CASE("find_raw reports a miss for an unknown outpoint", "[reorg][undo]") {
-    // Undo capture treats a miss as "resolve through the deferred queue, then
-    // fail loudly" — it must not silently produce an empty record.
+    // Undo capture treats a miss as "carry it into this capture's own batch,
+    // resolve that batch, then fail loudly" — it must not silently produce an
+    // empty record.
     utxoz_database db;
     REQUIRE(db.open(fresh_dir("miss"), true));
 
     auto const missed = db.find_raw(make_outpoint(42, 3), 1);
     REQUIRE_FALSE(missed.has_value());
-    CHECK(missed.error() == result_code::key_not_found);   // the documented contract
+    CHECK(missed.error() == result_code::not_resolved);   // the documented contract
 }
 
 // =============================================================================
 // Telling a failed read apart from a missing output
 // =============================================================================
 //
-// find_utxo_raw answers key_not_found for "queued for the deferred sweep" and
-// other codes for a read that failed. Capture used to queue both, so a storage
-// failure came back out as a missing output — the caller told the set does not
-// hold what a block spends, when what happened is that it could not be asked.
+// find_utxo_raw answers not_resolved for "the active versions cannot answer" and
+// other codes for a read that failed. Capture used to carry both onward the same
+// way, so a storage failure came back out as a missing output — the caller told
+// the set does not hold what a block spends, when what happened is that it could
+// not be asked.
 
 TEST_CASE("a failed read is reported as itself, not as a missing output", "[reorg][undo]") {
     failing_source source{result_code::other, 0, 0};
@@ -252,15 +262,15 @@ TEST_CASE("a failed read is reported as itself, not as a missing output", "[reor
     REQUIRE_FALSE(captured.has_value());
     CHECK(captured.error() == result_code::other);
 
-    // And it did not go through the deferred sweep: queueing a read that failed
+    // And it did not go through the batch resolution: carrying a read that failed
     // is what turned it into a missing output in the first place.
     CHECK(source.sweeps == 0);
 }
 
 TEST_CASE("an output still missing after the sweep is reported as not found", "[reorg][undo]") {
-    // The other half of the split: key_not_found is what the sweep is for, so it
-    // is queued, swept, and only then reported — and it now means only this.
-    failing_source source{result_code::key_not_found, 0, 0};
+    // The other half of the split: not_resolved is what the resolution is for, so
+    // it is kept by the caller, resolved as a batch, and only then reported.
+    failing_source source{result_code::not_resolved, 0, 0};
 
     utxo_raw_delta delta;
     delta.deletes.emplace(make_outpoint(8, 0), 900u);
@@ -269,7 +279,7 @@ TEST_CASE("an output still missing after the sweep is reported as not found", "[
     auto const captured = capture_block_undo(delta, empty_batch, source, 900u);
 
     REQUIRE_FALSE(captured.has_value());
-    CHECK(captured.error() == result_code::key_not_found);
+    CHECK(captured.error() == result_code::not_resolved);
     CHECK(source.sweeps == 1);
 }
 

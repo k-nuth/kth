@@ -133,6 +133,8 @@ set(kth_sources_just_kth
     src/block_undo.cpp
     src/block_store.cpp
     src/mempool_store.cpp
+    src/durability.cpp
+    src/utxo_transition_record.cpp
     src/header_index.cpp
 )
 
@@ -152,6 +154,9 @@ set(kth_headers
   include/kth/database/block_undo.hpp
   include/kth/database/block_store.hpp
   include/kth/database/mempool_store.hpp
+  include/kth/database/native_file.hpp
+  include/kth/database/durability.hpp
+  include/kth/database/utxo_transition_record.hpp
   include/kth/database/databases/property_code.hpp
   include/kth/database/databases/internal_database.ipp
   include/kth/database/databases/internal_database.hpp

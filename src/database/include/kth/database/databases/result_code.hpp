@@ -16,7 +16,16 @@ enum class result_code {
     no_data_to_prune = 5,
     db_corrupt = 6,
     prune_error = 7,
-    other = 8
+    other = 8,
+
+    /// The active versions cannot answer; the older ones were not consulted.
+    ///
+    /// NOT key_not_found, and the distinction is the point. UTXO-Z 0.10.0 named
+    /// it not_resolved for the same reason: absence is a fact about the
+    /// database, and this is a fact about which files were looked in. A caller
+    /// that flattens the two reports an output as spent because it did not
+    /// finish asking.
+    not_resolved = 9
 };
 
 inline

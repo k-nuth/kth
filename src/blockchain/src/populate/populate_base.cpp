@@ -65,14 +65,62 @@ code populate_base::populate_prevout(size_t branch_height, output_point const& o
     // branch_height is the validation height; get_utxo bounds the prevout to one
     // created at/below it (used by the spend check below too). require_confirmed
     // = confirmed-only (blocks) vs also-mempool (tx, handled in the miss branch).
-    auto const utxo = chain_.get_utxo(outpoint, branch_height);
+    auto utxo = chain_.get_utxo(outpoint, branch_height);
+
+    if ( ! utxo && utxo.error() == database::result_code::not_resolved) {
+        // The ACTIVE versions cannot answer. That is not absence, and treating
+        // it as one is what made admission impossible (#584): a prevout living
+        // in an older version file read as missing, so no transaction whose
+        // parent had aged out could ever be admitted.
+        //
+        // Resolved here, as a batch of one this call owns. One request is the
+        // honest size — a single prevout is what this function was asked about
+        // — and the store keeps nothing, so this cannot consume or be consumed
+        // by a concurrent block validation.
+        // Checked, not cast. The request record carries a uint32_t and
+        // branch_height is a size_t; truncating it would bound the resolution at
+        // a different block and answer confidently about the wrong one.
+        auto const store_height = database::to_store_height(branch_height);
+        if ( ! store_height) {
+            spdlog::error("[populate] branch height {} does not fit the UTXO store's request "
+                "height; refusing to resolve {}:{} against a truncated height",
+                branch_height, encode_hash(outpoint.hash()), outpoint.index());
+            return error::operation_failed;
+        }
+
+        auto const ph = outpoint.hash();
+        std::array<utxoz::lookup_request, 1> const own{
+            utxoz::lookup_request{
+                utxoz::make_outpoint(std::span<uint8_t const, 32>{ph.data(), 32},
+                                     outpoint.index()),
+                *store_height}};
+
+        auto resolved = chain_.utxo_resolve(own);
+        if ( ! resolved) {
+            // version_unreadable / catalog_unreadable. A local storage fault,
+            // never an answer about this prevout.
+            spdlog::error("[populate] resolving {}:{} failed; refusing to treat an unreadable "
+                "store as a missing prevout",
+                encode_hash(outpoint.hash()), outpoint.index());
+            return error::operation_failed;
+        }
+
+        if (auto const it = resolved->found.find(own[0].key); it != resolved->found.end()) {
+            utxo = block_chain::output_info{
+                it->second.output(), it->second.height(),
+                it->second.median_time_past(), it->second.coinbase()};
+        }
+        // Otherwise it is PROVEN absent, and falls through to the miss branch
+        // below — which is now the only way to reach it.
+    }
+
     if ( ! utxo) {
-        // Only key_not_found means the output is not there. Every other code is
-        // this node failing to read its own storage, and probing the mempool on
-        // that basis would answer a question nobody could answer: a miss would
-        // then look exactly like a prevout that does not exist, and the block
-        // would be rejected over a disk that did not respond.
-        if (utxo.error() != database::result_code::key_not_found) {
+        // Every remaining code is this node failing to read its own storage, and
+        // probing the mempool on that basis would answer a question nobody could
+        // answer: a miss would then look exactly like a prevout that does not
+        // exist, and the block would be rejected over a disk that did not
+        // respond.
+        if (utxo.error() != database::result_code::not_resolved) {
             spdlog::error("[populate] the UTXO store failed while reading {}:{}; "
                 "refusing to treat an unreadable store as a missing prevout",
                 encode_hash(outpoint.hash()), outpoint.index());

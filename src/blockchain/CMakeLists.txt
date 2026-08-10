@@ -199,6 +199,7 @@ set(kth_sources_just_legacy
   src/finalization.cpp
   src/parking.cpp
   src/utxo_builder.cpp
+        src/utxo_deletion_sweep.cpp
 )
 
 if(KTH_HAS_EMBEDDED_BLOOM)
@@ -319,6 +320,9 @@ if (ENABLE_TEST)
         test/block_undo.cpp
         test/reorg_undo_roundtrip.cpp
         test/undo_scan.cpp
+        test/utxo_transition_record.cpp
+        test/undo_barriers.cpp
+        test/transition_lifecycle.cpp
         test/reorg_e2e.cpp
     )
 

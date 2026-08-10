@@ -534,32 +534,43 @@ char const* strategy_name(utxo_build_strategy strategy) {
 
 // Helper to process deferred deletions and report errors
 [[nodiscard]]
-database::result_code process_deferred_deletions(block_chain& chain) {
-    auto deferred = chain.utxo_deferred_deletions_size();
-    if (deferred > 0) {
-        spdlog::debug("[utxo_builder] Processing {} pending deletions...", deferred);
-        auto drained = chain.utxo_process_pending_deletions();
-        if ( ! drained) {
-            // No deletion was applied, and the queue is still full. Returning
-            // success here would let the build advance over a UTXO set that
-            // still holds spent outputs.
-            spdlog::error("[utxo_builder] FATAL: the deferred deletion queue could not be "
-                "drained; {} deletions remain unapplied", deferred);
-            return database::result_code::other;
-        }
-        auto& [deleted, failed] = *drained;
-        if ( ! failed.empty()) {
-            spdlog::error("[utxo_builder] FATAL: Deferred deletions failed: {} deleted, {} failed",
-                deleted, failed.size());
-            for (auto const& entry : failed) {
-                auto point = database::utxoz_database::key_to_point(entry.key);
-                spdlog::error("[utxo_builder] Failed to delete UTXO at block {}: {}:{}",
-                    entry.height, encode_hash(point.hash()), point.index());
-            }
+database::result_code apply_owned_deletes(
+    block_chain& chain, std::vector<utxoz::deferred_deletion_entry> owed) {
+    if (owed.empty()) {
+        return database::result_code::success;
+    }
+
+    // The build's own batch. Only `unresolved` is ever resent, and `erased` is
+    // retired permanently even when the walk reported a fault.
+    constexpr int max_deletion_attempts = 3;
+    for (int attempt = 1; attempt <= max_deletion_attempts; ++attempt) {
+        auto progress = chain.utxo_apply_deletes(owed);
+
+        // The build nets out anything created and spent inside one batch, so no
+        // deletion here is entitled to be absent: every key it asks for was in
+        // the set. A proven absence is therefore a set that does not match the
+        // blocks, not a legitimate no-op.
+        if ( ! progress.absent.empty()) {
+            spdlog::error("[utxo_builder] FATAL: {} deletion(s) are proven absent; the UTXO set "
+                "does not hold outputs these blocks spent", progress.absent.size());
             return database::result_code::key_not_found;
         }
+
+        if (progress.unresolved.empty()) {
+            if (progress.error) {
+                spdlog::error("[utxo_builder] FATAL: the deletion walk reported {} with nothing "
+                    "left unresolved", database::utxoz_error_name(*progress.error));
+                return database::result_code::other;
+            }
+            return database::result_code::success;
+        }
+
+        owed.assign(progress.unresolved.begin(), progress.unresolved.end());
     }
-    return database::result_code::success;
+
+    spdlog::error("[utxo_builder] FATAL: {} deletion(s) could not be applied in {} attempts",
+        owed.size(), max_deletion_attempts);
+    return database::result_code::other;
 }
 
 // =============================================================================
@@ -613,10 +624,19 @@ bool save_utxo_bloom(
     auto bloom = std::make_shared<database::utxo_bloom_filter>(utxo_count, 0.01);
 
     size_t inserted = 0;
-    chain.utxo_for_each([&](utxoz::raw_outpoint const& key) {
-        bloom->insert(key);
-        ++inserted;
-    });
+    if ( ! chain.utxo_for_each([&](utxoz::raw_outpoint const& key) {
+            bloom->insert(key);
+            ++inserted;
+        })) {
+        // A filter built from part of the set is worse than none. This one is
+        // consulted to decide which keys apply_delta_raw may SKIP, so every key
+        // the walk did not reach becomes a delete that is never applied — a
+        // spent output left in the set, from a file that failed to be read once.
+        spdlog::error("[bloom] The UTXO set could not be walked in full ({} of {} key(s) "
+            "visited); refusing to write a filter that would license skipping the rest",
+            inserted, utxo_count);
+        return false;
+    }
 
     auto const build_elapsed = std::chrono::steady_clock::now() - t0;
     auto const build_ms = std::chrono::duration_cast<std::chrono::milliseconds>(build_elapsed).count();
@@ -833,7 +853,18 @@ uint32_t embedded_bloom_checkpoint_height() {
             auto delta = process_block_utxos(*block_ptr, h, mtp);
 
             // Apply directly to UTXO-Z
-            auto result = chain.apply_utxo_delta(delta.inserts, delta.deletes);
+            auto result = chain.apply_utxo_inserts(delta.inserts);
+                if (result == database::result_code::success) {
+                    std::vector<utxoz::deferred_deletion_entry> owed;
+                    owed.reserve(delta.deletes.size());
+                    for (auto const& [point, h] : delta.deletes) {
+                        auto const ph = point.hash();
+                        owed.emplace_back(
+                            utxoz::make_outpoint(std::span<uint8_t const, 32>{ph.data(), 32},
+                                                 point.index()), h);
+                    }
+                    result = apply_owned_deletes(chain, std::move(owed));
+                }
             if (result != database::result_code::success) {
                 spdlog::error("[utxo_builder] Failed to apply UTXO delta at height {}", h);
                 co_return result;
@@ -850,10 +881,6 @@ uint32_t embedded_bloom_checkpoint_height() {
             // Every batch_size blocks: process pending deletions, save progress, log
             if (processed % batch_size == 0 || h == end_height) {
                 // Process deferred deletions
-                auto deferred_result = process_deferred_deletions(chain);
-                if (deferred_result != database::result_code::success) {
-                    co_return deferred_result;
-                }
 
                 // Save progress
                 auto save_result = chain.set_utxo_built_height(h);
@@ -964,7 +991,15 @@ uint32_t embedded_bloom_checkpoint_height() {
             // ===== TIMING: Apply to UTXO-Z =====
             auto t_apply_start = clock::now();
 
-            auto result = chain.apply_utxo_delta_raw(delta.inserts, delta.deletes);
+            auto result = chain.apply_utxo_inserts_raw(delta.inserts);
+            if (result == database::result_code::success) {
+                std::vector<utxoz::deferred_deletion_entry> owed;
+                owed.reserve(delta.deletes.size());
+                for (auto const& [key, h] : delta.deletes) {
+                    owed.emplace_back(key, h);
+                }
+                result = apply_owned_deletes(chain, std::move(owed));
+            }
             if (result != database::result_code::success) {
                 spdlog::error("[utxo_builder] Failed to apply UTXO delta at batch starting {}", batch_start);
                 co_return result;
@@ -973,16 +1008,10 @@ uint32_t embedded_bloom_checkpoint_height() {
             auto t_apply_end = clock::now();
             auto apply_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_apply_end - t_apply_start).count();
 
-            // Count deferred deletions added during apply
-            auto deferred_count = chain.utxo_deferred_deletions_size();
 
             // ===== TIMING: Deferred deletions =====
             auto t_deferred_start = clock::now();
 
-            auto deferred_result = process_deferred_deletions(chain);
-            if (deferred_result != database::result_code::success) {
-                co_return deferred_result;
-            }
 
             auto t_deferred_end = clock::now();
             auto deferred_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_deferred_end - t_deferred_start).count();
@@ -996,33 +1025,42 @@ uint32_t embedded_bloom_checkpoint_height() {
             processed += compact_blocks.size();
             double pct = (100.0 * processed) / total_blocks;
             auto total_ms = fetch_ms + parse_ms + process_ms + apply_ms + deferred_ms;
-            auto direct_del = delta.delete_count() >= deferred_count
-                ? delta.delete_count() - deferred_count : size_t{0};
 
             if (bloom_ptr) {
-                spdlog::info("[utxo_builder] {}/{} ({:.1f}%) | {}ms (f:{} s:{} p:{} a:{} d:{}) | {} ins, ({},{}) del | bloom skip: {} ins, {} del",
+                spdlog::info("[utxo_builder] {}/{} ({:.1f}%) | {}ms (f:{} s:{} p:{} a:{} d:{}) | "
+                    "{} ins, {} del | bloom skip: {} ins, {} del",
                     processed, total_blocks, pct,
                     total_ms, fetch_ms, parse_ms, process_ms, apply_ms, deferred_ms,
-                    fmt_num(delta.insert_count()), fmt_num(direct_del), fmt_num(deferred_count),
+                    fmt_num(delta.inserts.size()), fmt_num(delta.deletes.size()),
                     fmt_num(delta.bloom_skipped_inserts), fmt_num(delta.bloom_skipped_deletes));
             } else {
-                spdlog::info("[utxo_builder] {}/{} ({:.1f}%) | {}ms (f:{} s:{} p:{} a:{} d:{}) | {} ins, ({},{}) del",
+                spdlog::info("[utxo_builder] {}/{} ({:.1f}%) | {}ms (f:{} s:{} p:{} a:{} d:{}) | "
+                    "{} ins, {} del",
                     processed, total_blocks, pct,
                     total_ms, fetch_ms, parse_ms, process_ms, apply_ms, deferred_ms,
-                    fmt_num(delta.insert_count()), fmt_num(direct_del), fmt_num(deferred_count));
+                    fmt_num(delta.inserts.size()), fmt_num(delta.deletes.size()));
             }
         }
     }
 
     // Final deferred deletions flush before compaction
-    auto final_deferred = process_deferred_deletions(chain);
+    auto final_deferred = database::result_code::success;
     if (final_deferred != database::result_code::success) {
         co_return final_deferred;
     }
 
-    // Final compaction after all batches
+    // Final compaction after all batches. Not a tidy-up whose failure can be
+    // logged and stepped over: UTXO-Z reports duplicate_key here when it finds
+    // one key held by two stored entries, which it can see because compaction
+    // holds two version files open at once. It repairs nothing and chooses
+    // nothing, so what comes back is "this database is locally inconsistent" —
+    // and the build must not report success over it.
     spdlog::info("[utxo_builder] Running final compaction...");
-    chain.utxo_compact();
+    if ( ! chain.utxo_compact()) {
+        spdlog::error("[utxo_builder] FATAL: the UTXO store could not be compacted after the "
+            "build; the reason is logged above and it may be that two stored entries share a key");
+        co_return database::result_code::other;
+    }
 
     chain.utxo_print_statistics();
     chain.utxo_print_sizing_report();

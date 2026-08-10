@@ -37,6 +37,12 @@ struct bv_outpoint {
     }
 };
 
+// The store's native key for a domain outpoint.
+inline utxoz::raw_outpoint to_raw_outpoint(domain::chain::output_point const& op) {
+    auto const h = op.hash();
+    return utxoz::make_outpoint(std::span<uint8_t const, 32>{h.data(), 32}, op.index());
+}
+
 struct bv_outpoint_hasher {
     size_t operator()(bv_outpoint const& k) const noexcept {
         size_t h;
@@ -130,6 +136,13 @@ code validate_block_batch(
 
     boost::unordered_flat_map<bv_outpoint, db_prevout, bv_outpoint_hasher> db_resolved;
 
+    // This call's OWN batch of unresolved lookups. It never leaves this
+    // function, and the store keeps no copy, so nothing here can be consumed by
+    // a concurrent transaction validation and nothing of its can arrive here —
+    // which is what stopped a foreign key from being read as a missing prevout
+    // of this block (#646).
+    std::vector<utxoz::lookup_request> pending;
+
     // -----------------------------------------------------------------------
     // Full intra-batch created-output index. Under BCH CTOR a tx may spend the
     // output of any other tx in the batch created at its own height or earlier.
@@ -149,7 +162,7 @@ code validate_block_batch(
     // -----------------------------------------------------------------------
     // Phase 1 (serial): per-height consensus flags, double-spend detection, and
     // EMIT every UTXO-Z lookup. find()/get_utxo is a two-phase contract — its
-    // key_not_found only means "not in the active file, queued as a deferred
+    // not_resolved only means "the active versions cannot answer"; the older
     // lookup", NOT "does not exist". So we do not conclude anything here.
     // -----------------------------------------------------------------------
     for (size_t i = 0; i < blocks.size(); ++i) {
@@ -201,53 +214,75 @@ code validate_block_batch(
                     continue;
                 }
 
-                // Otherwise it must come from UTXO-Z: emit the lookup. A hit is
-                // recorded now; a miss is queued and resolved after the loop.
-                if (auto const utxo = chain.get_utxo(op, height); utxo) {
+                // Otherwise it must come from UTXO-Z. get_utxo() probes the
+                // ACTIVE versions only; a miss is kept in a batch THIS call owns
+                // and resolved after the loop. Nothing is queued inside the
+                // store, so no other component can consume these and none of
+                // theirs can arrive here.
+                auto const utxo = chain.get_utxo(op, height);
+                if (utxo) {
                     db_resolved.insert({key, db_prevout{utxo->output, utxo->height, utxo->coinbase}});
+                    continue;
                 }
+                if (utxo.error() != database::result_code::not_resolved) {
+                    // A storage failure, not an answer about this prevout.
+                    // Reporting it as a missing input would reject a block over
+                    // a disk that did not respond.
+                    spdlog::error("[batch_validate] the UTXO store failed reading {}:{}; "
+                        "refusing to judge these blocks",
+                        encode_hash(op.hash()), op.index());
+                    return error::operation_failed;
+                }
+                pending.emplace_back(to_raw_outpoint(op), height);
             }
         }
     }
 
     // -----------------------------------------------------------------------
-    // Second phase of the find() contract: resolve every queued lookup by
-    // sweeping the older UTXO-Z file versions. This MUST run before any deferred
-    // deletion (block_tasks applies deletions only after this returns). Only keys
-    // absent here truly do not exist.
+    // Second phase: resolve THIS call's batch against the older versions.
+    //
+    // The batch is ours and stays ours — resolve() borrows the span and keeps
+    // nothing. That is what makes the `absent` list below a statement about
+    // these prevouts and no one else's: before UTXO-Z 0.10.0 this drained a
+    // global queue, so a lookup emitted by a concurrent transaction validation
+    // could be consumed here, come back absent, and reject a valid block.
     // -----------------------------------------------------------------------
-    {
-        auto drained = chain.utxo_process_pending_lookups();
-        if ( ! drained) {
-            // The sweep could not run. That is a LOCAL failure of this node's
-            // storage, and it must not be reported as a consensus verdict:
-            // missing_previous_output says the block spends something that does
-            // not exist, which would reject a block that may be perfectly valid
-            // and, worse, is the kind of answer that gets cached.
-            spdlog::error("[batch_validate] the deferred lookup sweep could not run "
+    if ( ! pending.empty()) {
+        auto resolved = chain.utxo_resolve(pending);
+        if ( ! resolved) {
+            // version_unreadable / catalog_unreadable. A LOCAL storage failure,
+            // never a consensus verdict: missing_previous_output says the block
+            // spends something that does not exist, which would reject a block
+            // that may be perfectly valid and is the kind of answer that gets
+            // cached. Nothing was consumed, so this is retryable.
+            spdlog::error("[batch_validate] resolving {} prevout lookup(s) failed "
                 "(batch {}-{}); refusing to judge these blocks rather than calling "
                 "unresolved prevouts missing",
-                start_height, start_height + blocks.size() - 1);
+                pending.size(), start_height, start_height + blocks.size() - 1);
             return error::operation_failed;
         }
-        auto& [found, failed] = *drained;
-        for (auto const& [rk, entry] : found) {
+
+        // Matched back BY KEY. The lists are deduplicated over distinct keys and
+        // are not parallel to `pending`.
+        for (auto const& [rk, entry] : resolved->found) {
             bv_outpoint key;
             std::memcpy(key.hash.data(), rk.data(), key.hash.size());
             std::memcpy(&key.index, rk.data() + key.hash.size(), sizeof(key.index));
             db_resolved.insert({key, db_prevout{entry.output(), entry.height(), entry.coinbase()}});
         }
-        // `failed` = outpoints absent from every UTXO-Z generation (the sweep is
-        // authoritative). Every deferred lookup came from a batch input's prevout,
-        // so a failed key is a genuinely-missing prevout -> invalid block.
-        if ( ! failed.empty()) {
-            auto const& rk = failed.front();
+
+        // `absent` is proven absence and only that — a version that could not be
+        // read is an error above, not an entry here. Every one of these keys is
+        // a prevout of THIS batch, so a missing one is an invalid block.
+        if ( ! resolved->absent.empty()) {
+            auto const& rk = resolved->absent.front();
             hash_digest h;
             uint32_t idx;
             std::memcpy(h.data(), rk.data(), h.size());
             std::memcpy(&idx, rk.data() + h.size(), sizeof(idx));
-            spdlog::error("[batch_validate] prevout not found {}:{} (deferred lookup failed; {} missing total, batch {}-{})",
-                encode_hash(h), idx, failed.size(), start_height, start_height + blocks.size() - 1);
+            spdlog::error("[batch_validate] prevout not found {}:{} ({} missing total, "
+                "batch {}-{})", encode_hash(h), idx, resolved->absent.size(),
+                start_height, start_height + blocks.size() - 1);
             return error::missing_previous_output;
         }
     }
@@ -294,12 +329,17 @@ code validate_block_batch(
                     prevout_height = it2->second.height;
                     prevout_coinbase = it2->second.coinbase;
                 } else {
-                    // Absent after the deferred-lookup sweep: the prevout truly does
-                    // not exist -> invalid block.
-                    spdlog::error("[batch_validate] prevout not found {}:{} spent@{} (batch_start={}, utxo_size={}, deferred_lookups_left={})",
+                    // Neither created in this batch nor resolved from the store,
+                    // and the resolution above already returned every absence it
+                    // proved. Reaching here means this prevout was never asked
+                    // about, which is a defect in the collection loop rather
+                    // than a fact about the block — so it is reported as a local
+                    // failure, not as a consensus verdict.
+                    spdlog::error("[batch_validate] prevout {}:{} spent@{} was never resolved "
+                        "(batch_start={}, utxo_size={}); refusing to judge these blocks",
                         encode_hash(op.hash()), op.index(), height, start_height,
-                        chain.utxo_size(), chain.utxo_deferred_lookups_size());
-                    return error::missing_previous_output;
+                        chain.utxo_size());
+                    return error::operation_failed;
                 }
 
                 if (prevout_coinbase && height < prevout_height + coinbase_maturity) {

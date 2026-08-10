@@ -12,6 +12,7 @@
 #include <optional>
 #include <ranges>
 #include <span>
+#include <utility>
 
 #include <boost/bloom/filter.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
@@ -22,6 +23,7 @@
 #include <utxoz/utxoz.hpp>
 
 #include <kth/database/define.hpp>
+#include <kth/database/durability.hpp>
 #include <kth/database/databases/result_code.hpp>
 #include <kth/database/databases/utxo_entry.hpp>
 #include <kth/domain/chain/point.hpp>
@@ -37,6 +39,55 @@ namespace kth::database {
 #ifdef KTH_UTXOZ_REFERENCE_MODE
 struct block_store;
 #endif
+
+/// The name of a UTXO-Z error code, for logs.
+///
+/// Declared here rather than kept file-local because the templates in this
+/// header report failures too, and a diagnosis that reads "error 14" against
+/// whichever enum order the linked UTXO-Z happened to have is not one.
+[[nodiscard]]
+KD_API char const* utxoz_error_name(utxoz::error_code code);
+
+/// Is this the ordinary outcome of probing the active versions?
+///
+/// In 0.10.0 exactly ONE code is: `not_resolved`, which says the active versions
+/// cannot answer and the older ones were not consulted. Every prevout that needs
+/// history produces it, so logging it as a failure turns a routine miss into an
+/// error line per input — and buries the faults that matter among them.
+///
+/// A single predicate rather than the condition repeated at each probe, because
+/// it was repeated and the two copies disagreed with the library: they still
+/// tested `not_found`, which 0.10.0 no longer returns from a probe, so every
+/// ordinary miss took the error path.
+///
+/// NOT a statement about absence. Absence is established by resolving a batch,
+/// and this code never means it.
+[[nodiscard]]
+inline bool is_ordinary_probe_miss(utxoz::error_code code) {
+    return code == utxoz::error_code::not_resolved;
+}
+
+/// A KTH height narrowed to the type UTXO-Z's request records carry.
+///
+/// Both `lookup_request` and `deferred_deletion_entry` hold a `uint32_t`, while
+/// several KTH signatures carry heights as `size_t` — `populate_prevout` among
+/// them. Letting that narrow implicitly is a hard error on Apple Clang and a
+/// SILENT TRUNCATION everywhere else, and a truncated height is not a smaller
+/// height: it names a different block. The resolution would then be bounded at
+/// the wrong point, which is a wrong answer rather than a failed one.
+///
+/// So it is checked and reported. A caller that gets `nullopt` has a height this
+/// store cannot express, which is an operational failure of this node and must
+/// never be reported as the output being absent.
+///
+/// @return the narrowed height, or nullopt if it does not fit.
+[[nodiscard]]
+inline std::optional<uint32_t> to_store_height(size_t height) {
+    if ( ! std::in_range<uint32_t>(height)) {
+        return std::nullopt;
+    }
+    return static_cast<uint32_t>(height);
+}
 
 /// What a successful sync() is worth on this platform.
 ///
@@ -125,12 +176,23 @@ struct KD_API utxoz_database {
     [[nodiscard]]
     std::expected<utxo_entry, result_code> find(domain::chain::point const& point, uint32_t height = 0) const;
 
-    /// Erase a UTXO by output point
-    /// @param point Output point to erase
-    /// @param height Current block height
-    /// @return result_code::success if erased, result_code::not_found if not found
+    /// What resolving a batch of typed lookups answered. Matched back BY KEY —
+    /// deduplicated over distinct keys, not positional against the span.
+    struct entry_resolution {
+        boost::unordered_flat_map<utxoz::raw_outpoint, utxo_entry> found;
+        std::vector<utxoz::raw_outpoint> absent;   ///< PROVEN absent, and only that
+    };
+
+    /// Resolve a batch of lookups the CALLER owns, materialising utxo_entry.
+    ///
+    /// Same contract as resolve_raw(): probe with find() first, since this walks
+    /// the versions BELOW the active ones; `absent` is proven absence and never
+    /// stands for a storage fault; an error returns no lists and consumes
+    /// nothing, so the same span may be retried.
     [[nodiscard]]
-    result_code erase(domain::chain::point const& point, uint32_t height = 0);
+    std::expected<entry_resolution, result_code>
+    resolve(std::span<utxoz::lookup_request const> requests) const;
+
 
     // =============================================================================
     // Raw access (reorg undo capture / restore)
@@ -138,51 +200,81 @@ struct KD_API utxoz_database {
 
     /// A UTXO exactly as stored, without resolving it into a utxo_entry.
     /// `value` is the storage-native payload — in reference mode the 8-byte
-    /// {file_number, tx_offset} reference, in full mode the serialized entry — so
-    /// it can be fed straight back into apply_delta_raw's insert range. `height` is
-    /// the entry's ORIGINAL creation height, which restoring must preserve.
+    /// {file_number, tx_offset} reference, in full mode the serialized entry —
+    /// which is the same shape apply_delta_raw inserts. It is NOT the same type:
+    /// that range holds utxo_raw_value, whose payload member is `data`, so a
+    /// range of these does not compile there and the caller rebuilds the pair
+    /// (see disconnect_block). `height` is the entry's ORIGINAL creation height,
+    /// which restoring must preserve.
     struct raw_stored {
         std::vector<uint8_t> value;
         uint32_t height;
     };
 
-    /// Read a UTXO's stored payload without resolving it (reference mode does not
-    /// touch the flat block files here; only resolve/find does).
+    /// Probe the ACTIVE versions for a UTXO's stored payload, without resolving
+    /// it (reference mode does not touch the flat block files here).
     ///
-    /// Two-phase contract, same as find(): a key_not_found result only means "not
-    /// in the active version file, queued for the deferred sweep" — it is NOT proof
-    /// of absence. Drain the queue with process_pending_lookups_raw() before
-    /// concluding a UTXO is missing.
+    /// Two-phase, and the store now keeps nothing between the phases: a
+    /// `not_resolved` result means the active versions cannot answer, NOT that
+    /// the key is absent, and nothing has been queued on the caller's behalf.
+    /// Keeping the request is the caller's job — collect the misses and hand
+    /// them to resolve_raw() as a batch it owns.
     ///
     /// @param key Raw outpoint key.
     /// @param height Access height (statistics only; does not affect the result).
     [[nodiscard]]
     std::expected<raw_stored, result_code> find_raw(utxoz::raw_outpoint const& key, uint32_t height = 0) const;
 
-    /// Resolve the deferred-lookup queue, returning payloads verbatim (no
-    /// utxo_entry reconstruction — the cheap counterpart of
-    /// process_pending_lookups()).
-    /// @return on success, (resolved entries keyed by outpoint, keys PROVEN
-    ///         absent — see process_pending_lookups()). On failure, the error: a
-    ///         queue that could not be drained is NOT a queue that resolved to
-    ///         nothing, and callers read "not resolved" as "this UTXO is spent".
+    /// What resolving a batch of raw lookups answered.
+    ///
+    /// One entry per DISTINCT key of the request span, never one per request:
+    /// UTXO-Z deduplicates by key keeping the first occurrence, so these are
+    /// matched back BY KEY. Never by position against the span, and never by
+    /// count — `found.size() + absent.size()` is the number of distinct keys.
+    struct raw_resolution {
+        boost::unordered_flat_map<utxoz::raw_outpoint, raw_stored> found;
+        std::vector<utxoz::raw_outpoint> absent;   ///< PROVEN absent, and only that
+    };
+
+    /// Resolve a batch of lookups the CALLER owns, against the older versions.
+    ///
+    /// The batch is borrowed for the call and nothing survives it, so two
+    /// components can each resolve their own without agreeing which of them is
+    /// allowed to, and neither can consume the other's request. That is what
+    /// replaced the global queue.
+    ///
+    /// Probe with find_raw() FIRST. This walks the cached files and the versions
+    /// BELOW the current one — not the active ones — so a key that lives in the
+    /// active version and was never probed comes back in `absent`, which would
+    /// be a false negative rather than a fact.
+    ///
+    /// @return on success, the resolution. On failure the error, and NO lists at
+    ///         all: version_unreadable / catalog_unreadable are storage faults,
+    ///         and a caller reading them as absence turns one into a UTXO it
+    ///         believes is spent. Nothing was consumed, so the same span can be
+    ///         retried once the fault is dealt with.
     [[nodiscard]]
-    std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, raw_stored>,
-                            std::vector<utxoz::raw_outpoint>>, result_code>
-    process_pending_lookups_raw();
+    std::expected<raw_resolution, result_code>
+    resolve_raw(std::span<utxoz::lookup_request const> requests) const;
 
     // =============================================================================
     // Batch Operations (for UTXO set building)
     // =============================================================================
 
 #ifndef KTH_UTXOZ_REFERENCE_MODE
-    /// Apply a batch of UTXO changes (full mode only — reference mode uses apply_delta_raw)
+    /// Apply a batch of UTXO insertions (full mode only — reference mode uses
+    /// apply_inserts_raw).
+    ///
+    /// Insertions ONLY. Deletions are a separate call now, because they are a
+    /// separate contract: apply_deletes() returns a three-way partition the
+    /// caller has to act on, and folding it into a single result_code is what
+    /// let a deferred deletion pass as applied.
+    ///
     /// @param inserts UTXOs to add (point -> utxo_entry, entry contains height)
-    /// @param deletes UTXOs to remove (point -> height for traceability)
     /// @return result_code::success on success
-    template <utxo_insert_range Inserts, utxo_delete_range Deletes>
+    template <utxo_insert_range Inserts>
     [[nodiscard]]
-    result_code apply_delta(Inserts const& inserts, Deletes const& deletes) {
+    result_code apply_inserts(Inserts const& inserts) {
         if ( ! is_open()) {
             return result_code::other;
         }
@@ -198,31 +290,19 @@ struct KD_API utxoz_database {
             }
         }
 
-        for (auto const& [point, height] : deletes) {
-            auto key = point_to_key(point);
-            auto const erased = db_->erase(key, height);
-            if ( ! erased && erased.error() != utxoz::error_code::not_found) {
-                // A delete that failed leaves a spent output in the set. Ignoring
-                // it and returning success let a batch be recorded as applied
-                // while the UTXO it spent is still there. not_found is different:
-                // the key was not present, which a delta can legitimately hit.
-                spdlog::error("[utxoz_database] Failed to erase UTXO from block {} - {}:{}",
-                    height, encode_hash(point.hash()), point.index());
-                return result_code::other;
-            }
-        }
-
         return result_code::success;
     }
 #endif
 
-    /// Apply a batch of raw UTXO changes (zero-copy path).
+    /// Apply a batch of raw UTXO insertions (zero-copy path).
     /// Keys are raw_outpoint (36 bytes) — no conversion needed.
     /// Inserts: range of {raw_outpoint, {data, height}}.
-    /// Deletes: range of {raw_outpoint, height}.
-    template <typename Inserts, typename Deletes>
+    ///
+    /// Insertions ONLY; see apply_deletes() for the other half and why they no
+    /// longer share a call.
+    template <typename Inserts>
     [[nodiscard]]
-    result_code apply_delta_raw(Inserts const& inserts, Deletes const& deletes) {
+    result_code apply_inserts_raw(Inserts const& inserts) {
         if ( ! is_open()) {
             return result_code::other;
         }
@@ -258,25 +338,33 @@ struct KD_API utxoz_database {
             }
         }
 
-        for (auto const& [key, height] : deletes) {
-            auto const erased = db_->erase(key, height);
-            if ( ! erased && erased.error() != utxoz::error_code::not_found) {
-                spdlog::error("[utxoz_database] Failed to erase {} at block {}",
-                    utxoz::outpoint_to_string(key), height);
-                return result_code::other;
-            }
-        }
-
         return result_code::success;
     }
 
     /// Iterate over all UTXO keys in the database.
+    ///
     /// @param callback Callable with signature void(utxoz::raw_outpoint const&)
+    /// @return false if the store is closed or the walk could not read every
+    ///         version file it needed. A partial walk is NOT reported through
+    ///         the callback — it simply stops — so a caller that discards this
+    ///         cannot tell a complete set from a truncated one. What is built
+    ///         from one of these is a filter that decides which keys
+    ///         apply_delta_raw is allowed to skip, and a key missing from it is
+    ///         a delete that never happens.
     template <typename F>
-    void for_each_utxo(F&& callback) const {
-        if (is_open()) {
-            db_->for_each_key(std::forward<F>(callback));
+    [[nodiscard]]
+    bool for_each_utxo(F&& callback) const {
+        if ( ! is_open()) {
+            return false;
         }
+        auto const walked = db_->for_each_key(std::forward<F>(callback));
+        if ( ! walked) {
+            spdlog::error("[utxoz_database] Walking the UTXO set failed: {}; the walk stopped "
+                "where it failed and what it visited is a subset, not the set",
+                utxoz_error_name(walked.error()));
+            return false;
+        }
+        return true;
     }
 
     /// Set the bloom filter for skip-insert optimization during IBD.
@@ -307,46 +395,41 @@ struct KD_API utxoz_database {
     // Maintenance
     // =============================================================================
 
-    /// Get the number of pending deferred deletions
-    [[nodiscard]]
-    size_t deferred_deletions_size() const;
-
-    /// Process pending deferred deletions
-    /// @return on success, (successful deletions, failed entries with key and
-    ///         height). On failure, the error: no deletion was applied, which is
-    ///         not the same as there having been none to apply.
-    [[nodiscard]]
-    std::expected<std::pair<uint32_t, std::vector<utxoz::deferred_deletion_entry>>, result_code>
-    process_pending_deletions();
-
-    /// Get the number of pending deferred lookups
-    [[nodiscard]]
-    size_t deferred_lookups_size() const;
-
-    /// Process pending deferred lookups (sweeps cached/older file versions).
-    /// find() is a two-phase contract: its key_not_found only means "not in the
-    /// active file, queued". This resolves the queue. Call once per batch, BEFORE
-    /// process_pending_deletions().
-    /// @return on success, (resolved entries keyed by outpoint, keys PROVEN
-    ///         absent). Since UTXO-Z 0.9.1 the second list means exactly that:
-    ///         a version file that could not be read makes the whole sweep fail
-    ///         with version_unreadable instead of dropping its keys in there. On
-    ///         failure, the error — absence is read upstream as "spent".
-    [[nodiscard]]
-    std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, utxo_entry>,
-                            std::vector<utxoz::raw_outpoint>>, result_code>
-    process_pending_lookups();
-
-    /// Compact the database.
+    /// Apply a batch of deletions the CALLER owns.
     ///
-    /// The name is the compaction OPERATION and did not change when UTXO-Z
-    /// renamed its storage mode; what changed is the contract. In 0.8.0
-    /// `compact_all()` returned void, so there was nothing to ignore. In 0.9.0
-    /// it returns `result<>`, and a caller that keeps calling it as a statement
-    /// still compiles while dropping every failure on the floor — which is why
-    /// this reports rather than returns void.
-    /// @return true if the database compacted, false if it is closed or the
-    ///         operation failed (the reason is logged).
+    /// The one mutating entry point for removal. Each request is tried against
+    /// the active versions, then the cached files, then every version below the
+    /// current one, with keys dropped from the working set as they are applied —
+    /// so the descent is paid once per batch rather than once per key. That is
+    /// why there is no single-key erase() any more: without a queue inside the
+    /// store, a lone key would have to pay the whole descent by itself.
+    ///
+    /// @warning Not transactional, and it cannot be: it writes as it goes, so a
+    /// fault partway through leaves earlier deletions APPLIED. That is why this
+    /// returns progress rather than an error — the applied part is enumerated
+    /// exactly, in `erased`, including on the failure path, and must never be
+    /// resent.
+    ///
+    /// @warning Mutating, so it needs a window with no find(), resolve(),
+    /// insert(), compaction or close() in flight. UTXO-Z's internal lock covers
+    /// resolve-vs-resolve ONLY and does not extend here.
+    ///
+    /// KTH DOES NOT PROVIDE THAT WINDOW YET, and this is a functional blocker
+    /// rather than a limitation to design around — see #649. The two callers of
+    /// this are mutually excluded from each other by the reorg barrier, but
+    /// neither is excluded from the single-transaction validate path, which
+    /// probes lock-free and is reachable over JSON-RPC and the C API. A
+    /// deletion writing through the cache's mappings while a probe reads is a
+    /// use-after-unmap: a crash, not a wrong answer.
+    ///
+    /// @return erased / absent / unresolved / error. The partition is over
+    ///         DISTINCT keys (deduplicated keeping the first occurrence), so the
+    ///         sizes do not add up to requests.size() and results are matched
+    ///         back by key, never by position. Resend `unresolved`, and only it.
+    [[nodiscard]]
+    utxoz::deletion_progress apply_deletes(std::span<utxoz::deferred_deletion_entry const> requests);
+
+    [[nodiscard]]
     bool compact();
 
     /// Ask for the data written so far to reach stable storage.
@@ -355,10 +438,19 @@ struct KD_API utxoz_database {
     /// mapping and stops, so a caller that wants the guarantee has to ask for
     /// it here first. What the answer is worth depends on the platform —
     /// see platform_durability().
-    /// @return true if a barrier was reached; false if the database is closed,
-    ///         the platform has none, or the barrier failed (each is logged as
-    ///         the distinct thing it is).
-    bool sync();
+    ///
+    /// Three answers rather than a bool. `sync_unsupported` and `sync_failed`
+    /// are different facts about the machine and only one is a defect: a
+    /// caller that has to decide whether the node may continue past this point
+    /// cannot get that from "false", and a policy built on "false" would either
+    /// stop a node on a platform that never had the barrier or carry one on
+    /// past a disk that refused to flush.
+    ///
+    /// A closed database reports `failed`: there is nothing mapped, so a caller
+    /// asking for a guarantee did not get one, and that is not the same as a
+    /// platform that has none.
+    [[nodiscard]]
+    barrier_outcome sync();
 
     /// Print statistics to log
     void print_statistics();

@@ -154,6 +154,27 @@ std::expected<uint32_t, result_code> internal_database_basis<Clock>::get_propert
 }
 
 template <typename Clock>
+std::expected<data_chunk, result_code>
+internal_database_basis<Clock>::get_property_blob(property_code prop, KTH_DB_txn* db_txn) const {
+    auto key = kth_db_make_value(sizeof(prop), &prop);
+
+    KTH_DB_val value;
+    auto res = kth_db_get(db_txn, dbi_properties_, &key, &value);
+    if (res == KTH_DB_NOTFOUND) {
+        // The absence of the key IS the clean answer for the one property that
+        // uses this, so it must not be folded into the failures below.
+        return std::unexpected(result_code::key_not_found);
+    }
+    if (res != KTH_DB_SUCCESS) {
+        return std::unexpected(result_code::other);
+    }
+
+    auto const* bytes = static_cast<uint8_t const*>(kth_db_get_data(value));
+    auto const size = kth_db_get_size(value);
+    return data_chunk(bytes, bytes + size);
+}
+
+template <typename Clock>
 std::expected<heights_t, result_code> internal_database_basis<Clock>::get_last_heights() const {
     KTH_DB_txn* db_txn;
     auto res = kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn);
@@ -211,6 +232,39 @@ result_code internal_database_basis<Clock>::set_property_height(property_code pr
     auto res = kth_db_put(db_txn, dbi_properties_, &key, &value, 0);  // 0 = overwrite if exists
     if (res != KTH_DB_SUCCESS) {
         spdlog::error("[database] Failed updating height property in DB Properties [set_property_height] {}", int32_t(res));
+        return result_code::other;
+    }
+
+    return result_code::success;
+}
+
+template <typename Clock>
+result_code internal_database_basis<Clock>::set_property_blob(property_code prop, byte_span value, KTH_DB_txn* db_txn) {
+    auto key = kth_db_make_value(sizeof(prop), &prop);
+    auto val = kth_db_make_value(value.size(), const_cast<uint8_t*>(value.data()));
+
+    auto res = kth_db_put(db_txn, dbi_properties_, &key, &val, 0);  // 0 = overwrite if exists
+    if (res != KTH_DB_SUCCESS) {
+        spdlog::error("[database] Failed writing property {} [set_property_blob] {}",
+            uint32_t(prop), int32_t(res));
+        return result_code::other;
+    }
+
+    return result_code::success;
+}
+
+template <typename Clock>
+result_code internal_database_basis<Clock>::clear_property(property_code prop, KTH_DB_txn* db_txn) {
+    auto key = kth_db_make_value(sizeof(prop), &prop);
+
+    auto res = kth_db_del(db_txn, dbi_properties_, &key, nullptr);
+    if (res == KTH_DB_NOTFOUND) {
+        // Already absent, which is the state this was asked to reach.
+        return result_code::success;
+    }
+    if (res != KTH_DB_SUCCESS) {
+        spdlog::error("[database] Failed clearing property {} [clear_property] {}",
+            uint32_t(prop), int32_t(res));
         return result_code::other;
     }
 
@@ -295,8 +349,19 @@ bool internal_database_basis<Clock>::verify_db_mode_property() const {
 template <typename Clock>
 bool internal_database_basis<Clock>::close() {
     if (db_opened_) {
-        // Force synchronous flush (use with KTH_DB_NOSYNC or MDB_NOMETASYNC)
-        kth_db_env_sync(env_, true);
+        // Force synchronous flush: the environment is opened MDB_NOSYNC, so
+        // nothing committed during the run has necessarily reached the disk.
+        //
+        // Reported rather than discarded. Closing cannot be refused — the
+        // caller is on its way out and there is nothing further to protect —
+        // but a barrier that failed here means transactions this run reported
+        // as committed were lost, and a shutdown that says nothing about that
+        // leaves the next start to discover it as corruption with no
+        // explanation.
+        if (kth_db_env_sync(env_, true) != KTH_DB_SUCCESS) {
+            spdlog::critical("[database] The final sync failed: transactions this run "
+                "reported as committed may not be on disk");
+        }
 
         // Close all DBIs before closing the environment
         kth_db_dbi_close(env_, dbi_block_header_);
@@ -337,7 +402,153 @@ result_code internal_database_basis<Clock>::set_utxo_built_height(uint32_t heigh
     return set_property_height(property_code::utxo_built_height, height);
 }
 
+template <typename Clock>
+result_code internal_database_basis<Clock>::begin_transition_record(utxo_transition_record const& record) {
+    auto const bytes = encode(record);
+
+    KTH_DB_txn* db_txn;
+    if (kth_db_txn_begin(env_, NULL, 0, &db_txn) != KTH_DB_SUCCESS) {
+        return result_code::other;
+    }
+
+    auto const written = set_property_blob(property_code::utxo_transition,
+        byte_span{bytes.data(), bytes.size()}, db_txn);
+    if (written != result_code::success) {
+        kth_db_txn_abort(db_txn);
+        return written;
+    }
+
+    if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
+        return result_code::other;
+    }
+
+    return result_code::success;
+}
+
+template <typename Clock>
+result_code internal_database_basis<Clock>::write_heights(transition_heights const& heights, KTH_DB_txn* db_txn) {
+    if (heights.last_block_height) {
+        auto const res = set_property_height(property_code::last_block_height,
+            *heights.last_block_height, db_txn);
+        if (res != result_code::success) {
+            return res;
+        }
+    }
+
+    if (heights.utxo_built_height) {
+        auto const res = set_property_height(property_code::utxo_built_height,
+            *heights.utxo_built_height, db_txn);
+        if (res != result_code::success) {
+            return res;
+        }
+    }
+
+    return result_code::success;
+}
+
+template <typename Clock>
+result_code internal_database_basis<Clock>::set_heights(transition_heights const& heights) {
+    KTH_DB_txn* db_txn;
+    if (kth_db_txn_begin(env_, NULL, 0, &db_txn) != KTH_DB_SUCCESS) {
+        return result_code::other;
+    }
+
+    auto const res = write_heights(heights, db_txn);
+    if (res != result_code::success) {
+        kth_db_txn_abort(db_txn);
+        return res;
+    }
+
+    if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
+        return result_code::other;
+    }
+
+    return result_code::success;
+}
+
+template <typename Clock>
+result_code internal_database_basis<Clock>::publish_transition(transition_heights const& heights) {
+    // write_heights treats two absent members as a no-op, and the clear below
+    // would then run on its own — which is a transition declared finished
+    // without publishing where it finished. That is the one thing this
+    // transaction exists to make impossible, so it is refused rather than
+    // committed: a caller with nothing to publish has no transition to close.
+    if ( ! heights.last_block_height && ! heights.utxo_built_height) {
+        return result_code::other;
+    }
+
+    KTH_DB_txn* db_txn;
+    if (kth_db_txn_begin(env_, NULL, 0, &db_txn) != KTH_DB_SUCCESS) {
+        return result_code::other;
+    }
+
+    auto const res = write_heights(heights, db_txn);
+    if (res != result_code::success) {
+        kth_db_txn_abort(db_txn);
+        return res;
+    }
+
+    // Last inside the transaction, and inseparable from the heights above it.
+    // Two transactions would leave the instant this exists to remove: one where
+    // the height says "arrived" and the record says "clean" independently.
+    auto const cleared = clear_property(property_code::utxo_transition, db_txn);
+    if (cleared != result_code::success) {
+        kth_db_txn_abort(db_txn);
+        return cleared;
+    }
+
+    if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
+        return result_code::other;
+    }
+
+    return result_code::success;
+}
+
+template <typename Clock>
+result_code internal_database_basis<Clock>::env_sync() {
+    if ( ! db_opened_) {
+        // Nothing is mapped, so reporting success would suggest a guarantee
+        // about a database this object has let go of.
+        return result_code::other;
+    }
+    if (kth_db_env_sync(env_, true) != KTH_DB_SUCCESS) {
+        return result_code::other;
+    }
+    return result_code::success;
+}
+
 #endif // ! defined(KTH_DB_READONLY)
+
+template <typename Clock>
+transition_check internal_database_basis<Clock>::read_transition_record() const {
+    KTH_DB_txn* db_txn;
+    if (kth_db_txn_begin(env_, NULL, KTH_DB_RDONLY, &db_txn) != KTH_DB_SUCCESS) {
+        return {transition_status::unreadable, std::nullopt, std::nullopt};
+    }
+
+    auto const stored = get_property_blob(property_code::utxo_transition, db_txn);
+    kth_db_txn_commit(db_txn);
+
+    if ( ! stored) {
+        // The one place "there is nothing here" and "I could not look" must not
+        // meet. key_not_found is the clean answer; anything else is not an
+        // answer at all.
+        return stored.error() == result_code::key_not_found
+             ? transition_check{transition_status::clean, std::nullopt, std::nullopt}
+             : transition_check{transition_status::unreadable, std::nullopt, std::nullopt};
+    }
+
+    auto const decoded = decode_transition_record(*stored);
+    if ( ! decoded) {
+        return {transition_status::corrupt, std::nullopt, decoded.error()};
+    }
+
+    // A record that decodes says a transition started and was never recorded as
+    // finished. `in_progress` is the only state the format defines, so there is
+    // no second branch to take here yet — the field exists so adding one later
+    // does not need a format bump.
+    return {transition_status::recovery_required, *decoded, std::nullopt};
+}
 
 template <typename Clock>
 std::expected<std::pair<domain::chain::header, uint32_t>, result_code> internal_database_basis<Clock>::get_header(hash_digest const& hash) const {

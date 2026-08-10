@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/blockchain/interface/block_chain.hpp>
+#include <kth/blockchain/utxo_deletion_sweep.hpp>
 
 #include <kth/blockchain/utxo_builder.hpp>
 #include <kth/database/flat_file_pos.hpp>
@@ -127,11 +128,76 @@ block_chain::~block_chain() {
 // LIFECYCLE
 // =============================================================================
 
+bool block_chain::check_last_transition() const {
+    auto const check = read_transition_record();
+
+    switch (check.status) {
+        case database::transition_status::clean:
+            // The key is absent, which is the only thing that reads as clean.
+            return true;
+
+        case database::transition_status::unreadable:
+            // "Could not read" is never reported as "clean". That conflation is
+            // the failure this record exists to prevent, and its own reader
+            // would be a poor place to reintroduce it.
+            spdlog::critical("[blockchain] The transition record could not be read. Whether the "
+                "last chain transition finished is unknown, so the UTXO set cannot be trusted. "
+                "Rebuild or reindex the database; this node will not open it");
+            return false;
+
+        case database::transition_status::corrupt:
+            spdlog::critical("[blockchain] The transition record is present and unreadable: {}. "
+                "It cannot say whether the last chain transition finished. Rebuild or reindex "
+                "the database; this node will not open it",
+                check.decode_error ? database::to_string(*check.decode_error)
+                                   : "no reason recorded");
+            return false;
+
+        case database::transition_status::recovery_required:
+            // The type, the id and the range, because a diagnosis starts by
+            // matching this against the log line the failing run wrote.
+            spdlog::critical("[blockchain] The last {} (operation {:#018x}) over heights {}-{} "
+                "started and was never recorded as finished. The UTXO set may be half-applied: "
+                "it cannot be rolled back, because the delta mutates it in place, and it must "
+                "not be resumed, because the built height names the transition BEFORE this one. "
+                "Rebuild or reindex the database from an authoritative point; recovery is NOT "
+                "automatic and this node will not open it",
+                check.record ? database::to_string(check.record->type) : "transition",
+                check.record ? check.record->operation_id : 0u,
+                check.record ? check.record->first_height : 0u,
+                check.record ? check.record->intended_last_height : 0u);
+            return false;
+    }
+
+    // A status this build does not know is not a status this build may pass.
+    spdlog::critical("[blockchain] The transition record reported a state this build does not "
+        "know; refusing to open the database");
+    return false;
+}
+
 bool block_chain::start(uint32_t disk_magic) {
     stopped_ = false;
 
     if ( ! database_.open()) {
         spdlog::error("[blockchain] Failed to open database.");
+        return false;
+    }
+
+    // Before anything else is opened, and before a single height is believed:
+    // did the last run finish what it started? (#600)
+    //
+    // Here rather than in the UTXO build task, because the answer decides
+    // whether this database may be opened for operation at all. A node that
+    // came up and only refused once it reached the build would already have
+    // served reads off a set that may be half-applied.
+    //
+    // Nothing is repaired. The record says a transition did not finish; it
+    // never says how to fix one, and there is no rollback to perform — the
+    // delta mutates the UTXO maps in place, so an interrupted transition can be
+    // neither reversed nor resumed. Rebuilding from an authoritative point is
+    // the only sound answer, and until that procedure exists refusing beats
+    // continuing on a set nothing can vouch for.
+    if ( ! check_last_transition()) {
         return false;
     }
 
@@ -749,6 +815,10 @@ code block_chain::organize_headers_batch(domain::chain::header::list const& head
     return database_.push_headers_batch(headers, start_height);
 }
 
+database::transition_check block_chain::read_transition_record() const {
+    return database_.internal_db().read_transition_record();
+}
+
 #if ! defined(KTH_DB_READONLY)
 
 code block_chain::replace_headers_from(domain::chain::header::list const& headers, size_t start_height) {
@@ -797,32 +867,56 @@ database::result_code block_chain::set_utxo_built_height(uint32_t height) {
     return database_.internal_db().set_utxo_built_height(height);
 }
 
+database::result_code block_chain::begin_transition_record(
+    database::utxo_transition_record const& record) {
+    return database_.internal_db().begin_transition_record(record);
+}
+
+database::result_code block_chain::set_heights(
+    database::transition_heights const& heights) {
+    return database_.internal_db().set_heights(heights);
+}
+
+database::result_code block_chain::publish_transition(
+    database::transition_heights const& heights) {
+    return database_.internal_db().publish_transition(heights);
+}
+
+database::result_code block_chain::env_sync() {
+    return database_.internal_db().env_sync();
+}
+
+std::expected<void, database::block_store::undo_flush_error>
+block_chain::flush_undo(std::span<int32_t const> file_numbers) {
+    if ( ! block_store_) {
+        // Asking for a barrier over a store that is not there is not an empty
+        // set of files; -1 is the store itself rather than any one file.
+        return std::unexpected(database::block_store::undo_flush_error{
+            database::result_code::other, -1});
+    }
+    return block_store_->flush_undo(file_numbers);
+}
+
+database::barrier_outcome block_chain::utxo_sync() {
+    return utxoz_db_.sync();
+}
+
+database::durability_level block_chain::durability() const {
+    return database::node_durability_level();
+}
+
 database::result_code block_chain::set_last_block_height(uint32_t height) {
     return database_.internal_db().set_last_block_height(height);
 }
 
-size_t block_chain::utxo_deferred_deletions_size() const {
-    return utxoz_db_.deferred_deletions_size();
+utxoz::deletion_progress block_chain::utxo_apply_deletes(
+    std::span<utxoz::deferred_deletion_entry const> requests) {
+    return utxoz_db_.apply_deletes(requests);
 }
 
-std::expected<std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>>, database::result_code>
-block_chain::utxo_process_pending_deletions() {
-    auto drained = utxoz_db_.process_pending_deletions();
-    if ( ! drained) {
-        return std::unexpected(drained.error());
-    }
-    return std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>>{
-        drained->first, std::move(drained->second)};
-}
-
-size_t block_chain::utxo_deferred_lookups_size() const {
-    return utxoz_db_.deferred_lookups_size();
-}
-
-std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxo_entry>,
-                        std::vector<utxoz::raw_outpoint>>, database::result_code>
-block_chain::utxo_process_pending_lookups() {
-    return utxoz_db_.process_pending_lookups();
+std::expected<database::utxoz_database::entry_resolution, database::result_code>
+block_chain::utxo_resolve(std::span<utxoz::lookup_request const> requests) const {
+    return utxoz_db_.resolve(requests);
 }
 
 // =============================================================================
@@ -834,22 +928,21 @@ block_chain::find_utxo_raw(utxoz::raw_outpoint const& key, uint32_t height) cons
     return utxoz_db_.find_raw(key, height);
 }
 
-std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxoz_database::raw_stored>,
-                        std::vector<utxoz::raw_outpoint>>, database::result_code>
-block_chain::utxo_process_pending_lookups_raw() {
-    return utxoz_db_.process_pending_lookups_raw();
+std::expected<database::utxoz_database::raw_resolution, database::result_code>
+block_chain::utxo_resolve_raw(std::span<utxoz::lookup_request const> requests) const {
+    return utxoz_db_.resolve_raw(requests);
 }
 
 #if ! defined(KTH_DB_READONLY)
-bool block_chain::store_block_undo(database::header_index::index_t idx,
-                                   database::block_undo const& undo,
-                                   hash_digest const& prev_hash) {
+std::optional<int32_t> block_chain::store_block_undo(database::header_index::index_t idx,
+                                                    database::block_undo const& undo,
+                                                    hash_digest const& prev_hash) {
     // The undo record lives in the rev*.dat file matching the block's blk*.dat,
     // and the header index stores only the offset — so the block must be on disk.
     auto const file_number = header_index_.get_file_number(idx);
     if (file_number < 0) {
         spdlog::error("[blockchain] store_block_undo: no block data for index {}", idx);
-        return false;
+        return std::nullopt;
     }
 
     // The record carries the owning block's hash so a restart can attribute it.
@@ -859,12 +952,17 @@ bool block_chain::store_block_undo(database::header_index::index_t idx,
         header_index_.get_hash(idx), prev_hash);
     if (pos.is_null()) {
         spdlog::error("[blockchain] store_block_undo: failed to write undo for index {}", idx);
-        return false;
+        return std::nullopt;
     }
 
     header_index_.set_undo_pos(idx, pos.pos);
     header_index_.add_status(idx, database::header_status::have_undo);
-    return true;
+
+    // Which rev file the record landed in, so the caller can put exactly the
+    // files this transition wrote on stable storage. Derived here rather than
+    // recomputed at the call site: the same lookup twice is the same lookup
+    // twice only until one of them changes.
+    return file_number;
 }
 #endif
 
@@ -882,7 +980,9 @@ block_chain::read_block_undo(database::header_index::index_t idx, hash_digest co
 }
 
 #if ! defined(KTH_DB_READONLY)
-database::disconnect_result block_chain::disconnect_block(uint32_t height) {
+database::disconnect_result block_chain::disconnect_block(uint32_t height,
+    boost::unordered_flat_map<utxoz::raw_outpoint, bool>& absence_tolerated,
+    std::vector<utxoz::deferred_deletion_entry>& pending_deletes) {
     // Genesis anchors the chain and has no parent to roll back to.
     if (height == 0) {
         spdlog::error("[blockchain] disconnect_block: refusing to disconnect genesis");
@@ -954,22 +1054,88 @@ database::disconnect_result block_chain::disconnect_block(uint32_t height) {
         inverse.deletes.emplace(out.key, height);
     }
 
-    // An output both created and spent inside this block was never in the set;
-    // erasing it is a no-op, and it is absent from the undo record by construction.
-    auto const result = utxoz_db_.apply_delta_raw(inverse.inserts, inverse.deletes);
+    // Which of those deletes are allowed to come back unapplied, decided HERE,
+    // from the two exact key sets this block's inverse delta was built from.
+    //
+    // An output created AND spent inside this same block never entered the set:
+    // the connect-side delta netted it out. So erasing it now is a no-op, it is
+    // absent from the undo record by construction, and UTXO-Z — finding it in no
+    // mapped version — will defer the deletion and then report it as failed.
+    // That report is indistinguishable from the report it gives for a version
+    // file it could not read, which is why the set of keys entitled to it has to
+    // be known independently of the store.
+    //
+    // PER BLOCK, and that is the whole subtlety. An output created at this
+    // height and spent by a LATER block of the same abandoned branch is not in
+    // this block's inputs, so it does not land here — correctly, because the
+    // later block was disconnected first and its own inverse delta restored the
+    // output. It is in the set when this erase runs, and the erase must succeed.
+    // Intersecting the branch's outputs with the branch's inputs as a whole
+    // would sweep that key in and license exactly the failure this exists to
+    // catch.
+    //
+    // Both sides are the delta's own keys — the outpoints being erased and the
+    // outpoints this block spends — not a per-transaction argument about which
+    // output some transaction consumed. An outpoint names one output, so the
+    // intersection is the answer rather than an approximation of it.
+    // This block's own view: an outpoint it erases that it ALSO spends was
+    // created and spent inside itself, so it never entered the set.
+    boost::unordered_flat_set<utxoz::raw_outpoint> spent_here;
+    spent_here.reserve(parsed->inputs.size());
+    for (auto const& in : parsed->inputs) {
+        if (inverse.deletes.contains(in.prev_key)) {
+            spent_here.insert(in.prev_key);
+        }
+    }
+
+    // Folded into the rewind's obligation CONSERVATIVELY, per key. The batch is
+    // applied once at the end and UTXO-Z deduplicates by key keeping the first
+    // occurrence, so one key can be contributed by several blocks at several
+    // heights and will come back as a single answer. A union of "tolerable"
+    // would let one block's no-op excuse another block's real deletion.
+    //
+    // So the obligations AND together: a key is tolerated absent only if EVERY
+    // appearance is structurally tolerable, and a single appearance that
+    // requires the key to exist and be deleted dominates every other.
+    for (auto const& [key, at_height] : inverse.deletes) {
+        fold_absence_tolerance(absence_tolerated, key, spent_here.contains(key));
+    }
+
+    auto const result = utxoz_db_.apply_inserts_raw(inverse.inserts);
     if (result != database::result_code::success) {
-        spdlog::error("[blockchain] disconnect_block: failed to apply inverse delta at height {}", height);
+        spdlog::error("[blockchain] disconnect_block: failed to restore spent outputs at height {}",
+            height);
         return database::disconnect_result::unclean;
+    }
+
+    // The deletions are NOT applied here. They are appended to a batch this
+    // rewind owns and carries to the end, because apply_deletes() is one
+    // exclusive, descending walk whose cost is paid per batch rather than per
+    // key — and because the whole rewind is a single transition that publishes
+    // nothing until it completes, so the set holding them transiently is the
+    // same window the transition record already covers.
+    //
+    // Order still holds within the batch: an output created at this height and
+    // spent by a LATER block of the branch was restored by that block's
+    // disconnect, which ran first, so it is present when the batch is applied.
+    for (auto const& [key, at_height] : inverse.deletes) {
+        pending_deletes.emplace_back(key, at_height);
     }
 
     // Roll the markers back to the parent block. The UTXO set is already reverted
     // at this point, so a failed marker write leaves the two disagreeing — report
     // it rather than claiming a clean disconnect.
+    //
+    // ONE transaction for both. They used to be two, which left an instant where
+    // the stored-block height named one block and the built height named
+    // another: a start landing there reads a chain whose two markers describe
+    // different blocks, and neither of them is wrong on its own.
     auto const parent = height - 1;
-    auto const block_marker = database_.internal_db().set_last_block_height(parent);
-    auto const utxo_marker = database_.internal_db().set_utxo_built_height(parent);
-    if (block_marker != database::result_code::success ||
-        utxo_marker != database::result_code::success) {
+    if (auto const markers = database_.internal_db().set_heights(
+            database::transition_heights{
+                .last_block_height = parent,
+                .utxo_built_height = parent});
+        markers != database::result_code::success) {
         spdlog::error("[blockchain] disconnect_block: UTXO set rolled back to {} but the height "
             "markers could not be updated", parent);
         return database::disconnect_result::unclean;
@@ -1033,6 +1199,25 @@ block_chain::switch_result block_chain::switch_to_branch(
     // point, so "the tip is where it was" is not evidence either way.
     bool mutated = false;
 
+    // Correlates the log lines this switch writes with the record a failed run
+    // leaves behind. `record_written` and not `operation_id != 0`: the id comes
+    // from system entropy, and zero is a value it may legitimately draw.
+    uint64_t operation_id = 0;
+    bool record_written = false;
+
+    // Accumulated across every block this rewind disconnects, and consumed once
+    // by the sweep below. Per-block by construction: each disconnect adds only
+    // the keys ITS own inverse delta created and spent within itself.
+    // Per key, whether a proven absence is tolerable: true only while every
+    // block that asked for this key's deletion created and spent it itself.
+    boost::unordered_flat_map<utxoz::raw_outpoint, bool> absence_tolerated;
+
+    // The rewind's deletion obligation, owned here and handed to apply_deletes()
+    // as a span. It lives exactly as long as this switch: #602 retries within
+    // the operation and never across a restart — an interrupted transition is
+    // refused at the next start, not resumed.
+    std::vector<utxoz::deferred_deletion_entry> pending_deletes;
+
     if (fork_height > heights->block) {
         spdlog::info("[blockchain] Reorg: fork at {} is above the validated tip {}, nothing to disconnect",
             fork_height, heights->block);
@@ -1043,10 +1228,55 @@ block_chain::switch_result block_chain::switch_to_branch(
         spdlog::warn("[blockchain] Reorg: disconnecting {} block(s), {} down to {}",
             to_disconnect, heights->block, fork_height + 1);
 
+        // Step 2. The same record the connect batch writes, with the same
+        // meaning: this transition is about to mutate the stores and has not
+        // been recorded as finished. A reorganization rewrites the UTXO state of
+        // every height above the fork, so that is the range it names — the
+        // lowest it touches and the tip it starts from.
+        //
+        // Written here and not above: the rejections before this point return
+        // without touching anything, and a record over a transition that never
+        // began would refuse the next start for nothing.
+        operation_id = database::make_operation_id();
+        if (auto const recorded = database_.internal_db().begin_transition_record(
+                database::utxo_transition_record{
+                    .format_version = database::utxo_transition_record::current_format_version,
+                    .type = database::transition_type::reorg,
+                    .operation_id = operation_id,
+                    .first_height = fork_height + 1,
+                    .intended_last_height = heights->block,
+                    .state = database::transition_state::in_progress});
+            recorded != database::result_code::success) {
+            spdlog::critical("[blockchain] Reorg: could not record that the switch over {}-{} is "
+                "in flight; refusing to rewind the UTXO set without it",
+                fork_height + 1, heights->block);
+            // Nothing was mutated, so the stores are as they were — but a
+            // properties write that failed is a database this process must stop
+            // writing to, not a switch to shrug off and retry.
+            return {false, heights->block, /*mutated*/ false, /*fatal*/ true};
+        }
+
+        // Step 3. The environment is opened MDB_NOSYNC, so the record above has
+        // not reached the disk. Without this it describes a window it does not
+        // cover.
+        if (auto const synced = database_.internal_db().env_sync();
+            synced != database::result_code::success) {
+            spdlog::critical("[blockchain] Reorg: the transition record for {}-{} could not be "
+                "put on stable storage; refusing to rewind the UTXO set behind a record a "
+                "restart may not find", fork_height + 1, heights->block);
+            // The record is left where it is. Whether it reached the disk is
+            // exactly what just failed to be established, and clearing it would
+            // be a second write through the same barrier — asserting "clean" on
+            // the strength of the mechanism that has already refused to answer.
+            // Fail closed: this run stops and the next start decides.
+            return {false, heights->block, /*mutated*/ false, /*fatal*/ true};
+        }
+        record_written = true;
+
         // Newest first: disconnecting out of order would restore outputs that a
         // later block still spends.
         for (uint32_t h = heights->block; h > fork_height; --h) {
-            auto const result = disconnect_block(h);
+            auto const result = disconnect_block(h, absence_tolerated, pending_deletes);
 
             if (result == database::disconnect_result::unclean) {
                 // The delta was applied, so this counts as a mutation even
@@ -1056,10 +1286,21 @@ block_chain::switch_result block_chain::switch_to_branch(
                 // Reporting h as a resumable tip would re-download from a height
                 // whose UTXO state is already inconsistent, and nothing would ever
                 // repair it. Report "unknown" so the caller stops instead.
+                // And the record stays. This is precisely the state it exists
+                // for: the stores disagree with each other, nothing here can
+                // reconcile them, and the next start must refuse rather than
+                // build on a set that no longer describes itself.
                 spdlog::error("[blockchain] Reorg: UTXO set and height markers diverged at {} "
-                    "(set is at {}, markers say {}); aborting without a resumable tip",
-                    h, h - 1, h);
-                return {false, std::nullopt, /*mutated*/ true};
+                    "(set is at {}, markers say {}); aborting without a resumable tip. The "
+                    "transition record for operation {:#018x} is left in place: the next start "
+                    "will refuse and ask for a rebuild",
+                    h, h - 1, h, operation_id);
+                // Fatal, and said here rather than inferred downstream. The
+                // record is deliberately left in place, which is the condition
+                // `fatal` documents; reorg.cpp reaches the same conclusion from
+                // an empty validated_tip, but that inference lives in one caller
+                // and this result is public.
+                return {false, std::nullopt, /*mutated*/ true, /*fatal*/ true};
             }
 
             if (result != database::disconnect_result::ok) {
@@ -1067,14 +1308,35 @@ block_chain::switch_result block_chain::switch_to_branch(
                 // and the set agree at h. Report it so the caller resyncs there
                 // instead of assuming nothing moved (which would strand the rewound
                 // range, never re-downloaded).
+                //
+                // The switch did not reach the fork, but it did reach a state
+                // the stores agree on — which is what the record's clearing
+                // asserts, and all it asserts. Publishing it here is what keeps
+                // the next start from refusing over a database that is whole.
                 spdlog::error("[blockchain] Reorg: failed to disconnect block at height {}, "
                     "aborting the switch (validated tip is now {})", h, h);
+                if ( ! publish_reorg_transition(h, operation_id, absence_tolerated, pending_deletes)) {
+                    return {false, std::nullopt, mutated, /*fatal*/ true};
+                }
                 return {false, h, mutated};
             }
 
             // Applied. From here the chain has moved, whatever happens next.
             mutated = true;
         }
+    }
+
+    // Steps 7 to 11, once the whole rewind has landed. Skipped when nothing was
+    // disconnected: no record was written, so there is nothing to publish and
+    // nothing to clear, and asking four stores for a barrier over no mutation
+    // would only cost the fsyncs.
+    if (record_written && ! publish_reorg_transition(validated_tip, operation_id,
+            absence_tolerated, pending_deletes)) {
+        // The chain has moved and the transition could not be recorded as
+        // finished. No tip is reported: the caller reads that as fatal, leaves
+        // capture shut and winds the node down, and the record stays for the
+        // next start to refuse on.
+        return {false, std::nullopt, mutated, /*fatal*/ true};
     }
 
     // The active chain is NOT re-pointed here. Publishing the new tip is the
@@ -1087,6 +1349,173 @@ block_chain::switch_result block_chain::switch_to_branch(
     spdlog::warn("[blockchain] Reorg: UTXO state rewound to the fork at {}; the branch head is "
         "published by the caller", fork_height);
     return {true, validated_tip, mutated};
+}
+
+bool block_chain::sweep_reorg_deletions(uint64_t operation_id,
+    boost::unordered_flat_map<utxoz::raw_outpoint, bool> const& absence_tolerated,
+    std::span<utxoz::deferred_deletion_entry const> pending_deletes) {
+    // This function deliberately touches NOTHING that is shared with a reader.
+    //
+    // It used to prove absence through find() and process_pending_lookups(),
+    // and that could not be made correct. UTXO-Z's pending-lookup set is global
+    // and drained wholesale, so borrowing it means owning it for the whole
+    // sequence — and one producer cannot be excluded: the c-api/JSON-RPC single
+    // transaction validate path resolves prevouts lock-free, by its own comment
+    // in transaction_organizer, and the reorg barrier parks only REGISTERED
+    // writers, which it is not. Checking the queue was empty and then draining
+    // it left a window in between: a concurrent validate could queue there, have
+    // its keys consumed by this sweep (so it reads its own prevouts as absent,
+    // which it reports as spent), and put a key into this sweep's results that
+    // this sweep would read as a rewind that did not finish. Two ways to be
+    // wrong, from one window.
+    //
+    // Adding a lock does not close it. The exclusion primitive has no shared
+    // mode and is already held across suspension points, which is undefined
+    // behaviour the synchronization document calls live rather than latent; the
+    // validate path suspends three times. So the fix is not to coordinate the
+    // producers of that queue but to stop being one of them. What replaces it is
+    // the caller's own knowledge of the delta it applied — see disconnect_block,
+    // where structurally_absent is derived from the exact keys of each inverse
+    // delta. Nothing here reads the store, so nothing here can race with a
+    // reader, whatever that reader does.
+    if (pending_deletes.empty()) {
+        return true;
+    }
+
+    spdlog::info("[blockchain] Reorg: applying {} deletion(s) owed by the rewind "
+        "(operation {:#018x})", pending_deletes.size(), operation_id);
+
+    // Bounded, and small. A retry only helps a fault that has already cleared;
+    // repeating a walk against a version file that is still unreadable buys
+    // nothing, and an unbounded loop would hold the switch open forever with the
+    // transition record in place. Within THIS operation and this process: an
+    // interrupted transition is refused at the next start, never resumed.
+    constexpr int max_deletion_attempts = 3;
+
+    utxoz::deferred_deletion_entry offender{utxoz::raw_outpoint{}, 0};
+
+    auto const outcome = run_deletion_sweep(
+        std::vector<utxoz::deferred_deletion_entry>(pending_deletes.begin(), pending_deletes.end()),
+        absence_tolerated,
+        [this](std::span<utxoz::deferred_deletion_entry const> batch) {
+            return utxo_apply_deletes(batch);
+        },
+        max_deletion_attempts,
+        [&](int attempt, utxoz::deletion_progress const& progress) {
+            if ( ! progress.unresolved.empty() || progress.error) {
+                spdlog::warn("[blockchain] Reorg: attempt {} of {} applied {}, proved {} absent, "
+                    "left {} owed (operation {:#018x}){}", attempt, max_deletion_attempts,
+                    progress.erased.size(), progress.absent.size(), progress.unresolved.size(),
+                    operation_id,
+                    progress.error
+                        ? fmt::format(", fault: {}", database::utxoz_error_name(*progress.error))
+                        : "");
+            }
+        },
+        &offender);
+
+    switch (outcome) {
+        case deletion_sweep_outcome::applied:
+            spdlog::info("[blockchain] Reorg: every deletion the rewind owed is accounted for "
+                "(operation {:#018x})", operation_id);
+            return true;
+
+        case deletion_sweep_outcome::absent_unaccounted:
+            spdlog::critical("[blockchain] Reorg: {} (from block {}) is proven absent, and at "
+                "least one block of this rewind required it to exist and be deleted "
+                "(operation {:#018x}); it was in the UTXO set and is unaccounted for now",
+                utxoz::outpoint_to_string(offender.key), offender.height, operation_id);
+            return false;
+
+        case deletion_sweep_outcome::fault_reported:
+            spdlog::critical("[blockchain] Reorg: the deletion walk reported a fault with nothing "
+                "left unresolved (operation {:#018x}); refusing to publish over a store that "
+                "reported one", operation_id);
+            return false;
+
+        case deletion_sweep_outcome::attempts_exhausted:
+            spdlog::critical("[blockchain] Reorg: deletions could not be applied in {} attempts "
+                "(operation {:#018x}); the UTXO set still holds outputs of blocks that are no "
+                "longer on the chain, and this switch will not be published",
+                max_deletion_attempts, operation_id);
+            return false;
+    }
+
+    return false;
+}
+
+bool block_chain::publish_reorg_transition(uint32_t connected_height, uint64_t operation_id,
+    boost::unordered_flat_map<utxoz::raw_outpoint, bool> const& absence_tolerated,
+    std::span<utxoz::deferred_deletion_entry const> pending_deletes) {
+    // Step 6. The deletions the rewind's inverse deltas deferred. Before the
+    // barriers, because a barrier over a set that still owes them makes the
+    // outputs of abandoned blocks durable instead of removing them, and before
+    // the publication, because clearing the record asserts the stores agree.
+    if ( ! sweep_reorg_deletions(operation_id, absence_tolerated, pending_deletes)) {
+        return false;
+    }
+
+    // Step 7 and 8. A reorganization READS undo records and writes none, so
+    // there is no rev file of its own to cover. The call is made anyway, with
+    // the empty set: it still runs the directory barrier, it costs one fsync on
+    // a path that runs once per chain switch, and it keeps this path and the
+    // connect batch running the same protocol rather than one of them carrying
+    // a footnote about why it does not.
+    //
+    // Through the member wrapper, which reports an absent block_store as
+    // file_number -1 rather than dereferencing it.
+    if (auto const flushed = flush_undo(std::span<int32_t const>{}); ! flushed) {
+        spdlog::critical("[blockchain] Reorg: the undo directory could not be put on stable "
+            "storage after the switch (operation {:#018x})", operation_id);
+        return false;
+    }
+
+    // Step 9. The rewind's inverse deltas live in UTXO-Z, and close() does not
+    // sync.
+    switch (utxo_sync()) {
+        case database::barrier_outcome::crossed:
+            break;
+        case database::barrier_outcome::unsupported:
+            if (durability() != database::durability_level::none) {
+                spdlog::critical("[blockchain] Reorg: the UTXO store reports no durability "
+                    "barrier while this node claims '{}'; the two disagree about the same "
+                    "machine", database::to_string(durability()));
+                return false;
+            }
+            spdlog::warn("[blockchain] Reorg: this platform exposes no durability barrier; the "
+                "switch is published without one");
+            break;
+        case database::barrier_outcome::failed:
+            spdlog::critical("[blockchain] Reorg: the UTXO store's durability barrier failed "
+                "after the switch (operation {:#018x}); what it rewound is not known to be on "
+                "disk", operation_id);
+            return false;
+    }
+
+    // Step 10. Both heights and the clearing of the record, in one transaction.
+    // A reorganization moves both: the stored-block height and the built height
+    // come back to the same block, and a start that found them apart could not
+    // tell which of the two described the set.
+    if (auto const published = publish_transition(
+            database::transition_heights{
+                .last_block_height = connected_height,
+                .utxo_built_height = connected_height});
+        published != database::result_code::success) {
+        spdlog::critical("[blockchain] Reorg: could not publish the switch at height {} "
+            "(operation {:#018x}); the UTXO set has moved and nothing records where to",
+            connected_height, operation_id);
+        return false;
+    }
+
+    // Step 11. And onto the disk. Until this returns, a restart can still find
+    // the record over a rewind that is already complete.
+    if (auto const synced = env_sync(); synced != database::result_code::success) {
+        spdlog::critical("[blockchain] Reorg: the published state at height {} could not be put "
+            "on stable storage (operation {:#018x})", connected_height, operation_id);
+        return false;
+    }
+
+    return true;
 }
 #endif
 

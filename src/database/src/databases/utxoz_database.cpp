@@ -24,8 +24,6 @@ bool utxoz_reference_mode() {
 #endif
 }
 
-namespace {
-
 // UTXO-Z 0.9.0 grew its error enum from five values to twenty-one. Logging the
 // integer, as this used to, turns a diagnosis into a lookup against whichever
 // header version the reader happens to open — and the numbers moved, so an old
@@ -38,9 +36,10 @@ namespace {
 // file compiled clean and the new code would have printed "unrecognised". So the
 // trailing return is the defence, and adding a case is a manual step on every
 // UTXO-Z bump, not something the build will remind anyone about.
-char const* utxoz_error_name(utxoz::error_code code) {
+KD_API char const* utxoz_error_name(utxoz::error_code code) {
     switch (code) {
         case utxoz::error_code::not_found:              return "not_found";
+        case utxoz::error_code::not_resolved:           return "not_resolved";
         case utxoz::error_code::closed:                 return "closed";
         case utxoz::error_code::storage_mode_mismatch:  return "storage_mode_mismatch";
         case utxoz::error_code::config_file_corrupt:    return "config_file_corrupt";
@@ -65,15 +64,22 @@ char const* utxoz_error_name(utxoz::error_code code) {
     return "unrecognised";
 }
 
+namespace {
+
 // UTXO-Z's find() can now fail for reasons that are not absence: the database
 // is closed, the catalogue could not be read, recovery is required. Folding all
 // of them into key_not_found is the sentinel conversion this migration exists
-// to avoid — upstream reads key_not_found as "queued, sweep it", and a sweep
-// over a database that cannot be read answers "absent", which the validator
-// reads as "spent".
+// to avoid — upstream reads key_not_found as absence, and a database that could
+// not be read reported that way answers "absent", which the validator reads as
+// "spent".
 result_code find_failure_to_result_code(utxoz::error_code code) {
-    return code == utxoz::error_code::not_found
-         ? result_code::key_not_found
+    // not_resolved is the ONLY non-error answer find() has in 0.10.0: the active
+    // versions cannot say, and nothing was queued on anyone's behalf. It is
+    // mapped to its own code rather than to key_not_found, because a caller that
+    // reads it as absence reports an output as spent having stopped asking
+    // halfway. Everything else is a genuine failure of this node's storage.
+    return code == utxoz::error_code::not_resolved
+         ? result_code::not_resolved
          : result_code::other;
 }
 
@@ -195,7 +201,11 @@ std::expected<utxo_entry, result_code> utxoz_database::find(domain::chain::point
 #ifdef KTH_UTXOZ_REFERENCE_MODE
     auto result = db_->find(key, height);
     if ( ! result) {
-        if (result.error() != utxoz::error_code::not_found) {
+        // not_resolved is the ordinary outcome: the active versions cannot
+        // answer, which every caller expects and resolves as a batch. Logging it
+        // as an error made a routine miss look like a fault, once per prevout.
+        // Anything else IS a fault and still says so.
+        if ( ! is_ordinary_probe_miss(result.error())) {
             spdlog::error("[utxoz_database] find() failed for {}: {}; this is not absence",
                 utxoz::outpoint_to_string(key), utxoz_error_name(result.error()));
         }
@@ -205,7 +215,11 @@ std::expected<utxo_entry, result_code> utxoz_database::find(domain::chain::point
 #else
     auto result = db_->find(key, height);
     if ( ! result) {
-        if (result.error() != utxoz::error_code::not_found) {
+        // not_resolved is the ordinary outcome: the active versions cannot
+        // answer, which every caller expects and resolves as a batch. Logging it
+        // as an error made a routine miss look like a fault, once per prevout.
+        // Anything else IS a fault and still says so.
+        if ( ! is_ordinary_probe_miss(result.error())) {
             spdlog::error("[utxoz_database] find() failed for {}: {}; this is not absence",
                 utxoz::outpoint_to_string(key), utxoz_error_name(result.error()));
         }
@@ -213,29 +227,6 @@ std::expected<utxo_entry, result_code> utxoz_database::find(domain::chain::point
     }
     return bytes_to_entry(result->data);
 #endif
-}
-
-result_code utxoz_database::erase(domain::chain::point const& point, uint32_t height) {
-    if ( ! is_open()) {
-        return result_code::other;
-    }
-
-    auto key = point_to_key(point);
-
-    // 0.9.0 wraps the count in result<>. The old `erased > 0` no longer
-    // compiles, which is the lucky half of this change: the dangerous reading
-    // is that a failed erase looks like a key that was not there. It is not —
-    // the entry may well exist and still be spendable — so a failure reports
-    // itself rather than being folded into key_not_found.
-    auto const erased = db_->erase(key, height);
-    if ( ! erased) {
-        spdlog::error("[utxoz_database] Erase failed for {}: {}; this is NOT "
-            "the key being absent", utxoz::outpoint_to_string(key),
-            utxoz_error_name(erased.error()));
-        return result_code::other;
-    }
-
-    return *erased > 0 ? result_code::success : result_code::key_not_found;
 }
 
 namespace {
@@ -261,13 +252,13 @@ utxoz_database::find_raw(utxoz::raw_outpoint const& key, uint32_t height) const 
 
     auto result = db_->find(key, height);
     if ( ! result) {
-        // not_found means "not in the active version file"; it may still be
-        // resolved by the deferred sweep, and the caller must not treat it as
-        // absence. Any OTHER error is a read that failed, and must not be
-        // dressed up as the two-phase contract.
-        if (result.error() != utxoz::error_code::not_found) {
+        // not_resolved means "the active versions cannot answer". It is NOT
+        // absence: the caller keeps the request and hands it to resolve() as
+        // part of a batch it owns. Any OTHER error is a read that failed, and
+        // must not be dressed up as the two-phase contract.
+        if ( ! is_ordinary_probe_miss(result.error())) {
             spdlog::error("[utxoz_database] find_raw() failed for {}: {}; this is not "
-                "a deferred lookup", utxoz::outpoint_to_string(key),
+                "the key being unresolvable", utxoz::outpoint_to_string(key),
                 utxoz_error_name(result.error()));
         }
         return std::unexpected(find_failure_to_result_code(result.error()));
@@ -280,162 +271,91 @@ utxoz_database::find_raw(utxoz::raw_outpoint const& key, uint32_t height) const 
 #endif
 }
 
-std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, utxoz_database::raw_stored>,
-                        std::vector<utxoz::raw_outpoint>>, result_code>
-utxoz_database::process_pending_lookups_raw() {
-    boost::unordered_flat_map<utxoz::raw_outpoint, raw_stored> resolved;
-    std::vector<utxoz::raw_outpoint> failed;
+std::expected<utxoz_database::raw_resolution, result_code>
+utxoz_database::resolve_raw(std::span<utxoz::lookup_request const> requests) const {
+    raw_resolution out;
 
     if ( ! is_open()) {
         return std::unexpected(result_code::other);
     }
+    if (requests.empty()) {
+        return out;
+    }
 
-    // 0.9.0 wraps this in result<>: draining the queue can now fail as a whole
-    // (an unreadable catalogue is not an empty one), and that is a different
-    // answer from "these keys do not exist". Reporting the failure as an empty
-    // resolution would turn a read error into a UTXO that is absent.
-    auto drained = db_->process_pending_lookups();
-    if ( ! drained) {
-        spdlog::error("[utxoz_database] Draining the deferred lookup queue failed: {}; "
-            "this is not the same as the keys being absent",
-            utxoz_error_name(drained.error()));
+    // The batch is the caller's throughout: borrowed for this call, and nothing
+    // of it survives the return. Two components resolving at once cannot take
+    // each other's keys, which is the whole reason this takes an argument.
+    auto resolved = db_->resolve(requests);
+    if ( ! resolved) {
+        // version_unreadable / catalog_unreadable. No lists come back at all,
+        // and that is the correct shape: a sweep that could not cover every
+        // version has established nothing, and reporting it as an empty
+        // resolution would turn a storage fault into a set of absent UTXOs.
+        // Nothing was consumed, so the same span can be retried.
+        spdlog::error("[utxoz_database] resolving {} lookup(s) failed: {}; this is NOT "
+            "the keys being absent", requests.size(), utxoz_error_name(resolved.error()));
         return std::unexpected(result_code::other);
     }
-    auto& [found, fail] = *drained;
-    resolved.reserve(found.size());
-    for (auto const& [key, res] : found) {
+
+    out.found.reserve(resolved->found.size());
+    for (auto const& [key, res] : resolved->found) {
 #ifdef KTH_UTXOZ_REFERENCE_MODE
-        resolved.emplace(key, raw_stored{pack_reference_ref(res.file_number, res.offset), res.block_height});
+        out.found.emplace(key, raw_stored{pack_reference_ref(res.file_number, res.offset), res.block_height});
 #else
-        resolved.emplace(key, raw_stored{res.data, res.block_height});
+        out.found.emplace(key, raw_stored{res.data, res.block_height});
 #endif
     }
 
-    failed.reserve(fail.size());
-    for (auto const& e : fail) {
-        failed.push_back(e.key);
+    out.absent.reserve(resolved->absent.size());
+    for (auto const& request : resolved->absent) {
+        out.absent.push_back(request.key);
     }
 
-    return std::pair{std::move(resolved), std::move(failed)};
+    return out;
 }
 
-result_code utxoz_database::clear() {
-    if ( ! is_open()) {
-        return result_code::other;
-    }
+std::expected<utxoz_database::entry_resolution, result_code>
+utxoz_database::resolve(std::span<utxoz::lookup_request const> requests) const {
+    entry_resolution out;
 
-    // UTXO-Z doesn't have a clear method, so we need to close and reopen with remove_existing
-    // Get the path first (we need to store it before closing)
-    spdlog::warn("[utxoz_database] Clear not directly supported - requires reopen with remove_existing");
-    return result_code::other;
-}
-
-size_t utxoz_database::deferred_deletions_size() const {
-    if ( ! is_open()) {
-        return 0;
-    }
-    return db_->deferred_deletions_size();
-}
-
-std::expected<std::pair<uint32_t, std::vector<utxoz::deferred_deletion_entry>>, result_code>
-utxoz_database::process_pending_deletions() {
     if ( ! is_open()) {
         return std::unexpected(result_code::other);
     }
-
-    // Also result<>-wrapped since 0.9.0. An empty return has to mean "nothing
-    // was pending", so a drain that could not run says so instead of borrowing
-    // that meaning.
-    auto drained = db_->process_pending_deletions();
-    if ( ! drained) {
-        spdlog::error("[utxoz_database] Draining the deferred deletion queue failed: {}; "
-            "no deletion was applied", utxoz_error_name(drained.error()));
-        return std::unexpected(result_code::other);
+    if (requests.empty()) {
+        return out;
     }
-    return std::move(*drained);
-}
 
-size_t utxoz_database::deferred_lookups_size() const {
-    if ( ! is_open()) {
-        return 0;
-    }
-    return db_->deferred_lookups_size();
-}
-
-std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, utxo_entry>,
-                        std::vector<utxoz::raw_outpoint>>, result_code>
-utxoz_database::process_pending_lookups() {
-    boost::unordered_flat_map<utxoz::raw_outpoint, utxo_entry> resolved;
-    std::vector<utxoz::raw_outpoint> failed;
-    if ( ! is_open()) {
+    auto resolved = db_->resolve(requests);
+    if ( ! resolved) {
+        spdlog::error("[utxoz_database] resolving {} lookup(s) failed: {}; this is NOT "
+            "the keys being absent", requests.size(), utxoz_error_name(resolved.error()));
         return std::unexpected(result_code::other);
     }
 
+    out.found.reserve(resolved->found.size());
+    for (auto const& [key, res] : resolved->found) {
 #ifdef KTH_UTXOZ_REFERENCE_MODE
-    // 0.9.0 wraps this in result<>: draining the queue can now fail as a whole
-    // (an unreadable catalogue is not an empty one), and that is a different
-    // answer from "these keys do not exist". Reporting the failure as an empty
-    // resolution would turn a read error into a UTXO that is absent.
-    auto drained = db_->process_pending_lookups();
-    if ( ! drained) {
-        spdlog::error("[utxoz_database] Draining the deferred lookup queue failed: {}; "
-            "this is not the same as the keys being absent",
-            utxoz_error_name(drained.error()));
-        return std::unexpected(result_code::other);
-    }
-    auto& [found, fail] = *drained;
-    resolved.reserve(found.size());
-    for (auto const& [key, ref] : found) {
-        uint32_t index;
-        std::memcpy(&index, key.data() + 32, sizeof(index));   // outpoint index (LE)
-        auto entry = resolve_reference_ref(ref, index);
-        if ( ! entry) {
-            // The sweep FOUND this key; materialising the reference is a read of
-            // the block file, and that read failed. Pushing it onto `failed`
-            // would report a UTXO that demonstrably exists as one that does not.
-            spdlog::error("[utxoz_database] resolving a reference for a key the sweep "
-                "found failed: {}; the entry exists and could not be read",
-                utxoz::outpoint_to_string(key));
-            return std::unexpected(entry.error());
-        }
-        resolved.emplace(key, std::move(*entry));
-    }
-    for (auto const& e : fail) {
-        failed.push_back(e.key);
-    }
+        auto entry = resolve_reference_ref(res, key_to_point(key).index());
 #else
-    // 0.9.0 wraps this in result<>: draining the queue can now fail as a whole
-    // (an unreadable catalogue is not an empty one), and that is a different
-    // answer from "these keys do not exist". Reporting the failure as an empty
-    // resolution would turn a read error into a UTXO that is absent.
-    auto drained = db_->process_pending_lookups();
-    if ( ! drained) {
-        spdlog::error("[utxoz_database] Draining the deferred lookup queue failed: {}; "
-            "this is not the same as the keys being absent",
-            utxoz_error_name(drained.error()));
-        return std::unexpected(result_code::other);
-    }
-    auto& [found, fail] = *drained;
-    resolved.reserve(found.size());
-    for (auto const& [key, res] : found) {
         auto entry = bytes_to_entry(res.data);
+#endif
         if ( ! entry) {
-            // Stored bytes that will not decode are corruption. Skipping the
-            // entry silently drops it from `resolved` without putting it in
-            // `failed` either, so the caller sees neither the UTXO nor a problem.
-            spdlog::error("[utxoz_database] stored bytes for {} could not be decoded; "
-                "the entry exists and is unreadable",
-                utxoz::outpoint_to_string(key));
+            // The resolution FOUND this key; materialising it is what failed.
+            // Dropping it would report a UTXO that demonstrably exists as one
+            // this node does not have, so the failure is returned instead.
+            spdlog::error("[utxoz_database] {} resolved but could not be materialised; "
+                "the entry exists and is unreadable", utxoz::outpoint_to_string(key));
             return std::unexpected(entry.error());
         }
-        resolved.emplace(key, std::move(*entry));
+        out.found.emplace(key, std::move(*entry));
     }
-    failed.reserve(fail.size());
-    for (auto const& e : fail) {
-        failed.push_back(e.key);
+
+    out.absent.reserve(resolved->absent.size());
+    for (auto const& request : resolved->absent) {
+        out.absent.push_back(request.key);
     }
-#endif
-    return std::pair{std::move(resolved), std::move(failed)};
+
+    return out;
 }
 
 bool utxoz_database::compact() {
@@ -451,15 +371,20 @@ bool utxoz_database::compact() {
     return true;
 }
 
-bool utxoz_database::sync() {
+barrier_outcome utxoz_database::sync() {
     if ( ! is_open()) {
-        spdlog::warn("[utxoz_database] sync() on a closed database; nothing was written");
-        return false;
+        // Not `unsupported`: the platform's barrier may exist and simply have
+        // nothing to run against here. A caller told "this platform has none"
+        // would stop asking; one told the barrier failed stops instead, which
+        // is the right answer when a guarantee was wanted from a database this
+        // object has let go of.
+        spdlog::error("[utxoz_database] sync() on a closed database; no guarantee was obtained");
+        return barrier_outcome::failed;
     }
 
     auto const synced = db_->sync();
     if (synced) {
-        return true;
+        return barrier_outcome::crossed;
     }
 
     // These are three different facts about the machine, and collapsing them
@@ -469,17 +394,71 @@ bool utxoz_database::sync() {
             spdlog::warn("[utxoz_database] This platform exposes no durability "
                 "barrier ({}); nothing was promised",
                 to_string(utxoz::platform_durability()));
-            break;
+            return barrier_outcome::unsupported;
         case utxoz::error_code::sync_failed:
             spdlog::error("[utxoz_database] A durability barrier was attempted "
                 "and failed; the data written so far is not known to be durable");
-            break;
+            return barrier_outcome::failed;
         default:
             spdlog::error("[utxoz_database] sync() failed: {}",
                 utxoz_error_name(synced.error()));
-            break;
+            return barrier_outcome::failed;
     }
-    return false;
+}
+
+result_code utxoz_database::clear() {
+    if ( ! is_open()) {
+        return result_code::other;
+    }
+
+    // UTXO-Z doesn't have a clear method, so we need to close and reopen with remove_existing
+    // Get the path first (we need to store it before closing)
+    spdlog::warn("[utxoz_database] Clear not directly supported - requires reopen with remove_existing");
+    return result_code::other;
+}
+
+utxoz::deletion_progress
+utxoz_database::apply_deletes(std::span<utxoz::deferred_deletion_entry const> requests) {
+    if ( ! is_open()) {
+        // A refusal is still an answer about the same keys, so the batch comes
+        // back in `unresolved` rather than as an empty progress that would read
+        // as "there was nothing to do".
+        //
+        // DEDUPLICATED, exactly as the library does it: the partition is over
+        // DISTINCT keys, keeping the FIRST occurrence of each — its height
+        // included, so a caller that sent one outpoint at two heights gets the
+        // earlier one back. Copying the span verbatim would hand back more
+        // entries than there are keys and break the invariant every caller
+        // matches results against, on the one path that never reaches the
+        // library to have it applied for us.
+        utxoz::deletion_progress closed;
+        closed.unresolved.reserve(requests.size());
+
+        boost::unordered_flat_set<utxoz::raw_outpoint> seen;
+        seen.reserve(requests.size());
+        for (auto const& request : requests) {
+            if (seen.insert(request.key).second) {
+                closed.unresolved.push_back(request);
+            }
+        }
+
+        closed.error = utxoz::error_code::closed;
+        return closed;
+    }
+
+    auto progress = db_->apply_deletes(requests);
+
+    if (progress.error) {
+        // NOT flattened into a failure. A deletion writes as it walks, so this
+        // call has already applied whatever is in `erased`, and that part is a
+        // fact the caller needs in order not to resend it.
+        spdlog::error("[utxoz_database] applying {} deletion(s) stopped: {}; {} applied, "
+            "{} proven absent, {} still owed", requests.size(),
+            utxoz_error_name(*progress.error), progress.erased.size(),
+            progress.absent.size(), progress.unresolved.size());
+    }
+
+    return progress;
 }
 
 void utxoz_database::print_statistics() {

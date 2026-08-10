@@ -84,7 +84,7 @@ TEST_CASE("utxoz full-mode value round-trips write path -> find", "[utxoz][regre
         block, /*height*/ 100u, /*mtp*/ 111u, /*file*/ 0, /*data_pos*/ 0u, nullptr);
     REQUIRE(delta_result.has_value());
     auto& delta = *delta_result;
-    REQUIRE(db.apply_delta_raw(delta.inserts, delta.deletes) == result_code::success);
+    REQUIRE(db.apply_inserts_raw(delta.inserts) == result_code::success);
 
     // Read path (database), the same one get_utxo uses. Look the prevout up at a
     // later height than it was created (as validation does at the spending block).
