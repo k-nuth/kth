@@ -226,8 +226,8 @@ jobs:
       conan-remote: "kth"
       build-version: ${{ needs.setup.outputs.build-version }}
     secrets:
-      conan-user: ${{ secrets.CONAN_LOGIN_USERNAME }}
-      conan-password: ${{ secrets.CONAN_3_PASSWORD }}
+      conan_remote_username: ${{ secrets.CONAN_LOGIN_USERNAME }}
+      conan_remote_password: ${{ secrets.CONAN_3_PASSWORD }}
 
   calc-deps-without-container:
     needs: [setup, generate-matrix]
@@ -241,8 +241,8 @@ jobs:
       conan-remote: "kth"
       build-version: ${{ needs.setup.outputs.build-version }}
     secrets:
-      conan-user: ${{ secrets.CONAN_LOGIN_USERNAME }}
-      conan-password: ${{ secrets.CONAN_3_PASSWORD }}
+      conan_remote_username: ${{ secrets.CONAN_LOGIN_USERNAME }}
+      conan_remote_password: ${{ secrets.CONAN_3_PASSWORD }}
 
   build-deps-with-container:
     needs: [calc-deps-with-container]
@@ -258,8 +258,8 @@ jobs:
       context: ${{ matrix.config.context }}
       conan-remote: "kth"
     secrets:
-      conan-user: ${{ secrets.CONAN_LOGIN_USERNAME }}
-      conan-password: ${{ secrets.CONAN_3_PASSWORD }}
+      conan_remote_username: ${{ secrets.CONAN_LOGIN_USERNAME }}
+      conan_remote_password: ${{ secrets.CONAN_3_PASSWORD }}
 
   build-deps-without-container:
     needs: [calc-deps-without-container]
@@ -274,8 +274,8 @@ jobs:
       context: ${{ matrix.config.context }}
       conan-remote: "kth"
     secrets:
-      conan-user: ${{ secrets.CONAN_LOGIN_USERNAME }}
-      conan-password: ${{ secrets.CONAN_3_PASSWORD }}
+      conan_remote_username: ${{ secrets.CONAN_LOGIN_USERNAME }}
+      conan_remote_password: ${{ secrets.CONAN_3_PASSWORD }}
 
   build-with-container:
     # Wait for the deps job to push prebuilt packages to the conan remote.
@@ -303,8 +303,8 @@ jobs:
       enable-tsan: false
       skip-tests: false
     secrets:
-      CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
-      CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
+      conan_remote_username: ${{ secrets.CONAN_LOGIN_USERNAME }}
+      conan_remote_password: ${{ secrets.CONAN_3_PASSWORD }}
 
   # Sanitizers only run on push (master / release / hotfix /
   # dev-publish / tags), NOT on `pull_request`. Rationale:
@@ -353,8 +353,8 @@ jobs:
       skip-tests: false
       advisory: false
     secrets:
-      CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
-      CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
+      conan_remote_username: ${{ secrets.CONAN_LOGIN_USERNAME }}
+      conan_remote_password: ${{ secrets.CONAN_3_PASSWORD }}
 
   build-without-container:
     # Wait for the macOS deps build to populate the conan remote. Hosted
@@ -380,8 +380,8 @@ jobs:
       enable-tsan: false  # Disabled due to secp256k1 inline assembly conflicts
       skip-tests: false
     secrets:
-      CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
-      CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
+      conan_remote_username: ${{ secrets.CONAN_LOGIN_USERNAME }}
+      conan_remote_password: ${{ secrets.CONAN_3_PASSWORD }}
 
   build-with-container-release:
     needs: [setup, generate-matrix]
@@ -407,8 +407,8 @@ jobs:
       enable-tsan: false  # Disabled for clean release builds
       skip-tests: false  # Skip tests for clean release builds
     secrets:
-      CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
-      CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
+      conan_remote_username: ${{ secrets.CONAN_LOGIN_USERNAME }}
+      conan_remote_password: ${{ secrets.CONAN_3_PASSWORD }}
 
   build-without-container-release:
     needs: [setup, generate-matrix]
@@ -433,8 +433,8 @@ jobs:
       enable-tsan: false  # Disabled for clean release builds
       skip-tests: false
     secrets:
-      CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
-      CONAN_PASSWORD: ${{ secrets.CONAN_3_PASSWORD }}
+      conan_remote_username: ${{ secrets.CONAN_LOGIN_USERNAME }}
+      conan_remote_password: ${{ secrets.CONAN_3_PASSWORD }}
 
   static-checks:
     name: 🔍 Static analysis

@@ -63,9 +63,9 @@ on:
         type: boolean
         default: false
     secrets:
-      CONAN_LOGIN_USERNAME:
+      conan_remote_username:
         required: true
-      CONAN_PASSWORD:
+      conan_remote_password:
         required: true
 jobs:
   reusable-build-with-container:
@@ -153,6 +153,10 @@ jobs:
       # job worked. The self-test now exercises the API path against a stubbed
       # curl here as well as on macOS, so a tool this image lacks is found by a
       # check rather than by an inventory that quietly keeps growing.
+      # The credentials check joined them for the same reason read from
+      # the other end: the Conan secrets had three different names
+      # across six workflows, and half a rename is valid YAML that
+      # fails when a job starts rather than when the file is edited.
       - name: 🧪 CI script checks
         if: ${{ inputs.upload != true }}
         shell: bash
@@ -160,6 +164,8 @@ jobs:
           python3 "${GITHUB_WORKSPACE}/.github/scripts/check-cache-keys.py"
           "${GITHUB_WORKSPACE}/.github/scripts/ccache-prune-selftest.sh"
           "${GITHUB_WORKSPACE}/.github/scripts/ccache-prune-closed-prs-selftest.sh"
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/check-conan-credentials.py"
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/check-conan-credentials-selftest.py"
 
       - name: 🗄️ Setup ccache
         if: ${{ inputs.upload != true }}
@@ -275,7 +281,7 @@ jobs:
           # Choose build strategy based on whether we need to upload
           if [ "${{ inputs.upload }}" = "true" ]; then
             echo "🚀 Release build - using conan create (includes package validation)"
-            conan remote login -p ${{ secrets.CONAN_PASSWORD }} ${{ inputs.conan-remote }} ${{ secrets.CONAN_LOGIN_USERNAME }}
+            conan remote login -p "${{ secrets.conan_remote_password }}" "${{ inputs.conan-remote }}" "${{ secrets.conan_remote_username }}"
             conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh $EXTRA_CONAN_OPTS
             conan create conanfile.py --version ${{ inputs.build-version }} --lockfile=build/conan.lock -pr:b linux-ci-cd -pr:h linux-ci-cd --build=missing -o march_id=ZLm9Pjh -o tests=False $EXTRA_CONAN_OPTS
           else
@@ -672,5 +678,5 @@ jobs:
         # if: github.event_name == 'push' && needs.check.outputs.permitted == 'true'
         if: ${{ inputs.upload }}
         run: |
-          conan remote login -p ${{ secrets.CONAN_PASSWORD }} ${{ inputs.conan-remote }} ${{ secrets.CONAN_LOGIN_USERNAME }}
+          conan remote login -p "${{ secrets.conan_remote_password }}" "${{ inputs.conan-remote }}" "${{ secrets.conan_remote_username }}"
           conan upload ${{ inputs.recipe-name }}/${{ inputs.build-version }}@ -r ${{ inputs.conan-remote }} # --all
