@@ -50,9 +50,9 @@ uint32_t kth_node_cppapi_build_timestamp(void);
 
 // Build configuration of the UTXO storage / IBD optimizations.
 
-// Whether UTXO-Z was built in compact mode (KTH_UTXOZ_COMPACT_MODE) vs full mode.
+// Whether UTXO-Z was built in reference mode (KTH_UTXOZ_REFERENCE_MODE) vs full mode.
 KTH_EXPORT
-kth_bool_t kth_node_utxoz_compact_mode(void);
+kth_bool_t kth_node_utxoz_reference_mode(void);
 
 // Whether this build embeds a UTXO bloom filter (KTH_HAS_EMBEDDED_BLOOM).
 KTH_EXPORT

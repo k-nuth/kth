@@ -19,15 +19,15 @@ namespace kth::database {
 
 /// One output spent by a block, recorded so the block can be disconnected.
 ///
-/// `value` is the UTXO storage payload verbatim — in compact mode the 8-byte
+/// `value` is the UTXO storage payload verbatim — in reference mode the 8-byte
 /// {file_number, tx_offset} reference, in full mode the serialized entry — which
 /// is exactly the shape apply_delta_raw's insert range consumes. Restoring a
 /// spent output is therefore just re-inserting this record; no reconstruction of
-/// the output is needed, and none is possible in compact mode (the storage holds
+/// the output is needed, and none is possible in reference mode (the storage holds
 /// a reference into the block files, not the output bytes).
 ///
 /// `height` is the output's ORIGINAL creation height, not the height of the block
-/// that spent it. It must round-trip exactly: in compact mode the height also
+/// that spent it. It must round-trip exactly: in reference mode the height also
 /// drives the median-time-past window used when the UTXO is later resolved.
 struct KD_API spent_output {
     utxoz::raw_outpoint key{};

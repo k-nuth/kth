@@ -36,9 +36,9 @@ utxoz::raw_outpoint make_outpoint(uint8_t seed, uint32_t index) {
 }
 
 // The storage-native payload for one UTXO, matching what utxo_build produces:
-// 8 bytes {file_number, tx_offset} in compact mode, a serialized entry otherwise.
+// 8 bytes {file_number, tx_offset} in reference mode, a serialized entry otherwise.
 std::vector<uint8_t> make_payload(uint32_t file_number, uint32_t tx_offset) {
-#ifdef KTH_UTXOZ_COMPACT_MODE
+#ifdef KTH_UTXOZ_REFERENCE_MODE
     std::vector<uint8_t> value(8);
     std::memcpy(value.data(), &file_number, 4);
     std::memcpy(value.data() + 4, &tx_offset, 4);
@@ -82,11 +82,11 @@ struct failing_source {
         return std::unexpected(error);
     }
 
-    std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, utxoz_database::raw_stored>,
-              std::vector<utxoz::raw_outpoint>>
+    std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, utxoz_database::raw_stored>,
+                            std::vector<utxoz::raw_outpoint>>, result_code>
     utxo_process_pending_lookups_raw() {
         ++sweeps;
-        return {};
+        return std::unexpected(error);
     }
 };
 
@@ -99,7 +99,7 @@ struct failing_source {
 // The correctness claim behind the undo record is that a spent output can be put
 // back EXACTLY as it was: same storage payload and, critically, the same ORIGINAL
 // creation height. Restoring with the spending block's height instead would
-// corrupt both coinbase maturity and (in compact mode) the median-time-past
+// corrupt both coinbase maturity and (in reference mode) the median-time-past
 // window used when the UTXO is later resolved — silently, and only for outputs
 // that a reorg touched.
 //
@@ -200,8 +200,10 @@ TEST_CASE("outputs created and spent in the same block need no undo entry", "[re
                              /*coinbase*/ false, /*tx_start*/ 0u});
     block.inputs.push_back({internal});   // spent by a later tx in the same block
 
-    auto delta = process_compact_block_utxos(block, /*height*/ 700u, /*mtp*/ 12u,
+    auto delta_result = process_compact_block_utxos(block, /*height*/ 700u, /*mtp*/ 12u,
                                              /*file*/ 0, /*data_pos*/ 0u, nullptr);
+    REQUIRE(delta_result.has_value());
+    auto& delta = *delta_result;
 
     // The producer cancels the pair: nothing to insert, and nothing to delete —
     // which is what keeps the output out of the undo record.

@@ -227,7 +227,7 @@ bool utxo_raw_delta::empty() const {
 // Compact block processing (zero-copy path)
 // =============================================================================
 
-utxo_raw_delta process_compact_block_utxos(
+expect<utxo_raw_delta> process_compact_block_utxos(
     utxo_compact_block const& block,
     uint32_t height,
     uint32_t median_time_past,
@@ -235,6 +235,19 @@ utxo_raw_delta process_compact_block_utxos(
     uint32_t block_data_pos,
     database::utxo_bloom_filter const* bloom
 ) {
+#ifdef KTH_UTXOZ_REFERENCE_MODE
+    // Checked once, before anything is built. Gated on the mode because this is
+    // the only mode that stores the file number: full mode keeps the whole
+    // output and never reads this parameter, so rejecting a block there would
+    // refuse work over a field nothing uses.
+    if (file_number < 0) {
+        spdlog::error("[utxo_builder] block at height {} has no file number in the header "
+            "index (-1); the index and the block store disagree, and building references "
+            "against it would write UINT32_MAX into every entry", height);
+        return std::unexpected(error::operation_failed);
+    }
+#endif
+
     utxo_raw_delta delta;
 
     // 1. Process all outputs (inserts)
@@ -245,10 +258,9 @@ utxo_raw_delta process_compact_block_utxos(
             continue;
         }
 
-#ifdef KTH_UTXOZ_COMPACT_MODE
-        // Compact: 8-byte ref = {file_number, data_pos + tx_start}
-        KTH_ASSERT(file_number >= 0);  // -1 means "no data" — should never happen for stored blocks
-        compact_utxo_ref ref{
+#ifdef KTH_UTXOZ_REFERENCE_MODE
+        // Reference: 8-byte ref = {file_number, data_pos + tx_start}
+        reference_utxo_ref ref{
             static_cast<uint32_t>(file_number),
             block_data_pos + out.tx_start
         };
@@ -526,7 +538,16 @@ database::result_code process_deferred_deletions(block_chain& chain) {
     auto deferred = chain.utxo_deferred_deletions_size();
     if (deferred > 0) {
         spdlog::debug("[utxo_builder] Processing {} pending deletions...", deferred);
-        auto [deleted, failed] = chain.utxo_process_pending_deletions();
+        auto drained = chain.utxo_process_pending_deletions();
+        if ( ! drained) {
+            // No deletion was applied, and the queue is still full. Returning
+            // success here would let the build advance over a UTXO set that
+            // still holds spent outputs.
+            spdlog::error("[utxo_builder] FATAL: the deferred deletion queue could not be "
+                "drained; {} deletions remain unapplied", deferred);
+            return database::result_code::other;
+        }
+        auto& [deleted, failed] = *drained;
         if ( ! failed.empty()) {
             spdlog::error("[utxo_builder] FATAL: Deferred deletions failed: {} deleted, {} failed",
                 deleted, failed.size());
@@ -794,9 +815,9 @@ uint32_t embedded_bloom_checkpoint_height() {
 
     // ==========================================================================
     // Strategy: sequential_direct - process 1 block at a time, apply directly
-    // (Not available in compact mode — uses domain-object insert path)
+    // (Not available in reference mode — uses domain-object insert path)
     // ==========================================================================
-#ifndef KTH_UTXOZ_COMPACT_MODE
+#ifndef KTH_UTXOZ_REFERENCE_MODE
     if (strategy == utxo_build_strategy::sequential_direct) {
         for (uint32_t h = actual_start; h <= end_height; ++h) {
             auto block_result = co_await chain.fetch_block(h);
@@ -897,16 +918,31 @@ uint32_t embedded_bloom_checkpoint_height() {
                 uint32_t h = batch_start + static_cast<uint32_t>(i);
                 uint32_t mtp = calculate_mtp(timestamp_window);
 
-                // Get block position from header_index for compact mode. Resolved
+                // Get block position from header_index for reference mode. Resolved
                 // through the active chain: the index also holds side branches,
                 // numbered in arrival order, so an entry's index is not its height.
                 auto const idx = chain.headers().active_at(static_cast<int32_t>(h));
-                KTH_ASSERT(idx != header_index::null_index);
+                if (idx == header_index::null_index) {
+                    // KTH_ASSERT is compiled out in Release, where this would go
+                    // on to read file number and data position from a null index
+                    // entry. block_tasks already refuses here; this is the same
+                    // fork and it was the only one still trusting the assertion.
+                    spdlog::critical("[utxo_builder] no active header at height {}; "
+                        "the index cannot place this block", h);
+                    co_return database::result_code::other;
+                }
                 KTH_ASSERT(chain.headers().get_height(idx) == static_cast<int32_t>(h));
                 auto const file_num = chain.headers().get_file_number(idx);
                 auto const data_pos = chain.headers().get_data_pos(idx);
 
-                auto block_delta = process_compact_block_utxos(compact_blocks[i], h, mtp, file_num, data_pos, bloom_ptr);
+                auto block_delta_result = process_compact_block_utxos(compact_blocks[i], h, mtp, file_num, data_pos, bloom_ptr);
+                if ( ! block_delta_result) {
+                    spdlog::critical("[utxo_builder] cannot build UTXO references for the block "
+                        "at height {}; stopping the batch rather than storing entries that "
+                        "point nowhere", h);
+                    co_return database::result_code::other;
+                }
+                auto block_delta = std::move(*block_delta_result);
                 if (i == 0) {
                     delta = std::move(block_delta);
                 } else {

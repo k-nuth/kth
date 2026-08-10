@@ -75,7 +75,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_stats": [True, False],
         "rpc": [True, False],
         "embed_utxo_bloom": [True, False],
-        "utxoz_compact": [True, False],
+        "utxoz_reference": [True, False],
         "asio_standalone": [True, False],
 
         # secp256k1 options
@@ -127,7 +127,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_stats": False,
         "rpc": True,
         "embed_utxo_bloom": False,
-        "utxoz_compact": False,
+        "utxoz_reference": False,
         "asio_standalone": True,
 
         # secp256k1 options
@@ -177,7 +177,7 @@ class KthRecipe(KnuthConanFileV2):
         self.requires("fmt/12.1.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.17.0", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/0.9.32", transitive_headers=True, transitive_libs=True)
-        self.requires("utxoz/0.8.0", transitive_headers=True, transitive_libs=True)
+        self.requires("utxoz/0.9.1", transitive_headers=True, transitive_libs=True)
 
         # GMP is required for BigInt support in the native interpreter.
         self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
@@ -309,7 +309,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_WITH_STATS"] = option_on_off(self.options.with_stats)
         tc.variables["KTH_WITH_RPC"] = option_on_off(self.options.rpc)
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
-        tc.variables["KTH_UTXOZ_COMPACT_MODE"] = option_on_off(self.options.utxoz_compact)
+        tc.variables["KTH_UTXOZ_REFERENCE_MODE"] = option_on_off(self.options.utxoz_reference)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
 
         # Secp256k1 --------------------------------------------

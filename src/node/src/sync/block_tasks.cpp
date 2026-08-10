@@ -2046,11 +2046,22 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             // Prune with the bloom only up to the checkpoint; above it keep every
             // output (live UTXO set) so full validation can resolve prevouts.
             auto const* block_bloom = (h <= checkpoint_height) ? bloom_ptr : nullptr;
-            auto block_delta = blockchain::process_compact_block_utxos(
+            auto block_delta_result = blockchain::process_compact_block_utxos(
                 *parsed, h, mtp,
                 chain.headers().get_file_number(idx),
                 chain.headers().get_data_pos(idx),
                 block_bloom);
+            if ( ! block_delta_result) {
+                // The header index has no file number for this block. Storing
+                // references built from it would put UINT32_MAX in every entry,
+                // so the batch stops here rather than writing entries that can
+                // never be resolved.
+                spdlog::critical("[utxo_build] cannot reference the block at height {}: "
+                    "the header index and the block store disagree", h);
+                on_fatal("the header index has no data for a block being built");
+                co_return;
+            }
+            auto block_delta = std::move(*block_delta_result);
 
             // Capture undo data so this block can be disconnected on a reorg.
             // Only above the checkpoint: below it the bloom prunes the delta, so
@@ -2133,6 +2144,52 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             }
         }
 
+        // The deletions the store deferred are part of this batch's delta, not
+        // work that follows it: until they run, outputs these blocks spent are
+        // still in the set. So they come before the state is published, and a
+        // failure is fatal rather than logged — a spent output left behind is a
+        // double spend the node would accept.
+        //
+        // ORDER MATTERS, and it used to be wrong: the height marker was persisted
+        // first and the queue drained afterwards. A crash between the two left a
+        // marker saying the batch was complete over a set that still held every
+        // output these blocks spent, and the restart trusted the marker and never
+        // drained again — a double spend the node would accept, reachable without
+        // any storage failure at all, just bad luck with the timing.
+        //
+        // Draining first closes that window in one direction only: a crash after
+        // the drain and before the marker replays the batch, which is safe
+        // because applying a delta twice is idempotent for the marker's purpose
+        // (resume rebuilds from the recorded height). The other direction is what
+        // #600 specifies and #602 implements: a durable record that says which of
+        // the two happened, so recovery does not have to infer it. This PR gets
+        // the order right and refuses to continue past a failure; it does not
+        // make the window crash-safe, and the two must not be confused.
+        auto const deferred = chain.utxo_deferred_deletions_size();
+        if (deferred > 0) {
+            auto drained = chain.utxo_process_pending_deletions();
+            if ( ! drained) {
+                // Asked again rather than reusing the count taken before the
+                // call: the drain may have applied some deletions before it
+                // failed, and reporting the pre-drain figure would overstate
+                // what is still outstanding.
+                spdlog::critical("[utxo_build] the deferred deletion queue could not be "
+                    "drained at batch {}-{}: {} deletion(s) remain unapplied, so the UTXO "
+                    "set still holds outputs these blocks spent", batch_start, batch_end,
+                    chain.utxo_deferred_deletions_size());
+                on_fatal("the deferred deletion queue could not be drained");
+                co_return;
+            }
+            auto const& failed = drained->second;
+            if ( ! failed.empty()) {
+                spdlog::critical("[utxo_build] {} deferred deletion(s) failed at batch {}-{}: the "
+                    "UTXO set still holds outputs these blocks spent", failed.size(),
+                    batch_start, batch_end);
+                on_fatal("a batch left spent outputs in the UTXO set");
+                co_return;
+            }
+        }
+
         utxo_built_height = batch_end;
 
         // Save progress. Not ignorable: everything below treats these blocks as
@@ -2173,28 +2230,6 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                 co_return;
             }
         }
-        // The deletions the store deferred are part of this batch's delta, not
-        // work that follows it: until they run, outputs these blocks spent are
-        // still in the set. So they come before the state is published, and a
-        // failure is fatal rather than logged — a spent output left behind is a
-        // double spend the node would accept.
-        //
-        // The marker at which this becomes recoverable rather than merely fatal
-        // is #600, and #602 is the change that adds it. This orders the work
-        // correctly and refuses to continue past a failure; it does not make the
-        // window crash-safe, and the two must not be confused.
-        auto const deferred = chain.utxo_deferred_deletions_size();
-        if (deferred > 0) {
-            auto [deleted, failed] = chain.utxo_process_pending_deletions();
-            if ( ! failed.empty()) {
-                spdlog::critical("[utxo_build] {} deferred deletion(s) failed at batch {}-{}: the "
-                    "UTXO set still holds outputs these blocks spent", failed.size(),
-                    batch_start, batch_end);
-                on_fatal("a batch left spent outputs in the UTXO set");
-                co_return;
-            }
-        }
-
         // Now the batch is closed: the delta is applied in full, the undo records
         // are written, the height marker has moved and the mempool no longer
         // holds what these blocks confirmed. Only now does a coherent state exist
@@ -2223,7 +2258,13 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
     // Final compaction
     spdlog::info("[utxo_build] Running final compaction...");
-    chain.utxo_compact();
+    if ( ! chain.utxo_compact()) {
+        // Not fatal: compaction reclaims space, it does not decide correctness,
+        // and the set is coherent either way. But it is not nothing, and the old
+        // void signature meant nobody could tell it had happened.
+        spdlog::error("[utxo_build] final compaction failed; the UTXO set is intact "
+            "but was not compacted");
+    }
     chain.utxo_print_statistics();
     chain.utxo_print_sizing_report();
     chain.utxo_print_height_range_stats();

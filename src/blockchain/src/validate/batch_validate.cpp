@@ -217,7 +217,20 @@ code validate_block_batch(
     // absent here truly do not exist.
     // -----------------------------------------------------------------------
     {
-        auto [found, failed] = chain.utxo_process_pending_lookups();
+        auto drained = chain.utxo_process_pending_lookups();
+        if ( ! drained) {
+            // The sweep could not run. That is a LOCAL failure of this node's
+            // storage, and it must not be reported as a consensus verdict:
+            // missing_previous_output says the block spends something that does
+            // not exist, which would reject a block that may be perfectly valid
+            // and, worse, is the kind of answer that gets cached.
+            spdlog::error("[batch_validate] the deferred lookup sweep could not run "
+                "(batch {}-{}); refusing to judge these blocks rather than calling "
+                "unresolved prevouts missing",
+                start_height, start_height + blocks.size() - 1);
+            return error::operation_failed;
+        }
+        auto& [found, failed] = *drained;
         for (auto const& [rk, entry] : found) {
             bv_outpoint key;
             std::memcpy(key.hash.data(), rk.data(), key.hash.size());

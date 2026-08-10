@@ -56,20 +56,20 @@ struct block_chain;
 // Inputs store only the outpoint being spent.
 // =============================================================================
 
-/// Compact UTXO reference: points to the transaction in blk*.dat flat files.
-/// In compact mode, this 8-byte value replaces the full serialized output data.
-struct compact_utxo_ref {
+/// UTXO storage reference: points to the transaction in blk*.dat flat files.
+/// In reference mode, this 8-byte value replaces the full serialized output data.
+struct reference_utxo_ref {
     uint32_t file_number;   // blk*.dat file number
     uint32_t tx_offset;     // absolute byte offset of the tx within that file
 };
-static_assert(sizeof(compact_utxo_ref) == 8);
+static_assert(sizeof(reference_utxo_ref) == 8);
 
 struct utxo_compact_block {
     struct output_entry {
         utxoz::raw_outpoint key;        // txid(32) + index(4) — UTXO-Z native key
         std::span<uint8_t const> raw;   // raw output bytes (value + script), points into source buffer
         bool coinbase;
-        uint32_t tx_start{0};           // offset of tx within the raw block (for compact mode)
+        uint32_t tx_start{0};           // offset of tx within the raw block (for reference mode)
     };
 
     struct input_entry {
@@ -145,12 +145,20 @@ struct KB_API utxo_raw_delta {
 // Process a compact block into a raw delta (zero-copy path).
 // Raw output bytes are serialized directly into UTXO-Z storage format.
 // When bloom is provided, outputs/inputs not in the filter are skipped.
-// In compact mode, file_number and block_data_pos are used to build compact refs.
+// In reference mode, file_number and block_data_pos are used to build reference refs.
 // NOTE: file_number is int16_t (matching header_index::get_file_number()) which limits
 // to 32767 blk*.dat files (~4 TB at 134 MB/file). Sufficient for current chain sizes.
 // If BCH grows past this, widen to int32_t in both header_index and here.
 [[nodiscard]]
-KB_API utxo_raw_delta process_compact_block_utxos(
+/// @return the block's delta, or an error if the block cannot be referenced.
+///         A negative `file_number` means the header index has no data for a
+///         block whose UTXOs are being built — the index and the block store
+///         disagree, which a crash can produce. It is NOT an impossible
+///         precondition, so it does not get an assertion that evaporates in
+///         Release: there, -1 would become UINT32_MAX and every reference in
+///         this block would point at a file that will never exist.
+[[nodiscard]]
+KB_API expect<utxo_raw_delta> process_compact_block_utxos(
     utxo_compact_block const& block,
     uint32_t height,
     uint32_t median_time_past,
@@ -233,7 +241,16 @@ std::expected<database::block_undo, database::result_code> capture_block_undo(
     }
 
     if ( ! deferred.empty()) {
-        auto [resolved, missing] = source.utxo_process_pending_lookups_raw();
+        auto drained = source.utxo_process_pending_lookups_raw();
+        if ( ! drained) {
+            // The sweep did not run, so nothing below can distinguish "spent
+            // output absent" from "never looked". Capturing an undo record on
+            // that basis would write a reorg record that cannot be trusted.
+            spdlog::error("[utxo_builder] capture_block_undo: the deferred lookup sweep "
+                "could not run at height {}; no undo record is captured", height);
+            return std::unexpected(drained.error());
+        }
+        auto& [resolved, missing] = *drained;
 
         for (auto const& key : deferred) {
             auto it = resolved.find(key);

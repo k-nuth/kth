@@ -48,7 +48,7 @@ void populate_base::populate_pooled(domain::chain::transaction const& tx, uint32
 // Unspent outputs are cached by the store. If the cache is large enough this
 // may never hit the file system. However on high RAM systems the file system
 // is faster than the cache due to reduced paging of the memory-mapped file.
-void populate_base::populate_prevout(size_t branch_height, output_point const& outpoint, bool require_confirmed, uint32_t median_time_past) const {
+code populate_base::populate_prevout(size_t branch_height, output_point const& outpoint, bool require_confirmed, uint32_t median_time_past) const {
     // The previous output will be cached on the input's outpoint.
     auto& prevout = outpoint.validation;
 
@@ -59,7 +59,7 @@ void populate_base::populate_prevout(size_t branch_height, output_point const& o
 
     // If the input is a coinbase there is no prevout to populate.
     if (outpoint.is_null()) {
-        return;
+        return error::success;
     }
 
     // branch_height is the validation height; get_utxo bounds the prevout to one
@@ -67,6 +67,17 @@ void populate_base::populate_prevout(size_t branch_height, output_point const& o
     // = confirmed-only (blocks) vs also-mempool (tx, handled in the miss branch).
     auto const utxo = chain_.get_utxo(outpoint, branch_height);
     if ( ! utxo) {
+        // Only key_not_found means the output is not there. Every other code is
+        // this node failing to read its own storage, and probing the mempool on
+        // that basis would answer a question nobody could answer: a miss would
+        // then look exactly like a prevout that does not exist, and the block
+        // would be rejected over a disk that did not respond.
+        if (utxo.error() != database::result_code::key_not_found) {
+            spdlog::error("[populate] the UTXO store failed while reading {}:{}; "
+                "refusing to treat an unreadable store as a missing prevout",
+                encode_hash(outpoint.hash()), outpoint.index());
+            return error::operation_failed;
+        }
         // Chained tx: the prevout may be an unconfirmed parent's output in the
         // mempool (tx-validation path only). Model the mempool coin as "confirms
         // next block" (BCHN MEMPOOL_HEIGHT): height = branch_height + 1 and the
@@ -81,7 +92,7 @@ void populate_base::populate_prevout(size_t branch_height, output_point const& o
                 prevout.from_mempool = true;
             }
         }
-        return;
+        return error::success;
     }
     prevout.cache = utxo->output;
     prevout.height = utxo->height;
@@ -99,6 +110,8 @@ void populate_base::populate_prevout(size_t branch_height, output_point const& o
         prevout.confirmed = true;
         prevout.cache = domain::chain::output{};
     }
+
+    return error::success;
 }
 
 } // namespace kth::blockchain

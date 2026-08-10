@@ -88,8 +88,8 @@ uint32_t kth_node_cppapi_build_timestamp() {
 // #endif
 }
 
-kth_bool_t kth_node_utxoz_compact_mode() {
-    return kth::database::utxoz_compact_mode() ? 1 : 0;
+kth_bool_t kth_node_utxoz_reference_mode() {
+    return kth::database::utxoz_reference_mode() ? 1 : 0;
 }
 
 kth_bool_t kth_node_embedded_bloom_available() {
