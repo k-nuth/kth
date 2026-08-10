@@ -168,12 +168,26 @@ inline header_persister real_persister(blockchain::block_chain& chain) {
 // whatever the sweep had not reached yet.
 inline bool utxo_present(blockchain::block_chain& chain, hash_digest const& txid, uint32_t index,
                   uint32_t at_height) {
-    if (chain.get_utxo(domain::chain::output_point{txid, index}, at_height)) {
+    auto const direct = chain.get_utxo(domain::chain::output_point{txid, index}, at_height);
+    if (direct) {
         return true;
     }
+    if (direct.error() != database::result_code::key_not_found) {
+        // Only "not in the active file, queued" is a reason to sweep. Any other
+        // code is the store failing, and sweeping on it would answer a question
+        // the store just refused.
+        throw std::runtime_error(
+            "utxo_present: the UTXO store failed; presence is unknown");
+    }
     auto const key = utxoz::make_outpoint(std::span<uint8_t const, 32>{txid.data(), 32}, index);
-    auto const [found, missing] = chain.utxo_process_pending_lookups();
-    return found.contains(key);
+    auto const drained = chain.utxo_process_pending_lookups();
+    if ( ! drained) {
+        // "Could not look" is not "not there". Returning false here would make
+        // every assertion built on this helper pass or fail for the wrong reason.
+        throw std::runtime_error(
+            "utxo_present: the deferred lookup sweep could not run; presence is unknown");
+    }
+    return drained->first.contains(key);
 }
 
 

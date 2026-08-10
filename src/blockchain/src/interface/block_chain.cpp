@@ -144,8 +144,8 @@ bool block_chain::start(uint32_t disk_magic) {
     }
     spdlog::info("[blockchain] UTXO-Z database opened at {}", utxoz_path.string());
 
-#ifdef KTH_UTXOZ_COMPACT_MODE
-    // Compact mode find resolution requires block_store and header_index.
+#ifdef KTH_UTXOZ_REFERENCE_MODE
+    // Reference mode find resolution requires block_store and header_index.
     // block_store_ is not yet initialized here — we wire it below after initialization.
 #endif
 
@@ -394,11 +394,11 @@ bool block_chain::start(uint32_t disk_magic) {
             scanned, restored, scan_ms);
     }
 
-#ifdef KTH_UTXOZ_COMPACT_MODE
-    // Wire block_store and header_index to UTXO-Z for compact mode find resolution
+#ifdef KTH_UTXOZ_REFERENCE_MODE
+    // Wire block_store and header_index to UTXO-Z for reference mode find resolution
     utxoz_db_.set_block_store(block_store_.get());
     utxoz_db_.set_header_index(&header_index_);
-    spdlog::info("[blockchain] UTXO-Z compact mode: block_store and header_index wired for find resolution");
+    spdlog::info("[blockchain] UTXO-Z reference mode: block_store and header_index wired for find resolution");
 #endif
 
     return true;
@@ -805,15 +805,22 @@ size_t block_chain::utxo_deferred_deletions_size() const {
     return utxoz_db_.deferred_deletions_size();
 }
 
-std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>> block_chain::utxo_process_pending_deletions() {
-    return utxoz_db_.process_pending_deletions();
+std::expected<std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>>, database::result_code>
+block_chain::utxo_process_pending_deletions() {
+    auto drained = utxoz_db_.process_pending_deletions();
+    if ( ! drained) {
+        return std::unexpected(drained.error());
+    }
+    return std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>>{
+        drained->first, std::move(drained->second)};
 }
 
 size_t block_chain::utxo_deferred_lookups_size() const {
     return utxoz_db_.deferred_lookups_size();
 }
 
-std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxo_entry>, std::vector<utxoz::raw_outpoint>>
+std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxo_entry>,
+                        std::vector<utxoz::raw_outpoint>>, database::result_code>
 block_chain::utxo_process_pending_lookups() {
     return utxoz_db_.process_pending_lookups();
 }
@@ -827,8 +834,8 @@ block_chain::find_utxo_raw(utxoz::raw_outpoint const& key, uint32_t height) cons
     return utxoz_db_.find_raw(key, height);
 }
 
-std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxoz_database::raw_stored>,
-          std::vector<utxoz::raw_outpoint>>
+std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxoz_database::raw_stored>,
+                        std::vector<utxoz::raw_outpoint>>, database::result_code>
 block_chain::utxo_process_pending_lookups_raw() {
     return utxoz_db_.process_pending_lookups_raw();
 }
@@ -1101,8 +1108,8 @@ block_chain::switch_result block_chain::switch_to_branch(
     co_return result;
 }
 
-void block_chain::utxo_compact() {
-    utxoz_db_.compact();
+bool block_chain::utxo_compact() {
+    return utxoz_db_.compact();
 }
 
 void block_chain::utxo_print_statistics() {

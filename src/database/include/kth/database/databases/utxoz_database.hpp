@@ -27,16 +27,25 @@
 #include <kth/domain/chain/point.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 
-#ifdef KTH_UTXOZ_COMPACT_MODE
+#ifdef KTH_UTXOZ_REFERENCE_MODE
 #include <kth/database/flat_file_pos.hpp>
 #include <kth/database/header_index.hpp>
 #endif
 
 namespace kth::database {
 
-#ifdef KTH_UTXOZ_COMPACT_MODE
+#ifdef KTH_UTXOZ_REFERENCE_MODE
 struct block_store;
 #endif
+
+/// What a successful sync() is worth on this platform.
+///
+/// New in UTXO-Z 0.9.0, and worth asking rather than assuming: under
+/// `contents_only` the file contents reach the disk and the directory entries
+/// naming them do not, so a checkpoint recorded on the strength of a successful
+/// sync is weaker than it looks. Constant for the build, and safe to branch on.
+[[nodiscard]]
+KD_API utxoz::durability_level utxoz_platform_durability();
 
 // Bloom filter type for UTXO skip-insert optimization.
 // K=7 hash functions, default subfilter/stride, uses std::hash<raw_outpoint>.
@@ -100,8 +109,8 @@ struct KD_API utxoz_database {
     [[nodiscard]]
     size_t size() const;
 
-#ifndef KTH_UTXOZ_COMPACT_MODE
-    /// Insert a UTXO (full mode only — compact mode uses apply_delta_raw)
+#ifndef KTH_UTXOZ_REFERENCE_MODE
+    /// Insert a UTXO (full mode only — reference mode uses apply_delta_raw)
     /// @param point Output point (txid + index)
     /// @param entry UTXO entry data
     /// @return result_code::success on success
@@ -128,7 +137,7 @@ struct KD_API utxoz_database {
     // =============================================================================
 
     /// A UTXO exactly as stored, without resolving it into a utxo_entry.
-    /// `value` is the storage-native payload — in compact mode the 8-byte
+    /// `value` is the storage-native payload — in reference mode the 8-byte
     /// {file_number, tx_offset} reference, in full mode the serialized entry — so
     /// it can be fed straight back into apply_delta_raw's insert range. `height` is
     /// the entry's ORIGINAL creation height, which restoring must preserve.
@@ -137,7 +146,7 @@ struct KD_API utxoz_database {
         uint32_t height;
     };
 
-    /// Read a UTXO's stored payload without resolving it (compact mode does not
+    /// Read a UTXO's stored payload without resolving it (reference mode does not
     /// touch the flat block files here; only resolve/find does).
     ///
     /// Two-phase contract, same as find(): a key_not_found result only means "not
@@ -153,17 +162,21 @@ struct KD_API utxoz_database {
     /// Resolve the deferred-lookup queue, returning payloads verbatim (no
     /// utxo_entry reconstruction — the cheap counterpart of
     /// process_pending_lookups()).
-    /// @return pair of (resolved entries keyed by outpoint, keys that truly don't exist)
+    /// @return on success, (resolved entries keyed by outpoint, keys PROVEN
+    ///         absent — see process_pending_lookups()). On failure, the error: a
+    ///         queue that could not be drained is NOT a queue that resolved to
+    ///         nothing, and callers read "not resolved" as "this UTXO is spent".
     [[nodiscard]]
-    std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, raw_stored>, std::vector<utxoz::raw_outpoint>>
+    std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, raw_stored>,
+                            std::vector<utxoz::raw_outpoint>>, result_code>
     process_pending_lookups_raw();
 
     // =============================================================================
     // Batch Operations (for UTXO set building)
     // =============================================================================
 
-#ifndef KTH_UTXOZ_COMPACT_MODE
-    /// Apply a batch of UTXO changes (full mode only — compact mode uses apply_delta_raw)
+#ifndef KTH_UTXOZ_REFERENCE_MODE
+    /// Apply a batch of UTXO changes (full mode only — reference mode uses apply_delta_raw)
     /// @param inserts UTXOs to add (point -> utxo_entry, entry contains height)
     /// @param deletes UTXOs to remove (point -> height for traceability)
     /// @return result_code::success on success
@@ -187,7 +200,16 @@ struct KD_API utxoz_database {
 
         for (auto const& [point, height] : deletes) {
             auto key = point_to_key(point);
-            std::ignore = db_->erase(key, height);
+            auto const erased = db_->erase(key, height);
+            if ( ! erased && erased.error() != utxoz::error_code::not_found) {
+                // A delete that failed leaves a spent output in the set. Ignoring
+                // it and returning success let a batch be recorded as applied
+                // while the UTXO it spent is still there. not_found is different:
+                // the key was not present, which a delta can legitimately hit.
+                spdlog::error("[utxoz_database] Failed to erase UTXO from block {} - {}:{}",
+                    height, encode_hash(point.hash()), point.index());
+                return result_code::other;
+            }
         }
 
         return result_code::success;
@@ -206,8 +228,17 @@ struct KD_API utxoz_database {
         }
 
         for (auto const& [key, raw] : inserts) {
-#ifdef KTH_UTXOZ_COMPACT_MODE
-            // Compact mode: deserialize 8-byte compact_utxo_ref into typed fields
+#ifdef KTH_UTXOZ_REFERENCE_MODE
+            // Reference mode: deserialize the 8-byte reference into typed fields.
+            // Checked first: these are two reads off a caller-supplied buffer,
+            // and a short payload would read past its end. A payload that is not
+            // exactly eight bytes is not a reference at all, whatever it is.
+            if (raw.data.size() != 8) {
+                spdlog::error("[utxoz_database] reference payload for {} is {} byte(s), "
+                    "not 8; refusing to read it as a reference",
+                    utxoz::outpoint_to_string(key), raw.data.size());
+                return result_code::other;
+            }
             uint32_t file_number, tx_offset;
             std::memcpy(&file_number, raw.data.data(), 4);
             std::memcpy(&tx_offset, raw.data.data() + 4, 4);
@@ -228,7 +259,12 @@ struct KD_API utxoz_database {
         }
 
         for (auto const& [key, height] : deletes) {
-            std::ignore = db_->erase(key, height);
+            auto const erased = db_->erase(key, height);
+            if ( ! erased && erased.error() != utxoz::error_code::not_found) {
+                spdlog::error("[utxoz_database] Failed to erase {} at block {}",
+                    utxoz::outpoint_to_string(key), height);
+                return result_code::other;
+            }
         }
 
         return result_code::success;
@@ -254,11 +290,11 @@ struct KD_API utxoz_database {
         utxo_bloom_.reset();
     }
 
-#ifdef KTH_UTXOZ_COMPACT_MODE
-    /// Set the block store for compact mode find resolution.
+#ifdef KTH_UTXOZ_REFERENCE_MODE
+    /// Set the block store for reference mode find resolution.
     void set_block_store(block_store const* store) { block_store_ = store; }
 
-    /// Set the header index for compact mode find resolution (MTP calculation).
+    /// Set the header index for reference mode find resolution (MTP calculation).
     void set_header_index(header_index const* idx) { header_index_ = idx; }
 #endif
 
@@ -276,9 +312,12 @@ struct KD_API utxoz_database {
     size_t deferred_deletions_size() const;
 
     /// Process pending deferred deletions
-    /// @return pair of (successful deletions, failed entries with key and height)
+    /// @return on success, (successful deletions, failed entries with key and
+    ///         height). On failure, the error: no deletion was applied, which is
+    ///         not the same as there having been none to apply.
     [[nodiscard]]
-    std::pair<uint32_t, std::vector<utxoz::deferred_deletion_entry>> process_pending_deletions();
+    std::expected<std::pair<uint32_t, std::vector<utxoz::deferred_deletion_entry>>, result_code>
+    process_pending_deletions();
 
     /// Get the number of pending deferred lookups
     [[nodiscard]]
@@ -288,13 +327,38 @@ struct KD_API utxoz_database {
     /// find() is a two-phase contract: its key_not_found only means "not in the
     /// active file, queued". This resolves the queue. Call once per batch, BEFORE
     /// process_pending_deletions().
-    /// @return pair of (resolved entries keyed by outpoint, keys that truly don't exist)
+    /// @return on success, (resolved entries keyed by outpoint, keys PROVEN
+    ///         absent). Since UTXO-Z 0.9.1 the second list means exactly that:
+    ///         a version file that could not be read makes the whole sweep fail
+    ///         with version_unreadable instead of dropping its keys in there. On
+    ///         failure, the error — absence is read upstream as "spent".
     [[nodiscard]]
-    std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, utxo_entry>, std::vector<utxoz::raw_outpoint>>
+    std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, utxo_entry>,
+                            std::vector<utxoz::raw_outpoint>>, result_code>
     process_pending_lookups();
 
-    /// Compact the database
-    void compact();
+    /// Compact the database.
+    ///
+    /// The name is the compaction OPERATION and did not change when UTXO-Z
+    /// renamed its storage mode; what changed is the contract. In 0.8.0
+    /// `compact_all()` returned void, so there was nothing to ignore. In 0.9.0
+    /// it returns `result<>`, and a caller that keeps calling it as a statement
+    /// still compiles while dropping every failure on the floor — which is why
+    /// this reports rather than returns void.
+    /// @return true if the database compacted, false if it is closed or the
+    ///         operation failed (the reason is logged).
+    bool compact();
+
+    /// Ask for the data written so far to reach stable storage.
+    ///
+    /// New in UTXO-Z 0.9.0. Closing does NOT sync: `close()` releases the
+    /// mapping and stops, so a caller that wants the guarantee has to ask for
+    /// it here first. What the answer is worth depends on the platform —
+    /// see platform_durability().
+    /// @return true if a barrier was reached; false if the database is closed,
+    ///         the platform has none, or the barrier failed (each is logged as
+    ///         the distinct thing it is).
+    bool sync();
 
     /// Print statistics to log
     void print_statistics();
@@ -322,24 +386,24 @@ private:
     [[nodiscard]]
     static std::expected<utxo_entry, result_code> bytes_to_entry(std::span<uint8_t const> bytes);
 
-    // Resolve a compact find result to a full utxo_entry.
-    // Used in compact mode find path.
-#ifdef KTH_UTXOZ_COMPACT_MODE
+    // Resolve a reference find result to a full utxo_entry.
+    // Used in reference mode find path.
+#ifdef KTH_UTXOZ_REFERENCE_MODE
     [[nodiscard]]
-    std::expected<utxo_entry, result_code> resolve_compact_ref(
-        utxoz::compact_find_result const& ref,
+    std::expected<utxo_entry, result_code> resolve_reference_ref(
+        utxoz::reference_find_result const& ref,
         uint32_t output_index) const;
 #endif
 
-#ifdef KTH_UTXOZ_COMPACT_MODE
-    std::optional<utxoz::compact_db> db_;
+#ifdef KTH_UTXOZ_REFERENCE_MODE
+    std::optional<utxoz::reference_db> db_;
 #else
     std::optional<utxoz::full_db> db_;
 #endif
     bool is_open_ = false;
     std::shared_ptr<utxo_bloom_filter const> utxo_bloom_;  // optional bloom filter for skip-insert optimization
 
-#ifdef KTH_UTXOZ_COMPACT_MODE
+#ifdef KTH_UTXOZ_REFERENCE_MODE
     block_store const* block_store_ = nullptr;
     header_index const* header_index_ = nullptr;
 #endif

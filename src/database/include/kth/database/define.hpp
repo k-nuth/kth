@@ -37,11 +37,11 @@ namespace kth::database {
 using array_index = uint32_t;
 using file_offset = uint64_t;
 
-/// True if this database library was compiled with UTXO-Z compact storage mode
-/// (KTH_UTXOZ_COMPACT_MODE). Reported for build diagnostics: the option is
+/// True if this database library was compiled with UTXO-Z reference storage mode
+/// (KTH_UTXOZ_REFERENCE_MODE). Reported for build diagnostics: the option is
 /// declared in more than one CMake list, so a build can end up with the database
 /// and blockchain modules disagreeing — this exposes each module's actual value.
-KD_API bool utxoz_compact_mode();
+KD_API bool utxoz_reference_mode();
 
 } // namespace kth::database
 

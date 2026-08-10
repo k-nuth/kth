@@ -544,7 +544,7 @@ void executor::print_version(std::string_view extra) {
 #endif
     // UTXO-Z storage mode (single source of truth).
     std::println("  UTXO-Z mode: {}",
-        kth::database::utxoz_compact_mode() ? "compact" : "full");
+        kth::database::utxoz_reference_mode() ? "reference" : "full");
     // Embedded UTXO bloom filter (single source of truth).
     if (kth::blockchain::embedded_bloom_available()) {
         std::println("  UTXO bloom: embedded (checkpoint height {})",

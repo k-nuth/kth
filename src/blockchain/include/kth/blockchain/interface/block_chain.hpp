@@ -169,8 +169,8 @@ struct KB_API block_chain {
     [[nodiscard]] code push_sync(transaction_const_ptr tx);
     [[nodiscard]] bool insert(block_const_ptr block, size_t height);
 
-#ifndef KTH_UTXOZ_COMPACT_MODE
-    // Apply a batch of UTXO changes (full mode only — compact mode uses apply_utxo_delta_raw)
+#ifndef KTH_UTXOZ_REFERENCE_MODE
+    // Apply a batch of UTXO changes (full mode only — reference mode uses apply_utxo_delta_raw)
     template <database::utxo_insert_range Inserts, database::utxo_delete_range Deletes>
     [[nodiscard]]
     database::result_code apply_utxo_delta(Inserts const& inserts, Deletes const& deletes) {
@@ -201,7 +201,8 @@ struct KB_API block_chain {
     size_t utxo_deferred_deletions_size() const;
 
     [[nodiscard]]
-    std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>> utxo_process_pending_deletions();
+    std::expected<std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>>, database::result_code>
+    utxo_process_pending_deletions();
 
     [[nodiscard]]
     size_t utxo_deferred_lookups_size() const;
@@ -210,7 +211,8 @@ struct KB_API block_chain {
     // returned key_not_found (queued, not authoritative) by sweeping older file
     // versions. Returns {resolved by outpoint, keys that truly don't exist}.
     [[nodiscard]]
-    std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxo_entry>, std::vector<utxoz::raw_outpoint>>
+    std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxo_entry>,
+                            std::vector<utxoz::raw_outpoint>>, database::result_code>
     utxo_process_pending_lookups();
 
     // =========================================================================
@@ -227,8 +229,8 @@ struct KB_API block_chain {
     // Raw counterpart of utxo_process_pending_lookups(): resolves the deferred
     // queue without reconstructing utxo_entry objects.
     [[nodiscard]]
-    std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxoz_database::raw_stored>,
-              std::vector<utxoz::raw_outpoint>>
+    std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxoz_database::raw_stored>,
+                            std::vector<utxoz::raw_outpoint>>, database::result_code>
     utxo_process_pending_lookups_raw();
 
 #if ! defined(KTH_DB_READONLY)
@@ -362,7 +364,11 @@ struct KB_API block_chain {
         return reorg_parked_.load(std::memory_order_seq_cst) >= registered;
     }
 
-    void utxo_compact();
+    /// Compact the UTXO store.
+    /// @return true if compaction ran and succeeded. A caller that ignores this
+    ///         is back to the 0.8.0 contract, where compaction could not fail.
+    [[nodiscard]]
+    bool utxo_compact();
     void utxo_print_statistics();
     void utxo_print_sizing_report();
     void utxo_print_height_range_stats();

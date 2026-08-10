@@ -87,12 +87,12 @@ probe(request, buffer_provider)
 buffer_provider(required_size) -> span<uint8_t>
 ```
 
-**Compact mode** — the entry is a small POD the store holds by value, so there is
+**Reference mode** — the entry is a small POD the store holds by value, so there is
 nothing to lend:
 
 ```
 probe(request)
-    -> found(compact_find_result)
+    -> found(reference_find_result)
      | absent
      | needs_resolution
      | error
@@ -323,14 +323,14 @@ node with the single one it needs.
   phase discipline and the one-handle-per-executor rule. Calling back in would
   break both.
 - **the sink copies into caller-owned state and returns. That is all it does.**
-  No I/O, no materializing a compact reference, no parsing, no blocking work.
+  No I/O, no materializing a reference, no parsing, no blocking work.
   The node materializes and parses **after the handle is released**, in both
-  modes — a compact reference costs a block-file read and a whole transaction
+  modes — a reference costs a block-file read and a whole transaction
   parse to materialize, and doing that inside the callback would hold a version
   mapping across I/O that has nothing to do with it. Full mode defers its parse
   for the same reason, minus the I/O: the lease stays short.
 
-  **Deferring also fixes something, and that is worth keeping.** Today a compact
+  **Deferring also fixes something, and that is worth keeping.** Today a reference
   materialization that fails — an unreadable block file, an unparseable
   transaction — puts the key in the failed set, where the caller reads it as a
   missing prevout and therefore as an invalid block: a local I/O fault dressed up
@@ -413,11 +413,11 @@ the original creation height
 **And nothing else.** An earlier draft asked for a coinbase flag; that was the
 node asking for something it already has, and it is withdrawn. In full mode the
 node writes the coinbase byte and the median time past *inside the value*, so the
-payload carries them and the store stays agnostic to the content. In compact mode
+payload carries them and the store stays agnostic to the content. In reference mode
 the node derives them while materializing the transaction it must parse anyway.
 Neither needs a format change nor a bit stolen from the height.
 
-**The payload's shape follows the storage mode, and that is fine.** In compact
+**The payload's shape follows the storage mode, and that is fine.** In reference
 mode it is the small POD reference the store holds — the store does not have the
 output's bytes and cannot materialize it. In full mode it is the stored value.
 One shape does not have to serve both.
@@ -951,7 +951,7 @@ Both interfaces will exist for a while. What the node needs during that:
 | authoritative absence | not expressible at all | from the resolution; from the probe only if the capability is taken up |
 | read failure | indistinguishable from absence | its own answer |
 | pending lookups | a queue inside the store | a list the caller owns |
-| results | may reference mapped memory | delivered to a sink, valid for that invocation; probe writes into caller storage in full mode, returns a POD in compact |
+| results | may reference mapped memory | delivered to a sink, valid for that invocation; probe writes into caller storage in full mode, returns a POD in reference |
 | probe concurrency | limited by a shared statistics vector | any number of threads |
 | erase | searches cached files inline | active map only |
 | resolution | one executor, by construction | **concurrent** — the central requirement |

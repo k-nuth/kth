@@ -55,13 +55,13 @@ if (NOT GLOBAL_BUILD)
   find_package(domain REQUIRED)
 endif()
 
-# UTXO-Z compact storage mode (8-byte refs instead of full output data).
-# The real default comes from Conan (conanfile.py: utxoz_compact=False); this
+# UTXO-Z reference storage mode (8-byte refs instead of full output data).
+# The real default comes from Conan (conanfile.py: utxoz_reference=False); this
 # option only applies to standalone builds. It MUST agree with the value used by
 # the other modules — the write path (utxo_builder) and the storage layer
 # (utxoz_database) branch on this same macro, so a mismatch makes them disagree
 # on the stored value layout.
-option(KTH_UTXOZ_COMPACT_MODE "Use UTXO-Z compact storage mode" OFF)
+option(KTH_UTXOZ_REFERENCE_MODE "Use UTXO-Z reference storage mode" OFF)
 
 find_package(lmdb 0.9.29 REQUIRED)
 find_package(utxoz REQUIRED)
@@ -193,9 +193,9 @@ target_link_libraries(${PROJECT_NAME} PUBLIC domain::domain)
 target_link_libraries(${PROJECT_NAME} PUBLIC lmdb::lmdb)
 target_link_libraries(${PROJECT_NAME} PUBLIC utxoz::utxoz)
 
-if(KTH_UTXOZ_COMPACT_MODE)
-    target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_UTXOZ_COMPACT_MODE)
-    message(STATUS "Knuth: UTXO-Z compact storage mode enabled (database)")
+if(KTH_UTXOZ_REFERENCE_MODE)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_UTXOZ_REFERENCE_MODE)
+    message(STATUS "Knuth: UTXO-Z reference storage mode enabled (database)")
 endif()
 
 if (MINGW)

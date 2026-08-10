@@ -19,7 +19,7 @@ utxoz::raw_outpoint make_key(uint8_t seed) {
     return key;
 }
 
-// A compact-mode payload: {file_number(4 LE), tx_offset(4 LE)}.
+// A reference-mode payload: {file_number(4 LE), tx_offset(4 LE)}.
 std::vector<uint8_t> make_compact_value(uint32_t file_number, uint32_t offset) {
     std::vector<uint8_t> value(8);
     std::memcpy(value.data(), &file_number, 4);

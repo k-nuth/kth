@@ -48,7 +48,7 @@ std::filesystem::path fresh_utxoz_dir() {
 //      reader deserialized the output in non-wire form.
 // Both are invisible until something reads UTXO-Z (IBD is merkle-only and never
 // calls get_utxo), so it stayed latent.
-#ifndef KTH_UTXOZ_COMPACT_MODE
+#ifndef KTH_UTXOZ_REFERENCE_MODE
 TEST_CASE("utxoz full-mode value round-trips write path -> find", "[utxoz][regression]") {
     utxoz_database db;
     REQUIRE(db.open(fresh_utxoz_dir(), true));
@@ -80,8 +80,10 @@ TEST_CASE("utxoz full-mode value round-trips write path -> find", "[utxoz][regre
     block.outputs.push_back(oe);
 
     // Write path (blockchain): serialize + insert.
-    auto delta = process_compact_block_utxos(
+    auto delta_result = process_compact_block_utxos(
         block, /*height*/ 100u, /*mtp*/ 111u, /*file*/ 0, /*data_pos*/ 0u, nullptr);
+    REQUIRE(delta_result.has_value());
+    auto& delta = *delta_result;
     REQUIRE(db.apply_delta_raw(delta.inserts, delta.deletes) == result_code::success);
 
     // Read path (database), the same one get_utxo uses. Look the prevout up at a
@@ -93,4 +95,4 @@ TEST_CASE("utxoz full-mode value round-trips write path -> find", "[utxoz][regre
     CHECK(found->median_time_past() == 111u);
     CHECK(found->coinbase() == false);
 }
-#endif // KTH_UTXOZ_COMPACT_MODE
+#endif // KTH_UTXOZ_REFERENCE_MODE

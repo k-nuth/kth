@@ -106,9 +106,12 @@ code populate_transaction::populate_inputs_sync(transaction_const_ptr tx, size_t
         auto const& input = inputs[input_index];
         auto const& prevout = input.previous_output();
         // Tx-validation path: allow unconfirmed (mempool) parents.
-        populate_prevout(chain_height, prevout, false, median_time_past);
-
-
+        if (auto const ec = populate_prevout(chain_height, prevout, false, median_time_past)) {
+            // A store that did not answer. Returning success here and letting the
+            // empty prevout cache speak would hand the validator a verdict about
+            // the transaction built from a failure of this node.
+            return ec;
+        }
     }
 
     return error::success;

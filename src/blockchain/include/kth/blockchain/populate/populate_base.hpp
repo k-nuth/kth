@@ -30,7 +30,17 @@ protected:
     void populate_pooled(domain::chain::transaction const& tx, uint32_t height) const;
     // median_time_past (tip's MTP) is used only for a prevout resolved from the
     // mempool. Block validation (require_confirmed) never consults the mempool.
-    void populate_prevout(size_t maximum_height, domain::chain::output_point const& outpoint, bool require_confirmed, uint32_t median_time_past) const;
+    /// Populate one input's prevout from the UTXO set, or from the mempool when
+    /// unconfirmed parents are allowed.
+    ///
+    /// @return error::success when the prevout was populated AND when it is
+    ///         genuinely absent — absence is a verdict about the transaction and
+    ///         is decided later, by the prevout cache being invalid. Any other
+    ///         result_code from the store is an operational failure of THIS node
+    ///         and is returned, because "could not read" must never reach that
+    ///         verdict wearing the same face as "does not exist".
+    [[nodiscard]]
+    code populate_prevout(size_t maximum_height, domain::chain::output_point const& outpoint, bool require_confirmed, uint32_t median_time_past) const;
 
     // Thread pool executor for parallel operations
     executor_type executor_;

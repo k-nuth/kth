@@ -75,13 +75,13 @@ endif()
 message(STATUS "Knuth: Header index capacity: ${KTH_HEADER_INDEX_CAPACITY}")
 add_definitions(-DKTH_HEADER_INDEX_CAPACITY=${KTH_HEADER_INDEX_CAPACITY})
 
-# UTXO-Z compact storage mode (8-byte refs instead of full output data).
-# The real default comes from Conan (conanfile.py: utxoz_compact=False); this
+# UTXO-Z reference storage mode (8-byte refs instead of full output data).
+# The real default comes from Conan (conanfile.py: utxoz_reference=False); this
 # option only applies to standalone builds. It MUST agree with the value used by
 # the other modules — the write path (utxo_builder) and the storage layer
 # (utxoz_database) branch on this same macro, so a mismatch makes them disagree
 # on the stored value layout.
-option(KTH_UTXOZ_COMPACT_MODE "Use UTXO-Z compact storage mode" OFF)
+option(KTH_UTXOZ_REFERENCE_MODE "Use UTXO-Z reference storage mode" OFF)
 
 # Embedded UTXO bloom filter — .incbin via assembly
 option(KTH_EMBED_UTXO_BLOOM "Embed UTXO bloom filter in the executable for faster IBD" ON)
@@ -256,9 +256,9 @@ if(KTH_HAS_EMBEDDED_BLOOM)
     message(STATUS "Knuth: Bloom filter will be embedded in the executable")
 endif()
 
-if(KTH_UTXOZ_COMPACT_MODE)
-    target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_UTXOZ_COMPACT_MODE)
-    message(STATUS "Knuth: UTXO-Z compact storage mode enabled")
+if(KTH_UTXOZ_REFERENCE_MODE)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_UTXOZ_REFERENCE_MODE)
+    message(STATUS "Knuth: UTXO-Z reference storage mode enabled")
 endif()
 
 if (ENABLE_POSITION_INDEPENDENT_CODE)
@@ -311,6 +311,7 @@ if (ENABLE_TEST)
         test/mempool_persistence_test.cpp
         test/block_template_test.cpp
         test/utxoz_roundtrip.cpp
+        test/utxoz_contract.cpp
         test/verify_script_context.cpp
         test/batch_sigchecks.cpp
         test/finalization.cpp
