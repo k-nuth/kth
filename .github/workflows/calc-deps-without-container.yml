@@ -15,9 +15,9 @@ on:
         required: true
         type: string
     secrets:
-      conan-user:
+      conan_remote_username:
         required: true
-      conan-password:
+      conan_remote_password:
         required: true
     outputs:
       matrix:
@@ -53,7 +53,7 @@ jobs:
       - name: 🔧 Setup kthbuild
         uses: ./ci_utils/.github/actions/setup-kthbuild
       - name: 🔑 Conan login
-        run: conan remote login -p ${{ secrets.conan-password }} ${{ inputs.conan-remote }} ${{ secrets.conan-user }}
+        run: conan remote login -p "${{ secrets.conan_remote_password }}" "${{ inputs.conan-remote }}" "${{ secrets.conan_remote_username }}"
 
       - name: 📋 Build order
         working-directory: .
