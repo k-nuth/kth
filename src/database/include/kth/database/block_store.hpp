@@ -11,12 +11,14 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include <kth/database/define.hpp>
 #include <kth/database/block_undo.hpp>
 #include <kth/database/flat_file_pos.hpp>
 #include <kth/database/flat_file_seq.hpp>
+#include <kth/database/native_file.hpp>
 #include <kth/domain.hpp>
 
 namespace kth::database {
@@ -217,9 +219,46 @@ struct KD_API block_store {
     // Maintenance
     // =========================================================================
 
-    /// Flush all pending writes to disk.
-    /// @param finalize True to truncate files to actual size.
-    void flush(bool finalize = false);
+    /// Why a durability barrier over the undo files failed, and where.
+    ///
+    /// The file number is carried rather than logged: a caller that has to
+    /// decide whether the node can continue needs to name what did not reach
+    /// the disk, and a log line is the one place that answer cannot be acted
+    /// on. This is a value, not the root of a hierarchy.
+    struct undo_flush_error {
+        result_code code;
+        int32_t file_number;    ///< -1 when the failure was the directory barrier.
+    };
+
+    /// Put the undo records in `file_numbers` on stable storage.
+    ///
+    /// Takes the set of files a transition touched, because a batch that
+    /// crosses a rotation writes undo into more than one rev*.dat and syncing
+    /// only the last one leaves the rest to the page cache. Duplicates are
+    /// expected — one number per block — and are normalized away here rather
+    /// than at every call site.
+    ///
+    /// Stops at the first failure. A partial barrier is not a weaker guarantee,
+    /// it is no guarantee: the caller cannot act on "some of it reached the
+    /// disk" any differently than on "none of it did".
+    ///
+    /// Then the directory, unconditionally. Whether a given rev file is new
+    /// could be tracked through the write path, to save one fsync per batch;
+    /// a barrier that is skipped because the tracking was wrong costs a
+    /// database, and the saving does not buy that risk. Where the platform has
+    /// no directory barrier this is reported through `directory_durability()`
+    /// and is not a failure.
+    ///
+    /// This replaces a `flush` that returned void, discarded both results it
+    /// got, covered only the last block file and had no caller anywhere in the
+    /// repo. The machinery underneath was correct and simply disconnected.
+    [[nodiscard]]
+    std::expected<void, undo_flush_error>
+    flush_undo(std::span<int32_t const> file_numbers);
+
+    /// What this platform can promise about publishing a new file's name.
+    [[nodiscard]]
+    directory_barrier directory_durability() const;
 
     /// Calculate total disk usage.
     /// @return Total bytes used by block and undo files.

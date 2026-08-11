@@ -735,8 +735,18 @@ They are easy to conflate and they answer different questions:
   It must either **carry the certification across atomically**, or **mark it dirty
   before mutating and restore it only on completion**. #600 covers batches;
   compaction and rotation need the equivalent rule unless they are crash-atomic.
-- **the in-flight batch marker** (#600) — records that a mutation of the set
-  began and did not complete delta, deletions and height recoverably.
+- **the transition record** (#600) — records that a mutation of the set began and
+  was never recorded as finished. One versioned, checksummed value in one
+  property, so publication is a single put and is atomic by construction; "clean"
+  is the absence of the key. It is the authority on **whether** the last
+  transition finished, never on **how** to repair one that did not.
+
+  KTH's durability guarantee here is the **weakest of four barriers** — the LMDB
+  environment, the contents of the rev files, the directory entries naming them,
+  and the UTXO store — and is reported as KTH's own rather than borrowed from
+  whichever store was asked last. A barrier the platform does not have is
+  reported as that; a barrier that was attempted and failed is fatal, on every
+  platform.
 
 Neither substitutes for the other. The first says the database was ever known
 sound; the second says whether the last thing done to it finished.
@@ -748,14 +758,38 @@ duplicate, after BIP34 as much as before. So **migration validates the invariant
 over the whole database**, not only over pre-BIP34 history. After that, transitions
 maintain it, provided a batch is never published half-applied.
 
-**That proviso is a requirement, and the node does not meet it today** (#600).
-The built-height marker is persisted before the batch's deferred deletions run,
-and a failed deletion is logged rather than acted on — so a batch can be recorded
-as connected while an entry that should have been removed is still there, with no
-rollback and nothing telling the next start. Until that is closed, **the claim
-that transitions preserve the invariant by construction is a target rather than a
-fact**, and this document should not be read as asserting it of the current
-node.
+**The node meets that proviso as of #600.** A transition — a connect batch or a
+reorganization — records durably that it is about to mutate the stores, before it
+does; its deferred deletions run before any height advances and a failure is
+fatal rather than logged; every store it touched is put on stable storage; and
+the record is cleared in the *same transaction* that publishes the heights. A
+start that finds the record refuses to open the database at all.
+
+What that buys is **not a transaction**. Nothing is rolled back and nothing is
+resumed: the delta mutates the maps in place, so an interrupted transition can be
+neither reversed nor replayed. What holds is narrower and is exactly what the
+claim above needs — **a half-applied set is always detectable and never silently
+continued**, so a published state is one that finished.
+
+Three answers follow from that, and they are worth stating apart because they are
+easy to run together:
+
+- **Safe retry.** Only *before* the first mutation. Steps that fail there — the
+  record could not be written, or could not be made durable — have changed
+  nothing, so the transition may be attempted again. The store's own barrier has
+  the same property: a failed `sync()` discharges nothing, so calling it again
+  attempts every barrier it owed. What retrying cannot do is make a disk that
+  refused to flush agree to.
+- **Recovery / rollback.** There is none, and none is claimed. Finding a record
+  means an explicit rebuild or reindex from an authoritative point. A
+  rollback-from-undo design was considered and parked: it would depend on the
+  store's inverse delta being idempotent, which was never verified, and nobody
+  should later assume it was.
+- **Indeterminate state is fail-closed.** "Could not read the record" is never
+  reported as "clean", and neither is "the record is there and this build cannot
+  decode it". Both refuse. So does a valid record. Only the *absence* of the key
+  reads as clean, and absence is unambiguous because the record is written whole
+  or not at all.
 
 **Only one kind of transient duplicate is legitimate**, and the distinction
 decides whether an operation carries on or stops.

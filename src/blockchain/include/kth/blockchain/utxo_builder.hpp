@@ -180,21 +180,22 @@ KB_API expect<utxo_raw_delta> process_compact_block_utxos(
 //   - `batch_delta` — the accumulated delta for blocks already processed in this
 //     batch but not yet applied; a parent created there is still only in memory.
 //   - UTXO-Z — everything older, read verbatim (no resolution) via find_raw,
-//     honouring its two-phase contract (a miss is queued, not absent).
+//     honouring its two-phase contract (a miss is unresolved, not absent).
 //
 // Fails rather than drop an entry, since undo data missing one would corrupt the
 // UTXO set on disconnect. The two ways to fail are kept apart, because they mean
 // different things:
 //   key_not_found — the delta says an output is spent that the set does not
-//                   have, once the deferred sweep has run;
+//                   have, once the batch was resolved against the older versions;
 //   anything else — the source could not be read at all.
 // Neither is interpreted here: this function does not know what the caller knows
 // about the block. One that knows it passed validation can conclude more from
 // the first than one that does not (see utxo_build_task).
 //
 // `source` is anything exposing the two raw lookups this needs:
-//     std::expected<utxoz_database::raw_stored, result_code> find_utxo_raw(key, height)
-//     pair<map<key, raw_stored>, vector<key>>              utxo_process_pending_lookups_raw()
+//     std::expected<utxoz_database::raw_stored, result_code>  find_utxo_raw(key, height)
+//     std::expected<utxoz_database::raw_resolution, result_code>
+//                                        utxo_resolve_raw(span<lookup_request const>)
 // block_chain satisfies it in production; a test can substitute a thin adapter
 // over a utxoz_database — or one that fails on purpose, which is how the two
 // branches above are covered.
@@ -210,8 +211,9 @@ std::expected<database::block_undo, database::result_code> capture_block_undo(
     undo.spent.reserve(block_delta.deletes.size());
 
     // Spent outputs still missing after the first pass, to be resolved by the
-    // deferred sweep (find_raw's key_not_found only means "queued").
-    std::vector<utxoz::raw_outpoint> deferred;
+    // batch resolution (find_raw's not_resolved only means "the active versions
+    // cannot answer").
+    std::vector<utxoz::lookup_request> deferred;
 
     for (auto const& [key, _] : block_delta.deletes) {
         // Parent created earlier in this same batch: it lives only in the
@@ -227,48 +229,52 @@ std::expected<database::block_undo, database::result_code> capture_block_undo(
             continue;
         }
 
-        // Only key_not_found means "queued for the deferred sweep". Anything else
-        // is a read that failed, and queueing it would turn a storage error into a
-        // missing output — the caller would be told the set does not have what the
-        // block spends, when what happened is that it could not be asked.
-        if (stored.error() != database::result_code::key_not_found) {
+        // Only not_resolved means "the active versions cannot say". Anything
+        // else is a read that failed, and carrying it into the batch would turn
+        // a storage error into a missing output — the caller would be told the
+        // set does not have what the block spends, when what happened is that it
+        // could not be asked.
+        if (stored.error() != database::result_code::not_resolved) {
             spdlog::error("[utxo_builder] capture_block_undo: reading a spent output failed at "
                 "height {}", height);
             return std::unexpected(stored.error());
         }
 
-        deferred.push_back(key);
+        deferred.emplace_back(key, height);
     }
 
     if ( ! deferred.empty()) {
-        auto drained = source.utxo_process_pending_lookups_raw();
-        if ( ! drained) {
-            // The sweep did not run, so nothing below can distinguish "spent
-            // output absent" from "never looked". Capturing an undo record on
-            // that basis would write a reorg record that cannot be trusted.
-            spdlog::error("[utxo_builder] capture_block_undo: the deferred lookup sweep "
-                "could not run at height {}; no undo record is captured", height);
-            return std::unexpected(drained.error());
+        // This capture's OWN batch. resolve() borrows the span and keeps
+        // nothing, so no other component can consume these and none of theirs
+        // can arrive here.
+        auto resolved = source.utxo_resolve_raw(deferred);
+        if ( ! resolved) {
+            // The resolution did not run, so nothing below can distinguish
+            // "spent output absent" from "never looked". Capturing an undo
+            // record on that basis would write a reorg record that cannot be
+            // trusted.
+            spdlog::error("[utxo_builder] capture_block_undo: resolving {} spent output(s) "
+                "failed at height {}; no undo record is captured", deferred.size(), height);
+            return std::unexpected(resolved.error());
         }
-        auto& [resolved, missing] = *drained;
 
-        for (auto const& key : deferred) {
-            auto it = resolved.find(key);
-            if (it == resolved.end()) {
+        // Matched BY KEY: the lists are deduplicated over distinct keys and are
+        // not parallel to the request span.
+        for (auto const& request : deferred) {
+            auto it = resolved->found.find(request.key);
+            if (it == resolved->found.end()) {
                 // The delta says this output is spent and the set does not have
                 // it. What that means depends on what the caller already knows
                 // about the block — this function does not know, and does not
                 // guess; it reports the fact and leaves the reading to whoever
                 // called (see the UTXO build, which knows the block validated).
-                //
-                // key_not_found means exactly this and nothing else now: a read
-                // that failed took the branch above.
-                spdlog::error("[utxo_builder] capture_block_undo: spent output not found at height {} "
-                    "({} of {} deferred lookups unresolved) — the delta and the UTXO set disagree "
-                    "about it", height, missing.size(), deferred.size());
+                spdlog::error("[utxo_builder] capture_block_undo: {} is spent by this block and "
+                    "is proven absent from the UTXO set at height {}",
+                    utxoz::outpoint_to_string(request.key), height);
                 return std::unexpected(database::result_code::key_not_found);
             }
-            undo.spent.push_back({key, it->second.value, it->second.height});
+            undo.spent.push_back(database::spent_output{
+                request.key, it->second.value, it->second.height});
         }
     }
 

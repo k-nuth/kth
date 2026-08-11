@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <array>
 #include <vector>
 
 #include <asio/co_spawn.hpp>
@@ -92,9 +93,14 @@ inline domain::message::header::list headers_of(std::vector<domain::chain::block
 // Runs the connect tasks and returns when they are done, whatever the outcome:
 // a batch that fails validation ends the UTXO build, and this returns with
 // nothing connected. Callers that require progress use connect_bodies below.
+//
+// `on_fatal` is what the build reports a fatal condition through. Most callers
+// want the default below, which fails the test; a caller that is deliberately
+// staging one of those conditions passes its own and inspects what came out.
 inline void run_connect_tasks(test::chain_fixture& fixture,
                               std::vector<domain::chain::block> const& blocks,
-                              uint32_t start_height) {
+                              uint32_t start_height,
+                              std::function<void(std::string const&)> on_fatal) {
 
     auto& chain = fixture.chain();
     auto const end_height = start_height + uint32_t(blocks.size()) - 1;
@@ -120,12 +126,7 @@ inline void run_connect_tasks(test::chain_fixture& fixture,
                 auto const built = chain.get_utxo_built_height();
                 return built && *built >= end_height;
             },
-            // Nothing here can reach it: the two conditions that report through
-            // this are a failed height-marker write and a failed mempool update,
-            // neither of which a test can provoke against a working database.
-            [](std::string const& reason) {
-                FAIL("the UTXO build reported a fatal condition: " << reason);
-            }),
+            std::move(on_fatal)),
         ::asio::detached);
 
     REQUIRE(input.try_send(std::error_code{}, downloaded_chunk{
@@ -141,6 +142,34 @@ inline void run_connect_tasks(test::chain_fixture& fixture,
 
     // Drain what the storage task reported, so nothing is left owning blocks.
     while (output.try_receive([](std::error_code, chunk_validated) {})) {}
+}
+
+// The ordinary form: a fatal condition means the test has found something, so
+// it stops here rather than at a height assertion further down that would point
+// at the wrong thing.
+inline void run_connect_tasks(test::chain_fixture& fixture,
+                              std::vector<domain::chain::block> const& blocks,
+                              uint32_t start_height) {
+    run_connect_tasks(fixture, blocks, start_height,
+        [](std::string const& reason) {
+            FAIL("the UTXO build reported a fatal condition: " << reason);
+        });
+}
+
+// For a test that STAGES a fatal condition: the build must report it, and it
+// must report that one. A build that stopped for a different reason would leave
+// the state under test unreached, and every assertion after it would be about
+// something else.
+inline void run_connect_tasks_expect_fatal(test::chain_fixture& fixture,
+                                           std::vector<domain::chain::block> const& blocks,
+                                           uint32_t start_height,
+                                           std::string const& expected) {
+    std::vector<std::string> fatals;
+    run_connect_tasks(fixture, blocks, start_height,
+        [&fatals](std::string const& reason) { fatals.push_back(reason); });
+
+    REQUIRE(fatals.size() == 1);
+    REQUIRE(fatals.front() == expected);
 }
 
 // The same, for a run that is expected to connect: fails here if the tasks
@@ -163,31 +192,36 @@ inline header_persister real_persister(blockchain::block_chain& chain) {
     };
 }
 
-// UTXO-Z answers a miss with "queued", not "absent": the lookup is deferred to a
-// sweep. Concluding a UTXO is gone without draining that queue would report
-// whatever the sweep had not reached yet.
+// UTXO-Z answers a probe with "not resolved", not "absent": the active versions
+// cannot say, and the older ones were not consulted. Concluding a UTXO is gone
+// without resolving the request would report a question that was never finished
+// asking, so the miss is carried into a batch this helper owns and resolved.
 inline bool utxo_present(blockchain::block_chain& chain, hash_digest const& txid, uint32_t index,
                   uint32_t at_height) {
     auto const direct = chain.get_utxo(domain::chain::output_point{txid, index}, at_height);
     if (direct) {
         return true;
     }
-    if (direct.error() != database::result_code::key_not_found) {
-        // Only "not in the active file, queued" is a reason to sweep. Any other
+    if (direct.error() != database::result_code::not_resolved) {
+        // Only "the active versions cannot answer" is a reason to resolve. Any other
         // code is the store failing, and sweeping on it would answer a question
         // the store just refused.
         throw std::runtime_error(
             "utxo_present: the UTXO store failed; presence is unknown");
     }
     auto const key = utxoz::make_outpoint(std::span<uint8_t const, 32>{txid.data(), 32}, index);
-    auto const drained = chain.utxo_process_pending_lookups();
-    if ( ! drained) {
+
+    // This helper's OWN batch of one. The store keeps nothing, so nothing here
+    // can consume or be consumed by anything else running.
+    std::array<utxoz::lookup_request, 1> const own{utxoz::lookup_request{key, at_height}};
+    auto const resolved = chain.utxo_resolve(own);
+    if ( ! resolved) {
         // "Could not look" is not "not there". Returning false here would make
         // every assertion built on this helper pass or fail for the wrong reason.
         throw std::runtime_error(
-            "utxo_present: the deferred lookup sweep could not run; presence is unknown");
+            "utxo_present: the resolution could not run; presence is unknown");
     }
-    return drained->first.contains(key);
+    return resolved->found.contains(key);
 }
 
 

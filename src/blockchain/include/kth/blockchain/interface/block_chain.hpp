@@ -14,6 +14,7 @@
 #include <expected>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -162,6 +163,15 @@ struct KB_API block_chain {
     code replace_headers_from(domain::chain::header::list const& headers, size_t start_height);
 #endif // ! defined(KTH_DB_READONLY)
 
+    /// What the persisted transition record says about the last transition
+    /// (#600). Read before anything is mutated: `start()` asks it and refuses
+    /// to come up on a database whose last transition did not finish.
+    ///
+    /// Outside the read-only guard, and deliberately: a build that only reads
+    /// still must not serve answers from a UTXO set that may be half-applied.
+    [[nodiscard]]
+    database::transition_check read_transition_record() const;
+
 #if ! defined(KTH_DB_READONLY)
     [[nodiscard]]
     ::asio::awaitable<code> push(transaction_const_ptr tx);
@@ -171,19 +181,26 @@ struct KB_API block_chain {
 
 #ifndef KTH_UTXOZ_REFERENCE_MODE
     // Apply a batch of UTXO changes (full mode only — reference mode uses apply_utxo_delta_raw)
-    template <database::utxo_insert_range Inserts, database::utxo_delete_range Deletes>
+    template <database::utxo_insert_range Inserts>
     [[nodiscard]]
-    database::result_code apply_utxo_delta(Inserts const& inserts, Deletes const& deletes) {
-        return utxoz_db_.apply_delta(inserts, deletes);
+    database::result_code apply_utxo_inserts(Inserts const& inserts) {
+        return utxoz_db_.apply_inserts(inserts);
     }
 #endif
 
     // Apply a batch of raw UTXO changes (zero-copy path, no domain objects)
-    template <typename Inserts, typename Deletes>
+    template <typename Inserts>
     [[nodiscard]]
-    database::result_code apply_utxo_delta_raw(Inserts const& inserts, Deletes const& deletes) {
-        return utxoz_db_.apply_delta_raw(inserts, deletes);
+    database::result_code apply_utxo_inserts_raw(Inserts const& inserts) {
+        return utxoz_db_.apply_inserts_raw(inserts);
     }
+
+    /// Apply a batch of deletions this caller owns. See
+    /// utxoz_database::apply_deletes: three-way partition over DISTINCT keys,
+    /// matched back BY KEY, and only `unresolved` may be resent.
+    [[nodiscard]]
+    utxoz::deletion_progress utxo_apply_deletes(
+        std::span<utxoz::deferred_deletion_entry const> requests);
 
     // Set last block height in LMDB (for fast IBD storage progress tracking)
     [[nodiscard]]
@@ -196,51 +213,110 @@ struct KB_API block_chain {
     [[nodiscard]]
     database::result_code set_utxo_built_height(uint32_t height);
 
-    // UTXO-Z maintenance operations
-    [[nodiscard]]
-    size_t utxo_deferred_deletions_size() const;
-
-    [[nodiscard]]
-    std::expected<std::pair<size_t, std::vector<utxoz::deferred_deletion_entry>>, database::result_code>
-    utxo_process_pending_deletions();
-
-    [[nodiscard]]
-    size_t utxo_deferred_lookups_size() const;
-
-    // Second phase of the find() contract: resolves outpoints whose find()
-    // returned key_not_found (queued, not authoritative) by sweeping older file
-    // versions. Returns {resolved by outpoint, keys that truly don't exist}.
-    [[nodiscard]]
-    std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxo_entry>,
-                            std::vector<utxoz::raw_outpoint>>, database::result_code>
-    utxo_process_pending_lookups();
-
     // =========================================================================
-    // Reorg undo
+    // The transition record and the barriers under it (#600)
     // =========================================================================
+    //
+    // Applying a batch's UTXO delta mutates the maps in place. There is no
+    // staging, no transaction and nothing to roll back, so the sequence cannot
+    // be made reversible — it is made DETECTABLE instead. A record written
+    // before the first mutation and cleared only once every store has been put
+    // on stable storage says, at the next start, whether the last transition
+    // finished. It never says how to repair one that did not.
+    //
+    // The order is the mechanism, and every step of it is a barrier that has to
+    // be checked. Stated once, here, because it is the same on both paths — the
+    // connect batch in node/sync/block_tasks.cpp and the reorganization in
+    // switch_to_branch below:
+    //
+    //   1  begin_transition()                     the gate closes
+    //   2  begin_transition_record(...)           one LMDB transaction
+    //   3  env_sync()                             or the record is decorative
+    //   4  apply the UTXO delta                   the first mutation
+    //   5  write the undo records
+    //   6  drain the deferred deletions           a failure is fatal, not logged
+    //   7  flush_undo(every rev file touched)     not just the last
+    //   8  the undo directory                     inside flush_undo
+    //   9  utxo_sync()
+    //  10  publish_transition(...)                ONE transaction: heights AND clear
+    //  11  env_sync()
+    //  12  mempool, publish_chain_view(), end_transition()
+    //
+    // Steps 10 and 11 are what close the window: there is no instant where the
+    // height says "arrived" and the record says "clean" separately.
 
-    // Read a UTXO's stored payload verbatim (no resolution). Same two-phase
-    // contract as find(): key_not_found means "queued", not "absent" — resolve
-    // with utxo_process_pending_lookups_raw().
+    /// Step 2. Records, durably once step 3 has run, that a transition is about
+    /// to mutate the stores.
+    [[nodiscard]]
+    database::result_code begin_transition_record(database::utxo_transition_record const& record);
+
+    /// A step INSIDE a transition: move the heights in one transaction and
+    /// leave the record where it is. A reorganization rolls both heights back
+    /// one block at a time, and each of those steps has to be all-or-nothing on
+    /// its own without being mistaken for the end of the transition.
+    [[nodiscard]]
+    database::result_code set_heights(database::transition_heights const& heights);
+
+    /// Step 10. The heights the transition reached and the clearing of its
+    /// record, in one transaction.
+    [[nodiscard]]
+    database::result_code publish_transition(database::transition_heights const& heights);
+
+    /// Steps 3 and 11. The LMDB environment is opened MDB_NOSYNC, so a commit
+    /// that returned success has not necessarily reached the disk.
+    [[nodiscard]]
+    database::result_code env_sync();
+
+    /// Steps 7 and 8. The contents of every rev file the transition wrote, then
+    /// the directory entries naming them.
+    [[nodiscard]]
+    std::expected<void, database::block_store::undo_flush_error>
+    flush_undo(std::span<int32_t const> file_numbers);
+
+    /// Step 9. UTXO-Z's own barrier, which `close()` does not run.
+    [[nodiscard]]
+    database::barrier_outcome utxo_sync();
+
+    /// What this node may claim about a published transition: the weakest of
+    /// the four barriers above, not any one store's answer.
+    [[nodiscard]]
+    database::durability_level durability() const;
+    /// Resolve a batch of typed lookups this caller owns, against the older
+    /// versions. Probe with get_utxo()/find first: this does not read the active
+    /// versions, so an unprobed key that lives there comes back absent.
+    ///
+    /// `absent` is proven absence; an error means the resolution could not cover
+    /// everything and returns no lists at all, and must never be read as absence.
+    /// Results are matched back BY KEY.
+    [[nodiscard]]
+    std::expected<database::utxoz_database::entry_resolution, database::result_code>
+    utxo_resolve(std::span<utxoz::lookup_request const> requests) const;
+
+    /// Probe the ACTIVE versions only. `not_resolved` means the older versions
+    /// were not consulted — it is NOT absence, and nothing was queued: keeping
+    /// the request and handing it to utxo_resolve_raw() is the caller's job.
     [[nodiscard]]
     std::expected<database::utxoz_database::raw_stored, database::result_code>
     find_utxo_raw(utxoz::raw_outpoint const& key, uint32_t height) const;
 
-    // Raw counterpart of utxo_process_pending_lookups(): resolves the deferred
-    // queue without reconstructing utxo_entry objects.
+    /// Raw counterpart of utxo_resolve(): same ownership and same contract.
     [[nodiscard]]
-    std::expected<std::pair<boost::unordered_flat_map<utxoz::raw_outpoint, database::utxoz_database::raw_stored>,
-                            std::vector<utxoz::raw_outpoint>>, database::result_code>
-    utxo_process_pending_lookups_raw();
+    std::expected<database::utxoz_database::raw_resolution, database::result_code>
+    utxo_resolve_raw(std::span<utxoz::lookup_request const> requests) const;
+
 
 #if ! defined(KTH_DB_READONLY)
     // Persist a block's undo data and record its position on the header index.
     // The undo record shares the block's file number, so the block must already
     // be stored (have_data) when this is called.
+    //
+    // Returns WHICH rev file the record landed in, because the caller owes a
+    // durability barrier over every file the transition touched and a batch that
+    // crosses a rotation writes into more than one. Empty on failure.
     [[nodiscard]]
-    bool store_block_undo(database::header_index::index_t idx,
-                          database::block_undo const& undo,
-                          hash_digest const& prev_hash);
+    std::optional<int32_t> store_block_undo(database::header_index::index_t idx,
+                                            database::block_undo const& undo,
+                                            hash_digest const& prev_hash);
 #endif
 
     // Read back a block's undo data, if any was recorded.
@@ -259,7 +335,20 @@ struct KB_API block_chain {
     // must be the current validated tip: blocks are disconnected one at a time,
     // newest first.
     [[nodiscard]]
-    database::disconnect_result disconnect_block(uint32_t height);
+    /// @param absence_tolerated Per key, whether a proven absence may be
+    ///        tolerated. Derived PER BLOCK from that block's own inverse delta —
+    ///        the outputs it created and spent itself — and folded in
+    ///        conservatively: the value ANDs across blocks, so one appearance
+    ///        that requires the key to exist and be deleted dominates every
+    ///        appearance that would excuse it. The batch is applied once at the
+    ///        end and UTXO-Z answers once per distinct key, which is exactly why
+    ///        a union of "tolerable" would be wrong.
+    /// @param pending_deletes Accumulates this block's inverse-delta deletions.
+    ///        The rewind owns the batch and applies it once at the end: the
+    ///        descent through the version files is paid per batch, not per key.
+    database::disconnect_result disconnect_block(uint32_t height,
+        boost::unordered_flat_map<utxoz::raw_outpoint, bool>& absence_tolerated,
+        std::vector<utxoz::deferred_deletion_entry>& pending_deletes);
 
     // Rewind the UTXO state to `fork_height` so the chain can move onto
     // `branch_head`.
@@ -296,6 +385,15 @@ struct KB_API block_chain {
         // that republished on those would move the generation and drop the
         // template cache for a switch that did nothing.
         bool mutated{false};
+        // Whether the node may carry on. A switch can be rejected without
+        // anything being wrong — a null head, a fork that is not above the tip —
+        // and those are ordinary. This is for the other kind: the transition
+        // record could not be written, or could not be made durable, or the
+        // switch could not be recorded as finished. Carried rather than inferred
+        // from `mutated`, because the first two happen before anything is
+        // touched and still leave a database this process must not keep writing
+        // to (#600).
+        bool fatal{false};
     };
 
     [[nodiscard]]
@@ -374,9 +472,13 @@ struct KB_API block_chain {
     void utxo_print_height_range_stats();
 
     // UTXO-Z iteration (for building bloom filter after IBD)
+    /// @return false if the walk did not cover the whole set (see
+    ///         utxoz_database::for_each_utxo). Nodiscard because the callback
+    ///         sees no difference between a complete walk and one that stopped.
     template <typename F>
-    void utxo_for_each(F&& callback) const {
-        utxoz_db_.for_each_utxo(std::forward<F>(callback));
+    [[nodiscard]]
+    bool utxo_for_each(F&& callback) const {
+        return utxoz_db_.for_each_utxo(std::forward<F>(callback));
     }
 
     // UTXO-Z size (number of UTXOs in the set)
@@ -736,6 +838,83 @@ private:
 
     // <datadir>/mempool.dat — sibling of the blocks/ and utxoz/ directories.
     std::filesystem::path mempool_dat_path() const;
+
+    /// Whether the last chain transition finished, and therefore whether this
+    /// database may be opened for operation at all (#600). Logs the refusal —
+    /// the transition's type, id and height range, and an explicit instruction
+    /// to rebuild — and does not claim recovery is automatic, because it is not.
+    [[nodiscard]]
+    bool check_last_transition() const;
+
+#if ! defined(KTH_DB_READONLY)
+    /// Step 6 for the reorganization path: apply the deletions the rewind owes,
+    /// and refuse the switch unless every one of them is accounted for.
+    ///
+    /// A rewind's inverse delta erases the outputs the abandoned blocks CREATED.
+    /// UTXO-Z 0.10.0 has no single-key erase(): removal is a batch the CALLER
+    /// owns, applied once by apply_deletes(), which descends through the version
+    /// files searching each for fewer keys than the last. Publishing without
+    /// applying it declares the rewind finished while outputs of abandoned
+    /// blocks are still in the set — spendable inputs to validation and the
+    /// mempool.
+    ///
+    /// @par The three lists, and why they are three
+    /// `erased` is applied, and is a fact even when `error` is set, because the
+    /// walk writes as it goes. `absent` is PROVEN not stored, established only
+    /// after every version that could hold the key was read; it never stands for
+    /// an operational fault. `unresolved` is what is still owed, and the only
+    /// category that may be resent — resending an `erased` key asks about
+    /// something now genuinely gone, gets `absent` back, and turns this switch's
+    /// own success into a refusal.
+    ///
+    /// @par Why entitlement is not asked of the store
+    /// Whether a proven absence is legitimate is a question about the delta this
+    /// rewind applied, not about the database: an output created AND spent
+    /// inside one abandoned block never entered the set, so failing to erase it
+    /// is correct. That is decided from `absence_tolerated`, and nothing in this
+    /// path reads the store to decide it — which is also why it cannot race with
+    /// a concurrent reader, however that reader is scheduled.
+    ///
+    /// @par Retries
+    /// Bounded, and within THIS operation and this process. An interrupted
+    /// transition is refused at the next start and rebuilt, never resumed — see
+    /// check_last_transition, and #648 for the journal that would change that.
+    ///
+    /// @param absence_tolerated Per key, whether a proven absence may be
+    ///        tolerated. Built PER BLOCK and folded conservatively, so one
+    ///        appearance that requires the key to exist dominates every
+    ///        appearance that would excuse it.
+    ///
+    /// @return false if a proven absence is unaccounted for, if the walk
+    ///         reported a fault, or if the obligation outlives its attempts. The
+    ///         record then stays and the caller must treat the switch as fatal.
+    [[nodiscard]]
+    bool sweep_reorg_deletions(uint64_t operation_id,
+        boost::unordered_flat_map<utxoz::raw_outpoint, bool> const& absence_tolerated,
+        std::span<utxoz::deferred_deletion_entry const> pending_deletes);
+
+    /// Steps 6 to 11 of the durable order, for the reorganization path: the
+    /// deferred deletions, the barriers, then the coherent heights and the
+    /// clearing of the transition record in one transaction, then that
+    /// transaction onto the disk.
+    ///
+    /// Step 6 comes first and is not optional (see sweep_reorg_deletions). A
+    /// barrier over a set that still owes deletions puts exactly that set on the
+    /// disk, so ordering the drain after the sync would make the outputs of
+    /// abandoned blocks durable rather than remove them.
+    ///
+    /// `connected_height` is where the switch actually left the chain, which is
+    /// the fork when it completed and the height it stopped at when it did not.
+    /// Either way it is a state the stores agree on — which is the only thing
+    /// clearing the record asserts.
+    ///
+    /// @return false if any barrier or the publication failed. The record then
+    ///         stays in place and the caller must treat the switch as fatal.
+    [[nodiscard]]
+    bool publish_reorg_transition(uint32_t connected_height, uint64_t operation_id,
+        boost::unordered_flat_map<utxoz::raw_outpoint, bool> const& absence_tolerated,
+        std::span<utxoz::deferred_deletion_entry const> pending_deletes);
+#endif
 
     // Thread safe members
     std::atomic<bool> stopped_;

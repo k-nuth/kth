@@ -89,7 +89,12 @@ namespace {
     // Set wherever the chain and its persisted description end up disagreeing.
     // Every such case is the same condition: the header table describes a branch
     // the node is no longer on, and nothing repairs it while it runs.
-    bool fatal = false;
+    //
+    // Seeded from the switch, which reports its own (#600): a transition record
+    // that could not be written, could not be made durable, or could not be
+    // cleared is a database this process must stop writing to — including in the
+    // cases where nothing was mutated, which `mutated` alone cannot express.
+    bool fatal = outcome.fatal;
 
     if (outcome.ok) {
         organizer.adopt_tip(branch_head);

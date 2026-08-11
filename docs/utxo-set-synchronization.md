@@ -114,12 +114,17 @@ drains down to a single block, so each new block is processed as it lands.
 
 ### Known defects
 
-**[TODAY] Mempool admission cannot resolve a prevout that needs history** (issue
-#584). The active-map probe answers every miss the same way, whether or not the
-prevout exists in an older version — it cannot establish absence, only that the
-active map does not hold the key. Admission reads that answer as absence and
-never runs the second phase, so the transaction is rejected with *previous output
-not found*.
+**[FIXED, UTXO-Z 0.10.0] Mempool admission could not resolve a prevout that
+needed history** (issue #584). The active-map probe answered every miss the same
+way, whether or not the prevout existed in an older version, and admission read
+that as absence.
+
+0.10.0 made the two answers different things: `find()` returns `not_resolved`,
+which is a fact about which files were consulted, and only `resolve(batch)`
+establishes absence. `populate_prevout` now resolves its miss as a batch of one it
+owns, so a prevout in an older version is found instead of rejected, and a
+storage fault reaches the caller as `operation_failed` rather than as a missing
+input.
 
 How much that costs in production is **not established** and belongs in the
 measurements below: it depends on what fraction of spends resolve straight out of
@@ -127,10 +132,14 @@ the active map. What is measured is that the deferred path is not exotic — the
 node's own test harness has to drain the queue to find a UTXO that exists, and
 ten of ten admissions of matured-coinbase spends failed there.
 
-**[TODAY] Two callers can return leaving the pending queue dirty.** Both undo
-capture and batch validation have error returns **inside the loop** that walks the
-inputs, and by the time they are reached, earlier iterations have already queued
-their keys. They return without sweeping.
+**[FIXED, UTXO-Z 0.10.0] Two callers could return leaving the pending queue
+dirty.** Both undo capture and batch validation have error returns inside the loop
+that walks the inputs, and earlier iterations had already queued their keys.
+
+There is no queue to leave dirty any more. `find()` records nothing, and the
+pending set belongs to the caller — a `std::vector<utxoz::lookup_request>` that
+dies with the function whatever exit it takes. That is also what stopped one
+component from consuming another's lookups (#646).
 
 **[TODAY] History is resolved twice per batch.** Step 3 resolves prevouts in
 order to validate; step 6 resolves **the same spent outputs** to capture undo.

@@ -23,6 +23,16 @@ enum class property_code {
     last_header_height = 1,
     last_block_height  = 2,
     utxo_built_height  = 3,  // Last block height for which UTXO set was built
+
+    // The one property that does not hold a height. It carries the versioned,
+    // checksummed record that says a chain transition started and has not been
+    // recorded as finished — see utxo_transition_record.hpp and issue #600.
+    //
+    // One property rather than a field per attribute: publication is then a
+    // single put, atomic by construction, and "clean" is the absence of the key
+    // rather than a value that each field has to be checked against separately.
+    // Zero is not overloaded to mean anything.
+    utxo_transition    = 4,
 };
 
 enum class db_mode_type {

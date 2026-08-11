@@ -31,6 +31,12 @@
 
 #include <test_helpers.hpp>
 
+#include <limits>
+#include <memory>
+
+#include <spdlog/sinks/ringbuffer_sink.h>
+#include <spdlog/spdlog.h>
+
 #include <expected>
 
 #include <kth/blockchain/interface/block_chain.hpp>
@@ -130,71 +136,259 @@ TEST_CASE("utxoz contract: compact_all reports failure instead of returning void
         "wrapper and every caller");
 }
 
-TEST_CASE("utxoz contract: erase distinguishes failure from absence", "[utxoz][contract]") {
-    // `erase()` went from size_t to result<size_t>. The tempting migration is
-    // `*erased > 0 ? success : key_not_found`, which quietly turns "the erase
-    // failed" into "the key was not there" — and the entry may well still exist
-    // and still be spendable.
-    using erase_result = decltype(std::declval<utxoz_db&>().erase(
-        std::declval<utxoz::raw_outpoint const&>(), uint32_t{}));
-    static_assert(std::is_same_v<erase_result, utxoz::result<size_t>>,
-        "erase() no longer returns result<size_t>; revisit the failure-vs-absence split");
-    static_assert( ! std::is_integral_v<erase_result>,
-        "erase() returns a bare count again: a failure would read as a missing key");
+
+// A requires-expression over a CONCRETE type is a hard error, not a substitution
+// failure, so each absence below is asked through a template parameter.
+template <typename D>
+concept has_single_key_erase = requires(D& db, utxoz::raw_outpoint const& k, uint32_t h) {
+    db.erase(k, h);
+};
+template <typename D>
+concept has_lookup_queue = requires(D& db) { db.process_pending_lookups(); };
+template <typename D>
+concept has_deletion_queue = requires(D& db) { db.process_pending_deletions(); };
+template <typename D>
+concept has_lookup_counter = requires(D const& db) { db.deferred_lookups_size(); };
+template <typename D>
+concept has_deletion_counter = requires(D const& db) { db.deferred_deletions_size(); };
+
+// Swap the default logger for one that keeps what was written, so a test can ask
+// what a probe actually logged rather than what it was supposed to.
+struct captured_log {
+    std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> sink;
+    std::shared_ptr<spdlog::logger> installed;
+    std::shared_ptr<spdlog::logger> previous;
+
+    captured_log()
+        : sink(std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(256))
+        , installed(std::make_shared<spdlog::logger>("captured", sink))
+        , previous(spdlog::default_logger()) {
+        installed->set_level(spdlog::level::trace);
+        spdlog::set_default_logger(installed);
+    }
+
+    ~captured_log() { spdlog::set_default_logger(previous); }
+
+    captured_log(captured_log const&) = delete;
+    captured_log& operator=(captured_log const&) = delete;
+
+    [[nodiscard]] size_t errors() const {
+        size_t n = 0;
+        for (auto const& entry : sink->last_raw()) {
+            if (entry.level >= spdlog::level::err) {
+                ++n;
+            }
+        }
+        return n;
+    }
+};
+
+TEST_CASE("utxoz behaviour: an ordinary probe miss is not logged as a failure",
+          "[utxoz][contract]") {
+    // The BEHAVIOURAL half, at the real boundary. That not_resolved has a name
+    // says nothing about whether a probe treats it as a fault, and the two
+    // conditions drifted apart exactly there: the probes still tested
+    // `not_found`, which 0.10.0 never returns, so every ordinary miss took the
+    // error path and printed one line per prevout.
+    scoped_temp_dir const dir{"kth_utxoz_quiet_" + std::to_string(current_process_id())};
+    utxoz_database db;
+    REQUIRE(db.open(dir.path, true));
+    scoped_open_db const guard{db};
+
+    auto const key = utxoz::make_outpoint(std::span<uint8_t const, 32>{
+        std::vector<uint8_t>(32, 0x5A).data(), 32}, 0);
+
+    {
+        captured_log log;
+
+        // Both probes, because both were wired to the same stale condition.
+        auto const raw = db.find_raw(key, 0);
+        auto const typed = db.find(domain::chain::point{
+            hash_digest(std::array<uint8_t, 32>{}), 0}, 0);
+
+        // Each really did miss, so the assertion below is about a path that ran.
+        REQUIRE_FALSE(raw.has_value());
+        CHECK(raw.error() == result_code::not_resolved);
+        REQUIRE_FALSE(typed.has_value());
+        CHECK(typed.error() == result_code::not_resolved);
+
+        // And neither said a word at error level. Restoring `!= not_found`, or
+        // making not_resolved take the log path again, turns this red.
+        CHECK(log.errors() == 0);
+    }
 }
 
-TEST_CASE("utxoz contract: draining a queue can fail as a whole", "[utxoz][contract]") {
-    // Both drains are result<>-wrapped since 0.9.0. An empty result has to keep
-    // meaning "nothing was pending"; a drain that could not run must not borrow
-    // that meaning, because every caller upstream reads absence as "spent".
+TEST_CASE("utxoz contract: only the ordinary miss is exempt from the log",
+          "[utxoz][contract]") {
+    // The predicate both probes are wired to. not_resolved is the one outcome
+    // that is not a fault; everything else keeps the error path, so a genuine
+    // storage failure still reaches an operator.
+    CHECK(database::is_ordinary_probe_miss(utxoz::error_code::not_resolved));
+
+    for (auto const code : {utxoz::error_code::not_found,
+                            utxoz::error_code::version_unreadable,
+                            utxoz::error_code::catalog_unreadable,
+                            utxoz::error_code::closed,
+                            utxoz::error_code::recovery_required}) {
+        CHECK_FALSE(database::is_ordinary_probe_miss(code));
+    }
+}
+
+TEST_CASE("utxoz contract: the ordinary miss has a name", "[utxoz][contract]") {
+    // 0.10.0 answers every ordinary miss with not_resolved. A switch that does
+    // not carry the code prints "unrecognised", which is what an operator reads
+    // while trying to diagnose something else entirely.
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::not_resolved))
+          == "not_resolved");
+
+    // NEGATION, without reaching for an out-of-range enum: that switch has no
+    // `default`, so casting an unlisted value into it is undefined behaviour and
+    // the test would be asserting against a jump past the table. Instead, every
+    // code this migration actually reasons about must carry its OWN name — a
+    // case silently lost shows up here as "unrecognised".
+    for (auto const code : {utxoz::error_code::not_resolved,
+                            utxoz::error_code::version_unreadable,
+                            utxoz::error_code::catalog_unreadable,
+                            utxoz::error_code::closed,
+                            utxoz::error_code::not_found}) {
+        CHECK(std::string(database::utxoz_error_name(code)) != "unrecognised");
+    }
+
+    // And a real fault keeps its own name rather than collapsing into the miss.
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::version_unreadable))
+          == "version_unreadable");
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::catalog_unreadable))
+          == "catalog_unreadable");
+}
+
+TEST_CASE("utxoz contract: a closed store still partitions over distinct keys",
+          "[utxoz][contract]") {
+    // apply_deletes() promises a partition over DISTINCT keys, deduplicated
+    // keeping the FIRST occurrence — height included. The refusal path never
+    // reaches the library, so the wrapper owes that contract itself; copying the
+    // span verbatim would hand back more entries than there are keys.
+    utxoz_database db;   // deliberately not opened
+
+    auto const key = utxoz::make_outpoint(
+        std::span<uint8_t const, 32>{std::array<uint8_t, 32>{}.data(), 32}, 7);
+
+    std::array<utxoz::deferred_deletion_entry, 3> const repeated{
+        utxoz::deferred_deletion_entry{key, 101},
+        utxoz::deferred_deletion_entry{key, 202},
+        utxoz::deferred_deletion_entry{key, 303}};
+
+    auto const progress = db.apply_deletes(repeated);
+
+    CHECK(progress.erased.empty());
+    CHECK(progress.absent.empty());
+    REQUIRE(progress.error.has_value());
+
+    // One entry per distinct key, not one per request.
+    REQUIRE(progress.unresolved.size() == 1);
+    CHECK(progress.unresolved.front().key == key);
+
+    // And the FIRST occurrence's height, not the last and not the largest.
+    CHECK(progress.unresolved.front().height == 101u);
+}
+
+TEST_CASE("utxoz contract: a height that does not fit is refused, not truncated",
+          "[utxoz][contract]") {
+    // The request records carry uint32_t and several KTH signatures carry
+    // heights as size_t. Apple Clang rejects the implicit narrowing outright;
+    // every other compiler takes it silently, and a truncated height is not a
+    // smaller height — it names a DIFFERENT block, so the resolution would be
+    // bounded at the wrong point and answer confidently about the wrong one.
+
+    // POSITIVE: every height a chain will ever reach fits, and comes back
+    // unchanged. Without this half, a helper that refused everything would pass
+    // the negation below and break all resolution.
+    CHECK(database::to_store_height(0u) == 0u);
+    CHECK(database::to_store_height(1u) == 1u);
+    CHECK(database::to_store_height(900000u) == 900000u);
+    CHECK(database::to_store_height(
+        size_t{std::numeric_limits<uint32_t>::max()}) == std::numeric_limits<uint32_t>::max());
+
+    // NEGATIVE: one past the boundary, and far past it. Not truncated — refused.
+    if constexpr (sizeof(size_t) > sizeof(uint32_t)) {
+        CHECK_FALSE(database::to_store_height(
+            size_t{std::numeric_limits<uint32_t>::max()} + 1).has_value());
+        CHECK_FALSE(database::to_store_height(
+            std::numeric_limits<size_t>::max()).has_value());
+
+        // And the truncation it refuses to perform would have been silent: the
+        // wrapped value is a perfectly plausible height.
+        auto const wrapped = static_cast<uint32_t>(
+            size_t{std::numeric_limits<uint32_t>::max()} + 1);
+        CHECK(wrapped == 0u);
+    }
+}
+
+TEST_CASE("utxoz contract: there is no single-key erase", "[utxoz][contract]") {
+    // 0.10.0 removed erase() outright. It could not survive the removal of the
+    // internal queue: reaching only the active versions and deferring the rest
+    // is what it did, and without somewhere to defer to, a lone key would have
+    // to pay the whole descent through the version files by itself.
     //
-    // The library's own types are the easy half. What matters is that KNUTH
-    // does not unwrap them back into a sentinel on the way up, so each layer is
-    // pinned below — utxoz_database, block_chain, and the shape the builder
-    // template requires of whatever it is given.
-    using lib_lookups = decltype(std::declval<utxoz_db&>().process_pending_lookups());
-    using lib_deletions = decltype(std::declval<utxoz_db&>().process_pending_deletions());
-    static_assert(is_expected_v<lib_lookups>,
-        "UTXO-Z's process_pending_lookups() no longer reports failure");
-    static_assert(is_expected_v<lib_deletions>,
-        "UTXO-Z's process_pending_deletions() no longer reports failure");
+    // Deletion is a batch the caller owns, and the batch is what makes the
+    // descent affordable — each further file is searched for fewer keys.
+    static_assert( ! has_single_key_erase<utxoz_db>,
+        "utxoz::erase() is back; the deletion path assumes apply_deletes() owns the whole batch");
 }
 
-TEST_CASE("utxoz contract: knuth does not unwrap the drains into sentinels", "[utxoz][contract]") {
-    // THE BLOCKER THIS FILE MISSED THE FIRST TIME. Every one of these compiled
-    // happily while the wrapper logged the error and returned an empty pair,
-    // which is precisely "could not drain" reported as "there was nothing".
+TEST_CASE("utxoz contract: a probe never answers absence", "[utxoz][contract]") {
+    // find() reads the ACTIVE versions and nothing else, so it cannot establish
+    // that a key does not exist. 0.10.0 says so in the code rather than in a
+    // comment: the miss is not_resolved, a code that did not exist before and
+    // that is deliberately not spelled not_found.
+    static_assert(requires { utxoz::error_code::not_resolved; },
+        "utxoz::error_code::not_resolved is gone; a probe miss would read as absence again");
 
-    // Layer 1: the database wrapper.
-    using db_lookups = decltype(std::declval<utxoz_database&>().process_pending_lookups());
-    using db_lookups_raw = decltype(std::declval<utxoz_database&>().process_pending_lookups_raw());
-    using db_deletions = decltype(std::declval<utxoz_database&>().process_pending_deletions());
-    static_assert(is_expected_v<db_lookups>,
-        "utxoz_database::process_pending_lookups() returns a bare pair: a failed drain "
-        "is indistinguishable from an empty queue");
-    static_assert(is_expected_v<db_lookups_raw>,
-        "utxoz_database::process_pending_lookups_raw() returns a bare pair");
-    static_assert(is_expected_v<db_deletions>,
-        "utxoz_database::process_pending_deletions() returns a bare pair");
-
-    // Layer 2: the chain interface every consumer actually calls.
-    using chain_lookups = decltype(std::declval<blockchain::block_chain&>().utxo_process_pending_lookups());
-    using chain_lookups_raw = decltype(std::declval<blockchain::block_chain&>().utxo_process_pending_lookups_raw());
-    using chain_deletions = decltype(std::declval<blockchain::block_chain&>().utxo_process_pending_deletions());
-    static_assert(is_expected_v<chain_lookups>,
-        "block_chain::utxo_process_pending_lookups() drops the failure on the way up");
-    static_assert(is_expected_v<chain_lookups_raw>,
-        "block_chain::utxo_process_pending_lookups_raw() drops the failure on the way up");
-    static_assert(is_expected_v<chain_deletions>,
-        "block_chain::utxo_process_pending_deletions() drops the failure on the way up");
-
-    // ...and the payload each one carries is mode-dependent, so a check written
-    // for full mode cannot pass vacuously in reference mode or the reverse.
-    using resolved_map = boost::unordered_flat_map<utxoz::raw_outpoint, database::utxo_entry>;
-    static_assert(std::is_same_v<typename chain_lookups::value_type,
-                                 std::pair<resolved_map, std::vector<utxoz::raw_outpoint>>>,
-        "the resolved-lookup payload changed shape");
+    // And KTH keeps them apart on the way up. Mapping not_resolved onto
+    // key_not_found is exactly the conflation #602 exists to prevent.
+    static_assert(static_cast<int>(database::result_code::not_resolved)
+               != static_cast<int>(database::result_code::key_not_found),
+        "result_code::not_resolved collapsed into key_not_found");
 }
+
+TEST_CASE("utxoz contract: resolution is a caller-owned batch", "[utxoz][contract]") {
+    // The queue is gone from the library, which is what stops one component
+    // consuming another's lookups (#116, #646). resolve() takes a span and
+    // returns; nothing of the request survives the call.
+    using lib_resolve = decltype(std::declval<utxoz_db const&>().resolve(
+        std::declval<std::span<utxoz::lookup_request const>>()));
+    static_assert(is_expected_v<lib_resolve>,
+        "UTXO-Z's resolve() no longer reports failure as an error");
+
+    static_assert( ! has_lookup_queue<utxoz_db>,
+        "the global lookup queue is back; a caller could consume another's batch");
+    static_assert( ! has_deletion_queue<utxoz_db>,
+        "the global deletion queue is back");
+    static_assert( ! has_lookup_counter<utxoz_db>,
+        "a global pending counter is back; nothing may infer work from it");
+    static_assert( ! has_deletion_counter<utxoz_db>,
+        "a global pending counter is back");
+}
+
+TEST_CASE("utxoz contract: deletion reports progress, not an error", "[utxoz][contract]") {
+    // apply_deletes() is deliberately NOT result<>-wrapped. It writes as it
+    // walks, so a fault partway leaves earlier deletions applied, and hiding
+    // that behind an error would leave the caller unable to tell which keys are
+    // gone — and resending one of them turns its own success into a refusal.
+    using lib_deletes = decltype(std::declval<utxoz_db&>().apply_deletes(
+        std::declval<std::span<utxoz::deferred_deletion_entry const>>()));
+    static_assert(std::is_same_v<lib_deletes, utxoz::deletion_progress>,
+        "apply_deletes() no longer returns progress; partial application would be hidden");
+    static_assert( ! is_expected_v<lib_deletes>,
+        "apply_deletes() became result<>-wrapped: `erased` would be lost on the failure path");
+
+    // The three lists are three separate facts, and the caller acts differently
+    // on each. Collapsing absent into unresolved (or the reverse) is the
+    // ambiguity 0.9.1 had and this replaced.
+    static_assert(requires(utxoz::deletion_progress p) {
+        p.erased; p.absent; p.unresolved; p.error;
+    }, "deletion_progress lost one of its four fields");
+}
+
 
 TEST_CASE("utxoz contract: this target and the database agree on the mode", "[utxoz][contract]") {
     // The first version of this test asked the macro what the macro said. The
@@ -240,8 +434,10 @@ TEST_CASE("utxoz contract: sync is a separate act from close", "[utxoz][contract
     // kind of thing that should be noticed deliberately.
     static_assert(std::is_same_v<decltype(std::declval<utxoz_db&>().sync()), utxoz::result<>>,
         "sync() must report what it achieved; a void sync promises what it cannot");
-    static_assert(std::is_same_v<decltype(std::declval<utxoz_database&>().sync()), bool>,
-        "the wrapper must report whether a barrier was actually reached");
+    static_assert(std::is_same_v<decltype(std::declval<utxoz_database&>().sync()),
+                                 kth::database::barrier_outcome>,
+        "the wrapper must keep 'this platform has none' apart from 'one failed': a bool "
+        "answers both with false, and only one of the two may be carried on past (#600)");
 }
 
 TEST_CASE("utxoz contract: platform durability is askable, not assumed", "[utxoz][contract]") {
@@ -343,7 +539,7 @@ TEST_CASE("utxoz behaviour: find() failing for a reason other than absence is no
     // NEGATION: closed, so the read never happened.
     auto const closed = db.find_raw(key, 0);
     REQUIRE_FALSE(closed.has_value());
-    REQUIRE(closed.error() != result_code::key_not_found);
+    REQUIRE(closed.error() != result_code::not_resolved);
 
     // POSITIVE: opened and empty, the same key is genuinely absent, and THAT is
     // key_not_found. Without this half, an implementation that returned `other`
@@ -351,9 +547,19 @@ TEST_CASE("utxoz behaviour: find() failing for a reason other than absence is no
     scoped_temp_dir const dir{"kth_utxoz_find_" + std::to_string(current_process_id())};
     REQUIRE(db.open(dir.path, true));
     scoped_open_db const guard{db};
-    auto const absent = db.find_raw(key, 0);
-    REQUIRE_FALSE(absent.has_value());
-    REQUIRE(absent.error() == result_code::key_not_found);
+    // An empty database cannot answer from its active versions either, so the
+    // probe says not_resolved — NOT absence. Absence is established by a
+    // resolution, and only by one.
+    auto const probed = db.find_raw(key, 0);
+    REQUIRE_FALSE(probed.has_value());
+    REQUIRE(probed.error() == result_code::not_resolved);
+
+    std::array<utxoz::lookup_request, 1> const own{utxoz::lookup_request{key, 0}};
+    auto const resolved = db.resolve_raw(own);
+    REQUIRE(resolved);
+    CHECK(resolved->found.empty());
+    REQUIRE(resolved->absent.size() == 1);
+    CHECK(resolved->absent.front() == key);
 }
 
 TEST_CASE("utxoz behaviour: an entry that cannot be materialised is not absent",
@@ -386,7 +592,7 @@ TEST_CASE("utxoz behaviour: an entry that cannot be materialised is not absent",
     std::vector<std::pair<utxoz::raw_outpoint, raw_in>> inserts{{key, {junk, 100u}}};
 #endif
     std::vector<std::pair<utxoz::raw_outpoint, uint32_t>> const no_deletes;
-    REQUIRE(db.apply_delta_raw(inserts, no_deletes) == result_code::success);
+    REQUIRE(db.apply_inserts_raw(inserts) == result_code::success);
 
     // NEGATION. This MUST fail in both modes, for the reason each mode has:
     // in reference the stored reference points at a block file no store can
@@ -430,13 +636,13 @@ TEST_CASE("utxoz behaviour: a reference payload that is not eight bytes is refus
     // reads rather than producing a stored entry.
     std::vector<std::pair<utxoz::raw_outpoint, raw_in>> short_payload{
         {key, {std::vector<uint8_t>(7, 0), 10u}}};
-    REQUIRE(db.apply_delta_raw(short_payload, no_deletes) != result_code::success);
+    REQUIRE(db.apply_inserts_raw(short_payload) != result_code::success);
     REQUIRE_FALSE(db.find_raw(key, 0).has_value());
 
     // ...and nine bytes, which would otherwise be accepted by silent truncation.
     std::vector<std::pair<utxoz::raw_outpoint, raw_in>> long_payload{
         {key, {std::vector<uint8_t>(9, 0), 10u}}};
-    REQUIRE(db.apply_delta_raw(long_payload, no_deletes) != result_code::success);
+    REQUIRE(db.apply_inserts_raw(long_payload) != result_code::success);
 #endif
 
     // POSITIVE, in both modes: a well-formed payload is accepted and stored, so
@@ -444,7 +650,7 @@ TEST_CASE("utxoz behaviour: a reference payload that is not eight bytes is refus
     // unconditionally.
     std::vector<std::pair<utxoz::raw_outpoint, raw_in>> good{
         {key, {std::vector<uint8_t>(8, 0), 10u}}};
-    REQUIRE(db.apply_delta_raw(good, no_deletes) == result_code::success);
+    REQUIRE(db.apply_inserts_raw(good) == result_code::success);
     REQUIRE(db.find_raw(key, 0).has_value());
 }
 
@@ -473,7 +679,7 @@ TEST_CASE("utxoz behaviour: a delete on a closed store is not success",
     std::vector<std::pair<utxoz::raw_outpoint, uint32_t>> deletes{{key, 10u}};
 
     // NEGATION: closed store, the erase cannot have happened.
-    REQUIRE(db.apply_delta_raw(no_inserts, deletes) != result_code::success);
+    REQUIRE(db.apply_inserts_raw(no_inserts) != result_code::success);
 
     // POSITIVE: open store, and deleting a key that was never there is NOT a
     // storage failure — not_found must stay tolerated, or every delta carrying a
@@ -481,5 +687,5 @@ TEST_CASE("utxoz behaviour: a delete on a closed store is not success",
     scoped_temp_dir const dir{"kth_utxoz_del_" + std::to_string(current_process_id())};
     REQUIRE(db.open(dir.path, true));
     scoped_open_db const guard{db};
-    REQUIRE(db.apply_delta_raw(no_inserts, deletes) == result_code::success);
+    REQUIRE(db.apply_inserts_raw(no_inserts) == result_code::success);
 }

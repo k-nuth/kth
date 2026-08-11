@@ -8,8 +8,6 @@
 #include <cstdio>
 #include <cstring>
 #include <optional>
-#include <print>
-#include <thread>
 
 #include <boost/unordered/unordered_flat_set.hpp>
 
@@ -96,7 +94,6 @@ block_store::block_store(std::filesystem::path blocks_dir, magic_t magic)
 }
 
 bool block_store::initialize() {
-    std::println("[block_store::initialize] thread_id: {}", std::this_thread::get_id());
 
     // Create directory if it doesn't exist
     std::error_code ec;
@@ -164,7 +161,6 @@ flat_file_pos block_store::save_block(domain::chain::block const& block, uint32_
 }
 
 flat_file_pos block_store::save_block_raw(data_chunk const& raw_block, uint32_t height, uint64_t timestamp) {
-    // std::println("[block_store::save_block_raw] thread_id: {}", std::this_thread::get_id());
 
     auto const block_size = static_cast<uint32_t>(raw_block.size());
     auto pos = find_block_pos(block_size + block_header_size, height, timestamp);
@@ -195,7 +191,6 @@ flat_file_pos block_store::write_block_at(data_chunk const& raw_block, flat_file
 
 flat_file_pos block_store::write_undo(block_undo const& undo, int32_t file_num,
                                      hash_digest const& block_hash, hash_digest const& prev_hash) {
-    std::println("[block_store::write_undo] thread_id: {}", std::this_thread::get_id());
 
     auto const undo_size = static_cast<uint32_t>(undo.serialized_size());
     auto pos = find_undo_pos(file_num, undo_size + undo_header_size + undo_checksum_size);
@@ -837,18 +832,50 @@ block_store::read_undo(flat_file_pos const& pos, hash_digest const& block_hash,
 // Maintenance
 // =============================================================================
 
-void block_store::flush(bool finalize) {
-    std::println("[block_store::flush] thread_id: {}", std::this_thread::get_id());
+std::expected<void, block_store::undo_flush_error>
+block_store::flush_undo(std::span<int32_t const> file_numbers) {
+    // One number per block arrives here, so a thousand-block batch inside one
+    // file asks for a thousand barriers on it. Normalized once, not at every
+    // call site — and sorted, so the order the files are synced in does not
+    // depend on the order the blocks happened to arrive.
+    std::vector<int32_t> files(file_numbers.begin(), file_numbers.end());
+    std::sort(files.begin(), files.end());
+    files.erase(std::unique(files.begin(), files.end()), files.end());
 
-    flat_file_pos block_pos{last_block_file_, file_info_[last_block_file_].size};
-    flat_file_pos undo_pos{last_block_file_, file_info_[last_block_file_].undo_size};
+    for (auto const file : files) {
+        if (file < 0 || size_t(file) >= file_info_.size()) {
+            return std::unexpected(undo_flush_error{result_code::other, file});
+        }
 
-    block_files_.flush(block_pos, finalize);
-    undo_files_.flush(undo_pos, finalize);
+        flat_file_pos const pos{file, file_info_[size_t(file)].undo_size};
+        if ( ! undo_files_.flush(pos, /*finalize*/ false)) {
+            // Stop here. The caller cannot act on "some of it reached the disk"
+            // any differently than on "none of it did", and continuing would
+            // only replace the first failure's file number with the last one's.
+            return std::unexpected(undo_flush_error{result_code::other, file});
+        }
+    }
+
+    // The names, not the contents. A rev file whose every byte is on the platter
+    // still does not exist if the directory entry that reaches it was never
+    // written.
+    auto const [barrier, ok] = sync_directory(blocks_dir_);
+    if (barrier == directory_barrier::available && ! ok) {
+        return std::unexpected(undo_flush_error{result_code::other, -1});
+    }
+
+    return {};
+}
+
+directory_barrier block_store::directory_durability() const {
+#ifdef _WIN32
+    return directory_barrier::unsupported;
+#else
+    return directory_barrier::available;
+#endif
 }
 
 uint64_t block_store::calculate_disk_usage() const {
-    std::println("[block_store::calculate_disk_usage] thread_id: {}", std::this_thread::get_id());
 
     uint64_t total = 0;
     for (auto const& info : file_info_) {
@@ -858,12 +885,10 @@ uint64_t block_store::calculate_disk_usage() const {
 }
 
 size_t block_store::file_count() const {
-    std::println("[block_store::file_count] thread_id: {}", std::this_thread::get_id());
     return file_info_.size();
 }
 
 block_file_info const& block_store::file_info(size_t index) const {
-    std::println("[block_store::file_info] thread_id: {}", std::this_thread::get_id());
     return file_info_.at(index);
 }
 
