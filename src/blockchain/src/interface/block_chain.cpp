@@ -115,6 +115,7 @@ block_chain::block_chain(blockchain::settings const& chain_settings,
     , priority_pool_("priority", std::min(size_t(8), thread_ceiling(chain_settings.cores)))
     , transaction_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings)
     , block_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings, network, relay_transactions)
+    , utxoz_db_(utxo_gate_)
 {
     spdlog::debug("[blockchain] block_chain constructor completed successfully");
     spdlog::info("[blockchain] Mempool backend: {}", mempool_backend_name);
@@ -204,9 +205,17 @@ bool block_chain::start(uint32_t disk_magic) {
     // Open UTXO-Z database (in a subdirectory of the main database)
     utxoz::set_log_prefix("UTXO-Z");
     auto utxoz_path = database_.internal_db_dir.parent_path() / "utxoz";
-    if ( ! utxoz_db_.open(utxoz_path)) {
-        spdlog::error("[blockchain] Failed to open UTXO-Z database at {}", utxoz_path.string());
-        return false;
+    // Scoped to the open itself. Held for the rest of start() it would deadlock
+    // against the reference-mode wiring below, which takes a window of its own —
+    // and only in reference mode, so a full-mode build would never show it and
+    // the node would hang at startup on the other one.
+    {
+        auto const lifecycle = utxo_gate_.write();
+        if ( ! utxoz_db_.with_write(lifecycle, [&](auto& db) { return db.open(utxoz_path); })) {
+            spdlog::error("[blockchain] Failed to open UTXO-Z database at {}",
+                utxoz_path.string());
+            return false;
+        }
     }
     spdlog::info("[blockchain] UTXO-Z database opened at {}", utxoz_path.string());
 
@@ -462,8 +471,17 @@ bool block_chain::start(uint32_t disk_magic) {
 
 #ifdef KTH_UTXOZ_REFERENCE_MODE
     // Wire block_store and header_index to UTXO-Z for reference mode find resolution
-    utxoz_db_.set_block_store(block_store_.get());
-    utxoz_db_.set_header_index(&header_index_);
+    // Scoped to the wiring it authorises, and for the same reason the open above
+    // is: a window that outlived its callback once already met another one and
+    // hung the node at startup, in reference mode only. Nothing follows this here
+    // today — but the previous version of that sentence was also true.
+    {
+        auto const configure = utxo_gate_.write();
+        utxoz_db_.with_write(configure, [&](auto& db) {
+            db.set_block_store(block_store_.get());
+            db.set_header_index(&header_index_);
+        });
+    }
     spdlog::info("[blockchain] UTXO-Z reference mode: block_store and header_index wired for find resolution");
 #endif
 
@@ -487,7 +505,12 @@ bool block_chain::close() {
     // is torn down (the path is a plain sibling of the DB, still valid here).
     dump_mempool_to_disk();
     priority_pool_.join();
-    utxoz_db_.close();
+    {
+        // close() is a mutation of the store's own state; it needs the same
+        // window as any other, for its whole operation.
+        auto closing = utxo_gate_.write();
+        utxoz_db_.with_write(closing, [](auto& db) { db.close(); });
+    }
     return result && database_.close();
 }
 
@@ -897,8 +920,8 @@ block_chain::flush_undo(std::span<int32_t const> file_numbers) {
     return block_store_->flush_undo(file_numbers);
 }
 
-database::barrier_outcome block_chain::utxo_sync() {
-    return utxoz_db_.sync();
+database::barrier_outcome block_chain::utxo_sync(utxo_write_window const& window) {
+    return utxoz_db_.with_write(window, [](auto& db) { return db.sync(); });
 }
 
 database::durability_level block_chain::durability() const {
@@ -910,13 +933,15 @@ database::result_code block_chain::set_last_block_height(uint32_t height) {
 }
 
 utxoz::deletion_progress block_chain::utxo_apply_deletes(
-    std::span<utxoz::deferred_deletion_entry const> requests) {
-    return utxoz_db_.apply_deletes(requests);
+    utxo_write_window const& window, std::span<utxoz::deferred_deletion_entry const> requests) {
+    return utxoz_db_.with_write(window,
+        [&](auto& db) { return db.apply_deletes(requests); });
 }
 
 std::expected<database::utxoz_database::entry_resolution, database::result_code>
 block_chain::utxo_resolve(std::span<utxoz::lookup_request const> requests) const {
-    return utxoz_db_.resolve(requests);
+    auto lease = utxo_gate_.read();
+    return utxoz_db_.with_read(lease, [&](auto const& db) { return db.resolve(requests); });
 }
 
 // =============================================================================
@@ -925,12 +950,14 @@ block_chain::utxo_resolve(std::span<utxoz::lookup_request const> requests) const
 
 std::expected<database::utxoz_database::raw_stored, database::result_code>
 block_chain::find_utxo_raw(utxoz::raw_outpoint const& key, uint32_t height) const {
-    return utxoz_db_.find_raw(key, height);
+    auto lease = utxo_gate_.read();
+    return utxoz_db_.with_read(lease, [&](auto const& db) { return db.find_raw(key, height); });
 }
 
 std::expected<database::utxoz_database::raw_resolution, database::result_code>
 block_chain::utxo_resolve_raw(std::span<utxoz::lookup_request const> requests) const {
-    return utxoz_db_.resolve_raw(requests);
+    auto lease = utxo_gate_.read();
+    return utxoz_db_.with_read(lease, [&](auto const& db) { return db.resolve_raw(requests); });
 }
 
 #if ! defined(KTH_DB_READONLY)
@@ -981,6 +1008,7 @@ block_chain::read_block_undo(database::header_index::index_t idx, hash_digest co
 
 #if ! defined(KTH_DB_READONLY)
 database::disconnect_result block_chain::disconnect_block(uint32_t height,
+    utxo_write_window const& window,
     boost::unordered_flat_map<utxoz::raw_outpoint, bool>& absence_tolerated,
     std::vector<utxoz::deferred_deletion_entry>& pending_deletes) {
     // Genesis anchors the chain and has no parent to roll back to.
@@ -1101,7 +1129,8 @@ database::disconnect_result block_chain::disconnect_block(uint32_t height,
         fold_absence_tolerance(absence_tolerated, key, spent_here.contains(key));
     }
 
-    auto const result = utxoz_db_.apply_inserts_raw(inverse.inserts);
+    auto const result = utxoz_db_.with_write(window,
+        [&](auto& db) { return db.apply_inserts_raw(inverse.inserts); });
     if (result != database::result_code::success) {
         spdlog::error("[blockchain] disconnect_block: failed to restore spent outputs at height {}",
             height);
@@ -1208,6 +1237,13 @@ block_chain::switch_result block_chain::switch_to_branch(
     // Accumulated across every block this rewind disconnects, and consumed once
     // by the sweep below. Per-block by construction: each disconnect adds only
     // the keys ITS own inverse delta created and spent within itself.
+    // ONE window for the whole rewind: the restorations, every disconnect, and
+    // the final sweep. A reader admitted between them would see a set holding
+    // outputs of blocks this switch is abandoning, and it would not consult the
+    // transition record to know better. Synchronous throughout — nothing below
+    // suspends — so the capability never crosses a co_await (#649).
+    auto const window = utxo_gate_.write();
+
     // Per key, whether a proven absence is tolerable: true only while every
     // block that asked for this key's deletion created and spent it itself.
     boost::unordered_flat_map<utxoz::raw_outpoint, bool> absence_tolerated;
@@ -1276,7 +1312,7 @@ block_chain::switch_result block_chain::switch_to_branch(
         // Newest first: disconnecting out of order would restore outputs that a
         // later block still spends.
         for (uint32_t h = heights->block; h > fork_height; --h) {
-            auto const result = disconnect_block(h, absence_tolerated, pending_deletes);
+            auto const result = disconnect_block(h, window, absence_tolerated, pending_deletes);
 
             if (result == database::disconnect_result::unclean) {
                 // The delta was applied, so this counts as a mutation even
@@ -1315,7 +1351,7 @@ block_chain::switch_result block_chain::switch_to_branch(
                 // the next start from refusing over a database that is whole.
                 spdlog::error("[blockchain] Reorg: failed to disconnect block at height {}, "
                     "aborting the switch (validated tip is now {})", h, h);
-                if ( ! publish_reorg_transition(h, operation_id, absence_tolerated, pending_deletes)) {
+                if ( ! publish_reorg_transition(h, operation_id, window, absence_tolerated, pending_deletes)) {
                     return {false, std::nullopt, mutated, /*fatal*/ true};
                 }
                 return {false, h, mutated};
@@ -1330,7 +1366,7 @@ block_chain::switch_result block_chain::switch_to_branch(
     // disconnected: no record was written, so there is nothing to publish and
     // nothing to clear, and asking four stores for a barrier over no mutation
     // would only cost the fsyncs.
-    if (record_written && ! publish_reorg_transition(validated_tip, operation_id,
+    if (record_written && ! publish_reorg_transition(validated_tip, operation_id, window,
             absence_tolerated, pending_deletes)) {
         // The chain has moved and the transition could not be recorded as
         // finished. No tip is reported: the caller reads that as fatal, leaves
@@ -1352,6 +1388,7 @@ block_chain::switch_result block_chain::switch_to_branch(
 }
 
 bool block_chain::sweep_reorg_deletions(uint64_t operation_id,
+    utxo_write_window const& window,
     boost::unordered_flat_map<utxoz::raw_outpoint, bool> const& absence_tolerated,
     std::span<utxoz::deferred_deletion_entry const> pending_deletes) {
     // This function deliberately touches NOTHING that is shared with a reader.
@@ -1397,8 +1434,8 @@ bool block_chain::sweep_reorg_deletions(uint64_t operation_id,
     auto const outcome = run_deletion_sweep(
         std::vector<utxoz::deferred_deletion_entry>(pending_deletes.begin(), pending_deletes.end()),
         absence_tolerated,
-        [this](std::span<utxoz::deferred_deletion_entry const> batch) {
-            return utxo_apply_deletes(batch);
+        [this, &window](std::span<utxoz::deferred_deletion_entry const> batch) {
+            return utxo_apply_deletes(window, batch);
         },
         max_deletion_attempts,
         [&](int attempt, utxoz::deletion_progress const& progress) {
@@ -1445,13 +1482,14 @@ bool block_chain::sweep_reorg_deletions(uint64_t operation_id,
 }
 
 bool block_chain::publish_reorg_transition(uint32_t connected_height, uint64_t operation_id,
+    utxo_write_window const& window,
     boost::unordered_flat_map<utxoz::raw_outpoint, bool> const& absence_tolerated,
     std::span<utxoz::deferred_deletion_entry const> pending_deletes) {
     // Step 6. The deletions the rewind's inverse deltas deferred. Before the
     // barriers, because a barrier over a set that still owes them makes the
     // outputs of abandoned blocks durable instead of removing them, and before
     // the publication, because clearing the record asserts the stores agree.
-    if ( ! sweep_reorg_deletions(operation_id, absence_tolerated, pending_deletes)) {
+    if ( ! sweep_reorg_deletions(operation_id, window, absence_tolerated, pending_deletes)) {
         return false;
     }
 
@@ -1472,7 +1510,7 @@ bool block_chain::publish_reorg_transition(uint32_t connected_height, uint64_t o
 
     // Step 9. The rewind's inverse deltas live in UTXO-Z, and close() does not
     // sync.
-    switch (utxo_sync()) {
+    switch (utxo_sync(window)) {
         case database::barrier_outcome::crossed:
             break;
         case database::barrier_outcome::unsupported:
@@ -1538,31 +1576,42 @@ bool block_chain::publish_reorg_transition(uint32_t connected_height, uint64_t o
 }
 
 bool block_chain::utxo_compact() {
-    return utxoz_db_.compact();
+    auto window = utxo_gate_.write();
+    return utxoz_db_.with_write(window, [](auto& db) { return db.compact(); });
 }
 
 void block_chain::utxo_print_statistics() {
-    utxoz_db_.print_statistics();
+    // The exclusive window, and deliberately not a lease: UTXO-Z recomputes the
+    // fragmentation counters here and documents that it must not overlap a
+    // mutation nor another statistics call. The two reports below are const on
+    // both sides and are genuine observations.
+    auto window = utxo_gate_.write();
+    utxoz_db_.with_write(window, [](auto& db) { db.print_statistics(); });
 }
 
 void block_chain::utxo_print_sizing_report() {
-    utxoz_db_.print_sizing_report();
+    auto lease = utxo_gate_.read();
+    utxoz_db_.with_read(lease, [](auto const& db) { db.print_sizing_report(); });
 }
 
 void block_chain::utxo_print_height_range_stats() {
-    utxoz_db_.print_height_range_stats();
+    auto lease = utxo_gate_.read();
+    utxoz_db_.with_read(lease, [](auto const& db) { db.print_height_range_stats(); });
 }
 
 size_t block_chain::utxo_size() const {
-    return utxoz_db_.size();
+    auto lease = utxo_gate_.read();
+    return utxoz_db_.with_read(lease, [](auto const& db) { return db.size(); });
 }
 
 void block_chain::set_utxo_bloom(std::shared_ptr<database::utxo_bloom_filter const> bloom) {
-    utxoz_db_.set_utxo_bloom(std::move(bloom));
+    auto window = utxo_gate_.write();
+    utxoz_db_.with_write(window, [&](auto& db) { db.set_utxo_bloom(std::move(bloom)); });
 }
 
 void block_chain::clear_utxo_bloom() {
-    utxoz_db_.clear_utxo_bloom();
+    auto window = utxo_gate_.write();
+    utxoz_db_.with_write(window, [](auto& db) { db.clear_utxo_bloom(); });
 }
 
 #endif // ! defined(KTH_DB_READONLY)
@@ -1718,6 +1767,24 @@ private:
 } // namespace
 
 code block_chain::mempool_remove_for_block(byte_span raw) {
+    // Lock-order control (#649). The organizer takes validation_mutex_ and THEN a
+    // UTXO read lease inside validator_.accept(); arriving here still holding the
+    // UTXO window would take the same two in the opposite order, and two threads
+    // doing both at once is the AB-BA deadlock. Refused by name, at the site,
+    // rather than found later as a node that stopped for no stated reason.
+    if (utxo_gate_.held_by_current_thread()) {
+        // Logged before it is thrown, because the throw does not survive the
+        // trip: it leaves a coroutine, and what an operator ends up reading is
+        // whatever downstream notices the batch died — "two chain transitions
+        // overlapped", which names a consequence and not this cause.
+        spdlog::critical("[blockchain] The mempool update was reached while this thread still "
+            "holds the UTXO write window; the window must end after the durability barrier "
+            "and before the mempool update, or this deadlocks against transaction validation");
+        throw utxo_lock_order_error(
+            "mempool_remove_for_block was called while this thread holds the UTXO "
+            "write window; the window must end before the mempool update");
+    }
+
     validation_high_priority_lock const lock(validation_mutex_);
 
     // Under the lock, so an admission cannot land between finding the pool empty
@@ -1738,6 +1805,24 @@ code block_chain::mempool_remove_for_block(byte_span raw) {
 }
 
 void block_chain::mempool_remove_for_block(domain::chain::block const& block) {
+    // Lock-order control (#649). The organizer takes validation_mutex_ and THEN a
+    // UTXO read lease inside validator_.accept(); arriving here still holding the
+    // UTXO window would take the same two in the opposite order, and two threads
+    // doing both at once is the AB-BA deadlock. Refused by name, at the site,
+    // rather than found later as a node that stopped for no stated reason.
+    if (utxo_gate_.held_by_current_thread()) {
+        // Logged before it is thrown, because the throw does not survive the
+        // trip: it leaves a coroutine, and what an operator ends up reading is
+        // whatever downstream notices the batch died — "two chain transitions
+        // overlapped", which names a consequence and not this cause.
+        spdlog::critical("[blockchain] The mempool update was reached while this thread still "
+            "holds the UTXO write window; the window must end after the durability barrier "
+            "and before the mempool update, or this deadlocks against transaction validation");
+        throw utxo_lock_order_error(
+            "mempool_remove_for_block was called while this thread holds the UTXO "
+            "write window; the window must end before the mempool update");
+    }
+
     validation_high_priority_lock const lock(validation_mutex_);
     mempool_.remove_for_block(block);
 }
@@ -1953,7 +2038,9 @@ std::expected<block_chain::output_info, database::result_code> block_chain::get_
     domain::chain::output_point const& outpoint, size_t branch_height) const {
 
     // Use UTXO-Z high-performance database
-    auto entry = utxoz_db_.find(outpoint, static_cast<uint32_t>(branch_height));
+    auto lease = utxo_gate_.read();
+    auto entry = utxoz_db_.with_read(lease,
+        [&](auto const& db) { return db.find(outpoint, static_cast<uint32_t>(branch_height)); });
     if ( ! entry) {
         return std::unexpected(entry.error());
     }

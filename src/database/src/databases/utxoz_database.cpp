@@ -467,13 +467,13 @@ void utxoz_database::print_statistics() {
     }
 }
 
-void utxoz_database::print_sizing_report() {
+void utxoz_database::print_sizing_report() const {
     if (is_open()) {
         db_->print_sizing_report();
     }
 }
 
-void utxoz_database::print_height_range_stats() {
+void utxoz_database::print_height_range_stats() const {
     if (is_open()) {
         db_->print_height_range_stats();
     }

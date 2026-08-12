@@ -535,7 +535,8 @@ char const* strategy_name(utxo_build_strategy strategy) {
 // Helper to process deferred deletions and report errors
 [[nodiscard]]
 database::result_code apply_owned_deletes(
-    block_chain& chain, std::vector<utxoz::deferred_deletion_entry> owed) {
+    block_chain& chain, utxo_write_window const& window,
+    std::vector<utxoz::deferred_deletion_entry> owed) {
     if (owed.empty()) {
         return database::result_code::success;
     }
@@ -544,7 +545,7 @@ database::result_code apply_owned_deletes(
     // retired permanently even when the walk reported a fault.
     constexpr int max_deletion_attempts = 3;
     for (int attempt = 1; attempt <= max_deletion_attempts; ++attempt) {
-        auto progress = chain.utxo_apply_deletes(owed);
+        auto progress = chain.utxo_apply_deletes(window, owed);
 
         // The build nets out anything created and spent inside one batch, so no
         // deletion here is entitled to be absent: every key it asks for was in
@@ -624,7 +625,8 @@ bool save_utxo_bloom(
     auto bloom = std::make_shared<database::utxo_bloom_filter>(utxo_count, 0.01);
 
     size_t inserted = 0;
-    if ( ! chain.utxo_for_each([&](utxoz::raw_outpoint const& key) {
+    auto const window = chain.begin_utxo_write();
+    if ( ! chain.utxo_for_each(window, [&](utxoz::raw_outpoint const& key) {
             bloom->insert(key);
             ++inserted;
         })) {
@@ -852,8 +854,10 @@ uint32_t embedded_bloom_checkpoint_height() {
             // Process single block
             auto delta = process_block_utxos(*block_ptr, h, mtp);
 
-            // Apply directly to UTXO-Z
-            auto result = chain.apply_utxo_inserts(delta.inserts);
+            // Apply directly to UTXO-Z, under ONE window for the whole coherent
+            // application: the inserts and the deletions this delta owes.
+            auto const window = chain.begin_utxo_write();
+            auto result = chain.apply_utxo_inserts(window, delta.inserts);
                 if (result == database::result_code::success) {
                     std::vector<utxoz::deferred_deletion_entry> owed;
                     owed.reserve(delta.deletes.size());
@@ -863,7 +867,7 @@ uint32_t embedded_bloom_checkpoint_height() {
                             utxoz::make_outpoint(std::span<uint8_t const, 32>{ph.data(), 32},
                                                  point.index()), h);
                     }
-                    result = apply_owned_deletes(chain, std::move(owed));
+                    result = apply_owned_deletes(chain, window, std::move(owed));
                 }
             if (result != database::result_code::success) {
                 spdlog::error("[utxo_builder] Failed to apply UTXO delta at height {}", h);
@@ -991,14 +995,15 @@ uint32_t embedded_bloom_checkpoint_height() {
             // ===== TIMING: Apply to UTXO-Z =====
             auto t_apply_start = clock::now();
 
-            auto result = chain.apply_utxo_inserts_raw(delta.inserts);
+            auto const window = chain.begin_utxo_write();
+            auto result = chain.apply_utxo_inserts_raw(window, delta.inserts);
             if (result == database::result_code::success) {
                 std::vector<utxoz::deferred_deletion_entry> owed;
                 owed.reserve(delta.deletes.size());
                 for (auto const& [key, h] : delta.deletes) {
                     owed.emplace_back(key, h);
                 }
-                result = apply_owned_deletes(chain, std::move(owed));
+                result = apply_owned_deletes(chain, window, std::move(owed));
             }
             if (result != database::result_code::success) {
                 spdlog::error("[utxo_builder] Failed to apply UTXO delta at batch starting {}", batch_start);

@@ -414,13 +414,20 @@ struct KD_API utxoz_database {
     /// insert(), compaction or close() in flight. UTXO-Z's internal lock covers
     /// resolve-vs-resolve ONLY and does not extend here.
     ///
-    /// KTH DOES NOT PROVIDE THAT WINDOW YET, and this is a functional blocker
-    /// rather than a limitation to design around — see #649. The two callers of
-    /// this are mutually excluded from each other by the reorg barrier, but
-    /// neither is excluded from the single-transaction validate path, which
-    /// probes lock-free and is reachable over JSON-RPC and the C API. A
-    /// deletion writing through the cache's mappings while a probe reads is a
-    /// use-after-unmap: a crash, not a wrong answer.
+    /// THE CALLER MUST HOLD A `blockchain::utxo_write_window` (#649). That is
+    /// the window: it excludes every find(), resolve(), insert(), compaction and
+    /// close() over this store for as long as it is held, and it is a capability
+    /// rather than a convention — `blockchain::guarded_store` will not hand out
+    /// the database without one, so reaching this method without the exclusion
+    /// does not compile on that side.
+    ///
+    /// It must span the whole logical mutation and not this call, because a
+    /// reader admitted between the inserts and the deletions sees a set still
+    /// holding outputs the blocks spent. What the window prevents here is
+    /// concrete: a deletion writing through the cache's mappings while a probe
+    /// reads is a use-after-unmap — a crash, not a wrong answer — and the
+    /// single-transaction validate path probes lock-free, reachable over
+    /// JSON-RPC and the C API.
     ///
     /// @return erased / absent / unresolved / error. The partition is over
     ///         DISTINCT keys (deduplicated keeping the first occurrence), so the
@@ -452,14 +459,19 @@ struct KD_API utxoz_database {
     [[nodiscard]]
     barrier_outcome sync();
 
-    /// Print statistics to log
+    /// Print statistics to log.
+    ///
+    /// NOT const, and not an observation: UTXO-Z recomputes the fragmentation
+    /// counters as it goes, and documents that this must not overlap a mutation
+    /// nor another statistics call. It takes the exclusive window for that
+    /// reason, unlike the two below.
     void print_statistics();
 
-    /// Print sizing report to log
-    void print_sizing_report();
+    /// Print sizing report to log. Const on both sides: a genuine observation.
+    void print_sizing_report() const;
 
-    /// Print height range stats to log
-    void print_height_range_stats();
+    /// Print height range stats to log. Const on both sides.
+    void print_height_range_stats() const;
 
     // Convert utxoz::raw_outpoint back to domain::chain::point (for error reporting)
     [[nodiscard]]

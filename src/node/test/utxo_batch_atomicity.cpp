@@ -88,7 +88,8 @@ void insert_raw(blockchain::block_chain& chain, utxoz::raw_outpoint const& key, 
     blockchain::utxo_raw_delta delta;
     delta.inserts.emplace(key, blockchain::utxo_raw_value{
         std::vector<uint8_t>(8, 0x11), height});
-    REQUIRE(chain.apply_utxo_inserts_raw(delta.inserts)
+    auto const window = chain.begin_utxo_write();
+    REQUIRE(chain.apply_utxo_inserts_raw(window, delta.inserts)
             == database::result_code::success);
 }
 
@@ -242,9 +243,13 @@ TEST_CASE("a crash after the deletions are applied refuses the next start",
     insert_raw(chain, synthetic_key(0xA2), 4);
 
     // Nothing is owed here: the insert above created no deletion obligation.
-    auto const progress = chain.utxo_apply_deletes({});
-    REQUIRE(progress.erased.empty());
-    REQUIRE(progress.unresolved.empty());
+    {
+        // Scoped for the same reason: everything after this reads or restarts.
+        auto const del_window = chain.begin_utxo_write();
+        auto const progress = chain.utxo_apply_deletes(del_window, {});
+        REQUIRE(progress.erased.empty());
+        REQUIRE(progress.unresolved.empty());
+    }
 
     CHECK_FALSE(fixture.restart());
 }
@@ -265,14 +270,19 @@ TEST_CASE("a crash after every durability barrier refuses the next start",
     open_transition(chain, 4u, 6u);
     insert_raw(chain, synthetic_key(0xA3), 4);
 
-    // No obligation was created by the insert above.
-    auto const progress = chain.utxo_apply_deletes({});
-    REQUIRE(progress.unresolved.empty());
+    {
+        // Scoped: restart() below closes the chain, and close() takes a window of
+        // its own. Holding one across it is the reachable-but-unsupported
+        // pattern, and it hangs.
+        auto const del_window = chain.begin_utxo_write();
+        auto const progress = chain.utxo_apply_deletes(del_window, {});
+        REQUIRE(progress.unresolved.empty());
 
-    std::vector<int32_t> const touched{0};
-    REQUIRE(chain.flush_undo(touched).has_value());
-    CHECK(chain.utxo_sync() != database::barrier_outcome::failed);
-    REQUIRE(chain.env_sync() == database::result_code::success);
+        std::vector<int32_t> const touched{0};
+        REQUIRE(chain.flush_undo(touched).has_value());
+        CHECK(chain.utxo_sync(del_window) != database::barrier_outcome::failed);
+        REQUIRE(chain.env_sync() == database::result_code::success);
+    }
 
     CHECK_FALSE(fixture.restart());
 }

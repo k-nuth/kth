@@ -312,7 +312,9 @@ if (ENABLE_TEST)
         test/mempool_persistence_test.cpp
         test/block_template_test.cpp
         test/utxoz_roundtrip.cpp
-        test/utxoz_contract.cpp
+        test/utxo_gate.cpp
+          test/utxo_gate_bench.cpp
+          test/utxoz_contract.cpp
         test/verify_script_context.cpp
         test/batch_sigchecks.cpp
         test/finalization.cpp
