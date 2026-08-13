@@ -53,6 +53,20 @@
 
 namespace kth::blockchain {
 
+/// Recency from the validated header tip's timestamp. Pure, so that "cannot be
+/// established" is reachable from a test rather than argued about.
+[[nodiscard]]
+KB_API bool recency_is_stale(std::optional<uint32_t> tip_timestamp, time_t limit_seconds);
+
+/// The startup reconciliation decision, pure for the same reason: an operational
+/// read failure cannot be forced out of the database on demand.
+[[nodiscard]]
+KB_API std::optional<uint32_t> reconcile_tip(
+    uint32_t marker_height,
+    std::expected<uint32_t, database::result_code> const& built,
+    bool utxo_set_is_empty);
+
+
 using kth::awaitable_expected;
 using database::heights_t;
 
@@ -221,8 +235,21 @@ struct KB_API block_chain {
         utxo_write_window const& window,
         std::span<utxoz::deferred_deletion_entry const> requests);
 
-    // Set last block height in LMDB (for fast IBD storage progress tracking)
+    /// The connected tip to trust at startup, reconciling the two persisted
+    /// markers and correcting the stored one when they disagree (#653).
+    ///
+    /// nullopt means the markers could not be read — an operational failure, not
+    /// an absent marker — and start() fails closed on it rather than publishing
+    /// chain state at a height nothing vouches for.
     [[nodiscard]]
+    std::optional<uint32_t> reconcile_connected_tip(uint32_t marker_height);
+
+    /// Write the CONNECTED tip. Only the batch that connected those blocks may
+    /// call it — the storage paths must not, since storing is not connecting —
+    /// and the connect path publishes it through publish_transition instead, in
+    /// the transaction that also clears the record. What remains here is the
+    /// startup reconciliation above, which corrects a marker written by an
+    /// earlier version.
     database::result_code set_last_block_height(uint32_t height);
 
     // Get/set the last block height for which UTXO set was built
@@ -680,6 +707,16 @@ struct KB_API block_chain {
     // PROPERTIES
     // =========================================================================
 
+    /// Timestamp of the validated header tip, or nullopt when it cannot be
+    /// established — three distinct ways, all of which answer stale.
+    ///
+    /// Declared beside is_stale() and OUTSIDE the read-only guard on purpose:
+    /// is_stale() is available in a read-only build and calls this, so a
+    /// declaration behind the write guard would not compile there. Only
+    /// reconcile_connected_tip(), which writes, belongs inside it.
+    [[nodiscard]]
+    std::optional<uint32_t> active_tip_timestamp() const;
+
     bool is_stale() const;
     settings const& chain_settings() const;
     executor_type executor() const;
@@ -955,7 +992,6 @@ private:
     std::atomic<size_t> reorg_registered_{0};
     settings const& settings_;
     time_t const notify_limit_seconds_;
-    kth::atomic<block_const_ptr> last_block_;
 
     populate_chain_state const chain_state_populator_;
     database::data_base database_;

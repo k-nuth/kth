@@ -1649,17 +1649,18 @@ std::atomic<uint32_t> g_active_download_peers{0};
     }
 
 
-    // Update LMDB with contiguous height (no gaps guaranteed)
-    if (contiguous_height > start_height) {
-        auto const lmdb_height = contiguous_height - 1;
-        auto result = chain.set_last_block_height(lmdb_height);
-        if (result != database::result_code::success) {
-            spdlog::warn("[block_storage] Failed to update final LMDB height {}: {}",
-                lmdb_height, static_cast<int>(result));
-        }
-        spdlog::info("[block_storage] LMDB last_block_height set to {} (contiguous), max_stored was {}",
-            lmdb_height, max_stored_height);
-    }
+    // This task does NOT touch last_block_height (#653). Storing a block makes it
+    // downloadable, not connected: the bytes are in a stdio buffer, the index
+    // entry is in memory, and no barrier has run. The marker means the CONNECTED
+    // tip — publish_chain_view builds state at it and disconnect_block refuses to
+    // rewind past it — so writing the stored height here published a claim the
+    // UTXO set could not back.
+    //
+    // It also only ever ran on the way out, which is what made the defect
+    // self-masking: during the run the marker never moved, and a clean stop wrote
+    // a recent-looking height that let the next start drain the remainder
+    // immediately. The connect path publishes it now, per batch, with the barrier
+    // and the record.
 
     // Fragmentation analysis: how ordered are the chunks on disk?
     // Since allocation is serial, arrival order = disk order.
@@ -2357,9 +2358,20 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // on the next start the built height is what says how far the UTXO set
         // reaches. A set that moved without its height would be rebuilt over on
         // resume, applying deltas that are already in it.
+        // BOTH heights, and the same value (#653). `last_block_height` is the
+        // CONNECTED tip — what publish_chain_view builds state at, and what
+        // disconnect_block refuses to rewind past — so the batch that just
+        // connected these blocks is the only thing entitled to move it. It was
+        // published empty here and written instead by the storage task with the
+        // height of what had merely been DOWNLOADED, which is how a stopped node
+        // ended up claiming a connected tip 952 blocks beyond its own UTXO set.
+        //
+        // Published after step 9's barrier and inside the same transaction as the
+        // record, so the marker cannot outrun the data it describes: either both
+        // heights and the cleared record commit, or none of them do.
         if (auto const published = chain.publish_transition(
                 database::transition_heights{
-                    .last_block_height = std::nullopt,
+                    .last_block_height = utxo_built_height,
                     .utxo_built_height = utxo_built_height});
             published != database::result_code::success) {
             spdlog::critical("[utxo_build] Could not publish batch {}-{} at built height {}: the "

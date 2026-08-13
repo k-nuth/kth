@@ -299,6 +299,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/fatal_shutdown.cpp
           test/mempool_admission.cpp
           test/mempool_connect_wiring.cpp
+          test/connected_tip_remainder.cpp
           test/utxo_batch_atomicity.cpp
           test/reorg_cycle.cpp
           test/reorg_deferred_sweep.cpp
