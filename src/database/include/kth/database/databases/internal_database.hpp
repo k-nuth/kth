@@ -5,6 +5,7 @@
 #ifndef KTH_DATABASE_INTERNAL_DATABASE_HPP_
 #define KTH_DATABASE_INTERNAL_DATABASE_HPP_
 
+#include <atomic>
 #include <expected>
 #include <filesystem>
 #include <optional>
@@ -93,6 +94,50 @@ struct transition_heights {
     std::optional<uint32_t> last_block_height;
     std::optional<uint32_t> utxo_built_height;
 };
+
+// =============================================================================
+// Fault injection, for tests only
+// =============================================================================
+//
+// Some failures cannot be provoked from outside: an LMDB commit fails on a full
+// map, a disk error or a corrupted environment, and none of those can be staged
+// on demand — a map small enough to exhaust is refused at create, and the
+// property setters overwrite one key rather than growing the database.
+//
+// Without a seam the atomicity of publish_transition can only be argued from
+// reading the code, and this is the one property where an argument is not
+// enough: a publish that moved one height and not the other would leave a
+// connected tip the UTXO set does not back.
+//
+// A runtime flag rather than a compile-time one, deliberately. internal_database
+// is a header-only template instantiated in more than one translation unit, so a
+// definition present for tests and absent for the library would differ across
+// instantiations of the same template — an ODR violation the linker is free to
+// resolve either way. The cost is one relaxed load per published batch, next to
+// a transaction that already touches the disk.
+//
+// @par It is process-wide, and what that rests on
+// Every database in the process sees it, so it is only safe while no second
+// publish can overlap the one under test. It is: Catch2 runs test cases
+// sequentially in a single process, ctest registers one test per binary so
+// separate binaries are separate processes with separate globals, and the only
+// callers of publish_transition are the connect batch and the reorganization —
+// neither of which runs in a fixture that starts no sync tasks.
+//
+// If in-process parallel test execution is ever adopted, this must become
+// instance-scoped. It is not today, because reaching an instance from a test
+// would mean exposing internal_db() on block_chain, which is deliberately not
+// public — widening the production surface further than this flag does.
+//
+// Default off, and a test that sets it must restore it on every path, including
+// an exception: a flag left set makes every later publish in the process fail
+// for no stated reason.
+namespace testing {
+
+inline std::atomic<bool> fail_publish_transition_before_commit{false};
+
+} // namespace testing
+
 
 constexpr size_t max_dbs_full_ = 3;        // KTH_DB_NEW_FULL
 constexpr size_t max_dbs_blocks_ = 3;      // KTH_DB_NEW_BLOCKS

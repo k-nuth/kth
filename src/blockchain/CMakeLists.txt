@@ -324,7 +324,8 @@ if (ENABLE_TEST)
         test/undo_scan.cpp
         test/utxo_transition_record.cpp
         test/undo_barriers.cpp
-        test/transition_lifecycle.cpp
+        test/connected_tip.cpp
+  test/transition_lifecycle.cpp
         test/reorg_e2e.cpp
     )
 

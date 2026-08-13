@@ -497,6 +497,16 @@ result_code internal_database_basis<Clock>::publish_transition(transition_height
         return cleared;
     }
 
+    // The one place a test can make this transaction fail. Everything above has
+    // been written into the transaction and nothing has been committed, so this
+    // is exactly the instant the atomicity claim is about: whatever was staged
+    // must be discarded, both heights must read as they did, and the record must
+    // still be pending.
+    if (testing::fail_publish_transition_before_commit.load(std::memory_order_relaxed)) {
+        kth_db_txn_abort(db_txn);
+        return result_code::other;
+    }
+
     if (kth_db_txn_commit(db_txn) != KTH_DB_SUCCESS) {
         return result_code::other;
     }

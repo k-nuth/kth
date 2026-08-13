@@ -242,7 +242,16 @@ bool block_chain::start(uint32_t disk_magic) {
         spdlog::error("[blockchain] Failed to read the last heights.");
         return false;
     }
-    if (auto const ec = publish_chain_view(connected->block); ec) {
+    auto const reconciled = reconcile_connected_tip(connected->block);
+    if ( ! reconciled) {
+        // Fail-closed. An unreadable marker is not an absent one: continuing would
+        // publish chain state at a height nothing vouches for, and disconnect_block
+        // would then refuse or accept rewinds against it.
+        spdlog::error("[blockchain] Cannot establish the connected tip: the UTXO "
+            "height marker could not be read");
+        return false;
+    }
+    if (auto const ec = publish_chain_view(*reconciled); ec) {
         spdlog::error("[blockchain] Failed to initialize chain state: {}", ec.message());
         return false;
     }
@@ -778,12 +787,15 @@ static constexpr bool chunk_serial_validation = true;
             header_index_.add_status(idx, header_status::have_data);
         }
 
-        // 3. Update last block height in LMDB (for compatibility / UTXO build)
-        auto result = database_.internal_db().set_last_block_height(height);
-        if (result != database::result_code::success) {
-            spdlog::warn("[blockchain] Failed to update last_height in LMDB for height {}: {}",
-                height, static_cast<int>(result));
-        }
+        // The connected-tip marker is deliberately NOT written here (#653).
+        // Storing is not connecting: the bytes are in a stdio buffer, this index
+        // entry is in memory, and no barrier has run. Only the batch that applied
+        // the UTXO delta may move that height, and it does so with the barrier
+        // and the transition record.
+        //
+        // This function currently has no callers — it is the single-block
+        // counterpart of store_chunk. Left in place rather than removed here, but
+        // it must not carry a rule the rest of the code no longer follows.
 
         channel->try_send(std::error_code{}, error::success);
     });
@@ -926,6 +938,107 @@ database::barrier_outcome block_chain::utxo_sync(utxo_write_window const& window
 
 database::durability_level block_chain::durability() const {
     return database::node_durability_level();
+}
+
+// The reconciliation decision, pure so that every input is reachable from a
+// test — including the operational failure, which no fixture setup can force out
+// of LMDB on demand.
+//
+// Four inputs, and they are genuinely different states:
+//
+//   * a value reconciles: the UTXO height wins over the marker, in both
+//     directions, because it is what describes the set;
+//   * `key_not_found` WITH AN EMPTY UTXO STORE is a database that has never
+//     built — a fresh datadir, or one that only ever downloaded — so nothing is
+//     connected and the answer is zero, whatever the marker claims;
+//   * `key_not_found` with a NON-EMPTY store is a materialised UTXO set whose
+//     height nothing records. The property has existed since v1.0, but a base
+//     from any release can reach this if it was written before the marker was,
+//     and the set itself cannot be asked how far it goes: entries carry creation
+//     heights, and the highest surviving one is a lower bound, not the built
+//     height, because spent outputs are erased. Answering zero would rebuild
+//     from genesis over a populated store — re-sending inserts that are already
+//     there. So it is refused;
+//   * any other code is a read that FAILED, which is not an absent marker.
+//
+// The last two answer nullopt and the caller fails closed, with different
+// diagnostics because they call for different repairs.
+std::optional<uint32_t> reconcile_tip(
+    uint32_t marker_height,
+    std::expected<uint32_t, database::result_code> const& built,
+    bool utxo_set_is_empty) {
+    if (built) {
+        return *built;
+    }
+    if (built.error() != database::result_code::key_not_found) {
+        return std::nullopt;
+    }
+    if (utxo_set_is_empty) {
+        return 0u;
+    }
+    return std::nullopt;
+}
+
+std::optional<uint32_t> block_chain::reconcile_connected_tip(uint32_t marker_height) {
+    // What the two markers mean, and why the UTXO one wins in BOTH directions.
+    //
+    // `utxo_built_height` is written only by the batch that applied the delta,
+    // after its barrier, in the transaction that clears the transition record. It
+    // therefore describes the UTXO set itself. `last_block_height` is the
+    // connected tip its readers assume — but a released version also let the
+    // storage task write the DOWNLOADED height into it (#653), so it can be wrong
+    // in either direction and cannot be trusted on its own.
+    //
+    // min() would be wrong. Before this fix the storage marker was written only
+    // on a clean stop, so a node that crashed mid-sync has last_block_height at 0
+    // with a UTXO set describing hundreds of thousands of blocks: taking the
+    // lower would throw away everything that IS connected. The set is the
+    // evidence, so wherever the two disagree, the UTXO height wins.
+    auto const built_marker = get_utxo_built_height();
+    auto const utxo_empty = utxo_size() == 0;
+    auto const decided = reconcile_tip(marker_height, built_marker, utxo_empty);
+    if ( ! decided) {
+        if ( ! built_marker && built_marker.error() == database::result_code::key_not_found) {
+            spdlog::error("[blockchain] The UTXO set holds entries but no height marker "
+                "records how far it was built; that height cannot be recovered from the "
+                "set itself, so the node refuses to start rather than rebuild from "
+                "genesis over a populated store. Rebuild the UTXO set for this datadir.");
+        }
+        return std::nullopt;   // the caller fails closed
+    }
+    auto const built = *decided;
+
+    if (built == marker_height) {
+        return marker_height;
+    }
+
+    // The height has to be one the node can stand on. publish_chain_view reads
+    // the header and the block at the tip it is given, so a marker naming a
+    // height with no header behind it is not a tip but a claim — and starting on
+    // it would build chain state out of nothing. Refused rather than repaired:
+    // this is a database that disagrees with itself in a way no rule here can
+    // settle.
+    if ( ! get_header(built)) {
+        spdlog::error("[blockchain] The UTXO set claims height {} but no header is "
+            "stored there; refusing to start on a tip that cannot be read", built);
+        return std::nullopt;
+    }
+
+    spdlog::warn("[blockchain] The connected-tip marker says {} and the UTXO set "
+        "describes {}; taking the UTXO height, which is what the set actually "
+        "holds, and correcting the marker", marker_height, built);
+
+    // Corrected DURABLY, and before any state is published from it: a restart
+    // must read the reconciled value directly rather than repeat this every time,
+    // and a reader that arrives between the two would otherwise still see the
+    // stale claim.
+    if (auto const written = set_last_block_height(built);
+        written != database::result_code::success) {
+        spdlog::error("[blockchain] Could not persist the reconciled connected tip {}",
+            built);
+        return std::nullopt;
+    }
+    return built;
 }
 
 database::result_code block_chain::set_last_block_height(uint32_t height) {
@@ -1875,36 +1988,81 @@ void block_chain::unsubscribe_ds_proof(ds_proof_channel_ptr const& channel) {
 // PROPERTIES
 // =============================================================================
 
-bool block_chain::is_stale() const {
-    if (notify_limit_seconds_ == 0) {
+// The timestamp of the validated header tip, or nullopt when it cannot be
+// established. THREE distinct ways to fail, kept apart because they are
+// different states and each is separately reachable:
+//
+//   * no active chain at all — the index before anything populates it;
+//   * a null index for a height the tip read just reported, which is a reorg
+//     truncating the active chain between the two reads. header_index publishes
+//     the lowered size FIRST precisely so a concurrent reader sees a shorter
+//     chain rather than a stale entry, so this is a real race, not a
+//     hypothetical one;
+//   * a zero timestamp, which no valid header carries.
+//
+// Read from the in-memory validated index rather than the by-height table: that
+// table is written by the header-persist task and lags the index by whole sync
+// cycles, which would make recency depend on an unrelated schedule.
+std::optional<uint32_t> block_chain::active_tip_timestamp() const {
+    auto const tip_height = header_index_.active_tip_height();
+    if (tip_height < 0) {
+        return std::nullopt;
+    }
+    auto const idx = header_index_.active_at(tip_height);
+    if (idx == database::header_index::null_index) {
+        return std::nullopt;
+    }
+    auto const timestamp = header_index_.get_timestamp(idx);
+    if (timestamp == 0) {
+        return std::nullopt;
+    }
+    return timestamp;
+}
+
+bool recency_is_stale(std::optional<uint32_t> tip_timestamp, time_t limit_seconds) {
+    if (limit_seconds == 0) {
         return false;
     }
 
-    auto const top = last_block_.load();
-
-    uint32_t last_timestamp = 0;
-    if ( ! top) {
-        auto const heights = get_last_heights();
-        if (heights) {
-            auto const last_height = heights->block;
-            auto const last_header = get_header(last_height);
-            if (last_header) {
-                last_timestamp = last_header->timestamp();
-            }
-        }
+    // Unknown answers STALE, on every one of the paths above. Being wrongly
+    // considered current is what relaxes batching and lets the node act as if it
+    // had caught up; being wrongly considered behind only costs a poll.
+    if ( ! tip_timestamp) {
+        return true;
     }
 
-    auto const timestamp = top ? top->header().timestamp() : last_timestamp;
     auto const now = static_cast<uint32_t>(zulu_time());
-    auto const limit = notify_limit_seconds_ > time_t(std::numeric_limits<uint32_t>::max())
+    auto const limit = limit_seconds > time_t(std::numeric_limits<uint32_t>::max())
         ? std::numeric_limits<uint32_t>::max()
-        : static_cast<uint32_t>(notify_limit_seconds_);
+        : static_cast<uint32_t>(limit_seconds);
 
     // Keep both operands unsigned so floor_subtract saturates at zero. The old
     // local time_t overload saturated at TIME_MIN and bypassed the constrained
     // helper entirely; its comparison happened to produce the expected boolean
     // while expressing the wrong cutoff.
-    return timestamp < floor_subtract(now, limit);
+    return *tip_timestamp < floor_subtract(now, limit);
+}
+
+bool block_chain::is_stale() const {
+    // The VALIDATED HEADER TIP, and deliberately not the connected tip (#653).
+    //
+    // Recency answers "is this node behind the network", which the header chain
+    // knows long before the UTXO set does — in a mainnet sync the headers reach
+    // the tip in about a minute and the build takes an hour. Asking the connected
+    // tip instead makes the answer depend on the very progress it gates: the
+    // builder drains a remainder shorter than one batch only when NOT stale, so a
+    // connected tip days behind keeps it stale, keeps the remainder unbuilt, and
+    // keeps the tip where it was. That livelock parked a node 941 blocks short of
+    // the tip for over an hour, with no error.
+    //
+    // Headers are validated — proof of work and difficulty — so a recent
+    // timestamp here costs real work and is not something a peer can simply
+    // assert. No new durable marker is needed: recency is a question about now,
+    // not about what survives a crash.
+    //
+    // Every failure to establish the tip answers STALE — see the two functions
+    // above, which is where those paths live and where they are tested.
+    return recency_is_stale(active_tip_timestamp(), notify_limit_seconds_);
 }
 
 settings const& block_chain::chain_settings() const {
@@ -2068,15 +2226,6 @@ block_chain::fetch_block(size_t height) const {
         co_return std::unexpected(error::service_stopped);
     }
 
-    auto const cached = last_block_.load();
-    if (cached) {
-        domain::chain::chain_state::ptr state;
-        block_validations().visit(cached->hash(), [&](auto const& bv){ state = bv.state; });
-        if (state && state->height() == height) {
-            co_return std::pair{cached, height};
-        }
-    }
-
     // LMDB block storage removed - blocks now in flat files
     (void)height;
     co_return std::unexpected(error::not_found);
@@ -2086,15 +2235,6 @@ awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(hash_digest const& hash) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
-    }
-
-    auto const cached = last_block_.load();
-    if (cached) {
-        domain::chain::chain_state::ptr state;
-        block_validations().visit(cached->hash(), [&](auto const& bv){ state = bv.state; });
-        if (state && cached->hash() == hash) {
-            co_return std::pair{cached, state->height()};
-        }
     }
 
     // LMDB block storage removed - blocks now in flat files
