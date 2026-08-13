@@ -6,6 +6,10 @@
 
 #include <algorithm>
 #include <array>
+#include <thread>
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -65,6 +69,31 @@ using namespace kth::test;
 // the same policy against a real store.
 
 namespace {
+
+// Aborts rather than letting a hang wedge the suite. Only ever fires on a
+// genuine exclusion defect: nothing here is expected to reach the deadline.
+struct watchdog_scope {
+    std::atomic<bool> done{false};
+    std::thread barker;
+
+    watchdog_scope(std::chrono::seconds budget, char const* what)
+        : barker([this, budget, what] {
+              auto const deadline = std::chrono::steady_clock::now() + budget;
+              while ( ! done.load()) {
+                  if (std::chrono::steady_clock::now() > deadline) {
+                      std::fprintf(stderr, "\n[watchdog] %s did not finish: "
+                          "treating it as an exclusion defect\n", what);
+                      std::abort();
+                  }
+                  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+              }
+          }) {}
+
+    ~watchdog_scope() {
+        done.store(true);
+        barker.join();
+    }
+};
 
 constexpr uint32_t trunk_len = 100;
 constexpr uint64_t spend_fee = 1000;
@@ -541,8 +570,12 @@ TEST_CASE("the classification is per block, and strict dominates tolerable",
     absence_tolerance tolerated;
     std::vector<utxoz::deferred_deletion_entry> owed;
 
-    REQUIRE(chain.disconnect_block(102, tolerated, owed) == database::disconnect_result::ok);
-    REQUIRE(chain.disconnect_block(101, tolerated, owed) == database::disconnect_result::ok);
+    // The same capability the rewind holds: one window for the whole operation.
+    auto const window = chain.begin_utxo_write();
+    REQUIRE(chain.disconnect_block(102, window, tolerated, owed)
+            == database::disconnect_result::ok);
+    REQUIRE(chain.disconnect_block(101, window, tolerated, owed)
+            == database::disconnect_result::ok);
 
     // Created and spent inside 101: never in the set, so absence is tolerable.
     auto const parent = tolerated.find(key_of(s.tx_parent, 0));
@@ -652,8 +685,16 @@ TEST_CASE("a deletion the rewind did not account for is fatal and publishes noth
 
     std::array<utxoz::deferred_deletion_entry, 1> const strip{
         utxoz::deferred_deletion_entry{coinbase_101, 101}};
-    auto const stripped = chain.utxo_apply_deletes(strip);
-    REQUIRE(stripped.erased.size() == 1);
+    {
+        // Scoped, and it MUST be: resolves() below takes a read lease, and the
+        // gate is deliberately not recursive, so reading while still holding the
+        // window is the self-deadlock the header calls reachable-but-unsupported.
+        // This test formed it and hung — the pattern being real, not a reason to
+        // soften the gate.
+        auto const strip_window = chain.begin_utxo_write();
+        auto const stripped = chain.utxo_apply_deletes(strip_window, strip);
+        REQUIRE(stripped.erased.size() == 1);
+    }
     REQUIRE_FALSE(resolves(chain, coinbase_101, 102));
 
     auto const branch_head = propose_switch(fixture, s);
@@ -680,6 +721,232 @@ TEST_CASE("a deletion the rewind did not account for is fatal and publishes noth
     // operation only; an interrupted transition is never resumed across a
     // restart, it is refused and rebuilt.
     CHECK_FALSE(fixture.restart());
+}
+
+TEST_CASE("a chain starts and makes progress under either storage mode",
+          "[node][reorg][deferred][gate]") {
+    // REGRESSION for a production deadlock full mode cannot reach. start() held
+    // one window across its whole body, and the reference-mode wiring inside it
+    // takes another; the gate is not recursive, so a reference build hung at
+    // startup while every full-mode run stayed green.
+    //
+    // Compiled in both modes, so the reference build actually exercises the
+    // #ifdef branch that deadlocked. Under a watchdog, because the failure it
+    // guards against is a hang rather than a wrong answer.
+    watchdog_scope guard(std::chrono::seconds(60), "starting a chain");
+
+    chain_fixture fixture("gate_start_regression");
+    REQUIRE(fixture.created());
+
+    // The call that hung. Reaching the next line is the assertion.
+    REQUIRE(fixture.start());
+
+    auto& chain = fixture.chain();
+
+    // Progress, not merely "it returned": the store answers, a window can be
+    // taken and released, and a read completes afterwards.
+    CHECK(chain.utxo_size() == 0u);
+    {
+        auto const window = chain.begin_utxo_write();
+        CHECK(window.held());
+    }
+    CHECK(chain.utxo_size() == 0u);
+
+    // And a restart, which closes and reopens — the other lifecycle path that
+    // takes windows.
+    REQUIRE(fixture.restart());
+    CHECK(fixture.chain().utxo_size() == 0u);
+}
+
+TEST_CASE("a deletion under a scoped window is readable once the window ends",
+          "[node][reorg][deferred][gate]") {
+    // REGRESSION. An earlier version held the write window across a resolves()
+    // call, which takes a read lease; the gate is not recursive, so the suite
+    // hung until it was killed. That is the reachable-but-unsupported pattern
+    // the header describes, and it must not come back as a hang someone has to
+    // notice.
+    //
+    // The blocking capability is owned BY THE TEST, in an optional, so the
+    // failure path can release it and let the reader finish. Nothing is ever
+    // detached: a thread parked on the gate that outlived this fixture would be
+    // reading freed memory, which would poison the rest of the suite and every
+    // sanitizer report in it.
+    chain_fixture fixture("gate_scoped_window_regression");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+
+    auto const s = build_and_connect(fixture);
+    auto const target = key_of(s.tx_grand, 0);
+    REQUIRE(resolves(chain, target, 102));
+
+    std::optional<utxo_write_window> blocker = chain.begin_utxo_write();
+    CHECK(blocker->held());
+    {
+        std::array<utxoz::deferred_deletion_entry, 1> const batch{
+            utxoz::deferred_deletion_entry{target, 102}};
+        auto const progress = chain.utxo_apply_deletes(*blocker, batch);
+        CHECK(progress.erased.size() == 1);
+    }
+
+    // THE PROPERTY: released before anything reads.
+    blocker.reset();
+
+    // Re-acquisition after release, which is what this can actually show:
+    // `blocker` was already reset above, so taking a window here proves the
+    // first one gave the gate back rather than proving anything about exclusion
+    // while it was alive. Exclusion during a live window is covered where it can
+    // be forced — see the gate's own suite.
+    {
+        auto const proof = chain.begin_utxo_write();
+        CHECK(proof.held());
+    }
+
+    std::atomic<bool> done{false};
+    std::atomic<bool> still_there{true};
+    std::thread reader;
+
+    // The failure here is a HANG, not a wrong answer: `blocker` was released
+    // above before the reader starts, so the reaper's reset below is a no-op on
+    // every path — it cannot rescue a reader stuck on a window this test no
+    // longer holds. If the read blocks, the FAIL below throws, unwinding reaches
+    // the join, and the join has no deadline of its own. This is what bounds it.
+    watchdog_scope hang_guard(std::chrono::seconds(60), "a read after a scoped window");
+
+    // Joins on EVERY path, including a failed REQUIRE or an exception. The reset
+    // is kept for the shape rather than the effect: if a later edit moves the
+    // release below the thread, the reaper is already correct.
+    struct reaper {
+        std::thread& worker;
+        std::optional<utxo_write_window>& blocking;
+        ~reaper() {
+            if (worker.joinable()) {
+                blocking.reset();
+                worker.join();
+            }
+        }
+    } const guard{reader, blocker};
+
+    // resolves() throws when the store fails or the resolution cannot run, and an
+    // exception leaving a thread function calls std::terminate — which would kill
+    // the whole suite before the FAIL below could say anything. Captured here and
+    // reported by the main thread.
+    std::atomic<bool> threw{false};
+    std::string reason;
+    reader = std::thread([&] {
+        try {
+            still_there.store(resolves(chain, target, 102));
+        } catch (std::exception const& e) {
+            reason = e.what();
+            threw.store(true);
+        } catch (...) {
+            reason = "an unknown exception";
+            threw.store(true);
+        }
+        done.store(true);
+    });
+
+    // Short: the isolated case finishes immediately, so a long budget would only
+    // delay the diagnosis.
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while ( ! done.load() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    // FAIL, not FAIL_CHECK: the reaper above still runs and joins cleanly.
+    if ( ! done.load()) {
+        FAIL("the read did not complete: a write window is being held across it");
+    }
+
+    if (threw.load()) {
+        FAIL("the read failed rather than answering: " << reason);
+    }
+    CHECK(still_there.load() == false);   // deleted, and observable afterwards
+}
+
+TEST_CASE("connect runs its whole mutation under one window and reaches sync",
+          "[node][reorg][deferred][gate]") {
+    // A gate regression here is a HANG, not a wrong answer: build_and_connect
+    // drives the window-taking sync path, and reaching the end is the assertion.
+    // Without this the suite wedges instead of reporting.
+    watchdog_scope guard(std::chrono::seconds(60), "connect under one window");
+    // End to end for the connect path (#649): the batch's inserts, the deletions
+    // it owes and utxo_sync(window) all run under ONE capability, and the effect
+    // is observable afterwards rather than merely "it did not die".
+    //
+    // The timeout is the point as much as the assertions: utxo_sync() used to
+    // take its own window while the batch still held one, which this gate — not
+    // being recursive — turns into a deterministic hang. Reaching the end at all
+    // is what proves that is gone.
+    chain_fixture fixture("gate_connect_e2e");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+
+    auto const s = build_and_connect(fixture);
+
+    // connect_bodies drove utxo_build_task to completion, which is the path that
+    // opens the window, applies the delta, applies the deletions and syncs.
+    auto const heights = chain.get_last_heights();
+    REQUIRE(heights);
+    CHECK(heights->block == 102u);
+
+    auto const built = chain.get_utxo_built_height();
+    REQUIRE(built);
+    CHECK(*built == 102u);
+
+    // The final effect: what the branch created resolves, what it spent does not.
+    CHECK(resolves(chain, key_of(s.tx_grand, 0), 102));
+    CHECK_FALSE(resolves(chain, key_of(s.tx_child, 0), 102));
+    CHECK_FALSE(resolves(chain, key_of(s.tx_parent, 0), 102));
+
+    // Published cleanly, so the sync at the end of the window did happen.
+    CHECK(chain.read_transition_record().status == database::transition_status::clean);
+
+    // And the gate is left open: a window can be taken now, which it could not
+    // be if the batch had abandoned one.
+    auto const after = chain.begin_utxo_write();
+    CHECK(after.held());
+}
+
+TEST_CASE("reorg runs the whole rewind under one window and publishes",
+          "[node][reorg][deferred][gate]") {
+    // Same reason, and run_switch bounds only itself: build_and_connect and
+    // connect_bodies below it are unbounded.
+    watchdog_scope guard(std::chrono::seconds(60), "the rewind under one window");
+    // The same for the switch: restorations, every disconnect, the deletion
+    // sweep and the barrier under ONE capability, ending in a published branch
+    // and a verifiable UTXO set.
+    chain_fixture fixture("gate_reorg_e2e");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+
+    auto const s = build_and_connect(fixture);
+    auto const branch_head = propose_switch(fixture, s);
+    auto const outcome = run_switch(fixture, branch_head, trunk_len, {});
+
+    // It finished — the switch reaches publish_reorg_transition, which syncs
+    // while still holding the rewind's window.
+    CHECK_FALSE(outcome.fatal);
+    REQUIRE(outcome.result.ok);
+    REQUIRE(outcome.result.validated_tip);
+    CHECK(*outcome.result.validated_tip == trunk_len);
+    CHECK(chain.read_transition_record().status == database::transition_status::clean);
+
+    // The branch is published and the UTXO set matches it.
+    connect_bodies(fixture, s.branch_b, 101);
+    auto const heights = chain.get_last_heights();
+    REQUIRE(heights);
+    CHECK(heights->block == 104u);
+
+    CHECK_FALSE(resolves(chain, key_of(s.tx_parent, 0), 104));
+    CHECK_FALSE(resolves(chain, key_of(s.tx_child, 0), 104));
+    CHECK_FALSE(resolves(chain, key_of(s.tx_grand, 0), 104));
+    CHECK(resolves(chain, key_of(s.trunk.front().transactions().front(), 0), 104));
+
+    auto const after = chain.begin_utxo_write();
+    CHECK(after.held());
 }
 
 TEST_CASE("a concurrent resolution keeps its own batch through the switch",

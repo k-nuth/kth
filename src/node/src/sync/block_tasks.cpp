@@ -2161,172 +2161,192 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
         // Step 4. Apply to UTXO-Z. THE FIRST MUTATION: from here the record is
         // the only thing that says this batch was ever started.
-        if ( ! delta.empty()) {
-            auto result = chain.apply_utxo_inserts_raw(delta.inserts);
-            if (result != database::result_code::success) {
-                spdlog::critical("[utxo_build] Failed to apply UTXO delta at batch {} "
-                    "(operation {:#018x})", batch_start, operation_id);
-                on_fatal("a UTXO delta could not be applied");
-                co_return;
-            }
-        }
-
-        // Step 5. Persist undo data AFTER the delta is applied and BEFORE the
-        // built-height marker advances, so a crash can only leave undo data for a
-        // block that is already connected — never a connected block without undo
-        // data.
+        // ONE window for the whole coherent mutation: the inserts, the undo
+        // capture that reads under the same capability, the deletions, and the
+        // barrier that makes them durable. Opened AFTER the last suspension
+        // above and closed before the next, so the capability never lives across
+        // a co_await — everything between is synchronous (#649).
         //
-        // Each write reports which rev file it landed in. A batch that crosses a
-        // rotation writes into more than one, and the barrier below has to cover
-        // every one of them: syncing "the last file" leaves the rest to the page
-        // cache, which is the shape this replaced.
-        std::vector<int32_t> undo_files;
-        undo_files.reserve(pending_undo.size());
-        for (auto& entry : pending_undo) {
-            auto const file = chain.store_block_undo(entry.idx, entry.undo, entry.prev_hash);
-            if ( ! file) {
-                // After the delta: these blocks are in the UTXO set and now cannot be
-                // disconnected, so a later reorganization would have nothing to
-                // reverse them with.
-                spdlog::critical("[utxo_build] Failed to store undo data for index {}", entry.idx);
-                on_fatal("a connected block has no undo data and cannot be disconnected");
-                co_return;
-            }
-            undo_files.push_back(*file);
-        }
-
-        // Step 6. The deletions this batch owes, applied from a batch the task
-        // OWNS. They are part of this batch's delta, not work that follows it:
-        // until they run, outputs these blocks spent are still in the set. So
-        // they come before the state is published, and a failure is fatal rather
-        // than logged — a spent output left behind is a double spend the node
-        // would accept.
-        //
-        // ORDER MATTERS, and it used to be wrong: the height marker was
-        // persisted first and the deletions applied afterwards. A crash between
-        // the two left a marker saying the batch was complete over a set that
-        // still held every output these blocks spent, and the restart trusted
-        // the marker. The other direction — a crash after the deletions and
-        // before the height — is closed by the record written at step 2.
+        // Per call would keep readers out of the mappings and still admit one
+        // between the inserts and the deletions, where the set holds outputs
+        // these blocks spent and the transition record does not protect a reader
+        // that never consults it.
+        // Steps 4 to 9 ONLY. The window dies with this scope, before step 10:
+        // the organizer takes validation_mutex_ and then a UTXO read lease inside
+        // accept(), so a connect still holding the window when mempool_remove_for_block
+        // takes that same mutex would be acquiring the two in the opposite order —
+        // the AB-BA deadlock. Nothing below step 9 needs the capability, and the
+        // fsyncs of steps 10 and 11 have no business excluding readers.
         {
-            std::vector<utxoz::deferred_deletion_entry> owed;
-            owed.reserve(delta.deletes.size());
-            for (auto const& [key, h] : delta.deletes) {
-                owed.emplace_back(key, h);
-            }
+            auto const window = chain.begin_utxo_write();
 
-            // The SAME policy the reorganization runs, from the same function:
-            // `erased` retired permanently even when the walk reported a fault,
-            // only `unresolved` resent and rebuilt from what came back, a fault
-            // with nothing owed still fatal, bounded attempts. Reimplementing it
-            // here is how the two drifted apart before.
-            //
-            // What differs is the tolerance, and only that: strict_absence()
-            // says no proven absence is legitimate on this path, because a
-            // connect batch nets out anything created and spent inside itself,
-            // so every key it asks to delete was in the set.
-            constexpr int max_deletion_attempts = 3;
-            utxoz::deferred_deletion_entry offender{utxoz::raw_outpoint{}, 0};
-
-            auto const outcome = blockchain::run_deletion_sweep(
-                std::move(owed), blockchain::strict_absence(),
-                [&chain](std::span<utxoz::deferred_deletion_entry const> b) {
-                    return chain.utxo_apply_deletes(b);
-                },
-                max_deletion_attempts,
-                [&](int attempt, utxoz::deletion_progress const& progress) {
-                    if ( ! progress.unresolved.empty() || progress.error) {
-                        spdlog::warn("[utxo_build] attempt {} of {} applied {}, proved {} absent, "
-                            "left {} owed at batch {}-{}{}", attempt, max_deletion_attempts,
-                            progress.erased.size(), progress.absent.size(),
-                            progress.unresolved.size(), batch_start, batch_end,
-                            progress.error
-                                ? fmt::format(", fault: {}",
-                                    database::utxoz_error_name(*progress.error))
-                                : "");
-                    }
-                },
-                &offender);
-
-            switch (outcome) {
-                case blockchain::deletion_sweep_outcome::applied:
-                    break;
-
-                case blockchain::deletion_sweep_outcome::absent_unaccounted:
-                    spdlog::critical("[utxo_build] {} is proven absent at batch {}-{}: the UTXO "
-                        "set does not hold an output these blocks spent",
-                        utxoz::outpoint_to_string(offender.key), batch_start, batch_end);
-                    on_fatal("a batch spent an output the UTXO set does not hold");
-                    co_return;
-
-                case blockchain::deletion_sweep_outcome::fault_reported:
-                    spdlog::critical("[utxo_build] the deletion walk reported a fault at batch "
-                        "{}-{} with nothing left unresolved; refusing to publish over a store "
-                        "that reported one", batch_start, batch_end);
-                    on_fatal("the UTXO store reported a fault while applying deletions");
-                    co_return;
-
-                case blockchain::deletion_sweep_outcome::attempts_exhausted:
-                    spdlog::critical("[utxo_build] deletions could not be applied in {} attempts "
-                        "at batch {}-{}; the UTXO set still holds outputs these blocks spent",
-                        max_deletion_attempts, batch_start, batch_end);
-                    on_fatal("the deletions a batch owed could not be applied");
-                    co_return;
-            }
-        }
-
-        utxo_built_height = batch_end;
-
-        // Steps 7 and 8. Every rev file this batch wrote into, then the
-        // directory entries naming them. Contents and names are two barriers: a
-        // newly created rev*.dat can have every byte on the platter and still
-        // not exist after a power cut, because the entry that reaches it was
-        // never written. Both live inside flush_undo.
-        if (auto const flushed = chain.flush_undo(undo_files); ! flushed) {
-            if (flushed.error().file_number < 0) {
-                spdlog::critical("[utxo_build] The undo directory could not be put on stable "
-                    "storage after batch {}-{}: the rev files this batch wrote may not survive "
-                    "a restart, so these blocks would be connected and not disconnectable",
-                    batch_start, batch_end);
-            } else {
-                spdlog::critical("[utxo_build] The undo records in rev file {} could not be put "
-                    "on stable storage after batch {}-{}: these blocks would be connected and "
-                    "not disconnectable", flushed.error().file_number, batch_start, batch_end);
-            }
-            on_fatal("the undo records of a connected batch could not be made durable");
-            co_return;
-        }
-
-        // Step 9. UTXO-Z's own barrier. `close()` does not run it, so without
-        // this the set's mutations are the one part of the transition still in
-        // the page cache when the record is cleared.
-        //
-        // `unsupported` is not a failure and not a guarantee either: it is the
-        // documented answer where the platform has no barrier at all, and the
-        // node's own durability level already says so. `failed` is fatal on
-        // every platform — a level describes what a platform CAN promise, and it
-        // never turns a barrier that was attempted and refused into a success.
-        switch (chain.utxo_sync()) {
-            case database::barrier_outcome::crossed:
-                break;
-            case database::barrier_outcome::unsupported:
-                if (chain.durability() != database::durability_level::none) {
-                    spdlog::critical("[utxo_build] The UTXO store reports no durability barrier "
-                        "while this node claims '{}'; the two disagree about the same machine",
-                        database::to_string(chain.durability()));
-                    on_fatal("the UTXO store and the node disagree about what this platform can promise");
+            if ( ! delta.empty()) {
+                auto result = chain.apply_utxo_inserts_raw(window, delta.inserts);
+                if (result != database::result_code::success) {
+                    spdlog::critical("[utxo_build] Failed to apply UTXO delta at batch {} "
+                        "(operation {:#018x})", batch_start, operation_id);
+                    on_fatal("a UTXO delta could not be applied");
                     co_return;
                 }
-                spdlog::warn("[utxo_build] This platform exposes no durability barrier; batch "
-                    "{}-{} is published without one", batch_start, batch_end);
-                break;
-            case database::barrier_outcome::failed:
-                spdlog::critical("[utxo_build] The UTXO store's durability barrier failed after "
-                    "batch {}-{} (operation {:#018x}); what it applied is not known to be on "
-                    "disk", batch_start, batch_end, operation_id);
-                on_fatal("the UTXO set of a connected batch could not be made durable");
+            }
+
+            // Step 5. Persist undo data AFTER the delta is applied and BEFORE the
+            // built-height marker advances, so a crash can only leave undo data for a
+            // block that is already connected — never a connected block without undo
+            // data.
+            //
+            // Each write reports which rev file it landed in. A batch that crosses a
+            // rotation writes into more than one, and the barrier below has to cover
+            // every one of them: syncing "the last file" leaves the rest to the page
+            // cache, which is the shape this replaced.
+            std::vector<int32_t> undo_files;
+            undo_files.reserve(pending_undo.size());
+            for (auto& entry : pending_undo) {
+                auto const file = chain.store_block_undo(entry.idx, entry.undo, entry.prev_hash);
+                if ( ! file) {
+                    // After the delta: these blocks are in the UTXO set and now cannot be
+                    // disconnected, so a later reorganization would have nothing to
+                    // reverse them with.
+                    spdlog::critical("[utxo_build] Failed to store undo data for index {}", entry.idx);
+                    on_fatal("a connected block has no undo data and cannot be disconnected");
+                    co_return;
+                }
+                undo_files.push_back(*file);
+            }
+
+            // Step 6. The deletions this batch owes, applied from a batch the task
+            // OWNS. They are part of this batch's delta, not work that follows it:
+            // until they run, outputs these blocks spent are still in the set. So
+            // they come before the state is published, and a failure is fatal rather
+            // than logged — a spent output left behind is a double spend the node
+            // would accept.
+            //
+            // ORDER MATTERS, and it used to be wrong: the height marker was
+            // persisted first and the deletions applied afterwards. A crash between
+            // the two left a marker saying the batch was complete over a set that
+            // still held every output these blocks spent, and the restart trusted
+            // the marker. The other direction — a crash after the deletions and
+            // before the height — is closed by the record written at step 2.
+            {
+                std::vector<utxoz::deferred_deletion_entry> owed;
+                owed.reserve(delta.deletes.size());
+                for (auto const& [key, h] : delta.deletes) {
+                    owed.emplace_back(key, h);
+                }
+
+                // The SAME policy the reorganization runs, from the same function:
+                // `erased` retired permanently even when the walk reported a fault,
+                // only `unresolved` resent and rebuilt from what came back, a fault
+                // with nothing owed still fatal, bounded attempts. Reimplementing it
+                // here is how the two drifted apart before.
+                //
+                // What differs is the tolerance, and only that: strict_absence()
+                // says no proven absence is legitimate on this path, because a
+                // connect batch nets out anything created and spent inside itself,
+                // so every key it asks to delete was in the set.
+                constexpr int max_deletion_attempts = 3;
+                utxoz::deferred_deletion_entry offender{utxoz::raw_outpoint{}, 0};
+
+                auto const outcome = blockchain::run_deletion_sweep(
+                    std::move(owed), blockchain::strict_absence(),
+                    [&chain, &window](std::span<utxoz::deferred_deletion_entry const> b) {
+                        return chain.utxo_apply_deletes(window, b);
+                    },
+                    max_deletion_attempts,
+                    [&](int attempt, utxoz::deletion_progress const& progress) {
+                        if ( ! progress.unresolved.empty() || progress.error) {
+                            spdlog::warn("[utxo_build] attempt {} of {} applied {}, proved {} absent, "
+                                "left {} owed at batch {}-{}{}", attempt, max_deletion_attempts,
+                                progress.erased.size(), progress.absent.size(),
+                                progress.unresolved.size(), batch_start, batch_end,
+                                progress.error
+                                    ? fmt::format(", fault: {}",
+                                        database::utxoz_error_name(*progress.error))
+                                    : "");
+                        }
+                    },
+                    &offender);
+
+                switch (outcome) {
+                    case blockchain::deletion_sweep_outcome::applied:
+                        break;
+
+                    case blockchain::deletion_sweep_outcome::absent_unaccounted:
+                        spdlog::critical("[utxo_build] {} is proven absent at batch {}-{}: the UTXO "
+                            "set does not hold an output these blocks spent",
+                            utxoz::outpoint_to_string(offender.key), batch_start, batch_end);
+                        on_fatal("a batch spent an output the UTXO set does not hold");
+                        co_return;
+
+                    case blockchain::deletion_sweep_outcome::fault_reported:
+                        spdlog::critical("[utxo_build] the deletion walk reported a fault at batch "
+                            "{}-{} with nothing left unresolved; refusing to publish over a store "
+                            "that reported one", batch_start, batch_end);
+                        on_fatal("the UTXO store reported a fault while applying deletions");
+                        co_return;
+
+                    case blockchain::deletion_sweep_outcome::attempts_exhausted:
+                        spdlog::critical("[utxo_build] deletions could not be applied in {} attempts "
+                            "at batch {}-{}; the UTXO set still holds outputs these blocks spent",
+                            max_deletion_attempts, batch_start, batch_end);
+                        on_fatal("the deletions a batch owed could not be applied");
+                        co_return;
+                }
+            }
+
+            utxo_built_height = batch_end;
+
+            // Steps 7 and 8. Every rev file this batch wrote into, then the
+            // directory entries naming them. Contents and names are two barriers: a
+            // newly created rev*.dat can have every byte on the platter and still
+            // not exist after a power cut, because the entry that reaches it was
+            // never written. Both live inside flush_undo.
+            if (auto const flushed = chain.flush_undo(undo_files); ! flushed) {
+                if (flushed.error().file_number < 0) {
+                    spdlog::critical("[utxo_build] The undo directory could not be put on stable "
+                        "storage after batch {}-{}: the rev files this batch wrote may not survive "
+                        "a restart, so these blocks would be connected and not disconnectable",
+                        batch_start, batch_end);
+                } else {
+                    spdlog::critical("[utxo_build] The undo records in rev file {} could not be put "
+                        "on stable storage after batch {}-{}: these blocks would be connected and "
+                        "not disconnectable", flushed.error().file_number, batch_start, batch_end);
+                }
+                on_fatal("the undo records of a connected batch could not be made durable");
                 co_return;
-        }
+            }
+
+            // Step 9. UTXO-Z's own barrier. `close()` does not run it, so without
+            // this the set's mutations are the one part of the transition still in
+            // the page cache when the record is cleared.
+            //
+            // `unsupported` is not a failure and not a guarantee either: it is the
+            // documented answer where the platform has no barrier at all, and the
+            // node's own durability level already says so. `failed` is fatal on
+            // every platform — a level describes what a platform CAN promise, and it
+            // never turns a barrier that was attempted and refused into a success.
+            switch (chain.utxo_sync(window)) {
+                case database::barrier_outcome::crossed:
+                    break;
+                case database::barrier_outcome::unsupported:
+                    if (chain.durability() != database::durability_level::none) {
+                        spdlog::critical("[utxo_build] The UTXO store reports no durability barrier "
+                            "while this node claims '{}'; the two disagree about the same machine",
+                            database::to_string(chain.durability()));
+                        on_fatal("the UTXO store and the node disagree about what this platform can promise");
+                        co_return;
+                    }
+                    spdlog::warn("[utxo_build] This platform exposes no durability barrier; batch "
+                        "{}-{} is published without one", batch_start, batch_end);
+                    break;
+                case database::barrier_outcome::failed:
+                    spdlog::critical("[utxo_build] The UTXO store's durability barrier failed after "
+                        "batch {}-{} (operation {:#018x}); what it applied is not known to be on "
+                        "disk", batch_start, batch_end, operation_id);
+                    on_fatal("the UTXO set of a connected batch could not be made durable");
+                    co_return;
+            }
+        }   // the window ends HERE, before publish_transition
 
         // Step 10. The built height AND the clearing of the record, in ONE
         // transaction. Separately there is an instant where the height says

@@ -184,3 +184,54 @@ TEST_CASE("with a pool to update the raw form reports bytes it cannot parse", "[
     CHECK(pool.size() == 1);
     CHECK(pool.entry(pooled->hash()));
 }
+
+// =============================================================================
+// Lock order (#649)
+// =============================================================================
+//
+// The node has two locks and exactly one order. The transaction organizer takes
+// validation_mutex_ and THEN, inside validator_.accept(), a UTXO read lease. So
+// a connect batch still holding the UTXO write window when it reaches the
+// mempool update would take the same two in the opposite order, and two threads
+// doing both at once is the AB-BA deadlock: a node that stops, with no error and
+// nothing in the log.
+//
+// This is a DISCRIMINATING control, not a timeout. It fails by name, in the
+// thread that formed the pattern, and it goes red the moment the connect path
+// keeps its window past step 9 — which is precisely the defect it exists for. No
+// wall-clock is involved in reaching the verdict.
+
+TEST_CASE("the mempool update refuses to run under the UTXO window",
+          "[mempool][connect][gate]") {
+    test::chain_fixture fixture("mp_lock_order");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+    auto& pool = chain.mempool_ref();
+
+    auto const confirmed = as_ptr(make_tx({op(1, 0)}, 1, 1));
+    REQUIRE(pool.add(entry_for(confirmed, 1)));
+    auto const blk = block_with({*confirmed});
+    auto const raw = serialize(blk);
+
+    {
+        auto const window = chain.begin_utxo_write();
+
+        // Both overloads: the raw one is what the connect path calls, and the
+        // parsed one is reachable from the reorganization side.
+        CHECK_THROWS_AS(chain.mempool_remove_for_block(blk),
+                        blockchain::utxo_lock_order_error);
+        CHECK_THROWS_AS(chain.mempool_remove_for_block(byte_span{raw.data(), raw.size()}),
+                        blockchain::utxo_lock_order_error);
+
+        // Refused BEFORE doing anything: the pool is untouched, so this is a
+        // rejection rather than a half-applied update that also complained.
+        CHECK(pool.entry(confirmed->hash()));
+    }
+
+    // POSITIVE, and the half that makes the negation mean something: with the
+    // window ended — which is where the connect path now ends it — the same call
+    // does its work.
+    CHECK_FALSE(chain.mempool_remove_for_block(byte_span{raw.data(), raw.size()}));
+    CHECK_FALSE(pool.entry(confirmed->hash()));
+}

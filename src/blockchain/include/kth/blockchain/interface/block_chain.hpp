@@ -34,6 +34,7 @@
 
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/header_index.hpp>
+#include <kth/blockchain/utxo_gate.hpp>
 #include <kth/blockchain/pools/block_organizer.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/pools/capture_gate.hpp>
@@ -163,6 +164,19 @@ struct KB_API block_chain {
     code replace_headers_from(domain::chain::header::list const& headers, size_t start_height);
 #endif // ! defined(KTH_DB_READONLY)
 
+    /// Open the exclusive window over the UTXO store, for ONE logical operation.
+    ///
+    /// Held from before the first mutation until the set is coherent again — a
+    /// connect batch's inserts through its deletions, a rewind's restorations
+    /// through its final sweep. Per call would keep readers out of the mappings
+    /// and still admit one between the inserts and the deletions, where the set
+    /// holds outputs the blocks spent.
+    ///
+    /// Blocks until every admitted reader has left. Never held across a
+    /// suspension point: the mutating stretches it guards are synchronous.
+    [[nodiscard]]
+    utxo_write_window begin_utxo_write() { return utxo_gate_.write(); }
+
     /// What the persisted transition record says about the last transition
     /// (#600). Read before anything is mutated: `start()` asks it and refuses
     /// to come up on a database whose last transition did not finish.
@@ -183,16 +197,20 @@ struct KB_API block_chain {
     // Apply a batch of UTXO changes (full mode only — reference mode uses apply_utxo_delta_raw)
     template <database::utxo_insert_range Inserts>
     [[nodiscard]]
-    database::result_code apply_utxo_inserts(Inserts const& inserts) {
-        return utxoz_db_.apply_inserts(inserts);
+    database::result_code apply_utxo_inserts(
+        utxo_write_window const& window, Inserts const& inserts) {
+        return utxoz_db_.with_write(window,
+            [&](auto& db) { return db.apply_inserts(inserts); });
     }
 #endif
 
     // Apply a batch of raw UTXO changes (zero-copy path, no domain objects)
     template <typename Inserts>
     [[nodiscard]]
-    database::result_code apply_utxo_inserts_raw(Inserts const& inserts) {
-        return utxoz_db_.apply_inserts_raw(inserts);
+    database::result_code apply_utxo_inserts_raw(
+        utxo_write_window const& window, Inserts const& inserts) {
+        return utxoz_db_.with_write(window,
+            [&](auto& db) { return db.apply_inserts_raw(inserts); });
     }
 
     /// Apply a batch of deletions this caller owns. See
@@ -200,6 +218,7 @@ struct KB_API block_chain {
     /// matched back BY KEY, and only `unresolved` may be resent.
     [[nodiscard]]
     utxoz::deletion_progress utxo_apply_deletes(
+        utxo_write_window const& window,
         std::span<utxoz::deferred_deletion_entry const> requests);
 
     // Set last block height in LMDB (for fast IBD storage progress tracking)
@@ -273,9 +292,13 @@ struct KB_API block_chain {
     std::expected<void, database::block_store::undo_flush_error>
     flush_undo(std::span<int32_t const> file_numbers);
 
-    /// Step 9. UTXO-Z's own barrier, which `close()` does not run.
+    /// Step 9. UTXO-Z's own durability barrier, which `close()` does not run,
+    /// under the window of the operation it belongs to. Takes the capability
+    /// rather than opening its own: the connect batch and the rewind both call
+    /// it while still holding theirs, and this gate is deliberately not
+    /// recursive.
     [[nodiscard]]
-    database::barrier_outcome utxo_sync();
+    database::barrier_outcome utxo_sync(utxo_write_window const& window);
 
     /// What this node may claim about a published transition: the weakest of
     /// the four barriers above, not any one store's answer.
@@ -347,6 +370,7 @@ struct KB_API block_chain {
     ///        The rewind owns the batch and applies it once at the end: the
     ///        descent through the version files is paid per batch, not per key.
     database::disconnect_result disconnect_block(uint32_t height,
+        utxo_write_window const& window,
         boost::unordered_flat_map<utxoz::raw_outpoint, bool>& absence_tolerated,
         std::vector<utxoz::deferred_deletion_entry>& pending_deletes);
 
@@ -477,8 +501,12 @@ struct KB_API block_chain {
     ///         sees no difference between a complete walk and one that stopped.
     template <typename F>
     [[nodiscard]]
-    bool utxo_for_each(F&& callback) const {
-        return utxoz_db_.for_each_utxo(std::forward<F>(callback));
+    bool utxo_for_each(utxo_write_window const& window, F&& callback) const {
+        // Under the window rather than a lease: a full walk of every version is
+        // exactly the shape that must not overlap a mutation, and the bloom
+        // filter it feeds decides which keys a later delta may SKIP.
+        return utxoz_db_.with_read(window,
+            [&](auto const& db) { return db.for_each_utxo(std::forward<F>(callback)); });
     }
 
     // UTXO-Z size (number of UTXOs in the set)
@@ -890,6 +918,7 @@ private:
     ///         record then stays and the caller must treat the switch as fatal.
     [[nodiscard]]
     bool sweep_reorg_deletions(uint64_t operation_id,
+        utxo_write_window const& window,
         boost::unordered_flat_map<utxoz::raw_outpoint, bool> const& absence_tolerated,
         std::span<utxoz::deferred_deletion_entry const> pending_deletes);
 
@@ -912,6 +941,7 @@ private:
     ///         stays in place and the caller must treat the switch as fatal.
     [[nodiscard]]
     bool publish_reorg_transition(uint32_t connected_height, uint64_t operation_id,
+        utxo_write_window const& window,
         boost::unordered_flat_map<utxoz::raw_outpoint, bool> const& absence_tolerated,
         std::span<utxoz::deferred_deletion_entry const> pending_deletes);
 #endif
@@ -990,7 +1020,10 @@ private:
     std::unique_ptr<database::block_store> block_store_;
 
     // UTXO-Z high-performance UTXO database
-    database::utxoz_database utxoz_db_;
+    // The gate first: guarded_store holds a pointer to it, so it must outlive
+    // the store and therefore be declared before it.
+    mutable utxo_gate utxo_gate_;
+    guarded_store<database::utxoz_database> utxoz_db_;
 };
 
 } // namespace kth::blockchain
