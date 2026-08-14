@@ -155,6 +155,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # CSP-based sync system
     src/sync/chunk_coordinator.cpp
     src/sync/header_tasks.cpp
+    src/sync/download_ownership.cpp
     src/sync/block_tasks.cpp
     src/sync/orchestrator.cpp
     src/sync/reorg.cpp
@@ -299,6 +300,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/fatal_shutdown.cpp
           test/mempool_admission.cpp
           test/mempool_connect_wiring.cpp
+          test/download_supervisor.cpp
+          test/download_ownership.cpp
           test/connected_tip_remainder.cpp
           test/utxo_batch_atomicity.cpp
           test/reorg_cycle.cpp

@@ -155,8 +155,21 @@ struct chunk_validated {
 };
 
 // Report that a download task has ended (for cleanup of spawned_peers)
+/// A download worker reporting that it ended.
+///
+/// The nonce alone is not an identity (#652). Replacing a coordinator does not
+/// stop its workers — `stop()` is a flag they notice between chunks, and one
+/// mid-download took 59 seconds to come back in a mainnet run — so this can
+/// arrive after a NEW worker for the same peer already exists. Matched on the
+/// nonce alone it would retire that new worker, leaving the peer with no
+/// consumer and no event coming.
+///
+/// `task_id` names the instance and `coordinator_epoch` the range it belonged
+/// to; both are the values the worker was started with, repeated verbatim.
 struct download_task_ended {
-    uint64_t peer_nonce;  // peer->nonce() for lookup in spawned_peers
+    uint64_t peer_nonce;
+    uint64_t task_id;
+    uint64_t coordinator_epoch;
 };
 
 // Block download supervisor input - single channel (CSP pattern)
