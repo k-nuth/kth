@@ -64,11 +64,31 @@ extern std::atomic<uint64_t> g_blocks_received_by_validation;
 //
 // =============================================================================
 
+/// Starts the actual download for one peer session.
+///
+/// A seam, and a deliberately narrow one (#652): it replaces ONLY "run the
+/// download for this session". Everything the supervisor decides — the snapshot
+/// of known peers, the range and its epoch, the reservation before the start,
+/// the exact match on a report, the handoff and the rollback — stays inside the
+/// supervisor and is exercised through it.
+///
+/// It exists because the worker body talks p2p, so a test that wants to control
+/// WHEN a worker ends would otherwise have to drive a real peer conversation.
+/// The identity is passed through unchanged: a launcher must report with the
+/// same task id and epoch it was handed, exactly as the real worker does.
+using download_worker_launcher = std::function<void(
+    network::peer_session::ptr peer,
+    std::shared_ptr<chunk_coordinator> coordinator,
+    uint64_t task_id,
+    uint64_t coordinator_epoch,
+    block_download_task_output_channel& output)>;
+
 ::asio::awaitable<void> block_download_supervisor(
     block_download_input_channel& input,
     block_download_channel& output,  // carries blocks + performance stats
     blockchain::header_organizer& organizer,  // read-only for hashes
-    fast_validation_input_channel* fast_val = nullptr  // chunk-based fast validation (nullptr = old path)
+    fast_validation_input_channel* fast_val = nullptr,  // chunk-based fast validation (nullptr = old path)
+    download_worker_launcher launcher = nullptr   // test seam; null means the real worker
 );
 
 // =============================================================================
@@ -88,6 +108,8 @@ extern std::atomic<uint64_t> g_blocks_received_by_validation;
     std::shared_ptr<chunk_coordinator> coordinator,  // Lock-free chunk assignment (shared to keep alive)
     std::atomic<uint32_t>& active_peers,     // Atomic peer counter for metrics
     block_download_task_output_channel& output,  // Single output: blocks + task_ended
+    uint64_t task_id,            // this instance, so a late report cannot retire a newer one (#652)
+    uint64_t coordinator_epoch,  // the range it belongs to; NOT index_.generation()
     fast_validation_input_channel* fast_val = nullptr  // chunk-based fast validation (nullptr = old path)
 );
 

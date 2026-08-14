@@ -5,6 +5,8 @@
 #include <kth/blockchain/utxo_deletion_sweep.hpp>
 #include <kth/node/sync/block_tasks.hpp>
 
+#include <kth/node/sync/download_ownership.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -86,6 +88,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
     std::shared_ptr<chunk_coordinator> coordinator,
     std::atomic<uint32_t>& active_peers,
     block_download_task_output_channel& output,
+    uint64_t task_id,
+    uint64_t coordinator_epoch,
     fast_validation_input_channel* fast_val
 ) {
     auto const addr = peer->authority_with_agent();
@@ -416,7 +420,11 @@ std::atomic<uint32_t> g_active_download_peers{0};
     // Notify supervisor that this task is ending (CSP: communicate via channel)
     // Use retry to ensure this critical message is delivered
     spdlog::debug("[block_download:shutdown] Peer {} - sending task_ended notification...", addr);
-    if (!co_await try_send_with_retry(output, download_task_ended{peer_nonce})) {
+    // The identity this instance was started with, repeated verbatim: the
+    // supervisor matches on all three, so a report from a worker that has already
+    // been replaced changes nothing (#652).
+    if (!co_await try_send_with_retry(output,
+            download_task_ended{peer_nonce, task_id, coordinator_epoch})) {
         spdlog::warn("[block_download:shutdown] Failed to send task_ended after retries for peer {}", addr);
     }
 
@@ -431,7 +439,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
     block_download_input_channel& input,
     block_download_channel& output,
     blockchain::header_organizer& organizer,
-    fast_validation_input_channel* fast_val
+    fast_validation_input_channel* fast_val,
+    download_worker_launcher launcher
 ) {
     auto executor = co_await ::asio::this_coro::executor;
 
@@ -446,8 +455,20 @@ std::atomic<uint32_t> g_active_download_peers{0};
     std::shared_ptr<chunk_coordinator> coordinator;
     std::atomic<uint32_t> active_peers{0};
 
-    // Track peers that already have running download tasks (by nonce)
-    boost::unordered_flat_set<uint64_t> spawned_peers;
+    // Who owns each peer's download slot, and which peers exist at all (#652).
+    //
+    // The two are different sets, and conflating them is what left a range with
+    // no consumers: the old code tracked only the peers with a RUNNING task, so
+    // when a range finished and every task ended, it held nothing and the next
+    // range had nobody to start. Recovery then depended on an unrelated peer
+    // connect or disconnect — twice in one mainnet IBD, for 12m43s and 10m40s.
+    sync::download_ownership ownership;
+
+    // The peer objects behind the nonces the ownership reasons about. Replaced
+    // wholesale on every update, because peers_updated is a SNAPSHOT: the
+    // provider keeps one cumulative list, prunes stopped peers and broadcasts all
+    // of it, so a nonce that is absent has been withdrawn.
+    boost::unordered_flat_map<uint64_t, network::peer_session::ptr> known_peers;
 
     // Internal channel for tasks output (blocks + task_ended)
     block_download_task_output_channel task_output(executor, 256);
@@ -463,36 +484,69 @@ std::atomic<uint32_t> g_active_download_peers{0};
     uint64_t last_bytes_downloaded = 0;
     auto last_stats_time = std::chrono::steady_clock::now();
 
-    // Buffer peers that arrive before we have a range
-    std::vector<network::peer_session::ptr> pending_peers;
-
     // Timer for periodic timeout checks (created here so we can cancel it on shutdown)
     ::asio::steady_timer timeout_timer(executor);
     std::atomic<bool> timer_running{true};
 
     // Helper to spawn download task for a peer (returns true if spawned)
-    auto spawn_download = [&](network::peer_session::ptr peer) -> bool {
-        if (peer->stopped() || !coordinator) return false;
+    // Returns false ONLY for conditions checked before the start: no coordinator,
+    // a peer that is gone, or a nonce that already has a worker. A start that
+    // cannot happen is not one of them — it propagates.
+    auto spawn_download = [&](network::peer_session::ptr const& peer) -> bool {
+        // Re-checked here and not only by the caller: a snapshot can age between
+        // the decision and this point.
+        if ( ! peer || peer->stopped() || ! coordinator) return false;
 
         auto const nonce = peer->nonce();
-        if (spawned_peers.contains(nonce)) {
+        if (ownership.has_worker(nonce)) {
             return false;  // Already has a running task
         }
 
-        spdlog::debug("[block_supervisor] Spawning download task for peer {}", peer->authority_with_agent());
-        spawned_peers.insert(nonce);
-        g_active_download_peers.store(static_cast<uint32_t>(spawned_peers.size()), std::memory_order_relaxed);
-        // 2026-02-07: task_id is a unique counter, nonce identifies the peer session
         auto const task_id = g_block_download_task_id.fetch_add(1);
+        auto const epoch = ownership.epoch();
         auto task_name = fmt::format("block_download_{}:{}:{}", peer->authority(), nonce, task_id);
-        tasks.spawn(task_name, block_download_task(
-            peer,
-            coordinator,  // Pass shared_ptr - task keeps coordinator alive until done
-            active_peers,
-            task_output,
-            fast_val      // chunk-based fast validation (nullptr = old path)
-        ));
+
+        spdlog::debug("[block_supervisor] Spawning download task for peer {} (task {}, epoch {})",
+            peer->authority_with_agent(), task_id, epoch);
+
+        // No try/catch here, deliberately. `task_group::spawn` increments its
+        // active count before it can throw, so catching and carrying on would
+        // leave the group waiting at join() for a task that will never report —
+        // a supervisor that looked recovered and a shutdown that never finished.
+        // A start that cannot happen is not a condition this can absorb, so it
+        // propagates as it did before.
+        if (launcher) {
+            // The seam replaces the download itself and nothing else: the
+            // bookkeeping below and the report handling are the real ones either
+            // way.
+            launcher(peer, coordinator, task_id, epoch, task_output);
+        } else {
+            tasks.spawn(task_name, block_download_task(
+                peer,
+                coordinator,  // Pass shared_ptr - task keeps coordinator alive until done
+                active_peers,
+                task_output,
+                task_id,
+                epoch,
+                fast_val      // chunk-based fast validation (nullptr = old path)
+            ));
+        }
+
+        // Immediately after the start and with no suspension in between, so the
+        // report of this worker — whenever it arrives — is matched against a slot
+        // that already exists.
+        ownership.record(nonce, task_id, epoch);
+        g_active_download_peers.store(
+            static_cast<uint32_t>(ownership.worker_count()), std::memory_order_relaxed);
         return true;
+    };
+
+    // Start `nonce` against the CURRENT coordinator, using the peer the latest
+    // snapshot holds — never a pointer captured by the worker that just ended.
+    auto spawn_known = [&](uint64_t nonce) -> bool {
+        auto const it = known_peers.find(nonce);
+        if (it == known_peers.end()) return false;
+        return spawn_download(it->second);
     };
 
     // -------------------------------------------------------------------------
@@ -671,7 +725,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 auto blk_rate = elapsed_ms > 0 ? (blocks_delta * 1000 / elapsed_ms) : 0;
                 double mb_rate = elapsed_ms > 0 ? (double(bytes_delta) / 1024.0 / 1024.0) / (double(elapsed_ms) / 1000.0) : 0.0;
                 spdlog::info("[block_supervisor] Stats: {} blocks ({} blk/s, {:.1f} MB/s), {} peers downloading",
-                    blocks_forwarded, blk_rate, mb_rate, spawned_peers.size());
+                    blocks_forwarded, blk_rate, mb_rate, ownership.worker_count());
                 last_stats_time = now;
                 last_blocks_forwarded = blocks_forwarded;
                 last_bytes_downloaded = bytes_downloaded;
@@ -680,10 +734,37 @@ std::atomic<uint32_t> g_active_download_peers{0};
         }
 
         if (auto* ended = std::get_if<download_task_ended>(&msg)) {
-            spawned_peers.erase(ended->peer_nonce);
-            g_active_download_peers.store(static_cast<uint32_t>(spawned_peers.size()), std::memory_order_relaxed);
-            spdlog::info("[block_supervisor:task_ended] nonce={}, remaining downloading={}",
-                ended->peer_nonce, spawned_peers.size());
+            // The exact instance decides, before anything else is considered: a
+            // report that does not name the live slot belongs to a worker that
+            // was already replaced, and must not retire the one that replaced it.
+            //
+            // Only then the handoff. A worker of an earlier range has just freed
+            // the only slot its peer has, and this is the moment that peer can be
+            // given to the current coordinator — which is what replaces the
+            // accidental peer event this defect depended on.
+            auto const wants_workers = coordinator && ! coordinator->is_stopped() &&
+                ! coordinator->is_complete();
+            auto const handoff = ownership.ended(
+                ended->peer_nonce, ended->task_id, ended->coordinator_epoch, wants_workers);
+
+            g_active_download_peers.store(
+                static_cast<uint32_t>(ownership.worker_count()), std::memory_order_relaxed);
+            spdlog::info("[block_supervisor:task_ended] nonce={} task={} epoch={}, remaining downloading={}",
+                ended->peer_nonce, ended->task_id, ended->coordinator_epoch,
+                ownership.worker_count());
+
+            if (handoff) {
+                if (spawn_known(*handoff)) {
+                    spdlog::info("[block_supervisor:task_ended] peer {} handed to the current range "
+                        "(epoch {})", *handoff, ownership.epoch());
+                } else {
+                    // A refusal here is the state this whole change is about: the
+                    // range has one consumer fewer and nothing else will say so.
+                    spdlog::warn("[block_supervisor:task_ended] peer {} could not be handed to the "
+                        "current range (epoch {}); it is no longer eligible or could not start",
+                        *handoff, ownership.epoch());
+                }
+            }
             continue;
         }
 
@@ -706,56 +787,61 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 request->end_height
             );
 
-            // Spawn tasks for any pending peers
-            if (!pending_peers.empty()) {
-                spdlog::debug("[block_supervisor] Spawning tasks for {} buffered peers",
-                    pending_peers.size());
-                for (auto& p : pending_peers) {
-                    spawn_download(p);
+            // The coordinator is installed FIRST, then the epoch moves, and only
+            // then are workers started — so nothing is ever started against a
+            // coordinator that is no longer current.
+            //
+            // begin_range() answers with the known peers that have no live slot.
+            // A peer whose previous worker is still finishing is deliberately not
+            // among them: it is handed over when that worker reports, which is
+            // the one moment its slot is free.
+            auto const to_start = ownership.begin_range();
+            size_t started = 0;
+            for (auto const nonce : to_start) {
+                if (spawn_known(nonce)) {
+                    ++started;
                 }
-                pending_peers.clear();
             }
+            spdlog::info("[block_supervisor] Range {}-{} (epoch {}): started {} of {} known peers, "
+                "{} still finishing the previous range",
+                request->start_height, request->end_height, ownership.epoch(),
+                started, to_start.size(),
+                ownership.worker_count() - started);
             continue;
         }
 
         if (auto* peers_msg = std::get_if<peers_updated>(&msg)) {
-            // Count idle peers (connected but not downloading)
-            size_t idle_count = 0;
+            // A SNAPSHOT: the provider keeps one cumulative list, prunes stopped
+            // peers and broadcasts all of it, so a nonce that is absent has been
+            // withdrawn and must not be started again. (The block channel gets
+            // the fast-peer subset, so this set means "eligible to download".)
+            known_peers.clear();
+            std::vector<uint64_t> nonces;
+            nonces.reserve(peers_msg->peers.size());
             for (auto const& peer : peers_msg->peers) {
-                if (!peer->stopped() && !spawned_peers.contains(peer->nonce())) {
-                    ++idle_count;
-                }
+                if ( ! peer || peer->stopped()) continue;
+                known_peers.emplace(peer->nonce(), peer);
+                nonces.push_back(peer->nonce());
             }
-            spdlog::info("[block_supervisor:peers_updated] received {} peers, {} idle, {} downloading (coordinator={})",
-                peers_msg->peers.size(), idle_count, spawned_peers.size(), coordinator ? "yes" : "no");
+            ownership.set_known(nonces);
 
-            if (!coordinator) {
-                // Buffer peers until we have a range request
-                pending_peers = peers_msg->peers;
-                spdlog::debug("[block_supervisor] Buffered {} peers (waiting for range)",
-                    pending_peers.size());
+            spdlog::info("[block_supervisor:peers_updated] received {} peers, {} known, {} downloading "
+                "(coordinator={})", peers_msg->peers.size(), known_peers.size(),
+                ownership.worker_count(), coordinator ? "yes" : "no");
+
+            if ( ! coordinator) {
+                // Nothing to attach them to yet. They are remembered rather than
+                // buffered: the next range starts from what is known, so this no
+                // longer has to be the only chance they get.
                 continue;
             }
 
-            // Spawn tasks for any new peers in the list
             size_t spawned = 0;
-            size_t stopped_count = 0;
-            size_t already_spawned_count = 0;
-            for (auto const& peer : peers_msg->peers) {
-                if (peer->stopped()) {
-                    ++stopped_count;
-                    continue;
-                }
-                if (spawned_peers.contains(peer->nonce())) {
-                    ++already_spawned_count;
-                    continue;
-                }
-                if (spawn_download(peer)) {
-                    ++spawned;
-                }
+            for (auto const nonce : nonces) {
+                if (spawn_known(nonce)) ++spawned;
             }
-            spdlog::info("[block_supervisor:peers_updated] result: spawned={}, already_running={}, stopped={}",
-                spawned, already_spawned_count, stopped_count);
+            spdlog::info("[block_supervisor:peers_updated] result: spawned={}, already_running={}",
+                spawned, ownership.worker_count() - spawned);
             continue;
         }
 
