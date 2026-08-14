@@ -188,8 +188,13 @@ struct KB_API block_chain {
     ///
     /// Blocks until every admitted reader has left. Never held across a
     /// suspension point: the mutating stretches it guards are synchronous.
+    /// Fails with `recovery_required` once the gate has latched: an operation
+    /// that may have left the set half-applied did not finish, and nothing after
+    /// it is admitted.
     [[nodiscard]]
-    utxo_write_window begin_utxo_write() { return utxo_gate_.write(); }
+    std::expected<utxo_write_window, database::result_code> begin_utxo_write() {
+        return utxo_gate_.write();
+    }
 
     /// What the persisted transition record says about the last transition
     /// (#600). Read before anything is mutated: `start()` asks it and refuses
@@ -223,8 +228,16 @@ struct KB_API block_chain {
     [[nodiscard]]
     database::result_code apply_utxo_inserts_raw(
         utxo_write_window const& window, Inserts const& inserts) {
-        return utxoz_db_.with_write(window,
+        auto const code = utxoz_db_.with_write(window,
             [&](auto& db) { return db.apply_inserts_raw(inserts); });
+        // The window latches anyway on the way out, because a caller that gets
+        // anything but success returns without completing. This closes the gate
+        // at the point the store said so, which is what a caller reading the
+        // code with needs_recovery() is entitled to assume already happened.
+        if (database::needs_recovery(code)) {
+            utxo_gate_.latch_observed();
+        }
+        return code;
     }
 
     /// Apply a batch of deletions this caller owns. See
@@ -517,10 +530,24 @@ struct KB_API block_chain {
     /// @return true if compaction ran and succeeded. A caller that ignores this
     ///         is back to the 0.8.0 contract, where compaction could not fail.
     [[nodiscard]]
-    bool utxo_compact();
-    void utxo_print_statistics();
-    void utxo_print_sizing_report();
-    void utxo_print_height_range_stats();
+    /// Compact the UTXO store's version files.
+    ///
+    /// Replaces `utxo_compact()`, and the rename is the point: the old signature
+    /// returned `bool`, in which "the store latched and will refuse everything
+    /// from now on" and "there was a problem reclaiming space" are the same
+    /// answer. Its one caller logged the second, saying the set was intact.
+    ///
+    /// A new NAME rather than a new return type on the old one: changing only
+    /// the return keeps the mangled symbol on the Itanium ABI while changing how
+    /// the value comes back, so an old binary would link and corrupt its stack.
+    [[nodiscard]]
+    std::expected<void, database::result_code> compact_utxo();
+    /// The three UTXO reports. Renamed from `utxo_print_*` for the same reason
+    /// as above: a distinct symbol, so the error cannot arrive through a
+    /// signature that had nowhere to put it.
+    [[nodiscard]] std::expected<void, database::result_code> print_utxo_statistics();
+    [[nodiscard]] std::expected<void, database::result_code> print_utxo_sizing_report();
+    [[nodiscard]] std::expected<void, database::result_code> print_utxo_height_range_stats();
 
     // UTXO-Z iteration (for building bloom filter after IBD)
     /// @return false if the walk did not cover the whole set (see
@@ -538,7 +565,12 @@ struct KB_API block_chain {
 
     // UTXO-Z size (number of UTXOs in the set)
     [[nodiscard]]
-    size_t utxo_size() const;
+    /// How many UTXOs the store holds.
+    ///
+    /// Replaces `utxo_size()`, which could only answer with a number — so a
+    /// latched store returned 0, and 0 is a real answer meaning "empty".
+    [[nodiscard]]
+    std::expected<size_t, database::result_code> utxo_count() const;
 
     // Set/clear bloom filter for skip-insert optimization
     void set_utxo_bloom(std::shared_ptr<database::utxo_bloom_filter const> bloom);

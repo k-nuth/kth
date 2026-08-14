@@ -571,7 +571,7 @@ TEST_CASE("the classification is per block, and strict dominates tolerable",
     std::vector<utxoz::deferred_deletion_entry> owed;
 
     // The same capability the rewind holds: one window for the whole operation.
-    auto const window = chain.begin_utxo_write();
+    auto const window = chain.begin_utxo_write().value();
     REQUIRE(chain.disconnect_block(102, window, tolerated, owed)
             == database::disconnect_result::ok);
     REQUIRE(chain.disconnect_block(101, window, tolerated, owed)
@@ -691,7 +691,7 @@ TEST_CASE("a deletion the rewind did not account for is fatal and publishes noth
         // window is the self-deadlock the header calls reachable-but-unsupported.
         // This test formed it and hung — the pattern being real, not a reason to
         // soften the gate.
-        auto const strip_window = chain.begin_utxo_write();
+        auto const strip_window = chain.begin_utxo_write().value();
         auto const stripped = chain.utxo_apply_deletes(strip_window, strip);
         REQUIRE(stripped.erased.size() == 1);
     }
@@ -745,17 +745,17 @@ TEST_CASE("a chain starts and makes progress under either storage mode",
 
     // Progress, not merely "it returned": the store answers, a window can be
     // taken and released, and a read completes afterwards.
-    CHECK(chain.utxo_size() == 0u);
+    CHECK(chain.utxo_count().value() == 0u);
     {
-        auto const window = chain.begin_utxo_write();
+        auto const window = chain.begin_utxo_write().value();
         CHECK(window.held());
     }
-    CHECK(chain.utxo_size() == 0u);
+    CHECK(chain.utxo_count().value() == 0u);
 
     // And a restart, which closes and reopens — the other lifecycle path that
     // takes windows.
     REQUIRE(fixture.restart());
-    CHECK(fixture.chain().utxo_size() == 0u);
+    CHECK(fixture.chain().utxo_count().value() == 0u);
 }
 
 TEST_CASE("a deletion under a scoped window is readable once the window ends",
@@ -780,7 +780,7 @@ TEST_CASE("a deletion under a scoped window is readable once the window ends",
     auto const target = key_of(s.tx_grand, 0);
     REQUIRE(resolves(chain, target, 102));
 
-    std::optional<utxo_write_window> blocker = chain.begin_utxo_write();
+    std::optional<utxo_write_window> blocker = chain.begin_utxo_write().value();
     CHECK(blocker->held());
     {
         std::array<utxoz::deferred_deletion_entry, 1> const batch{
@@ -798,7 +798,7 @@ TEST_CASE("a deletion under a scoped window is readable once the window ends",
     // while it was alive. Exclusion during a live window is covered where it can
     // be forced — see the gate's own suite.
     {
-        auto const proof = chain.begin_utxo_write();
+        auto const proof = chain.begin_utxo_write().value();
         CHECK(proof.held());
     }
 
@@ -905,7 +905,7 @@ TEST_CASE("connect runs its whole mutation under one window and reaches sync",
 
     // And the gate is left open: a window can be taken now, which it could not
     // be if the batch had abandoned one.
-    auto const after = chain.begin_utxo_write();
+    auto const after = chain.begin_utxo_write().value();
     CHECK(after.held());
 }
 
@@ -945,7 +945,7 @@ TEST_CASE("reorg runs the whole rewind under one window and publishes",
     CHECK_FALSE(resolves(chain, key_of(s.tx_grand, 0), 104));
     CHECK(resolves(chain, key_of(s.trunk.front().transactions().front(), 0), 104));
 
-    auto const after = chain.begin_utxo_write();
+    auto const after = chain.begin_utxo_write().value();
     CHECK(after.held());
 }
 

@@ -6,6 +6,7 @@
 #define KTH_BLOCKCHAIN_UTXO_GATE_HPP
 
 #include <chrono>
+#include <expected>
 #include <concepts>
 #include <condition_variable>
 #include <cstddef>
@@ -18,6 +19,7 @@
 #include <utility>
 
 #include <kth/blockchain/define.hpp>
+#include <kth/database/databases/result_code.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 
 namespace kth::blockchain {
@@ -72,6 +74,15 @@ struct KB_API utxo_affinity_error : std::logic_error {
 /// to refuse. The right fix is always to end the window first — the invariant is
 /// that nothing under it may take another of the node's locks.
 struct KB_API utxo_lock_order_error : std::logic_error {
+    using std::logic_error::logic_error;
+};
+
+/// Raised when a capability does not authorise the access it was offered for.
+///
+/// A programming error, surfaced rather than left as undefined behaviour: a
+/// token from a different gate, or one already released, proves exclusion over
+/// something that is not this store — or over nothing at all.
+struct KB_API utxo_capability_error : std::logic_error {
     using std::logic_error::logic_error;
 };
 
@@ -190,6 +201,7 @@ public:
         detail::check_capability_move(other.gate_ != nullptr, other.owner_, "write window");
         gate_ = std::exchange(other.gate_, nullptr);
         owner_ = std::exchange(other.owner_, std::thread::id{});
+        take_state_from(other);
     }
 
     utxo_write_window& operator=(utxo_write_window&& other) {
@@ -200,6 +212,7 @@ public:
             release();
             gate_ = std::exchange(other.gate_, nullptr);
             owner_ = std::exchange(other.owner_, std::thread::id{});
+            take_state_from(other);
         }
         return *this;
     }
@@ -216,6 +229,81 @@ public:
     ~utxo_write_window() { release(); }
 
     [[nodiscard]] bool held() const { return gate_ != nullptr; }
+
+    // -------------------------------------------------------------------------
+    // Three facts, and they are three because two of them get the answer wrong
+    // -------------------------------------------------------------------------
+    //
+    // What the window has to know is not one thing:
+    //
+    //   * `mark_mutating()` — an operation that CAN leave partial progress is
+    //     about to start. Said BEFORE the call, because afterwards there may be
+    //     no one left to say it: an exception, a cancellation and an early
+    //     return all leave through the destructor and nowhere else. This governs
+    //     poison, and it is deliberately pessimistic — it claims only that
+    //     something MIGHT have been applied;
+    //
+    //   * `mark_mutated()` — something WAS applied, and there is evidence.
+    //     `deletion_progress.erased` is that evidence for a deletion batch, and
+    //     the library documents it as exact even on the failure path. This is
+    //     what `switch_result.mutated` reports, and it must not be the flag
+    //     above: the reorg caller republishes the chain view when it is true, so
+    //     a conservative true moves the generation and drops the template cache
+    //     for a switch that touched nothing, while a false negative leaves the
+    //     published view describing a branch the node has already left;
+    //
+    //   * `complete()` — the operation reached ITS OWN safe boundary. Which
+    //     boundary that is belongs to the operation, not to the gate: a connect
+    //     batch is safe once `utxo_sync` returns, because its LMDB record and
+    //     its UTXO-Z mutations have to agree on disk; a compaction is safe the
+    //     moment `compact_all()` returns success, because it changes which files
+    //     hold the set and not what the set contains, so there is no second
+    //     store for it to agree with and no barrier it owes. Baking either rule
+    //     in here would poison the other operation for following its own
+    //     protocol correctly.
+    //
+    // A window that was never marked — statistics, a bloom walk, the open —
+    // leaves without poison whatever else happened to it.
+
+    /// An operation that may apply part of its work is about to begin.
+    void mark_mutating() { mutation_may_have_started_ = true; }
+
+    /// Evidence that something was applied. Separate from the above on purpose;
+    /// see the note there.
+    void mark_mutated() {
+        mutation_may_have_started_ = true;
+        ever_mutated_ = true;
+    }
+
+    /// The operation reached the boundary past which abandoning it is safe.
+    ///
+    /// A contract error on a window that was never marked, and on a second call:
+    /// both mean the caller's idea of its own protocol and this window's
+    /// disagree, and the failure worth having is the loud one rather than a
+    /// store that quietly stops being poisoned.
+    void complete() {
+        if ( ! mutation_may_have_started_) {
+            throw utxo_capability_error(
+                "complete() on a window that never declared a mutation: either the "
+                "operation forgot mark_mutating(), or it has nothing to complete");
+        }
+        if (completed_) {
+            throw utxo_capability_error(
+                "complete() called twice on one window; the safe boundary is "
+                "crossed once");
+        }
+        completed_ = true;
+    }
+
+    /// Whether anything was actually applied — the answer `switch_result.mutated`
+    /// carries. Evidence, never the conservative flag.
+    [[nodiscard]] bool has_mutated() const { return ever_mutated_; }
+
+    /// Whether releasing now would poison the gate. For controls and
+    /// diagnostics: a caller decides by marking, not by asking.
+    [[nodiscard]] bool would_poison() const {
+        return mutation_may_have_started_ && ! completed_;
+    }
 
     /// Whether this capability was issued by `gate` and is still held. A token
     /// from another gate authorises nothing: it proves exclusion over a store
@@ -234,6 +322,83 @@ public:
 private:
     friend class utxo_gate;
     explicit utxo_write_window(utxo_gate& gate)
+        : gate_(&gate), owner_(std::this_thread::get_id()) {}
+    void release();
+
+    /// The three facts move with the gate they describe, and the source is left
+    /// clean. A moved-from window holds no gate, so it releases nothing and can
+    /// poison nothing — leaving its flags set would be harmless today and a trap
+    /// the first time one is reused.
+    void take_state_from(utxo_write_window& other) {
+        mutation_may_have_started_ = std::exchange(other.mutation_may_have_started_, false);
+        ever_mutated_ = std::exchange(other.ever_mutated_, false);
+        completed_ = std::exchange(other.completed_, false);
+    }
+
+    utxo_gate* gate_;
+    std::thread::id owner_;
+
+    /// Not carried across a move: a moved-from window releases nothing, and the
+    /// receiving one takes the facts with the gate. See the move operations,
+    /// which transfer all three.
+    bool mutation_may_have_started_{false};
+    bool ever_mutated_{false};
+    bool completed_{false};
+};
+
+/// Permission to CLOSE the store, and nothing else.
+///
+/// A latched gate refuses every window and every lease, which is the point — and
+/// which would also make it impossible to shut the store down cleanly, since
+/// close() needs the same exclusion any mutation does. This is the one way past
+/// that, and it is deliberately a separate type rather than a flag on the write
+/// window: a bool would be one argument away from authorising a write.
+///
+/// What it can do is bounded by what accepts it. `guarded_store::with_close` is
+/// the only overload that takes one, and it hands the store to a callback that
+/// may not return a reference or a pointer — the same constraint the other two
+/// carry — so the store cannot escape through it either.
+///
+/// It does NOT clear the latch. Closing is how a node winds down; it is not a
+/// repair, and a gate that came back clean after a close would let the next
+/// start() run over a store nobody established anything about.
+class KB_API utxo_close_authority {
+public:
+    utxo_close_authority(utxo_close_authority const&) = delete;
+    utxo_close_authority& operator=(utxo_close_authority const&) = delete;
+
+    utxo_close_authority(utxo_close_authority&& other)
+        : gate_(nullptr), owner_() {
+        detail::check_capability_move(other.gate_ != nullptr, other.owner_, "close authority");
+        gate_ = std::exchange(other.gate_, nullptr);
+        owner_ = std::exchange(other.owner_, std::thread::id{});
+    }
+
+    utxo_close_authority& operator=(utxo_close_authority&& other) {
+        if (this != &other) {
+            detail::check_capability_move(other.gate_ != nullptr, other.owner_, "close authority");
+            release();
+            gate_ = std::exchange(other.gate_, nullptr);
+            owner_ = std::exchange(other.owner_, std::thread::id{});
+        }
+        return *this;
+    }
+
+    ~utxo_close_authority() { release(); }
+
+    [[nodiscard]] bool held() const { return gate_ != nullptr; }
+
+    [[nodiscard]] bool authorises(utxo_gate const& gate) const {
+        return gate_ == &gate;
+    }
+
+    [[nodiscard]] bool on_issuing_thread() const {
+        return owner_ == std::this_thread::get_id();
+    }
+
+private:
+    friend class utxo_gate;
+    explicit utxo_close_authority(utxo_gate& gate)
         : gate_(&gate), owner_(std::this_thread::get_id()) {}
     void release();
 
@@ -374,8 +539,11 @@ public:
     /// single function that took it, and nothing nests — plus the bounded
     /// regression in the suite.
     [[nodiscard]]
-    utxo_read_lease read() {
+    std::expected<utxo_read_lease, database::result_code> read() {
         std::unique_lock<std::mutex> guard(mutex_);
+        if (poisoned_) {
+            return std::unexpected(database::result_code::recovery_required);
+        }
         // Refused, not waited on: this thread is holding the window this lease
         // would wait for. Detection only — a thread that does NOT hold the
         // window is never granted anything on the strength of its id.
@@ -388,14 +556,24 @@ public:
         // stream of readers must not be able to starve the deletion that a
         // batch cannot publish without.
         cv_.wait(guard, [this] { return ! writer_active_ && writers_waiting_ == 0; });
+        // Asked AGAIN after the wait. The first check refuses a caller that
+        // arrives late; this one refuses the caller that was already parked when
+        // the latch was published, which is the reader the ordering in
+        // end_write() exists to catch.
+        if (poisoned_) {
+            return std::unexpected(database::result_code::recovery_required);
+        }
         ++readers_;
         return utxo_read_lease(*this);
     }
 
     /// Take the exclusive window. Blocks until every admitted reader has left.
     [[nodiscard]]
-    utxo_write_window write() {
+    std::expected<utxo_write_window, database::result_code> write() {
         std::unique_lock<std::mutex> guard(mutex_);
+        if (poisoned_) {
+            return std::unexpected(database::result_code::recovery_required);
+        }
         if (writer_active_ && owner_ == std::this_thread::get_id()) {
             throw utxo_reentry_error(
                 "the exclusive window was requested by the thread already holding "
@@ -407,10 +585,59 @@ public:
         // exceptional path is unreachable from here. It is written to be correct
         // regardless, and tested where it lives rather than through this call.
         cv_.wait(guard, [this] { return ! writer_active_ && readers_ == 0; });
+        if (poisoned_) {
+            return std::unexpected(database::result_code::recovery_required);
+        }
         pending.acquired();
         writer_active_ = true;
         owner_ = std::this_thread::get_id();
         return utxo_write_window(*this);
+    }
+
+    /// Take the exclusive window FOR CLOSING, latched or not.
+    ///
+    /// Waits for ordinary exclusion exactly as write() does — a close that ran
+    /// alongside a reader would unmap what that reader is holding — and it is
+    /// the poison check, and only that, which it skips. The latch stays set:
+    /// this returns permission to shut the store down, never permission to keep
+    /// using it.
+    [[nodiscard]]
+    utxo_close_authority authorise_close() {
+        std::unique_lock<std::mutex> guard(mutex_);
+        if (writer_active_ && owner_ == std::this_thread::get_id()) {
+            throw utxo_reentry_error(
+                "a close authority was requested by the thread already holding the "
+                "exclusive window; the gate is not recursive");
+        }
+        detail::pending_writer pending(writers_waiting_, cv_, guard);
+        cv_.wait(guard, [this] { return ! writer_active_ && readers_ == 0; });
+        pending.acquired();
+        writer_active_ = true;
+        owner_ = std::this_thread::get_id();
+        return utxo_close_authority(*this);
+    }
+
+    /// The STORE reported that it has latched; close the gate behind it.
+    ///
+    /// UTXO-Z latches itself for the same reason this gate does — an operation
+    /// it could not finish — and it says so with a code of its own. A boundary
+    /// that only translated that code would leave every later caller queueing
+    /// for a store that has already stopped answering, one refused call at a
+    /// time. This is the read path's way to latch: a lease cannot poison on
+    /// release, because a read leaves nothing half-applied, so the fact has to
+    /// be published where it is observed.
+    ///
+    /// Idempotent, and it only ever sets.
+    void latch_observed() {
+        std::lock_guard<std::mutex> guard(mutex_);
+        poisoned_ = true;
+    }
+
+    /// Whether the gate has latched. Diagnostics and controls; a caller learns
+    /// it by being refused, not by asking first.
+    [[nodiscard]] bool poisoned() const {
+        std::lock_guard<std::mutex> guard(mutex_);
+        return poisoned_;
     }
 
     /// Take the window, or give up. Returns nullopt rather than waiting past the
@@ -424,6 +651,11 @@ public:
     [[nodiscard]]
     std::optional<utxo_write_window> try_write_for(std::chrono::milliseconds budget) {
         std::unique_lock<std::mutex> guard(mutex_);
+        // A latched gate declines rather than waits. `nullopt` is the only
+        // refusal this signature has, and it already means "you did not get it".
+        if (poisoned_) {
+            return std::nullopt;
+        }
         // Same refusal as write(), and for the same reason: waiting out the
         // budget would report a programming error as contention, and hand back a
         // nullopt that reads as "someone else had it" when nobody did.
@@ -441,6 +673,13 @@ public:
                 // waiting on a count nothing will lower again.
                 return std::nullopt;
             }
+            // Asked AGAIN, for the same reason read() and write() ask twice: the
+            // latch can be published while this caller is parked in wait_for,
+            // and a caller that only checked on the way in would be admitted to
+            // a store that latched while it waited.
+            if (poisoned_) {
+                return std::nullopt;
+            }
             pending.acquired();
         }
         writer_active_ = true;
@@ -454,6 +693,9 @@ public:
     [[nodiscard]]
     std::optional<utxo_read_lease> try_read_for(std::chrono::milliseconds budget) {
         std::unique_lock<std::mutex> guard(mutex_);
+        if (poisoned_) {
+            return std::nullopt;
+        }
         if (writer_active_ && owner_ == std::this_thread::get_id()) {
             throw utxo_reentry_error(
                 "a read lease was requested by the thread already holding the "
@@ -462,6 +704,9 @@ public:
         auto const got = cv_.wait_for(guard, budget,
             [this] { return ! writer_active_ && writers_waiting_ == 0; });
         if ( ! got) {
+            return std::nullopt;
+        }
+        if (poisoned_) {
             return std::nullopt;
         }
         ++readers_;
@@ -504,6 +749,7 @@ public:
 private:
     friend class utxo_write_window;
     friend class utxo_read_lease;
+    friend class utxo_close_authority;
 
     void end_read() {
         {
@@ -513,9 +759,21 @@ private:
         cv_.notify_all();
     }
 
-    void end_write() {
+    /// @param poison Whether the operation left through an unsafe exit.
+    ///
+    /// The ORDER inside the critical section is the whole of the guarantee. The
+    /// latch is published FIRST, then the writer is stood down, and only after
+    /// the mutex is released is anyone woken. So there is no instant at which
+    /// the door is open and the latch is not yet set: a reader that wakes has
+    /// already lost, and a reader that has not entered yet is refused before it
+    /// takes the lock. Poisoning in a separate call after end_write() would
+    /// leave exactly that gap.
+    void end_write(bool poison) {
         {
             std::lock_guard<std::mutex> guard(mutex_);
+            if (poison) {
+                poisoned_ = true;
+            }
             writer_active_ = false;
             // Cleared on every path, an exception included: the destructor runs
             // during unwinding, so a stale owner cannot outlive a failed
@@ -531,6 +789,14 @@ private:
     size_t writers_waiting_{0};
     bool writer_active_{false};
 
+    /// Set once, never cleared. There is no unpoison(), and close() does not
+    /// clear it: what the latch says is that an operation which may have applied
+    /// part of its work did not finish, and no later call can make that untrue.
+    /// The only thing that resolves it is a restart, which consults the
+    /// transition record — a decision this object is deliberately not able to
+    /// make on its own.
+    bool poisoned_{false};
+
     /// Whoever holds the window, for DETECTION only. Never read to authorise an
     /// access: with_read/with_write ask the capability, never the thread.
     std::thread::id owner_{};
@@ -538,7 +804,24 @@ private:
 
 inline void utxo_write_window::release() {
     if (gate_ != nullptr) {
-        gate_->end_write();
+        // The verdict travels WITH the release, so the gate can publish it in
+        // the same critical section that opens the door. Deciding it here and
+        // poisoning in a second call would leave a window between them in which
+        // a reader is admitted to a store nobody has declared unusable yet.
+        gate_->end_write(would_poison());
+        gate_ = nullptr;
+        mutation_may_have_started_ = false;
+        ever_mutated_ = false;
+        completed_ = false;
+    }
+}
+
+inline void utxo_close_authority::release() {
+    if (gate_ != nullptr) {
+        // Never poisons: closing is a wind-down, not an operation that could
+        // have left the set half-written. Never CLEARS it either — end_write
+        // only ever sets.
+        gate_->end_write(false);
         gate_ = nullptr;
     }
 }
@@ -550,14 +833,6 @@ inline void utxo_read_lease::release() {
     }
 }
 
-/// Raised when a capability does not authorise the access it was offered for.
-///
-/// A programming error, surfaced rather than left as undefined behaviour: a
-/// token from a different gate, or one already released, proves exclusion over
-/// something that is not this store — or over nothing at all.
-struct KB_API utxo_capability_error : std::logic_error {
-    using std::logic_error::logic_error;
-};
 
 
 /// A callback whose result cannot carry the store out of the scope that
@@ -612,6 +887,18 @@ public:
         requires escaping_free_result<F, T const&>
     decltype(auto) with_read(utxo_read_lease const& lease, F&& callback) const {
         authorise(lease, "read");
+        return std::forward<F>(callback)(value_);
+    }
+
+    /// Closing access, authorised by the administrative capability.
+    ///
+    /// The ONLY overload that takes one. Separate from with_write so that the
+    /// capability which survives a latched gate cannot be handed to a mutation:
+    /// the type system refuses it rather than a review having to notice.
+    template <typename F>
+        requires escaping_free_result<F, T&>
+    decltype(auto) with_close(utxo_close_authority const& authority, F&& callback) {
+        authorise(authority, "close");
         return std::forward<F>(callback)(value_);
     }
 

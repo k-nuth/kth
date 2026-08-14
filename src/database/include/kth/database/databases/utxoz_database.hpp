@@ -25,6 +25,7 @@
 #include <kth/database/define.hpp>
 #include <kth/database/durability.hpp>
 #include <kth/database/databases/result_code.hpp>
+#include <kth/database/detail/storage_failure.hpp>
 #include <kth/database/databases/utxo_entry.hpp>
 #include <kth/domain/chain/point.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
@@ -286,7 +287,11 @@ struct KD_API utxoz_database {
             if ( ! ins || ! *ins) {
                 spdlog::error("[utxoz_database] Failed to insert UTXO from block {} - {}:{}",
                     entry.height(), encode_hash(point.hash()), point.index());
-                return ins ? result_code::duplicated_key : result_code::other;
+                // Through the same conversion as every other boundary: this is
+                // the path a connect batch takes, so a store that latches here
+                // is exactly where the category matters most.
+                return ins ? result_code::duplicated_key
+                           : detail::storage_failure_to_result_code(ins.error());
             }
         }
 
@@ -329,7 +334,7 @@ struct KD_API utxoz_database {
             if ( ! ins) {
                 spdlog::error("[utxoz_database] Insert error at block {}, outpoint={}",
                     raw.height, utxoz::outpoint_to_string(key));
-                return result_code::other;
+                return detail::storage_failure_to_result_code(ins.error());
             }
             if ( ! *ins) {
                 spdlog::error("[utxoz_database] Duplicate key at block {}, outpoint={}",
@@ -436,8 +441,13 @@ struct KD_API utxoz_database {
     [[nodiscard]]
     utxoz::deletion_progress apply_deletes(std::span<utxoz::deferred_deletion_entry const> requests);
 
+    /// Compact all version files.
+    ///
+    /// Replaces `bool compact()`, whose `false` meant two different things: the
+    /// database was never opened, or a compaction ran and failed. UTXO-Z can now
+    /// also latch here, and that is a third thing again.
     [[nodiscard]]
-    bool compact();
+    std::expected<void, result_code> compact_utxo();
 
     /// Ask for the data written so far to reach stable storage.
     ///

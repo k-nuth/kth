@@ -338,7 +338,12 @@ code validate_block_batch(
                     spdlog::error("[batch_validate] prevout {}:{} spent@{} was never resolved "
                         "(batch_start={}, utxo_size={}); refusing to judge these blocks",
                         encode_hash(op.hash()), op.index(), height, start_height,
-                        chain.utxo_size());
+                        // A store that will not answer its size is itself worth
+                        // seeing here, so the code is printed rather than a
+                        // number that would read as an empty set.
+                        chain.utxo_count()
+                            .transform([](size_t n) { return std::to_string(n); })
+                            .value_or(std::string("unavailable")));
                     return error::operation_failed;
                 }
 

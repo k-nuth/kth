@@ -530,7 +530,14 @@ bool save_utxo_bloom(
 ) {
     auto const t0 = std::chrono::steady_clock::now();
 
-    auto const utxo_count = chain.utxo_size();
+    auto const counted = chain.utxo_count();
+    if ( ! counted) {
+        spdlog::error("[bloom] The UTXO store will not answer its size ({}); refusing to build "
+            "a filter over a set that cannot be read",
+            database::result_code_name(counted.error()));
+        return false;
+    }
+    auto const utxo_count = *counted;
     if (utxo_count == 0) {
         spdlog::warn("[bloom] No UTXOs to build bloom filter from");
         return false;
@@ -543,7 +550,15 @@ bool save_utxo_bloom(
 
     size_t inserted = 0;
     auto const window = chain.begin_utxo_write();
-    if ( ! chain.utxo_for_each(window, [&](utxoz::raw_outpoint const& key) {
+    if ( ! window) {
+        spdlog::error("[bloom] The UTXO gate has latched ({}); no filter is written",
+            database::result_code_name(window.error()));
+        return false;
+    }
+    // Never marked. The walk is read-only — it takes the exclusive window
+    // because UTXO-Z will not have a traversal overlap a mutation, not because
+    // it applies anything — so leaving it, however it is left, latches nothing.
+    if ( ! chain.utxo_for_each(*window, [&](utxoz::raw_outpoint const& key) {
             bloom->insert(key);
             ++inserted;
         })) {

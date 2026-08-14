@@ -54,13 +54,13 @@ TEST_CASE("gate baseline: uncontended lease and window", "[.][utxo][gate][bench]
 
     auto const read_ns = per_op_ns(ops, [&] {
         for (size_t i = 0; i < ops; ++i) {
-            auto lease = gate.read();
+            auto lease = gate.read().value();
         }
     });
 
     auto const write_ns = per_op_ns(ops, [&] {
         for (size_t i = 0; i < ops; ++i) {
-            auto window = gate.write();
+            auto window = gate.write().value();
         }
     });
 
@@ -92,7 +92,7 @@ TEST_CASE("gate baseline: readers under contention", "[.][utxo][gate][bench]") {
                 // door shut rather than what the gate costs — the first version
                 // of this loop did exactly that and reported readers paying
                 // hundreds of microseconds they never pay in production.
-                auto window = gate.write();
+                auto window = gate.write().value();
                 windows.fetch_add(1);
             }
             // Spaced like a batch rather than a spin loop.
@@ -105,7 +105,7 @@ TEST_CASE("gate baseline: readers under contention", "[.][utxo][gate][bench]") {
         for (int t = 0; t < threads; ++t) {
             readers.emplace_back([&] {
                 for (size_t i = 0; i < per_thread; ++i) {
-                    auto lease = gate.read();
+                    auto lease = gate.read().value();
                 }
             });
         }

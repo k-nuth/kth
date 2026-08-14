@@ -315,6 +315,8 @@ if (ENABLE_TEST)
         test/utxo_gate.cpp
           test/utxo_gate_bench.cpp
           test/utxoz_contract.cpp
+        test/result_code_translation.cpp
+        test/utxo_gate_poison.cpp
         test/verify_script_context.cpp
         test/batch_sigchecks.cpp
         test/finalization.cpp
