@@ -1120,9 +1120,14 @@ static
                     if (blocks_synced_to == checkpoint_height) {
                         spdlog::info("[sync_coordinator] *** FAST SYNC COMPLETE at checkpoint {} ***",
                             checkpoint_height);
-                        // UTXO set is built incrementally by block_storage_task.
-                        // No need to call build_utxo_set() here.
-                        spdlog::info("[sync_coordinator] UTXO set build handled by block_storage_task (incremental)");
+                        // Nothing to build here. `utxo_build_task` applies each
+                        // block's delta as it goes, following the contiguous
+                        // height `block_storage_task` publishes, and there is no
+                        // range-builder call left for the checkpoint to make.
+                        // It runs on its own schedule, so reaching the checkpoint
+                        // does not mean it has arrived — this only says the
+                        // coordinator has nothing to do about it.
+                        spdlog::info("[sync_coordinator] UTXO set built incrementally by utxo_build_task");
                     }
 
                     // Trigger SLOW block sync for the post-checkpoint range.

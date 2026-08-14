@@ -362,40 +362,8 @@ KB_API database::result_code apply_utxo_delta(
     utxo_delta const& delta
 );
 
-// =============================================================================
-// UTXO Set Builder (main entry point for building UTXO from stored blocks)
-// =============================================================================
-// Builds the UTXO set by processing blocks from start_height to end_height.
-// - Reads blocks from the database
-// - Processes them in batches (strategy determines parallelism)
-// - Calculates median_time_past for each block
-// - Applies the resulting delta to the database
-// =============================================================================
-
 // Forward declaration to avoid circular include
 struct block_chain;
-
-// Processing strategy for UTXO set building
-enum class utxo_build_strategy {
-    // Process 1000 blocks in parallel, merge internally, then apply to UTXO-Z
-    parallel_batch,
-
-    // Process 1000 blocks sequentially, merge internally, then apply to UTXO-Z
-    sequential_batch,
-
-    // Process 1 block at a time, apply directly to UTXO-Z
-    // (pending deletions and compact every 1000 blocks)
-    sequential_direct
-};
-
-[[nodiscard]]
-KB_API ::asio::awaitable<database::result_code> build_utxo_set(
-    block_chain& chain,
-    ::asio::thread_pool& pool,
-    uint32_t start_height,
-    uint32_t end_height,
-    utxo_build_strategy strategy = utxo_build_strategy::parallel_batch
-);
 
 // =============================================================================
 // Bloom Filter Helpers (UTXO skip-insert optimization)
