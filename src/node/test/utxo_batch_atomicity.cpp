@@ -88,7 +88,7 @@ void insert_raw(blockchain::block_chain& chain, utxoz::raw_outpoint const& key, 
     blockchain::utxo_raw_delta delta;
     delta.inserts.emplace(key, blockchain::utxo_raw_value{
         std::vector<uint8_t>(8, 0x11), height});
-    auto const window = chain.begin_utxo_write();
+    auto const window = chain.begin_utxo_write().value();
     REQUIRE(chain.apply_utxo_inserts_raw(window, delta.inserts)
             == database::result_code::success);
 }
@@ -245,7 +245,7 @@ TEST_CASE("a crash after the deletions are applied refuses the next start",
     // Nothing is owed here: the insert above created no deletion obligation.
     {
         // Scoped for the same reason: everything after this reads or restarts.
-        auto const del_window = chain.begin_utxo_write();
+        auto const del_window = chain.begin_utxo_write().value();
         auto const progress = chain.utxo_apply_deletes(del_window, {});
         REQUIRE(progress.erased.empty());
         REQUIRE(progress.unresolved.empty());
@@ -274,7 +274,7 @@ TEST_CASE("a crash after every durability barrier refuses the next start",
         // Scoped: restart() below closes the chain, and close() takes a window of
         // its own. Holding one across it is the reachable-but-unsupported
         // pattern, and it hangs.
-        auto const del_window = chain.begin_utxo_write();
+        auto const del_window = chain.begin_utxo_write().value();
         auto const progress = chain.utxo_apply_deletes(del_window, {});
         REQUIRE(progress.unresolved.empty());
 
@@ -310,7 +310,7 @@ TEST_CASE("a crash after the height was published starts cleanly",
     REQUIRE(chain.set_heights(database::transition_heights{
         .last_block_height = std::nullopt,
         .utxo_built_height = 3u}) == database::result_code::success);
-    auto const before = chain.utxo_size();
+    auto const before = chain.utxo_count().value();
 
     open_transition(chain, 4u, 4u);
     auto const key = synthetic_key(0xA4);
@@ -329,7 +329,7 @@ TEST_CASE("a crash after the height was published starts cleanly",
 
     // The batch's one entry is in the set, once. Neither lost by the restart
     // nor doubled by anything replaying it.
-    CHECK(fixture.chain().utxo_size() == before + 1);
+    CHECK(fixture.chain().utxo_count().value() == before + 1);
     auto const found = fixture.chain().find_utxo_raw(key, 4u);
     CHECK(found.has_value());
 }
@@ -367,7 +367,7 @@ TEST_CASE("a restart neither loses nor duplicates what a batch applied",
     persist_headers(fixture, blocks, trunk_len + 1);
     connect_bodies(fixture, blocks, trunk_len + 1);
 
-    auto const size_before = chain.utxo_size();
+    auto const size_before = chain.utxo_count().value();
     REQUIRE(size_before > 0);
 
     // Nothing was left in flight, so the restart must succeed.
@@ -380,7 +380,7 @@ TEST_CASE("a restart neither loses nor duplicates what a batch applied",
 
     // Counted, not sampled: a duplicate insert or a deletion that never ran
     // moves this number, and neither shows up in a spot check of one outpoint.
-    CHECK(reopened.utxo_size() == size_before);
+    CHECK(reopened.utxo_count().value() == size_before);
 
     // The spent coinbase is gone — the deletion was applied and its effect
     // reached the disk.

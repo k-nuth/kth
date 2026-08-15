@@ -358,7 +358,11 @@ install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+# `detail/` is internal: helpers the tests in this tree include by path so a
+# decision worth checking directly does not have to become an exported symbol to
+# be reachable. Excluded here so a consumer cannot come to depend on one.
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        PATTERN "detail" EXCLUDE)
 
 # Generate and install a CMake package configuration file
 install(EXPORT ${PROJECT_NAME}-targets

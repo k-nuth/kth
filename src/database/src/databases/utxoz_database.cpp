@@ -7,6 +7,7 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 
+#include <kth/database/detail/storage_failure.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 
 #ifdef KTH_UTXOZ_REFERENCE_MODE
@@ -64,24 +65,9 @@ KD_API char const* utxoz_error_name(utxoz::error_code code) {
     return "unrecognised";
 }
 
+
 namespace {
 
-// UTXO-Z's find() can now fail for reasons that are not absence: the database
-// is closed, the catalogue could not be read, recovery is required. Folding all
-// of them into key_not_found is the sentinel conversion this migration exists
-// to avoid — upstream reads key_not_found as absence, and a database that could
-// not be read reported that way answers "absent", which the validator reads as
-// "spent".
-result_code find_failure_to_result_code(utxoz::error_code code) {
-    // not_resolved is the ONLY non-error answer find() has in 0.10.0: the active
-    // versions cannot say, and nothing was queued on anyone's behalf. It is
-    // mapped to its own code rather than to key_not_found, because a caller that
-    // reads it as absence reports an output as spent having stopped asking
-    // halfway. Everything else is a genuine failure of this node's storage.
-    return code == utxoz::error_code::not_resolved
-         ? result_code::not_resolved
-         : result_code::other;
-}
 
 char const* to_string(utxoz::durability_level level) {
     switch (level) {
@@ -185,7 +171,7 @@ result_code utxoz_database::insert(domain::chain::point const& point, utxo_entry
 
     auto result = db_->insert(key, value, entry.height());
     if ( ! result) {
-        return result_code::other;
+        return detail::storage_failure_to_result_code(result.error());
     }
     return *result ? result_code::success : result_code::duplicated_key;
 }
@@ -209,7 +195,7 @@ std::expected<utxo_entry, result_code> utxoz_database::find(domain::chain::point
             spdlog::error("[utxoz_database] find() failed for {}: {}; this is not absence",
                 utxoz::outpoint_to_string(key), utxoz_error_name(result.error()));
         }
-        return std::unexpected(find_failure_to_result_code(result.error()));
+        return std::unexpected(detail::storage_failure_to_result_code(result.error()));
     }
     return resolve_reference_ref(*result, point.index());
 #else
@@ -223,7 +209,7 @@ std::expected<utxo_entry, result_code> utxoz_database::find(domain::chain::point
             spdlog::error("[utxoz_database] find() failed for {}: {}; this is not absence",
                 utxoz::outpoint_to_string(key), utxoz_error_name(result.error()));
         }
-        return std::unexpected(find_failure_to_result_code(result.error()));
+        return std::unexpected(detail::storage_failure_to_result_code(result.error()));
     }
     return bytes_to_entry(result->data);
 #endif
@@ -261,7 +247,7 @@ utxoz_database::find_raw(utxoz::raw_outpoint const& key, uint32_t height) const 
                 "the key being unresolvable", utxoz::outpoint_to_string(key),
                 utxoz_error_name(result.error()));
         }
-        return std::unexpected(find_failure_to_result_code(result.error()));
+        return std::unexpected(detail::storage_failure_to_result_code(result.error()));
     }
 
 #ifdef KTH_UTXOZ_REFERENCE_MODE
@@ -294,7 +280,7 @@ utxoz_database::resolve_raw(std::span<utxoz::lookup_request const> requests) con
         // Nothing was consumed, so the same span can be retried.
         spdlog::error("[utxoz_database] resolving {} lookup(s) failed: {}; this is NOT "
             "the keys being absent", requests.size(), utxoz_error_name(resolved.error()));
-        return std::unexpected(result_code::other);
+        return std::unexpected(detail::storage_failure_to_result_code(resolved.error()));
     }
 
     out.found.reserve(resolved->found.size());
@@ -329,7 +315,7 @@ utxoz_database::resolve(std::span<utxoz::lookup_request const> requests) const {
     if ( ! resolved) {
         spdlog::error("[utxoz_database] resolving {} lookup(s) failed: {}; this is NOT "
             "the keys being absent", requests.size(), utxoz_error_name(resolved.error()));
-        return std::unexpected(result_code::other);
+        return std::unexpected(detail::storage_failure_to_result_code(resolved.error()));
     }
 
     out.found.reserve(resolved->found.size());
@@ -358,17 +344,19 @@ utxoz_database::resolve(std::span<utxoz::lookup_request const> requests) const {
     return out;
 }
 
-bool utxoz_database::compact() {
+std::expected<void, result_code> utxoz_database::compact_utxo() {
     if ( ! is_open()) {
-        return false;
+        // Never attempted. Distinct from a compaction that ran and failed, which
+        // the old `bool` could not express — both were `false`.
+        return std::unexpected(result_code::other);
     }
     auto const compacted = db_->compact_all();
     if ( ! compacted) {
         spdlog::error("[utxoz_database] Compaction failed: {}",
             utxoz_error_name(compacted.error()));
-        return false;
+        return std::unexpected(detail::storage_failure_to_result_code(compacted.error()));
     }
-    return true;
+    return {};
 }
 
 barrier_outcome utxoz_database::sync() {
@@ -398,6 +386,24 @@ barrier_outcome utxoz_database::sync() {
         case utxoz::error_code::sync_failed:
             spdlog::error("[utxoz_database] A durability barrier was attempted "
                 "and failed; the data written so far is not known to be durable");
+            return barrier_outcome::failed;
+        case utxoz::error_code::recovery_required:
+            // A fourth fact, and the only one with an action attached: the
+            // library has latched and will refuse every further operation until
+            // the database is closed and reopened. Named here rather than left
+            // to `default`, where it would arrive as a generic barrier failure
+            // and send an operator looking at the disk.
+            //
+            // Still `failed` as the OUTCOME. `barrier_outcome` is shared by all
+            // four barriers of a chain transition, and three of them have no way
+            // to latch; giving it a value only one can ever return would make
+            // every caller handle a case that cannot reach it. What the caller
+            // needs from here is "the barrier was not crossed", which is what it
+            // gets — the category reaches the operator through this log, and the
+            // write window's own state decides what happens to the store.
+            spdlog::error("[utxoz_database] sync() refused: the store has latched and "
+                "requires recovery. Nothing after this point will be written; close "
+                "the node and let the restart consult the transition record");
             return barrier_outcome::failed;
         default:
             spdlog::error("[utxoz_database] sync() failed: {}",

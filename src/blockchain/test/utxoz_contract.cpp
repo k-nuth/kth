@@ -123,17 +123,21 @@ TEST_CASE("utxoz contract: compact_all reports failure instead of returning void
     static_assert(std::is_same_v<compact_result, utxoz::result<>>,
         "compact_all() no longer returns result<>; the wrapper's error handling is dead code");
 
-    // And the wrapper must pass that answer on rather than swallowing it.
-    static_assert(std::is_same_v<decltype(std::declval<utxoz_database&>().compact()), bool>,
-        "utxoz_database::compact() must report whether compaction happened");
+    // And the wrapper must pass that answer on rather than swallowing it — WITH
+    // its category. A bool here was the previous contract, and it could not tell
+    // "the store latched and will refuse everything" from "space was not
+    // reclaimed": both were false, and the one caller logged the second.
+    static_assert(std::is_same_v<decltype(std::declval<utxoz_database&>().compact_utxo()),
+                                 std::expected<void, result_code>>,
+        "utxoz_database::compact_utxo() must report WHY compaction failed, not only that it did");
 
-    // ...and the report has to survive the trip up. A bool at the wrapper with a
-    // void above it is the same defect one layer higher: every caller of
-    // block_chain::utxo_compact() would be back to the 0.8.0 contract, in which
-    // compaction could not fail.
-    static_assert(std::is_same_v<decltype(std::declval<blockchain::block_chain&>().utxo_compact()), bool>,
-        "block_chain::utxo_compact() returns void: the failure dies between the "
-        "wrapper and every caller");
+    // ...and the report has to survive the trip up. A bool at either layer is
+    // the same defect: every caller would be back to a contract in which a
+    // latched store looks like a tidy-up that did not happen.
+    static_assert(std::is_same_v<decltype(std::declval<blockchain::block_chain&>().compact_utxo()),
+                                 std::expected<void, result_code>>,
+        "block_chain::compact_utxo() must carry the code up: recovery_required has to be "
+        "distinguishable from an ordinary compaction failure");
 }
 
 

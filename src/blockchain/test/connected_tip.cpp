@@ -464,7 +464,7 @@ TEST_CASE("an absent marker over an empty set is zero", "[connected_tip][reconci
     auto& chain = fixture.chain();
 
     REQUIRE_FALSE(chain.get_utxo_built_height());
-    REQUIRE(chain.utxo_size() == 0u);
+    REQUIRE(chain.utxo_count().value() == 0u);
 
     REQUIRE(chain.set_last_block_height(963898) == database::result_code::success);
     auto const tip = chain.reconcile_connected_tip(963898);
@@ -491,7 +491,7 @@ TEST_CASE("an absent marker over a populated set is refused, not assumed to be g
 
     // Entries in the store, and deliberately no marker published for them.
     {
-        auto const window = chain.begin_utxo_write();
+        auto const window = chain.begin_utxo_write().value();
         blockchain::utxo_raw_delta delta;
         hash_digest h{};
         h.fill(0xAB);
@@ -505,7 +505,7 @@ TEST_CASE("an absent marker over a populated set is refused, not assumed to be g
         REQUIRE(chain.apply_utxo_inserts_raw(window, delta.inserts) ==
                 database::result_code::success);
     }
-    REQUIRE(chain.utxo_size() > 0u);
+    REQUIRE(chain.utxo_count().value() > 0u);
     REQUIRE_FALSE(chain.get_utxo_built_height());
 
     REQUIRE(chain.set_last_block_height(4) == database::result_code::success);

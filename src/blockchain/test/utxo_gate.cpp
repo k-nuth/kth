@@ -62,12 +62,12 @@ TEST_CASE("a capability only opens the store of the gate that issued it",
     utxo_gate other;
     guarded_store<fake_store> store(mine);
 
-    auto foreign = other.write();
+    auto foreign = other.write().value();
     CHECK_THROWS_AS(store.with_write(foreign, [](auto& s) { ++s.touched; }),
                     utxo_capability_error);
 
     // And the right one works, so the rejection is not "everything is refused".
-    auto ours = mine.write();
+    auto ours = mine.write().value();
     CHECK_NOTHROW(store.with_write(ours, [](auto& s) { ++s.touched; }));
 }
 
@@ -77,7 +77,7 @@ TEST_CASE("a released or moved-from capability authorises nothing",
     guarded_store<fake_store> store(gate);
 
     SECTION("moved-from") {
-        auto window = gate.write();
+        auto window = gate.write().value();
         auto moved = std::move(window);
         // `window` is spent: it no longer names the gate, so it proves nothing.
         CHECK_THROWS_AS(store.with_write(window, [](auto& s) { ++s.touched; }),
@@ -86,7 +86,7 @@ TEST_CASE("a released or moved-from capability authorises nothing",
     }
 
     SECTION("released") {
-        utxo_write_window spent = gate.write();
+        utxo_write_window spent = gate.write().value();
         {
             auto taking = std::move(spent);   // released at the end of this scope
         }
@@ -95,7 +95,7 @@ TEST_CASE("a released or moved-from capability authorises nothing",
     }
 
     SECTION("a lease that has gone out of scope cannot be reused") {
-        utxo_read_lease spent = gate.read();
+        utxo_read_lease spent = gate.read().value();
         {
             auto taking = std::move(spent);
         }
@@ -166,7 +166,7 @@ TEST_CASE("the callback may not hand the store back out", "[utxo][gate]") {
     // A value really does come back, so the constraint is not just refusing.
     utxo_gate gate;
     store_t store(gate);
-    auto window = gate.write();
+    auto window = gate.write().value();
     store.with_write(window, [](fake_store& s) { s.touched = 7; });
     auto const seen = store.with_read(window, [](fake_store const& s) { return s.touched; });
     CHECK(seen == 7);
@@ -241,7 +241,7 @@ constexpr auto watchdog_budget = std::chrono::seconds(20);
 TEST_CASE("asking for the window while holding a lease does not acquire it",
           "[utxo][gate]") {
     // NOT a claim that an upgrade is detected — it is not, and the header says
-    // so. The pattern is REACHABLE: begin_utxo_write() can be called while a
+    // so. The pattern is REACHABLE: begin_utxo_write().value() can be called while a
     // lease is alive. It is simply not supported, and the blocking variant would
     // self-deadlock. What keeps it from happening is that no caller forms it,
     // which is audited rather than enforced.
@@ -253,7 +253,7 @@ TEST_CASE("asking for the window while holding a lease does not acquire it",
     watchdog guard(watchdog_budget, "the upgrade attempt");
     utxo_gate gate;
 
-    auto lease = gate.read();
+    auto lease = gate.read().value();
     REQUIRE(gate.readers() == 1);
 
     auto const started = std::chrono::steady_clock::now();
@@ -283,7 +283,7 @@ TEST_CASE("asking for the window while holding a lease does not acquire it",
 
     std::atomic<bool> entered{false};
     std::thread reader([&] {
-        auto l = gate.read();
+        auto l = gate.read().value();
         entered.store(true);
     });
     reader.join();
@@ -304,13 +304,13 @@ TEST_CASE("a second lease on one thread is not safe once a writer is pending",
     watchdog guard(watchdog_budget, "the nested lease with a writer pending");
     utxo_gate gate;
 
-    auto first = gate.read();   // not const: released explicitly at the end
+    auto first = gate.read().value();   // not const: released explicitly at the end
     REQUIRE(gate.readers() == 1);
 
     // Nesting with nobody waiting: allowed, and it must stay allowed, or this
     // test would be measuring a gate that simply refuses everything.
     {
-        auto const nested = gate.read();
+        auto const nested = gate.read().value();
         CHECK(gate.readers() == 2);
     }
     REQUIRE(gate.readers() == 1);
@@ -319,7 +319,7 @@ TEST_CASE("a second lease on one thread is not safe once a writer is pending",
     // but writer preference closes the door behind it.
     std::atomic<bool> writer_in{false};
     std::thread writer([&] {
-        auto const window = gate.write();
+        auto const window = gate.write().value();
         writer_in.store(true);
     });
     while (gate.writers_waiting() == 0) {
@@ -350,7 +350,7 @@ TEST_CASE("the timed variants refuse reentry instead of waiting it out",
     watchdog guard(watchdog_budget, "reentry through the timed variants");
     utxo_gate gate;
 
-    auto const window = gate.write();
+    auto const window = gate.write().value();
 
     // A budget long enough that waiting it out would be unmistakable in the
     // elapsed time below.
@@ -397,11 +397,11 @@ TEST_CASE("a writer that times out restores the count and wakes the readers",
     std::thread reader;
 
     {
-        auto const lease = gate.read();
+        auto const lease = gate.read().value();
 
         reader = std::thread([&] {
             reader_at_gate.store(true);
-            auto const l = gate.read();     // waits: a writer is pending
+            auto const l = gate.read().value();     // waits: a writer is pending
             admitted.store(true);
         });
         while ( ! reader_at_gate.load()) {
@@ -498,12 +498,12 @@ TEST_CASE("reentering the window from the same thread fails immediately",
     watchdog guard(watchdog_budget, "the reentry detection");
     utxo_gate gate;
 
-    auto window = gate.write();
+    auto window = gate.write().value();
 
     // 1 & 2 — both refused, and immediately: no budget, no waiting.
     auto const before = std::chrono::steady_clock::now();
-    CHECK_THROWS_AS(gate.write(), utxo_reentry_error);
-    CHECK_THROWS_AS(gate.read(), utxo_reentry_error);
+    CHECK_THROWS_AS(gate.write().value(), utxo_reentry_error);
+    CHECK_THROWS_AS(gate.read().value(), utxo_reentry_error);
     auto const elapsed = std::chrono::steady_clock::now() - before;
     CHECK(elapsed < std::chrono::milliseconds(200));
 
@@ -513,13 +513,13 @@ TEST_CASE("reentering the window from the same thread fails immediately",
     // 6 — moving within the same thread still works.
     auto moved = std::move(window);
     CHECK(moved.held());
-    CHECK_THROWS_AS(gate.write(), utxo_reentry_error);   // still owned
+    CHECK_THROWS_AS(gate.write().value(), utxo_reentry_error);   // still owned
 
     // 4 — another thread WAITS rather than being refused: legitimate contention
     // must not have been turned into an error.
     std::atomic<bool> other_entered{false};
     std::thread other([&] {
-        auto w = gate.write();
+        auto w = gate.write().value();
         other_entered.store(true);
     });
     std::this_thread::sleep_for(std::chrono::milliseconds(80));
@@ -533,7 +533,7 @@ TEST_CASE("reentering the window from the same thread fails immediately",
 
     std::atomic<bool> reader_in{false};
     std::thread reader([&] {
-        auto l = gate.read();
+        auto l = gate.read().value();
         reader_in.store(true);
     });
     reader.join();
@@ -547,19 +547,19 @@ TEST_CASE("an exception inside the window clears the owner", "[utxo][gate]") {
     utxo_gate gate;
 
     try {
-        auto window = gate.write();
+        auto window = gate.write().value();
         throw std::runtime_error("the operation failed");
     } catch (std::runtime_error const&) {
     }
 
     // The same thread can take it again, which it could not if the owner had
     // survived the unwinding.
-    auto again = gate.write();
+    auto again = gate.write().value();
     CHECK(again.held());
     { auto closing = std::move(again); }
 
     // And a read on this thread is no longer refused either.
-    auto lease = gate.read();
+    auto lease = gate.read().value();
     CHECK(lease.held());
 }
 
@@ -570,11 +570,11 @@ TEST_CASE("a writer does not start while a reader is admitted", "[utxo][gate]") 
 
     std::thread writer;
     {
-        auto lease = gate.read();
+        auto lease = gate.read().value();
         REQUIRE(gate.readers() == 1);
 
         writer = std::thread([&] {
-            auto window = gate.write();
+            auto window = gate.write().value();
             writing.store(true);
             std::this_thread::sleep_for(settle);
         });
@@ -602,11 +602,11 @@ TEST_CASE("a reader admitted after the window is asked for waits for it",
     std::atomic<bool> read_entered{false};
     std::atomic<bool> window_open{false};
 
-    auto window = gate.write();
+    auto window = gate.write().value();
     window_open.store(true);
 
     std::thread reader([&] {
-        auto lease = gate.read();
+        auto lease = gate.read().value();
         read_entered.store(true);
     });
 
@@ -632,7 +632,7 @@ TEST_CASE("many readers coexist and none excludes another", "[utxo][gate]") {
 
     for (int i = 0; i < count; ++i) {
         readers.emplace_back([&] {
-            auto lease = gate.read();
+            auto lease = gate.read().value();
             auto const now = inside.fetch_add(1) + 1;
             int seen = peak.load();
             while (now > seen && ! peak.compare_exchange_weak(seen, now)) {
@@ -675,7 +675,7 @@ TEST_CASE("a reader forced between the inserts and the deletions waits for both"
 
     std::thread mutation([&] {
         // ONE window for the whole logical operation.
-        auto window = gate.write();
+        auto window = gate.write().value();
 
         inserts_done.store(true);              // ... inserts applied
 
@@ -702,7 +702,7 @@ TEST_CASE("a reader forced between the inserts and the deletions waits for both"
         saw_window_open.store(gate.writing());
         reader_at_gate.store(true);
 
-        auto lease = gate.read();
+        auto lease = gate.read().value();
         read_saw_deletes.store(deletes_done.load());
         read_returned.store(true);
     });
@@ -726,7 +726,7 @@ TEST_CASE("an exception inside the window does not leave the door shut",
     utxo_gate gate;
 
     try {
-        auto window = gate.write();
+        auto window = gate.write().value();
         throw std::runtime_error("the operation failed");
     } catch (std::runtime_error const&) {
     }
@@ -736,7 +736,7 @@ TEST_CASE("an exception inside the window does not leave the door shut",
     // Provable rather than asserted from a flag: a reader gets in.
     std::atomic<bool> entered{false};
     std::thread reader([&] {
-        auto lease = gate.read();
+        auto lease = gate.read().value();
         entered.store(true);
     });
     reader.join();
@@ -744,7 +744,7 @@ TEST_CASE("an exception inside the window does not leave the door shut",
 
     // And the window can be taken again.
     {
-        auto again = gate.write();
+        auto again = gate.write().value();
         CHECK(again.held());
     }
     CHECK_FALSE(gate.writing());
@@ -755,7 +755,7 @@ TEST_CASE("a released window and lease report themselves released",
     utxo_gate gate;
 
     {
-        auto window = gate.write();
+        auto window = gate.write().value();
         CHECK(window.held());
         auto moved = std::move(window);
         CHECK(moved.held());
@@ -764,7 +764,7 @@ TEST_CASE("a released window and lease report themselves released",
     CHECK_FALSE(gate.writing());
 
     {
-        auto lease = gate.read();
+        auto lease = gate.read().value();
         CHECK(lease.held());
         auto moved = std::move(lease);
         CHECK(moved.held());
@@ -797,7 +797,7 @@ TEST_CASE("a capability used by another thread authorises nothing",
     guarded_store<fake_store> store(gate);
 
     SECTION("a write window") {
-        auto const window = gate.write();
+        auto const window = gate.write().value();
         // It still names the right gate — that is the point. What disqualifies it
         // is the thread asking, and the two are reported apart.
         CHECK(window.authorises(gate));
@@ -823,7 +823,7 @@ TEST_CASE("a capability used by another thread authorises nothing",
     }
 
     SECTION("a read lease") {
-        auto const lease = gate.read();
+        auto const lease = gate.read().value();
 
         std::atomic<bool> refused{false};
         std::thread borrower([&] {
@@ -848,7 +848,7 @@ TEST_CASE("moving a capability out of its thread is refused at the move",
     watchdog guard(watchdog_budget, "a cross-thread move of a capability");
     utxo_gate gate;
 
-    auto window = gate.write();
+    auto window = gate.write().value();
 
     std::atomic<bool> refused{false};
     std::atomic<bool> stole_it{false};
@@ -883,7 +883,7 @@ TEST_CASE("a capability released by another thread opens the gate",
 
     // Parked by its owner, which is legal: the move happens on the issuing
     // thread. What follows is another thread ending its life.
-    std::optional<utxo_write_window> parked = gate.write();
+    std::optional<utxo_write_window> parked = gate.write().value();
     REQUIRE(gate.writing());
 
     std::thread releaser([&] { parked.reset(); });
@@ -895,12 +895,12 @@ TEST_CASE("a capability released by another thread opens the gate",
     // which is the property the flag stands for. Neither can be satisfied by a
     // gate left in a half-released state.
     {
-        auto const fresh = gate.write();
+        auto const fresh = gate.write().value();
         CHECK(fresh.held());
         CHECK_NOTHROW(store.with_write(fresh, [](auto& s) { ++s.touched; }));
     }
     {
-        auto const lease = gate.read();
+        auto const lease = gate.read().value();
         CHECK(lease.held());
         CHECK_NOTHROW(store.with_read(lease, [](auto const& s) { return s.touched; }));
     }
@@ -910,7 +910,7 @@ TEST_CASE("a capability released by another thread opens the gate",
     // only for the one that happens to have run before.
     std::atomic<bool> got_in{false};
     std::thread later([&] {
-        auto const window = gate.write();
+        auto const window = gate.write().value();
         got_in.store(window.held());
     });
     later.join();
@@ -925,7 +925,7 @@ TEST_CASE("a capability moved and used within one thread keeps working",
     utxo_gate gate;
     guarded_store<fake_store> store(gate);
 
-    std::optional<utxo_write_window> parked = gate.write();
+    std::optional<utxo_write_window> parked = gate.write().value();
     CHECK_NOTHROW(store.with_write(*parked, [](auto& s) { ++s.touched; }));
 
     auto moved = std::move(*parked);
@@ -947,7 +947,7 @@ TEST_CASE("a capability moved and used within one thread keeps working",
     std::atomic<bool> acquired{false};
     std::atomic<bool> usable{false};
     std::thread worker([&] {
-        auto lease = gate.read();
+        auto lease = gate.read().value();
         acquired.store(true);
         auto owned = std::move(lease);
         usable.store(owned.on_issuing_thread() &&

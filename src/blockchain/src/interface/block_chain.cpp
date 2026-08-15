@@ -211,7 +211,15 @@ bool block_chain::start(uint32_t disk_magic) {
     // the node would hang at startup on the other one.
     {
         auto const lifecycle = utxo_gate_.write();
-        if ( ! utxoz_db_.with_write(lifecycle, [&](auto& db) { return db.open(utxoz_path); })) {
+        if ( ! lifecycle) {
+            spdlog::error("[blockchain] The UTXO gate has latched; the store cannot be opened "
+                "({}). Restart the node so the transition record is consulted",
+                database::result_code_name(lifecycle.error()));
+            return false;
+        }
+        // Opening applies nothing, so it is never marked: a failed open leaves
+        // the gate exactly as it found it.
+        if ( ! utxoz_db_.with_write(*lifecycle, [&](auto& db) { return db.open(utxoz_path); })) {
             spdlog::error("[blockchain] Failed to open UTXO-Z database at {}",
                 utxoz_path.string());
             return false;
@@ -486,7 +494,12 @@ bool block_chain::start(uint32_t disk_magic) {
     // today — but the previous version of that sentence was also true.
     {
         auto const configure = utxo_gate_.write();
-        utxoz_db_.with_write(configure, [&](auto& db) {
+        if ( ! configure) {
+            spdlog::error("[blockchain] The UTXO gate has latched; reference-mode wiring "
+                "cannot be applied ({})", database::result_code_name(configure.error()));
+            return false;
+        }
+        utxoz_db_.with_write(*configure, [&](auto& db) {
             db.set_block_store(block_store_.get());
             db.set_header_index(&header_index_);
         });
@@ -515,10 +528,14 @@ bool block_chain::close() {
     dump_mempool_to_disk();
     priority_pool_.join();
     {
-        // close() is a mutation of the store's own state; it needs the same
-        // window as any other, for its whole operation.
-        auto closing = utxo_gate_.write();
-        utxoz_db_.with_write(closing, [](auto& db) { db.close(); });
+        // close() needs the same exclusion any mutation does — a close running
+        // alongside a reader unmaps what that reader is holding — but it must
+        // work on a LATCHED gate too, which refuses every window. Hence the
+        // administrative capability: it waits for exclusion exactly as a window
+        // does and skips only the poison check, and it never clears the latch,
+        // so a restart still finds the gate closed to everything else.
+        auto closing = utxo_gate_.authorise_close();
+        utxoz_db_.with_close(closing, [](auto& db) { db.close(); });
     }
     return result && database_.close();
 }
@@ -995,7 +1012,16 @@ std::optional<uint32_t> block_chain::reconcile_connected_tip(uint32_t marker_hei
     // lower would throw away everything that IS connected. The set is the
     // evidence, so wherever the two disagree, the UTXO height wins.
     auto const built_marker = get_utxo_built_height();
-    auto const utxo_empty = utxo_size() == 0;
+    auto const count = utxo_count();
+    if ( ! count) {
+        // The enclosing function answers with an optional height. A store that
+        // will not answer is not a height, and it is not "no marker" either —
+        // nullopt is the honest one: nothing was established.
+        spdlog::error("[blockchain] The UTXO store will not answer its size ({}); the connected "
+            "tip cannot be reconciled", database::result_code_name(count.error()));
+        return std::nullopt;
+    }
+    auto const utxo_empty = *count == 0;
     auto const decided = reconcile_tip(marker_height, built_marker, utxo_empty);
     if ( ! decided) {
         if ( ! built_marker && built_marker.error() == database::result_code::key_not_found) {
@@ -1051,10 +1077,31 @@ utxoz::deletion_progress block_chain::utxo_apply_deletes(
         [&](auto& db) { return db.apply_deletes(requests); });
 }
 
+// A store that reports it has latched closes the gate behind it.
+//
+// Translating the code and nothing else would leave every later caller queueing
+// for a store that has already stopped answering — the gate would keep admitting
+// them one refused call at a time. Applied wherever a boundary can observe it,
+// the read paths included: a lease cannot latch on release, because a read
+// leaves nothing half-applied, so the fact is published where it is seen.
+template <typename T>
+std::expected<T, database::result_code> latch_if_store_reports_recovery(
+    std::expected<T, database::result_code> result, utxo_gate& gate) {
+    if ( ! result && database::needs_recovery(result.error())) {
+        gate.latch_observed();
+    }
+    return result;
+}
+
 std::expected<database::utxoz_database::entry_resolution, database::result_code>
 block_chain::utxo_resolve(std::span<utxoz::lookup_request const> requests) const {
     auto lease = utxo_gate_.read();
-    return utxoz_db_.with_read(lease, [&](auto const& db) { return db.resolve(requests); });
+    if ( ! lease) {
+        return std::unexpected(lease.error());
+    }
+    return latch_if_store_reports_recovery(
+        utxoz_db_.with_read(*lease, [&](auto const& db) { return db.resolve(requests); }),
+        utxo_gate_);
 }
 
 // =============================================================================
@@ -1064,13 +1111,23 @@ block_chain::utxo_resolve(std::span<utxoz::lookup_request const> requests) const
 std::expected<database::utxoz_database::raw_stored, database::result_code>
 block_chain::find_utxo_raw(utxoz::raw_outpoint const& key, uint32_t height) const {
     auto lease = utxo_gate_.read();
-    return utxoz_db_.with_read(lease, [&](auto const& db) { return db.find_raw(key, height); });
+    if ( ! lease) {
+        return std::unexpected(lease.error());
+    }
+    return latch_if_store_reports_recovery(
+        utxoz_db_.with_read(*lease, [&](auto const& db) { return db.find_raw(key, height); }),
+        utxo_gate_);
 }
 
 std::expected<database::utxoz_database::raw_resolution, database::result_code>
 block_chain::utxo_resolve_raw(std::span<utxoz::lookup_request const> requests) const {
     auto lease = utxo_gate_.read();
-    return utxoz_db_.with_read(lease, [&](auto const& db) { return db.resolve_raw(requests); });
+    if ( ! lease) {
+        return std::unexpected(lease.error());
+    }
+    return latch_if_store_reports_recovery(
+        utxoz_db_.with_read(*lease, [&](auto const& db) { return db.resolve_raw(requests); }),
+        utxo_gate_);
 }
 
 #if ! defined(KTH_DB_READONLY)
@@ -1336,10 +1393,15 @@ block_chain::switch_result block_chain::switch_to_branch(
     // strand the still-missing blocks below it, never requested again.
     uint32_t validated_tip = heights->block;
 
-    // Whether any block was actually disconnected. A fork above the validated
-    // tip disconnects nothing and several rejections above return before this
-    // point, so "the tip is where it was" is not evidence either way.
-    bool mutated = false;
+    // Whether any block was actually disconnected is no longer tracked here. The
+    // window carries it — `mark_mutated()` on evidence, `has_mutated()` to read
+    // it back — so there is one fact and not two that can drift apart. It is
+    // deliberately NOT the same fact as the one governing poison: this one says
+    // something WAS applied and drives republishing the chain view, while the
+    // conservative one says something MIGHT have been and drives the latch.
+    // Merging them would republish on every rejected switch, moving the
+    // generation and dropping the template cache for a switch that touched
+    // nothing.
 
     // Correlates the log lines this switch writes with the record a failed run
     // leaves behind. `record_written` and not `operation_id != 0`: the id comes
@@ -1355,7 +1417,12 @@ block_chain::switch_result block_chain::switch_to_branch(
     // outputs of blocks this switch is abandoning, and it would not consult the
     // transition record to know better. Synchronous throughout — nothing below
     // suspends — so the capability never crosses a co_await (#649).
-    auto const window = utxo_gate_.write();
+    auto window = utxo_gate_.write();
+    if ( ! window) {
+        spdlog::error("[blockchain] Reorg: the UTXO gate has latched; the switch cannot run ({})",
+            database::result_code_name(window.error()));
+        return {false, std::nullopt, /*mutated*/ false, /*fatal*/ true};
+    }
 
     // Per key, whether a proven absence is tolerable: true only while every
     // block that asked for this key's deletion created and spent it itself.
@@ -1424,12 +1491,22 @@ block_chain::switch_result block_chain::switch_to_branch(
 
         // Newest first: disconnecting out of order would restore outputs that a
         // later block still spends.
+        //
+        // Declared BEFORE the first disconnect, not after it. A disconnect
+        // writes as it goes, so from the moment the loop is entered the set may
+        // hold part of an inverse delta — and if this stretch is left by an
+        // exception rather than by a return, the destructor is the only thing
+        // that runs. It says "something might have been applied", which is a
+        // weaker claim than mark_mutated() below and a different one.
+        window->mark_mutating();
         for (uint32_t h = heights->block; h > fork_height; --h) {
-            auto const result = disconnect_block(h, window, absence_tolerated, pending_deletes);
+            auto const result = disconnect_block(h, *window, absence_tolerated, pending_deletes);
 
             if (result == database::disconnect_result::unclean) {
                 // The delta was applied, so this counts as a mutation even
-                // though the switch is abandoned.
+                // though the switch is abandoned. Evidence, so it is recorded on
+                // the window rather than only in the returned struct.
+                window->mark_mutated();
                 // The inverse delta was applied but the markers could not be
                 // written: the UTXO set is at h-1 while the markers still say h.
                 // Reporting h as a resumable tip would re-download from a height
@@ -1449,7 +1526,7 @@ block_chain::switch_result block_chain::switch_to_branch(
                 // `fatal` documents; reorg.cpp reaches the same conclusion from
                 // an empty validated_tip, but that inference lives in one caller
                 // and this result is public.
-                return {false, std::nullopt, /*mutated*/ true, /*fatal*/ true};
+                return {false, std::nullopt, window->has_mutated(), /*fatal*/ true};
             }
 
             if (result != database::disconnect_result::ok) {
@@ -1464,14 +1541,14 @@ block_chain::switch_result block_chain::switch_to_branch(
                 // the next start from refusing over a database that is whole.
                 spdlog::error("[blockchain] Reorg: failed to disconnect block at height {}, "
                     "aborting the switch (validated tip is now {})", h, h);
-                if ( ! publish_reorg_transition(h, operation_id, window, absence_tolerated, pending_deletes)) {
-                    return {false, std::nullopt, mutated, /*fatal*/ true};
+                if ( ! publish_reorg_transition(h, operation_id, *window, absence_tolerated, pending_deletes)) {
+                    return {false, std::nullopt, window->has_mutated(), /*fatal*/ true};
                 }
-                return {false, h, mutated};
+                return {false, h, window->has_mutated()};
             }
 
             // Applied. From here the chain has moved, whatever happens next.
-            mutated = true;
+            window->mark_mutated();
         }
     }
 
@@ -1479,13 +1556,25 @@ block_chain::switch_result block_chain::switch_to_branch(
     // disconnected: no record was written, so there is nothing to publish and
     // nothing to clear, and asking four stores for a barrier over no mutation
     // would only cost the fsyncs.
-    if (record_written && ! publish_reorg_transition(validated_tip, operation_id, window,
+    if (record_written && ! publish_reorg_transition(validated_tip, operation_id, *window,
             absence_tolerated, pending_deletes)) {
         // The chain has moved and the transition could not be recorded as
         // finished. No tip is reported: the caller reads that as fatal, leaves
         // capture shut and winds the node down, and the record stays for the
         // next start to refuse on.
-        return {false, std::nullopt, mutated, /*fatal*/ true};
+        return {false, std::nullopt, window->has_mutated(), /*fatal*/ true};
+    }
+
+    // The safe boundary for a rewind, and it is `utxo_sync` that defines it: the
+    // transition record in LMDB and the UTXO-Z mutations are two stores that
+    // have to agree on disk, and until the barrier returns they may not. Past
+    // this point abandoning the window leaves nothing for a restart to
+    // reconcile, so the gate is not latched.
+    //
+    // Only reached when a record was written; a switch that disconnected nothing
+    // never marked the window, so it has nothing to complete.
+    if (record_written) {
+        window->complete();
     }
 
     // The active chain is NOT re-pointed here. Publishing the new tip is the
@@ -1497,7 +1586,7 @@ block_chain::switch_result block_chain::switch_to_branch(
     // other. The caller adopts the branch head as soon as this returns.
     spdlog::warn("[blockchain] Reorg: UTXO state rewound to the fork at {}; the branch head is "
         "published by the caller", fork_height);
-    return {true, validated_tip, mutated};
+    return {true, validated_tip, window->has_mutated()};
 }
 
 bool block_chain::sweep_reorg_deletions(uint64_t operation_id,
@@ -1688,43 +1777,109 @@ bool block_chain::publish_reorg_transition(uint32_t connected_height, uint64_t o
     co_return result;
 }
 
-bool block_chain::utxo_compact() {
+std::expected<void, database::result_code> block_chain::compact_utxo() {
     auto window = utxo_gate_.write();
-    return utxoz_db_.with_write(window, [](auto& db) { return db.compact(); });
+    if ( ! window) {
+        return std::unexpected(window.error());
+    }
+
+    // Compaction merges entries out of older version files and removes the ones
+    // left empty. It writes, and a fault partway leaves the store having
+    // published a merge it could not finish retiring — which is exactly the
+    // state UTXO-Z latches on. So it is declared BEFORE the call.
+    window->mark_mutating();
+
+    auto const compacted = utxoz_db_.with_write(*window,
+        [](auto& db) { return db.compact_utxo(); });
+
+    if ( ! compacted) {
+        // The window poisons on the way out because it is left incomplete; this
+        // says the same thing from the other direction, so the two agree even if
+        // one of them is ever removed.
+        if (database::needs_recovery(compacted.error())) {
+            utxo_gate_.latch_observed();
+        }
+        // Left incomplete, so the window poisons on the way out. Deliberate even
+        // for the ordinary failures: the library documents a compaction fault as
+        // fatal — it reports rather than repairs, and it will not choose between
+        // duplicate entries — so "probably intact" is not a state to carry on
+        // from.
+        return std::unexpected(compacted.error());
+    }
+
+    // The safe boundary for THIS operation, and it is not the same one a connect
+    // batch has. Compaction changes which files hold the set, not what the set
+    // contains, so there is no second store for it to agree with and no barrier
+    // it owes; UTXO-Z's own contract attaches no durability requirement to it.
+    // Success is completion.
+    window->mark_mutated();
+    window->complete();
+    return {};
 }
 
-void block_chain::utxo_print_statistics() {
+std::expected<void, database::result_code> block_chain::print_utxo_statistics() {
     // The exclusive window, and deliberately not a lease: UTXO-Z recomputes the
     // fragmentation counters here and documents that it must not overlap a
     // mutation nor another statistics call. The two reports below are const on
     // both sides and are genuine observations.
+    //
+    // Never marked. Recomputing a counter changes no entry, so a window that
+    // dies here leaves nothing half-applied and must not latch the gate.
     auto window = utxo_gate_.write();
-    utxoz_db_.with_write(window, [](auto& db) { db.print_statistics(); });
+    if ( ! window) {
+        return std::unexpected(window.error());
+    }
+    utxoz_db_.with_write(*window, [](auto& db) { db.print_statistics(); });
+    return {};
 }
 
-void block_chain::utxo_print_sizing_report() {
+std::expected<void, database::result_code> block_chain::print_utxo_sizing_report() {
     auto lease = utxo_gate_.read();
-    utxoz_db_.with_read(lease, [](auto const& db) { db.print_sizing_report(); });
+    if ( ! lease) {
+        return std::unexpected(lease.error());
+    }
+    utxoz_db_.with_read(*lease, [](auto const& db) { db.print_sizing_report(); });
+    return {};
 }
 
-void block_chain::utxo_print_height_range_stats() {
+std::expected<void, database::result_code> block_chain::print_utxo_height_range_stats() {
     auto lease = utxo_gate_.read();
-    utxoz_db_.with_read(lease, [](auto const& db) { db.print_height_range_stats(); });
+    if ( ! lease) {
+        return std::unexpected(lease.error());
+    }
+    utxoz_db_.with_read(*lease, [](auto const& db) { db.print_height_range_stats(); });
+    return {};
 }
 
-size_t block_chain::utxo_size() const {
+std::expected<size_t, database::result_code> block_chain::utxo_count() const {
     auto lease = utxo_gate_.read();
-    return utxoz_db_.with_read(lease, [](auto const& db) { return db.size(); });
+    if ( ! lease) {
+        return std::unexpected(lease.error());
+    }
+    // No latch to observe here: UTXO-Z documents size() as answering even on a
+    // latched instance, precisely so a database in trouble can still be
+    // described. The gate refusing the lease above is the only way this fails.
+    return utxoz_db_.with_read(*lease, [](auto const& db) { return db.size(); });
 }
 
+// Signatures untouched: what these should be is the subject of the
+// save_utxo_bloom audit (#661), and neither has a caller today. They install an
+// in-memory filter and apply nothing, so they are never marked — a latched gate
+// simply means the filter is not installed.
 void block_chain::set_utxo_bloom(std::shared_ptr<database::utxo_bloom_filter const> bloom) {
     auto window = utxo_gate_.write();
-    utxoz_db_.with_write(window, [&](auto& db) { db.set_utxo_bloom(std::move(bloom)); });
+    if ( ! window) {
+        return;
+    }
+    utxoz_db_.with_write(*window, [&](auto& db) { db.set_utxo_bloom(std::move(bloom)); });
 }
 
 void block_chain::clear_utxo_bloom() {
     auto window = utxo_gate_.write();
-    utxoz_db_.with_write(window, [](auto& db) { db.clear_utxo_bloom(); });
+    if ( ! window) {
+        return;
+    }
+    utxoz_db_.with_write(*window, [](auto& db) { db.clear_utxo_bloom(); });
 }
 
 #endif // ! defined(KTH_DB_READONLY)
@@ -2197,8 +2352,13 @@ std::expected<block_chain::output_info, database::result_code> block_chain::get_
 
     // Use UTXO-Z high-performance database
     auto lease = utxo_gate_.read();
-    auto entry = utxoz_db_.with_read(lease,
-        [&](auto const& db) { return db.find(outpoint, static_cast<uint32_t>(branch_height)); });
+    if ( ! lease) {
+        return std::unexpected(lease.error());
+    }
+    auto entry = latch_if_store_reports_recovery(
+        utxoz_db_.with_read(*lease,
+            [&](auto const& db) { return db.find(outpoint, static_cast<uint32_t>(branch_height)); }),
+        utxo_gate_);
     if ( ! entry) {
         return std::unexpected(entry.error());
     }

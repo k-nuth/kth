@@ -2227,8 +2227,9 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                     .intended_last_height = batch_end,
                     .state = database::transition_state::in_progress});
             recorded != database::result_code::success) {
-            spdlog::critical("[utxo_build] Could not record that batch {}-{} is in flight; "
-                "refusing to mutate the UTXO set without it", batch_start, batch_end);
+            spdlog::critical("[utxo_build] Could not record that batch {}-{} is in flight ({}); "
+                "refusing to mutate the UTXO set without it", batch_start, batch_end,
+                database::result_code_name(recorded));
             on_fatal("the transition record could not be written");
             co_return;
         }
@@ -2240,8 +2241,9 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         if (auto const synced = chain.env_sync();
             synced != database::result_code::success) {
             spdlog::critical("[utxo_build] The transition record for batch {}-{} could not be put "
-                "on stable storage; refusing to mutate the UTXO set behind a record that a "
-                "restart may not find", batch_start, batch_end);
+                "on stable storage ({}); refusing to mutate the UTXO set behind a record that a "
+                "restart may not find", batch_start, batch_end,
+                database::result_code_name(synced));
             on_fatal("the transition record could not be made durable");
             co_return;
         }
@@ -2265,13 +2267,32 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // the AB-BA deadlock. Nothing below step 9 needs the capability, and the
         // fsyncs of steps 10 and 11 have no business excluding readers.
         {
-            auto const window = chain.begin_utxo_write();
+            auto window = chain.begin_utxo_write();
+            if ( ! window) {
+                spdlog::critical("[utxo_build] The UTXO gate has latched ({}); batch {}-{} is "
+                    "not attempted", database::result_code_name(window.error()),
+                    batch_start, batch_end);
+                on_fatal("the UTXO store requires recovery");
+                co_return;
+            }
+
+            // Declared here, before anything can be applied, and it covers every
+            // exit below without one of them having to remember. Steps 4 to 9
+            // write as they go: an early return, a thrown exception and a
+            // cancellation all leave through the window's destructor, which
+            // latches the gate unless complete() has been reached.
+            window->mark_mutating();
 
             if ( ! delta.empty()) {
-                auto result = chain.apply_utxo_inserts_raw(window, delta.inserts);
+                auto result = chain.apply_utxo_inserts_raw(*window, delta.inserts);
                 if (result != database::result_code::success) {
+                    // The code, not just the fact. `recovery_required` says the
+                    // store has latched and nothing further will be written,
+                    // which is a different instruction to an operator than a
+                    // delta that failed for any other reason.
                     spdlog::critical("[utxo_build] Failed to apply UTXO delta at batch {} "
-                        "(operation {:#018x})", batch_start, operation_id);
+                        "(operation {:#018x}): {}", batch_start, operation_id,
+                        database::result_code_name(result));
                     on_fatal("a UTXO delta could not be applied");
                     co_return;
                 }
@@ -2337,7 +2358,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                 auto const outcome = blockchain::run_deletion_sweep(
                     std::move(owed), blockchain::strict_absence(),
                     [&chain, &window](std::span<utxoz::deferred_deletion_entry const> b) {
-                        return chain.utxo_apply_deletes(window, b);
+                        return chain.utxo_apply_deletes(*window, b);
                     },
                     max_deletion_attempts,
                     [&](int attempt, utxoz::deletion_progress const& progress) {
@@ -2412,7 +2433,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             // node's own durability level already says so. `failed` is fatal on
             // every platform — a level describes what a platform CAN promise, and it
             // never turns a barrier that was attempted and refused into a success.
-            switch (chain.utxo_sync(window)) {
+            switch (chain.utxo_sync(*window)) {
                 case database::barrier_outcome::crossed:
                     break;
                 case database::barrier_outcome::unsupported:
@@ -2433,6 +2454,18 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                     on_fatal("the UTXO set of a connected batch could not be made durable");
                     co_return;
             }
+
+            // The safe boundary for a connect batch, and it is `utxo_sync` that
+            // sets it: the LMDB record and the UTXO-Z mutations are two stores
+            // that have to agree on disk, and until the barrier above returns
+            // they may not. Everything applied is now durable, so releasing the
+            // window from here latches nothing.
+            //
+            // Deliberately not earlier. Every `co_return` above leaves without
+            // reaching this line, which is how the eight exits inside this
+            // window come to poison the gate without any of them saying so.
+            window->mark_mutated();
+            window->complete();
         }   // the window ends HERE, before publish_transition
 
         // Step 10. The built height AND the clearing of the record, in ONE
@@ -2460,9 +2493,10 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                     .last_block_height = utxo_built_height,
                     .utxo_built_height = utxo_built_height});
             published != database::result_code::success) {
-            spdlog::critical("[utxo_build] Could not publish batch {}-{} at built height {}: the "
-                "UTXO set is ahead of what the next start will believe",
-                batch_start, batch_end, utxo_built_height);
+            spdlog::critical("[utxo_build] Could not publish batch {}-{} at built height {} ({}): "
+                "the UTXO set is ahead of what the next start will believe",
+                batch_start, batch_end, utxo_built_height,
+                database::result_code_name(published));
             on_fatal("the UTXO set advanced past the height marker that describes it");
             co_return;
         }
@@ -2472,8 +2506,9 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         if (auto const synced = chain.env_sync();
             synced != database::result_code::success) {
             spdlog::critical("[utxo_build] The published state of batch {}-{} could not be put on "
-                "stable storage; a restart may find this batch still in flight over a set that "
-                "already holds it", batch_start, batch_end);
+                "stable storage ({}); a restart may find this batch still in flight over a set "
+                "that already holds it", batch_start, batch_end,
+                database::result_code_name(synced));
             on_fatal("a published transition could not be made durable");
             co_return;
         }
@@ -2532,16 +2567,32 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
     // Final compaction
     spdlog::info("[utxo_build] Running final compaction...");
-    if ( ! chain.utxo_compact()) {
-        // Not fatal: compaction reclaims space, it does not decide correctness,
-        // and the set is coherent either way. But it is not nothing, and the old
-        // void signature meant nobody could tell it had happened.
-        spdlog::error("[utxo_build] final compaction failed; the UTXO set is intact "
-            "but was not compacted");
+    if (auto const compacted = chain.compact_utxo(); ! compacted) {
+        if (database::needs_recovery(compacted.error())) {
+            // NOT the benign case. The store has latched: it will refuse every
+            // operation from here, and the set is not "intact either way". The
+            // old bool could not tell these apart and this branch is why the
+            // signature changed.
+            spdlog::critical("[utxo_build] Final compaction latched the UTXO store ({}); it will "
+                "refuse every further operation until the node restarts",
+                database::result_code_name(compacted.error()));
+        } else {
+            spdlog::error("[utxo_build] final compaction failed ({}); the UTXO set is intact "
+                "but was not compacted", database::result_code_name(compacted.error()));
+        }
     }
-    chain.utxo_print_statistics();
-    chain.utxo_print_sizing_report();
-    chain.utxo_print_height_range_stats();
+    // Reports, and a latched store simply has none to give. Each says so rather
+    // than returning silently, which is what the old void signatures did.
+    for (auto const& [name, report] : std::initializer_list<
+             std::pair<char const*, std::expected<void, database::result_code> (blockchain::block_chain::*)()>>{
+             {"statistics", &blockchain::block_chain::print_utxo_statistics},
+             {"sizing report", &blockchain::block_chain::print_utxo_sizing_report},
+             {"height range stats", &blockchain::block_chain::print_utxo_height_range_stats}}) {
+        if (auto const printed = (chain.*report)(); ! printed) {
+            spdlog::warn("[utxo_build] the UTXO {} is unavailable ({})", name,
+                database::result_code_name(printed.error()));
+        }
+    }
 
     spdlog::info("[utxo_build] Task ended at UTXO height {}", utxo_built_height);
 }
