@@ -24,7 +24,13 @@
 namespace kth::database {
 
 /// High-level API for storing blocks and undo data in flat files.
-/// Thread-safe.
+/// NOT internally synchronised. `file_info_`, the append cursors and the
+/// adoption state below are plain members: the store is driven from one thread
+/// at a time by its owner, which is what block_chain does — `initialize()` and
+/// both walks run during start(), and every writer begins after start() returns.
+///
+/// Said plainly because two comments here used to claim a mutex that this class
+/// does not have.
 struct KD_API block_store {
     using magic_t = std::array<uint8_t, 4>;
 
@@ -36,7 +42,7 @@ struct KD_API block_store {
 
     ~block_store() = default;
 
-    // Non-copyable, non-movable (contains mutex)
+    // Non-copyable, non-movable
     block_store(block_store const&) = delete;
     block_store& operator=(block_store const&) = delete;
     block_store(block_store&&) = delete;
@@ -72,7 +78,8 @@ struct KD_API block_store {
     flat_file_pos save_block_raw(data_chunk const& raw_block, uint32_t height, uint64_t timestamp);
 
     /// Allocate space for a raw block without writing data.
-    /// Thread-safe: serializes access to allocation state via internal mutex.
+    /// Called from the owner's thread, like everything else here; see the note
+    /// on the class.
     /// @param raw_block_size Size of the raw block data (excluding header).
     /// @param height Block height.
     /// @param timestamp Block timestamp.
@@ -198,8 +205,45 @@ struct KD_API block_store {
     /// reorganization: see undo_scan_result::unattributed.
     using undo_parent_lookup = std::function<std::optional<hash_digest>(hash_digest const&)>;
 
+    /// Why a walk of the blk files stopped, and where.
+    ///
+    /// It used to be a `size_t` count with a silent `break` at every anomaly, and
+    /// that was tolerable only while nothing depended on where it stopped. It
+    /// governs the write cursor now, so "it ended" and "it stopped understanding"
+    /// have to be different answers: taking the second for the first would put
+    /// the next block on top of data nobody could read (#668).
+    enum class block_scan_status {
+        clean_eof,          ///< Every record read, right up to the end of the file.
+        clean_padding,      ///< Every record read; what follows is reserved space, all zero.
+        open_failed,        ///< A file that exists could not be opened.
+        truncated_header,   ///< Not enough room left for a record header.
+        bad_magic,          ///< Four bytes that are neither this network's magic nor zeroes.
+        invalid_size,       ///< A payload size that cannot be right.
+        record_beyond_file, ///< A record that claims more bytes than the file holds.
+        short_read,         ///< A read returned less than it was asked for.
+        seek_failed,        ///< A seek over a payload failed.
+    };
+
+    struct block_scan_result {
+        block_scan_status status{block_scan_status::clean_eof};
+        size_t found{0};                ///< Records read and reported. Only meaningful when clean.
+        int32_t file_number{-1};        ///< Where it stopped, for diagnosis.
+        uint32_t position{0};
+
+        [[nodiscard]] bool clean() const {
+            return status == block_scan_status::clean_eof
+                || status == block_scan_status::clean_padding;
+        }
+    };
+
+    /// Walk the blk files and report every block position.
+    ///
+    /// The extents it measures are NOT returned. A caller cannot hand this store
+    /// a cursor: the walk publishes what it measured, itself, and only when it
+    /// finished cleanly on every file. Anything else leaves the block cursor
+    /// unavailable and this store refusing to append (see `append_enabled`).
     [[nodiscard]]
-    size_t scan_block_positions(block_position_callback const& callback) const;
+    block_scan_result scan_block_positions(block_position_callback const& callback);
 
     /// Walk the rev files and recover every undo record, so the header index can
     /// be rebuilt at startup the way block positions already are.
@@ -212,8 +256,42 @@ struct KD_API block_store {
     /// reported until every file has been read, so a failure late in the last
     /// file cannot leave earlier records already applied — a half-restored index
     /// is worse than none, because it looks complete.
+    /// Same contract as `scan_block_positions`: the extents stay here, and they
+    /// are published only when every file read cleanly.
     [[nodiscard]]
-    undo_scan_result scan_undo_positions(undo_parent_lookup const& parent_of) const;
+    undo_scan_result scan_undo_positions(undo_parent_lookup const& parent_of);
+
+    // =========================================================================
+    // Appending is earned, not assumed (#668)
+    // =========================================================================
+    //
+    // A rev or blk file is preallocated in whole chunks, so its size on disk is
+    // almost always larger than the bytes written into it. `initialize()` used to
+    // take that size as the write cursor, and after a restart the next record
+    // landed on the chunk boundary — leaving a hole, and leaving the start after
+    // that refusing to open the database.
+    //
+    // So the cursor is no longer guessed from the file system. It comes from the
+    // walk that reads the records, and until BOTH walks have finished cleanly
+    // this store refuses to hand out a write position at all. There is no
+    // fallback to the file size: an unavailable cursor is an error a caller sees,
+    // in every build, not an assertion that disappears in Release.
+    //
+    // @par The contract for a direct caller
+    // `initialize()` → `scan_block_positions(...)` → `scan_undo_positions(...)` →
+    // append. The two walks need the header index, so they cannot run inside
+    // `initialize()`; on a database with no files they are trivially clean and
+    // cost nothing.
+    //
+    // There is no `close()`: this store is destroyed and rebuilt, which is what
+    // block_chain does, so a reopen starts from `initialize()` and earns the
+    // cursors again. `initialize()` also clears both, so calling it twice on one
+    // instance does not inherit the last run's answer.
+
+    /// Whether a write position can be issued. False until both walks have
+    /// completed cleanly, and false again after another `initialize()`.
+    [[nodiscard]]
+    bool append_enabled() const;
 
     // =========================================================================
     // Maintenance
@@ -301,7 +379,17 @@ private:
     flat_file_seq undo_files_;
 
     std::vector<block_file_info> file_info_;
+
     int32_t last_block_file_{0};
+
+    /// Set only by a walk that finished cleanly on every file, and cleared by
+    /// `initialize()`. Both are required before a position is issued.
+    bool block_extents_adopted_{false};
+    bool undo_extents_adopted_{false};
+    // Appended last on purpose: the two flags fit in the padding that already
+    // followed `last_block_file_`, so no existing member changes offset and
+    // sizeof is unchanged. Placing them earlier would have shifted that member
+    // for no reason.
 
     // Thread safety:
     // - allocate_block_space() must be called serially (single coroutine / single pool thread)

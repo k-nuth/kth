@@ -365,13 +365,18 @@ bool block_chain::start(uint32_t disk_magic) {
         spdlog::info("[blockchain] Loaded {} headers into header_index in {}ms", loaded, elapsed_ms);
     }
 
-    // Restore block file positions in header_index from flat files
-    if (block_store_ && heights->block > 0) {
+    // Restore block file positions in header_index from flat files.
+    //
+    // Unconditional now, and `heights->block > 0` is gone on purpose: the walks
+    // are what authorise the store to append (#668), so skipping them on a fresh
+    // database left it unable to write its first block. On a database with no
+    // files they visit nothing and cost nothing.
+    if (block_store_) {
         spdlog::info("[blockchain] Scanning flat files to restore block positions...");
         auto const scan_start = std::chrono::steady_clock::now();
 
         size_t restored = 0;
-        auto const scanned = block_store_->scan_block_positions(
+        auto const block_scan = block_store_->scan_block_positions(
             [this, &restored](int32_t file_num, uint32_t data_pos, hash_digest const& hash) {
                 auto const idx = header_index_.find(hash);
                 if (idx != header_index::null_index) {
@@ -381,6 +386,22 @@ bool block_chain::start(uint32_t disk_magic) {
                 }
             }
         );
+
+        // The walk governs the write cursor now, so an anomaly is a refusal
+        // rather than a shorter answer. It used to stop quietly on any of eight
+        // conditions and report only how many records it had managed to read —
+        // which, once the cursor comes from where it stopped, is the difference
+        // between appending after the last block and appending on top of data
+        // nobody could parse (#668).
+        if ( ! block_scan.clean()) {
+            spdlog::critical("[blockchain] The block files could not be read back "
+                "(status {}, file {}, offset {}). Refusing to start on a chain whose block "
+                "data is unaccounted for.",
+                static_cast<int>(block_scan.status), block_scan.file_number,
+                block_scan.position);
+            return false;
+        }
+        auto const scanned = block_scan.found;
 
         // And the undo records, the same way and for the same reason: their
         // positions live only in this in-memory index, so without this pass a

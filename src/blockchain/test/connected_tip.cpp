@@ -519,3 +519,43 @@ TEST_CASE("an absent marker over a populated set is refused, not assumed to be g
     REQUIRE(heights);
     CHECK(heights->block == 4u);
 }
+
+// -----------------------------------------------------------------------------
+// A chain whose block files cannot be read back does not come up (#668)
+// -----------------------------------------------------------------------------
+
+TEST_CASE("a chain whose block files cannot be read back refuses to start",
+          "[connected_tip][block_scan]") {
+    // The refusal an operator actually meets. `block_store` has its own controls
+    // for the walk; this is the one that decides whether the CHAIN comes up. The
+    // walk governs the append cursor, so a file it stopped understanding has to
+    // stop the start rather than yield a shorter answer and a cursor over
+    // whatever was left — which would put the next block on top of data nobody
+    // could parse.
+    //
+    // The file is written by hand, which is what a reader test is for: no correct
+    // writer produces this, and that is the point.
+    chain_fixture fixture("block_scan_refuses");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const dir = fixture.dir();
+    fixture.close();
+
+    auto const blocks_dir = dir / "blocks";
+    std::error_code ec;
+    std::filesystem::create_directories(blocks_dir, ec);
+
+    // Four bytes that are neither this network's magic nor the zeroes of
+    // reserved space. The walk cannot say what follows them, so it must not say
+    // the file ended here.
+    {
+        FILE* file = kth::database::open_native(blocks_dir / "blk00000.dat", "wb");
+        REQUIRE(file != nullptr);
+        std::array<uint8_t, 8> const junk{{0xde, 0xad, 0xbe, 0xef, 1, 2, 3, 4}};
+        REQUIRE(std::fwrite(junk.data(), 1, junk.size(), file) == junk.size());
+        std::fclose(file);
+    }
+
+    // And it does not come up. Not "comes up with fewer blocks": does not come up.
+    CHECK_FALSE(fixture.start());
+}
