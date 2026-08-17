@@ -84,6 +84,72 @@ hash_digest active_hash_at(blockchain::header_index const& index, uint32_t heigh
 }
 
 // =============================================================================
+// May the post-checkpoint range start? (#663)
+// =============================================================================
+
+slow_sync_admission may_start_slow_sync(
+    uint32_t start_height,
+    std::expected<uint32_t, database::result_code> const& built) {
+
+    if ( ! built) {
+        // Fail-closed, and both reasons land here on purpose. `key_not_found`
+        // means no marker has been published yet, which is a store that has not
+        // built anything this side of a rebuild; a fault means the store would
+        // not answer. Neither is "far enough", and reading either as permission
+        // is how a validator ends up judging blocks against a set it cannot
+        // describe.
+        return slow_sync_admission::height_unavailable;
+    }
+
+    // H needs the set at H - 1, so the first block of the range needs
+    // start_height - 1. Equality is enough and is the whole point: demanding
+    // start_height would wait for the block the range has not downloaded yet, and
+    // the range would never start.
+    //
+    // `start_height == 0` FIRST, so the subtraction below cannot underflow. It
+    // cannot arrive today — every call site passes `blocks_synced_to + 1` — and a
+    // range starting at genesis needs nothing built ahead of it, which is the
+    // honest answer rather than a guard against a caller that does not exist.
+    if (start_height == 0) {
+        return slow_sync_admission::start;
+    }
+
+    // The arithmetic is on the CONSTANT side, not the measured one. `*built + 1`
+    // wraps to 0 when the builder reports UINT32_MAX, which would report the
+    // highest set representable as behind — fail-closed, and still wrong.
+    if (*built >= start_height - 1) {
+        return slow_sync_admission::start;
+    }
+    return slow_sync_admission::builder_behind;
+}
+
+utxo_progress_step utxo_progress_for_tick(
+    std::optional<uint32_t> last_seen,
+    std::expected<uint32_t, database::result_code> const& built) {
+
+    if ( ! built) {
+        // Nothing to announce, AND the memory is cleared. Keeping it would let a
+        // transient read failure hide the next successful reading of the same
+        // height — and the coordinator may well be holding on
+        // `height_unavailable` at that moment, with no other event coming.
+        return {std::nullopt, std::nullopt};
+    }
+    if (last_seen && *last_seen == *built) {
+        return {std::nullopt, last_seen};
+    }
+    return {*built, *built};
+}
+
+char const* to_string(slow_sync_admission admission) {
+    switch (admission) {
+        case slow_sync_admission::start:              return "start";
+        case slow_sync_admission::builder_behind:     return "builder_behind";
+        case slow_sync_admission::height_unavailable: return "height_unavailable";
+    }
+    return "invalid slow_sync_admission";
+}
+
+// =============================================================================
 // Header Persistence (background task)
 // =============================================================================
 
@@ -679,6 +745,57 @@ static
     });
 
     // Bridge: stored_chunks -> coordinator_events (carries storage results: validated + stored)
+    // Bridge: the UTXO builder's published height -> coordinator_events (#663)
+    //
+    // The coordinator holds the post-checkpoint range until the set describes the
+    // state below it, and the builder has nothing to announce when it advances —
+    // it publishes a height and carries on. Without this the coordinator would sit
+    // on its receive point until some UNRELATED event arrived, which is how the
+    // range came to start on a peer connecting or a header batch landing. In the
+    // observed run it did not arrive for over ten minutes.
+    //
+    // A poll and not a signal, deliberately: the builder is in another task with
+    // its own window, and having it notify would mean either sending from under
+    // that window or threading a channel through it. One LMDB key read per second
+    // costs nothing next to what it unblocks, and it keeps the builder unaware of
+    // the coordinator entirely.
+    //
+    // Sends only on CHANGE, so a steady state is silent. A read that fails sends
+    // nothing: the coordinator asks the store itself when it evaluates, and
+    // fail-closed there is the decision — this task's job is to make it look
+    // again, not to decide anything.
+    all_tasks.spawn("coordinator_utxo_bridge", [&]() -> ::asio::awaitable<void> {
+        spdlog::debug("[coordinator:utxo_bridge] Started");
+        auto exec = co_await ::asio::this_coro::executor;
+        ::asio::steady_timer poll(exec);
+
+        std::optional<uint32_t> last_seen;
+        while ( ! network.stopped()) {
+            poll.expires_after(std::chrono::seconds(1));
+            auto [timer_ec] = co_await poll.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            if (timer_ec) {
+                break;
+            }
+
+            auto const step = utxo_progress_for_tick(last_seen,
+                chain.get_utxo_built_height());
+            last_seen = step.next_last_seen;
+            if ( ! step.announce) {
+                continue;
+            }
+
+            if ( ! coordinator_events.try_send(std::error_code{},
+                    utxo_build_advanced{*step.announce})) {
+                // Dropped, and not fatal: the next tick reports the height again
+                // because `last_seen` is only updated here, so a full channel
+                // delays the wake-up rather than losing it.
+                spdlog::debug("[coordinator:utxo_bridge] Channel full, utxo_build_advanced dropped");
+                last_seen.reset();
+            }
+        }
+        spdlog::info("[coordinator:utxo_bridge] Task ended");
+    });
+
     all_tasks.spawn("coordinator_stored_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::debug("[coordinator:stored_bridge] Started");
         while (true) {
@@ -818,6 +935,10 @@ static
         // fire on every subsequent chunk/block event.
         bool slow_sync_started = false;
 
+        // The last answer reported, so a hold is logged when it changes rather
+        // than on every event. `start` means "not holding".
+        auto last_slow_sync_hold = slow_sync_admission::start;
+
         // For ETA calculation
         auto header_sync_start = std::chrono::steady_clock::now();
         uint32_t headers_at_start = headers_synced_to;
@@ -869,6 +990,56 @@ static
             }
             spdlog::info("[sync_coordinator] block_range_request {}-{} sent ({} retries)", start, end, retries);
             co_return true;
+        };
+
+        // Ask, log once per answer, and send only on `start`.
+        //
+        // One place, called from the three events that can change the answer, so
+        // the three cannot drift apart — which is how the two existing copies of
+        // this trigger came to be identical by hand.
+        //
+        // The height is read, not held. `get_utxo_built_height()` may well take a
+        // read lease of its own internally — the property that matters is that it
+        // returns a VALUE and nothing outlives the call, so no lease and no
+        // capability is alive across the co_await inside send_block_range.
+        auto try_start_slow_sync = [&]() -> ::asio::awaitable<void> {
+            if (slow_sync_started || blocks_synced_to < checkpoint_height ||
+                headers_synced_to <= blocks_synced_to) {
+                co_return;
+            }
+
+            auto const start_height = blocks_synced_to + 1;
+            auto const built = chain.get_utxo_built_height();
+            auto const admission = may_start_slow_sync(start_height, built);
+
+            if (admission != slow_sync_admission::start) {
+                // Throttled: the builder is minutes behind at the start of a long
+                // range, and one line per event would bury everything else.
+                if (admission != last_slow_sync_hold) {
+                    if (admission == slow_sync_admission::height_unavailable) {
+                        spdlog::error("[sync_coordinator] SLOW block sync held at {}: the UTXO "
+                            "built height could not be read ({}); refusing to validate against a "
+                            "set that cannot say how far it describes",
+                            start_height, database::result_code_name(built.error()));
+                    } else {
+                        spdlog::info("[sync_coordinator] SLOW block sync held at {}: the UTXO set "
+                            "is at {} and block {} needs it at {}; waiting for the builder",
+                            start_height, *built, start_height, start_height - 1);
+                    }
+                    last_slow_sync_hold = admission;
+                }
+                co_return;
+            }
+
+            if (last_slow_sync_hold != slow_sync_admission::start) {
+                spdlog::info("[sync_coordinator] The UTXO set reached {}; SLOW block sync released",
+                    *built);
+                last_slow_sync_hold = slow_sync_admission::start;
+            }
+
+            spdlog::info("[sync_coordinator] Starting SLOW block sync: {} to {} ({} blocks)",
+                start_height, headers_synced_to, headers_synced_to - blocks_synced_to);
+            slow_sync_started = co_await send_block_range(start_height, headers_synced_to);
         };
 
         // Main loop: ONLY receives from unified channel (no || operator)
@@ -1067,25 +1238,28 @@ static
 
                     // Trigger block download if we have headers ahead of blocks
                     if (headers_synced_to > blocks_synced_to) {
-                        // Determine end height based on sync stage
-                        uint32_t end_height;
                         if (blocks_synced_to < checkpoint_height) {
-                            // Fast sync stage: download up to checkpoint
+                            // Fast sync stage: download up to the checkpoint. Merkle
+                            // only, so the UTXO set is not consulted and there is
+                            // nothing to wait for.
+                            //
                             // NOTE: We should only reach here if headers_synced_to >= checkpoint_height
                             // because header_sync should not complete until we have checkpoint headers
-                            end_height = checkpoint_height;
                             spdlog::info("[sync_coordinator] Starting FAST block sync: {} to {} ({} blocks)",
-                                blocks_synced_to + 1, end_height,
-                                end_height - blocks_synced_to);
+                                blocks_synced_to + 1, checkpoint_height,
+                                checkpoint_height - blocks_synced_to);
+                            co_await send_block_range(blocks_synced_to + 1, checkpoint_height);
                         } else {
-                            // Slow sync stage: download up to headers (requires UTXO)
-                            end_height = headers_synced_to;
-                            spdlog::info("[sync_coordinator] Starting SLOW block sync: {} to {} ({} blocks)",
-                                blocks_synced_to + 1, end_height,
-                                end_height - blocks_synced_to);
+                            // Slow sync stage. THIS is the third door onto the
+                            // post-checkpoint range, and it used to send directly:
+                            // its own comment said "requires UTXO" and nothing
+                            // checked that the set had it. It also left
+                            // `slow_sync_started` false, so the block and chunk
+                            // paths could send the same range again.
+                            //
+                            // Same guarded admission as the other two (#663).
+                            co_await try_start_slow_sync();
                         }
-
-                        co_await send_block_range(blocks_synced_to + 1, end_height);
                     } else {
                         // Already synced - wait and check for new blocks later
                         spdlog::info("[sync_coordinator] Fully synced at height {}", blocks_synced_to);
@@ -1137,13 +1311,10 @@ static
                     // headers are already ahead of the bloom height. The
                     // `slow_sync_started` guard keeps subsequent block_validated
                     // events from re-sending the request.
-                    if (blocks_synced_to >= checkpoint_height && !slow_sync_started &&
-                        headers_synced_to > blocks_synced_to) {
-                        spdlog::info("[sync_coordinator] Starting SLOW block sync: {} to {} ({} blocks)",
-                            blocks_synced_to + 1, headers_synced_to,
-                            headers_synced_to - blocks_synced_to);
-                        slow_sync_started = co_await send_block_range(blocks_synced_to + 1, headers_synced_to);
-                    }
+                    //
+                    // Held until the UTXO set describes the state below the first
+                    // block of the range — see may_start_slow_sync (#663).
+                    co_await try_start_slow_sync();
 
                     // Check if we've caught up to headers
                     if (blocks_synced_to >= headers_synced_to && header_sync_complete) {
@@ -1186,6 +1357,22 @@ static
                 continue;
             }
 
+            if (auto* advanced = std::get_if<utxo_build_advanced>(&event)) {
+                // A WAKE-UP, not an authority on the height. The value it carries
+                // is logged and nothing else: the message can sit in the channel
+                // while a reorg, a startup reconciliation or a rebuild moves the
+                // height under it, and a decision made on the stale number would
+                // send the range against a set that no longer describes what the
+                // message claimed.
+                //
+                // `try_start_slow_sync` takes no arguments precisely so the
+                // payload cannot reach the decision; it reads the height itself.
+                spdlog::debug("[sync_coordinator] UTXO built height reported as {}; re-checking",
+                    advanced->built_height);
+                co_await try_start_slow_sync();
+                continue;
+            }
+
             if (auto* result = std::get_if<chunk_validated>(&event)) {
                 if (!result->result) {
                     // Buffer the chunk result (chunks may arrive out of order)
@@ -1212,21 +1399,18 @@ static
                     if (blocks_synced_to >= checkpoint_height) {
                         spdlog::info("[sync_coordinator] *** FAST SYNC COMPLETE at checkpoint {} ***",
                             checkpoint_height);
-                        // UTXO set is built incrementally by block_storage_task.
-                        spdlog::info("[sync_coordinator] UTXO set build handled by block_storage_task (incremental)");
+                        // Nothing to build here; `utxo_build_task` applies each
+                        // block's delta as it goes. Reaching the checkpoint does
+                        // not mean it has arrived — which is why the range below
+                        // asks rather than assumes.
+                        spdlog::info("[sync_coordinator] UTXO set built incrementally by utxo_build_task");
                     }
 
                     // Trigger SLOW block sync for the post-checkpoint range.
-                    // See the matching block in the block_validated branch
-                    // above for the rationale — same fix on the chunk path,
-                    // which is the one that fires during the FAST IBD itself.
-                    if (blocks_synced_to >= checkpoint_height && !slow_sync_started &&
-                        headers_synced_to > blocks_synced_to) {
-                        spdlog::info("[sync_coordinator] Starting SLOW block sync: {} to {} ({} blocks)",
-                            blocks_synced_to + 1, headers_synced_to,
-                            headers_synced_to - blocks_synced_to);
-                        slow_sync_started = co_await send_block_range(blocks_synced_to + 1, headers_synced_to);
-                    }
+                    // See the matching call in the block_validated branch above —
+                    // same decision on the chunk path, which is the one that
+                    // fires during the FAST IBD itself.
+                    co_await try_start_slow_sync();
 
                     // Check if we've caught up to headers
                     if (blocks_synced_to >= headers_synced_to && header_sync_complete) {

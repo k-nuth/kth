@@ -254,11 +254,28 @@ using stop_channel = concurrent_event_channel;
 
 // Sync coordinator unified event (combines all input sources to avoid || operator)
 // This prevents message loss that occurs when async_receive is cancelled by ||
+/// The UTXO builder has published a new height (#663).
+///
+/// The coordinator cannot start the post-checkpoint range until the UTXO set
+/// describes the state below it, and the builder runs on its own schedule with
+/// nothing to announce when it advances. Without this the coordinator would sit
+/// on its receive point waiting for an event that has no reason to arrive, and
+/// the range would start on the next unrelated one — a peer connecting, a header
+/// batch landing — which is how the range came to depend on an accident.
+///
+/// Carries the height rather than a bare "look again", so the coordinator logs
+/// what it is waiting for and how far off it is without reading the store from
+/// its own loop.
+struct utxo_build_advanced {
+    uint32_t built_height{0};
+};
+
 using sync_coordinator_event = std::variant<
     stop_request,
     headers_validated,
     block_validated,
-    chunk_validated
+    chunk_validated,
+    utxo_build_advanced
 >;
 
 using sync_coordinator_event_channel = concurrent_channel<sync_coordinator_event>;
