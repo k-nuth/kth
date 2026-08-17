@@ -1854,6 +1854,22 @@ uint32_t resume_utxo_built_height(std::optional<uint32_t> saved, uint32_t start_
     return start_height > 0 ? start_height - 1 : 0;
 }
 
+// What a fatal exit inside the UTXO write window has to say, once it is safe to
+// say it (#657).
+//
+// Everything here is OWNED and copyable. A span, a reference into the store or a
+// capability would outlive the scope that justified it — the whole point is that
+// this value crosses the window's closing brace and the things it describes do
+// not.
+//
+// Formatting happens where the failure is seen, because that is where the values
+// are; it is arithmetic and allocation, not I/O. What waits is the sink write and
+// the handler, which are the parts that leave this node's control.
+struct window_fatal {
+    std::string log;      ///< The critical line, already formatted.
+    std::string reason;   ///< What on_fatal is told, verbatim as before.
+};
+
 uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     if (available >= batch_size) {
         return batch_size;
@@ -2266,14 +2282,26 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // takes that same mutex would be acquiring the two in the opposite order —
         // the AB-BA deadlock. Nothing below step 9 needs the capability, and the
         // fsyncs of steps 10 and 11 have no business excluding readers.
-        {
+        //
+        // The window's whole body is an immediately-invoked lambda so that a
+        // fatal condition can be REPORTED rather than acted on: it returns a
+        // description, the window dies with the lambda's frame, and the log and
+        // the handler run afterwards (#657). Reporting from inside meant a
+        // synchronous sink write and an arbitrary handler — which stops the node
+        // and joins its pools — executing while the exclusive window was still
+        // held, with every reader shut out for the duration.
+        //
+        // Nothing about the sane path changes: inserts, undo, deletions, the
+        // flush, utxo_sync and complete() run in the same order, under the same
+        // window, and a batch that succeeds returns nullopt.
+        auto const fatal = [&]() -> std::optional<window_fatal> {
             auto window = chain.begin_utxo_write();
             if ( ! window) {
-                spdlog::critical("[utxo_build] The UTXO gate has latched ({}); batch {}-{} is "
-                    "not attempted", database::result_code_name(window.error()),
-                    batch_start, batch_end);
-                on_fatal("the UTXO store requires recovery");
-                co_return;
+                return window_fatal{
+                    fmt::format("[utxo_build] The UTXO gate has latched ({}); batch {}-{} is "
+                        "not attempted", database::result_code_name(window.error()),
+                        batch_start, batch_end),
+                    "the UTXO store requires recovery"};
             }
 
             // Declared here, before anything can be applied, and it covers every
@@ -2290,11 +2318,11 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                     // store has latched and nothing further will be written,
                     // which is a different instruction to an operator than a
                     // delta that failed for any other reason.
-                    spdlog::critical("[utxo_build] Failed to apply UTXO delta at batch {} "
-                        "(operation {:#018x}): {}", batch_start, operation_id,
-                        database::result_code_name(result));
-                    on_fatal("a UTXO delta could not be applied");
-                    co_return;
+                    return window_fatal{
+                        fmt::format("[utxo_build] Failed to apply UTXO delta at batch {} "
+                            "(operation {:#018x}): {}", batch_start, operation_id,
+                            database::result_code_name(result)),
+                        "a UTXO delta could not be applied"};
                 }
             }
 
@@ -2315,9 +2343,9 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                     // After the delta: these blocks are in the UTXO set and now cannot be
                     // disconnected, so a later reorganization would have nothing to
                     // reverse them with.
-                    spdlog::critical("[utxo_build] Failed to store undo data for index {}", entry.idx);
-                    on_fatal("a connected block has no undo data and cannot be disconnected");
-                    co_return;
+                    return window_fatal{
+                        fmt::format("[utxo_build] Failed to store undo data for index {}", entry.idx),
+                        "a connected block has no undo data and cannot be disconnected"};
                 }
                 undo_files.push_back(*file);
             }
@@ -2380,25 +2408,25 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                         break;
 
                     case blockchain::deletion_sweep_outcome::absent_unaccounted:
-                        spdlog::critical("[utxo_build] {} is proven absent at batch {}-{}: the UTXO "
-                            "set does not hold an output these blocks spent",
-                            utxoz::outpoint_to_string(offender.key), batch_start, batch_end);
-                        on_fatal("a batch spent an output the UTXO set does not hold");
-                        co_return;
+                        return window_fatal{
+                            fmt::format("[utxo_build] {} is proven absent at batch {}-{}: the UTXO "
+                                "set does not hold an output these blocks spent",
+                                utxoz::outpoint_to_string(offender.key), batch_start, batch_end),
+                            "a batch spent an output the UTXO set does not hold"};
 
                     case blockchain::deletion_sweep_outcome::fault_reported:
-                        spdlog::critical("[utxo_build] the deletion walk reported a fault at batch "
-                            "{}-{} with nothing left unresolved; refusing to publish over a store "
-                            "that reported one", batch_start, batch_end);
-                        on_fatal("the UTXO store reported a fault while applying deletions");
-                        co_return;
+                        return window_fatal{
+                            fmt::format("[utxo_build] the deletion walk reported a fault at batch "
+                                "{}-{} with nothing left unresolved; refusing to publish over a "
+                                "store that reported one", batch_start, batch_end),
+                            "the UTXO store reported a fault while applying deletions"};
 
                     case blockchain::deletion_sweep_outcome::attempts_exhausted:
-                        spdlog::critical("[utxo_build] deletions could not be applied in {} attempts "
-                            "at batch {}-{}; the UTXO set still holds outputs these blocks spent",
-                            max_deletion_attempts, batch_start, batch_end);
-                        on_fatal("the deletions a batch owed could not be applied");
-                        co_return;
+                        return window_fatal{
+                            fmt::format("[utxo_build] deletions could not be applied in {} attempts "
+                                "at batch {}-{}; the UTXO set still holds outputs these blocks spent",
+                                max_deletion_attempts, batch_start, batch_end),
+                            "the deletions a batch owed could not be applied"};
                 }
             }
 
@@ -2410,18 +2438,17 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             // not exist after a power cut, because the entry that reaches it was
             // never written. Both live inside flush_undo.
             if (auto const flushed = chain.flush_undo(undo_files); ! flushed) {
-                if (flushed.error().file_number < 0) {
-                    spdlog::critical("[utxo_build] The undo directory could not be put on stable "
-                        "storage after batch {}-{}: the rev files this batch wrote may not survive "
-                        "a restart, so these blocks would be connected and not disconnectable",
-                        batch_start, batch_end);
-                } else {
-                    spdlog::critical("[utxo_build] The undo records in rev file {} could not be put "
-                        "on stable storage after batch {}-{}: these blocks would be connected and "
-                        "not disconnectable", flushed.error().file_number, batch_start, batch_end);
-                }
-                on_fatal("the undo records of a connected batch could not be made durable");
-                co_return;
+                return window_fatal{
+                    flushed.error().file_number < 0
+                        ? fmt::format("[utxo_build] The undo directory could not be put on stable "
+                            "storage after batch {}-{}: the rev files this batch wrote may not "
+                            "survive a restart, so these blocks would be connected and not "
+                            "disconnectable", batch_start, batch_end)
+                        : fmt::format("[utxo_build] The undo records in rev file {} could not be put "
+                            "on stable storage after batch {}-{}: these blocks would be connected "
+                            "and not disconnectable", flushed.error().file_number,
+                            batch_start, batch_end),
+                    "the undo records of a connected batch could not be made durable"};
             }
 
             // Step 9. UTXO-Z's own barrier. `close()` does not run it, so without
@@ -2438,21 +2465,21 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                     break;
                 case database::barrier_outcome::unsupported:
                     if (chain.durability() != database::durability_level::none) {
-                        spdlog::critical("[utxo_build] The UTXO store reports no durability barrier "
-                            "while this node claims '{}'; the two disagree about the same machine",
-                            database::to_string(chain.durability()));
-                        on_fatal("the UTXO store and the node disagree about what this platform can promise");
-                        co_return;
+                        return window_fatal{
+                            fmt::format("[utxo_build] The UTXO store reports no durability barrier "
+                                "while this node claims '{}'; the two disagree about the same "
+                                "machine", database::to_string(chain.durability())),
+                            "the UTXO store and the node disagree about what this platform can promise"};
                     }
                     spdlog::warn("[utxo_build] This platform exposes no durability barrier; batch "
                         "{}-{} is published without one", batch_start, batch_end);
                     break;
                 case database::barrier_outcome::failed:
-                    spdlog::critical("[utxo_build] The UTXO store's durability barrier failed after "
-                        "batch {}-{} (operation {:#018x}); what it applied is not known to be on "
-                        "disk", batch_start, batch_end, operation_id);
-                    on_fatal("the UTXO set of a connected batch could not be made durable");
-                    co_return;
+                    return window_fatal{
+                        fmt::format("[utxo_build] The UTXO store's durability barrier failed after "
+                            "batch {}-{} (operation {:#018x}); what it applied is not known to be "
+                            "on disk", batch_start, batch_end, operation_id),
+                        "the UTXO set of a connected batch could not be made durable"};
             }
 
             // The safe boundary for a connect batch, and it is `utxo_sync` that
@@ -2466,7 +2493,21 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             // window come to poison the gate without any of them saying so.
             window->mark_mutated();
             window->complete();
-        }   // the window ends HERE, before publish_transition
+            return std::nullopt;
+        }();   // the window ends HERE, with the lambda's frame
+
+        // Outside the window, and only now. Whatever the gate was left holding it
+        // is holding no longer: an unfinished mutation latched it as the frame
+        // unwound, a finished one did not, and either way no reader is waiting on
+        // this thread. So the sink write below is a write, not a write under
+        // exclusion, and on_fatal is free to stop the node and join its pools.
+        //
+        // Emitted ONCE, and the co_return is the one that was here before.
+        if (fatal) {
+            spdlog::critical("{}", fatal->log);
+            on_fatal(fatal->reason);
+            co_return;
+        }
 
         // Step 10. The built height AND the clearing of the record, in ONE
         // transaction. Separately there is an instant where the height says
