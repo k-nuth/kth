@@ -97,12 +97,22 @@ int kth_node_stopped(kth_node_t node) {
 }
 
 kth_chain_t kth_node_get_chain(kth_node_t node) {
-    return &(kth_node_cpp(node).node().chain());
+    // Null before a start and after a stop. This used to dereference the node
+    // pointer without asking, which is undefined in both.
+    auto const running = kth_node_cpp(node).node();
+    if ( ! running) {
+        return nullptr;
+    }
+    return &running->chain();
 }
 
 kth_p2p_t kth_node_get_p2p(kth_node_t node) {
 #if ! defined(__EMSCRIPTEN__)
-    return &kth_node_cpp(node).node().network();
+    auto const running = kth_node_cpp(node).node();   // null before a start
+    if ( ! running) {
+        return nullptr;
+    }
+    return &running->network();
 #else
     return nullptr;
 #endif

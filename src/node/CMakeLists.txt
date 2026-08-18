@@ -303,6 +303,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/download_supervisor.cpp
           test/download_ownership.cpp
           test/connected_tip_remainder.cpp
+          test/executor_lifecycle.cpp
+          test/scope_action.cpp
           test/utxo_batch_atomicity.cpp
           test/fatal_outside_window.cpp
           test/slow_sync_ordering.cpp
@@ -338,6 +340,12 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
   target_link_libraries(kth_node_test PUBLIC ${PROJECT_NAME})
   target_link_libraries(kth_node_test PRIVATE Catch2::Catch2WithMain)
+
+  # test/executor_lifecycle.cpp runs some of its own cases as subprocesses: the
+  # failure it pins is abnormal termination, which cannot be observed from inside
+  # the process it terminates. This is how those cases find the binary to re-run.
+  target_compile_definitions(kth_node_test PRIVATE
+    KTH_NODE_TEST_BINARY="$<TARGET_FILE:kth_node_test>")
 
   _group_sources(kth_node_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
@@ -399,7 +407,10 @@ install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+# `detail/` is internal: helpers the tests in this tree include by path so a
+# decision worth testing on its own does not have to become a public symbol.
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        PATTERN "detail" EXCLUDE)
 
 # Generate and install a CMake package configuration file
 install(EXPORT ${PROJECT_NAME}-targets
