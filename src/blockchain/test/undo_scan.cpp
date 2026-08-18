@@ -53,6 +53,20 @@ block_undo make_undo(uint8_t seed, uint32_t height) {
     return undo;
 }
 
+// The protocol production follows, in one place: a store may not append until
+// both walks have completed cleanly (#668). On a fresh directory they visit
+// nothing and are trivially clean, which is exactly what a fresh production
+// database does at its first start.
+inline void authorise_appends(kth::database::block_store& store) {
+    auto const blocks = store.scan_block_positions(
+        [](int32_t, uint32_t, kth::hash_digest const&) {});
+    REQUIRE(blocks.clean());
+    auto const undo = store.scan_undo_positions(
+        [](kth::hash_digest const&) -> std::optional<kth::hash_digest> { return std::nullopt; });
+    REQUIRE(undo.status == kth::database::block_store::undo_scan_status::clean_eof);
+    REQUIRE(store.append_enabled());
+}
+
 // A directory of its own per test, so one leaving files behind cannot make
 // another pass or fail for the wrong reason.
 struct store_fixture {
@@ -66,6 +80,9 @@ struct store_fixture {
         std::error_code ec;
         std::filesystem::remove_all(dir, ec);
         REQUIRE(store.initialize());
+        // The store starts unable to append; the walks earn it. See
+        // authorise_appends: on this empty directory they read nothing.
+        authorise_appends(store);
         // initialize() reads a rev file's size only when the matching blk file
         // exists — the two are discovered together, since a rev file only ever
         // holds undo for blocks in its blk file. Production always has one; a
@@ -441,6 +458,10 @@ TEST_CASE("records are recovered from more than one rev file", "[undo][scan]") {
     // rev00001.dat.
     fixture.make_block_file(1);
     REQUIRE(fixture.store.initialize());
+    // A second initialize() revokes the authorisation the fixture earned: it
+    // clears both cursors, on purpose, so a re-initialize cannot inherit an
+    // answer about files it has not read yet (#668). Earn it again.
+    authorise_appends(fixture.store);
 
     auto const block_a = make_hash(1);
     auto const parent_a = make_hash(0);

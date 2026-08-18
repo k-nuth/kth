@@ -4,6 +4,8 @@
 
 #include <kth/database/block_store.hpp>
 
+#include <limits>
+
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -49,6 +51,18 @@ constexpr size_t undo_checksum_size = 32;
 // block could produce and only rules out nonsense.
 constexpr uint32_t max_undo_size = 256u * 1024u * 1024u;
 
+// The largest block record a blk file can legitimately hold.
+//
+// Derived, not chosen: `find_block_pos` starts a new file as soon as
+// `size + add_size >= MAX_BLOCKFILE_SIZE`, so no record this store ever wrote
+// can span more than one file's worth of bytes. `MAX_BLOCKFILE_SIZE` is the
+// writer's own limit, which is why it is the reader's.
+//
+// Without it a corrupt size seeks past the end — which is legal — and the next
+// iteration finds no room for a header and reports a clean ending. Corruption
+// wearing the shape of EOF is the one outcome a cursor must never be built on.
+constexpr uint64_t max_block_record = MAX_BLOCKFILE_SIZE - block_header_size;
+
 // The record's checksum: the owning block's parent hash, then the payload. The
 // parent seeds it and is not stored, which is why it cannot serve as identity —
 // every sibling produces the same value.
@@ -57,21 +71,60 @@ constexpr uint32_t max_undo_size = 256u * 1024u * 1024u;
 // that may be taken for a clean end: anything non-zero after the records is
 // either an interrupted write or damage, and treating it as the end would let it
 // hide whatever follows.
-bool tail_is_all_zero(FILE* file, uint32_t offset, uint32_t file_size) {
-    if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0) return false;
+// Three answers, because a caller that has to report WHY needs them apart: the
+// tail is reserved space, the tail holds data, or the tail could not be read.
+// The last two are both fail-closed, and collapsing them only makes the
+// diagnosis worse.
+//
+// Read in fixed 64 KiB blocks from a buffer that does not grow with the padding:
+// the last file of a real database carries a hundred-odd megabytes of reserved
+// space, and neither mapping it nor allocating for it is warranted to answer a
+// yes/no question.
+// The file's size RIGHT NOW, not as some earlier pass remembered it. A snapshot
+// taken at initialize() is stale the moment anything appends, and a walk bounded
+// by a stale size stops early and calls it an ending.
+std::optional<uint32_t> physical_size_of(std::filesystem::path const& path) {
+    std::error_code ec;
+    auto const size = std::filesystem::file_size(path, ec);
+    if (ec) return std::nullopt;
+    // Every offset in these files is a uint32_t, so a file larger than one can
+    // address is not a file this reader can bound. Truncating it would hand the
+    // walk a limit far inside the data and call whatever followed an ending.
+    if (size > std::numeric_limits<uint32_t>::max()) return std::nullopt;
+    // And by what the walk can SEEK to. `std::fseek` takes a `long`, which is
+    // 32-bit on Windows: a size above LONG_MAX converts to a negative offset, the
+    // seek does not fail in any useful way, and the walk reports an ending from
+    // inside written data. A bound the reader cannot act on is not a bound.
+    if (size > static_cast<uintmax_t>(std::numeric_limits<long>::max())) return std::nullopt;
+    return static_cast<uint32_t>(size);
+}
 
-    std::array<uint8_t, 4096> buffer{};
+enum class tail_check { all_zero, has_data, unreadable };
+
+tail_check check_tail(FILE* file, uint32_t offset, uint32_t file_size) {
+    if (offset > file_size) return tail_check::unreadable;
+    if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0) {
+        return tail_check::unreadable;
+    }
+
+    std::array<uint8_t, 64 * 1024> buffer{};
     uint32_t remaining = file_size - offset;
     while (remaining > 0) {
         auto const want = std::min<size_t>(remaining, buffer.size());
-        if (std::fread(buffer.data(), 1, want, file) != want) return false;
+        if (std::fread(buffer.data(), 1, want, file) != want) {
+            return tail_check::unreadable;
+        }
         if (std::any_of(buffer.begin(), buffer.begin() + want,
                         [](uint8_t byte) { return byte != 0; })) {
-            return false;
+            return tail_check::has_data;
         }
         remaining -= static_cast<uint32_t>(want);
     }
-    return true;
+    return tail_check::all_zero;
+}
+
+bool tail_is_all_zero(FILE* file, uint32_t offset, uint32_t file_size) {
+    return check_tail(file, offset, file_size) == tail_check::all_zero;
 }
 
 hash_digest undo_checksum(hash_digest const& prev_hash, data_chunk const& undo_data) {
@@ -95,6 +148,18 @@ block_store::block_store(std::filesystem::path blocks_dir, magic_t magic)
 
 bool block_store::initialize() {
 
+    // FIRST, and before any path that can return. Both cursors are unavailable
+    // until a walk earns them, and that has to hold for a re-initialize as much
+    // as for a fresh instance — otherwise a second call would inherit the last
+    // run's answer about files it has not read yet.
+    //
+    // This is also why there is no close(): the store holds no handle between
+    // calls — every read and write opens and closes its own FILE* — so the only
+    // thing a close could do is set these two, which is what this already does,
+    // on the one path that precedes reading anything.
+    block_extents_adopted_ = false;
+    undo_extents_adopted_ = false;
+
     // Create directory if it doesn't exist
     std::error_code ec;
     std::filesystem::create_directories(blocks_dir_, ec);
@@ -109,7 +174,19 @@ bool block_store::initialize() {
     while (true) {
         flat_file_pos pos{file_num, 0};
         auto path = block_files_.file_name(pos);
-        if (!std::filesystem::exists(path)) {
+        // With an error_code: the throwing overload turns an unreadable directory
+        // into an exception out of initialize(), where every other failure here
+        // is a `return false`. An error is not "the file is not there" either —
+        // it is not knowing, which is a refusal.
+        std::error_code exists_ec;
+        auto const present = std::filesystem::exists(path, exists_ec);
+        if (exists_ec) {
+            spdlog::critical("block_store::initialize: {} could not be examined ({}); refusing "
+                "to open on a directory this process cannot read",
+                path.string(), exists_ec.message());
+            return false;
+        }
+        if ( ! present) {
             break;
         }
 
@@ -126,25 +203,73 @@ bool block_store::initialize() {
         if (file_info_.size() <= static_cast<size_t>(file_num)) {
             file_info_.resize(file_num + 1);
         }
-        file_info_[file_num].size = static_cast<uint32_t>(file_size);
-
-        // Also check undo file size
-        flat_file_pos undo_pos{file_num, 0};
-        auto undo_path = undo_files_.file_name(undo_pos);
-        if (std::filesystem::exists(undo_path)) {
-            auto undo_size = std::filesystem::file_size(undo_path, size_ec);
-            if (!size_ec) {
-                file_info_[file_num].undo_size = static_cast<uint32_t>(undo_size);
-            }
-        }
+        // The size is NOT recorded here. It would be stale by the time anything
+        // asked, and it must never become a write cursor: a file is preallocated
+        // in whole chunks, so it is almost always larger than what was written
+        // into it, and appending at it is exactly the defect this replaces
+        // (#668). What initialize() establishes is only WHICH files exist; each
+        // walk measures the one it is reading.
+        (void)file_size;
 
         ++file_num;
     }
 
+    // The numbering stopped at `file_num`. That is the end only if nothing is
+    // numbered above it: a blk file missing BETWEEN two that exist is a file that
+    // was lost, and stopping there would report a clean read of a chain with a
+    // piece cut out — every block in the files beyond would simply be invisible,
+    // with a cursor handed out over what was left.
+    {
+        // Driven with the non-throwing increment, and refusing when the listing
+        // cannot be read. The previous shape had two holes: `list_ec` was set
+        // only by the constructor, so a failure left `highest` at -1 and the gap
+        // check below was skipped while initialize() returned success; and the
+        // range-for's `operator++` throws, so an error during iteration escaped
+        // this function instead of returning false.
+        std::error_code list_ec;
+        std::filesystem::directory_iterator it(blocks_dir_, list_ec);
+        if (list_ec) {
+            spdlog::critical("block_store::initialize: the blocks directory {} could not be "
+                "listed ({}); refusing to open, because a lost file between the ones that do "
+                "exist would go unnoticed", blocks_dir_.string(), list_ec.message());
+            return false;
+        }
+
+        int32_t highest = -1;
+        std::filesystem::directory_iterator const done;
+        for (; it != done; it.increment(list_ec)) {
+            if (list_ec) {
+                spdlog::critical("block_store::initialize: listing {} failed part way ({}); "
+                    "refusing to open on a directory that could not be read in full",
+                    blocks_dir_.string(), list_ec.message());
+                return false;
+            }
+            auto const& entry = *it;
+            auto const name = entry.path().filename().string();
+            if (name.size() != 12 || name.compare(0, 3, "blk") != 0
+                || name.compare(8, 4, ".dat") != 0) {
+                continue;
+            }
+            auto const digits = name.substr(3, 5);
+            if (digits.find_first_not_of("0123456789") != std::string::npos) {
+                continue;
+            }
+            highest = std::max(highest, static_cast<int32_t>(std::stol(digits)));
+        }
+
+        if (highest >= file_num) {
+            spdlog::critical("block_store::initialize: blk{:05d}.dat is missing while "
+                "blk{:05d}.dat exists. A gap in the numbering is a lost file, not the end of "
+                "the chain; refusing to open rather than reporting a clean read of what is left",
+                file_num, highest);
+            return false;
+        }
+    }
+
     if (file_num > 0) {
         last_block_file_ = file_num - 1;
-        spdlog::info("block_store: restored {} block files, last file size: {} bytes",
-                    file_num, file_info_[last_block_file_].size);
+        spdlog::info("block_store: discovered {} block files; write cursors stay unavailable "
+                    "until both scans complete", file_num);
     } else {
         spdlog::info("block_store: initialized with no existing files");
     }
@@ -503,7 +628,11 @@ block_store::read_blocks_raw(std::vector<flat_file_pos> const& positions) const 
 }
 
 block_store::undo_scan_result
-block_store::scan_undo_positions(undo_parent_lookup const& parent_of) const {
+block_store::scan_undo_positions(undo_parent_lookup const& parent_of) {
+    // Revoked first, for the same reason as the block walk.
+    undo_extents_adopted_ = false;
+
+    std::vector<uint32_t> extents(file_info_.size(), 0);
     undo_scan_result result;
     result.status = undo_scan_status::clean_eof;
 
@@ -539,7 +668,14 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) const {
             return fail(undo_scan_status::io_error, file_num, 0, {});
         }
 
-        auto const file_size = file_info_[file_num].undo_size;
+        // Physical, for the same reason the block walk uses it: the cursor is
+        // what this walk produces, so it cannot also bound it.
+        auto const measured = physical_size_of(path);
+        if ( ! measured) {
+            std::fclose(file);
+            return fail(undo_scan_status::io_error, file_num, 0, hash_digest{});
+        }
+        auto const file_size = *measured;
         uint32_t offset = 0;
 
         while (true) {
@@ -669,58 +805,205 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) const {
         }
 
         std::fclose(file);
+
+        // Measured, not published. Every `return fail(...)` above leaves this
+        // vector on the floor, which is the point: a family is adopted whole or
+        // not at all.
+        if (static_cast<size_t>(file_num) >= extents.size()) {
+            return fail(undo_scan_status::io_error, file_num, offset, hash_digest{});
+        }
+        extents[file_num] = offset;
     }
+
+    // Every file read cleanly. Publish the extents, all at once, and only now.
+    for (size_t i = 0; i < extents.size() && i < file_info_.size(); ++i) {
+        file_info_[i].undo_size = extents[i];
+    }
+    undo_extents_adopted_ = true;
 
     return result;
 }
 
-size_t block_store::scan_block_positions(block_position_callback const& callback) const {
-    size_t count = 0;
-    constexpr size_t header_bytes = 80;  // Bitcoin block header size
+block_store::block_scan_result
+block_store::scan_block_positions(block_position_callback const& callback) {
+    constexpr size_t bitcoin_header_bytes = 80;
+
+    auto fail = [](block_scan_status status, int32_t file_num, uint32_t position) {
+        return block_scan_result{status, 0, file_num, position};
+    };
+
+    // Measured here, published only if every file reads cleanly. A partial walk
+    // must leave nothing behind: half a set of cursors is worse than none,
+    // because the files it reached would accept appends and the rest would not.
+    // Revoked first. A walk that is about to run is a walk whose answer is not
+    // known yet, and granting on success while relying on initialize() to clear
+    // left a failing RESCAN with the previous pair still authorised — the store
+    // would have gone on appending at cursors measured before whatever just
+    // stopped being readable.
+    block_extents_adopted_ = false;
+
+    std::vector<uint32_t> extents(file_info_.size(), 0);
+    size_t found = 0;
+
+    // The last file's answer is the walk's answer. `clean_padding` and
+    // `clean_eof` are both clean and they are not the same fact: one says the
+    // file ends exactly at its last record, the other that reserved space
+    // follows. Reporting only the first would make the second unreachable.
+    auto last_status = block_scan_status::clean_eof;
 
     for (int32_t file_num = 0; file_num <= last_block_file_; ++file_num) {
         auto path = block_files_.file_name(flat_file_pos{file_num, 0});
 
-        FILE* file = open_native(path, "rb");
-        if (!file) continue;
-
-        auto const file_size = file_info_[file_num].size;
-
-        while (true) {
-            auto const record_start = static_cast<uint32_t>(std::ftell(file));
-            if (record_start + block_header_size > file_size) break;
-
-            // Read record header: magic(4) + size(4)
-            std::array<uint8_t, 4> file_magic;
-            uint32_t block_size;
-
-            if (std::fread(file_magic.data(), 1, 4, file) != 4) break;
-            if (std::fread(&block_size, sizeof(block_size), 1, file) != 1) break;
-
-            if (file_magic != magic_) break;
-
-            auto const data_pos = static_cast<uint32_t>(std::ftell(file));
-
-            if (block_size < header_bytes) break;
-
-            // Read the 80-byte block header to compute its hash
-            std::array<uint8_t, 80> hdr;
-            if (std::fread(hdr.data(), 1, header_bytes, file) != header_bytes) break;
-
-            auto const hash = bitcoin_hash(byte_span{hdr.data(), hdr.size()});
-
-            callback(file_num, data_pos, hash);
-            ++count;
-
-            // Skip remaining block data
-            auto const remaining = block_size - header_bytes;
-            if (remaining > 0 && std::fseek(file, static_cast<long>(remaining), SEEK_CUR) != 0) break;
+        // A file that is not there was never written: its extent is zero and
+        // there is nothing to read. A file that IS there and will not open is a
+        // different thing entirely — its extent is unknown, and an unknown extent
+        // must never become a place to write, so skipping it (as this used to)
+        // is not available any more.
+        std::error_code exists_ec;
+        auto const present = std::filesystem::exists(path, exists_ec);
+        if (exists_ec) {
+            return fail(block_scan_status::open_failed, file_num, 0);
+        }
+        if ( ! present) {
+            continue;
         }
 
-        std::fclose(file);
+        FILE* file = open_native(path, "rb");
+        if (file == nullptr) {
+            spdlog::error("block_store: blk file {} exists and could not be opened for scanning",
+                file_num);
+            return fail(block_scan_status::open_failed, file_num, 0);
+        }
+
+        // The PHYSICAL size bounds the walk. Bounding it by the write cursor
+        // would be circular — the cursor is what this walk exists to produce.
+        auto const measured = physical_size_of(path);
+        if ( ! measured) {
+            std::fclose(file);
+            return fail(block_scan_status::open_failed, file_num, 0);
+        }
+        auto const file_size = *measured;
+        uint32_t offset = 0;
+        auto status = block_scan_status::clean_eof;
+
+        while (true) {
+            if (uint64_t(offset) + block_header_size > file_size) {
+                // No room for another header. That is an ending only if what is
+                // left is the zeroes of reserved space; anything else is a write
+                // that was cut short.
+                auto const tail = check_tail(file, offset, static_cast<uint32_t>(file_size));
+                std::fclose(file);
+                if (tail == tail_check::unreadable) {
+                    return fail(block_scan_status::short_read, file_num, offset);
+                }
+                if (tail == tail_check::has_data) {
+                    return fail(block_scan_status::truncated_header, file_num, offset);
+                }
+                status = (offset == file_size)
+                    ? block_scan_status::clean_eof
+                    : block_scan_status::clean_padding;
+                file = nullptr;
+                break;   // status travels out with the loop; see `last_status`
+            }
+
+            if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0) {
+                std::fclose(file);
+                return fail(block_scan_status::seek_failed, file_num, offset);
+            }
+
+            std::array<uint8_t, 4> file_magic{};
+            if (std::fread(file_magic.data(), 1, file_magic.size(), file) != file_magic.size()) {
+                std::fclose(file);
+                return fail(block_scan_status::short_read, file_num, offset);
+            }
+
+            if (file_magic != magic_) {
+                // Four zeroes are the start of reserved space — but only if
+                // everything after them is reserved too. Four zeroes with data
+                // beyond would otherwise end the walk here and hide every record
+                // past them, and the next append would land on top of those.
+                if (file_magic == std::array<uint8_t, 4>{}) {
+                    auto const tail = check_tail(file, offset, static_cast<uint32_t>(file_size));
+                    std::fclose(file);
+                    if (tail == tail_check::unreadable) {
+                        return fail(block_scan_status::short_read, file_num, offset);
+                    }
+                    if (tail == tail_check::has_data) {
+                        spdlog::critical("block_store: blk file {} holds data beyond a run of "
+                            "zeroes starting at offset {}. This is not the end of the file's "
+                            "records: something follows that the walk cannot account for, so the "
+                            "database has to be rebuilt or reindexed rather than appended to",
+                            file_num, offset);
+                        return fail(block_scan_status::bad_magic, file_num, offset);
+                    }
+                    status = block_scan_status::clean_padding;
+                    file = nullptr;
+                    break;
+                }
+
+                std::fclose(file);
+                return fail(block_scan_status::bad_magic, file_num, offset);
+            }
+
+            uint32_t block_size = 0;
+            if (std::fread(&block_size, sizeof(block_size), 1, file) != 1) {
+                std::fclose(file);
+                return fail(block_scan_status::short_read, file_num, offset);
+            }
+
+            // Both ends of the size, in 64-bit arithmetic so neither the bound
+            // nor the sum below can wrap.
+            if (block_size < bitcoin_header_bytes || uint64_t(block_size) > max_block_record) {
+                std::fclose(file);
+                return fail(block_scan_status::invalid_size, file_num, offset);
+            }
+
+            auto const record_end = uint64_t(offset) + block_header_size + block_size;
+            if (record_end > file_size) {
+                std::fclose(file);
+                return fail(block_scan_status::record_beyond_file, file_num, offset);
+            }
+
+            auto const data_pos = static_cast<uint32_t>(offset + block_header_size);
+
+            std::array<uint8_t, bitcoin_header_bytes> hdr{};
+            if (std::fread(hdr.data(), 1, hdr.size(), file) != hdr.size()) {
+                std::fclose(file);
+                return fail(block_scan_status::short_read, file_num, offset);
+            }
+
+            callback(file_num, data_pos, bitcoin_hash(byte_span{hdr.data(), hdr.size()}));
+            ++found;
+
+            offset = static_cast<uint32_t>(record_end);
+        }
+
+        if (file != nullptr) {
+            std::fclose(file);
+        }
+
+        // Out of range means this walk measured a file the store does not have a
+        // slot for, which is a disagreement about how many files exist. Skipping
+        // the assignment would publish a zero extent for it — an invitation to
+        // append at the start of a file that already holds records.
+        if (static_cast<size_t>(file_num) >= extents.size()) {
+            return fail(block_scan_status::open_failed, file_num, offset);
+        }
+        extents[file_num] = offset;
+        last_status = status;
     }
 
-    return count;
+    // Clean on every file: publish, all at once. Nothing above touched a cursor.
+    for (size_t i = 0; i < extents.size() && i < file_info_.size(); ++i) {
+        file_info_[i].size = extents[i];
+    }
+    block_extents_adopted_ = true;
+
+    return block_scan_result{last_status, found, -1, 0};
+}
+
+bool block_store::append_enabled() const {
+    return block_extents_adopted_ && undo_extents_adopted_;
 }
 
 std::expected<block_undo, result_code>
@@ -897,6 +1180,17 @@ block_file_info const& block_store::file_info(size_t index) const {
 // =============================================================================
 
 flat_file_pos block_store::find_block_pos(uint32_t add_size, uint32_t height, uint64_t time) {
+    // Refused, not guessed. Until both walks have finished cleanly this store
+    // does not know where its files really end, and the one thing it must never
+    // do is fall back to the file's size — that is the defect (#668). A value,
+    // not an assertion: the caller sees it in every build.
+    if ( ! append_enabled()) {
+        spdlog::error("block_store::{}: the write cursor is unavailable. Both the block and "
+            "the undo scans have to complete cleanly before this store can append; a database "
+            "whose files could not be read end to end is not one to write to", "find_block_pos");
+        return {};
+    }
+
     // Check if current file has space
     auto file_num = static_cast<uint32_t>(last_block_file_);
 
@@ -940,6 +1234,17 @@ flat_file_pos block_store::find_block_pos(uint32_t add_size, uint32_t height, ui
 }
 
 flat_file_pos block_store::find_undo_pos(int32_t file_num, uint32_t add_size) {
+    // Refused, not guessed. Until both walks have finished cleanly this store
+    // does not know where its files really end, and the one thing it must never
+    // do is fall back to the file's size — that is the defect (#668). A value,
+    // not an assertion: the caller sees it in every build.
+    if ( ! append_enabled()) {
+        spdlog::error("block_store::{}: the write cursor is unavailable. Both the block and "
+            "the undo scans have to complete cleanly before this store can append; a database "
+            "whose files could not be read end to end is not one to write to", "find_undo_pos");
+        return {};
+    }
+
     if (file_num < 0 || static_cast<size_t>(file_num) >= file_info_.size()) {
         return {};
     }
