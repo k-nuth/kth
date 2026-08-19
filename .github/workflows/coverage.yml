@@ -126,6 +126,14 @@ jobs:
           # master (24851108475, 2026-04-23) was on -O0 with gcovr
           # finishing in ~4 min. Slower tests are the right trade —
           # this job's purpose is the report, not benchmarking.
+          #
+          # And -fprofile-update=atomic, because the counters are shared and the
+          # default increment is not. Two threads through the same line lose
+          # updates, and a lost decrement is how geninfo comes to read a count of
+          # -1 and refuse the file — which is what it did as soon as a test first
+          # stood a running node up. The alternative on offer is
+          # `--ignore-errors negative`, which does not make the numbers right, it
+          # stops them being checked.
           "$METRICS" phase-start configure
           set +e
           cmake --preset conan-release \
@@ -133,8 +141,8 @@ jobs:
             -DGLOBAL_BUILD=ON \
             -DENABLE_TEST=ON \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_FLAGS="-O0 --coverage" \
-            -DCMAKE_CXX_FLAGS="-O0 --coverage" \
+            -DCMAKE_C_FLAGS="-O0 --coverage -fprofile-update=atomic" \
+            -DCMAKE_CXX_FLAGS="-O0 --coverage -fprofile-update=atomic" \
             -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache

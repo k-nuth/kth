@@ -47,9 +47,23 @@ int kth_node_close(kth_node_t node);
 KTH_EXPORT
 int kth_node_stopped(kth_node_t node);
 
+/**
+ * The chain of the running node, or NULL if it is not running.
+ *
+ * The handle points INSIDE the node and is owned by it. It is valid only while
+ * the node runs: do not keep it across kth_node_signal_stop(), kth_node_close()
+ * or kth_node_destruct(), which end the node it points into. Ask again after a
+ * start rather than holding one from before a stop.
+ */
 KTH_EXPORT
 kth_chain_t kth_node_get_chain(kth_node_t node);
 
+/**
+ * The P2P layer of the running node, or NULL if it is not running.
+ *
+ * Same lifetime as kth_node_get_chain(): owned by the node, valid only while it
+ * runs, and not to be kept across a stop.
+ */
 KTH_EXPORT
 kth_p2p_t kth_node_get_p2p(kth_node_t node);
 
