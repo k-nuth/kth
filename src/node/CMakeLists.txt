@@ -302,6 +302,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/mempool_connect_wiring.cpp
           test/download_supervisor.cpp
           test/download_ownership.cpp
+          test/body_range_extension.cpp
+          test/body_range_reopen.cpp
           test/connected_tip_remainder.cpp
           test/executor_lifecycle.cpp
           test/scope_action.cpp
