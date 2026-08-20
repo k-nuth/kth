@@ -1983,3 +1983,333 @@ TEST_CASE("a failure after a finished wind-down is not redone", "[executor][life
     require_clean_child(run_child(
         "executor child: a failure after the wind-down finished is not a failed wind-down"));
 }
+
+// =============================================================================
+// A stop does not wait out the heartbeat (#683)
+// =============================================================================
+//
+// The heartbeat waits ten seconds between beats, and it used to wait on a timer
+// that lived inside its own coroutine frame — reachable by nobody. Its exit
+// condition was therefore re-read only when that timer expired on its own.
+//
+// The teardown waits for that coroutine: release() blocks on run_completed_,
+// which is satisfied only after `node_->run() && heartbeat()` completes. So
+// stopping a node that had nothing left to do could take ten seconds, in
+// production and in every control here that stands one up and takes it down.
+//
+// io_context_.stop(), which would end the wait, runs after that wait.
+
+namespace {
+
+// Comfortably below the ten seconds, and comfortably above what the work
+// actually takes, so this measures the wait rather than the machine. A CI runner
+// several times slower than a development machine still lands well inside it.
+constexpr auto stop_budget = std::chrono::seconds(5);
+
+} // namespace
+
+TEST_CASE("executor child: a stop handed off does not wait out the heartbeat either",
+    "[.executor-child]") {
+    watchdog guard(full_start_limit, "handed-off stop does not wait out the heartbeat");
+
+    // stop_async() hands the wind-down to its own thread, and that thread asks
+    // the node to stop; release() does the same on the caller's thread. Both have
+    // to wake the heartbeat, and this case walks the handed-off one end to end:
+    // the request is accepted, the wind-down completes, the handler runs, and the
+    // object is still one a caller can take down afterwards.
+    auto const base = claimed_dir("kth_exec_heartbeat_async");
+    auto const cfg = make_config(base);
+    make_startable_database(cfg);
+
+    {
+        node::executor host(cfg, false);
+        REQUIRE(host.start() == kth::error::success);
+
+        std::promise<void> wound_down;
+        auto done = wound_down.get_future();
+
+        host.stop_async([&wound_down]() { wound_down.set_value(); });
+        REQUIRE(done.wait_for(full_start_limit) == std::future_status::ready);
+
+        // NO wall-clock bound here, on purpose. This window ends when the stop
+        // handler runs, which is after node->join(), and that join waits on
+        // p2p_node's status task — a timer with this same defect, ten seconds
+        // long, and not this PR's to fix (#689). A run where the node was up
+        // long enough for that task to arm takes ten seconds whether or not the
+        // heartbeat was woken, so a bound here measures the other component and
+        // passes or fails by platform: it passed on Linux and failed on macOS at
+        // 11.39s, with nothing wrong.
+        //
+        // What proves the heartbeat was cut short is the probe, in
+        // "a woken heartbeat ends once and counts no beat", which observes it
+        // directly and does not depend on time at all.
+
+        // And the object is still one a caller can take down.
+        host.stop();
+        CHECK(host.stopped());
+    }
+
+    announce_completion();
+    std::error_code ec;
+    std::filesystem::remove_all(base, ec);
+}
+
+TEST_CASE("executor child: stopping twice is still safe and still prompt", "[.executor-child]") {
+    watchdog guard(full_start_limit, "second stop after a woken heartbeat");
+
+    // The wake is posted, and a second stop posts another one at a moment when
+    // the heartbeat has already ended and the timer will never be armed again.
+    // Cancelling a timer nobody is waiting on has to be a no-op, not a fault.
+    auto const base = claimed_dir("kth_exec_heartbeat_twice");
+    auto const cfg = make_config(base);
+    make_startable_database(cfg);
+
+    {
+        node::executor host(cfg, false);
+        REQUIRE(host.start() == kth::error::success);
+
+        host.stop();
+        CHECK(host.stopped());
+
+        auto const before = std::chrono::steady_clock::now();
+        host.stop();
+        auto const elapsed = std::chrono::steady_clock::now() - before;
+
+        CHECK(host.stopped());
+        CHECK(elapsed < stop_budget);
+    }
+
+    announce_completion();
+    std::error_code ec;
+    std::filesystem::remove_all(base, ec);
+}
+
+TEST_CASE("executor child: an object that never started leaves no timer behind",
+    "[.executor-child]") {
+    watchdog guard(full_start_limit, "never started, nothing to wake");
+
+    // No start, so no heartbeat and no armed timer — and the teardown still has
+    // to be prompt rather than waiting for something that was never scheduled.
+    auto const base = claimed_dir("kth_exec_heartbeat_unstarted");
+    auto const cfg = make_config(base);
+
+    {
+        node::executor host(cfg, false);
+
+        auto const before = std::chrono::steady_clock::now();
+        host.stop();
+        auto const elapsed = std::chrono::steady_clock::now() - before;
+        CHECK(elapsed < stop_budget);
+    }
+
+    // And a failed start, which DOES create the io thread before it knows the
+    // node cannot start — so it is the case where a timer could be left behind.
+    // The factory hands back nothing, which is how a start fails without needing
+    // a broken database.
+    {
+        node::executor host(cfg, false);
+        node::detail::executor_test_seam::set_node_factory(host,
+            [](node::configuration const&) { return node::full_node::ptr{}; });
+        REQUIRE(host.start() != kth::error::success);
+
+        auto const before = std::chrono::steady_clock::now();
+        host.stop();
+        auto const elapsed = std::chrono::steady_clock::now() - before;
+        CHECK(elapsed < stop_budget);
+    }
+
+    announce_completion();
+    std::error_code ec;
+    std::filesystem::remove_all(base, ec);
+}
+
+TEST_CASE("a handed-off stop does not wait out the heartbeat", "[executor][lifecycle]") {
+    require_clean_child(run_child(
+        "executor child: a stop handed off does not wait out the heartbeat either"));
+}
+
+TEST_CASE("stopping twice after a woken heartbeat is safe", "[executor][lifecycle]") {
+    require_clean_child(run_child("executor child: stopping twice is still safe and still prompt"));
+}
+
+TEST_CASE("an executor that never ran leaves no heartbeat behind", "[executor][lifecycle]") {
+    require_clean_child(run_child(
+        "executor child: an object that never started leaves no timer behind"));
+}
+
+TEST_CASE("executor child: a woken heartbeat ends once and counts no beat",
+    "[.executor-child]") {
+    watchdog guard(full_start_limit, "heartbeat woken exactly once");
+
+    // The three facts the wake rests on, and none of them is visible from
+    // outside: the timer's handler runs ONCE, `operation_aborted` ends the loop,
+    // and it is not counted as a beat. Reported through the lifecycle probe,
+    // which exists for exactly this kind of fact.
+    auto const base = claimed_dir("kth_exec_heartbeat_once");
+    auto const cfg = make_config(base);
+    make_startable_database(cfg);
+
+    std::atomic<unsigned> beats{0};
+    std::atomic<unsigned> wakes{0};
+    std::atomic<bool> armed{false};
+
+    {
+        node::executor host(cfg, false);
+        node::detail::executor_test_seam::set_lifecycle_probe(host,
+            [&beats, &wakes, &armed](probe_point point) {
+                if (point == probe_point::heartbeat_armed) { armed.store(true); }
+                if (point == probe_point::heartbeat_beat) { ++beats; }
+                if (point == probe_point::heartbeat_woken) { ++wakes; }
+            });
+
+        REQUIRE(host.start() == kth::error::success);
+
+        // OBSERVED, not assumed. A stop that arrives before the heartbeat has
+        // armed its timer ends the loop on its own condition — correct, and not
+        // what this case measures. Under TSan the stop wins that race routinely,
+        // which is how this control came to say `wakes == 0` on a build where
+        // nothing was wrong.
+        //
+        // The watchdog above is what bounds this: a heartbeat that never arms is
+        // a defect of its own, and hanging here is how it would show.
+        while ( ! armed.load()) {
+            // Slept, not spun. The heartbeat arms on the io thread, and a pure
+            // yield loop here burns a core competing with it — on a single-core
+            // runner that is the thread this loop is waiting for. The wait is
+            // bounded by the watchdog either way.
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::promise<void> wound_down;
+        auto done = wound_down.get_future();
+        host.stop_async([&wound_down]() { wound_down.set_value(); });
+        REQUIRE(done.wait_for(full_start_limit) == std::future_status::ready);
+
+        host.stop();
+        CHECK(host.stopped());
+    }
+
+    // Ended by the wake, exactly once. A second wake — the stop above sends one
+    // too — must not produce a second ending, because by then the loop is gone
+    // and the timer is never armed again.
+    CHECK(wakes.load() == 1u);
+
+    // And no beat: the whole run is far shorter than one ten-second period, so a
+    // beat here would mean an abort was counted as one.
+    CHECK(beats.load() == 0u);
+
+    announce_completion();
+    std::error_code ec;
+    std::filesystem::remove_all(base, ec);
+}
+
+TEST_CASE("executor child: destroying after a stop neither repeats nor abandons work",
+    "[.executor-child]") {
+    watchdog guard(full_start_limit, "destructor after stop");
+
+    // The destructor runs release() again. With the heartbeat already ended, the
+    // wake it sends has no timer to cancel and no loop to end — and the object
+    // still has to come down promptly rather than waiting for anything.
+    auto const base = claimed_dir("kth_exec_heartbeat_dtor");
+    auto const cfg = make_config(base);
+    make_startable_database(cfg);
+
+    std::atomic<unsigned> wakes{0};
+    std::chrono::steady_clock::duration destroy_time{};
+
+    {
+        auto host = std::make_unique<node::executor>(cfg, false);
+        node::detail::executor_test_seam::set_lifecycle_probe(*host,
+            [&wakes](probe_point point) {
+                if (point == probe_point::heartbeat_woken) { ++wakes; }
+            });
+
+        REQUIRE(host->start() == kth::error::success);
+        host->stop();
+        REQUIRE(host->stopped());
+
+        auto const before = std::chrono::steady_clock::now();
+        host.reset();
+        destroy_time = std::chrono::steady_clock::now() - before;
+    }
+
+    auto const ms = std::chrono::duration_cast<std::chrono::milliseconds>(destroy_time);
+    CAPTURE(ms.count());
+    CHECK(destroy_time < stop_budget);
+
+    // The ending happened once, on the stop; the destructor did not produce
+    // another one out of a loop that was already gone.
+    CHECK(wakes.load() <= 1u);
+
+    announce_completion();
+    std::error_code ec;
+    std::filesystem::remove_all(base, ec);
+}
+
+TEST_CASE("executor child: destroying a running executor wakes the heartbeat too",
+    "[.executor-child]") {
+    watchdog guard(full_start_limit, "destroy while running");
+
+    // No stop at all: the destructor is the teardown. It runs release(), which
+    // asks the node to stop and wakes the heartbeat on the same path — but a
+    // caller who never calls stop() is a case of its own, and nothing else here
+    // covered it.
+    //
+    // Asserted through the probe rather than a clock. The window ends when the
+    // destructor returns, which is after node->join(), and that join waits on
+    // p2p_node's status task — the same defect in another component (#689), ten
+    // seconds long. A bound here would measure that instead, which is how the
+    // wall-clock version of this case passed on Linux and failed on macOS.
+    auto const base = claimed_dir("kth_exec_heartbeat_running_dtor");
+    auto const cfg = make_config(base);
+    make_startable_database(cfg);
+
+    std::atomic<unsigned> beats{0};
+    std::atomic<unsigned> wakes{0};
+    std::atomic<bool> armed{false};
+
+    {
+        node::executor host(cfg, false);
+        node::detail::executor_test_seam::set_lifecycle_probe(host,
+            [&beats, &wakes, &armed](probe_point point) {
+                if (point == probe_point::heartbeat_armed) { armed.store(true); }
+                if (point == probe_point::heartbeat_beat) { ++beats; }
+                if (point == probe_point::heartbeat_woken) { ++wakes; }
+            });
+
+        REQUIRE(host.start() == kth::error::success);
+
+        // Observed, so the destructor really is cutting a wait short.
+        while ( ! armed.load()) {
+            // Slept, not spun. The heartbeat arms on the io thread, and a pure
+            // yield loop here burns a core competing with it — on a single-core
+            // runner that is the thread this loop is waiting for. The wait is
+            // bounded by the watchdog either way.
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    // The wait was ended by the destructor's own stop, once, and no abort was
+    // counted as a beat.
+    CHECK(wakes.load() == 1u);
+    CHECK(beats.load() == 0u);
+
+    announce_completion();
+    std::error_code ec;
+    std::filesystem::remove_all(base, ec);
+}
+
+TEST_CASE("a woken heartbeat ends once and counts no beat", "[executor][lifecycle]") {
+    require_clean_child(run_child(
+        "executor child: a woken heartbeat ends once and counts no beat"));
+}
+
+TEST_CASE("destroying after a stop is prompt and does not repeat", "[executor][lifecycle]") {
+    require_clean_child(run_child(
+        "executor child: destroying after a stop neither repeats nor abandons work"));
+}
+
+TEST_CASE("destroying a running executor wakes the heartbeat", "[executor][lifecycle]") {
+    require_clean_child(run_child(
+        "executor child: destroying a running executor wakes the heartbeat too"));
+}

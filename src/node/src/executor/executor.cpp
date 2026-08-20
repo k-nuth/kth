@@ -28,6 +28,7 @@
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
+#include <asio/post.hpp>
 #include <asio/signal_set.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
@@ -225,6 +226,65 @@ void executor::answer_failed_start(code ec, start_handler const& handler) noexce
     }
 }
 
+void executor::wake_heartbeat() noexcept {
+    // Posted, never cancelled in place: the wait runs on the io thread and every
+    // caller of this is on another one. Cancelling a timer from a second thread
+    // while it is being waited on is not safe, and measurably does not work —
+    // the control for this reports that the wake simply never arrives.
+    //
+    // @par Why the handler cannot outlive this object
+    // The only thread that can run it is the io thread, and release() joins that
+    // thread in stop_io_thread() before returning; the destructor calls
+    // release(). So the object is alive for as long as the handler can run.
+    // heartbeat_timer_ is declared after io_context_ and before io_thread_, so it
+    // is destroyed before the context it refers to.
+    //
+    // @par Why a stopped context is safe rather than merely likely
+    // io_context::stop() does not discard queued work: it makes run() return, and
+    // that work could still execute after a restart() and another run(). What
+    // makes this safe is that this executor is SINGLE-USE — it never restarts
+    // that context, and it destroys it after joining the thread — so a handler
+    // that was still queued when the context stopped is destroyed with it and
+    // never runs.
+    //
+    // `noexcept` because both callers are teardown paths that must not throw, and
+    // one is reached from kth_node_signal_stop(), which is `extern "C"`. A post
+    // that cannot be queued is not a reason to abandon a shutdown: the
+    // heartbeat's own condition still ends it at the next expiry, which is the
+    // behaviour this change improves on rather than depends on.
+    try {
+        ::asio::post(io_context_, [this] {
+            // On the io thread now, so this cannot race the wait it cancels.
+            // Cancelling a timer that is not armed does nothing, and it does not
+            // need to: every caller has already asked the node to stop, so the
+            // loop re-reads `node_->stopped()` before arming and ends there.
+            //
+            // Guarded because cancel() throws on failure — it calls
+            // asio::detail::throw_error() — and an exception out of a handler
+            // leaves io_context::run(), which is the io thread's whole body. That
+            // would take the thread down in the middle of a shutdown, and the
+            // teardown is waiting on work that runs there.
+            try {
+                heartbeat_timer_.cancel();
+            } catch (...) {
+                try {
+                    spdlog::debug("[executor] The heartbeat timer could not be cancelled; "
+                        "it ends on its own");
+                } catch (...) {
+                }
+            }
+        });
+    } catch (...) {
+        // Reporting is itself fallible — a logger can throw, and this function
+        // promises not to — so the diagnostic gets its own guard rather than
+        // being the thing that breaks the promise.
+        try {
+            spdlog::debug("[executor] The heartbeat could not be woken; it ends on its own");
+        } catch (...) {
+        }
+    }
+}
+
 void executor::probe(lifecycle_probe_point point) const {
     if (lifecycle_probe_) {
         lifecycle_probe_(point);
@@ -355,6 +415,9 @@ executor::teardown executor::release() noexcept {
             if (node) {
                 probe(lifecycle_probe_point::before_node_stop);
                 node->stop();
+                // After the stop, so a wake that arrives before the timer is
+                // armed is covered by the loop's own condition.
+                wake_heartbeat();
             }
             // Gated on the start, not on the future being valid. The future is
             // built by the constructor now, so valid() is true from the moment
@@ -625,21 +688,45 @@ void executor::begin_admitted_start(start_handler handler) {
         // This helps identify if the io_context stops processing timers
         // Returns code to match node_->run() return type for && operator
         auto heartbeat = [this]() -> ::asio::awaitable<code> {
-            auto executor = co_await ::asio::this_coro::executor;
-            ::asio::steady_timer timer(executor);
             uint64_t heartbeat_count = 0;
             // Also stops when the node stopped on its own: a fatal condition
             // reported from inside it ends run(), and a heartbeat that only
             // watched this executor's state would keep the `&&` below from ever
             // completing — no join, no shutdown, a process with nothing to do.
+            //
+            // The condition is re-read before each wait AND the wait can be
+            // ended from outside, which are two different things and both are
+            // needed. Re-reading alone is what made stopping this node take up
+            // to ten seconds: the teardown waits for this coroutine, and this
+            // coroutine was waiting on a timer nobody could reach.
             while (state_.load() == state::running && node_ && ! node_->stopped()) {
-                timer.expires_after(std::chrono::seconds(10));
-                auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-                if (ec) {
-                    spdlog::debug("[executor:heartbeat] Timer cancelled: {}", ec.message());
+                heartbeat_timer_.expires_after(std::chrono::seconds(10));
+                probe(lifecycle_probe_point::heartbeat_armed);
+                auto [ec] = co_await heartbeat_timer_.async_wait(
+                    ::asio::as_tuple(::asio::use_awaitable));
+
+                if (ec == ::asio::error::operation_aborted) {
+                    // A stop asked for this, and it is the ONLY reason this wait
+                    // ends early. Not a tick: nothing is alive to report on, and
+                    // counting it would say the io_context was serving timers at
+                    // a moment when it was being torn down.
+                    //
+                    // Deliberately silent. This is the shutdown path, a logger can
+                    // throw, and an exception out of here is not merely a lost
+                    // line: the wait below is `node_->run() && heartbeat()`, so it
+                    // would cancel run() mid-flight. The probe above reports the
+                    // fact, and the "Exiting" line after the loop says the same
+                    // thing one statement later.
+                    probe(lifecycle_probe_point::heartbeat_woken);
                     break;
                 }
+                if (ec) {
+                    spdlog::debug("[executor:heartbeat] Timer failed: {}", ec.message());
+                    break;
+                }
+
                 ++heartbeat_count;
+                probe(lifecycle_probe_point::heartbeat_beat);
                 // 2026-02-07: Log more info to help diagnose io_context issues
                 spdlog::debug("[executor:heartbeat] io_context alive, beat #{}, io_stopped={}, state={}",
                     heartbeat_count, io_context_.stopped(), static_cast<int>(state_.load()));
@@ -743,6 +830,8 @@ void executor::wind_down_node(stop_handler const& handler) noexcept {
         if (node) {
             probe(lifecycle_probe_point::before_node_stop);
             node->stop();
+            // After the stop, for the same reason as in release().
+            wake_heartbeat();
         }
 
         // CRITICAL: Wait for run() to fully complete before cleanup.
