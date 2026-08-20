@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/node/detail/body_range.hpp>
 #include <kth/node/sync/orchestrator.hpp>
 
 #include <kth/node/sync/reorg.hpp>
@@ -121,6 +122,257 @@ slow_sync_admission may_start_slow_sync(
         return slow_sync_admission::start;
     }
     return slow_sync_admission::builder_behind;
+}
+
+range_quiet why_no_range(
+    uint32_t blocks_synced_to,
+    uint32_t headers_synced_to,
+    uint32_t checkpoint_height,
+    std::optional<uint32_t> range_end) {
+
+    // Nothing owed: the bodies are level with the headers, or past them. This is
+    // also what makes the `+ 1` in next_slow_sync_range safe without a guard of
+    // its own — past this condition `blocks_synced_to < headers_synced_to <=
+    // UINT32_MAX`, so `blocks_synced_to` cannot be UINT32_MAX and the increment
+    // cannot wrap.
+    if (headers_synced_to <= blocks_synced_to) {
+        return range_quiet::no_advance;
+    }
+
+    // Below the checkpoint the FAST range owns the download, and its end is the
+    // checkpoint rather than the header tip. Opening a post-checkpoint range over
+    // the same heights would put two coordinators on the same blocks.
+    if (blocks_synced_to < checkpoint_height) {
+        return range_quiet::below_checkpoint;
+    }
+
+    // A range still in flight is left to finish. Its workers hold chunks; a new
+    // coordinator stops the old one and those chunks are dropped, to be claimed
+    // again from a range that starts below them. The remainder is opened when
+    // this range drains, by the event that drains it.
+    if (range_end && blocks_synced_to < *range_end) {
+        return range_quiet::in_flight;
+    }
+
+    return range_quiet::none;
+}
+
+std::optional<slow_sync_range> next_slow_sync_range(
+    uint32_t blocks_synced_to,
+    uint32_t headers_synced_to,
+    uint32_t checkpoint_height,
+    std::optional<uint32_t> range_end) {
+
+    // Asked, not repeated. The reason and the range are two readings of one rule,
+    // and the log line below reads it the same way.
+    if (why_no_range(blocks_synced_to, headers_synced_to, checkpoint_height, range_end)
+            != range_quiet::none) {
+        return std::nullopt;
+    }
+    return slow_sync_range{blocks_synced_to + 1, headers_synced_to};
+}
+
+std::optional<uint32_t> range_end_after_rewind(
+    std::optional<uint32_t> range_end, uint32_t rewound_to) {
+
+    // Kept when it still describes blocks the bodies actually hold: a range that
+    // ended at or below the rewound tip was completed over blocks the switch did
+    // not take away, and dropping it would reopen heights already downloaded.
+    if (range_end && *range_end > rewound_to) {
+        return std::nullopt;
+    }
+    return range_end;
+}
+
+char const* to_string(body_range_trigger trigger) {
+    switch (trigger) {
+        case body_range_trigger::headers_advanced:     return "headers_advanced";
+        case body_range_trigger::header_sync_complete: return "header_sync_complete";
+        case body_range_trigger::block_validated:      return "block_validated";
+        case body_range_trigger::chunk_validated:      return "chunk_validated";
+        case body_range_trigger::utxo_build_advanced:  return "utxo_build_advanced";
+        case body_range_trigger::reorg:                return "reorg";
+    }
+    return "unknown";
+}
+
+namespace {
+
+char const* quiet_name(range_quiet quiet) {
+    switch (quiet) {
+        case range_quiet::no_advance:       return "the headers have not moved past the bodies";
+        case range_quiet::below_checkpoint: return "the FAST range still owns these heights";
+        case range_quiet::in_flight:        return "the previous range is still in flight";
+        case range_quiet::none:             return "none";
+    }
+    return "unknown";
+}
+
+std::string end_name(std::optional<uint32_t> end) {
+    return end ? std::to_string(*end) : std::string("none");
+}
+
+// One place, so the two paths that open a range cannot drift into two formats —
+// which is the same reason the trigger is an enum rather than a string.
+//
+// `utxo` is nullopt on the reorg path, and says so: that path does not consult
+// the UTXO admission, because the admission is about a set that describes the
+// chain BELOW the range and a switch has just moved what that means.
+void log_range_opening(slow_sync_range range, body_range_trigger trigger,
+    uint32_t headers_synced_to, uint32_t blocks_synced_to,
+    std::optional<uint32_t> previous_end, std::optional<uint32_t> utxo) {
+
+    spdlog::info("[sync_coordinator] Opening body range [{}..{}]: trigger={} headers={} "
+        "bodies={} utxo={} previous_end={} ({} blocks)",
+        range.start, range.end, to_string(trigger), headers_synced_to, blocks_synced_to,
+        utxo ? std::to_string(*utxo) : std::string("not consulted"), end_name(previous_end),
+        range.end - range.start + 1);
+}
+
+} // namespace
+
+// Reliable delivery of a block_range_request: a dropped try_send would leave the
+// download coordinator uncreated and the node stalled with peers idle, so this
+// retries until the channel accepts it. Returns false only when we are shutting
+// down. (async_send is intentionally avoided here — it has its own issues on this
+// channel type.)
+::asio::awaitable<bool> send_block_range(body_range_deps deps, uint32_t start, uint32_t end) {
+    auto exec = co_await ::asio::this_coro::executor;
+    block_range_request const req{.start_height = start, .end_height = end};
+
+    size_t retries = 0;
+    while ( ! deps.block_download_input.try_send(std::error_code{}, req)) {
+        // Log the first stall and then periodically, so a genuinely wedged
+        // channel (no consumer draining) is visible rather than silent.
+        if (retries == 0 || retries % 50 == 0) {
+            spdlog::warn("[sync_coordinator] block_download_input full — retrying "
+                "block_range_request {}-{} (retry {})", start, end, retries);
+        }
+        ++retries;
+        ::asio::steady_timer timer(exec);
+        timer.expires_after(std::chrono::milliseconds(20));
+        auto [tec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+        if (tec || deps.network.stopped()) {
+            spdlog::info("[sync_coordinator] block_range_request {}-{} abandoned (stopping) "
+                "after {} retries", start, end, retries);
+            co_return false;
+        }
+    }
+    spdlog::info("[sync_coordinator] block_range_request {}-{} sent ({} retries)",
+        start, end, retries);
+    co_return true;
+}
+
+::asio::awaitable<std::optional<uint32_t>> open_body_range_if_owed(
+    body_range_deps deps,
+    body_range_log_memory& memory,
+    body_range_trigger trigger,
+    uint32_t blocks_synced_to,
+    uint32_t headers_synced_to,
+    std::optional<uint32_t> range_end) {
+
+    auto const range = next_slow_sync_range(
+        blocks_synced_to, headers_synced_to, deps.checkpoint_height, range_end);
+
+    if ( ! range) {
+        auto const reason = why_no_range(
+            blocks_synced_to, headers_synced_to, deps.checkpoint_height, range_end);
+        if (reason != memory.last_quiet) {
+            spdlog::debug("[sync_coordinator] No body range on {}: {} "
+                "(headers={} bodies={} previous_end={})",
+                to_string(trigger), quiet_name(reason), headers_synced_to, blocks_synced_to,
+                end_name(range_end));
+            memory.last_quiet = reason;
+        }
+        co_return std::nullopt;
+    }
+    memory.last_quiet = range_quiet::none;
+
+    // The height is READ, not held. get_utxo_built_height() may take a read lease
+    // of its own internally; what matters is that it returns a VALUE, so nothing
+    // is alive across the co_await in send_block_range below.
+    auto const built = deps.chain.get_utxo_built_height();
+    auto const admission = may_start_slow_sync(range->start, built);
+
+    if (admission != slow_sync_admission::start) {
+        // Throttled: the builder is minutes behind at the start of a long range,
+        // and one line per event would bury everything else.
+        if (admission != memory.last_hold) {
+            if (admission == slow_sync_admission::height_unavailable) {
+                spdlog::error("[sync_coordinator] SLOW block sync held at {}: the UTXO built "
+                    "height could not be read ({}); refusing to validate against a set that "
+                    "cannot say how far it describes",
+                    range->start, database::result_code_name(built.error()));
+            } else {
+                spdlog::info("[sync_coordinator] SLOW block sync held at {}: the UTXO set is at "
+                    "{} and block {} needs it at {}; waiting for the builder",
+                    range->start, *built, range->start, range->start - 1);
+            }
+            memory.last_hold = admission;
+        }
+
+        // A gap nothing is working on. There IS a range to open, which means the
+        // previous one drained, which means no coordinator covers these heights;
+        // the only thing that will move this is the builder. Named ONCE per
+        // standstill — the same pair of heights re-read by the next event is the
+        // same standstill, not a new one.
+        auto const stall = std::pair{headers_synced_to, blocks_synced_to};
+        if (memory.last_stall != stall) {
+            spdlog::warn("[sync_coordinator] Bodies {}-{} are owed and nothing is downloading "
+                "them: headers={} bodies={} previous_end={} trigger={} (held by the UTXO "
+                "admission reported above)",
+                range->start, range->end, headers_synced_to, blocks_synced_to,
+                end_name(range_end), to_string(trigger));
+            memory.last_stall = stall;
+        }
+        co_return std::nullopt;
+    }
+    memory.last_stall.reset();
+
+    if (memory.last_hold != slow_sync_admission::start) {
+        spdlog::info("[sync_coordinator] The UTXO set reached {}; SLOW block sync released",
+            *built);
+        memory.last_hold = slow_sync_admission::start;
+    }
+
+    // The one line that reconstructs the decision: which door was taken, what the
+    // three heights were, and what the previous range covered.
+    log_range_opening(*range, trigger, headers_synced_to, blocks_synced_to, range_end, *built);
+
+    if ( ! co_await send_block_range(deps, range->start, range->end)) {
+        // Shutting down, or a channel that would not take it. Nothing is recorded
+        // either way, so the next event asks again rather than holding behind a
+        // range that was never sent.
+        co_return std::nullopt;
+    }
+    co_return range->end;
+}
+
+::asio::awaitable<headers_progress> on_headers_advanced(
+    body_range_deps deps,
+    body_range_log_memory& memory,
+    headers_validated const& result,
+    uint32_t blocks_synced_to,
+    uint32_t headers_synced_to,
+    std::optional<uint32_t> range_end) {
+
+    // Nothing was added, so nothing moved. An error with no accepted headers is
+    // a peer to retry with, not a tip that advanced.
+    if (result.count == 0) {
+        co_return headers_progress{headers_synced_to, std::nullopt};
+    }
+
+    // Deliberately NOT gated on `result.result`. A batch that added a valid
+    // prefix and then hit a bad header moved the tip by that prefix, exactly as a
+    // clean batch would, and the bodies are owed the same thing either way. What
+    // the error decides is which peer to ask next, and that is the caller's.
+    auto const moved_to = result.height;
+
+    co_return headers_progress{
+        moved_to,
+        co_await open_body_range_if_owed(
+            deps, memory, body_range_trigger::headers_advanced,
+            blocks_synced_to, moved_to, range_end)};
 }
 
 utxo_progress_step utxo_progress_for_tick(
@@ -707,6 +959,7 @@ static
     //     Receives from fast_validation_task, stores sequentially, notifies coordinator
     // -------------------------------------------------------------------------
     auto contiguous_height = std::make_shared<std::atomic<uint32_t>>(initial_block_height + 1);
+
     all_tasks.spawn("block_storage_task", block_storage_task(
         chain,
         block_storage_input,
@@ -928,16 +1181,19 @@ static
         uint32_t blocks_synced_to = initial_block_height;
         uint32_t headers_synced_to = initial_header_height;
         bool header_sync_complete = false;
-        // Tracks whether the post-checkpoint (SLOW) block_range_request has
-        // been sent. Without this guard the FAST → SLOW transition would
-        // either never fire (if `blocks_synced_to < headers_synced_to` at
-        // FAST SYNC COMPLETE — chain stalls forever at the checkpoint) or
-        // fire on every subsequent chunk/block event.
-        bool slow_sync_started = false;
+        // The END of the post-checkpoint range last sent, or nothing if none has
+        // been. NOT a "was it started" flag: a flag cannot say which range, and
+        // the range's end is the header tip as it stood when it was opened. A
+        // tip that moves afterwards left the flag true, the coordinator complete
+        // and the remaining bodies never requested — see next_slow_sync_range.
+        std::optional<uint32_t> slow_sync_end;
 
-        // The last answer reported, so a hold is logged when it changes rather
-        // than on every event. `start` means "not holding".
-        auto last_slow_sync_hold = slow_sync_admission::start;
+        // What the range decision needs, and what its logs remember. Both live
+        // outside the loop so the decision itself is a function a control can
+        // drive with real channels — see open_body_range_if_owed.
+        body_range_deps deps{chain, network, block_download_input, checkpoint_height};
+        body_range_log_memory range_log;
+
 
         // For ETA calculation
         auto header_sync_start = std::chrono::steady_clock::now();
@@ -962,84 +1218,21 @@ static
             spdlog::warn("[sync_coordinator] Channel full, initial header_request dropped");
         }
 
-        // Reliable delivery of a block_range_request: every trigger site is
-        // one-shot (guarded by header_sync_complete / slow_sync_started), so a
-        // dropped try_send would leave the download coordinator uncreated and the
-        // node stalled forever with peers idle. Retry until the channel accepts it.
-        // Returns false only if we are shutting down. (async_send is intentionally
-        // avoided here — it has its own issues on this channel type.)
-        auto send_block_range = [&](uint32_t start, uint32_t end) -> ::asio::awaitable<bool> {
-            block_range_request const req{.start_height = start, .end_height = end};
-            size_t retries = 0;
-            while ( ! block_download_input.try_send(std::error_code{}, req)) {
-                // Log the first stall and then periodically, so a genuinely wedged
-                // channel (no consumer draining) is visible rather than silent.
-                if (retries == 0 || retries % 50 == 0) {
-                    spdlog::warn("[sync_coordinator] block_download_input full — retrying block_range_request {}-{} (retry {})",
-                        start, end, retries);
-                }
-                ++retries;
-                ::asio::steady_timer timer(exec);
-                timer.expires_after(std::chrono::milliseconds(20));
-                auto [tec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-                if (tec || network.stopped()) {
-                    spdlog::info("[sync_coordinator] block_range_request {}-{} abandoned (stopping) after {} retries",
-                        start, end, retries);
-                    co_return false;
-                }
+
+        // One place, called from every event that can change the answer, so they
+        // cannot drift apart — which is how two copies of this trigger once came
+        // to be identical by hand.
+        // The ONE place an opened range is recorded, so the rule has a single
+        // statement rather than one per call site.
+        auto record = [&](std::optional<uint32_t> opened) {
+            if (opened) {
+                slow_sync_end = opened;
             }
-            spdlog::info("[sync_coordinator] block_range_request {}-{} sent ({} retries)", start, end, retries);
-            co_return true;
         };
 
-        // Ask, log once per answer, and send only on `start`.
-        //
-        // One place, called from the three events that can change the answer, so
-        // the three cannot drift apart — which is how the two existing copies of
-        // this trigger came to be identical by hand.
-        //
-        // The height is read, not held. `get_utxo_built_height()` may well take a
-        // read lease of its own internally — the property that matters is that it
-        // returns a VALUE and nothing outlives the call, so no lease and no
-        // capability is alive across the co_await inside send_block_range.
-        auto try_start_slow_sync = [&]() -> ::asio::awaitable<void> {
-            if (slow_sync_started || blocks_synced_to < checkpoint_height ||
-                headers_synced_to <= blocks_synced_to) {
-                co_return;
-            }
-
-            auto const start_height = blocks_synced_to + 1;
-            auto const built = chain.get_utxo_built_height();
-            auto const admission = may_start_slow_sync(start_height, built);
-
-            if (admission != slow_sync_admission::start) {
-                // Throttled: the builder is minutes behind at the start of a long
-                // range, and one line per event would bury everything else.
-                if (admission != last_slow_sync_hold) {
-                    if (admission == slow_sync_admission::height_unavailable) {
-                        spdlog::error("[sync_coordinator] SLOW block sync held at {}: the UTXO "
-                            "built height could not be read ({}); refusing to validate against a "
-                            "set that cannot say how far it describes",
-                            start_height, database::result_code_name(built.error()));
-                    } else {
-                        spdlog::info("[sync_coordinator] SLOW block sync held at {}: the UTXO set "
-                            "is at {} and block {} needs it at {}; waiting for the builder",
-                            start_height, *built, start_height, start_height - 1);
-                    }
-                    last_slow_sync_hold = admission;
-                }
-                co_return;
-            }
-
-            if (last_slow_sync_hold != slow_sync_admission::start) {
-                spdlog::info("[sync_coordinator] The UTXO set reached {}; SLOW block sync released",
-                    *built);
-                last_slow_sync_hold = slow_sync_admission::start;
-            }
-
-            spdlog::info("[sync_coordinator] Starting SLOW block sync: {} to {} ({} blocks)",
-                start_height, headers_synced_to, headers_synced_to - blocks_synced_to);
-            slow_sync_started = co_await send_block_range(start_height, headers_synced_to);
+        auto try_start_slow_sync = [&](body_range_trigger trigger) -> ::asio::awaitable<void> {
+            record(co_await open_body_range_if_owed(
+                deps, range_log, trigger, blocks_synced_to, headers_synced_to, slow_sync_end));
         };
 
         // Main loop: ONLY receives from unified channel (no || operator)
@@ -1107,6 +1300,12 @@ static
                         // value; leaving it would make the UTXO build request
                         // headers-only heights on every poll.
                         contiguous_height->store(blocks_synced_to + 1, std::memory_order_release);
+
+                        // HERE, before any branching: the branches below that do
+                        // not re-drive the download are exactly the ones that
+                        // would otherwise carry a range end describing blocks the
+                        // switch just took away.
+                        slow_sync_end = range_end_after_rewind(slow_sync_end, blocks_synced_to);
                     }
 
                     auto const new_tip = switched ? chain.headers().active_tip_height() : -1;
@@ -1117,8 +1316,26 @@ static
                         spdlog::warn("[sync_coordinator] Reorg complete: blocks rewound to {}, "
                             "headers now at {}", blocks_synced_to, headers_synced_to);
 
-                        if ( ! co_await send_block_range(blocks_synced_to + 1, headers_synced_to)) {
-                            spdlog::error("[sync_coordinator] Reorg: failed to re-drive block download");
+                        // Recorded like any other range. Left unrecorded, a
+                        // stale end from before the switch would read as a range
+                        // still in flight over heights the reorg just rewound,
+                        // and the remainder above it would never be opened.
+                        log_range_opening(
+                            slow_sync_range{blocks_synced_to + 1, headers_synced_to},
+                            body_range_trigger::reorg, headers_synced_to, blocks_synced_to,
+                            slow_sync_end, std::nullopt);
+
+                        if (co_await send_block_range(deps, blocks_synced_to + 1, headers_synced_to)) {
+                            // The only place a new end is recorded, and only once
+                            // the request was actually sent. A send that failed
+                            // leaves nothing recorded, and the rewind above has
+                            // already dropped what described the old branch, so
+                            // the next event re-derives the range from the
+                            // heights instead of holding behind it.
+                            slow_sync_end = headers_synced_to;
+                        } else {
+                            spdlog::error("[sync_coordinator] Reorg: failed to re-drive block "
+                                "download; the next event asks again");
                         }
                     } else if (switched) {
                         // Switched, but the new tip is not above the fork — nothing
@@ -1132,16 +1349,30 @@ static
                     continue;
                 }
 
+                // ONE progress point, ahead of the success/error split, because the
+                // progress is the same fact either way: `count` is what the
+                // organizer accepted and `result` is why it stopped, and a batch
+                // that added a valid prefix before hitting a bad header moved the
+                // tip by that prefix. Splitting first is how the error path came
+                // to advance the tip and tell nobody.
+                auto const prev_headers_synced = headers_synced_to;
+                {
+                    auto const progress = co_await on_headers_advanced(
+                        deps, range_log, *result,
+                        blocks_synced_to, headers_synced_to, slow_sync_end);
+                    headers_synced_to = progress.headers_synced_to;
+                    record(progress.opened);
+                }
+
                 if (result->result) {
                     // Header validation failed - normal network behavior (peer on wrong chain)
                     spdlog::debug("[sync_coordinator] Header validation failed: {} from peer {}",
                         result->result.message(),
                         result->source_peer ? result->source_peer->authority_with_agent() : "unknown");
 
-                    // Update progress if some headers were added before the failure
                     if (result->count > 0) {
-                        headers_synced_to = result->height;
-                        spdlog::debug("[sync_coordinator] Headers synced to {} before failure", headers_synced_to);
+                        spdlog::debug("[sync_coordinator] Headers synced to {} before failure",
+                            headers_synced_to);
                     }
 
                     // Report error to peer_provider - it decides what to do (ban, exclude, etc.)
@@ -1167,9 +1398,9 @@ static
                         spdlog::warn("[sync_coordinator] Channel full, retry header_request dropped");
                     }
                 } else if (result->count > 0) {
-                    // Sequential header sync - track progress and request next batch
-                    auto const prev_headers_synced = headers_synced_to;
-                    headers_synced_to = result->height;
+                    // The tip has already moved above; what is left here is this
+                    // branch's own policy — the progress log and asking the same
+                    // peer for the next batch.
 
                     // Log progress when crossing 10000 boundaries (handles any batch size)
                     uint32_t prev_10k = prev_headers_synced / 10000;
@@ -1183,10 +1414,12 @@ static
                         spdlog::info("[header_sync] height {} ({}/s)", headers_synced_to, rate);
                     }
 
-                    // Request next batch of headers (sequential sync)
-                    auto next_hash = active_hash_at(organizer.index(), headers_synced_to);
-
-                    if (!header_download_input.try_send(std::error_code{}, header_request{
+                    // Sequential header sync: ask for the next batch. Exactly one
+                    // header_request leaves this handler — the error branch above
+                    // sends its own, to a different peer, and the two are
+                    // mutually exclusive.
+                    auto const next_hash = active_hash_at(organizer.index(), headers_synced_to);
+                    if ( ! header_download_input.try_send(std::error_code{}, header_request{
                         .from_height = headers_synced_to,
                         .from_hash = next_hash
                     })) {
@@ -1245,20 +1478,27 @@ static
                             //
                             // NOTE: We should only reach here if headers_synced_to >= checkpoint_height
                             // because header_sync should not complete until we have checkpoint headers
-                            spdlog::info("[sync_coordinator] Starting FAST block sync: {} to {} ({} blocks)",
-                                blocks_synced_to + 1, checkpoint_height,
+                            spdlog::info("[sync_coordinator] Starting FAST block sync: {} to "
+                                "{} ({} blocks)", blocks_synced_to + 1, checkpoint_height,
                                 checkpoint_height - blocks_synced_to);
-                            co_await send_block_range(blocks_synced_to + 1, checkpoint_height);
+
+                            // The result is not consulted, and that is correct
+                            // again now that the send is unbounded: it answers
+                            // false only when the node is winding down, and a
+                            // node that is winding down owes no range.
+                            co_await send_block_range(
+                                deps, blocks_synced_to + 1, checkpoint_height);
                         } else {
                             // Slow sync stage. THIS is the third door onto the
                             // post-checkpoint range, and it used to send directly:
                             // its own comment said "requires UTXO" and nothing
                             // checked that the set had it. It also left
-                            // `slow_sync_started` false, so the block and chunk
-                            // paths could send the same range again.
+                            // no range recorded, so the block and chunk paths
+                            // could send the same range again.
                             //
                             // Same guarded admission as the other two (#663).
-                            co_await try_start_slow_sync();
+                            co_await try_start_slow_sync(
+                                body_range_trigger::header_sync_complete);
                         }
                     } else {
                         // Already synced - wait and check for new blocks later
@@ -1309,12 +1549,12 @@ static
                     // (whose end_height was the checkpoint); without this trigger
                     // the orchestrator stalls forever at the checkpoint when
                     // headers are already ahead of the bloom height. The
-                    // `slow_sync_started` guard keeps subsequent block_validated
-                    // events from re-sending the request.
+                    // The recorded range end keeps subsequent block_validated
+                    // events from re-sending a range already in flight.
                     //
                     // Held until the UTXO set describes the state below the first
                     // block of the range — see may_start_slow_sync (#663).
-                    co_await try_start_slow_sync();
+                    co_await try_start_slow_sync(body_range_trigger::block_validated);
 
                     // Check if we've caught up to headers
                     if (blocks_synced_to >= headers_synced_to && header_sync_complete) {
@@ -1326,7 +1566,10 @@ static
                         header_sync_complete = false;
                         header_sync_start = std::chrono::steady_clock::now();
                         headers_at_start = headers_synced_to;
-                        slow_sync_started = false;  // allow next FAST→SLOW transition after a full re-sync
+                        // The range is DROPPED, not reopened: the bodies caught
+                        // up to it, so it covered everything it was asked to.
+                        // What comes next is decided from the heights.
+                        slow_sync_end.reset();
 
                         auto next_hash = active_hash_at(organizer.index(), headers_synced_to);
 
@@ -1365,11 +1608,12 @@ static
                 // send the range against a set that no longer describes what the
                 // message claimed.
                 //
-                // `try_start_slow_sync` takes no arguments precisely so the
-                // payload cannot reach the decision; it reads the height itself.
+                // The trigger names the door; the payload's height is not passed
+                // and cannot reach the decision. `try_start_slow_sync` reads the
+                // height itself, from the store, at the moment it evaluates.
                 spdlog::debug("[sync_coordinator] UTXO built height reported as {}; re-checking",
                     advanced->built_height);
-                co_await try_start_slow_sync();
+                co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
             }
 
@@ -1410,7 +1654,7 @@ static
                     // See the matching call in the block_validated branch above —
                     // same decision on the chunk path, which is the one that
                     // fires during the FAST IBD itself.
-                    co_await try_start_slow_sync();
+                    co_await try_start_slow_sync(body_range_trigger::chunk_validated);
 
                     // Check if we've caught up to headers
                     if (blocks_synced_to >= headers_synced_to && header_sync_complete) {
@@ -1420,7 +1664,7 @@ static
                         header_sync_complete = false;
                         header_sync_start = std::chrono::steady_clock::now();
                         headers_at_start = headers_synced_to;
-                        slow_sync_started = false;
+                        slow_sync_end.reset();
 
                         auto next_hash = active_hash_at(organizer.index(), headers_synced_to);
 
