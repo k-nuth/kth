@@ -23,6 +23,7 @@
 #include <kth/node/executor/executor_info.hpp>
 
 #include <asio/io_context.hpp>
+#include <asio/steady_timer.hpp>
 #include <asio/executor_work_guard.hpp>
 
 namespace kth::node {
@@ -302,7 +303,35 @@ private:
     ::asio::io_context io_context_;
     using work_guard_type = ::asio::executor_work_guard<::asio::io_context::executor_type>;
     std::optional<work_guard_type> work_guard_;
+
+    /// What the heartbeat waits on, held here so a stop can reach it.
+    ///
+    /// It used to be a local of the heartbeat coroutine, which is why stopping
+    /// this node could take ten seconds with nothing left to do: the wait was
+    /// only re-evaluated when the timer expired on its own, and the teardown
+    /// waits for that coroutine — release() blocks on run_completed_future_,
+    /// which is satisfied only after `node_->run() && heartbeat()` completes.
+    /// io_context_.stop(), which would end it, runs after that wait.
+    ///
+    /// Declared AFTER io_context_ so it is destroyed before it, and touched only
+    /// from the io thread: wake_heartbeat() posts, it does not cancel in place.
+    ::asio::steady_timer heartbeat_timer_{io_context_};
+
     std::thread io_thread_;
+
+    /// Ask the heartbeat to look again, now.
+    ///
+    /// Posted rather than cancelled in place: the wait runs on the io thread and
+    /// the stop does not, and a timer is not safe to cancel from another thread
+    /// while it is being waited on.
+    ///
+    /// A cancellation that arrives before the timer is armed is not lost. Every
+    /// caller has already asked the node to stop, so the loop's own condition —
+    /// re-read before it arms — sees `node_->stopped()` and ends. And one that
+    /// arrives after the timer has already expired changes nothing: asio runs
+    /// that handler exactly once with the result it already had, and the loop
+    /// re-reads the same condition at the top.
+    void wake_heartbeat() noexcept;
 
     /// The wind-down stop_async() hands off, so it can return without blocking the
     /// io thread it may itself be running on.
@@ -330,7 +359,18 @@ private:
         // not get the wind-down classified as failed and redone.
         after_wind_down,
         before_wind_down_thread,
-        after_node_cleanup
+        after_node_cleanup,
+        /// The heartbeat is about to wait. A control that needs the wait to be
+        /// in progress observes this rather than assuming it: under a sanitizer
+        /// the stop can arrive first, and then the loop ends on its own
+        /// condition — correct, but not what such a control set out to measure.
+        heartbeat_armed,
+        /// The heartbeat completed a real wait and is about to report. A tick.
+        heartbeat_beat,
+        /// The heartbeat's wait was ended by a stop. NOT a tick: nothing is left
+        /// alive to report on, and counting it would say the io_context was
+        /// serving timers at the moment it was being torn down.
+        heartbeat_woken
     };
 
     /// Called at the points above. Empty in every build but a test's.
