@@ -2350,12 +2350,50 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
                 if ( ! displaced.empty()) {
                     auto const progress = chain.utxo_apply_deletes(*window, displaced);
+
+                    // All four parts of the answer, because three of them can be
+                    // true with `unresolved` empty and the insert below must not
+                    // run on any of them.
+                    //
+                    // `error` first, and its category kept. A store that reports
+                    // recovery_required has latched and will write nothing more;
+                    // reading only `unresolved` would see an empty list and carry
+                    // on to insert over a key that was never withdrawn.
+                    if (progress.error) {
+                        return window_fatal{
+                            fmt::format("[utxo_build] Withdrawing the entry a BIP30 replacement "
+                                "displaces failed at batch {} (operation {:#018x}): {} "
+                                "(erased {}, absent {}, unresolved {})",
+                                batch_start, operation_id, database::utxoz_error_name(*progress.error),
+                                progress.erased.size(), progress.absent.size(),
+                                progress.unresolved.size()),
+                            "the store failed while withdrawing a BIP30 replacement"};
+                    }
+
+                    // `unresolved` means the walk did not finish for those keys.
+                    // Resending is what the deletion batch does, but not here:
+                    // this withdrawal is the first half of a replace, and the
+                    // insert must not proceed on a key still holding its old
+                    // entry.
                     if ( ! progress.unresolved.empty()) {
                         return window_fatal{
                             fmt::format("[utxo_build] Could not withdraw {} entry(ies) a BIP30 "
-                                "replacement displaces at batch {} (operation {:#018x})",
-                                progress.unresolved.size(), batch_start, operation_id),
+                                "replacement displaces at batch {} (operation {:#018x}) "
+                                "(erased {}, absent {})",
+                                progress.unresolved.size(), batch_start, operation_id,
+                                progress.erased.size(), progress.absent.size()),
                             "a BIP30 replacement could not withdraw the entry it replaces"};
+                    }
+
+                    // `absent` is the expected answer, not a fault: an exception
+                    // block whose output the set does not already hold is an
+                    // authorized insert with nothing to overwrite. `erased` says
+                    // what was actually mutated, which is the part a recovery
+                    // needs to know and the part the undo record has to match.
+                    if ( ! progress.erased.empty() || ! progress.absent.empty()) {
+                        spdlog::info("[utxo_build] BIP30 replacement at batch {}: withdrew {} "
+                            "entry(ies), {} had none to withdraw",
+                            batch_start, progress.erased.size(), progress.absent.size());
                     }
                 }
             }
