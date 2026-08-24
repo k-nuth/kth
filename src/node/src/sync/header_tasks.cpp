@@ -21,6 +21,33 @@ namespace kth::node::sync {
 
 using namespace ::asio::experimental::awaitable_operators;
 
+namespace {
+
+// What a single attempt at a header request left behind, and therefore what
+// has to happen next. The task buffers an unfinished request in
+// `pending_request`, and nothing outside this file can tell from that buffer
+// alone whether the request is waiting on the network or waiting on the task
+// itself -- which is precisely how #692 stayed invisible. Naming the three
+// endings keeps that distinction in the type rather than in a comment.
+enum class request_outcome {
+    // Nothing is owed: headers were delivered, or the tip was reported.
+    settled,
+
+    // Buffered, and this task will not touch it again. The only thing that
+    // re-reads pending_request is the peers_updated handler, so waking up means
+    // an inbound message on `input` -- from the peer provider, or from the
+    // coordinator. Which of those it is depends on the branch, and each branch
+    // says so; the name promises only that a wake, if it comes, comes from
+    // outside. It deliberately does not promise that one is coming.
+    parked_for_external_event,
+
+    // Buffered, an eligible peer has already been made current, and nothing
+    // external is expected. Only the caller can move this forward.
+    ask_next_peer,
+};
+
+} // namespace
+
 // =============================================================================
 // Header Download Task
 // =============================================================================
@@ -96,7 +123,7 @@ using namespace ::asio::experimental::awaitable_operators;
     };
 
     // Helper lambda to process a request
-    auto process_request = [&](header_request const& request) -> ::asio::awaitable<void> {
+    auto process_request = [&](header_request const& request) -> ::asio::awaitable<request_outcome> {
         // Check if we've reached the max header height limit (if set)
         if (max_header_height > 0 && request.from_height >= max_header_height) {
             spdlog::info("[header_download] Reached max_header_height {} at from_height={}, signaling sync complete",
@@ -111,15 +138,17 @@ using namespace ::asio::experimental::awaitable_operators;
                 spdlog::warn("[header_download] Channel full, max height signal dropped");
             }
             pending_request.reset();
-            co_return;
+            co_return request_outcome::settled;
         }
 
         auto peer = get_header_peer();
         if (!peer) {
             spdlog::debug("[header_download] No peers available, buffering request for height {}",
                 request.from_height);
+            // Driver: peers_updated. There is nobody to ask, so waiting for the
+            // peer provider to produce someone is the whole of the work here.
             pending_request = request;
-            co_return;
+            co_return request_outcome::parked_for_external_event;
         }
 
         spdlog::debug("[header_download] Requesting headers from {} at height {}",
@@ -160,10 +189,16 @@ using namespace ::asio::experimental::awaitable_operators;
             if (!send_ok) {
                 spdlog::warn("[header_download] Channel full or closed, peer failure report dropped");
             }
-            // Keep request pending - will retry with new peer after peers_updated
+            // Driver: the coordinator, not peers_updated. The failure report
+            // above travels output -> bridge -> header_validation_task ->
+            // validated_headers -> coordinator, which answers with a fresh
+            // header_request. Every hop is a bounded try_send that logs and
+            // drops when full, so this is observed-reliable rather than
+            // guaranteed; it fired on every failure across three mainnet runs.
+            // Left as it is on purpose: a failure is not "ask the next one".
             pending_request = request;
             spdlog::warn("[header_sync] checkpoint 6: returning from error handler");
-            co_return;
+            co_return request_outcome::parked_for_external_event;
         }
 
         if (result->elements().empty()) {
@@ -197,21 +232,29 @@ using namespace ::asio::experimental::awaitable_operators;
                         spdlog::warn("[header_download] Channel full, empty headers signal dropped");
                     }
                     pending_request.reset();
+                    co_return request_outcome::settled;
                 } else {
                     // We're below the best known height but all peers returned 0
                     // This is suspicious - peers claimed higher but can't provide headers
                     // Keep request pending and wait for peers_updated (new peers or peers sync more)
                     spdlog::warn("[header_download] All peers returned 0 but we're at {} < best_known={}, waiting for more peers",
                         request.from_height, best_known_height);
+                    // Driver: peers_updated. Every peer we have is at its tip,
+                    // so only a change in the peer set can move this.
                     pending_request = request;
                 }
-                co_return;
+                co_return request_outcome::parked_for_external_event;
             }
 
-            // Another peer available - keep request pending for immediate retry
-            // (The main loop will process pending_request before waiting for new events)
+            // Another peer is eligible and get_header_peer() has already made it
+            // current. Nothing will ask it on its own: the main loop blocks on
+            // input.async_receive(), the only reader of pending_request is the
+            // peers_updated handler, and this task has no timer. Returning
+            // `ask_next_peer` is what makes the caller send it -- without that,
+            // the request waits for an unrelated peer to connect or drop, which
+            // on BCH mainnet measured 23m25s, 33m47s and 29m51s (#692).
             pending_request = request;
-            co_return;
+            co_return request_outcome::ask_next_peer;
         }
 
         auto headers_count = uint32_t(result->elements().size());
@@ -224,9 +267,14 @@ using namespace ::asio::experimental::awaitable_operators;
             .start_height = request.from_height + 1,
             .source_peer = peer
         })) {
+            // No driver. Draining this output channel does not wake this task:
+            // it reads from `input`, and nothing turns a drop here into an
+            // inbound message. The request then waits on unrelated peer churn,
+            // exactly the way #692 did. Tracked separately -- the trigger is
+            // saturation, not an empty answer, and the fix is backpressure.
             spdlog::warn("[header_download] Channel full, headers dropped");
             pending_request = request;
-            co_return;
+            co_return request_outcome::parked_for_external_event;
         }
 
         // Report performance to peer_provider (for slow peer tracking)
@@ -241,6 +289,31 @@ using namespace ::asio::experimental::awaitable_operators;
 
         // Clear pending since we processed it
         pending_request.reset();
+        co_return request_outcome::settled;
+    };
+
+    // Ask, and keep asking while the answer was "not me, ask the next one".
+    // Every empty answer puts its peer in peers_at_tip and get_header_peer()
+    // skips those, so this visits each available peer at most once and ends
+    // either at a peer with headers or at the all-peers-at-their-tip branch,
+    // which settles. available_peers is not touched inside the walk.
+    auto drive_request = [&](header_request request) -> ::asio::awaitable<void> {
+        while (co_await process_request(request) == request_outcome::ask_next_peer) {
+            // Shutdown closes this channel first and stops the peers after, so
+            // for a moment the peers still answer. A walk already under way
+            // would spend that moment asking them, and would only notice once
+            // it returned to the main loop -- which is where the closed input
+            // is observed. Asking here is the same observation, one step
+            // earlier, and it costs one flag read rather than a second notion
+            // of "are we stopping".
+            if ( ! input.is_open()) {
+                co_return;
+            }
+
+            // process_request re-buffered the same request for the peer it just
+            // made current; ask that one now rather than leaving it parked.
+            request = *pending_request;
+        }
     };
 
     // Single channel, FIFO processing - no priority issues
@@ -343,14 +416,14 @@ using namespace ::asio::experimental::awaitable_operators;
             if (pending_request && !available_peers.empty()) {
                 spdlog::debug("[header_download] Retrying pending request with {} peers",
                     available_peers.size());
-                co_await process_request(*pending_request);
+                co_await drive_request(*pending_request);
             }
             continue;
         }
 
         if (auto* request = std::get_if<header_request>(&event)) {
             spdlog::debug("[header_download] Request received: height={}", request->from_height);
-            co_await process_request(*request);
+            co_await drive_request(*request);
             continue;
         }
     }
