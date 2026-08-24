@@ -24,6 +24,14 @@ namespace kth::domain::chain {
 class block;
 class header;
 
+// The two mainnet blocks BIP30 grandfathers, asked as the consensus rule asks it:
+// the exact {hash, height} pair, both of which must match. Defined once, over the
+// `mainnet_bip30_exception_checkpoint*` constants, and shared rather than copied --
+// a second list of hashes and heights is a second thing to get wrong (#695).
+KD_API
+bool is_bip30_exception(infrastructure::config::checkpoint const& check,
+                        domain::config::network network);
+
 struct KD_API chain_state {
     using bitss = std::deque<uint32_t>;                 //TODO(fernando): why deque?
     using versions = std::deque<uint32_t>;              //TODO(fernando): why deque?

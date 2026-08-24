@@ -2203,7 +2203,21 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                                           chain.headers().get_prev_block_hash(idx));
             }
 
-            delta.merge(std::move(block_delta));
+            // A key this block re-creates over one the batch already carries, with
+            // no BIP30 authorization for it, is a consensus violation that the
+            // batch validator does not look for (see batch_validate.hpp). The
+            // merge refuses it and leaves the batch untouched, so nothing is
+            // half-applied -- but nothing downstream would notice the block was
+            // dropped either, and a UTXO set quietly missing a block's outputs is
+            // worse than a stop. Treated like the other local, non-retryable
+            // disagreements above.
+            if (delta.merge(std::move(block_delta))
+                    != blockchain::delta_merge_result::ok) {
+                spdlog::critical("[utxo_build] The block at height {} re-creates an output the "
+                    "batch already holds and is not one of the two BIP30 exceptions", h);
+                on_fatal("a block re-created an existing output without BIP30 authorization");
+                co_return;
+            }
 
             // Update MTP window from raw block header (timestamp at offset 68)
             uint32_t block_timestamp;

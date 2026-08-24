@@ -193,15 +193,30 @@ std::vector<uint8_t> serialize_utxo_raw_value(
 // utxo_raw_delta implementation
 // =============================================================================
 
-// NOTE (#695): the body below is still the pre-fix behaviour and always reports
-// `ok`. The signature is here so the properties the fix has to satisfy can be
-// stated as tests first; see the red controls in bip30_duplicate_coinbase.cpp.
 delta_merge_result utxo_raw_delta::merge(utxo_raw_delta&& other) {
+    // Pass 1 decides, and touches nothing. Every key `other` creates that this
+    // batch already carries has to be authorized by `other` itself; one that is
+    // not makes the whole merge fail, and it must do so no matter which
+    // colliding key the iteration reaches first.
+    for (auto const& [point, raw] : other.inserts) {
+        if ( ! inserts.contains(point)) {
+            continue;
+        }
+        if ( ! other.authorized_replacements.contains(point)) {
+            return delta_merge_result::unauthorized_duplicate;
+        }
+    }
+
+    // Pass 2 applies, and cannot fail. Past here every collision is a
+    // replacement the consensus rule authorized for this block, and the newer
+    // entry wins -- which is what BCHN's AddCoin does for a coinbase, assigning
+    // over the live coin so the set ends up holding the new output at the new
+    // height.
     bloom_skipped_inserts += other.bloom_skipped_inserts;
     bloom_skipped_deletes += other.bloom_skipped_deletes;
 
     for (auto& [point, raw] : other.inserts) {
-        inserts.emplace(point, std::move(raw));
+        inserts.insert_or_assign(point, std::move(raw));
     }
 
     for (auto const& [point, height] : other.deletes) {
@@ -215,12 +230,6 @@ delta_merge_result utxo_raw_delta::merge(utxo_raw_delta&& other) {
     }
 
     return delta_merge_result::ok;
-}
-
-// NOTE (#695): no replacement is recorded yet, so this always answers "none".
-// The fix populates it when a merge performs an authorized replacement.
-std::optional<utxo_raw_value> utxo_raw_delta::replaced_entry(key_t const&) const {
-    return std::nullopt;
 }
 
 void utxo_raw_delta::clear() {

@@ -141,19 +141,26 @@ struct KB_API utxo_raw_delta {
     boost::unordered_flat_map<key_t, utxo_raw_value, hasher_t> inserts;
     boost::unordered_flat_map<key_t, uint32_t, hasher_t> deletes;
 
+    // The keys this block is permitted to re-create over a live entry. Filled
+    // when the block's delta is built, from the consensus rule itself
+    // (is_bip30_exception over the block's own {hash, height}), and carried with
+    // the operation from there on. A merge NEVER decides that a collision must
+    // have been BIP30: the two grandfathered blocks are the only source of an
+    // entry here, so a collision without one is a consensus violation and is
+    // reported as such. Empty for every block but those two.
+    boost::unordered_flat_set<key_t, hasher_t> authorized_replacements;
+
     // Bloom filter skip counters (accumulated across merge)
     size_t bloom_skipped_inserts = 0;
     size_t bloom_skipped_deletes = 0;
 
+    // Merging one block into this batch. Either the whole of `other` is folded
+    // in, or nothing is: an unauthorized duplicate is reported with this batch
+    // left exactly as it was. Two passes rather than one, so the answer cannot
+    // depend on the order `other.inserts` happens to iterate in -- a batch whose
+    // outcome varies with a hash table's layout is the same class of defect as
+    // one whose outcome varies with the partition (#695).
     delta_merge_result merge(utxo_raw_delta&& other);
-
-    // The entry an authorized BIP30 replacement displaced, if this batch made
-    // one for `key`. Undo needs it and cannot get it anywhere else: the original
-    // output is never spent, so it appears in no `deletes` list, and when the
-    // original and the duplicate share a batch it was never published to the
-    // store either. Empty when the key was not replaced.
-    [[nodiscard]]
-    std::optional<utxo_raw_value> replaced_entry(key_t const& key) const;
     void clear();
 
     [[nodiscard]]
