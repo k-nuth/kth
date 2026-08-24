@@ -246,12 +246,42 @@ std::expected<database::block_undo, database::result_code> capture_block_undo(
     uint32_t height
 ) {
     database::block_undo undo;
-    undo.spent.reserve(block_delta.deletes.size());
+    undo.spent.reserve(block_delta.deletes.size() + block_delta.authorized_replacements.size());
 
     // Spent outputs still missing after the first pass, to be resolved by the
     // batch resolution (find_raw's not_resolved only means "the active versions
     // cannot answer").
     std::vector<utxoz::lookup_request> deferred;
+
+    // A BIP30 replacement displaces a live entry, and nothing else records it:
+    // the original output is never spent, so it is in no `deletes` list. Captured
+    // FIRST, before the merge folds this block in and before anything is applied,
+    // because after either the previous value is gone.
+    //
+    // The batch is asked before the store. When the original and the duplicate
+    // share a batch, the entry the duplicate displaces was created by an earlier
+    // block of that same batch and has not been published yet, so the store would
+    // truthfully answer that it does not have it.
+    //
+    // Absence is not corruption. An exception block whose coinbase output the set
+    // does not already hold is an authorized insert with nothing to overwrite --
+    // which is what the second of the two looks like after a rewind past the
+    // first. Nothing is recorded, and the disconnect will simply remove what the
+    // block created.
+    for (auto const& key : block_delta.authorized_replacements) {
+        if (auto it = batch_delta.inserts.find(key); it != batch_delta.inserts.end()) {
+            undo.spent.push_back({key, it->second.data, it->second.height});
+            continue;
+        }
+        if (auto stored = source.find_utxo_raw(key, height); stored) {
+            undo.spent.push_back({key, std::move(stored->value), stored->height});
+        } else if (stored.error() != database::result_code::not_resolved &&
+                   stored.error() != database::result_code::key_not_found) {
+            spdlog::error("[utxo_builder] capture_block_undo: reading the entry a BIP30 "
+                "replacement displaces failed at height {}", height);
+            return std::unexpected(stored.error());
+        }
+    }
 
     for (auto const& [key, _] : block_delta.deletes) {
         // Parent created earlier in this same batch: it lives only in the

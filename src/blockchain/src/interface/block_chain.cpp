@@ -1270,6 +1270,22 @@ database::disconnect_result block_chain::disconnect_block(uint32_t height,
         inverse.inserts.emplace(entry.key, utxo_raw_value{entry.value, entry.height});
     }
     for (auto const& out : parsed->outputs) {
+        // A key this block created that the undo ALSO carries a previous value
+        // for is a BIP30 replacement: the block overwrote a live entry, and the
+        // undo kept what it overwrote. Restoring it and then deleting it would
+        // leave nothing -- the restore above runs first and the deletions are
+        // applied at the end of the rewind -- so the key is simply not deleted.
+        //
+        // Nothing else produces that overlap. capture_block_undo records the
+        // previous value of what a block SPENDS, and an output created and spent
+        // inside one block is netted out of the delta before it can be recorded:
+        // process_compact_block_utxos inserts every output of the block before it
+        // examines any input, so the pairing does not depend on the order the
+        // transactions happen to be in. The overlap therefore needs no marker in
+        // the undo format to be read unambiguously.
+        if (inverse.inserts.contains(out.key)) {
+            continue;
+        }
         inverse.deletes.emplace(out.key, height);
     }
 

@@ -2325,6 +2325,41 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             // latches the gate unless complete() has been reached.
             window->mark_mutating();
 
+            // A BIP30 replacement cannot go in as an ordinary insert: the store
+            // holds the entry it displaces and refuses to write over a live key,
+            // which is the cross-batch half of #695. Withdraw it first, so the
+            // insert below lands on an absent key exactly like every other.
+            //
+            // This is a real mutation and it is placed accordingly: after the
+            // transition record is durable, inside the write window, past
+            // mark_mutating(). A failure between the withdrawal and the insert
+            // returns through the window's destructor, which latches the gate --
+            // the one outcome that must not be "accepted".
+            //
+            // Only the licensed keys, and only those the store actually has: an
+            // authorized insert with nothing to overwrite is ordinary work.
+            if ( ! delta.authorized_replacements.empty()) {
+                std::vector<utxoz::deferred_deletion_entry> displaced;
+                displaced.reserve(delta.authorized_replacements.size());
+                for (auto const& key : delta.authorized_replacements) {
+                    if (auto const it = delta.inserts.find(key); it == delta.inserts.end()) {
+                        continue;
+                    }
+                    displaced.emplace_back(key, batch_end);
+                }
+
+                if ( ! displaced.empty()) {
+                    auto const progress = chain.utxo_apply_deletes(*window, displaced);
+                    if ( ! progress.unresolved.empty()) {
+                        return window_fatal{
+                            fmt::format("[utxo_build] Could not withdraw {} entry(ies) a BIP30 "
+                                "replacement displaces at batch {} (operation {:#018x})",
+                                progress.unresolved.size(), batch_start, operation_id),
+                            "a BIP30 replacement could not withdraw the entry it replaces"};
+                    }
+                }
+            }
+
             if ( ! delta.empty()) {
                 auto result = chain.apply_utxo_inserts_raw(*window, delta.inserts);
                 if (result != database::result_code::success) {
