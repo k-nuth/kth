@@ -193,7 +193,10 @@ std::vector<uint8_t> serialize_utxo_raw_value(
 // utxo_raw_delta implementation
 // =============================================================================
 
-void utxo_raw_delta::merge(utxo_raw_delta&& other) {
+// NOTE (#695): the body below is still the pre-fix behaviour and always reports
+// `ok`. The signature is here so the properties the fix has to satisfy can be
+// stated as tests first; see the red controls in bip30_duplicate_coinbase.cpp.
+delta_merge_result utxo_raw_delta::merge(utxo_raw_delta&& other) {
     bloom_skipped_inserts += other.bloom_skipped_inserts;
     bloom_skipped_deletes += other.bloom_skipped_deletes;
 
@@ -210,6 +213,14 @@ void utxo_raw_delta::merge(utxo_raw_delta&& other) {
             deletes.emplace(point, height);
         }
     }
+
+    return delta_merge_result::ok;
+}
+
+// NOTE (#695): no replacement is recorded yet, so this always answers "none".
+// The fix populates it when a merge performs an authorized replacement.
+std::optional<utxo_raw_value> utxo_raw_delta::replaced_entry(key_t const&) const {
+    return std::nullopt;
 }
 
 void utxo_raw_delta::clear() {

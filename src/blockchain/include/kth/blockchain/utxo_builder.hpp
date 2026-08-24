@@ -6,6 +6,7 @@
 #define KTH_BLOCKCHAIN_UTXO_BUILDER_HPP
 
 #include <cstdint>
+#include <optional>
 #include <cstring>
 #include <expected>
 #include <filesystem>
@@ -118,6 +119,21 @@ struct outpoint_fast_hasher {
     }
 };
 
+// What merging one block's delta into a batch delta concluded. A second insert
+// of a key the batch already carries is not a detail the merge can settle on its
+// own: for the two blocks BIP30 grandfathers it is an authorized replacement, and
+// anywhere else it is a consensus violation. Silently keeping one of the two --
+// which is what an `emplace` does -- answers neither question and makes the batch
+// partition decide the result (#695).
+enum class delta_merge_result {
+    // Nothing collided, or the collision was an authorized BIP30 replacement.
+    ok,
+
+    // A second insert arrived for a key already in the batch, with no consensus
+    // authorization to replace it.
+    unauthorized_duplicate,
+};
+
 struct KB_API utxo_raw_delta {
     using key_t = utxoz::raw_outpoint;
     using hasher_t = outpoint_fast_hasher;
@@ -129,7 +145,15 @@ struct KB_API utxo_raw_delta {
     size_t bloom_skipped_inserts = 0;
     size_t bloom_skipped_deletes = 0;
 
-    void merge(utxo_raw_delta&& other);
+    delta_merge_result merge(utxo_raw_delta&& other);
+
+    // The entry an authorized BIP30 replacement displaced, if this batch made
+    // one for `key`. Undo needs it and cannot get it anywhere else: the original
+    // output is never spent, so it appears in no `deletes` list, and when the
+    // original and the duplicate share a batch it was never published to the
+    // store either. Empty when the key was not replaced.
+    [[nodiscard]]
+    std::optional<utxo_raw_value> replaced_entry(key_t const& key) const;
     void clear();
 
     [[nodiscard]]
