@@ -268,18 +268,55 @@ std::expected<database::block_undo, database::result_code> capture_block_undo(
     // which is what the second of the two looks like after a rewind past the
     // first. Nothing is recorded, and the disconnect will simply remove what the
     // block created.
+    std::vector<utxoz::lookup_request> deferred_replacements;
+
     for (auto const& key : block_delta.authorized_replacements) {
         if (auto it = batch_delta.inserts.find(key); it != batch_delta.inserts.end()) {
             undo.spent.push_back({key, it->second.data, it->second.height});
             continue;
         }
-        if (auto stored = source.find_utxo_raw(key, height); stored) {
+        auto stored = source.find_utxo_raw(key, height);
+        if (stored) {
             undo.spent.push_back({key, std::move(stored->value), stored->height});
-        } else if (stored.error() != database::result_code::not_resolved &&
-                   stored.error() != database::result_code::key_not_found) {
+            continue;
+        }
+
+        // not_resolved is not absence: it says the ACTIVE versions cannot answer,
+        // and the entry a replacement displaces may well be in an older
+        // generation. Accepting it as "nothing to keep" would lose the only copy
+        // of that value, and the disconnect would then delete the key instead of
+        // restoring it. Resolved below, exactly like a spent output.
+        if (stored.error() == database::result_code::not_resolved) {
+            deferred_replacements.emplace_back(key, height);
+            continue;
+        }
+
+        if (stored.error() != database::result_code::key_not_found) {
             spdlog::error("[utxo_builder] capture_block_undo: reading the entry a BIP30 "
                 "replacement displaces failed at height {}", height);
             return std::unexpected(stored.error());
+        }
+        // key_not_found is a proven absence, and for a replacement that is
+        // ordinary: an authorized insert with nothing to overwrite.
+    }
+
+    if ( ! deferred_replacements.empty()) {
+        auto resolved = source.utxo_resolve_raw(deferred_replacements);
+        if ( ! resolved) {
+            spdlog::error("[utxo_builder] capture_block_undo: resolving {} entry(ies) a BIP30 "
+                "replacement displaces failed at height {}; no undo record is captured",
+                deferred_replacements.size(), height);
+            return std::unexpected(resolved.error());
+        }
+
+        // Absence AFTER resolution is the answer, not a fault -- unlike a spent
+        // output, whose absence means the set and the delta disagree. Here it
+        // means the set simply does not hold what this block re-creates.
+        for (auto const& request : deferred_replacements) {
+            if (auto it = resolved->found.find(request.key); it != resolved->found.end()) {
+                undo.spent.push_back(database::spent_output{
+                    request.key, it->second.value, it->second.height});
+            }
         }
     }
 

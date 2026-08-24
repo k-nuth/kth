@@ -2351,9 +2351,10 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                 if ( ! displaced.empty()) {
                     auto const progress = chain.utxo_apply_deletes(*window, displaced);
 
-                    // All four parts of the answer, because three of them can be
-                    // true with `unresolved` empty and the insert below must not
-                    // run on any of them.
+                    // All four parts matter, and they do not all mean the same
+                    // thing: `error` and `unresolved` prevent the insert, `absent`
+                    // is a valid authorized insert with nothing to displace, and
+                    // `erased` records the mutation that actually occurred.
                     //
                     // `error` first, and its category kept. A store that reports
                     // recovery_required has latched and will write nothing more;
