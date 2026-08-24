@@ -47,11 +47,36 @@ p2p_node::~p2p_node() {
 }
 
 ::asio::awaitable<code> p2p_node::start() {
-    if (!stopped_) {
+    // One transition, and this object is single-use.
+    //
+    // A stop closes new_peer_channel_, stop_signal_ and peer_notification_channel_
+    // — built once, in the constructor's init list, and never rebuilt — and
+    // join() on an asio::thread_pool is terminal. A second start was nonetheless
+    // ADMITTED, because the service state said "not running" after every stop, so
+    // the call
+    // returned success and then ran on closed channels over a pool that could
+    // not serve it.
+    //
+    // Supporting restart would mean rebuilding the pool, the channels and the
+    // tasks, not clearing flags. Until something does that, this refuses.
+    // ONE atomic step. `created → running` is the only admission there is, so a
+    // second start finds something other than `created` and is refused — and the
+    // value it found says why.
+    //
+    // Nothing to serialise: the admission and the active state are the same word,
+    // so a stop() racing this either wins the transition or loses it. It cannot
+    // land between two of them, because there is only one.
+    auto expected = lifecycle_state::fresh;
+    if ( ! lifecycle_.compare_exchange_strong(expected, lifecycle_state::active,
+            std::memory_order_acq_rel, std::memory_order_acquire)) {
+        if (expected == lifecycle_state::stopped) {
+            spdlog::error("[p2p_node] start() refused: this node was already stopped.");
+        } else {
+            spdlog::error("[p2p_node] start() refused: this node has already been started once. "
+                "A p2p_node is single-use — its channels and thread pool do not come back.");
+        }
         co_return error::operation_failed;
     }
-
-    stopped_ = false;
 
     // Load peer database (unified storage for hosts, bans, and reputation)
     if (!peer_db_.load()) {
@@ -81,9 +106,22 @@ p2p_node::~p2p_node() {
 ::asio::awaitable<code> p2p_node::run() {
     spdlog::info("[p2p_node] run() STARTING");
 
-    if (stopped_) {
+    if (stopped()) {
         spdlog::debug("[p2p_node] run() - already stopped");
         co_return error::service_stopped;
+    }
+
+    // Admitted once, like start(). A second run() would spawn every network task
+    // again -- among them the status task, and two coroutines waiting on the one
+    // status_timer_ means a cancellation ends whichever happens to be waiting.
+    //
+    // Its own flag rather than a fourth lifecycle state: nothing pairs with this
+    // one. No stop reads it, and it is not published together with anything, so
+    // folding it into that word would make the transition table describe two
+    // unrelated things.
+    if (run_admitted_.exchange(true, std::memory_order_acq_rel)) {
+        spdlog::error("[p2p_node] run() refused: this node is already running.");
+        co_return error::operation_failed;
     }
 
     // Run all network tasks in parallel using task_group on pool_ executor.
@@ -115,7 +153,7 @@ p2p_node::~p2p_node() {
     });
 
     // Wait for supervisor to be ready before connecting manual peers
-    while (!supervisor_ready_.load(std::memory_order_acquire) && !stopped_) {
+    while (!supervisor_ready_.load(std::memory_order_acquire) && !stopped()) {
         co_await ::asio::post(pool_.get_executor(), ::asio::use_awaitable);
     }
 
@@ -140,12 +178,24 @@ p2p_node::~p2p_node() {
 }
 
 void p2p_node::stop() {
-    if (stopped_) {
+    // ONE atomic step, and the value it replaces says what this stop has to do.
+    auto const previous = lifecycle_.exchange(lifecycle_state::stopped, std::memory_order_acq_rel);
+
+    if (previous == lifecycle_state::stopped) {
+        return;             // someone else already did all of this
+    }
+    if (previous == lifecycle_state::fresh) {
+        // Nothing was ever running, so there is nothing to cancel, stop or save —
+        // but the claim above stands, and it is what refuses a later start.
         return;
     }
 
-    stopped_ = true;
-    supervisor_ready_ = false;  // Reset for potential restart
+    supervisor_ready_ = false;  // Not for restart: see start(), which refuses one.
+
+    // Before the channel cancellations below, and after the stopped state is
+    // published, so a wake
+    // that lands before the timer is armed is covered by the loop's own re-read.
+    wake_status_task();
 
     // Cancel and close channels - cancel() wakes up pending async ops, close() alone does NOT!
     if (stop_signal_) {
@@ -183,7 +233,7 @@ void p2p_node::stop() {
     // NOTE: We do NOT call pool_.stop() here!
     // With structured concurrency, all coroutines will complete naturally:
     // 1. run_inbound() exits (acceptor closed)
-    // 2. run_outbound() exits (stopped_ = true)
+    // 2. run_outbound() exits (the node is stopped)
     // 3. peer_supervisor() exits after peer_tasks.join() completes
     // 4. run() returns, then join() can complete
     // Calling pool_.stop() here would abort pending work and prevent clean shutdown.
@@ -201,7 +251,10 @@ settings const& p2p_node::network_settings() const {
 }
 
 bool p2p_node::stopped() const {
-    return stopped_;
+    // Anything that is not `active` counts as stopped, which is what every caller
+    // and every loop condition means by it: `fresh` has not started and `stopped`
+    // has finished.
+    return lifecycle_.load(std::memory_order_acquire) != lifecycle_state::active;
 }
 
 size_t p2p_node::connection_count() const {
@@ -366,7 +419,7 @@ awaitable_expected<peer_session::ptr> p2p_node::connect(
     std::string const& host,
     uint16_t port)
 {
-    if (stopped_) {
+    if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
 
@@ -495,7 +548,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 
     // Launch all seed connections in parallel
     for (auto const& seed : seeds_copy) {
-        if (stopped_) break;
+        if (stopped()) break;
 
         auto task_name = fmt::format("seed_{}:{}:{}", seed.host(), seed.port(), seed_task_counter_.fetch_add(1));
         seed_tasks.spawn(task_name, [this, host = seed.host(), port = seed.port(), seeds_completed]() -> ::asio::awaitable<void> {
@@ -511,7 +564,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
     auto const max_wait = std::chrono::seconds(settings_.connect_timeout_seconds + 35);
     auto const start_time = std::chrono::steady_clock::now();
 
-    while (seed_tasks.has_active_tasks() && !stopped_) {
+    while (seed_tasks.has_active_tasks() && !stopped()) {
         // Check elapsed time
         if (std::chrono::steady_clock::now() - start_time >= max_wait) {
             spdlog::debug("[p2p_node] Seeding timeout reached");
@@ -705,14 +758,14 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
     acceptor_ = std::make_unique<::asio::ip::tcp::acceptor>(std::move(*listen_result));
 
     // Wait for peer_supervisor to be ready (deterministic synchronization)
-    while (!supervisor_ready_.load(std::memory_order_acquire) && !stopped_) {
+    while (!supervisor_ready_.load(std::memory_order_acquire) && !stopped()) {
         co_await ::asio::post(executor, ::asio::use_awaitable);
     }
 
     spdlog::info("[p2p_node] Listening on port {}", settings_.inbound_port);
 
     // Accept loop
-    while (!stopped_) {
+    while (!stopped()) {
         // Use async_accept from peer_session.hpp
         auto result = co_await async_accept(*acceptor_, settings_);
 
@@ -760,7 +813,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 
     auto last_ping = std::chrono::steady_clock::now();
 
-    while (!peer->stopped() && !stopped_) {
+    while (!peer->stopped() && !stopped()) {
         // Use short check_interval for responsive shutdown, but track ping timing separately
         check_timer.expires_after(check_interval);
 
@@ -771,7 +824,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
             check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
         );
 
-        if (peer->stopped() || stopped_) {
+        if (peer->stopped() || stopped()) {
             spdlog::debug("[p2p_node:protocols] [{}] Breaking due to stopped flag", peer->authority());
             break;
         }
@@ -868,13 +921,46 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
     spdlog::debug("[p2p_node] manager_.remove() completed for [{}]", peer->authority());
 }
 
+void p2p_node::probe_status_task(status_probe_point point) const {
+    if (status_probe_) {
+        status_probe_(point);
+    }
+}
+
+void p2p_node::wake_status_task() noexcept {
+    // Posted to the STRAND, not to the pool. The wait runs on the pool and stop()
+    // runs on whatever thread asked for it, and `pool_` has several threads — so
+    // posting to its executor would put the cancellation on some thread while the
+    // status coroutine is resuming into expires_after() on another. Same
+    // executor is not serialized execution. The strand is what makes these two
+    // mutually exclusive.
+    //
+    // @par Why the handler cannot outlive this object
+    // The only threads that can run it are the pool's, and join() waits for them;
+    // callers stop() and then join() before destroying this. A handler still
+    // queued when the pool drains is destroyed with it.
+    try {
+        ::asio::post(status_strand_, [this] {
+            // Guarded rather than passed an error_code: this asio has no
+            // cancel(error_code&) overload, and cancel() throws on failure —
+            // an exception out of a handler leaves the pool's run loop, which
+            // is the thread's whole body.
+            try {
+                status_timer_.cancel();
+            } catch (...) {
+            }
+        });
+    } catch (...) {
+    }
+}
+
 ::asio::awaitable<void> p2p_node::maintain_outbound_connections() {
     auto executor = co_await ::asio::this_coro::executor;
     ::asio::steady_timer timer(executor);
 
     // Wait for peer_supervisor to be ready (deterministic synchronization)
     // The && operator starts coroutines but doesn't guarantee execution order.
-    while (!supervisor_ready_.load(std::memory_order_acquire) && !stopped_) {
+    while (!supervisor_ready_.load(std::memory_order_acquire) && !stopped()) {
         // Yield to allow peer_supervisor to start
         co_await ::asio::post(executor, ::asio::use_awaitable);
     }
@@ -886,24 +972,57 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
     constexpr size_t max_parallel_attempts = 32;
 
     // Spawn independent status logging task (doesn't block on connection attempts)
-    ::asio::co_spawn(executor, [this]() -> ::asio::awaitable<void> {
-        auto exec = co_await ::asio::this_coro::executor;
-        ::asio::steady_timer status_timer(exec);
-        while (!stopped_) {
-            status_timer.expires_after(10s);
-            auto [ec] = co_await status_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-            if (ec || stopped_) break;
+    //
+    // On the STRAND rather than the pool: this task and the cancellation that
+    // ends it both touch status_timer_, and only a strand makes them mutually
+    // exclusive. Spawning on the pool's executor would leave the coroutine free
+    // to resume into expires_after() on one thread while cancel() runs on
+    // another.
+    ::asio::co_spawn(status_strand_, [this]() -> ::asio::awaitable<void> {
+        // The timer is a member now, not a local, so a stop can end this wait
+        // instead of waiting it out. This task is detached and join() waits for
+        // the pool it keeps alive, so ten seconds of sleeping here is ten seconds
+        // of shutdown with nothing to do.
+        while (!stopped()) {
+            probe_status_task(status_probe_point::before_arm);
+
+            // Re-read, because the window between the condition above and the
+            // arming below is real: a stop can land in it, and without this the
+            // task arms a ten-second wait only to be woken straight out of it.
+            // The wake covers that; not arming at all is cheaper and says the
+            // same thing.
+            if (stopped()) {
+                break;
+            }
+
+            status_timer_.expires_after(10s);
+            probe_status_task(status_probe_point::armed);
+
+            auto [ec] = co_await status_timer_.async_wait(::asio::as_tuple(::asio::use_awaitable));
+
+            if (ec == ::asio::error::operation_aborted) {
+                // A stop asked for this, and it is the only reason the wait ends
+                // early. Deliberately silent and deliberately not a status line:
+                // there is nothing left to report on, and a logger can throw
+                // during a teardown.
+                probe_status_task(status_probe_point::woken);
+                break;
+            }
+            if (ec || stopped()) {
+                break;
+            }
 
             auto const current = manager_.count_snapshot();
             auto const target = settings_.outbound_connections;
             auto const [hosts, banned] = peer_db_.count_by_status();
             auto const pending = pending_connections_.size();
+            probe_status_task(status_probe_point::reported);
             spdlog::info("[p2p_node:status] Peers: {}/{} (target), pending: {}, hosts: {}, banned: {}",
                 current, target, pending, hosts, banned);
         }
     }, ::asio::detached);
 
-    while (!stopped_) {
+    while (!stopped()) {
         auto const current_count = manager_.count_snapshot();
         auto const target = settings_.outbound_connections;
         auto const [host_count, ban_count] = peer_db_.count_by_status();
@@ -937,7 +1056,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
             });
 
             // Fetch addresses, filtering out duplicates and already-connected IPs
-            for (size_t attempts = 0; attempts < batch_size * 3 && addresses.size() < batch_size && !stopped_; ++attempts) {
+            for (size_t attempts = 0; attempts < batch_size * 3 && addresses.size() < batch_size && !stopped(); ++attempts) {
                 domain::message::network_address addr;
                 auto ec = peer_db_.fetch_address(addr);
                 if (ec) {
@@ -1094,7 +1213,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
     // Signal that we're ready to receive peers (deterministic synchronization)
     supervisor_ready_.store(true, std::memory_order_release);
 
-    while (!stopped_) {
+    while (!stopped()) {
         // Wait for new peer event
         // NOTE: We don't use || with stop_signal_ because the || operator in asio
         // waits for BOTH operations to complete, not just the first one.

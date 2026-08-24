@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <mutex>
 #include <memory>
 #include <string>
 #include <vector>
@@ -32,7 +33,10 @@
 #include <asio/io_context.hpp>
 #include <asio/ip/tcp.hpp>
 #include <asio/steady_timer.hpp>
+#include <asio/strand.hpp>
 #include <asio/thread_pool.hpp>
+
+namespace kth::node::detail { struct p2p_node_test_seam; }
 
 namespace kth::node {
 using namespace kth::network;
@@ -185,10 +189,32 @@ public:
     // Lifecycle
     // -------------------------------------------------------------------------
 
-    /// Start the node (load hosts, seed if needed)
+    /// Start the node (load hosts, seed if needed).
+    ///
+    /// @par Single-use, and single-use from the ADMISSION
+    /// A p2p_node can be started ONCE. A second call returns
+    /// `error::operation_failed`, including after a clean stop, and including
+    /// when the first call went on to fail: what is consumed is the admission,
+    /// not the success. An object whose start failed is finished, not ready to
+    /// try again.
+    ///
+    /// This is an observable change. The previous behaviour admitted a second
+    /// start whenever the service state said "not running", which it did after
+    /// every stop, and then ran it over channels that stop() had closed and a
+    /// thread pool that join() had ended. It returned success and did nothing;
+    /// the refusal says so instead.
+    ///
+    /// Restarting would mean rebuilding the pool, the channels and the tasks.
+    /// Until something does that, construct a new node.
     ::asio::awaitable<code> start();
 
-    /// Run the node (start accepting connections and connecting to peers)
+    /// Run the node (start accepting connections and connecting to peers).
+    ///
+    /// Admitted once, like start(). A second call returns
+    /// `error::operation_failed` rather than spawning the network tasks again --
+    /// among them the status task, which would then be a second coroutine waiting
+    /// on the one status_timer_, so a cancellation would end whichever of them
+    /// happened to be waiting.
     ::asio::awaitable<code> run();
 
     /// Stop the node
@@ -380,7 +406,128 @@ private:
     // Acceptor for inbound connections
     std::unique_ptr<::asio::ip::tcp::acceptor> acceptor_;
 
-    std::atomic<bool> stopped_{true};
+    /// The whole lifecycle, in one atomic word.
+    ///
+    /// @par Why one value and not several flags
+    /// The admission and the active state used to be two atomics — `start()` took
+    /// an admission and then published the active state as a separate step — and
+    /// two atomics are not one transition: a `stop()` landing between them read
+    /// the INITIAL "stopped", concluded there was nothing to stop, and returned,
+    /// leaving a node running after the stop that was meant to end it had already
+    /// come back.
+    ///
+    /// A mutex around both steps would fix that by serialising it. One value
+    /// removes it instead: there is nothing to serialise when the admission and
+    /// the state ARE the same word. start() is one compare-exchange and stop() is
+    /// one exchange, and neither needs to say what it holds across what.
+    ///
+    /// @par The transitions, all of them
+    /// `fresh → active` is the only admission, so a start is admitted once and
+    /// the compare-exchange says so. Anything `→ stopped` is a stop, and the value
+    /// it replaces says what that stop has to do: `active` means there is work,
+    /// `fresh` means nothing was ever running but the claim still counts — a stop
+    /// that arrives before a start refuses that start rather than being forgotten
+    /// — and `stopped` means someone got there first.
+    ///
+    /// Nothing goes back. `stopped → active` would be a restart, and restarting
+    /// would mean rebuilding the pool and the channels, not changing this value.
+    ///
+    /// @par `active`, not `running`
+    /// It is published BEFORE the database load and the seeding finish, so it
+    /// says "the lifecycle has been consumed and not stopped", not "the start
+    /// succeeded". A stop arriving during that work still finds `active` and
+    /// tears down, which is the point.
+    ///
+    /// @par What this does NOT do
+    /// It makes the lifecycle DECISION one step. It does not serialize the rest
+    /// of start()'s work against a teardown running beside it — that concurrency
+    /// predates this and is not what this change addresses. What it closes is a
+    /// stop being lost in the transition itself.
+    enum class lifecycle_state : uint8_t { fresh, active, stopped };
+    std::atomic<lifecycle_state> lifecycle_{lifecycle_state::fresh};
+
+    /// Whether run() has already spawned the network tasks.
+    ///
+    /// Monotonic and never cleared, not even when run() returns: the whole object
+    /// is single-use, so a node that has run has run.
+    ///
+    /// @par When it is consumed
+    /// Only by a call that gets past the stopped check, which is to say only by a
+    /// call on an active node. A run() on a node that was never started answers
+    /// `service_stopped` and spends nothing, so the legitimate run() that follows
+    /// its start is still admitted.
+    ///
+    /// @par Deliberately NOT a fourth lifecycle state
+    /// That word exists because an admission and an active state had to be
+    /// published together. This one is published against nothing: no stop reads
+    /// it, and no decision pairs with it. Folding it in would make the transition
+    /// table describe two unrelated things.
+    ///
+    /// @par What it does not do
+    /// It stops the tasks from being spawned twice. It does not address a first
+    /// run() racing a stop(), which predates this.
+    std::atomic<bool> run_admitted_{false};
+
+    /// Serializes everything that touches status_timer_.
+    ///
+    /// A strand, not the pool's executor. `pool_` is an asio::thread_pool with
+    /// several threads, so posting to its executor says nothing about ordering:
+    /// the status coroutine can be resuming into expires_after() on one thread
+    /// while a cancellation runs on another. Same executor is not serialized
+    /// execution, and a clean TSan run would not make it one.
+    ///
+    /// Declared after pool_ so it is destroyed before the executor it wraps.
+    ::asio::strand<::asio::thread_pool::executor_type> status_strand_{
+        ::asio::make_strand(pool_.get_executor())};
+
+    /// What the status task waits on, held here so a stop can reach it.
+    ///
+    /// It used to be a local of that task's coroutine, which is why stopping this
+    /// node could take ten seconds with nothing left to do: the wait was only
+    /// re-evaluated when the timer expired on its own, the task is detached, and
+    /// join() waits for the pool it keeps alive.
+    ///
+    /// Built on the strand above, and touched only from it.
+    ::asio::steady_timer status_timer_{status_strand_};
+
+    /// Ask the status task to look again, now.
+    ///
+    /// Posted rather than cancelled in place: the wait runs on the pool and stop()
+    /// runs on whatever thread asked, and a timer is not safe to cancel from
+    /// another thread while it is being waited on.
+    ///
+    /// A cancellation that arrives before the timer is armed is not lost: stop()
+    /// publishes the stopped state first, and the loop re-reads it -- through
+    /// stopped() -- before arming.
+    ///
+    /// @par Why no generation stamp
+    /// A wake cannot arrive for a run that is not the current one, because there
+    /// is no second run: start() admits ONCE and refuses every call after it,
+    /// including after a clean stop. A second admission is structurally
+    /// forbidden, so a wake cannot belong to a run other than the current one and
+    /// needs no generation stamp to say so.
+    ///
+    /// The refusal is not decoration. Restarting would mean rebuilding the pool
+    /// and the channels — stop() closes new_peer_channel_, stop_signal_ and
+    /// peer_notification_channel_, which are built once in the constructor's init
+    /// list, and join() on an asio::thread_pool is terminal — so a second run
+    /// that was merely admitted would do nothing and say it worked.
+    void wake_status_task() noexcept;
+
+    /// Where the status task can be watched. Nothing here is reachable from
+    /// outside: the task is detached, logs at info and reports to no one, so
+    /// whether a stop cut its wait short or the wait simply expired is
+    /// indistinguishable without this.
+    enum class status_probe_point { before_arm, armed, woken, reported };
+
+    /// Empty in every build but a control's. Installed only through
+    /// detail/p2p_node_test_seam.hpp, which is not installed.
+    std::function<void(status_probe_point)> status_probe_;
+
+    void probe_status_task(status_probe_point point) const;
+
+    friend struct detail::p2p_node_test_seam;
+
     std::atomic<bool> seeded_{false};
     std::atomic<bool> supervisor_ready_{false};  // Signals that peer_supervisor is ready
     std::atomic<int> seed_task_counter_{0};  // For unique seed task names in logging
