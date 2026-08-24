@@ -208,7 +208,8 @@ TEST_CASE("outputs created and spent in the same block need no undo entry", "[re
                              /*coinbase*/ false, /*tx_start*/ 0u});
     block.inputs.push_back({internal});   // spent by a later tx in the same block
 
-    auto delta_result = process_compact_block_utxos(block, /*height*/ 700u, /*mtp*/ 12u,
+    auto delta_result = process_compact_block_utxos(block, null_hash, /*height*/ 700u, /*mtp*/ 12u,
+                                             domain::config::network::mainnet,
                                              /*file*/ 0, /*data_pos*/ 0u, nullptr);
     REQUIRE(delta_result.has_value());
     auto& delta = *delta_result;

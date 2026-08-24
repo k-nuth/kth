@@ -21,6 +21,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <kth/domain/chain/chain_state.hpp>
+#include <kth/domain/config/network.hpp>
 #include <utxoz/types.hpp>
 
 #include <kth/blockchain/define.hpp>
@@ -161,6 +163,9 @@ struct KB_API utxo_raw_delta {
     // outcome varies with a hash table's layout is the same class of defect as
     // one whose outcome varies with the partition (#695).
     delta_merge_result merge(utxo_raw_delta&& other);
+    // Empties the batch, authorizations included. A licence that outlived the
+    // delta it was granted for would authorize a replacement in whatever batch
+    // reused the object.
     void clear();
 
     [[nodiscard]]
@@ -191,8 +196,10 @@ struct KB_API utxo_raw_delta {
 [[nodiscard]]
 KB_API expect<utxo_raw_delta> process_compact_block_utxos(
     utxo_compact_block const& block,
+    hash_digest const& block_hash,
     uint32_t height,
     uint32_t median_time_past,
+    domain::config::network network,
     int16_t file_number,
     uint32_t block_data_pos,
     database::utxo_bloom_filter const* bloom = nullptr

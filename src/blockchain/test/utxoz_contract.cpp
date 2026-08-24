@@ -514,7 +514,8 @@ TEST_CASE("utxoz behaviour: a negative file number fails in reference mode only"
     block.outputs.push_back({});
 
     auto const negative = process_compact_block_utxos(
-        block, /*height*/ 500u, /*mtp*/ 10u, /*file*/ int16_t{-1}, /*data_pos*/ 0u, nullptr);
+        block, null_hash, /*height*/ 500u, /*mtp*/ 10u,
+        domain::config::network::mainnet, /*file*/ int16_t{-1}, /*data_pos*/ 0u, nullptr);
 
 #ifdef KTH_UTXOZ_REFERENCE_MODE
     REQUIRE_FALSE(negative.has_value());
@@ -527,7 +528,8 @@ TEST_CASE("utxoz behaviour: a negative file number fails in reference mode only"
     // The control that keeps the above from passing by always failing: a valid
     // file number builds in both modes.
     auto const valid = process_compact_block_utxos(
-        block, /*height*/ 500u, /*mtp*/ 10u, /*file*/ int16_t{0}, /*data_pos*/ 0u, nullptr);
+        block, null_hash, /*height*/ 500u, /*mtp*/ 10u,
+        domain::config::network::mainnet, /*file*/ int16_t{0}, /*data_pos*/ 0u, nullptr);
     REQUIRE(valid.has_value());
 }
 

@@ -2151,7 +2151,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             // output (live UTXO set) so full validation can resolve prevouts.
             auto const* block_bloom = (h <= checkpoint_height) ? bloom_ptr : nullptr;
             auto block_delta_result = blockchain::process_compact_block_utxos(
-                *parsed, h, mtp,
+                *parsed, chain.headers().get_hash(idx), h, mtp, network,
                 chain.headers().get_file_number(idx),
                 chain.headers().get_data_pos(idx),
                 block_bloom);
