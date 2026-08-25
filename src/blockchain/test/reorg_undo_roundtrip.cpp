@@ -304,3 +304,122 @@ TEST_CASE("an output the same batch created needs no read at all", "[reorg][undo
     CHECK(source.reads == 0);
     CHECK(source.sweeps == 0);
 }
+
+// =============================================================================
+// BIP30: the entry a replacement displaces is what the undo has to carry (#695)
+// =============================================================================
+//
+// A replacement is not a spend. The output block 91880 re-creates was never
+// spent -- that is exactly why it is one of the two BIP30 exceptions -- so it
+// appears in no `deletes` list and capture_block_undo would walk straight past
+// it. Without a record, disconnecting the duplicate deletes the key it created
+// and has nothing to put back: the outpoint vanishes instead of reverting.
+//
+// Both places the displaced entry can live are covered, because they are reached
+// by different partitions of the same chain.
+
+TEST_CASE("bip30: the displaced entry is captured from the store", "[reorg][undo][bip30]") {
+    utxoz_database db;
+    REQUIRE(db.open(fresh_dir("bip30_displaced_stored"), true));
+
+    // The original was committed by an earlier batch, so it is in the set.
+    auto const key = make_outpoint(0xE3, 0);
+    auto const original = make_payload(5, 91722);
+    boost::unordered_flat_map<utxoz::raw_outpoint, utxo_raw_value, outpoint_fast_hasher> inserts;
+    inserts.emplace(key, utxo_raw_value{original, 91722u});
+    REQUIRE(db.apply_inserts_raw(inserts) == result_code::success);
+
+    // The duplicate block: it CREATES the key and spends nothing. Under the old
+    // capture there is nothing here to look at.
+    utxo_raw_delta block_delta;
+    block_delta.inserts.emplace(key, utxo_raw_value{make_payload(9, 91880), 91880u});
+    block_delta.authorized_replacements.insert(key);
+    utxo_raw_delta const empty_batch;
+
+    db_source source{db};
+    auto const captured = capture_block_undo(block_delta, empty_batch, source, 91880u);
+    REQUIRE(captured.has_value());
+
+    // The record carries the ORIGINAL entry, with its original height. Restoring
+    // it with 91880 would put the wrong coinbase maturity back.
+    REQUIRE(captured->spent.size() == 1u);
+    auto const& kept = captured->spent.front();
+    CHECK(kept.key == key);
+    CHECK(kept.height == 91722u);
+    CHECK(kept.value == original);
+}
+
+TEST_CASE("bip30: the displaced entry is captured from the batch when it is only there",
+          "[reorg][undo][bip30]") {
+    utxoz_database db;
+    REQUIRE(db.open(fresh_dir("bip30_displaced_batch"), true));
+
+    // The store is deliberately empty. This is the same-batch partition: the
+    // original was created by an earlier block of the SAME batch, so it has not
+    // been published and the store would truthfully answer that it does not have
+    // it. The batch is asked first for exactly this reason.
+    auto const key = make_outpoint(0xD5, 0);
+    auto const original = make_payload(6, 91812);
+
+    utxo_raw_delta batch_delta;
+    batch_delta.inserts.emplace(key, utxo_raw_value{original, 91812u});
+
+    utxo_raw_delta block_delta;
+    block_delta.inserts.emplace(key, utxo_raw_value{make_payload(9, 91842), 91842u});
+    block_delta.authorized_replacements.insert(key);
+
+    db_source source{db};
+    auto const captured = capture_block_undo(block_delta, batch_delta, source, 91842u);
+    REQUIRE(captured.has_value());
+
+    REQUIRE(captured->spent.size() == 1u);
+    auto const& kept = captured->spent.front();
+    CHECK(kept.key == key);
+    CHECK(kept.height == 91812u);
+    CHECK(kept.value == original);
+}
+
+TEST_CASE("bip30: an authorized insert with nothing to displace records nothing",
+          "[reorg][undo][bip30]") {
+    utxoz_database db;
+    REQUIRE(db.open(fresh_dir("bip30_displaced_absent"), true));
+
+    // Licensed, and neither the batch nor the store holds anything to overwrite.
+    // Absence here is ordinary -- what the second exception looks like after a
+    // rewind past the first -- and must not be reported as a missing output the
+    // way an absent SPENT output is.
+    auto const key = make_outpoint(0xE4, 0);
+
+    utxo_raw_delta block_delta;
+    block_delta.inserts.emplace(key, utxo_raw_value{make_payload(9, 91880), 91880u});
+    block_delta.authorized_replacements.insert(key);
+    utxo_raw_delta const empty_batch;
+
+    db_source source{db};
+    auto const captured = capture_block_undo(block_delta, empty_batch, source, 91880u);
+
+    REQUIRE(captured.has_value());
+    CHECK(captured->spent.empty());
+}
+
+TEST_CASE("bip30: a read that fails while capturing a displaced entry is reported",
+          "[reorg][undo][bip30]") {
+    // A storage fault must not be read as "nothing to keep": that would lose the
+    // only copy of the displaced value and leave the disconnect deleting the key.
+    auto const key = make_outpoint(0xE5, 0);
+
+    utxo_raw_delta block_delta;
+    block_delta.inserts.emplace(key, utxo_raw_value{make_payload(9, 91880), 91880u});
+    block_delta.authorized_replacements.insert(key);
+    utxo_raw_delta const empty_batch;
+
+    failing_source source{result_code::other};
+    auto const captured = capture_block_undo(block_delta, empty_batch, source, 91880u);
+
+    REQUIRE_FALSE(captured.has_value());
+    CHECK(captured.error() == result_code::other);
+
+    // And it really went looking -- without this the case would pass on a
+    // capture that skipped replacements entirely.
+    CHECK(source.reads == 1u);
+}

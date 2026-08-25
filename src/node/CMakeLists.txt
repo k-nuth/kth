@@ -307,6 +307,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/connected_tip_remainder.cpp
           test/executor_lifecycle.cpp
           test/scope_action.cpp
+          test/bip30_integration.cpp
           test/utxo_batch_atomicity.cpp
           test/fatal_outside_window.cpp
           test/slow_sync_ordering.cpp
