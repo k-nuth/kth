@@ -106,6 +106,7 @@ struct utxo_raw_value {
 // =============================================================================
 // Like utxo_delta, but uses UTXO-Z native keys (raw_outpoint) and
 // pre-serialized byte vectors. No domain objects anywhere.
+
 // =============================================================================
 
 // Fast hasher for raw_outpoint (36 bytes).
@@ -177,6 +178,115 @@ struct KB_API utxo_raw_delta {
     [[nodiscard]]
     size_t delete_count() const { return deletes.size(); }
 };
+
+// =============================================================================
+// Applying a built delta
+// =============================================================================
+//
+// What the store is asked to do with a delta that is already built and already
+// carries whatever authorization it is entitled to. Everything that DECIDES stays
+// with the caller: the consensus question (is_bip30_exception, over the block's
+// own network, hash and height) is answered when the block's delta is built, and
+// the transition record, the write window, mark_mutating/complete, the poisoned
+// gate, on_fatal and the fatal logging stay in the build task. This does the two
+// mutations, in order, and reports what happened.
+
+enum class delta_apply_status {
+    /// Everything asked for was done.
+    success,
+
+    /// The store faulted while withdrawing a displaced entry. `store_error`
+    /// carries which fault -- recovery_required, which says the store has
+    /// latched, is not the same instruction as a read that failed, so it is
+    /// never flattened into a generic failure.
+    withdrawal_failed,
+
+    /// The withdrawal walk did not finish for some keys. A deletion batch would
+    /// resend those; this cannot, because the insert that follows would land on a
+    /// key still holding its old entry.
+    withdrawal_unresolved,
+
+    /// The inserts failed. `insert_error` carries the code for the same reason.
+    insert_failed,
+};
+
+struct delta_apply_result {
+    delta_apply_status status{delta_apply_status::success};
+
+    /// Set when status is withdrawal_failed.
+    std::optional<utxoz::error_code> store_error;
+
+    /// Set when status is insert_failed.
+    std::optional<database::result_code> insert_error;
+
+    /// What the withdrawal actually did, for diagnosis and for a recovery that
+    /// has to reconcile the store against the undo records. `absent` is not a
+    /// fault: an authorized insert with nothing to overwrite is ordinary work.
+    size_t erased{0};
+    size_t absent{0};
+    size_t unresolved{0};
+
+    [[nodiscard]]
+    bool ok() const { return status == delta_apply_status::success; }
+};
+
+// `chain` is anything exposing utxo_apply_deletes and apply_utxo_inserts_raw over
+// a window the caller already opened and already marked mutating. Templated so
+// the blockchain layer does not depend on the node layer to be exercised.
+template <typename Chain, typename Window>
+delta_apply_result apply_utxo_delta(
+    Chain& chain,
+    Window const& window,
+    utxo_raw_delta const& delta,
+    uint32_t delete_height
+) {
+    delta_apply_result result;
+
+    // A BIP30 replacement cannot go in as an ordinary insert: the store holds the
+    // entry it displaces and refuses to write over a live key. Withdraw first, so
+    // the insert lands on an absent key exactly like every other one. Only the
+    // licensed keys this delta actually re-creates.
+    if ( ! delta.authorized_replacements.empty()) {
+        std::vector<utxoz::deferred_deletion_entry> displaced;
+        displaced.reserve(delta.authorized_replacements.size());
+        for (auto const& key : delta.authorized_replacements) {
+            if (delta.inserts.contains(key)) {
+                displaced.emplace_back(key, delete_height);
+            }
+        }
+
+        if ( ! displaced.empty()) {
+            auto const progress = chain.utxo_apply_deletes(window, displaced);
+            result.erased = progress.erased.size();
+            result.absent = progress.absent.size();
+            result.unresolved = progress.unresolved.size();
+
+            // Every part of the answer is read, and they do not mean the same
+            // thing: a fault and an unfinished walk stop the insert, an absent
+            // key does not.
+            if (progress.error) {
+                result.status = delta_apply_status::withdrawal_failed;
+                result.store_error = *progress.error;
+                return result;
+            }
+            if ( ! progress.unresolved.empty()) {
+                result.status = delta_apply_status::withdrawal_unresolved;
+                return result;
+            }
+        }
+    }
+
+    if ( ! delta.empty()) {
+        auto const code = chain.apply_utxo_inserts_raw(window, delta.inserts);
+        if (code != database::result_code::success) {
+            result.status = delta_apply_status::insert_failed;
+            result.insert_error = code;
+            return result;
+        }
+    }
+
+    return result;
+}
 
 // Process a compact block into a raw delta (zero-copy path).
 // Raw output bytes are serialized directly into UTXO-Z storage format.
