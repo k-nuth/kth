@@ -2151,7 +2151,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             // output (live UTXO set) so full validation can resolve prevouts.
             auto const* block_bloom = (h <= checkpoint_height) ? bloom_ptr : nullptr;
             auto block_delta_result = blockchain::process_compact_block_utxos(
-                *parsed, h, mtp,
+                *parsed, chain.headers().get_hash(idx), h, mtp, network,
                 chain.headers().get_file_number(idx),
                 chain.headers().get_data_pos(idx),
                 block_bloom);
@@ -2203,7 +2203,21 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                                           chain.headers().get_prev_block_hash(idx));
             }
 
-            delta.merge(std::move(block_delta));
+            // A key this block re-creates over one the batch already carries, with
+            // no BIP30 authorization for it, is a consensus violation that the
+            // batch validator does not look for (see batch_validate.hpp). The
+            // merge refuses it and leaves the batch untouched, so nothing is
+            // half-applied -- but nothing downstream would notice the block was
+            // dropped either, and a UTXO set quietly missing a block's outputs is
+            // worse than a stop. Treated like the other local, non-retryable
+            // disagreements above.
+            if (delta.merge(std::move(block_delta))
+                    != blockchain::delta_merge_result::ok) {
+                spdlog::critical("[utxo_build] The block at height {} re-creates an output the "
+                    "batch already holds and is not one of the two BIP30 exceptions", h);
+                on_fatal("a block re-created an existing output without BIP30 authorization");
+                co_return;
+            }
 
             // Update MTP window from raw block header (timestamp at offset 68)
             uint32_t block_timestamp;
@@ -2311,19 +2325,52 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             // latches the gate unless complete() has been reached.
             window->mark_mutating();
 
-            if ( ! delta.empty()) {
-                auto result = chain.apply_utxo_inserts_raw(*window, delta.inserts);
-                if (result != database::result_code::success) {
-                    // The code, not just the fact. `recovery_required` says the
-                    // store has latched and nothing further will be written,
-                    // which is a different instruction to an operator than a
-                    // delta that failed for any other reason.
+            // The two mutations, in order, done by the shared helper so this
+            // task and the controls that exercise it run the same code. What
+            // stays here is everything that DECIDES: the record is already
+            // durable, the window is open and marked mutating, and every exit
+            // below latches the gate through its destructor.
+            auto const applied = blockchain::apply_utxo_delta(
+                chain, *window, delta, batch_end);
+
+            if (applied.erased > 0 || applied.absent > 0) {
+                spdlog::info("[utxo_build] BIP30 replacement at batch {}: withdrew {} "
+                    "entry(ies), {} had none to withdraw",
+                    batch_start, applied.erased, applied.absent);
+            }
+
+            switch (applied.status) {
+                case blockchain::delta_apply_status::success:
+                    break;
+
+                case blockchain::delta_apply_status::withdrawal_failed:
+                    // The category, not just the fact. recovery_required says the
+                    // store has latched and will write nothing more, which is a
+                    // different instruction to an operator than a read that failed.
+                    return window_fatal{
+                        fmt::format("[utxo_build] Withdrawing the entry a BIP30 replacement "
+                            "displaces failed at batch {} (operation {:#018x}): {} "
+                            "(erased {}, absent {}, unresolved {})",
+                            batch_start, operation_id,
+                            database::utxoz_error_name(*applied.store_error),
+                            applied.erased, applied.absent, applied.unresolved),
+                        "the store failed while withdrawing a BIP30 replacement"};
+
+                case blockchain::delta_apply_status::withdrawal_unresolved:
+                    return window_fatal{
+                        fmt::format("[utxo_build] Could not withdraw {} entry(ies) a BIP30 "
+                            "replacement displaces at batch {} (operation {:#018x}) "
+                            "(erased {}, absent {})",
+                            applied.unresolved, batch_start, operation_id,
+                            applied.erased, applied.absent),
+                        "a BIP30 replacement could not withdraw the entry it replaces"};
+
+                case blockchain::delta_apply_status::insert_failed:
                     return window_fatal{
                         fmt::format("[utxo_build] Failed to apply UTXO delta at batch {} "
                             "(operation {:#018x}): {}", batch_start, operation_id,
-                            database::result_code_name(result)),
+                            database::result_code_name(*applied.insert_error)),
                         "a UTXO delta could not be applied"};
-                }
             }
 
             // Step 5. Persist undo data AFTER the delta is applied and BEFORE the

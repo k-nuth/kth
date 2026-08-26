@@ -6,6 +6,7 @@
 #define KTH_BLOCKCHAIN_UTXO_BUILDER_HPP
 
 #include <cstdint>
+#include <optional>
 #include <cstring>
 #include <expected>
 #include <filesystem>
@@ -20,6 +21,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <kth/domain/chain/chain_state.hpp>
+#include <kth/domain/config/network.hpp>
 #include <utxoz/types.hpp>
 
 #include <kth/blockchain/define.hpp>
@@ -103,6 +106,7 @@ struct utxo_raw_value {
 // =============================================================================
 // Like utxo_delta, but uses UTXO-Z native keys (raw_outpoint) and
 // pre-serialized byte vectors. No domain objects anywhere.
+
 // =============================================================================
 
 // Fast hasher for raw_outpoint (36 bytes).
@@ -118,6 +122,21 @@ struct outpoint_fast_hasher {
     }
 };
 
+// What merging one block's delta into a batch delta concluded. A second insert
+// of a key the batch already carries is not a detail the merge can settle on its
+// own: for the two blocks BIP30 grandfathers it is an authorized replacement, and
+// anywhere else it is a consensus violation. Silently keeping one of the two --
+// which is what an `emplace` does -- answers neither question and makes the batch
+// partition decide the result (#695).
+enum class delta_merge_result {
+    // Nothing collided, or the collision was an authorized BIP30 replacement.
+    ok,
+
+    // A second insert arrived for a key already in the batch, with no consensus
+    // authorization to replace it.
+    unauthorized_duplicate,
+};
+
 struct KB_API utxo_raw_delta {
     using key_t = utxoz::raw_outpoint;
     using hasher_t = outpoint_fast_hasher;
@@ -125,11 +144,29 @@ struct KB_API utxo_raw_delta {
     boost::unordered_flat_map<key_t, utxo_raw_value, hasher_t> inserts;
     boost::unordered_flat_map<key_t, uint32_t, hasher_t> deletes;
 
+    // The keys this block is permitted to re-create over a live entry. Filled
+    // when the block's delta is built, from the consensus rule itself
+    // (is_bip30_exception over the block's own {hash, height}), and carried with
+    // the operation from there on. A merge NEVER decides that a collision must
+    // have been BIP30: the two grandfathered blocks are the only source of an
+    // entry here, so a collision without one is a consensus violation and is
+    // reported as such. Empty for every block but those two.
+    boost::unordered_flat_set<key_t, hasher_t> authorized_replacements;
+
     // Bloom filter skip counters (accumulated across merge)
     size_t bloom_skipped_inserts = 0;
     size_t bloom_skipped_deletes = 0;
 
-    void merge(utxo_raw_delta&& other);
+    // Merging one block into this batch. Either the whole of `other` is folded
+    // in, or nothing is: an unauthorized duplicate is reported with this batch
+    // left exactly as it was. Two passes rather than one, so the answer cannot
+    // depend on the order `other.inserts` happens to iterate in -- a batch whose
+    // outcome varies with a hash table's layout is the same class of defect as
+    // one whose outcome varies with the partition (#695).
+    delta_merge_result merge(utxo_raw_delta&& other);
+    // Empties the batch, authorizations included. A licence that outlived the
+    // delta it was granted for would authorize a replacement in whatever batch
+    // reused the object.
     void clear();
 
     [[nodiscard]]
@@ -141,6 +178,115 @@ struct KB_API utxo_raw_delta {
     [[nodiscard]]
     size_t delete_count() const { return deletes.size(); }
 };
+
+// =============================================================================
+// Applying a built delta
+// =============================================================================
+//
+// What the store is asked to do with a delta that is already built and already
+// carries whatever authorization it is entitled to. Everything that DECIDES stays
+// with the caller: the consensus question (is_bip30_exception, over the block's
+// own network, hash and height) is answered when the block's delta is built, and
+// the transition record, the write window, mark_mutating/complete, the poisoned
+// gate, on_fatal and the fatal logging stay in the build task. This does the two
+// mutations, in order, and reports what happened.
+
+enum class delta_apply_status {
+    /// Everything asked for was done.
+    success,
+
+    /// The store faulted while withdrawing a displaced entry. `store_error`
+    /// carries which fault -- recovery_required, which says the store has
+    /// latched, is not the same instruction as a read that failed, so it is
+    /// never flattened into a generic failure.
+    withdrawal_failed,
+
+    /// The withdrawal walk did not finish for some keys. A deletion batch would
+    /// resend those; this cannot, because the insert that follows would land on a
+    /// key still holding its old entry.
+    withdrawal_unresolved,
+
+    /// The inserts failed. `insert_error` carries the code for the same reason.
+    insert_failed,
+};
+
+struct delta_apply_result {
+    delta_apply_status status{delta_apply_status::success};
+
+    /// Set when status is withdrawal_failed.
+    std::optional<utxoz::error_code> store_error;
+
+    /// Set when status is insert_failed.
+    std::optional<database::result_code> insert_error;
+
+    /// What the withdrawal actually did, for diagnosis and for a recovery that
+    /// has to reconcile the store against the undo records. `absent` is not a
+    /// fault: an authorized insert with nothing to overwrite is ordinary work.
+    size_t erased{0};
+    size_t absent{0};
+    size_t unresolved{0};
+
+    [[nodiscard]]
+    bool ok() const { return status == delta_apply_status::success; }
+};
+
+// `chain` is anything exposing utxo_apply_deletes and apply_utxo_inserts_raw over
+// a window the caller already opened and already marked mutating. Templated so
+// the blockchain layer does not depend on the node layer to be exercised.
+template <typename Chain, typename Window>
+delta_apply_result apply_utxo_delta(
+    Chain& chain,
+    Window const& window,
+    utxo_raw_delta const& delta,
+    uint32_t delete_height
+) {
+    delta_apply_result result;
+
+    // A BIP30 replacement cannot go in as an ordinary insert: the store holds the
+    // entry it displaces and refuses to write over a live key. Withdraw first, so
+    // the insert lands on an absent key exactly like every other one. Only the
+    // licensed keys this delta actually re-creates.
+    if ( ! delta.authorized_replacements.empty()) {
+        std::vector<utxoz::deferred_deletion_entry> displaced;
+        displaced.reserve(delta.authorized_replacements.size());
+        for (auto const& key : delta.authorized_replacements) {
+            if (delta.inserts.contains(key)) {
+                displaced.emplace_back(key, delete_height);
+            }
+        }
+
+        if ( ! displaced.empty()) {
+            auto const progress = chain.utxo_apply_deletes(window, displaced);
+            result.erased = progress.erased.size();
+            result.absent = progress.absent.size();
+            result.unresolved = progress.unresolved.size();
+
+            // Every part of the answer is read, and they do not mean the same
+            // thing: a fault and an unfinished walk stop the insert, an absent
+            // key does not.
+            if (progress.error) {
+                result.status = delta_apply_status::withdrawal_failed;
+                result.store_error = *progress.error;
+                return result;
+            }
+            if ( ! progress.unresolved.empty()) {
+                result.status = delta_apply_status::withdrawal_unresolved;
+                return result;
+            }
+        }
+    }
+
+    if ( ! delta.empty()) {
+        auto const code = chain.apply_utxo_inserts_raw(window, delta.inserts);
+        if (code != database::result_code::success) {
+            result.status = delta_apply_status::insert_failed;
+            result.insert_error = code;
+            return result;
+        }
+    }
+
+    return result;
+}
 
 // Process a compact block into a raw delta (zero-copy path).
 // Raw output bytes are serialized directly into UTXO-Z storage format.
@@ -160,8 +306,10 @@ struct KB_API utxo_raw_delta {
 [[nodiscard]]
 KB_API expect<utxo_raw_delta> process_compact_block_utxos(
     utxo_compact_block const& block,
+    hash_digest const& block_hash,
     uint32_t height,
     uint32_t median_time_past,
+    domain::config::network network,
     int16_t file_number,
     uint32_t block_data_pos,
     database::utxo_bloom_filter const* bloom = nullptr
@@ -208,12 +356,79 @@ std::expected<database::block_undo, database::result_code> capture_block_undo(
     uint32_t height
 ) {
     database::block_undo undo;
-    undo.spent.reserve(block_delta.deletes.size());
+    undo.spent.reserve(block_delta.deletes.size() + block_delta.authorized_replacements.size());
 
     // Spent outputs still missing after the first pass, to be resolved by the
     // batch resolution (find_raw's not_resolved only means "the active versions
     // cannot answer").
     std::vector<utxoz::lookup_request> deferred;
+
+    // A BIP30 replacement displaces a live entry, and nothing else records it:
+    // the original output is never spent, so it is in no `deletes` list. Captured
+    // FIRST, before the merge folds this block in and before anything is applied,
+    // because after either the previous value is gone.
+    //
+    // The batch is asked before the store. When the original and the duplicate
+    // share a batch, the entry the duplicate displaces was created by an earlier
+    // block of that same batch and has not been published yet, so the store would
+    // truthfully answer that it does not have it.
+    //
+    // Absence is not corruption. An exception block whose coinbase output the set
+    // does not already hold is an authorized insert with nothing to overwrite --
+    // which is what the second of the two looks like after a rewind past the
+    // first. Nothing is recorded, and the disconnect will simply remove what the
+    // block created.
+    std::vector<utxoz::lookup_request> deferred_replacements;
+
+    for (auto const& key : block_delta.authorized_replacements) {
+        if (auto it = batch_delta.inserts.find(key); it != batch_delta.inserts.end()) {
+            undo.spent.push_back({key, it->second.data, it->second.height});
+            continue;
+        }
+        auto stored = source.find_utxo_raw(key, height);
+        if (stored) {
+            undo.spent.push_back({key, std::move(stored->value), stored->height});
+            continue;
+        }
+
+        // not_resolved is not absence: it says the ACTIVE versions cannot answer,
+        // and the entry a replacement displaces may well be in an older
+        // generation. Accepting it as "nothing to keep" would lose the only copy
+        // of that value, and the disconnect would then delete the key instead of
+        // restoring it. Resolved below, exactly like a spent output.
+        if (stored.error() == database::result_code::not_resolved) {
+            deferred_replacements.emplace_back(key, height);
+            continue;
+        }
+
+        if (stored.error() != database::result_code::key_not_found) {
+            spdlog::error("[utxo_builder] capture_block_undo: reading the entry a BIP30 "
+                "replacement displaces failed at height {}", height);
+            return std::unexpected(stored.error());
+        }
+        // key_not_found is a proven absence, and for a replacement that is
+        // ordinary: an authorized insert with nothing to overwrite.
+    }
+
+    if ( ! deferred_replacements.empty()) {
+        auto resolved = source.utxo_resolve_raw(deferred_replacements);
+        if ( ! resolved) {
+            spdlog::error("[utxo_builder] capture_block_undo: resolving {} entry(ies) a BIP30 "
+                "replacement displaces failed at height {}; no undo record is captured",
+                deferred_replacements.size(), height);
+            return std::unexpected(resolved.error());
+        }
+
+        // Absence AFTER resolution is the answer, not a fault -- unlike a spent
+        // output, whose absence means the set and the delta disagree. Here it
+        // means the set simply does not hold what this block re-creates.
+        for (auto const& request : deferred_replacements) {
+            if (auto it = resolved->found.find(request.key); it != resolved->found.end()) {
+                undo.spent.push_back(database::spent_output{
+                    request.key, it->second.value, it->second.height});
+            }
+        }
+    }
 
     for (auto const& [key, _] : block_delta.deletes) {
         // Parent created earlier in this same batch: it lives only in the

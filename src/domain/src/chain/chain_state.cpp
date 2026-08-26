@@ -176,7 +176,6 @@ bool is_bip16_exception(infrastructure::config::checkpoint const& check, domain:
     return network == domain::config::network::mainnet && check == mainnet_bip16_exception_checkpoint;
 }
 
-inline
 bool is_bip30_exception(infrastructure::config::checkpoint const& check, domain::config::network network) {
     return network == domain::config::network::mainnet &&
            ((check == mainnet_bip30_exception_checkpoint1) ||

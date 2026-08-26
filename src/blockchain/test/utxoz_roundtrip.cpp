@@ -81,7 +81,8 @@ TEST_CASE("utxoz full-mode value round-trips write path -> find", "[utxoz][regre
 
     // Write path (blockchain): serialize + insert.
     auto delta_result = process_compact_block_utxos(
-        block, /*height*/ 100u, /*mtp*/ 111u, /*file*/ 0, /*data_pos*/ 0u, nullptr);
+        block, null_hash, /*height*/ 100u, /*mtp*/ 111u,
+        domain::config::network::mainnet, /*file*/ 0, /*data_pos*/ 0u, nullptr);
     REQUIRE(delta_result.has_value());
     auto& delta = *delta_result;
     REQUIRE(db.apply_inserts_raw(delta.inserts) == result_code::success);

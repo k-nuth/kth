@@ -193,12 +193,37 @@ std::vector<uint8_t> serialize_utxo_raw_value(
 // utxo_raw_delta implementation
 // =============================================================================
 
-void utxo_raw_delta::merge(utxo_raw_delta&& other) {
+delta_merge_result utxo_raw_delta::merge(utxo_raw_delta&& other) {
+    // Pass 1 decides, and touches nothing. Every key `other` creates that this
+    // batch already carries has to be authorized by `other` itself; one that is
+    // not makes the whole merge fail, and it must do so no matter which
+    // colliding key the iteration reaches first.
+    for (auto const& [point, raw] : other.inserts) {
+        if ( ! inserts.contains(point)) {
+            continue;
+        }
+        if ( ! other.authorized_replacements.contains(point)) {
+            return delta_merge_result::unauthorized_duplicate;
+        }
+    }
+
+    // Pass 2 applies, and cannot fail. Past here every collision is a
+    // replacement the consensus rule authorized for this block, and the newer
+    // entry wins -- which is what BCHN's AddCoin does for a coinbase, assigning
+    // over the live coin so the set ends up holding the new output at the new
+    // height.
     bloom_skipped_inserts += other.bloom_skipped_inserts;
     bloom_skipped_deletes += other.bloom_skipped_deletes;
 
+    // The licence travels with the batch, not just with the block that carried
+    // it in. Whatever applies this batch has to be able to tell a replacement
+    // from a plain insert -- the store already holds the entry a replacement
+    // displaces, and it must not be handed that as an ordinary insert.
+    authorized_replacements.insert(other.authorized_replacements.begin(),
+                                   other.authorized_replacements.end());
+
     for (auto& [point, raw] : other.inserts) {
-        inserts.emplace(point, std::move(raw));
+        inserts.insert_or_assign(point, std::move(raw));
     }
 
     for (auto const& [point, height] : other.deletes) {
@@ -210,11 +235,14 @@ void utxo_raw_delta::merge(utxo_raw_delta&& other) {
             deletes.emplace(point, height);
         }
     }
+
+    return delta_merge_result::ok;
 }
 
 void utxo_raw_delta::clear() {
     inserts.clear();
     deletes.clear();
+    authorized_replacements.clear();
     bloom_skipped_inserts = 0;
     bloom_skipped_deletes = 0;
 }
@@ -229,8 +257,10 @@ bool utxo_raw_delta::empty() const {
 
 expect<utxo_raw_delta> process_compact_block_utxos(
     utxo_compact_block const& block,
+    hash_digest const& block_hash,
     uint32_t height,
     uint32_t median_time_past,
+    domain::config::network network,
     int16_t file_number,
     uint32_t block_data_pos,
     database::utxo_bloom_filter const* bloom
@@ -249,6 +279,13 @@ expect<utxo_raw_delta> process_compact_block_utxos(
 #endif
 
     utxo_raw_delta delta;
+
+    // Asked once, of the block itself, by the identity the rule uses: the exact
+    // {hash, height} pair. This is the only place a replacement can be licensed
+    // -- downstream nothing re-derives it, and a collision on its own never
+    // means BIP30 (#695).
+    bool const bip30_exception = domain::chain::is_bip30_exception(
+        {block_hash, height}, network);
 
     // 1. Process all outputs (inserts)
     for (auto const& out : block.outputs) {
@@ -274,6 +311,14 @@ expect<utxo_raw_delta> process_compact_block_utxos(
             out.key,
             utxo_raw_value{std::move(value), height}
         );
+
+        // Only the coinbase of one of the two grandfathered blocks. The exception
+        // is about a duplicated coinbase transaction, so a non-coinbase output
+        // that happened to be created by the same block gets no licence -- and
+        // neither does anything in any other block.
+        if (bip30_exception && out.coinbase) {
+            delta.authorized_replacements.insert(out.key);
+        }
     }
 
     // 2. Process all inputs (deletes)
