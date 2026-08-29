@@ -46,6 +46,38 @@ private:
 // failed write, or the chain moving underneath it (checked per batch, so a run
 // racing a switch stops instead of interleaving two branches in one table).
 [[nodiscard]]
+/// Make the by-height header table durable through `to_height`, and no further.
+///
+/// The one writer of that table outside a reorganization. Everything that needs
+/// a header to be readable from `internal_db` -- the chain state a connected
+/// batch publishes, and the reconcile a start performs -- goes through here, so
+/// the range is written once and by one caller at a time.
+///
+/// Serialized and gap-only: concurrent callers do not overlap, and a range
+/// already durable costs a marker read. Idempotent, so asking twice is free and
+/// asking for less than is already there is a no-op.
+///
+/// Returns false when the range could not be made durable -- the chain moved
+/// under it, a height is not on the active chain, or the write failed. A caller
+/// that needs the header must not proceed on false: the point of this function
+/// is that "it is in the index" and "it is on disk" stop being the same claim
+/// (#697).
+bool ensure_headers_persisted(
+    blockchain::block_chain& chain,
+    blockchain::header_index const& index,
+    uint32_t to_height);
+
+/// Tell the persistence marker that the table was rewritten at and above
+/// `new_tip_height`, so nothing above it may be treated as durable any more.
+///
+/// A switch replaces the headers at heights the marker already counted. Leaving
+/// it alone would be safe only in the direction where the marker under-claims;
+/// in the other one -- a switch that rewinds the tip -- the heights above the new
+/// tip still hold the ABANDONED branch's headers while the marker says they are
+/// durable, and the next request for one of them would be answered without
+/// writing anything.
+void headers_persistence_rewound_to(blockchain::block_chain& chain, uint32_t new_tip_height);
+
 bool persist_active_headers(
     blockchain::block_chain& chain,
     blockchain::header_index const& index,

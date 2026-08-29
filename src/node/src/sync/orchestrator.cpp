@@ -447,7 +447,9 @@ static
             co_return;
         }
 
-        if ( ! persist_active_headers(chain, index, height, chunk_end)) {
+        // Through the same single entry point the build task uses, so the bulk
+        // catch-up and the per-batch barrier cannot both write the same range.
+        if ( ! ensure_headers_persisted(chain, index, chunk_end)) {
             co_return;
         }
         height = chunk_end + 1;
@@ -1364,6 +1366,30 @@ static
                     record(progress.opened);
                 }
 
+                // Persisted as the header tip moves, not only when a batch of
+                // bodies reaches it. The per-batch barrier keeps the UTXO set
+                // from outrunning the durable table, but it is driven by bodies:
+                // headers can arrive for a long stretch with no batch behind
+                // them -- which is the whole distance between the connected tip
+                // and the header tip -- and nothing would write them.
+                //
+                // Gap-only and serialized, so this is the same single writer: a
+                // range a batch has already made durable costs a cursor read,
+                // and the two never overlap.
+                //
+                // A failure is logged and not fatal. Nothing durable depends on
+                // these headers yet -- no batch has published a height that
+                // needs them -- so the cost is re-fetching them after a restart,
+                // and the batch that eventually reaches them has its own barrier
+                // that does fail.
+                if (headers_synced_to > prev_headers_synced) {
+                    if ( ! ensure_headers_persisted(chain, organizer.index(),
+                                                    headers_synced_to)) {
+                        spdlog::warn("[header_persist] Could not persist headers through {}; "
+                            "they will be re-fetched after a restart", headers_synced_to);
+                    }
+                }
+
                 if (result->result) {
                     // Header validation failed - normal network behavior (peer on wrong chain)
                     spdlog::debug("[sync_coordinator] Header validation failed: {} from peer {}",
@@ -1461,12 +1487,20 @@ static
                     spdlog::info("[sync_coordinator] Header sync COMPLETE: {} headers in {}s ({}/s)",
                         total_headers, elapsed_secs, rate);
 
-                    // Spawn background task to persist headers to DB
+                    // Owned by the task group, not detached. It holds `chain` and
+                    // the organizer's index BY REFERENCE and it suspends between
+                    // chunks, so a detached one outlives the join below: the final
+                    // drain would overlap a writer it believed had stopped, and
+                    // the orchestrator could return and let the organizer be
+                    // destroyed while this still held a reference into it.
+                    //
+                    // In the group, join() waits for it, which is what makes the
+                    // drain after that join a quiescence barrier rather than a
+                    // hope.
                     if (headers_synced_to > initial_header_height) {
-                        ::asio::co_spawn(exec,
+                        all_tasks.spawn("header_persist",
                             persist_headers_to_db(chain, organizer.index(),
-                                initial_header_height + 1, headers_synced_to),
-                            ::asio::detached);
+                                initial_header_height + 1, headers_synced_to));
                     }
 
                     // Trigger block download if we have headers ahead of blocks
@@ -1705,6 +1739,24 @@ static
     // Wait for all tasks
     spdlog::info("[sync_orchestrator] All {} tasks spawned, running...", all_tasks.active_count());
     co_await all_tasks.join();
+
+    // AFTER the join, and that is the whole point. Draining before the channels
+    // close reads a tip that producers can still move: the walk persists through
+    // H, a header validation already in flight admits H+1, the channels shut, and
+    // H+1 is left accepted in memory and nowhere else -- the same shape as the
+    // defect this change exists to remove, arrived at through the exit instead of
+    // through the sync.
+    //
+    // Rereading the tip in a loop would not fix it either, because the producers
+    // are what has to stop, not the reader. The join IS the quiescence barrier:
+    // every task that could admit a header has ended, so the tip read here cannot
+    // move afterwards.
+    if (auto const tip = organizer.index().active_tip_height(); tip > 0) {
+        if ( ! ensure_headers_persisted(chain, organizer.index(), uint32_t(tip))) {
+            spdlog::warn("[header_persist:shutdown] Could not drain headers through {}; "
+                "they will be re-fetched after a restart", tip);
+        }
+    }
 
     spdlog::info("[sync_orchestrator:shutdown] All tasks completed - orchestrator exiting");
 }

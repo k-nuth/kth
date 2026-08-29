@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/blockchain/detail/block_chain_internal.hpp>
+
 #include <kth/node/full_node.hpp>
 
 #include <cstddef>
@@ -259,6 +261,12 @@ full_node::~full_node() {
 
     // Sync tip from chain's header index
     organizer.sync_tip();
+
+    // The index is materialised, so hydration is over. From here a header the
+    // index cannot produce is a broken invariant rather than a reason to ask the
+    // durable checkpoint: the chain state's header comes from memory, and it
+    // stops depending on how far that checkpoint happened to get (#697).
+    blockchain::detail::block_chain_internal::end_hydration(chain_);
 
     // Tell it how far blocks are already validated. Nothing else does until the
     // first newly stored block, and deep-reorg parking measures depth against

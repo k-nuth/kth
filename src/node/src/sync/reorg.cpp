@@ -2,9 +2,15 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <mutex>
+
+#include <kth/node/detail/header_persist_test_seam.hpp>
+#include <kth/blockchain/detail/block_chain_internal.hpp>
 #include <kth/node/sync/reorg.hpp>
 
 #include <algorithm>
+#include <atomic>
+#include <limits>
 #include <chrono>
 #include <exception>
 
@@ -18,6 +24,57 @@
 #include <kth/infrastructure/utility/assert.hpp>
 
 namespace kth::node::sync {
+
+
+void headers_persistence_rewound_to(blockchain::block_chain& chain, uint32_t new_tip_height) {
+    std::lock_guard<std::mutex> const guard(blockchain::detail::block_chain_internal::persist_mutex(chain));
+    blockchain::detail::block_chain_internal::set_persisted_through(chain,
+        std::min(blockchain::detail::block_chain_internal::persisted_through_locked(chain), new_tip_height));
+}
+
+namespace detail {
+
+// No production path writes this. Armed only by a control that needs the barrier
+// to refuse after the batch exists, which is the one thing the barrier is for and
+// the one thing no external arrangement can produce.
+std::atomic<uint32_t> persist_fault_height{std::numeric_limits<uint32_t>::max()};
+
+void fail_header_persistence_at_or_above(uint32_t height) {
+    persist_fault_height.store(height, std::memory_order_release);
+}
+
+void clear_header_persistence_fault() {
+    persist_fault_height.store(std::numeric_limits<uint32_t>::max(),
+                               std::memory_order_release);
+}
+
+} // namespace detail
+
+bool ensure_headers_persisted(
+    blockchain::block_chain& chain,
+    blockchain::header_index const& index,
+    uint32_t to_height) {
+
+    if (to_height >= detail::persist_fault_height.load(std::memory_order_acquire)) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> const guard(blockchain::detail::block_chain_internal::persist_mutex(chain));
+
+    if (to_height <= blockchain::detail::block_chain_internal::persisted_through_locked(chain)) {
+        return true;
+    }
+
+    // Only the gap. Rewriting a range that is already durable would be the second
+    // writer over it that this function exists to prevent.
+    auto const from = blockchain::detail::block_chain_internal::persisted_through_locked(chain) + 1;
+    if ( ! persist_active_headers(chain, index, from, to_height)) {
+        return false;
+    }
+
+    blockchain::detail::block_chain_internal::set_persisted_through(chain, to_height);
+    return true;
+}
 
 bool persist_active_headers(
     blockchain::block_chain& chain,
@@ -137,8 +194,24 @@ namespace {
                 branch.push_back(index.get_header(idx));
             }
 
+            // Before the write, and unconditionally: from here the heights above
+            // the new tip are not durable whatever happens next. Lowering it
+            // after a failure too is the conservative direction -- a marker that
+            // under-claims costs a rewrite, one that over-claims hands out a
+            // header from the branch the node just left.
+            headers_persistence_rewound_to(chain, uint32_t(new_tip_height));
+
             if ( ! branch.empty()) {
                 if (auto const ec = persist(branch, fork_height + 1); ec) {
+                    // Nothing above the fork was rewritten, so nothing above it
+                    // is durable as the branch this node is now on. The rewind
+                    // above lowered the cursor to the new tip, which is still an
+                    // over-claim while the table holds the abandoned branch's
+                    // headers there. The wind-down below means nobody should ask
+                    // again -- but "the node is dying" is a poor reason to leave
+                    // a marker saying something untrue.
+                    headers_persistence_rewound_to(chain, fork_height);
+
                     // The transaction aborted, so nothing was written: the
                     // persisted headers still describe the branch the node just
                     // left — whole, but wrong.
