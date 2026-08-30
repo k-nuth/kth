@@ -77,12 +77,30 @@ bool run_with_log(kth::node::executor& host) {
         return true;
     }
 
-    // Wait for SIGINT/SIGTERM (poll the atomic)
+    // An external signal OR the node finishing on its own.
+    //
+    // Waiting only for the signal is what left a process alive for five minutes
+    // after its node had stopped, joined and said "Good bye!": the fault came
+    // from inside, nothing was ever going to raise SIGTERM, and the only thing
+    // that would have released the executor's threads was the stop() below
+    // (#698).
+    //
+    // The wait is on the run's own completion -- published once when the run
+    // coroutine ends -- and not on running(), which reports a lifecycle state
+    // rather than whether the work is over.
+    bool internal_completion = false;
     while (g_signal_received.load() == 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (host.wait_for_run_completion(std::chrono::milliseconds(100))) {
+            internal_completion = true;
+            break;
+        }
     }
 
-    spdlog::info("\n[node] Stop signal detected (code: {}).", g_signal_received.load());
+    if (internal_completion) {
+        spdlog::info("[node] The node stopped on its own; shutting down.");
+    } else {
+        spdlog::info("\n[node] Stop signal detected (code: {}).", g_signal_received.load());
+    }
 
     // Stop node (blocks until stopped)
     host.stop();

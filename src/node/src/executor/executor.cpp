@@ -205,6 +205,20 @@ void executor::satisfy_run_completed() noexcept {
     } catch (...) {
         spdlog::error("[executor] Could not signal run completion");
     }
+
+    // After the promise, and unconditionally: a caller waiting to learn the node
+    // ended is owed the news whether or not the promise could carry it.
+    {
+        std::lock_guard<std::mutex> const guard(run_completed_mutex_);
+    }
+    run_completed_cv_.notify_all();
+}
+
+bool executor::wait_for_run_completion(std::chrono::milliseconds patience) {
+    std::unique_lock<std::mutex> lock(run_completed_mutex_);
+    return run_completed_cv_.wait_for(lock, patience, [this] {
+        return run_completed_satisfied_.load(std::memory_order_acquire);
+    });
 }
 
 void executor::await_start_outcome() {
